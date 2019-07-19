@@ -33,7 +33,7 @@ Documentation for this is currently minimal. See docs/coding.md and docs/best_pr
 
 -----
 
-README.md Copyright 2010-2014 OrlyAtomics, Inc.
+README.md Copyright 2010-2019 Atomic Kismet Company
 
 README.md is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
 
