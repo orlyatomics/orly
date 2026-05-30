@@ -1225,7 +1225,7 @@ namespace Orly {
             return false;
           }
           case TTycon::Tuple: {
-            if (IndirectCoreArray.ElemCount == IndirectCoreArray.ElemCount) {
+            if (IndirectCoreArray.ElemCount == that_core.IndirectCoreArray.ElemCount) {
               void *lhs_pin_alloc = alloca(sizeof(TArena::TFinalPin) * 2);
               void *rhs_pin_alloc = reinterpret_cast<uint8_t *>(lhs_pin_alloc) + sizeof(TArena::TFinalPin);
               TArena::TFinalPin::TWrapper lhs_pin(this_arena->Pin(IndirectCoreArray.Offset,
