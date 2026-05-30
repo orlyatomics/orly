@@ -65,8 +65,10 @@ jobs:
       - name: Bootstrap jhm
         run: make bootstrap
 
-      - name: jhm -c release
-        run: jhm -c release
+      # tools/jhm because the Makefile's `export PATH` only applies inside
+      # make's environment; this is a separate shell invocation.
+      - name: tools/jhm -c release
+        run: tools/jhm -c release
 
       - name: Smoke each release binary with --help
         run: |
