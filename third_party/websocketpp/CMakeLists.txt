@@ -1,17 +1,43 @@
 
 ############ Setup project and cmake
-
-# Project name
-project (websocketpp)
-
 # Minimum cmake requirement. We should require a quite recent
 # cmake for the dependency find macros etc. to be up to date.
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.8)
 
+############ Paths
+
+set (WEBSOCKETPP_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+set (WEBSOCKETPP_INCLUDE ${WEBSOCKETPP_ROOT}/websocketpp)
+set (WEBSOCKETPP_BUILD_ROOT ${CMAKE_CURRENT_BINARY_DIR})
+set (WEBSOCKETPP_BIN ${WEBSOCKETPP_BUILD_ROOT}/bin)
+set (WEBSOCKETPP_LIB ${WEBSOCKETPP_BUILD_ROOT}/lib)
+
+# CMake install step prefix. I assume linux users want the prefix to
+# be the default /usr or /usr/local so this is only adjusted on Windows.
+# This must be set prior to any call to project or it will not be read correctly.
+# - Windows: Build the INSTALL project in your solution file.
+# - Linux/OSX: make install.
+if (WIN32)
+    set (CMAKE_INSTALL_PREFIX "${WEBSOCKETPP_ROOT}/install" CACHE PATH "")
+endif ()
+
+############ Project name and version
 set (WEBSOCKETPP_MAJOR_VERSION 0)
-set (WEBSOCKETPP_MINOR_VERSION 3)
-set (WEBSOCKETPP_PATCH_VERSION 0)
+set (WEBSOCKETPP_MINOR_VERSION 8)
+set (WEBSOCKETPP_PATCH_VERSION 2)
 set (WEBSOCKETPP_VERSION ${WEBSOCKETPP_MAJOR_VERSION}.${WEBSOCKETPP_MINOR_VERSION}.${WEBSOCKETPP_PATCH_VERSION})
+
+if(POLICY CMP0048)
+  cmake_policy(GET CMP0048 _version_policy)
+endif()
+
+if(_version_allowed STREQUAL NEW)
+  project (websocketpp VERSION ${WEBSOCKETPP_VERSION})
+else()
+  project (websocketpp)
+endif()
+
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(INSTALL_INCLUDE_DIR include CACHE PATH "Installation directory for header files")
 if (WIN32 AND NOT CYGWIN)
@@ -42,21 +68,6 @@ set (CMAKE_CONFIGURATION_TYPES "Release;RelWithDebInfo;Debug" CACHE STRING "Conf
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include (CMakeHelpers)
 
-############ Paths
-
-set (WEBSOCKETPP_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-set (WEBSOCKETPP_INCLUDE ${WEBSOCKETPP_ROOT}/websocketpp)
-set (WEBSOCKETPP_BUILD_ROOT ${CMAKE_CURRENT_BINARY_DIR})
-set (WEBSOCKETPP_BIN ${WEBSOCKETPP_BUILD_ROOT}/bin)
-set (WEBSOCKETPP_LIB ${WEBSOCKETPP_BUILD_ROOT}/lib)
-
-# CMake install step prefix. I assume linux users want the prefix to
-# be the default /usr or /usr/local so this is only adjusted on Windows.
-# - Windows: Build the INSTALL project in your solution file.
-# - Linux/OSX: make install.
-if (MSVC)
-    set (CMAKE_INSTALL_PREFIX "${WEBSOCKETPP_ROOT}/install")
-endif ()
 
 ############  Build customization
 
@@ -67,10 +78,12 @@ option (BUILD_TESTS "Build websocketpp tests." FALSE)
 
 if (BUILD_TESTS OR BUILD_EXAMPLES)
 
+    enable_testing ()
+
     ############ Compiler specific setup
 
     set (WEBSOCKETPP_PLATFORM_LIBS "")
-    set (WEBSOCKETPP_PLATFORM_TSL_LIBS "")
+    set (WEBSOCKETPP_PLATFORM_TLS_LIBS "")
     set (WEBSOCKETPP_BOOST_LIBS "")
 
     # VC9 and C++11 reasoning
@@ -87,7 +100,14 @@ if (BUILD_TESTS OR BUILD_EXAMPLES)
 
     # C++11 defines
     if (ENABLE_CPP11)
-        add_definitions (-D_WEBSOCKETPP_CPP11_STL_)
+        if (MSVC)
+            add_definitions (-D_WEBSOCKETPP_CPP11_FUNCTIONAL_)
+            add_definitions (-D_WEBSOCKETPP_CPP11_SYSTEM_ERROR_)
+            add_definitions (-D_WEBSOCKETPP_CPP11_RANDOM_DEVICE_)
+            add_definitions (-D_WEBSOCKETPP_CPP11_MEMORY_)
+        else()
+            add_definitions (-D_WEBSOCKETPP_CPP11_STL_)
+        endif()
     endif ()
 
     # Visual studio
@@ -103,10 +123,14 @@ if (BUILD_TESTS OR BUILD_EXAMPLES)
 
     # g++
     if (CMAKE_COMPILER_IS_GNUCXX)
-        set (WEBSOCKETPP_PLATFORM_LIBS pthread rt)
-        set (WEBSOCKETPP_PLATFORM_TSL_LIBS ssl crypto)
+        if (NOT APPLE)
+            set (WEBSOCKETPP_PLATFORM_LIBS pthread rt)
+        else()
+            set (WEBSOCKETPP_PLATFORM_LIBS pthread)
+        endif()
+        set (WEBSOCKETPP_PLATFORM_TLS_LIBS ssl crypto)
         set (WEBSOCKETPP_BOOST_LIBS system thread)
-        set (CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-std=c++0x")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
         if (NOT APPLE)
             add_definitions (-DNDEBUG -Wall -Wcast-align) # todo: should we use CMAKE_C_FLAGS for these?
         endif ()
@@ -126,7 +150,7 @@ if (BUILD_TESTS OR BUILD_EXAMPLES)
         else()
             set (WEBSOCKETPP_PLATFORM_LIBS pthread)
         endif()
-        set (WEBSOCKETPP_PLATFORM_TSL_LIBS ssl crypto)
+        set (WEBSOCKETPP_PLATFORM_TLS_LIBS ssl crypto)
         set (WEBSOCKETPP_BOOST_LIBS system thread)
         set (CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-std=c++0x -stdlib=libc++") # todo: is libc++ really needed here?
         if (NOT APPLE)
@@ -141,6 +165,10 @@ if (BUILD_TESTS OR BUILD_EXAMPLES)
 
     if (BUILD_EXAMPLES)
         list (APPEND WEBSOCKETPP_BOOST_LIBS random)
+    endif()
+
+    if (BUILD_TESTS)
+        list (APPEND WEBSOCKETPP_BOOST_LIBS unit_test_framework)
     endif()
 
     ############ Dependencies
@@ -171,6 +199,14 @@ if (BUILD_TESTS OR BUILD_EXAMPLES)
     else ()
         set (Boost_USE_MULTITHREADED FALSE)
         set (Boost_USE_STATIC_LIBS FALSE)
+    endif ()
+
+	if (BOOST_STATIC)
+		set (Boost_USE_STATIC_LIBS TRUE)
+	endif ()
+
+    if (NOT Boost_USE_STATIC_LIBS)
+        add_definitions (-DBOOST_TEST_DYN_LINK)
     endif ()
 
     set (Boost_FIND_REQUIRED TRUE)
@@ -205,6 +241,7 @@ if (BUILD_TESTS OR BUILD_EXAMPLES)
     endif ()
 
     find_package(OpenSSL)
+    find_package(ZLIB)
 endif()
 
 ############ Add projects
@@ -214,20 +251,28 @@ add_subdirectory (websocketpp)
 
 # Add examples
 if (BUILD_EXAMPLES)
-    add_subdirectory (examples)
+    include_subdirs ("examples")
 endif ()
 
 # Add tests
 if (BUILD_TESTS)
-    add_subdirectory (test)
+    include_subdirs ("test")
 endif ()
 
 print_used_build_config()
 
 export (PACKAGE websocketpp)
 
-configure_file (websocketpp-config.cmake.in "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/websocketpp-config.cmake" @ONLY)
-configure_file (websocketpp-configVersion.cmake.in "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/websocketpp-configVersion.cmake" @ONLY)
+include(CMakePackageConfigHelpers)
+configure_package_config_file(websocketpp-config.cmake.in
+  "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/websocketpp-config.cmake"
+  PATH_VARS INSTALL_INCLUDE_DIR
+  INSTALL_DESTINATION "${INSTALL_CMAKE_DIR}"
+  NO_CHECK_REQUIRED_COMPONENTS_MACRO
+)
+write_basic_package_version_file("${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/websocketpp-configVersion.cmake"
+  VERSION ${WEBSOCKETPP_VERSION}
+  COMPATIBILITY ExactVersion)
 
 # Install the websocketpp-config.cmake and websocketpp-configVersion.cmake
 install (FILES

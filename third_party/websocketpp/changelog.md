@@ -1,4 +1,310 @@
 HEAD
+
+0.8.2 - 2020-04-19
+- Examples: Update print_client_tls example to remove use of deprecated
+  OpenSSL functions.
+- Compatibility: Removes the use of make_shared in a number of cases where
+  it would be incompatible with newer versions of ASIO. Thank you Stefan
+  Floeren for the patch. #810 #814 #862 #843 #794 #808
+- CMake: Update cmake installer to better handle dependencies when using
+  g++ on MacOS. Thank you Luca Palano for reporting and a patch. #831
+- CMake: Update cmake installer to use a variable for the include directory
+  improving the ability of the install to be customized. THank you Schrijvers
+  Luc and Gianfranco Costamanga for reporting and a patch. #842
+
+0.8.1 - 2018-07-16
+Note: This release does not change library behavior. It only corrects issues
+in the installer and test system.
+- Test Suite: Adjust test suite to match behavior introduced in 0.8.0. Thank
+  you Gianfranco Costamagna for reporting and a patch. #731
+- CMake: Update cmake installer to only install library files globally.
+  Thank you Gianfraco Costamanga for reporting and a patch. #732
+
+0.8.0 - 2018-07-12
+- Examples: Add `print_client` example. This demonstrates a minimal non-TLS
+  client that connects to a server and prints out the messages it receives.
+- Examples: Add `print_client_tls` example. This demonstrates a minimal TLS
+  client, including basic support via Asio+OpenSSL for certificate chain
+  and hostname verification.
+- Feature: Add getter for all headers to the HTTP parsers. This allows a
+  wrapping library to enumerate all headers to send upstream. Thank you Jupp
+  Müller for reporting and an initial pull request.
+- Improvement: Move the `socket_init_handler` to execute as a part of `init_asio`
+  rather than connection `pre_init`. This allows setting of socket options prior
+  to the bind/listen/accept system calls. Thank you ChristianRobl3D for
+  reporting #530.
+- Improvement: Timers in transport integration tests should only fail if their
+  own test times out, rather than any test. #643 Thank you Alex Korotkin for
+  reporting and a patch.
+- Improvement: Preserve transport layer error codes in more cases, particularly
+  during calls to `endpoint::listen`. #652 Thank you vadz for reporting and
+  patches.
+- Compatibility: Make sure the chrono library used by Boost/Asio is in sync
+  with what the websocketpp is using. Thank you Flow86 for reporting and a
+  patch.
+- Compatibility: Update `telemetry_client` to use a slightly more cross platform
+  method of sleeping. Should work on windows now. Thank you Meir Yanovich for
+  reporting.
+- Compatibility: Updated permessage-deflate support to reflect that the zlib
+  library does not actually support a sliding window size of 256 bits. 
+  WebSocket++ will no longer negotiate 256 bit deflate windows. If the user
+  of the library tries to request a 256 bit window a 512 bit window will be
+  specified instead (This was the previous behavior). #596 #653 Thank you 
+  Vinnie Falco and Gianfranco Costamagna for reporting.
+- Compatibility: Better error handling and logging in cases where extension
+  requests parse correctly but negotiation fails.
+- Compatibility: Removed custom handling of `SSL_R_SHORT_READ` error condition.
+  This error code no longer exists in modern versions of OpenSSL and causes
+  a build error. It wasn't being used for anything particularly important
+  (slightly improving error reporting) and there isn't a great replacement.
+  #599 Thank you Gianfranco Costamagna for reporting.
+- Compatibility: Add missing `<stdint>` headers. Fixes issues with g++ 5.4.0.
+  #638 Thank you Alex Korotkin for reporting and a patch.
+- Compatibility: Remove the use of `std::auto_ptr` and `std::binary_function`
+  from builds with C++11 or later. These features are deprecated and were
+  removed entirely in C++17. This change allows building WebSocket++ on
+  C++17 compilers. #592 Thank you Michal Fojtak for reporting and a patch
+- Compatibility: Add 1014 close code and adds missing descriptions for codes
+  1012 and 1013. #589 Thank you jbwdevries and ronneke1996 for reporting and
+  patches.
+- Compatibility: Add hooks to support `mingw-std-threads` C++11 thread and mutex
+  polyfill library as an alternative to Boost. #608 Thank you Peter Taylor for
+  reporting and an initial patch.
+- Compatibility: Changed the handshake connection token to 'Upgrade' from
+  'upgrade'. Technically this header is supposed to be processed case
+  insensitively. In practice, there are browsers (such as Edge) that don't do
+  this and they tend to use the uppercase value used as an example in RFC6455.
+  Thank you Johann Bauer for reporting and a patch. #727
+- Bug: Store loggers in shared pointers to avoid crashes related to connections
+  trying to write logs entries after their respective endpoint has been
+  deallocated. Thank you Thalhammer for reporting and Jupp Müller for the 
+  patch. #539 #501
+- Bug: Change default listen backlog from 0 to `socket_base::max_connections`.
+  #549. Thank you derwassi and zwelab for reporting and na1pir for providing
+  access to hardware to debug the issue.
+- Bug: Fix a crash in the accept loop when `get_connection` fails. #551 Thank you
+  Walter Gray for a patch.
+- Bug/Documentation: Fix incorrect example code that used 
+  `websocketpp::lib::error_code` instead of `websocketpp::exception`. Thank you
+  heretic13 for reporting
+- Bug: Fix uninitialized shared pointer in Asio transport test suite. #647
+  Thank you Alex Korotkin for reporting and a patch.
+- Bug: Fix a thread safety issue in the permessage-deflate extension that
+  caused message corruption when sending compressed messages from a different
+  thread than the main I/O thread. #615 Thank you KyleNyenhuis and Pieter De 
+  Gendt for reporting and a patch.
+- Bug: Fix an undefined behavior issue performing a 64 bit wide shift on a 64
+  bit value. #636 Thank you Gregor Jasny for reporting and a patch
+- Bug: Fix some compile issues with ASIO_STANDALONE. #662 #665 Thank you
+  chronoxor and Guillaume Egles for reporting and patches.
+
+0.7.0 - 2016-02-22
+- MINOR BREAKING SOCKET POLICY CHANGE: Asio transport socket policy method 
+  `cancel_socket` will now return `lib::asio::error_code` instead of `void`.
+  Custom Asio transport socket policies will need to be updated accordingly.
+  This does not affect anyone using the bundled socket policies.
+- Feature: Basic support for the permessage-deflate extension. #344
+- Feature: Allow accessing the local endpoint when using the Asio transport.
+  This allows inspection of the address and port in cases where they are chosen
+  by the operating system rather than the user. Thank you Andreas Weis and 
+  Muzahid Hussain for reporting and related code. #458
+- Feature: Add support for subprotocols in Hybi00. Thank you Lukas Obermann
+  for reporting and a patch. #518
+- Feature: Adds `tcp_pre_bind handler` to Asio transport. This allows setting
+  arbitrary socket options after the listen acceptor has been created but before
+  the socket bind has been performed. #634 #439 Thank you Gregor Jasny for
+  the patch.
+- Improvement: Better automatic std::chrono feature detection for Visual Studio
+- Improvement: Major refactoring to bundled CMake build system. CMake can now be
+  used to build all of the examples and the test suite. Thank you Thijs Wenker
+  for a significant portion of this code. #378, #435, #449
+- Improvement: In build environments where `lib::error_code` and 
+  `lib::asio::error_code` match (such as using `boost::asio` with 
+  `boost::system_error` or standalone asio with `std::system_error`, transport
+  errors are passed through natively rather than being reported as a translated 
+  `pass_through` error type.
+- Improvement: Add a `get_transport_error` method to Asio transport connections
+  to allow retrieving a machine readable native transport error.
+- Improvement: Add `connection::get_response`, `connection::get_response_code`,
+  and `connection::get_response_msg` methods to allow accessing additional
+  information about the HTTP responses that WebSocket++ sends. #465 Thank you
+  Flow86 for reporting.
+- Improvement: Removes use of empty strings ("") in favor of `string::clear()`
+  and `string::empty()`. This avoids generating unnecessary temporary objects.
+  #468 Thank you Vladislav Yaroslavlev for reporting and a patch.
+- Documentation: Adds an example demonstrating the use of external `io_service`
+- Documentation: Adds a simple `echo_client` example.
+- Documentation: Begins migration of the web based user manual into Doxygen.
+- Bug: Fix memory leak when `init_asio` produces an error. #454 Thank you Mark 
+  Grimes for reporting and fixing.
+- Bug: Fix crash when processing a specially crafted HTTP header. Thank you Eli 
+  Fidler for reporting, test cases, and a patch. #456
+- Bug: Fix an issue where standalone Asio builds that use TLS would not compile
+  due to lingering boost code. #448 Thank you mjsp for reporting
+- Bug: Fix an issue where canceling a socket could throw an exception on some
+  older Windows XP platforms. It now prints an appropriate set of log messages
+  instead. Thank you Thijs Wenker for reporting and researching solutions. #460
+- Bug: Fix an issue where deferred HTTP connections that start sending a very 
+  long response before their HTTP handler ends would result in a second set of
+  HTTP headers being injected into the output. Thank you Kevin Smith for
+  reporting and providing test case details. #443
+- Bug: Fix an issue where the wrong type of strand was being created. Thank you 
+  Bastien Brunnenstein for reporting and a patch. #462
+- Bug: Fix an issue where TLS includes were broken for Asio Standalone builds.
+  Thank you giachi and Bastien Brunnenstein for reporting. #491
+- Bug: Remove the use of cached read and write handlers in the Asio transport.
+  This feature caused memory leaks when the `io_service` the connection was
+  running on was abruptly stopped. There isn't a clean and safe way of using
+  this optimization without global state and the associated locks. The locks
+  perform worse. Thank you Xavier Gibert for reporting, test cases, and code.
+  Fixes #490.
+- Bug: Fix a heap buffer overflow when checking very short URIs. Thank you 
+  Xavier Gibert for reporting and a patch #524
+- Compatibility: Fixes a number of build & config issues on Visual Studio 2015
+- Compatibility: Removes non-standards compliant masking behavior. #395, #469
+- Compatibility: Replace deprecated use of `auto_ptr` on systems where 
+  `unique_ptr` is available.
+
+0.6.0 - 2015-06-02
+- MINOR BREAKING TRANSPORT POLICY CHANGE: Custom transport policies will now be
+  required to include a new method `void set_uri(uri_ptr u)`. An implementation
+  is not required. The stub transport policy includes an example stub method
+  that can be added to any existing custom transport policy to fulfill this
+  requirement. This does not affect anyone using the bundled transports or
+  configs.
+- MINOR BREAKING SOCKET POLICY CHANGE: Custom asio transport socket policies 
+  will now be required to include a new method `void set_uri(uri_ptr u)`. Like
+  with the transport layer, an implementation is not required. This does not 
+  affect anyone using the bundled socket policies.
+- MINOR BREAKING DEPENDENCY CHANGE: When using Boost versions greater than or 
+  equal to 1.49 in C++03 mode, `libboost-chrono` is needed now instead of 
+  `libboost-date_time`. Users with C++11 compilers or using Boost versions 1.48
+  and earlier are not affected. Note: This change affects the bundled unit test
+  suite.
+- Feature: WebSocket++ Asio transport policy can now be used with the standalone
+  version of Asio (1.8.0+) when a C++11 compiler and standard library are 
+  present. This means that it is possible now to use WebSocket++'s Asio
+  transport entirely without Boost. Thank you Robert Seiler for proof of concept
+  code that was used as a guide for this implementation. Fixes #324 
+- Feature: Adds a vectored/scatter-gather write handler to the iostream
+  transport.
+- Feature: Adds the ability to defer sending an HTTP response until sometime
+  after the `http_handler` is run. This allows processing of long running http
+  handlers to defer their response until it is ready without blocking the
+  network thread. references #425
+- Improvement: `echo_server_tls` has been update to demonstrate how to configure
+  it for Mozilla's recommended intermediate and modern TLS security profiles.
+- Improvement: `endpoint::set_timer` now uses a steady clock provided by 
+  `boost::chrono` or `std::chrono` where available instead of the non-monotonic
+  system clock. Thank you breyed for reporting. fixes #241
+- Improvement: Outgoing TLS connections to servers using the SNI extension to
+  choose a certificate will now work. Thank you moozzyk for reporting. 
+  Fixes #400
+- Improvement: Removes an unnecessary mutex lock in `get_con_from_hdl`.
+- Cleanup: Asio transport policy has been refactored to remove many Boost
+  dependencies. On C++03 compilers the `boost::noncopyable` dependency has been
+  removed and the `boost::date_time` dependency has been replaced with the newer
+  `boost::chrono` when possible. On C++11 compilers the `boost::aligned_storage`
+  and `boost::date_time` dependencies are gone, replaced with equivalent C++11
+  standard library features.
+- Bug: Fixes a potential dangling pointer and inconsistent error message
+  handling in `websocketpp::exception`. #432 Thank you Tom Swirly for the fix.
+
+0.5.1 - 2015-02-27
+- Bug: Fixes an issue where some frame data was counted against the max header
+  size limit, resulting in connections that included a lot of frame data
+  immediately after the opening handshake to fail.
+- Bug: Fix a typo in the name of the set method for `max_http_body_size`. #406
+  Thank you jplatte for reporting.
+
+0.5.0 - 2015-01-22
+- BREAKING UTILITY CHANGE: Deprecated methods `http::parser::parse_headers`,
+  `http::response::parse_complete`, and `http::request::parse_complete` have
+  been removed.
+- Security: Disabled SSLv3 in example servers.
+- Feature: Adds basic support for accessing HTTP request bodies in the http
+  handler. #181
+- Feature: Adds the ability to register a shutdown handler when using the
+  iostream transport. This provides a clean interface for triggering the shut
+  down of external sockets and other cleanup without hooking in to higher level
+  WebSocket handlers.
+- Feature: Adds the ability to register a write handler when using the iostream
+  transport. This handler can be used to handle transport output in place of
+  registering an ostream to write to.
+- Feature: Adds a new logging policy that outputs to syslog. #386 Thank you Tom
+  Hughes for submitting the initial version of this policy.
+- Improvement: Message payload logging now prints text for text messages rather
+  than binary.
+- Improvement: Overhaul of handshake state machine. Should make it impossible
+  for exceptions to bubble out of transport methods like `io_service::run`.
+- Improvement: Overhaul of handshake error reporting. Fail handler error codes
+  will be more detailed and precise. Adds new [fail] and [http] logging channels
+  that log failed websocket connections and successful HTTP connections
+  respectively. A new aggregate channel package, `alevel::access_core`, allows
+  enabling connect, disconnect, fail, and http together. Successful HTTP
+  connections will no longer trigger a fail handler.
+- Improvement: Ability to terminate connection during an http handler to cleanly
+  suppress the default outgoing HTTP response.
+- Documentation: Add Sending & Receiving Messages step to chapter one of the
+  `utility_client` tutorial. Update `utility_client` example to match.
+- Cleanup: Removes unused files & STL includes. Adds required STL includes.
+  Normalizes include order.
+- Bug: Fixes a fatal state error when a handshake response is completed
+  immediately after that handshake times out. #389
+- Bug: MinGW fixes; C++11 feature detection, localtime use. #393 Thank you
+  Schebb for reporting, code, and testing.
+- Bug: Fixes an issue where `websocketpp::exception::what()` could return an out
+  of scope pointer. #397 Thank you fabioang for reporting.
+- Bug: Fixes an issue where endpoints were not reset properly after a call to
+  `endpoint::listen` failed. #390 Thank you wyyqyl for reporting.
+
+0.4.0 - 2014-11-04
+- BREAKING API CHANGE: All WebSocket++ methods now throw an exception of type
+  `websocketpp::exception` which derives from `std::exception`. This normalizes
+  all exception types under the standard exception hierarchy and allows
+  WebSocket++ exceptions to be caught in the same statement as others. The error
+  code that was previously thrown is wrapped in the exception object and can be
+  accessed via the `websocketpp::exception::code()` method.
+- BREAKING API CHANGE: Custom logging policies have some new required
+  constructors that take generic config settings rather than pointers to
+  std::ostreams. This allows writing logging policies that do not involve the
+  use of std::ostream. This does not affect anyone using the built in logging
+  policies.
+- BREAKING UTILITY CHANGE: `websocketpp::lib::net::htonll` and
+  `websocketpp::lib::net::ntohll` have been prefixed with an underscore to avoid
+  conflicts with similarly named macros in some operating systems. If you are
+  using the WebSocket++ provided 64 bit host/network byte order functions you
+  will need to switch to the prefixed versions.
+- BREAKING UTILITY CHANGE: The signature of `base64_encode` has changed from
+  `websocketpp::base64_encode(unsigned char const *, unsigned int)` to
+  `websocketpp::base64_encode(unsigned char const *, size_t)`.
+- BREAKING UTILITY CHANGE: The signature of `sha1::calc` has changed from
+  `websocketpp::sha1::calc(void const *, int, unsigned char *)` to
+  `websocketpp::sha1::calc(void const *, size_t, unsigned char *)`
+- Feature: Adds incomplete `minimal_server` and `minimal_client` configs that
+  can be used to build custom configs without pulling in the dependencies of
+  `core` or `core_client`. These configs will offer a stable base config to
+  future-proof custom configs.
+- Improvement: Core library no longer has std::iostream as a dependency.
+  std::iostream is still required for the optional iostream logging policy and
+  iostream transport.
+- Bug: C++11 Chrono support was being incorrectly detected by the `boost_config`
+  header. Thank you Max Dmitrichenko for reporting and a patch.
+- Bug: use of `std::put_time` is now guarded by a unique flag rather than a
+  chrono library flag. Thank you Max Dmitrichenko for reporting.
+- Bug: Fixes non-thread safe use of std::localtime. #347 #383
+- Compatibility: Adjust usage of std::min to be more compatible with systems
+  that define a min(...) macro.
+- Compatibility: Removes unused parameters from all library, test, and example
+  code. This assists with those developing with -Werror and -Wunused-parameter
+  #376
+- Compatibility: Renames ntohll and htonll methods to avoid conflicts with
+  platform specific macros. #358 #381, #382 Thank you logotype, unphased,
+  svendjo
+- Cleanup: Removes unused functions, fixes variable shadow warnings, normalizes
+  all whitespace in library, examples, and tests to 4 spaces. #376
+
+0.3.0 - 2014-08-10
 - Feature: Adds `start_perpetual` and `stop_perpetual` methods to asio transport
   These may be used to replace manually managed `asio::io_service::work` objects
 - Feature: Allow setting pong and handshake timeouts at runtime.
@@ -17,6 +323,9 @@ HEAD
 - Feature: Adds the ability to specify a maximum message size.
 - Feature: Adds `close::status::get_string(...)` method to look up a human
   readable string given a close code value.
+- Feature: Adds `connection::read_all(...)` method to iostream transport as a
+  convenience method for reading all data into the connection buffer without the
+  end user needing to manually loop on `read_some`.
 - Improvement: Open, close, and pong timeouts can be disabled entirely by
   setting their duration to 0.
 - Improvement: Numerous performance improvements. Including: tuned default
@@ -125,7 +434,7 @@ HEAD
 - Change default HTTP response error code when no http_handler is defined from
   500/Internal Server Error to 426/Upgrade Required
 - Remove timezone from logger timestamp to work around issues with the Windows
-  implimentation of strftime. Thank you breyed for testing and code. #257
+  implementation of strftime. Thank you breyed for testing and code. #257
 - Switch integer literals to char literals to improve VCPP compatibility.
   Thank you breyed for testing and code. #257
 - Add MSVCPP warning suppression for the bundled SHA1 library. Thank you breyed

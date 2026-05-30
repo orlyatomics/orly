@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Peter Thorson. All rights reserved.
+ * Copyright (c) 2014, Peter Thorson. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,12 +29,15 @@
 #define WEBSOCKETPP_CLIENT_ENDPOINT_HPP
 
 #include <websocketpp/endpoint.hpp>
+#include <websocketpp/uri.hpp>
+
 #include <websocketpp/logger/levels.hpp>
 
-#include <iostream>
+#include <websocketpp/common/system_error.hpp>
+
+#include <string>
 
 namespace websocketpp {
-
 
 /// Client endpoint role based on the given config
 /**
@@ -64,9 +67,11 @@ public:
     /// Type of the endpoint component of this server
     typedef endpoint<connection_type,config> endpoint_type;
 
+    friend class connection<config>;
+
     explicit client() : endpoint_type(false)
     {
-        endpoint_type::m_alog.write(log::alevel::devel, "client constructor");
+        endpoint_type::m_alog->write(log::alevel::devel, "client constructor");
     }
 
     /// Get a new connection
@@ -112,7 +117,7 @@ public:
      * @return A connection_ptr to the new connection
      */
     connection_ptr get_connection(std::string const & u, lib::error_code & ec) {
-        uri_ptr location(new uri(u));
+        uri_ptr location = lib::make_shared<uri>(u);
 
         if (!location->get_valid()) {
             ec = error::make_error_code(error::invalid_uri);
@@ -152,10 +157,10 @@ private:
         if (ec) {
             con->terminate(ec);
 
-            endpoint_type::m_elog.write(log::elevel::rerror,
+            endpoint_type::m_elog->write(log::elevel::rerror,
                     "handle_connect error: "+ec.message());
         } else {
-            endpoint_type::m_alog.write(log::alevel::connect,
+            endpoint_type::m_alog->write(log::alevel::connect,
                 "Successful connection");
 
             con->start();

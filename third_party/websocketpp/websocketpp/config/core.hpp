@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Peter Thorson. All rights reserved.
+ * Copyright (c) 2014, Peter Thorson. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -49,6 +49,7 @@
 
 // Loggers
 #include <websocketpp/logger/basic.hpp>
+#include <websocketpp/logger/levels.hpp>
 
 // RNG
 #include <websocketpp/random/none.hpp>
@@ -188,7 +189,18 @@ struct core {
     static const websocketpp::log::level alog_level =
         websocketpp::log::alevel::all ^ websocketpp::log::alevel::devel;
 
-    ///
+    /// Size of the per-connection read buffer
+    /**
+     * Each connection has an internal buffer of this size. A larger value will
+     * result in fewer trips through the library and less CPU overhead at the
+     * expense of increased memory usage per connection.
+     *
+     * If your application primarily deals in very large messages you may want
+     * to try setting this value higher.
+     *
+     * If your application has a lot of connections or primarily deals in small
+     * messages you may want to try setting this smaller.
+     */
     static const size_t connection_read_buffer_size = 16384;
 
     /// Drop connections immediately on protocol error.
@@ -223,9 +235,21 @@ struct core {
      *
      * The default is 32MB
      *
-     * @since 0.4.0-alpha1
+     * @since 0.3.0
      */
     static const size_t max_message_size = 32000000;
+    
+    /// Default maximum http body size
+    /**
+     * Default value for the http parser's maximum body size. Maximum body size
+     * determines the point at which the library will abort reading an HTTP
+     * connection with the 413/request entity too large error.
+     *
+     * The default is 32MB
+     *
+     * @since 0.5.0
+     */
+    static const size_t max_http_body_size = 32000000;
 
     /// Global flag for enabling/disabling extensions
     static const bool enable_extensions = true;

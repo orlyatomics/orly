@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Peter Thorson. All rights reserved.
+ * Copyright (c) 2014, Peter Thorson. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,13 +28,8 @@
 #ifndef WEBSOCKETPP_TRANSPORT_BASE_HPP
 #define WEBSOCKETPP_TRANSPORT_BASE_HPP
 
-#include <websocketpp/common/cpp11.hpp>
-#include <websocketpp/common/connection_hdl.hpp>
 #include <websocketpp/common/functional.hpp>
 #include <websocketpp/common/system_error.hpp>
-#include <websocketpp/uri.hpp>
-
-#include <iostream>
 
 namespace websocketpp {
 /// Transport policies provide network connectivity and timers
@@ -64,7 +59,7 @@ namespace websocketpp {
  * `connection_hdl` and any error that occurred.
  *
  * **init_logging**
- * `void init_logging(alog_type * a, elog_type * e)`\n
+ * `void init_logging(const lib::shared_ptr<alog_type>& a, const lib::shared_ptr<elog_type>& e)`\n
  * Called once after construction to provide pointers to the endpoint's access
  * and error loggers. These may be stored and used to log messages or ignored.
  */
