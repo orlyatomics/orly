@@ -66,9 +66,11 @@ jobs:
         run: make bootstrap
 
       # tools/jhm because the Makefile's `export PATH` only applies inside
-      # make's environment; this is a separate shell invocation.
+      # make's environment. PATH also has to include tools/ so that jhm
+      # itself can execvp `make_dep_file` (a sibling in tools/).
+      # Mirrors the last line of bootstrap.sh.
       - name: tools/jhm -c release
-        run: tools/jhm -c release
+        run: PATH="$PWD/tools:$PATH" tools/jhm -c release
 
       - name: Smoke each release binary with --help
         run: |
