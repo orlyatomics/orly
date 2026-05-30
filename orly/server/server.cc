@@ -2465,6 +2465,74 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &client_addr
           context.reset();
           break;
         }
+        case Mynde::TRequest::TOpcode::Delete: {
+          /* memcache DELETE: remove a key from this connection's POV. The
+             memcached binary spec says DELETE on a missing key returns
+             0x01 (KeyNotFound), and on success returns 0x00 with an empty
+             body. The Quiet variant suppresses the success response only;
+             error responses are still sent. Indy doesn't have a hard
+             "delete" primitive -- it's an MVCC store -- so we model the
+             delete as a write of Native::TTombstone at the same indy
+             index key. The Get handler above already treats missing /
+             unset keys via context->Exists(); a tombstone-written key
+             likewise returns "not found" on subsequent Get. */
+          if (!context) {
+            context = make_unique<Indy::TContext>(repo, &context_arena);
+          }
+          Mynde::TKey key{{req.GetKey().GetData(), req.GetKey().GetSize()}};
+          void *state_alloc_key = alloca(Sabot::State::GetMaxStateSize());
+          Indy::TIndexKey indy_index_key(
+              Mynde::MemcachedIndexUuid,
+              Indy::TKey(&context_arena,
+                         Sabot::State::TAny::TWrapper(Native::State::New(key, state_alloc_key))));
+          if (!context->Exists(indy_index_key)) {
+            syslog(LOG_INFO, "Delete of unset key %s", std::get<0>(key).c_str());
+            hdr.Status = Mynde::TResponseStatus::KeyNotFound;
+            switch_to_runner.reset();
+            const char err_msg[] = "Not found";
+            hdr.TotalBodyLength = sizeof(err_msg) - 1;
+            if (!req.GetFlags().Quiet) {
+              out << hdr;
+              out.Write(err_msg, sizeof(err_msg) - 1);
+            }
+            context.reset();
+            break;
+          }
+          syslog(LOG_INFO, "Delete %s", std::get<0>(key).c_str());
+          auto transaction = RepoManager->NewTransaction();
+          TUuid update_id(TUuid::Twister);
+          TMetaRecord meta_record(update_id,
+                                  TMetaRecord::TEntry(session->GetId(),
+                                                      session->GetUserId(),
+                                                      Orly::Mynde::PackageName,
+                                                      "delete",
+                                                      {},
+                                                      {},
+                                                      Base::Chrono::CreateTimePnt(2014, 3, 23, 0, 0, 0, 0, 0),
+                                                      0));
+          void *state_alloc_key2 = alloca(Sabot::State::GetMaxStateSize());
+          void *state_alloc_val = alloca(Sabot::State::GetMaxStateSize());
+          void *state_alloc_meta = alloca(Sabot::State::GetMaxStateSize());
+          void *state_alloc_id = alloca(Sabot::State::GetMaxStateSize());
+          auto update = Indy::TUpdate::NewUpdate(
+              TUpdate::TOpByKey{
+                  {Indy::TIndexKey(
+                       Mynde::MemcachedIndexUuid,
+                       Indy::TKey(&context_arena, Sabot::State::TAny::TWrapper(Native::State::New(key, state_alloc_key2)))),
+                   Indy::TKey(&context_arena,
+                              Sabot::State::TAny::TWrapper(Native::State::New(Native::TTombstone::Tombstone, state_alloc_val)))}},
+              Indy::TKey(meta_record, &context_arena, state_alloc_meta),
+              Indy::TKey(update_id, &context_arena, state_alloc_id));
+          transaction->Push(repo, update);
+          transaction->Prepare();
+          transaction->CommitAction();
+          switch_to_runner.reset();
+          if (!req.GetFlags().Quiet) {
+            out << hdr;
+          }
+          context.reset();
+          break;
+        }
         case Mynde::TRequest::TOpcode::NoOp: {
           syslog(LOG_INFO, "Noop, %02X", hdr.Opcode);
           context.reset();
