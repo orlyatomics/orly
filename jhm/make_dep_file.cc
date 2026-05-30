@@ -16,6 +16,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
+#include <csignal>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -155,6 +156,12 @@ void MakeDepFile(const string &filename, const string &out_name, const vector<st
 }
 
 int main(int argc, const char *argv[]) {
+  /* Same SIGPIPE reasoning as jhm: TPump-managed pipes can write to a
+     reader that's already closed (the g++ subprocess we spawn for -M -MG
+     exits after producing its output). Default SIGPIPE terminates us;
+     ignoring lets write() return EPIPE and the pump cleans up. */
+  std::signal(SIGPIPE, SIG_IGN);
+
   if (argc < 3) {
     //TODO: add '-o' to specify output filename.
     cout << "USAGE: " << argv[0] << "input_name output_name [misc_flags]\n"

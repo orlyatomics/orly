@@ -16,6 +16,7 @@
 
 #include <base/pump.h>
 
+#include <cstdio>
 #include <sys/epoll.h>
 #include <fcntl.h>
 
@@ -154,19 +155,29 @@ class TPump::TPipe {
     }
   }
 
+  /* Idempotent. Safe to call from either Service()'s read-error fallback
+     after the write-error fallback has already invoked it, and safe from
+     ~TPipe after a Service() call has already torn the read side down. */
   void StopWriting() {
     assert(this);
-    if (Writing) {
+    if (Writing && WriteFd.IsOpen()) {
       Pump->PartEpoll(WriteFd);
-      Writing = false;
     }
+    Writing = false;
   }
 
+  /* Same idempotency contract as StopWriting -- Service() can reach this
+     more than once on a single iteration (EOF on the read side, then an
+     unrelated error on the write side that re-invokes StopReading), and
+     with NDEBUG the historical assert(ReadFd.IsOpen()) doesn't catch the
+     double-call. Without the open-check the second PartEpoll passes -1
+     and EBADF terminates jhm. */
   void StopReading() {
     assert(this);
-    assert(ReadFd.IsOpen());
-    Pump->PartEpoll(ReadFd);
-    ReadFd.Reset();
+    if (ReadFd.IsOpen()) {
+      Pump->PartEpoll(ReadFd);
+      ReadFd.Reset();
+    }
   }
 
   /* Pointer to the pump so we can register / deregister as needed, as well as */
@@ -276,10 +287,20 @@ void TPump::JoinEpoll(int fd, uint32_t events, TPipe *pipe) {
   epoll_event event;
   event.events = events;
   event.data.ptr = pipe;
-  IfLt0(epoll_ctl(Epoll, EPOLL_CTL_ADD, fd, &event));
+  int rc = epoll_ctl(Epoll, EPOLL_CTL_ADD, fd, &event);
+  if (rc < 0) {
+    std::fprintf(stderr, "TPump::JoinEpoll(Epoll=%d, fd=%d) failed errno=%d\n",
+                 static_cast<int>(Epoll), fd, errno);
+    Util::ThrowSystemError(errno);
+  }
 }
 
 void TPump::PartEpoll(int fd) {
   assert(this);
-  IfLt0(epoll_ctl(Epoll, EPOLL_CTL_DEL, fd, nullptr));
+  int rc = epoll_ctl(Epoll, EPOLL_CTL_DEL, fd, nullptr);
+  if (rc < 0) {
+    std::fprintf(stderr, "TPump::PartEpoll(Epoll=%d, fd=%d) failed errno=%d\n",
+                 static_cast<int>(Epoll), fd, errno);
+    Util::ThrowSystemError(errno);
+  }
 }
