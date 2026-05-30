@@ -64,9 +64,13 @@ The revival pass uses:
 
 Build flags live in `root.jhm` (per-target overrides in `debug.jhm` / `release.jhm` / `bootstrap.jhm`).
 
+## Walkthrough
+
+[`docs/walkthrough.md`](docs/walkthrough.md) walks through compiling an Orlyscript package with `orlyc`, loading it into a running `orlyi`, and invoking a method on it via `orly_client` — the full pipeline end-to-end.
+
 ## Contributing
 
-Start with `docs/coding.md` and `docs/best_practices.md` for the project's conventions. The build system (`jhm`) lives in `jhm/`; the bootstrap path is documented in `bootstrap.sh`.
+The build system (`jhm`) lives in `jhm/`; the bootstrap path is documented in `bootstrap.sh`. There's no formal style guide; match the surrounding code.
 
 -----
 
