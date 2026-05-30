@@ -50,7 +50,10 @@ void Base::SetBacktraceOnTerminate() {
   std::set_terminate([]() {
     static bool tried_throw = false;
     try {
-      if (!tried_throw++) throw;
+      if (!tried_throw) {
+        tried_throw = true;
+        throw;
+      }
       cerr << "TERMINATE (no exception)" << endl;
     } catch (const std::exception &ex) {
       cerr << "TERMINATE (standard exception): " << ex.what() << endl;

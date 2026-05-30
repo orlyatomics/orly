@@ -143,7 +143,7 @@ vector<string> CopyAppendVector(const vector<string> &src, string &&val) {
 //TODO:
 TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, const string &config_mixin)
     : Root(root),
-      Src(CopyAppendVector(Root.Root, "src")),
+      Src(CopyAppendVector(Root.Root, string(proj_name))),
       Out(GetOutDirName(root, proj_name, config, config_mixin)),
       Config(GetConfigList(root, proj_name, config, config_mixin)) {
 

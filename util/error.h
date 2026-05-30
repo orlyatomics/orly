@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <system_error>
+#include <type_traits>
 
 #include <base/code_location.h>
 
@@ -36,8 +37,10 @@ namespace Util {
      Use this function to test the results of system I/O calls. */
   template <typename TRet>
   TRet IfLt0(TRet &&ret) {
-    if (ret < 0) {
-      ThrowSystemError(errno);
+    if constexpr (std::is_signed_v<std::remove_reference_t<TRet>>) {
+      if (ret < 0) {
+        ThrowSystemError(errno);
+      }
     }
     return ret;
   }

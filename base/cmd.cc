@@ -124,7 +124,7 @@ void TCmd::TMeta::WriteHelp(ostream &strm, const TCmd *cmd, size_t line_size, si
   if (named_size) {
     strm << endl << "OPTIONS:" << endl;
     named_size += pad_size;
-    for (const pair<string, string> &item: by_name) {
+    for (const auto &item: by_name) {
       WriteWrapped(strm, named_size, line_size, item.first, item.second);
     }
   }
