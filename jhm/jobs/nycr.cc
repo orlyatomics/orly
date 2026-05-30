@@ -30,7 +30,14 @@ using namespace Jhm::Job;
 using namespace std;
 using namespace Util;
 
-static string GetNycrPath(TEnv &env) { return AsStr(*env.GetRoot()) + "/out/bootstrap/tools/nycr/nycr"; }
+static string GetNycrPath(TEnv &env) {
+  const string &proj = env.GetProjName();
+  string out_dir = "out";
+  if (proj != "src") {
+    out_dir += '_' + proj;
+  }
+  return AsStr(*env.GetRoot()) + '/' + out_dir + "/bootstrap/tools/nycr/nycr";
+}
 
 static TOpt<TRelPath> GetNycrLangInputName(const TRelPath &output) {
   if (output.Path.EndsWith({"nycr", "lang"})) {

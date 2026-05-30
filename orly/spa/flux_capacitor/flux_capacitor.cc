@@ -538,7 +538,7 @@ bool TUpdate::ForEachKey(const function<bool (const Var::TVar &)> &cb) const {
   assert(this);
   assert(&cb);
   const unordered_map<TKV, TVersion<TKV> *> &version_by_key = KVCluster->GetVersionByKey();
-  for (const pair<TKV, TVersion<TKV> *> &item: version_by_key) {
+  for (const auto &item: version_by_key) {
     if (!cb(item.first.GetKey())) {
       return false;
     }

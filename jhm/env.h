@@ -138,6 +138,10 @@ namespace Jhm {
       return &Root;
     }
 
+    const std::string &GetProjName() const {
+      return ProjName;
+    }
+
     std::unordered_set<TJob*> GetJobsProducingFile(TFile *file) {
       return Jobs.GetPotentialJobs(*this, file);
     }
@@ -161,6 +165,7 @@ namespace Jhm {
     TInterner<TRelPath, TFile> Files;
 
     TTree Root, Src, Out;
+    std::string ProjName;
 
     TConfig Config;
 

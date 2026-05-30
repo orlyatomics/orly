@@ -390,7 +390,7 @@ std::string TToString::operator()(const std::vector<TFoo> &that) const {
   strm << '[';
   bool sep = false;
   for (const auto &variant : that) {
-    sep ? strm << ", " : sep = true;
+    if (sep) { strm << ", "; } else { sep = true; }
     strm << ToString(variant);
   }
   strm << ']';
@@ -403,7 +403,7 @@ std::string TToString::operator()(const std::list<TBar> &that) const {
   strm << '[';
   bool sep = false;
   for (const auto &variant : that) {
-    sep ? strm << ", " : sep = true;
+    if (sep) { strm << ", "; } else { sep = true; }
     strm << ToString(variant);
   }
   strm << ']';
