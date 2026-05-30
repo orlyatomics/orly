@@ -18,7 +18,7 @@ set -e
 
 CC=g++
 common_flags=(
-  -O3 -DNDEBUG -flto
+  -O3 -DNDEBUG -flto=auto
   -std=c++17
   -Wall -Werror -Wextra -Wold-style-cast
   -Wno-unused -Wno-unused-parameter -Wno-unused-result
