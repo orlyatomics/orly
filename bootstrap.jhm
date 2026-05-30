@@ -6,7 +6,7 @@
       "-O3",
       "-g1",
       "-DNDEBUG",
-      "-flto",
+      "-flto=auto",
       "-Wno-unused",
       "-Wno-unused-parameter",
       "-Wno-unused-result",
@@ -17,7 +17,7 @@
       "-O3",
       "-g1",
       "-DNDEBUG",
-      "-flto",
+      "-flto=auto",
       "-DBOOTSTRAP"
     ],
     "flex": {
@@ -26,7 +26,7 @@
         "-O3",
         "-g1",
         "-DNDEBUG",
-        "-flto",
+        "-flto=auto",
         "-DBOOTSTRAP"
       ]
     },
@@ -36,14 +36,14 @@
         "-O3",
         "-g1",
         "-DNDEBUG",
-        "-flto",
+        "-flto=auto",
         "-DBOOTSTRAP"
       ]
     },
     "ld": {
       "+flags": [
         "-O3",
-        "-flto"
+        "-flto=auto"
       ]
     }
   }
