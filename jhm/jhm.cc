@@ -29,6 +29,7 @@
 #include <thread>
 
 #include <base/cmd.h>
+#include <base/path.h>
 #include <base/split.h>
 #include <base/thrower.h>
 #include <jhm/env.h>
@@ -92,10 +93,26 @@ class TJhm : public TCmd {
   int Run() {
     auto cwd = GetCwd();
 
-    // Build up the environment. Find the root, grab the project, user, and system configuration
-    // TODO: proj_name should be the folder immediately inside the root that executed inside, so long as it doesn't
-    // begin with "out".
-    TEnv env(TTree::Find(cwd, ".jhm"), "src", Config, ConfigMixin);
+    // Build up the environment. Find the root, grab the project, user, and system configuration.
+    // The project name is the folder immediately inside the .jhm root that cwd lives in.
+    // Falls back to "src" when cwd is the root itself, preserving the legacy layout.
+    auto root = TTree::Find(cwd, ".jhm");
+    string proj_name = "src";
+    auto cwd_parts = Base::SplitNamespace(cwd);
+    if (cwd_parts.size() > root.Root.size()) {
+      bool prefix_match = true;
+      for (size_t i = 0; i < root.Root.size(); ++i) {
+        if (cwd_parts[i] != root.Root[i]) {
+          prefix_match = false;
+          break;
+        }
+      }
+      if (prefix_match && cwd_parts[root.Root.size()].compare(0, 4, "out_") != 0
+          && cwd_parts[root.Root.size()] != "out") {
+        proj_name = cwd_parts[root.Root.size()];
+      }
+    }
+    TEnv env(root, proj_name, Config, ConfigMixin);
 
     // chdir to the src folder so we can always use relative paths. for commands
     /* abs_root */ {

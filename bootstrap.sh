@@ -19,9 +19,13 @@ set -e
 CC=g++
 common_flags=(
   -O3 -DNDEBUG -flto
-  -std=c++1y
+  -std=c++17
   -Wall -Werror -Wextra -Wold-style-cast
   -Wno-unused -Wno-unused-parameter -Wno-unused-result
+  -Wno-deprecated-declarations -Wno-deprecated -Wno-deprecated-copy
+  -Wno-class-memaccess -Wno-stringop-overflow -Wno-stringop-overread
+  -Wno-array-bounds -Wno-restrict -Wno-pessimizing-move -Wno-redundant-move
+  -Wno-mismatched-new-delete -Wno-dangling-reference
   -Wl,--hash-style=gnu -Wl,--no-copy-dt-needed-entries -Wl,-z,relro -Wl,--no-as-needed
   )
 
@@ -52,4 +56,4 @@ $CC -o tools/make_dep_file                                                      
 mkdir -p ../.jhm
 
 #Build nycr
-./tools/jhm -c bootstrap
+PATH="$PWD/tools:$PATH" ./tools/jhm -c bootstrap

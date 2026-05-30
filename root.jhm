@@ -26,7 +26,7 @@
     ],
   "cmd": {
     "g++" : [
-      "-std=c++1y",
+      "-std=c++17",
       "-Wall",
       "-Werror",
       "-Wextra",
@@ -34,6 +34,18 @@
       "-Wno-type-limits",
       "-Wno-parentheses",
       "-Wno-delete-non-virtual-dtor",
+      "-Wno-deprecated-declarations",
+      "-Wno-deprecated",
+      "-Wno-deprecated-copy",
+      "-Wno-class-memaccess",
+      "-Wno-stringop-overflow",
+      "-Wno-stringop-overread",
+      "-Wno-array-bounds",
+      "-Wno-restrict",
+      "-Wno-pessimizing-move",
+      "-Wno-redundant-move",
+      "-Wno-mismatched-new-delete",
+      "-Wno-dangling-reference",
       "-msse2",
       "-pthread",
       "-fno-strict-aliasing",
@@ -61,14 +73,14 @@
     "flex": {
       "g++": [
         "-DTEST_OUTPUT_DIR=\"/tmp/\"",
-        "-std=c++1y",
+        "-std=c++17",
         "-pthread"
       ]
     },
     "bison": {
       "g++": [
         "-DTEST_OUTPUT_DIR=\"/tmp/\"",
-        "-std=c++1y",
+        "-std=c++17",
         "-pthread"
       ]
     },
