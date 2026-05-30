@@ -78,10 +78,15 @@ class TWsImpl final
     WsServer.set_open_handler(bind(&TWsImpl::OnOpen, this, _1));
     WsServer.set_close_handler(bind(&TWsImpl::OnClose, this, _1));
     WsServer.set_message_handler(bind(&TWsImpl::OnMsg, this, _1, _2));
-    WsServer.set_socket_init_handler(
-          [] (websocketpp::connection_hdl /*hdl*/, boost::asio::ip::tcp::socket &s) {
+    /* In websocketpp 0.8.2 set_socket_init_handler fires during
+       init_asio(), before the socket has an underlying file descriptor,
+       so set_option on it fails with EBADF. set_tcp_pre_init_handler
+       runs after the raw TCP connection has been established, which is
+       when TCP_NODELAY can actually be applied. */
+    WsServer.set_tcp_pre_init_handler(
+          [this] (websocketpp::connection_hdl hdl) {
             boost::asio::ip::tcp::no_delay option(true);
-            s.set_option(option);
+            WsServer.get_con_from_hdl(hdl)->get_raw_socket().set_option(option);
           }
     );
     WsServer.set_listen_backlog(8192);
