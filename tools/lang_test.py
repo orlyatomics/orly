@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # Copyright 2010-2014 OrlyAtomics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +14,12 @@
 # limitations under the License.
 
 import argparse
-import cPickle
 import itertools
 import multiprocessing
+import os
 import os.path
+import pickle
 import subprocess
-
-from littleworkers import Pool
 
 # Process object. wraps subprocess.Popen object to augment it with a filename.
 class TProcess(object):
@@ -36,22 +35,44 @@ class TProcess(object):
   def returncode(self):
     return self.process.returncode
 
-# Our Process pool inherited from littleworkers' Pool
-class TPool(Pool):
-    def __init__(self, out_dir, *args, **kwargs):
-        super(TPool, self).__init__(*args, **kwargs)
-        self.collected_output = []
+# Bounded worker pool for orlyc invocations. Replaces the original
+# littleworkers.Pool dependency, which is unmaintained and has a
+# Python 3 typing bug in its poll loop.
+class TPool(object):
+    def __init__(self, out_dir, workers):
         self.__out_dir = out_dir
+        self.__workers = max(1, int(workers))
 
     def create_process(self, filepath):
-        # logging.debug("Starting process to handle command '%s'." % command)
         return TProcess(
                  filepath,
                  subprocess.Popen(
-                     '../out/debug/orly/orlyc -m -d ' + filepath + ' -o ' + self.__out_dir,
+                     '../out_orly/debug/orly/orlyc -m -d ' + filepath + ' -o ' + self.__out_dir,
                      shell=True,
                      stderr=subprocess.STDOUT,
                      stdout=subprocess.PIPE))
+
+    def run(self, filepaths, callback):
+        import time
+        pending = list(filepaths)
+        in_flight = []  # list of TProcess
+        while pending or in_flight:
+            while pending and len(in_flight) < self.__workers:
+                in_flight.append(self.create_process(pending.pop(0)))
+            # Reap any that finished. Polling rather than os.wait so we
+            # don't race subprocess.Popen's own bookkeeping; it would
+            # otherwise see ECHILD and set returncode to 0 incorrectly.
+            still_running = []
+            made_progress = False
+            for proc in in_flight:
+                if proc.poll() is None:
+                    still_running.append(proc)
+                else:
+                    callback(proc)
+                    made_progress = True
+            in_flight = still_running
+            if not made_progress and in_flight:
+                time.sleep(0.05)
 
 def GetArgParser():
   default_worker_count = multiprocessing.cpu_count()
@@ -72,7 +93,9 @@ def GetArgParser():
 
 def GetResult(proc):
   output = proc.stdout.read()
-  sections = map(lambda x: x.splitlines(), output.split('MM_NOTICE: '))
+  if isinstance(output, bytes):
+    output = output.decode('utf-8', errors='replace')
+  sections = [x.splitlines() for x in output.split('MM_NOTICE: ')]
   return proc.returncode(), sections
 
 def GetStateFilename(filepath):
@@ -100,10 +123,10 @@ def Main():
 
   if args.directories:
     for path in args.filepaths:
-      def OnDirectory(_, dirname, filenames):
-        orly_filenames = filter(lambda filename: os.path.splitext(filename)[-1] == '.orly', filenames)
-        filepaths.extend(map(lambda filename: os.path.join(dirname, filename), orly_filenames))
-      os.path.walk(path, OnDirectory, None);
+      for dirname, _subdirs, filenames in os.walk(path):
+        for filename in filenames:
+          if os.path.splitext(filename)[-1] == '.orly':
+            filepaths.append(os.path.join(dirname, filename))
   else:
     filepaths = args.filepaths
 
@@ -116,19 +139,21 @@ def Main():
     result = GetResult(proc)
     filepath = proc.filepath
     if args.update:
-      cPickle.dump(result, open(GetStateFilename(filepath), 'w'))
+      with open(GetStateFilename(filepath), 'wb') as f:
+        pickle.dump(result, f)
       return
     else:
       try:
-        expected = cPickle.load(open(GetStateFilename(filepath), 'r'))
-      except IOError as ex:
+        with open(GetStateFilename(filepath), 'rb') as f:
+          expected = pickle.load(f)
+      except (IOError, OSError) as ex:
         if ex.errno != 2:
           raise
         if result[0] != 0:
-          print 'New failure:', filepath
-          print 'Exited with code', result[0]
-          print 'OUTPUT: '
-          print '\n'.join('\n'.join(x) for x in result[1])
+          print('New failure:', filepath)
+          print('Exited with code', result[0])
+          print('OUTPUT: ')
+          print('\n'.join('\n'.join(x) for x in result[1]))
           changed_files.append(filepath)
           failed_files.append(filepath)
         else:
@@ -148,35 +173,38 @@ def Main():
       returncode, section = result
       expected_returncode, expected_section = expected
 
-      print '===================================================================='
-      print 'Changes:', filepath
+      print('====================================================================')
+      print('Changes:', filepath)
 
       acceptable_change = True
 
-      for (expected_val, val) in itertools.izip_longest(expected_section, section):
+      def _label(section_val):
+        return section_val[0] if section_val else '(empty)'
+
+      for (expected_val, val) in itertools.zip_longest(expected_section, section):
         if expected_val == val:
           continue
         elif expected_val is None:
           acceptable_change = False
-          print 'Further:', val[0]
+          print('Further:', _label(val))
           if args.changes:
-            print '\n'.join(val)
+            print('\n'.join(val))
         elif val is None:
           acceptable_change = False
-          print 'Worse:', expected_val[0]
+          print('Worse:', _label(expected_val))
         else:
-          print 'Differs:', expected_val[0]
+          print('Differs:', _label(expected_val))
           if args.changes:
-            print 'Old:'
+            print('Old:')
             if len(expected_val) > 0:
-              print '\n'.join(expected_val[1:])
-            print 'New:'
+              print('\n'.join(expected_val[1:]))
+            print('New:')
             if len(val) > 0:
-              print '\n'.join(val[1:])
+              print('\n'.join(val[1:]))
 
       if returncode != expected_returncode:
         acceptable_change = False
-        print 'Return code from', expected_returncode, 'to', returncode
+        print('Return code from', expected_returncode, 'to', returncode)
 
       if not acceptable_change:
         changed_files.append(filepath)
@@ -193,10 +221,10 @@ def Main():
   if args.update:
     return 0
 
-  print 'Change:', ','.join(changed_files)
-  print 'Pass:', ','.join(passed_files)
-  print 'Fail:', ','.join(failed_files)
-  print 'Overall: %s changed, %s passed, %s failed' % (len(changed_files), len(passed_files), len(failed_files))
+  print('Change:', ','.join(changed_files))
+  print('Pass:', ','.join(passed_files))
+  print('Fail:', ','.join(failed_files))
+  print('Overall: %s changed, %s passed, %s failed' % (len(changed_files), len(passed_files), len(failed_files)))
   return 0 if len(changed_files) == 0 else -1
 
 if __name__ == '__main__':
