@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <cassert>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/fd.h>

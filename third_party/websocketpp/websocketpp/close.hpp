@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2013, Peter Thorson. All rights reserved.
+ * Copyright (c) 2014, Peter Thorson. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -142,6 +142,11 @@ namespace status {
     /// or reconnect to the same IP upon user action.
     static value const try_again_later = 1013;
 
+    /// Indicates that the server was acting as a gateway or proxy and received
+    /// an invalid response from the upstream server. This is similar to 502
+    /// HTTP Status Code.
+    static value const bad_gateway = 1014;
+
     /// An endpoint failed to perform a TLS handshake
     /**
      * Designated for use in applications expecting a status code to indicate
@@ -150,6 +155,21 @@ namespace status {
      * illegal on the wire.
      */
     static value const tls_handshake = 1015;
+    
+    /// A generic subprotocol error
+    /**
+     * Indicates that a subprotocol error occurred. Typically this involves
+     * receiving a message that is not formatted as a valid message for the
+     * subprotocol in use.
+     */
+    static value const subprotocol_error = 3000;
+    
+    /// A invalid subprotocol data
+    /**
+     * Indicates that data was received that violated the specification of the
+     * subprotocol in use.
+     */
+    static value const invalid_subprotocol_data = 3001;
 
     /// First value in range reserved for future protocol use
     static value const rsv_start = 1016;
@@ -163,7 +183,7 @@ namespace status {
      */
     inline bool reserved(value code) {
         return ((code >= rsv_start && code <= rsv_end) ||
-                code == 1004 || code == 1014);
+                code == 1004);
     }
 
     /// First value in range that is always invalid on the wire
@@ -204,7 +224,7 @@ namespace status {
     /**
      * See https://tools.ietf.org/html/rfc6455#section-7.4 for more details.
      *
-     * @since 0.4.0-beta1
+     * @since 0.3.0
      *
      * @param [in] code The code to look up.
      * @return A human readable interpretation of the code.
@@ -233,8 +253,18 @@ namespace status {
                 return "Extension required";
             case internal_endpoint_error:
                 return "Internal endpoint error";
+            case service_restart:
+                return "Service restart";
+            case try_again_later:
+                return "Try again later";
+            case bad_gateway:
+                return "Bad gateway";
             case tls_handshake:
                 return "TLS handshake failure";
+            case subprotocol_error:
+                return "Generic subprotocol error";
+            case invalid_subprotocol_data:
+                return "Invalid subprotocol data";
             default:
                 return "Unknown";
         }
@@ -303,7 +333,7 @@ inline status::value extract_code(std::string const & payload, lib::error_code
 inline std::string extract_reason(std::string const & payload, lib::error_code
     & ec)
 {
-    std::string reason = "";
+    std::string reason;
     ec = lib::error_code();
 
     if (payload.size() > 2) {

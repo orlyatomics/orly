@@ -106,7 +106,7 @@ FIXTURE(RoundTrip64) {
   static const vector<int64_t> vals = {
     numeric_limits<int64_t>::min(),
     numeric_limits<int64_t>::min() + 1,
-    numeric_limits<int32_t>::min() - 1,
+    static_cast<int64_t>(numeric_limits<int32_t>::min()) - 1,
     numeric_limits<int32_t>::min(),
     numeric_limits<int32_t>::min() + 1,
     numeric_limits<int16_t>::min() - 1,
@@ -124,7 +124,7 @@ FIXTURE(RoundTrip64) {
     numeric_limits<int16_t>::min() + 1,
     numeric_limits<int32_t>::max() - 1,
     numeric_limits<int32_t>::max(),
-    numeric_limits<int32_t>::max() + 1,
+    static_cast<int64_t>(numeric_limits<int32_t>::max()) + 1,
     numeric_limits<int64_t>::max() - 1,
     numeric_limits<int64_t>::max()
   };

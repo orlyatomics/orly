@@ -65,7 +65,7 @@ template <typename TTpl>
 bool AllKindsEq(TJson::TKind expected_kind) {
   static const size_t expected_size = tuple_size<TTpl>::value;
   auto kinds = GetKinds<TTpl>();
-  bool success = (kinds.size(), expected_size);
+  bool success = (kinds.size() == expected_size);
   for (size_t i = 0; success && i < expected_size; ++i) {
     success = (kinds[i] == expected_kind);
   }

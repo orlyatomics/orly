@@ -93,7 +93,7 @@ static bool RoundTripNbo(TVal expected) {
   }
   /* Confirm we wrote a number of bytes equal to the physical size of the
      expected value. */
-  if (!cons.GetSize() == sizeof(TVal)) {
+  if (cons.GetSize() != sizeof(TVal)) {
     return false;
   }
   TVal actual;

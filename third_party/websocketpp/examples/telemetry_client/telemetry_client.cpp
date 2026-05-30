@@ -7,6 +7,17 @@
 #include <websocketpp/common/thread.hpp>
 
 /**
+ * Define a semi-cross platform helper method that waits/sleeps for a bit.
+ */
+void wait_a_bit() {
+#ifdef WIN32
+    Sleep(1000);
+#else
+    sleep(1);
+#endif
+}
+
+/**
  * The telemetry client connects to a WebSocket server and sends a message every
  * second containing an integer count. This example can be used as the basis for
  * programs where a client connects and pushes data for logging, stress/load
@@ -30,20 +41,20 @@ public:
         // Bind the handlers we are using
         using websocketpp::lib::placeholders::_1;
         using websocketpp::lib::bind;
-        m_client.set_open_handler(bind(&telemetry_client::on_open,this,::_1));
-        m_client.set_close_handler(bind(&telemetry_client::on_close,this,::_1));
-        m_client.set_fail_handler(bind(&telemetry_client::on_fail,this,::_1));
+        m_client.set_open_handler(bind(&telemetry_client::on_open,this,_1));
+        m_client.set_close_handler(bind(&telemetry_client::on_close,this,_1));
+        m_client.set_fail_handler(bind(&telemetry_client::on_fail,this,_1));
     }
 
     // This method will block until the connection is complete
     void run(const std::string & uri) {
-    	// Create a new connection to the given URI
+        // Create a new connection to the given URI
         websocketpp::lib::error_code ec;
         client::connection_ptr con = m_client.get_connection(uri, ec);
         if (ec) {
-        	m_client.get_alog().write(websocketpp::log::alevel::app,
-                	"Get Connection Error: "+ec.message());
-        	return;
+            m_client.get_alog().write(websocketpp::log::alevel::app,
+                    "Get Connection Error: "+ec.message());
+            return;
         }
 
         // Grab a handle for this connection so we can talk to it in a thread
@@ -65,7 +76,7 @@ public:
     }
 
     // The open handler will signal that we are ready to start sending telemetry
-    void on_open(websocketpp::connection_hdl hdl) {
+    void on_open(websocketpp::connection_hdl) {
         m_client.get_alog().write(websocketpp::log::alevel::app,
             "Connection opened, starting telemetry!");
 
@@ -74,7 +85,7 @@ public:
     }
 
     // The close handler will signal that we should stop sending telemetry
-    void on_close(websocketpp::connection_hdl hdl) {
+    void on_close(websocketpp::connection_hdl) {
         m_client.get_alog().write(websocketpp::log::alevel::app,
             "Connection closed, stopping telemetry!");
 
@@ -83,7 +94,7 @@ public:
     }
 
     // The fail handler will signal that we should stop sending telemetry
-    void on_fail(websocketpp::connection_hdl hdl) {
+    void on_fail(websocketpp::connection_hdl) {
         m_client.get_alog().write(websocketpp::log::alevel::app,
             "Connection failed, stopping telemetry!");
 
@@ -111,7 +122,7 @@ public:
             }
 
             if (wait) {
-                sleep(1);
+                wait_a_bit();
                 continue;
             }
 
@@ -128,11 +139,11 @@ public:
             // in this simple example, we'll stop the telemetry loop.
             if (ec) {
                 m_client.get_alog().write(websocketpp::log::alevel::app,
-                	"Send Error: "+ec.message());
+                    "Send Error: "+ec.message());
                 break;
             }
 
-            sleep(1);
+            wait_a_bit();
         }
     }
 private:

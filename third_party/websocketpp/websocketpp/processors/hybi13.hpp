@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Peter Thorson. All rights reserved.
+ * Copyright (c) 2015, Peter Thorson. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,28 +28,26 @@
 #ifndef WEBSOCKETPP_PROCESSOR_HYBI13_HPP
 #define WEBSOCKETPP_PROCESSOR_HYBI13_HPP
 
-#include <cassert>
-
-#include <websocketpp/frame.hpp>
-#include <websocketpp/utf8_validator.hpp>
-#include <websocketpp/common/network.hpp>
-#include <websocketpp/common/platforms.hpp>
-#include <websocketpp/http/constants.hpp>
-
 #include <websocketpp/processors/processor.hpp>
 
+#include <websocketpp/frame.hpp>
+#include <websocketpp/http/constants.hpp>
+
+#include <websocketpp/utf8_validator.hpp>
 #include <websocketpp/sha1/sha1.hpp>
 #include <websocketpp/base64/base64.hpp>
 
+#include <websocketpp/common/network.hpp>
+#include <websocketpp/common/platforms.hpp>
+
+#include <algorithm>
+#include <cassert>
 #include <string>
 #include <vector>
 #include <utility>
 
 namespace websocketpp {
 namespace processor {
-
-#pragma GCC push_options
-#pragma GCC optimize "0"
 
 /// Processor for Hybi version 13 (RFC6455)
 template <typename config>
@@ -87,7 +85,21 @@ public:
         return m_permessage_deflate.is_implemented();
     }
 
-    err_str_pair negotiate_extensions(request_type const & req) {
+    err_str_pair negotiate_extensions(request_type const & request) {
+        return negotiate_extensions_helper(request);
+    }
+    
+    err_str_pair negotiate_extensions(response_type const & response) {
+        return negotiate_extensions_helper(response);
+    }
+    
+    /// Extension negotiation helper function
+    /**
+     * This exists mostly because the code for requests and responses is
+     * identical and I can't have virtual template methods.
+     */
+    template <typename header_type>
+    err_str_pair negotiate_extensions_helper(header_type const & header) {
         err_str_pair ret;
 
         // Respect blanket disabling of all extensions and don't even parse
@@ -99,7 +111,7 @@ public:
 
         http::parameter_list p;
 
-        bool error = req.get_header_as_plist("Sec-WebSocket-Extensions",p);
+        bool error = header.get_header_as_plist("Sec-WebSocket-Extensions",p);
 
         if (error) {
             ret.first = make_error_code(error::extension_parse_error);
@@ -113,28 +125,59 @@ public:
 
         http::parameter_list::const_iterator it;
 
+        // look through the list of extension requests to find the first
+        // one that we can accept.
         if (m_permessage_deflate.is_implemented()) {
             err_str_pair neg_ret;
             for (it = p.begin(); it != p.end(); ++it) {
-                // look through each extension, if the key is permessage-deflate
-                if (it->first == "permessage-deflate") {
-                    neg_ret = m_permessage_deflate.negotiate(it->second);
+                // not a permessage-deflate extension request, ignore
+                if (it->first != "permessage-deflate") {
+                    continue;
+                }
 
-                    if (neg_ret.first) {
-                        // Figure out if this is an error that should halt all
-                        // extension negotiations or simply cause negotiation of
-                        // this specific extension to fail.
-                        std::cout << "permessage-compress negotiation failed: "
-                                  << neg_ret.first.message() << std::endl;
-                    } else {
-                        // Note: this list will need commas if WebSocket++ ever
-                        // supports more than one extension
-                        ret.second += neg_ret.second;
-                        continue;
-                    }
+                // if we have already successfully negotiated this extension
+                // then skip any other requests to negotiate the same one
+                // with different parameters 
+                if (m_permessage_deflate.is_enabled()) {
+                    continue;
+                }
+                
+                // attempt to negotiate this offer
+                neg_ret = m_permessage_deflate.negotiate(it->second);
+
+                if (neg_ret.first) {
+                    // negotiation offer failed. Do nothing. We will continue
+                    // searching for a permessage-deflate config that succeeds
+                    continue;
+                }
+
+                // Negotiation tentatively succeeded
+
+                // Actually try to initialize the extension before we
+                // deem negotiation complete
+                lib::error_code ec = m_permessage_deflate.init(base::m_server);
+
+                if (ec) {
+                    // Negotiation succeeded but initialization failed this is 
+                    // an error that should stop negotiation of permessage 
+                    // deflate. Return the reason for the init failure
+
+                    ret.first = ec;
+                    break;
+                } else {
+                    // Successfully initialized, push the negotiated response into
+                    // the reply and stop looking for additional permessage-deflate
+                    // extensions
+                    ret.second += neg_ret.second;
+                    break;
                 }
             }
         }
+
+        // support for future extensions would go here. Should check the value of 
+        // ret.first before continuing. Might need to consider whether failure of
+        // negotiation of an earlier extension should stop negotiation of subsequent
+        // ones
 
         return ret;
     }
@@ -152,7 +195,7 @@ public:
         // Host is required by HTTP/1.1
         // Connection is required by is_websocket_handshake
         // Upgrade is required by is_websocket_handshake
-        if (r.get_header("Sec-WebSocket-Key") == "") {
+        if (r.get_header("Sec-WebSocket-Key").empty()) {
             return make_error_code(error::missing_required_header);
         }
 
@@ -163,8 +206,8 @@ public:
      * generic struct if other user input parameters to the processed handshake
      * are found.
      */
-    lib::error_code process_handshake(request_type const & request, const
-        std::string & subprotocol, response_type& response) const
+    lib::error_code process_handshake(request_type const & request, 
+        std::string const & subprotocol, response_type & response) const
     {
         std::string server_key = request.get_header("Sec-WebSocket-Key");
 
@@ -185,7 +228,13 @@ public:
         return lib::error_code();
     }
 
-    lib::error_code client_handshake_request(request_type& req, uri_ptr
+    /// Fill in a set of request headers for a client connection request
+    /**
+     * @param [out] req  Set of headers to fill in
+     * @param [in] uri The uri being connected to
+     * @param [in] subprotocols The list of subprotocols to request
+     */
+    lib::error_code client_handshake_request(request_type & req, uri_ptr
         uri, std::vector<std::string> const & subprotocols) const
     {
         req.set_method("GET");
@@ -219,9 +268,22 @@ public:
 
         req.replace_header("Sec-WebSocket-Key",base64_encode(raw_key, 16));
 
+        if (m_permessage_deflate.is_implemented()) {
+            std::string offer = m_permessage_deflate.generate_offer();
+            if (!offer.empty()) {
+                req.replace_header("Sec-WebSocket-Extensions",offer);
+            }
+        }
+
         return lib::error_code();
     }
 
+    /// Validate the server's response to an outgoing handshake request
+    /**
+     * @param req The original request sent
+     * @param res The reponse to generate
+     * @return An error code, 0 on success, non-zero for other errors
+     */
     lib::error_code validate_server_handshake_response(request_type const & req,
         response_type& res) const
     {
@@ -253,6 +315,8 @@ public:
         if (ec || key != res.get_header("Sec-WebSocket-Accept")) {
             return error::make_error_code(error::missing_required_header);
         }
+
+        // check extensions
 
         return lib::error_code();
     }
@@ -376,21 +440,25 @@ public:
                             ec = make_error_code(error::message_too_big);
                             break;
                         }
-
+                        
                         m_data_msg = msg_metadata(
                             m_msg_manager->get_message(op,m_bytes_needed),
                             frame::get_masking_key(m_basic_header,m_extended_header)
                         );
+                        
+                        if (m_permessage_deflate.is_enabled()) {
+                            m_data_msg.msg_ptr->set_compressed(frame::get_rsv1(m_basic_header));
+                        }
                     } else {
                         // Fetch the underlying payload buffer from the data message we
                         // are writing into.
                         std::string & out = m_data_msg.msg_ptr->get_raw_payload();
-
+                        
                         if (out.size() + m_bytes_needed > base::m_max_message_size) {
                             ec = make_error_code(error::message_too_big);
                             break;
                         }
-
+                        
                         // Each frame starts a new masking key. All other state
                         // remains between frames.
                         m_data_msg.prepared_key = prepare_masking_key(
@@ -399,7 +467,7 @@ public:
                                 m_extended_header
                             )
                         );
-
+                        
                         out.reserve(out.size() + m_bytes_needed);
                     }
                     m_current_msg = &m_data_msg;
@@ -407,7 +475,7 @@ public:
             } else if (m_state == EXTENSION) {
                 m_state = APPLICATION;
             } else if (m_state == APPLICATION) {
-                size_t bytes_to_process = std::min(m_bytes_needed,len-p);
+                size_t bytes_to_process = (std::min)(m_bytes_needed,len-p);
 
                 if (bytes_to_process > 0) {
                     p += this->process_payload_bytes(buf+p,bytes_to_process,ec);
@@ -422,15 +490,10 @@ public:
                 // If this was the last frame in the message set the ready flag.
                 // Otherwise, reset processor state to read additional frames.
                 if (frame::get_fin(m_basic_header)) {
-                    // ensure that text messages end on a valid UTF8 code point
-                    if (frame::get_opcode(m_basic_header) == frame::opcode::TEXT) {
-                        if (!m_current_msg->validator.complete()) {
-                            ec = make_error_code(error::invalid_utf8);
-                            break;
-                        }
+                    ec = finalize_message();
+                    if (ec) {
+                        break;
                     }
-
-                    m_state = READY;
                 } else {
                     this->reset_headers();
                 }
@@ -442,6 +505,44 @@ public:
         }
 
         return p;
+    }
+
+    /// Perform any finalization actions on an incoming message
+    /**
+     * Called after the full message is received. Provides the opportunity for
+     * extensions to complete any data post processing as well as final UTF8
+     * validation checks for text messages.
+     *
+     * @return A code indicating errors, if any
+     */
+    lib::error_code finalize_message() {
+        std::string & out = m_current_msg->msg_ptr->get_raw_payload();
+
+        // if the frame is compressed, append the compression
+        // trailer and flush the compression buffer.
+        if (m_permessage_deflate.is_enabled()
+            && m_current_msg->msg_ptr->get_compressed())
+        {
+            uint8_t trailer[4] = {0x00, 0x00, 0xff, 0xff};
+
+            // Decompress current buffer into the message buffer
+            lib::error_code ec;
+            ec = m_permessage_deflate.decompress(trailer,4,out);
+            if (ec) {
+                return ec;
+            }
+        }
+
+        // ensure that text messages end on a valid UTF8 code point
+        if (frame::get_opcode(m_basic_header) == frame::opcode::TEXT) {
+            if (!m_current_msg->validator.complete()) {
+                return make_error_code(error::invalid_utf8);
+            }
+        }
+
+        m_state = READY;
+
+        return lib::error_code();
     }
 
     void reset_headers() {
@@ -495,19 +596,6 @@ public:
      * Performs validation, masking, compression, etc. will return an error if
      * there was an error, otherwise msg will be ready to be written
      *
-     * By default WebSocket++ performs block masking/unmasking in a manner that
-     * makes assumptions about the nature of the machine and STL library used.
-     * In particular the assumption is either a 32 or 64 bit word size and an
-     * STL with std::string::data returning a contiguous char array.
-     *
-     * This method improves masking performance by 3-8x depending on the ratio
-     * of small to large messages and the availability of a 64 bit processor.
-     *
-     * To disable this optimization (for use with alternative STL
-     * implementations or processors) define WEBSOCKETPP_STRICT_MASKING when
-     * compiling the library. This will force the library to perform masking in
-     * single byte chunks.
-     *
      * TODO: tests
      *
      * @param in An unprepared message to prepare
@@ -541,24 +629,25 @@ public:
                           && in->get_compressed();
         bool fin = in->get_fin();
 
-        // generate header
-        frame::basic_header h(op,i.size(),fin,masked,compressed);
-
         if (masked) {
             // Generate masking key.
             key.i = m_rng();
-
-            frame::extended_header e(i.size(),key.i);
-            out->set_header(frame::prepare_header(h,e));
         } else {
-            frame::extended_header e(i.size());
-            out->set_header(frame::prepare_header(h,e));
+            key.i = 0;
         }
 
         // prepare payload
         if (compressed) {
             // compress and store in o after header.
             m_permessage_deflate.compress(i,o);
+
+            if (o.size() < 4) {
+                return make_error_code(error::general);
+            }
+
+            // Strip trailing 4 0x00 0x00 0xff 0xff bytes before writing to the
+            // wire
+            o.resize(o.size()-4);
 
             // mask in place if necessary
             if (masked) {
@@ -578,7 +667,19 @@ public:
             }
         }
 
+        // generate header
+        frame::basic_header h(op,o.size(),fin,masked,compressed);
+
+        if (masked) {
+            frame::extended_header e(o.size(),key.i);
+            out->set_header(frame::prepare_header(h,e));
+        } else {
+            frame::extended_header e(o.size());
+            out->set_header(frame::prepare_header(h,e));
+        }
+
         out->set_prepared(true);
+        out->set_opcode(op);
 
         return lib::error_code();
     }
@@ -673,7 +774,7 @@ protected:
 
     /// Reads bytes from buf into m_extended_header
     size_t copy_extended_header_bytes(uint8_t const * buf, size_t len) {
-        size_t bytes_to_read = std::min(m_bytes_needed,len);
+        size_t bytes_to_read = (std::min)(m_bytes_needed,len);
 
         std::copy(buf,buf+bytes_to_read,m_extended_header.bytes+m_cursor);
         m_cursor += bytes_to_read;
@@ -699,19 +800,9 @@ protected:
     {
         // unmask if masked
         if (frame::get_masked(m_basic_header)) {
-            #ifdef WEBSOCKETPP_STRICT_MASKING
-                m_current_msg->prepared_key = frame::byte_mask_circ(
-                    buf,
-                    len,
-                    m_current_msg->prepared_key
-                );
-            #else
-                m_current_msg->prepared_key = frame::word_mask_circ(
-                    buf,
-                    len,
-                    m_current_msg->prepared_key
-                );
-            #endif
+            m_current_msg->prepared_key = frame::byte_mask_circ(
+                buf, len, m_current_msg->prepared_key);
+            // TODO: SIMD masking
         }
 
         std::string & out = m_current_msg->msg_ptr->get_raw_payload();
@@ -719,13 +810,13 @@ protected:
 
         // decompress message if needed.
         if (m_permessage_deflate.is_enabled()
-            && frame::get_rsv1(m_basic_header))
+            && m_current_msg->msg_ptr->get_compressed())
         {
             // Decompress current buffer into the message buffer
-            m_permessage_deflate.decompress(buf,len,out);
-
-            // get the length of the newly uncompressed output
-            offset = out.size() - offset;
+            ec = m_permessage_deflate.decompress(buf,len,out);
+            if (ec) {
+                return 0;
+            }
         } else {
             // No compression, straight copy
             out.append(reinterpret_cast<char *>(buf),len);
@@ -870,16 +961,8 @@ protected:
     void masked_copy (std::string const & i, std::string & o,
         frame::masking_key_type key) const
     {
-        #ifdef WEBSOCKETPP_STRICT_MASKING
-            frame::byte_mask(i.begin(),i.end(),o.begin(),key);
-        #else
-            websocketpp::frame::word_mask_exact(
-                reinterpret_cast<uint8_t *>(const_cast<char *>(i.data())),
-                reinterpret_cast<uint8_t *>(const_cast<char *>(o.data())),
-                i.size(),
-                key
-            );
-        #endif
+        frame::byte_mask(i.begin(),i.end(),o.begin(),key);
+        // TODO: SIMD masking
     }
 
     /// Generic prepare control frame with opcode and payload.
@@ -926,7 +1009,8 @@ protected:
             out->set_header(frame::prepare_header(h,e));
             std::copy(payload.begin(),payload.end(),o.begin());
         }
-
+    
+        out->set_opcode(op);
         out->set_prepared(true);
 
         return lib::error_code();
@@ -987,7 +1071,6 @@ protected:
     // Extensions
     permessage_deflate_type m_permessage_deflate;
 };
-#pragma GCC pop_options
 
 } // namespace processor
 } // namespace websocketpp

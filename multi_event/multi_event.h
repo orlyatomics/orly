@@ -166,7 +166,7 @@ namespace MultiEvent {
       assert(&val_by_event);
       return std::bind(
         [](const TConsumer &consumer, const std::unordered_map<std::shared_ptr<TEvent>, TVal> &val_by_event) {
-          for (const std::pair<std::shared_ptr<TEvent>, TVal> &event_and_val: val_by_event) {
+          for (const auto &event_and_val: val_by_event) {
             consumer(event_and_val.first);
           }
         },

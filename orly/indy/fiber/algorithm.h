@@ -17,6 +17,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <type_traits>
 
 #include <orly/indy/fiber/fiber.h>

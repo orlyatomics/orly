@@ -145,6 +145,7 @@ TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, con
     : Root(root),
       Src(CopyAppendVector(Root.Root, string(proj_name))),
       Out(GetOutDirName(root, proj_name, config, config_mixin)),
+      ProjName(proj_name),
       Config(GetConfigList(root, proj_name, config, config_mixin)) {
 
   if (config == "root") {

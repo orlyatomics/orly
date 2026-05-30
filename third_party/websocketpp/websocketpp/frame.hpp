@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Peter Thorson. All rights reserved.
+ * Copyright (c) 2014, Peter Thorson. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,6 +29,7 @@
 #define WEBSOCKETPP_FRAME_HPP
 
 #include <algorithm>
+#include <string>
 
 #include <websocketpp/common/system_error.hpp>
 #include <websocketpp/common/network.hpp>
@@ -266,7 +267,7 @@ private:
         }
 
         uint64_converter temp64;
-        temp64.i = lib::net::htonll(payload_size);
+        temp64.i = lib::net::_htonll(payload_size);
         std::copy(temp64.c+payload_offset,temp64.c+8,bytes);
 
         return 8-payload_offset;
@@ -456,35 +457,6 @@ inline size_t get_header_len(basic_header const & h) {
     return size;
 }
 
-/// Set the frame's size
-/**
- * @param [out] h The basic header to set.
- * @param [out] eh The extended header to set.
- * @param [in] The size to set.
- * @return What error occurred, if any.
- */
-inline lib::error_code set_size(basic_header & h, extended_header & eh, uint64_t
-    size)
-{
-    // make sure value isn't too big
-    uint8_t basic_value;
-
-    if (size <= limits::payload_size_basic) {
-        basic_value = static_cast<uint8_t>(size);
-    } else if (size <= limits::payload_size_extended) {
-        basic_value = payload_size_code_16bit;
-    } else if (size <= limits::payload_size_jumbo) {
-        basic_value = payload_size_code_64bit;
-    } else {
-        // error
-        return lib::error_code();
-    }
-
-    h.b1 = (basic_value & BHB1_PAYLOAD) | (h.b1 & BHB1_MASK);
-
-    return lib::error_code();
-}
-
 /// Calculate the offset location of the masking key within the extended header
 /**
  * Calculate the offset location of the masking key within the extended header
@@ -583,7 +555,7 @@ inline uint16_t get_extended_size(const extended_header &e) {
 inline uint64_t get_jumbo_size(const extended_header &e) {
     uint64_converter temp64;
     std::copy(e.bytes,e.bytes+8,temp64.c);
-    return lib::net::ntohll(temp64.i);
+    return lib::net::_ntohll(temp64.i);
 }
 
 /// Extract the full payload size field from a WebSocket header
@@ -638,6 +610,9 @@ inline size_t prepare_masking_key(const masking_key_type& key) {
  * to zero and less than sizeof(size_t).
  */
 inline size_t circshift_prepared_key(size_t prepared_key, size_t offset) {
+    if (offset == 0) {
+        return prepared_key;
+    }
     if (lib::net::is_little_endian()) {
         size_t temp = prepared_key << (sizeof(size_t)-offset)*8;
         return (prepared_key >> offset*8) | temp;
@@ -759,8 +734,6 @@ inline void word_mask_exact(uint8_t* data, size_t length, const
     word_mask_exact(data,data,length,key);
 }
 
-#pragma GCC push_options
-#pragma GCC optimize "0"
 /// Circular word aligned mask/unmask
 /**
  * Performs a circular mask/unmask in word sized chunks using pre-prepared keys
@@ -814,7 +787,6 @@ inline size_t word_mask_circ(uint8_t * input, uint8_t * output, size_t length,
 
     return circshift_prepared_key(prepared_key,l);
 }
-#pragma GCC pop_options
 
 /// Circular word aligned mask/unmask (in place)
 /**
