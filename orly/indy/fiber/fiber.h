@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cerrno>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -133,7 +134,13 @@ namespace Orly {
       inline void create_fiber(fiber_t &fib, void(*ufnc)(void *), void *uctx, size_t stack_size) {
         getcontext(&fib.fib);
         fib.start_of_stack = reinterpret_cast<uint8_t *>(malloc(stack_size));
-        Util::IfLt0(mlock(fib.start_of_stack, stack_size));
+        /* mlock keeps fiber stacks resident in RAM as a perf hint; on systems
+           where RLIMIT_MEMLOCK is small (modern Linux default is 64KB) this
+           fails with ENOMEM for MB-sized fiber stacks. The stack is still
+           valid memory, so degrade gracefully rather than aborting. */
+        if (mlock(fib.start_of_stack, stack_size) < 0 && errno != ENOMEM && errno != EPERM) {
+          Util::ThrowSystemError(errno);
+        }
         // init the fiber locals
         size_t bytes_of_loc = 0UL;
         fib.fib.uc_stack.ss_sp = fib.start_of_stack;

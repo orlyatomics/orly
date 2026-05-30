@@ -16,6 +16,7 @@
 
 #include <base/mlock.h>
 
+#include <cerrno>
 #include <sys/mman.h>
 
 #include <test/is_in_test.h>
@@ -24,8 +25,19 @@
 void Base::MlockRaw(const void *val, uint64_t len) {
   int res = mlock(val, len);
 
-  // If we're in a test and mlock fails, ignore the failure silently
-  // The failure only changes perf, not correctness
+  if (res == 0) {
+    return;
+  }
+
+  // Failure to mlock changes perf, not correctness. On modern Linux the
+  // default RLIMIT_MEMLOCK is 64KB (vs effectively unlimited in 2014),
+  // so any non-trivial pool allocation hits ENOMEM/EPERM. Degrade
+  // silently rather than aborting -- this also covers static-init-time
+  // allocations that run before ExtraInit() sets the in-test flag.
+  if (errno == ENOMEM || errno == EPERM) {
+    return;
+  }
+
   if (Test::AvoidTheseWheneverPossible::IsInTest()) {
     return;
   }
