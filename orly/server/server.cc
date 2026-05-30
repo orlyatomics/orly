@@ -2479,6 +2479,22 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &client_addr
           }
           break;
         }
+        case Mynde::TRequest::TOpcode::Version: {
+          /* The memcache binary spec puts the version string in the response
+             body. Clients (libmemcached, mc-cli, etc) typically send Version
+             right after connecting as a liveness/capability probe; they're
+             happy with any non-empty string. We deliberately don't claim to
+             be a specific memcached release so clients don't infer feature
+             support that isn't there -- the supported opcode set is still
+             much smaller than upstream memcached's (see UnknownCommand path
+             below, and docs/memcached.md for the broader picture). */
+          context.reset();
+          static const char version[] = "orly-0.5";
+          hdr.TotalBodyLength = sizeof(version) - 1;
+          out << hdr;
+          out.Write(version, sizeof(version) - 1);
+          break;
+        }
         default: {
           /* Many opcodes (Delete, Increment, Version, Add, Replace, Append,
              Prepend, Flush, State, and all the quiet variants) are still
