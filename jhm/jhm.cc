@@ -23,11 +23,13 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
+#include <csignal>
 #include <iomanip>
 #include <iostream>
 #include <string>
 #include <thread>
 
+#include <base/backtrace.h>
 #include <base/cmd.h>
 #include <base/path.h>
 #include <base/split.h>
@@ -288,6 +290,21 @@ class TJhm : public TCmd {
 };
 
 int main(int argc, char *argv[]) {
+  /* Ignore SIGPIPE so a subprocess closing its read end mid-write doesn't
+     kill jhm. TPump's background thread writes through pipes that connect
+     to child stdin / our buffered read of child stdout/stderr. When a
+     child exits (normal flow at end of build, especially in the LTO link
+     region with hundreds of input fds in flight), one of those writes can
+     hit a closed read end. Default SIGPIPE terminates the process; with
+     this handler write() just returns -1/EPIPE and the existing
+     pump.cc:117-124 fallthrough flags the pipe dead and continues. */
+  std::signal(SIGPIPE, SIG_IGN);
+
+  /* Backtrace on terminate so an uncaught std::system_error in a worker
+     thread (e.g. TPump's background thread) doesn't disappear into a bare
+     `terminate called after throwing` line. */
+  Base::SetBacktraceOnTerminate();
+
   try {
     return TJhm(argc, argv).Run();
   }
