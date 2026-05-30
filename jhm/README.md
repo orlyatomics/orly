@@ -6,7 +6,7 @@ The JHM(*) build system.
 
 -----
 
-README.md Copyright 2010-2014 OrlyAtomics, Inc.
+README.md Copyright 2010-2026 Atomic Kismet Company
 
 README.md is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
 

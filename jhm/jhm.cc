@@ -9,7 +9,7 @@
     - Make jobs and files const more of the time.
     - Eliminate the Ready queue. It just slows us down a little / makes unnecessary extra looping happen...
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -272,7 +272,7 @@ class TJhm : public TCmd {
     virtual void WriteAfterDesc(ostream &strm) const {
       assert(this);
       assert(&strm);
-      strm << "Copyright OrlyAtomics, Inc.\n"
+      strm << "Copyright Atomic Kismet Company\n"
            << "Licensed under the Apache License, Version 2.0" << endl;
     }
   };

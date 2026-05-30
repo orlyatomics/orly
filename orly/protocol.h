@@ -10,7 +10,7 @@
    any time.  Orly::ServerRpc and Orly::ClientRpc describe the individual entry points provided by the server and client, respectively.
    (See <rpc/rpc.h> for more information about the formats of RPC messages in general.)
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

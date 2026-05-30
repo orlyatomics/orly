@@ -2,7 +2,7 @@
 
    Context for parsing. This is a static to simplify / keep us from having to pass it around by hand all the places.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

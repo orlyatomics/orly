@@ -6,7 +6,7 @@
    This prevents us from having to write the exact same code to make an ostringstream and then get the string out all
    over the place
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

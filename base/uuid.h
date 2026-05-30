@@ -5,7 +5,7 @@
    The text format used by TUuid looks like this: 1b4e28ba-2fa1-11d2-883f-b9a761bde3fb
    Which, as a printf pattern, would be: %08x-%04x-%04x-%04x-%012x
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

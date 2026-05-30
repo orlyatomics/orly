@@ -4,7 +4,7 @@
    by something else such as by-value, or by const-ref. Either way we need to call the Accept() function in it. We use this
    function to dereference if it's a pointer and call the Accept() function.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

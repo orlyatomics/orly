@@ -19,7 +19,7 @@
    relatively low implementation cost. By all means, feel free to implement suggstion 1 above and pipe it through all
    the tools we use for running tests for all time. Patches welcome (although there is a lot you'll have to patch)
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

@@ -11,7 +11,7 @@
       --log_info    (li)  Log info messages, or up to info messages (if --log_all).
       --log_debug   (ld)  Log debug messages, or up to debug messages (if --log_all).
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
