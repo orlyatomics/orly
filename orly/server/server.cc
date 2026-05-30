@@ -2480,8 +2480,25 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &client_addr
           break;
         }
         default: {
+          /* Many opcodes (Delete, Increment, Version, Add, Replace, Append,
+             Prepend, Flush, State, and all the quiet variants) are still
+             stubbed -- see orly/mynde/binary_protocol.cc for the full parser
+             but only Get/Set/NoOp/Quit handled above. Previously this path
+             called NOT_IMPLEMENTED() which throws std::logic_error and the
+             outer catch closes the connection. That meant a routine client
+             probing for Version (a common no-op for memcache clients) would
+             see a socket reset and treat the server as broken.
+             Per the memcached binary spec, status 0x81 (UnknownCommand) is
+             the correct reply for opcodes we don't service; the body
+             carries a human-readable explanation. Returning that keeps the
+             connection alive for whatever the client wants to do next. */
           syslog(LOG_INFO, "Memcache not implemented opcode: %02X", req.GetBinaryOpcode());
-          NOT_IMPLEMENTED();
+          hdr.Status = Mynde::TResponseStatus::UnknownCommand;
+          const char err_msg[] = "Not implemented";
+          hdr.TotalBodyLength = sizeof(err_msg) - 1;
+          out << hdr;
+          out.Write(err_msg, sizeof(err_msg) - 1);
+          break;
         }
       }
 
