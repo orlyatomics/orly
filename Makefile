@@ -1,5 +1,10 @@
 .NOTPARALLEL:
 
+# jhm itself lives in tools/ after bootstrap, and it spawns make_dep_file
+# (also in tools/) as a subprocess. Put tools/ on PATH so every recipe
+# can find both binaries by name -- matches how bootstrap.sh invokes them.
+export PATH := $(CURDIR)/tools:$(PATH)
+
 PREFIX=/usr/local
 BINDIR=$(PREFIX)/bin
 PACKAGE_DIR=$(PREFIX)/packages
