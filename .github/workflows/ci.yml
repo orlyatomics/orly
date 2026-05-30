@@ -1,0 +1,101 @@
+# Build & test orly on Ubuntu 24.04 / gcc 13.
+#
+# This is the first CI for the project. Keep it intentionally simple:
+# one workflow, three jobs (debug+test, release-build, lang-tests),
+# all on stock ubuntu-24.04 runners. No caching yet -- the build is
+# ~10-15 min from scratch but each job's cold-start cost is dwarfed by
+# the LTO link in release; we can layer caching on once we have signal.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  debug-and-test:
+    name: make debug + make test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc g++ \
+            uuid-dev libgmp-dev libaio-dev libsnappy-dev \
+            libreadline-dev libboost-system-dev zlib1g-dev \
+            bison flex valgrind
+
+      - name: make debug
+        run: make debug
+
+      - name: List built binaries
+        run: |
+          ls -la ../out_orly/debug/orly/orlyc \
+                 ../out_orly/debug/orly/server/orlyi \
+                 ../out_orly/debug/orly/spa/spa \
+                 ../out_orly/debug/orly/client/orly_client
+
+      - name: make test
+        run: make test
+
+  release-build:
+    name: jhm -c release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc g++ \
+            uuid-dev libgmp-dev libaio-dev libsnappy-dev \
+            libreadline-dev libboost-system-dev zlib1g-dev \
+            bison flex valgrind
+
+      # Bootstrap first (same path make debug takes), then drive jhm
+      # directly. `make release` works but its Makefile wrapper has a
+      # cosmetic broken-pipe quirk at EOF -- direct jhm exits cleanly
+      # with the full status trace. Tracked in #10.
+      - name: Bootstrap jhm
+        run: make bootstrap
+
+      - name: jhm -c release
+        run: jhm -c release
+
+      - name: Smoke each release binary with --help
+        run: |
+          ../out_orly/release/orly/client/orly_client --help | head -1
+          ../out_orly/release/orly/orlyc --help | head -1
+          ../out_orly/release/orly/spa/spa --help | head -1
+          # orlyi's --help prints a huge memory-tuning header first;
+          # asserting non-empty output is enough for a smoke check.
+          ../out_orly/release/orly/server/orlyi --help > /tmp/orlyi-help.txt
+          test -s /tmp/orlyi-help.txt
+
+  lang-tests:
+    name: lang_test.py
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc g++ \
+            uuid-dev libgmp-dev libaio-dev libsnappy-dev \
+            libreadline-dev libboost-system-dev zlib1g-dev \
+            bison flex valgrind
+
+      - name: make debug
+        run: make debug
+
+      - name: python3 tools/lang_test.py
+        run: python3 tools/lang_test.py -d orly/data orly/lang_tests
