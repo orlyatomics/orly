@@ -222,7 +222,7 @@ Package::TVersionedName Orly::Compiler::Compile(
     }
 
     // TODO: Check these compile flags.
-    vector<string> gcc_cmd{"g++", "-std=c++1y", "-xc++", "-I" + GetSrcRoot(), "-fPIC", "-shared", "-o",
+    vector<string> gcc_cmd{"g++", "-std=c++17", "-xc++", "-I" + GetSrcRoot(), "-fPIC", "-shared", "-o",
                            AsStr(out_tree.GetAbsPath(SwapExtension(
                                TPath(core_rel.Path), {to_string(packages[core_rel]->GetVersion()), "so"}))),
                            "-iquote", AsStr(out_tree),
@@ -232,9 +232,38 @@ Package::TVersionedName Orly::Compiler::Compile(
       gcc_cmd.emplace_back(AsStr(out_tree.GetAbsPath(SwapExtension(TPath(package.first.Path), {"cc"}))));
     }
     if (debug_cc) {
-      const char *debug_args[] = {"-g",      "-Wno-unused-variable", "-Wno-type-limits",
-                                  "-Werror", "-Wno-parentheses",     "-Wall",
-                                  "-Wextra", "-Wno-unused-parameter"};
+      const char *debug_args[] = {
+          "-g",      "-Wno-unused-variable", "-Wno-type-limits",
+          "-Werror", "-Wno-parentheses",     "-Wall",
+          "-Wextra", "-Wno-unused-parameter",
+          // The same gcc 13-era suppressions used by root.jhm, mirrored here
+          // because orlyc shells out to g++ on the generated .cc and the system
+          // toolchain has many more warnings than the gcc 4.9 era this was tuned
+          // for. Without these, every package compile reports diagnostics from
+          // the orly headers (e.g. -Waddress-of-packed-member on TCore's union).
+          "-Wno-address-of-packed-member", "-Wno-deprecated-declarations",
+          "-Wno-class-memaccess", "-Wno-stringop-overflow", "-Wno-stringop-overread",
+          "-Wno-array-bounds", "-Wno-restrict", "-Wno-pessimizing-move",
+          "-Wno-redundant-move", "-Wno-mismatched-new-delete",
+          "-Wno-dangling-reference", "-Wno-tautological-compare",
+          "-Wno-implicit-fallthrough", "-Wno-overloaded-virtual",
+          "-Wno-deprecated", "-Wno-deprecated-copy", "-Wno-c++20-compat",
+          "-Wno-volatile", "-Wno-narrowing", "-Wno-maybe-uninitialized",
+          "-Wno-init-list-lifetime", "-Wno-deprecated-enum-enum-conversion",
+          "-Wno-deprecated-enum-float-conversion", "-Wno-int-in-bool-context",
+          "-Wno-uninitialized", "-Wno-sign-compare", "-Wno-empty-body",
+          "-Wno-misleading-indentation", "-Wno-terminate", "-Wno-noexcept-type",
+          "-Wno-comment", "-Wno-unused-result", "-Wno-reorder",
+          "-Wno-strict-overflow", "-Wno-shift-negative-value",
+          "-Wno-zero-as-null-pointer-constant", "-Wno-write-strings",
+          "-Wno-multichar", "-Wno-int-to-pointer-cast", "-Wno-pointer-arith",
+          "-Wno-error=return-type", "-Wno-error=switch", "-Wno-format",
+          "-Wno-format-security", "-Wno-error=format-security",
+          "-Wno-ignored-qualifiers", "-Wno-cast-function-type",
+          "-Wno-aligned-new", "-Wno-placement-new",
+          "-Wno-format-truncation", "-Wno-format-overflow",
+          "-Wno-nonnull-compare", "-Wno-nonnull", "-Wno-error=cpp",
+      };
       for (auto &arg : debug_args) {
         gcc_cmd.emplace_back(arg);
       }
