@@ -271,7 +271,13 @@ FIXTURE(PinnedLongStr) {
   TTestArena arena;
   void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize());
   void *state_alloc_2 = alloca(Sabot::State::GetMaxStateSize());
-  Sabot::State::TAny::TWrapper tpl_state(TCore(make_tuple(expected), &arena, state_alloc_1).NewState(&arena, state_alloc_2));
+  /* tpl_core must outlive tpl_state: the SS::TTuple constructed in
+     state_alloc_2 caches a pointer back to this TCore and reads from
+     it later when Pin() is called. Using a temporary here (as the
+     original code did) is a stack-lifetime bug that happened to work
+     under older compilers but reads freed memory under gcc 13. */
+  TCore tpl_core(make_tuple(expected), &arena, state_alloc_1);
+  Sabot::State::TAny::TWrapper tpl_state(tpl_core.NewState(&arena, state_alloc_2));
   auto tpl = dynamic_cast<Sabot::State::TTuple *>(tpl_state.get());
   if (EXPECT_TRUE(tpl)) {
     void *state_pin_alloc_1 = alloca(Sabot::State::GetMaxStatePinSize());
