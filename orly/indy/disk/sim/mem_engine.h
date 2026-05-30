@@ -39,16 +39,29 @@ namespace Orly {
             const size_t logical_block_size = 512;
             const size_t physical_block_size = 512;
             const size_t num_logical_block_per_stripe = 1024UL;
-            const size_t num_fast_logical_block = num_mb * ((1024 * 1024) / logical_block_size);
-            const size_t num_slow_logical_block = num_slow_mb * ((1024 * 1024) / logical_block_size);
+            /* Per-device capacity has to be a multiple of the stripe size --
+               enforced by TVolume's constructor and otherwise throws
+               "Device Capacity must be a multiple of the striping factor."
+               at server startup. So the total logical-block count has to be
+               a multiple of (stripe_size * num_devices). Round the requested
+               MB count up to satisfy that, and log if we did, so the server's
+               auto-scaled --mem_sim_mb (which is computed from available RAM
+               and doesn't know about stripes) doesn't blow up on init. */
+            auto round_up_blocks = [num_logical_block_per_stripe](size_t requested, size_t num_devices, const char *label) {
+              const size_t alignment = num_logical_block_per_stripe * num_devices;
+              const size_t rounded = ((requested + alignment - 1) / alignment) * alignment;
+              if (rounded != requested) {
+                syslog(LOG_INFO, "TMemEngine: rounded %s logical-block count %zu -> %zu to satisfy stripe alignment (%zu blocks/stripe x %zu devices)",
+                       label, requested, rounded, num_logical_block_per_stripe, num_devices);
+              }
+              return rounded;
+            };
+            const size_t num_fast_logical_block =
+                round_up_blocks(num_mb * ((1024 * 1024) / logical_block_size), NumFastMemDevice, "fast");
+            const size_t num_slow_logical_block =
+                round_up_blocks(num_slow_mb * ((1024 * 1024) / logical_block_size), NumSlowMemDevice, "slow");
             const size_t min_discard_blocks = 8UL;
             const double high_utilization_threshold = 0.85;
-            if (num_fast_logical_block % NumFastMemDevice != 0) {
-              throw std::runtime_error("TMemEngine num_fast_logical_block must be a multiple of NumFastMemDevice");
-            }
-            if (num_slow_logical_block % NumSlowMemDevice != 0) {
-              throw std::runtime_error("TMemEngine num_slow_logical_block must be a multiple of NumSlowMemDevice");
-            }
             CacheCb = [this](Util::TCacheInstr cache_instr, const Util::TOffset logical_start_offset, void *buf, size_t count) {
               switch (cache_instr) {
                 case Util::TCacheInstr::CacheAll: {
