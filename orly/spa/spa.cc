@@ -1,6 +1,6 @@
 /* <orly/spa/spa.cc>
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -260,7 +260,7 @@ class TSpa : public Mongoose::TMongoose {
         assert(&strm);
         strm << "Build: Unknown" << endl // FIXME: Use Version from SCM to tag.
              << endl
-             << "Copyright OrlyAtomics, Inc." << endl
+             << "Copyright Atomic Kismet Company" << endl
              << "Licensed under the Apache License, Version 2.0" << endl;
       }
     };

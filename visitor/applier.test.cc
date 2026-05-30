@@ -7,7 +7,7 @@
    correct one. Also, if we happen to have the final type already, then we get an early binding and dispatch to it
    directly. The usage pattern is demonstrated below.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

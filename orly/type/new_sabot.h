@@ -2,7 +2,7 @@
 
    Given a var type, get a type sabot.  The sabot is interned, so you don't have to delete it.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

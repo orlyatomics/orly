@@ -5,7 +5,7 @@
    Mutable is a parametric type, depending on both the type of the address which may be present, as well as the type
    being stored in the address.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

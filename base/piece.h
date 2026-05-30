@@ -27,7 +27,7 @@
    TPiece<const char>&.  AsPiece() overloads exist to convert from const char* and const std::string& to TPiece<const char>, and these conversions are very
    cheap.  The result is your function will be more general and more easily callable if you use TPiece<>.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

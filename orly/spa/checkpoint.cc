@@ -4,7 +4,7 @@
 
    NOTE: When updating this file, make sure to update command.cc identically, as it is a copy/paste of this code.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

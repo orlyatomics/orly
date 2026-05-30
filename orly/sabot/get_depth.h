@@ -3,7 +3,7 @@
    Return the depth of a sabot. All primitive types have depth 0.
    Parametrics have depth 1 greater than their deepest child.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

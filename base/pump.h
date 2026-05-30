@@ -46,7 +46,7 @@
 
   TODO: Migrate to http://dvdhrm.wordpress.com/2014/06/10/memfd_create2/ once that is around.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

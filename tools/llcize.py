@@ -1,6 +1,6 @@
 #!/usr/bin/python2
 #
-# Copyright 2010-2014 OrlyAtomics, Inc.
+# Copyright 2010-2026 Atomic Kismet Company
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import argparse, os, re, sys
 
 OLD_COPYRIGHT_PATTERN = re.compile(R'copyright[ \t]*\d+(\-\d*)?[ \t]*orly', re.I)
 
-NEW_COPYRIGHT = 'Copyright 2010-2014 OrlyAtomics, Inc.'
+NEW_COPYRIGHT = 'Copyright 2010-2026 Atomic Kismet Company'
 
 Root = ''
 IgnoredRelPaths = []

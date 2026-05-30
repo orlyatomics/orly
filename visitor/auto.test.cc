@@ -6,7 +6,7 @@
    abstract visitors. If there are too many final types in the family, you can manually write out (probably code gen)
    the abstract visitors. Take a look at <visitor/manual.test.cc>
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

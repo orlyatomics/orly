@@ -6,7 +6,7 @@
    generate lots of errors which become exceptions if you try writing to an fd which can't be written to or reading
    from an fd which can't be read from.
 
-   Copyright 2010-2014 OrlyAtomics, Inc.
+   Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
