@@ -2,38 +2,75 @@
   <img src="static/branding/orly.png?raw=true" height="100" alt="Orly" />
 </p>
 
-[![tip for next commit](http://tip4commit.com/projects/860.svg)](http://tip4commit.com/projects/860)
+> **Status — 2026 revival.** Orly was dormant from 2019 until early 2026, when a modernization pass brought the codebase back to building and testing cleanly on a current Linux toolchain. `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13. See [#10](https://github.com/orlyatomics/orly/issues/10) for the full status and remaining gaps. No active feature development.
 
-This is the repository for the Orly non-relational database. It's meant to be fast and to scale for billions of users.  Orly provides a single path to data and will eliminate our need for memcache due to its speed and high concurrency.
+This is the repository for the Orly non-relational database. It's meant to be fast and to scale for billions of users. Orly provides a single path to data and will eliminate our need for memcache due to its speed and high concurrency.
 
-## Orly features:
+## Orly features
 
 * **Points of View**: This is our version of optimistic locking or isolation. In traditional databases, clients have to lock the entire database (or at least large swaths of it) before updating it to ensure data remains consistent. In Orly, clients make changes in their own private points of view, which are like small sandboxes. Changes in private points of view eventually propagate into shared points of view and eventually reach the global point of view, which is the whole database. Updates to private points of view don't lock anything: Orly determines later whether, when, and how to reconcile changes from different points of view. We also encourage field calls rather than field changes (e.g., `x += 1` is better than `x = x + 1`).
-* **Time Travel**: We use something called the _Flux Capacitor_ to keep a history of changes made to the database and to resolve conflicts as they come into shared points of view and the global point of view. This permits us to perform consistent read for any point in time. Orly defines its "time line" by causality rather than clock time. Instead of manipulating timestamps, Orly records an ordering of events (e.g., update A affects update B, so A "happens before" B).)
+* **Time Travel**: We use something called the _Flux Capacitor_ to keep a history of changes made to the database and to resolve conflicts as they come into shared points of view and the global point of view. This permits us to perform consistent read for any point in time. Orly defines its "time line" by causality rather than clock time. Instead of manipulating timestamps, Orly records an ordering of events (e.g., update A affects update B, so A "happens before" B).
 * **Query Language**: Orly has its own high-level, compiled, type-safe, functional language called _Orlyscript_. Orlyscript is not just a query language: You can write general-purpose programs in it complete with compile-time unit tests. Orly comes with a compiler that transforms Orlyscript into shared libraries (.so files on Linux), which Orly servers load as packages.
 * **Scalability and Availability**: While we eventually plan to develop a sharded Orly machine (and actively design so that we can build such a machine), our current single-node server with fail-over/replication can handle hundreds of thousands of transactions per second. We like to say that Orly will function on a "planetary scale": Your data and computations will not only distribute across a data center, but also across many data centers across the globe. This means that no disaster short of nuking the planet fifty times over or colliding with a gigantic asteroid will destroy your data. (Even those might not be catastrophic: Maybe we'll have data centers running Orly with your replicated data on the moon or Mars.)
 
-## Supported Platforms
+## Supported platforms
 
-Currently Orly only runs on Linux.
+Linux only, x86-64. Verified on Ubuntu 24.04. Earlier Ubuntu releases probably work too but have not been re-tested in the revival pass.
 
-## System Requirements
+## Quick start
 
-* Ubuntu 14.04 LTS (Trusty Tahr) (64-bit)
-* 4GB of RAM
+Install the system dependencies:
 
-## Building Orly
+```sh
+sudo apt-get install -y \
+  build-essential gcc g++ \
+  uuid-dev libgmp-dev libaio-dev libsnappy-dev \
+  libreadline-dev libboost-system-dev zlib1g-dev \
+  bison flex valgrind
+```
 
-Requires the latest versions of the gcc and clang/LLVM compilers.
-We're currently using: gcc (Ubuntu 4.9-20140406-1ubuntu1) 4.9.0 20140405 (experimental) [trunk revision 209157]
+Build and test:
 
-## Contributing to Orly
+```sh
+make debug       # 1707 jobs, ~2-5 min on a recent laptop
+make test        # runs 188 test binaries
+make release     # LTO-built production binaries
+```
 
-Documentation for this is currently minimal. See docs/coding.md and docs/best_practices.md for basic starting hints.
+The four production binaries land at `../out_orly/debug/` (or `../out_orly/release/`):
+
+| Binary | Purpose |
+| --- | --- |
+| `orly/orlyc` | Orlyscript compiler |
+| `orly/server/orlyi` | Database server |
+| `orly/spa/spa` | Single-process app server |
+| `orly/client/orly_client` | Interactive client shell |
+
+To exercise the Orlyscript test suite against compiled `.orly` programs:
+
+```sh
+python3 tools/lang_test.py -d orly/data orly/lang_tests
+```
+
+## Toolchain
+
+The revival pass uses:
+
+* gcc 13.3.0
+* `-std=c++17`
+* boost 1.83 (system)
+* websocketpp 0.8.2 (vendored)
+* Python 3.12 for `lang_test.py`
+
+Build flags live in `root.jhm` (per-target overrides in `debug.jhm` / `release.jhm` / `bootstrap.jhm`).
+
+## Contributing
+
+Start with `docs/coding.md` and `docs/best_practices.md` for the project's conventions. The build system (`jhm`) lives in `jhm/`; the bootstrap path is documented in `bootstrap.sh`.
 
 -----
 
-README.md Copyright 2010-2019 Atomic Kismet Company
+README.md Copyright 2010-2026 Atomic Kismet Company
 
 README.md is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
 
