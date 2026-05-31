@@ -222,13 +222,11 @@ namespace Base {
 
     /* Shuts down the bg, if it hasn't already finished. */
     virtual ~TBgGenerator() noexcept {
-      assert(this);
       FinalizeBg();
     }
 
     /* Move-construct, leaving the donor as if it were default-constructed. */
     TBgGenerator &operator=(TBgGenerator &&that) {
-      assert(this);
       TBgGenerator temp(std::move(that));
       return Swap(temp);
     }
@@ -236,7 +234,6 @@ namespace Base {
     /* True if the bg has yielded a value, false if it has exited normally.  If
        has thrown an exception, this function rethrows it. */
     operator bool() const {
-      assert(this);
       return HasBgYielded();
     }
 
@@ -244,7 +241,6 @@ namespace Base {
        normally, this throws ENODATA.  If the bg has thrown an exception, this
        function rethrows it. */
     const TVal &operator*() const {
-      assert(this);
       RequireBgHasYielded();
       assert(Cache);
       return *Cache;
@@ -254,7 +250,6 @@ namespace Base {
        normally, this throws ENODATA.  If the bg has thrown an exception, this
        function rethrows it. */
     const TVal *operator->() const {
-      assert(this);
       RequireBgHasYielded();
       assert(Cache);
       return Cache;
@@ -265,7 +260,6 @@ namespace Base {
        throws ENODATA.  If the bg has thrown an exception, this function
        rethrows it. */
     TBgGenerator &operator++() {
-      assert(this);
       RequestBgYield();
       Cache = nullptr;
       return *this;
@@ -274,7 +268,6 @@ namespace Base {
     /* Swap this generator with that one.  NOTE: It's an error to do this if
        either generator has already started running. */
     TBgGenerator &Swap(TBgGenerator &that) noexcept {
-      assert(this);
       assert(&that);
       TAnyBgGenerator::Swap(that);
       std::swap(Cache, that.Cache);
@@ -286,7 +279,6 @@ namespace Base {
 
     /* Calls the generating function and yields each value generated. */
     virtual void BgMain() override {
-      assert(this);
       /* For each value generated, cache a pointer to it and yield to the fg.
          Keep going until we're out of values or until the fg tells us to stop.
          Between yields, the cache pointer should have been cleared by

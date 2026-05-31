@@ -47,7 +47,6 @@ class TTestArena final
 
   /* Destroys all notes when it goes. */
   ~TTestArena() {
-    assert(this);
     for (TNote *note: Notes) {
       delete note;
     }
@@ -55,7 +54,6 @@ class TTestArena final
 
   /* See base class. */
   virtual TOffset Propose(TNote *proposed_note) override {
-    assert(this);
     assert(proposed_note);
     try {
       Notes.insert(proposed_note);
@@ -73,14 +71,12 @@ class TTestArena final
 
   /* See base class.  Looks up the requested offset in Notes. */
   virtual const TNote *TryAcquireNote(TOffset offset, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) override {
-    assert(this);
     auto note = reinterpret_cast<TNote *>(offset);
     return (Notes.find(note) != Notes.end()) ? note : nullptr;
   }
 
   /* See base class.  Looks up the requested offset in Notes. */
   virtual const TNote *TryAcquireNote(TOffset offset, size_t /*known_size*/, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) override {
-    assert(this);
     auto note = reinterpret_cast<TNote *>(offset);
     return (Notes.find(note) != Notes.end()) ? note : nullptr;
   }

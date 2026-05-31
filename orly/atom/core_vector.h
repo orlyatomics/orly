@@ -45,13 +45,11 @@ namespace Orly {
 
       /* The arena to which the cores in the vector refer.  Never null. */
       TArena *GetArena() const {
-        assert(this);
         return &Arena;
       }
 
       /* The cores we streamed in. */
       const std::vector<TCore> &GetCores() const {
-        assert(this);
         return Cores;
       }
 

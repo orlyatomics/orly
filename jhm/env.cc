@@ -201,14 +201,12 @@ TFile *TEnv::GetFile(TRelPath name) {
 }
 
 bool TEnv::IsBuildable(TFile *file) const {
-  assert(this);
   assert(Buildable);
 
   return Buildable(file);
 }
 
 bool TEnv::IsDone(TFile *file) const {
-  assert(this);
   assert(Done);
 
   return Done(file);

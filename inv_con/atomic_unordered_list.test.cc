@@ -36,12 +36,10 @@ class TTeam {
       : PlayerCollection(this) {}
 
   ~TTeam() {
-    assert(this);
     PlayerCollection.DeleteEachMember();
   }
 
   TPlayerCollection *GetPlayerCollection() const {
-    assert(this);
     return &PlayerCollection;
   }
 
@@ -68,22 +66,18 @@ class TPlayer {
       : TeamMembership(this), Number(number) {}
 
   int GetNumber() const {
-    assert(this);
     return Number;
   }
 
   void Insert(TTeam *team) {
-    assert(this);
     TeamMembership.Insert(team->GetPlayerCollection());
   }
 
   void Remove() {
-    assert(this);
     TeamMembership.Remove();
   }
 
   TTeamMembership *GetTeamMembership() {
-    assert(this);
     return &TeamMembership;
   }
 

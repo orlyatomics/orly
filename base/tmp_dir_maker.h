@@ -43,13 +43,11 @@ namespace Base {
 
     /* Ensures the dir is gone. */
     ~TTmpDirMaker() {
-      assert(this);
       Util::EnsureDirIsGone(Path.c_str());
     }
 
     /* The path to the dir we manage. */
     const std::string &GetPath() const {
-      assert(this);
       return Path;
     }
 

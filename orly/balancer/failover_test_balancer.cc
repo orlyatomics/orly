@@ -43,7 +43,6 @@ TFailoverTestBalancer::~TFailoverTestBalancer() {
 }
 
 const Socket::TAddress &TFailoverTestBalancer::ChooseHost() {
-  assert(this);
   std::lock_guard<std::mutex> lock(HostMutex);
   if (!MasterHost) {
     throw std::runtime_error("No master host available to connect to.");
@@ -52,7 +51,6 @@ const Socket::TAddress &TFailoverTestBalancer::ChooseHost() {
 }
 
 void TFailoverTestBalancer::RegisterHost(const Socket::TAddress &address) {
-  assert(this);
   std::lock_guard<std::mutex> lock(HostMutex);
   auto ret = HostSet.insert(address);
   if (!ret.second) {

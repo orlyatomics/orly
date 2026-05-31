@@ -46,18 +46,15 @@ TFunction::TArg::TPtr TFunction::TArg::New(const L0::TPackage *package, TId<TIdK
 
 
 const TId<TIdKind::Arg> &TFunction::TArg::GetId() const {
-  assert(this);
   return Id;
 }
 
 const TFunction::TArg::TRef::TPtr &TFunction::TArg::GetRef() const {
-  assert(this);
 
   return Ref;
 }
 
 Type::TType TFunction::TArg::GetType() const {
-  assert(this);
   return Type;
 }
 
@@ -73,7 +70,6 @@ void TFunction::Build() {
     return;
   }
 
-  assert(this);
   TFunctionCtx ctx(this);
   //Build up all of our sub functions
   for(auto &it: ChildFuncs) {
@@ -92,33 +88,28 @@ void TFunction::Build() {
 
 
 TFunction::TArg::TRef::TPtr TFunction::GetArg(const std::string &name) const {
-  assert(this);
   auto arg = Args.find(name);
   assert(arg != Args.end());
   return arg->second->GetRef();
 }
 
 const TFunction::TArgs &TFunction::GetArgs() const {
-  assert(this);
 
   return Args;
 }
 
 
 TCodeScope *TFunction::GetCodeScope() {
-  assert(this);
 
   return &CodeScope;
 }
 
 bool TFunction::HasArgs() const {
-  assert(this);
 
   return Args.size();
 }
 
 void TFunction::WriteArgs(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Join(Args,
@@ -131,7 +122,6 @@ void TFunction::WriteArgs(TCppPrinter &out) const {
 }
 
 void TFunction::WriteBody(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   assert(Body); // NOTE: If this assertion fails, it means that Build() function probably wasn't called.
@@ -200,7 +190,6 @@ TFunction::TFunction(const L0::TPackage *package, const TIdScope::TPtr &id_scope
 }
 
 void TFunction::PostCtor(const TNamedArgs &args, const Expr::TExpr::TPtr &expr, bool keep_mutable, bool implicit) {
-  assert(this);
   assert(&args);
   assert(Args.empty());
   assert(!Expr);

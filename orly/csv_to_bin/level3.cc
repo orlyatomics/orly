@@ -62,7 +62,6 @@ void Orly::CsvToBin::StartOfRecord(TLevel3 &that) {
 const TLevel3::TOptions TLevel3::DefaultOptions = { "true", "false" };
 
 TLevel3 &TLevel3::operator>>(bool &that) {
-  assert(this);
   assert(&that);
   uint8_t c = tolower(Peek());
   const char *kwd;
@@ -84,7 +83,6 @@ TLevel3 &TLevel3::operator>>(bool &that) {
 }
 
 TLevel3 &TLevel3::operator>>(Base::TUuid &that) {
-  assert(this);
   assert(&that);
   static constexpr size_t size = Base::TUuid::StrSize;
   char buf[size + 1];
@@ -97,7 +95,6 @@ TLevel3 &TLevel3::operator>>(Base::TUuid &that) {
 }
 
 TLevel3 &TLevel3::operator>>(int64_t &that) {
-  assert(this);
   assert(&that);
   uint8_t c = Peek();
   int64_t sign;
@@ -118,7 +115,6 @@ TLevel3 &TLevel3::operator>>(int64_t &that) {
 }
 
 TLevel3 &TLevel3::operator>>(double &that) {
-  assert(this);
   assert(&that);
   /* TODO: Yeah, this is cheating.  We really shouldn't be consuming all the
      bytes in the field and then translating just the prefix into a number.
@@ -130,7 +126,6 @@ TLevel3 &TLevel3::operator>>(double &that) {
 }
 
 TLevel3 &TLevel3::operator>>(std::string &that) {
-  assert(this);
   assert(&that);
   string temp;
   while (RefreshBytes(false)) {
@@ -142,7 +137,6 @@ TLevel3 &TLevel3::operator>>(std::string &that) {
 }
 
 TLevel3 &TLevel3::operator>>(Base::Chrono::TTimePnt &that) {
-  assert(this);
   assert(&that);
   /* Parse something like 2014-07-04. */
   int64_t year;
@@ -238,7 +232,6 @@ TLevel3 &TLevel3::operator>>(Base::Chrono::TTimePnt &that) {
 }
 
 bool TLevel3::AtField() const {
-  assert(this);
   bool result;
   auto state = GetState();
   switch (state) {
@@ -260,7 +253,6 @@ bool TLevel3::AtField() const {
 }
 
 bool TLevel3::AtRecord() const {
-  assert(this);
   bool result;
   auto state = GetState();
   switch (state) {
@@ -282,7 +274,6 @@ bool TLevel3::AtRecord() const {
 }
 
 void TLevel3::MatchByte(uint8_t expected) {
-  assert(this);
   if (!TryMatchByte(expected)) {
     THROW_ERROR(TSyntaxError)
         << "expected '" << expected
@@ -291,7 +282,6 @@ void TLevel3::MatchByte(uint8_t expected) {
 }
 
 uint8_t TLevel3::MatchByte(const char *expected) {
-  assert(this);
   uint8_t match;
   if (!TryMatchByte(expected, match)) {
     THROW_ERROR(TSyntaxError)
@@ -302,7 +292,6 @@ uint8_t TLevel3::MatchByte(const char *expected) {
 }
 
 void TLevel3::MatchKeyword(const char *keyword) {
-  assert(this);
   for (const char *csr = keyword; *csr; ++csr) {
     if (tolower(Pop()) != *csr) {
       THROW_ERROR(TSyntaxError)
@@ -312,7 +301,6 @@ void TLevel3::MatchKeyword(const char *keyword) {
 }
 
 void TLevel3::MatchState(TLevel2::TState state) {
-  assert(this);
   if (GetState() != state) {
     THROW_ERROR(TUnexpectedState)
         << "expected " << TLevel2::GetName(state)
@@ -322,7 +310,6 @@ void TLevel3::MatchState(TLevel2::TState state) {
 }
 
 void TLevel3::ReadDecimalInt(int64_t &value, size_t &size) {
-  assert(this);
   assert(&value);
   assert(&size);
   size = 0;
@@ -350,7 +337,6 @@ void TLevel3::ReadDecimalInt(int64_t &value, size_t &size) {
 }
 
 bool TLevel3::RefreshBytes(bool required) const {
-  assert(this);
   bool success = (Cursor < Limit);
   if (!success) {
     if (Cursor) {
@@ -397,7 +383,6 @@ bool TLevel3::RefreshBytes(bool required) const {
 }
 
 bool TLevel3::TryMatchByte(uint8_t expected) {
-  assert(this);
   bool success = (Peek() == expected);
   if (success) {
     Pop();
@@ -406,13 +391,11 @@ bool TLevel3::TryMatchByte(uint8_t expected) {
 }
 
 bool TLevel3::TryMatchByte(const char *expected) {
-  assert(this);
   uint8_t dummy;
   return TryMatchByte(expected, dummy);
 }
 
 bool TLevel3::TryMatchByte(const char *expected, uint8_t &match) {
-  assert(this);
   assert(&match);
   uint8_t c = Peek();
   bool success = (strchr(expected, c) != nullptr);

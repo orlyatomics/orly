@@ -27,12 +27,10 @@ using namespace Tools::Nycr;
 using namespace Tools::Nycr::Symbol;
 
 TCompound::TMember::~TMember() {
-  assert(this);
   assert(!Compound);
 }
 
 void TCompound::TMember::SetCompound(TCompound *compound) {
-  assert(this);
   if (Compound) {
     Compound->OnPart(this);
   }
@@ -48,7 +46,6 @@ void TCompound::TMember::SetCompound(TCompound *compound) {
 }
 
 void TCompound::OnJoin(TMember *member) {
-  assert(this);
   assert(member);
   pair<TName, TMember *> item(member->GetName(), member);
   auto result = MembersByName.insert(item);
@@ -66,7 +63,6 @@ void TCompound::OnJoin(TMember *member) {
 }
 
 void TCompound::OnPart(TMember *member) {
-  assert(this);
   assert(member);
   MembersByName.erase(member->GetName());
   auto iter = find(MembersInOrder.begin(), MembersInOrder.end(), member);

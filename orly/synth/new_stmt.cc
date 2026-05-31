@@ -44,13 +44,11 @@ TNewStmt::TNewStmt(const TExprFactory *expr_factory, const Package::Syntax::TNew
 }
 
 TNewStmt::~TNewStmt() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Symbol::Stmt::TStmt::TPtr TNewStmt::Build() const {
-  assert(this);
   return Symbol::Stmt::TNew::New(
              Symbol::Stmt::TStmtArg::New(Lhs->Build()),
              Symbol::Stmt::TStmtArg::New(Rhs->Build()),
@@ -58,7 +56,6 @@ Symbol::Stmt::TStmt::TPtr TNewStmt::Build() const {
 }
 
 void TNewStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -66,7 +63,6 @@ void TNewStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
 }
 
 void TNewStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);

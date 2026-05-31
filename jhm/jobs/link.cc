@@ -60,7 +60,6 @@ const char *TLink::GetName() {
 }
 
 const unordered_set<TFile*> TLink::GetNeeds() {
-  assert(this);
 
   // Seed the link search with the core input file.
   if (ObjFiles.empty()) {
@@ -117,7 +116,6 @@ unordered_set<TFile*> TLink::GetAntiNeeds() {
 }
 
 vector<string> TLink::GetCmd() {
-  assert(this);
 
   //TODO: If there are no C++ files, use 'gcc' to link instead of g++
   vector<string> cmd{"g++","-o" + GetSoleOutput()->GetPath()};
@@ -144,7 +142,6 @@ TTimestamp TLink::GetCmdTimestamp() const {
 }
 
 bool TLink::IsComplete() {
-  assert(this);
 
   return true;
 }

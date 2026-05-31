@@ -26,7 +26,6 @@ const TLevel1::TOptions TLevel1::DefaultOptions = {
 };
 
 void TLevel1::Update() {
-  assert(this);
   for (;;) {
     /* Peek at the next byte.  If there is none, we've reached end-of-file;
        otherwise, pop it. */

@@ -59,7 +59,6 @@ namespace Orly {
 
         /* TODO */
         void *Alloc(size_t size) {
-          assert(this);
           void *ptr = TryAlloc(size);
           if (!ptr) {
             size_t retry = 2000UL;
@@ -119,17 +118,14 @@ namespace Orly {
       };  // TPool
 
       inline const char *TPool::GetName() const {
-        assert(this);
         return Name;
       }
 
       inline size_t TPool::GetNumBlocksUsed() const {
-        assert(this);
         return NumBlocksUsed.load();
       }
 
       inline size_t TPool::GetMaxBlocks() const {
-        assert(this);
         return MaxBlocks;
       }
 

@@ -29,6 +29,5 @@ TSessionIdExpr::TSessionIdExpr(const Package::Syntax::TSessionIdExpr *session_id
     : SessionIdExpr(Base::AssertTrue(session_id_expr)) {}
 
 Expr::TExpr::TPtr TSessionIdExpr::Build() const {
-  assert(this);
   return Expr::TSessionId::New(GetPosRange(SessionIdExpr));
 }

@@ -210,7 +210,6 @@ namespace Orly {
 
         /* TODO */
         inline size_t operator[](size_t pos) const {
-          assert(this);
           assert(pos < VecSize);
           auto ub = BlockMap.upper_bound(pos);
           assert(ub != BlockMap.begin());
@@ -223,32 +222,27 @@ namespace Orly {
 
         /* TODO */
         inline size_t Front() const {
-          assert(this);
           assert(VecSize > 0UL);
           return BlockMap.begin()->second.first;
         }
 
         /* TODO */
         inline size_t Size() const {
-          assert(this);
           return VecSize;
         }
 
         /* TODO */
         TRandomIterator begin() const {
-          assert(this);
           return TRandomIterator(&BlockMap, BlockMap.begin(), 0UL);
         }
 
         /* TODO */
         TRandomIterator end() const {
-          assert(this);
           return TRandomIterator(&BlockMap, BlockMap.end(), VecSize);
         }
 
         /* Push back a single block id */
         inline void PushBack(size_t block_id) {
-          assert(this);
           if (unlikely(VecSize == 0)) {
             BlockMap.emplace(0, std::make_pair(block_id, 1UL));
           } else {
@@ -267,7 +261,6 @@ namespace Orly {
 
         /* Push back a sequential range */
         inline void PushBack(const std::pair<size_t, size_t> &block_range) {
-          assert(this);
           if (unlikely(VecSize == 0)) {
             BlockMap.emplace(0, std::make_pair(block_range.first, block_range.second));
           } else {
@@ -286,7 +279,6 @@ namespace Orly {
 
         /* remove the last n elements from the vector */
         void Trim(size_t n) {
-          assert(this);
           assert(n <= VecSize);
           const size_t pos = VecSize - n;
           auto pub = BlockMap.upper_bound(pos);
@@ -306,13 +298,11 @@ namespace Orly {
 
         /* TODO */
         const TBlockMap &GetSeqBlockMap() const {
-          assert(this);
           return BlockMap;
         }
 
         /* Call back for each sequential range (block, num seq block) where the index is >= start_index and < end_index */
         void ForEachSeqRangeInRange(const std::function<bool (size_t, size_t)> &cb, size_t start_index, size_t end_index) const {
-          assert(this);
           assert(start_index <= end_index);
           if (start_index < end_index) {
             auto ub = BlockMap.upper_bound(start_index);
@@ -338,7 +328,6 @@ namespace Orly {
 
         /* Debug Print facility */
         void Print(std::stringstream &ss) const {
-          assert(this);
           for (const auto &it : BlockMap) {
             ss << "[" << it.first << "] -> (" << it.second.first << " -> " << it.second.second << ")" << std::endl;
           }

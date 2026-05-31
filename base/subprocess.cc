@@ -39,7 +39,6 @@ int TSubprocess::WaitAll() {
 }
 
 int TSubprocess::Wait() const {
-  assert(this);
   int status;
   IfLt0(waitpid(ChildId, &status, 0));
   /* The Linux macros used to work with waitpid() use C-style casts, so we'll have to

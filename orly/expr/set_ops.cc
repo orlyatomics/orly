@@ -43,13 +43,11 @@ TIntersection::TIntersection(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, con
     : TBinary(lhs, rhs, pos_range) {}
 
 void TIntersection::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TIntersection::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TSetOpsTypeVisitor(type, GetPosRange()));
   return type;
@@ -63,13 +61,11 @@ TSymmetricDiff::TSymmetricDiff(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, c
     : TBinary(lhs, rhs, pos_range) {}
 
 void TSymmetricDiff::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TSymmetricDiff::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TSetOpsTypeVisitor(type, GetPosRange()));
   return type;
@@ -83,13 +79,11 @@ TUnion::TUnion(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &
     : TBinary(lhs, rhs, pos_range) {}
 
 void TUnion::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TUnion::GetTypeImpl () const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TSetOpsTypeVisitor(type, GetPosRange()));
   return type;

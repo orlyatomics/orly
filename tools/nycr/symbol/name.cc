@@ -30,14 +30,12 @@ using namespace Tools::Nycr;
 using namespace Tools::Nycr::Symbol;
 
 bool TName::operator<(const TName &that) const {
-  assert(this);
   return lexicographical_compare(
       Parts.begin(), Parts.end(),
       that.Parts.begin(), that.Parts.end());
 }
 
 void TName::WriteLower(ostream &strm) const {
-  assert(this);
   assert(&strm);
   for (auto iter = Parts.begin(); iter != Parts.end(); ++iter) {
     if (iter != Parts.begin()) {
@@ -48,7 +46,6 @@ void TName::WriteLower(ostream &strm) const {
 }
 
 void TName::WriteUpper(ostream &strm) const {
-  assert(this);
   assert(&strm);
   for (auto iter = Parts.begin(); iter != Parts.end(); ++iter) {
     const string &part = *iter;
@@ -57,7 +54,6 @@ void TName::WriteUpper(ostream &strm) const {
 }
 
 void TName::WriteXml(ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm << TXmlTag(TXmlTag::Name, Open, Indent, NoEndl);
   for (auto iter = Parts.begin(); iter != Parts.end(); ++iter) {

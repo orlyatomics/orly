@@ -64,7 +64,6 @@ const unordered_set<TFile*> TBison::GetNeeds() {
 }
 
 vector<string> TBison::GetCmd() {
-  assert(this);
   TFile *primary_output = GetOutputWithExtension(GetOutput(), {"cc"});
   return vector<string>{"bison","-rall","-o" + primary_output->GetPath(), GetInput()->GetPath()};
 }

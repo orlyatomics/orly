@@ -41,25 +41,21 @@ TPostfixCast::TPostfixCast(const TExprFactory *expr_factory, const Package::Synt
 }
 
 TPostfixCast::~TPostfixCast() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Expr::TExpr::TPtr TPostfixCast::Build() const {
-  assert(this);
   return Expr::TAs::New(Lhs->Build(), Rhs->GetSymbolicType(), GetPosRange(PostfixCast));
 }
 
 void TPostfixCast::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
 }
 
 void TPostfixCast::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);

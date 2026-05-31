@@ -43,12 +43,10 @@ class TActor {
   }
 
   double GetTimer() const {
-    assert(this);
     return Timer;
   }
 
   void Join() {
-    assert(this);
     Thread.join();
   }
 
@@ -61,7 +59,6 @@ class TActor {
   private:
 
   void Main(size_t spin_count) {
-    assert(this);
     /* extra */ {
       unique_lock<mutex> lock(Mutex);
       Cond.wait(lock, []{ return GoFlag; });

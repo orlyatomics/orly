@@ -29,16 +29,13 @@ TUnaryType::TUnaryType(TType *type, TGet get)
     : Type(Base::AssertTrue(type)), Get(get) {}
 
 TUnaryType::~TUnaryType() {
-  assert(this);
   delete Type;
 }
 
 void TUnaryType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   Type->ForEachRef(cb);
 }
 
 Type::TType TUnaryType::ComputeSymbolicType() const {
-  assert(this);
   return Get(Type->GetSymbolicType());
 }

@@ -140,7 +140,6 @@ TTimeDiffInfo::TTimeDiffInfo(const TTimeDiff &time_diff)
 
 /* TODO */
 std::string TTimeDiffInfo::AsString() const {
-  assert(this);
   std::ostringstream strm;
   Write(strm);
   return strm.str();
@@ -148,7 +147,6 @@ std::string TTimeDiffInfo::AsString() const {
 
 /* TODO */
 TTimeDiff TTimeDiffInfo::AsTimeDiff() const {
-  assert(this);
   return TTimeDiff((Day * NumNanosecond::Day +
                     Hour * NumNanosecond::Hour +
                     Minute * NumNanosecond::Minute +
@@ -158,7 +156,6 @@ TTimeDiff TTimeDiffInfo::AsTimeDiff() const {
 
 /* TODO */
 void TTimeDiffInfo::Write(std::ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm
     << (IsForward ? '+' : '-')
@@ -242,7 +239,6 @@ TTimePntInfo::TTimePntInfo(const TTimePnt &time_pnt)
 
 /* TODO */
 std::string TTimePntInfo::AsString() const {
-  assert(this);
   std::ostringstream strm;
   Write(strm);
   return strm.str();
@@ -250,7 +246,6 @@ std::string TTimePntInfo::AsString() const {
 
 /* TODO */
 TTimePnt TTimePntInfo::AsTimePnt() const {
-  assert(this);
 
   std::tm tm_obj;
   time_t zulu_time = timegm(&(AsTmObj(tm_obj)));
@@ -263,7 +258,6 @@ TTimePnt TTimePntInfo::AsTimePnt() const {
 /* Convert a TimePntObj to a std::tm
    NOTE. This is more of a helper function for AsTimePnt */
 std::tm &TTimePntInfo::AsTmObj(std::tm &out) const {
-  assert(this);
   out.tm_year = Year - 1900;
   out.tm_mon = Month - 1;
   out.tm_mday = Day;
@@ -277,7 +271,6 @@ std::tm &TTimePntInfo::AsTmObj(std::tm &out) const {
 
 /* TODO */
 void TTimePntInfo::Validate(const TCodeLocation &here) const {
-  assert(this);
   if (Year < 1900) {
     throw TChronoError(here, "Year prior to 1900 is not supported");
   }
@@ -306,7 +299,6 @@ void TTimePntInfo::Validate(const TCodeLocation &here) const {
 
 /* TODO */
 void TTimePntInfo::Write(std::ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm
     << Year << '-'

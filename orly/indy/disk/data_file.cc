@@ -44,7 +44,6 @@ class TIndexFile
           Note(note) {}
 
     bool operator<(const TOrderedNote &that) const {
-      assert(this);
       assert(&that);
       assert(Note);
       assert(that.Note);
@@ -67,7 +66,6 @@ class TIndexFile
     }
 
     bool operator==(const TOrderedNote &that) const {
-      assert(this);
       assert(&that);
       assert(Note);
       assert(that.Note);
@@ -87,7 +85,6 @@ class TIndexFile
     }
 
     bool operator!=(const TOrderedNote &that) const {
-      assert(this);
       assert(&that);
       assert(Note);
       assert(that.Note);
@@ -122,7 +119,6 @@ class TIndexFile
 
     /* TODO */
     bool operator<(const THashObj &that) const {
-      assert(this);
       assert(&that);
       return Hash < that.Hash;
     }
@@ -179,7 +175,6 @@ class TIndexFile
   }
 
   virtual ~TIndexFile() {
-    assert(this);
     /* write out the index meta-data */ {
       TDataFile::TDataOutStream meta_stream(HERE,
                                             Source::DataFileOther,
@@ -390,7 +385,6 @@ void TIndexFile::EmplaceOrderedNotes(TOrderedNoteIndex &note_index, TSuprena *ar
 }
 
 void TIndexFile::PrepKeyRange(TDataFile::TUpdateCollector *update_collector, TDataFile::TBlockVec *block_vec) {
-  assert(this);
   assert(MaxKeyCount);
   assert(!UpdateCollector);
   BlockVec = block_vec;
@@ -433,7 +427,6 @@ void TIndexFile::PrepKeyRange(TDataFile::TUpdateCollector *update_collector, TDa
 }
 
 Atom::TCore::TOffset TIndexFile::RemapKey(Atom::TCore::TOffset offset) {
-  assert(this);
   assert(CurArena);
   auto pos = ArenaRemapIndex.find(TRemapObj(CurArena, offset, 0UL /* not used */));
   assert(pos != ArenaRemapIndex.end());
@@ -441,7 +434,6 @@ Atom::TCore::TOffset TIndexFile::RemapKey(Atom::TCore::TOffset offset) {
 }
 
 Atom::TCore::TOffset TIndexFile::RemapVal(Atom::TCore::TOffset offset) {
-  assert(this);
   assert(CurArena);
   auto pos = MainArenaRemapIndex.find(TRemapObj(CurArena, offset, 0UL /* not used */));
   assert(pos != MainArenaRemapIndex.end());
@@ -465,7 +457,6 @@ void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec) {
 }
 
 void TIndexFile::PushKey(TUpdate::TEntry *entry) {
-  assert(this);
   assert(UpdateCollector);
   const TKey &key = entry->GetKey();
   #ifndef NDEBUG
@@ -557,7 +548,6 @@ void TIndexFile::PushKey(TUpdate::TEntry *entry) {
 }
 
 void TIndexFile::FlushHistory() {
-  assert(this);
   TDataFile::TDataOutStream &stream = *KeyStream;
   if (PrevKeyWritten) {
     stream << NumHistoryElem << ByteOffsetOfHistory;
@@ -580,7 +570,6 @@ void TIndexFile::FlushHistory() {
 }
 
 void TIndexFile::FlushHashes() {
-  assert(this);
   size_t total_bytes_required = 0UL;
   unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
   size_t hash_index_byte_offset = BlockVec->Size() * Disk::Util::LogicalBlockSize;
@@ -768,7 +757,6 @@ TDataFile::TDataFile(Util::TEngine *engine,
       NumKeys(0UL),
       TempFileConsolThresh(temp_file_consol_thresh),
       UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true) {
-  assert(this);
   try {
     auto main_arena_note_index = make_unique<TIndexFile::TOrderedNoteIndex>(
         HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);

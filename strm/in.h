@@ -85,7 +85,6 @@ namespace Strm {
       /* True iff. there is data to be consumed.  If the producer is open-
          ended (such as a socket), this will always be true. */
       operator bool() const {
-        assert(this);
         TryRefresh();
         return !AtEnd;
       }
@@ -102,14 +101,12 @@ namespace Strm {
 
       /* Peeks at the next byte of data. */
       uint8_t Peek() const {
-        assert(this);
         Refresh();
         return *Cursor;
       }
 
       /* Peeks at the next bytes of data. */
       void Peek(const uint8_t *&start, const uint8_t *&limit) const {
-        assert(this);
         assert(&start);
         assert(&limit);
         Refresh();
@@ -119,7 +116,6 @@ namespace Strm {
 
       /* Pops the next byte of data. */
       uint8_t Pop() {
-        assert(this);
         Refresh();
         return *Cursor++;
       }
@@ -132,7 +128,6 @@ namespace Strm {
 
       /* Skips the next byte of data. */
       void Skip() {
-        assert(this);
         Refresh();
         Cursor++;
       }
@@ -142,7 +137,6 @@ namespace Strm {
 
       /* A pointer to the next byte, if there is one; otherwise, return null. */
       const uint8_t *TryPeek() const {
-        assert(this);
         TryRefresh();
         return (Cursor < Limit) ? Cursor : nullptr;
       }
@@ -154,7 +148,6 @@ namespace Strm {
          succeed.  If not, and we have reached the end of our producer's data,
          we throw TPastEnd. */
       void Refresh() const {
-        assert(this);
         TryRefresh();
         if (Cursor >= Limit) {
           throw TPastEnd();

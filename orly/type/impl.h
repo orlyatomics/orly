@@ -70,7 +70,6 @@ namespace Orly {
 
         /* TODO */
         TType AsType() const {
-          assert(this);
           return TType(shared_from_this());
         }
 
@@ -116,7 +115,6 @@ namespace Orly {
 
       /* TODO */
       TType &operator=(TType &&that) {
-        assert(this);
         assert(&that);
         std::swap(Impl, that.Impl);
         return *this;
@@ -124,14 +122,12 @@ namespace Orly {
 
       /* TODO */
       TType &operator=(const TType &that) {
-        assert(this);
         assert(&that);
         return *this = TType(that);
       }
 
       /* TODO */
       bool operator==(const TType &that) const {
-        assert(this);
         assert(&that);
         assert(Impl);
         assert(that.Impl);
@@ -140,7 +136,6 @@ namespace Orly {
 
       /* TODO */
       bool operator!=(const TType &that) const {
-        assert(this);
         assert(&that);
         assert(Impl);
         assert(that.Impl);
@@ -152,7 +147,6 @@ namespace Orly {
 
       /* TODO */
       void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         assert(Impl);
         Impl->Accept(visitor);
@@ -166,7 +160,6 @@ namespace Orly {
 
       /* TODO */
       size_t GetHash() const {
-        assert(this);
         assert(Impl);
         return reinterpret_cast<size_t>(Impl.get());
       }

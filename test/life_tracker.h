@@ -49,7 +49,6 @@ namespace Test {
 
       /* True iff. all counts equal. */
       bool operator==(const TCounts &that) const noexcept {
-        assert(this);
         assert(&that);
         return
             MoveCtor == that.MoveCtor &&
@@ -99,7 +98,6 @@ namespace Test {
 
     /* Take on the identity of our donor and count a move-assignment. */
     TLifeTracker &operator=(TLifeTracker &&that) noexcept {
-      assert(this);
       assert(&that);
       Counts = that.Counts;
       ++(Counts->MoveAssign);
@@ -108,7 +106,6 @@ namespace Test {
 
     /* Take on the identity of our example and count a copy-assignment. */
     TLifeTracker &operator=(const TLifeTracker &that) {
-      assert(this);
       assert(&that);
       Counts = that.Counts;
       ++(Counts->CopyAssign);
@@ -117,13 +114,11 @@ namespace Test {
 
     /* Get our counts. */
     const TCounts &operator*() const noexcept {
-      assert(this);
       return *Counts;
     }
 
     /* Get our counts. */
     const TCounts *operator->() const noexcept {
-      assert(this);
       return Counts.get();
     }
 

@@ -25,6 +25,5 @@ TThatableUnary::TThatableUnary(const TExpr::TPtr &expr, const TPosRange &pos_ran
     : TUnary(expr, pos_range) {}
 
 Type::TType TThatableUnary::GetThatType() const {
-  assert(this);
   return GetExpr()->GetType();
 }

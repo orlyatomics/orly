@@ -61,7 +61,6 @@ class TCompilerConfig : public Base::TCmd {
 
     private:
     virtual void WriteAfterDesc(std::ostream &strm) const {
-      assert(this);
       assert(&strm);
       strm << "Build: Unknown" << endl // TODO: Version from SCM.
            << endl
@@ -72,7 +71,6 @@ class TCompilerConfig : public Base::TCmd {
   };  // TMeta
 
   virtual TCmd::TMeta *NewMeta() const {
-    assert(this);
     return new TMeta();
   }
 

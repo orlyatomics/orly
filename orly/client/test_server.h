@@ -56,17 +56,14 @@ namespace Orly {
       TMsgHdr &operator=(const TMsgHdr &) = default;
 
       TKind GetKind() const {
-        assert(this);
         return Kind;
       }
 
       uint32_t GetRequestId() const {
-        assert(this);
         return RequestId;
       }
 
       uint32_t GetSize() const {
-        assert(this);
         return Size;
       }
 
@@ -189,7 +186,6 @@ namespace Orly {
 
       /* The address on which the server accepts client connections. */
       const Socket::TAddress &GetAcceptingAddress() const {
-        assert(this);
         return AcceptingAddress;
       }
 

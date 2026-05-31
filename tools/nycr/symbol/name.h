@@ -64,26 +64,22 @@ namespace Tools {
 
         /* TODO */
         TName &operator=(TName &&that) {
-          assert(this);
           std::swap(Parts, that.Parts);
           return *this;
         }
 
         /* TODO */
         TName &operator=(const TName &that) {
-          assert(this);
           return *this = TName(that);
         }
 
         /* TODO */
         TName &operator=(const char *that) {
-          assert(this);
           return *this = TName(that);
         }
 
         /* TODO */
         TName &operator=(const std::string &that) {
-          assert(this);
           return *this = TName(that);
         }
 

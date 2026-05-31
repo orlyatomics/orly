@@ -34,7 +34,6 @@ TSlice::TSlice(const L0::TPackage *package,
 
 
 void TSlice::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << "Slice" << (Colon ? "Range" : "Single");

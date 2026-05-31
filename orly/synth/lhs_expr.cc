@@ -37,6 +37,5 @@ TLhsExpr::TLhsExpr(const TExprFactory *expr_factory, const Package::Syntax::TLhs
 }
 
 Expr::TExpr::TPtr TLhsExpr::Build() const {
-  assert(this);
   return Expr::TLhs::New(LhsRhsableExpr->GetLhsRhsableSymbol(), GetPosRange(LhsExpr));
 }

@@ -66,7 +66,6 @@ class TPump::TPipe {
 
   /* Pipes data into the buffer file as needed. Returns true if there will be more processing down the line. */
   bool Service() {
-    assert(this);
     static_assert(ReadBufSize > 0, "Read buffer size must be greater than zero otherwise we infinite loop.");
 
     if (ReadFd.IsOpen()) {
@@ -148,7 +147,6 @@ class TPump::TPipe {
   void ReleaseBlock() { Pump->BlockPool.Recycle(Pop(Blocks)); }
 
   void StartWriting() {
-    assert(this);
     if (!Writing) {
       Pump->JoinEpoll(WriteFd, EPOLLOUT, this);
       Writing = true;
@@ -159,7 +157,6 @@ class TPump::TPipe {
      after the write-error fallback has already invoked it, and safe from
      ~TPipe after a Service() call has already torn the read side down. */
   void StopWriting() {
-    assert(this);
     if (Writing && WriteFd.IsOpen()) {
       Pump->PartEpoll(WriteFd);
     }
@@ -173,7 +170,6 @@ class TPump::TPipe {
      double-call. Without the open-check the second PartEpoll passes -1
      and EBADF terminates jhm. */
   void StopReading() {
-    assert(this);
     if (ReadFd.IsOpen()) {
       Pump->PartEpoll(ReadFd);
       ReadFd.Reset();
@@ -231,14 +227,12 @@ TPump::~TPump() {
 }
 
 bool TPump::IsIdle() const {
-  assert(this);
 
   //TODO: Make a better guaranteed atomic check for whether or not we are idle
   return Pipes.empty();
 }
 
 void TPump::BackgroundMain() {
-  assert(this);
 
   // TODO: Block all signals
 
@@ -283,7 +277,6 @@ void TPump::BackgroundMain() {
 }
 
 void TPump::JoinEpoll(int fd, uint32_t events, TPipe *pipe) {
-  assert(this);
   epoll_event event;
   event.events = events;
   event.data.ptr = pipe;
@@ -296,7 +289,6 @@ void TPump::JoinEpoll(int fd, uint32_t events, TPipe *pipe) {
 }
 
 void TPump::PartEpoll(int fd) {
-  assert(this);
   int rc = epoll_ctl(Epoll, EPOLL_CTL_DEL, fd, nullptr);
   if (rc < 0) {
     std::fprintf(stderr, "TPump::PartEpoll(Epoll=%d, fd=%d) failed errno=%d\n",

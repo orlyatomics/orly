@@ -49,13 +49,11 @@ TList::TList(const TExprVec &exprs, const TPosRange &pos_range)
 }
 
 void TList::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TList::GetTypeImpl() const {
-  assert(this);
   if (!Type) {
     Type::TType elem = Type::Unwrap(GetExprs().front()->GetType());
     bool is_sequence = false;

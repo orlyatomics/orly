@@ -45,26 +45,22 @@ namespace Strm {
       /* The limit of the data we contain.
          Always >= GetStart().  Never null. */
       const uint8_t *GetLimit() const noexcept {
-        assert(this);
         return Limit;
       }
 
       /* The number of bytes we contain.  Can be zero. */
       size_t GetSize() const noexcept {
-        assert(this);
         return Limit - Workspace;
       }
 
       /* The start of the data we contain.
          Always <= GetLimit().  Never null. */
       const uint8_t *GetStart() const noexcept {
-        assert(this);
         return Workspace;
       }
 
       /* Go back to being empty. */
       void Reset() const noexcept {
-        assert(this);
         Limit = Workspace;
       }
 
@@ -72,7 +68,6 @@ namespace Strm {
 
       /* See Out::TCons. */
       virtual void Cycle(uint8_t *cursor, uint8_t **start, uint8_t **limit) override {
-        assert(this);
         if (cursor) {
           assert(cursor >= Limit);
           assert(cursor <= Workspace + MaxSize);

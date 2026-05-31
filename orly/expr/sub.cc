@@ -43,13 +43,11 @@ TSub::TSub(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TSub::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TSub::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TSubTypeVisitor(type, GetPosRange()));
   return type;

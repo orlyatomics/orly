@@ -69,14 +69,12 @@ namespace Orly {
 
         /* TODO */
         void Stop() {
-          assert(this);
 
           SetTask(TaskStop);
         }
 
         /* TODO */
         void AddPov(TParentPov *pov) {
-          assert(this);
           epoll_event event;
           Base::Zero(event);
           event.events = EPOLLIN;
@@ -86,13 +84,11 @@ namespace Orly {
 
         /* TODO */
         void RemovePov(TParentPov *pov) {
-          assert(this);
           epoll_ctl(EpollFD, EPOLL_CTL_DEL, pov->GetTetrisWaitHandle(), 0);
         }
 
         /* Has the calling thread "wait" until the tetris handler has run out of updates to process. */
         void Drain() {
-          assert(this);
 
           SetTask(TaskDrain);
         }
@@ -120,7 +116,6 @@ namespace Orly {
 
         /* TODO */
         void Callback(std::unordered_map<TUpdate *, int> &m) {
-          assert(this);
           assert(&m);
           for (auto iter = m.begin(); iter != m.end(); ++iter) {
             iter->second = 1;
@@ -143,7 +138,6 @@ namespace Orly {
 
         /* TODO */
         void HandlerFunc() {
-          assert(this);
           epoll_event event;
           Base::Zero(event);
           event.events = EPOLLIN;
@@ -254,7 +248,6 @@ namespace Orly {
 
         /* TODO */
         ~TStore() {
-          assert(this);
           if (!Draining) {
             Drain();
           }
@@ -262,7 +255,6 @@ namespace Orly {
 
         /* TODO */
         void Drain() {
-          assert(this);
           {
             std::unique_lock<std::mutex> lock(Mutex);
             Running = false;
@@ -283,7 +275,6 @@ namespace Orly {
 
         /* TODO */
         void AddVal(TVal *val) {
-          assert(this);
           if (Running) {
             std::lock_guard<std::mutex> lock(Mutex);
             auto cache_member = Cache.GetUUIDCollection()->TryGetFirstMember(val->GetUUID());
@@ -311,7 +302,6 @@ namespace Orly {
 
         /* TODO */
         void AddToCache(TVal *val) {
-          assert(this);
           std::lock_guard<std::mutex> lock(Mutex);
           auto new_member = new TCacheMember(&Cache, val->GetUUID(), val);
           new_member->Incr();
@@ -319,7 +309,6 @@ namespace Orly {
 
         /* TODO */
         typename TVal::TPtr Rendezvous(const Base::TUuid &uuid) {
-          assert(this);
           std::lock_guard<std::mutex> lock(Mutex);
           auto cache_member = Cache.GetUUIDCollection()->TryGetFirstMember(uuid);
           if (cache_member) {
@@ -339,7 +328,6 @@ namespace Orly {
 
 
         bool ForEach(const std::function<bool (TVal *)> &cb) const {
-          assert(this);
           assert(&cb);
           assert(cb);
 
@@ -371,20 +359,17 @@ namespace Orly {
 
           /* TODO */
           ~TStoreData() {
-            assert(this);
             TimeCollection.DeleteEachMember();
             UUIDCollection.DeleteEachMember();
           }
 
           /* TODO */
           TTimeCollection *GetTimeCollection() const {
-            assert(this);
             return &TimeCollection;
           }
 
           /* TODO */
           TUUIDCollection *GetUUIDCollection() const {
-            assert(this);
             return &UUIDCollection;
           }
 
@@ -415,38 +400,32 @@ namespace Orly {
 
           /* TODO */
           ~TDataMember() {
-            assert(this);
             TimeListMembership.Remove();
             UUIDMembership.Remove();
           }
 
           /* TODO */
           const std::chrono::time_point<std::chrono::system_clock> &GetTime() const {
-            assert(this);
             return TimeListMembership.GetKey();
           }
 
           /* TODO */
           const Base::TUuid &GetUUID() const {
-            assert(this);
             return UUIDMembership.GetKey();
           }
 
           /* TODO */
           TVal *GetVal() const {
-            assert(this);
             return Val;
           }
 
           /* TODO */
           TTimeListMembership *GetTTimeListMembership() {
-            assert(this);
             return &TimeListMembership;
           }
 
           /* TODO */
           TUUIDMembership *GetUUIDMembership() {
-            assert(this);
             return &UUIDMembership;
           }
 
@@ -479,13 +458,11 @@ namespace Orly {
 
           /* TODO */
           ~TCache() {
-            assert(this);
             UUIDCollection.DeleteEachMember();
           }
 
           /* TODO */
           TUUIDCollection *GetUUIDCollection() const {
-            assert(this);
             return &UUIDCollection;
           }
 
@@ -509,31 +486,26 @@ namespace Orly {
 
           /* TODO */
           ~TCacheMember() {
-            assert(this);
             UUIDMembership.Remove();
           }
 
           /* TODO */
           TVal *GetVal() const {
-            assert(this);
             return Val;
           }
 
           /* TODO */
           TUUIDMembership *GetUUIDMembership() {
-            assert(this);
             return &UUIDMembership;
           }
 
           /* TODO */
           size_t Decr() {
-            assert(this);
             return --Outstanding;
           }
 
           /* TODO */
           void Incr() {
-            assert(this);
             ++Outstanding;
           }
 
@@ -552,7 +524,6 @@ namespace Orly {
 
         /* TODO */
         void Collect() {
-          assert(this);
           std::unique_lock<std::mutex> lock(Mutex);
           while (Running) {
             std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
@@ -631,20 +602,17 @@ namespace Orly {
           }
 
           TSessionObj *GetSessionObj() const {
-            assert(this);
 
             return SessionObj;
           }
 
           /* TODO */
           const Base::TUuid &GetUUID() const {
-            assert(this);
             return SessionObj->GetUUID();
           }
 
           /* TODO */
           const Base::TOpt<Base::TUuid> &GetAcct() const {
-            assert(this);
             return SessionObj->GetAcct();
           }
 
@@ -685,19 +653,16 @@ namespace Orly {
 
         /* TODO */
         const Base::TOpt<Base::TUuid> &GetAcct() const {
-          assert(this);
           return Acct;
         }
 
         /* TODO */
         int GetTtl() const {
-          assert(this);
           return Ttl;
         }
 
         /* TODO */
         const Base::TUuid &GetUUID() const {
-          assert(this);
           return UUID;
         }
 
@@ -843,13 +808,11 @@ namespace Orly {
 
           /* TODO */
           TSharedPov *GetSharedPov() const {
-            assert(this);
             return SharedPovObj->SharedPov;
           }
 
           /* TODO */
           const Base::TUuid &GetUUID() const {
-            assert(this);
             return SharedPovObj->UUID;
           }
 
@@ -886,20 +849,17 @@ namespace Orly {
 
         /* TODO */
         ~TSharedPovObj() {
-          assert(this);
           Base::AssertTrue(TAnyHoncho::GetAnyHoncho())->GetTetrisHandler().RemovePov(SharedPov);
           delete SharedPov;
         }
 
         /* TODO */
         int GetTtl() const {
-          assert(this);
           return Ttl;
         }
 
         /* TODO */
         const Base::TUuid &GetUUID() const {
-          assert(this);
           return UUID;
         }
 
@@ -972,31 +932,26 @@ namespace Orly {
 
           /* TODO */
           const TSync &GetSync() const {
-            assert(this);
             return PrivatePovObj->PrivatePov->GetSync();
           }
 
           /* TODO */
           const Base::TUuid &GetUUID() const {
-            assert(this);
             return PrivatePovObj->UUID;
           }
 
 
           TSessionObj::TSessionHandle::TPtr GetSession() const {
-            assert(this);
             return PrivatePovObj->SessionPtr;
           }
 
 
           /* TODO */
           TPrivatePov *GetPrivatePov() const {
-            assert(this);
             return PrivatePovObj->PrivatePov;
           }
 
           TPrivatePovObj *GetObj() const {
-            assert(this);
             return PrivatePovObj;
           }
 
@@ -1038,19 +993,16 @@ namespace Orly {
 
         /* TODO */
         ~TPrivatePovObj() {
-          assert(this);
           delete PrivatePov;
         }
 
         /* TODO */
         int GetTtl() const {
-          assert(this);
           return Ttl;
         }
 
         /* TODO */
         const Base::TUuid &GetUUID() const {
-          assert(this);
           return UUID;
         }
 
@@ -1060,7 +1012,6 @@ namespace Orly {
         }
 
         TPrivatePov *GetNative() const {
-          assert(this);
           return PrivatePov;
         }
 

@@ -65,43 +65,36 @@ namespace Utf8 {
 
     /* True iff. the this piece is non-empty. */
     operator bool() const {
-      assert(this);
       return Limit != Start;
     }
 
     /* Same as Compare(that) == 0. */
     bool operator==(const TPiece &that) const {
-      assert(this);
       return Compare(that) == 0;
     }
 
     /* Same as Compare(that) != 0. */
     bool operator!=(const TPiece &that) const {
-      assert(this);
       return Compare(that) != 0;
     }
 
     /* Same as Compare(that) < 0. */
     bool operator<(const TPiece &that) const {
-      assert(this);
       return Compare(that) < 0;
     }
 
     /* Same as Compare(that) <= 0. */
     bool operator<=(const TPiece &that) const {
-      assert(this);
       return Compare(that) <= 0;
     }
 
     /* Same as Compare(that) > 0. */
     bool operator>(const TPiece &that) const {
-      assert(this);
       return Compare(that) > 0;
     }
 
     /* Same as Compare(that) >= 0. */
     bool operator>=(const TPiece &that) const {
-      assert(this);
       return Compare(that) >= 0;
     }
 
@@ -110,7 +103,6 @@ namespace Utf8 {
 
     /* True iff. this piece contains the given address. */
     bool Contains(const char *ptr) const {
-      assert(this);
       return Start <= ptr && ptr < Limit;
     }
 
@@ -118,7 +110,6 @@ namespace Utf8 {
        Runs in constant time.
        The piece need not be valid. */
     size_t GetByteCount() const {
-      assert(this);
       return Limit - Start;
     }
 
@@ -136,7 +127,6 @@ namespace Utf8 {
        Always >= Start.
        Can be null iff. Start is also null. */
     const char *GetLimit() const {
-      assert(this);
       return Limit;
     }
 
@@ -144,13 +134,11 @@ namespace Utf8 {
        Always <= Limit.
        Can be null. */
     const char *GetStart() const {
-      assert(this);
       return Start;
     }
 
     /* True iff. this string piece and that one are pointing at the same memory. */
     bool Is(const TPiece &that) const {
-      assert(this);
       assert(&that);
       return Start == that.Start && Limit == that.Limit;
     }
@@ -158,7 +146,6 @@ namespace Utf8 {
     /* Return the first code point in this piece and shorten this piece by one code point.
        If this piece is empty or if the first code point is invalid, throw. */
     uint32_t Peek() const {
-      assert(this);
       return TPiece(*this).Pop();
     }
 
@@ -169,7 +156,6 @@ namespace Utf8 {
 
     /* Reset to the default-constructed state. */
     TPiece &Reset() {
-      assert(this);
       Start = nullptr;
       Limit = nullptr;
       return *this;
@@ -179,7 +165,6 @@ namespace Utf8 {
        If this piece is empty, throw.
        If the first code point is invalid, shorten this piece anyway, but then throw. */
     TPiece Split() {
-      assert(this);
       const char *temp = Start;
       Pop();
       return TPiece(temp, Start);

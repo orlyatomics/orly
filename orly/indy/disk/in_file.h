@@ -174,7 +174,6 @@ namespace Orly {
 
         /* TODO */
         virtual ~TStream() {
-          assert(this);
           AsyncTrigger.Wait();
           if (MaxLocalCacheSize > 0) {
             /* do-little: LocalBufCache releases cache state correctly */
@@ -185,7 +184,6 @@ namespace Orly {
 
         /* TODO */
         void Read(size_t &out) {
-          assert(this);
           assert(ByteOffset + sizeof(size_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(size_t))) {
             //out = *reinterpret_cast<const size_t *>(BufData + OffsetInPage);
@@ -203,7 +201,6 @@ namespace Orly {
 
         /* TODO */
         void Read(int64_t &out) {
-          assert(this);
           assert(ByteOffset + sizeof(int64_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(int64_t))) {
             //out = *reinterpret_cast<const int64_t *>(BufData + OffsetInPage);
@@ -221,7 +218,6 @@ namespace Orly {
 
         /* TODO */
         void Read(uint8_t &out) {
-          assert(this);
           assert(ByteOffset + sizeof(uint8_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uint8_t))) {
             //out = *reinterpret_cast<const uint8_t *>(BufData + OffsetInPage);
@@ -239,7 +235,6 @@ namespace Orly {
 
         /* TODO */
         void Read(uint16_t &out) {
-          assert(this);
           assert(ByteOffset + sizeof(uint16_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uint16_t))) {
             //out = *reinterpret_cast<const uint16_t *>(BufData + OffsetInPage);
@@ -257,7 +252,6 @@ namespace Orly {
 
         /* TODO */
         void Read(uint32_t &out) {
-          assert(this);
           assert(ByteOffset + sizeof(uint32_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uint32_t))) {
             //out = *reinterpret_cast<const uint32_t *>(BufData + OffsetInPage);
@@ -275,7 +269,6 @@ namespace Orly {
 
         /* TODO */
         void Read(bool &out) {
-          assert(this);
           assert(ByteOffset + sizeof(bool) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(bool))) {
             //out = *reinterpret_cast<const bool *>(BufData + OffsetInPage);
@@ -293,7 +286,6 @@ namespace Orly {
 
         /* TODO */
         void Read(Base::TUuid &out) {
-          assert(this);
           assert(ByteOffset + sizeof(uuid_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uuid_t))) {
           if (OffsetInChunk <= (DataChunkSize - sizeof(uuid_t))) {
@@ -315,7 +307,6 @@ namespace Orly {
 
         /* TODO */
         void Read(void *buf, size_t len) {
-          assert(this);
           assert(ByteOffset + len <= EndOfStream);
           size_t left = len;
           char *ptr = reinterpret_cast<char *>(buf);
@@ -336,7 +327,6 @@ namespace Orly {
 
         /* TODO */
         inline void Skip(size_t num_bytes) {
-          assert(this);
           assert(ByteOffset + num_bytes <= EndOfStream);
           ByteOffset += num_bytes;
           CheckBuf();
@@ -347,7 +337,6 @@ namespace Orly {
 
         /* TODO */
         inline void GoTo(size_t offset) {
-          assert(this);
           assert(offset <= EndOfStream);
           assert(offset < EndOfStream);
           ByteOffset = offset;
@@ -359,67 +348,56 @@ namespace Orly {
 
         /* TODO */
         inline operator bool() const {
-          assert(this);
           return ByteOffset < EndOfStream;
         }
 
         /* TODO */
         inline size_t GetOffset() const {
-          assert(this);
           return ByteOffset;
         }
 
         /* TODO */
         size_t GetLoadedPageId() const {
-          assert(this);
           return LoadedPageId;
         }
 
         /* TODO */
         Util::TPageCache::TSlot *GetLoadedMainSlot() const {
-          assert(this);
           assert(MainSlot);
           return MainSlot;
         }
 
         /* TODO */
         Util::TPageCache::TSlot *GetLoadedDataSlot() const {
-          assert(this);
           assert(DataSlot);
           return DataSlot;
         }
 
         size_t GetOffsetInChunk() const {
-          assert(this);
           return OffsetInChunk;
         }
         size_t GetChunkInPage() const {
-          assert(this);
           return ChunkInPage;
         }
 
         /* TODO */
         size_t GetFetchCount() const {
-          assert(this);
           return FetchCount;
         }
 
         /* TODO */
         inline size_t FindPageIdOfByte(size_t offset) const {
-          assert(this);
           return File->FindPageIdOfByte(offset);
         }
 
         /* TODO */
         const char *GetData() const {
-          assert(this);
           //return (BufData + OffsetInPage);
           return (BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk);
         }
 
         /* TODO */
         void ReleaseBuf() {
-          assert(this);
           ByteOffset = -1;
           if (MainSlot) {
             Cache->Release(MainSlot, LoadedPageId);
@@ -483,7 +461,6 @@ namespace Orly {
 
         /* TODO */
         inline void FetchBuf(size_t page_id, size_t offset) {
-          assert(this);
           const size_t prev_loaded_page_id = LoadedPageId;
           LoadedPageId = page_id;
           LoadedByteStart = (offset / CachePageSize) * CachePageSize;
@@ -540,7 +517,6 @@ namespace Orly {
 
         /* TODO */
         inline void CheckBuf() {
-          assert(this);
           if ((ByteOffset >= LoadedByteEnd || ByteOffset < LoadedByteStart) && ByteOffset < EndOfStream) {
             size_t page_id_of_byte_index = FindPageIdOfByte(ByteOffset);
             FetchBuf(page_id_of_byte_index, ByteOffset);
@@ -588,7 +564,6 @@ namespace Orly {
                 MainSlot(main_slot),
                 DataSlot(data_slot) {}
           ~TSlotStruct() {
-            assert(this);
             Cache->Release(MainSlot, PageId);
           }
           const size_t PageId;

@@ -45,7 +45,6 @@ namespace Strm {
       /* Returns a pointer to the last value decoded, or null if we're in the
          middle of decoding. */
       const uint64_t *operator*() const noexcept {
-        assert(this);
         return !Shift ? &Accum : nullptr;
       }
 
@@ -95,20 +94,17 @@ namespace Strm {
 
       /* The limit of our encoded data.  Always >= GetStart(). */
       const uint8_t *GetLimit() const noexcept {
-        assert(this);
         return Limit;
       }
 
       /* The number of bytes of encoded data we currently hold.
          This can be zero. */
       size_t GetSize() const noexcept {
-        assert(this);
         return Limit - Buffer;
       }
 
       /* The start of our encoded data.  Always <= GetLimit(). */
       const uint8_t *GetStart() const noexcept {
-        assert(this);
         return Buffer;
       }
 

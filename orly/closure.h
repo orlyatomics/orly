@@ -55,7 +55,6 @@ namespace Orly {
 
       /* Return an iterator to the nth element in the map. */
       TCoreByName::const_iterator operator[](size_t elem_idx) const {
-        assert(this);
         assert(elem_idx < Closure->CoreByName.size());
         if (ElemIdx > elem_idx) {
           Rewind();
@@ -69,7 +68,6 @@ namespace Orly {
 
       /* The closure whose map we're walking. */
       const TClosure *GetClosure() const {
-        assert(this);
         return Closure;
       }
 
@@ -77,7 +75,6 @@ namespace Orly {
 
       /* Send Iter and ElemIdx back to the beginning of the map. */
       void Rewind() const {
-        assert(this);
         Iter = Closure->CoreByName.begin();
         ElemIdx = 0;
       }
@@ -206,14 +203,12 @@ namespace Orly {
 
     /* TODO */
     void AddArgBySabot(const std::string &name, const Sabot::State::TAny *state) {
-      assert(this);
       AddCore(name, Atom::TCore(Arena.get(), state));
     }
 
     /* TODO */
     template <typename TVal>
     TVal &GetArg(const std::string &name, TVal &out) const {
-      assert(this);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Sabot::State::TAny::TWrapper state(GetCore(name)->NewState(Arena.get(), state_alloc));
       Sabot::ToNative(*state, out);
@@ -222,25 +217,21 @@ namespace Orly {
 
     /* TODO */
     const std::shared_ptr<Atom::TSuprena> &GetArena() const {
-      assert(this);
       return Arena;
     }
 
     /* TODO */
     size_t GetArgCount() const {
-      assert(this);
       return CoreByName.size();
     }
 
     /* TODO */
     const TCoreByName &GetCoreByName() const {
-      assert(this);
       return CoreByName;
     }
 
     /* TODO */
     const std::string &GetMethodName() const {
-      assert(this);
       return MethodName;
     }
 
@@ -262,7 +253,6 @@ namespace Orly {
     /* TODO */
     template <typename TVal>
     bool AddArg(const std::string &name, const TVal &val) {
-      assert(this);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Sabot::State::TAny::TWrapper state(Native::State::New(val, state_alloc));
       return AddCore(name, Atom::TCore(Arena.get(), state));

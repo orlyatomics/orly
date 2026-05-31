@@ -29,13 +29,11 @@ TRule::TRule(const Syntax::TRule *decl)
     : TCompound(decl->GetName(), decl->GetOptSuper(), decl->GetOptRhs()), Symbol(0) {}
 
 Symbol::TCompound *TRule::GetSymbolAsCompound() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 bool TRule::Build(int pass) {
-  assert(this);
   bool is_done;
   switch (pass) {
     case 1: {

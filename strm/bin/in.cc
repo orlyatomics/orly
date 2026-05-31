@@ -25,7 +25,6 @@ using namespace std;
 using namespace Strm::Bin;
 
 TIn &TIn::operator>>(bool &that) {
-  assert(this);
   assert(&that);
   switch (Peek()) {
     case 'T': {
@@ -45,7 +44,6 @@ TIn &TIn::operator>>(bool &that) {
 }
 
 TIn &TIn::operator>>(string &that) {
-  assert(this);
   assert(&that);
   size_t size;
   *this >> size;
@@ -57,7 +55,6 @@ TIn &TIn::operator>>(string &that) {
 }
 
 uint64_t TIn::ReadVarInt() {
-  assert(this);
   const uint8_t *start, *limit;
   TVarIntDecoder decoder;
   const uint64_t *val;

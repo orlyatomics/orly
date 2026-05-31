@@ -114,7 +114,6 @@ namespace Io {
     /* Resume use of the previous formatting options.
        It is not legal to destroy a formatter other than the most recent one. */
     ~TFormatter() {
-      assert(this);
       /* Formatters must be destroyed in the opposite order in which they were created.
          If this assertion fails, it means we're being destroyed out of order. */
       assert(Strm->NewestFormatter == this);
@@ -123,25 +122,21 @@ namespace Io {
 
     /* Our formatting options. */
     const TFormat &operator*() const {
-      assert(this);
       return Format;
     }
 
     /* Our formatting options. */
     TFormat &operator*() {
-      assert(this);
       return Format;
     }
 
     /* Our formatting options. */
     const TFormat *operator->() const {
-      assert(this);
       return &Format;
     }
 
     /* Our formatting options. */
     TFormat *operator->() {
-      assert(this);
       return &Format;
     }
 
@@ -161,14 +156,12 @@ namespace Io {
   /* See declaration. */
   template <typename TFormat>
   const TFormat &TStream<TFormat>::GetFormat() const {
-    assert(this);
     return NewestFormatter ? **NewestFormatter : Format;
   }
 
   /* See declaration. */
   template <typename TFormat>
   TFormat &TStream<TFormat>::GetFormat() {
-    assert(this);
     return NewestFormatter ? **NewestFormatter : Format;
   }
 
@@ -186,7 +179,6 @@ namespace Io {
 
     /* Assign the argument to the field. */
     void Write(TStream<TFormat> &strm) const {
-      assert(this);
       assert(&strm);
       strm.GetFormat().*Ptr = Arg;
     }

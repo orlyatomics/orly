@@ -50,13 +50,11 @@ TDict::TDict(const TMemberMap &members, const TPosRange &pos_range)
 }
 
 void TDict::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TDict::GetTypeImpl() const {
-  assert(this);
   if (!Type) {
     Type::TType key_type = Type::Unwrap(GetMembers().begin()->first->GetType());
     Type::TType val_type = Type::Unwrap(GetMembers().begin()->second->GetType());

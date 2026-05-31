@@ -37,7 +37,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TPrecLevel *GetSymbol() const {
-        assert(this);
         assert(Symbol);
         return Symbol;
       }

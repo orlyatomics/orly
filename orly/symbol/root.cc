@@ -30,20 +30,17 @@ TRoot::TRoot(const Expr::TExpr::TPtr &expr)
 }
 
 TRoot::~TRoot() {
-  assert(this);
   if (Expr) {
     Expr->UnsetExprParent(this);
   }
 }
 
 const Expr::TExpr::TPtr &TRoot::GetExpr() const {
-  assert(this);
   assert(Expr);
   return Expr;
 }
 
 void TRoot::SetExpr(const Expr::TExpr::TPtr &expr) {
-  assert(this);
   assert(expr);
   assert(!Expr);
   Expr = expr;

@@ -37,7 +37,6 @@ namespace Orly {
 
       /* The number of seconds before the server shuts down. */
       const std::chrono::seconds &GetTtl() const {
-        assert(this);
         return Ttl;
       }
 

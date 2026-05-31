@@ -321,7 +321,6 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
       Binary(that);
     }
     void Yield(const TExpr::TPtr &expr) const {
-      assert(this);
       assert(&expr);
       assert(expr);
       // For this callback, true means stop, false means keep going
@@ -331,18 +330,15 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
     }
     private:
     void Unary(const TUnary *unary) const {
-      assert(this);
       assert(unary);
       Yield(unary->GetExpr());
     }
     void Binary(const TBinary *binary) const {
-      assert(this);
       assert(binary);
       Yield(binary->GetLhs());
       Yield(binary->GetRhs());
     }
     void BinaryRhsInnerFunc(const TBinary *binary) const {
-      assert(this);
       assert(binary);
       Yield(binary->GetLhs());
       if (IncludeInnerFuncs) {
@@ -368,12 +364,10 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
         }
         private:
         void Unary(const Symbol::Stmt::TUnary *that) const {
-          assert(this);
           assert(that);
           ExprVisitor.Yield(that->GetStmtArg()->GetExpr());
         }
         void Binary(const Symbol::Stmt::TBinary *that) const {
-          assert(this);
           assert(that);
           ExprVisitor.Yield(that->GetLhs()->GetExpr());
           ExprVisitor.Yield(that->GetRhs()->GetExpr());

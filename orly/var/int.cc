@@ -24,98 +24,80 @@ using namespace Orly;
 using namespace Var;
 
 size_t TInt::GetHash() const {
-  assert(this);
   return Val;
 }
 
 Type::TType TInt::GetType() const {
-  assert(this);
   return Type::TInt::Get();
 }
 
 void TInt::Write(std::ostream &stream) const {
-  assert(this);
   stream << Val << "L";
 }
 
 void TInt::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TInt::Touch() {
-  assert(this);
 }
 
 Var::TVar &TInt::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on Int.");
 }
 
 TInt &TInt::Add(const TVar &rhs) {
-  assert(this);
   Val += Var::TVar::TDt<int64_t>::As(rhs);
   return *this;
 }
 
 TInt &TInt::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on Int.");
 }
 
 TInt &TInt::Div(const TVar &rhs) {
-  assert(this);
   Val /= Var::TVar::TDt<int64_t>::As(rhs);
   return *this;
 }
 
 TInt &TInt::Exp(const TVar &rhs) {
-  assert(this);
   Val = static_cast<int64_t>(pow(Val, Var::TVar::TDt<int64_t>::As(rhs)));
   return *this;
 }
 
 TInt &TInt::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on Int.");
 }
 
 TInt &TInt::Mod(const TVar &rhs) {
-  assert(this);
   Val %= Var::TVar::TDt<int64_t>::As(rhs);
   return *this;
 }
 
 TInt &TInt::Mult(const TVar &rhs) {
-  assert(this);
   Val *= Var::TVar::TDt<int64_t>::As(rhs);
   return *this;
 }
 
 TInt &TInt::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on Int.");
 }
 
 TInt &TInt::Sub(const TVar &rhs) {
-  assert(this);
   Val -= Var::TVar::TDt<int64_t>::As(rhs);
   return *this;
 }
 
 TInt &TInt::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on Int.");
 }
 
 TInt &TInt::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on Int.");
 }
 
 TInt &TInt::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on Int.");
 }
 
@@ -124,7 +106,6 @@ TInt::TInt(int64_t that) : Val(that) {}
 TInt::~TInt() {}
 
 TVar TInt::Copy() const {
-  assert(this);
   return TInt::New(Val);
 }
 

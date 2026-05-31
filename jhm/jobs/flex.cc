@@ -63,7 +63,6 @@ const unordered_set<TFile*> TFlex::GetNeeds() {
 }
 
 vector<string> TFlex::GetCmd() {
-  assert(this);
   return vector<string>{"flex", "-o" + GetSoleOutput()->GetPath(), GetInput()->GetPath()};
 }
 

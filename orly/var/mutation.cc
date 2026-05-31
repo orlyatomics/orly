@@ -33,7 +33,6 @@ TPtr<TObjChange> TObjChange::New(string key, const TPtr<TChange> &change) {
 
 /* TODO: The Apply function should be able to be moved into TPartialChange. */
 void TObjChange::Apply(TVar &var) const {
-   assert(this);
    /*
    std::cout << "TObjChange From [";
    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -62,7 +61,6 @@ TPtr<TDictChange> TDictChange::New(const Var::TVar &key, const TPtr<TChange> &ch
 }
 
 void TDictChange::Apply(TVar &var) const {
-   assert(this);
 
   //NOTE: If the assertion fails, there was a type mismatch in the database. Expected an object, didn't get it.
     const TDict *dict = var.As<TDict>();
@@ -81,7 +79,6 @@ TPtr<TAddrChange> TAddrChange::New(uint32_t key, const TPtr<TChange> &change) {
 }
 
 void TAddrChange::Apply(TVar &var) const {
-   assert(this);
 
   //NOTE: If the assertion fails, there was a type mismatch in the database. Expected an object, didn't get it.
     TAddr::TElems elems = var.As<TAddr>()->GetVal();
@@ -99,7 +96,6 @@ TPtr<TListChange> TListChange::New(uint64_t key, const TPtr<TChange> &change) {
 }
 
 void TListChange::Apply(TVar &var) const {
-   assert(this);
 
  //NOTE: If the assertion fails, there was a type mismatch in the database. Expected an object, didn't get it.
     const TList *list = var.As<TList>();
@@ -118,7 +114,6 @@ TPtr<TMutation> TMutation::New(TMutator mutator, const Var::TVar &rhs) {
 }
 
 void TMutation::Apply(Var::TVar &var) const {
-  assert(this);
 
   var = Orly::Rt::Mutate(var, Mutator, Rhs);
 }
@@ -128,12 +123,10 @@ void TMutation::Augment(const TPtr<const TChange> &) {
 }
 
 bool TMutation::IsDelete() const {
-  assert(this);
   return false;
 }
 
 bool TMutation::IsFinal() const {
-  assert(this);
   return Mutator == TMutator::Assign;
 }
 
@@ -152,12 +145,10 @@ void TDelete::Augment(const TPtr<const TChange> &) {
 }
 
 bool TDelete::IsDelete() const {
-  assert(this);
   return true;
 }
 
 bool TDelete::IsFinal() const {
-  assert(this);
   return true;
 }
 
@@ -176,12 +167,10 @@ void TNew::Augment(const TPtr<const TChange> &) {
 }
 
 bool TNew::IsDelete() const {
-  assert(this);
   return false;
 }
 
 bool TNew::IsFinal() const {
-  assert(this);
 
   return true;
 }

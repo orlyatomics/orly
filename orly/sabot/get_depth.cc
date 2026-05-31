@@ -107,7 +107,6 @@ void TDepthVisitor::operator()(const Type::TSet &type   ) const { OnUnaryType(ty
 void TDepthVisitor::operator()(const Type::TVector &type) const { OnUnaryType(type); }
 void TDepthVisitor::operator()(const Type::TMap &type   ) const { OnBinaryType(type); }
 void TDepthVisitor::operator()(const Type::TRecord &type) const {
-  assert(this);
   assert(&type);
   size_t max_child_depth = 0UL;
   size_t elem_count = type.GetElemCount();
@@ -121,7 +120,6 @@ void TDepthVisitor::operator()(const Type::TRecord &type) const {
   Depth = max_child_depth + 1UL;
 }
 void TDepthVisitor::operator()(const Type::TTuple &type ) const {
-  assert(this);
   assert(&type);
   size_t max_child_depth = 0UL;
   size_t elem_count = type.GetElemCount();
@@ -136,7 +134,6 @@ void TDepthVisitor::operator()(const Type::TTuple &type ) const {
 }
 
 void TDepthVisitor::OnBinaryType(const Type::TBinary &binary) const {
-  assert(this);
   assert(&binary);
   void *pin_alloc = alloca(Type::GetMaxTypePinSize());
   void *type_alloc = alloca(Type::GetMaxTypeSize());
@@ -149,7 +146,6 @@ void TDepthVisitor::OnBinaryType(const Type::TBinary &binary) const {
 }
 
 void TDepthVisitor::OnUnaryType(const Type::TUnary &unary) const {
-  assert(this);
   assert(&unary);
   void *pin_alloc = alloca(Type::GetMaxTypePinSize());
   void *type_alloc = alloca(Type::GetMaxTypeSize());

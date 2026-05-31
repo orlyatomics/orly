@@ -72,12 +72,10 @@ namespace Orly {
     inline TNoteInterner::TNoteInterner() {}
 
     inline const TNoteInterner::TNotes &TNoteInterner::GetNotes() const {
-      assert(this);
       return Notes;
     }
 
     inline size_t TNoteInterner::GetSize() const {
-      assert(this);
       return Notes.size();
     }
 

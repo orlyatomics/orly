@@ -47,7 +47,6 @@ namespace Orly {
       }
 
       virtual void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(this);
       }
@@ -57,7 +56,6 @@ namespace Orly {
       }
 
       virtual Type::TType GetTypeImpl() const override {
-        assert(this);
         /* This visitor is used to make sure that the type that arises from the expression on the
            right of the collected_by matches the type of the 'lhs' and 'rhs' keywords. */
         class TCollectVisitor

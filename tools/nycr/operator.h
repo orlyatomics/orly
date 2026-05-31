@@ -46,7 +46,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TOperator *GetSymbolAsOperator() const {
-        assert(this);
         assert(Symbol);
         return Symbol;
       }

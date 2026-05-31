@@ -41,13 +41,11 @@ namespace Utf8 {
 
     /* The column number.  Never zero. */
     size_t GetCol() const {
-      assert(this);
       return Col;
     }
 
     /* The row number.  Never zero. */
     size_t GetLine() const {
-      assert(this);
       return Line;
     }
 

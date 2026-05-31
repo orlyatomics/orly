@@ -46,28 +46,23 @@ TTestCase::TTestCase(
         PosRange(pos_range) {}
 
 const std::string &TTestCase::GetName() const {
-  assert(this);
   assert(OptName);
   return *OptName;
 }
 
 const TPosRange &TTestCase::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 bool TTestCase::HasName() const {
-  assert(this);
   return OptName;
 }
 
 const TTestCaseBlock::TPtr &TTestCase::GetOptTestCaseBlock() const {
-  assert(this);
   return OptTestCaseBlock;
 }
 
 void TTestCase::TypeCheck() const {
-  assert(this);
   if (!Type::UnwrapMutable(GetExpr()->GetType()).Is<Type::TBool>()) {
     throw TExprError(HERE, PosRange, "Currently test cases must evaluate to bool.");
   }
@@ -84,17 +79,14 @@ TTestCaseBlock::TTestCaseBlock(const TTestCases &test_cases, const TPosRange &po
     : TestCases(test_cases), PosRange(pos_range) {}
 
 const TPosRange &TTestCaseBlock::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 const TTestCaseBlock::TTestCases &TTestCaseBlock::GetTestCases() const {
-  assert(this);
   return TestCases;
 }
 
 void TTestCaseBlock::TypeCheck() const {
-  assert(this);
   for (const auto &test_case : TestCases) {
     test_case->TypeCheck();
   }

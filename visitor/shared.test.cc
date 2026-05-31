@@ -63,7 +63,6 @@ FIXTURE(SharedFromThis) {
     class TObj : public std::enable_shared_from_this<TObj> {
       public:
       std::shared_ptr<TObj> GetThis() {
-        assert(this);
         return shared_from_this();
       }
     };  // TObj
@@ -77,7 +76,6 @@ FIXTURE(SharedFromThis) {
     class TObj {
       public:
       TShared<TObj> GetThis() {
-        assert(this);
         return Share(*this);
       }
     };  // TObj

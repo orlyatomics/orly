@@ -76,7 +76,6 @@ Expr::TExpr::TPtr TLiteralExpr::Build() const {
     }
     Expr::TExpr::TPtr &Expr;
   };  // TLiteralVisitor
-  assert(this);
   Expr::TExpr::TPtr expr;
   LiteralExpr->GetLiteral()->Accept(TLiteralVisitor(expr));
   return expr;

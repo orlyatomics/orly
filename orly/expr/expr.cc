@@ -27,7 +27,6 @@ TExpr::TExpr(const TPosRange &pos_range)
     : ExprParent(nullptr), PosRange(pos_range) {}
 
 const TExprParent *TExpr::GetExprParent() const {
-  assert(this);
   assert(ExprParent);
   return ExprParent;
 }
@@ -46,19 +45,16 @@ Type::TType TExpr::GetType() const {
 }
 
 void TExpr::SetExprParent(const TExprParent *expr_parent) {
-  assert(this);
   assert(expr_parent);
   assert(!ExprParent);
   ExprParent = expr_parent;
 }
 
 const TPosRange &TExpr::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 void TExpr::UnsetExprParent(const TExprParent *expr_parent) {
-  assert(this);
   assert(expr_parent);
   assert(ExprParent == expr_parent);
   ExprParent = nullptr;

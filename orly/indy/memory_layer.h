@@ -262,19 +262,16 @@ namespace Orly {
 
     /* TODO */
     inline TMemoryLayer::TEntryCollection *TMemoryLayer::GetEntryCollection() const {
-      assert(this);
       return &EntryCollection;
     }
 
     /* TODO */
     inline TMemoryLayer::TUpdateCollection *TMemoryLayer::GetUpdateCollection() const {
-      assert(this);
       return &UpdateCollection;
     }
 
     /* TODO */
     inline bool TMemoryLayer::IsEmpty() const {
-      assert(this);
       return UpdateCollection.TryGetFirstMember() == nullptr;
     }
 
@@ -285,20 +282,17 @@ namespace Orly {
 
     /* TODO */
     inline size_t TMemoryLayer::GetSize() const {
-      assert(this);
       return Size;
     }
 
     /* TODO */
     inline TSequenceNumber TMemoryLayer::GetLowestSeq() const {
-      assert(this);
       assert(Size);
       return UpdateCollection.TryGetFirstMember()->GetSequenceNumber();
     }
 
     /* TODO */
     inline TSequenceNumber TMemoryLayer::GetHighestSeq() const {
-      assert(this);
       assert(Size);
       return UpdateCollection.TryGetLastMember()->GetSequenceNumber();
     }

@@ -47,21 +47,18 @@ TAddrType::~TAddrType() {
 }
 
 void TAddrType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   for (auto &member : Members) {
     member.second->ForEachRef(cb);
   }
 }
 
 void TAddrType::Cleanup() {
-  assert(this);
   for (auto &member : Members) {
     delete member.second;
   }
 }
 
 Type::TType TAddrType::ComputeSymbolicType() const {
-  assert(this);
   Type::TAddr::TElems members;
   for (auto &member : Members) {
     members.emplace_back(std::make_pair(member.first, (member.second)->GetSymbolicType()));

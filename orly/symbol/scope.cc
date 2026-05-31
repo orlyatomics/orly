@@ -31,7 +31,6 @@ TScope::TScope() {}
 TScope::~TScope() {}
 
 void TScope::Add(const TFunction::TPtr &function) {
-  assert(this);
   assert(&function);
   assert(function);
   auto result = Functions.insert(function);
@@ -39,31 +38,26 @@ void TScope::Add(const TFunction::TPtr &function) {
 }
 
 void TScope::Add(const Test::TTest::TPtr &test) {
-  assert(this);
   assert(&test);
   assert(test);
   Tests.push_back(test);
 }
 
 const TScope::TFunctionSet &TScope::GetFunctions() const {
-  assert(this);
   return Functions;
 }
 
 const TScope::TTests &TScope::GetTests() const {
-  assert(this);
   return Tests;
 }
 
 void TScope::Remove(const TFunction::TPtr &function) {
-  assert(this);
   assert(&function);
   assert(function);
   Functions.erase(function);
 }
 
 void TScope::Remove(const Test::TTest::TPtr &test) {
-  assert(this);
   assert(&test);
   assert(test);
   auto result = std::find(Tests.begin(), Tests.end(), test);
@@ -73,7 +67,6 @@ void TScope::Remove(const Test::TTest::TPtr &test) {
 }
 
 void TScope::TypeCheck() const {
-  assert(this);
   for (const auto &function : Functions) {
     function->GetType();
   }

@@ -35,24 +35,20 @@ TObjMemberExpr::TObjMemberExpr(const TExprFactory *expr_factory, const Package::
       Name(PostfixObjMember->GetName()) {}
 
 TObjMemberExpr::~TObjMemberExpr() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TExpr::TPtr TObjMemberExpr::Build() const {
-  assert(this);
   return Expr::TObjMember::New(Expr->Build(), Name.GetText(), GetPosRange(PostfixObjMember));
 }
 
 void TObjMemberExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TObjMemberExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

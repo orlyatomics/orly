@@ -57,13 +57,11 @@ TLog::TLog(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TLog::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLog::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TLogTypeVisitor(type, GetPosRange()));
   return type;
@@ -77,13 +75,11 @@ TLog2::TLog2(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TLog2::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLog2::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TLogTypeVisitor(type, GetPosRange()));
   return type;
@@ -97,13 +93,11 @@ TLog10::TLog10(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TLog10::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLog10::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TLogTypeVisitor(type, GetPosRange()));
   return type;

@@ -60,7 +60,6 @@ namespace Shape {
     virtual void Accept(const TVisitor &visitor) const override;
 
     int GetRadius() const {
-      assert(this);
       return Radius;
     }
 
@@ -80,7 +79,6 @@ namespace Shape {
     virtual void Accept(const TVisitor &visitor) const override;
 
     int GetLength() const {
-      assert(this);
       return Length;
     }
 
@@ -101,12 +99,10 @@ namespace Shape {
     virtual void Accept(const TVisitor &visitor) const override;
 
     int GetBase() const {
-      assert(this);
       return Base;
     }
 
     int GetHeight() const {
-      assert(this);
       return Height;
     }
 
@@ -128,19 +124,16 @@ namespace Shape {
   /* 5. Finish the definitions for the final classes' Accept() functions. */
 
   void TCircle::Accept(const TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
 
   void TSquare::Accept(const TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
 
   void TTriangle::Accept(const TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }

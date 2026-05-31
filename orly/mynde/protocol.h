@@ -87,35 +87,27 @@ namespace Orly {
       };
 
       const TBuffer &GetKey() const {
-        assert(this);
         return Key;
       }
       const TBuffer &GetValue() const {
-        assert(this);
         return Value;
       }
       const TBuffer &GetExtras() const {
-        assert(this);
         return Extras;
       }
       uint64_t GetCas() const {
-        assert(this);
         return Cas;
       }
       uint32_t GetOpaque() const {
-        assert(this);
         return Opaque;
       }
       TOpcode GetOpcode() const {
-        assert(this);
         return Opcode;
       }
       uint8_t GetBinaryOpcode() const {
-        assert(this);
         return BinaryOpcode;
       }
       TFlags GetFlags() const {
-        assert(this);
         return Flags;
       }
 

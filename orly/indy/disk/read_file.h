@@ -58,20 +58,17 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetHash() const {
-          assert(this);
           return GenId ^ FileId.GetHash();
         }
 
         /* TODO */
         inline bool operator==(const TFileKey &that) const {
-          assert(this);
           assert(&that);
           return FileId == that.FileId && GenId == that.GenId;
         }
 
         /* TODO */
         inline bool operator!=(const TFileKey &that) const {
-          assert(this);
           assert(&that);
           return FileId != that.FileId || GenId != that.GenId;
         }
@@ -177,7 +174,6 @@ namespace Orly {
 
           /* TODO */
           ~TCursor() {
-            assert(this);
             if (Pin) {
               Pin->TPin::~TPin();
             }
@@ -186,13 +182,11 @@ namespace Orly {
 
           /* TODO */
           operator bool() const {
-            assert(this);
             return Pin != nullptr;
           }
 
           /* TODO */
           const Atom::TCore::TNote *operator*() const {
-            assert(this);
             assert(Pin);
             assert(Pin->GetNote());
             return Pin->GetNote();
@@ -200,7 +194,6 @@ namespace Orly {
 
           /* TODO */
           const Atom::TCore::TNote *operator->() const {
-            assert(this);
             assert(Pin);
             assert(Pin->GetNote());
             return Pin->GetNote();
@@ -208,14 +201,12 @@ namespace Orly {
 
           /* TODO */
           TCursor &operator++() {
-            assert(this);
             Refresh();
             return *this;
           }
 
           /* TODO */
           Atom::TCore::TOffset GetOffset() const {
-            assert(this);
             return Offset;
           }
 
@@ -228,7 +219,6 @@ namespace Orly {
 
           /* TODO */
           void Refresh() {
-            assert(this);
             if (Pin) {
               Offset += sizeof(Atom::TCore::TNote) + Pin->GetNote()->GetRawSize();
               Pin->TPin::~TPin();
@@ -271,7 +261,6 @@ namespace Orly {
 
         /* TODO */
         virtual ~TDiskArena() {
-          assert(this);
         }
 
         /* TODO */
@@ -285,7 +274,6 @@ namespace Orly {
 
         /* TODO */
         Atom::TCore::TOffset GetNumBytesOfArena() const {
-          assert(this);
           return File->GetNumBytesOfArena();
         }
 
@@ -327,25 +315,21 @@ namespace Orly {
 
         /* TODO */
         inline virtual size_t GetFileLength() const {
-          assert(this);
           return FileLength;
         }
 
         /* TODO */
         inline virtual size_t GetStartingBlock() const {
-          assert(this);
           return StartingBlockId;
         }
 
         /* TODO */
         virtual void ReadMeta(size_t , size_t &) const {
-          assert(this);
           throw std::logic_error("Deprecated");
         }
 
         /* TODO */
         inline virtual size_t FindPageIdOfByte(size_t offset) const {
-          assert(this);
           assert(offset < FileLength);
           size_t num_blocks_into_file = offset / BlockSize;
           if (num_blocks_into_file == StartingBlockOffset) {
@@ -477,67 +461,56 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetNumBlocks() const {
-          assert(this);
           return NumBlocks;
         }
 
         /* TODO */
         inline size_t GetStartingBlockOffset() const {
-          assert(this);
           return StartingBlockOffset;
         }
 
         /* TODO */
         inline size_t GetNumMetaBlocks() const {
-          assert(this);
           return NumMetaBlocks;
         }
 
         /* TODO */
         inline size_t GetNumSequentialBlockPairings() const {
-          assert(this);
           return NumSequentialBlockPairings;
         }
 
         /* TODO */
         inline size_t GetByteOffsetOfArena() const {
-          assert(this);
           return ByteOffsetOfMainArena;
         }
 
         /* TODO */
         inline size_t GetNumArenaNotes() const {
-          assert(this);
           return NumMainArenaNotes;
         }
 
         /* TODO */
         inline size_t GetNumBytesOfArena() const {
-          assert(this);
           return NumMainArenaBytes;
         }
 
         /* TODO */
         inline const std::vector<size_t> &GetTypeBoundaryOffsetVec() const {
-          assert(this);
           return MainArenaTypeBoundaryOffsetVec;
         }
 
         /* TODO */
         inline size_t GetNumUpdates() const {
-          assert(this);
           return NumUpdates;
         }
 
         /* TODO */
         inline size_t GetGenId() const {
-          assert(this);
           return GenId;
         }
 
         /* TODO */
         inline size_t GetByteOffsetOfUpdateIndex() const {
-          assert(this);
           return ByteOffsetOfUpdateIndex;
         }
 
@@ -550,7 +523,6 @@ namespace Orly {
 
         /* TODO */
         bool FindInHash(const Base::TUuid &index_id, const TKey &key, size_t &out_offset) const {
-          assert(this);
           auto ret = IndexById.find(index_id);
           if (ret != IndexById.end()) {
             return ret->second->FindInHash(key, out_offset);
@@ -614,20 +586,17 @@ namespace Orly {
 
             /* True iff. we have an item. */
             operator bool() const {
-              assert(this);
               return Cur < Limit;
             }
 
             /* The current item. */
             const TKeyItem &operator*() const {
-              assert(this);
               assert(Cur < Limit);
               return Item;
             }
 
             /* Walk to the next item, if any. */
             TKeyCursor &operator++() {
-              assert(this);
               ++Cur;
               if (likely(Cur < Limit)) {
                 InStream.Read(&Item, sizeof(Item));
@@ -676,20 +645,17 @@ namespace Orly {
 
             /* True iff. we have an item. */
             operator bool() const {
-              assert(this);
               return Cur < Limit;
             }
 
             /* The current item. */
             const THistoryKeyItem &operator*() const {
-              assert(this);
               assert(Cur < Limit);
               return Item;
             }
 
             /* Walk to the next item, if any. */
             THistoryKeyCursor &operator++() {
-              assert(this);
               ++Cur;
               if (Cur < Limit) {
                 InStream.Read(&Item, sizeof(Item));
@@ -748,7 +714,6 @@ namespace Orly {
 
           /* TODO */
           bool FindInHash(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
-            assert(this);
             assert(key.GetCore().IsTuple());
             const Atom::TCore &core = key.GetCore();
             const Atom::TCore::TOffset *const off = core.TryGetOffset();
@@ -829,7 +794,6 @@ namespace Orly {
 
           /* TODO */
           bool BinaryLowerBoundOnKey(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
-            assert(this);
             assert(&key);
             assert(&out_offset);
             assert(NumCurKeys > 0);
@@ -867,55 +831,46 @@ namespace Orly {
 
           /* TODO */
           inline const Base::TUuid &GetIndexId() const {
-            assert(this);
             return IndexId;
           }
 
           /* TODO */
           inline virtual Atom::TCore::TOffset GetNumBytesOfArena() const override {
-            assert(this);
             return NumArenaBytes;
           }
 
           /* TODO */
           inline const std::vector<size_t> &GetTypeBoundaryOffsetVec() const {
-            assert(this);
             return ArenaTypeBoundaryByOffset;
           }
 
           /* TODO */
           inline size_t GetNumCurKeys() const {
-            assert(this);
             return NumCurKeys;
           }
 
           /* TODO */
           inline size_t GetNumHistKeys() const {
-            assert(this);
             return NumHistKeys;
           }
 
           /* TODO */
           inline size_t GetGenId() const {
-            assert(this);
             return File->GenId;
           }
 
           /* TODO */
           inline size_t GetByteOffsetOfKeyIndex() const {
-            assert(this);
             return ByteOffsetOfKeyIndex;
           }
 
           /* TODO */
           inline size_t GetByteOffsetOfHistoryIndex() const {
-            assert(this);
             return ByteOffsetOfKeyIndex + (NumCurKeys * TData::KeyEntrySize);
           }
 
           /* TODO */
           inline const std::vector<std::pair<size_t, size_t>> &GetNumHashFieldsByOffset() const {
-            assert(this);
             return NumHashFieldsByOffset;
           }
 
@@ -923,40 +878,34 @@ namespace Orly {
 
           /* TODO */
           inline virtual size_t GetByteOffsetOfArena() const override {
-            assert(this);
             return ArenaByteOffset;
           }
 
           /* TODO */
           inline virtual size_t GetNumArenaNotes() const override {
-            assert(this);
             return NumArenaNotes;
           }
 
           /* TODO */
           inline virtual size_t GetFileLength() const override {
-            assert(this);
             assert(File);
             return File->GetFileLength();
           }
 
           /* TODO */
           inline virtual size_t GetStartingBlock() const override {
-            assert(this);
             assert(File);
             return File->GetStartingBlock();
           }
 
           /* TODO */
           inline virtual void ReadMeta(size_t offset, size_t &out) const override {
-            assert(this);
             assert(File);
             return File->ReadMeta(offset, out);
           }
 
           /* TODO */
           inline virtual size_t FindPageIdOfByte(size_t offset) const override {
-            assert(this);
             assert(File);
             return File->FindPageIdOfByte(offset);
           }
@@ -987,7 +936,6 @@ namespace Orly {
 
         /* TODO */
         inline const std::unordered_map<Base::TUuid, std::unique_ptr<TIndexFile>> &GetIndexByIdMap() {
-          assert(this);
           return IndexById;
         }
 
@@ -1084,7 +1032,6 @@ namespace Orly {
         TLocalReadFile *Get(Util::TEngine *engine,
                             const Base::TUuid &file_id,
                             size_t gen_id) {
-          assert(this);
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TFileKey(file_id, gen_id));
           if (!loader) {
             loader = new TLoaderObj(this, engine, file_id, gen_id);
@@ -1123,7 +1070,6 @@ namespace Orly {
 
           /* TODO */
           TLocalReadFile *GetFile() {
-            assert(this);
             if (!File) {
               FrameWaitingVec.emplace_back(Fiber::TFrame::LocalFrame);
               Fiber::Wait();
@@ -1157,7 +1103,6 @@ namespace Orly {
 
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
       inline void TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::ReleaseNote(const Atom::TCore::TNote *note, Atom::TCore::TOffset offset, void *data1, void */*data2*/, void *data3) {
-        assert(this);
         if (data1) { /* This data fit in the block, release the block. */
           Cache->Release(reinterpret_cast<typename Util::TCache<PhysicalCachePageSize>::TSlot *>(data1), reinterpret_cast<size_t>(data3));
           //File->GetService()->ReleaseBuf(reinterpret_cast<TPageCache::TObj *>(data));
@@ -1169,7 +1114,6 @@ namespace Orly {
 
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
       inline const Atom::TCore::TNote *TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::TryAcquireNote(Atom::TCore::TOffset offset, void *&data1, void *&data2, void *&data3) {
-        assert(this);
         const size_t note_offset = StartOffset + offset;
         assert(note_offset < File->GetFileLength());
         Stream.GoTo(note_offset);
@@ -1228,7 +1172,6 @@ namespace Orly {
 
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
       inline const Atom::TCore::TNote *TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::TryAcquireNote(Atom::TCore::TOffset offset, const size_t note_size, void *&data1, void *&data2, void *&data3) {
-        assert(this);
         const size_t note_offset = StartOffset + offset;
         Stream.GoTo(note_offset);
         #ifndef NDEBUG

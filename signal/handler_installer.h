@@ -44,13 +44,11 @@ namespace Signal {
 
     /* Restore the old action. */
     ~THandlerInstaller() {
-      assert(this);
       sigaction(SignalNumber, &OldAct, nullptr);
     }
 
     /* The signal we handle. */
     int GetSignalNumber() const {
-      assert(this);
       return SignalNumber;
     }
 

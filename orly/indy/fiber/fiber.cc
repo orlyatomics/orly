@@ -52,7 +52,6 @@ void Orly::Indy::ExternFiber::SchedTaskLocally(const std::function<void ()> &fun
       }
     }
     ~TRunFunc() {
-      assert(this);
       FreeMyFrame(FramePool);
     }
     void Run() {
@@ -71,22 +70,18 @@ Orly::Indy::ExternFiber::TSync::TSync(size_t waiting_for) {
 }
 
 Orly::Indy::ExternFiber::TSync::~TSync() {
-  assert(this);
   GetImpl()->~TSync();
 }
 
 void Orly::Indy::ExternFiber::TSync::Sync(bool come_back_right_away) {
-  assert(this);
   GetImpl()->Sync(come_back_right_away);
 }
 
 void Orly::Indy::ExternFiber::TSync::Complete() {
-  assert(this);
   GetImpl()->Complete();
 }
 
 void Orly::Indy::ExternFiber::TSync::WaitForMore(size_t num) {
-  assert(this);
   GetImpl()->WaitForMore(num);
 }
 
@@ -97,7 +92,6 @@ void Orly::Indy::ExternFiber::TSync::WaitForMore(size_t num) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 void TRunner::Run() {
-  assert(this);
   LocalRunner = this;
   TFrame *rt_queue = nullptr; /* we use this to push come back right away jobs to the front... */
   TFrame *next_frame = nullptr; /* we use this to loop through a queue... */

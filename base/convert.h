@@ -33,7 +33,6 @@ namespace Base {
     /* Reads a sign (+/-) From the input stream. If + is read, then it returns true, if - is read, then it returns false. If some other character is the next
        character at the head of the input stream, it returns a TOpt in the unknown state. */
     TOpt<bool> TryReadSign() {
-      assert(this);
 
       if(!(*this)) {
         return TOpt<bool>::GetUnknown();
@@ -53,7 +52,6 @@ namespace Base {
 
     /* TryReadSign wrapper that asserts that a sign is read or throws. */
     bool ReadSign() {
-      assert(this);
 
       TOpt<bool> ret = TryReadSign();
 
@@ -66,20 +64,17 @@ namespace Base {
 
     /* Returns true if there is a next character in the input stream and it is a digit, false otherwise. */
     bool HasDigit() {
-      assert(this);
 
       return ((*this) && isdigit(*(*this)));
     }
 
     void ConsumeWhitespace() {
-      assert(this);
 
       while(isspace(**this)) { ++(*this); }
     }
 
     /* Reads in a character from Input and converts it to it's decimal value. */
     template<typename TVal> bool TryReadDigit(TVal &output) {
-      assert(this);
       assert(&output);
       assert(std::numeric_limits<TVal>::is_exact);
       assert(std::numeric_limits<TVal>::min() <= 0);
@@ -99,7 +94,6 @@ namespace Base {
     /* Reads in an unsigned integer and stores it inside output. This operation is automic. The positive flag changes whether each digit is added or subtracted
        from the value to make the end result positive/negative. This is useful when the sign is known in advance so we can get more precise bounds checking. */
     template<typename TVal> bool TryReadUnsignedInt(TVal &output, bool positive=true) {
-      assert(this);
       assert(&output);
       assert(std::numeric_limits<TVal>::is_integer);
       assert(std::numeric_limits<TVal>::is_exact);
@@ -148,7 +142,6 @@ namespace Base {
 
     /* Wrapper for TryReadUnsignedInt which asserts that an UnsignedInt must be read or an exception thrown. */
     template<typename TVal> TConverter &ReadUnsignedInt(TVal &output, bool positive=true) {
-      assert(this);
       if(!TryReadUnsignedInt(output, positive)) {
         throw TSyntaxError(HERE, "No integer exists at current location in stream.");
       }
@@ -161,7 +154,6 @@ namespace Base {
        with the try_read flag set manually, rather call ReadInt if you mean try_read=false. At the moment this only supports decimal representations, but
        in the future will be expanded to support hexadecimal and octal. */
     template<typename TVal> bool TryReadInt(TVal &output,bool sign_required=false) {
-      assert(this);
       assert(&output);
       assert(std::numeric_limits<TVal>::is_integer);
       assert(std::numeric_limits<TVal>::is_exact);
@@ -188,7 +180,6 @@ namespace Base {
 
     /* Wrapper for TryReadSignedInt which asserts that if no integer was found at the current stream head, then an exception should be thrown. */
     template<typename TVal> TConverter &ReadInt(TVal &output, bool sign_required=false) {
-      assert(this);
       if(!TryReadInt(output, sign_required)) {
         throw TSyntaxError(HERE, "No integer exists at current location.");
       }
@@ -211,7 +202,6 @@ namespace Base {
     void ReadDouble(double &output, bool sign_required=false);
 
     operator bool() const {
-      assert(this);
       return Working;
     }
 
@@ -237,7 +227,6 @@ namespace Base {
     }
 
     TConverter &operator++() {
-      assert(this);
       if (!Working) {
         throw TSyntaxError(HERE, "unexpectedly out of text");
       }

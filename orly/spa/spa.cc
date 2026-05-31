@@ -163,20 +163,17 @@ class TKey {
 
   /* We're equal iff. both method and URI are equal. */
   bool operator==(const TKey &that) const {
-    assert(this);
     assert(&that);
     return strcmp(Method, that.Method) == 0 && strcmp(Uri, that.Uri) == 0;
   }
 
   /* Our hash is sensitive to both our method and our URI. */
   size_t GetHash() const {
-    assert(this);
     return Hash;
   }
 
   /* TODO */
   const char *GetUri() const {
-    assert(this);
     return Uri;
   }
 
@@ -256,7 +253,6 @@ class TSpa : public Mongoose::TMongoose {
 
       private:
       virtual void WriteAfterDesc(std::ostream &strm) const {
-        assert(this);
         assert(&strm);
         strm << "Build: Unknown" << endl // FIXME: Use Version from SCM to tag.
              << endl
@@ -305,7 +301,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Called by Mongoose to let us know an event has occurred. */
   virtual void *OnEvent(mg_event event, mg_connection *conn, const mg_request_info *request_info) {
-    assert(this);
     bool is_handled = false;
     try {
       switch (event) {
@@ -397,7 +392,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "GET /sys/health". */
   bool OnGetHealth(TArgs &args, ostream &/*strm*/) {
-    assert(this);
     assert(&args);
 
     args.VerifyAllUsed();
@@ -412,7 +406,6 @@ class TSpa : public Mongoose::TMongoose {
      stream.  We'll return success if the handler returns success.  If we don't find a handler,
      leave the reply stream alone and return false. */
   bool OnNewRequest(const char *method, const char *uri, char *query, ostream &strm) {
-    assert(this);
     assert(method);
     assert(uri);
 
@@ -455,7 +448,6 @@ class TSpa : public Mongoose::TMongoose {
   }
 
   bool OnPoll(TArgs &args, ostream &strm) {
-    assert(this);
 
     std::unordered_set<Base::TUuid> notifiers;
     TOpt<chrono::milliseconds> timeout;
@@ -482,7 +474,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/create_session". */
   bool OnPostCreateSession(TArgs &args, ostream &strm) {
-    assert(this);
     TOpt<Base::TUuid> acct;
     int ttl;
 
@@ -500,7 +491,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/create_private_pov". */
   bool OnPostCreatePrivatePov(TArgs &args, ostream &strm) {
-    assert(this);
 
     Base::TUuid session;
     TOpt<Base::TUuid> parent;
@@ -522,7 +512,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/create_shared_pov". */
   bool OnPostCreateSharedPov(TArgs &args, ostream &strm) {
-    assert(this);
 
     TOpt<Base::TUuid> parent;
     int ttl;
@@ -542,7 +531,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/reset_counters". */
   bool OnPostResetCounters(TArgs &args, ostream &strm) {
-    assert(this);
 
     args.VerifyAllUsed();
 
@@ -554,7 +542,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/install_package". */
   bool OnPostInstallPackage(TArgs &args, ostream &/*strm*/) {
-    assert(this);
 
     std::string file;
     args.Get("file", file);
@@ -570,7 +557,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/uninstall_package". */
   bool OnPostUninstallPackage(TArgs &args, ostream &/*strm*/) {
-    assert(this);
 
     std::string file;
     args.Get("file", file);
@@ -584,13 +570,11 @@ class TSpa : public Mongoose::TMongoose {
   }
 
   bool OnDo(const char *, TArgs &, ostream &) {
-    assert(this);
 
     NOT_IMPLEMENTED();
   }
 
   bool OnTry(const char *uri, TArgs &args, ostream &strm) {
-    assert(this);
 
     CallsTo_Try.Increment();
 
@@ -719,7 +703,6 @@ class TSpa : public Mongoose::TMongoose {
   /* Opens the log, launches the HTTP service on the given port,
      and waits for the signal to exit.  Returns success/failure. */
   bool RunServer(int extra_log_flags = 0) {
-    assert(this);
     bool success;
     /* Lifespan of TService */ {
       TService service;
@@ -767,7 +750,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Parse CheckpointArg into CheckpointOut and CheckpointSource */
   void SetupCheckpointInfo() {
-    assert(this);
 
     std::string checkpoint_dir, checkpoint_name;
     const char *checkpoint_ext = ".checkpoint";

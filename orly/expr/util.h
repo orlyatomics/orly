@@ -25,7 +25,6 @@ namespace Orly {
     template <typename TFinal>
     const TFinal *TExpr::As() const {
       static_assert(std::is_base_of<TExpr, TFinal>::value, "TExpr::As<>() can only be used with final types");
-      assert(this);
       auto result = TryAs<TFinal>();
       assert(result);
       return result;
@@ -34,14 +33,12 @@ namespace Orly {
     template <typename TFinal>
     bool TExpr::Is() const {
       static_assert(std::is_base_of<TExpr, TFinal>::value, "TExpr::Is<>() can only be used with final types");
-      assert(this);
       return TryAs<TFinal>();
     }
 
     template <typename TFinal>
     const TFinal *TExpr::TryAs() const {
       static_assert(std::is_base_of<TExpr, TFinal>::value, "TExpr::TryAs<>() can only be used with final types");
-      assert(this);
       return dynamic_cast<const TFinal *>(this);
     }
 

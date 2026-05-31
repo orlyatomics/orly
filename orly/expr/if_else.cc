@@ -46,23 +46,19 @@ TIfElse::TIfElse(
                            Base::AssertTrue(false_case)}}, pos_range) {}
 
 void TIfElse::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const TExpr::TPtr &TIfElse::GetTrue() const {
-  assert(this);
   return GetExprs()[0];
 }
 
 const TExpr::TPtr &TIfElse::GetPredicate() const {
-  assert(this);
   return GetExprs()[1];
 }
 
 const TExpr::TPtr &TIfElse::GetFalse() const {
-  assert(this);
   return GetExprs()[2];
 }
 
@@ -118,7 +114,6 @@ Type::TType TIfElse::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *lhs, const Type::TTimeDiff *) const { Type = lhs->AsType(); }
     virtual void operator()(const Type::TTimePnt  *lhs, const Type::TTimePnt  *) const { Type = lhs->AsType(); }
   };  // TIfElseVisitor
-  assert(this);
   if (Type::Unwrap(GetPredicate()->GetType()) != Type::TBool::Get()) {
     throw TExprError(HERE, GetPosRange(), "if else expression's predicate must evaluate to a bool.");
   }

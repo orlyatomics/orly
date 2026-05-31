@@ -41,7 +41,6 @@ TPool::TPool(size_t block_size, const char *name, size_t block_count)
 }
 
 void TPool::Init(size_t block_count) {
-  assert(this);
   assert(MaxBlocks == 0UL);
   MaxBlocks = block_count;
   if (block_count) {
@@ -68,7 +67,6 @@ void TPool::Init(size_t block_count) {
 }
 
 TPool::~TPool() {
-  assert(this);
   if (NumBlocksUsed) {
     syslog(LOG_ERR, "[%ld] Blocks left in [%s] pool", NumBlocksUsed.load(), Name);
   }
@@ -76,7 +74,6 @@ TPool::~TPool() {
 }
 
 void TPool::Free(void *ptr) {
-  assert(this);
   assert(ptr);
   TBlock *block = static_cast<TBlock *>(ptr);
   std::lock_guard<std::mutex> lock(Mutex);
@@ -86,7 +83,6 @@ void TPool::Free(void *ptr) {
 }
 
 void *TPool::TryAlloc(size_t size) {
-  assert(this);
   assert(size <= BlockSize);
   std::lock_guard<std::mutex> lock(Mutex);
   TBlock *block = FirstBlock;

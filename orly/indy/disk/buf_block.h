@@ -57,19 +57,16 @@ namespace Orly {
 
           /* TODO */
           size_t GetNumBlocksUsed() const {
-            assert(this);
             return NumBlocksUsed;
           }
 
           /* TODO */
           size_t GetMaxBlocks() const {
-            assert(this);
             return MaxBlocks;
           }
 
           /* TODO */
           void Init(size_t block_count) {
-            assert(this);
             assert(MaxBlocks == 0UL);
             MaxBlocks = block_count;
             if (block_count) {
@@ -95,7 +92,6 @@ namespace Orly {
 
           /* TODO */
           void *Alloc() {
-            assert(this);
             //syslog(LOG_INFO, "BufBlock [%ld] / [%ld]", NumBlocksUsed, MaxBlocks);
             void *ptr = TryAlloc();
             while (!ptr) {
@@ -116,7 +112,6 @@ namespace Orly {
 
           /* TODO */
           void Free(void *ptr) {
-            assert(this);
             assert(ptr);
             TBlock *block = static_cast<TBlock *>(ptr);
             //Base::TSpinLock::TSoftLock lock(SpinLock);
@@ -129,7 +124,6 @@ namespace Orly {
 
           /* TODO */
           void *TryAlloc() {
-            assert(this);
             //Base::TSpinLock::TSoftLock lock(SpinLock);
             std::lock_guard<std::mutex> lock(Lock);
             TBlock *block = FirstBlock;
@@ -195,7 +189,6 @@ namespace Orly {
 
         /* TODO */
         char *GetData() const {
-          assert(this);
           return &Buf;
         }
 

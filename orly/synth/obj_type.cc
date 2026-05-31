@@ -45,21 +45,18 @@ TObjType::~TObjType() {
 }
 
 void TObjType::Cleanup() {
-  assert(this);
   for (auto &member : Members) {
     delete member.second;
   }
 }
 
 void TObjType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   for (auto &member : Members) {
     (member.second)->ForEachRef(cb);
   }
 }
 
 Type::TType TObjType::ComputeSymbolicType() const {
-  assert(this);
   Type::TObj::TElems elems;
   for (auto &member : Members) {
     auto result = elems.insert(std::make_pair(member.first, (member.second)->GetSymbolicType()));

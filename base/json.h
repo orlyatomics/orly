@@ -379,7 +379,6 @@ namespace Base {
 
     /* Contained elements, if any, are also destroyed. */
     ~TJson() {
-      assert(this);
       switch (Kind) {
         /* Do nothing. */
         case Null:   { break; }
@@ -394,7 +393,6 @@ namespace Base {
 
     /* The donor is left null. */
     TJson &operator=(TJson &&that) noexcept {
-      assert(this);
       assert(&that);
       this->~TJson();
       new (this) TJson(std::move(that));
@@ -403,14 +401,12 @@ namespace Base {
 
     /* Deep-copy. */
     TJson &operator=(const TJson &that) {
-      assert(this);
       assert(&that);
       return *this = TJson(that);
     }
 
     /* True iff. this object and that one are in the same state. */
     bool operator==(const TJson &that) const noexcept {
-      assert(this);
       assert(&that);
       bool success = (Kind == that.Kind);
       if (success) {
@@ -428,13 +424,11 @@ namespace Base {
 
     /* True iff. this object and that one are not in the same state. */
     bool operator!=(const TJson &that) const noexcept {
-      assert(this);
       return !(*this == that);
     }
 
     /* Subscript to an element contained in an array. */
     TJson &operator[](size_t that) {
-      assert(this);
       assert(Kind == Array);
       assert(that < Array_.size());
       return Array_[that];
@@ -442,7 +436,6 @@ namespace Base {
 
     /* Subscript to an element contained in an array. */
     const TJson &operator[](size_t that) const {
-      assert(this);
       assert(Kind == Array);
       assert(that < Array_.size());
       return Array_[that];
@@ -450,7 +443,6 @@ namespace Base {
 
     /* Find or create an element contained in an object. */
     TJson &operator[](TString &&that) {
-      assert(this);
       assert(&that);
       assert(Kind == Object);
       return Object_[std::move(that)];
@@ -458,7 +450,6 @@ namespace Base {
 
     /* Find or create an element contained in an object. */
     TJson &operator[](const TString &that) {
-      assert(this);
       assert(&that);
       assert(Kind == Object);
       return Object_[that];
@@ -466,7 +457,6 @@ namespace Base {
 
     /* Find or create an element contained in an object. */
     const TJson &operator[](const TString &that) const {
-      assert(this);
       assert(&that);
       assert(Kind == Object);
       const TJson *elem = TryFind(that);
@@ -476,7 +466,6 @@ namespace Base {
 
     /* Accept the visitor. */
     void Accept(const TVisitor &visitor) const {
-      assert(this);
       assert(&visitor);
       switch (Kind) {
         case Null:   { visitor(       ); break; }
@@ -490,13 +479,11 @@ namespace Base {
 
     /* Returns true if the object contains the given key */
     bool Contains(const TString &that) const {
-      assert(this);
       return TryFind(that);
     }
 
     /* Call back for each element contained in an array. */
     bool ForEachElem(const TArrayCb &cb) const {
-      assert(this);
       assert(&cb);
       assert(cb);
       assert(Kind == Array);
@@ -510,7 +497,6 @@ namespace Base {
 
     /* Call back for each element contained in an object. */
     bool ForEachElem(const TObjectCb &cb) const {
-      assert(this);
       assert(&cb);
       assert(cb);
       assert(Kind == Object);
@@ -524,7 +510,6 @@ namespace Base {
 
     /* Call back for each element contained in an array. */
     bool ForEachElem(const TArrayCbNonConst &cb) {
-      assert(this);
       assert(&cb);
       assert(cb);
       assert(Kind == Array);
@@ -538,7 +523,6 @@ namespace Base {
 
     /* Call back for each element contained in an object. */
     bool ForEachElem(const TObjectCbNonConst &cb) {
-      assert(this);
       assert(&cb);
       assert(cb);
       assert(Kind == Object);
@@ -552,14 +536,12 @@ namespace Base {
 
     /* The kind of state we're in. */
     TKind GetKind() const noexcept {
-      assert(this);
       return Kind;
     }
 
     /* The number of elements in an array or object or the number of
        characters in a string. */
     size_t GetSize() const noexcept {
-      assert(this);
       switch (Kind) {
         case Array:  { return Array_ .size(); }
         case Object: { return Object_.size(); }
@@ -572,43 +554,36 @@ namespace Base {
     }
 
     const TArray &GetArray() const noexcept {
-      assert(this);
       assert(Kind == Array);
       return Array_;
     }
 
     TArray &GetArray() noexcept {
-      assert(this);
       assert(Kind == Array);
       return Array_;
     }
 
     bool GetBool() const noexcept {
-      assert(this);
       assert(Kind == Bool);
       return Bool_;
     }
 
     double GetNumber() const noexcept {
-      assert(this);
       assert(Kind == Number);
       return Number_;
     }
 
     const TString &GetString() const noexcept {
-      assert(this);
       assert(Kind == String);
       return String_;
     }
 
     bool IsNull() const noexcept {
-      assert(this);
       return Kind == Null;
     }
 
     /* Parse from the stream. */
     void Read(std::istream &strm) {
-      assert(this);
       assert(&strm);
       int c = std::ws(strm).peek();
       switch (c) {
@@ -677,7 +652,6 @@ namespace Base {
 
     /* Return to the default-constructed state (which is null). */
     TJson &Reset() noexcept {
-      assert(this);
       this->~TJson();
       Kind = Null;
       return *this;
@@ -685,7 +659,6 @@ namespace Base {
 
     /* Swap states. */
     TJson &Swap(TJson &that) noexcept {
-      assert(this);
       assert(&that);
       TJson temp = std::move(*this);
       new (this) TJson(std::move(that));
@@ -696,7 +669,6 @@ namespace Base {
     /* If we contain a bool, get it and return true;
        otherwise, return false. */
     bool TryAs(bool &out) const {
-      assert(this);
       bool success = (Kind == Bool);
       if (success) {
         out = Bool_;
@@ -707,7 +679,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(int8_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -718,7 +689,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(int16_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -729,7 +699,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(int32_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -740,7 +709,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(int64_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -751,7 +719,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(uint8_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -762,7 +729,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(uint16_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -773,7 +739,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(uint32_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -784,7 +749,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(uint64_t &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -795,7 +759,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(float &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -806,7 +769,6 @@ namespace Base {
     /* If we contain a number, get it and return true;
        otherwise, return false. */
     bool TryAs(double &out) const {
-      assert(this);
       bool success = (Kind == Number);
       if (success) {
         out = Number_;
@@ -817,7 +779,6 @@ namespace Base {
     /* If we contain a string, get it and return true;
        otherwise, return false. */
     bool TryAs(std::string &out) const {
-      assert(this);
       bool success = (Kind == String);
       if (success) {
         out = String_;
@@ -828,7 +789,6 @@ namespace Base {
     /* A pointer to the named element in the object, or null if we have no
        such element. */
     const TJson *TryFind(const std::string &key) const {
-      assert(this);
       assert(Kind == Object);
       auto iter = Object_.find(key);
       return (iter != Object_.end()) ? &(iter->second) : nullptr;
@@ -836,7 +796,6 @@ namespace Base {
 
     /* Format to the stream. */
     void Write(std::ostream &strm) const {
-      assert(this);
       assert(&strm);
       switch (Kind) {
         case Null: {

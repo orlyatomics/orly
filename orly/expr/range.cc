@@ -47,7 +47,6 @@ TRange::TRange(
 
 
 void TRange::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -79,7 +78,6 @@ Type::TType TRange::GetTypeImpl() const {
       throw TExprError(code_location, PosRange, "Range constructor elements must be evaluated to int");
     }
   };  // TRangeTypeVisitor
-  assert(this);
   Type::TType start_type;
   GetStart()->GetType().Accept(TRangeTypeVisitor(start_type, GetStart()->GetPosRange()));
   if (GetOptStride()) {
@@ -103,24 +101,20 @@ Type::TType TRange::GetTypeImpl() const {
 
 /* Return the pointer to the start */
 const TExpr::TPtr &TRange::GetStart() const {
-  assert(this);
   return GetExprs()[0];
 }
 
 /* Return the pointer to an optional end. This means the pointer can be null */
 const TExpr::TPtr &TRange::GetOptStride() const {
-  assert(this);
   return GetExprs()[1];
 }
 
 /* Return the pointer to an optional end. This means the pointer can be null */
 const TExpr::TPtr &TRange::GetOptEnd() const {
-  assert(this);
   return GetExprs()[2];
 }
 
 bool TRange::HasEndIncluded() const {
-  assert(this);
   return EndIncluded;
 }
 

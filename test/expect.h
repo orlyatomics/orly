@@ -251,14 +251,12 @@ namespace Test {
 
     /* TODO */
     operator bool() const {
-      assert(this);
       return Pass;
     }
 
     /* TODO */
     template <typename TVal>
     const TExpect &Write(const TVal &val) const {
-      assert(this);
       Explanation << val;
       return *this;
     }
@@ -266,7 +264,6 @@ namespace Test {
     private:
     template <typename TLhs, typename TRhs>
     void WriteInfixOp(const char *lhs_str, const TLhs &lhs, const char *op_str, const char *rhs_str, const TRhs &rhs) {
-      assert(this);
       assert(lhs_str);
       assert(&lhs);
       assert(op_str);

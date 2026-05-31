@@ -113,33 +113,28 @@ namespace Signal {
 
     /* Add the signal to the set. */
     TSet &operator+=(int sig) {
-      assert(this);
       Util::IfLt0(sigaddset(&OsObj, sig));
       return *this;
     }
 
     /* Remove the signal from the set. */
     TSet &operator-=(int sig) {
-      assert(this);
       Util::IfLt0(sigdelset(&OsObj, sig));
       return *this;
     }
 
     /* Construct a new set with the signal added. */
     TSet operator+(int sig) {
-      assert(this);
       return TSet(*this) += sig;
     }
 
     /* Construct a new set with the signal removed. */
     TSet operator-(int sig) {
-      assert(this);
       return TSet(*this) -= sig;
     }
 
     /* True iff. the signal is in the set. */
     bool operator[](int sig) const {
-      assert(this);
       int result;
       Util::IfLt0(result = sigismember(&OsObj, sig));
       return result != 0;
@@ -147,13 +142,11 @@ namespace Signal {
 
     /* Access the OS object. */
     const sigset_t &operator*() const {
-      assert(this);
       return OsObj;
     }
 
     /* Access the OS object. */
     const sigset_t *Get() const {
-      assert(this);
       return &OsObj;
     }
 

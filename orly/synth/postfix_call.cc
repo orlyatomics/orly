@@ -79,7 +79,6 @@ TPostfixCall::~TPostfixCall() {
 }
 
 Expr::TExpr::TPtr TPostfixCall::Build() const {
-  assert(this);
   Expr::TFunctionApp::TFunctionAppArgMap args;
   for (auto arg : Args) {
     auto result = args.insert(make_pair((arg.first).GetText(), Expr::TFunctionAppArg::New((arg.second)->Build())));
@@ -89,7 +88,6 @@ Expr::TExpr::TPtr TPostfixCall::Build() const {
 }
 
 void TPostfixCall::Cleanup() {
-  assert(this);
   delete Expr;
   for (auto arg : Args) {
     delete arg.second;
@@ -97,7 +95,6 @@ void TPostfixCall::Cleanup() {
 }
 
 void TPostfixCall::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
@@ -107,7 +104,6 @@ void TPostfixCall::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TPostfixCall::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

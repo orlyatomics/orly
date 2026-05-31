@@ -41,13 +41,11 @@ TTestCaseBlock::TTestCase::TTestCase(
         PosRange(pos_range) {}
 
 TTestCaseBlock::TTestCase::~TTestCase() {
-  assert(this);
   delete Expr;
   delete OptTestCaseBlock;
 }
 
 Symbol::Test::TTestCase::TPtr TTestCaseBlock::TTestCase::Build() const {
-  assert(this);
   return Symbol::Test::TTestCase::New(
              Expr->Build(),
              OptName,
@@ -56,7 +54,6 @@ Symbol::Test::TTestCase::TPtr TTestCaseBlock::TTestCase::Build() const {
 }
 
 void TTestCaseBlock::TTestCase::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   Expr->ForEachInnerScope(cb);
   if (OptTestCaseBlock) {
     OptTestCaseBlock->ForEachInnerScope(cb);
@@ -64,7 +61,6 @@ void TTestCaseBlock::TTestCase::ForEachInnerScope(const std::function<void (TSco
 }
 
 void TTestCaseBlock::TTestCase::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   Expr->ForEachRef(cb);
   if (OptTestCaseBlock) {
     OptTestCaseBlock->ForEachRef(cb);
@@ -127,14 +123,12 @@ TTestCaseBlock::TTestCaseBlock(const TExprFactory *expr_factory, const Package::
 }
 
 TTestCaseBlock::~TTestCaseBlock() {
-  assert(this);
   for (auto &test_case : TestCases) {
     delete test_case;
   }
 }
 
 Symbol::Test::TTestCaseBlock::TPtr TTestCaseBlock::Build() const {
-  assert(this);
   Symbol::Test::TTestCaseBlock::TTestCases test_cases;
   for (auto &test_case : TestCases) {
     test_cases.push_back(test_case->Build());
@@ -143,7 +137,6 @@ Symbol::Test::TTestCaseBlock::TPtr TTestCaseBlock::Build() const {
 }
 
 void TTestCaseBlock::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto &test_case : TestCases) {
@@ -152,7 +145,6 @@ void TTestCaseBlock::ForEachInnerScope(const std::function<void (TScope *)> &cb)
 }
 
 void TTestCaseBlock::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto &test_case : TestCases) {

@@ -47,12 +47,10 @@ namespace Orly {
 
         /* TODO */
         void AppendUpdate(const Base::TUuid &repo_id, const TUpdateWalker::TItem &item) {
-          assert(this);
           UpdateVec.push_back(std::move(TUpdate(repo_id, item, Suprena)));
         }
 
         void Write(Io::TBinaryOutputStream &strm) const {
-          assert(this);
           TTranslationMap translation_map;
           /* Writing out the Intern context first */
           strm << Suprena.GetSize();  // (size_t> number of notes
@@ -159,7 +157,6 @@ namespace Orly {
 
         /* TODO */
         void Read(Io::TBinaryInputStream &strm) {
-          assert(this);
           assert(Suprena);
           TTranslationMap translation_map;
           size_t num_elem;
@@ -219,7 +216,6 @@ namespace Orly {
 
         /* TODO */
         void Write(Io::TBinaryOutputStream &strm) const {
-          assert(this);
           TTranslationMap translation_map;
           /* Writing out the Intern context first */
           strm << Suprena->GetSize();  // (size_t> number of notes
@@ -263,7 +259,6 @@ namespace Orly {
 
         /* TODO */
         void AppendUpdate(const Base::TUuid &repo_id, const TUpdateWalker::TItem &item) {
-          assert(this);
           UpdateVec.push_back(std::move(TUpdate(repo_id, item, *Suprena)));
         }
 

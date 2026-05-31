@@ -67,7 +67,6 @@ TStmtBlock::~TStmtBlock() {
 }
 
 Symbol::Stmt::TStmtBlock::TPtr TStmtBlock::Build() const {
-  assert(this);
   Symbol::Stmt::TStmtBlock::TStmtVec stmts;
   for (auto stmt : Stmts) {
     stmts.emplace_back(stmt->Build());
@@ -76,14 +75,12 @@ Symbol::Stmt::TStmtBlock::TPtr TStmtBlock::Build() const {
 }
 
 void TStmtBlock::Cleanup() {
-  assert(this);
   for (auto stmt : Stmts) {
     delete stmt;
   }
 }
 
 void TStmtBlock::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   for (auto stmt : Stmts) {
     stmt->ForEachRef(cb);
   }

@@ -52,7 +52,6 @@ namespace Orly {
 
         /* TODO */
         inline void AddHits(size_t block_num, size_t num_hits) {
-          assert(this);
           std::lock_guard<std::mutex> lock(CountLock);
           uint8_t *val = WorksetBuf.get() + block_num;
           double cur = log(exp(*val) + num_hits);
@@ -61,14 +60,12 @@ namespace Orly {
 
         /* TODO */
         inline uint8_t GetNumHits(size_t block_num) const {
-          assert(this);
           std::lock_guard<std::mutex> lock(CountLock);
           return *(WorksetBuf.get() + block_num);
         }
 
         /* TODO */
         inline void Reset(size_t block_num) {
-          assert(this);
           std::lock_guard<std::mutex> lock(CountLock);
           *(WorksetBuf.get() + block_num) = 0;
         }
@@ -77,7 +74,6 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetNumBytes() const {
-          assert(this);
           return ceil(static_cast<double>(NumBlocks) / BlockSize) * BlockSize;
         }
 

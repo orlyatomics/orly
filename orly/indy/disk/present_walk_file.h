@@ -53,20 +53,17 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetHash() const {
-          assert(this);
           return GenId ^ FileId.GetHash()^ IndexId.GetHash();
         }
 
         /* TODO */
         inline bool operator==(const TWalkerKey &that) const {
-          assert(this);
           assert(&that);
           return FileId == that.FileId && GenId == that.GenId && IndexId == that.IndexId;
         }
 
         /* TODO */
         inline bool operator!=(const TWalkerKey &that) const {
-          assert(this);
           assert(&that);
           return FileId != that.FileId || GenId != that.GenId || IndexId != that.IndexId;
         }
@@ -212,14 +209,12 @@ namespace Orly {
 
           /* True iff. we have an item. */
           inline virtual operator bool() const {
-            assert(this);
             //Refresh();
             return Valid;
           }
 
           /* The current item. */
           inline virtual const TItem &operator*() const {
-            assert(this);
             //Refresh();
             assert(Cached);
             assert(Valid);
@@ -229,7 +224,6 @@ namespace Orly {
 
           /* Walk to the next item, if any. */
           inline virtual TPresentWalker &operator++() {
-            assert(this);
             Cached = false;
             Refresh();
             return *this;
@@ -239,7 +233,6 @@ namespace Orly {
 
           /* TODO */
           void Refresh() const {
-            assert(this);
             assert (!Cached);
             assert(Valid);
             #ifndef NDEBUG
@@ -351,7 +344,6 @@ namespace Orly {
                               const Base::TUuid &file_id,
                               size_t gen_id,
                               const Base::TUuid &index_id) {
-          assert(this);
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
           if (!loader) {
             loader = new TLoaderObj(this, file_id, gen_id, index_id);
@@ -361,7 +353,6 @@ namespace Orly {
 
         /* TODO */
         void Clear(const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
-          assert(this);
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
           delete loader;
         }
@@ -384,7 +375,6 @@ namespace Orly {
 
           /* TODO */
           ~TLoaderObj() {
-            assert(this);
             for (TPresentWalkFile *file = FreeQueue; file;) {
               TPresentWalkFile *to_delete = file;
               file = file->NextWalker;
@@ -394,7 +384,6 @@ namespace Orly {
 
           /* TODO */
           TPresentWalkFile *GetNewFile(Util::TEngine *engine, const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
-            assert(this);
             if (!FreeQueue) {
               return new TPresentWalkFile(engine, file_id, gen_id, index_id, this);
             } else {
@@ -406,7 +395,6 @@ namespace Orly {
 
           /* TODO */
           void Free(TPresentWalkFile *walker) {
-            assert(this);
             walker->NextWalker = FreeQueue;
             FreeQueue = walker;
           }
@@ -462,7 +450,6 @@ namespace Orly {
 
         /* TODO */
         virtual ~TPresentWalkFileWrapper() {
-          assert(this);
           assert(File);
           assert(File->LoaderObj);
           File->LoaderObj->Free(File);
@@ -470,19 +457,16 @@ namespace Orly {
 
         /* True iff. we have an item. */
         inline virtual operator bool() const {
-          assert(this);
           return static_cast<bool>(*File);
         }
 
         /* The current item. */
         inline virtual const TItem &operator*() const {
-          assert(this);
           return **File;
         }
 
         /* Walk to the next item, if any. */
         inline virtual TPresentWalker &operator++() {
-          assert(this);
           ++(*File);
           return *this;
         }

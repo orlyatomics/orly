@@ -27,7 +27,6 @@ namespace Orly {
     template <typename TTarget>
     const TTarget *TVar::As() const {
       static_assert(std::is_base_of<TVar::TImpl, TTarget>::value, "TVar::As<>() can only be used with final var types");
-      assert(this);
 
       auto res = TryAs<TTarget>();
       assert(res);
@@ -37,7 +36,6 @@ namespace Orly {
     template <typename TTarget>
     bool TVar::Is() const {
       static_assert(std::is_base_of<TVar::TImpl, TTarget>::value, "TVar::Is<>() can only be used with final var types");
-      assert(this);
 
       return TryAs<TTarget>();
     }
@@ -45,7 +43,6 @@ namespace Orly {
     template <typename TTarget>
     const TTarget *TVar::TryAs() const {
       static_assert(std::is_base_of<TVar::TImpl, TTarget>::value, "TVar::TryAs<>() can only be used with final var types");
-      assert(this);
 
       return dynamic_cast<const TTarget*>(Impl.get());
     }

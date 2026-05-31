@@ -79,7 +79,6 @@ namespace Orly {
 
         /* TODO */
         TAddrDir GetAddrDir() const {
-          assert(this);
           return AddrDir;
         }
 

@@ -21,7 +21,6 @@
 using namespace Tools::Nycr::Symbol;
 
 void TRule::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }

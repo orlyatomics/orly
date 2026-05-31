@@ -178,13 +178,11 @@ namespace Orly {
 
       /* TODO */
       inline size_t GetWalkerCount() const {
-        assert(this);
         return WalkerCount;
       }
 
       /* TODO */
       const Base::TTimer &GetPresentWalkConsTimer() const {
-        assert(this);
         return PresentWalkConsTimer;
       }
 
@@ -276,18 +274,15 @@ namespace Orly {
       ******************/
 
     inline TContext::TPresentWalker::operator bool() const {
-      assert(this);
       return Valid;
     }
 
     inline const TContext::TPresentWalker::TItem &TContext::TPresentWalker::operator*() const {
-      assert(this);
       assert(Valid);
       return Item;
     }
 
     inline TContext::TPresentWalker &TContext::TPresentWalker::operator++() {
-      assert(this);
       assert(Valid);
       Valid = static_cast<bool>(MinHeap);
       Refresh();

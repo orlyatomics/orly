@@ -36,17 +36,14 @@ TMetric::TMetric(const char *type_name, const char *name, TDirection direction)
     : Direction(direction), Name(name), TypeName(type_name), PreDtorCalled(false) {}
 
 const char *TMetric::GetTypeName() const {
-  assert(this);
   return TypeName;
 }
 
 const char *TMetric::GetName() const {
-  assert(this);
   return Name;
 }
 
 TMetric::TDirection TMetric::GetDirection() const {
-  assert(this);
   return Direction;
 }
 
@@ -62,23 +59,19 @@ TPerf::TPerf(const char *name, TFunc func, chrono::seconds max_runtime)
 }
 
 TPerf::TFunc TPerf::GetFunc() const {
-  assert(this);
   return Func;
 }
 
 
 std::chrono::seconds TPerf::GetMaxRuntime() const {
-  assert(this);
   return MaxRuntime;
 }
 
 const char *TPerf::GetName() const {
-  assert(this);
   return Name;
 }
 
 const TPerf *TPerf::GetNext() const {
-  assert(this);
   return Next;
 }
 
@@ -126,7 +119,6 @@ class TApp : public TCmd {
   };
 
   virtual TCmd::TMeta *NewMeta() const {
-    assert(this);
     return new TMeta();
   }
 
@@ -172,7 +164,6 @@ class TApp : public TCmd {
   }
 
   virtual int Run() {
-    assert(this);
 
     return Do() ? EXIT_SUCCESS : EXIT_FAILURE;
   }

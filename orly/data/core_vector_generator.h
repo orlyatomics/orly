@@ -58,7 +58,6 @@ namespace Orly {
 
       /* TODO */
       ~TCoreVectorGenerator() {
-        assert(this);
         if (Count > 0) {
           Flush();
         }

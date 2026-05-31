@@ -30,12 +30,10 @@ TTypeDef::TTypeDef(TScope *scope, const Package::Syntax::TTypeDef *type_def)
       Type(NewType(type_def->GetType())) {}
 
 TTypeDef::~TTypeDef() {
-  assert(this);
   delete Type;
 }
 
 TAction TTypeDef::Build(int pass) {
-  assert(this);
   switch (pass) {
     case 1: {
       Type->GetSymbolicType();
@@ -47,7 +45,6 @@ TAction TTypeDef::Build(int pass) {
 }
 
 void TTypeDef::ForEachPred(int pass, const std::function<bool (TDef *)> &cb) {
-  assert(this);
   switch (pass) {
     case 1: {
       Type->ForEachRef([cb](TAnyRef &ref) -> bool {
@@ -61,12 +58,10 @@ void TTypeDef::ForEachPred(int pass, const std::function<bool (TDef *)> &cb) {
 }
 
 void TTypeDef::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   Type->ForEachRef(cb);
 }
 
 const Type::TType &TTypeDef::GetSymbolicType() const {
-  assert(this);
   return Type->GetSymbolicType();
 }
 

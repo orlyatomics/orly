@@ -100,7 +100,6 @@ namespace Orly {
 
         /* TODO */
         TRef Pop() {
-          assert(this);
           assert(!IsEmpty());
           TRef ref = First->Ref;
           TMergeElement *first = First;
@@ -111,7 +110,6 @@ namespace Orly {
 
         /* TODO */
         bool IsEmpty() const {
-          assert(this);
           return First == 0;
         }
 
@@ -192,21 +190,18 @@ namespace Orly {
 
         /* TODO */
         const TKey &Peek() const {
-          assert(this);
           assert(!IsEmpty());
           return First->Key;
         }
 
         /* TODO */
         TKey &Peek() {
-          assert(this);
           assert(!IsEmpty());
           return First->Key;
         }
 
         /* TODO */
         TRef Pop(TSequenceNumber &seq_num) {
-          assert(this);
           assert(!IsEmpty());
           TRef ref = First->Ref;
           seq_num = First->SeqNum;
@@ -218,7 +213,6 @@ namespace Orly {
 
         /* TODO */
         bool IsEmpty() const {
-          assert(this);
           return First == 0;
         }
 
@@ -317,7 +311,6 @@ namespace Orly {
 
         /* TODO */
         TRef Pop(TSequenceNumber &seq_num) {
-          assert(this);
           assert(!IsEmpty());
           TRef ref = First->Ref;
           seq_num = First->SeqNum;
@@ -329,7 +322,6 @@ namespace Orly {
 
         /* TODO */
         bool IsEmpty() const {
-          assert(this);
           return First == 0;
         }
 
@@ -411,7 +403,6 @@ namespace Orly {
 
         /* TODO */
         TRef Pop(TSequenceNumber &seq_num, uuid_t &id) {
-          assert(this);
           assert(!IsEmpty());
           TRef ref = First->Ref;
           seq_num = First->SeqNum;
@@ -424,7 +415,6 @@ namespace Orly {
 
         /* TODO */
         bool IsEmpty() const {
-          assert(this);
           return First == 0;
         }
 
@@ -511,14 +501,12 @@ namespace Orly {
 
         /* TODO */
         const TVal &Peek() const {
-          assert(this);
           assert(!IsEmpty());
           return First->Val;
         }
 
         /* TODO */
         const TVal &Pop(TRef &ref) {
-          assert(this);
           assert(!IsEmpty());
           ref = First->Ref;
           const TVal &val = First->Val;
@@ -530,7 +518,6 @@ namespace Orly {
 
         /* TODO */
         bool IsEmpty() const {
-          assert(this);
           return First == 0;
         }
 
@@ -611,14 +598,12 @@ namespace Orly {
 
         /* TODO */
         const TVal &Peek() const {
-          assert(this);
           assert(!IsEmpty());
           return First->Val;
         }
 
         /* TODO */
         TVal Pop(TRef &ref) {
-          assert(this);
           assert(!IsEmpty());
           ref = First->Ref;
           const TVal val = First->Val;
@@ -630,7 +615,6 @@ namespace Orly {
 
         /* TODO */
         bool IsEmpty() const {
-          assert(this);
           return First == 0;
         }
 

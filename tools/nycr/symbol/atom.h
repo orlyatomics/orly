@@ -38,19 +38,16 @@ namespace Tools {
 
         /* TODO */
         const std::string &GetPattern() const {
-          assert(this);
           return Pattern;
         }
 
         /* TODO */
         const Base::TOpt<int> &GetPri() const {
-          assert(this);
           return Pri;
         }
 
         /* TODO */
         int GetPriAsInt() const {
-          assert(this);
           return Pri ? *Pri : 0;
         }
 

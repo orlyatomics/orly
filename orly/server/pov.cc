@@ -24,7 +24,6 @@ using namespace Orly;
 using namespace Orly::Server;
 
 const Indy::L0::TManager::TPtr<Indy::TRepo> &TPov::GetRepo(const TServer *server) const {
-  assert(this);
   std::lock_guard<std::mutex> lock(RepoLock);
   if (!Repo) {
     assert(server);
@@ -57,7 +56,6 @@ TPov::TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputSt
 TPov::~TPov() {}
 
 void TPov::Write(Io::TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   TObj::Write(strm);
   strm << SessionId << reinterpret_cast<const char &>(Audience) << reinterpret_cast<const char &>(Policy);

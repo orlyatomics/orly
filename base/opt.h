@@ -92,13 +92,11 @@ namespace Base {
 
     /* If we're known, destroy our value as we go. */
     ~TOpt() {
-      assert(this);
       Reset();
     }
 
     /* Swaperator. */
     TOpt &operator=(TOpt &&that) {
-      assert(this);
       assert(&that);
       if (this != &that) {
         if (Val && that.Val) {
@@ -116,14 +114,12 @@ namespace Base {
 
     /* Assignment operator. */
     TOpt &operator=(const TOpt &that) {
-      assert(this);
       return (this != &that) ? *this = TOpt(that) : *this;
     }
 
     /* If we're already known, swap our value with the given one;
        otherwise, move-construct the value into our storage. */
     TOpt &operator=(TVal &&that) {
-      assert(this);
       assert(&that);
       if (Val != &that) {
         if (Val) {
@@ -137,67 +133,57 @@ namespace Base {
 
     /* Assume a copy of the given value.  If we weren't known before, we will be now. */
     TOpt &operator=(const TVal &that) {
-      assert(this);
       return (Val != &that) ? *this = TOpt(that) : *this;
     }
 
     /* True iff. we're known. */
     operator bool() const {
-      assert(this);
       return Val != nullptr;
     }
 
     /* Our value.  We must already be known. */
     const TVal &operator*() const {
-      assert(this);
       assert(Val);
       return *Val;
     }
 
     /* Our value.  We must already be known. */
     TVal &operator*() {
-      assert(this);
       assert(Val);
       return *Val;
     }
 
     /* Our value.  We must already be known. */
     const TVal *operator->() const {
-      assert(this);
       assert(Val);
       return Val;
     }
 
     /* Our value.  We must already be known. */
     TVal *operator->() {
-      assert(this);
       assert(Val);
       return Val;
     }
 
     /* A pointer to our value.  We must already be known. */
     const TVal *Get() const {
-      assert(this);
       assert(Val);
       return Val;
     }
 
     /* A pointer to our value.  We must already be known. */
     TVal *Get() {
-      assert(this);
       assert(Val);
       return Val;
     }
 
     /* True iff. we're known. */
     bool IsKnown() const {
-      assert(this);
       return Val != nullptr;
     }
 
     /* True iff. we're not known. */
     bool IsUnknown() const {
-      assert(this);
       return Val == nullptr;
     }
 
@@ -205,7 +191,6 @@ namespace Base {
        Return a refernce to our (possibly new) value. */
     template <typename... TArgs>
     TVal &MakeKnown(TArgs &&... args) {
-      assert(this);
       if (!Val) {
         Val = new (Storage) TVal(std::forward<TArgs>(args)...);
       }
@@ -214,7 +199,6 @@ namespace Base {
 
     /* Stream in. */
     void Read(Io::TBinaryInputStream &strm) {
-      assert(this);
       assert(&strm);
       bool is_known;
       strm >> is_known;
@@ -228,7 +212,6 @@ namespace Base {
     /* Forward our value to the out-parameter and resume the unknown state.
        We must already be known. */
     void Release(TVal &val) {
-      assert(this);
       assert(&val);
       assert(Val);
       val = std::forward<TVal>(*Val);
@@ -237,7 +220,6 @@ namespace Base {
 
     /* Reset to the unknown state. */
     TOpt &Reset() {
-      assert(this);
       if (Val) {
         Val->~TVal();
         Val = 0;
@@ -247,19 +229,16 @@ namespace Base {
 
     /* A pointer to our value.  If we're not known, return null. */
     const TVal *TryGet() const {
-      assert(this);
       return Val;
     }
 
     /* A pointer to our value.  If we're not known, return null. */
     TVal *TryGet() {
-      assert(this);
       return Val;
     }
 
     /* Stream out. */
     void Write(Io::TBinaryOutputStream &strm) const {
-      assert(this);
       assert(&strm);
       bool is_known = *this;
       strm << is_known;

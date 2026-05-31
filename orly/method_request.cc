@@ -44,7 +44,6 @@ TMethodRequest::TMethodRequest(const TId &pov_id, const TPackage &package, const
 }
 
 void TMethodRequest::Read(TBinaryInputStream &strm) {
-  assert(this);
   assert(&strm);
   strm >> PovId >> TimeToLive >> TrackingId >> Package >> Closure;
   if (!IsValid()) {
@@ -55,12 +54,10 @@ void TMethodRequest::Read(TBinaryInputStream &strm) {
 }
 
 void TMethodRequest::Write(TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   strm << PovId << TimeToLive << TrackingId << Package << Closure;
 }
 
 bool TMethodRequest::IsValid() const {
-  assert(this);
   return !Package.empty() && !Closure.GetMethodName().empty() && (!TrackingId || !TimeToLive.count());
 }

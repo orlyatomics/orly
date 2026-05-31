@@ -1200,7 +1200,6 @@ void TServer::Init() {
 }
 
 TServer::~TServer() {
-  assert(this);
   WsRunner.ShutDown();
   WsThread.join();
   delete TetrisManager;
@@ -1212,20 +1211,17 @@ TServer::~TServer() {
 }
 
 TWs::TSessionPin *TServer::NewSession() {
-  assert(this);
   assert(DurableManager);
   return new TSessionPin(this);
 }
 
 TWs::TSessionPin *TServer::ResumeSession(const TUuid &id) {
-  assert(this);
   assert(DurableManager);
   return new TSessionPin(this, id);
 }
 
 bool TServer::ForEachIndex(const std::function<
     bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const {
-  assert(this);
   lock_guard<mutex> lock(IndexMapMutex);
   Atom::TSuprena temp_arena;
   for(const auto &idx: IndexByIndexId) {
@@ -1268,17 +1264,14 @@ TServer::TSessionPin::TSessionPin(TServer *server, const TUuid &id) {
 }
 
 void TServer::TSessionPin::BeginImport() const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::BeginImport, Conn.get())));
 }
 
 void TServer::TSessionPin::EndImport() const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::EndImport, Conn.get())));
 }
 
 const Base::TUuid &TServer::TSessionPin::GetId() const {
-  assert(this);
   return Conn->GetSession()->GetId();
 }
 
@@ -1298,13 +1291,11 @@ void TServer::TSessionPin::Import(const string &file_pattern,
 
 void TServer::TSessionPin::InstallPackage(
     const std::vector<std::string> &name, uint64_t version) const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::InstallPackage, Conn.get(), cref(name), version)));
 }
 
 Base::TUuid TServer::TSessionPin::NewPov(
     bool is_safe, bool is_shared, const Base::TOpt<Base::TUuid> &parent_id) const {
-  assert(this);
   const seconds ttl(600);
   auto func = is_safe
       ? (is_shared ? &TConnection::NewSafeSharedPov : &TConnection::NewSafePrivatePov)
@@ -1319,28 +1310,23 @@ Base::TUuid TServer::TSessionPin::NewPov(
 }
 
 void TServer::TSessionPin::PausePov(const Base::TUuid &pov_id) const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::PausePov, Conn.get(), cref(pov_id))));
 }
 
 void TServer::TSessionPin::SetTtl(
     const Base::TUuid &durable_id, const std::chrono::seconds &ttl) const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::SetTimeToLive, Conn.get(), cref(durable_id), cref(ttl))));
 }
 
 void TServer::TSessionPin::SetUserId(const Base::TUuid &user_id) const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::SetUserId, Conn.get(), cref(user_id))));
 }
 
 void TServer::TSessionPin::Tail() const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::TailGlobalPov, Conn.get())));
 }
 
 TMethodResult TServer::TSessionPin::Try(const TMethodRequest &method_request) const {
-  assert(this);
   TMethodResult method_result;
   Conn->RunWs(Indy::Fiber::TJumpRunnable(
       [this, &method_request, &method_result] {
@@ -1353,12 +1339,10 @@ TMethodResult TServer::TSessionPin::Try(const TMethodRequest &method_request) co
 
 void TServer::TSessionPin::UninstallPackage(
     const std::vector<std::string> &name, uint64_t version) const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::UninstallPackage, Conn.get(), cref(name), version)));
 }
 
 void TServer::TSessionPin::UnpausePov(const Base::TUuid &pov_id) const {
-  assert(this);
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::UnpausePov, Conn.get(), cref(pov_id))));
 }
 
@@ -1397,7 +1381,6 @@ void TServer::TConnection::Run(TFd &fd) {
     TConnection *Connection;
     shared_ptr<TFuture<void>> &Ack;
   };
-  assert(this);
   assert(&fd);
   /* Install the socket as our RPC device. */
   auto device = make_shared<TDevice>(move(fd));
@@ -1525,7 +1508,6 @@ void TServer::TConnection::OnRelease(TConnection *connection) {
 }
 
 void TServer::AcceptClientConnections(bool is_memcache) {
-  assert(this);
   if (!Fiber::TFrame::LocalFramePool) {
     Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
   }
@@ -1551,7 +1533,6 @@ void TServer::AcceptClientConnections(bool is_memcache) {
 }
 
 void TServer::BeginImport() {
-  assert(this);
   DEBUG_LOG("server; pausing tetris for global pov");
   TetrisManager->PausePlayer(TSession::GlobalPovId);
   DEBUG_LOG("server; tetris for global pov is paused");
@@ -1571,7 +1552,6 @@ void TServer::CleanHouse() {
 }
 
 string TServer::Echo(const string &msg) {
-  assert(this);
   assert(&msg);
   if (msg[0] == '"' && msg[1] == '!') {
     string temp = msg.substr(2, msg.size() - 3);
@@ -1606,7 +1586,6 @@ string TServer::ImportCoreVector(const string &file_pattern,
       2. merge all our generated files from the file system iteratively till we have 1 file
       3. insert that 1 file into our repo system
      */
-  assert(this);
   assert(&file_pattern);
   string result;
   const size_t merge_simultaneous = merge_simultaneous_in;
@@ -2074,7 +2053,6 @@ string TServer::ImportCoreVector(const string &file_pattern,
 }
 
 void TServer::InstallPackage(const vector<string> &package_name, uint64_t version) {
-  assert(this);
 
   if (package_name == Mynde::PackageName) {
     throw std::runtime_error("memcachememcache is a reserved package name.");
@@ -2152,7 +2130,6 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
 }
 
 void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
-  assert(this);
   assert(&fd);
   assert(&client_address);
   string client_address_str;
@@ -2261,7 +2238,6 @@ template<uint64_t Length>
 constexpr uint64_t GetArrayLen(const char(&)[Length]) { return Length; }
 
 void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &client_address) {
-  assert(this);
   assert(&fd_original);
   assert(&client_address);
 
@@ -2598,7 +2574,6 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &client_addr
 }
 
 void TServer::StateChangeCb(Orly::Indy::TManager::TState state) {
-  assert(this);
   string from;
   string to;
   switch (RepoState) {
@@ -2661,12 +2636,10 @@ void TServer::StateChangeCb(Orly::Indy::TManager::TState state) {
 }
 
 void TServer::UninstallPackage(const vector<string> &package_name, uint64_t version) {
-  assert(this);
   PackageManager.Uninstall(unordered_set<Package::TVersionedName>{Package::TVersionedName{{package_name}, version}});
 }
 
 void TServer::WaitForSlave() {
-  assert(this);
   using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
     Orly::Indy::Disk::Util::LogicalBlockSize,
     Orly::Indy::Disk::Util::PhysicalBlockSize,
@@ -2710,14 +2683,12 @@ TIndyReporter::TIndyReporter(const TServer *server, TScheduler *scheduler, int p
 }
 
 void TIndyReporter::AcceptClientConnections() {
-  assert(this);
   for (;;) {
     Scheduler->Schedule(bind(&TIndyReporter::ServeClient, this, TFd(accept(Socket, nullptr, nullptr))));
   }
 }
 
 void TIndyReporter::ServeClient(TFd &fd) {
-  assert(this);
   char buf[8192];
   for (;;) {
     IfLt0(read(fd, buf, 8192));
@@ -2742,7 +2713,6 @@ void TIndyReporter::ServeClient(TFd &fd) {
 }
 
 void TIndyReporter::AddReport(std::stringstream &ss) const {
-  assert(this);
   const Disk::Util::TEngine *engine = !Server->Cmd.MemorySim ? Server->DiskEngine->GetEngine() : Server->SimMemEngine->GetEngine();
   #ifdef PERF_STATS
   Disk::Util::TPageCache *const page_cache = engine->GetPageCache();

@@ -34,13 +34,11 @@ namespace Io {
 
     /* The pool from which we acquire chunks.  Never null. */
     const std::shared_ptr<TPool> &GetPool() const {
-      assert(this);
       return Pool;
     }
 
     /* The consumer of the output we produce.  Null if we're not pushing. */
     const std::shared_ptr<TOutputConsumer> &GetOutputConsumer() const {
-      assert(this);
       return OutputConsumer;
     }
 

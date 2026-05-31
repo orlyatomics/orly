@@ -29,12 +29,10 @@ TGivenExpr::TGivenExpr(const TParamFuncDef *param_func_def, const Package::Synta
     : GivenExpr(Base::AssertTrue(given_expr)), ParamFuncDef(Base::AssertTrue(param_func_def)) {}
 
 Expr::TExpr::TPtr TGivenExpr::Build() const {
-  assert(this);
   return Expr::TRef::New(ParamFuncDef->GetParamDefSymbol(), GetPosRange(GivenExpr));
 }
 
 void TGivenExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   ParamFuncDef->GetType()->ForEachRef(cb);
 }

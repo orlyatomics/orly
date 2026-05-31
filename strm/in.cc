@@ -28,7 +28,6 @@ TProd::TProd() noexcept
     : Cons(nullptr) {}
 
 TProd::~TProd() {
-  assert(this);
   assert(!Cons);
 }
 
@@ -41,7 +40,6 @@ TCons::TCons(TProd *prod) noexcept
 }
 
 TCons::~TCons() {
-  assert(this);
   assert(Prod->Cons == this);
   if (Start) {
     Prod->Cycle(1, nullptr, nullptr);
@@ -50,7 +48,6 @@ TCons::~TCons() {
 }
 
 void TCons::Read(void *data, size_t size) {
-  assert(this);
   assert(data || !size);
   auto *cursor = static_cast<char *>(data);
   while (size) {
@@ -64,7 +61,6 @@ void TCons::Read(void *data, size_t size) {
 }
 
 size_t TCons::TryRead(void *data, size_t size) {
-  assert(this);
   assert(data || !size);
   size_t remaining = size;
 
@@ -87,7 +83,6 @@ size_t TCons::TryRead(void *data, size_t size) {
 
 
 void TCons::Skip(size_t size) {
-  assert(this);
   while (size) {
     Refresh();
     auto actl = min<size_t>(size, Limit - Cursor);
@@ -97,7 +92,6 @@ void TCons::Skip(size_t size) {
 }
 
 void TCons::TryRefresh() const {
-  assert(this);
   if (Cursor >= Limit) {
     if (Prod->Cycle(Start ? 1 : 0, &Start, &Limit)) {
       assert(Start < Limit);

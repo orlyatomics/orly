@@ -55,95 +55,77 @@ TClient::TClient(const TAddress &server_address, const TOpt<TUuid> &session_id, 
 }
 
 TClient::~TClient() {
-  assert(this);
   Destructing.Push();
   IoThread.join();
   DispatchThread.join();
 }
 
 shared_ptr<TFuture<string>> TClient::Echo(const string &msg) {
-  assert(this);
   return Write<string>(1000, msg);
 }
 
 shared_ptr<TFuture<void>> TClient::InstallPackage(const vector<string> &package_name, uint64_t version) {
-  assert(this);
   return Write<void>(ServerRpc::InstallPackage, package_name, version);
 }
 
 shared_ptr<TFuture<void>> TClient::UnInstallPackage(const vector<string> &package_name, uint64_t version) {
-  assert(this);
   return Write<void>(ServerRpc::UninstallPackage, package_name, version);
 }
 
 shared_ptr<Rpc::TFuture<TUuid>> TClient::NewFastPrivatePov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
-  assert(this);
   return Write<TUuid>(ServerRpc::NewFastPrivatePov, parent_pov_id, ttl);
 }
 
 shared_ptr<Rpc::TFuture<TUuid>> TClient::NewSafePrivatePov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
-  assert(this);
   return Write<TUuid>(ServerRpc::NewSafePrivatePov, parent_pov_id, ttl);
 }
 
 shared_ptr<Rpc::TFuture<TUuid>> TClient::NewFastSharedPov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
-  assert(this);
   return Write<TUuid>(ServerRpc::NewFastSharedPov, parent_pov_id, ttl);
 }
 
 shared_ptr<Rpc::TFuture<TUuid>> TClient::NewSafeSharedPov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
-  assert(this);
   return Write<TUuid>(ServerRpc::NewSafeSharedPov, parent_pov_id, ttl);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::PausePov(const TUuid &pov_id) {
-  assert(this);
   return Write<void>(ServerRpc::PausePov, pov_id);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::UnpausePov(const TUuid &pov_id) {
-  assert(this);
   return Write<void>(ServerRpc::UnpausePov, pov_id);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::SetUserId(const TUuid &user_id) {
-  assert(this);
   return Write<void>(ServerRpc::SetUserId, user_id);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::SetTimeToLive(const TUuid &durable_id, const chrono::seconds &time_to_live) {
-  assert(this);
   return Write<void>(ServerRpc::SetTimeToLive, durable_id, time_to_live);
 }
 
 shared_ptr<Rpc::TFuture<TMethodResult>> TClient::Try(const TUuid &pov_id, const vector<string> &fq_name, const TClosure &closure) {
-  assert(this);
   return Write<TMethodResult>(ServerRpc::Try, pov_id, fq_name, closure);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::BeginImport() {
-  assert(this);
   return Write<void>(ServerRpc::BeginImport);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::EndImport() {
-  assert(this);
   return Write<void>(ServerRpc::EndImport);
 }
 
 shared_ptr<Rpc::TFuture<void>> TClient::TailGlobalPov() {
-  assert(this);
   return Write<void>(ServerRpc::TailGlobalPov);
 }
 
 shared_ptr<Rpc::TFuture<string>> TClient::ImportCoreVector(const string &file_pattern, const string &pkg_name, int64_t num_load_threads, int64_t num_merge_threads, int64_t merge_simultaneous) {
-  assert(this);
   return Write<string>(
       ServerRpc::ImportCoreVector, file_pattern, pkg_name, num_load_threads, num_merge_threads, merge_simultaneous);
 }
 
 void TClient::DispatchMain() {
-  assert(this);
   try {
     /* Loop until we get the destruction semaphore, handling messages from the server. */
     pollfd polls[2];
@@ -183,7 +165,6 @@ void TClient::DispatchMain() {
 }
 
 void TClient::IoMain() {
-  assert(this);
   try {
     /* Loop while the internal pipe is open, relaying data between the pipe and the server. */
     pollfd polls[2];

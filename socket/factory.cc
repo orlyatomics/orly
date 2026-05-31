@@ -38,12 +38,10 @@ TFactory::TFactory()
 }
 
 TFactory::~TFactory() {
-  assert(this);
   freeifaddrs(FirstInterface);
 }
 
 TFd TFactory::New(TAddress &address) const {
-  assert(this);
   assert(&address);
   /* Find a network interface that matches our criteria. */
   auto *sa = FindNetworkInterface();
@@ -73,7 +71,6 @@ TFd TFactory::New(TAddress &address) const {
 }
 
 sockaddr *TFactory::FindNetworkInterface() const {
-  assert(this);
   sockaddr *result;
   /* This will track the state of our search through the linked list of
      network interfaces. */

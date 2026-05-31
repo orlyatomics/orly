@@ -39,13 +39,11 @@ namespace Tools {
 
       /* TODO */
       const std::string &GetPatternText() const {
-        assert(this);
         return PatternText;
       }
 
       /* TODO */
       int GetPri() const {
-        assert(this);
         return Pri ? *Pri : 0;
       }
 

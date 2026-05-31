@@ -73,13 +73,11 @@ namespace Orly {
 
           /* TODO */
           const TBufBlock *GetBuf() const {
-            assert(this);
             return Buf;
           }
 
           /* TODO */
           size_t GetBlockId() const {
-            assert(this);
             return BlockId;
           }
 
@@ -110,7 +108,6 @@ namespace Orly {
 
         /* TODO */
         virtual void Flush() {
-          assert(this);
           WriteCollection.DeleteEachMember();
           QueueSize = 0UL;
         }
@@ -123,13 +120,11 @@ namespace Orly {
 
         /* TODO */
         size_t GetSize() const {
-          assert(this);
           return QueueSize;
         }
 
         /* TODO */
         void Append(size_t cur_block_id, const TBufBlock *buf) {
-          assert(this);
           auto handle = WriteCollection.TryGetLastMember();
           if (!handle) {
             /* it's empty, let's add ourselves */

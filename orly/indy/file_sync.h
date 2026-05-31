@@ -48,19 +48,16 @@ namespace Orly {
 
       /* TODO */
       inline size_t GetStartingBlockId() const {
-        assert(this);
         return StartingBlockId;
       }
 
       /* TODO */
       inline size_t GetStartingBlockOffset() const {
-        assert(this);
         return StartingBlockOffset;
       }
 
       /* TODO */
       inline size_t GetFileLength() const {
-        assert(this);
         return BlockVec.Size() * Disk::Util::LogicalBlockSize;
       }
 

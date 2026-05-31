@@ -36,7 +36,6 @@ TAddrOf::TAddrOf(const TExpr::TPtr &expr, const TPosRange &pos_range)
   : TUnary(expr, pos_range) {}
 
 void TAddrOf::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -69,7 +68,6 @@ Type::TType TAddrOf::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TAddrOfTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TAddrOfTypeVisitor(type, GetPosRange()));
   return type;

@@ -27,12 +27,10 @@ using namespace Orly;
 using namespace Orly::Var;
 
 size_t TUnknown::GetHash() const {
-  assert(this);
   return 0;
 }
 
 Type::TType TUnknown::GetType() const {
-  assert(this);
   return Type::TUnknown::Get();
 }
 
@@ -41,77 +39,62 @@ void TUnknown::Write(std::ostream &) const {
 }
 
 void TUnknown::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TUnknown::Touch() {
-  assert(this);
 }
 
 Var::TVar &TUnknown::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on unknown.");
 }
 
 TUnknown &TUnknown::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not supported on unknown.");
 }
 
 TUnknown &TUnknown::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on unknown.");
 }
 
 TUnknown &TUnknown::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on unknown.");
 }
 
 TUnknown &TUnknown::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on unknown.");
 }
 
 TUnknown &TUnknown::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on unknown.");
 }
 
 TUnknown &TUnknown::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on unknown.");
 }
 
 TUnknown &TUnknown::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on unknown.");
 }
 
 TUnknown &TUnknown::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on unknown.");
 }
 
 TUnknown &TUnknown::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on unknown.");
 }
 
 TUnknown &TUnknown::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on unknown.");
 }
 
 TUnknown &TUnknown::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union Or not supported on unknown.");
 }
 
 TUnknown &TUnknown::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on unknown.");
 }
 

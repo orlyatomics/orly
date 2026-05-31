@@ -63,13 +63,11 @@ namespace Io {
     /* The number of chunks currently cached by this consumer.
        This information is of limited real value, but is useful for debugging. */
     size_t GetCachedChunkCount() const {
-      assert(this);
       return Chunks.size();
     }
 
     /* The producer of the input which we consume.  Never null. */
     const std::shared_ptr<TInputProducer> &GetInputProducer() const {
-      assert(this);
       return InputProducer;
     }
 
@@ -78,7 +76,6 @@ namespace Io {
 
     /* True iff. we have reached the end of the input stream. */
     bool IsAtEnd() {
-      assert(this);
       TryRefresh();
       return ChunkIdx >= Chunks.size() && NoMoreChunks;
     }
@@ -93,7 +90,6 @@ namespace Io {
     /* The number of bytes currently available to Peek() and TryPeek().
        This will always be > 0 unless we have reached the end of the input stream. */
     size_t GetPeekSize() {
-      assert(this);
       TryRefresh();
       return Limit - Cursor;
     }
@@ -102,7 +98,6 @@ namespace Io {
        Use GetPeekSize() to find out how many bytes here are valid.
        If we have reached the end of the input stream, throw TPastEndError. */
     const char *Peek() {
-      assert(this);
       Refresh();
       return Cursor;
     }
@@ -110,7 +105,6 @@ namespace Io {
     /* The byte at our current position.
        If we have reached the end of the input stream, throw TPastEndError. */
     char PeekChar() {
-      assert(this);
       return *Peek();
     }
 
@@ -125,7 +119,6 @@ namespace Io {
        Use GetPeekSize() to find out how many bytes here are valid.
        If we have reached the end of the input stream, this will be null. */
     const char *TryPeek() {
-      assert(this);
       TryRefresh();
       return Cursor;
     }
@@ -148,7 +141,6 @@ namespace Io {
 
     /* Refresh our cursor, then return the size given or the available number of bytes at the cursor, whichever is lesser. */
     size_t GetStepSize(size_t size) {
-      assert(this);
       Refresh();
       size_t step_size = Limit - Cursor;
       return std::min(size, step_size);
@@ -157,7 +149,6 @@ namespace Io {
     /* Make sure we have at least one byte of usable data at our cursor.
        If we don't have one and can't get one, throw TPastEndError. */
     void Refresh() {
-      assert(this);
       TryRefresh();
       if (ChunkIdx >= Chunks.size()) {
         throw TPastEndError();

@@ -49,7 +49,6 @@
        public:
 
        std::shared_ptr<TObj> GetThis() {
-         assert(this);
          return shared_from_this();
        }
 
@@ -61,7 +60,6 @@
        public:
 
        TShared<TObj> GetThis() {
-         assert(this);
          return TShared<TObj>::Share(this);
        }
 
@@ -167,7 +165,6 @@ namespace Visitor {
     /* Increment the number of TShared<> instances that are currently pointing
        at the managed element. */
     void IncrSharedCount() noexcept {
-      assert(this);
       ++SharedCount;
     }
 
@@ -178,7 +175,6 @@ namespace Visitor {
        they can inspect the SharedCount. If no TWeak<> instances are pointing
        at the managed element either, No one wants us... we die. */
     void DecrSharedCount() noexcept {
-      assert(this);
       assert(SharedCount > 0);
       if (--SharedCount == 0) {
         Destroy(GetElem());
@@ -191,7 +187,6 @@ namespace Visitor {
     /* Increment the number of TWeak<> instances that are currently pointing
        at the managed element. */
     void IncrWeakCount() noexcept {
-      assert(this);
       ++WeakCount;
     }
 
@@ -200,7 +195,6 @@ namespace Visitor {
        managed element and neither are any TWeak<> instances, no one wants us,
        we die. */
     void DecrWeakCount() noexcept {
-      assert(this);
       assert(WeakCount > 0);
       if (--WeakCount == 0 && SharedCount == 0) {
         Delete();
@@ -210,14 +204,12 @@ namespace Visitor {
     /* Return the number of TShared<> instances that are currently pointing at
        the managed element. */
     std::size_t GetCount() const noexcept {
-      assert(this);
       return SharedCount;
     }
 
     /* Validate the control_block and return the memory address immediately
        after the control block. */
     void *GetElem() const noexcept {
-      assert(this);
       assert(IsValid());
       return static_cast<void *>(const_cast<TControlBlock *>(std::next(this)));
     }
@@ -239,7 +231,6 @@ namespace Visitor {
     /* Invoke ~TControlBlock() and delete the memory allocated by TBuffer.
        Use whatever deleter is set for TBuffer so that we stay consistent. */
     void Delete() noexcept {
-      assert(this);
       this->~TControlBlock();
       TBuffer::deleter_type()(this);
     }
@@ -247,7 +238,6 @@ namespace Visitor {
     /* Used in debug mode to catch references to control blocks that are
        invalid. In release mode it just returns true. */
     bool IsValid() const noexcept {
-      assert(this);
       return
 #ifdef NDEBUG
           true;
@@ -317,7 +307,6 @@ namespace Visitor {
     /* If we're stateless, do nothing. Otherwise, decrement the shared count.
        The control block will take care of destroying things as it needs. */
     ~TShared() noexcept {
-      assert(this);
       if (!*this) {
         return;
       }  // if
@@ -327,14 +316,12 @@ namespace Visitor {
 
     /* Returns true iff we have a state, returns false otherwise. */
     explicit operator bool() const noexcept {
-      assert(this);
       return Elem;
     }
 
     /* Steal the state from the donor, leaving it stateless.
        If we already have a state, abandon it. */
     TShared &operator=(TShared &&that) noexcept {
-      assert(this);
       TShared temp(std::move(that));
       return Swap(temp);
     }
@@ -343,7 +330,6 @@ namespace Visitor {
        If we already have a state, abandon it. */
     template <typename TThatElem>
     TShared &operator=(TShared<TThatElem> &&that) {
-      assert(this);
       TShared temp(std::move(that));
       return Swap(temp);
     }
@@ -351,7 +337,6 @@ namespace Visitor {
     /* Share the state with the other shared.
        If we already have a state, abandon it. */
     TShared &operator=(const TShared &that) noexcept {
-      assert(this);
       TShared temp(that);
       return Swap(temp);
     }
@@ -360,7 +345,6 @@ namespace Visitor {
        If we already have a state, abandon it. */
     template <typename TThatElem>
     TShared &operator=(const TShared<TThatElem> &that) {
-      assert(this);
       TShared temp(that);
       return Swap(temp);
     }
@@ -369,40 +353,34 @@ namespace Visitor {
     template <typename TElem = TElem,
               Mpl::DisableIf<std::is_same<TElem, void>>...>
     TElem &operator*() const noexcept {
-      assert(this);
       assert(Elem);
       return *Elem;
     }
 
     /* Dereference the managed element. */
     TElem *operator->() const noexcept {
-      assert(this);
       return Elem;
     }
 
     /* Return the native pointer to the managed element. */
     TElem *Get() const noexcept {
-      assert(this);
       return Elem;
     }
 
     /* Return the number of TShared<> instances that are currently pointing at
        the managed element. */
     std::size_t GetCount() const noexcept {
-      assert(this);
       return Elem ? TControlBlock::GetControlBlock(Elem)->GetCount() : 0;
     }
 
     /* Returns true iff we're the only one referring to the managed element,
        otherwise return false. */
     bool IsUnique() const noexcept {
-      assert(this);
       return GetCount() == 1;
     }
 
     /* Swap the pointers to the managed element. */
     TShared &Swap(TShared &that) noexcept {
-      assert(this);
       assert(&that);
       if (this == &that) {
         return *this;
@@ -413,7 +391,6 @@ namespace Visitor {
 
     /* Bring us back to the default-constructed state. */
     TShared &Reset() noexcept {
-      assert(this);
       TShared temp;
       return Swap(temp);
     }
@@ -616,7 +593,6 @@ namespace Visitor {
     /* If we're stateless, do nothing. Otherwise, decrement the weak count.
        The control block will take care of destroying things as it needs. */
     ~TWeak() {
-      assert(this);
       if (!Elem) {
         return;
       }  // if
@@ -628,7 +604,6 @@ namespace Visitor {
        If we already have a state, abandon it. */
     template <typename TThatElem>
     TWeak &operator=(const TShared<TThatElem> &that) noexcept {
-      assert(this);
       TWeak temp(that);
       return Swap(temp);
     }
@@ -636,7 +611,6 @@ namespace Visitor {
     /* Share the state with the other shared.
        If we already have a state, abandon it. */
     TWeak &operator=(const TWeak &that) noexcept {
-      assert(this);
       TWeak temp(that);
       return Swap(temp);
     }
@@ -645,7 +619,6 @@ namespace Visitor {
        If we already have a state, abandon it. */
     template <typename TThatElem>
     TWeak &operator=(const TWeak<TThatElem> &that) noexcept {
-      assert(this);
       TWeak temp(that);
       return Swap(temp);
     }
@@ -654,7 +627,6 @@ namespace Visitor {
        pointing at the manage element. Use this to check if an instance of
        TWeak<> is dead. */
     bool IsExpired() const noexcept {
-      assert(this);
       return GetCount() == 0;
     }
 
@@ -662,20 +634,17 @@ namespace Visitor {
        element. If the life-time of the managed element is expired, returns an
        empty TShared<> instance. */
     TShared<TElem> Lock() const noexcept {
-      assert(this);
       return IsExpired() ? TShared<TElem>() : Share(*Elem);
     }
 
     /* Return the number of TShared<> instances that are currently pointing at
        the managed element. */
     std::size_t GetCount() const noexcept {
-      assert(this);
       return Elem ? TControlBlock::GetControlBlock(Elem)->GetCount() : 0;
     }
 
     /* Swap the pointers to the managed element. */
     TWeak &Swap(TWeak &that) noexcept {
-      assert(this);
       assert(&that);
       if (this == &that) {
         return *this;
@@ -686,7 +655,6 @@ namespace Visitor {
 
     /* Bring us back to the default-constructed state. */
     TWeak &Reset() noexcept {
-      assert(this);
       TWeak temp;
       return Swap(temp);
     }

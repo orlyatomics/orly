@@ -60,7 +60,6 @@ namespace Orly {
         /* Calls the closure in the given fiber runner.  If this thread has no local pool of fiber
            frames, we'll make one now, using the given pool manager. */
         void operator()(TFramePoolMngr *frame_pool_mngr, Indy::Fiber::TRunner *runner) {
-          assert(this);
           EnsureLocalFramePool(frame_pool_mngr);
           /* The fiber will set this flag when it's done. */
           Flag = false;
@@ -107,7 +106,6 @@ namespace Orly {
 
         /* Entry point of the fiber. */
         void Main() {
-          assert(this);
           /* Make this thread has a frame pool and a disk event pool. */
           EnsureLocalDiskEventPool();
           try {

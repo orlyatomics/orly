@@ -51,7 +51,6 @@ namespace Base {
 
     /* TODO */
     ~TMiniCache() {
-      assert(this);
       // destroy all the elements
       for (size_t i = 0; i < NumElem; ++i) {
         TElem *ptr = &ElemSpace[i];
@@ -62,7 +61,6 @@ namespace Base {
     /* Insert a new TElem in-place using forward constructed args. */
     template <typename... TFwdKeyArgs, typename... TFwdValArgs>
     void inline Emplace(std::tuple<TFwdKeyArgs...> &&key_args, std::tuple<TFwdValArgs...> &&val_args) {
-      assert(this);
       assert(TryGet(TElem::template Construct<TKey>(std::move(key_args), std::index_sequence_for<TFwdKeyArgs...>())) == nullptr);
       TElem *ptr;
       if (NumElem < MaxSize) {
@@ -81,7 +79,6 @@ namespace Base {
 
     /* Return a pointer to the value, or nullptr if this key is no longer cached. */
     inline TVal *TryGet(const TKey &k) const {
-      assert(this);
       TElem *elem = ElemMap.TryGetFirstMember(k);
       if (elem) {
         // put us at the end of the LRU
@@ -124,7 +121,6 @@ namespace Base {
 
       /* Remove ourselves from the hash map and LRU list. */
       inline ~TElem() {
-        assert(this);
         CacheMembership.Remove();
         LRUMembership.Remove();
       }

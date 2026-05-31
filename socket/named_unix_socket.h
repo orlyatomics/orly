@@ -37,32 +37,26 @@ namespace Socket {
     TNamedUnixSocket(int type, int protocol);
 
     ~TNamedUnixSocket() {
-      assert(this);
       Reset();
     }
 
     const Base::TFd &GetFd() const {
-      assert(this);
       return Fd;
     }
 
     const std::string &GetPath() const {
-      assert(this);
       return Path;
     }
 
     operator int() const {
-      assert(this);
       return Fd;
     }
 
     bool IsBound() const {
-      assert(this);
       return !Path.empty();
     }
 
     bool IsOpen() const {
-      assert(this);
       return Fd.IsOpen();
     }
 

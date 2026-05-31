@@ -34,7 +34,6 @@ THeader::THeader(TRequestKind request_kind, const seconds &time_to_live)
     : Intro(MagicIntro), Version(CurrentVersion), TimeToLive(time_to_live.count()), RequestKind(request_kind) {}
 
 THeader::TRequestKind THeader::GetRequestKind() const {
-  assert(this);
   if (Intro != MagicIntro || Version != CurrentVersion) {
     THROW_ERROR(TBadHeader) << "intro = 0x" << hex << Intro << ", version = 0x" << hex << Version;
   }
@@ -42,7 +41,6 @@ THeader::TRequestKind THeader::GetRequestKind() const {
 }
 
 seconds THeader::GetTimeToLive() const {
-  assert(this);
   return seconds(TimeToLive);
 }
 
@@ -53,7 +51,6 @@ THealthCheck::TReply::TReply(TResult result)
     : Result(result) {}
 
 THealthCheck::TReply::TResult THealthCheck::TReply::GetResult() const {
-  assert(this);
   return Result;
 }
 
@@ -66,7 +63,6 @@ TNewSession::TReply::TReply(const TUuid &session_id) {
 }
 
 TUuid TNewSession::TReply::GetSessionId() const {
-  assert(this);
   return TUuid(SessionId);
 }
 
@@ -77,7 +73,6 @@ TOldSession::TReply::TReply(TResult result)
     : Result(result) {}
 
 TOldSession::TReply::TResult TOldSession::TReply::GetResult() const {
-  assert(this);
   return Result;
 }
 
@@ -90,6 +85,5 @@ TOldSession::TOldSession(const TUuid &session_id) {
 }
 
 TUuid TOldSession::GetSessionId() const {
-  assert(this);
   return TUuid(SessionId);
 }

@@ -95,31 +95,26 @@ namespace Orly {
 
     /* TODO */
     inline size_t TDiskLayer::GetGenId() const {
-      assert(this);
       return GenId;
     }
 
     /* TODO */
     inline size_t TDiskLayer::GetNumKeys() const {
-      assert(this);
       return NumKeys;
     }
 
     /* TODO */
     inline size_t TDiskLayer::GetSize() const {
-      assert(this);
       return NumKeys;
     }
 
     /* TODO */
     inline TSequenceNumber TDiskLayer::GetLowestSeq() const {
-      assert(this);
       return LowestSeq;
     }
 
     /* TODO */
     inline TSequenceNumber TDiskLayer::GetHighestSeq() const {
-      assert(this);
       return HighestSeq;
     }
 

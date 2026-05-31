@@ -62,7 +62,6 @@ namespace Orly {
 
         /* TODO */
         inline Fiber::TSync *GetImpl() {
-          assert(this);
           return reinterpret_cast<Fiber::TSync *>(&SyncSpace[0]);
         }
 

@@ -25,7 +25,6 @@ IMPL_UNARY_TYPE(TErr);
 TErr::~TErr() {}
 
 void TErr::Write(std::ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm << "Orly::Rt::TUserError<" << GetElem() << '>';
 }

@@ -30,7 +30,6 @@ TCall::TCall(const L0::TPackage *package,
       Func(func) {}
 
 void TCall::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   Func->WriteName(out);

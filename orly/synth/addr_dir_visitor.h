@@ -34,7 +34,6 @@ namespace Orly {
             : AddrDir(addr_dir) {}
 
         const TAddrDir &GetAddrDir() const {
-          assert(this);
           return AddrDir;
         }
 

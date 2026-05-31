@@ -53,13 +53,11 @@ namespace Orly {
 
         /* TODO */
         ~TSubSortRunnable() {
-          assert(this);
           TFrame::LocalFramePool->Free(Frame);
         }
 
         /* TODO */
         void DoSort() {
-          assert(this);
           std::sort(Begin, End, Comp);
           SafeSync.Complete();
         }
@@ -102,13 +100,11 @@ namespace Orly {
 
         /* TODO */
         ~TInplaceMergeRunnable() {
-          assert(this);
           TFrame::LocalFramePool->Free(Frame);
         }
 
         /* TODO */
         void DoMerge() {
-          assert(this);
           WaitOnSafeSync.Sync();
           std::inplace_merge(Begin, Middle, End, Comp);
           TriggerToSafeSync.Complete();

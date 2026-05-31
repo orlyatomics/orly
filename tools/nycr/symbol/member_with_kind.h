@@ -37,7 +37,6 @@ namespace Tools {
 
         /* TODO */
         TKind *GetKind() const {
-          assert(this);
           return Kind;
         }
 

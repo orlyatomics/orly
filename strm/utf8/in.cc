@@ -24,7 +24,6 @@ using namespace std;
 using namespace Strm::Utf8;
 
 char32_t TIn::ReadChar() const {
-  assert(this);
   uint8_t c = Peek();
   char32_t result;
   ssize_t more;

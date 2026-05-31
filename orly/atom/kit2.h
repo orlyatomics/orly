@@ -324,14 +324,12 @@ namespace Orly {
       /* Interpret direct data as the given type, regardless of the tycon. */
       template <typename TVal>
       const TVal &ForceAs() const {
-        assert(this);
         return *reinterpret_cast<const TVal *>(DirectBlob);
       }
 
       /* Interpret direct data as the given type, regardless of the tycon. */
       template <typename TVal>
       TVal &ForceAs() {
-        assert(this);
         return *reinterpret_cast<TVal *>(DirectBlob);
       }
 
@@ -365,7 +363,6 @@ namespace Orly {
       template <typename TVal>
       void InitDirect(TTycon tycon, const TVal &val) {
         static_assert(sizeof(TVal) <= MaxDirectSize, "TVal is value too large to store directly.");
-        assert(this);
         assert(&val);
         Init(tycon);
         new (DirectBlob) TVal(val);
@@ -506,7 +503,6 @@ namespace Orly {
 
         /* The note we pin into memory. */
         const TNote *GetNote() const {
-          assert(this);
           return Note;
         }
 
@@ -614,7 +610,6 @@ namespace Orly {
 
       /* TODO */
       bool IsOrdered() const {
-        assert(this);
         return IsOrderedFlag;
       }
 
@@ -834,13 +829,11 @@ namespace Orly {
 
     template <typename TVal>
     TVal *TCore::TNote::GetStart() const {
-      assert(this);
       return const_cast<TVal *>(static_cast<const TVal *>(GetRawData()));
     }
 
     template <typename TVal>
     TVal *TCore::TNote::GetLimit() const {
-      assert(this);
       return const_cast<TVal *>(static_cast<const TVal *>(GetRawData())) + (RawSize / sizeof(TVal));
     }
 
@@ -889,7 +882,6 @@ namespace Orly {
     }
 
     inline bool TCore::TryQuickOrderComparison(TArena *this_arena, const TCore &that_core, TArena *that_arena, Atom::TComparison &comp) const {
-      assert(this);
       assert(this_arena);
       assert(&that_core);
       assert(that_arena);
@@ -1116,7 +1108,6 @@ namespace Orly {
     }
 
     inline bool TCore::MatchType(TArena *this_arena, const TCore &that_core, TArena *that_arena) const {
-      assert(this);
       assert(this_arena);
       assert(&that_core);
       assert(that_arena);
@@ -1267,7 +1258,6 @@ namespace Orly {
     }
 
     inline Orly::Sabot::TMatchResult TCore::PrefixMatch(TArena *this_arena, const TCore &that_core, TArena *that_arena) const {
-      assert(this);
       assert(this_arena);
       assert(&that_core);
       assert(that_arena);
@@ -1315,7 +1305,6 @@ namespace Orly {
     }
 
     inline const uint32_t *TCore::TryGetElemCount() const {
-      assert(this);
       if (Tycon >= TTycon::Desc) {
         return &IndirectCoreArray.ElemCount;
       }
@@ -1323,7 +1312,6 @@ namespace Orly {
     }
 
     inline size_t TCore::ForceGetIndirectHash() const {
-      assert(this);
       assert(Tycon >= TTycon::Blob);
       assert(IndirectCoreArray.StoresHash);
       assert(IndirectCoreArray.UsesFullNote);
@@ -1331,7 +1319,6 @@ namespace Orly {
     }
 
     inline bool TCore::TryGetQuickHash(size_t &out_hash) const {
-      assert(this);
       assert(&out_hash);
       switch (Tycon) {
         case TTycon::Int8: {
@@ -1412,7 +1399,6 @@ namespace Orly {
     }
 
     inline bool TCore::TryGetStoredHash(size_t &out_hash) const {
-      assert(this);
       assert(&out_hash);
       bool success = Tycon >= TTycon::Blob &&
         IndirectCoreArray.StoresHash &&
@@ -1424,13 +1410,11 @@ namespace Orly {
     }
 
     inline size_t TCore::ForceGetStoredHash() const {
-      assert(this);
       assert(Tycon >= TTycon::Blob && IndirectCoreArray.StoresHash);
       return IndirectCoreArray.HashVal;
     }
 
     inline bool TCore::TrySetStoredHash(size_t hash_val) {
-      assert(this);
       bool success = Tycon >= TTycon::Blob;
       if (success) {
         IndirectCoreArray.StoresHash = true;
@@ -1443,7 +1427,6 @@ namespace Orly {
 
     template <typename TVal>
     inline void TCore::TNote::GetArray(TVal *&start, TVal *&limit) const {
-      assert(this);
       assert(&start);
       assert(&limit);
       #ifndef NDEBUG
@@ -1456,7 +1439,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(const uint8_t *&start, const uint8_t *&limit) const {
-      assert(this);
       #ifndef NDEBUG
       if (Tycon != TTycon::Blob) {
         throw TBadType();
@@ -1466,7 +1448,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(uint8_t *&start, uint8_t *&limit) {
-      assert(this);
       #ifndef NDEBUG
       if (Tycon != TTycon::Blob) {
         throw TBadType();
@@ -1476,7 +1457,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(const char *&start, const char *&limit) const {
-      assert(this);
       #ifndef NDEBUG
       if (Tycon != TTycon::Str) {
         throw TBadType();
@@ -1488,7 +1468,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(char *&start, char *&limit) {
-      assert(this);
       #ifndef NDEBUG
       if (Tycon != TTycon::Str) {
         throw TBadType();
@@ -1500,7 +1479,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(const TCore *&start, const TCore *&limit) const {
-      assert(this);
       #ifndef NDEBUG
       switch (Tycon) {
         case TTycon::Desc:
@@ -1522,7 +1500,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(TCore *&start, TCore *&limit) {
-      assert(this);
       #ifndef NDEBUG
       switch (Tycon) {
         case TTycon::Desc:
@@ -1544,7 +1521,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(const TPairOfCores *&start, const TPairOfCores *&limit) const {
-      assert(this);
       #ifndef NDEBUG
       switch (Tycon) {
         case TTycon::Map:
@@ -1562,7 +1538,6 @@ namespace Orly {
     }
 
     inline void TCore::TNote::Get(TPairOfCores *&start, TPairOfCores *&limit) {
-      assert(this);
       #ifndef NDEBUG
       switch (Tycon) {
         case TTycon::Map:
@@ -1580,17 +1555,14 @@ namespace Orly {
     }
 
     inline const void *TCore::TNote::GetRawData() const {
-      assert(this);
       return reinterpret_cast<const void *>(this + 1);
     }
 
     inline size_t TCore::TNote::GetRawSize() const {
-      assert(this);
       return RawSize;
     }
 
     inline size_t TCore::TNote::GetSize() const {
-      assert(this);
       size_t raw_size = RawSize, elem_size;
       switch (Tycon) {
         case TTycon::Blob: {
@@ -1629,12 +1601,10 @@ namespace Orly {
     }
 
     inline bool TCore::TNote::IsExemplar() const {
-      assert(this);
       return Exemplar;
     }
 
     inline bool TCore::TNote::IsUnReferenced() const {
-      assert(this);
       return UnReferenced;
     }
 
@@ -1717,13 +1687,11 @@ namespace Orly {
 
       /* See State::TBlob. */
       virtual size_t GetSize() const override {
-        assert(this);
         return Core->IndirectScalarArray.Size;
       }
 
       /* See State::TBlob. */
       virtual Type::TBlob *GetBlobType(void *type_alloc) const override {
-        assert(this);
         return new (type_alloc) Type::TBlob();
       }
 
@@ -1790,13 +1758,11 @@ namespace Orly {
 
       /* See State::TStr. */
       virtual size_t GetSize() const override {
-        assert(this);
         return Core->IndirectScalarArray.Size;
       }
 
       /* See State::TStr. */
       virtual Type::TStr *GetStrType(void *type_alloc) const override {
-        assert(this);
         return new (type_alloc) Sabot::Type::TStr();
       }
 
@@ -1870,7 +1836,6 @@ namespace Orly {
 
       /* TODO */
       void PostCtor() {
-        assert(this);
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
           throw TCorrupt(HERE);
@@ -1891,7 +1856,6 @@ namespace Orly {
 
       /* Returns the size of the data that needs to be pinned to get this array of states. */
       inline size_t GetComputedSize() const {
-        assert(this);
         return sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * Core->IndirectCoreArray.ElemCount);
       }
 
@@ -1963,7 +1927,6 @@ namespace Orly {
 
       /* See State::TBase. */
       virtual size_t GetElemCount() const override {
-        assert(this);
         return !Core->IndirectCoreArray.IsExemplar ? Core->IndirectCoreArray.ElemCount : 0;
       }
 
@@ -1980,7 +1943,6 @@ namespace Orly {
 
       /* TODO */
       void PostCtor() {
-        assert(this);
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
           throw TCorrupt(HERE);
@@ -2001,7 +1963,6 @@ namespace Orly {
 
       /* Returns the size of the data that needs to be pinned to get this array of states. */
       inline size_t GetComputedSize() const {
-        assert(this);
         return sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * Core->IndirectCoreArray.ElemCount);
       }
 
@@ -2097,7 +2058,6 @@ namespace Orly {
 
       /* See State::TFree. */
       virtual Type::TFree *GetFreeType(void *type_alloc) const override {
-        assert(this);
         return new (type_alloc) TCore::ST::TFree(Arena, Core);
       }
 
@@ -2132,7 +2092,6 @@ namespace Orly {
 
       /* TODO */
       void PostCtor() {
-        assert(this);
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
           throw TCorrupt(HERE);
@@ -2153,7 +2112,6 @@ namespace Orly {
 
       /* Returns the size of the data that needs to be pinned to get this array of pairs of states. */
       inline size_t GetComputedSize() const {
-        assert(this);
         return sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * 2 * Core->IndirectCoreArray.ElemCount);
       }
 
@@ -2226,7 +2184,6 @@ namespace Orly {
 
       /* See State::TBase. */
       virtual size_t GetElemCount() const override {
-        assert(this);
         return !Core->IndirectCoreArray.IsExemplar ? Core->IndirectCoreArray.ElemCount : 0;
       }
 
@@ -2243,7 +2200,6 @@ namespace Orly {
 
       /* TODO */
       void PostCtor() {
-        assert(this);
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
           throw TCorrupt(HERE);
@@ -2264,7 +2220,6 @@ namespace Orly {
 
       /* Returns the size of the data that needs to be pinned to get this array of pairs of states. */
       inline size_t GetComputedSize() const {
-        assert(this);
         return sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * 2 * Core->IndirectCoreArray.ElemCount);
       }
 
@@ -2358,7 +2313,6 @@ namespace Orly {
 
       /* See Type::TBase. */
       virtual size_t GetElemCount() const override {
-        assert(this);
         return Core->IndirectCoreArray.ElemCount;
       }
 
@@ -2371,7 +2325,6 @@ namespace Orly {
 
       /* Returns the size of the data that needs to be pinned to get this record. */
       inline size_t GetComputedSize() const {
-        assert(this);
         return sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * 2 * Core->IndirectCoreArray.ElemCount);
       }
 
@@ -2459,7 +2412,6 @@ namespace Orly {
 
       /* See State::TRecord. */
       virtual Type::TRecord *GetRecordType(void *type_alloc) const override {
-        assert(this);
         return new (type_alloc) TCore::ST::TRecord(Arena, Core);
       }
 
@@ -2470,7 +2422,6 @@ namespace Orly {
 
       /* TODO */
       virtual size_t GetElemCount() const override {
-        assert(this);
         return Core->IndirectCoreArray.ElemCount;
       }
 
@@ -2478,7 +2429,6 @@ namespace Orly {
 
       /* Returns the size of the data that needs to be pinned to get this record. */
       inline size_t GetComputedSize() const {
-        assert(this);
         return sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * 2 * Core->IndirectCoreArray.ElemCount);
       }
 
@@ -2553,7 +2503,6 @@ namespace Orly {
 
       /* See Type::TBase. */
       virtual size_t GetElemCount() const override {
-        assert(this);
         return Core->IndirectCoreArray.ElemCount;
       }
 
@@ -2637,19 +2586,16 @@ namespace Orly {
 
       /* See State::TTuple. */
       virtual Type::TTuple *GetTupleType(void *type_alloc) const override {
-        assert(this);
         return new (type_alloc) TCore::ST::TTuple(Arena, Core);
       }
 
       /* See State::TTuple. */
       virtual State::TTuple::TPin *Pin(void *alloc) const override {
-        assert(this);
         return new (alloc) TPin(this);
       }
 
       /* TODO */
       virtual size_t GetElemCount() const override {
-        assert(this);
         return Core->IndirectCoreArray.ElemCount;
       }
 

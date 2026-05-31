@@ -73,18 +73,15 @@ namespace Orly {
 
             /* TODO */
             ~TCursor() {
-              assert(this);
             }
 
             /* TODO */
             operator bool() const {
-              assert(this);
               return static_cast<bool>(*MinHeap);
             }
 
             /* TODO */
             const TVal &operator*() const {
-              assert(this);
               #ifndef NDEBUG
               if (!static_cast<bool>(*MinHeap)) {
                 throw std::logic_error("empty minheap");
@@ -97,7 +94,6 @@ namespace Orly {
 
             /* TODO */
             const TVal *operator->() const {
-              assert(this);
               #ifndef NDEBUG
               if (!static_cast<bool>(*MinHeap)) {
                 throw std::logic_error("empty minheap");
@@ -110,7 +106,6 @@ namespace Orly {
 
             /* TODO */
             TCursor &operator++() {
-              assert(this);
               size_t pos = 0U;
               MinHeap->Pop(pos);
               assert(pos < CsrVec.size());
@@ -160,7 +155,6 @@ namespace Orly {
 
           /* TODO */
           ~TIndexManager() {
-            assert(this);
             SortFileCollection.DeleteEachMember();
           }
 
@@ -200,7 +194,6 @@ namespace Orly {
 
           /* TODO */
           void Clear() {
-            assert(this);
             MemSorter.Clear();
             MemSorted = false;
             SortFileCollection.DeleteEachMember();
@@ -216,7 +209,6 @@ namespace Orly {
 
           /* TODO */
           void SortMem() {
-            assert(this);
             if (!MemSorted) {
               if (Size >= MinParallelSortThreshold) {
                 //__gnu_parallel::sort(MemSorter.begin(), MemSorter.end(), Comp);
@@ -230,7 +222,6 @@ namespace Orly {
 
           /* TODO */
           void ConsolidateGeneration(size_t gen, size_t num) {
-            assert(this);
             new TSortFile(CodeLocation, UtilSrc, StorageSpeed, Engine, VolMan, BlockCache, gen, num, SortFileCollection, 10UL, Comp, CacheInstr);
           }
 

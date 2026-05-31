@@ -58,13 +58,11 @@ TCos::TCos(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TCos::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TCos::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTrigTypeVisitor(type, GetPosRange()));
   return type;
@@ -79,13 +77,11 @@ TSin::TSin(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TSin::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TSin::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTrigTypeVisitor(type, GetPosRange()));
   return type;
@@ -100,13 +96,11 @@ TTan::TTan(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TTan::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TTan::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTrigTypeVisitor(type, GetPosRange()));
   return type;
@@ -121,13 +115,11 @@ TAcos::TAcos(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TAcos::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAcos::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTrigTypeVisitor(type, GetPosRange()));
   return type;
@@ -142,13 +134,11 @@ TAsin::TAsin(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TAsin::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAsin::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTrigTypeVisitor(type, GetPosRange()));
   return type;
@@ -163,13 +153,11 @@ TAtan::TAtan(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TAtan::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAtan::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTrigTypeVisitor(type, GetPosRange()));
   return type;
@@ -184,13 +172,11 @@ TAtan2::TAtan2(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &
     : TBinary(lhs, rhs, pos_range) {}
 
 void TAtan2::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAtan2::GetTypeImpl() const {
-  assert(this);
   Type::TType type_lhs;
   Type::TType type_rhs;
   GetLhs()->GetType().Accept(TTrigTypeVisitor(type_lhs, GetPosRange()));

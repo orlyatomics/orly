@@ -26,13 +26,11 @@ using namespace Var;
 using namespace Util;
 
 void TDict::Insert(const TDictType::const_iterator &begin, const TDictType::const_iterator &end) {
-  assert(this);
   Val.insert(begin, end);
   SetHash();
 }
 
 void TDict::Remove(const Rt::TSet<TVar> &keys) {
-  assert(this);
   for (auto iter : keys) {
     Val.erase(iter);
   }
@@ -40,12 +38,10 @@ void TDict::Remove(const Rt::TSet<TVar> &keys) {
 }
 
 size_t TDict::GetHash() const {
-  assert(this);
   return Hash;
 }
 
 Type::TType TDict::GetType() const {
-  assert(this);
   return Type::TDict::Get(KeyType, ValType);
 }
 
@@ -61,13 +57,11 @@ void TDict::Write(std::ostream &strm) const {
 }
 
 void TDict::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TDict::SetHash() {
-  assert(this);
   Hash = 0;
   for (auto iter = Val.begin(); iter != Val.end(); ++iter) {
     Hash ^= iter->first.GetHash();
@@ -76,12 +70,10 @@ void TDict::SetHash() {
 }
 
 void TDict::Touch() {
-  assert(this);
   SetHash();
 }
 
 Var::TVar &TDict::Index(const TVar &key) {
-  assert(this);
   auto pos = Val.find(key);
   if (pos == Val.end()) {
     throw Rt::TSystemError(HERE, "Dynamic Dict index key does not exist.");
@@ -90,7 +82,6 @@ Var::TVar &TDict::Index(const TVar &key) {
 }
 
 TDict &TDict::Add(const TVar &rhs) {
-  assert(this);
   TDictType other = Var::TVar::TDt<TDictType>::As(rhs);
   for (auto iter : other) {
     auto ret = Val.insert(iter);
@@ -102,42 +93,34 @@ TDict &TDict::Add(const TVar &rhs) {
 }
 
 TDict &TDict::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on Dict.");
 }
 
 TDict &TDict::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on Dict.");
 }
 
 TDict &TDict::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on Dict.");
 }
 
 TDict &TDict::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on Dict.");
 }
 
 TDict &TDict::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on Dict.");
 }
 
 TDict &TDict::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on Dict.");
 }
 
 TDict &TDict::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on Dict.");
 }
 
 TDict &TDict::Sub(const TVar &rhs) {
-  assert(this);
   TSet::TSetType other = Var::TVar::TDt<TSet::TSetType>::As(rhs);
   for (auto iter : other) {
     Val.erase(iter);
@@ -146,22 +129,18 @@ TDict &TDict::Sub(const TVar &rhs) {
 }
 
 TDict &TDict::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on Dict.");
 }
 
 TDict &TDict::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on Dict.");
 }
 
 TDict &TDict::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on Dict.");
 }
 
 TDict::TDict(const Rt::TDict<TVar, TVar> &that, const Type::TType &key_type, const Type::TType &val_type) : Val(that), KeyType(key_type), ValType(val_type) {
-  assert(this);
   for (auto iter = Val.begin(); iter != Val.end(); ++iter) {
     if (iter->first.GetType() != KeyType) {
       throw Rt::TSystemError(HERE, "Dictionary constructor requires homogenous key type.");
@@ -176,7 +155,6 @@ TDict::TDict(const Rt::TDict<TVar, TVar> &that, const Type::TType &key_type, con
 TDict::~TDict() {}
 
 TVar TDict::Copy() const {
-  assert(this);
   TDictType copy_dict;
   for (auto iter : Val) {
     copy_dict.insert(std::make_pair(iter.first.Copy(), iter.second.Copy()));

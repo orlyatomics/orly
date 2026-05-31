@@ -85,7 +85,6 @@ namespace Orly {
 
         /* Get all the partial changes */
         const TChanges &GetChanges() const {
-          assert(this);
           return Changes;
         };
 

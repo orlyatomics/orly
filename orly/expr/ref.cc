@@ -41,7 +41,6 @@ TRef::TRef(const Symbol::TDef *def, const TPosRange &pos_range)
     : TLeaf(pos_range), Def(Base::AssertTrue(def)) {}
 
 void TRef::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -52,7 +51,6 @@ Type::TType TRef::GetTypeImpl() const {
           This works because the only place we allow a ref to point to a non-zero parameter function is
           when the ref is within a function application
   */
-  assert(this);
   auto interior = dynamic_cast<const TInterior *>(GetExprParent());
   if (!interior || !interior->Is<Expr::TFunctionApp>()) {
     ImplicitFunctionAppCheck();
@@ -61,12 +59,10 @@ Type::TType TRef::GetTypeImpl() const {
 }
 
 const Symbol::TDef *TRef::GetDef() const {
-  assert(this);
   return Def;
 }
 
 void TRef::ImplicitFunctionAppCheck() const {
-  assert(this);
   class TDefVisitor
       : public Symbol::TDef::TVisitor {
     NO_COPY(TDefVisitor);
@@ -88,7 +84,6 @@ void TRef::ImplicitFunctionAppCheck() const {
     private:
     const TPosRange &PosRange;
     void ThrowError(const Base::TCodeLocation &code_location) const {
-      assert(this);
       throw TExprError(code_location, PosRange, "Cannot implicitly call a non-zero parameter function");
     }
   };  // TDefVisitor

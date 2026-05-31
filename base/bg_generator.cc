@@ -30,7 +30,6 @@ using namespace Base;
 using namespace Util;
 
 TAnyBgGenerator::~TAnyBgGenerator() noexcept {
-  assert(this);
   /* If this assertion fails, it means you didn't call FinalizeBg() in your
      destructor. */
   assert(State == Unstarted);
@@ -43,7 +42,6 @@ size_t TAnyBgGenerator::GetDefStackSize() {
 }
 
 bool TAnyBgGenerator::BgYield() {
-  assert(this);
   /* If this assertion fails, you're probably not calling this function from
      the bg. */
   assert(State == Started);
@@ -53,7 +51,6 @@ bool TAnyBgGenerator::BgYield() {
 }
 
 void TAnyBgGenerator::FinalizeBg() noexcept {
-  assert(this);
   /* Loop while we're not unstarted.  (That is, while we're maybe doing
      something in the bg.) */
   for (;;) {
@@ -86,7 +83,6 @@ void TAnyBgGenerator::FinalizeBg() noexcept {
 }
 
 bool TAnyBgGenerator::HasBgYielded() const {
-  assert(this);
   /* Loop until the bg yields or exits.  If this is our first time through,
      construct the bg context. */
   for (;;) {
@@ -144,7 +140,6 @@ bool TAnyBgGenerator::HasBgYielded() const {
 }
 
 void TAnyBgGenerator::RequestBgYield() {
-  assert(this);
   /* Make sure we've yielded something. */
   RequireBgHasYielded();
   /* And now require that we yield again. */
@@ -152,14 +147,12 @@ void TAnyBgGenerator::RequestBgYield() {
 }
 
 void TAnyBgGenerator::RequireBgHasYielded() const {
-  assert(this);
   if (!HasBgYielded()) {
     ThrowSystemError(ENODATA);
   }
 }
 
 void TAnyBgGenerator::Swap(TAnyBgGenerator &that) noexcept {
-  assert(this);
   assert(&that);
   /* If this assertion fails, it means this or that generator has already
      started running and so cannot be swapped. */
@@ -178,7 +171,6 @@ void TAnyBgGenerator::Swap(TAnyBgGenerator &that) noexcept {
 }
 
 void TAnyBgGenerator::BgWrapper() noexcept {
-  assert(this);
   assert(KeepGoing);
   try {
     /* Do the work. */

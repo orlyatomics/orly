@@ -49,7 +49,6 @@ class TCounter {
 
   /* Increment the counter, possibly unblocking the threads blocked on Wait(). */
   void Incr() {
-    assert(this);
     unique_lock<mutex> lock(Mutex);
     ++Count;
     Changed.notify_all();
@@ -57,7 +56,6 @@ class TCounter {
 
   /* Block until the count equals the given value. */
   void Wait(size_t count) {
-    assert(this);
     unique_lock<mutex> lock(Mutex);
     while (Count != count) {
       Changed.wait(lock);
@@ -103,7 +101,6 @@ class TTester {
 
   /* Run the workers, let them build the queue, then check to see if the queue is in order. */
   bool Run() {
-    assert(this);
     /* Launch the required number of workers. */
     vector<thread> workers;
     for (int priority_backoff = 0; priority_backoff < WorkerCount; ++priority_backoff) {
@@ -132,7 +129,6 @@ class TTester {
 
   /* Workers start here. */
   void ThreadMain(int priority_backoff) {
-    assert(this);
     /* Boost, if we're supposed to. */
     unique_ptr<TBooster> booster;
     if (Boosted) {

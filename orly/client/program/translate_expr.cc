@@ -303,7 +303,6 @@ Type::TRecordType::TPin::TPin(const TRecordType *record_type)
 }
 
 Sabot::Type::TAny *Type::TRecordType::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
-  assert(this);
   assert(&name);
   auto member = RecordType->Members[elem_idx];
   name = member->GetName()->GetLexeme().GetText();
@@ -331,7 +330,6 @@ Type::TRecordType::TRecordType(const TObjType *type) {
 }
 
 size_t Type::TRecordType::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
@@ -345,7 +343,6 @@ Type::TRecordExpr::TPin::TPin(const TRecordExpr *record_expr)
 }
 
 Sabot::Type::TAny *Type::TRecordExpr::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
-  assert(this);
   assert(&name);
   auto member = RecordExpr->Members[elem_idx];
   name = member->GetName()->GetLexeme().GetText();
@@ -381,7 +378,6 @@ Type::TRecordExpr::TRecordExpr(const TObjExpr *expr) {
 }
 
 size_t Type::TRecordExpr::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
@@ -395,7 +391,6 @@ Type::TTupleType::TPin::TPin(const TTupleType *tuple_type)
 }
 
 Sabot::Type::TAny *Type::TTupleType::TPin::NewElem(size_t elem_idx, void *type_alloc) const {
-  assert(this);
   return NewTypeSabot(TupleType->Members[elem_idx]->GetType(), type_alloc);
 }
 
@@ -410,7 +405,6 @@ Type::TTupleType::TTupleType(const TAddrType *type) {
 }
 
 size_t Type::TTupleType::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
@@ -424,7 +418,6 @@ Type::TTupleExpr::TPin::TPin(const TTupleExpr *tuple_expr)
 }
 
 Sabot::Type::TAny *Type::TTupleExpr::TPin::NewElem(size_t elem_idx, void *type_alloc) const {
-  assert(this);
   auto member = TupleExpr->Members[elem_idx];
   auto expr = member->GetExpr();
   return dynamic_cast<const TDescOrdering *>(member->GetOptOrdering())
@@ -443,7 +436,6 @@ Type::TTupleExpr::TTupleExpr(const TAddrExpr *expr) {
 }
 
 size_t Type::TTupleExpr::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
@@ -458,7 +450,6 @@ State::TBool::TBool(const TFalseExpr *)
     : Val(false) {}
 
 const bool &State::TBool::Get() const {
-  assert(this);
   return Val;
 }
 
@@ -472,7 +463,6 @@ State::TInt::TInt(const TIntExpr *expr) {
 }
 
 const int64_t &State::TInt::Get() const {
-  assert(this);
   return Val;
 }
 
@@ -486,7 +476,6 @@ State::TReal::TReal(const TRealExpr *expr) {
 }
 
 const double &State::TReal::Get() const {
-  assert(this);
   return Val;
 }
 
@@ -500,7 +489,6 @@ State::TId::TId(const TIdExpr *expr) {
 }
 
 const TUuid &State::TId::Get() const {
-  assert(this);
   return Val;
 }
 
@@ -514,7 +502,6 @@ State::TTimePnt::TTimePnt(const TTimePntExpr *expr) {
 }
 
 const Sabot::TStdTimePoint &State::TTimePnt::Get() const {
-  assert(this);
   return Val;
 }
 
@@ -528,7 +515,6 @@ State::TTimeDiff::TTimeDiff(const TTimeDiffExpr *expr) {
 }
 
 const Sabot::TStdDuration &State::TTimeDiff::Get() const {
-  assert(this);
   return Val;
 }
 
@@ -560,7 +546,6 @@ State::TStr::TStr(const TDoubleQuotedRawStrExpr *expr) {
 }
 
 size_t State::TStr::GetSize() const {
-  assert(this);
   return Val.size();
 }
 
@@ -569,7 +554,6 @@ Sabot::Type::TStr *State::TStr::GetStrType(void *type_alloc) const {
 }
 
 State::TStr::TPinBase *State::TStr::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -577,7 +561,6 @@ State::TOpt::TPin::TPin(const TOpt *opt)
     : TPinBase(opt), Expr(opt->Expr) {}
 
 Sabot::State::TAny *State::TOpt::TPin::NewElemInRange(size_t, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(Expr, state_alloc);
 }
 
@@ -594,19 +577,16 @@ State::TOpt::TOpt(const TUnknownExpr *expr) {
 }
 
 size_t State::TOpt::GetElemCount() const {
-  assert(this);
   return Expr ? 1 : 0;
 }
 
 Sabot::Type::TOpt *State::TOpt::GetOptType(void *type_alloc) const {
-  assert(this);
   return Expr
       ? static_cast<Sabot::Type::TOpt *>(new (type_alloc) Type::TUnaryExpr<Sabot::Type::TOpt>(Expr))
       : new (type_alloc) Type::TUnaryType<Sabot::Type::TOpt>(Type);
 }
 
 State::TOpt::TPinBase *State::TOpt::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -616,7 +596,6 @@ State::TDesc::TPin::TPin(const TDesc *desc)
 }
 
 Sabot::State::TAny *State::TDesc::TPin::NewElemInRange(size_t, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(Desc->Expr, state_alloc);
 }
 
@@ -626,17 +605,14 @@ State::TDesc::TDesc(const TExpr *expr)
 }
 
 size_t State::TDesc::GetElemCount() const {
-  assert(this);
   return 1;
 }
 
 Sabot::Type::TDesc *State::TDesc::GetDescType(void *type_alloc) const {
-  assert(this);
   return new (type_alloc) Type::TUnaryExpr<Sabot::Type::TDesc>(Expr);
 }
 
 State::TDesc::TPinBase *State::TDesc::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -646,7 +622,6 @@ State::TSet::TPin::TPin(const TSet *set)
 }
 
 Sabot::State::TAny *State::TSet::TPin::NewElemInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(Set->Members[elem_idx], state_alloc);
 }
 
@@ -681,19 +656,16 @@ State::TSet::TSet(const TSetType *type) {
 }
 
 size_t State::TSet::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
 Sabot::Type::TSet *State::TSet::GetSetType(void *type_alloc) const {
-  assert(this);
   return !Members.empty()
       ? static_cast<Sabot::Type::TSet *>(new (type_alloc) Type::TUnaryExpr<Sabot::Type::TSet>(Members[0]))
       : new (type_alloc) Type::TUnaryType<Sabot::Type::TSet>(Type);
 }
 
 State::TSet::TPinBase *State::TSet::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -703,7 +675,6 @@ State::TList::TPin::TPin(const TList *list)
 }
 
 Sabot::State::TAny *State::TList::TPin::NewElemInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(List->Members[elem_idx], state_alloc);
 }
 
@@ -724,19 +695,16 @@ State::TList::TList(const TListType *type) {
 }
 
 size_t State::TList::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
 Sabot::Type::TVector *State::TList::GetVectorType(void *type_alloc) const {
-  assert(this);
   return !Members.empty()
       ? static_cast<Sabot::Type::TVector *>(new (type_alloc) Type::TUnaryExpr<Sabot::Type::TVector>(Members[0]))
       : new (type_alloc) Type::TUnaryType<Sabot::Type::TVector>(Type);
 }
 
 State::TList::TPinBase *State::TList::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -746,12 +714,10 @@ State::TDict::TPin::TPin(const TDict *dict)
 }
 
 Sabot::State::TAny *State::TDict::TPin::NewLhsInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(Dict->Members[elem_idx]->GetKey(), state_alloc);
 }
 
 Sabot::State::TAny *State::TDict::TPin::NewRhsInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(Dict->Members[elem_idx]->GetValue(), state_alloc);
 }
 
@@ -788,19 +754,16 @@ State::TDict::TDict(const TDictType *type) {
 }
 
 size_t State::TDict::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
 Sabot::Type::TMap *State::TDict::GetMapType(void *type_alloc) const {
-  assert(this);
   return !Members.empty()
       ? static_cast<Sabot::Type::TMap *>(new (type_alloc) Type::TBinaryExpr<Sabot::Type::TMap>(Members[0]->GetKey(), Members[0]->GetValue()))
       : new (type_alloc) Type::TBinaryType<Sabot::Type::TMap>(LhsType, RhsType);
 }
 
 State::TDict::TPinBase *State::TDict::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -810,7 +773,6 @@ State::TObj::TPin::TPin(const TObj *obj)
 }
 
 Sabot::State::TAny *State::TObj::TPin::NewElemInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   return NewStateSabot(Obj->Members[elem_idx]->GetExpr(), state_alloc);
 }
 
@@ -834,17 +796,14 @@ State::TObj::TObj(const TObjExpr *expr)
 }
 
 size_t State::TObj::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
 Sabot::Type::TRecord *State::TObj::GetRecordType(void *type_alloc) const {
-  assert(this);
   return new (type_alloc) Type::TRecordExpr(Expr);
 }
 
 State::TObj::TPinBase *State::TObj::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
@@ -854,7 +813,6 @@ State::TAddr::TPin::TPin(const TAddr *addr)
 }
 
 Sabot::State::TAny *State::TAddr::TPin::NewElemInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   auto member = Addr->Members[elem_idx];
   auto expr = member->GetExpr();
   return dynamic_cast<const TDescOrdering *>(member->GetOptOrdering())
@@ -874,16 +832,13 @@ State::TAddr::TAddr(const TAddrExpr *expr)
 }
 
 size_t State::TAddr::GetElemCount() const {
-  assert(this);
   return Members.size();
 }
 
 Sabot::Type::TTuple *State::TAddr::GetTupleType(void *type_alloc) const {
-  assert(this);
   return new (type_alloc) Type::TTupleExpr(Expr);
 }
 
 State::TAddr::TPinBase *State::TAddr::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }

@@ -51,28 +51,24 @@ namespace Utf8 {
 
       /* True iff. we have a match. */
       operator bool() const {
-        assert(this);
         TryRefresh();
         return Status == Match;
       }
 
       /* Our current match. */
       const TPiece &operator*() const {
-        assert(this);
         Refresh();
         return Piece;
       }
 
       /* Our current match. */
       const TPiece *operator->() const {
-        assert(this);
         Refresh();
         return &Piece;
       }
 
       /* Advance to the next match, if any. */
       TCursor &operator++() {
-        assert(this);
         Refresh();
         Text = Piece.GetStart() + 1;
         Flags |= REG_NOTBOL;
@@ -84,14 +80,12 @@ namespace Utf8 {
 
       /* Make sure we have a match. */
       void Refresh() const {
-        assert(this);
         TryRefresh();
         assert(Status == Match);
       }
 
       /* Try to make sure we have a match. */
       void TryRefresh() const {
-        assert(this);
         if (Status == Unknown) {
           Status = Regex->TryGetMatch(Text, Piece, Flags) ? Match : NoMoreMatches;
         }

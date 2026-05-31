@@ -57,13 +57,11 @@ TCeiling::TCeiling(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TCeiling::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TCeiling::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TCeilingTypeVisitor(type, GetPosRange()));
   return type;

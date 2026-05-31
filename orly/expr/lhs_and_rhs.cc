@@ -35,18 +35,15 @@ TLhs::TLhs(const TLhsRhsable *lhsrhsable, const TPosRange &pos_range)
     : TLeaf(pos_range), LhsRhsable(Base::AssertTrue(lhsrhsable)) {}
 
 void TLhs::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLhs::GetTypeImpl() const {
-  assert(this);
   return LhsRhsable->GetLhsRhsType();
 }
 
 const TLhsRhsable *TLhs::GetLhsRhsable() const {
-  assert(this);
   return LhsRhsable;
 }
 
@@ -58,17 +55,14 @@ TRhs::TRhs(const TLhsRhsable *lhsrhsable, const TPosRange &pos_range)
     : TLeaf(pos_range), LhsRhsable(Base::AssertTrue(lhsrhsable)) {}
 
 void TRhs::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TRhs::GetTypeImpl() const {
-  assert(this);
   return LhsRhsable->GetLhsRhsType();
 }
 
 const TLhsRhsable *TRhs::GetLhsRhsable() const {
-  assert(this);
   return LhsRhsable;
 }

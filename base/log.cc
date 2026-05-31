@@ -25,12 +25,10 @@
 using namespace Base;
 
 int TLog::TCmd::GetOpenFlags() const {
-  assert(this);
   return LOG_PID | (Echo ? LOG_PERROR : 0);
 }
 
 int TLog::TCmd::GetMask() const {
-  assert(this);
   int result = LOG_MASK(LOG_EMERG) | LOG_MASK(LOG_ALERT) | LOG_MASK(LOG_CRIT) | LOG_MASK(LOG_ERR);
   if (All) {
     if (Info) {

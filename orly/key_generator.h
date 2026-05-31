@@ -137,7 +137,6 @@ namespace Orly {
 
       /* TODO */
       operator bool() const {
-        assert(this);
         Refresh();
         assert(Cached);
         return Valid;
@@ -145,7 +144,6 @@ namespace Orly {
 
       /* TODO */
       TVal &operator*() const {
-        assert(this);
         Refresh();
         assert(Cached);
         assert(Valid);
@@ -154,7 +152,6 @@ namespace Orly {
 
       /* TODO */
       Base::TIter<TVal> &operator++() {
-        assert(this);
         ++(*Iter);
         Cached = false;
         return *this;
@@ -164,7 +161,6 @@ namespace Orly {
 
       /* TODO */
       inline void Refresh() const {
-        assert(this);
         if (!Cached) {
           Cached = true;
           if (static_cast<bool>(*Iter)) {
@@ -203,25 +199,21 @@ namespace Orly {
 
     /* TODO */
     TContextBase &GetContext() {
-      assert(this);
       return Ctx;
     }
 
     /* TODO */
     TContextBase &GetContext() const {
-      assert(this);
       return Ctx;
     }
 
     /* TODO */
     const Indy::TIndexKey &GetStart() const {
-      assert(this);
       return Start;
     }
 
     /* TODO */
     virtual Base::TIterHolder<const TRet> NewCursor() const {
-      assert(this);
       return MakeHolder(new TCursor(this->shared_from_this()));
     }
 

@@ -53,7 +53,6 @@ TAddrCtor::~TAddrCtor() {
 }
 
 Expr::TExpr::TPtr TAddrCtor::Build() const {
-  assert(this);
   Expr::TAddr::TMemberVec members;
   for (auto &member : Members) {
     members.emplace_back(std::make_pair(member.first, (member.second)->Build()));
@@ -62,14 +61,12 @@ Expr::TExpr::TPtr TAddrCtor::Build() const {
 }
 
 void TAddrCtor::Cleanup() {
-  assert(this);
   for (auto &member : Members) {
     delete member.second;
   }
 }
 
 void TAddrCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto &member : Members) {
@@ -78,7 +75,6 @@ void TAddrCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TAddrCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto &member : Members) {

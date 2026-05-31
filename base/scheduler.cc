@@ -43,7 +43,6 @@ TScheduler::TPolicy::TPolicy(size_t min_worker_count, size_t max_worker_count, c
 }
 
 void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job) const {
-  assert(this);
   assert(&main_job);
   try {
     TMasker masker(*TSet(TSet::Full));
@@ -68,20 +67,17 @@ TScheduler::TScheduler(const TPolicy &policy)
     : TScheduler(policy, TOpt<pthread_t>::GetUnknown()) {}
 
 TScheduler::~TScheduler() {
-  assert(this);
   //TODO: This shutdown should be seperate from a global shutdown.
   ShutDown();
   Shutdown(milliseconds(0));
 }
 
 TScheduler::TPolicy TScheduler::GetPolicy() const {
-  assert(this);
   lock_guard<mutex> lock(Mutex);
   return Policy;
 }
 
 void TScheduler::SetPolicy(const TPolicy &policy) {
-  assert(this);
   assert(&policy);
   unique_lock<mutex> lock(Mutex);
   Policy = policy;
@@ -90,7 +86,6 @@ void TScheduler::SetPolicy(const TPolicy &policy) {
 }
 
 bool TScheduler::Schedule(TJob &&job, int priority) {
-  assert(this);
   assert(&job);
   unique_lock<mutex> lock(Mutex);
   bool success = (Policy.GetMaxWorkerCount() > 0);
@@ -109,7 +104,6 @@ bool TScheduler::Schedule(TJob &&job, int priority) {
 }
 
 bool TScheduler::Shutdown(const milliseconds &timeout) {
-  assert(this);
   ShutDown();
   bool is_clean = true;
   unique_lock<mutex> lock(Mutex);
@@ -153,12 +147,10 @@ TScheduler::TWorker::TWorker(TScheduler *scheduler)
       Thread(&TWorker::ThreadMain, this) {}
 
 TScheduler::TWorker::~TWorker() {
-  assert(this);
   Thread.detach();
 }
 
 void TScheduler::TWorker::ThreadMain() {
-  assert(this);
   try {
     if (Scheduler->Policy.IsRealTime()) {
       struct sched_param sp;
@@ -229,7 +221,6 @@ TScheduler::TScheduler(const TPolicy &policy, const TOpt<pthread_t> &ctrl_c_thre
 }
 
 bool TScheduler::TryPopJob(unique_lock<mutex> &lock, TJob &job) {
-  assert(this);
   assert(&lock);
   assert(&job);
   bool success;

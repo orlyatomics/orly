@@ -32,7 +32,6 @@ TWhile::TPtr TWhile::New(
 }
 
 void TWhile::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   out << "TWhileGenerator<" << Type::UnwrapSequence(GetReturnType()) << ">::New(";
   Func->WriteName(out);

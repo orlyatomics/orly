@@ -141,7 +141,6 @@ namespace Base {
 
     /* Swaperator. */
     TUuid &operator=(TUuid &&that) {
-      assert(this);
       assert(&that);
       if (this != &that) {
         std::swap(Data, that.Data);
@@ -151,7 +150,6 @@ namespace Base {
 
     /* Copy assignment. */
     TUuid &operator=(const TUuid &that) {
-      assert(this);
       assert(&that);
       if (this != &that) {
         uuid_copy(Data, that.Data);
@@ -161,7 +159,6 @@ namespace Base {
 
     /* Copy assignment. */
     TUuid &operator=(const uuid_t &that) {
-      assert(this);
       assert(&that);
       if (&Data != &that) {
         uuid_copy(Data, that);
@@ -171,7 +168,6 @@ namespace Base {
 
     /* Unique assignment. */
     TUuid &operator=(TAlgo that) {
-      assert(this);
       return *this = TUuid(that);
     }
 
@@ -182,49 +178,42 @@ namespace Base {
 
     /* Comparator. */
     bool operator==(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data) == 0;
     }
 
     /* Comparator. */
     bool operator!=(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data) != 0;
     }
 
     /* Comparator. */
     bool operator<(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data) < 0;
     }
 
     /* Comparator. */
     bool operator<=(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data) <= 0;
     }
 
     /* Comparator. */
     bool operator>(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data) > 0;
     }
 
     /* Comparator. */
     bool operator>=(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data) >= 0;
     }
 
     /* Comparator. */
     int Compare(const TUuid &that) const {
-      assert(this);
       assert(&that);
       return uuid_compare(Data, that.Data);
     }
@@ -233,7 +222,6 @@ namespace Base {
        The buffer must be at least MinBufSize bytes long.
        See the comment at the top of this file for more information about text formatting. */
     void Format(char *buf, TCasing casing = DefaultCasing) const {
-      assert(this);
       assert(buf);
       switch (casing) {
         case DefaultCasing: {
@@ -254,7 +242,6 @@ namespace Base {
 
     /* Format with an underscore instead of '-' */
     void FormatUnderscore(char *buf, TCasing casing = DefaultCasing) const {
-      assert(this);
       Format(buf, casing);
       buf[8] = '_';
       buf[13] = '_';
@@ -264,13 +251,11 @@ namespace Base {
 
     /* Hasher. */
     size_t GetHash() const {
-      assert(this);
       return *reinterpret_cast<size_t *>(const_cast<unsigned char *>(Data));
     }
 
     /* TODO */
     const uuid_t &GetRaw() const {
-      assert(this);
       return Data;
     }
 
@@ -278,13 +263,11 @@ namespace Base {
        The buffer must be at least MinBufSize bytes long.
        See the comment at the top of this file for more information about text formatting. */
     TUuid &Parse(const char *buf) {
-      assert(this);
       return *this = TUuid(buf);
     }
 
     /* Read from std stream. */
     void Read(std::istream &strm) {
-      assert(this);
       assert(&strm);
       char buf[MinBufSize];
       strm.read(buf, StrSize);
@@ -294,21 +277,18 @@ namespace Base {
 
     /* Read from a binary stream. */
     void Read(Io::TBinaryInputStream &strm) {
-      assert(this);
       assert(&strm);
       strm >> Data;
     }
 
     /* Return to the null state. */
     TUuid &Reset() {
-      assert(this);
       uuid_clear(Data);
       return *this;
     }
 
     /* Write to a std stream. */
     void Write(std::ostream &strm) const {
-      assert(this);
       assert(&strm);
       char buf[MinBufSize];
       Format(buf);
@@ -317,7 +297,6 @@ namespace Base {
 
     /* Write to a binary stream. */
     void Write(Io::TBinaryOutputStream &strm) const {
-      assert(this);
       assert(&strm);
       strm << Data;
     }

@@ -73,14 +73,12 @@ namespace Orly {
 
         /* True iff. we have an item. */
         virtual operator bool() const {
-          assert(this);
           Refresh();
           return Valid;
         }
 
         /* The current item. */
         virtual const TItem &operator*() const {
-          assert(this);
           Refresh();
           assert(Valid);
           return Item;
@@ -88,7 +86,6 @@ namespace Orly {
 
         /* Walk to the next item, if any. */
         virtual TUpdateWalker &operator++() {
-          assert(this);
           Cached = false;
           Refresh();
           return *this;
@@ -98,7 +95,6 @@ namespace Orly {
 
         /* TODO */
         void Refresh() const {
-          assert(this);
           if (Valid && !Cached) {
             if (NumScanned < GetNumUpdates()) {
               size_t offset_of_bucket;

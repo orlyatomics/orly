@@ -81,7 +81,6 @@ TRangeCtor::~TRangeCtor() {
 }
 
 Expr::TExpr::TPtr TRangeCtor::Build() const {
-  assert(this);
   return Expr::TRange::New(
             Start->Build(),
             OptStride ? OptStride->Build() : nullptr,
@@ -91,14 +90,12 @@ Expr::TExpr::TPtr TRangeCtor::Build() const {
 }
 
 void TRangeCtor::Cleanup() {
-  assert(this);
   delete Start;
   delete OptStride;
   delete OptEnd;
 }
 
 void TRangeCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Start->ForEachInnerScope(cb);
@@ -111,7 +108,6 @@ void TRangeCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TRangeCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Start->ForEachRef(cb);

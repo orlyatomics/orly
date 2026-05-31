@@ -73,7 +73,6 @@ namespace Orly {
 
           /* TODO */
           virtual TAny *NewElem(void *type_alloc) const override {
-            assert(this);
             return DescMod->Factory(type_alloc);
           }
 
@@ -90,7 +89,6 @@ namespace Orly {
 
         /* TODO */
         virtual TPinBase *Pin(void *alloc) const override {
-          assert(this);
           return new (alloc) TPin(this);
         }
 
@@ -117,7 +115,6 @@ namespace Orly {
 
           /* See Sabot::Type::TFreeDesc. */
           virtual Sabot::Type::TAny *NewElem(void *buf) const override {
-            assert(this);
             return new (buf) Type::ST::TDesc(Elem);
           }
 
@@ -182,7 +179,6 @@ namespace Orly {
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const bool &Get() const override {
-          assert(this);
           return Val;
         }
 
@@ -209,7 +205,6 @@ namespace Orly {
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const Base::TUuid &Get() const override {
-          assert(this);
           return Val;
         }
 
@@ -246,7 +241,6 @@ namespace Orly {
 
           /* TODO */
           virtual Sabot::State::TAny *NewElemInRange(size_t, void *state_alloc) const override {
-            assert(this);
             return NewSabot(state_alloc, Desc->Var);
           }
 
@@ -292,7 +286,6 @@ namespace Orly {
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const int64_t &Get() const override {
-          assert(this);
           return Val;
         }
 
@@ -319,13 +312,11 @@ namespace Orly {
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const double &Get() const override {
-          assert(this);
           return Val;
         }
 
         /* See Sabot::State::TDouble. */
         virtual Sabot::Type::TDouble *GetDoubleType(void *buf) const override {
-          assert(this);
           return new (buf) Sabot::Type::TDouble();
         }
 
@@ -347,13 +338,11 @@ namespace Orly {
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const Sabot::TStdDuration &Get() const override {
-          assert(this);
           return Val;
         }
 
         /* See Sabot::State::TDuration. */
         virtual Sabot::Type::TDuration *GetDurationType(void *buf) const override {
-          assert(this);
           return new (buf) Sabot::Type::TDuration();
         }
 
@@ -375,13 +364,11 @@ namespace Orly {
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const Sabot::TStdTimePoint &Get() const override {
-          assert(this);
           return Val;
         }
 
         /* See Sabot::State::TTimePoint. */
         virtual Sabot::Type::TTimePoint *GetTimePointType(void *buf) const override {
-          assert(this);
           return new (buf) Sabot::Type::TTimePoint();
         }
 
@@ -421,7 +408,6 @@ namespace Orly {
 
         /* See Sabot::State::TArrayOfScalars<>. */
         virtual size_t GetSize() const override {
-          assert(this);
           return Limit - Start;
         }
 
@@ -465,7 +451,6 @@ namespace Orly {
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *buf) const override {
-            assert(this);
             return NewSabot(buf, State->Elems[elem_idx]);
           }
 
@@ -480,7 +465,6 @@ namespace Orly {
 
         /* See Sabot::State::TArrayOfScalars<>. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           return Elems.size();
         }
 
@@ -527,7 +511,6 @@ namespace Orly {
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *buf) const override {
-            assert(this);
             return NewSabot(buf, State->Elems[elem_idx]);
           }
 
@@ -547,7 +530,6 @@ namespace Orly {
 
         /* See Sabot::State::TArrayOfScalars<>. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           return Elems.size();
         }
 
@@ -594,7 +576,6 @@ namespace Orly {
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewElemInRange(size_t, void *buf) const override {
-            assert(this);
             return NewSabot(buf, State->Elem.GetVal());
           }
 
@@ -609,7 +590,6 @@ namespace Orly {
 
         /* See Sabot::State::TArrayOfScalars<>. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           return Elem.IsKnown() ? 1 : 0;
         }
 
@@ -656,13 +636,11 @@ namespace Orly {
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewLhsInRange(size_t elem_idx, void *buf) const override {
-            assert(this);
             return NewSabot(buf, State->Elems[elem_idx].first);
           }
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewRhsInRange(size_t elem_idx, void *buf) const override {
-            assert(this);
             return NewSabot(buf, State->Elems[elem_idx].second);
           }
 
@@ -682,7 +660,6 @@ namespace Orly {
 
         /* See Sabot::State::TArrayOfScalars<>. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           return Elems.size();
         }
 
@@ -729,7 +706,6 @@ namespace Orly {
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *buf) const override {
-            assert(this);
             const auto &field = State->Elems[elem_idx];
             return NewSabot(buf, field.second, field.first);
           }
@@ -786,7 +762,6 @@ namespace Orly {
 
           /* See TPinBase. */
           virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *buf) const override {
-            assert(this);
             return NewSabot(buf, State->Elems[elem_idx].second);
           }
 

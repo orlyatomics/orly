@@ -38,7 +38,6 @@ TMatch::TMatch(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &
     : TBinary(lhs, rhs, pos_range) {}
 
 void TMatch::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -67,7 +66,6 @@ Type::TType TMatch::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TMatchTypeVisitor
-  assert(this);
   Type::TType type;
   GetLhs()->GetType().Accept(TMatchTypeVisitor(type, GetPosRange()));
   if (Type::Unwrap(GetRhs()->GetType()) != Type::TStr::Get()) {

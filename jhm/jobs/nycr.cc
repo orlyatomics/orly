@@ -144,13 +144,11 @@ const char *TNycr::GetName() {
 }
 
 const unordered_set<TFile*> TNycr::GetNeeds() {
-  assert(this);
 
   return {Need};
 }
 
 vector<string> TNycr::GetCmd() {
-  assert(this);
 
   // Use the need to get the list of languages, finalize our output set.
   vector<string> languages = Need->GetConfig().Read<vector<string>>({"nycr","languages"});
@@ -194,7 +192,6 @@ TTimestamp TNycr::GetCmdTimestamp() const {
 }
 
 bool TNycr::IsComplete() {
-  assert(this);
 
   return true;
 }

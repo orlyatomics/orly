@@ -27,7 +27,6 @@ IMPL_INTERNED_TYPE(TAddr, TAddrElems);
 TAddr::~TAddr() {}
 
 void TAddr::Write(std::ostream &strm) const {
-  assert(this);
   assert(&strm);
 
   #if 0

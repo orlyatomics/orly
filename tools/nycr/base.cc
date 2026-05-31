@@ -28,13 +28,11 @@ TBase::TBase(const Syntax::TBase *decl)
   : TKind(decl->GetName(), decl->GetOptSuper()), Symbol(0) {}
 
 Symbol::TKind *TBase::GetSymbolAsKind() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 bool TBase::Build(int pass) {
-  assert(this);
   bool is_done;
   switch (pass) {
     case 1: {

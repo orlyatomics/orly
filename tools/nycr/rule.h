@@ -43,7 +43,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TRule *GetSymbolAsRule() const {
-        assert(this);
         assert(Symbol);
         return Symbol;
       }

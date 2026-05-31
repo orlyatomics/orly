@@ -24,12 +24,10 @@ using namespace std;
 using namespace Base;
 
 const char *TCodeLocation::GetFile() const {
-  assert(this);
   return File + ((strncmp(File, SrcRoot, SrcRootLen) == 0) ? (SrcRootLen) : 0);
 }
 
 void TCodeLocation::Write(ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm << '[' << GetFile() << ", " << LineNumber << ']';
 }

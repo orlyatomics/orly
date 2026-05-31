@@ -35,7 +35,6 @@ using namespace Orly::CodeGen;
 
 template <>
 void TCppPrinter::Write(const Tools::Nycr::TPos &pos) {
-  assert(this);
 
   *this << "Tools::Nycr::TPos(" << pos.GetLineNumber() << ", " << pos.GetColumnNumber() << ')';
 }
@@ -64,13 +63,11 @@ TTestCase::TTestCase(const L0::TPackage *package,
 }
 
 void TTestCase::WriteCcName(TCppPrinter &out) const {
-  assert(this);
 
   out << Id;
 }
 
 const TId<TIdKind::Test> &TTestCase::GetId() const {
-  assert(this);
 
   return Id;
 }
@@ -88,7 +85,6 @@ Type::TType TTestCase::GetType() const {
 }
 
 void TTestCase::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   WriteDef(out);
@@ -129,7 +125,6 @@ void TTestCase::Write(TCppPrinter &out) const {
 }
 
 void TTestCase::WriteName(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Id;
@@ -175,7 +170,6 @@ TTestBlock::~TTestBlock() {
 }
 
 void TTestBlock::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   for(auto &test: Children) {
@@ -184,7 +178,6 @@ void TTestBlock::Write(TCppPrinter &out) const {
 }
 
 void TTestBlock::WriteMeta(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out
@@ -274,13 +267,11 @@ TTest::TTest(const L0::TPackage *package, const Symbol::Test::TTest::TPtr &symbo
 }
 
 const TId<TIdKind::Test> &TTest::GetId() const {
-  assert(this);
 
   return Id;
 }
 
 void TTest::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   Tests.Write(out);

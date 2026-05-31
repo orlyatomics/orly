@@ -63,27 +63,23 @@ namespace Base {
     TIterHolder(TIterHolder &&that) : Iter(std::move(that.Iter)) {}
 
     virtual operator bool() const {
-      assert(this);
       assert(Iter);
 
       return *Iter;
     }
 
     virtual TVal &operator*() const {
-      assert(this);
       assert(Iter);
 
       return **Iter;
     }
 
     TVal &Get() const {
-      assert(this);
       assert(Iter);
       return **this;
     }
 
     virtual TIter<TVal> &operator++() {
-      assert(this);
       assert(Iter);
       //Note the internal iter __should__ throw for us when advancing past end.
       ++(*Iter);

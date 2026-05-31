@@ -35,7 +35,6 @@ TIn::TIn(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TIn::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -288,7 +287,6 @@ Type::TType TIn::GetTypeImpl() const {
       Type = Type::TBool::Get();
     }
   };  // TInTypeVisitor
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TInTypeVisitor(type, GetPosRange()));
   return type;

@@ -30,7 +30,6 @@ TBuiltInCall::TBuiltInCall(const L0::TPackage *package,
       Func(func) {}
 
 void TBuiltInCall::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Func->GetName() << '('

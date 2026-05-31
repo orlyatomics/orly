@@ -35,7 +35,6 @@ TFilter::TFilter(const TExpr::TPtr &lhs, const TPosRange &pos_range)
     : TThatableBinary(lhs, pos_range) {}
 
 void TFilter::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -63,7 +62,6 @@ Type::TType TFilter::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TFilterTypeVisitor
-  assert(this);
   Type::TType type;
   GetLhs()->GetType().Accept(TFilterTypeVisitor(type, GetPosRange()));
   if (Type::Unwrap(GetRhs()->GetType()) != Type::TBool::Get()) {

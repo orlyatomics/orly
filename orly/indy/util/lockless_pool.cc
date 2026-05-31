@@ -38,7 +38,6 @@ TLocklessPool::TLocklessPool(size_t block_size, const char *name, size_t block_c
 }
 
 void TLocklessPool::Init(size_t block_count) {
-  assert(this);
   assert(MaxBlocks == 0UL);
   MaxBlocks = block_count;
   if (block_count) {
@@ -61,6 +60,5 @@ void TLocklessPool::Init(size_t block_count) {
 }
 
 TLocklessPool::~TLocklessPool() {
-  assert(this);
   free(Blob);
 }

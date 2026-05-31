@@ -30,7 +30,6 @@ TTransportArena::TUnexpectedOffset::TUnexpectedOffset()
     : logic_error("encountered an unexpected offset while writing a transport arena") {}
 
 TTransportArena::~TTransportArena() {
-  assert(this);
   free(RawData);
 }
 
@@ -115,20 +114,17 @@ TTransportArena::TTransportArena(TBinaryInputStream &strm)
 }
 
 TTransportArena::TNote *TTransportArena::GetNoteUnsafely(TOffset offset) const {
-  assert(this);
   return reinterpret_cast<TNote *>(RawData + offset);
 }
 
 void TTransportArena::ReleaseNote(const TNote *, TOffset, void *, void *, void *) {}
 
 const TTransportArena::TNote *TTransportArena::TryAcquireNote(TOffset offset, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   auto iter = Offsets.find(offset);
   return (iter != Offsets.end()) ? GetNoteUnsafely(offset) : nullptr;
 }
 
 const TTransportArena::TNote *TTransportArena::TryAcquireNote(TOffset offset, size_t /*known_size*/, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   auto iter = Offsets.find(offset);
   return (iter != Offsets.end()) ? GetNoteUnsafely(offset) : nullptr;
 }

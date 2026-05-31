@@ -44,7 +44,6 @@ namespace Base {
 
       /* TODO */
       ~TLock() {
-        assert(this);
         SpinLock.Lock.clear(std::memory_order_release);
       }
 
@@ -76,7 +75,6 @@ namespace Base {
 
       /* TODO */
       ~TSoftLock() {
-        assert(this);
         SpinLock.Lock.clear(std::memory_order_release);
       }
 

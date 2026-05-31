@@ -37,13 +37,11 @@ TAddr::TAddr(const TMemberVec &members, const TPosRange &pos_range)
     : TCtor(members, pos_range) {}
 
 void TAddr::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAddr::GetTypeImpl() const {
-  assert(this);
   Type::TAddr::TElems elems;
   bool is_sequence = false;
   for (auto member : GetMembers()) {

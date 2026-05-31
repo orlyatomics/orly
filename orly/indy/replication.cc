@@ -36,12 +36,10 @@ TReplicationQueue::TReplicationQueue()
     : ItemCollection(this) {}
 
 TReplicationQueue::~TReplicationQueue() {
-  assert(this);
   ItemCollection.DeleteEachMember();
 }
 
 void TReplicationQueue::Swap(TReplicationQueue &that) {
-  assert(this);
   assert(&that);
   for (auto item = that.ItemCollection.TryGetFirstMember(); item; item = that.ItemCollection.TryGetFirstMember()) {
     item->QueueMembership.Remove();
@@ -81,7 +79,6 @@ TReplicationStreamer::TReplicationStreamer() {}
 TReplicationStreamer::~TReplicationStreamer() {}
 
 void TReplicationStreamer::Write(Io::TBinaryOutputStream &strm) const {
-  assert(this);
   IndexIdBuilder.Write(strm);
   RepoBuilder.Write(strm);
   DurableBuilder.Write(strm);
@@ -89,7 +86,6 @@ void TReplicationStreamer::Write(Io::TBinaryOutputStream &strm) const {
 }
 
 void TReplicationStreamer::Read(Io::TBinaryInputStream &strm) {
-  assert(this);
   assert(!IndexIdVector);
   assert(!RepoVector);
   assert(!DurableVector);
@@ -101,7 +97,6 @@ void TReplicationStreamer::Read(Io::TBinaryInputStream &strm) {
 }
 
 void TReplicationStreamer::PushIndexId(const TIndexIdReplication &index_id) {
-  assert(this);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   IndexIdBuilder.Push(index_id.GetId());
   IndexIdBuilder.Push(index_id.GetPkgKey());
@@ -109,7 +104,6 @@ void TReplicationStreamer::PushIndexId(const TIndexIdReplication &index_id) {
 }
 
 void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &replica) {
-  assert(this);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TransactionBuilder.Push(replica.GetMutationList().size()); /* number of mutations in this transaction. */
   for (const auto &mutation : replica.GetMutationList()) {
@@ -162,14 +156,12 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
 }
 
 void TReplicationStreamer::PushDurable(const TDurableReplication &durable) {
-  assert(this);
   DurableBuilder.Push(durable.GetId());
   DurableBuilder.Push(durable.GetTtl());
   DurableBuilder.Push(durable.GetSerializedObj());
 }
 
 void TReplicationStreamer::PushRepo(const TRepoReplication &repo) {
-  assert(this);
   RepoBuilder.Push(repo.GetId());
   RepoBuilder.Push(Sabot::TStdDuration(repo.GetTtl()));
   RepoBuilder.Push(repo.GetIsSafe());

@@ -43,7 +43,6 @@ TBalancer::TBalancer(TScheduler *scheduler, const TCmd &cmd)
 TBalancer::~TBalancer() {}
 
 void TBalancer::AcceptClientConnections() {
-  assert(this);
   for (;;) {
     TAddress client_address;
     TFd client_socket(Accept(MainSocket, client_address));
@@ -52,7 +51,6 @@ void TBalancer::AcceptClientConnections() {
 }
 
 void TBalancer::ServeClient(TFd &fd, const TAddress &client_address) {
-  assert(this);
   assert(&fd);
   assert(&client_address);
   const size_t buf_size = 4096;

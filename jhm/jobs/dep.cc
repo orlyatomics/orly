@@ -56,13 +56,11 @@ const char *TDep::GetName() {
 }
 
 const unordered_set<TFile*> TDep::GetNeeds() {
-  assert(this);
 
   return Needs;
 }
 
 vector<string> TDep::GetCmd() {
-  assert(this);
 
   vector<string> cmd{"make_dep_file", GetInput()->GetPath(), GetSoleOutput()->GetPath()};
 
@@ -87,7 +85,6 @@ TTimestamp TDep::GetCmdTimestamp() const {
 }
 
 bool TDep::IsComplete() {
-  assert(this);
 
   bool needs_work = false;
 

@@ -25,7 +25,6 @@ using namespace Orly::CodeGen;
 
 /* Writes the common subexpression eliminated variant of this inline. */
 void TInline::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   if (Id) {
@@ -36,26 +35,22 @@ void TInline::Write(TCppPrinter &out) const {
 }
 
 const TId<TIdKind::Var> &TInline::GetId() const {
-  assert(this);
   assert(Id);
 
   return *Id;
 }
 
 Orly::Type::TType TInline::GetReturnType() const {
-  assert(this);
 
   return ReturnType;
 }
 
 bool TInline::HasId() const {
-  assert(this);
   return Id;
 }
 
 //Used by common sub expression eliminator.
 void TInline::SetCommonSubexpressionId(TId<TIdKind::Var> &&id) const {
-  assert(this);
   assert(!Id);
 
   Id = std::move(id);

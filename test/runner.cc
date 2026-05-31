@@ -31,7 +31,6 @@ using namespace Test;
 TRunner::TExpect::~TExpect() {}
 
 void TRunner::TExpect::PreDtor() {
-  assert(this);
   GetRunner()->OnExpectDtor(this);
 }
 
@@ -43,7 +42,6 @@ TRunner::TRunner(TApp *app, const TFixture *fixture)
 }
 
 TRunner::~TRunner() {
-  assert(this);
   assert(Runner == this);
   PreDtor();
   TApp::TLogger(!Pass)
@@ -53,12 +51,10 @@ TRunner::~TRunner() {
 }
 
 TRunner::operator bool() const {
-  assert(this);
   return Pass;
 }
 
 void TRunner::Run() {
-  assert(this);
   Pass = true;
   try {
     (*Fixture->GetFunc())();
@@ -74,7 +70,6 @@ void TRunner::Run() {
 }
 
 void TRunner::OnExpectDtor(const TExpect *expect) {
-  assert(this);
   assert(expect);
   Pass = Pass && *expect;
 }

@@ -29,26 +29,22 @@ TEffect::TEffect(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TThatableUnary(expr, pos_range), StmtBlock(nullptr) {}
 
 void TEffect::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const Symbol::Stmt::TStmtBlock::TPtr &TEffect::GetStmtBlock() const {
-  assert(this);
   assert(StmtBlock);
   return StmtBlock;
 }
 
 Type::TType TEffect::GetTypeImpl() const {
-  assert(this);
   assert(StmtBlock);
   StmtBlock->TypeCheck();
   return GetExpr()->GetType();
 }
 
 void TEffect::SetStmtBlock(const Symbol::Stmt::TStmtBlock::TPtr &stmt_block) {
-  assert(this);
   assert(stmt_block);
   assert(!StmtBlock);
   StmtBlock = stmt_block;

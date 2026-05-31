@@ -31,7 +31,6 @@ namespace Orly {
 
       /* TODO */
       virtual size_t GetHash() const {
-        assert(this);
         return 0;
       }
 
@@ -43,14 +42,12 @@ namespace Orly {
 
       /* TODO */
       bool operator==(const TUnknown &that) const {
-        assert(this);
         assert(&that);
         return true;
       }
 
       /* TODO */
       bool operator!=(const TUnknown &that) const {
-        assert(this);
         assert(&that);
         return false;
       }

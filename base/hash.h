@@ -40,7 +40,6 @@ namespace Base {
 
     template <std::size_t Idx, typename TElem>
     void operator()(const TElem &elem) {
-      assert(this);
       assert(&elem);
       Out ^= Util::RotatedLeft(std::hash<TElem>()(elem), Idx * 5);
     }

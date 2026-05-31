@@ -100,21 +100,18 @@ namespace Io {
 
     template <typename... TArgs>
     void Write(const std::tuple<TArgs...> &that) {
-      assert(this);
       assert(&that);
       *this << Base::Concat(that);
     }
 
     template <typename TRep, typename TPeriod>
     void Write(const std::chrono::duration<TRep, TPeriod> &that) {
-      assert(this);
       assert(&that);
       Write(that.count());
     }
 
     template <typename TContainer, typename TDelimiter, typename TFormat>
     void Write(const Base::TJoin<TContainer, TDelimiter, TFormat> &that) {
-      assert(this);
       assert(&that);
       Base::WriteJoin(*this, that);
     }
@@ -152,7 +149,6 @@ namespace Io {
     /* Write an STL container. */
     template <typename TThat>
     void WriteContainer(const TThat &that) {
-      assert(this);
       assert(&that);
       Write(that.size());
       for (const typename TThat::value_type &val: that) {
@@ -162,7 +158,6 @@ namespace Io {
 
     /* Write a string. */
     void WriteString(const char *start, size_t size) {
-      assert(this);
       Write(size);
       WriteExactly(start, size);
     }
@@ -170,7 +165,6 @@ namespace Io {
     /* Write a built-in, converting to NBO if necessary. */
     template <typename TThat>
     void WriteWithSwap(TThat that) {
-      assert(this);
       GetFormat().ConvertInt(that);
       WriteExactly(&that, sizeof(that));
     }
@@ -178,7 +172,6 @@ namespace Io {
     /* Write a built-in without converting to NBO. */
     template <typename TThat>
     void WriteWithoutSwap(TThat that) {
-      assert(this);
       WriteExactly(&that, sizeof(that));
     }
 

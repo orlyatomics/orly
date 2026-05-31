@@ -121,21 +121,18 @@ namespace Io {
 
     /* Commit the given number of bytes in the storage buffer. */
     void Commit(size_t size) {
-      assert(this);
       Cursor += size;
       assert(Cursor <= Limit);
     }
 
     /* The start of the available storage space. */
     char *GetBuffer() const {
-      assert(this);
       return Cursor;
     }
 
     /* Return pointers to the data in this chunk.
        Upon return, start will always be <= limit. */
     void GetData(const char *&start, const char *&limit) const NO_THROW {
-      assert(this);
       assert(&start);
       assert(&limit);
       start = Start;
@@ -144,13 +141,11 @@ namespace Io {
 
     /* The number of bytes remaining in our storage space. */
     size_t GetRemainingSize() const {
-      assert(this);
       return Limit - Cursor;
     }
 
     /* The number of bytes in this chunk. */
     size_t GetSize() const {
-      assert(this);
       return Cursor - Start;
     }
 
@@ -275,7 +270,6 @@ namespace Io {
     /* The number of chunks in the free queue.
        This information is useful for testing. */
     size_t GetFreeChunkCount() const {
-      assert(this);
       return FreeChunks.size();
     }
 

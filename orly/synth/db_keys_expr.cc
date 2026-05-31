@@ -42,24 +42,20 @@ TDbKeysExpr::TFixedMember::TFixedMember(TAddrDir addr_dir, TExpr *expr)
     : TMember(addr_dir), Expr(Base::AssertTrue(expr)) {}
 
 TDbKeysExpr::TFixedMember::~TFixedMember() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TExpr::TPtr TDbKeysExpr::TFixedMember::Build() const {
-  assert(this);
   return Expr->Build();
 }
 
 void TDbKeysExpr::TFixedMember::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TDbKeysExpr::TFixedMember::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
@@ -69,19 +65,16 @@ TDbKeysExpr::TFreeMember::TFreeMember(TAddrDir addr_dir, TType *type, const TPos
     : TMember(addr_dir), Type(Base::AssertTrue(type)), PosRange(pos_range) {}
 
 TDbKeysExpr::TFreeMember::~TFreeMember() {
-  assert(this);
   delete Type;
 }
 
 Expr::TExpr::TPtr TDbKeysExpr::TFreeMember::Build() const {
-  assert(this);
   return Expr::TFree::New(Type->GetSymbolicType(), PosRange, GetAddrDir());
 }
 
 void TDbKeysExpr::TFreeMember::ForEachInnerScope(const std::function<void (TScope *)> &) {}
 
 void TDbKeysExpr::TFreeMember::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Type->ForEachRef(cb);
@@ -154,7 +147,6 @@ TDbKeysExpr::~TDbKeysExpr() {
 }
 
 Expr::TExpr::TPtr TDbKeysExpr::Build() const {
-  assert(this);
   Expr::TAddr::TMemberVec members;
   for (auto &member : Members) {
     members.emplace_back(std::make_pair(member->GetAddrDir(), member->Build()));
@@ -163,14 +155,12 @@ Expr::TExpr::TPtr TDbKeysExpr::Build() const {
 }
 
 void TDbKeysExpr::Cleanup() {
-  assert(this);
   for (auto member: Members) {
     delete member;
   }
 }
 
 void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto member : Members) {
@@ -179,7 +169,6 @@ void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TDbKeysExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto member : Members) {

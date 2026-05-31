@@ -113,7 +113,6 @@ namespace Orly {
 
       /* The request (for a new session or an old session) being sent. */
       const TRequest &GetRequest() const {
-        assert(this);
         return Request;
       }
 

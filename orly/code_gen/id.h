@@ -62,12 +62,10 @@ namespace Orly {
       };
 
       uint32_t GetId() const {
-        assert(this);
         return Id;
       }
 
       void Write(TCppPrinter &out) const {
-        assert(this);
         out << GetKindPrefix(Kind) << Id;
       }
 

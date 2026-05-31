@@ -127,14 +127,12 @@ namespace Orly {
 
           /* True iff. we're not yet exhausted. */
           operator bool() const {
-            assert(this);
             return TrailingUpdate != 0;
           }
 
           /* The current trailing update.  Never null.
              Calling this function on an exhausted iterator is an error. */
           TUpdate *operator*() const {
-            assert(this);
             assert(TrailingUpdate);
             return TrailingUpdate;
           }
@@ -142,7 +140,6 @@ namespace Orly {
           /* The current trailing update.  Never null.
              Calling this function on an exhausted iterator is an error. */
           TUpdate *operator->() const {
-            assert(this);
             assert(TrailingUpdate);
             return TrailingUpdate;
           }
@@ -166,19 +163,16 @@ namespace Orly {
         /* The root of the causality graph.  Every pov in the tree sees the
            same root.  Never null. */
         TRoot *GetRoot() {
-          assert(this);
           return Root;
         }
 
         /* Our index of all KVs being updated. */
         TKVIndex *GetKVIndex() const {
-          assert(this);
           return KVIndex;
         }
 
         /* TODO */
         const TSync &GetSync() const {
-          assert(this);
           return Sync;
         }
 
@@ -186,13 +180,11 @@ namespace Orly {
            This is an epoll handle.  You can wait for it but don't try to use it
            for reading or writing. */
         int GetTrailingWaitHandle() const {
-          assert(this);
           return PipeHandles[0];
         }
 
         /* Our pointer to the global pov. */
         TGlobalPov *GetGlobalPov() const {
-          assert(this);
           return GlobalPov;
         }
 
@@ -287,14 +279,12 @@ namespace Orly {
 
           /* True iff. we're not yet exhausted. */
           operator bool() const {
-            assert(this);
             return ChildPov != 0;
           }
 
           /* The current child.  Never null.
              Calling this function on an exhausted iterator is an error. */
           TChildPov *operator*() const {
-            assert(this);
             assert(ChildPov);
             return ChildPov;
           }
@@ -302,7 +292,6 @@ namespace Orly {
           /* The current child.  Never null.
              Calling this function on an exhausted iterator is an error. */
           TChildPov *operator->() const {
-            assert(this);
             assert(ChildPov);
             return ChildPov;
           }
@@ -321,7 +310,6 @@ namespace Orly {
 
         /* TODO */
         int GetTetrisWaitHandle() {
-          assert(this);
           return TetrisWaitHandle;
         }
 
@@ -394,13 +382,11 @@ namespace Orly {
 
         /* See TFlowState. */
         TFlowState GetFlowState() const {
-          assert(this);
           return FlowState;
         }
 
         /* The pov which owns us.  Never null. */
         TParentPov *GetParentPov() {
-          assert(this);
           return ParentPov;
         }
 
@@ -409,7 +395,6 @@ namespace Orly {
 
         /* See TPov::TryGetParentPov(). */
         virtual TParentPov *TryGetParentPov() const {
-          assert(this);
           return ParentPov;
         }
 
@@ -513,7 +498,6 @@ namespace Orly {
         /* The leaf of the graph that lives at this terminus of the pov tree.
            Never null. */
         TLeaf *GetLeaf() const {
-          assert(this);
           return Leaf;
         }
 
@@ -560,7 +544,6 @@ namespace Orly {
 
         /* The pov which owns this event.  Never null. */
         TPov *GetPov() const {
-          assert(this);
           assert(Pov);
           return Pov;
         }
@@ -611,7 +594,6 @@ namespace Orly {
 
           /* True iff. we're not yet exhausted. */
           operator bool() const {
-            assert(this);
             return LinkToEffect != 0;
           }
 
@@ -630,7 +612,6 @@ namespace Orly {
           /* The link to the current effect.
              Calling this function on an exhausted iterator is an error. */
           TLink *GetLinkToEffect() const {
-            assert(this);
             assert(LinkToEffect);
             return LinkToEffect;
           }
@@ -638,7 +619,6 @@ namespace Orly {
           /* The link to the current effect.
              If the iterator is exhausted, return null. */
           TLink *TryGetLinkToEffect() const {
-            assert(this);
             return LinkToEffect;
           }
 
@@ -711,7 +691,6 @@ namespace Orly {
 
           /* True iff. we're not yet exhausted. */
           operator bool() const {
-            assert(this);
             return LinkToCause != 0;
           }
 
@@ -730,7 +709,6 @@ namespace Orly {
           /* The link to the current cause.
              Calling this function on an exhausted iterator is an error. */
           TLink *GetLinkToCause() const {
-            assert(this);
             assert(LinkToCause);
             return LinkToCause;
           }
@@ -738,7 +716,6 @@ namespace Orly {
           /* The link to the current cause.
              If the iterator is exhausted, return null. */
           TLink *TryGetLinkToCause() const {
-            assert(this);
             return LinkToCause;
           }
 
@@ -816,21 +793,18 @@ namespace Orly {
 
         /* The cause to which we link.  Never null. */
         TCause *GetCause() const {
-          assert(this);
           assert(Cause);
           return Cause;
         }
 
         /* The effect to which we link.  Never null. */
         TEffect *GetEffect() const {
-          assert(this);
           assert(Effect);
           return Effect;
         }
 
         /* True iff. only link between our cause and any effect. */
         bool CauseHasOnlyOneEffect() const {
-          assert(this);
           return Cause && !NextLinkToEffect && !PrevLinkToEffect;
         }
 
@@ -848,7 +822,6 @@ namespace Orly {
 
         /* Called only by TCause::~TCause() and TEffect::~TEffect(). */
         ~TLink() {
-          assert(this);
           SetEffect(0);
           SetCause(0);
         }
@@ -859,7 +832,6 @@ namespace Orly {
            If the change in linkage results in the joining and/or parting of a local cause, notify the effect's handler(s).
            If the given cause is the same as our current one, do nothing. */
         void SetCause(TCause *new_cause) {
-          assert(this);
           if (Cause != new_cause) {
             if (Cause) {
               TCause *old_cause = Cause;
@@ -891,7 +863,6 @@ namespace Orly {
            If the change in linkage results in the joining and/or parting of a local cause, notify the effect's handler(s).
            If the given effect is the same as our current one, do nothing. */
         void SetEffect(TEffect *new_effect) {
-          assert(this);
           if (Effect != new_effect) {
             if (Effect) {
               TEffect *old_effect = Effect;
@@ -1053,7 +1024,6 @@ namespace Orly {
         /* See TCause::IsLocal().
            We count as a local cause if we're in the same pov as the given event. */
         virtual bool IsLocal(const TEvent *event) const {
-          assert(this);
           assert(event);
           return Pov == event->GetPov();
         }
@@ -1069,7 +1039,6 @@ namespace Orly {
         /* Mark this update's pov as permanently failed.  The pov will no longer be part of tetris.
            NOTE: Do NOT call this on any update which is in global.  You will abort the program. */
         virtual void Fail() {
-          assert(this);
           if(IsLinkedToPov) {
             Pov->Fail();
           }
@@ -1083,7 +1052,6 @@ namespace Orly {
 
         /* TODO */
         const TAssertChecker &GetAssertChecker() const {
-          assert(this);
           assert(AssertChecker); // Make sure the function is valid.
 
           return AssertChecker;
@@ -1098,7 +1066,6 @@ namespace Orly {
         /* The version we keep for the given key, if any. */
         template <typename TKey>
         TVersion<TKey> *TryGetVersion(const TKey &key) const {
-          assert(this);
           TCluster<TKey> *cluster;
           GetCluster(cluster);
           return cluster->TryGetVersion(key);
@@ -1113,7 +1080,6 @@ namespace Orly {
         /* The cluster of KV versions for this update.  Null if this update does not update any KVs.
            We return by out-parameter in order to take advantage of function overloading in the template-based classes. */
         void GetCluster(TCluster<TKV> *&out) const {
-          assert(this);
           assert(&out);
           out = KVCluster;
         }
@@ -1193,7 +1159,6 @@ namespace Orly {
 
         /* True iff. the key exists in the index. */
         bool Exists(const TKey &key) const {
-          assert(this);
           return TourByKey.find(key) != TourByKey.end();
         }
 
@@ -1201,7 +1166,6 @@ namespace Orly {
            Return false from your callback to halt the iterator.
            If the iterator reaches the end, return true; if halted, return false. */
         bool ForEachTour(const std::function<bool (TTour<TKey> *)> &callback) const {
-          assert(this);
           assert(&callback);
           bool result = true;
           for (auto iter = TourByKey.begin(); result && iter != TourByKey.end(); ++iter) {
@@ -1212,13 +1176,11 @@ namespace Orly {
 
         /* The pov to which we belong. */
         TPov *GetPov() const {
-          assert(this);
           return Pov;
         }
 
         /* The tour associated with the given key, if any. */
         TTour<TKey> *TryGetTour(const TKey &key) const {
-          assert(this);
           return Util::FindOrDefault(TourByKey, key, 0);
         }
 
@@ -1232,7 +1194,6 @@ namespace Orly {
 
         /* You must make sure that all the slots have been destroyed before destroying the index. */
         virtual ~TIndex() {
-          assert(this);
           assert(TourByKey.empty());
         }
 
@@ -1244,14 +1205,12 @@ namespace Orly {
 
         /* Called by a tour to let us know it's joining to us. */
         void RaiseTourJoin(TTour<TKey> *tour) {
-          assert(this);
           assert(tour);
           OnTourJoin(std::pair<TKey, TTour<TKey> *>(tour->GetKey(), tour));
         }
 
         /* Called by a tour to let us know it's parting from us. */
         void RaiseTourPart(TTour<TKey> *tour) {
-          assert(this);
           assert(tour);
           const TKey &key = tour->GetKey();
           TourByKey.erase(key);
@@ -1262,7 +1221,6 @@ namespace Orly {
 
         /* The tour associated with the given key.  If there is no such tour, create one. */
         TTour<TKey> *GetTour(const TKey &key) {
-          assert(this);
           /* Try to find the tour for the given key.  If it's not already in our
              map, insert a null to hold its place. */
           auto result = TourByKey.insert(std::pair<TKey, TTour<TKey> *>(key, 0));
@@ -1322,7 +1280,6 @@ namespace Orly {
 
           /* True iff. we're not yet exhausted. */
           operator bool() const {
-            assert(this);
             if (!Valid) {
               GetValue();
             }
@@ -1332,7 +1289,6 @@ namespace Orly {
           /* A reference to the current KV.
              Calling this function on an exhausted iterator is an error. */
           const TKV &operator*() const {
-            assert(this);
             if (!Valid) {
               GetValue();
             }
@@ -1343,7 +1299,6 @@ namespace Orly {
           /* A pointer to the current KV.  Never null.
              Calling this function on an exhausted iterator is an error. */
           const TKV *operator->() const {
-            assert(this);
             if (!Valid) {
               GetValue();
             }
@@ -1441,25 +1396,21 @@ namespace Orly {
 
         /* The index of our key type within the pov.  Never null. */
         TIndex<TKey> *GetIndex() const {
-          assert(this);
           return Index;
         }
 
         /* The key we represent. */
         const TKey &GetKey() const {
-          assert(this);
           return Key;
         }
 
         /* The newest version in our tour */
         TVersion<TKey> *GetNewestVersion() const {
-          assert(this);
           return NewestVersion;
         }
 
         /* The oldest version in our tour */
         TVersion<TKey> *GetOldestVersion() const {
-          assert(this);
           return OldestVersion;
         }
 
@@ -1467,7 +1418,6 @@ namespace Orly {
            We'll return the tour nearest to us, scanning upward in the pov tree.
            If there is no ancestor pov containing a tour for our key, return null. */
         TTour<TKey> *TryGetAncestorTour(std::vector<TSync::TSharedLock *> &shared_lock_vec) const {
-          assert(this);
           TTour<TKey> *result = 0;
           const TPov *pov = Index->GetPov();
           do {
@@ -1487,7 +1437,6 @@ namespace Orly {
            We'll return the tour nearest to us, scanning downward in the pov tree.
            If there is no descendant containing a tour for our key, return null. */
         TTour<TKey> *TryGetDescendantTour(const TPrivatePov *private_pov) const {
-          assert(this);
           TTour<TKey> *result = 0;
           const TPov *pov = Index->GetPov();
           do {
@@ -1531,7 +1480,6 @@ namespace Orly {
         /* Do not attempt to destroy a tour while it still has versions.  Destroy the versions and let
            the last of them destroy the tour for you. */
         ~TTour() {
-          assert(this);
           assert(!OldestVersion && !NewestVersion);
           /* We let our index know we're parting. */
           assert(Index);
@@ -1577,26 +1525,22 @@ namespace Orly {
 
         /* The cluster of which we are a part.  Never null. */
         TCluster<TKey> *GetCluster() const {
-          assert(this);
           return Cluster;
         }
 
         /* The operation we perform on the key's value. */
         const TOp &GetOp() const {
-          assert(this);
           return Op;
         }
 
         /* The tour of which we are a part.  Never null. */
         TTour<TKey> *GetTour() const {
-          assert(this);
           return Tour;
         }
 
         /* The version which follows us in our key's timeline.  This version may belong to a pov from which descends from our pov,
            w.r.t. the given private pov.  If we are the newest version for this key, return null. */
         TVersion<TKey> *TryGetAnyNewerVersion(const TPrivatePov *private_pov) const {
-          assert(this);
           TVersion<TKey> *result = NewerVersion;
           if (!result) {
             TTour<TKey> *tour = Tour->TryGetDescendantTour(private_pov);
@@ -1610,7 +1554,6 @@ namespace Orly {
         /* The version which precedes us in our key's timeline.  This version may belong to a pov from which our pov descends.
            If we are the oldest version for this key in the whole pov tree, return null. */
         TVersion<TKey> *TryGetAnyOlderVersion(std::vector<TSync::TSharedLock *> &shared_lock_vec) const {
-          assert(this);
           TVersion<TKey> *result = OlderVersion;
           if (!result) {
             TTour<TKey> *tour = Tour->TryGetAncestorTour(shared_lock_vec);
@@ -1636,7 +1579,6 @@ namespace Orly {
         /* Unlink from our cluster and from our tour.
            If we're the only version in the tour, we'll destroy the tour as well. */
         ~TVersion() {
-          assert(this);
           Cluster->VersionByKey.erase(Tour->GetKey());
           UnlinkFromTour();
         }
@@ -1644,7 +1586,6 @@ namespace Orly {
         /* Unlink from our current tour, if any, and link to the tour for the given key within our
            cluster's index.  If no such tour yet exists, create it. */
         void LinkToTour(const TKey &key) {
-          assert(this);
           TTour<TKey> *tour = Cluster->GetIndex()->GetTour(key);
           UnlinkFromTour();
           assert(!NewerVersion);
@@ -1657,7 +1598,6 @@ namespace Orly {
         /* If we're currently linked to a tour, unlink.
            If we were the only version in the tour, destroy the tour. */
         void UnlinkFromTour() {
-          assert(this);
           if (Tour) {
             (OlderVersion ? OlderVersion->NewerVersion : Tour->OldestVersion) = NewerVersion;
             (NewerVersion ? NewerVersion->OlderVersion : Tour->NewestVersion) = OlderVersion;
@@ -1705,7 +1645,6 @@ namespace Orly {
 
         /* Add to the given set of causes any updates which are implied by our set of versions. */
         void AugmentCauses(std::unordered_set<TUpdate *> &causes, std::vector<TSync::TSharedLock *> &shared_lock_vec) const {
-          assert(this);
           assert(&causes);
           for (auto iter = VersionByKey.begin(); iter != VersionByKey.end(); ++iter) {
             TVersion<TKey> *older_version = iter->second->TryGetAnyOlderVersion(shared_lock_vec);
@@ -1717,7 +1656,6 @@ namespace Orly {
 
         /* The index which keeps our keys.  Never null. */
         TIndex<TKey> *GetIndex() const {
-          assert(this);
           TIndex<TKey> *index;
           Update->GetPov()->GetIndex(index);
           assert(index);
@@ -1726,19 +1664,16 @@ namespace Orly {
 
         /* The update to which we blong.  Never null. */
         TUpdate *GetUpdate() const {
-          assert(this);
           return Update;
         }
 
         /* TODO */
         const std::unordered_map<TKey, TVersion<TKey> *> &GetVersionByKey() const {
-          assert(this);
           return VersionByKey;
         }
 
         /* The version we keep for the given key, if any. */
         TVersion<TKey> *TryGetVersion(const TKey &key) const {
-          assert(this);
           return Util::FindOrDefault(VersionByKey, key, 0);
         }
 
@@ -1762,14 +1697,12 @@ namespace Orly {
 
         /* We delete our versions when we go. */
         ~TCluster() {
-          assert(this);
           DeleteEachVersion();
         }
 
         /* Delete each of our versions.
            We use this to clean up during ctor failure and dtor. */
         void DeleteEachVersion() {
-          assert(this);
           /* TODO (jlucas): This isn't a particularly time-efficient way to clear a map. */
           while (!VersionByKey.empty()) {
             delete VersionByKey.begin()->second;
@@ -1779,7 +1712,6 @@ namespace Orly {
         /* Called by TUpdate::Promote() after the update has promoted to a parent pov.
            We repeat the message to our versions to allow them to chance tours. */
         void OnPromote() {
-          assert(this);
           try {
             for (auto iter = VersionByKey.begin(); iter != VersionByKey.end(); ++iter) {
               iter->second->LinkToTour(iter->first);
@@ -1833,14 +1765,12 @@ namespace Orly {
 
           /* TODO */
           virtual operator bool() const {
-            assert(this);
             Refresh();
             return Cursor;
           }
 
           /* TODO */
           virtual const Indy::TKey &operator*() const {
-            assert(this);
             Refresh();
             assert(Cursor);
             return Key;
@@ -1848,7 +1778,6 @@ namespace Orly {
 
           /* TODO */
           virtual const Indy::TKey *operator->() const {
-            assert(this);
             Refresh();
             assert(Cursor);
             return &Key;
@@ -1856,7 +1785,6 @@ namespace Orly {
 
           /* TODO */
           virtual TKeyCursor &operator++() {
-            assert(this);
             Cached = false;
             ++Cursor;
             Refresh();
@@ -1867,7 +1795,6 @@ namespace Orly {
 
           /* Advance the cursor to a valid state. */
           void Refresh() const {
-            assert(this);
             if (!Cached) {
               Cached = true;
               void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -1936,7 +1863,6 @@ namespace Orly {
 
         /* TODO */
         virtual ~TContext() {
-          assert(this);
           for (auto iter = SharedLockVec.rbegin(); iter != SharedLockVec.rend(); ++iter) {
             delete *iter;
           }
@@ -1945,7 +1871,6 @@ namespace Orly {
         #if 0
         /* Swaperator. */
         TContext &operator=(TContext &&that) {
-          assert(this);
           assert(&that);
           std::swap(Pov, that.Pov);
           std::swap(InvalidUpdates, that.InvalidUpdates);
@@ -1959,7 +1884,6 @@ namespace Orly {
         /* Assignment operator.
            Note: See the copy constructor for a brief discussion of why this is here. */
         TContext &operator=(const TContext &that) {
-          assert(this);
           return *this = TContext(that);
         }
         #endif
@@ -1968,7 +1892,6 @@ namespace Orly {
         /* TODO */
         template <typename TKey>
         Var::TVar operator[](const TKey &key) /* const */ { /* making this non-const so that the interpreter can backstep this specific instance of the context: saves on new locks */
-          assert(this);
           Var::TVar ret;
           /* TODO: this is where we're going to run the "interpreter" to apply all non-assignment operations to get a final value to return */
           TVersion<TKey> *version = TryGetVersion(key);
@@ -1985,7 +1908,6 @@ namespace Orly {
         template <typename TKey>
         #endif
         virtual Indy::TKey operator[](const Indy::TIndexKey &index_key) override {
-          assert(this);
           const Indy::TKey &key = index_key.GetKey(); /* TODO: we should use the index information properly. */
           Var::TVar ret;
           Atom::TCore core;
@@ -2019,7 +1941,6 @@ namespace Orly {
         template <typename TKey>
         #endif
         virtual bool Exists(const Indy::TIndexKey &index_key) override {
-          assert(this);
           const Indy::TKey &key = index_key.GetKey(); /* TODO: we should use the index information properly. */
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
           TVersion<TKV> *version = TryGetVersion(TKV(Var::ToVar(*Sabot::State::TAny::TWrapper(key.GetState(state_alloc))), index_key.GetIndexId()));
@@ -2042,7 +1963,6 @@ namespace Orly {
 
         /* Return the version for the given kv, if any. */
         TVersion<TKV> *TryGetVersion(const TKV &key) const {
-          assert(this);
           return TryGetVersion(VersionByKV, key);
         }
 
@@ -2081,7 +2001,6 @@ namespace Orly {
         /* Invalidate the updates responsible for the current values of the given keys in the given context. */
         template <typename TKey>
         void AugmentInvalidUpdates(const TContext &that, const std::unordered_set<TKey> &keys) {
-          assert(this);
           assert(&keys);
           for (auto iter = keys.begin(); iter != keys.end(); ++iter) {
             TVersion<TKey> *version = that.TryGetVersion(*iter);
@@ -2096,7 +2015,6 @@ namespace Orly {
         TVersion<TKey> *TryGetVersion(
             std::unordered_map<TKey, TVersion<TKey> *> &version_by_key,
             const TKey &key) const {
-          assert(this);
           /* Do we already have the result cached? */
           auto result = version_by_key.insert(std::pair<TKey, TVersion<TKey> *>(key, 0));
           if (result.second) {

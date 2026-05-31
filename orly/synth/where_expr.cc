@@ -39,25 +39,21 @@ TWhereExpr::TWhereExpr(
 }
 
 TWhereExpr::~TWhereExpr() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TExpr::TPtr TWhereExpr::Build() const {
-  assert(this);
   assert(Expr);
   Symbol->SetExpr(Expr->Build());
   return Symbol;
 }
 
 void TWhereExpr::BuildSymbol() {
-  assert(this);
   assert(!Symbol);
   Symbol = Expr::TWhere::New(GetPosRange(WhereExpr));
 }
 
 void TWhereExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   cb(this);
@@ -65,26 +61,22 @@ void TWhereExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TWhereExpr::ForEachControlledRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }
 
 Symbol::TScope::TPtr TWhereExpr::GetScopeSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TWhere::TPtr TWhereExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 bool TWhereExpr::HasSymbol() const {
-  assert(this);
   return Symbol.get();
 }
 
@@ -98,22 +90,18 @@ TWhereExpr::TLocalDefFactory::TLocalDefFactory(const TExprFactory *expr_factory)
     : TDefFactory(expr_factory) {}
 
 void TWhereExpr::TLocalDefFactory::operator()(const Package::Syntax::TInstallerDef *that) const {
-  assert(this);
   OnTopLevel("an installer", GetPosRange(that));
 }
 
 void TWhereExpr::TLocalDefFactory::operator()(const Package::Syntax::TUninstallerDef *that) const {
-  assert(this);
   OnTopLevel("an uninstaller", GetPosRange(that));
 }
 
 void TWhereExpr::TLocalDefFactory::operator()(const Package::Syntax::TUpgraderDef *that) const {
-  assert(this);
   OnTopLevel("an upgrader", GetPosRange(that));
 }
 
 void TWhereExpr::TLocalDefFactory::OnTopLevel(const char *desc, const TPosRange &pos_range) const {
-  assert(this);
   assert(desc);
   assert(&pos_range);
 

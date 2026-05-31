@@ -74,17 +74,14 @@ namespace Jhm {
     virtual bool IsComplete() = 0;
 
     TFile *GetInput() {
-      assert(this);
       return Input;
     }
 
     const TSet<TFile*> &GetOutput() const {
-      assert(this);
       return Output;
     }
 
     TFile *GetSoleOutput() const {
-      assert(this);
       assert(Output.size() == 1);
       for(TFile *f: GetOutput()) {
         return f;
@@ -97,7 +94,6 @@ namespace Jhm {
     virtual Util::TTimestamp GetCmdTimestamp() const = 0;
 
     bool HasUnknownOutputs() const {
-      assert(this);
       return UnknownOutputs;
     }
 

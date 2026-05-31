@@ -55,7 +55,6 @@ namespace Orly {
 
         /* TODO */
         size_t GetAge() const {
-          assert(this);
           return Age;
         }
 
@@ -64,7 +63,6 @@ namespace Orly {
 
         /* TODO */
         bool IncrAge() {
-          assert(this);
           return !MaxAge || (++Age <= MaxAge);
         }
 
@@ -85,7 +83,6 @@ namespace Orly {
 
         /* TODO */
         void ResetAge() {
-          assert(this);
           Age = 0;
         }
 

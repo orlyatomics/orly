@@ -61,41 +61,35 @@ namespace InvCon {
 
       /* The collector which owns us.  Never null. */
       TCollector *GetCollector() const {
-        assert(this);
         return Collector;
       }
 
       /* The first member of the collection,
          or null if the collection is empty. */
       TMember *TryGetFirstMember() const {
-        assert(this);
         return FirstMembership ? FirstMembership->Member : 0;
       }
 
       /* The first membership of the collection,
          or null if the collection is empty. */
       TTypedMembership *TryGetFirstMembership() const {
-        assert(this);
         return FirstMembership;
       }
 
       /* The last member of the collection,
          or null if the collection is empty. */
       TMember *TryGetLastMember() const {
-        assert(this);
         return LastMembership ? LastMembership->Member : 0;
       }
 
       /* The last membership of the collection,
          or null if the collection is empty. */
       TTypedMembership *TryGetLastMembership() const {
-        assert(this);
         return LastMembership;
       }
 
       /* TODO */
       bool IsEmpty() const {
-        assert(this);
         return FirstMembership == 0;
       }
 
@@ -109,13 +103,11 @@ namespace InvCon {
 
       /* Remove each member from the collection upon destruction. */
       virtual ~TCollection() {
-        assert(this);
         RemoveEachMember();
       }
 
       /* Delete each member. */
       void DeleteEachMember() {
-        assert(this);
         while (FirstMembership) {
           TMember *member = FirstMembership->Member;
           FirstMembership->Remove();
@@ -127,14 +119,12 @@ namespace InvCon {
          If the membership is already in that position, do nothing.
          If the membership in a collection, remove it from that collection before inserting. */
       void Insert(TTypedMembership *membership, TOrient orient = Fwd) {
-        assert(this);
         assert(membership);
         membership->Insert(this, orient);
       }
 
       /* Remove each member from the collection but don't delete them. */
       void RemoveEachMember() {
-        assert(this);
         while (FirstMembership) {
           FirstMembership->Remove();
         }
@@ -167,47 +157,40 @@ namespace InvCon {
 
       /* The member which owns us.  Never null. */
       TMember *GetMember() const {
-        assert(this);
         return Member;
       }
 
       /* The collection we're in, if any. */
       TTypedCollection *TryGetCollection() const {
-        assert(this);
         return Collection;
       }
 
       /* The collector whose collection we're in, if any. */
       TCollector *TryGetCollector() const {
-        assert(this);
         return Collection ? Collection->Collector : 0;
       }
 
       /* The member before us in our collection.
          A null here means either we're first in our collection or we're not in a collection. */
       TMember *TryGetPrevMember() const {
-        assert(this);
         return PrevMembership ? PrevMembership->Member : 0;
       }
 
       /* The membership before us in our collection.
          A null here means either we're first in our collection or we're not in a collection. */
       TMembership *TryGetPrevMembership() const {
-        assert(this);
         return PrevMembership;
       }
 
       /* The member before us in our collection.
          A null here means either we're first in our collection or we're not in a collection. */
       TMember *TryGetNextMember() const {
-        assert(this);
         return NextMembership ? NextMembership->Member : 0;
       }
 
       /* The membership before us in our collection.
          A null here means either we're first in our collection or we're not in a collection. */
       TMembership *TryGetNextMembership() const {
-        assert(this);
         return NextMembership;
       }
 
@@ -240,7 +223,6 @@ namespace InvCon {
 
       /* Automatically removes us from our collection (if any) before destruction. */
       virtual ~TMembership() {
-        assert(this);
         Remove();
       }
 
@@ -248,7 +230,6 @@ namespace InvCon {
          If we're already in that position, do nothing.
          If we're already in a collection, remove us from that collection before inserting. */
       void Insert(TTypedCollection *collection, TOrient orient = Fwd) {
-        assert(this);
         assert(collection);
         switch (orient) {
           case Fwd: {
@@ -273,7 +254,6 @@ namespace InvCon {
          The sibling must already be in a collection or this is an error.
          It is also an error to try to insert ourself next to ourself. */
       void Insert(TMembership *sibling, TOrient orient = Fwd) {
-        assert(this);
         assert(sibling && sibling != this);
         assert(sibling->Collection);
         switch (orient) {
@@ -296,7 +276,6 @@ namespace InvCon {
       /* Remove us from our collection.
          If we're not in a collection, this function does nothing. */
       void Remove() {
-        assert(this);
         if (Collection) {
           /* Fixup the pointers on either side of us to point around us,
              then go back to the unlinked state. */
@@ -310,7 +289,6 @@ namespace InvCon {
       /* The fixup pointers before and after us in our collection.
          We must be in a collection or this is an error. */
       void FixupLinkage(TMembership *prev_fixup, TMembership *next_fixup) {
-        assert(this);
         assert(Collection);
         (PrevMembership ? PrevMembership->NextMembership : Collection->FirstMembership) = prev_fixup;
         (NextMembership ? NextMembership->PrevMembership : Collection->LastMembership ) = next_fixup;
@@ -319,7 +297,6 @@ namespace InvCon {
       /* Insert us in the given collection, just between the 'prev_membership' and 'next_membership' siblings.
          If we're is already in a collection, remove us from there before inserting. */
       void SetLinkage(TTypedCollection *collection, TMembership *prev_membership, TMembership *next_membership) {
-        assert(this);
         assert(collection);
         /* 'prev_membership' is null (this is, we're inserting as first)
            or 'next_membership' comes immediately after it in the collection's collection. */
@@ -342,7 +319,6 @@ namespace InvCon {
       /* Reset all pointers to null.
          This function does no unlinking so make sure we're unlinked first. */
       void ZeroLinkage() {
-        assert(this);
         Collection = 0;
         NextMembership = 0;
         PrevMembership = 0;

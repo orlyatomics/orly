@@ -52,12 +52,10 @@ TExistsCtor::TExistsCtor(const TExprFactory *expr_factory, const Package::Syntax
 }
 
 TExistsCtor::~TExistsCtor() {
-  assert(this);
   delete ValueType;
 }
 
 Expr::TExpr::TPtr TExistsCtor::Build() const {
-  assert(this);
   /*auto addr_expr_ptr = Expr->Build();
   Expr::TAddr *k = dynamic_cast<Expr::TAddr *>(addr_expr_ptr.get());*/
   /* If read is on a keys expression, check that the keys value type is the same as the as_type of the read expression */
@@ -68,7 +66,6 @@ Expr::TExpr::TPtr TExistsCtor::Build() const {
 }
 
 void TExistsCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   assert(ValueType);

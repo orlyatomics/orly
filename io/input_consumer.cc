@@ -26,12 +26,10 @@ using namespace std;
 using namespace Io;
 
 bool TInputConsumer::HasBufferedData() const {
-  assert(this);
   return Cursor < Limit;// || ChunkIdx < Chunks.size();
 }
 
 void TInputConsumer::PeekAndDump(string &out) {
-  assert(this);
   assert(&out);
   TryRefresh();
   size_t size = Limit - Cursor;
@@ -48,7 +46,6 @@ void TInputConsumer::PeekAndDump(string &out) {
 }
 
 void TInputConsumer::ReadExactly(void *buf, size_t size) {
-  assert(this);
   assert(buf || !size);
   char *csr = static_cast<char *>(buf);
   while (size) {
@@ -61,7 +58,6 @@ void TInputConsumer::ReadExactly(void *buf, size_t size) {
 }
 
 void TInputConsumer::SkipExactly(size_t size) {
-  assert(this);
   while (size) {
     size_t step_size = GetStepSize(size);
     Cursor += step_size;
@@ -70,12 +66,10 @@ void TInputConsumer::SkipExactly(size_t size) {
 }
 
 TInputConsumer::~TInputConsumer() {
-  assert(this);
   assert(!NewestMark);
 }
 
 void TInputConsumer::TryRefresh() {
-  assert(this);
   /* If we're out of data, try to get more; otherwise, do nothing. */
   if (Cursor >= Limit) {
     /* If we have a current chunk, we're now done with it.
@@ -128,7 +122,6 @@ TMark::TMark(TInputConsumer *input_consumer) {
 }
 
 TMark::~TMark() {
-  assert(this);
   /* Marks must be destroyed in the opposite order in which they were created.
      If this assertion fails, it means we're being destroyed out of order. */
   assert(InputConsumer->NewestMark == this);
@@ -145,7 +138,6 @@ TMark::~TMark() {
 }
 
 void TMark::Rewind() const {
-  assert(this);
   /* You cannot rewind past the newest mark.
      If this assertion fails, it means we're rewinding out of order. */
   assert(InputConsumer->NewestMark == this);

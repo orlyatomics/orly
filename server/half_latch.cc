@@ -34,14 +34,12 @@ THalfLatch::THalfLatch()
 }
 
 void THalfLatch::Recv() {
-  assert(this);
   char dummy;
   Util::IfLt0(read(RecvFd, &dummy, 1));
   IsSet = false;
 }
 
 void THalfLatch::Send() {
-  assert(this);
   if (!IsSet) {
     Util::IfLt0(write(SendFd, ".", 1));
     IsSet = true;

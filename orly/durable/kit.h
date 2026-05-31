@@ -174,7 +174,6 @@ namespace Orly {
 
       /* See base class. */
       virtual TObj *ForceRelease() override {
-        assert(this);
         auto *temp = SomeObj;
         SomeObj = nullptr;
         return temp;
@@ -313,13 +312,11 @@ namespace Orly {
          If the object is open, this is unknown.
          An object which is open cannot be destroyed by the cleaner, so it has no deadline. */
       const Base::TOpt<TDeadline> &GetDeadline() const {
-        assert(this);
         return Deadline;
       }
 
       /* The unique id of this durable object. */
       const TId &GetId() const {
-        assert(this);
         return Id;
       }
 
@@ -329,20 +326,17 @@ namespace Orly {
 
       /* The manager to which this durable object belongs. */
       TManager *GetManager() const {
-        assert(this);
         return Manager;
       }
 
       /* The minimum amount of time this object will live after it is closed.
          If this value is zero, then this object will be destroyed immediately after it is closed. */
       const TTtl &GetTtl() const {
-        assert(this);
         return Ttl;
       }
 
       /* True iff. this object has ever been saved to disk; otherwise, false. */
       bool IsOnDisk() const {
-        assert(this);
         return OnDisk;
       }
 
@@ -468,7 +462,6 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj>::~TPtr() {
-      assert(this);
       if (SomeObj) {
         SomeObj->OnPtrRelease();
       }
@@ -476,7 +469,6 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj> &TPtr<TSomeObj>::operator=(TPtr &&that) {
-      assert(this);
       assert(&that);
       std::swap(SomeObj, that.SomeObj);
       return *this;
@@ -484,62 +476,52 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj> &TPtr<TSomeObj>::operator=(const TPtr &that) {
-      assert(this);
       return *this = TPtr(that);
     }
 
     template <typename TSomeObj>
     bool TPtr<TSomeObj>::operator==(const TPtr &that) const {
-      assert(this);
       return SomeObj == that.SomeObj;
     }
 
     template <typename TSomeObj>
     bool TPtr<TSomeObj>::operator!=(const TPtr &that) const {
-      assert(this);
       return SomeObj != that.SomeObj;
     }
 
     template <typename TSomeObj>
     size_t TPtr<TSomeObj>::GetHash() const {
-      assert(this);
       return reinterpret_cast<size_t>(SomeObj);
     }
 
     template <typename TSomeObj>
     template <typename TOtherObj>
     TPtr<TSomeObj> &TPtr<TSomeObj>::operator=(const TPtr<TOtherObj> &that) {
-      assert(this);
       return *this = TPtr(that);
     }
 
     template <typename TSomeObj>
     TPtr<TSomeObj>::operator bool() const {
-      assert(this);
       return SomeObj != nullptr;
     }
 
     template <typename TSomeObj>
     TSomeObj &TPtr<TSomeObj>::operator*() const {
-      assert(this);
       return *SomeObj;
     }
 
     template <typename TSomeObj>
     TSomeObj *TPtr<TSomeObj>::operator->() const {
-      assert(this);
       return SomeObj;
     }
 
     template <typename TSomeObj>
     TSomeObj *TPtr<TSomeObj>::Get() const {
-      assert(this);
       return SomeObj;
     }
 
     template <typename TSomeObj>
     TPtr<TSomeObj> &TPtr<TSomeObj>::Reset() {
-      assert(this);
       return *this = TPtr();
     }
 
@@ -552,7 +534,6 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj>::TPtr(TObj *obj, TOld) {
-      assert(this);
       assert(obj);
       SomeObj = dynamic_cast<TSomeObj *>(obj);
       if (!SomeObj) {
@@ -567,7 +548,6 @@ namespace Orly {
 
     template <typename TSomeObj, typename... TArgs>
     TPtr<TSomeObj> TManager::New(const TId &id, const TTtl &ttl, TArgs &&... args) {
-      assert(this);
       /* Lock the manager and create the requested slot among the openable objects.
          If the slot already exists, throw. */
       std::lock_guard<std::mutex> lock(Mutex);
@@ -612,7 +592,6 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj> TManager::Open(const TId &id) {
-      assert(this);
       /* Lock the manager and find/create the requested slot among the openable objects. */
       std::lock_guard<std::mutex> lock(Mutex);
       auto iter = OpenableObjs.insert(std::pair<TId, TObj *>(id, nullptr)).first;

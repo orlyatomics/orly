@@ -34,12 +34,10 @@ TUserId::TUserId(const TPosRange &pos_range)
     : TLeaf(pos_range) {}
 
 void TUserId::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TUserId::GetTypeImpl() const {
-  assert(this);
   return Type::TOpt::Get(Type::TId::Get());
 }

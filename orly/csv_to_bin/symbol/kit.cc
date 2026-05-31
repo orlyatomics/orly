@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly::CsvToBin::Symbol;
 
 void TTable::AddCol(std::unique_ptr<TCol> &&col) {
-  assert(this);
   assert(&col);
   assert(col);
   if (TryFindCol(col->GetName())) {
@@ -33,7 +32,6 @@ void TTable::AddCol(std::unique_ptr<TCol> &&col) {
 }
 
 void TTable::AddSecondaryKey(std::unique_ptr<TSecondaryKey> &&key) {
-  assert(this);
   assert(&key);
   assert(key);
   if (TryFindSecondaryKey(key->GetName())) {
@@ -44,7 +42,6 @@ void TTable::AddSecondaryKey(std::unique_ptr<TSecondaryKey> &&key) {
 }
 
 void TTable::AddText(const TCol *col) {
-  assert(this);
   assert(col);
   if (col->GetType() != TType::Str) {
     THROW_ERROR(TSemanticError)
@@ -59,7 +56,6 @@ void TTable::AddText(const TCol *col) {
 }
 
 const TCol *TTable::FindCol(const std::string &name) const {
-  assert(this);
   const auto *col = TryFindCol(name);
   if (!col) {
     THROW_ERROR(TSemanticError)
@@ -70,7 +66,6 @@ const TCol *TTable::FindCol(const std::string &name) const {
 
 bool TTable::ForEachColNotInKey(
     const std::function<bool (const TCol *)> &cb, const TKey *key) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   assert(&key);
@@ -90,13 +85,11 @@ bool TTable::ForEachColNotInKey(
 }
 
 size_t TTable::NumColNotCoveredByKey(const TKey *key) const {
-  assert(this);
   assert(key);
   return GetColCount() - key->GetFields().size();
 }
 
 const TCol *TTable::TryFindCol(const string &name) const {
-  assert(this);
   for (const auto &col: Cols) {
     if (col->GetName() == name) {
       return col.get();
@@ -106,7 +99,6 @@ const TCol *TTable::TryFindCol(const string &name) const {
 }
 
 const TSecondaryKey *TTable::TryFindSecondaryKey(const string &name) const {
-  assert(this);
   for (const auto &key: SecondaryKeys) {
     if (key->GetName() == name) {
       return key.get();
@@ -116,7 +108,6 @@ const TSecondaryKey *TTable::TryFindSecondaryKey(const string &name) const {
 }
 
 void TTable::Verify() const {
-  assert(this);
   if (Cols.empty()) {
     THROW_ERROR(TSemanticError) << "no columns defined";
   }

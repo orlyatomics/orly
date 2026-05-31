@@ -77,13 +77,11 @@ namespace Orly {
 
       /* TODO */
       const Type::TType &GetElemType() const {
-        assert(this);
         return Type;
       }
 
       /* TODO */
       const TSetType &GetVal() const {
-        assert(this);
         return Val;
       }
 

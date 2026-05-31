@@ -38,7 +38,6 @@ namespace Orly {
 
       /* Dependency graph */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        assert(this);
         dependency_set.insert(Start);
         Start->AppendDependsOn(dependency_set);
         if (OptLimit) {

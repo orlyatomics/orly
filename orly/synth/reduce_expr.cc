@@ -44,13 +44,11 @@ TReduceExpr::TReduceExpr(const TExprFactory *expr_factory, const Package::Syntax
 }
 
 TReduceExpr::~TReduceExpr() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Expr::TExpr::TPtr TReduceExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I set rhs seperately, take a look at <orly/synth/thatable_expr.h>
   Symbol = Expr::TReduce::New(Lhs->Build(), GetPosRange(InfixReduce));
@@ -59,7 +57,6 @@ Expr::TExpr::TPtr TReduceExpr::Build() const {
 }
 
 void TReduceExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
@@ -67,7 +64,6 @@ void TReduceExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TReduceExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -75,19 +71,16 @@ void TReduceExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TReduce::TPtr &TReduceExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TStartable::TPtr TReduceExpr::GetStartableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TThatable::TPtr TReduceExpr::GetThatableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

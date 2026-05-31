@@ -32,20 +32,17 @@ TUnary::TUnary(const TExpr::TPtr &expr, const TPosRange &pos_range)
 }
 
 TUnary::~TUnary() {
-  assert(this);
   if (Expr) {
     Expr->UnsetExprParent(this);
   }
 }
 
 const TExpr::TPtr &TUnary::GetExpr() const {
-  assert(this);
   assert(Expr);
   return Expr;
 }
 
 void TUnary::SetExpr(const TExpr::TPtr &expr) {
-  assert(this);
   assert(expr);
   assert(!Expr);
   Expr = expr;

@@ -21,7 +21,6 @@
 using namespace Tools::Nycr::Symbol;
 
 void TOperator::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }

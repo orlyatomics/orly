@@ -54,14 +54,12 @@ namespace Tools {
       /* Translate the lexeme to a native string, treating the lexeme as a double-quoted raw string.  That is, the lexeme begins and ends with
          double-quote (") and contains no double-quotes, back-slashes, or control characters. */
       std::string AsDoubleQuotedRawString() const {
-        assert(this);
         return AsQuotedString('"', true);
       }
 
       /* Translate the lexeme to a native string, treating the lexeme as a double-quoted raw string.  That is, the lexeme begins and ends with
          double-quote (") and contains no control characters, but may contain escape sequences such as \n, \t, \", or \\. */
       std::string AsDoubleQuotedString() const {
-        assert(this);
         return AsQuotedString('"', false);
       }
 
@@ -74,14 +72,12 @@ namespace Tools {
       /* Translate the lexeme to a native string, treating the lexeme as a double-quoted raw string.  That is, the lexeme begins and ends with
          single-quote (') and contains no single-quotes, back-slashes, or control characters. */
       std::string AsSingleQuotedRawString() const {
-        assert(this);
         return AsQuotedString('\'', true);
       }
 
       /* Translate the lexeme to a native string, treating the lexeme as a double-quoted raw string.  That is, the lexeme begins and ends with
          single-quote (') and contains no control characters, but may contain escape sequences such as \n, \t, \', or \\. */
       std::string AsSingleQuotedString() const {
-        assert(this);
         return AsQuotedString('\'', false);
       }
 
@@ -91,19 +87,16 @@ namespace Tools {
 
       /* The position range covered by the lexeme. */
       const TPosRange &GetPosRange() const {
-        assert(this);
         return PosRange;
       }
 
       /* The text of the lexeme. */
       const std::string &GetText() const {
-        assert(this);
         return Text;
       }
 
       /* Used to dump the tree. */
       void Write(std::ostream &strm) const {
-        assert(this);
         assert(&strm);
         strm << PosRange << ' ' << TEscape(Text);
       }

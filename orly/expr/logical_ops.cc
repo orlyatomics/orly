@@ -45,13 +45,11 @@ TAnd::TAnd(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TAnd::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAnd::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TLogicalOpsTypeVisitor(type, GetPosRange()));
   return type;
@@ -65,13 +63,11 @@ TAndThen::TAndThen(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRan
     : TBinary(lhs, rhs, pos_range) {}
 
 void TAndThen::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TAndThen::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TLogicalOpsTypeVisitor(type, GetPosRange()));
   return type;
@@ -85,7 +81,6 @@ TNot::TNot(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TNot::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -112,7 +107,6 @@ Type::TType TNot::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TNotTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TNotTypeVisitor(type, GetPosRange()));
   return type;
@@ -126,13 +120,11 @@ TOr::TOr(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TOr::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TOr::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TLogicalOpsTypeVisitor(type, GetPosRange()));
   return type;
@@ -146,13 +138,11 @@ TOrElse::TOrElse(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange
     : TBinary(lhs, rhs, pos_range) {}
 
 void TOrElse::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TOrElse::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TLogicalOpsTypeVisitor(type, GetPosRange()));
   return type;
@@ -166,13 +156,11 @@ TXor::TXor(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TXor::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TXor::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TLogicalOpsTypeVisitor(type, GetPosRange()));
   return type;

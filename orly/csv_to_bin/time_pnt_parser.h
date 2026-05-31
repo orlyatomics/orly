@@ -88,7 +88,6 @@ namespace Orly {
 
       /* True when we have at least one more byte to peek. */
       bool CanPeek() const {
-        assert(this);
         return RefreshBytes(false);
       }
 
@@ -103,7 +102,6 @@ namespace Orly {
 
       /* Our current byte.  Throws if we're out of bytes. */
       uint8_t Peek() const {
-        assert(this);
         RefreshBytes(true);
         return *Cursor;
       }
@@ -111,7 +109,6 @@ namespace Orly {
       /* Our current byte and advances to the next byte.  Throws if we're out
          of bytes. */
       uint8_t Pop() {
-        assert(this);
         RefreshBytes(true);
         return *Cursor++;
       }

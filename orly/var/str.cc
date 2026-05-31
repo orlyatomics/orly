@@ -26,93 +26,75 @@ using namespace Orly;
 using namespace Var;
 
 size_t TStr::GetHash() const {
-  assert(this);
   return std::hash<std::string>()(Val);
 }
 
 Type::TType TStr::GetType() const {
-  assert(this);
   return Type::TStr::Get();
 }
 
 void TStr::Write(std::ostream &strm) const {
-  assert(this);
   strm << "std::string(" << std::quoted(Val) << ')';
 }
 
 void TStr::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TStr::Touch() {
-  assert(this);
 }
 
 Var::TVar &TStr::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on str.");
 }
 
 TStr &TStr::Add(const TVar &rhs) {
-  assert(this);
   Val += Var::TVar::TDt<std::string>::As(rhs);
   return *this;
 }
 
 TStr &TStr::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on str.");
 }
 
 TStr &TStr::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on str.");
 }
 
 TStr &TStr::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on str.");
 }
 
 TStr &TStr::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on str.");
 }
 
 TStr &TStr::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on str.");
 }
 
 TStr &TStr::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mul not supported on str.");
 }
 
 TStr &TStr::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on str.");
 }
 
 TStr &TStr::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on str.");
 }
 
 TStr &TStr::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff Xor not supported on str.");
 }
 
 TStr &TStr::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union Or not supported on str.");
 }
 
 TStr &TStr::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on str.");
 }
 
@@ -121,7 +103,6 @@ TStr::TStr(const std::string &that) : Val(that) {}
 TStr::~TStr() {}
 
 TVar TStr::Copy() const {
-  assert(this);
   return TStr::New(Val);
 }
 

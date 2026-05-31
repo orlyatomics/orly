@@ -40,7 +40,6 @@ TContext::TSyntaxError::TSyntaxError()
 TContext::~TContext() {}
 
 shared_ptr<const TAnyRequest> TContext::Read() {
-  assert(this);
   TBinaryIoStream &strm = GetBinaryIoStream();
   shared_ptr<const TAnyRequest> new_request;
   char introducer;
@@ -73,7 +72,6 @@ shared_ptr<const TAnyRequest> TContext::Read() {
 }
 
 void TContext::FailAllFutures(const string &error_msg) {
-  assert(this);
   lock_guard<mutex> lock(FutureByRequestIdMutex);
   for (const auto &iter: FutureByRequestId) {
     string my_error = error_msg;
@@ -82,7 +80,6 @@ void TContext::FailAllFutures(const string &error_msg) {
 }
 
 shared_ptr<TAnyFuture> TContext::PopFuture(TRequestId request_id) {
-  assert(this);
   lock_guard<mutex> lock(FutureByRequestIdMutex);
   auto iter = FutureByRequestId.find(request_id);
   if (iter == FutureByRequestId.end()) {
@@ -99,7 +96,6 @@ TAnyFuture::TRemoteError::TRemoteError(const string &error_msg)
 TAnyFuture::~TAnyFuture() {}
 
 TAnyFuture::operator bool() const {
-  assert(this);
   bool is_ready = (ResultStatus.load(std::memory_order_consume) != NoResult);
   if (!is_ready) {
     pollfd temp;
@@ -113,7 +109,6 @@ TAnyFuture::operator bool() const {
 }
 
 void TAnyFuture::Sync() const {
-  assert(this);
   bool is_ready;
   do {
     switch (ResultStatus.load(std::memory_order_consume)) {
@@ -139,14 +134,12 @@ TAnyFuture::TAnyFuture()
     : EventFd(eventfd(0, 0)), ResultStatus(NoResult) {}
 
 void TAnyFuture::SetErrorResult(string &error_msg) {
-  assert(this);
   assert(&error_msg);
   ErrorMsg = move(error_msg);
   SetResultStatus(ErrorResult);
 }
 
 void TAnyFuture::SetResultStatus(TResultStatus result_status) {
-  assert(this);
   assert(result_status != NoResult);
   assert(ResultStatus == NoResult);
   ResultStatus.store(result_status, std::memory_order_release);
@@ -168,14 +161,12 @@ TProtocol::TUnknownEntry::TUnknownEntry()
     : runtime_error("unknown request factory") {}
 
 TProtocol::~TProtocol() {
-  assert(this);
   for (auto item: EntryById) {
     delete item.second;
   }
 }
 
 const TAnyEntry *TProtocol::FindEntry(TEntryId entry_id) const {
-  assert(this);
   auto iter = EntryById.find(entry_id);
   if (iter == EntryById.end()) {
     throw TUnknownEntry();

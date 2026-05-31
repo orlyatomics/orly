@@ -53,20 +53,17 @@ namespace Orly {
 
       /* The arena to which the cores in the vector refer.  Never null. */
       TArena *GetArena() const {
-        assert(this);
         return Arena;
       }
 
       /* The cores we've accumulated. */
       const std::vector<TCore> &GetCores() const {
-        assert(this);
         return Cores;
       }
 
       /* Append the given value to the vector. */
       template <typename TVal>
       void Push(const TVal &val) {
-        assert(this);
         Sabot::State::TAny::TWrapper state(Native::State::New(val, StateBuffer));
         SetDepth(state);
         Cores.emplace_back(Arena, state.get());
@@ -74,7 +71,6 @@ namespace Orly {
 
       /* Append the value represented by the given state to the vector. */
       void PushState(const Sabot::State::TAny::TWrapper &state) {
-        assert(this);
         SetDepth(state);
         Cores.emplace_back(Arena, state.get());
       }
@@ -84,7 +80,6 @@ namespace Orly {
 
       /* TODO */
       inline size_t GetNumArenaBytes() const {
-        assert(this);
         assert(Arena);
         return Arena->GetNumBytes();
       }
@@ -110,7 +105,6 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetNumBytes() {
-          assert(this);
           return NumBytes;
         }
 

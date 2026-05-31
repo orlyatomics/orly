@@ -33,7 +33,6 @@ TPiece::TPiece(const char *that) {
 }
 
 int TPiece::Compare(const TPiece &that) const {
-  assert(this);
   assert(&that);
   TPiece
       lhs = *this,
@@ -59,12 +58,10 @@ int TPiece::Compare(const TPiece &that) const {
 }
 
 size_t TPiece::GetHash() const {
-  assert(this);
   return _Hash_bytes(Start, Limit - Start, 0);
 }
 
 size_t TPiece::GetLength() const {
-  assert(this);
   size_t result = 0;
   for (TPiece temp = *this; temp; temp.Pop()) {
     ++result;
@@ -73,7 +70,6 @@ size_t TPiece::GetLength() const {
 }
 
 uint32_t TPiece::Pop() {
-  assert(this);
   if (Limit == Start) {
     THROW_ERROR(TEmpty);
   }

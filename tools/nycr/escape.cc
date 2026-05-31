@@ -24,7 +24,6 @@ using namespace std;
 using namespace Tools::Nycr;
 
 void TEscape::Write(ostream &strm) const {
-  assert(this);
   assert(&strm);
   switch (EscapeStyle) {
     case TEscape::CStyle: {

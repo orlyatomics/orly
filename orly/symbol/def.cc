@@ -30,11 +30,9 @@ TDef::TDef(const std::string &name, const TPosRange &pos_range)
 TDef::~TDef() {}
 
 const std::string &TDef::GetName() const {
-  assert(this);
   return Name;
 }
 
 const TPosRange &TDef::GetPosRange() const {
-  assert(this);
   return PosRange;
 }

@@ -29,13 +29,11 @@ using namespace Util;
 
 /* TODO */
 size_t TObj::GetHash() const {
-  assert(this);
   return Hash;
 }
 
 /* TODO */
 Type::TType TObj::GetType() const {
-  assert(this);
   return Type::TObj::Get(TypeMap);
 }
 
@@ -46,13 +44,11 @@ void TObj::Write(std::ostream &) const {
 const TVar TObj::DefaultVar;
 
 void TObj::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TObj::SetHash() {
-  assert(this);
   Hash = 0;
   for (auto iter = FieldsByName.begin(); iter != FieldsByName.end(); ++iter) {
     Hash ^= std::hash<std::string>()(iter->first);
@@ -61,12 +57,10 @@ void TObj::SetHash() {
 }
 
 void TObj::Touch() {
-  assert(this);
   SetHash();
 }
 
 Var::TVar &TObj::Index(const TVar &key) {
-  assert(this);
   std::string name = TVar::TDt<std::string>::As(key);
   auto pos = FieldsByName.find(name);
   if (pos == FieldsByName.end()) {
@@ -76,67 +70,54 @@ Var::TVar &TObj::Index(const TVar &key) {
 }
 
 TObj &TObj::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not supported on Obj.");
 }
 
 TObj &TObj::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on Obj.");
 }
 
 TObj &TObj::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on Obj.");
 }
 
 TObj &TObj::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on Obj.");
 }
 
 TObj &TObj::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on Obj.");
 }
 
 TObj &TObj::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on Obj.");
 }
 
 TObj &TObj::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mul not supported on Obj.");
 }
 
 TObj &TObj::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on Obj.");
 }
 
 TObj &TObj::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on Obj.");
 }
 
 TObj &TObj::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on Obj.");
 }
 
 TObj &TObj::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on Obj.");
 }
 
 TObj &TObj::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on Obj.");
 }
 
 TObj::TObj(const std::unordered_map<std::string, TVar> &that) : FieldsByName(that) {
-  assert(this);
   for (auto iter = FieldsByName.begin(); iter != FieldsByName.end(); ++iter) {
     TypeMap[iter->first] = iter->second.GetType();
   }
@@ -146,7 +127,6 @@ TObj::TObj(const std::unordered_map<std::string, TVar> &that) : FieldsByName(tha
 TObj::~TObj() {}
 
 TVar TObj::Copy() const {
-  assert(this);
   TFieldsByName copy_obj;
   for (auto iter : FieldsByName) {
     copy_obj.insert(std::make_pair(iter.first, iter.second.Copy()));

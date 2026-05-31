@@ -257,13 +257,11 @@ namespace Visitor {
 
     /* Destroy our state. */
     ~TVariant() noexcept {
-      assert(this);
       Acceptor = nullptr;
     }
 
     /* Returns true iff. this variant is non-empty. */
     explicit operator bool() const noexcept {
-      assert(this);
       assert((Acceptor && Data) || (!Acceptor && !Data));
       return Acceptor;
     }
@@ -271,7 +269,6 @@ namespace Visitor {
     /* Steal the state from the donor, leaving it stateless.
        If we already have a state, abandon it. */
     TVariant &operator=(TVariant &&that) noexcept {
-      assert(this);
       TVariant temp(std::move(that));
       return Swap(temp);
     }
@@ -279,7 +276,6 @@ namespace Visitor {
     /* Same as above but across-family. */
     template <typename ThatFamily>
     TVariant &operator=(TVariant<ThatFamily> &&that) {
-      assert(this);
       TVariant temp(std::move(that));
       return Swap(temp);
     }
@@ -287,7 +283,6 @@ namespace Visitor {
     /* Share the state with the other variant.
        If we already have a state, abandon it. */
     TVariant &operator=(const TVariant &that) noexcept {
-      assert(this);
       TVariant temp(that);
       return Swap(temp);
     }
@@ -295,14 +290,12 @@ namespace Visitor {
     /* Same as above but across-family. */
     template <typename ThatFamily>
     TVariant &operator=(const TVariant<ThatFamily> &that) {
-      assert(this);
       TVariant temp(that);
       return Swap(temp);
     }
 
     /* Accept a regular (non-mutating) visitor. */
     void Accept(const TVisitor &visitor) const {
-      assert(this);
       assert(*this);
       assert(&visitor);
       (*Acceptor)(visitor, Data.Get());
@@ -310,7 +303,6 @@ namespace Visitor {
 
     /* Accept a mutating visitor. */
     void Accept(const TMutatingVisitor &visitor) {
-      assert(this);
       assert(*this);
       assert(&visitor);
       if (!Data.IsUnique()) {
@@ -321,14 +313,12 @@ namespace Visitor {
 
     /* Bring us back to the default constructed state. */
     TVariant &Reset() noexcept {
-      assert(this);
       TVariant temp;
       return Swap(temp);
     }
 
     /* Swap two variants. */
     TVariant &Swap(TVariant &that) noexcept {
-      assert(this);
       assert(&that);
       if (this == &that) {
         return *this;
@@ -384,7 +374,6 @@ namespace Visitor {
          its correct type. */
       virtual void operator()(const TVisitor &visitor,
                               const void *data) const override {
-        assert(this);
         assert(&visitor);
         assert(data);
         visitor(*static_cast<const TElem *>(data));
@@ -397,7 +386,6 @@ namespace Visitor {
          instead. Fullfilling the COW (Copy-on-Write) feature of TVariant. */
       virtual void operator()(const TMutatingVisitor &visitor,
                               void *data) const override {
-        assert(this);
         assert(&visitor);
         assert(data);
         visitor(*static_cast<TElem *>(data));

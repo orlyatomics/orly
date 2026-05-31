@@ -67,7 +67,6 @@ TPackage::TPackage(const Package::TName &name, const Package::Syntax::TPackage *
 }
 
 void TPackage::Build() const {
-  assert(this);
   Bind();
   int pass = 0;
   while (!GetContext().HasErrors()) {
@@ -79,33 +78,27 @@ void TPackage::Build() const {
 }
 
 void TPackage::BuildSymbol() {
-  assert(this);
   assert(!Symbol);
   Symbol = Symbol::TPackage::New(Name, IndexName, Version);
 }
 
 const Package::TName &TPackage::GetName() const {
-  assert(this);
   return Name;
 }
 
 Symbol::TScope::TPtr TPackage::GetScopeSymbol() const {
-  assert(this);
   return Symbol;
 }
 
 Symbol::TPackage::TPtr TPackage::GetSymbol() const {
-  assert(this);
   return Symbol;
 }
 
 unsigned int TPackage::GetVersion() const {
-  assert(this);
   return Version;
 }
 
 bool TPackage::HasSymbol() const {
-  assert(this);
   return Symbol.get();
 }
 

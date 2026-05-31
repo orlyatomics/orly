@@ -45,7 +45,6 @@ namespace Orly {
       virtual void Accept(const TVisitor &visitor) const;
 
       inline const TExprSet &GetExprs() const {
-        assert(this);
         return GetContainer();
       }
 

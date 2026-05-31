@@ -92,14 +92,12 @@ namespace Base {
     /* The directory in which the executable resides.  Not null.  No trailing slash.
        Taken from argv[0]. */
     const char *GetDir() const {
-      assert(this);
       return Dir;
     }
 
     /* The name of the executable.
        Taken from argv[0]. */
     const char *GetProg() const {
-      assert(this);
       return Prog;
     }
 
@@ -186,21 +184,18 @@ namespace Base {
       /* Declare a pass-by-name parameter with a backer. */
       template <typename TSomeCmd, typename TVal>
       void Param(TVal (TSomeCmd::*backer), const char *arg_name, TBasis basis, const char *names, const char *desc) {
-        assert(this);
         AppendParam(new TBackedParam<TSomeCmd, TVal>(backer, arg_name, basis, names, desc));
       }
 
       /* Declare a pass-by-position parameter with a backer. */
       template <typename TSomeCmd, typename TVal>
       void Param(TVal (TSomeCmd::*backer), const char *arg_name, TBasis basis, const char *desc) {
-        assert(this);
         AppendParam(new TBackedParam<TSomeCmd, TVal>(backer, arg_name, basis, 0, desc));
       }
 
       /* Declare a pass-by-name parameter without a backer. */
       template <typename TSomeCmd>
       void Param(bool (TSomeCmd::*handler)(const TMessageConsumer &), TBasis basis, const char *names, const char *desc) {
-        assert(this);
         AppendParam(new TUnbackedParam<TSomeCmd>(handler, basis, names, desc));
       }
 
@@ -225,7 +220,6 @@ namespace Base {
 
           /* The name of this argument. */
           const char *GetName() const {
-            assert(this);
             return Name;
           }
 
@@ -346,7 +340,6 @@ namespace Base {
         /* The argument accepted by this parameter.  If this parameter as no argument, calling this function is an error.
            Note that a pass-by-position parameter always has an argument, and a pass-by-name parameter may or may not have. */
         const TArg *GetArg() const {
-          assert(this);
           auto arg = TryGetArg();
           assert(arg);
           return arg;
@@ -354,25 +347,21 @@ namespace Base {
 
         /* See TBasis. */
         TBasis GetBasis() const {
-          assert(this);
           return Basis;
         }
 
         /* A name by which to refer to this parameter in diagnostics.  Never null. */
         const char *GetDiagnosticName() const {
-          assert(this);
           return Names ? Names : GetArg()->GetName();
         }
 
         /* True iff. this is a pass-by-name parameter. */
         bool GetIsByName() const {
-          assert(this);
           return Names != 0;
         }
 
         /* See TRecurrence. */
         TRecurrence GetRecurrence() const {
-          assert(this);
           auto arg = TryGetArg();
           return arg ? arg->GetRecurrence() : Once;
         }
@@ -411,7 +400,6 @@ namespace Base {
 
           /* See base class. */
           virtual bool GetIsRequired() const {
-            assert(this);
             return ValInfo<TVal>::TryGetDefault() == 0;
           }
 
@@ -422,7 +410,6 @@ namespace Base {
 
           /* See base class. */
           virtual void Write(std::ostream &strm, const TCmd *cmd) const {
-            assert(this);
             ValInfo<TVal>::Write(strm, GetVal(cmd));
           }
 
@@ -447,7 +434,6 @@ namespace Base {
 
           /* See base class. */
           virtual void AssignDefault(TCmd *cmd) const {
-            assert(this);
             auto default_val = ValInfo<TVal>::TryGetDefault();
             assert(default_val);
             GetVal(cmd) = *default_val;
@@ -455,11 +441,9 @@ namespace Base {
 
           /* See base class. */
           virtual void Read(std::istream &strm, TCmd *cmd) const {
-            assert(this);
             ValInfo<TVal>::Read(strm, GetVal(cmd));
           }
           virtual void Read(const TJson &json, TCmd *cmd) const {
-            assert(this);
             ValInfo<TVal>::Read(json, GetVal(cmd));
           }
 
@@ -504,17 +488,14 @@ namespace Base {
 
         /* See base class. */
         virtual bool OnRecognition(TCmd *cmd, const char *arg_text, const TMessageConsumer &cb) const {
-          assert(this);
           return Arg.Parse(cmd, arg_text, cb);
         }
         virtual bool OnRecognition(TCmd *cmd, const TJson &json, const TMessageConsumer &cb) const {
-          assert(this);
           return Arg.Parse(cmd, json, cb);
         }
 
         /* See base class. */
         virtual const TParam::TArg *TryGetArg() const {
-          assert(this);
           return &Arg;
         }
 
@@ -540,7 +521,6 @@ namespace Base {
 
           /* See base class. */
           virtual const TVal &GetVal(const TCmd *cmd) const {
-            assert(this);
             assert(cmd);
             const TSomeCmd *some_cmd = dynamic_cast<const TSomeCmd *>(cmd);
             assert(some_cmd);
@@ -549,7 +529,6 @@ namespace Base {
 
           /* See base class. */
           virtual TVal &GetVal(TCmd *cmd) const {
-            assert(this);
             assert(cmd);
             TSomeCmd *some_cmd = dynamic_cast<TSomeCmd *>(cmd);
             assert(some_cmd);
@@ -582,13 +561,11 @@ namespace Base {
 
         /* See base class. */
         virtual bool OnRecognition(TCmd *cmd, const char *, const TMessageConsumer &cb) const {
-          assert(this);
           return (cmd->*Handler)(cb);
         }
 
         /* See base class. */
         virtual bool OnRecognition(TCmd *cmd, const TJson &, const TMessageConsumer &cb) const {
-          assert(this);
           return (cmd->*Handler)(cb);
         }
 
@@ -672,7 +649,6 @@ namespace Base {
              Otherwise, deletgate to the parameter's OnRecognition() action. */
           template<typename TSource>
           bool OnRecognition(const TParam *param, TCmd *cmd, TSource &&source, const TMessageConsumer &cb) {
-            assert(this);
             assert(param);
             assert(&cb);
             size_t &count = CountByParam.insert(std::make_pair(param, Zero)).first->second;

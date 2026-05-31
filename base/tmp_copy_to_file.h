@@ -45,7 +45,6 @@ namespace Base {
 
     /* The path to tmp file we manage. */
     const std::string &GetPath() const {
-      assert(this);
       return Path;
     }
 

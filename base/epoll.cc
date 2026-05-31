@@ -33,12 +33,10 @@ TEpoll::TEpoll()
     : Fd(epoll_create1(0)), Events(nullptr), MaxEventCount(0), EventCount(0), FdCount(0) {}
 
 TEpoll::~TEpoll() {
-  assert(this);
   free(Events);
 }
 
 size_t TEpoll::Wait(size_t max_event_count, int timeout) {
-  assert(this);
   assert(max_event_count);
   if (max_event_count > MaxEventCount) {
     Events = static_cast<epoll_event *>(realloc(Events, sizeof(epoll_event) * max_event_count));
@@ -61,7 +59,6 @@ size_t TEpoll::Wait(size_t max_event_count, int timeout) {
 }
 
 void TEpoll::Control(int fd, int flags, int op) {
-  assert(this);
   epoll_event event;
   Zero(event);
   event.events = flags;

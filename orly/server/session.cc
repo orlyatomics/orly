@@ -36,12 +36,10 @@ using namespace Util;
 
 TMethodResult TSession::DoInPast(
     TServer */*server*/, const TUuid &/*pov_id*/, const vector<string> &/*fq_name*/, const TClosure &/*closure*/, const TUuid &/*tracking_id*/) {
-  assert(this);
   THROW_ERROR(TStubbed) << "DoInPast";
 }
 
 bool TSession::ForEachNotification(const function<bool (uint32_t, const TNotification *)> &cb) const {
-  assert(this);
   assert(&cb);
   lock_guard<mutex> lock(NotificationMutex);
   for (const auto &item: NotificationBySeqNumber) {
@@ -53,7 +51,6 @@ bool TSession::ForEachNotification(const function<bool (uint32_t, const TNotific
 }
 
 const TNotification *TSession::GetFirstNotification(uint32_t &seq_number) {
-  assert(this);
   assert(&seq_number);
   lock_guard<mutex> lock(NotificationMutex);
   assert(!NotificationBySeqNumber.empty());
@@ -63,28 +60,23 @@ const TNotification *TSession::GetFirstNotification(uint32_t &seq_number) {
 }
 
 TUuid TSession::NewFastPrivatePov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
-  assert(this);
   assert(server);
   return NewPov(server, parent_pov_id, TPov::TAudience::Private, TPov::TPolicy::Fast, time_to_live);
 }
 
 TUuid TSession::NewFastSharedPov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
-  assert(this);
   return NewPov(server, parent_pov_id, TPov::TAudience::Shared, TPov::TPolicy::Fast, time_to_live);
 }
 
 TUuid TSession::NewSafePrivatePov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
-  assert(this);
   return NewPov(server, parent_pov_id, TPov::TAudience::Private, TPov::TPolicy::Safe, time_to_live);
 }
 
 TUuid TSession::NewSafeSharedPov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
-  assert(this);
   return NewPov(server, parent_pov_id, TPov::TAudience::Shared, TPov::TPolicy::Safe, time_to_live);
 }
 
 void TSession::PausePov(TServer *server, const TUuid &pov_id) {
-  assert(this);
   assert(server);
   auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
   auto repo = pov->GetRepo(server);
@@ -96,7 +88,6 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
 }
 
 uint32_t TSession::InsertNotification(TNotification *notification) {
-  assert(this);
   lock_guard<mutex> lock(NotificationMutex);
   uint32_t result = NextSeqNumber++;
   try {
@@ -111,7 +102,6 @@ uint32_t TSession::InsertNotification(TNotification *notification) {
 }
 
 void TSession::RemoveNotification(uint32_t seq_number) {
-  assert(this);
   lock_guard<mutex> lock(NotificationMutex);
   auto iter = NotificationBySeqNumber.find(seq_number);
   assert(iter != NotificationBySeqNumber.end());
@@ -121,14 +111,12 @@ void TSession::RemoveNotification(uint32_t seq_number) {
 }
 
 void TSession::SetTimeToLive(TServer *server, const TUuid &durable_id, const seconds &time_to_live) {
-  assert(this);
   assert(server);
   throw std::runtime_error("TSession::SetTimeToLive is currently not enabled.");
   server->GetDurableManager()->Open<TObj>(durable_id)->SetTtl(time_to_live);
 }
 
 void TSession::SetUserId(TServer */*server*/, const TUuid &user_id) {
-  assert(this);
   assert(&user_id);
   if (UserId) {
     DEFINE_ERROR(error_t, runtime_error, "user_id already set");
@@ -138,7 +126,6 @@ void TSession::SetUserId(TServer */*server*/, const TUuid &user_id) {
 }
 
 TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const TClosure &closure) {
-  assert(this);
   assert(Indy::Fiber::TRunner::LocalRunner);
   size_t prev_assignment_count = std::atomic_fetch_add(&server->FastAssignmentCounter, 1UL);
   Indy::Fiber::TSwitchToRunner RunnerSwitcher(server->FastRunnerVec[prev_assignment_count % server->FastRunnerVec.size()].get());
@@ -259,7 +246,6 @@ bool TSession::RunTestSuite(TServer * /*server*/,
     const std::vector<std::string> & /*package_name*/,
     uint64_t /*package_version*/, bool /*verbose*/) {
 #if 0
-  assert(this);
   assert(server);
   assert(&package_name);
 
@@ -285,19 +271,16 @@ bool TSession::RunTestSuite(TServer * /*server*/,
 }
 
 TNotification *TSession::TryGetNotification(uint32_t seq_number) const {
-  assert(this);
   lock_guard<mutex> lock(NotificationMutex);
   auto iter = NotificationBySeqNumber.find(seq_number);
   return (iter != NotificationBySeqNumber.end()) ? iter->second : nullptr;
 }
 
 TMethodResult TSession::TryTracked(TServer */*server*/, const TUuid &/*pov_id*/, const vector<string> &/*fq_name*/, const TClosure &/*closure*/) {
-  assert(this);
   THROW_ERROR(TStubbed) << "TryTracked";
 }
 
 void TSession::UnpausePov(TServer *server, const TUuid &pov_id) {
-  assert(this);
   assert(server);
   auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
   auto repo = pov->GetRepo(server);
@@ -349,7 +332,6 @@ TSession::TSession(Durable::TManager *manager, const Base::TUuid &id, Io::TBinar
 }
 
 TSession::~TSession() {
-  assert(this);
   Cleanup();
 }
 
@@ -436,7 +418,6 @@ bool TSession::RunTestBlock(const Base::TUuid &/*parent_pov_id*/,
 }
 
 void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
-  assert(this);
   std::lock_guard<std::mutex> lock(PovMutex);
   if (find(Povs.begin(), Povs.end(), pov) == Povs.end()) {
     Povs.push_back(pov);
@@ -444,7 +425,6 @@ void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
 }
 
 void TSession::Write(Io::TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   lock_guard<mutex> lock(NotificationMutex);
   TObj::Write(strm);
@@ -456,7 +436,6 @@ void TSession::Write(Io::TBinaryOutputStream &strm) const {
 }
 
 void TSession::Cleanup() {
-  assert(this);
   for (const auto &item: NotificationBySeqNumber) {
     delete item.second;
   }
@@ -464,7 +443,6 @@ void TSession::Cleanup() {
 
 TUuid TSession::NewPov(
     TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live) {
-  assert(this);
   assert(server);
   assert(&parent_pov_id);
   printf("TSession::NewPov()\n");
@@ -484,7 +462,6 @@ TUuid TSession::NewPov(
 }
 
 bool TSession::ForEachDependentPtr(const function<bool (Durable::TAnyPtr &)> &cb) noexcept {
-  assert(this);
   assert(&cb);
   std::lock_guard<std::mutex> lock(PovMutex);
   for (auto &pov: Povs) {

@@ -65,7 +65,6 @@ class TFile final
   }
 
   void NewMod(TManager *manager, const TTtl &time_to_live) {
-    assert(this);
     lock_guard<mutex> lock(Mutex);
     Mods.push_back(manager->New<TSubModule>(Base::TUuid::Twister, time_to_live));
   }
@@ -75,18 +74,15 @@ class TFile final
   }
 
   int GetVal() const {
-    assert(this);
     return Val;
   }
 
   virtual void Write(TBinaryOutputStream &strm) const override {
-    assert(this);
     TObj::Write(strm);
     strm << Val;
   }
 
   virtual bool ForEachDependentPtr(const function<bool (TAnyPtr &)> &cb) noexcept override {
-    assert(this);
     assert(&cb);
     for (auto &mod: Mods) {
       if (!cb(mod)) {
@@ -100,7 +96,6 @@ class TFile final
   private:
 
   virtual ~TFile() {
-    assert(this);
     Val = -99;
   }
 

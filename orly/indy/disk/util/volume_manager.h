@@ -524,7 +524,6 @@ namespace Orly {
 
           /* TODO */
           inline TDeviceCollection *GetDeviceCollection() const {
-            assert(this);
             return &DeviceCollection;
           }
 
@@ -566,7 +565,6 @@ namespace Orly {
             const size_t NumLogicalBlock;
             const size_t Capacity;
             bool operator !=(const TDesc &that) const {
-              assert(this);
               assert(&that);
               return Kind != that.Kind
                 || LogicalBlockSize != that.LogicalBlockSize
@@ -584,13 +582,11 @@ namespace Orly {
 
           /* TODO */
           inline const TDesc &GetDesc() const {
-            assert(this);
             return Desc;
           }
 
           /* TODO */
           TVolumeMembership *GetVolumeMembership() {
-            assert(this);
             return &VolumeMembership;
           }
 
@@ -651,7 +647,6 @@ namespace Orly {
 
           /* TODO */
           void SetPos(size_t pos) {
-            assert(this);
             VolumeMembership.SetKey(pos);
           }
 
@@ -820,25 +815,21 @@ namespace Orly {
 
           /* TODO */
           inline const char *GetDevicePath() const {
-            assert(this);
             return DevicePath.c_str();
           }
 
           /* TODO */
           const Base::TFd &GetDiskFd() const {
-            assert(this);
             return DiskFd;
           }
 
           /* TODO */
           inline virtual size_t GetMaxSegments() const override {
-            assert(this);
             return MaxSegmentsPerIO;
           }
 
           /* TODO */
           inline virtual size_t GetMaxSectorsKb() const override {
-            assert(this);
             return MaxSectorsKb;
           }
 
@@ -849,7 +840,6 @@ namespace Orly {
 
           /* TODO */
           virtual void DiscardRange(uint64_t from, uint64_t num_bytes) override {
-            assert(this);
             if (DiscardSupport) {
               uint64_t range[2];
               range[0] = from;
@@ -903,7 +893,6 @@ namespace Orly {
 
           /* Append Event to synchronized incoming queue. */
           inline void Enqueue(TDiskController::TEvent *inbound_event) {
-            assert(this);
             assert(inbound_event);
             assert(inbound_event->NextEvent == nullptr);
             do {
@@ -980,7 +969,6 @@ namespace Orly {
 
           /* TODO */
           void AddDevice(TDevice *device, size_t pos) {
-            assert(this);
             assert(device);
             device->SetPos(pos);
             if (ManagerMembership.TryGetCollection()) {
@@ -996,25 +984,21 @@ namespace Orly {
 
           /* TODO */
           inline size_t GetVolumeId() const {
-            assert(this);
             return VolumeId;
           }
 
           /* TODO */
           inline const TDesc &GetDesc() const {
-            assert(this);
             return Desc;
           }
 
           /* TODO */
           TDeviceCollection *GetDeviceCollection() const {
-            assert(this);
             return &DeviceCollection;
           }
 
           /* TODO */
           size_t GetNumDevices() const {
-            assert(this);
             size_t count = 0UL;
             for (TDeviceCollection::TCursor csr(&DeviceCollection); csr; ++csr, ++count) {}
             return count;
@@ -1025,7 +1009,6 @@ namespace Orly {
 
           /* TODO */
           TManagerMembership *GetManagerMembership() {
-            assert(this);
             return &ManagerMembership;
           }
 
@@ -1077,7 +1060,6 @@ namespace Orly {
 
           /* TODO */
           inline void SetVolumeId(size_t vol_id) {
-            assert(this);
             VolumeId = vol_id;
           }
 
@@ -1194,7 +1176,6 @@ namespace Orly {
 
           /* TODO */
           size_t RequestNewVolumeId() const {
-            assert(this);
             size_t max_id = 0UL;
             for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
               max_id = std::max(max_id, csr->GetVolumeId());
@@ -1278,7 +1259,6 @@ namespace Orly {
         void TVolumeManager::WriteImpl(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                        const TOffset start_offset, long long nbytes, DiskPriority priority, TCacheInstr cache_instr,
                                        bool abort_on_error, TArgs &...args) {
-          assert(this);
           const size_t logical_extent_block_start = (start_offset / ExtentAllocationBlockSize) * ExtentAllocationBlockSize;
           const size_t logical_extent_block_end = ((start_offset + nbytes - 1) / ExtentAllocationBlockSize) * ExtentAllocationBlockSize;
           TVolume *const start_vol = LogicalExtentStartToVolumeMap[logical_extent_block_start];
@@ -1294,7 +1274,6 @@ namespace Orly {
         template <typename ...TArgs>
         void TVolumeManager::ReadImpl(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                       const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args) {
-          assert(this);
           const size_t logical_extent_block_start = (start_offset / ExtentAllocationBlockSize) * ExtentAllocationBlockSize;
           const size_t logical_extent_block_end = ((start_offset + nbytes - 1) / ExtentAllocationBlockSize) * ExtentAllocationBlockSize;
           TVolume *const start_vol = LogicalExtentStartToVolumeMap[logical_extent_block_start];
@@ -1311,7 +1290,6 @@ namespace Orly {
         void TVolumeManager::ReadVImpl(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array,
                                        size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                        TArgs &...args) {
-          assert(this);
           const size_t logical_extent_block_start = (start_offset / ExtentAllocationBlockSize) * ExtentAllocationBlockSize;
           const size_t logical_extent_block_end = ((start_offset + nbytes - 1) / ExtentAllocationBlockSize) * ExtentAllocationBlockSize;
           TVolume *const start_vol = LogicalExtentStartToVolumeMap[logical_extent_block_start];

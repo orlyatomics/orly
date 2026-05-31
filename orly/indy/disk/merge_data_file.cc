@@ -827,7 +827,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator<(const TUpdateObj &that) const {
-      assert(this);
       assert(&that);
       return SequenceNumber < that.SequenceNumber;
     }
@@ -874,7 +873,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator<(const TL0MergeNote &that) const {
-      assert(this);
       assert(&that);
       assert(Arena);
       assert(that.Arena);
@@ -897,7 +895,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator==(const TL0MergeNote &that) const {
-      assert(this);
       assert(&that);
       assert(Arena);
       assert(that.Arena);
@@ -918,7 +915,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator!=(const TL0MergeNote &that) const {
-      assert(this);
       assert(&that);
       assert(Arena);
       assert(that.Arena);
@@ -939,19 +935,16 @@ class TMergeDataFileImpl {
 
     /* TODO */
     Atom::TCore::TArena *GetArena() const {
-      assert(this);
       return Arena;
     }
 
     /* TODO */
     Atom::TCore::TOffset GetOffset() const {
-      assert(this);
       return Offset;
     }
 
     /* TODO */
     const Atom::TCore::TNote *GetNote() const {
-      assert(this);
       return Note;
     }
 
@@ -987,7 +980,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator==(const TMergeNote &that) const {
-      assert(this);
       assert(&that);
       assert(Arena == that.Arena);
       assert(Note);
@@ -999,7 +991,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator!=(const TMergeNote &that) const {
-      assert(this);
       assert(&that);
       assert(Arena == that.Arena);
       assert(Note);
@@ -1011,19 +1002,16 @@ class TMergeDataFileImpl {
 
     /* TODO */
     Atom::TCore::TArena *GetArena() const {
-      assert(this);
       return Arena;
     }
 
     /* TODO */
     Atom::TCore::TOffset GetOffset() const {
-      assert(this);
       return Offset;
     }
 
     /* TODO */
     const Atom::TCore::TNote *GetNote() const {
-      assert(this);
       return Note;
     }
 
@@ -1061,13 +1049,11 @@ class TMergeDataFileImpl {
 
     /* TODO */
     inline Atom::TCore::TArena *GetArena() const {
-      assert(this);
       return Arena;
     }
 
     /* TODO */
     inline Atom::TCore::TOffset GetOffset() const {
-      assert(this);
       return Offset;
     }
 
@@ -1141,17 +1127,14 @@ class TMergeDataFileImpl {
     }
 
     virtual size_t GetByteOffsetOfArena() const override {
-      assert(this);
       return ArenaByteOffset;
     }
 
     virtual size_t GetNumArenaNotes() const override {
-      assert(this);
       return NumArenaNotes;
     }
 
     virtual Atom::TCore::TOffset GetNumBytesOfArena() const override {
-      assert(this);
       return NumArenaBytes;
     }
 
@@ -1963,19 +1946,16 @@ class TMergeDataFileImpl {
 
   /* TODO */
   inline size_t GetNumKeys() const {
-    assert(this);
     return NumKeys;
   }
 
   /* TODO */
   inline TSequenceNumber GetLowestSequence() const {
-    assert(this);
     return LowestSeq;
   }
 
   /* TODO */
   inline TSequenceNumber GetHighestSequence() const {
-    assert(this);
     return HighestSeq;
   }
 
@@ -1990,7 +1970,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     inline bool operator<(const TSortedKey &that) const {
-      assert(this);
       Atom::TComparison comp;
       if (Arena && that.Arena && Core.TryQuickOrderComparison(Arena, that.Core, that.Arena, comp)) {
       } else {
@@ -2027,7 +2006,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     virtual ~TReader() {
-      assert(this);
       Arena.reset();
     }
 
@@ -2044,7 +2022,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     inline const std::unique_ptr<TArena> &GetArena() const {
-      assert(this);
       assert(Arena);
       return Arena;
     }
@@ -2073,7 +2050,6 @@ class TMergeDataFileImpl {
           : Core(core), Hash(hash), Offset(offset) {}
 
       bool operator<(const THashObj &that) const {
-        assert(this);
         assert(&that);
         return Hash < that.Hash;
       }
@@ -2132,7 +2108,6 @@ class TMergeDataFileImpl {
     }
 
     virtual ~TMergeIndexFile() {
-      assert(this);
       assert(WasPrepared);
       assert(KeyStream->GetOffset() <= MaxByteOffsetOfKeyStream);
       KeyStream.reset();
@@ -2212,7 +2187,6 @@ class TMergeDataFileImpl {
     }
 
     void PrepKeyRange(size_t max_keys, TUpdateCollector *update_collector) {
-      assert(this);
       UpdateCollector = update_collector;
       for (size_t i = 0; i < NumHashTables; ++i) {
         HashCollectorVec.emplace_back(new THashCollector(HERE, Source::MergeDataFileHashIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true));
@@ -2254,7 +2228,6 @@ class TMergeDataFileImpl {
     }
 
     void PushCurKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val) {
-      assert(this);
       ++NumCurKeys;
       TDataOutStream &stream = *KeyStream;
       if (!FirstKey) {
@@ -2304,7 +2277,6 @@ class TMergeDataFileImpl {
     }
 
     void PushHistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val) {
-      assert(this);
       ++NumHistKeys;
       HistKeyVec.emplace_back(seq_num, key, val);
       UpdateCollector->Emplace(seq_num, ByteOffsetOfCurHistory + NumCurHistoryElem * TData::KeyHistorySize, false, IndexId);
@@ -2312,7 +2284,6 @@ class TMergeDataFileImpl {
     }
 
     void FlushHistory() {
-      assert(this);
       TDataOutStream &stream = *KeyStream;
       if (!FirstKey) {
         stream << NumCurHistoryElem << ByteOffsetOfCurHistory;
@@ -2329,7 +2300,6 @@ class TMergeDataFileImpl {
     }
 
     void FlushHashes() {
-      assert(this);
       size_t total_bytes_required = 0UL;
       std::unordered_map<size_t, std::shared_ptr<const TBufBlock>> collision_map {};
       size_t hash_index_byte_offset = BlockVec->Size() * LogicalBlockSize;
@@ -2540,7 +2510,6 @@ class TMergeDataFileImpl {
     TKey ExampleKey;
 
     Atom::TCore::TOffset RemapKey(Atom::TCore::TOffset offset) {
-      assert(this);
       /* TODO: should we keep the old offset to make sure we've got the right one? */
       const TRemapResolvedObj &obj = **ResolvedKeySorterCursorVec[MyPos];
       assert(offset == obj.OldKey);
@@ -2551,7 +2520,6 @@ class TMergeDataFileImpl {
     }
 
     Atom::TCore::TOffset RemapVal(Atom::TCore::TOffset offset) {
-      assert(this);
       /* TODO: should we keep the old offset to make sure we've got the right one? */
       const TRemapResolvedObj &obj = **ResolvedValSorterCursorVec[MyPos];
       assert(offset == obj.OldKey);
@@ -2634,17 +2602,14 @@ class TMergeDataFileImpl {
     }
 
     virtual size_t GetByteOffsetOfArena() const override {
-      assert(this);
       return ArenaByteOffset;
     }
 
     virtual size_t GetNumArenaNotes() const override {
-      assert(this);
       return NumArenaNotes;
     }
 
     virtual Atom::TCore::TOffset GetNumBytesOfArena() const override {
-      assert(this);
       return NumArenaBytes;
     }
 

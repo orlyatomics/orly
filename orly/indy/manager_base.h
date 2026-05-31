@@ -189,7 +189,6 @@ namespace Orly {
 
           /* See base class. */
           virtual TObj *ForceRelease() override {
-            assert(this);
             auto *temp = SomeObj;
             SomeObj = nullptr;
             return temp;
@@ -214,13 +213,11 @@ namespace Orly {
              If the object is open, this is unknown.
              An object which is open cannot be destroyed by the cleaner, so it has no deadline. */
           const Base::TOpt<TDeadline> &GetDeadline() const {
-            assert(this);
             return Deadline;
           }
 
           /* The unique id of this durable object. */
           const TId &GetId() const {
-            assert(this);
             return Id;
           }
 
@@ -230,20 +227,17 @@ namespace Orly {
 
           /* The manager to which this durable object belongs. */
           TManager *GetManager() const {
-            assert(this);
             return Manager;
           }
 
           /* The minimum amount of time this object will live after it is closed.
              If this value is zero, then this object will be destroyed immediately after it is closed. */
           const TTtl &GetTtl() const {
-            assert(this);
             return Ttl;
           }
 
           /* True iff. this object has ever been saved to disk; otherwise, false. */
           bool IsOnDisk() const {
-            assert(this);
             return OnDisk;
           }
 
@@ -980,28 +974,23 @@ namespace Orly {
       };  // TManager
 
       inline const Base::TUuid &TManager::TRepo::GetId() const {
-        assert(this);
         return Id;
       }
 
       inline TStatus TManager::TRepo::GetStatus() const {
-        assert(this);
         return Status;
       }
 
       inline bool TManager::TRepo::IsTailingAllowed() const {
-        assert(this);
         return Manager->AllowTailing;
       }
 
       inline void TManager::TRepo::TMapping::Incr() {
-        assert(this);
         assert(!(this != RepoMembership.TryGetCollection()->TryGetLastMember() && RefCount == 0));
         __sync_add_and_fetch(&RefCount, 1U);
       }
 
       inline void TManager::TRepo::TMapping::Decr() {
-        assert(this);
         assert(RefCount > 0);
         size_t count = __sync_sub_and_fetch(&RefCount, 1U);
         if (this != RepoMembership.TryGetCollection()->TryGetLastMember() && count == 0) {
@@ -1010,79 +999,64 @@ namespace Orly {
       }
 
       inline size_t TManager::TRepo::TMapping::GetRefCount() const {
-        assert(this);
         return RefCount;
       }
 
       inline TManager::TRepo::TMapping::TEntryCollection *TManager::TRepo::TMapping::GetEntryCollection() const {
-        assert(this);
         return &EntryCollection;
       }
 
       inline void TManager::TRepo::TDataLayer::RemoveFromCollection() {
-        assert(this);
         assert(MarkedTaken);
         assert(RemovalMembership.TryGetCollection());
         RemovalMembership.Remove();
       }
 
       inline bool TManager::TRepo::TDataLayer::GetMarkedForDelete() const {
-        assert(this);
         return MarkedForDelete;
       }
 
       inline void TManager::TRepo::TDataLayer::MarkForDelete() {
-        assert(this);
         MarkedForDelete = true;
       }
 
       inline bool TManager::TRepo::TDataLayer::GetMarkedTaken() const {
-        assert(this);
         return MarkedTaken;
       }
 
       inline void TManager::TRepo::TDataLayer::MarkTaken() {
-        assert(this);
         MarkedTaken = true;
       }
 
       inline void TManager::TRepo::TDataLayer::UnmarkTaken() {
-        assert(this);
         MarkedTaken = false;
       }
 
       inline void TManager::TRepo::EnqueueMergeMem() {
-        assert(this);
         Manager->EnqueueMergeMem(this);
       }
 
       inline void TManager::TRepo::EnqueueMergeDisk() {
-        assert(this);
         Manager->EnqueueMergeDisk(this);
       }
 
       inline void TManager::TRepo::RemoveFromClosedBuffer() {
-        assert(this);
         throw std::logic_error("TODO: implement TRepo::RemoveFromClosedBuffer");
       }
 
       inline const std::chrono::steady_clock::time_point &TManager::TRepo::GetTimeOfNextMergeMem() const {
-        assert(this);
         return MergeMemMembership.GetKey();
       }
 
       inline const std::chrono::steady_clock::time_point &TManager::TRepo::GetTimeOfNextMergeDisk() const {
-        assert(this);
         return MergeDiskMembership.GetKey();
       }
 
       inline void TManager::TRepo::SetTimeOfNextMergeMem(const std::chrono::steady_clock::time_point &time) {
-        assert(this);
         MergeMemMembership.SetKey(time);
       }
 
       inline void TManager::TRepo::SetTimeOfNextMergeDisk(const std::chrono::steady_clock::time_point &time) {
-        assert(this);
         MergeDiskMembership.SetKey(time);
       }
 
@@ -1128,7 +1102,6 @@ namespace Orly {
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj>::~TPtr() {
-        assert(this);
         if (SomeObj) {
           SomeObj->OnPtrRelease();
         }
@@ -1136,7 +1109,6 @@ namespace Orly {
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj> &TManager::TPtr<TSomeObj>::operator=(TPtr &&that) {
-        assert(this);
         assert(&that);
         std::swap(SomeObj, that.SomeObj);
         return *this;
@@ -1144,62 +1116,52 @@ namespace Orly {
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj> &TManager::TPtr<TSomeObj>::operator=(const TPtr &that) {
-        assert(this);
         return *this = TPtr(that);
       }
 
       template <typename TSomeObj>
       bool TManager::TPtr<TSomeObj>::operator==(const TPtr &that) const {
-        assert(this);
         return SomeObj == that.SomeObj;
       }
 
       template <typename TSomeObj>
       bool TManager::TPtr<TSomeObj>::operator!=(const TPtr &that) const {
-        assert(this);
         return SomeObj != that.SomeObj;
       }
 
       template <typename TSomeObj>
       size_t TManager::TPtr<TSomeObj>::GetHash() const {
-        assert(this);
         return reinterpret_cast<size_t>(SomeObj);
       }
 
       template <typename TSomeObj>
       template <typename TOtherObj>
       TManager::TPtr<TSomeObj> &TManager::TPtr<TSomeObj>::operator=(const TPtr<TOtherObj> &that) {
-        assert(this);
         return *this = TPtr(that);
       }
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj>::operator bool() const {
-        assert(this);
         return SomeObj != nullptr;
       }
 
       template <typename TSomeObj>
       TSomeObj &TManager::TPtr<TSomeObj>::operator*() const {
-        assert(this);
         return *SomeObj;
       }
 
       template <typename TSomeObj>
       TSomeObj *TManager::TPtr<TSomeObj>::operator->() const {
-        assert(this);
         return SomeObj;
       }
 
       template <typename TSomeObj>
       TSomeObj *TManager::TPtr<TSomeObj>::Get() const {
-        assert(this);
         return SomeObj;
       }
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj> &TManager::TPtr<TSomeObj>::Reset() {
-        assert(this);
         return *this = TPtr();
       }
 
@@ -1212,7 +1174,6 @@ namespace Orly {
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj>::TPtr(TObj *obj, TOld) {
-        assert(this);
         assert(obj);
         SomeObj = dynamic_cast<TSomeObj *>(obj);
         if (!SomeObj) {
@@ -1227,7 +1188,6 @@ namespace Orly {
 
       template <typename... TArgs>
       TManager::TPtr<TManager::TRepo> TManager::New(const TId &id, const TTtl &ttl, TArgs &&... args) {
-        assert(this);
         std::pair<std::unordered_map<TId, TObj *>::iterator, bool> ret;
         /* Lock the manager and create the requested slot among the openable objects.
            If the slot already exists, throw. */ {
@@ -1258,7 +1218,6 @@ namespace Orly {
 
       template <typename TSomeObj>
       TManager::TPtr<TSomeObj> TManager::Open(const TId &id) {
-        assert(this);
         for (;;) {
           /* Lock the manager and find/create the requested slot among the openable objects. */
           std::unique_lock<std::mutex> lock(DurableMutex);
@@ -1310,7 +1269,6 @@ namespace Orly {
                                                                     const Base::TOpt<TTtl> &ttl,
                                                                     const Base::TOpt<TPtr<TRepo>> &parent_repo,
                                                                     bool is_safe) {
-        assert(this);
         std::pair<std::unordered_map<TId, TObj *>::iterator, bool> ret;
         for (;;) {
           /* Lock the manager and find/create the requested slot among the openable objects. */
@@ -1354,7 +1312,6 @@ namespace Orly {
       }
 
       inline TManager::TPtr<TManager::TRepo> TManager::ForceOpenRepo(const Base::TUuid &repo_id) {
-        assert(this);
         return Open<TManager::TRepo>(repo_id);
       }
 

@@ -64,13 +64,11 @@ TNegative::TNegative(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TNegative::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TNegative::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TSignTypeVisitor(type, GetPosRange()));
   return type;
@@ -84,13 +82,11 @@ TPositive::TPositive(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TPositive::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TPositive::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TSignTypeVisitor(type, GetPosRange()));
   return type;

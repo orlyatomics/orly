@@ -34,24 +34,20 @@ TPostfixIsKnown::TPostfixIsKnown(const TExprFactory *expr_factory, const Package
       Expr(Base::AssertTrue(expr_factory)->NewExpr(PostfixIsKnown->GetExpr())) {}
 
 TPostfixIsKnown::~TPostfixIsKnown() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TExpr::TPtr TPostfixIsKnown::Build() const {
-  assert(this);
   return Expr::TIsKnown::New(Expr->Build(), GetPosRange(PostfixIsKnown));
 }
 
 void TPostfixIsKnown::ForEachInnerScope(const std::function<void (TScope *cb)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TPostfixIsKnown::ForEachRef(const std::function<void (TAnyRef &cb)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

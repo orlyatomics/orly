@@ -145,7 +145,6 @@ void TSessionObj::OnPromote(Base::TUuid update_id, const TPov *pov) {
 }
 
 void TSessionObj::OnPovFail(TPov *pov) {
-  assert(this);
   assert(pov);
   std::lock_guard<std::recursive_mutex> lock(NotifierLock);
 
@@ -171,7 +170,6 @@ void TSessionObj::OnPovFail(TPov *pov) {
 TSessionObj::TNotifier::TNotifier(TPov *pov, Base::TUuid update_id) : Event(MultiEvent::TEvent::New()), Pov(pov), UpdateId(update_id) {}
 
 void TSessionObj::TNotifier::Fire(TNotifierState state) {
-  assert(this);
   assert(!State);
 
   State = state;
@@ -181,38 +179,31 @@ void TSessionObj::TNotifier::Fire(TNotifierState state) {
 
 
 MultiEvent::TEvent::TPtr TSessionObj::TNotifier::GetEvent() const {
-  assert(this);
   return Event;
 }
 
 const Base::TUuid &TSessionObj::TNotifier::GetId() const {
-  assert(this);
   return Id;
 }
 
 TPov *TSessionObj::TNotifier::GetPov() const {
-  assert(this);
   return Pov;
 }
 
 TNotifierState TSessionObj::TNotifier::GetState() const {
-  assert(this);
   return *State;
 }
 
 const Base::TUuid &TSessionObj::TNotifier::GetUpdateId() const {
-  assert(this);
   return UpdateId;
 }
 
 
 const Base::TOpt<TNotifierState> &TSessionObj::TNotifier::TryGetState() const {
-  assert(this);
   return State;
 }
 
 void TSessionObj::MakeNotifiers(const TPrivatePovObj* ppov, const std::unordered_set<Base::TUuid> &notify_povs, const Base::TUuid &update_id, std::unordered_map<Base::TUuid, Base::TUuid> &out) {
-  assert(this);
   std::lock_guard<std::recursive_mutex> lock(NotifierLock);
 
   std::unordered_map<Base::TUuid, TNotifier*> notifiers_map(Notifiers); //notifier id -> notifier (Poll)

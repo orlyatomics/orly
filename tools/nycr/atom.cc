@@ -63,7 +63,6 @@ TAtom::TAtom(const Syntax::TName *name, const Syntax::TOptSuper *opt_super, cons
 }
 
 Symbol::TKind *TAtom::GetSymbolAsKind() const {
-  assert(this);
   return GetSymbolAsAtom();
 }
 

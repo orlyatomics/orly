@@ -46,7 +46,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TLanguage *GetSymbolAsLanguage() const {
-        assert(this);
         assert(Symbol);
         return Symbol;
       }

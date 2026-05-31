@@ -38,7 +38,6 @@ TTimeObj::TTimeObj(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TTimeObj::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -68,7 +67,6 @@ Type::TType TTimeObj::GetTypeImpl() const {
       Type = Type::TObj::Get(Base::Chrono::GetTimePntMap());
     }
   };  // TTimeObjTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TTimeObjTypeVisitor(type, GetPosRange()));
   return type;

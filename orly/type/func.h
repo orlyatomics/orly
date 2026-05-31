@@ -30,11 +30,9 @@ namespace Orly {
       public:
 
       const TType &GetParamObject() const {
-        assert(this);
         return std::get<0>(this->GetKey());
       }
       const TType &GetReturnType() const {
-        assert(this);
         return std::get<1>(this->GetKey());
       }
       static TType Get(const TType &param_obj, const TType &return_type) {

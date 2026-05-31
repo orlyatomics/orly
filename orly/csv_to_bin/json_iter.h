@@ -39,28 +39,24 @@ namespace Orly {
 
       /* True if we have not yet reached the end of the input. */
       operator bool() const {
-        assert(this);
         TryRefresh();
         return IsCached;
       }
 
       /* Our cached state. */
       const TJson &operator*() const {
-        assert(this);
         Refresh();
         return Cache;
       }
 
       /* Our cached state. */
       const TJson *operator->() const {
-        assert(this);
         Refresh();
         return &Cache;
       }
 
       /* Dump our cached state and advance. */
       TJsonIter &operator++() {
-        assert(this);
         Refresh();
         IsCached = false;
         return *this;
@@ -71,7 +67,6 @@ namespace Orly {
       /* If our cache is fresh, do nothing; otherwise, read the next JSON
          object.  We must not be at the end of the input stream. */
       void Refresh() const {
-        assert(this);
         TryRefresh();
         assert(IsCached);
       }
@@ -79,7 +74,6 @@ namespace Orly {
       /* If our cache is fresh, do nothing; otherwise, read the next JSON
          object, if there is one. */
       void TryRefresh() const {
-        assert(this);
         if (!IsCached) {
           if (!ws(Strm).eof()) {
             Strm >> Cache;

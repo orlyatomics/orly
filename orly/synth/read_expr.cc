@@ -44,13 +44,11 @@ TReadExpr::TReadExpr(const TExprFactory *expr_factory, const Package::Syntax::TR
 }
 
 TReadExpr::~TReadExpr() {
-  assert(this);
   delete Expr;
   delete Type;
 }
 
 Expr::TExpr::TPtr TReadExpr::Build() const {
-  assert(this);
   auto keys_expr_ptr = Expr->Build();
   Type::TType as_type = Type->GetSymbolicType();
   Expr::TKeys *k = dynamic_cast<Expr::TKeys *>(keys_expr_ptr.get());
@@ -63,14 +61,12 @@ Expr::TExpr::TPtr TReadExpr::Build() const {
 }
 
 void TReadExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TReadExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

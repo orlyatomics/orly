@@ -76,7 +76,6 @@ namespace Orly {
 
         /* TODO */
         TKV &operator=(TKV &&that) {
-          assert(this);
           assert(&that);
           std::swap(Key, that.Key);
           std::swap(IndexId, that.IndexId);
@@ -86,7 +85,6 @@ namespace Orly {
 
         /* TODO */
         TKV &operator=(const TKV &that) {
-          assert(this);
           assert(&that);
           if (this != &that) {
             Key = that.Key;
@@ -98,47 +96,39 @@ namespace Orly {
 
         /* True iff. both fields are equal. */
         bool operator==(const TKV &that) const {
-          assert(this);
           return Hash == that.Hash && Key == that.Key && IndexId == that.IndexId;
         }
 
         /* True iff. either field is unequal. */
         bool operator!=(const TKV &that) const {
-          assert(this);
           return !(*this == that);
         }
 
         /* TODO */
         bool operator<(const TKV &that) const {
-          assert(this);
           return Key < that.Key;
         }
 
         bool operator<=(const TKV &that) const {
-          assert(this);
           return Key <= that.Key;
         }
 
         /* TODO */
         size_t GetHash() const {
-          assert(this);
           return Hash;
         }
 
         /* The TVar which is our key. */
         const Var::TVar &GetKey() const {
-          assert(this);
           return Key;
         }
 
         const Base::TUuid &GetIndexId() const {
-          assert(this);
           return IndexId;
         }
 
         /* TODO */
         TKV &Reset() {
-          assert(this);
           return *this = TKV();
         }
 
@@ -146,7 +136,6 @@ namespace Orly {
 
         /* TODO */
         void SetHash() {
-          assert(this);
           Hash = Key.GetHash();
         }
 

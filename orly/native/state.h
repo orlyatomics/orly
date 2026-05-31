@@ -93,7 +93,6 @@ namespace Orly {
 
         /* See Sabot::State::TScalar. */
         virtual const typename TScalarSabotState::TVal &Get() const override final {
-          assert(this);
           return Val;
         }
 
@@ -120,13 +119,11 @@ namespace Orly {
 
         /* See Sabot::Type::TArrayOfScalars. */
         virtual size_t GetSize() const override final {
-          assert(this);
           return Limit - Start;
         }
 
         /* See Sabot::Type::TArrayOfScalars. */
         virtual typename TArrayOfScalarsSabotState::TPin *Pin(void *alloc) const override final {
-          assert(this);
           return new (alloc) TPin(this);
         }
 
@@ -168,13 +165,11 @@ namespace Orly {
 
         /* See Sabot::Type::TArrayOfSingleStates. */
         virtual size_t GetElemCount() const override final {
-          assert(this);
           return ElemCount;
         }
 
         /* See Sabot::Type::TArrayOfSingleStates. */
         virtual typename TArrayOfSingleStatesSabotState::TPin *Pin(void *alloc) const override final {
-          assert(this);
           return new (alloc) TPin(this);
         }
 
@@ -205,7 +200,6 @@ namespace Orly {
 
           /* See Sabot::Type::TArrayOfSingleStates::TPin. */
           virtual TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override {
-            assert(this);
             return ArrayOfSingleStates->NewElem(elem_idx, state_alloc);
           }
 
@@ -230,13 +224,11 @@ namespace Orly {
 
         /* See Sabot::Type::TArrayOfPairsOfStates. */
         virtual size_t GetElemCount() const override final {
-          assert(this);
           return ElemCount;
         }
 
         /* See Sabot::Type::TArrayOfPairsOfStates. */
         virtual typename TArrayOfPairsOfStatesSabotState::TPin *Pin(void *alloc) const override final {
-          assert(this);
           return new (alloc) TPin(this);
         }
 
@@ -270,13 +262,11 @@ namespace Orly {
 
           /* See Sabot::Type::TArrayOfPairsOfStates::TPin. */
           virtual TAny *NewLhsInRange(size_t elem_idx, void *state_alloc) const override {
-            assert(this);
             return ArrayOfPairsOfStates->NewLhs(elem_idx, state_alloc);
           }
 
           /* See Sabot::Type::TArrayOfPairsOfStates::TPin. */
           virtual TAny *NewRhsInRange(size_t elem_idx, void *state_alloc) const override {
-            assert(this);
             return ArrayOfPairsOfStates->NewRhs(elem_idx, state_alloc);
           }
 
@@ -301,7 +291,6 @@ namespace Orly {
 
         /* See Sabot::Type::TStaticArrayOfSingleStates. */
         virtual typename TStaticArrayOfSingleStatesSabotState::TPin *Pin(void *alloc) const override final {
-          assert(this);
           return new (alloc) TPin(this);
         }
 
@@ -330,7 +319,6 @@ namespace Orly {
 
           /* See Sabot::Type::TStaticArrayOfSingleStates::TPin. */
           virtual TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override {
-            assert(this);
             return StaticArrayOfSingleStates->NewElem(elem_idx, state_alloc);
           }
 
@@ -549,7 +537,6 @@ namespace Orly {
 
         /* See TArrayOfSingleStates<TElem>. */
         virtual TAny *NewElem(size_t elem_idx, void *state_alloc) const override {
-          assert(this);
           const int64_t cursor_diff = elem_idx - CachedIterIdx;
           switch (cursor_diff) {
             case 0L: {
@@ -634,7 +621,6 @@ namespace Orly {
 
         /* The map iterator corresponding to the given element index. */
         typename std::map<TLhs, TRhs, TCompare>::const_iterator GetIter(size_t elem_idx) const {
-          assert(this);
           const int64_t cursor_diff = elem_idx - CachedIterIdx;
           switch (cursor_diff) {
             case 0L: {

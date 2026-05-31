@@ -34,17 +34,14 @@ class TTeam {
       : PlayerCollection(this) {}
 
   ~TTeam() {
-    assert(this);
     PlayerCollection.DeleteEachMember();
   }
 
   void DeleteEachMember() {
-    assert(this);
     PlayerCollection.DeleteEachMember();
   }
 
   TPlayerCollection *GetPlayerCollection() const {
-    assert(this);
     return &PlayerCollection;
   }
 
@@ -78,27 +75,22 @@ class TPlayer {
       : Number(number), TeamMembership(this, sibling->GetTeamMembership(), orient) {}
 
   int GetNumber() const {
-    assert(this);
     return Number;
   }
 
   TTeamMembership *GetTeamMembership() {
-    assert(this);
     return &TeamMembership;
   }
 
   void Insert(TTeam *team, InvCon::TOrient orient = InvCon::Fwd) {
-    assert(this);
     TeamMembership.Insert(team->GetPlayerCollection(), orient);
   }
 
   void Insert(TPlayer *sibling, InvCon::TOrient orient = InvCon::Fwd) {
-    assert(this);
     TeamMembership.Insert(sibling->GetTeamMembership(), orient);
   }
 
   void Remove() {
-    assert(this);
     TeamMembership.Remove();
   }
 

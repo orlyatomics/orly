@@ -33,17 +33,14 @@ TFunction::TPtr TSymbolFunc::Find(const Symbol::TFunction *symbol) {
 }
 
 std::string TSymbolFunc::GetName() const {
-  assert(this);
   return Symbol->GetName();
 }
 
 Type::TType TSymbolFunc::GetReturnType() const {
-  assert(this);
   return Symbol->GetReturnType();
 }
 
 Type::TType TSymbolFunc::GetType() const {
-  assert(this);
   return Symbol->GetType();
 }
 

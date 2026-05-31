@@ -32,7 +32,6 @@ TNamedUnixSocket::TNamedUnixSocket(int type, int protocol)
 {}
 
 void TNamedUnixSocket::Reset() {
-  assert(this);
   Fd.Reset();
   if (!Path.empty()) {
     unlink(Path.c_str());

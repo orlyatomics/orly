@@ -46,21 +46,18 @@ namespace Orly {
 
         /* TODO */
         bool operator==(const TRemapObj &that) const {
-          assert(this);
           assert(&that);
           return Arena == that.Arena && OldKey == that.OldKey;
         }
 
         /* TODO */
         bool operator!=(const TRemapObj &that) const {
-          assert(this);
           assert(&that);
           return Arena != that.Arena || OldKey != that.OldKey;
         }
 
         /* TODO */
         size_t GetHash() const {
-          assert(this);
           return reinterpret_cast<size_t>(Arena) ^ OldKey;
         }
 
@@ -127,7 +124,6 @@ namespace Orly {
 
           /* TODO */
           bool operator<(const TUpdateObj &that) const {
-            assert(this);
             assert(&that);
             return SequenceNumber < that.SequenceNumber;
           }
@@ -194,19 +190,16 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetNumKeys() const {
-          assert(this);
           return NumKeys;
         }
 
         /* TODO */
         inline TSequenceNumber GetLowestSequence() const {
-          assert(this);
           return LowestSeq;
         }
 
         /* TODO */
         inline TSequenceNumber GetHighestSequence() const {
-          assert(this);
           return HighestSeq;
         }
 

@@ -78,7 +78,6 @@ namespace Io {
 
     /* The recorder from which we are playing back.  Never null. */
     const std::shared_ptr<TRecorder> &GetRecorder() const {
-      assert(this);
       return Recorder;
     }
 

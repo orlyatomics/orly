@@ -39,7 +39,6 @@ TMethodResult::TMethodResult(TArena *arena, const Atom::TCore &value, const Base
 }
 
 void TMethodResult::Read(TBinaryInputStream &strm) {
-  assert(this);
   assert(&strm);
   Reset();
   Arena.reset(TTransportArena::Read(strm, Value));
@@ -47,14 +46,12 @@ void TMethodResult::Read(TBinaryInputStream &strm) {
 }
 
 void TMethodResult::Reset() {
-  assert(this);
   Arena.reset();
   Value = TCore();
   Tracker.Reset();
 }
 
 void TMethodResult::Write(TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   auto temp = dynamic_pointer_cast<TSuprena>(Arena);
   assert(temp);

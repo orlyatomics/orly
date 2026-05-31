@@ -47,7 +47,6 @@ namespace Orly {
 
       /* Alias for GetContainer */
       inline const TExprArray &GetExprs() const {
-        assert(this);
         return GetContainer();
       }
 

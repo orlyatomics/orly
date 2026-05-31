@@ -34,24 +34,20 @@ TStmtBlock::TStmtBlock(const TStmtVec &stmts, const TPosRange &pos_range)
 }
 
 TStmtBlock::~TStmtBlock() {
-  assert(this);
   for (auto stmt : Stmts) {
     stmt->UnsetStmtBlock(this);
   }
 }
 
 const TPosRange &TStmtBlock::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 const TStmtBlock::TStmtVec &TStmtBlock::GetStmts() const {
-  assert(this);
   return Stmts;
 }
 
 void TStmtBlock::TypeCheck() const {
-  assert(this);
   for (const auto &stmt : Stmts) {
     stmt->TypeCheck();
   }

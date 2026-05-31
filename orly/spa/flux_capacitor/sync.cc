@@ -40,12 +40,10 @@ TSync::TSync() : KeyInitialized(false), RwLockInitialized(false) {
 }
 
 TSync::~TSync() {
-  assert(this);
   Cleanup();
 }
 
 void TSync::TLocal::DecrLockCount() {
-  assert(this);
   /* Make sure we're not decrementing a zero. */
   assert(LockCount > 0);
   --LockCount;
@@ -55,7 +53,6 @@ void TSync::TLocal::DecrLockCount() {
 }
 
 void TSync::TLocal::IncrLockCount(bool is_exclusive) {
-  assert(this);
   assert(LockCount >= 0);
   /* Make sure this thread either
         (1) has not yet locked this target,
@@ -101,7 +98,6 @@ TSync::TLocal::TLocal(const TSync &sync) : Sync(sync), LockCount(0) {}
 TSync::TLocal::~TLocal() {}
 
 void TSync::Cleanup() {
-  assert(this);
   if (RwLockInitialized) {
     pthread_rwlock_destroy(&RwLock);
   }

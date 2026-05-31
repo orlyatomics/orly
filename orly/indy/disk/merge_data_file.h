@@ -58,19 +58,16 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetNumKeys() const {
-          assert(this);
           return NumKeys;
         }
 
         /* TODO */
         inline TSequenceNumber GetLowestSequence() const {
-          assert(this);
           return LowestSeq;
         }
 
         /* TODO */
         inline TSequenceNumber GetHighestSequence() const {
-          assert(this);
           return HighestSeq;
         }
 

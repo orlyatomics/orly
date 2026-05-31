@@ -38,14 +38,12 @@ TIfElseExpr::TIfElseExpr(
         TrueCase(Base::AssertTrue(true_case)) {}
 
 TIfElseExpr::~TIfElseExpr() {
-  assert(this);
   delete FalseCase;
   delete Predicate;
   delete TrueCase;
 }
 
 Expr::TExpr::TPtr TIfElseExpr::Build() const {
-  assert(this);
   return Expr::TIfElse::New(
              TrueCase->Build(),
              Predicate->Build(),
@@ -54,14 +52,12 @@ Expr::TExpr::TPtr TIfElseExpr::Build() const {
 }
 
 void TIfElseExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   FalseCase->ForEachInnerScope(cb);
   Predicate->ForEachInnerScope(cb);
   TrueCase->ForEachInnerScope(cb);
 }
 
 void TIfElseExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   FalseCase->ForEachRef(cb);
   Predicate->ForEachRef(cb);
   TrueCase->ForEachRef(cb);

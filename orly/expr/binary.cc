@@ -36,7 +36,6 @@ TBinary::TBinary(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange
 }
 
 TBinary::~TBinary() {
-  assert(this);
   if (Lhs) {
     Lhs->UnsetExprParent(this);
   }
@@ -46,18 +45,15 @@ TBinary::~TBinary() {
 }
 
 const TExpr::TPtr &TBinary::GetLhs() const {
-  assert(this);
   return Lhs;
 }
 
 const TExpr::TPtr &TBinary::GetRhs() const {
-  assert(this);
   assert(Rhs);
   return Rhs;
 }
 
 void TBinary::SetRhs(const TExpr::TPtr &rhs) {
-  assert(this);
   assert(rhs);
   assert(!Rhs);
   Rhs = rhs;

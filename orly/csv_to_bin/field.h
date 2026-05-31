@@ -242,7 +242,6 @@ namespace Orly {
 
       /* The name of the field, which must be unique within TSomeObj. */
       const std::string &GetName() const noexcept {
-        assert(this);
         return Name;
       }
 
@@ -286,7 +285,6 @@ namespace Orly {
       /* Set the value of a field in the given instance of TSomeObj.  If the
          JSON object's type isn't compatible with the field, throw. */
       virtual void SetVal(TSomeObj *that, const TJson &json) const override {
-        assert(this);
         assert(that);
         assert(&json);
         TranslateJson(that->*Member, json);
@@ -296,7 +294,6 @@ namespace Orly {
          TSomeObj.  Returns success/failure, based on whether or not the
          field's type supports the 'unknown' state. */
       virtual bool TrySetNull(TSomeObj *that) const override {
-        assert(this);
         return NoJson<TVal>::TrySetNull(that->*Member);
       }
 
@@ -333,7 +330,6 @@ namespace Orly {
 
       /* Add a field to the collection. */
       void AddField(std::unique_ptr<TAnyField<TSomeObj>> &&field_ptr) {
-        assert(this);
         assert(&field_ptr);
         assert(field_ptr);
         FieldPtrs.push_back(std::move(field_ptr));
@@ -341,7 +337,6 @@ namespace Orly {
 
       /* The number of fields in this collection.  This can be zero. */
       size_t GetSize() const noexcept {
-        assert(this);
         return FieldPtrs.size();
       }
 
@@ -351,7 +346,6 @@ namespace Orly {
          additional elements we ignore. */
       virtual void TranslateJson(
           TObj *that, const TJson &json) const override {
-        assert(this);
         assert(that);
         assert(&json);
         auto *obj = dynamic_cast<TSomeObj *>(that);

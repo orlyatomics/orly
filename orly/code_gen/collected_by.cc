@@ -33,7 +33,6 @@ TCollectedBy::TPtr TCollectedBy::New(
 }
 
 void TCollectedBy::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   auto type = Seq->GetReturnType();
   auto seq = type.As<Type::TSeq>();
@@ -55,7 +54,6 @@ TCollectedBy::TCollectedBy(
       : TInline(package, ret_type), Seq(seq), CollectFunc(collect_func) {}
 
 void TCollectedBy::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
-  assert(this);
   dependency_set.insert(Seq);
   Seq->AppendDependsOn(dependency_set);
   dependency_set.insert(CollectFunc->GetBody());

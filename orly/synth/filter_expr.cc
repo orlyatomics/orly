@@ -43,13 +43,11 @@ TFilterExpr::TFilterExpr(const TExprFactory *expr_factory, const Package::Syntax
 }
 
 TFilterExpr::~TFilterExpr() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Expr::TExpr::TPtr TFilterExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I set rhs seperately, take a look at <orly/synth/thatable_expr.h>
   Symbol = Expr::TFilter::New(Lhs->Build(), GetPosRange(InfixFilter));
@@ -58,7 +56,6 @@ Expr::TExpr::TPtr TFilterExpr::Build() const {
 }
 
 void TFilterExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
@@ -66,7 +63,6 @@ void TFilterExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TFilterExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -74,13 +70,11 @@ void TFilterExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TFilter::TPtr &TFilterExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TThatable::TPtr TFilterExpr::GetThatableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

@@ -52,7 +52,6 @@ namespace Tools {
 
           /* TODO */
           const TSubKinds &GetSubKinds() const {
-            assert(this);
             return SubKinds;
           }
 
@@ -115,19 +114,16 @@ namespace Tools {
 
         /* TODO */
         TBase *GetBase() const {
-          assert(this);
           return Base ? Base->GetBase() : 0;
         }
 
         /* TODO */
         const TName &GetName() const {
-          assert(this);
           return Name;
         }
 
         /* TODO */
         bool HasBase(const TBase *target) const {
-          assert(this);
           return Base ? Base->HasBase(target) : false;
         }
 

@@ -35,13 +35,11 @@ namespace Base {
 
     /* An fd that signals when the reply is ready. */
     const TFd &GetReplyIsReadyFd() const {
-      assert(this);
       return ReplyIsReady.GetFd();
     }
 
     /* An fd that signals when a request is ready. */
     const TFd &GetRequestIsReadyFd() const {
-      assert(this);
       return RequestIsReady.GetFd();
     }
 
@@ -52,13 +50,11 @@ namespace Base {
 
     /* Wait for the reply to be ready. */
     void PopReply() {
-      assert(this);
       ReplyIsReady.Pop();
     }
 
     /* Wait for the request to be ready. */
     void PopRequest() {
-      assert(this);
       RequestIsReady.Pop();
     }
 
@@ -89,7 +85,6 @@ namespace Base {
 
     /* Wait for the request. */
     void PopRequest(TRequest &request) {
-      assert(this);
       TAnyLatch::PopRequest();
       Request.Release(request);
     }
@@ -97,7 +92,6 @@ namespace Base {
     /* Push the request. */
     template <typename... TArgs>
     void PushRequest(TArgs &&... args) {
-      assert(this);
       Request.MakeKnown(std::forward<TArgs>(args)...);
       TAnyLatch::PushRequest();
     }
@@ -141,7 +135,6 @@ namespace Base {
 
     /* Wait for the reply. */
     void PopReply(TReply &reply) {
-      assert(this);
       TAnyLatch::PopReply();
       Reply.Release(reply);
     }
@@ -149,7 +142,6 @@ namespace Base {
     /* Push the reply. */
     template <typename... TArgs>
     void PushReply(TArgs &&... args) {
-      assert(this);
       Reply.MakeKnown(std::forward<TArgs>(args)...);
       TAnyLatch::PushReply();
     }
@@ -198,7 +190,6 @@ namespace Base {
     /* Wait for a request and push the the reply. */
     template <typename... TArgs>
     void TransactReply(TRequest &request, TArgs &&... args) {
-      assert(this);
       TRequestLatch<TRequest>::PopRequest(request);
       TReplyLatch<TReply>::PushReply(std::forward<TArgs>(args)...);
     }
@@ -206,7 +197,6 @@ namespace Base {
     /* Push a request and wait for the reply. */
     template <typename... TArgs>
     void TransactRequest(TReply &reply, TArgs &&... args) {
-      assert(this);
       TRequestLatch<TRequest>::PushRequest(std::forward<TArgs>(args)...);
       TReplyLatch<TReply>::PopReply(reply);
     }
@@ -224,7 +214,6 @@ namespace Base {
 
     /* Wait for a request and push the the reply. */
     void TransactReply(TRequest &request) {
-      assert(this);
       TRequestLatch<TRequest>::PopRequest(request);
       TReplyLatch<void>::PushReply();
     }
@@ -232,7 +221,6 @@ namespace Base {
     /* Push a request and wait for the reply. */
     template <typename... TArgs>
     void TransactRequest(TArgs &&... args) {
-      assert(this);
       TRequestLatch<TRequest>::PushRequest(std::forward<TArgs>(args)...);
       TReplyLatch<void>::PopReply();
     }
@@ -252,14 +240,12 @@ namespace Base {
     /* Wait for a request and push the the reply. */
     template <typename... TArgs>
     void TransactReply(TArgs &&... args) {
-      assert(this);
       TRequestLatch<void>::PopRequest();
       TReplyLatch<TReply>::PushReply(std::forward<TArgs>(args)...);
     }
 
     /* Push a request and wait for the reply. */
     void TransactRequest(TReply &reply) {
-      assert(this);
       TRequestLatch<void>::PushRequest();
       TReplyLatch<TReply>::PopReply(reply);
     }
@@ -278,14 +264,12 @@ namespace Base {
 
     /* Wait for a request and push the the reply. */
     void TransactReply() {
-      assert(this);
       TRequestLatch<void>::PopRequest();
       TReplyLatch<void>::PushReply();
     }
 
     /* Push a request and wait for the reply. */
     void TransactRequest() {
-      assert(this);
       TRequestLatch<void>::PushRequest();
       TReplyLatch<void>::PopReply();
     }

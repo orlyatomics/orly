@@ -25,7 +25,6 @@ IMPL_UNARY_TYPE(TSeq);
 TSeq::~TSeq() {}
 
 void TSeq::Write(std::ostream &out) const {
-  assert(this);
   assert(&out);
   out << "Orly::Rt::TGenerator<" << GetElem() << ">::TPtr";
 }

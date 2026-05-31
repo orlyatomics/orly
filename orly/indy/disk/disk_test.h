@@ -77,7 +77,6 @@ namespace Orly {
         }
 
         virtual ~TReader() {
-          assert(this);
           Arena.reset();
         }
 
@@ -92,7 +91,6 @@ namespace Orly {
         using TReadFile::FindInHash;
 
         inline const std::unique_ptr<TArena> &GetArena() const {
-          assert(this);
           assert(Arena);
           return Arena;
         }

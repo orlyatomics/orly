@@ -46,7 +46,6 @@ namespace Orly { namespace Spa { namespace FluxCapacitor {
         : KvMap(kv_map) {}
 
     const Var::TVar &operator[](const Var::TVar &key) const {
-      assert(this);
       auto iter = KvMap.find(key);
       return (iter != KvMap.end()) ? iter->second : DefaultVar;
     }
@@ -80,12 +79,10 @@ class TMyPiece
   }
 
   virtual void Fail() {
-    assert(this);
     Status = Failed;
   }
 
   virtual bool ForEachKey(const function<bool (const TKey &)> &cb) const {
-    assert(this);
     assert(cb);
     for (auto key: Keys) {
       if (!cb(key)) {
@@ -96,17 +93,14 @@ class TMyPiece
   }
 
   virtual size_t GetKeyCount() const {
-    assert(this);
     return Keys.size();
   }
 
   TStatus GetStatus() const {
-    assert(this);
     return Status;
   }
 
   virtual bool Promote() {
-    assert(this);
     UpdateFunc();
     Status = Promoted;
     return true;
@@ -134,14 +128,12 @@ class TMyPlayer {
      : Db(db) {}
 
   ~TMyPlayer() {
-    assert(this);
     for (pair<const int, TMyPiece *> &item: PieceById) {
       delete item.second;
     }
   }
 
   TMyPiece *GetPiece(int id) const {
-    assert(this);
     auto iter = PieceById.find(id);
     assert(iter != PieceById.end());
     return iter->second;
@@ -152,14 +144,12 @@ class TMyPlayer {
       const TAssertFunc &assert_func = NoAssert,
       const TKvMap &changes = EmptyKvMap,
       size_t max_age = 0) {
-    assert(this);
     TMyPiece *&piece = PieceById.insert(make_pair(id, static_cast<TMyPiece *>(0))).first->second;
     delete piece;
     piece = new TMyPiece(keys, assert_func, bind(&TMyPlayer::ApplyChanges, this, changes), max_age);
   }
 
   void PlayTetris() {
-    assert(this);
     TContext ctxt(Db);
     TMyPiece::PlayTetris(ctxt, [this](const function<void (TTetrisPiece *)> &cb) {
       for (pair<const int, TMyPiece *> &item: PieceById) {
@@ -174,7 +164,6 @@ class TMyPlayer {
   private:
 
   void ApplyChanges(const TKvMap &changes) {
-    assert(this);
     assert(&changes);
     for (auto change: changes) {
       Db[change.first] = change.second;

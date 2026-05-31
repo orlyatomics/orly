@@ -73,7 +73,6 @@ namespace Orly {
 
       /* TODO */
       int64_t GetVal() const {
-        assert(this);
         return Val;
       }
 

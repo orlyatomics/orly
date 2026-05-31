@@ -56,7 +56,6 @@ class TReader
 };
 
 void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed) {
-  assert(this);
   //assert(!ParentRepo);
   TDataLayer *new_layer = nullptr;
   if (IsSafeRepo()) {
@@ -107,7 +106,6 @@ void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, 
 }
 
 void TRepo::AddFileToRepo(size_t gen_id, TSequenceNumber saved_low_seq, TSequenceNumber saved_high_seq, size_t num_keys) {
-  assert(this);
   TDiskLayer *new_disk = nullptr;
   /* acquire DataLayer lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
@@ -139,7 +137,6 @@ void TRepo::AddFileToRepo(size_t gen_id, TSequenceNumber saved_low_seq, TSequenc
 }
 
 void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
-  assert(this);
   assert(seq_num < NextUpdate);
   assert(seq_num == ReleasedUpTo + 1L || ensure_or_discard);
   if (!ensure_or_discard || seq_num == ReleasedUpTo + 1L) {
@@ -159,7 +156,6 @@ unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<T
                                                          const TIndexKey &from,
                                                          const TIndexKey &to,
                                                          bool ignore_tombstone) {
-  assert(this);
   assert(view);
   return make_unique<TPresentWalker>(view, from, to, ignore_tombstone);
 }
@@ -167,7 +163,6 @@ unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<T
 unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<TView> &view,
                                                          const TIndexKey &key,
                                                          bool ignore_tombstone) {
-  assert(this);
   assert(view);
   return make_unique<TPresentWalker>(view, key, ignore_tombstone);
 }
@@ -175,14 +170,12 @@ unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<T
 unique_ptr<Indy::TUpdateWalker> TRepo::NewUpdateWalker(const std::unique_ptr<TView> &view,
                                                        TSequenceNumber from,
                                                        const Base::TOpt<TSequenceNumber> &to) {
-  assert(this);
   assert(view);
   return make_unique<TUpdateWalker>(view, from, to);
 }
 
 unique_ptr<Indy::TUpdateWalker> TRepo::NewUpdateWalker(const std::unique_ptr<TView> &view,
                                                        TSequenceNumber from) {
-  assert(this);
   return NewUpdateWalker(view, from, Base::TOpt<TSequenceNumber>());
 }
 
@@ -205,7 +198,6 @@ TRepo::TView::TView(TRepo *repo)
 }
 
 TRepo::TView::~TView() {
-  assert(this);
   assert(CurrentMemoryLayer);
   assert(Repo);
   std::lock_guard<std::mutex> lock(Repo->MappingLock);
@@ -214,22 +206,18 @@ TRepo::TView::~TView() {
 }
 
 const TMemoryLayer *TRepo::TView::GetCurMem() const {
-  assert(this);
   return CurrentMemoryLayer;
 }
 
 const TRepo::TMapping *TRepo::TView::GetMapping() const {
-  assert(this);
   return Mapping;
 }
 
 const Base::TOpt<TSequenceNumber> &TRepo::TView::GetLower() const {
-  assert(this);
   return LowerBound;
 }
 
 const Base::TOpt<TSequenceNumber> &TRepo::TView::GetUpper() const {
-  assert(this);
   return UpperBound;
 }
 
@@ -282,7 +270,6 @@ TRepo::TRepo(L0::TManager *manager,
 }
 
 TRepo::~TRepo() {
-  assert(this);
   assert(CurMemoryLayer->IsEmpty());
   assert(!InTetris);
   if (ParentRepo && InTetris) {
@@ -293,7 +280,6 @@ TRepo::~TRepo() {
 }
 
 Base::TOpt<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
-  assert(this);
   Base::TOpt<TSequenceNumber> new_seq;
   bool add_to_tetris = false;
   /* acquire Data lock */ {
@@ -327,7 +313,6 @@ Base::TOpt<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber
 }
 
 Base::TOpt<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_THROW {
-  assert(this);
   assert(Status == Normal);
   assert(LowestSeqNum);
   assert(HighestSeqNum);
@@ -352,7 +337,6 @@ Base::TOpt<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_TH
 }
 
 std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
-  assert(this);
   assert(LowestSeqNum);
   assert(HighestSeqNum);
   auto view = make_unique<TRepo::TView>(this);
@@ -371,7 +355,6 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
 }
 
 Base::TOpt<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumber &next_update) NO_THROW {
-  assert(this);
   switch (Status) {
     case Normal : {
       assert(status != Normal);  // you probably meant to unpause something. if it's not already paused you may have forgotten your pause!
@@ -435,7 +418,6 @@ class TUpdateSortComparator {
 };  // TUpdateSortComparator
 
 void TRepo::StepMergeMem() {
-  assert(this);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
   try {
@@ -662,7 +644,6 @@ void TRepo::StepMergeMem() {
 }
 
 size_t TRepo::AddMapping(TDataLayer *layer) {
-  assert(this);
   size_t total = 0;
   /* acquire Mapping lock */ {
     std::lock_guard<std::mutex> lock(MappingLock);
@@ -811,18 +792,15 @@ TRepo::TUpdateWalker::~TUpdateWalker() {
 }
 
 TRepo::TUpdateWalker::operator bool() const {
-  assert(this);
   return Valid;
 }
 
 const TUpdateWalker::TItem &TRepo::TUpdateWalker::operator*() const {
-  assert(this);
   assert(Valid);
   return Item;
 }
 
 TRepo::TUpdateWalker &TRepo::TUpdateWalker::operator++() {
-  assert(this);
   assert(Valid);
   Valid = !MergeSorter.IsEmpty();
   Refresh();
@@ -830,7 +808,6 @@ TRepo::TUpdateWalker &TRepo::TUpdateWalker::operator++() {
 }
 
 void TRepo::TUpdateWalker::Refresh() {
-  assert(this);
   bool done = false;
   while (Valid && !done) {
     const TDataLayer *layer;
@@ -857,7 +834,6 @@ void TRepo::TUpdateWalker::Refresh() {
 }
 
 TRepo::TMapping *TRepo::AcquireCurrentMapping() {
-  assert(this);
   TMapping *mapping = 0;
   /* acquire Mapping lock */ {
     std::lock_guard<std::mutex> lock(MappingLock);
@@ -869,7 +845,6 @@ TRepo::TMapping *TRepo::AcquireCurrentMapping() {
 }
 
 void TRepo::ReleaseMapping(TMapping *mapping) {
-  assert(this);
   /* acquire Mapping lock */ {
     std::lock_guard<std::mutex> lock(MappingLock);
     mapping->Decr();
@@ -877,7 +852,6 @@ void TRepo::ReleaseMapping(TMapping *mapping) {
 }
 
 void TRepo::CheckRemoveDirty() {
-  assert(this);
   TMapping *mapping = AcquireCurrentMapping();
   bool found_non_empty_mem = false;
   try {
@@ -929,7 +903,6 @@ TFastRepo::~TFastRepo() {
 }
 
 bool TFastRepo::IsSafeRepo() const {
-  assert(this);
   return false;
 }
 
@@ -1247,7 +1220,6 @@ size_t TSafeRepo::AddSyncedFileToRepo(size_t starting_block_id,
                                       TSequenceNumber low_saved,
                                       TSequenceNumber high_saved,
                                       size_t num_keys) {
-  assert(this);
   size_t gen_id = GetNextGenId();
   /* wait for file entry to flush */ {
     TCompletionTrigger trigger;
@@ -1310,7 +1282,6 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
 }
 
 bool TSafeRepo::IsSafeRepo() const {
-  assert(this);
   return true;
 }
 
@@ -1324,7 +1295,6 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
                              TSequenceNumber release_up_to,
                              bool can_tail,
                              bool can_tail_tombstone) {
-  assert(this);
   size_t gen_id = GetNextGenId();
   bool my_can_tail = can_tail && !static_cast<bool>(GetParentRepo()) && IsTailingAllowed();
   bool my_can_tail_tombstone = my_can_tail && can_tail_tombstone && (gen_id_vec.size() == 1);
@@ -1336,7 +1306,6 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
 }
 
 void TSafeRepo::RemoveFile(size_t gen_id) {
-  assert(this);
   Util::TBlockVec block_vec;
   /* reader life span */ {
     TReader reader(Manager->GetEngine(), GetId(), Low, gen_id);
@@ -1417,19 +1386,16 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
 std::unique_ptr<Orly::Indy::TPresentWalker> TSafeRepo::NewPresentWalkerFile(size_t gen_id,
                                                                             const TIndexKey &index_from,
                                                                             const TIndexKey &index_to) const {
-  assert(this);
   return make_unique<Disk::TPresentWalkFileWrapper>(
       Manager->GetEngine(), GetId(), gen_id, index_from.GetIndexId(), index_from.GetKey(), index_to.GetKey());
 }
 
 std::unique_ptr<Orly::Indy::TPresentWalker> TSafeRepo::NewPresentWalkerFile(size_t gen_id,
                                                                             const TIndexKey &index_key) const {
-  assert(this);
   return make_unique<Disk::TPresentWalkFileWrapper>(
       Manager->GetEngine(), GetId(), gen_id, index_key.GetIndexId(), index_key.GetKey());
 }
 
 std::unique_ptr<Orly::Indy::TUpdateWalker> TSafeRepo::NewUpdateWalkerFile(size_t gen_id, TSequenceNumber from) const {
-  assert(this);
   return make_unique<Disk::TUpdateWalkFile>(Manager->GetEngine(), GetId(), gen_id, from);
 }

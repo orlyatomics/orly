@@ -166,7 +166,6 @@ TManager::~TManager() {
 L0::TManager::TPtr<TRepo> TManager::NewSafeRepo(const TUuid &repo_id,
                                         const Base::TOpt<TTtl> &ttl,
                                         const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
-  assert(this);
   assert(&repo_id);
   return New(repo_id, *ttl, parent_repo, true);
 }
@@ -174,14 +173,12 @@ L0::TManager::TPtr<TRepo> TManager::NewSafeRepo(const TUuid &repo_id,
 L0::TManager::TPtr<TRepo> TManager::NewFastRepo(const TUuid &repo_id,
                                         const Base::TOpt<TTtl> &ttl,
                                         const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
-  assert(this);
   assert(&repo_id);
   return New(repo_id, *ttl, parent_repo, false);
 }
 
 void TManager::RunReplicationQueue() {
   try {
-    assert(this);
     epoll_event event;
     int timeout = -1;
     for (;;) {
@@ -242,7 +239,6 @@ void TManager::RunReplicationQueue() {
 
 void TManager::RunReplicationWork() {
   try {
-    assert(this);
     epoll_event event;
     int timeout = -1;
     for (;;) {
@@ -289,7 +285,6 @@ void TManager::RunReplicationWork() {
 }
 
 void TManager::RunReplicateTransaction() {
-  assert(this);
   epoll_event event;
   int timeout = -1;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -500,24 +495,20 @@ TManager::TMaster::TMaster(TManager *manager, const TFd &fd)
 TManager::TMaster::~TMaster() {}
 
 bool TManager::TMaster::Queue() {
-  assert(this);
   return TCommonContext::Queue();
 }
 
 bool TManager::TMaster::Work() {
-  assert(this);
   return TCommonContext::Work();
 }
 
 void TManager::TMaster::NotifyFinishSyncInventory() {
-  assert(this);
   std::lock_guard<std::mutex> lock(Manager->SlaveNotifyLock);
   Manager->SlaveNotifiedFinish = true;
   Manager->SlaveNotifyCond.notify_all();
 }
 
 TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest) {
-  assert(this);
   std::cout << "TMaster::FetchUpdates(" << repo_id << ") [" << lowest << " -> " << highest << "]" << std::endl;
   Base::TTimer timer;
   auto repo = Manager->ForceGetRepo(repo_id);
@@ -535,7 +526,6 @@ TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSeq
 }
 
 TManager::TMaster::TViewDef TManager::TMaster::GetView(const Base::TUuid &repo_id) {
-  assert(this);
   assert(Manager->SlaveSyncViewMap.find(repo_id) != Manager->SlaveSyncViewMap.end());
   TViewDef ret;
   const auto &view = Manager->SlaveSyncViewMap.find(repo_id)->second;
@@ -544,7 +534,6 @@ TManager::TMaster::TViewDef TManager::TMaster::GetView(const Base::TUuid &repo_i
 }
 
 void TManager::AugmentViewMapWithDiskLayers(TMaster::TViewDef &view_def, const std::unique_ptr<Indy::TRepo::TView> &view) const {
-  assert(this);
   assert(view);
   const TRepo::TMapping *mapping = view->GetMapping();
   for (TRepo::TMapping::TEntryCollection::TCursor entry_csr(mapping->GetEntryCollection()); entry_csr; ++entry_csr) {
@@ -561,7 +550,6 @@ void TManager::AugmentViewMapWithDiskLayers(TMaster::TViewDef &view_def, const s
 }
 
 TFileSync TManager::TMaster::SyncFile(const Base::TUuid &file_id, size_t gen_id, size_t context) {
-  assert(this);
   return TFileSync(Manager->GetEngine(), file_id, gen_id, context);
 }
 
@@ -571,17 +559,14 @@ TManager::TSlave::TSlave(TManager *manager, const TFd &fd)
 TManager::TSlave::~TSlave() {}
 
 bool TManager::TSlave::Queue() {
-  assert(this);
   return TCommonContext::Queue();
 }
 
 bool TManager::TSlave::Work() {
-  assert(this);
   return TCommonContext::Work();
 }
 
 void TManager::TSlave::ScheduleSyncInventory() {
-  assert(this);
   std::cout << "Scheduling SyncInventory()" << std::endl;
   Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
   try {
@@ -595,7 +580,6 @@ void TManager::TSlave::ScheduleSyncInventory() {
 
 void TManager::TSlave::SyncInventory() {
   std::cout << "Calling SyncInventory()" << std::endl;
-  assert(this);
   for (const auto &to_sync : ToSyncQueue) {
     const TUuid &repo_id = to_sync.RepoId;
     size_t ttl = to_sync.Ttl;
@@ -689,7 +673,6 @@ void TManager::TSlave::SyncInventory() {
 
 void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPtr<Indy::TRepo> &repo, TSequenceNumber from, TSequenceNumber to) {
   std::cout << "PullUpdateRange from [" << from << " -> " << to << "]" << std::endl;
-  assert(this);
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
   const size_t max_update_pull = 50000;
   void *lhs_state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -760,7 +743,6 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
 }
 
 void TManager::TSlave::TFlusher::ConsumeOutput(const std::shared_ptr<const Io::TChunk> &chunk) {
-  assert(this);
   assert(chunk);
   const size_t num_bytes = chunk->GetSize();
   const char *start, *limit;
@@ -769,7 +751,6 @@ void TManager::TSlave::TFlusher::ConsumeOutput(const std::shared_ptr<const Io::T
 }
 
 std::shared_ptr<const Io::TChunk> TManager::TSlave::TFlusher::TryProduceInput() {
-  assert(this);
   if (!InStream) {
     InStream = std::make_unique<TDataInStream>(HERE, Disk::Source::SlaveSlush, Disk::RealTime, this, Engine->GetPageCache(), 0UL);
   }
@@ -781,14 +762,12 @@ std::shared_ptr<const Io::TChunk> TManager::TSlave::TFlusher::TryProduceInput() 
 }
 
 void TManager::TSlave::TFlusher::Flush() {
-  assert(this);
   assert(OutStream);
   OutStream.reset(); /* flush the outbound stream */
   Trigger.Wait(); /* wait for everything to be flushed */
 }
 
 size_t TManager::TSlave::TFlusher::NewBlockCb(Disk::Util::TVolumeManager */*vol_man*/) {
-  assert(this);
   return Engine->ReserveBlock(Disk::Util::TVolume::TDesc::TStorageSpeed::Fast);
 }
 
@@ -799,12 +778,10 @@ void TManager::TSlave::Inventory(const TUuid &repo_id,
                                  const Base::TOpt<TSequenceNumber> &lowest,
                                  const Base::TOpt<TSequenceNumber> &highest,
                                  TSequenceNumber next_id) {
-  assert(this);
   ToSyncQueue.emplace_back(repo_id, ttl, parent_repo_id, is_safe, lowest, highest, next_id);
 }
 
 void TManager::TSlave::Index(const TIndexMapReplica &index_map_replica) {
-  assert(this);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator index_iter = index_map_replica.GetCoreVec().GetCores().begin();
   std::vector<TCore>::const_iterator index_end = index_map_replica.GetCoreVec().GetCores().end();
@@ -984,7 +961,6 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
 }
 
 size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
-  assert(this);
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator iter = core_vec.begin();
@@ -1061,7 +1037,6 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
 }
 
 void TManager::TSlave::TransitionToSlave() {
-  assert(this);
   try {
     std::cout << "TSlave::TransitionToSlave()..." << std::endl;
     /* acquire Context lock */ {
@@ -1118,7 +1093,6 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
     syslog(LOG_INFO, "Create Repo [%s] with ttl=[%ld], is_safe=[%s], create=[%s]", ss.str().c_str(), ttl ? ttl->count() : 0, is_safe ? "true" : "false", create ? "true" : "false");
   }
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  assert(this);
   assert(&repo_id);
   if (repo_id != SystemRepoId) {
     assert(SystemRepo);
@@ -1221,7 +1195,6 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
 }
 
 L0::TManager::TRepo *TManager::ReconstructRepo(const TUuid &repo_id) {
-  assert(this);
   assert(&repo_id);
   if (repo_id != SystemRepoId) { /* construct a regular repo */
     auto deadline = TDeadline::max(); /* TODO: we should figure out the right deadline here */
@@ -1245,7 +1218,6 @@ bool TManager::CanLoad(const L0::TId &id) {
 }
 
 void TManager::SaveRepo(TRepo *base_repo) {
-  assert(this);
   if (base_repo->GetId() != SystemRepoId) {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
     Orly::Indy::TRepo *repo = dynamic_cast<Orly::Indy::TRepo *>(base_repo);
@@ -1433,7 +1405,6 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
 }
 
 void TManager::Enqueue(TTransactionReplication *transaction_replication, L1::TTransaction::TReplica &&replica) NO_THROW {
-  assert(this);
   /* make sure you acquire the replication queue lock before calling enqueue */
   transaction_replication->SwapReplica(std::forward<L1::TTransaction::TReplica>(replica));
   if (ReplicationQueue.IsEmpty()) {
@@ -1443,7 +1414,6 @@ void TManager::Enqueue(TTransactionReplication *transaction_replication, L1::TTr
 }
 
 void TManager::Enqueue(TRepoReplication *repo_replication) NO_THROW {
-  assert(this);
   /* make sure you acquire the replication queue lock before calling enqueue */
   if (ReplicationQueue.IsEmpty()) {
     ReplicationSem.Push();
@@ -1452,7 +1422,6 @@ void TManager::Enqueue(TRepoReplication *repo_replication) NO_THROW {
 }
 
 void TManager::EnqueueDurable(TDurableReplication *durable_replication) NO_THROW {
-  assert(this);
   std::lock_guard<std::mutex> lock(ReplicationLock);
   if (ReplicationQueue.IsEmpty()) {
     ReplicationSem.Push();
@@ -1461,7 +1430,6 @@ void TManager::EnqueueDurable(TDurableReplication *durable_replication) NO_THROW
 }
 
 void TManager::Enqueue(TIndexIdReplication *index_replication) NO_THROW {
-  assert(this);
   syslog(LOG_INFO, "Enqueue IndexId replication");
   std::lock_guard<std::mutex> lock(ReplicationLock);
   if (ReplicationQueue.IsEmpty()) {
@@ -1471,27 +1439,22 @@ void TManager::Enqueue(TIndexIdReplication *index_replication) NO_THROW {
 }
 
 TDurableReplication *TManager::NewDurableReplication(const Base::TUuid &id, const TTtl &ttl, const std::string &serialized_form) const {
-  assert(this);
   return new TDurableReplication(id, ttl, serialized_form);
 }
 
 void TManager::DeleteDurableReplication(TDurableReplication *durable_replication) NO_THROW {
-  assert(this);
   delete durable_replication;
 }
 
 TTransactionReplication *TManager::NewTransactionReplication() {
-  assert(this);
   return new TTransactionReplication();
 }
 
 void TManager::DeleteTransactionReplication(TTransactionReplication *transaction_replication) NO_THROW {
-  assert(this);
   delete transaction_replication;
 }
 
 void TManager::Demote() {
-  assert(this);
   assert(State == Master);
   Context.reset();
   State = Solo;
@@ -1502,7 +1465,6 @@ void TManager::Demote() {
 }
 
 void TManager::PromoteSolo(const Base::TFd &fd) {
-  assert(this);
   assert(State == Solo);
   Context.reset();
   Context = make_shared<TMaster>(this, fd);
@@ -1516,7 +1478,6 @@ void TManager::PromoteSolo(const Base::TFd &fd) {
 }
 
 void TManager::PromoteSlave() {
-  assert(this);
   assert(State == Slave);
   Context.reset();
   State = Solo;

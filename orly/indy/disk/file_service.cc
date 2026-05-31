@@ -405,7 +405,6 @@ bool TFileService::ForEachFile(const std::function<bool (const Base::TUuid &file
 }
 
 void TFileService::Runner() {
-  assert(this);
   assert(Util::PhysicalBlockSize >= Util::PhysicalSectorSize);
   /* allocate event pools */
   if (!Disk::Util::TDiskController::TEvent::LocalEventPool) {
@@ -743,7 +742,6 @@ void TFileService::ApplyImageBlock(TFileMap &file_map,
 }
 
 bool TFileService::TryLoadFromBaseImage(size_t base_image_block, const size_t *cur_buf, TBufBlock *cur_buf_block) {
-  assert(this);
   TCompletionTrigger trigger;
   Map.clear();
   NumFiles = 0UL;
@@ -780,7 +778,6 @@ bool TFileService::TryLoadFromBaseImage(size_t base_image_block, const size_t *c
 }
 
 void TFileService::ZeroImageBlocks(size_t image_1_block_id, size_t image_2_block_id) {
-  assert(this);
   auto buf_block = make_unique<TBufBlock>();
   memset(buf_block->GetData(), 0, Util::PhysicalBlockSize);
   TCompletionTrigger trigger;
@@ -810,7 +807,6 @@ void TFileService::ZeroImageBlocks(size_t image_1_block_id, size_t image_2_block
 }
 
 void TFileService::ZeroAppendLog() {
-  assert(this);
   TCompletionTrigger trigger;
   auto buf_block = make_unique<TBufBlock>();
   memset(buf_block->GetData(), 0, Util::PhysicalBlockSize);

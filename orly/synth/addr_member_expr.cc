@@ -36,24 +36,20 @@ TAddrMemberExpr::TAddrMemberExpr(
         Index(AddrMember->GetIntLiteral()->GetLexeme().AsInt()) {}
 
 TAddrMemberExpr::~TAddrMemberExpr() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TExpr::TPtr TAddrMemberExpr::Build() const {
-  assert(this);
   return Expr::TAddrMember::New(Expr->Build(), Index, GetPosRange(AddrMember));
 }
 
 void TAddrMemberExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TAddrMemberExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

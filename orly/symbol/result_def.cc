@@ -35,7 +35,6 @@ TResultDef::TResultDef(const TAnyFunction::TPtr &function, const std::string &na
     : TDef(name, pos_range), Function(Base::AssertTrue(function)) {}
 
 TResultDef::~TResultDef() {
-  assert(this);
   auto function = TryGetFunction();
   if (function) {
     function->Remove(shared_from_this());
@@ -43,7 +42,6 @@ TResultDef::~TResultDef() {
 }
 
 void TResultDef::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -53,11 +51,9 @@ TAnyFunction::TPtr TResultDef::GetFunction() const {
 }
 
 Type::TType TResultDef::GetType() const {
-  assert(this);
   return GetFunction()->GetReturnType();
 }
 
 TAnyFunction::TPtr TResultDef::TryGetFunction() const {
-  assert(this);
   return Function.lock();
 }

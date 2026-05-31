@@ -63,57 +63,46 @@ namespace Orly {
 
         #if 0
         Var::TVar AsVar() const final {
-          assert(this);
           return Var::TVar::Obj(TDynamicMembers{{ "day", Var::TVar(Vday)}, { "hour", Var::TVar(Vhour)}, { "is_forward", Var::TVar(Vis_forward)}, { "minute", Var::TVar(Vminute)}, { "nanosecond", Var::TVar(Vnanosecond)}, { "second", Var::TVar(Vsecond)}});
         }
         #endif
 
         size_t GetHash() const {
-          assert(this);
           return  std::hash<int64_t>()(Vday) ^ std::hash<int64_t>()(Vhour) ^ std::hash<bool>()(Vis_forward) ^ std::hash<int64_t>()(Vminute) ^ std::hash<int64_t>()(Vnanosecond) ^ std::hash<int64_t>()(Vsecond);
         }
 
         bool EqEq(const TObjO6i3dayi4hourb10is_forwardi6minutei10nanosecondi6second &that) const {
-          assert(this);
           assert(&that);
           return Rt::And(Rt::EqEq(Vday, that.Vday), Rt::And(Rt::EqEq(Vhour, that.Vhour), Rt::And(Rt::EqEq(Vis_forward, that.Vis_forward), Rt::And(Rt::EqEq(Vminute, that.Vminute), Rt::And(Rt::EqEq(Vnanosecond, that.Vnanosecond), Rt::And(Rt::EqEq(Vsecond, that.Vsecond), true))))));
         }
 
 
         bool Match(const TObjO6i3dayi4hourb10is_forwardi6minutei10nanosecondi6second &that) const {
-          assert(this);
           assert(&that);
           return Rt::Match(Vday, that.Vday) && Rt::Match(Vhour, that.Vhour) && Rt::Match(Vis_forward, that.Vis_forward) && Rt::Match(Vminute, that.Vminute) && Rt::Match(Vnanosecond, that.Vnanosecond) && Rt::Match(Vsecond, that.Vsecond);
         }
 
         bool Neq(const TObjO6i3dayi4hourb10is_forwardi6minutei10nanosecondi6second &that) const {
-          assert(this);
           assert(&that);
           return Rt::Or(Rt::Neq(Vday, that.Vday), Rt::Or(Rt::Neq(Vhour, that.Vhour), Rt::Or(Rt::Neq(Vis_forward, that.Vis_forward), Rt::Or(Rt::Neq(Vminute, that.Vminute), Rt::Or(Rt::Neq(Vnanosecond, that.Vnanosecond), Rt::Or(Rt::Neq(Vsecond, that.Vsecond), false))))));
         }
 
         int64_t GetVday() const {
-          assert(this);
           return Vday;
         }
         int64_t GetVhour() const {
-          assert(this);
           return Vhour;
         }
         bool GetVis_forward() const {
-          assert(this);
           return Vis_forward;
         }
         int64_t GetVminute() const {
-          assert(this);
           return Vminute;
         }
         int64_t GetVnanosecond() const {
-          assert(this);
           return Vnanosecond;
         }
         int64_t GetVsecond() const {
-          assert(this);
           return Vsecond;
         }
 

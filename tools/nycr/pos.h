@@ -38,43 +38,36 @@ namespace Tools {
 
       /* See Compare(). */
       bool operator==(const TPos &that) const {
-        assert(this);
         return Compare(that) == 0;
       }
 
       /* See Compare(). */
       bool operator!=(const TPos &that) const {
-        assert(this);
         return Compare(that) != 0;
       }
 
       /* See Compare(). */
       bool operator<(const TPos &that) const {
-        assert(this);
         return Compare(that) < 0;
       }
 
       /* See Compare(). */
       bool operator<=(const TPos &that) const {
-        assert(this);
         return Compare(that) <= 0;
       }
 
       /* See Compare(). */
       bool operator>(const TPos &that) const {
-        assert(this);
         return Compare(that) > 0;
       }
 
       /* See Compare(). */
       bool operator>=(const TPos &that) const {
-        assert(this);
         return Compare(that) >= 0;
       }
 
       /* Compares by line, then by column. */
       int Compare(const TPos &that) const {
-        assert(this);
         assert(&that);
         int result = LineNumber - that.LineNumber;
         if (!result) {
@@ -85,19 +78,16 @@ namespace Tools {
 
       /* The 1-based column-number of this position. */
       int GetColumnNumber() const {
-        assert(this);
         return ColumnNumber;
       }
 
       /* The 1-based line-number of this position. */
       int GetLineNumber() const {
-        assert(this);
         return LineNumber;
       }
 
       /* Writes the position as line:col. */
       void Write(std::ostream &strm) const {
-        assert(this);
         assert(&strm);
         strm << LineNumber << ':' << ColumnNumber;
       }

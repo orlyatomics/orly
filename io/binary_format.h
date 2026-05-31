@@ -34,7 +34,6 @@ namespace Io {
 
     template <typename TVal>
     void ConvertInt(TVal &val) const {
-      assert(this);
       assert(&val);
       if (UseNbo) {
         val = SwapEnds(val);

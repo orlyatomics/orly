@@ -28,6 +28,5 @@ TThatableBinary::TThatableBinary(const TExpr::TPtr &lhs, const TPosRange &pos_ra
     : TBinary(lhs, pos_range) {}
 
 Type::TType TThatableBinary::GetThatType() const {
-  assert(this);
   return Type::Unwrap(GetLhs()->GetType());
 }

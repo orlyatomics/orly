@@ -64,13 +64,11 @@ namespace Orly {
 
           /* TODO */
           const std::string &GetName() const {
-            assert(this);
             return Name;
           }
 
           /* TODO */
           const TAnyField *GetNextField() const {
-            assert(this);
             return NextField;
           }
 
@@ -124,7 +122,6 @@ namespace Orly {
 
           /* TODO */
           virtual Type::TType GetType() const {
-            assert(this);
             return Type::TDt<TVal>::GetType();
           }
 
@@ -152,14 +149,12 @@ namespace Orly {
 
           /* TODO */
           ~TClass() {
-            assert(this);
             assert(Class == this);
             Class = 0;
           }
 
           /* TODO */
           const std::string &GetName() const {
-            assert(this);
             return Name;
           }
 
@@ -191,7 +186,6 @@ namespace Orly {
 
       /* TODO */
       const TObjElems &GetElems() const {
-        assert(this);
         return std::get<0>(GetKey());
       }
 
@@ -202,7 +196,6 @@ namespace Orly {
 
       /* TODO */
       bool IsSubsetOf(const TObj *that, bool &is_optional) const {
-        assert(this);
         assert(that);
         assert(&is_optional);
         for (auto iter : GetElems()) {

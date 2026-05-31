@@ -217,18 +217,15 @@ class expr_visitor_t
     }
   }
   void Yield(const TExpr::TPtr &expr) const {
-    assert(this);
     assert(&expr);
     assert(expr);
     expr->Accept(*this);
   }
   void Unary(const TUnary *unary) const {
-    assert(this);
     assert(unary);
     Yield(unary->GetExpr());
   }
   void Binary(const TBinary *binary) const {
-    assert(this);
     assert(binary);
     Yield(binary->GetLhs());
     Yield(binary->GetRhs());
@@ -436,18 +433,15 @@ class expr_visitor_t
       }
     }
     void Yield(const TExpr::TPtr &expr) const {
-      assert(this);
       assert(&expr);
       assert(expr);
       expr->Accept(*this);
     }
     void Unary(const TUnary *unary) const {
-      assert(this);
       assert(unary);
       Yield(unary->GetExpr());
     }
     void Binary(const TBinary *binary) const {
-      assert(this);
       assert(binary);
       Yield(binary->GetLhs());
       Yield(binary->GetRhs());
@@ -473,12 +467,10 @@ class expr_visitor_t
         }
         private:
         void Unary(const Symbol::Stmt::TUnary *that) const {
-          assert(this);
           assert(that);
           EffectingExprVisitor.Yield(that->GetStmtArg()->GetExpr());
         }
         void Binary(const Symbol::Stmt::TBinary *that) const {
-          assert(this);
           assert(that);
           EffectingExprVisitor.Yield(that->GetLhs()->GetExpr());
           EffectingExprVisitor.Yield(that->GetRhs()->GetExpr());
@@ -499,7 +491,6 @@ class expr_visitor_t
     stmt_visitor_t(const expr_visitor_t &expr_visitor, unordered_set<pair<Type::TType, Type::TType>> &addr_set)
       : ExprVisitor(expr_visitor), Addrs(addr_set) {}
     virtual void operator()(const Symbol::Stmt::TDelete *that) const override {
-      assert(this);
       assert(that);
       effecting_expr_visitor_t(ExprVisitor, Addrs, that->GetValueType()).Yield(that->GetStmtArg()->GetExpr());
     }
@@ -517,7 +508,6 @@ class expr_visitor_t
     }
     private:
     void Binary(const Symbol::Stmt::TBinary *that) const {
-      assert(this);
       assert(that);
       effecting_expr_visitor_t(ExprVisitor, Addrs, that->GetRhs()->GetExpr()->GetType()).Yield(that->GetLhs()->GetExpr());
       ExprVisitor.Yield(that->GetRhs()->GetExpr());

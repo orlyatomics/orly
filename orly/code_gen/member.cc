@@ -23,7 +23,6 @@
 using namespace Orly::CodeGen;
 
 void TMutableRewrap::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   if(GetReturnType().Is<Type::TMutable>()) {
     out << "[](const " << Src->GetReturnType() << " &src) {" << Eol
@@ -44,21 +43,18 @@ TAddrMember::TAddrMember(const L0::TPackage *package, const Type::TType &return_
     : TMutableRewrap(package, return_type, addr), Index(index) {}
 
 void TAddrMember::WritePartId(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Index;
 }
 
 void TAddrMember::WritePostfixOp(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << ".Get<" << Index << ">()";
 }
 
 void TAddrMember::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   if(GetReturnType().Is<Type::TMutable>()) {
     out << "[](const " << Src->GetReturnType() << " &src) {" << Eol
@@ -73,14 +69,12 @@ TObjMember::TObjMember(const L0::TPackage *package, const Type::TType &return_ty
     : TMutableRewrap(package, return_type, obj), Name(name) {}
 
 void TObjMember::WritePartId(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Name;
 }
 
 void TObjMember::WritePostfixOp(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << ".GetV" << Name << "()";

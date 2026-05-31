@@ -44,17 +44,14 @@ string TLexeme::RemoveCurlyBraces(const string &str) {
 }
 
 Chrono::TTimeDiff TLexeme::AsTimeDiff() const {
-  assert(this);
   return Chrono::TTimeDiffInfo(RemoveCurlyBraces(Text)).AsTimeDiff();
 }
 
 Chrono::TTimePnt TLexeme::AsTimePnt() const {
-  assert(this);
   return Chrono::TTimePntInfo(RemoveCurlyBraces(Text)).AsTimePnt();
 }
 
 double TLexeme::AsDouble() const {
-  assert(this);
   const char *start = Text.c_str();
   char *end;
   errno = 0;
@@ -69,22 +66,18 @@ double TLexeme::AsDouble() const {
 }
 
 int64_t TLexeme::AsInt() const {
-  assert(this);
   return TConvertProxy(AsPiece(Text.c_str()));
 }
 
 long TLexeme::AsLong() const {
-  assert(this);
   return TConvertProxy(AsPiece(Text.c_str()));
 }
 
 uint32_t TLexeme::AsUInt32() const {
-  assert(this);
   return TConvertProxy(AsPiece(Text.c_str()));
 }
 
 string TLexeme::AsQuotedString(char quote, bool is_raw) const {
-  assert(this);
   string result;
   if (Text.size() < (is_raw ? 3 : 2)) {
     THROW << "quoted string too short";

@@ -43,7 +43,6 @@ namespace Orly {
 
       /* Alias for GetContainer from TNAry */
       inline const TAddr::TMemberVec &GetMembers() const {
-        assert(this);
         return GetContainer();
       }
 

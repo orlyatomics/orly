@@ -37,7 +37,6 @@ TEventSemaphore::TEventSemaphore(uint64_t initial_count, bool nonblocking)
 }
 
 bool TEventSemaphore::Pop() {
-  assert(this);
   uint64_t dummy;
   ssize_t ret = read(Fd, &dummy, sizeof(dummy));
 
@@ -55,6 +54,5 @@ bool TEventSemaphore::Pop() {
 }
 
 void TEventSemaphore::Push(uint64_t count) {
-  assert(this);
   IfLt0(eventfd_write(Fd, count));
 }

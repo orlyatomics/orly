@@ -57,22 +57,18 @@ namespace Jhm {
     }
 
     void PushComputedConfig(Base::TJson &&config) {
-      assert(this);
       Config.AddComputed(std::move(config));
     }
 
     void WriteConfig(std::ostream &out) {
-      assert(this);
       Config.WriteComputed(out);
     }
 
     void LoadConfig(const std::string &filename) {
-      assert(this);
       Config.LoadComputed(filename);
     }
 
     void SetComputed(std::vector<Base::TJson> &&config) {
-      assert(this);
       Config.SetComputed(move(config));
     }
 

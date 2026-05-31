@@ -71,12 +71,10 @@ namespace Orly {
             : Iter(std::move(that.Iter)), Ptr(std::move(that.Ptr)) {}
 
         explicit operator bool() const {
-          assert(this);
           return Iter || ResultCache.IsKnown();
         }
 
         TItem &operator*() const {
-          assert(this);
           if (ResultCache.IsKnown()) {
             return ResultCache.GetVal();
           }  // if
@@ -104,7 +102,6 @@ namespace Orly {
         }
 
         Base::TIter<TItem> &operator++() {
-          assert(this);
           ResultCache.Reset();
           HavingResultCache.Reset();
           return *this;
@@ -127,22 +124,18 @@ namespace Orly {
       }
 
       const TReduceFunc &GetReduceFunc() const {
-        assert(this);
         return ReduceFunc;
       }
 
       const THavingFunc &GetHavingFunc() const {
-        assert(this);
         return HavingFunc;
       }
 
       const TValGenPtr &GetGenerator() const {
-        assert(this);
         return Generator;
       }
 
       const TReduceResult &GetStart() const {
-        assert(this);
         return Start;
       }
 

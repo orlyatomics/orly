@@ -74,7 +74,6 @@ TPostfixSlice::~TPostfixSlice() {
 }
 
 Expr::TExpr::TPtr TPostfixSlice::Build() const {
-  assert(this);
   return Expr::TSlice::New(
            Expr->Build(),
            OptLhs ? OptLhs->Build() : nullptr,
@@ -84,14 +83,12 @@ Expr::TExpr::TPtr TPostfixSlice::Build() const {
 }
 
 void TPostfixSlice::Cleanup() {
-  assert(this);
   delete Expr;
   delete OptLhs;
   delete OptRhs;
 }
 
 void TPostfixSlice::ForEachInnerScope(const std::function<void (TScope *cb)> &cb) {
-  assert(this);
   Expr->ForEachInnerScope(cb);
   if (OptLhs) {
     OptLhs->ForEachInnerScope(cb);
@@ -102,7 +99,6 @@ void TPostfixSlice::ForEachInnerScope(const std::function<void (TScope *cb)> &cb
 }
 
 void TPostfixSlice::ForEachRef(const std::function<void (TAnyRef &cb)> &cb) {
-  assert(this);
   Expr->ForEachRef(cb);
   if (OptLhs) {
     OptLhs->ForEachRef(cb);

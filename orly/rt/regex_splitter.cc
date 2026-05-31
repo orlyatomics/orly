@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly::Rt;
 
 TRegexSplitter &TRegexSplitter::operator++() {
-  assert(this);
   assert(Next);
   TPiece match_delim;
   if (Regex->TryGetMatch(Next, match_delim, Flags)) {
@@ -39,7 +38,6 @@ TRegexSplitter &TRegexSplitter::operator++() {
 }
 
 TRegexMatcher &TRegexMatcher::operator++() {
-  assert(this);
   assert(Next);
   TPiece match_delim;
   if (Regex->TryGetMatch(Next, match_delim, Flags)) {

@@ -54,7 +54,6 @@ namespace Orly {
 
       //TODO: It would be nice to kill this function off.
       std::ostream &GetOstream() {
-        assert(this);
 
         return Out;
       }

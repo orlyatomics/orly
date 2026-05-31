@@ -46,12 +46,10 @@ namespace Orly {
       virtual Type::TType GetTypeImpl() const override;
 
       inline const TExpr::TPtr &GetContainer() const {
-        assert(this);
         return GetLhs();
       }
 
       inline const TExpr::TPtr &GetPredicate() const {
-        assert(this);
         return GetRhs();
       }
 

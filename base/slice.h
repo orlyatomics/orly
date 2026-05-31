@@ -47,21 +47,18 @@ namespace Base {
 
     /* Returns true iff. this slice is the same as that one. */
     bool operator==(const TSlice &that) const {
-      assert(this);
       assert(&that);
       return Start == that.Start && Limit == that.Limit;
     }
 
     /* Returns true iff. this slice is not the same as that one. */
     bool operator!=(const TSlice &that) const {
-      assert(this);
       assert(&that);
       return Start != that.Start || Limit != that.Limit;
     }
 
     /* Converts a slice based on a non-char sequence into a slice of a char sequence. */
     TSlice AsByteSlice(size_t seq_size, size_t elem_size) const {
-      assert(this);
       size_t start, limit;
       GetAbsPair(seq_size / elem_size, start, limit);
       start *= elem_size;
@@ -71,7 +68,6 @@ namespace Base {
 
     /* Returns true iff. this slice is valid when applied to a sequence of the given size. */
     bool CanGetAbsPair(size_t size) const {
-      assert(this);
       size_t dummy1, dummy2;
       return TryGetAbsPair(size, dummy1, dummy2);
     }
@@ -79,7 +75,6 @@ namespace Base {
     /* Returns (via out-parameters) the absolute offsets into a sequence of the given size specified by this slice.  The size must be large enough to
        accomodate the slice. */
     void GetAbsPair(size_t size, size_t &start, size_t &limit) const {
-      assert(this);
       bool success = TryGetAbsPair(size, start, limit);
       assert(success);
     }
@@ -87,14 +82,12 @@ namespace Base {
     /* Returns true if the slice amounts to a single pos; that is, if the start and limit are the same relative position.  This doesn't detect the case where
        two different relative positions map to the same absolute position.  You'll need to use same variation on GetAbsPair() for that. */
     bool IsPos() const {
-      assert(this);
       return Start == Limit;
     }
 
     /* Tries to apply this slice to a sequence of the given size.  If the size is large enough to accomodate us, then this function sets the two out-parameters
        to the correct absolute offsets and returns true; otherwise, this function leaves the out-parameters alone and the returns false. */
     bool TryGetAbsPair(size_t size, size_t &start, size_t &limit) const {
-      assert(this);
       assert(&start);
       assert(&limit);
       ptrdiff_t start_offset = Start.GetAbsOffset(size),
@@ -111,7 +104,6 @@ namespace Base {
 
     /* The default (everything) slice. */
     TSlice &Reset() {
-      assert(this);
       Start = TPos::GetStart();
       Limit = TPos::GetLimit();
       return *this;
@@ -119,7 +111,6 @@ namespace Base {
 
     /* Swap this slice with that one. */
     TSlice &Swap(TSlice &that) noexcept {
-      assert(this);
       std::swap(Start, that.Start);
       std::swap(Limit, that.Limit);
       return *this;

@@ -44,13 +44,11 @@ TSortExpr::TSortExpr(const TExprFactory *expr_factory, const Package::Syntax::TI
 }
 
 TSortExpr::~TSortExpr() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Expr::TExpr::TPtr TSortExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   /* NOTE: If you're wondering why I set rhs seperately,
            Take a look at <orly/synth/thatable_expr.h>.
@@ -61,13 +59,11 @@ Expr::TExpr::TPtr TSortExpr::Build() const {
 }
 
 void TSortExpr::Cleanup() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 void TSortExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
@@ -75,7 +71,6 @@ void TSortExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TSortExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -83,13 +78,11 @@ void TSortExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TSort::TPtr &TSortExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TLhsRhsable::TPtr TSortExpr::GetLhsRhsableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

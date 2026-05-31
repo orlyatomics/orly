@@ -170,7 +170,6 @@ namespace Orly {
 
       template <typename TStore, typename... TCompatArgs>
       typename TStore::TPtr Get(TStore &store, TCompatArgs &&...args) {
-        assert(this);
         typedef typename TStore::TWeak TWeak;
         typedef typename TStore::TPtr TPtr;
         //TOOD: This is copied from Base::TInterner (With just AddLocal logic added).
@@ -191,7 +190,6 @@ namespace Orly {
 
       template <typename TStore, typename... TCompatArgs>
       bool Has(TStore &store, TCompatArgs &&...args) {
-        assert(this);
 
         auto it = store.ObjByKey.find(TKey(args...));
         return it == store.ObjByKey.end() ? false : !it->second.expired();

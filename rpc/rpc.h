@@ -173,20 +173,17 @@ namespace Rpc {
 
     /* The binary I/O stream over which we communicate with our partner context. */
     Io::TBinaryIoStream &GetBinaryIoStream() const {
-      assert(this);
       assert(BinaryIoStream);
       return *BinaryIoStream;
     }
 
     /* The protocol we serve. */
     const TProtocol &GetProtocol() const {
-      assert(this);
       return Protocol;
     }
 
     /* True iff. all requests returned by Read() have been handled and we are not waiting for any replies. */
     bool IsIdle() {
-      assert(this);
       std::lock_guard<std::mutex> lock(FutureByRequestIdMutex);
       return FutureByRequestId.empty() && UnhandledRequestCount == 0;
     }
@@ -273,7 +270,6 @@ namespace Rpc {
     /* Wait for this fd to become readable if you want to synchronize against this future manually.
        Do NOT close or alter this fd. */
     const Base::TFd &GetEventFd() const {
-      assert(this);
       return EventFd;
     }
 
@@ -343,7 +339,6 @@ namespace Rpc {
     /* The value returned by the server.
        If the server hasn't returned a value yet, wait for it. */
     const TVal operator*() const {
-      assert(this);
       Sync();
       return Val;
     }
@@ -351,7 +346,6 @@ namespace Rpc {
     /* The value returned by the server.
        If the server hasn't returned a value yet, wait for it. */
     const TVal *operator->() const {
-      assert(this);
       Sync();
       return &Val;
     }
@@ -360,7 +354,6 @@ namespace Rpc {
 
     /* See base class. */
     virtual void SetNormalResult(Io::TBinaryInputStream &strm) {
-      assert(this);
       assert(&strm);
       strm >> Val;
       SetResultStatus(NormalResult);
@@ -386,7 +379,6 @@ namespace Rpc {
 
     /* See base class. */
     virtual void SetNormalResult(Io::TBinaryInputStream &) {
-      assert(this);
       SetResultStatus(NormalResult);
     }
 
@@ -395,7 +387,6 @@ namespace Rpc {
   /* See declaration. */
   template <typename TRet, typename... TArgs>
   std::shared_ptr<TFuture<TRet>> TContext::Write(TEntryId entry_id, TArgs &&... args) {
-    assert(this);
     Io::TBinaryIoStream &strm = GetBinaryIoStream();
     std::pair<TRequestId, std::shared_ptr<TFuture<TRet>>> item;
     item.second = std::make_shared<TFuture<TRet>>();
@@ -434,7 +425,6 @@ namespace Rpc {
 
     /* The id of this request. */
     TRequestId GetId() const {
-      assert(this);
       return Id;
     }
 
@@ -519,7 +509,6 @@ namespace Rpc {
 
     /* See base class. */
     virtual void operator()() const {
-      assert(this);
       WriteReply(Context->GetBinaryIoStream(), GetId(), Context.get(), Handler, Args);
     }
 
@@ -578,7 +567,6 @@ namespace Rpc {
 
     /* See base class. */
     virtual std::shared_ptr<TAnyRequest> NewRequest(TRequestId request_id, const std::shared_ptr<TContext> &context) const {
-      assert(this);
       return std::make_shared<TManufacturedRequest>(request_id, std::dynamic_pointer_cast<TSomeContext>(context), Handler);
     }
 
@@ -623,7 +611,6 @@ namespace Rpc {
     /* Include the given entry in this protocol. */
     template <typename TSomeContext, typename TRet, typename... TArgs>
     void Register(TEntryId entry_id, typename TEntry<TSomeContext, TRet, TArgs...>::THandler handler) {
-      assert(this);
       auto entry = new TEntry<TSomeContext, TRet, TArgs...>(handler);
       try {
         bool is_unique = EntryById.insert(std::make_pair(entry_id, entry)).second;

@@ -27,11 +27,9 @@ TRefType::TRefType(const Package::Syntax::TRefType *ref_type)
     : TypeDef(Base::AssertTrue(ref_type)->GetName()) {}
 
 void TRefType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   cb(TypeDef);
 }
 
 Type::TType TRefType::ComputeSymbolicType() const {
-  assert(this);
   return TypeDef->GetSymbolicType();
 }

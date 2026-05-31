@@ -75,7 +75,6 @@ namespace Orly {
 
       /* TODO */
       const std::string &GetVal() const {
-        assert(this);
         return Val;
       }
 

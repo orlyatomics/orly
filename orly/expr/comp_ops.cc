@@ -35,13 +35,11 @@ TEqEq::TEqEq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TEqEq::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TEqEq::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), Type::TEqCompVisitor(type, GetPosRange()));
   return type;
@@ -55,13 +53,11 @@ TNeq::TNeq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TNeq::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TNeq::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), Type::TEqCompVisitor(type, GetPosRange()));
   return type;
@@ -75,13 +71,11 @@ TLt::TLt(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TLt::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLt::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), Type::TIneqCompVisitor(type, GetPosRange()));
   return type;
@@ -95,13 +89,11 @@ TLtEq::TLtEq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TLtEq::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLtEq::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), Type::TIneqCompVisitor(type, GetPosRange()));
   return type;
@@ -115,13 +107,11 @@ TGt::TGt(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TGt::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TGt::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), Type::TIneqCompVisitor(type, GetPosRange()));
   return type;
@@ -135,13 +125,11 @@ TGtEq::TGtEq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TGtEq::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TGtEq::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), Type::TIneqCompVisitor(type, GetPosRange()));
   return type;

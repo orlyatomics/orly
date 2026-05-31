@@ -119,13 +119,11 @@ TArgs::~TArgs() {
 }
 
 void TArgs::FakeVerify() {
-  assert(this);
   VerifiedAllUsed = true;
 }
 
 //TODO
 bool TArgs::TryGrabArg(const TStrPiece &name, string &out) {
-  assert(this);
 
   //TODO: The inline string construction here is massive ug.
   auto it = Args.find(string(name.GetStart(), name.GetSize()));
@@ -140,7 +138,6 @@ bool TArgs::TryGrabArg(const TStrPiece &name, string &out) {
 }
 
 void TArgs::GrabArg(const TStrPiece &name, string &out) {
-  assert(this);
   assert(&name);
   assert(&out);
 
@@ -155,7 +152,6 @@ void TArgs::GrabArg(const TStrPiece &name, string &out) {
 //TODO: Convert to Base::Convert.
 //TODO: This is very copy/pasty. Really should abstract it out more. arg value error builder :)
 void TArgs::Convert(const std::string &str, bool &val) {
-  assert(this);
   assert(&str);
   assert(&val);
 
@@ -169,7 +165,6 @@ void TArgs::Convert(const std::string &str, bool &val) {
 }
 
 void TArgs::Convert(const std::string &str, int &val) {
-  assert(this);
   assert(&str);
   assert(&val);
 
@@ -182,7 +177,6 @@ void TArgs::Convert(const std::string &str, int &val) {
 }
 
 void TArgs::Convert(const std::string &str, uint64_t &val) {
-  assert(this);
   assert(&str);
   assert(&val);
 
@@ -196,7 +190,6 @@ void TArgs::Convert(const std::string &str, uint64_t &val) {
 }
 
 void TArgs::Convert(const std::string &str, std::chrono::milliseconds &val) {
-  assert(this);
   assert(&str);
   assert(&val);
 
@@ -207,7 +200,6 @@ void TArgs::Convert(const std::string &str, std::chrono::milliseconds &val) {
 }
 
 void TArgs::Convert(const std::string &str, long &val) {
-  assert(this);
   assert(&str);
   assert(&val);
 
@@ -220,7 +212,6 @@ void TArgs::Convert(const std::string &str, long &val) {
 }
 
 void TArgs::Convert(const std::string &str, Base::TUuid &uuid) {
-  assert(this);
   assert(&str);
   assert(&uuid);
 
@@ -237,12 +228,10 @@ void TArgs::Convert(const std::string &str, Var::TVar &var) {
 }
 
 bool TArgs::HasVerified() const {
-  assert(this);
   return VerifiedAllUsed;
 }
 
 void TArgs::VerifyAllUsed() {
-  assert(this);
   VerifiedAllUsed = true;
   if(Args.size() > 0) {
     stringstream arg_collector;
@@ -256,7 +245,6 @@ void TArgs::VerifyAllUsed() {
 
 template<>
 void TArgs::Get(const TStrPiece &name, std::string &str) {
-  assert(this);
   assert(&name);
   assert(&str);
 

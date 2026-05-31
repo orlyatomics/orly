@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly::CsvToBin;
 
 void TTimePntParser::Parse(TTimePnt &that) {
-  assert(this);
   assert(&that);
   /* Parse something like 2014-07-04. */
   int64_t year;
@@ -117,7 +116,6 @@ void TTimePntParser::Parse(TTimePnt &that) {
 }
 
 void TTimePntParser::MatchByte(uint8_t expected) {
-  assert(this);
   if (!TryMatchByte(expected)) {
     THROW_ERROR(TSyntaxError)
         << "expected '" << expected
@@ -126,7 +124,6 @@ void TTimePntParser::MatchByte(uint8_t expected) {
 }
 
 uint8_t TTimePntParser::MatchByte(const char *expected) {
-  assert(this);
   uint8_t match;
   if (!TryMatchByte(expected, match)) {
     THROW_ERROR(TSyntaxError)
@@ -137,7 +134,6 @@ uint8_t TTimePntParser::MatchByte(const char *expected) {
 }
 
 void TTimePntParser::MatchKeyword(const char *keyword) {
-  assert(this);
   assert(keyword);
   for (const char *csr = keyword; *csr; ++csr) {
     if (tolower(Pop()) != *csr) {
@@ -148,7 +144,6 @@ void TTimePntParser::MatchKeyword(const char *keyword) {
 }
 
 void TTimePntParser::ReadDecimalInt(int64_t &value, size_t &size) {
-  assert(this);
   assert(&value);
   assert(&size);
   size = 0;
@@ -176,7 +171,6 @@ void TTimePntParser::ReadDecimalInt(int64_t &value, size_t &size) {
 }
 
 bool TTimePntParser::RefreshBytes(bool required) const {
-  assert(this);
   bool success = (Cursor < Limit);
   if (!success) {
     auto mutable_this = const_cast<TTimePntParser *>(this);
@@ -196,7 +190,6 @@ bool TTimePntParser::RefreshBytes(bool required) const {
 }
 
 bool TTimePntParser::TryMatchByte(uint8_t expected) {
-  assert(this);
   bool success = (Peek() == expected);
   if (success) {
     Pop();
@@ -205,13 +198,11 @@ bool TTimePntParser::TryMatchByte(uint8_t expected) {
 }
 
 bool TTimePntParser::TryMatchByte(const char *expected) {
-  assert(this);
   uint8_t dummy;
   return TryMatchByte(expected, dummy);
 }
 
 bool TTimePntParser::TryMatchByte(const char *expected, uint8_t &match) {
-  assert(this);
   assert(&match);
   uint8_t c = Peek();
   bool success = (strchr(expected, c) != nullptr);

@@ -240,7 +240,6 @@ namespace Orly {
 
           /* TODO */
           ~TRunnerCons() {
-            assert(this);
             delete[] RunnerArray;
           }
 
@@ -249,7 +248,6 @@ namespace Orly {
           /* TODO */
           size_t GetNewId() {
             syslog(LOG_INFO, "TRunnerCons [%ld] GetNewId()", NextId);
-            assert(this);
             size_t ret = NextId;
             if (ret < NumRunners) {
               ++NextId;
@@ -304,7 +302,6 @@ namespace Orly {
 
         /* TODO */
         ~TRunner() {
-          assert(this);
           RunnerArray[RunnerId] = nullptr;
           delete[] QueueArray;
         }
@@ -314,7 +311,6 @@ namespace Orly {
 
         /* TODO */
         void ShutDown() {
-          assert(this);
           KeepRunning.store(false);
         }
 
@@ -428,7 +424,6 @@ namespace Orly {
 
         /* TODO */
         inline size_t GetWorkerCount() const {
-          assert(this);
           return WorkerCount;
         }
 
@@ -503,7 +498,6 @@ namespace Orly {
 
         /* TODO */
         inline void Yield() {
-          assert(this);
           ComeBackRightAway = false;
           TRunner::Schedule(this);
           TRunner::Yield(MyFiber);
@@ -511,7 +505,6 @@ namespace Orly {
 
         /* TODO */
         inline void YieldSlow() {
-          assert(this);
           ComeBackRightAway = false;
           TRunner::LocalRunner->ScheduleFrameSlow(this);
           TRunner::Yield(MyFiber);
@@ -519,14 +512,12 @@ namespace Orly {
 
         /* TODO */
         inline void Wait(bool come_back_right_away) {
-          assert(this);
           ComeBackRightAway = come_back_right_away;
           TRunner::Yield(MyFiber);
         }
 
         /* TODO */
         inline void SwitchTo(TRunner *runner) {
-          assert(this);
           ComeBackRightAway = false;
           runner->ScheduleFrame(this);
           TRunner::Yield(MyFiber);
@@ -535,7 +526,6 @@ namespace Orly {
         /* TODO */
         void Run() {
           //printf("TFrame [%p] Run()\n", this);
-          assert(this);
           /* wait to get scheduled (after a Latch). */
           for (;;) {
             assert(Runnable);
@@ -576,7 +566,6 @@ namespace Orly {
 
         /* TODO */
         inline fiber_t &GetFiber() {
-          assert(this);
           return MyFiber;
         }
 
@@ -877,7 +866,6 @@ namespace Orly {
 
           /* TODO */
           inline ~TLock() {
-            assert(this);
             /* Grab the spin lock to release control, and enqueue anyone who is waiting. */ {
               Base::TSpinLock::TLock lock(Lock.SpinLock);
               TLock *next_to_release;
@@ -956,7 +944,6 @@ namespace Orly {
 
           /* TODO */
           inline ~TLock() {
-            assert(this);
             if (Runner != Lock.Runner) {
               TFrame::LocalFrame->SwitchTo(Runner);
             }
@@ -1031,7 +1018,6 @@ namespace Orly {
 
         /* TODO */
         ~TSwitchToRunner() {
-          assert(this);
           assert(ComeFromRunner);
           SwitchTo(ComeFromRunner);
         }
@@ -1044,7 +1030,6 @@ namespace Orly {
       };  // TSwitchToRunner
 
       inline void TRunner::ScheduleFrameSlow(TFrame *frame) {
-        assert(this);
         assert(frame);
         if (LocalRunner) {
           TFrame *&outbound_queue = LocalRunner->QueueArray[RunnerId].Ptr;
@@ -1059,7 +1044,6 @@ namespace Orly {
       }
 
       inline void TRunner::ScheduleFrameSlow(TRunner *other_runner, TFrame *frame) {
-        assert(this);
         assert(LocalRunner);
         assert(other_runner);
         assert(frame);
@@ -1070,7 +1054,6 @@ namespace Orly {
       }
 
       inline void TRunner::ScheduleFrame(TFrame *frame) {
-        assert(this);
         assert(frame);
         if (this == LocalRunner) {
           //printf("ScheduleFrame local\n");
@@ -1126,7 +1109,6 @@ namespace Orly {
 
       /********************************************************/
       inline void TSafeSync::Sync(bool come_back_right_away) {
-        assert(this);
         #ifndef NDEBUG
         TRunner *safety_runner = TRunner::LocalRunner;
         #endif
@@ -1153,7 +1135,6 @@ namespace Orly {
       }
 
       inline void TSafeSync::Complete() {
-        assert(this);
         size_t prev = std::atomic_fetch_add(&Finished, 1UL);
         if ((prev + 1UL) == WaitingFor.load()) {
           Base::TSpinLock::TLock lock(SpinLock);
@@ -1170,7 +1151,6 @@ namespace Orly {
       }
 
       inline void TSafeSync::WaitForMore(size_t num) {
-        assert(this);
         WaitingFor += num;
       }
 

@@ -39,18 +39,15 @@ void Test::ExtraInit() {
 TApp::TRunner::~TRunner() {}
 
 void TApp::TRunner::PreDtor() {
-  assert(this);
   App->OnRunnerDtor(this);
 }
 
 void TApp::OnRunnerDtor(const TRunner *runner) {
-  assert(this);
   assert(runner);
   ++(*runner ? PassCount : FailCount);
 }
 
 int TApp::Run() {
-  assert(this);
   Verbose = Cmd.VerboseMember;
 
   chrono::time_point<chrono::system_clock> start;

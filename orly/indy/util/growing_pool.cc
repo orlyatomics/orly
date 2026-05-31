@@ -38,7 +38,6 @@ TGrowingPool::TGrowingPool(size_t block_size, const char *name)
 }
 
 TGrowingPool::~TGrowingPool() {
-  assert(this);
   if (NumBlocksUsed) {
     syslog(LOG_ERR, "[%ld] Blocks left in [%s] pool", NumBlocksUsed, Name);
   }
@@ -50,7 +49,6 @@ TGrowingPool::~TGrowingPool() {
 }
 
 void TGrowingPool::Free(void *ptr) {
-  assert(this);
   assert(ptr);
   TBlock *block = static_cast<TBlock *>(ptr);
   std::lock_guard<std::mutex> lock(Mutex);
@@ -60,7 +58,6 @@ void TGrowingPool::Free(void *ptr) {
 }
 
 void *TGrowingPool::TryAlloc(size_t size) {
-  assert(this);
   assert(size <= BlockSize);
   std::lock_guard<std::mutex> lock(Mutex);
   TBlock *block = FirstBlock;

@@ -54,14 +54,12 @@ TCompound::TCompound(const Syntax::TName *name, const Syntax::TOptSuper *opt_sup
 }
 
 TCompound::~TCompound() {
-  assert(this);
   for (auto iter = Members.begin(); iter != Members.end(); ++iter) {
     delete *iter;
   }
 }
 
 void TCompound::BuildMembers() {
-  assert(this);
   Symbol::TCompound *compound = GetSymbolAsCompound();
   assert(compound);
   for (auto iter = Members.begin(); iter != Members.end(); ++iter) {
@@ -71,12 +69,10 @@ void TCompound::BuildMembers() {
 }
 
 Symbol::TKind *TCompound::GetSymbolAsKind() const {
-  assert(this);
   return GetSymbolAsCompound();
 }
 
 void TCompound::ForEachRef(const function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   TFinal::ForEachRef(cb);
   for (auto iter = Members.begin(); iter != Members.end(); ++iter) {
@@ -86,25 +82,21 @@ void TCompound::ForEachRef(const function<void (TAnyRef &)> &cb) {
 }
 
 void TCompound::TErrorMember::Build(Symbol::TCompound *compound) {
-  assert(this);
   new Symbol::TErrorMember(compound);
 }
 
 void TCompound::TErrorMember::ForEachRef(const std::function<void (TAnyRef &)> &) {}
 
 void TCompound::TMemberWithKind::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   cb(Kind);
 }
 
 void TCompound::TAnonymousMember::Build(Symbol::TCompound *compound) {
-  assert(this);
   new Symbol::TAnonymousMember(compound, GetKind());
 }
 
 void TCompound::TNamedMember::Build(Symbol::TCompound *compound) {
-  assert(this);
   new Symbol::TNamedMember(compound, GetKind(), Name->GetLexeme().GetText());
 }
 

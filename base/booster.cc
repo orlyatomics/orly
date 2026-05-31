@@ -58,6 +58,5 @@ TBooster::TBooster(int policy, int priority_backoff) {
 }
 
 TBooster::~TBooster() {
-  assert(this);
   pthread_setschedparam(pthread_self(), OldPolicy, &OldSchedParam);
 }

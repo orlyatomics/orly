@@ -26,7 +26,6 @@ TType::TType() {}
 TType::~TType() {}
 
 const Type::TType &TType::GetSymbolicType() const {
-  assert(this);
   if (!CachedSymbolicType) {
     CachedSymbolicType = ComputeSymbolicType();
     assert(CachedSymbolicType);

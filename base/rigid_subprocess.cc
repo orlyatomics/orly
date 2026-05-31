@@ -66,7 +66,6 @@ TRigidSubprocess::TRigidSubprocess(vector<string> cmd) {
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 
 int TRigidSubprocess::Wait() const {
-  assert(this);
   int status;
   IfLt0(waitpid(ChildId, &status, 0));
   return WIFEXITED(status) ? WEXITSTATUS(status) : EXIT_FAILURE;

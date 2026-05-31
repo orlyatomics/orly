@@ -71,12 +71,10 @@ namespace Orly {
       static TPtr Get(size_t index);
 
       size_t GetIndex() const {
-        assert(this);
         return Index;
       }
 
       void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(this);
       }
@@ -101,7 +99,6 @@ namespace Orly {
       static TPtr Get();
 
       void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(this);
       }
@@ -121,13 +118,11 @@ namespace Orly {
       static TPtr Get(const Type::TType &key_type);
 
       void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(this);
       }
 
       const Type::TType &GetKeyType() const {
-        assert(this);
         return KeyType;
       }
 
@@ -151,13 +146,11 @@ namespace Orly {
       static TPtr Get(const std::string &name);
 
       void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(this);
       }
 
       const std::string &GetName() const {
-        assert(this);
         return Name;
       }
 
