@@ -37,7 +37,11 @@ namespace Util {
      Use this function to test the results of system I/O calls. */
   template <typename TRet>
   TRet IfLt0(TRet &&ret) {
-    if constexpr (std::is_signed_v<std::remove_reference_t<TRet>>) {
+    using TBare = std::remove_cv_t<std::remove_reference_t<TRet>>;
+    static_assert(!std::is_same_v<TBare, bool>,
+                  "IfLt0 called with bool -- did you accidentally write `IfLt0(syscall(...) < 0)`? "
+                  "Pass the raw syscall result; the < 0 check is internal.");
+    if constexpr (std::is_signed_v<TBare>) {
       if (ret < 0) {
         ThrowSystemError(errno);
       }
