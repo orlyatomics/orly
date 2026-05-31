@@ -42,11 +42,6 @@ class TPump::TPipe {
     // Pipe from where we write to where the user will read
     TFd::Pipe(read, WriteFd);
     SetNonBlocking(WriteFd);
-
-    assert(write);
-    assert(read);
-    assert(ReadFd);
-    assert(WriteFd);
   }
 
   ~TPipe() {
@@ -85,9 +80,6 @@ class TPump::TPipe {
       } else {  // Read data
         ReadOffset += read_size;
         StartWriting();
-
-        // NOTE: If we handle being at the end of the buffer / out of block space at the start of reading.
-        assert(ReadOffset <= ReadBufSize);
       }
     }
 
@@ -121,8 +113,6 @@ class TPump::TPipe {
           }
         } else {
           WriteOffset += write_size;
-
-          assert(WriteOffset <= ReadBufSize);
 
           // If we're at the same point in the buffer as the read head, release it to simplify things.
           if (Blocks.front() == Blocks.back() && ReadOffset == WriteOffset) {
