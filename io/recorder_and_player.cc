@@ -27,7 +27,6 @@ void TRecorder::ConsumeOutput(const shared_ptr<const TChunk> &chunk) {
 }
 
 void TRecorder::CopyOut(string &out) const {
-  assert(&out);
   size_t size = 0;
   for (const auto &chunk: Chunks) {
     size += chunk->GetSize();

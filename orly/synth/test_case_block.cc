@@ -137,7 +137,6 @@ Symbol::Test::TTestCaseBlock::TPtr TTestCaseBlock::Build() const {
 }
 
 void TTestCaseBlock::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto &test_case : TestCases) {
     test_case->ForEachInnerScope(cb);
@@ -145,7 +144,6 @@ void TTestCaseBlock::ForEachInnerScope(const std::function<void (TScope *)> &cb)
 }
 
 void TTestCaseBlock::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto &test_case : TestCases) {
     test_case->ForEachRef(cb);

@@ -34,7 +34,6 @@ TAddrMember::TAddrMember(const TExpr::TPtr &expr, size_t index, const TPosRange 
     : TUnary(expr, pos_range), Index(index) {}
 
 void TAddrMember::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

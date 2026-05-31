@@ -109,7 +109,6 @@ namespace Io {
        We will not own the storage space, merely point at it.
        We will not be recycled in a pool. */
     TChunk(TFull, const std::string &str) {
-      assert(&str);
       Start = const_cast<char *>(str.data());
       Limit = Start + str.size();
       Cursor = Limit;
@@ -133,8 +132,6 @@ namespace Io {
     /* Return pointers to the data in this chunk.
        Upon return, start will always be <= limit. */
     void GetData(const char *&start, const char *&limit) const NO_THROW {
-      assert(&start);
-      assert(&limit);
       start = Start;
       limit = Cursor;
     }

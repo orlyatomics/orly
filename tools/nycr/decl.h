@@ -54,7 +54,6 @@ namespace Tools {
     template <typename TYesNode, typename TNoNode, typename TOptNode>
     static void GetOptInt(const TOptNode *opt_node, Base::TOpt<int> &out) {
       assert(opt_node);
-      assert(&out);
       const TYesNode *yes_node = TryGetNode<TYesNode, TNoNode>(opt_node);
       if (yes_node) {
         out = yes_node->GetIntLiteral()->GetLexeme().AsInt();

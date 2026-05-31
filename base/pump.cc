@@ -32,9 +32,6 @@ class TPump::TPipe {
 
   public:
   TPipe(TPump *pump, TFd &read, TFd &write) : Pump(pump) {
-    assert(&pump);
-    assert(&write);
-    assert(&read);
 
     // TODO: The kernel already can do most of this with temporary memory backed files... It just doesn't let us
     //      make a never-blocking stream :(

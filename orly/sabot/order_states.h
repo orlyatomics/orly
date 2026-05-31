@@ -37,7 +37,6 @@ namespace Orly {
       /* TODO. */
       TOrderStatesVisitor(Atom::TComparison &out)
           : Comparison(out) {
-        assert(&out);
       }
 
       /* Overrides. */

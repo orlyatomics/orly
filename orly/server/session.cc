@@ -40,7 +40,6 @@ TMethodResult TSession::DoInPast(
 }
 
 bool TSession::ForEachNotification(const function<bool (uint32_t, const TNotification *)> &cb) const {
-  assert(&cb);
   lock_guard<mutex> lock(NotificationMutex);
   for (const auto &item: NotificationBySeqNumber) {
     if (!cb(item.first, item.second)) {
@@ -51,7 +50,6 @@ bool TSession::ForEachNotification(const function<bool (uint32_t, const TNotific
 }
 
 const TNotification *TSession::GetFirstNotification(uint32_t &seq_number) {
-  assert(&seq_number);
   lock_guard<mutex> lock(NotificationMutex);
   assert(!NotificationBySeqNumber.empty());
   auto iter = NotificationBySeqNumber.begin();
@@ -117,7 +115,6 @@ void TSession::SetTimeToLive(TServer *server, const TUuid &durable_id, const sec
 }
 
 void TSession::SetUserId(TServer */*server*/, const TUuid &user_id) {
-  assert(&user_id);
   if (UserId) {
     DEFINE_ERROR(error_t, runtime_error, "user_id already set");
     THROW_ERROR(error_t) << "existing uid = " << user_id;
@@ -247,7 +244,6 @@ bool TSession::RunTestSuite(TServer * /*server*/,
     uint64_t /*package_version*/, bool /*verbose*/) {
 #if 0
   assert(server);
-  assert(&package_name);
 
   server->InstallPackage(package_name, package_version);
   bool succeeded = true;
@@ -298,7 +294,6 @@ TSession::TSession(Durable::TManager *manager, const Base::TUuid &id, const Dura
 
 TSession::TSession(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm)
     : TObj(manager, id, strm) {
-  assert(&strm);
   try {
     size_t size;
     strm >> UserId >> NextSeqNumber >> size;
@@ -341,7 +336,6 @@ void TSession::RunInPrivateChildPov(TServer *server,
     const Base::TUuid &parent_pov_id) {
   assert(server);
   assert(func);
-  assert(&parent_pov_id);
 
   Base::TUuid child_pov_id = NewFastPrivatePov(server, parent_pov_id, std::chrono::seconds(1000));
   Durable::TPtr<TPov> child_pov = server->GetDurableManager()->Open<TPov>(child_pov_id);
@@ -425,7 +419,6 @@ void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
 }
 
 void TSession::Write(Io::TBinaryOutputStream &strm) const {
-  assert(&strm);
   lock_guard<mutex> lock(NotificationMutex);
   TObj::Write(strm);
   strm << UserId << NextSeqNumber << NotificationBySeqNumber.size();
@@ -444,7 +437,6 @@ void TSession::Cleanup() {
 TUuid TSession::NewPov(
     TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live) {
   assert(server);
-  assert(&parent_pov_id);
   printf("TSession::NewPov()\n");
   auto durable_manager = server->GetDurableManager();
   TPov::TSharedParents shared_parents;
@@ -462,7 +454,6 @@ TUuid TSession::NewPov(
 }
 
 bool TSession::ForEachDependentPtr(const function<bool (Durable::TAnyPtr &)> &cb) noexcept {
-  assert(&cb);
   std::lock_guard<std::mutex> lock(PovMutex);
   for (auto &pov: Povs) {
     if (!cb(pov)) {

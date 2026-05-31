@@ -102,7 +102,6 @@ TFunctionApp::~TFunctionApp() {
 }
 
 void TFunctionApp::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

@@ -655,7 +655,6 @@ namespace Orly {
       template<>
       template<>
       inline TManager::TPtr<Indy::TRepo>::TPtr(const TPtr<L0::TManager::TRepo> &that) {
-        assert(&that);
         if ((SomeObj = dynamic_cast<Indy::TRepo *>(that.SomeObj)) != nullptr) {
           SomeObj->OnPtrAcquire();
         }

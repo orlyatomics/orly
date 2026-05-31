@@ -51,7 +51,6 @@ TFile::TFile(int fd, const char *mode) {
 }
 
 TFile::TFile(Base::TFd &&fd, const char *mode) {
-  assert(&fd);
   assert(fd.IsOpen());
   assert(mode);
   Handle = gzdopen(fd, mode);

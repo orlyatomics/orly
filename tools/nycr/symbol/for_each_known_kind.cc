@@ -38,7 +38,6 @@ static void Visit(
 void Tools::Nycr::Symbol::ForEachKnownKind(
     const TKind *kind, const function<void (const TKind *)> &cb) {
   assert(kind);
-  assert(&cb);
   unordered_set<const TKind *> done;
   Visit(kind, cb, done);
 }
@@ -47,8 +46,6 @@ static void Visit(
     const TKind *kind, const function<void (const TKind *)> &cb,
     unordered_set<const TKind *> &done) {
   assert(kind);
-  assert(&cb);
-  assert(&done);
   if (done.insert(kind).second) {
     class TVisitor : public TKind::TVisitor {
       public:

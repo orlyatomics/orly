@@ -154,7 +154,6 @@ static void TranslateDef(TContext &ctx, Symbol::TTable *table_symbol, const Synt
 
 unique_ptr<Symbol::TTable> Orly::CsvToBin::NewTable(
     ostream &strm, const char *src_text) {
-  assert(&strm);
   auto symbol = make_unique<Symbol::TTable>();
   Tools::Nycr::TContext ctx;
   try {

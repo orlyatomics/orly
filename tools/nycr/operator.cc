@@ -42,7 +42,6 @@ TOperator::TOperator(const Syntax::TOper *decl)
 }
 
 void TOperator::ForEachRef(const function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   TAtom::ForEachRef(cb);
   cb(PrecLevel);
 }

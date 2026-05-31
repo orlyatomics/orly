@@ -29,7 +29,6 @@ TEffect::TEffect(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TThatableUnary(expr, pos_range), StmtBlock(nullptr) {}
 
 void TEffect::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

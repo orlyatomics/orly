@@ -22,18 +22,15 @@ using namespace Io;
 using namespace Orly::Notification;
 
 bool TPovFailure::Matches(const TPovFailure &that) const {
-  assert(&that);
   return TNotification::Matches(that) && PovId == that.PovId;
 }
 
 void TPovFailure::Write(TBinaryOutputStream &strm) const {
-  assert(&strm);
   TNotification::Write(strm);
   strm << PovId;
 }
 
 TPovFailure::TPovFailure(TBinaryInputStream &strm)
     : TNotification(strm) {
-  assert(&strm);
   strm >> PovId;
 }

@@ -32,7 +32,6 @@ class TOrderTypesVisitor final
   /* TODO. */
   TOrderTypesVisitor(Atom::TComparison &out)
       : Comparison(out) {
-    assert(&out);
   }
 
   /* Overrides. */

@@ -47,7 +47,6 @@ namespace Orly {
       /* TODO */
       TToVarVisitor(Var::TVar &var)
           : Var(var) {
-        assert(&var);
       }
 
       /* Overrides. */

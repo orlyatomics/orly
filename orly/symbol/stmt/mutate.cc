@@ -106,7 +106,6 @@ TMutate::TPtr TMutate::New(
 }
 
 void TMutate::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

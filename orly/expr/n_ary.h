@@ -43,8 +43,6 @@ namespace Orly {
       /* TList and TSet */
       template <typename TCompatContainer>
       static void ForEachExpr(const TCompatContainer &container, const TCallback &cb) {
-        assert(&container);
-        assert(&cb);
         assert(cb);
         for (auto elem : container) {
           cb(elem);
@@ -53,8 +51,6 @@ namespace Orly {
 
       /* TIfElse, TRange */
       static void ForEachExpr(const std::array<TExpr::TPtr, 3U> &exprs, const TCallback &cb) {
-        assert(&exprs);
-        assert(&cb);
         assert(cb);
         for (auto expr : exprs) {
           if (expr) {
@@ -67,8 +63,6 @@ namespace Orly {
       static void ForEachExpr(
           const std::vector<std::pair<TAddrDir, TExpr::TPtr>> &addr_members,
           const TCallback &cb) {
-        assert(&addr_members);
-        assert(&cb);
         assert(cb);
         for (auto addr_member : addr_members) {
           cb(addr_member.second);
@@ -79,8 +73,6 @@ namespace Orly {
       static void ForEachExpr(
           const std::unordered_map<TExpr::TPtr, TExpr::TPtr> &dict_members,
           const TCallback &cb) {
-        assert(&dict_members);
-        assert(&cb);
         assert(cb);
         for (auto dict_member : dict_members) {
           cb(dict_member.first);
@@ -92,8 +84,6 @@ namespace Orly {
       static void ForEachExpr(
           const std::map<std::string, TExpr::TPtr> &obj_members,
           const TCallback &cb) {
-        assert(&obj_members);
-        assert(&cb);
         assert(cb);
         for (auto obj_member : obj_members) {
           cb(obj_member.second);

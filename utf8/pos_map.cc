@@ -24,7 +24,6 @@ using namespace std;
 using namespace Utf8;
 
 TPosMap::TPosMap(const TPiece &text) {
-  assert(&text);
   if (text) {
     Eols.push_back(text.GetStart() - 1);
     TPiece csr = text;

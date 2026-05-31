@@ -57,14 +57,12 @@ Symbol::Stmt::TNew::TPtr TTestKvEntry::Build() const {
 }
 
 void TTestKvEntry::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Key->ForEachInnerScope(cb);
   Val->ForEachInnerScope(cb);
 }
 
 void TTestKvEntry::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Key->ForEachRef(cb);
   Val->ForEachRef(cb);

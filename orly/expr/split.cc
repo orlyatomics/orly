@@ -38,7 +38,6 @@ TSplit::TSplit(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &
     : TBinary(lhs, rhs, pos_range) {}
 
 void TSplit::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

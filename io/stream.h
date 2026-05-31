@@ -179,7 +179,6 @@ namespace Io {
 
     /* Assign the argument to the field. */
     void Write(TStream<TFormat> &strm) const {
-      assert(&strm);
       strm.GetFormat().*Ptr = Arg;
     }
 
@@ -202,7 +201,6 @@ namespace Io {
   /* Inserter for Io::TSetFormat. */
   template <typename TFormat, typename TParam, typename TArg>
   TStream<TFormat> &operator<<(TStream<TFormat> &strm, const TSetFormat<TFormat, TParam, TArg> &manip) {
-    assert(&manip);
     manip.Write(strm);
     return strm;
   }

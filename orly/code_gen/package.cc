@@ -48,9 +48,7 @@ using namespace Util;
 
 void ForEachExprInTestBlock(const function<void (const Expr::TExpr::TPtr &expr)> &cb,
       const Symbol::Test::TTestCaseBlock::TPtr &block) {
-  assert(&cb);
   assert(cb);
-  assert(&block);
   assert(block);
 
   for(auto &test: block->GetTestCases()) {
@@ -161,7 +159,6 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
 TPackage::~TPackage() {}
 
 void TPackage::Emit(const Jhm::TTree &out_dir) const {;
-  assert(&out_dir);
 
   /* Emit the following files:
 

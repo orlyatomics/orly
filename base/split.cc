@@ -26,8 +26,6 @@ using namespace Base;
 
 void Base::Split(const char *tok, const string &src, vector<string> &pieces) {
   assert(tok);
-  assert(&src);
-  assert(&pieces);
 
   if(src.size() == 0) {
     return;

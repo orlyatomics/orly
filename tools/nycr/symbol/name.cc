@@ -36,7 +36,6 @@ bool TName::operator<(const TName &that) const {
 }
 
 void TName::WriteLower(ostream &strm) const {
-  assert(&strm);
   for (auto iter = Parts.begin(); iter != Parts.end(); ++iter) {
     if (iter != Parts.begin()) {
       strm << '_';
@@ -46,7 +45,6 @@ void TName::WriteLower(ostream &strm) const {
 }
 
 void TName::WriteUpper(ostream &strm) const {
-  assert(&strm);
   for (auto iter = Parts.begin(); iter != Parts.end(); ++iter) {
     const string &part = *iter;
     strm << static_cast<char>(toupper(part[0])) << part.substr(1);
@@ -54,7 +52,6 @@ void TName::WriteUpper(ostream &strm) const {
 }
 
 void TName::WriteXml(ostream &strm) const {
-  assert(&strm);
   strm << TXmlTag(TXmlTag::Name, Open, Indent, NoEndl);
   for (auto iter = Parts.begin(); iter != Parts.end(); ++iter) {
     strm << TXmlTag(TXmlTag::Part, Open, NoIndent, NoEndl)

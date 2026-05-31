@@ -35,7 +35,6 @@ TIn::TIn(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TIn::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

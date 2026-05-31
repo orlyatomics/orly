@@ -72,18 +72,15 @@ namespace Orly {
         }
 
         bool EqEq(const TObjO8i3dayi4houri6minutei5monthi10nanosecondi6secondi10utc_offseti4year &that) const {
-          assert(&that);
           return Rt::And(Rt::EqEq(Vday, that.Vday), Rt::And(Rt::EqEq(Vhour, that.Vhour), Rt::And(Rt::EqEq(Vminute, that.Vminute), Rt::And(Rt::EqEq(Vmonth, that.Vmonth), Rt::And(Rt::EqEq(Vnanosecond, that.Vnanosecond), Rt::And(Rt::EqEq(Vsecond, that.Vsecond), Rt::And(Rt::EqEq(Vutc_offset, that.Vutc_offset), Rt::And(Rt::EqEq(Vyear, that.Vyear), true))))))));
         }
 
 
         bool Match(const TObjO8i3dayi4houri6minutei5monthi10nanosecondi6secondi10utc_offseti4year &that) const {
-          assert(&that);
           return Rt::Match(Vday, that.Vday) && Rt::Match(Vhour, that.Vhour) && Rt::Match(Vminute, that.Vminute) && Rt::Match(Vmonth, that.Vmonth) && Rt::Match(Vnanosecond, that.Vnanosecond) && Rt::Match(Vsecond, that.Vsecond) && Rt::Match(Vutc_offset, that.Vutc_offset) && Rt::Match(Vyear, that.Vyear);
         }
 
         bool Neq(const TObjO8i3dayi4houri6minutei5monthi10nanosecondi6secondi10utc_offseti4year &that) const {
-          assert(&that);
           return Rt::Or(Rt::Neq(Vday, that.Vday), Rt::Or(Rt::Neq(Vhour, that.Vhour), Rt::Or(Rt::Neq(Vminute, that.Vminute), Rt::Or(Rt::Neq(Vmonth, that.Vmonth), Rt::Or(Rt::Neq(Vnanosecond, that.Vnanosecond), Rt::Or(Rt::Neq(Vsecond, that.Vsecond), Rt::Or(Rt::Neq(Vutc_offset, that.Vutc_offset), Rt::Or(Rt::Neq(Vyear, that.Vyear), false))))))));
         }
 

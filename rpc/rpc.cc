@@ -134,7 +134,6 @@ TAnyFuture::TAnyFuture()
     : EventFd(eventfd(0, 0)), ResultStatus(NoResult) {}
 
 void TAnyFuture::SetErrorResult(string &error_msg) {
-  assert(&error_msg);
   ErrorMsg = move(error_msg);
   SetResultStatus(ErrorResult);
 }
@@ -149,8 +148,6 @@ void TAnyFuture::SetResultStatus(TResultStatus result_status) {
 TAnyRequest::~TAnyRequest() {}
 
 void TAnyRequest::WriteError(TBinaryOutputStream &strm, TRequestId request_id, const exception &ex) {
-  assert(&strm);
-  assert(&ex);
   strm << ErrorResultIntroducer << request_id << ex.what();
   strm.Flush();
 }

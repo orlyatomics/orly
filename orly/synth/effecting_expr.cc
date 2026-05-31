@@ -64,7 +64,6 @@ Expr::TExpr::TPtr TEffectingExpr::Build() const {
 }
 
 void TEffectingExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
   for(auto &stmt : StmtBlock->GetStmts()) {
@@ -73,7 +72,6 @@ void TEffectingExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb)
 }
 
 void TEffectingExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
   StmtBlock->ForEachRef(cb);

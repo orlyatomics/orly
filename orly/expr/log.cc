@@ -57,7 +57,6 @@ TLog::TLog(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TLog::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -75,7 +74,6 @@ TLog2::TLog2(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TLog2::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -93,7 +91,6 @@ TLog10::TLog10(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TLog10::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

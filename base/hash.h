@@ -40,7 +40,6 @@ namespace Base {
 
     template <std::size_t Idx, typename TElem>
     void operator()(const TElem &elem) {
-      assert(&elem);
       Out ^= Util::RotatedLeft(std::hash<TElem>()(elem), Idx * 5);
     }
 
@@ -95,7 +94,6 @@ namespace std {
     using argument_type = array<TElem, size>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       Util::ForEach(that, Base::TTupleHash(result));
       return result;
@@ -110,7 +108,6 @@ namespace std {
     using argument_type = map<TKey, TVal>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (const auto &elem : that) {
         result ^= hash<pair<TKey, TVal>>()(elem);
@@ -127,7 +124,6 @@ namespace std {
     using argument_type = pair<TLhs, TRhs>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return hash<TLhs>()(that.first) ^ hash<TRhs>()(that.second);
     }
 
@@ -140,7 +136,6 @@ namespace std {
     using argument_type = set<TElem>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (const auto &elem : that) {
         result ^= hash<TElem>()(elem);
@@ -157,7 +152,6 @@ namespace std {
     using argument_type = tuple<TElems...>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       Util::ForEach(that, Base::TTupleHash(result));
       return result;
@@ -172,7 +166,6 @@ namespace std {
     using argument_type = unordered_map<TKey, TVal>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (const auto &elem : that) {
         result ^= hash<pair<TKey, TVal>>()(elem);
@@ -189,7 +182,6 @@ namespace std {
     using argument_type = unordered_set<TElem>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (const auto &elem : that) {
         result ^= hash<TElem>()(elem);
@@ -206,7 +198,6 @@ namespace std {
     using argument_type = vector<TElem>;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (std::size_t i = 0; i < that.size(); ++i) {
         result ^= Util::RotatedLeft(std::hash<TElem>()(that[i]), i * 5);

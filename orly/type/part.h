@@ -75,7 +75,6 @@ namespace Orly {
       }
 
       void Accept(const TVisitor &visitor) const {
-        assert(&visitor);
         visitor(this);
       }
 
@@ -99,7 +98,6 @@ namespace Orly {
       static TPtr Get();
 
       void Accept(const TVisitor &visitor) const {
-        assert(&visitor);
         visitor(this);
       }
 
@@ -118,7 +116,6 @@ namespace Orly {
       static TPtr Get(const Type::TType &key_type);
 
       void Accept(const TVisitor &visitor) const {
-        assert(&visitor);
         visitor(this);
       }
 
@@ -146,7 +143,6 @@ namespace Orly {
       static TPtr Get(const std::string &name);
 
       void Accept(const TVisitor &visitor) const {
-        assert(&visitor);
         visitor(this);
       }
 

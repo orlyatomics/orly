@@ -354,7 +354,6 @@ namespace Rpc {
 
     /* See base class. */
     virtual void SetNormalResult(Io::TBinaryInputStream &strm) {
-      assert(&strm);
       strm >> Val;
       SetResultStatus(NormalResult);
     }
@@ -442,9 +441,7 @@ namespace Rpc {
     static void WriteReply(
         Io::TBinaryOutputStream &strm, TRequestId request_id, TSomeContext *context,
         TRet (TSomeContext::*handler)(typename Pass<TArgs>::type...), const std::tuple<TArgs...> &args) {
-      assert(&strm);
       assert(context);
-      assert(&args);
       TRet ret;
       try {
         ret = Unpack(handler, context, args);
@@ -465,9 +462,7 @@ namespace Rpc {
     static void WriteReply(
         Io::TBinaryOutputStream &strm, TRequestId request_id, TSomeContext *context,
         void (TSomeContext::*handler)(typename Pass<TArgs>::type...), const std::tuple<TArgs...> &args) {
-      assert(&strm);
       assert(context);
-      assert(&args);
       try {
         Unpack(handler, context, args);
       } catch (const std::exception &ex) {

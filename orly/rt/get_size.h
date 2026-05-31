@@ -34,34 +34,29 @@ namespace Orly {
 
     /* size() overload for std::string<TVal> */
     inline int64_t GetSize(const std::string &val) {
-      assert(&val);
       return val.size();
     }
 
     /* size() overload for std::vector<TVal> */
     template <typename TVal>
     int64_t GetSize(const std::vector<TVal> &val) {
-      assert(&val);
       return val.size();
     }
 
     /* size() overload for TSet<TVal> */
     template <typename TVal>
     int64_t GetSize(const TSet<TVal> &val) {
-      assert(&val);
       return val.size();
     }
 
     /* size() overload for TDict<TVal> */
     template <typename TKey, typename TVal>
     int64_t GetSize(const TDict<TKey, TVal> &val) {
-      assert(&val);
       return val.size();
     }
 
     template <typename TAddr, typename TVal>
     int64_t GetSize(const TMutable<TAddr, TVal> &val) {
-      assert(&val);
       return GetSize(val.GetVal());
     }
 
@@ -70,7 +65,6 @@ namespace Orly {
              which is invalid in Orlyscript */
     template <typename TVal>
     TOpt<int64_t> GetSize(const TOpt<TVal> &opt_val) {
-      assert(&opt_val);
       return opt_val.IsKnown() ? GetSize(opt_val.GetVal()) : TOpt<int64_t>();
     }
 

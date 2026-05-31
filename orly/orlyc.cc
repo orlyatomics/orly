@@ -61,7 +61,6 @@ class TCompilerConfig : public Base::TCmd {
 
     private:
     virtual void WriteAfterDesc(std::ostream &strm) const {
-      assert(&strm);
       strm << "Build: Unknown" << endl // TODO: Version from SCM.
            << endl
            << "Copyright Atomic Kismet Company" << endl
@@ -88,7 +87,6 @@ class TCompilerConfig : public Base::TCmd {
 };
 
 int CompileCode(const TCompilerConfig &cmd) {
-  assert(&cmd);
 
   //TODO: This 'make absolute' is something we do fairly commonly. (At least here and <jhm/jhm>). Should canonicalize.
   string src = cmd.Source;

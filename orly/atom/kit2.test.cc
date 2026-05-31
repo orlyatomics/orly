@@ -383,7 +383,6 @@ const TSomeState *TryAsState(const Sabot::State::TAny &state) {
       this->Out = &that;
     }
   };
-  assert(&state);
   visitor_t visitor;
   visitor.Out = nullptr;
   state.Accept(visitor);

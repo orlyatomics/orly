@@ -720,9 +720,6 @@ size_t TDurableManager::TSortedInFile::FindPageIdOfByte(size_t offset) const {
 }
 
 void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num, const Durable::TId &id, std::string &serialized_form_out) const {
-  assert(&id);
-  assert(&serialized_form_out);
-  assert(&cur_max_seq_num);
   assert(InStream);
   uuid_t cur_id;
   TInStream hash_stream(HERE, Source::DurableMergeFileHash, RealTime, this, PageCache, HashIndexOffset);

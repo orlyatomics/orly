@@ -54,8 +54,6 @@ namespace Orly {
          change. */
       template <typename TVal>
       void AddEffect(const TVal &addr, const Base::TUuid &index_id, const Var::TPtr<Var::TChange> &change) {
-        assert(&addr);
-        assert(&change);
         assert(change);
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
         Indy::TIndexKey index_key(index_id, Indy::TKey(Atom::TCore(Arena, Sabot::State::TAny::TWrapper(Native::State::New(addr, state_alloc))), Arena));

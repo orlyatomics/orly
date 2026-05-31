@@ -70,7 +70,6 @@ void TDictCtor::Cleanup() {
 }
 
 void TDictCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto member : Members) {
     (member.first)->ForEachInnerScope(cb);
@@ -79,7 +78,6 @@ void TDictCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TDictCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto member : Members) {
     (member.first)->ForEachRef(cb);

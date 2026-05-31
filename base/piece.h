@@ -66,7 +66,6 @@ namespace Base {
      appear at the end of this file. */
   template <typename TVal>
   inline size_t GetHashHelper(const TVal &val) {
-    assert(&val);
     return val.GetHash();
   }
 
@@ -125,7 +124,6 @@ namespace Base {
     /* Construct as a copy of a piece of compatible type. */
     template <typename TCompatVal>
     TPiece(const TPiece<TCompatVal> &that) {
-      assert(&that);
       Start = that.GetStart();
       Limit = that.GetLimit();
     }
@@ -152,7 +150,6 @@ namespace Base {
     /* Assign as a copy of a piece of compatible type. */
     template <typename TCompatVal>
     TPiece &operator=(const TPiece<TCompatVal> &that) {
-      assert(&that);
       Start = that.GetStart();
       Limit = that.GetLimit();
       return *this;
@@ -180,7 +177,6 @@ namespace Base {
 
     /* Return a slice of the piece. */
     TPiece operator[](const TSlice &slice) const {
-      assert(&slice);
       size_t start, limit;
       slice.GetAbsPair(GetSize(), start, limit);
       assert(start <= limit);
@@ -190,7 +186,6 @@ namespace Base {
     /* Compare this piece with that one on a lexicographical basis and return true iff. they are equal. */
     template <typename TCompatVal>
     bool operator==(const TPiece<TCompatVal> &that) const {
-      assert(&that);
       TVal *cursor = Start;
       TCompatVal *that_cursor = that.GetStart();
       for (; cursor < Limit && that_cursor < that.GetLimit(); ++cursor, ++that_cursor) {
@@ -204,7 +199,6 @@ namespace Base {
     /* Compare this piece with that one on a lexicographical basis and return true iff. they are not equal. */
     template <typename TCompatVal>
     bool operator!=(const TPiece<TCompatVal> &that) const {
-      assert(&that);
       TVal *cursor = Start;
       TCompatVal *that_cursor = that.GetStart();
       for (; cursor < Limit && that_cursor < that.GetLimit(); ++cursor, ++that_cursor) {
@@ -285,7 +279,6 @@ namespace Base {
 
     /* Returns true if the given slice can be made. */
     bool CanSlice(const TSlice &slice) const {
-      assert(&slice);
       return slice.CanGetAbsPair(GetSize());
     }
 
@@ -293,7 +286,6 @@ namespace Base {
        zero if the two pieces sort identically.  TVal and TCompatVal must support strict-weak ordering relative to each other based on operator<. */
     template <typename TCompatVal>
     int Compare(const TPiece<TCompatVal> &that) const {
-      assert(&that);
       TVal *cursor = Start;
       TCompatVal *that_cursor = that.GetStart();
       for (; cursor < Limit && that_cursor < that.GetLimit(); ++cursor, ++that_cursor) {
@@ -309,7 +301,6 @@ namespace Base {
 
     /* Redefines the piece to just the given slice. */
     TPiece &Constrain(const TSlice &slice) {
-      assert(&slice);
       size_t start, limit;
       slice.GetAbsPair(GetSize(), start, limit);
       Limit = Start + limit;
@@ -327,7 +318,6 @@ namespace Base {
     /* Return true if the other piece falls within (or is congruent to) this one. */
     template <typename TCompatVal>
     bool Contains(const TPiece<TCompatVal> &that) {
-      assert(&that);
       return Start <= that.Start && that.Limit <= Limit;
     }
 
@@ -395,7 +385,6 @@ namespace Base {
 
     /* Exchange the states of this piece with that one.  This is a guranteed no-throw. */
     TPiece &Swap(TPiece &that) noexcept {
-      assert(&that);
       std::swap(Start, that.Start);
       std::swap(Limit, that.Limit);
       return *this;
@@ -404,7 +393,6 @@ namespace Base {
     /* Return a pointer to the instance of val, if possible. */
     template <typename TCompatVal>
     TVal *Find(const TCompatVal &val) const {
-      assert(&val);
       for (auto cur = Start; cur < Limit; ++cur) {
         if (*cur == val) {
           return cur;
@@ -416,7 +404,6 @@ namespace Base {
     /* Return a pointer to an instance of an element in val_set, if possible. */
     template <typename TCompatVal>
     TVal *Find(const std::unordered_set<TCompatVal> &val_set) const {
-      assert(&val_set);
       for (auto cur = Start; cur < Limit; ++cur) {
         if (Util::Contains(val_set, *cur)) {
           return cur;
@@ -427,8 +414,6 @@ namespace Base {
 
     /* Return a slice of the piece (by out-param), if possible. */
     bool TrySlice(const TSlice &slice, TPiece &out) const {
-      assert(&slice);
-      assert(&out);
       size_t start, limit;
       bool success = slice.TryGetAbsPair(GetSize(), start, limit);
       if (success) {
@@ -457,8 +442,6 @@ namespace Base {
   /* Shallow-copy with explicit size. */
   template <typename TDestVal, typename TSrcVal>
   const TPiece<TDestVal> &ShallowCopy(const TPiece<TDestVal> &dest, const TPiece<TSrcVal> &src, size_t size) {
-    assert(&dest);
-    assert(&src);
     assert(dest.GetSize() >= size);
     assert(src.GetSize() >= size);
     assert(sizeof(TDestVal) == sizeof(TSrcVal));
@@ -469,8 +452,6 @@ namespace Base {
   /* Shallow-copy with implicit size. */
   template <typename TDestVal, typename TSrcVal>
   const TPiece<TDestVal> &ShallowCopy(const TPiece<TDestVal> &dest, const TPiece<TSrcVal> &src) {
-    assert(&dest);
-    assert(&src);
     return ShallowCopy(dest, src, std::min(dest.GetSize(), src.GetSize()));
   }
 
@@ -481,8 +462,6 @@ namespace Base {
   /* Copy with explicit size. */
   template <typename TDestVal, typename TSrcVal>
   const TPiece<TDestVal> &Copy(const TPiece<TDestVal> &dest, const TPiece<TSrcVal> &src, size_t size) {
-    assert(&dest);
-    assert(&src);
     assert(dest.GetSize() >= size);
     assert(src.GetSize() >= size);
     TSrcVal *src_val = src.GetStart();
@@ -496,8 +475,6 @@ namespace Base {
   /* Copy with implicit size. */
   template <typename TDestVal, typename TSrcVal>
   const TPiece<TDestVal> &Copy(const TPiece<TDestVal> &dest, const TPiece<TSrcVal> &src) {
-    assert(&dest);
-    assert(&src);
     return Copy(dest, src, std::min(dest.GetSize(), src.GetSize()));
   }
 
@@ -610,28 +587,24 @@ namespace Base {
   /* Constructs a TPiece<const TVal> spanning a constant standard vector of the same type. */
   template <typename TVal, typename TAlloc>
   TPiece<const TVal> AsPiece(const std::vector<TVal, TAlloc> &that) {
-    assert(&that);
     return TPiece<const TVal>(&that[0], that.size());
   }
 
   /* Constructs a TPiece<TVal> spanning a standard vector of the same type. */
   template <typename TVal, typename TAlloc>
   TPiece<TVal> AsPiece(std::vector<TVal, TAlloc> &that) {
-    assert(&that);
     return TPiece<TVal>(&that[0], that.size());
   }
 
   /* Constructs a TPiece<const TVal> spanning a constant standard basic_string of the same type. */
   template <typename TVal, typename TTraits, typename TAlloc>
   TPiece<const TVal> AsPiece(const std::basic_string<TVal, TTraits, TAlloc> &that) {
-    assert(&that);
     return TPiece<const TVal>(that.data(), that.size());
   }
 
   /* Constructs a TPiece<TVal> spanning a standard basic_string of the same type. */
   template <typename TVal, typename TTraits, typename TAlloc>
   TPiece<TVal> AsPiece(std::basic_string<TVal, TTraits, TAlloc> &that) {
-    assert(&that);
     return TPiece<TVal>(const_cast<TVal *>(that.data()), that.size());
   }
 
@@ -703,21 +676,18 @@ namespace Base {
   /* Special hasher for char. */
   template <>
   inline size_t GetHashHelper(const char &val) {
-    assert(&val);
     return val;
   }
 
   /* Special hasher for unsigned char. */
   template <>
   inline size_t GetHashHelper(const unsigned char &val) {
-    assert(&val);
     return val;
   }
 
   /* Special hasher for std::string. */
   template <>
   inline size_t GetHashHelper(const std::string &val) {
-    assert(&val);
     return AsPiece(val).GetHash();
   }
 

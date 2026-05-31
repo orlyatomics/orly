@@ -161,7 +161,6 @@ namespace Strm {
          its underlying representation type. */
       template <typename TRep, typename TPeriod>
       TOut &operator<<(const std::chrono::duration<TRep, TPeriod> &that) {
-        assert(&that);
         return *this << that.count();
       }
 
@@ -170,7 +169,6 @@ namespace Strm {
       template <typename TClock, typename TDuration>
       TOut &operator<<(
           const std::chrono::time_point<TClock, TDuration> &that) {
-        assert(&that);
         return *this << that.time_since_epoch();
       }
 
@@ -415,7 +413,6 @@ namespace Strm {
           >::type
       >
       TOut &operator<<(const TNbo<TVal> &that) {
-        assert(&that);
         TVal temp = Io::SwapEnds(that.Val);
         WriteShallow(temp);
         return *this;

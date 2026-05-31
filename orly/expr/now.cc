@@ -35,7 +35,6 @@ TNow::TNow(const TPosRange &pos_range)
     : TLeaf(pos_range) {}
 
 void TNow::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

@@ -385,7 +385,6 @@ namespace Orly {
       NO_CONSTRUCTION(CastAs);
 
       static TVal Do(const TMutable<TAddr, TVal> &from) {
-        assert(&from);
         return from;
       }
 

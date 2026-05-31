@@ -30,7 +30,6 @@ class TMatchPrefixTypeVisitor final
   /* TODO. */
   TMatchPrefixTypeVisitor(TMatchResult &out)
       : Result(out) {
-    assert(&out);
   }
 
   /* Overrides. */

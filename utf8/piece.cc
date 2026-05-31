@@ -33,7 +33,6 @@ TPiece::TPiece(const char *that) {
 }
 
 int TPiece::Compare(const TPiece &that) const {
-  assert(&that);
   TPiece
       lhs = *this,
       rhs = that;

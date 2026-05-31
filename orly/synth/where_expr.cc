@@ -54,14 +54,12 @@ void TWhereExpr::BuildSymbol() {
 }
 
 void TWhereExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   cb(this);
   Expr->ForEachInnerScope(cb);
 }
 
 void TWhereExpr::ForEachControlledRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }
@@ -103,7 +101,6 @@ void TWhereExpr::TLocalDefFactory::operator()(const Package::Syntax::TUpgraderDe
 
 void TWhereExpr::TLocalDefFactory::OnTopLevel(const char *desc, const TPosRange &pos_range) const {
   assert(desc);
-  assert(&pos_range);
 
   GetContext().AddError(pos_range, Base::AsStr(desc," is not allowed within a where clause"));
 }

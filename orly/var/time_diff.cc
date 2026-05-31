@@ -32,12 +32,10 @@ Type::TType TTimeDiff::GetType() const {
 }
 
 void TTimeDiff::Write(std::ostream &strm) const {
-  assert(&strm);
   strm << "Base::Chrono::TTimeDiff(" << Val.count() << ')';
 }
 
 void TTimeDiff::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

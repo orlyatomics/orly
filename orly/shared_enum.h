@@ -53,7 +53,6 @@ namespace std {
     typedef Orly::TAddrDir argument_type;
 
     result_type operator()(const argument_type &that) {
-      assert(&that);
       return Orly::ToInt(that);
     }
 

@@ -28,7 +28,6 @@ using namespace Base;
 
 template <typename TKey, typename TVal>
 string ToString(const Base::TOrderedArray<TKey, TVal> &that) {
-  assert(&that);
   ostringstream strm;
   bool has_written = false;
   that.ForEach(

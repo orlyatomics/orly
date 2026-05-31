@@ -154,7 +154,6 @@ class TNycr : public Base::TCmd {
 
     private:
     virtual void WriteAfterDesc(std::ostream &strm) const {
-      assert(&strm);
       strm << "Build: Unknown" << endl //TODO: Use Version from SCM.
            << endl
            << "Copyright Atomic Kismet Company" << endl

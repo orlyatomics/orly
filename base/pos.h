@@ -67,13 +67,11 @@ namespace Base {
 
     /* Returns true iff. this pos is the same as that one. */
     bool operator==(const TPos &that) const {
-      assert(&that);
       return Offset == that.Offset && Dir == that.Dir;
     }
 
     /* Returns true iff. this pos is not the same as that one. */
     bool operator!=(const TPos &that) const {
-      assert(&that);
       return Offset != that.Offset || Dir != that.Dir;
     }
 

@@ -36,7 +36,6 @@ TSort::TSort(const TExpr::TPtr &lhs, const TPosRange &pos_range)
     : TBinary(lhs, pos_range) {};
 
 void TSort::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

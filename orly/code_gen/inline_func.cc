@@ -29,7 +29,6 @@ bool TInlineFunc::IsTopLevel() const {
 }
 
 void TInlineFunc::WriteDecl(TCppPrinter &out) const {
-  assert(&out);
 
   out << "std::function<" << GetReturnType() << " (";
   WriteArgs(out);
@@ -37,7 +36,6 @@ void TInlineFunc::WriteDecl(TCppPrinter &out) const {
 }
 
 void TInlineFunc::WriteDef(TCppPrinter &out) const {
-  assert(&out);
 
   WriteName(out);
   out << " = [=, &ctx](";
@@ -48,7 +46,6 @@ void TInlineFunc::WriteDef(TCppPrinter &out) const {
 }
 
 void TInlineFunc::WriteName(TCppPrinter &out) const {
-  assert(&out);
 
   out << Id;
 }

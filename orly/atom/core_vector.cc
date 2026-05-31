@@ -36,7 +36,6 @@ TCoreVector::TCoreVector(TBinaryInputStream &strm) : Arena(strm) {
 
 TCoreVector::TPackedArena::TPackedArena(TBinaryInputStream &strm)
     : TCore::TArena(false) {
-  assert(&strm);
   uint32_t raw_size;
   strm /*>> Offsets*/ >> raw_size;
   RawSize = raw_size;

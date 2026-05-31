@@ -69,7 +69,6 @@ Sabot::State::TAny *Var::TryNewSabot(void *buf, const TVar &var, TAddrDir addr_d
     void *Buf;
   };
   assert(buf);
-  assert(&var);
   Sabot::State::TAny *result = nullptr;
   if (var.Is<TFree>()) {
     result = new (buf) SS::TFree(var.As<TFree>(), addr_dir);

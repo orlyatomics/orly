@@ -61,13 +61,11 @@ Expr::TExpr::TPtr TReadExpr::Build() const {
 }
 
 void TReadExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TReadExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
   Type->ForEachRef(cb);

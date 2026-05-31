@@ -68,7 +68,6 @@ void Tools::Nycr::Symbol::CreateOutputFile(const char *root, const char *branch,
   assert(root);
   assert(language);
   assert(ext);
-  assert(&strm);
   ostringstream temp;
 
   temp << root << '/' << atom << '.' << TLower(language->GetName()) << ext;

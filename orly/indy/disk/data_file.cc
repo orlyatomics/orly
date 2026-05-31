@@ -44,7 +44,6 @@ class TIndexFile
           Note(note) {}
 
     bool operator<(const TOrderedNote &that) const {
-      assert(&that);
       assert(Note);
       assert(that.Note);
       assert(Arena);
@@ -66,7 +65,6 @@ class TIndexFile
     }
 
     bool operator==(const TOrderedNote &that) const {
-      assert(&that);
       assert(Note);
       assert(that.Note);
       assert(Arena);
@@ -85,7 +83,6 @@ class TIndexFile
     }
 
     bool operator!=(const TOrderedNote &that) const {
-      assert(&that);
       assert(Note);
       assert(that.Note);
       assert(Arena);
@@ -119,7 +116,6 @@ class TIndexFile
 
     /* TODO */
     bool operator<(const THashObj &that) const {
-      assert(&that);
       return Hash < that.Hash;
     }
 

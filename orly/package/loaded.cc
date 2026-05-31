@@ -56,7 +56,6 @@ bool TLoaded:: ForEachTest(const function<bool (const TTest *)> &cb) const {
 }
 
 TFuncHolder::TPtr TLoaded::GetFunctionInfo(const Base::TPiece<const char> &func) const {
-  assert(&func);
   string func_name(func.GetStart(), func.GetLimit());
   auto iter = LinkInfo->PrimaryInfo->Functions.find(func_name);
   if (iter == LinkInfo->PrimaryInfo->Functions.end()) {
@@ -144,14 +143,11 @@ const Orly::Type::TType &TFuncHolder::GetReturnType() const {
 }
 
 Orly::Atom::TCore TFuncHolder::Call(TContext &ctx, const TArgMap &args) const {
-  assert(&ctx);
-  assert(&args);
 
   return (Func->Runner)(ctx, args);
 }
 
 TFuncHolder::TFuncHolder(const TLoaded::TPtr &package, const TFuncInfo *func) : Package(package), Func(func) {
-  assert(&package);
   assert(package);
   assert(func);
 }

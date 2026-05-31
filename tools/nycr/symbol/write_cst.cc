@@ -321,13 +321,11 @@ static void WriteDecl(const TKind *kind, const string &namespace_prefix, ostream
     const string &NamespacePrefix;
   };
   assert(kind);
-  assert(&strm);
   kind->Accept(TVisitor(strm, namespace_prefix));
 }
 
 static void WriteDef(const TKind *kind, ostream &strm) {
   assert(kind);
-  assert(&strm);
   class TVisitor : public TKind::TVisitor {
     public:
     TVisitor(ostream &strm) : Strm(strm) {}
@@ -429,6 +427,5 @@ static void WriteDef(const TKind *kind, ostream &strm) {
 
 static void WriteFwdDecl(const TKind *kind, ostream &strm) {
   assert(kind);
-  assert(&strm);
   strm << "class " << TType(kind->GetName()) << ';' << endl;
 }

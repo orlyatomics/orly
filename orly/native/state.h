@@ -101,7 +101,6 @@ namespace Orly {
         /* Cache the reference to the value. */
         TScalar(const typename TScalarSabotState::TVal &val)
             : Val(val) {
-          assert(&val);
         }
 
         private:

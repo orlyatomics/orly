@@ -35,7 +35,6 @@ TKeys::TKeys(const TAddr::TMemberVec &members, const Type::TType &value_type, co
 }
 
 void TKeys::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

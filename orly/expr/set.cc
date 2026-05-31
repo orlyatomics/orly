@@ -48,7 +48,6 @@ TSet::TSet(const TExprSet &exprs, const TPosRange &pos_range)
 }
 
 void TSet::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

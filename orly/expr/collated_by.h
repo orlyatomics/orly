@@ -59,7 +59,6 @@ namespace Orly {
       }
 
       virtual void Accept(const TVisitor &visitor) const {
-        assert(&visitor);
         visitor(this);
       }
 

@@ -56,7 +56,6 @@ TPov::TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputSt
 TPov::~TPov() {}
 
 void TPov::Write(Io::TBinaryOutputStream &strm) const {
-  assert(&strm);
   TObj::Write(strm);
   strm << SessionId << reinterpret_cast<const char &>(Audience) << reinterpret_cast<const char &>(Policy);
   /* TODO: Why doesn't this work?: strm << SharedParents; */

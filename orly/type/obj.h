@@ -180,7 +180,6 @@ namespace Orly {
       static bool AreComparable(const TObj *lhs, const TObj *rhs, bool &is_optional) {
         assert(lhs);
         assert(rhs);
-        assert(&is_optional);
         return lhs->IsSubsetOf(rhs, is_optional) || rhs->IsSubsetOf(lhs, is_optional);
       }
 
@@ -197,7 +196,6 @@ namespace Orly {
       /* TODO */
       bool IsSubsetOf(const TObj *that, bool &is_optional) const {
         assert(that);
-        assert(&is_optional);
         for (auto iter : GetElems()) {
           auto pos = that->GetElems().find(iter.first);
           if (pos == that->GetElems().end() || iter.second != pos->second) {

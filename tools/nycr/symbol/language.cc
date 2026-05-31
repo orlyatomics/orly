@@ -25,7 +25,6 @@ TLanguage::~TLanguage() {
 }
 
 void TLanguage::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

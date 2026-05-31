@@ -63,7 +63,6 @@ namespace InvCon {
          the same key, call back for the first one in the collection.  You can use TryGetNextMemberWithSameKey()
          to spin through the rest.  If the callback returns false, stop generating immediately. */
       bool ForEachUniqueMember(const std::function<bool (TMember *)> &cb) const {
-        assert(&cb);
         auto csr = TryGetFirstMembership();
         bool result = true;
         while (csr) {
@@ -541,7 +540,6 @@ namespace InvCon {
       /* Set our key, relocating us within our collection, if necessary.
          If the new key is the same as the old, do nothing. */
       void SetKey(const TKey &key) {
-        assert(&key);
         if (Key != key) {
           Key = key;
           if (Bucket) {

@@ -69,14 +69,12 @@ namespace Orly {
       /* Copy the specified TName. */
       TName(const TName &that)
           : Text(nullptr), PosRange(nullptr), Lexeme(nullptr) {
-        assert(&that);
         *this = that;
       }
 
       /* Move constructor */
       TName(TName &&that)
           : Text(nullptr), PosRange(nullptr), Lexeme(nullptr) {
-        assert(&that);
         *this = that;
       }
 
@@ -100,7 +98,6 @@ namespace Orly {
 
       /* Regular assignment operator */
       TName &operator=(const TName &that) {
-        assert(&that);
         assert(that.Text);
         assert(that.PosRange);
         if (that.Lexeme) {
@@ -134,7 +131,6 @@ namespace Orly {
 
       /* Move assignment operator */
       TName &operator=(TName &&that) {
-        assert(&that);
         Cleanup();
         std::swap(Lexeme, that.Lexeme);
         std::swap(Text, that.Text);
@@ -145,20 +141,17 @@ namespace Orly {
       /* Two names are equal if their texts are equal or if they are both null.
          Positions are not considered. */
       bool operator==(const TName &that) const {
-        assert(&that);
         return GetText() == that.GetText();
       }
 
       /* Two names are unequal if their texts are unequal of if one is null and the other is not.
          Positions are not considered. */
       bool operator!=(const TName &that) const {
-        assert(&that);
         return GetText() != that.GetText();
       }
 
       /* */
       bool operator<(const TName &that) const {
-        assert(&that);
         return GetText() < that.GetText();
       }
 
@@ -231,7 +224,6 @@ namespace std {
     typedef Orly::Synth::TName argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return that.GetHash();
     }
 

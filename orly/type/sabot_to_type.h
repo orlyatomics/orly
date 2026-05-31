@@ -47,7 +47,6 @@ namespace Orly {
       /* TODO */
       TToTypeVisitor(Type::TType &type)
           : Type(type) {
-        assert(&type);
       }
 
       /* Overrides. */

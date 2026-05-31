@@ -303,14 +303,12 @@ namespace Orly {
 
   /* Binary stream extractor for Orly::TClosure. */
   inline Io::TBinaryInputStream &operator>>(Io::TBinaryInputStream &strm, TClosure &that) {
-    assert(&that);
     that.Read(strm);
     return strm;
   }
 
   /* Binary stream inserter for Orly::TClosure. */
   inline Io::TBinaryOutputStream &operator<<(Io::TBinaryOutputStream &strm, const TClosure &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }

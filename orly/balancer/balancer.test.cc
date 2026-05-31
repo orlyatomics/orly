@@ -263,9 +263,7 @@ class TTestServer {
     Finish.notify_all();
   }
 
-  void ServeClient(TFd &fd, const TAddress &client_address) {
-    assert(&fd);
-    assert(&client_address);
+  void ServeClient(TFd &fd, const TAddress &) {
     std::shared_ptr<TConnection> connection = make_shared<TConnection>(this, std::move(fd));
     try {
       /* Run the server thru one cycle. */ {

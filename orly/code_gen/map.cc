@@ -41,7 +41,6 @@ TMap::TMap(const L0::TPackage *package,
       Seqs(seqs) {}
 
 void TMap::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
   if(Seqs.size() != 1) {
     //NOTE: For proper code printing we must take all the correllated sequences as a sequence of objects.
     NOT_IMPLEMENTED_S("Maps containing more than one sequence do not yet have proper code printing");

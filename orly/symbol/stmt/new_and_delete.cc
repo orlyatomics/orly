@@ -51,7 +51,6 @@ TDelete::TPtr TDelete::New(const TStmtArg::TPtr &stmt_arg, Type::TType value_typ
 }
 
 void TDelete::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -71,7 +70,6 @@ TNew::TPtr TNew::New(
 }
 
 void TNew::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

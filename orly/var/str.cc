@@ -38,7 +38,6 @@ void TStr::Write(std::ostream &strm) const {
 }
 
 void TStr::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

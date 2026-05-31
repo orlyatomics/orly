@@ -57,7 +57,6 @@ void TSubprocess::ExecStr(const char *cmd) {
 }
 
 void TSubprocess::Exec(const vector<string> &cmd) {
-  assert(&cmd);
   // NOTE: This is lots of copies. We're going to get all overwritten / eaten by the child though, so no big worries.
   // Build an array
 
@@ -72,7 +71,6 @@ void TSubprocess::Exec(const vector<string> &cmd) {
 }
 
 TSubprocess::TSubprocess(TPump &pump) {
-  assert(&pump);
   /* Make the in/out/err pipes, then fork. */
   TFd stdin, stdout, stderr;
   pump.NewPipe(stdin, StdInToChild);

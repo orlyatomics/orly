@@ -67,7 +67,6 @@ namespace std {
     typedef Orly::CodeGen::TUnary::TOp argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return static_cast<result_type>(that);
     }
 

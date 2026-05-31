@@ -21,7 +21,6 @@
 using namespace Tools::Nycr::Symbol;
 
 void TBase::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

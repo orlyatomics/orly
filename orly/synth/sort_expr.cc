@@ -64,14 +64,12 @@ void TSortExpr::Cleanup() {
 }
 
 void TSortExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);
 }
 
 void TSortExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);

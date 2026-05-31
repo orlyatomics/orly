@@ -35,7 +35,6 @@ TWhile::TWhile(const TExpr::TPtr &lhs, const TPosRange &pos_range)
     : TThatableBinary(lhs, pos_range) {}
 
 void TWhile::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

@@ -83,7 +83,6 @@ namespace Tools {
 
       /* TODO */
       inline std::ostream &operator<<(std::ostream &strm, const TXmlTag &that) {
-        assert(&that);
         that.Write(strm);
         return strm;
       }

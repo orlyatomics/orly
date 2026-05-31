@@ -52,14 +52,12 @@ Expr::TExpr::TPtr TPostfixIsKnownExpr::Build() const {
 }
 
 void TPostfixIsKnownExpr::ForEachInnerScope(const std::function<void (TScope *cb)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);
 }
 
 void TPostfixIsKnownExpr::ForEachRef(const std::function<void (TAnyRef &cb)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);

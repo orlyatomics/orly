@@ -116,7 +116,6 @@ namespace Orly {
 
         /* TODO */
         void Callback(std::unordered_map<TUpdate *, int> &m) {
-          assert(&m);
           for (auto iter = m.begin(); iter != m.end(); ++iter) {
             iter->second = 1;
           }
@@ -328,7 +327,6 @@ namespace Orly {
 
 
         bool ForEach(const std::function<bool (TVal *)> &cb) const {
-          assert(&cb);
           assert(cb);
 
           //TODO //Joris can you verify this looks okay.

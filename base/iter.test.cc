@@ -28,7 +28,6 @@ using namespace Base;
 /* Generic iter test suite. */
 template <typename TVal>
 void TestIter(TIter<TVal> &iter, TVal match[3]) {
-  assert(&iter);
   EXPECT_TRUE(iter);
   EXPECT_EQ(*iter, match[0]);
   EXPECT_EQ(*(++iter), match[1]);

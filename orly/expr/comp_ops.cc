@@ -35,7 +35,6 @@ TEqEq::TEqEq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TEqEq::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -53,7 +52,6 @@ TNeq::TNeq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TNeq::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -71,7 +69,6 @@ TLt::TLt(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TLt::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -89,7 +86,6 @@ TLtEq::TLtEq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TLtEq::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -107,7 +103,6 @@ TGt::TGt(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TGt::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -125,7 +120,6 @@ TGtEq::TGtEq(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TGtEq::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

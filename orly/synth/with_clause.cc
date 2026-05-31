@@ -64,7 +64,6 @@ void TWithClause::Cleanup() {
 }
 
 void TWithClause::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto &test_kv_entry : TestKvEntries) {
     test_kv_entry->ForEachInnerScope(cb);
@@ -72,7 +71,6 @@ void TWithClause::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TWithClause::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto &test_kv_entry : TestKvEntries) {
     test_kv_entry->ForEachRef(cb);

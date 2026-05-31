@@ -144,7 +144,6 @@ namespace Base {
 
   template <typename TError, typename TVal>
   Base::TThrower<TError> &&operator<<(Base::TThrower<TError> &&thrower, const TVal &val) {
-    assert(&thrower);
     thrower.Write(val);
     return std::move(thrower);
   }

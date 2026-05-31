@@ -25,6 +25,5 @@ IMPL_SINGLETON_TYPE(TTimeDiff);
 TTimeDiff::~TTimeDiff() {}
 
 void TTimeDiff::Write(std::ostream &strm) const {
-  assert(&strm);
   strm << "Base::Chrono::TTimeDiff";
 }

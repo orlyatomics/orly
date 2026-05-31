@@ -49,15 +49,12 @@ TCodeScope::~TCodeScope() {
 }
 
 void TCodeScope::AddAssertion(const std::string &name, const TInline::TPtr &assertion) {
-  assert(&name);
-  assert(&assertion);
 
   Assertions.push_back(std::make_pair(name, assertion));
 }
 
 /* Makes a new id, and adds the given inline to our list of locals. */
 void TCodeScope::AddLocal(const TInline::TPtr &inline_) {
-  assert(&inline_);
 
   //Fast exit if we already have been common subexpression eliminated.
   if(inline_->HasId()) {
@@ -100,7 +97,6 @@ TId<TIdKind::Arg> TCodeScope::NewArg() {
 }
 
 void TCodeScope::WriteStart(TCppPrinter &out) const {
-  assert(&out);
 
   for(auto &it: Locals) {
     out << "auto " << it->GetId() << " = ";

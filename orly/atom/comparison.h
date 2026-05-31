@@ -58,8 +58,6 @@ namespace Orly {
        bool TLhs::operator<(const TRhs &) must be defined. */
     template <typename TLhs, typename TRhs>
     TComparison CompareOrdered(const TLhs &lhs, const TRhs &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return (lhs < rhs) ? TComparison::Lt : (rhs < lhs) ? TComparison::Gt : TComparison::Eq;
     }
 
@@ -72,8 +70,6 @@ namespace Orly {
     /* Compare two objects of the same type (TObj) by comparing their members in the given order. */
     template <typename TObj, typename TVal, typename... TMoreMembers>
     TComparison CompareOrderedMembers(const TObj &lhs, const TObj &rhs, TVal (TObj::*member), TMoreMembers... more_members) {
-      assert(&lhs);
-      assert(&rhs);
       TComparison result = CompareOrdered(lhs.*member, rhs.*member);
       if (result == TComparison::Eq) {
         result = CompareOrderedMembers(lhs, rhs, more_members...);
@@ -85,8 +81,6 @@ namespace Orly {
        bool TLhs::operator==(const TRhs &) must be defined. */
     template <typename TLhs, typename TRhs>
     TComparison CompareUnordered(const TLhs &lhs, const TRhs &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return (lhs == rhs) ? TComparison::Eq : TComparison::Ne;
     }
 

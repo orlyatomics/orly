@@ -41,7 +41,6 @@ TRef::TRef(const Symbol::TDef *def, const TPosRange &pos_range)
     : TLeaf(pos_range), Def(Base::AssertTrue(def)) {}
 
 void TRef::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

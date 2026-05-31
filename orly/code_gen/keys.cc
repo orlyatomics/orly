@@ -35,7 +35,6 @@ TKeys::TKeys(const L0::TPackage *package,
       ValType(val_type) {}
 
 void TKeys::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
 
   #if 0
   out << "ctx.New<" << Type::UnwrapSequence(GetReturnType()) << ">(ctx.GetFlux(), Var::TVar::Addr({";

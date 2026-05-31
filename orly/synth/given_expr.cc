@@ -33,6 +33,5 @@ Expr::TExpr::TPtr TGivenExpr::Build() const {
 }
 
 void TGivenExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   ParamFuncDef->GetType()->ForEachRef(cb);
 }

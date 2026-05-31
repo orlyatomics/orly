@@ -164,7 +164,6 @@ class TMyPlayer {
   private:
 
   void ApplyChanges(const TKvMap &changes) {
-    assert(&changes);
     for (auto change: changes) {
       Db[change.first] = change.second;
     }

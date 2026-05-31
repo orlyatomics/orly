@@ -49,7 +49,6 @@ TList::TList(const TExprVec &exprs, const TPosRange &pos_range)
 }
 
 void TList::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

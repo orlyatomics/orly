@@ -52,7 +52,6 @@ FIXTURE(RoundTrip) {
   TVarIntDecoder decoder;
   ForEachItem(
     [&encoder, &decoder](const TItem &item) {
-      assert(&item);
       /* Encode the value and make sure the encoded form is the expected
          number of bytes. */
       encoder.Encode(item.first);

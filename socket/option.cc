@@ -54,7 +54,6 @@ const TAnyOption *Socket::AllOptions[] = {
 };
 
 void Socket::DumpAllOptions(ostream &strm, int sock) {
-  assert(&strm);
   strm << "socket_ops: {";
   bool has_written = false;
   for (const TAnyOption *const *csr = AllOptions; *csr; ++csr) {

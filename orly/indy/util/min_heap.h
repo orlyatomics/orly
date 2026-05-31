@@ -48,7 +48,6 @@ namespace Orly {
 
           /* TODO */
           TMinHeapElem &operator=(TMinHeapElem &&that) {
-            assert(&that);
             if (this != &that) {
               std::swap(Val, that.Val);
               std::swap(Ref, that.Ref);
@@ -194,7 +193,6 @@ namespace Orly {
 
           /* TODO */
           TMinHeapElem &operator=(TMinHeapElem &&that) {
-            assert(&that);
             if (this != &that) {
               std::swap(Val, that.Val);
               std::swap(Ref, that.Ref);

@@ -43,7 +43,6 @@ TIntersection::TIntersection(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, con
     : TBinary(lhs, rhs, pos_range) {}
 
 void TIntersection::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -61,7 +60,6 @@ TSymmetricDiff::TSymmetricDiff(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, c
     : TBinary(lhs, rhs, pos_range) {}
 
 void TSymmetricDiff::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -79,7 +77,6 @@ TUnion::TUnion(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &
     : TBinary(lhs, rhs, pos_range) {}
 
 void TUnion::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

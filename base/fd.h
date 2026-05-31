@@ -57,14 +57,12 @@ namespace Base {
 
     /* Move-construct, leaving the donor in the default-constructed state. */
     TFd(TFd &&that) {
-      assert(&that);
       OsHandle = that.OsHandle;
       that.OsHandle = -1;
     }
 
     /* Copy-construct, duplicating the file descriptor with the OS call dup(), if necessary. */
     TFd(const TFd &that) {
-      assert(&that);
       OsHandle = that.IsSystemFd() ? that.OsHandle : Util::IfLt0(dup(that.OsHandle));
     }
 
@@ -84,7 +82,6 @@ namespace Base {
 
     /* Swaperator. */
     TFd &operator=(TFd &&that) {
-      assert(&that);
       std::swap(OsHandle, that.OsHandle);
       return *this;
     }
@@ -136,8 +133,6 @@ namespace Base {
 
     /* Construct the read- and write-only ends of a pipe. */
     static void Pipe(TFd &readable, TFd &writeable, int flags = 0) {
-      assert(&readable);
-      assert(&writeable);
       int fds[2];
       Util::IfLt0(pipe2(fds, flags) < 0);
       readable = TFd(fds[0], NoThrow);
@@ -146,8 +141,6 @@ namespace Base {
 
     /* Construct both ends of a socket. */
     static void SocketPair(TFd &lhs, TFd &rhs, int domain, int type, int proto = 0) {
-      assert(&lhs);
-      assert(&rhs);
       int fds[2];
       Util::IfLt0(socketpair(domain, type, proto, fds));
       lhs = TFd(fds[0], NoThrow);

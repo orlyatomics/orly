@@ -45,7 +45,6 @@ Type::TType TContextVar::GetType(TOp Op) {
 TContextVar::TContextVar(const L0::TPackage *package, TOp op) : TInline(package, GetType(op)), Op(op) {}
 
 void TContextVar::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
 
   out << "ctx.";
   switch(Op) {

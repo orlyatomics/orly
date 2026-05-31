@@ -36,7 +36,6 @@ TIsEmpty::TIsEmpty(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TIsEmpty::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

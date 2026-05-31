@@ -25,6 +25,5 @@ IMPL_SINGLETON_TYPE(TTimePnt);
 TTimePnt::~TTimePnt() {}
 
 void TTimePnt::Write(std::ostream &strm) const {
-  assert(&strm);
   strm << "Base::Chrono::TTimePnt";
 }

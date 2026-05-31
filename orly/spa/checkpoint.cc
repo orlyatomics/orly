@@ -658,8 +658,6 @@ void PromiseWhenReached(const TPov *target, std::promise<void> &promise, const T
 
 void Spa::ReadCheckpoint(const char *path, TCheckpointStmts &stmts, TCheckpointPackages &packages, Atom::TCore::TExtensibleArena *arena) {
   assert(path);
-  assert(&stmts);
-  assert(&packages);
 
   auto checkpoint = Checkpoint::Syntax::TCheckpoint::ParseFile(path);
   if (checkpoint.HasErrors()) {

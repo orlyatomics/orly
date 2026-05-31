@@ -44,7 +44,6 @@ TExp::TExp(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TExp::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

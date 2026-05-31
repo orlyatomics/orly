@@ -44,8 +44,6 @@ namespace Wrapper {
      calls the actual Sum function, then converts the result back to a core.
      (One entry like this per function in this package.) */
   Atom::TCore Sum(Package::TContext &ctx, const Package::TArgMap &args) {
-    assert(&ctx);
-    assert(&args);
     assert(args.size() == 2);
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
     return Atom::TCore(

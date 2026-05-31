@@ -45,7 +45,6 @@ void TOpt::Write(std::ostream &strm) const {
 }
 
 void TOpt::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

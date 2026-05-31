@@ -380,7 +380,6 @@ TSkip::TSkip(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TSkip::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

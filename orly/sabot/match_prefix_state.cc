@@ -30,7 +30,6 @@ class TMatchPrefixStateVisitor final
   /* TODO. */
   TMatchPrefixStateVisitor(TMatchResult &out)
       : Result(out) {
-    assert(&out);
   }
 
   /* Overrides. */

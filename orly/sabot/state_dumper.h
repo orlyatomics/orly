@@ -35,7 +35,6 @@ namespace Orly {
       /* Caches a reference to the stream. */
       TStateDumper(std::ostream &strm)
           : Strm(strm) {
-        assert(&strm);
       }
 
       /* Overrides. */

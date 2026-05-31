@@ -37,7 +37,6 @@ void TMutable::Write(std::ostream &) const {
 }
 
 void TMutable::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

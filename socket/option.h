@@ -72,7 +72,6 @@ namespace Socket {
      which is fine for everything but strings. */
   template <typename TArg>
   void GetSockOpt(int sock, int code, TArg &arg) {
-    assert(&arg);
     socklen_t dummy = sizeof(arg);
     Util::IfLt0(getsockopt(sock, SOL_SOCKET, code, &arg, &dummy));
   }
@@ -82,7 +81,6 @@ namespace Socket {
      which is fine for everything but strings. */
   template <typename TArg>
   void SetSockOpt(int sock, int code, const TArg &arg) {
-    assert(&arg);
     Util::IfLt0(setsockopt(sock, SOL_SOCKET, code, &arg, sizeof(arg)));
   }
 
@@ -140,7 +138,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void GetSockOpt(int sock, int code, TVal &val) {
-      assert(&val);
       int temp;
       Socket::GetSockOpt(sock, code, temp);
       val = (temp != 0);
@@ -186,7 +183,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void GetSockOpt(int sock, int code, TVal &val) {
-      assert(&val);
       linger temp;
       Socket::GetSockOpt(sock, code, temp);
       if (temp.l_onoff) {
@@ -198,7 +194,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void SetSockOpt(int sock, int code, const TVal &val) {
-      assert(&val);
       linger temp;
       temp.l_onoff = val;
       temp.l_linger = (temp.l_onoff ? val->count() : 0);
@@ -239,7 +234,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void GetSockOpt(int sock, int code, TVal &val) {
-      assert(&val);
       timeval temp;
       Socket::GetSockOpt(sock, code, temp);
       val = TTimeout(temp.tv_sec * 1000000 + temp.tv_usec);
@@ -247,7 +241,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void SetSockOpt(int sock, int code, const TVal &val) {
-      assert(&val);
       auto count = val.count();
       timeval temp;
       temp.tv_sec  = count / 1000000;
@@ -268,7 +261,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void GetSockOpt(int sock, int code, TVal &val) {
-      assert(&val);
       char temp[MaxSize];
       socklen_t size = MaxSize;
       Util::IfLt0(getsockopt(sock, SOL_SOCKET, code, temp, &size));
@@ -277,7 +269,6 @@ namespace Socket {
 
     /* See forward declaration of generic Conv<>. */
     static void SetSockOpt(int sock, int code, const TVal &val) {
-      assert(&val);
       Util::IfLt0(setsockopt(sock, SOL_SOCKET, code, val.c_str(), val.size()));
     }
 
@@ -310,7 +301,6 @@ namespace Socket {
 
     /* See forward declaration of generic Format<>. */
     static void Dump(std::ostream &strm, bool val) {
-      assert(&strm);
       strm << std::boolalpha << val;
     }
 
@@ -324,7 +314,6 @@ namespace Socket {
 
     /* See forward declaration of generic Format<>. */
     static void Dump(std::ostream &strm, int val) {
-      assert(&strm);
       strm << val;
     }
 
@@ -338,8 +327,6 @@ namespace Socket {
 
     /* See forward declaration of generic Format<>. */
     static void Dump(std::ostream &strm, const TLinger &val) {
-      assert(&strm);
-      assert(&val);
       if (val) {
         strm << val->count() << " sec(s)";
       } else {
@@ -357,8 +344,6 @@ namespace Socket {
 
     /* See forward declaration of generic Format<>. */
     static void Dump(std::ostream &strm, const ucred &val) {
-      assert(&strm);
-      assert(&val);
       strm << "{ pid: " << val.pid << ", uid: " << val.uid << ", gid: " << val.gid << " }";
     }
 
@@ -372,8 +357,6 @@ namespace Socket {
 
     /* See forward declaration of generic Format<>. */
     static void Dump(std::ostream &strm, const TTimeout &val) {
-      assert(&strm);
-      assert(&val);
       strm << val.count() << " usec(s)";
     }
 
@@ -387,8 +370,6 @@ namespace Socket {
 
     /* See forward declaration of generic Format<>. */
     static void Dump(std::ostream &strm, const std::string &val) {
-      assert(&strm);
-      assert(&val);
       strm << '"' << val << '"';
     }
 
@@ -462,7 +443,6 @@ namespace Socket {
 
     /* See base class. */
     virtual void Dump(std::ostream &strm, int sock) const override final {
-      assert(&strm);
       strm << TAnyOption::GetName() << ": ";
       TVal val;
       Get(sock, val);

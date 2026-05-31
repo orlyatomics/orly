@@ -73,7 +73,6 @@ Symbol::TKind *TCompound::GetSymbolAsKind() const {
 }
 
 void TCompound::ForEachRef(const function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   TFinal::ForEachRef(cb);
   for (auto iter = Members.begin(); iter != Members.end(); ++iter) {
     (*iter)->ForEachRef(cb);
@@ -88,7 +87,6 @@ void TCompound::TErrorMember::Build(Symbol::TCompound *compound) {
 void TCompound::TErrorMember::ForEachRef(const std::function<void (TAnyRef &)> &) {}
 
 void TCompound::TMemberWithKind::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   cb(Kind);
 }
 

@@ -193,7 +193,6 @@ bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
 }
 
 TInline::TPtr BuildOptInline(const L0::TPackage *package, const Expr::TExpr::TPtr &expr) {
-  assert(&expr);
 
   if (expr) {
     return BuildInline(package, expr, false);
@@ -205,7 +204,6 @@ TInline::TPtr BuildOptInline(const L0::TPackage *package, const Expr::TExpr::TPt
 void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &stmts);
 
 void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
-  assert(&stmt);
   assert(stmt);
 
   class TVisitor : public Symbol::Stmt::TStmt::TVisitor {
@@ -267,7 +265,6 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
 }
 
 void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &stmts)  {
-  assert(&stmts);
   assert(stmts);
 
   for(auto &stmt: stmts->GetStmts()) {
@@ -283,7 +280,6 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &st
    used. This allows us to use the same visitor to generate code for the implicit function needed for a map as well
    as code for general use with only a single expr visitor. */
 TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExpr::TPtr &expr, bool keep_mutable, bool keep_sequence) {
-  assert(&expr);
   assert(expr);
 
   class TVisitor : public Expr::TExpr::TVisitor {
@@ -731,7 +727,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
 }
 
 TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &expr, bool keep_mutable) {
-  assert(&expr);
   assert(expr->GetType().Is<Type::TSeq>());
   assert(!IsCoreSeq(expr));
 

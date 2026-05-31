@@ -29,8 +29,6 @@ using namespace Base;
 using namespace Orly::Client::Program;
 
 static void ForStmt(const Tools::Nycr::TContextBuilt<TProgram> &program, const TForStmt &cb) {
-  assert(&program);
-  assert(&cb);
   ThrowSyntaxErrors(program);
   auto stmt = dynamic_cast<const TStmt *>(program.Get()->GetTop());
   if (!stmt) {

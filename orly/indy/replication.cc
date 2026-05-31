@@ -40,7 +40,6 @@ TReplicationQueue::~TReplicationQueue() {
 }
 
 void TReplicationQueue::Swap(TReplicationQueue &that) {
-  assert(&that);
   for (auto item = that.ItemCollection.TryGetFirstMember(); item; item = that.ItemCollection.TryGetFirstMember()) {
     item->QueueMembership.Remove();
     ItemCollection.Insert(&item->QueueMembership);

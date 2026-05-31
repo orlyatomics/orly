@@ -78,7 +78,6 @@ namespace Orly {
         /* Call back for each column. */
         bool ForEachCol(
             const std::function<bool (const TCol *)> &cb) const {
-          assert(&cb);
           assert(cb);
           for (const auto &col: Cols) {
             if (!cb(col.get())) {
@@ -105,7 +104,6 @@ namespace Orly {
         /* Call back for each secondary key. */
         bool ForEachSecondaryKey(
             const std::function<bool (const TSecondaryKey *)> &cb) const {
-          assert(&cb);
           assert(cb);
           for (const auto &key: SecondaryKeys) {
             if (!cb(key.get())) {
@@ -134,7 +132,6 @@ namespace Orly {
         /* Assign the table its primary key.  You must do this exactly
            once. */
         void SetPrimaryKey(std::unique_ptr<TPrimaryKey> &&key) {
-          assert(&key);
           assert(key);
           if (PrimaryKey) {
             THROW_ERROR(TSemanticError)

@@ -35,7 +35,6 @@ TFilter::TFilter(const TExpr::TPtr &lhs, const TPosRange &pos_range)
     : TThatableBinary(lhs, pos_range) {}
 
 void TFilter::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

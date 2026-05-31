@@ -44,13 +44,11 @@ Expr::TExpr::TPtr TAddrMemberExpr::Build() const {
 }
 
 void TAddrMemberExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TAddrMemberExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }

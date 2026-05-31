@@ -24,45 +24,37 @@ using namespace std;
 using namespace Orly::CsvToBin;
 
 void Orly::CsvToBin::EndOfField(TLevel3 &that) {
-  assert(&that);
   that.MatchState(TLevel2::EndOfField);
 }
 
 void Orly::CsvToBin::EndOfFile(TLevel3 &that) {
-  assert(&that);
   that.MatchState(TLevel2::EndOfFile);
 }
 void Orly::CsvToBin::EndOfRecord(TLevel3 &that) {
-  assert(&that);
   that.MatchState(TLevel2::EndOfRecord);
 }
 
 void Orly::CsvToBin::SkipBytes(TLevel3 &that) {
-  assert(&that);
   while (that.RefreshBytes(false)) {
     that.Cursor = that.Limit;
   }
 }
 
 void Orly::CsvToBin::StartOfField(TLevel3 &that) {
-  assert(&that);
   that.MatchState(TLevel2::StartOfField);
 }
 
 void Orly::CsvToBin::StartOfFile(TLevel3 &that) {
-  assert(&that);
   that.MatchState(TLevel2::StartOfFile);
 }
 
 void Orly::CsvToBin::StartOfRecord(TLevel3 &that) {
-  assert(&that);
   that.MatchState(TLevel2::StartOfRecord);
 }
 
 const TLevel3::TOptions TLevel3::DefaultOptions = { "true", "false" };
 
 TLevel3 &TLevel3::operator>>(bool &that) {
-  assert(&that);
   uint8_t c = tolower(Peek());
   const char *kwd;
   bool result;
@@ -83,7 +75,6 @@ TLevel3 &TLevel3::operator>>(bool &that) {
 }
 
 TLevel3 &TLevel3::operator>>(Base::TUuid &that) {
-  assert(&that);
   static constexpr size_t size = Base::TUuid::StrSize;
   char buf[size + 1];
   for (size_t i = 0; i < size; ++i) {
@@ -95,7 +86,6 @@ TLevel3 &TLevel3::operator>>(Base::TUuid &that) {
 }
 
 TLevel3 &TLevel3::operator>>(int64_t &that) {
-  assert(&that);
   uint8_t c = Peek();
   int64_t sign;
   if (c == '+') {
@@ -115,7 +105,6 @@ TLevel3 &TLevel3::operator>>(int64_t &that) {
 }
 
 TLevel3 &TLevel3::operator>>(double &that) {
-  assert(&that);
   /* TODO: Yeah, this is cheating.  We really shouldn't be consuming all the
      bytes in the field and then translating just the prefix into a number.
      We should scan property to conserve the rest of the field. */
@@ -126,7 +115,6 @@ TLevel3 &TLevel3::operator>>(double &that) {
 }
 
 TLevel3 &TLevel3::operator>>(std::string &that) {
-  assert(&that);
   string temp;
   while (RefreshBytes(false)) {
     temp.append(Cursor, Limit);
@@ -137,7 +125,6 @@ TLevel3 &TLevel3::operator>>(std::string &that) {
 }
 
 TLevel3 &TLevel3::operator>>(Base::Chrono::TTimePnt &that) {
-  assert(&that);
   /* Parse something like 2014-07-04. */
   int64_t year;
   size_t size;
@@ -310,8 +297,6 @@ void TLevel3::MatchState(TLevel2::TState state) {
 }
 
 void TLevel3::ReadDecimalInt(int64_t &value, size_t &size) {
-  assert(&value);
-  assert(&size);
   size = 0;
   __int128 result = 0;
   uint8_t c;
@@ -396,7 +381,6 @@ bool TLevel3::TryMatchByte(const char *expected) {
 }
 
 bool TLevel3::TryMatchByte(const char *expected, uint8_t &match) {
-  assert(&match);
   uint8_t c = Peek();
   bool success = (strchr(expected, c) != nullptr);
   if (success) {

@@ -124,17 +124,14 @@ namespace Shape {
   /* 5. Finish the definitions for the final classes' Accept() functions. */
 
   void TCircle::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(this);
   }
 
   void TSquare::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(this);
   }
 
   void TTriangle::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(this);
   }
 

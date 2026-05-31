@@ -67,7 +67,6 @@ TIf::TPtr TIf::New(const TIfClauseVec &if_cases, const TElseClause::TPtr &opt_el
 }
 
 void TIf::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

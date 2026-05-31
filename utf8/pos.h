@@ -58,8 +58,6 @@ namespace Utf8 {
 
   /* A std stream inserter for Utf8::TPiece. */
   inline std::ostream &operator<<(std::ostream &strm, const TPos &that) {
-    assert(&strm);
-    assert(&that);
     return strm << that.GetLine() << ':' << that.GetCol();
   }
 

@@ -37,7 +37,6 @@ TCoreVectorBuilder::~TCoreVectorBuilder() {
 }
 
 void TCoreVectorBuilder::Write(TBinaryOutputStream &strm) const {
-  assert(&strm);
   /* Pass once over the notes to build up a map of old offset to new. */
   uint32_t raw_size = 0;
   map<TOffset, TOffset> offset_map;
@@ -99,7 +98,6 @@ TCoreVectorBuilder::TDirtyArena::~TDirtyArena() {
 }
 
 bool TCoreVectorBuilder::TDirtyArena::ForEachNote(const function<bool (const TNote *)> &cb) const {
-  assert(&cb);
   for (const auto &item: NotesByDepth) {
     for (const TNote *note: item.second) {
       if (!cb(note)) {
@@ -134,7 +132,6 @@ const TCoreVectorBuilder::TNote *TCoreVectorBuilder::TDirtyArena::TryAcquireNote
 }
 
 void TCoreVectorBuilder::SetDepth(const Sabot::State::TAny::TWrapper &state) {
-  assert(&state);
   Depth = Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(state->GetType(TypeBuffer)));
 }
 

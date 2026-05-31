@@ -32,7 +32,6 @@ TInlineScope::TPtr TInlineScope::New(const L0::TPackage *package, const Expr::TE
 }
 
 void TInlineScope::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
   out << "[=, &ctx] () -> " << GetReturnType() << " {" << Eol;
   /* Indent */ {
     TIndent indent(out);

@@ -35,7 +35,6 @@ TLhs::TLhs(const TLhsRhsable *lhsrhsable, const TPosRange &pos_range)
     : TLeaf(pos_range), LhsRhsable(Base::AssertTrue(lhsrhsable)) {}
 
 void TLhs::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -55,7 +54,6 @@ TRhs::TRhs(const TLhsRhsable *lhsrhsable, const TPosRange &pos_range)
     : TLeaf(pos_range), LhsRhsable(Base::AssertTrue(lhsrhsable)) {}
 
 void TRhs::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

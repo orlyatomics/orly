@@ -62,7 +62,6 @@ void TSetCtor::Cleanup() {
 }
 
 void TSetCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto expr : Exprs) {
     expr->ForEachInnerScope(cb);
@@ -70,7 +69,6 @@ void TSetCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TSetCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto expr : Exprs) {
     expr->ForEachRef(cb);

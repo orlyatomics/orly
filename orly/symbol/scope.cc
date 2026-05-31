@@ -31,14 +31,12 @@ TScope::TScope() {}
 TScope::~TScope() {}
 
 void TScope::Add(const TFunction::TPtr &function) {
-  assert(&function);
   assert(function);
   auto result = Functions.insert(function);
   assert(result.second);
 }
 
 void TScope::Add(const Test::TTest::TPtr &test) {
-  assert(&test);
   assert(test);
   Tests.push_back(test);
 }
@@ -52,13 +50,11 @@ const TScope::TTests &TScope::GetTests() const {
 }
 
 void TScope::Remove(const TFunction::TPtr &function) {
-  assert(&function);
   assert(function);
   Functions.erase(function);
 }
 
 void TScope::Remove(const Test::TTest::TPtr &test) {
-  assert(&test);
   assert(test);
   auto result = std::find(Tests.begin(), Tests.end(), test);
   if (result != Tests.end()) {

@@ -827,7 +827,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator<(const TUpdateObj &that) const {
-      assert(&that);
       return SequenceNumber < that.SequenceNumber;
     }
 
@@ -873,7 +872,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator<(const TL0MergeNote &that) const {
-      assert(&that);
       assert(Arena);
       assert(that.Arena);
       assert(Note);
@@ -895,7 +893,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator==(const TL0MergeNote &that) const {
-      assert(&that);
       assert(Arena);
       assert(that.Arena);
       assert(Note);
@@ -915,7 +912,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator!=(const TL0MergeNote &that) const {
-      assert(&that);
       assert(Arena);
       assert(that.Arena);
       assert(Note);
@@ -980,7 +976,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator==(const TMergeNote &that) const {
-      assert(&that);
       assert(Arena == that.Arena);
       assert(Note);
       assert(that.Note);
@@ -991,7 +986,6 @@ class TMergeDataFileImpl {
 
     /* TODO */
     bool operator!=(const TMergeNote &that) const {
-      assert(&that);
       assert(Arena == that.Arena);
       assert(Note);
       assert(that.Note);
@@ -2050,7 +2044,6 @@ class TMergeDataFileImpl {
           : Core(core), Hash(hash), Offset(offset) {}
 
       bool operator<(const THashObj &that) const {
-        assert(&that);
         return Hash < that.Hash;
       }
 

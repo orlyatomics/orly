@@ -34,8 +34,6 @@ TSessionObj::~TSessionObj() {
 void TSessionObj::Poll(const std::unordered_set<Base::TUuid> &notifiers,
       Base::TOpt<std::chrono::milliseconds> timeout,
       std::unordered_map<Base::TUuid, TNotifierState> &out) {
-  assert(&notifiers);
-  assert(&out);
 
   unordered_map<MultiEvent::TEvent::TPtr, TNotifier*> notifier_events;
 

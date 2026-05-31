@@ -51,19 +51,16 @@ namespace Shape {
 
     /* The sum of this point and that one. */
     TPoint operator+(const TPoint &that) const {
-      assert(&that);
       return TPoint(X + that.X, Y + that.Y);
     }
 
     /* The difference of this point and that one. */
     TPoint operator-(const TPoint &that) const {
-      assert(&that);
       return TPoint(X - that.X, Y - that.Y);
     }
 
     /* The dot-product of this point and that one. */
     double operator*(const TPoint &that) const {
-      assert(&that);
       return (X * that.X) + (Y * that.Y);
     }
 
@@ -80,7 +77,6 @@ namespace Shape {
 
     /* The distance between this point and that one. */
     double operator, (const TPoint &that) const {
-      assert(&that);
       TPoint diff = that - *this;
       return sqrt((diff.X * diff.X) + (diff.Y * diff.Y));
     }
@@ -181,7 +177,6 @@ namespace Shape {
 
     /* Call back for each edge of the rectangle. */
     bool ForEachEdge(const std::function<bool(const TLineSegment &)> &cb) const {
-      assert(&cb);
       return cb(GetTopEdge()) && cb(GetBottomEdge()) && cb(GetLeftEdge()) && cb(GetRightEdge());
     }
 
@@ -298,12 +293,10 @@ namespace Shape {
   /* 9. Finish the definitions for the final classes' Accept() functions. */
 
   void TCircle::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(*this);
   }
 
   void TRectangle::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(*this);
   }
 
@@ -324,7 +317,6 @@ double GetArea(const Shape::TShape &shape) {
       Result = that.GetWidth() * that.GetHeight();
     }
   };
-  assert(&shape);
   double result;
   Visitor::Single::Accept(shape, visitor_t(result));  /* 10. First method to Accept(). */
   return result;

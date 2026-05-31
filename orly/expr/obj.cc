@@ -35,7 +35,6 @@ TObj::TObj(const TMemberMap &members, const TPosRange &pos_range)
     : TCtor(members, pos_range) {}
 
 void TObj::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

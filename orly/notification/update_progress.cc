@@ -22,18 +22,15 @@ using namespace Io;
 using namespace Orly::Notification;
 
 bool TUpdateProgress::Matches(const TUpdateProgress &that) const {
-  assert(&that);
   return TNotification::Matches(that) && PovId == that.PovId && UpdateId == that.UpdateId && Response == that.Response;
 }
 
 void TUpdateProgress::Write(TBinaryOutputStream &strm) const {
-  assert(&strm);
   TNotification::Write(strm);
   strm << PovId << UpdateId << Response;
 }
 
 TUpdateProgress::TUpdateProgress(TBinaryInputStream &strm)
     : TNotification(strm) {
-  assert(&strm);
   strm >> PovId >> UpdateId >> TBinaryInputEnum<TResponse>(Response);
 }

@@ -33,7 +33,6 @@ class TCompareTypesVisitor final
   /* TODO. */
   TCompareTypesVisitor(Atom::TComparison &out)
       : Comparison(out) {
-    assert(&out);
   }
 
   /* Overrides. */

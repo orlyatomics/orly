@@ -22,9 +22,7 @@ using namespace Orly::CodeGen;
 
 TBinary::TBinary(const L0::TPackage *package, const Type::TType &ret_type, TOp op, const TInline::TPtr &lhs, const TInline::TPtr &rhs)
       : TInline(package, ret_type), Op(op), Lhs(lhs), Rhs(rhs) {
-  assert(&lhs);
   assert(lhs);
-  assert(&rhs);
   assert(rhs);
 }
 
@@ -76,24 +74,20 @@ void TBinary::WriteExpr(TCppPrinter &out) const {
 }
 
 void TBinary::Template(TCppPrinter &out, const char *name) const {
-  assert(&out);
   assert(name);
   out << name << '<' << GetReturnType() << ">(" << Lhs << ", " << Rhs << ')';
 }
 
 void TBinary::Infix(TCppPrinter &out, char op) const {
-  assert(&out);
   out << '(' << Lhs << ' ' << op << ' ' << Rhs << ')';
 }
 
 void TBinary::Call(TCppPrinter &out, const char *func) const {
-  assert(&out);
   assert(func);
   out << func << '(' << Lhs << ", " << Rhs << ')';
 }
 
 void TBinary::CallReverse(TCppPrinter &out, const char *func) const {
-  assert(&out);
   assert(func);
   out << func << '(' << Rhs << ", " << Lhs << ')';
 }

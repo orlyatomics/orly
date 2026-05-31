@@ -34,7 +34,6 @@ using namespace Tools::Nycr::Symbol;
 void Tools::Nycr::Symbol::ForEachFinal(
     const TBase *base, const function<void (const TFinal *)> &cb) {
   assert(base);
-  assert(&cb);
   const TBase::TSubKinds &sub_kinds = base->GetSubKinds();
   for (auto iter = sub_kinds.begin(); iter != sub_kinds.end(); ++iter) {
     class TVisitor : public TKind::TVisitor {

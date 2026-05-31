@@ -37,7 +37,6 @@ TExists::TExists(const TExpr::TPtr &expr, const Type::TType &value_type, const T
     : TUnary(expr, pos_range), ValueType(value_type) {}
 
 void TExists::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

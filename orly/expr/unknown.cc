@@ -35,7 +35,6 @@ TUnknown::TUnknown(const Type::TType &type, const TPosRange &pos_range)
     : TLeaf(pos_range), Type(type) {}
 
 void TUnknown::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

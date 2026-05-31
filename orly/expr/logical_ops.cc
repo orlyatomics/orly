@@ -45,7 +45,6 @@ TAnd::TAnd(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TAnd::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -63,7 +62,6 @@ TAndThen::TAndThen(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRan
     : TBinary(lhs, rhs, pos_range) {}
 
 void TAndThen::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -81,7 +79,6 @@ TNot::TNot(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TNot::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -120,7 +117,6 @@ TOr::TOr(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_ra
     : TBinary(lhs, rhs, pos_range) {}
 
 void TOr::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -138,7 +134,6 @@ TOrElse::TOrElse(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange
     : TBinary(lhs, rhs, pos_range) {}
 
 void TOrElse::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -156,7 +151,6 @@ TXor::TXor(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TXor::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

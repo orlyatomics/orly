@@ -29,7 +29,6 @@ using namespace Orly;
 using namespace Orly::Atom;
 
 Sabot::Type::TAny *TClosure::TType::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
-  assert(&name);
   auto iter = Walker[elem_idx];
   name = iter->first;
   return iter->second.GetType(Walker.GetClosure()->Arena.get(), type_alloc);
@@ -67,7 +66,6 @@ TClosure::TState::TPinBase *TClosure::TState::Pin(void *alloc) const {
 }
 
 void TClosure::Read(TBinaryInputStream &strm) {
-  assert(&strm);
   Reset();
   strm >> MethodName;
   TCore core;
@@ -110,7 +108,6 @@ void TClosure::Read(TBinaryInputStream &strm) {
 }
 
 bool TClosure::AddCore(const string &name, const TCore &core) {
-  assert(&core);
   return CoreByName.insert(make_pair(name, core)).second;
 }
 
@@ -120,7 +117,6 @@ void TClosure::Reset() {
 }
 
 void TClosure::Write(TBinaryOutputStream &strm) const {
-  assert(&strm);
   strm << MethodName;
   TState state(this);
   TCore core(Arena.get(), &state);

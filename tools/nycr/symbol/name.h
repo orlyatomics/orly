@@ -159,21 +159,18 @@ namespace Tools {
 
 /* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TLower &that) {
-  assert(&that);
   that.Name.WriteLower(strm);
   return strm;
 }
 
 /* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TUpper &that) {
-  assert(&that);
   that.Name.WriteUpper(strm);
   return strm;
 }
 
 /* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TType &that) {
-  assert(&strm);
   strm << 'T';
   that.Name.WriteUpper(strm);
   return strm;
@@ -181,7 +178,6 @@ inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::T
 
 /* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TXml &that) {
-  assert(&strm);
   that.Name.WriteXml(strm);
   return strm;
 }

@@ -41,7 +41,6 @@ namespace Orly {
 
     template <int size, typename TKey, typename TVal>
     const TDict<TKey, TVal> &DictCtor(const TDict<TKey, TVal> &out) {
-      assert(&out);
       if (out.size() != size) {
         throw TSystemError(HERE, "Duplicate keys in a dictionary constructor. Since execution order is arbitrary, this is not allowed.");
       }

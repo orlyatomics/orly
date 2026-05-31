@@ -47,7 +47,6 @@ TSlice::TSlice(
         Colon(colon) {}
 
 void TSlice::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

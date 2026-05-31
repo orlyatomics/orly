@@ -47,7 +47,6 @@ TRange::TRange(
 
 
 void TRange::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

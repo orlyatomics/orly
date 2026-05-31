@@ -337,7 +337,6 @@ namespace InvCon {
       /* Set our key, relocating us within our collection, if necessary.
          If the new key is the same as the old, do nothing. */
       void SetKey(const TKey &key) {
-        assert(&key);
         if (Key != key) {
           Key = key;
           if (Collection) {

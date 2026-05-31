@@ -67,7 +67,6 @@ static const vector<string> Strings = {
 
 static bool GenerateStrings(
     const function<bool (const string &)> &cb, size_t max_count) {
-  assert(&cb);
   assert(cb);
   const TExistenceChecker existence_checker;
   size_t count = 0;

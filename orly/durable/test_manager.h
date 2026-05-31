@@ -45,7 +45,6 @@ namespace Orly {
 
       /* TODO */
       virtual void CleanDisk(const TDeadline &now, TSem *sem) override {
-        assert(&now);
         assert(sem);
         std::unordered_map<TId, std::pair<TDeadline, std::string>> temp;
         for (const auto &item: BlobById) {
@@ -74,7 +73,6 @@ namespace Orly {
 
       /* TODO */
       virtual bool TryLoad(const TId &id, std::string &blob) override {
-        assert(&blob);
         auto iter = BlobById.find(id);
         bool success = (iter != BlobById.end());
         if (success) {

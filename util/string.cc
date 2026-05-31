@@ -69,7 +69,6 @@ string Util::ToString(const TWriter &writer) {
 }
 
 void Util::WriteBracketedJoin(ostream &strm, const TCStrGen &c_str_gen, char open_c, char close_c, const char *sep) {
-  assert(&strm);
   assert(c_str_gen);
   assert(sep);
   strm << open_c;
@@ -95,7 +94,6 @@ void Util::WriteBracketedJoin(ostream &strm, const TCStrGen &c_str_gen, char ope
 }
 
 void Util::WriteJoin(ostream &strm, const TCStrGen &c_str_gen, const char *sep) {
-  assert(&strm);
   assert(c_str_gen);
   assert(sep);
   bool sep_required = false;

@@ -79,7 +79,6 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
     void *Buf;
   };
   assert(buf);
-  assert(&type);
   Sabot::Type::TAny *result = nullptr;
   type.Accept(visitor_t(result, buf));
   return result;

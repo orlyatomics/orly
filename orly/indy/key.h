@@ -202,7 +202,6 @@ namespace Orly {
 
     /* A standard stream inserter for Orly::Indy::TKey. */
     inline std::ostream &operator<<(std::ostream &strm, const TKey &that) {
-      assert(&that);
       that.Dump(strm);
       return strm;
     }
@@ -284,7 +283,6 @@ namespace Orly {
     inline TKey::TKey(TKey &&that) : Arena(that.Arena), Core(that.Core), HashIsCached(that.HashIsCached), CachedHash(that.CachedHash) {}
 
     inline TKey &TKey::operator=(const TKey &that) {
-      assert(&that);
       Arena = that.Arena;
       Core = that.Core;
       HashIsCached = that.HashIsCached;
@@ -293,7 +291,6 @@ namespace Orly {
     }
 
     inline TKey &TKey::operator=(TKey &&that) {
-      assert(&that);
       std::swap(Arena, that.Arena);
       std::swap(Core, that.Core);
       std::swap(HashIsCached, that.HashIsCached);
@@ -302,8 +299,6 @@ namespace Orly {
     }
 
     inline bool TKey::EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      assert(&lhs);
-      assert(&rhs);
       size_t lhs_hash, rhs_hash;
       if (lhs.TryGetQuickHash(lhs_hash) && rhs.TryGetQuickHash(rhs_hash)) {
         return lhs_hash == rhs_hash && Atom::IsEq(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
@@ -312,8 +307,6 @@ namespace Orly {
     }
 
     inline bool TKey::TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      assert(&lhs);
-      assert(&rhs);
       return lhs.ForceGetIndirectHash() == rhs.ForceGetIndirectHash() && Atom::IsEq(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
     }
 
@@ -322,15 +315,11 @@ namespace Orly {
     }
 
     inline bool TKey::NeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      assert(&lhs);
-      assert(&rhs);
       size_t lhs_hash, rhs_hash;
       return (lhs.TryGetQuickHash(lhs_hash) && rhs.TryGetQuickHash(rhs_hash) && (lhs_hash != rhs_hash)) || Atom::IsNe(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
     }
 
     inline bool TKey::TupleNeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      assert(&lhs);
-      assert(&rhs);
       return (lhs.ForceGetIndirectHash() != rhs.ForceGetIndirectHash()) ||
               Atom::IsNe(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
     }
@@ -340,28 +329,22 @@ namespace Orly {
     }
 
     inline bool TKey::operator<(const TKey &that) const {
-      assert(&that);
       return Atom::IsLt(Compare(that));
     }
 
     inline bool TKey::operator<=(const TKey &that) const {
-      assert(&that);
       return Atom::IsLe(Compare(that));
     }
 
     inline bool TKey::operator>(const TKey &that) const {
-      assert(&that);
       return Atom::IsGt(Compare(that));
     }
 
     inline bool TKey::operator>=(const TKey &that) const {
-      assert(&that);
       return Atom::IsGe(Compare(that));
     }
 
     inline Atom::TComparison TKey::Compare(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      assert(&lhs);
-      assert(&rhs);
       Atom::TComparison comp;
       if (lhs_arena && rhs_arena && lhs.TryQuickOrderComparison(lhs_arena, rhs, rhs_arena, comp)) {
         return comp;

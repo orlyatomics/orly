@@ -272,7 +272,6 @@ class TJhm : public TCmd {
     }
 
     virtual void WriteAfterDesc(ostream &strm) const {
-      assert(&strm);
       strm << "Copyright Atomic Kismet Company\n"
            << "Licensed under the Apache License, Version 2.0" << endl;
     }

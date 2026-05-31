@@ -31,7 +31,6 @@ TFree::TFree(const Type::TType &type, const TPosRange &pos_range, TAddrDir addr_
     : TLeaf(pos_range), Type(type), AddrDir(addr_dir) {}
 
 void TFree::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

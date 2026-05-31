@@ -35,28 +35,24 @@ namespace Orly {
 
     /* empty() overload for std::string<TVal> */
     inline bool IsEmpty(const std::string &val) {
-      assert(&val);
       return val.empty();
     }
 
     /* empty() overload for std::vector<TVal> */
     template <typename TVal>
     bool IsEmpty(const std::vector<TVal> &val) {
-      assert(&val);
       return val.empty();
     }
 
     /* empty() overload for TSet<TVal> */
     template <typename TVal>
     bool IsEmpty(const TSet<TVal> &val) {
-      assert(&val);
       return val.empty();
     }
 
     /* empty() overload for std::TDict<TVal> */
     template <typename TKey, typename TVal>
     bool IsEmpty(const TDict<TKey, TVal> &val) {
-      assert(&val);
       return val.empty();
     }
 
@@ -65,7 +61,6 @@ namespace Orly {
              which is invalid in Orlyscript */
     template <typename TVal>
     TOpt<bool> IsEmpty(const TOpt<TVal> &opt) {
-      assert(&opt);
       return opt.IsKnown() ? TOpt<bool>(IsEmpty(opt.GetVal())) : TOpt<bool>();
     }
 

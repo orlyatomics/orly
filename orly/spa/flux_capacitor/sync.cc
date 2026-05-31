@@ -79,7 +79,6 @@ void TSync::TLocal::DeleteLocal(void *arg) {
 }
 
 TSync::TLocal *TSync::TLocal::GetLocal(const TSync &sync) {
-  assert(&sync);
   TLocal *local = static_cast<TLocal *>(pthread_getspecific(sync.Key));
   if (!local) {
     local = new TLocal(sync);

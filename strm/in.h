@@ -107,8 +107,6 @@ namespace Strm {
 
       /* Peeks at the next bytes of data. */
       void Peek(const uint8_t *&start, const uint8_t *&limit) const {
-        assert(&start);
-        assert(&limit);
         Refresh();
         start = Cursor;
         limit = Limit;

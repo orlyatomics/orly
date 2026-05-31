@@ -44,7 +44,6 @@ void TObj::Write(std::ostream &) const {
 const TVar TObj::DefaultVar;
 
 void TObj::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

@@ -64,7 +64,6 @@ namespace Orly {
         const typename ItemInfo<TItem>::TNode *node,
         const std::function<bool (const TItem *)> &cb) {
       assert(node);
-      assert(&cb);
       assert(cb);
       while (cb(ItemInfo<TItem>::GetItem(node)) && (node = ItemInfo<TItem>::TryGetNext(node)));
     }
@@ -75,7 +74,6 @@ namespace Orly {
         const typename ItemInfo<TItem>::TOptNode *opt_node,
         const std::function<bool (const TItem *)> &cb) {
       assert(opt_node);
-      assert(&cb);
       assert(cb);
       auto node = TryGetNode<typename ItemInfo<TItem>::TNode,
                              typename ItemInfo<TItem>::TNoNode>(opt_node);

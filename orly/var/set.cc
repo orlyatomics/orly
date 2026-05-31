@@ -43,7 +43,6 @@ void TSet::Write(std::ostream &strm) const {
 }
 
 void TSet::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

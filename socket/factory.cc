@@ -42,7 +42,6 @@ TFactory::~TFactory() {
 }
 
 TFd TFactory::New(TAddress &address) const {
-  assert(&address);
   /* Find a network interface that matches our criteria. */
   auto *sa = FindNetworkInterface();
   /* Open a socket that matches the network interface and is of the correct

@@ -107,13 +107,11 @@ void TUnary::WriteExpr(TCppPrinter &out) const {
 }
 
 void TUnary::Call(TCppPrinter &out, const char *func) const {
-  assert(&out);
   assert(func);
   out << func << '(' << Expr << ')';
 }
 
 void TUnary::Postfix(TCppPrinter &out, const char *func) const {
-  assert(&out);
   assert(func);
   out << Expr << '.' << func << "()";
 }

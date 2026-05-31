@@ -36,7 +36,6 @@ TLengthOf::TLengthOf(const TExpr::TPtr &container, const TPosRange &pos_range)
     : TUnary(container, pos_range) {}
 
 void TLengthOf::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

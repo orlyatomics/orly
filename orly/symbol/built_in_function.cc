@@ -105,7 +105,6 @@ TBuiltInFunction::TBuiltInFunction(
         ReturnType(return_type) {}
 
 void TBuiltInFunction::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

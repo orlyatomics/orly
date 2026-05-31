@@ -85,7 +85,6 @@ Type::TType TTestCase::GetType() const {
 }
 
 void TTestCase::Write(TCppPrinter &out) const {
-  assert(&out);
 
   WriteDef(out);
   out << Eol << Eol;
@@ -125,7 +124,6 @@ void TTestCase::Write(TCppPrinter &out) const {
 }
 
 void TTestCase::WriteName(TCppPrinter &out) const {
-  assert(&out);
 
   out << Id;
 }
@@ -170,7 +168,6 @@ TTestBlock::~TTestBlock() {
 }
 
 void TTestBlock::Write(TCppPrinter &out) const {
-  assert(&out);
 
   for(auto &test: Children) {
     test->Write(out);
@@ -178,7 +175,6 @@ void TTestBlock::Write(TCppPrinter &out) const {
 }
 
 void TTestBlock::WriteMeta(TCppPrinter &out) const {
-  assert(&out);
 
   out
     << "Package::TTestBlock{"
@@ -272,7 +268,6 @@ const TId<TIdKind::Test> &TTest::GetId() const {
 }
 
 void TTest::Write(TCppPrinter &out) const {
-  assert(&out);
 
   Tests.Write(out);
 

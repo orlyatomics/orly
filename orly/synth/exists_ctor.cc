@@ -66,7 +66,6 @@ Expr::TExpr::TPtr TExistsCtor::Build() const {
 }
 
 void TExistsCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   assert(ValueType);
   Expr->ForEachRef(cb);

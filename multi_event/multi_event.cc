@@ -34,14 +34,10 @@ void TEvent::Fire() {
 }
 
 bool TWaiter::Wait(const TProducer &producer, const TConsumer &consumer, const Base::TOpt<chrono::milliseconds> &timeout) {
-  assert(&producer);
-  assert(&consumer);
-  assert(&timeout);
   Flag = false;
   try {
     /* Spin through our events. */
     producer([&consumer, this](const shared_ptr<TEvent> &event) {
-      assert(&event);
       assert(event);
       lock_guard<mutex> lock(event->Mutex);
       if (event->Flag) {

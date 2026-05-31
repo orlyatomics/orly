@@ -39,7 +39,6 @@ void TUnknown::Write(std::ostream &) const {
 }
 
 void TUnknown::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

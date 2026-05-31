@@ -39,7 +39,6 @@ TCmd::TMeta::~TMeta() {
 }
 
 void TCmd::TMeta::Dump(ostream &strm, const TCmd *cmd) const {
-  assert(&strm);
   for (auto &param: Params) {
     auto arg = param->TryGetArg();
     if (arg) {
@@ -64,7 +63,6 @@ bool TCmd::TMeta::Parse(TCmd *cmd, int argc, char *argv[], const TMessageConsume
 void TCmd::TMeta::WriteAfterDesc(ostream &) const {}
 
 void TCmd::TMeta::WriteHelp(ostream &strm, const TCmd *cmd, size_t line_size, size_t pad_size) const {
-  assert(&strm);
   if (!line_size) {
     struct winsize ws;
     ioctl(0, TIOCGWINSZ, &ws);
@@ -126,8 +124,6 @@ void TCmd::TMeta::WriteHelp(ostream &strm, const TCmd *cmd, size_t line_size, si
 }
 
 bool TCmd::TMeta::WriteToStdErr(const string &msg, size_t &count) {
-  assert(&msg);
-  assert(&count);
   cerr << msg << endl;
   ++count;
   return true;
@@ -182,7 +178,6 @@ bool TCmd::TMeta::TParam::TArg::Parse(TCmd *cmd, const TJson &json, const TMessa
 TCmd::TMeta::TParam::~TParam() {}
 
 bool TCmd::TMeta::TParam::ForEachName(const function<bool (const char *)> &cb) const {
-  assert(&cb);
   if (Names) {
     for (const char *name = Names; *name; name += strlen(name) + 1) {
       if (!cb(name)) {
@@ -206,7 +201,6 @@ bool TCmd::TMeta::TParam::Matches(const char *target_name) const {
 }
 
 void TCmd::TMeta::TParam::WriteHelp(ostream &strm, const TCmd *cmd) const {
-  assert(&strm);
   strm << Desc;
   int cnt = 0;
   ForEachHelpPiece(strm, cmd, [&strm, &cnt] {
@@ -224,7 +218,6 @@ void TCmd::TMeta::TParam::WriteHelp(ostream &strm, const TCmd *cmd) const {
 }
 
 void TCmd::TMeta::TParam::WriteLineItem(ostream &strm) const {
-  assert(&strm);
   if (!Names) {
     const char *lhs, *rhs;
     switch (Basis) {
@@ -258,9 +251,7 @@ void TCmd::TMeta::TParam::WriteLineItem(ostream &strm) const {
 }
 
 bool TCmd::TMeta::TParam::ForEachHelpPiece(ostream &strm, const TCmd *cmd, const function<bool ()> &cb) const {
-  assert(&strm);
   assert(cmd);
-  assert(&cb);
   const TArg *arg = TryGetArg();
   if (!Names && arg && arg->GetIsRequired()) {
     if (!cb()) {
@@ -351,9 +342,6 @@ void TCmd::TMeta::AppendParam(TParam *param_raw) {
 }
 
 void TCmd::TMeta::WriteWrapped(ostream &strm, size_t col1_size, size_t line_size, const string &col1, const string &col2) {
-  assert(&strm);
-  assert(&col1);
-  assert(&col2);
   strm << col1;
   for (size_t i = 0; i < col1_size - col1.size(); ++i) {
     strm << ' ';
@@ -444,7 +432,6 @@ const TCmd::TMeta::TParam *TCmd::TMeta::TParser::TryFindParam(const char *name) 
 
 bool TCmd::TMeta::TParser::TRun::operator()(const TParser *parser, TCmd *cmd, int argc, char *argv[], const TMessageConsumer &cb) {
   assert(parser);
-  assert(&cb);
   char *path = argv[0], *slash = strrchr(path, '/');
   if (slash) {
     *slash = '\0';
@@ -520,8 +507,6 @@ bool TCmd::TMeta::TParser::TRun::operator()(const TParser *parser, TCmd *cmd, in
 }
 
 bool TCmd::TMeta::TParser::TRun::CheckForRequired(const vector<const TParam *> &params, const TMessageConsumer &cb) const {
-  assert(&params);
-  assert(&cb);
   std::unordered_set<const TParam *> missing_params;
   for (auto param: params) {
     if (Contains(missing_params, param)) {
@@ -554,7 +539,6 @@ bool TCmd::CheckArgs(const TMeta::TMessageConsumer &) {
 }
 
 void TCmd::Parse(int argc, char *argv[], const TMeta &meta) {
-  assert(&meta);
   if (meta.Parse(this, argc, argv)) {
     exit(EXIT_FAILURE);
   }

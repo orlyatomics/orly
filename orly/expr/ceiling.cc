@@ -57,7 +57,6 @@ TCeiling::TCeiling(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TCeiling::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

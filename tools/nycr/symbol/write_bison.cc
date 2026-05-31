@@ -67,7 +67,6 @@ static bool CompareOps(const TOperator *lhs, const TOperator *rhs) {
 
 static void CollectOperators(const TKind *kind, vector<const TOperator *> &ops) {
   assert(kind);
-  assert(&ops);
   class TVisitor : public TKind::TVisitor {
     public:
     TVisitor(vector<const TOperator *> &ops) : Ops(ops) {}
@@ -171,7 +170,6 @@ static void WriteBisonH(const char *root, const char *branch, const char *atom, 
 
 static void WriteRule(const TKind *kind, ostream &strm) {
   assert(kind);
-  assert(&strm);
   class TVisitor : public TKind::TVisitor {
     public:
     TVisitor(ostream &strm) : Strm(strm) {}
@@ -246,7 +244,6 @@ static void WriteRule(const TKind *kind, ostream &strm) {
 
 static void WriteTypeDecl(const TKind *kind, ostream &strm) {
   assert(kind);
-  assert(&strm);
   class TVisitor : public TKind::TVisitor {
     public:
     TVisitor(ostream &strm) : Strm(strm) {}
@@ -269,6 +266,5 @@ static void WriteTypeDecl(const TKind *kind, ostream &strm) {
 
 static void WriteUnionMember(const TKind *kind, ostream &strm) {
   assert(kind);
-  assert(&strm);
   strm << "  " << TType(kind->GetName()) << " *" << TLower(kind->GetName()) << ';' << endl;
 }

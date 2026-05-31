@@ -96,7 +96,6 @@ class TStats {
 };  // TStats
 
 ostream &operator<<(ostream &strm, const TStats &that) {
-  assert(&that);
   that.Write(strm);
   return strm;
 }

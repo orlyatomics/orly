@@ -37,7 +37,6 @@ using namespace Util;
 
 bool Base::Glob(const char *pattern, const function<bool (const char *)> &cb) {
   assert(pattern);
-  assert(&cb);
   /* Get the current working directory as an absolute path.
      This will start with a slash but will NOT end with a slash. */
   char root[PATH_MAX + 2];

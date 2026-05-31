@@ -37,7 +37,6 @@ TKind::TKind(const Syntax::TName *name, const Syntax::TOptSuper *opt_super)
 }
 
 void TKind::ForEachPred(int pass, const function<void (TDecl *)> &cb) {
-  assert(&cb);
   switch (pass) {
     case 1: {
       break;
@@ -54,7 +53,6 @@ void TKind::ForEachPred(int pass, const function<void (TDecl *)> &cb) {
 }
 
 void TKind::ForEachRef(const function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   cb(Super);
 }
 

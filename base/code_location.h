@@ -94,7 +94,6 @@ namespace Base {
 
   /* Standard stream inserter for Base::TCodeLocation. */
   inline std::ostream &operator<<(std::ostream &strm, const Base::TCodeLocation &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }
@@ -111,7 +110,6 @@ namespace std {
     typedef Base::TCodeLocation argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       const char *const file = that.GetFile();
       const size_t len = strlen(file);
       return _Hash_impl::hash(file, len) ^ that.GetLineNumber();

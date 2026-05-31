@@ -33,7 +33,6 @@ TCollectedBy::TPtr TCollectedBy::New(
 }
 
 void TCollectedBy::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
   auto type = Seq->GetReturnType();
   auto seq = type.As<Type::TSeq>();
   auto elem = seq->GetElem();

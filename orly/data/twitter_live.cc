@@ -275,7 +275,6 @@ constexpr int64_t PersonGeoGridSmall = 14;
 constexpr int64_t PersonGeoGridBig = 15;
 
 void TranslateFollow(TJsonIter &input, const std::string &username) {
-  assert(&input);
   // following
   using t_person_following_key = std::tuple<int64_t, int64_t, int64_t>;  // IndexId, follower user id, followed user id
   using t_person_following_val = std::tuple<std::string, std::string>;  // user handle (following), user handle (followed)
@@ -294,7 +293,6 @@ void TranslateFollow(TJsonIter &input, const std::string &username) {
 }
 
 void TranslateUser(TJsonIter &input, const std::string &username) {
-  assert(&input);
   // user screen name -> id
   using t_user_by_screen_key = std::tuple<std::string>;  // screen name
   using t_user_by_screen_val = int64_t;  // user_id
@@ -339,7 +337,6 @@ RECORD_ELEM(TPersonTweetedVal, Base::Chrono::TTimePnt, date);
 RECORD_ELEM(TPersonTweetedVal, std::string, text);
 RECORD_ELEM(TPersonTweetedVal, TPersonTweetedVal::TCoord, coordinates);
 void TranslateStatus(TJsonIter &input, const std::string &username) {
-  assert(&input);
   // person tweeted
   using t_person_tweeted_key = std::tuple<int64_t, int64_t>;  // user id, tweet id
   using t_person_tweeted_val = TPersonTweetedVal;  // text

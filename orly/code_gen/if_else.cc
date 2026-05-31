@@ -31,7 +31,6 @@ TIfElse::TPtr TIfElse::New(
 }
 
 void TIfElse::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
 
   //TODO: Building into the sum type if true case and false case return different types.
   out << "Predicate<" << GetReturnType() << ">(ctx, " << Predicate << ", " << True;

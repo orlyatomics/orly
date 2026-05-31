@@ -133,8 +133,6 @@ namespace Test {
         const char *rhs_str, const TRhs &rhs) : CodeLocation(code_location) {
       assert(lhs_str);
       assert(rhs_str);
-      assert(&lhs);
-      assert(&rhs);
 
       const char *op_str = "ERROR";
       switch(op) {
@@ -166,8 +164,6 @@ namespace Test {
         : CodeLocation(code_location) {
       assert(lhs_str);
       assert(rhs_str);
-      assert(&lhs);
-      assert(&rhs);
 
       const char *op_str;
       switch (op) {
@@ -202,7 +198,6 @@ namespace Test {
         TPrefixOp op, const char *arg_str, const TArg &arg)
         : CodeLocation(code_location) {
       assert(arg_str);
-      assert(&arg);
       const char *op_str;
       std::ostringstream strm;
       switch (op) {
@@ -230,9 +225,7 @@ namespace Test {
       const Base::TCodeLocation &code_location,
       const char *exc_str,
       const std::function<void (bool &pass)> &func) : CodeLocation(code_location) {
-      assert(&code_location);
       assert(exc_str);
-      assert(&func);
       assert(func);
 
       std::ostringstream strm;
@@ -265,10 +258,8 @@ namespace Test {
     template <typename TLhs, typename TRhs>
     void WriteInfixOp(const char *lhs_str, const TLhs &lhs, const char *op_str, const char *rhs_str, const TRhs &rhs) {
       assert(lhs_str);
-      assert(&lhs);
       assert(op_str);
       assert(rhs_str);
-      assert(&rhs);
 
       std::ostringstream strm;
       WriteType<TLhs>(strm);
@@ -305,6 +296,5 @@ namespace Test {
 /* A stream inserter for Test::TExpect targets. */
 template <typename TVal>
 const Test::TExpect &operator<<(const Test::TExpect &expect, const TVal &val) {
-  assert(&expect);
   return expect.Write(val);
 }

@@ -1080,7 +1080,6 @@ namespace Orly {
         /* The cluster of KV versions for this update.  Null if this update does not update any KVs.
            We return by out-parameter in order to take advantage of function overloading in the template-based classes. */
         void GetCluster(TCluster<TKV> *&out) const {
-          assert(&out);
           out = KVCluster;
         }
 
@@ -1166,7 +1165,6 @@ namespace Orly {
            Return false from your callback to halt the iterator.
            If the iterator reaches the end, return true; if halted, return false. */
         bool ForEachTour(const std::function<bool (TTour<TKey> *)> &callback) const {
-          assert(&callback);
           bool result = true;
           for (auto iter = TourByKey.begin(); result && iter != TourByKey.end(); ++iter) {
             result = callback(iter->second);
@@ -1645,7 +1643,6 @@ namespace Orly {
 
         /* Add to the given set of causes any updates which are implied by our set of versions. */
         void AugmentCauses(std::unordered_set<TUpdate *> &causes, std::vector<TSync::TSharedLock *> &shared_lock_vec) const {
-          assert(&causes);
           for (auto iter = VersionByKey.begin(); iter != VersionByKey.end(); ++iter) {
             TVersion<TKey> *older_version = iter->second->TryGetAnyOlderVersion(shared_lock_vec);
             if (older_version) {
@@ -1834,7 +1831,6 @@ namespace Orly {
         /* Move-construct.  The donor object resets to the leaf of its point-of-view. */
         TContext(TContext &&that)
             : Pov(that.Pov) {
-          assert(&that);
           std::swap(InvalidUpdates, that.InvalidUpdates);
           std::swap(VersionByKV, that.VersionByKV);
           std::swap(SharedLockVec, that.SharedLockVec);
@@ -1871,7 +1867,6 @@ namespace Orly {
         #if 0
         /* Swaperator. */
         TContext &operator=(TContext &&that) {
-          assert(&that);
           std::swap(Pov, that.Pov);
           std::swap(InvalidUpdates, that.InvalidUpdates);
           std::swap(VersionByKV, that.VersionByKV);
@@ -2001,7 +1996,6 @@ namespace Orly {
         /* Invalidate the updates responsible for the current values of the given keys in the given context. */
         template <typename TKey>
         void AugmentInvalidUpdates(const TContext &that, const std::unordered_set<TKey> &keys) {
-          assert(&keys);
           for (auto iter = keys.begin(); iter != keys.end(); ++iter) {
             TVersion<TKey> *version = that.TryGetVersion(*iter);
             if (version) {

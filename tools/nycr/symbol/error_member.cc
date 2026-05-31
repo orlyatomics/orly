@@ -36,12 +36,10 @@ const TKind *TErrorMember::TryGetKind() const {
 }
 
 void TErrorMember::WriteRhs(ostream &strm) const {
-  assert(&strm);
   strm << TLower(Name);
 }
 
 void TErrorMember::WriteXml(ostream &strm) const {
-  assert(&strm);
   strm << TXmlTag(TXmlTag::ErrorMember, Open)
        << TXml(Name)
        << TXmlTag(TXmlTag::ErrorMember, Close);
