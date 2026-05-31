@@ -76,8 +76,6 @@ namespace Orly {
 
     template <TIdKind Kind>
     TCppPrinter &operator<<(TCppPrinter &out, const TId<Kind> &id) {
-      assert(&out);
-      assert(&id);
 
       id.Write(out);
 

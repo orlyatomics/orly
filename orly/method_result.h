@@ -95,14 +95,12 @@ namespace Orly {
 
   /* Binary stream extractor for Orly::TMethodResult. */
   inline Io::TBinaryInputStream &operator>>(Io::TBinaryInputStream &strm, TMethodResult &that) {
-    assert(&that);
     that.Read(strm);
     return strm;
   }
 
   /* Binary stream inserter for Orly::TMethodResult. */
   inline Io::TBinaryOutputStream &operator<<(Io::TBinaryOutputStream &strm, const TMethodResult &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }

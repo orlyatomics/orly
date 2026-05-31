@@ -223,7 +223,6 @@ void TEnv::SetFuncs(TFileCheckFunc &&buildable, TFileCheckFunc &&done) {
 }
 
 TFile *TEnv::TryGetFileFromPath(const std::string &name) {
-  assert(&name);
   assert(name.size()); // Name must be non-empty.
   // If the name starts with a '/' it's an absolute filesystem path
   TPath path(name);

@@ -165,7 +165,6 @@ namespace Orly {
 
       /* TODO */
       inline void free_fiber(fiber_t &fib) {
-        assert(&fib);
         assert(fib.start_of_stack);
         free(fib.start_of_stack);
       }
@@ -199,7 +198,6 @@ namespace Orly {
 
       /* TODO */
       inline void free_fiber(fiber_t &fib) {
-        assert(&fib);
         assert(fib.uc_stack.ss_sp);
         free(fib.uc_stack.ss_sp);
       }

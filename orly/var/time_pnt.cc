@@ -32,14 +32,12 @@ Type::TType TTimePnt::GetType() const {
 }
 
 void TTimePnt::Write(std::ostream &strm) const {
-  assert(&strm);
   strm
     << "Base::Chrono::TTimePnt(Base::Chrono::TTimeDiff("
     << Base::Chrono::TimeDiffCast(Val.time_since_epoch()).count() << "))";
 }
 
 void TTimePnt::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

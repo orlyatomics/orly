@@ -29,7 +29,6 @@ class TGetTupleSizeVisitor final
   /* TODO. */
   TGetTupleSizeVisitor(size_t &size)
       : Size(size) {
-    assert(&size);
   }
 
   /* Overrides. */

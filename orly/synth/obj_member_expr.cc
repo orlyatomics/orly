@@ -43,13 +43,11 @@ Expr::TExpr::TPtr TObjMemberExpr::Build() const {
 }
 
 void TObjMemberExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TObjMemberExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }

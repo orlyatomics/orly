@@ -36,7 +36,6 @@ void TInt::Write(std::ostream &stream) const {
 }
 
 void TInt::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

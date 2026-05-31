@@ -120,7 +120,6 @@ void TObj::SetTtl(const TTtl &ttl) {
 }
 
 void TObj::Write(TBinaryOutputStream &strm) const {
-  assert(&strm);
   strm << Ttl;
 }
 
@@ -133,7 +132,6 @@ TObj::TObj(TManager *manager, const TId &id, const TTtl &ttl)
 TObj::TObj(TManager *manager, const TId &id, Io::TBinaryInputStream &strm)
     : Manager(manager), Id(id), PtrCount(0), OnDisk(true) {
   assert(manager);
-  assert(&strm);
   Sem = new TSem;
   try {
     strm >> Ttl;

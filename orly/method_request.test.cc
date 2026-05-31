@@ -31,7 +31,6 @@ using namespace Io;
 using namespace Orly;
 
 void CheckMethodRequest(const TMethodRequest &method_request) {
-  assert(&method_request);
   EXPECT_TRUE(method_request.GetPovId());
   EXPECT_EQ(method_request.GetPackage().size(), 3u);
   EXPECT_EQ(method_request.GetClosure().GetMethodName(), string("deal"));

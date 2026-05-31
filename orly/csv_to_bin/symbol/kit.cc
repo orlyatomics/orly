@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly::CsvToBin::Symbol;
 
 void TTable::AddCol(std::unique_ptr<TCol> &&col) {
-  assert(&col);
   assert(col);
   if (TryFindCol(col->GetName())) {
     THROW_ERROR(TSemanticError)
@@ -32,7 +31,6 @@ void TTable::AddCol(std::unique_ptr<TCol> &&col) {
 }
 
 void TTable::AddSecondaryKey(std::unique_ptr<TSecondaryKey> &&key) {
-  assert(&key);
   assert(key);
   if (TryFindSecondaryKey(key->GetName())) {
     THROW_ERROR(TSemanticError)
@@ -66,9 +64,7 @@ const TCol *TTable::FindCol(const std::string &name) const {
 
 bool TTable::ForEachColNotInKey(
     const std::function<bool (const TCol *)> &cb, const TKey *key) const {
-  assert(&cb);
   assert(cb);
-  assert(&key);
   for (const auto &col: Cols) {
     bool found = false;
     for (const auto &field : key->GetFields()) {

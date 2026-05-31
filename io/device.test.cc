@@ -56,9 +56,6 @@ namespace std {
 
 template <typename TExpected, typename TActual = TExpected>
 static void RoundTrip(TBinaryOutputStream &out_strm, TBinaryInputStream &in_strm, const TExpected &expected) {
-  assert(&out_strm);
-  assert(&in_strm);
-  assert(&expected);
   out_strm << expected;
   out_strm.Flush();
   TActual actual;

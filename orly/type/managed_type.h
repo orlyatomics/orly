@@ -60,7 +60,6 @@ namespace Orly {
       typedef std::unordered_map<TKey, TWeak> TTypeByKey;
 
       void Accept(const TType::TVisitor &visitor) const {
-        assert(&visitor);
         visitor(Base::AssertTrue(dynamic_cast<const TFinal*>(this)));
       }
 
@@ -165,7 +164,6 @@ namespace Orly {
       }
 
       void Accept(const TType::TVisitor &visitor) const {
-        assert(&visitor);
         assert(Ptr);
         visitor(Ptr->get());
       }
@@ -199,7 +197,6 @@ namespace Orly {
       public:
 
       static TType Get(const Type::TType &type) {
-        assert(&type);
         return TInternedType<TFinal, Type::TType>::Get(type);
       }
 

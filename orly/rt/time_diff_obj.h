@@ -72,18 +72,15 @@ namespace Orly {
         }
 
         bool EqEq(const TObjO6i3dayi4hourb10is_forwardi6minutei10nanosecondi6second &that) const {
-          assert(&that);
           return Rt::And(Rt::EqEq(Vday, that.Vday), Rt::And(Rt::EqEq(Vhour, that.Vhour), Rt::And(Rt::EqEq(Vis_forward, that.Vis_forward), Rt::And(Rt::EqEq(Vminute, that.Vminute), Rt::And(Rt::EqEq(Vnanosecond, that.Vnanosecond), Rt::And(Rt::EqEq(Vsecond, that.Vsecond), true))))));
         }
 
 
         bool Match(const TObjO6i3dayi4hourb10is_forwardi6minutei10nanosecondi6second &that) const {
-          assert(&that);
           return Rt::Match(Vday, that.Vday) && Rt::Match(Vhour, that.Vhour) && Rt::Match(Vis_forward, that.Vis_forward) && Rt::Match(Vminute, that.Vminute) && Rt::Match(Vnanosecond, that.Vnanosecond) && Rt::Match(Vsecond, that.Vsecond);
         }
 
         bool Neq(const TObjO6i3dayi4hourb10is_forwardi6minutei10nanosecondi6second &that) const {
-          assert(&that);
           return Rt::Or(Rt::Neq(Vday, that.Vday), Rt::Or(Rt::Neq(Vhour, that.Vhour), Rt::Or(Rt::Neq(Vis_forward, that.Vis_forward), Rt::Or(Rt::Neq(Vminute, that.Vminute), Rt::Or(Rt::Neq(Vnanosecond, that.Vnanosecond), Rt::Or(Rt::Neq(Vsecond, that.Vsecond), false))))));
         }
 

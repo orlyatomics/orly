@@ -27,7 +27,6 @@ inline bool KeyRequiresStruct(const Symbol::TTable *table, const Symbol::TKey *k
 }
 
 void WriteFuncParam(TCppPrinter &strm, const Symbol::TCol *col) {
-  assert(&strm);
   assert(col);
   strm << col->GetName() << " = given::(";
   PrintOrlyType(strm, col->GetType(), col->IsNull());
@@ -35,7 +34,6 @@ void WriteFuncParam(TCppPrinter &strm, const Symbol::TCol *col) {
 }
 
 void WriteKeyInsert(TCppPrinter &strm, const Symbol::TTable *table, const Symbol::TKey *key, const char *name) {
-  assert(&strm);
   assert(table);
   assert(key);
   assert(name);
@@ -63,7 +61,6 @@ void WriteKeyInsert(TCppPrinter &strm, const Symbol::TTable *table, const Symbol
 }
 
 void WriteInsertFunc(TCppPrinter &strm, const Symbol::TTable *table) {
-  assert(&strm);
   assert(table);
   strm << "NewRow = ((true) effecting {" << Eol;
   /* insert function effecting indent. */ {
@@ -86,7 +83,6 @@ void WriteInsertFunc(TCppPrinter &strm, const Symbol::TTable *table) {
 }
 
 void WriteGetterFuncsForKey(TCppPrinter &strm, const Symbol::TTable *table, const Symbol::TKey *key, const char *name) {
-  assert(&strm);
   assert(table);
   assert(key);
   const auto &fields = key->GetFields();
@@ -188,7 +184,6 @@ void WriteGetterFuncsForKey(TCppPrinter &strm, const Symbol::TTable *table, cons
 }
 
 void Orly::CsvToBin::WriteOrly(TCppPrinter &strm, const Symbol::TTable *table) {
-  assert(&strm);
   assert(table);
   strm << "package #1;" << Eol << Eol;
   // write out row object type
@@ -216,7 +211,6 @@ void Orly::CsvToBin::WriteOrly(TCppPrinter &strm, const Symbol::TTable *table) {
 }
 
 void Orly::CsvToBin::WriteValObjectTypeForRow(CodeGen::TCppPrinter &strm, const Symbol::TTable *table) {
-  assert(&strm);
   assert(table);
   strm << "row_obj is <{" << Eol;
   TIndent ind(strm);
@@ -235,7 +229,6 @@ void Orly::CsvToBin::WriteValObjectTypeForRow(CodeGen::TCppPrinter &strm, const 
 }
 
 void Orly::CsvToBin::WriteValObjectTypeForKey(TCppPrinter &strm, const Symbol::TTable *table, const Symbol::TKey *key, const char *name) {
-  assert(&strm);
   assert(table);
   assert(key);
   assert(name);
@@ -256,7 +249,6 @@ void Orly::CsvToBin::WriteValObjectTypeForKey(TCppPrinter &strm, const Symbol::T
 }
 
 void Orly::CsvToBin::WriteValObjectForKey(TCppPrinter &strm, const Symbol::TTable *table, const Symbol::TKey *key) {
-  assert(&strm);
   assert(table);
   assert(key);
   strm << "<{";
@@ -277,8 +269,6 @@ void Orly::CsvToBin::WriteValObjectForKey(TCppPrinter &strm, const Symbol::TTabl
 }
 
 void Orly::CsvToBin::PrintOrlyType(CodeGen::TCppPrinter &strm, Symbol::TType type, bool is_null) {
-  assert(&strm);
-  assert(&type);
   switch (type) {
     case Symbol::TType::Bool: {
       strm << "bool";

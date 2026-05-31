@@ -64,7 +64,6 @@ Expr::TExpr::TPtr TCollatedByExpr::Build() const {
 }
 
 void TCollatedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Seq->ForEachInnerScope(cb);
   Reduce->ForEachInnerScope(cb);
@@ -72,7 +71,6 @@ void TCollatedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb
 }
 
 void TCollatedByExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Seq->ForEachRef(cb);
   Reduce->ForEachRef(cb);

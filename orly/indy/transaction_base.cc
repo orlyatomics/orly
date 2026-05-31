@@ -436,7 +436,6 @@ TTransaction::TReplica::TReplica() {}
 TTransaction::TReplica::~TReplica() {}
 
 TTransaction::TReplica &TTransaction::TReplica::operator=(TReplica &&that) {
-  assert(&that);
   std::swap(MutationList, that.MutationList);
   return *this;
 }
@@ -479,7 +478,6 @@ TTransaction::TReplica::TMutation::TUpdate::TUpdate(const Orly::Indy::TUpdate *t
 TTransaction::TReplica::TMutation::TUpdate::~TUpdate() {}
 
 TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::TUpdate::operator=(TUpdate &&that) {
-  assert(&that);
   std::swap(Suprena, that.Suprena);
   Metadata = that.Metadata;
   Id = that.Id;
@@ -570,7 +568,6 @@ TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo
 TTransaction::TReplica::TMutation::~TMutation() {}
 
 TTransaction::TReplica::TMutation &TTransaction::TReplica::TMutation::operator=(TMutation &&that) {
-  assert(&that);
   std::swap(Kind, that.Kind);
   std::swap(RepoId, that.RepoId);
   std::swap(Update, that.Update);

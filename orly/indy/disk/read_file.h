@@ -63,13 +63,11 @@ namespace Orly {
 
         /* TODO */
         inline bool operator==(const TFileKey &that) const {
-          assert(&that);
           return FileId == that.FileId && GenId == that.GenId;
         }
 
         /* TODO */
         inline bool operator!=(const TFileKey &that) const {
-          assert(&that);
           return FileId != that.FileId || GenId != that.GenId;
         }
 
@@ -794,8 +792,6 @@ namespace Orly {
 
           /* TODO */
           bool BinaryLowerBoundOnKey(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
-            assert(&key);
-            assert(&out_offset);
             assert(NumCurKeys > 0);
             size_t first = 0U;
             size_t it = 0;

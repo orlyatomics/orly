@@ -68,7 +68,6 @@ namespace std {
   struct hash<Orly::Package::TName> {
 
     size_t operator()(const Orly::Package::TName &that) const {
-      assert(&that);
       return Base::ChainHashes(that.Name);
     }
 
@@ -81,7 +80,6 @@ namespace std {
     typedef Orly::Package::TVersionedName argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return Base::ChainHashes(that.Name, that.Version);
     }
 

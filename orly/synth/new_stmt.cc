@@ -56,14 +56,12 @@ Symbol::Stmt::TStmt::TPtr TNewStmt::Build() const {
 }
 
 void TNewStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);
 }
 
 void TNewStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);

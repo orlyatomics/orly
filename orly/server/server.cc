@@ -684,7 +684,6 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     Orly::Indy::Disk::Util::PhysicalBlockSize,
     Orly::Indy::Disk::Util::CheckedPage, true>;
   assert(scheduler);
-  assert(&cmd);
   assert(cmd.StartingState.size());
   auto launch_slow_fiber_sched = [this](size_t core, Fiber::TRunner *runner) {
     cpu_set_t mask;
@@ -1381,7 +1380,6 @@ void TServer::TConnection::Run(TFd &fd) {
     TConnection *Connection;
     shared_ptr<TFuture<void>> &Ack;
   };
-  assert(&fd);
   /* Install the socket as our RPC device. */
   auto device = make_shared<TDevice>(move(fd));
   BinaryIoStream = make_shared<TBinaryIoStream>(device);
@@ -1449,7 +1447,6 @@ void TServer::TConnection::Run(TFd &fd) {
 
 shared_ptr<TServer::TConnection> TServer::TConnection::New(TServer *server, const Durable::TPtr<TSession> &session) {
   assert(server);
-  assert(&session);
   bool success = false;
   std::shared_ptr<TConnection> result = nullptr;
   /* acquire Connection lock */ {
@@ -1552,7 +1549,6 @@ void TServer::CleanHouse() {
 }
 
 string TServer::Echo(const string &msg) {
-  assert(&msg);
   if (msg[0] == '"' && msg[1] == '!') {
     string temp = msg.substr(2, msg.size() - 3);
     system(temp.c_str());
@@ -1586,7 +1582,6 @@ string TServer::ImportCoreVector(const string &file_pattern,
       2. merge all our generated files from the file system iteratively till we have 1 file
       3. insert that 1 file into our repo system
      */
-  assert(&file_pattern);
   string result;
   const size_t merge_simultaneous = merge_simultaneous_in;
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
@@ -2130,8 +2125,6 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
 }
 
 void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
-  assert(&fd);
-  assert(&client_address);
   string client_address_str;
   /* extra */ {
     ostringstream strm;
@@ -2237,9 +2230,7 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
 template<uint64_t Length>
 constexpr uint64_t GetArrayLen(const char(&)[Length]) { return Length; }
 
-void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &client_address) {
-  assert(&fd_original);
-  assert(&client_address);
+void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
 
   // NOTE: fd_original has it's ownership stolen at this point. Use of it will cause badness.
   Strm::TFd<> strm(std::move(fd_original));

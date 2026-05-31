@@ -37,7 +37,6 @@ void TBool::Write(std::ostream &stream) const {
 }
 
 void TBool::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

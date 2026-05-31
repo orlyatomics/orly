@@ -51,7 +51,6 @@ void TList::Write(std::ostream &strm) const {
 }
 
 void TList::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

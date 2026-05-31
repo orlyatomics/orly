@@ -44,7 +44,6 @@ TDiv::TDiv(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &pos_
     : TBinary(lhs, rhs, pos_range) {}
 
 void TDiv::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

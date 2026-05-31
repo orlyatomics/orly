@@ -110,7 +110,6 @@ bool TFunction::HasArgs() const {
 }
 
 void TFunction::WriteArgs(TCppPrinter &out) const {
-  assert(&out);
 
   out << Join(Args,
               ", ",
@@ -122,7 +121,6 @@ void TFunction::WriteArgs(TCppPrinter &out) const {
 }
 
 void TFunction::WriteBody(TCppPrinter &out) const {
-  assert(&out);
 
   assert(Body); // NOTE: If this assertion fails, it means that Build() function probably wasn't called.
 
@@ -190,10 +188,8 @@ TFunction::TFunction(const L0::TPackage *package, const TIdScope::TPtr &id_scope
 }
 
 void TFunction::PostCtor(const TNamedArgs &args, const Expr::TExpr::TPtr &expr, bool keep_mutable, bool implicit) {
-  assert(&args);
   assert(Args.empty());
   assert(!Expr);
-  assert(&expr);
   assert(expr);
   Expr = expr;
   KeepMutable = keep_mutable;

@@ -213,13 +213,11 @@ namespace Base {
     TTimePnt Now();
 
     inline std::ostream &operator<<(std::ostream &strm, const TTimeDiff &that) {
-      assert(&strm);
       Base::Chrono::TTimeDiffInfo(that).Write(strm);
       return strm;
     }
 
     inline std::ostream &operator<<(std::ostream &strm, const TTimePnt &that) {
-      assert(&strm);
       Base::Chrono::TTimePntInfo(that).Write(strm);
       return strm;
     }
@@ -238,7 +236,6 @@ namespace std {
     typedef Base::Chrono::TTimeDiff argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return _Hash_impl::hash(&that, sizeof(that));
     }
 
@@ -252,7 +249,6 @@ namespace std {
     typedef Base::Chrono::TTimePnt argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return _Hash_impl::hash(&that, sizeof(that));
     }
 

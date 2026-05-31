@@ -185,9 +185,7 @@ namespace Orly {
 
 
       static TMapGenerator::TPtr New(const TFunc &func, const TValGenPtr &val_gen) {
-        assert(&func);
         assert(func);
-        assert(&val_gen);
 
         return TPtr(new TMapGenerator(func, val_gen));
       }

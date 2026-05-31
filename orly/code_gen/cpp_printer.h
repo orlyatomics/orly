@@ -60,7 +60,6 @@ namespace Orly {
 
       template <typename TVal>
       void Write(const TVal &val) {
-        assert(&val);
         if(StartOfLine) {
           //TODO: Might be better to cache the string here rather than recaluclate it.
           for(auto i = 0u; i < Indent; ++i) {
@@ -107,13 +106,11 @@ namespace Orly {
     template <typename TContainer, typename TDelimiter, typename TFormat>
     TCppPrinter &operator<<(TCppPrinter &printer,
                             const Base::TJoin<TContainer, TDelimiter, TFormat> &that) {
-      assert(&printer);
       return Base::WriteJoin(printer, that);
     }
 
     template <typename TVal>
     TCppPrinter &operator<<(TCppPrinter &printer, const TVal &val) {
-      assert(&printer);
       printer.Write(val);
 
       return printer;

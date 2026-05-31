@@ -75,14 +75,12 @@ namespace Base {
 
       /* Swap constructor.  The donor ptr is left null. */
       TPtr(TPtr &&that) {
-        assert(&that);
         Obj = that.Obj;
         that.Obj = 0;
       }
 
       /* Copy constructor.  This increments the reference count. */
       TPtr(const TPtr &that) {
-        assert(&that);
         Obj = that.Obj;
         if (Obj) {
           Obj->IncrRefCount();
@@ -93,7 +91,6 @@ namespace Base {
          up-castable types. */
       template <typename TDown>
       TPtr(const TPtr<TDown> &that) {
-        assert(&that);
         Obj = that.Obj;
         if (Obj) {
           Obj->IncrRefCount();
@@ -110,7 +107,6 @@ namespace Base {
 
       /* Swaperator. */
       TPtr &operator=(TPtr &&that) {
-        assert(&that);
         std::swap(Obj, that.Obj);
         return *this;
       }

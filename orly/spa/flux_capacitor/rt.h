@@ -160,8 +160,6 @@ namespace Orly {
     /* TODO: This is an odd place for this. Oh well. */
     template <typename TRet, typename TAddr>
     TMutable<TAddr, TRet> Read(Spa::FluxCapacitor::TContext &ctx, const TAddr &addr) {
-      assert(&ctx);
-      assert(&addr);
 
       /* TODO: Copy copy copy copy copy! */
       auto ret = Var::TRead<TRet>::Do(ctx[Spa::FluxCapacitor::TKV(Var::TVar::Addr(addr))]);
@@ -175,8 +173,6 @@ namespace Orly {
     /* TODO: This is an odd place for this. Oh well. */
     template <typename TAddr>
     bool Exists(Spa::FluxCapacitor::TContext &ctx, const TAddr &addr) {
-      assert(&ctx);
-      assert(&addr);
 
       return ctx.Exists(Spa::FluxCapacitor::TKV(Var::TVar::Addr(addr)));
     }

@@ -90,7 +90,6 @@ namespace Socket {
 
     /* Swaperator. */
     TAddress &operator=(TAddress &&that) {
-      assert(&that);
       std::swap(Storage, that.Storage);
       return *this;
     }
@@ -141,7 +140,6 @@ namespace Socket {
 
     /* Copy the naked address to the given buffer. */
     void CopyOut(sockaddr_storage &storage) const {
-      assert(&storage);
       memcpy(&storage, &Storage, GetLen());
     }
 
@@ -233,7 +231,6 @@ namespace Socket {
 
   /* A version of accept() using TAddress. */
   inline int Accept(int socket, TAddress &address) {
-    assert(&address);
     int result;
     socklen_t len = TAddress::MaxLen;
     Util::IfLt0(result = accept(socket, address, &len));
@@ -243,7 +240,6 @@ namespace Socket {
 
   /* A version of bind() using TAddress. */
   inline void Bind(int socket, const TAddress &address) {
-    assert(&address);
     Util::IfLt0(bind(socket, address, address.GetLen()));
   }
 
@@ -253,7 +249,6 @@ namespace Socket {
 
   /* A version of connect() using TAddress. */
   inline void Connect(int socket, const TAddress &address) {
-    assert(&address);
     Util::IfLt0(connect(socket, address, address.GetLen()));
   }
 
@@ -277,7 +272,6 @@ namespace Socket {
 
   /* A version of recvfrom() using TAddress. */
   inline size_t RecvFrom(int socket, void *buffer, size_t max_size, int flags, TAddress &address) {
-    assert(&address);
     ssize_t result;
     socklen_t len = TAddress::MaxLen;
     Util::IfLt0(result = recvfrom(socket, buffer, max_size, flags, address, &len));
@@ -287,7 +281,6 @@ namespace Socket {
 
   /* A version of sendto() using TAddress. */
   inline size_t SendTo(int socket, const void *buffer, size_t max_size, int flags, const TAddress &address) {
-    assert(&address);
     ssize_t result;
     Util::IfLt0(result = sendto(socket, buffer, max_size, flags, address, address.GetLen()));
     return result;
@@ -296,8 +289,6 @@ namespace Socket {
   /* A async version of accept() using TAddress.
      Returns false iff. it would block. */
   inline bool TryAccept(int socket, int &new_socket, TAddress &address) {
-    assert(&new_socket);
-    assert(&address);
     socklen_t len = TAddress::MaxLen;
     int result = accept(socket, address, &len);
     if (result < 0) {
@@ -314,7 +305,6 @@ namespace Socket {
   /* An async version of connect() using TAddress.
      Returns false iff. it would block. */
   inline bool TryConnect(int socket, const TAddress &address) {
-    assert(&address);
     if (connect(socket, address, address.GetLen()) < 0) {
       if (errno == EWOULDBLOCK) {
         return false;
@@ -327,8 +317,6 @@ namespace Socket {
   /* An async version of recvfrom() using TAddress.
      Returns false iff. it would block. */
   inline bool TryRecvFrom(int socket, void *buffer, size_t max_size, int flags, TAddress &address, size_t &size) {
-    assert(&address);
-    assert(&size);
     socklen_t len = TAddress::MaxLen;
     ssize_t result = recvfrom(socket, buffer, max_size, flags, address, &len);
     if (result < 0) {
@@ -345,8 +333,6 @@ namespace Socket {
   /* An async version of sendto() using TAddress.
      Returns false iff. it would block. */
   inline bool TrySendTo(int socket, const void *buffer, size_t max_size, int flags, const TAddress &address, size_t &size) {
-    assert(&address);
-    assert(&size);
     ssize_t result = sendto(socket, buffer, max_size, flags, address, address.GetLen());
     if (result < 0) {
       if (errno == EWOULDBLOCK) {
@@ -360,14 +346,12 @@ namespace Socket {
 
   /* A standard stream extractor for Socket::TAddress. */
   inline std::istream &operator>>(std::istream &strm, TAddress &that) {
-    assert(&that);
     that = std::move(strm);
     return strm;
   }
 
   /* A standard stream inserter for Socket::TAddress. */
   inline std::ostream &operator<<(std::ostream &strm, const TAddress &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }
@@ -380,7 +364,6 @@ namespace std {
   template <>
   struct hash<Socket::TAddress> {
     inline size_t operator()(const Socket::TAddress &that) const {
-      assert(&that);
       return that.GetHash();
     }
   };

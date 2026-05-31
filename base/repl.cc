@@ -48,9 +48,6 @@ static void ReplCompletionCallback(const char *buf, linenoiseCompletions *lc) {
 bool Base::Repl(const string &ps1,
                 const vector<TInfo> &completions,
                 const function<bool(const string &)> &process_cmd) {
-  assert(&ps1);
-  assert(&completions);
-  assert(&process_cmd);
 
   static bool InUse(false);
   // NOTE: This isn't a perfect lock. But it's good enough to catch most accidental misuses of the library.

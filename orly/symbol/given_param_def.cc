@@ -47,6 +47,5 @@ TGivenParamDef::~TGivenParamDef() {
 }
 
 void TGivenParamDef::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }

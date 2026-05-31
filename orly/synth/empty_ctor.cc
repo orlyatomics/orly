@@ -133,7 +133,6 @@ Expr::TExpr::TPtr TEmptyCtor::Build() const {
 }
 
 void TEmptyCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   assert(Type);
   Type->ForEachRef(cb);

@@ -225,7 +225,6 @@ TDirWalker::TAction TDirWalker::OnSymLink(const TEntry &/*entry*/) {
 }
 
 void TDirWalker::InitEntry(TEntry &out, const FTSENT *in) {
-  assert(&out);
   assert(in);
   auto *st = in->fts_statp;
   assert(st);

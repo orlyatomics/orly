@@ -176,7 +176,6 @@ namespace Base {
 
       /* Higher priority jobs go first. */
       bool operator<(const TQueueItem &that) const {
-        assert(&that);
         return Priority > that.Priority;
       }
 

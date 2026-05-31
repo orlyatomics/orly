@@ -857,26 +857,22 @@ void TVar::TImpl::Delete(TImpl *impl) {
 }
 
 int TVar::Compare(const TVar &that) const {
-  assert(&that);
   int comp;
   Accept(*this, that, TCompareDoubleVisitor(comp, false));
   return comp;
 }
 
 bool TVar::operator==(const TVar &that) const {
-  assert(&that);
   int comp;
   Accept(*this, that, TCompareDoubleVisitor(comp, true));
   return comp == 0;
 }
 
 bool TVar::operator<(const TVar &that) const {
-  assert(&that);
   return Compare(that) < 0;
 }
 
 bool TVar::operator>(const TVar &that) const {
-  assert(&that);
   return Compare(that) > 0;
 }
 
@@ -923,13 +919,11 @@ void TVar::Init() {
 }
 
 TVar::TVar(TVar &&that) {
-  assert(&that);
   Init();
   std::swap(Impl, that.Impl);
 }
 
 TVar::TVar(const TVar &that) {
-  assert(&that);
   Impl = that.Impl;
 }
 
@@ -938,13 +932,11 @@ TVar TVar::Copy() const {
 }
 
 TVar &TVar::operator=(TVar &&that) {
-  assert(&that);
   std::swap(Impl, that.Impl);
   return *this;
 }
 
 TVar &TVar::operator=(const TVar &that) {
-  assert(&that);
   return *this = TVar(that);
 }
 

@@ -29,7 +29,6 @@ TDevice::TTimeout::TTimeout()
     : runtime_error("timeout") {}
 
 void TDevice::ConsumeOutput(const shared_ptr<const TChunk> &chunk) {
-  assert(&chunk);
   assert(chunk);
   const char *start, *limit;
   chunk->GetData(start, limit);

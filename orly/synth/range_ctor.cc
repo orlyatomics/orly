@@ -96,7 +96,6 @@ void TRangeCtor::Cleanup() {
 }
 
 void TRangeCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Start->ForEachInnerScope(cb);
   if (OptStride) {
@@ -108,7 +107,6 @@ void TRangeCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TRangeCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Start->ForEachRef(cb);
   if (OptStride) {

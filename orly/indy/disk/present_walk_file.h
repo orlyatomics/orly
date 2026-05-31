@@ -58,13 +58,11 @@ namespace Orly {
 
         /* TODO */
         inline bool operator==(const TWalkerKey &that) const {
-          assert(&that);
           return FileId == that.FileId && GenId == that.GenId && IndexId == that.IndexId;
         }
 
         /* TODO */
         inline bool operator!=(const TWalkerKey &that) const {
-          assert(&that);
           return FileId != that.FileId || GenId != that.GenId || IndexId != that.IndexId;
         }
 

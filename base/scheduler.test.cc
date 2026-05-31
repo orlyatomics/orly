@@ -33,13 +33,10 @@ using namespace Base;
 
 #if 0
 static void Push(TEventSemaphore &sem) {
-  assert(&sem);
   sem.Push();
 }
 
 static void PushPop(TEventSemaphore &sem1, TEventSemaphore &sem2) {
-  assert(&sem1);
-  assert(&sem2);
   sem1.Push();
   sem2.Pop();
 }

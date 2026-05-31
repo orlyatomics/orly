@@ -74,9 +74,6 @@ void TService::CreateSession(const Base::TOpt<Base::TUuid> &acct, int ttl, Base:
 }
 
 void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
-  assert(&session_uuid);
-  assert(&parent);
-  assert(&out);
 
   if(parent) {
     out = TPrivatePovObj::TPrivatePovHandle::New(session_uuid, *parent, ttl, bind(&TService::OnPovFail, this, _1), paused)->GetUUID();
@@ -86,8 +83,6 @@ void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const TOpt<Base
 }
 
 void TService::CreateSharedPov(const TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
-  assert(&parent);
-  assert(&out);
 
   if(parent) {
     out = TSharedPovObj::TSharedPovHandle::New(*parent, ttl, bind(&TService::OnPovFail, this, _1), paused)->GetUUID();
@@ -97,7 +92,6 @@ void TService::CreateSharedPov(const TOpt<Base::TUuid> &parent, int ttl, bool pa
 }
 
 void TService::SaveCheckpoint(const string &filename) {
-  assert(&filename);
 
   TSync::TExclusiveLock lock(GlobalPov.GetSync());
 
@@ -124,7 +118,6 @@ void TService::SaveCheckpoint(const string &filename) {
 
 /* TODO: Push Jhm::TAbsBase out to the api. */
 void TService::SetPackageDir(const string &dir) {
-  assert(&dir);
 
   PackageManager.SetPackageDir(dir);
 }
@@ -150,9 +143,6 @@ void TService::Poll(
       const unordered_set<Base::TUuid> &notifiers,
       TOpt<chrono::milliseconds> timeout,
       unordered_map<Base::TUuid, TNotifierState> &out) {
-  assert(&notifiers);
-  assert(&out);
-  assert(&session_uuid);
 
   auto session = TSessionObj::TSessionHandle::Rendezvous(session_uuid);
 
@@ -184,13 +174,7 @@ void TService::Try(
       Atom::TSuprena &result_arena,
       unordered_map<Base::TUuid, Base::TUuid> &notifiers) {
 
-  assert(&func);
   assert(func);
-  assert(&private_pov);
-  assert(&notify_povs);
-  assert(&result_core);
-  assert(&result_arena);
-  assert(&notifiers);
   assert(notifiers.empty()); // Currently if this is not true, the cleanup notifiers logic will die in bad ways.
 
   //Make the call
@@ -342,9 +326,6 @@ void RunTestAndPromoteOnceIfEffects(TService &service, const function<void(Packa
 }
 
 bool TService::RunTest(const Base::TUuid &session, const Base::TUuid &spov_outer, const Package::TTestCase &test, bool verbose) {
-  assert(&session);
-  assert(&spov_outer);
-  assert(&test);
 
   Base::TUuid spov;
   CreateSharedPov(spov_outer, 1000, true, spov);
@@ -408,8 +389,6 @@ bool TService::RunTest(const Base::TUuid &session, const Base::TUuid &spov_outer
 
 
 bool TService::RunTestBlock(const Base::TUuid &session, const Base::TUuid &spov, const Package::TTestBlock &test_block, bool verbose) {
-  assert(&session);
-  assert(&test_block);
 
   bool result = true;
 
@@ -421,7 +400,6 @@ bool TService::RunTestBlock(const Base::TUuid &session, const Base::TUuid &spov,
 }
 
 bool TService::RunTestSuite(const Package::TName &name, bool verbose) {
-  assert(&name);
 
   /* TODO: We really want an API for destroying sessions explicitly */
   Base::TUuid session;
@@ -438,7 +416,6 @@ bool TService::RunTestSuite(const Package::TName &name, bool verbose) {
         if (test->WithBlock) {
           RunTestAndPromoteOnceIfEffects(*this,
               [test](Package::TSpaContext &ctx) {
-                assert(&ctx);
                 assert(test->WithBlock->Runner);
                 test->WithBlock->Runner(ctx, Package::TArgMap());
               },

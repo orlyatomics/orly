@@ -75,7 +75,6 @@ namespace Base {
 
     /* Reads in a character from Input and converts it to it's decimal value. */
     template<typename TVal> bool TryReadDigit(TVal &output) {
-      assert(&output);
       assert(std::numeric_limits<TVal>::is_exact);
       assert(std::numeric_limits<TVal>::min() <= 0);
       assert(std::numeric_limits<TVal>::max() >= 9);
@@ -94,7 +93,6 @@ namespace Base {
     /* Reads in an unsigned integer and stores it inside output. This operation is automic. The positive flag changes whether each digit is added or subtracted
        from the value to make the end result positive/negative. This is useful when the sign is known in advance so we can get more precise bounds checking. */
     template<typename TVal> bool TryReadUnsignedInt(TVal &output, bool positive=true) {
-      assert(&output);
       assert(std::numeric_limits<TVal>::is_integer);
       assert(std::numeric_limits<TVal>::is_exact);
       assert(positive || std::numeric_limits<TVal>::is_signed);
@@ -154,7 +152,6 @@ namespace Base {
        with the try_read flag set manually, rather call ReadInt if you mean try_read=false. At the moment this only supports decimal representations, but
        in the future will be expanded to support hexadecimal and octal. */
     template<typename TVal> bool TryReadInt(TVal &output,bool sign_required=false) {
-      assert(&output);
       assert(std::numeric_limits<TVal>::is_integer);
       assert(std::numeric_limits<TVal>::is_exact);
       assert(sign_required? std::numeric_limits<TVal>::is_signed : true);

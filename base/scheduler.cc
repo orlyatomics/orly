@@ -43,7 +43,6 @@ TScheduler::TPolicy::TPolicy(size_t min_worker_count, size_t max_worker_count, c
 }
 
 void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job) const {
-  assert(&main_job);
   try {
     TMasker masker(*TSet(TSet::Full));
     THandlerInstaller handler(
@@ -78,7 +77,6 @@ TScheduler::TPolicy TScheduler::GetPolicy() const {
 }
 
 void TScheduler::SetPolicy(const TPolicy &policy) {
-  assert(&policy);
   unique_lock<mutex> lock(Mutex);
   Policy = policy;
   PolicyChangedOrJobPushed.notify_all();
@@ -86,7 +84,6 @@ void TScheduler::SetPolicy(const TPolicy &policy) {
 }
 
 bool TScheduler::Schedule(TJob &&job, int priority) {
-  assert(&job);
   unique_lock<mutex> lock(Mutex);
   bool success = (Policy.GetMaxWorkerCount() > 0);
   if (success) {
@@ -221,8 +218,6 @@ TScheduler::TScheduler(const TPolicy &policy, const TOpt<pthread_t> &ctrl_c_thre
 }
 
 bool TScheduler::TryPopJob(unique_lock<mutex> &lock, TJob &job) {
-  assert(&lock);
-  assert(&job);
   bool success;
   do {
     /* If there are too many workers, leave without a job.

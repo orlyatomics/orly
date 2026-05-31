@@ -32,7 +32,6 @@ TReduce::TPtr TReduce::New(const L0::TPackage *package,
 }
 
 void TReduce::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
 
   out << "Reduce" << '(' << Seq << ", ";
   Func->WriteName(out);

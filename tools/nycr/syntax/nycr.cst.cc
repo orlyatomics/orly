@@ -55,7 +55,6 @@ TNycr::~TNycr() = default;
 
 
 void TNycr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -85,7 +84,6 @@ bool TNycr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const 
 }
 
 void TNoDeclSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -109,7 +107,6 @@ TDeclSeq::~TDeclSeq() = default;
 
 
 void TDeclSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -150,7 +147,6 @@ TPrecLevel::~TPrecLevel() = default;
 
 
 void TPrecLevel::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -196,7 +192,6 @@ bool TPrecLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) c
 }
 
 void TPrecKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -217,7 +212,6 @@ bool TPrecKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) con
 }
 
 void TName::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -238,7 +232,6 @@ bool TName::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const 
 }
 
 void TSemi::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -262,7 +255,6 @@ TOper::~TOper() = default;
 
 
 void TOper::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -335,7 +327,6 @@ TSuper::~TSuper() = default;
 
 
 void TSuper::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -373,7 +364,6 @@ bool TSuper::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TColon::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -394,7 +384,6 @@ bool TColon::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoSuper::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -418,7 +407,6 @@ TPattern::~TPattern() = default;
 
 
 void TPattern::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -464,7 +452,6 @@ bool TPattern::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) con
 }
 
 void TEq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -485,7 +472,6 @@ bool TEq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
 }
 
 void TSingleQuotedStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -506,7 +492,6 @@ bool TSingleQuotedStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char 
 }
 
 void TSingleQuotedRawStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -527,7 +512,6 @@ bool TSingleQuotedRawStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const ch
 }
 
 void TDoubleQuotedStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -548,7 +532,6 @@ bool TDoubleQuotedStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char 
 }
 
 void TDoubleQuotedRawStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -572,7 +555,6 @@ TPriLevel::~TPriLevel() = default;
 
 
 void TPriLevel::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -610,7 +592,6 @@ bool TPriLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TPriKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -631,7 +612,6 @@ bool TPriKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) cons
 }
 
 void TIntLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -652,7 +632,6 @@ bool TIntLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TNoPriLevel::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -673,7 +652,6 @@ bool TNoPriLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TRightKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -694,7 +672,6 @@ bool TRightKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TNonassocKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -715,7 +692,6 @@ bool TNonassocKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member)
 }
 
 void TLeftKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -739,7 +715,6 @@ TLanguage::~TLanguage() = default;
 
 
 void TLanguage::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -836,7 +811,6 @@ TRhs::~TRhs() = default;
 
 
 void TRhs::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -882,7 +856,6 @@ bool TRhs::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
 }
 
 void TArrow::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -903,7 +876,6 @@ bool TArrow::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoMemberSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -927,7 +899,6 @@ TMemberSeq::~TMemberSeq() = default;
 
 
 void TMemberSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -968,7 +939,6 @@ TNamedMember::~TNamedMember() = default;
 
 
 void TNamedMember::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1017,7 +987,6 @@ TErrorMember::~TErrorMember() = default;
 
 
 void TErrorMember::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1047,7 +1016,6 @@ bool TErrorMember::Test(::Tools::Nycr::Test::TNode *that, const char *as_member)
 }
 
 void TErrorKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1071,7 +1039,6 @@ TAnonymousMember::~TAnonymousMember() = default;
 
 
 void TAnonymousMember::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1104,7 +1071,6 @@ TOperRef::~TOperRef() = default;
 
 
 void TOperRef::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1142,7 +1108,6 @@ bool TOperRef::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) con
 }
 
 void TNoOperRef::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1166,7 +1131,6 @@ TNoRhs::~TNoRhs() = default;
 
 
 void TNoRhs::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1204,7 +1168,6 @@ bool TNoRhs::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TEmptyKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1225,7 +1188,6 @@ bool TEmptyKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TOpenAngle::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1249,7 +1211,6 @@ TPath::~TPath() = default;
 
 
 void TPath::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1290,7 +1251,6 @@ TPathTail::~TPathTail() = default;
 
 
 void TPathTail::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1328,7 +1288,6 @@ bool TPathTail::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TSlash::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1349,7 +1308,6 @@ bool TSlash::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoPathTail::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1370,7 +1328,6 @@ bool TNoPathTail::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TNoPath::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1391,7 +1348,6 @@ bool TNoPath::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) cons
 }
 
 void TCloseAngle::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1412,7 +1368,6 @@ bool TCloseAngle::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TNoExpectedSr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1436,7 +1391,6 @@ TExpectedSr::~TExpectedSr() = default;
 
 
 void TExpectedSr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1474,7 +1428,6 @@ bool TExpectedSr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TSrKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1495,7 +1448,6 @@ bool TSrKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoExpectedRr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1519,7 +1471,6 @@ TExpectedRr::~TExpectedRr() = default;
 
 
 void TExpectedRr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1557,7 +1508,6 @@ bool TExpectedRr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TRrKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1581,7 +1531,6 @@ TRule::~TRule() = default;
 
 
 void TRule::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1638,7 +1587,6 @@ TKeyword::~TKeyword() = default;
 
 
 void TKeyword::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1695,7 +1643,6 @@ TBase::~TBase() = default;
 
 
 void TBase::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";
@@ -1744,7 +1691,6 @@ TBadDecl::~TBadDecl() = default;
 
 
 void TBadDecl::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
     strm << as_member << " -> ";

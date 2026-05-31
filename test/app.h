@@ -163,7 +163,6 @@ namespace Test {
   template <typename TVal>
   const Test::TApp::TLogger &operator<<(
       const Test::TApp::TLogger &logger, const TVal &val) {
-    assert(&logger);
     return logger.Write(val);
   }
 }

@@ -26,7 +26,6 @@ using namespace Base;
 using namespace Orly::Spa::FluxCapacitor;
 
 void TTetrisPiece::PlayTetris(TContext &ctxt, const function<void (const function<void (TTetrisPiece *)> &)> &piece_generator) {
-  assert(&piece_generator);
   /* Age the generated pieces and fail any that are now too old.  Collect the rest into a group we need to process.
      If, for some reason, the generator yields a null pointer, just skip it. */
   vector<TTetrisPiece *> pieces;

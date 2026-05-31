@@ -68,7 +68,6 @@ namespace Tools {
 
       /* Compares by line, then by column. */
       int Compare(const TPos &that) const {
-        assert(&that);
         int result = LineNumber - that.LineNumber;
         if (!result) {
           result = ColumnNumber - that.ColumnNumber;
@@ -88,7 +87,6 @@ namespace Tools {
 
       /* Writes the position as line:col. */
       void Write(std::ostream &strm) const {
-        assert(&strm);
         strm << LineNumber << ':' << ColumnNumber;
       }
 
@@ -101,7 +99,6 @@ namespace Tools {
 
     /* Standard inserter for Tools::Nycr::TPos. */
     inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::TPos &that) {
-      assert(&that);
       that.Write(strm);
       return strm;
     }

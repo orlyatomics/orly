@@ -105,7 +105,6 @@ void TNew::Write(TCppPrinter &out) const {
 TNew::TNew(const TPtrC<TInline> &val) : Val(val) {}
 
 void TMutate::Write(TCppPrinter &out) const {
-  assert(&out);
 
   if(Mutable->GetReturnType().Is<Type::TSeq>()) {
     out << "for(auto it = " << Mutable << "->NewCursor(); it; ++it) {" << Eol
@@ -211,13 +210,10 @@ void TMutate::Write(TCppPrinter &out) const {
 TStmtBlock::TStmtBlock() {}
 
 void TStmtBlock::Add(const TPtrC<TStmt> &stmt) {
-  assert(&stmt);
   Stmts.push_back(stmt);
 }
 
 void TStmtBlock::Add(const L0::TPackage *package, const TPtrC<TInline> &key, TMutator mutation, const TPtrC<TInline> &rhs) {
-  assert(&key);
-  assert(&rhs);
   assert(key);
   assert(rhs);
 
@@ -233,15 +229,12 @@ void TStmtBlock::Add(const L0::TPackage *package, const TPtrC<TInline> &key, TMu
 }
 
 void TStmtBlock::AddDelete(const L0::TPackage *package, const TPtrC<TInline> &key, const Type::TType &val_type) {
-  assert(&key);
   assert(key);
 
   Stmts.push_back(TPtrC<TStmt>(new TMutate(package, key, TDelete::New(val_type))));
 }
 
 void TStmtBlock::AddNew(const L0::TPackage *package, const TPtrC<TInline> &key, const TPtrC<TInline> &val) {
-  assert(&key);
-  assert(&val);
   assert(key);
   assert(val);
 
@@ -253,7 +246,6 @@ bool TStmtBlock::IsEmpty() const {
 }
 
 void TStmtBlock::Write(TCppPrinter &out) const {
-  assert(&out);
 
   for(auto &it: Stmts) {
     it->Write(out);
@@ -291,7 +283,6 @@ TStmtBlock &TIf::GetElseClause() {
 }
 
 void TIf::Write(TCppPrinter &out) const {
-  assert(&out);
 
   out << Base::Join(IfClauses,
                     " else ",

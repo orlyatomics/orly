@@ -43,7 +43,6 @@ const char *Base::ReadVarInt(const char *buffer, uint32_t &value) {
 
 const char *Base::ReadVarInt(const char *buffer, uint64_t &value) {
   assert(buffer);
-  assert(&value);
   value = 0;
   uint64_t place = 1;
   for (;;) {

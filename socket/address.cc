@@ -69,7 +69,6 @@ TAddress::TAddress(TSpecial special, in_port_t port) {
 }
 
 TAddress::TAddress(istream &&strm) {
-  assert(&strm);
   if (ws(strm).peek() == '!') {
     /* We skipped whitespace and found the mark indicating an unspecified address.
        This is an easy, early-out for us. */
@@ -260,7 +259,6 @@ TAddress &TAddress::SetPath(const char *path) {
 }
 
 void TAddress::Write(ostream &strm) const {
-  assert(&strm);
   in_port_t port = 0;
   switch (Storage.ss_family) {
     case AF_UNSPEC: {
@@ -320,8 +318,6 @@ socklen_t TAddress::GetLen(sa_family_t family) {
 }
 
 void Socket::Bind(TNamedUnixSocket &socket, const TAddress &address) {
-  assert(&socket);
-  assert(&address);
   assert(address.GetFamily() == AF_LOCAL);
   string path(address.GetPath());
 

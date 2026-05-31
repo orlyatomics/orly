@@ -73,14 +73,12 @@ namespace Base {
     /* Move-construct into a new array, leaving the donor in the default-constructed state. */
     TOrderedArray(TOrderedArray &&that) noexcept
         : TOrderedArray() {
-      assert(&that);
       Swap(that);
     }
 
     /* Copy-construct into a new array. */
     TOrderedArray(const TOrderedArray &that)
         : Start(nullptr), Limit(nullptr), Capacity(nullptr), Comparator(that.Comparator) {
-      assert(&that);
       SetMaxSize(that.GetMaxSize());
       try {
         for (const TElem *elem = that.Start; elem < that.Limit; ++elem, ++Limit) {
@@ -100,7 +98,6 @@ namespace Base {
 
     /* Move into this array, leaving the donor in the default-constructed state. */
     TOrderedArray &operator=(TOrderedArray &&that) noexcept {
-      assert(&that);
       Swap(that);
       that.Reset();
       return *this;
@@ -108,7 +105,6 @@ namespace Base {
 
     /* Copy into this array. */
     TOrderedArray &operator=(const TOrderedArray &that) {
-      assert(&that);
       TOrderedArray temp(that);
       return Swap(temp);
     }
@@ -155,7 +151,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order. */
     bool ForEach(const TReader &cb) const {
-      assert(&cb);
       for (TElem *elem = Start; elem < Limit; ++elem) {
         if (!cb(elem->first, elem->second)) {
           return false;
@@ -166,7 +161,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order. */
     bool ForEach(const TWriter &cb) {
-      assert(&cb);
       for (TElem *elem = Start; elem < Limit; ++elem) {
         if (!cb(elem->first, elem->second)) {
           return false;
@@ -177,7 +171,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order, starting with the first key >= the given key. */
     bool ForEach(const TKey &key, const TReader &cb) const {
-      assert(&cb);
       TElem *elem;
       Search(key, elem);
       for (; elem < Limit; ++elem) {
@@ -190,7 +183,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order, starting with the first key >= the given key. */
     bool ForEach(const TKey &key, const TWriter &cb) {
-      assert(&cb);
       TElem *elem;
       Search(key, elem);
       for (; elem < Limit; ++elem) {
@@ -299,7 +291,6 @@ namespace Base {
 
     /* Swap this array with that one. */
     TOrderedArray &Swap(TOrderedArray &that) noexcept {
-      assert(&that);
       std::swap(Start,      that.Start     );
       std::swap(Limit,      that.Limit     );
       std::swap(Capacity,   that.Capacity  );
@@ -371,7 +362,6 @@ namespace Base {
        If we return true, then this post-condition holds: Start <= elem < Limit;
        otherwise, this post-condition holds: Start <= elem <= Limit. */
     bool Search(const TKey &key, TElem *&elem) const {
-      assert(&elem);
       assert(Comparator);
       elem = Start;
       TElem *limit = Limit;

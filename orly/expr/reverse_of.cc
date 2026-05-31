@@ -36,7 +36,6 @@ TReverseOf::TReverseOf(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TReverseOf::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

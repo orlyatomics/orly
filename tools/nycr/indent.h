@@ -45,7 +45,6 @@ namespace Tools {
 
     /* TODO */
     inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::TIndent &that) {
-      assert(&that);
       that.Write(strm);
       return strm;
     }

@@ -226,7 +226,6 @@ namespace Visitor {
        that we have a valid conversion, we conclude by moving the data. */
     template <typename ThatFamily>
     TVariant(TVariant<ThatFamily> &&that) : TVariant() {
-      assert(&that);
       if (!that) {
         return;
       }  // if
@@ -245,7 +244,6 @@ namespace Visitor {
        end rather than moving it. */
     template <typename ThatFamily>
     TVariant(const TVariant<ThatFamily> &that) : TVariant() {
-      assert(&that);
       if (!that) {
         return;
       }  // if
@@ -297,14 +295,12 @@ namespace Visitor {
     /* Accept a regular (non-mutating) visitor. */
     void Accept(const TVisitor &visitor) const {
       assert(*this);
-      assert(&visitor);
       (*Acceptor)(visitor, Data.Get());
     }
 
     /* Accept a mutating visitor. */
     void Accept(const TMutatingVisitor &visitor) {
       assert(*this);
-      assert(&visitor);
       if (!Data.IsUnique()) {
         Data = Single::Accept<TApplier<TMakeShared>>(*this);
       }  // if
@@ -319,7 +315,6 @@ namespace Visitor {
 
     /* Swap two variants. */
     TVariant &Swap(TVariant &that) noexcept {
-      assert(&that);
       if (this == &that) {
         return *this;
       }  // if
@@ -374,7 +369,6 @@ namespace Visitor {
          its correct type. */
       virtual void operator()(const TVisitor &visitor,
                               const void *data) const override {
-        assert(&visitor);
         assert(data);
         visitor(*static_cast<const TElem *>(data));
       }
@@ -386,7 +380,6 @@ namespace Visitor {
          instead. Fullfilling the COW (Copy-on-Write) feature of TVariant. */
       virtual void operator()(const TMutatingVisitor &visitor,
                               void *data) const override {
-        assert(&visitor);
         assert(data);
         visitor(*static_cast<TElem *>(data));
       }

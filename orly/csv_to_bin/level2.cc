@@ -215,6 +215,5 @@ void TLevel2::Update() {
 }
 
 ostream &operator<<(ostream &strm, TLevel2::TState that) {
-  assert(&strm);
   return strm << TLevel2::GetName(that);
 }

@@ -30,7 +30,6 @@ bool TInputConsumer::HasBufferedData() const {
 }
 
 void TInputConsumer::PeekAndDump(string &out) {
-  assert(&out);
   TryRefresh();
   size_t size = Limit - Cursor;
   ostringstream strm;

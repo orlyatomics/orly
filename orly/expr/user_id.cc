@@ -34,7 +34,6 @@ TUserId::TUserId(const TPosRange &pos_range)
     : TLeaf(pos_range) {}
 
 void TUserId::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

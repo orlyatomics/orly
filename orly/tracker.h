@@ -47,15 +47,11 @@ namespace Orly {
 
   /* Binary stream extractor for Orly::TTracker. */
   inline Io::TBinaryInputStream &operator>>(Io::TBinaryInputStream &strm, TTracker &that) {
-    assert(&strm);
-    assert(&that);
     return strm >> that.Id >> that.TimeToLive;
   }
 
   /* Binary stream inserter for Orly::TTracker. */
   inline Io::TBinaryOutputStream &operator<<(Io::TBinaryOutputStream &strm, const TTracker &that) {
-    assert(&strm);
-    assert(&that);
     return strm << that.Id << that.TimeToLive;
   }
 

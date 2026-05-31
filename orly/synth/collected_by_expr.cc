@@ -56,14 +56,12 @@ Expr::TExpr::TPtr TCollectedByExpr::Build() const {
 }
 
 void TCollectedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);
 }
 
 void TCollectedByExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);

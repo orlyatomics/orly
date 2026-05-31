@@ -25,7 +25,6 @@ using namespace std;
 using namespace Strm::Bin;
 
 TIn &TIn::operator>>(bool &that) {
-  assert(&that);
   switch (Peek()) {
     case 'T': {
       that = true;
@@ -44,7 +43,6 @@ TIn &TIn::operator>>(bool &that) {
 }
 
 TIn &TIn::operator>>(string &that) {
-  assert(&that);
   size_t size;
   *this >> size;
   string temp;

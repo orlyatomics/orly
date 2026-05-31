@@ -101,8 +101,6 @@ namespace Base {
      be exhausted when this function returns. */
   template <typename TLhs, typename TRhs>
   int Compare(TIter<TLhs> &lhs, TIter<TRhs> &rhs) {
-    assert(&lhs);
-    assert(&rhs);
     for (; lhs && rhs; ++lhs, ++rhs) {
       if (*lhs < *rhs) {
         return -1;

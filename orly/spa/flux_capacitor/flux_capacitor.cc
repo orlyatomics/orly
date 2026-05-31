@@ -101,7 +101,6 @@ TPov::~TPov() {
 }
 
 void TPov::GetIndex(TIndex<TKV> *&out) const {
-  assert(&out);
   out = KVIndex;
 }
 
@@ -187,7 +186,6 @@ void TChildPov::Unpause() {
 
 TChildPov::TChildPov(TParentPov *parent_pov, const TOnFail& on_fail, bool paused)
     : FlowState(paused ? Paused : Running), IsJoinedToTetris(false), OnFail(on_fail), ParentPov(parent_pov) {
-  assert(&on_fail);
   assert(parent_pov);
   lock_guard<recursive_mutex> lock(parent_pov->ChildListMutex);
   if (!paused) {
@@ -427,8 +425,6 @@ TUpdate::TUpdate(
       LocalCauseCount(0), IsLinkedToPov(false), NextTrailingUpdate(0), PrevTrailingUpdate(0),
       KVCluster(0), AssertChecker(assert_checker), OnPromote(std::move(on_promote)) {
   assert(private_pov);
-  assert(&causes);
-  assert(&op_by_kv);
   Pov = private_pov;
   std::vector<TSync::TSharedLock *> shared_lock_vec;
   try {
@@ -487,7 +483,6 @@ bool TUpdate::Assert(TContext &ctxt) const {
 void TUpdate::AugmentEffectsRecursively(
     unordered_set<const TUpdate *> &effects,
     const TPov *pov) const {
-  assert(&effects);
   if (pov->HasAncestor(Pov)) {
     auto result = effects.insert(this);
     if (result.second) {
@@ -499,7 +494,6 @@ void TUpdate::AugmentEffectsRecursively(
 }
 
 bool TUpdate::ForEachKey(const function<bool (const Var::TVar &)> &cb) const {
-  assert(&cb);
   const unordered_map<TKV, TVersion<TKV> *> &version_by_key = KVCluster->GetVersionByKey();
   for (const auto &item: version_by_key) {
     if (!cb(item.first.GetKey())) {
@@ -755,7 +749,6 @@ void TKVIndex::TKeyIndexCursor::GetValue() const {
 bool TNodeIndex::ForEachTour(
     const function<bool (TTour<TNode> *)> &callback,
     const string *location, const string *klass) const {
-  assert(&callback);
   if (location && klass) {
     TTour<TNode> *tour = TryGetTour(TNode(*location, *klass));
     if (tour && !callback(tour)) {

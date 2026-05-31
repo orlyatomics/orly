@@ -50,7 +50,6 @@ TDict::TDict(const TMemberMap &members, const TPosRange &pos_range)
 }
 
 void TDict::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

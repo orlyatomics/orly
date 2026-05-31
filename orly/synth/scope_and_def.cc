@@ -50,7 +50,6 @@ TScope::TScope(TScope *parent)
 void TScope::ForEachControlledRef(const std::function<void (TAnyRef &)> &) const {}
 
 TDef *TScope::TryGetAnyDef(const TName &name) const {
-  assert(&name);
   TDef *def;
   if (name) {
     const TScope *scope = this;
@@ -79,7 +78,6 @@ TDef *TScope::TryGetAnyDef(const TName &name) const {
 }
 
 void TScope::AddError(const TName &name, const char *expected_type) {
-  assert(&name);
   assert(expected_type);
   GetContext().AddError(name.GetPosRange(), Base::AsStr(std::quoted(name.GetText()), " does not refer to ", expected_type));
 }
@@ -94,7 +92,6 @@ void TDef::BindEachRef() {
 
 TAction TDef::BuildEachDef(int pass, const std::function<void (const std::function<bool (TDef *)> &)> &generate) {
   assert(pass > 0);
-  assert(&generate);
   TAction action = Finish;
   generate([pass, &action](TDef *def){
     bool keep_going;

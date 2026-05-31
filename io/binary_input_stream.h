@@ -96,7 +96,6 @@ namespace Io {
 
     /* Read a string. */
     void Read(std::string &that) {
-      assert(&that);
       size_t size;
       Read(size);
       that.resize(size);
@@ -106,13 +105,11 @@ namespace Io {
     /* Read STL tuples. */
     template <typename... TArgs>
     void Read(std::tuple<TArgs...> &that) {
-      assert(&that);
       Util::ForEach(that, TTupleHelper(*this));
     }
 
     template <typename TRep, typename TPeriod>
     void Read(std::chrono::duration<TRep, TPeriod> &that) {
-      assert(&that);
       TRep rep;
       *this >> rep;
       that = std::chrono::duration<TRep, TPeriod>(rep);
@@ -153,7 +150,6 @@ namespace Io {
     /* Read an STL container that supports push_back(). */
     template <typename TThat>
     void ReadPushableContainer(TThat &that) {
-      assert(&that);
       size_t size;
       Read(size);
       that.clear();
@@ -168,7 +164,6 @@ namespace Io {
     /* Read a built-in, converting from NBO if necessary. */
     template <typename TThat>
     void ReadWithSwap(TThat &that) {
-      assert(&that);
       ReadExactly(&that, sizeof(that));
       GetFormat().ConvertInt(that);
     }
@@ -176,7 +171,6 @@ namespace Io {
     /* Read a built-in without converting from NBO. */
     template <typename TThat>
     void ReadWithoutSwap(TThat &that) {
-      assert(&that);
       ReadExactly(&that, sizeof(that));
     }
 
@@ -207,7 +201,6 @@ namespace Io {
   /* TODO */
   template <typename TThat>
   void TBinaryInputStream::ReadInsertableContainer(TThat &that) {
-    assert(&that);
     size_t size;
     Read(size);
     that.clear();
@@ -231,7 +224,6 @@ namespace Io {
 
     /* Stream in. */
     void Read(TBinaryInputStream &strm) {
-      assert(&strm);
       TSomeInt some_int;
       strm >> some_int;
       SomeEnum = static_cast<TSomeEnum>(some_int);
@@ -297,7 +289,6 @@ namespace Io {
   /* Stream extractor for enums. */
   template <typename TSomeEnum, typename TSomeInt>
   inline TBinaryInputStream &operator>>(TBinaryInputStream &strm, TBinaryInputEnum<TSomeEnum, TSomeInt> &&that) {
-    assert(&that);
     that.Read(strm);
     return strm;
   }
@@ -357,7 +348,6 @@ namespace Io {
   /* Stream extractor for enums. */
   template <typename TSomeEnum, typename TSomeInt>
   inline TBinaryInputStream &&operator>>(TBinaryInputStream &&strm, TBinaryInputEnum<TSomeEnum, TSomeInt> &&that) {
-    assert(&that);
     that.Read(strm);
     return std::move(strm);
   }

@@ -57,7 +57,6 @@ void TDict::Write(std::ostream &strm) const {
 }
 
 void TDict::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

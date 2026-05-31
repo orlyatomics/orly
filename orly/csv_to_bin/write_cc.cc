@@ -100,7 +100,6 @@ void WriteForEachRecord(ostream &strm, const Symbol::TTable *table) {
 }
 
 void Orly::CsvToBin::WriteCc(ostream &strm, const Symbol::TTable *table) {
-  assert(&strm);
   assert(table);
   strm
       << "#include <syslog.h>" << endl
@@ -163,7 +162,6 @@ void Orly::CsvToBin::WriteCc(ostream &strm, const Symbol::TTable *table) {
 }
 
 void Orly::CsvToBin::WriteValRecordForKey(std::ostream &strm, const Symbol::TTable *table, const Symbol::TKey *key, const char *name) {
-  assert(&strm);
   assert(table);
   assert(key);
   assert(name);
@@ -205,7 +203,6 @@ void Orly::CsvToBin::WriteValRecordForKey(std::ostream &strm, const Symbol::TTab
 }
 
 void Orly::CsvToBin::WriteKeyTupleType(std::ostream &strm, const Symbol::TKey *key) {
-  assert(&strm);
   assert(key);
   const auto &fields = key->GetFields();
   assert(!fields.empty());
@@ -227,7 +224,6 @@ void Orly::CsvToBin::WriteKeyTupleType(std::ostream &strm, const Symbol::TKey *k
 }
 
 void Orly::CsvToBin::DefKeyTupleType(std::ostream &strm, const Symbol::TKey *key, const char *name) {
-  assert(&strm);
   assert(key);
   assert(name);
   strm << "using TKey" << name << " = ";

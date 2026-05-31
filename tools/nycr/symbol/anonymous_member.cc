@@ -32,12 +32,10 @@ const TName &TAnonymousMember::GetName() const {
 }
 
 void TAnonymousMember::WriteRhs(ostream &strm) const {
-  assert(&strm);
   strm << TLower(GetKind()->GetName());
 }
 
 void TAnonymousMember::WriteXml(ostream &strm) const {
-  assert(&strm);
   strm << TXmlTag(TXmlTag::AnonymousMember, Open)
        << TXml(GetName())
        << TXmlTag(TXmlTag::Kind, Open)

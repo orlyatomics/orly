@@ -68,7 +68,6 @@ TLog::TCmd::TMeta::TMeta(const char *desc)
 }
 
 TLog::TLog(const TCmd &cmd) {
-  assert(&cmd);
   openlog(cmd.GetProg(), cmd.GetOpenFlags(), LOG_USER);
   setlogmask(cmd.GetMask());
   syslog(LOG_NOTICE, "log started");

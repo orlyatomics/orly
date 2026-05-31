@@ -69,7 +69,6 @@ namespace std {
     typedef Orly::CodeGen::TBinaryScopedRhs::TOp argument_type;
 
     result_type operator()(const argument_type &that) {
-      assert(&that);
       return static_cast<result_type>(that);
     }
 

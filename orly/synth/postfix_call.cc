@@ -95,7 +95,6 @@ void TPostfixCall::Cleanup() {
 }
 
 void TPostfixCall::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
   for (auto arg : Args) {
@@ -104,7 +103,6 @@ void TPostfixCall::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TPostfixCall::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
   for (auto arg : Args) {

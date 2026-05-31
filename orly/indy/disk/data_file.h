@@ -46,13 +46,11 @@ namespace Orly {
 
         /* TODO */
         bool operator==(const TRemapObj &that) const {
-          assert(&that);
           return Arena == that.Arena && OldKey == that.OldKey;
         }
 
         /* TODO */
         bool operator!=(const TRemapObj &that) const {
-          assert(&that);
           return Arena != that.Arena || OldKey != that.OldKey;
         }
 
@@ -124,7 +122,6 @@ namespace Orly {
 
           /* TODO */
           bool operator<(const TUpdateObj &that) const {
-            assert(&that);
             return SequenceNumber < that.SequenceNumber;
           }
 

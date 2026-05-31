@@ -52,7 +52,6 @@ void Tools::Nycr::Symbol::WriteFlex(const char *root, const char *branch, const 
 
 static void CollectAtoms(const TKind *kind, vector<const TAtom *> &atoms) {
   assert(kind);
-  assert(&atoms);
   class TVisitor : public TKind::TVisitor {
     public:
     TVisitor(vector<const TAtom *> &atoms) : Atoms(atoms) {}

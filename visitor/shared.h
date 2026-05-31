@@ -21,7 +21,6 @@
      // In this version, we computed a new value which needs to be managed, so
         fine, we'll give it to std::make_shared<> to get it managed.
      std::shared_ptr<std::string> ToString(const int &that) {
-       assert(&that);
        return std::make_shared<std::string>(std::to_string(that));
      }
 
@@ -29,7 +28,6 @@
         the string is already managed. We'd rather not make another copy of it
         and worse-yet, do an unnecessary heap-allocation.
      std::shared_ptr<std::string> ToString(const std::string &that) {
-       assert(&that);
        return std::make_shared<std::string>(that);
      }
 
@@ -38,7 +36,6 @@
      // ToString(const int &that) omitted.
 
      TShared<std::string> ToString(const std::string &that) {
-       assert(&that);
        return TShared<std::string>::Share(&that);
      }
 
@@ -381,7 +378,6 @@ namespace Visitor {
 
     /* Swap the pointers to the managed element. */
     TShared &Swap(TShared &that) noexcept {
-      assert(&that);
       if (this == &that) {
         return *this;
       }  // if
@@ -448,20 +444,16 @@ namespace Visitor {
   template <typename TLhsElem, typename TRhsElem>
   bool operator==(const TShared<TLhsElem> &lhs,
                   const TShared<TRhsElem> &rhs) noexcept {
-    assert(&lhs);
-    assert(&rhs);
     return lhs.Get() == rhs.Get();
   }
 
   template <typename TElem>
   bool operator==(const TShared<TElem> &lhs, std::nullptr_t rhs) noexcept {
-    assert(&lhs);
     return lhs.Get() == rhs;
   }
 
   template <typename TElem>
   bool operator==(std::nullptr_t lhs, const TShared<TElem> &rhs) noexcept {
-    assert(&rhs);
     return lhs == rhs.Get();
   }
 
@@ -486,15 +478,12 @@ namespace Visitor {
   template <typename TLhsElem, typename TRhsElem>
   bool operator<(const TShared<TLhsElem> &lhs,
                  const TShared<TRhsElem> &rhs) noexcept {
-    assert(&lhs);
-    assert(&rhs);
     using common_t = std::common_type_t<TLhsElem *, TRhsElem *>;
     return std::less<common_t>()(lhs.Get(), rhs.Get());
   }
 
   template <typename TElem>
   bool operator<(const TShared<TElem> &lhs, std::nullptr_t rhs) noexcept {
-    assert(&lhs);
     return std::less<TElem *>()(lhs.Get(), rhs);
   }
 
@@ -559,8 +548,6 @@ namespace Visitor {
   std::basic_ostream<TChar, TCharTraits> &operator<<(
       std::basic_ostream<TChar, TCharTraits> &strm,
       const TShared<TElem> &that) {
-    assert(&strm);
-    assert(&that);
     return strm << that.Get();
   }
 
@@ -645,7 +632,6 @@ namespace Visitor {
 
     /* Swap the pointers to the managed element. */
     TWeak &Swap(TWeak &that) noexcept {
-      assert(&that);
       if (this == &that) {
         return *this;
       }  // if
@@ -682,14 +668,12 @@ namespace Visitor {
   /* std::swap<> specialization. */
   template <typename TElem>
   void swap(Visitor::TShared<TElem> &lhs, Visitor::TShared<TElem> &rhs) noexcept {
-    assert(&lhs);
     lhs.Swap(rhs);
   }
 
   /* std::swap<> specialization. */
   template <typename TElem>
   void swap(Visitor::TWeak<TElem> &lhs, Visitor::TWeak<TElem> &rhs) noexcept {
-    assert(&lhs);
     lhs.Swap(rhs);
   }
 
@@ -706,7 +690,6 @@ namespace std {
     using result_type = std::size_t;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       return std::hash<TElem *>()(that.Get());
     }
 

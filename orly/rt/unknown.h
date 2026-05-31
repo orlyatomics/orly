@@ -41,14 +41,12 @@ namespace Orly {
       ~TUnknown() {}
 
       /* TODO */
-      bool operator==(const TUnknown &that) const {
-        assert(&that);
+      bool operator==(const TUnknown &) const {
         return true;
       }
 
       /* TODO */
-      bool operator!=(const TUnknown &that) const {
-        assert(&that);
+      bool operator!=(const TUnknown &) const {
         return false;
       }
 

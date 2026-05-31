@@ -56,8 +56,6 @@ void TBuffer::Fill(uint32_t size, Strm::Bin::TIn &in) {
 }
 
 Strm::Bin::TOut &Orly::Mynde::operator<<(Strm::Bin::TOut &out, const TBuffer &that) {
-  assert(&out);
-  assert(&that);
   out.Write(that.GetData(), that.GetSize());
 
   return out;

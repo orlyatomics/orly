@@ -84,12 +84,10 @@ TAssert::TAssert(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TThatableUnary(expr, pos_range) {}
 
 void TAssert::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
 void TAssert::Delete(const TAssertCase::TPtr &assert_case) {
-  assert(&assert_case);
   assert(assert_case);
   AssertCases.erase(assert_case);
 }
@@ -106,7 +104,6 @@ Type::TType TAssert::GetTypeImpl() const {
 }
 
 void TAssert::Insert(const TAssertCase::TPtr &assert_case) {
-  assert(&assert_case);
   assert(assert_case);
   auto result = AssertCases.insert(assert_case);
   assert(result.second);

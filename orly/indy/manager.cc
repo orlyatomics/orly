@@ -166,14 +166,12 @@ TManager::~TManager() {
 L0::TManager::TPtr<TRepo> TManager::NewSafeRepo(const TUuid &repo_id,
                                         const Base::TOpt<TTtl> &ttl,
                                         const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
-  assert(&repo_id);
   return New(repo_id, *ttl, parent_repo, true);
 }
 
 L0::TManager::TPtr<TRepo> TManager::NewFastRepo(const TUuid &repo_id,
                                         const Base::TOpt<TTtl> &ttl,
                                         const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
-  assert(&repo_id);
   return New(repo_id, *ttl, parent_repo, false);
 }
 
@@ -1093,7 +1091,6 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
     syslog(LOG_INFO, "Create Repo [%s] with ttl=[%ld], is_safe=[%s], create=[%s]", ss.str().c_str(), ttl ? ttl->count() : 0, is_safe ? "true" : "false", create ? "true" : "false");
   }
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  assert(&repo_id);
   if (repo_id != SystemRepoId) {
     assert(SystemRepo);
     if (create) {
@@ -1195,7 +1192,6 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
 }
 
 L0::TManager::TRepo *TManager::ReconstructRepo(const TUuid &repo_id) {
-  assert(&repo_id);
   if (repo_id != SystemRepoId) { /* construct a regular repo */
     auto deadline = TDeadline::max(); /* TODO: we should figure out the right deadline here */
     return TSafeRepo::ReConstructFromDisk(this, repo_id, deadline);

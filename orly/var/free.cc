@@ -38,7 +38,6 @@ void TFree::Write(std::ostream &) const {
 }
 
 void TFree::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

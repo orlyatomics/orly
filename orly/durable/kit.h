@@ -438,14 +438,12 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj>::TPtr(TPtr &&that) {
-      assert(&that);
       SomeObj = that.SomeObj;
       that.SomeObj = nullptr;
     }
 
     template <typename TSomeObj>
     TPtr<TSomeObj>::TPtr(const TPtr &that) {
-      assert(&that);
       if ((SomeObj = that.SomeObj) != nullptr) {
         SomeObj->OnPtrAcquire();
       }
@@ -454,7 +452,6 @@ namespace Orly {
     template <typename TSomeObj>
     template <typename TOtherObj>
     TPtr<TSomeObj>::TPtr(const TPtr<TOtherObj> &that) {
-      assert(&that);
       if ((SomeObj = that.SomeObj) != nullptr) {
         SomeObj->OnPtrAcquire();
       }
@@ -469,7 +466,6 @@ namespace Orly {
 
     template <typename TSomeObj>
     TPtr<TSomeObj> &TPtr<TSomeObj>::operator=(TPtr &&that) {
-      assert(&that);
       std::swap(SomeObj, that.SomeObj);
       return *this;
     }

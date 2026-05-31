@@ -80,14 +80,12 @@ Symbol::Stmt::TStmt::TPtr TMutateStmt::Build() const {
 }
 
 void TMutateStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);
 }
 
 void TMutateStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);

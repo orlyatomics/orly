@@ -49,13 +49,11 @@ Expr::TExpr::TPtr TPrefixStart::Build() const {
 }
 
 void TPrefixStart::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TPrefixStart::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }

@@ -46,7 +46,6 @@ TIfElse::TIfElse(
                            Base::AssertTrue(false_case)}}, pos_range) {}
 
 void TIfElse::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

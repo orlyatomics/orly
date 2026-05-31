@@ -43,8 +43,6 @@ size_t TChunk::Store(int fd) {
 }
 
 bool TChunk::Store(const char *&buf, size_t &size) {
-  assert(&buf);
-  assert(&size);
   assert(buf || !size);
   size_t copy_size = GetRemainingSize();
   bool success = (copy_size != 0);

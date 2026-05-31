@@ -26,17 +26,14 @@ using namespace Io;
 using namespace Orly::Notification;
 
 void TPovFailure::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(*this);
 }
 
 void TSystemShutdown::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(*this);
 }
 
 void TUpdateProgress::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(*this);
 }
 
@@ -95,13 +92,11 @@ void Orly::Notification::Write(TBinaryOutputStream &strm, const TNotification *t
     private:
     TBinaryOutputStream &Strm;
   };
-  assert(&strm);
   assert(that);
   that->Accept(visitor_t(strm));
 }
 
 TNotification *Orly::Notification::New(TBinaryInputStream &strm) {
-  assert(&strm);
   TNotification *result;
   char code;
   strm >> code;

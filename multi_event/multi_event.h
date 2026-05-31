@@ -119,7 +119,6 @@ namespace MultiEvent {
 
     /* Make a consumer which collects events into a set. */
     static TConsumer Consume(std::unordered_set<std::shared_ptr<TEvent>> &events) {
-      assert(&events);
       return std::bind(
         [](const std::shared_ptr<TEvent> &event, std::unordered_set<std::shared_ptr<TEvent>> &events) {
           events.insert(event);
@@ -132,8 +131,6 @@ namespace MultiEvent {
     /* Make a consumer which trampolines an event to a callback by looking up the event's value. */
     template <typename TVal>
     static TConsumer Consume(const std::unordered_map<std::shared_ptr<TEvent>, TVal> &val_by_event, const std::function<void (const TVal &)> &cb) {
-      assert(&val_by_event);
-      assert(&cb);
       return std::bind(
         [](const std::shared_ptr<TEvent> &event,
            const std::unordered_map<std::shared_ptr<TEvent>, TVal> &val_by_event,
@@ -148,7 +145,6 @@ namespace MultiEvent {
 
     /* Produce (one at a time) all the events in a set. */
     static TProducer Produce(const std::unordered_set<std::shared_ptr<TEvent>> &events) {
-      assert(&events);
       return std::bind(
         [](const TConsumer &consumer, const std::unordered_set<std::shared_ptr<TEvent>> &events) {
           for (auto event: events) {
@@ -163,7 +159,6 @@ namespace MultiEvent {
     /* Produce (one at a time) all the events in a map which is keyed by events. */
     template <typename TVal>
     static TProducer Produce(const std::unordered_map<std::shared_ptr<TEvent>, TVal> &val_by_event) {
-      assert(&val_by_event);
       return std::bind(
         [](const TConsumer &consumer, const std::unordered_map<std::shared_ptr<TEvent>, TVal> &val_by_event) {
           for (const auto &event_and_val: val_by_event) {

@@ -83,7 +83,6 @@ TIsKnown::TIsKnown(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TIsKnown::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -101,7 +100,6 @@ TIsUnknown::TIsUnknown(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TIsUnknown::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -119,7 +117,6 @@ TIsKnownExpr::TIsKnownExpr(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const
     : TBinary(lhs, rhs, pos_range) {}
 
 void TIsKnownExpr::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -161,7 +158,6 @@ TKnown::TKnown(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TKnown::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

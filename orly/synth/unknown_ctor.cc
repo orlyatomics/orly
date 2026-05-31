@@ -41,7 +41,6 @@ Expr::TExpr::TPtr TUnknownCtor::Build() const {
 }
 
 void TUnknownCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Type->ForEachRef(cb);
 }

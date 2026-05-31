@@ -93,8 +93,6 @@ namespace Orly {
     /* Some JSON types pass thru to native types directly. */
     template <typename TVal>
     inline void JsonAs(TVal &val, const TJson &json) {
-      assert(&val);
-      assert(&json);
       if (!json.TryAs(val)) {
         THROW_ERROR(TJsonMismatch)
             << "cannot translate from JSON " << json.GetKind()
@@ -119,8 +117,6 @@ namespace Orly {
     /* Translate TTimePnts from JSON strings. */
     inline void TranslateJson(
         Base::Chrono::TTimePnt &val, const TJson &json) {
-      assert(&val);
-      assert(&json);
       std::string temp;
       JsonAs(temp, json);
       struct tm tm;
@@ -138,8 +134,6 @@ namespace Orly {
 
     /* Translate UUIDs from JSON strings. */
     inline void TranslateJson(Base::TUuid &val, const TJson &json) {
-      assert(&val);
-      assert(&json);
       std::string temp;
       JsonAs(temp, json);
       val = Base::TUuid(temp.c_str());
@@ -148,8 +142,6 @@ namespace Orly {
     /* Translate objects as JSON objects, re-entering the translation layer
        to handle the fields. */
     inline void TranslateJson(TObj &val, const TJson &json) {
-      assert(&val);
-      assert(&json);
       val.GetFields().TranslateJson(&val, json);
     }
 
@@ -157,8 +149,6 @@ namespace Orly {
        type inside the TOpt. */
     template <typename TVal>
     inline void TranslateJson(Base::TOpt<TVal> &val, const TJson &json) {
-      assert(&val);
-      assert(&json);
       if (json.IsNull()) {
         val.Reset();
       } else {
@@ -173,8 +163,6 @@ namespace Orly {
     template <typename TVal, typename TAlloc>
     inline void TranslateJson(
         std::vector<TVal, TAlloc> &val, const TJson &json) {
-      assert(&val);
-      assert(&json);
       if (json.GetKind() != TJson::Array) {
         THROW_ERROR(TJsonMismatch)
             << "cannot translate from JSON " << json.GetKind()
@@ -194,8 +182,6 @@ namespace Orly {
     template <typename TVal, typename TDel>
     inline void TranslateJson(
         std::unique_ptr<TVal, TDel> &ptr, const TJson &json) {
-      assert(&ptr);
-      assert(&json);
       ptr.reset(new TVal);
       TranslateJson(*ptr, json);
     }
@@ -214,7 +200,6 @@ namespace Orly {
     template <typename TVal>
     struct NoJson<Base::TOpt<TVal>> final {
       static inline bool TrySetNull(Base::TOpt<TVal> &val) {
-        assert(&val);
         val.Reset();
         return true;
       }
@@ -225,7 +210,6 @@ namespace Orly {
     template <typename TVal, typename TDel>
     struct NoJson<std::unique_ptr<TVal, TDel>> final {
       static inline bool TrySetNull(std::unique_ptr<TVal, TDel> &val) {
-        assert(&val);
         val.reset();
         return true;
       }
@@ -286,7 +270,6 @@ namespace Orly {
          JSON object's type isn't compatible with the field, throw. */
       virtual void SetVal(TSomeObj *that, const TJson &json) const override {
         assert(that);
-        assert(&json);
         TranslateJson(that->*Member, json);
       }
 
@@ -330,7 +313,6 @@ namespace Orly {
 
       /* Add a field to the collection. */
       void AddField(std::unique_ptr<TAnyField<TSomeObj>> &&field_ptr) {
-        assert(&field_ptr);
         assert(field_ptr);
         FieldPtrs.push_back(std::move(field_ptr));
       }
@@ -347,7 +329,6 @@ namespace Orly {
       virtual void TranslateJson(
           TObj *that, const TJson &json) const override {
         assert(that);
-        assert(&json);
         auto *obj = dynamic_cast<TSomeObj *>(that);
         if (!obj) {
           THROW_ERROR(TJsonMismatch)

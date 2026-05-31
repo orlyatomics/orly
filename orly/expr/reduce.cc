@@ -40,7 +40,6 @@ TReduce::TReduce(
       : TThatableBinary(lhs, pos_range) {}
 
 void TReduce::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

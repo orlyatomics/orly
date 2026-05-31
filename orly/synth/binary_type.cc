@@ -32,7 +32,6 @@ TBinaryType::~TBinaryType() {
 }
 
 void TBinaryType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);

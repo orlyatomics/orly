@@ -123,7 +123,6 @@ namespace Base {
     /* Read from the given input string to find a JSON string which starts/ends with '"' and properly unescape escaped
        characters. */
     static std::string ReadQuotedString(std::istream &strm) {
-      assert(&strm);
       /* Eat the opening quote. */
       if (unlikely(strm.peek() != '"')) {
         THROW_ERROR(TSyntaxError) << "missing opening quote";
@@ -264,7 +263,6 @@ namespace Base {
 
     /* The donor is left null. */
     TJson(TJson &&that) noexcept {
-      assert(&that);
       switch (that.Kind) {
         /* Do nothing. */
         case Null:   { break; }
@@ -282,7 +280,6 @@ namespace Base {
 
     /* Deep-copy. */
     TJson(const TJson &that) {
-      assert(&that);
       switch (that.Kind) {
         /* Do nothing. */
         case Null:   { break; }
@@ -393,7 +390,6 @@ namespace Base {
 
     /* The donor is left null. */
     TJson &operator=(TJson &&that) noexcept {
-      assert(&that);
       this->~TJson();
       new (this) TJson(std::move(that));
       return *this;
@@ -401,13 +397,11 @@ namespace Base {
 
     /* Deep-copy. */
     TJson &operator=(const TJson &that) {
-      assert(&that);
       return *this = TJson(that);
     }
 
     /* True iff. this object and that one are in the same state. */
     bool operator==(const TJson &that) const noexcept {
-      assert(&that);
       bool success = (Kind == that.Kind);
       if (success) {
         switch (Kind) {
@@ -443,21 +437,18 @@ namespace Base {
 
     /* Find or create an element contained in an object. */
     TJson &operator[](TString &&that) {
-      assert(&that);
       assert(Kind == Object);
       return Object_[std::move(that)];
     }
 
     /* Find or create an element contained in an object. */
     TJson &operator[](const TString &that) {
-      assert(&that);
       assert(Kind == Object);
       return Object_[that];
     }
 
     /* Find or create an element contained in an object. */
     const TJson &operator[](const TString &that) const {
-      assert(&that);
       assert(Kind == Object);
       const TJson *elem = TryFind(that);
       assert(elem);
@@ -466,7 +457,6 @@ namespace Base {
 
     /* Accept the visitor. */
     void Accept(const TVisitor &visitor) const {
-      assert(&visitor);
       switch (Kind) {
         case Null:   { visitor(       ); break; }
         case Bool:   { visitor(Bool_  ); break; }
@@ -484,7 +474,6 @@ namespace Base {
 
     /* Call back for each element contained in an array. */
     bool ForEachElem(const TArrayCb &cb) const {
-      assert(&cb);
       assert(cb);
       assert(Kind == Array);
       for (const auto &elem: Array_) {
@@ -497,7 +486,6 @@ namespace Base {
 
     /* Call back for each element contained in an object. */
     bool ForEachElem(const TObjectCb &cb) const {
-      assert(&cb);
       assert(cb);
       assert(Kind == Object);
       for (const auto &elem: Object_) {
@@ -510,7 +498,6 @@ namespace Base {
 
     /* Call back for each element contained in an array. */
     bool ForEachElem(const TArrayCbNonConst &cb) {
-      assert(&cb);
       assert(cb);
       assert(Kind == Array);
       for (auto &elem: Array_) {
@@ -523,7 +510,6 @@ namespace Base {
 
     /* Call back for each element contained in an object. */
     bool ForEachElem(const TObjectCbNonConst &cb) {
-      assert(&cb);
       assert(cb);
       assert(Kind == Object);
       for (auto &elem: Object_) {
@@ -584,7 +570,6 @@ namespace Base {
 
     /* Parse from the stream. */
     void Read(std::istream &strm) {
-      assert(&strm);
       int c = std::ws(strm).peek();
       switch (c) {
         case '[': {
@@ -659,7 +644,6 @@ namespace Base {
 
     /* Swap states. */
     TJson &Swap(TJson &that) noexcept {
-      assert(&that);
       TJson temp = std::move(*this);
       new (this) TJson(std::move(that));
       new (&that) TJson(std::move(temp));
@@ -796,7 +780,6 @@ namespace Base {
 
     /* Format to the stream. */
     void Write(std::ostream &strm) const {
-      assert(&strm);
       switch (Kind) {
         case Null: {
           strm << "null";
@@ -864,7 +847,6 @@ namespace Base {
        at the start of the list, a comma. */
     static bool ParseSep(
         std::istream &strm, char close_mark, bool at_start) {
-      assert(&strm);
       int c = std::ws(strm).peek();
       if (c == close_mark) {
         strm.ignore();
@@ -888,7 +870,6 @@ namespace Base {
 
     /* The stream must yield given char or throw a syntax error. */
     static void Match(std::istream &strm, char expected) {
-      assert(&strm);
       if (strm.peek() != expected) {
         THROW_ERROR(TSyntaxError) << "Expected '" << expected << "' but didn't find it. Found '" << char(strm.peek())
                                   << '\'';
@@ -917,20 +898,17 @@ namespace Base {
 
   /* Std stream extractor. */
   inline std::istream &operator>>(std::istream &strm, TJson &that) {
-    assert(&that);
     that.Read(strm);
     return strm;
   }
 
   /* Std stream inserter. */
   inline std::ostream &operator<<(std::ostream &strm, const TJson &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }
 
   inline std::ostream &operator<<(std::ostream &strm, const TJson::TKind &kind) {
-    assert(&kind);
       switch (kind) {
         case TJson::Null:   {
           strm << "null";

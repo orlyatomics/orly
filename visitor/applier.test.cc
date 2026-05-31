@@ -122,17 +122,14 @@ namespace Shape {
   using Double = Visitor::Alias::Double<TShape::TVisitor, TShape::TVisitor>;
 
   void TCircle::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(this);
   }
 
   void TSquare::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(this);
   }
 
   void TTriangle::Accept(const TVisitor &visitor) const {
-    assert(&visitor);
     visitor(this);
   }
 

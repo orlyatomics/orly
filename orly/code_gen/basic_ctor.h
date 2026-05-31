@@ -136,8 +136,6 @@ namespace Orly {
     }; // TBasicCtor
 
     inline void WriteCtorStart(const TBasicCtor<TDictContainer> &ctor, TCppPrinter &out) {
-      assert(&ctor);
-      assert(&out);
       out << "DictCtor<" << ctor.GetNumElements() << '>';
     }
 

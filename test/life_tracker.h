@@ -49,7 +49,6 @@ namespace Test {
 
       /* True iff. all counts equal. */
       bool operator==(const TCounts &that) const noexcept {
-        assert(&that);
         return
             MoveCtor == that.MoveCtor &&
             CopyCtor == that.CopyCtor &&
@@ -98,7 +97,6 @@ namespace Test {
 
     /* Take on the identity of our donor and count a move-assignment. */
     TLifeTracker &operator=(TLifeTracker &&that) noexcept {
-      assert(&that);
       Counts = that.Counts;
       ++(Counts->MoveAssign);
       return *this;
@@ -106,7 +104,6 @@ namespace Test {
 
     /* Take on the identity of our example and count a copy-assignment. */
     TLifeTracker &operator=(const TLifeTracker &that) {
-      assert(&that);
       Counts = that.Counts;
       ++(Counts->CopyAssign);
       return *this;
@@ -124,8 +121,6 @@ namespace Test {
 
     /* Count a swap against both objects. */
     friend void swap(TLifeTracker &lhs, TLifeTracker &rhs) noexcept {
-      assert(&rhs);
-      assert(&lhs);
       using std::swap;
       swap(lhs.Counts, rhs.Counts);
       ++(lhs.Counts->Swap);

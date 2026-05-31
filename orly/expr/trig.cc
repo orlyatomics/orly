@@ -58,7 +58,6 @@ TCos::TCos(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TCos::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -77,7 +76,6 @@ TSin::TSin(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TSin::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -96,7 +94,6 @@ TTan::TTan(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TTan::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -115,7 +112,6 @@ TAcos::TAcos(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TAcos::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -134,7 +130,6 @@ TAsin::TAsin(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TAsin::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -153,7 +148,6 @@ TAtan::TAtan(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TAtan::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 
@@ -172,7 +166,6 @@ TAtan2::TAtan2(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &
     : TBinary(lhs, rhs, pos_range) {}
 
 void TAtan2::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

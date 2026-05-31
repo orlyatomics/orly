@@ -38,7 +38,6 @@ using namespace Orly::Type;
 TObjCtor::TObjCtor(const L0::TPackage *package, const Type::TType &type, TArgs &&args) : TInline(package, type), Args(args) {}
 
 void TObjCtor::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
 
   out
     << GetReturnType() << '('
@@ -70,8 +69,6 @@ void WriteLessExpr(TCppPrinter &out, Type::TObjElems::const_iterator iter, const
 }
 
 void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &obj_type) {
-  assert(&out_dir);
-  assert(&obj_type);
 
   auto obj_name = obj_type.GetMangledName();
 
@@ -461,8 +458,6 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
 }
 
 void Orly::CodeGen::GenObjInclude(const Type::TType &obj_type, TCppPrinter &out) {
-  assert(&obj_type);
-  assert(&out);
 
   // Check for TimePnt and TimeDiff structural types so we don't regenerate them
   const Type::TObj *result = obj_type.TryAs<Type::TObj>();

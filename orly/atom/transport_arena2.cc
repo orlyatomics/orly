@@ -34,8 +34,6 @@ TTransportArena::~TTransportArena() {
 }
 
 TTransportArena *TTransportArena::Read(Io::TBinaryInputStream &strm, TCore &core) {
-  assert(&strm);
-  assert(&core);
   auto transport_arena = new TTransportArena(strm);
   try {
     strm.ReadExactly(&core, sizeof(TCore));
@@ -47,9 +45,7 @@ TTransportArena *TTransportArena::Read(Io::TBinaryInputStream &strm, TCore &core
 }
 
 void TTransportArena::Write(TBinaryOutputStream &strm, TSuprena *suprena, const TCore &core) {
-  assert(&strm);
   assert(suprena);
-  assert(&core);
   /* Get the notes from the arena and put them into merge order. */
   std::vector<const TNote *> notes;
   OrderNotes(notes, suprena->GetNotes(), suprena);
@@ -97,7 +93,6 @@ void TTransportArena::Write(TBinaryOutputStream &strm, TSuprena *suprena, const 
 
 TTransportArena::TTransportArena(TBinaryInputStream &strm)
     : TCore::TArena(false) {
-  assert(&strm);
   uint32_t raw_size;
   strm >> Offsets >> raw_size;
   RawSize = raw_size;

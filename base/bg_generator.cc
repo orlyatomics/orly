@@ -153,7 +153,6 @@ void TAnyBgGenerator::RequireBgHasYielded() const {
 }
 
 void TAnyBgGenerator::Swap(TAnyBgGenerator &that) noexcept {
-  assert(&that);
   /* If this assertion fails, it means this or that generator has already
      started running and so cannot be swapped. */
   assert(State == Unstarted);

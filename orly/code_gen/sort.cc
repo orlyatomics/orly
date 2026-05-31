@@ -30,7 +30,6 @@ TSort::TPtr TSort::New(const L0::TPackage *package,
 }
 
 void TSort::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
 
   out << "Sort(" << Container << ", ";
   Func->WriteName(out);

@@ -47,13 +47,11 @@ namespace Base {
 
     /* Returns true iff. this slice is the same as that one. */
     bool operator==(const TSlice &that) const {
-      assert(&that);
       return Start == that.Start && Limit == that.Limit;
     }
 
     /* Returns true iff. this slice is not the same as that one. */
     bool operator!=(const TSlice &that) const {
-      assert(&that);
       return Start != that.Start || Limit != that.Limit;
     }
 
@@ -88,8 +86,6 @@ namespace Base {
     /* Tries to apply this slice to a sequence of the given size.  If the size is large enough to accomodate us, then this function sets the two out-parameters
        to the correct absolute offsets and returns true; otherwise, this function leaves the out-parameters alone and the returns false. */
     bool TryGetAbsPair(size_t size, size_t &start, size_t &limit) const {
-      assert(&start);
-      assert(&limit);
       ptrdiff_t start_offset = Start.GetAbsOffset(size),
                 limit_offset = Limit.GetAbsOffset(size);
       bool success =

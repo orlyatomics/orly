@@ -36,7 +36,6 @@ void TId::Write(std::ostream &strm) const {
 }
 
 void TId::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

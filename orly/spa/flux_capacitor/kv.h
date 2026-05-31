@@ -42,8 +42,6 @@ namespace Orly {
 
           /* Compare. */
           bool operator()(const TKV &lhs, const TKV &rhs) const {
-            assert(&lhs);
-            assert(&rhs);
             int result = lhs.Key.Compare(rhs.Key);
             return result < 0;
           }
@@ -76,7 +74,6 @@ namespace Orly {
 
         /* TODO */
         TKV &operator=(TKV &&that) {
-          assert(&that);
           std::swap(Key, that.Key);
           std::swap(IndexId, that.IndexId);
           std::swap(Hash, that.Hash);
@@ -85,7 +82,6 @@ namespace Orly {
 
         /* TODO */
         TKV &operator=(const TKV &that) {
-          assert(&that);
           if (this != &that) {
             Key = that.Key;
             IndexId = that.IndexId;

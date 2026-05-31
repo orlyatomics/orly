@@ -37,7 +37,6 @@ TBinaryScopedRhs::TBinaryScopedRhs(const L0::TPackage *package,
         Op(op),
         Lhs(lhs),
         Rhs(TInlineScope::New(package, rhs)) {
-  assert(&lhs);
   assert(lhs);
 }
 

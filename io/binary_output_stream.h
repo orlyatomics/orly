@@ -100,19 +100,16 @@ namespace Io {
 
     template <typename... TArgs>
     void Write(const std::tuple<TArgs...> &that) {
-      assert(&that);
       *this << Base::Concat(that);
     }
 
     template <typename TRep, typename TPeriod>
     void Write(const std::chrono::duration<TRep, TPeriod> &that) {
-      assert(&that);
       Write(that.count());
     }
 
     template <typename TContainer, typename TDelimiter, typename TFormat>
     void Write(const Base::TJoin<TContainer, TDelimiter, TFormat> &that) {
-      assert(&that);
       Base::WriteJoin(*this, that);
     }
 
@@ -149,7 +146,6 @@ namespace Io {
     /* Write an STL container. */
     template <typename TThat>
     void WriteContainer(const TThat &that) {
-      assert(&that);
       Write(that.size());
       for (const typename TThat::value_type &val: that) {
         Write(val);

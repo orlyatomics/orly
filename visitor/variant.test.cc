@@ -145,11 +145,9 @@ int GetInt(const TFoo &that);
 // get_int.cc
 int TGetInt::operator()(int that) const { return that; }
 int TGetInt::operator()(const std::string &that) const {
-  assert(&that);
   return stoi(that);
 }
 int TGetInt::operator()(const std::vector<TFoo> &that) const {
-  assert(&that);
   int result = 0;
   for (const auto &variant : that) {
     result += GetInt(variant);
@@ -286,7 +284,6 @@ int TGetIntAndWriteVector::operator()(int that,
 int TGetIntAndWriteVector::operator()(const std::string &that,
                                       std::ostream &strm,
                                       const std::vector<int> &ints) const {
-  assert(&that);
   for (const auto &i : ints) {
     strm << i;
   }
@@ -295,7 +292,6 @@ int TGetIntAndWriteVector::operator()(const std::string &that,
 int TGetIntAndWriteVector::operator()(const std::vector<TFoo> &that,
                                       std::ostream &strm,
                                       const std::vector<int> &ints) const {
-  assert(&that);
   for (const auto &i : ints) {
     strm << i;
   }
@@ -380,12 +376,10 @@ std::string TToString::operator()(int that) const {
 }
 
 std::string TToString::operator()(const std::string &that) const {
-  assert(&that);
   return "'" + that + "'";
 }
 
 std::string TToString::operator()(const std::vector<TFoo> &that) const {
-  assert(&that);
   std::ostringstream strm;
   strm << '[';
   bool sep = false;
@@ -398,7 +392,6 @@ std::string TToString::operator()(const std::vector<TFoo> &that) const {
 }
 
 std::string TToString::operator()(const std::list<TBar> &that) const {
-  assert(&that);
   std::ostringstream strm;
   strm << '[';
   bool sep = false;
@@ -493,17 +486,14 @@ void SetDefault(TFoo &that);
 
 // set_default.cc
 void TSetDefault::operator()(int &that) const {
-  assert(&that);
   that = 0;
 }
 
 void TSetDefault::operator()(std::string &that) const {
-  assert(&that);
   that.clear();
 }
 
 void TSetDefault::operator()(std::vector<TFoo> &that) const {
-  assert(&that);
   for (auto &variant : that) {
     SetDefault(variant);
   }
@@ -540,7 +530,6 @@ struct TSetDefaultTemplate {
 
   template <typename TMember>
   void operator()(TMember &that) const {
-    assert(&that);
     that = TMember{};
   }
 

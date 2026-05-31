@@ -44,7 +44,6 @@ TMethodRequest::TMethodRequest(const TId &pov_id, const TPackage &package, const
 }
 
 void TMethodRequest::Read(TBinaryInputStream &strm) {
-  assert(&strm);
   strm >> PovId >> TimeToLive >> TrackingId >> Package >> Closure;
   if (!IsValid()) {
     *this = TMethodRequest();
@@ -54,7 +53,6 @@ void TMethodRequest::Read(TBinaryInputStream &strm) {
 }
 
 void TMethodRequest::Write(TBinaryOutputStream &strm) const {
-  assert(&strm);
   strm << PovId << TimeToLive << TrackingId << Package << Closure;
 }
 

@@ -217,7 +217,6 @@ class expr_visitor_t
     }
   }
   void Yield(const TExpr::TPtr &expr) const {
-    assert(&expr);
     assert(expr);
     expr->Accept(*this);
   }
@@ -433,7 +432,6 @@ class expr_visitor_t
       }
     }
     void Yield(const TExpr::TPtr &expr) const {
-      assert(&expr);
       assert(expr);
       expr->Accept(*this);
     }

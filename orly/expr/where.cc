@@ -33,7 +33,6 @@ TWhere::TWhere(const TPosRange &pos_range)
     : TUnary(pos_range) {}
 
 void TWhere::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

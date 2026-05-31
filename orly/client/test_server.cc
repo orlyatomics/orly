@@ -228,7 +228,6 @@ size_t TTestServer::TConn::HandleIoResult(ssize_t actl) {
 }
 
 void TTestServer::AcceptorMain(const string &worker_name) {
-  assert(&worker_name);
   /* Loop here, accepting connections and launching sessions, until the server begins stopping. */
   while (!Stopping) {
     syslog(LOG_INFO, "%s; waiting for connection", worker_name.c_str());
@@ -256,7 +255,6 @@ void TTestServer::AcceptorMain(const string &worker_name) {
 }
 
 void TTestServer::ConnectionMain(const string &worker_name, TFd &client) {
-  assert(&worker_name);
   /* Make an object to manage the I/O over this connection,
      then give the client a few tries to establish a session. */
   TConn conn(this, move(client));
@@ -313,8 +311,6 @@ void TTestServer::ConnectionMain(const string &worker_name, TFd &client) {
 }
 
 void TTestServer::LaunchWorker(string &&worker_name, function<void (const string &)> &&entry_point) {
-  assert(&worker_name);
-  assert(&entry_point);
   /* If we're stopping, throw. */
   if (Stopping) {
     throw TInterrupted();
@@ -340,8 +336,6 @@ void TTestServer::LaunchWorker(string &&worker_name, function<void (const string
 }
 
 void TTestServer::WorkerWrapper(const string &worker_name, const function<void (const string &)> &entry_point) {
-  assert(&worker_name);
-  assert(&entry_point);
   assert(entry_point);
   /* Cache the handle to the thread we're in. */
   auto self = pthread_self();

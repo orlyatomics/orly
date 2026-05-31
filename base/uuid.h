@@ -141,7 +141,6 @@ namespace Base {
 
     /* Swaperator. */
     TUuid &operator=(TUuid &&that) {
-      assert(&that);
       if (this != &that) {
         std::swap(Data, that.Data);
       }
@@ -150,7 +149,6 @@ namespace Base {
 
     /* Copy assignment. */
     TUuid &operator=(const TUuid &that) {
-      assert(&that);
       if (this != &that) {
         uuid_copy(Data, that.Data);
       }
@@ -159,7 +157,6 @@ namespace Base {
 
     /* Copy assignment. */
     TUuid &operator=(const uuid_t &that) {
-      assert(&that);
       if (&Data != &that) {
         uuid_copy(Data, that);
       }
@@ -178,43 +175,36 @@ namespace Base {
 
     /* Comparator. */
     bool operator==(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data) == 0;
     }
 
     /* Comparator. */
     bool operator!=(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data) != 0;
     }
 
     /* Comparator. */
     bool operator<(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data) < 0;
     }
 
     /* Comparator. */
     bool operator<=(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data) <= 0;
     }
 
     /* Comparator. */
     bool operator>(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data) > 0;
     }
 
     /* Comparator. */
     bool operator>=(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data) >= 0;
     }
 
     /* Comparator. */
     int Compare(const TUuid &that) const {
-      assert(&that);
       return uuid_compare(Data, that.Data);
     }
 
@@ -268,7 +258,6 @@ namespace Base {
 
     /* Read from std stream. */
     void Read(std::istream &strm) {
-      assert(&strm);
       char buf[MinBufSize];
       strm.read(buf, StrSize);
       buf[StrSize] = '\0';
@@ -277,7 +266,6 @@ namespace Base {
 
     /* Read from a binary stream. */
     void Read(Io::TBinaryInputStream &strm) {
-      assert(&strm);
       strm >> Data;
     }
 
@@ -289,7 +277,6 @@ namespace Base {
 
     /* Write to a std stream. */
     void Write(std::ostream &strm) const {
-      assert(&strm);
       char buf[MinBufSize];
       Format(buf);
       strm << buf;
@@ -297,7 +284,6 @@ namespace Base {
 
     /* Write to a binary stream. */
     void Write(Io::TBinaryOutputStream &strm) const {
-      assert(&strm);
       strm << Data;
     }
 
@@ -314,28 +300,24 @@ namespace Base {
 
   /* A standard stream extractor for Base::TUuid. */
   inline std::istream &operator>>(std::istream &strm, TUuid &that) {
-    assert(&that);
     that.Read(strm);
     return strm;
   }
 
   /* A standard stream inserter for Base::TUuid. */
   inline std::ostream &operator<<(std::ostream &strm, const TUuid &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }
 
   /* Binary extractor for Base::TUuid. */
   inline Io::TBinaryInputStream &operator>>(Io::TBinaryInputStream &strm, TUuid &that) {
-    assert(&that);
     that.Read(strm);
     return strm;
   }
 
   /* Binary inserter for Base::TUuid. */
   inline Io::TBinaryOutputStream &operator<<(Io::TBinaryOutputStream &strm, const TUuid &that) {
-    assert(&that);
     that.Write(strm);
     return strm;
   }

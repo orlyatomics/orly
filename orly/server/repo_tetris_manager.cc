@@ -183,8 +183,6 @@ namespace Orly {
   namespace Rt {
     template <typename TVal>
     std::ostream &operator<<(std::ostream &out, const TOpt<TVal> &that) {
-      assert(&out);
-      assert(&that);
 
       if(that.IsKnown()) {
         out<<that.GetVal();
@@ -197,7 +195,6 @@ namespace Orly {
 }
 
 bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context) const {
-  assert(&context);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   for (const auto &item: FuncHolderByUpdateId) {
     const auto &entry = MetaRecord.GetEntry(item.first);

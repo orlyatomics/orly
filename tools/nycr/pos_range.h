@@ -50,13 +50,11 @@ namespace Tools {
 
       /* Equal iff. start and limit are equal. */
       bool operator==(const TPosRange &that) const {
-        assert(&that);
         return Start == that.Start && Limit == that.Limit;
       }
 
       /* Unequal iff. start or limit are unequal. */
       bool operator!=(const TPosRange &that) const {
-        assert(&that);
         return Start != that.Start || Limit != that.Limit;
       }
 
@@ -72,7 +70,6 @@ namespace Tools {
 
       /* Writes the range as line1:col1-line2:col2. */
       void Write(std::ostream &strm) const {
-        assert(&strm);
         strm << Start << '-' << Limit;
       }
 
@@ -91,7 +88,6 @@ namespace Tools {
 
     /* Standard inserter for Tools::Nycr::TPosRange. */
     inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::TPosRange &that) {
-      assert(&that);
       that.Write(strm);
       return strm;
     }

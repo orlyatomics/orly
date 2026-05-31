@@ -97,7 +97,6 @@ namespace Tools {
 
       /* Used to dump the tree. */
       void Write(std::ostream &strm) const {
-        assert(&strm);
         strm << PosRange << ' ' << TEscape(Text);
       }
 
@@ -116,7 +115,6 @@ namespace Tools {
 
     /* Standard inserter for Tools::Nycr::TLexeme. */
     inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::TLexeme &that) {
-      assert(&that);
       that.Write(strm);
       return strm;
     }

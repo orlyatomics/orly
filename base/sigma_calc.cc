@@ -43,10 +43,6 @@ void TSigmaCalc::Push(double val) {
 }
 
 size_t TSigmaCalc::Report(double &min, double &max, double &mean, double &sigma) const {
-  assert(&min);
-  assert(&max);
-  assert(&mean);
-  assert(&sigma);
   if (Count) {
     min   = Min;
     max   = Max;
@@ -57,8 +53,6 @@ size_t TSigmaCalc::Report(double &min, double &max, double &mean, double &sigma)
 }
 
 ostream &Base::operator<<(ostream &strm, const TSigmaCalc &that) {
-  assert(&strm);
-  assert(&that);
   double min, max, mean, sigma;
   size_t count = that.Report(min, max, mean, sigma);
   strm << "(count: " << count;

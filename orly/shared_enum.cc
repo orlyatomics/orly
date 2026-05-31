@@ -25,7 +25,6 @@
 using namespace Orly;
 
 std::ostream &Orly::Write(std::ostream &strm, TAddrDir dir) {
-  assert(&strm);
   switch (dir) {
     case TAddrDir::Asc: {
       strm << "asc";
@@ -42,7 +41,6 @@ std::ostream &Orly::Write(std::ostream &strm, TAddrDir dir) {
 
 
 std::ostream &Orly::WriteCppType(std::ostream &strm, TAddrDir dir) {
-  assert(&strm);
   strm << "Orly::TAddrDir::";
   switch (dir) {
     case TAddrDir::Asc: {

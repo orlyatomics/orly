@@ -83,7 +83,6 @@ class TFile final
   }
 
   virtual bool ForEachDependentPtr(const function<bool (TAnyPtr &)> &cb) noexcept override {
-    assert(&cb);
     for (auto &mod: Mods) {
       if (!cb(mod)) {
         return false;

@@ -306,7 +306,6 @@ auto GrabOne(const std::unordered_set<TVal> &container) {
 }
 
 TFile *TWorkFinder::TryGetOutputFileFromPath(const std::string &filename) {
-  assert(&filename);
   TFile *ret = TryGetFileFromPath(filename);
   // If we aren't buildable, try finding the executable form.
   if (ret && !IsBuildable(ret)) {

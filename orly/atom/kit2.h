@@ -363,7 +363,6 @@ namespace Orly {
       template <typename TVal>
       void InitDirect(TTycon tycon, const TVal &val) {
         static_assert(sizeof(TVal) <= MaxDirectSize, "TVal is value too large to store directly.");
-        assert(&val);
         Init(tycon);
         new (DirectBlob) TVal(val);
       }
@@ -883,7 +882,6 @@ namespace Orly {
 
     inline bool TCore::TryQuickOrderComparison(TArena *this_arena, const TCore &that_core, TArena *that_arena, Atom::TComparison &comp) const {
       assert(this_arena);
-      assert(&that_core);
       assert(that_arena);
       bool success = Tycon == that_core.Tycon &&
         Tycon >= TTycon::Blob &&
@@ -1109,7 +1107,6 @@ namespace Orly {
 
     inline bool TCore::MatchType(TArena *this_arena, const TCore &that_core, TArena *that_arena) const {
       assert(this_arena);
-      assert(&that_core);
       assert(that_arena);
       if (Tycon == that_core.Tycon) {
         switch (Tycon) {
@@ -1259,7 +1256,6 @@ namespace Orly {
 
     inline Orly::Sabot::TMatchResult TCore::PrefixMatch(TArena *this_arena, const TCore &that_core, TArena *that_arena) const {
       assert(this_arena);
-      assert(&that_core);
       assert(that_arena);
       assert(Tycon == TTycon::Tuple);
       assert(that_core.Tycon == TTycon::Tuple);
@@ -1319,7 +1315,6 @@ namespace Orly {
     }
 
     inline bool TCore::TryGetQuickHash(size_t &out_hash) const {
-      assert(&out_hash);
       switch (Tycon) {
         case TTycon::Int8: {
           out_hash = std::_Hash_impl::hash(&ForceAs<int8_t>(), sizeof(int8_t));
@@ -1399,7 +1394,6 @@ namespace Orly {
     }
 
     inline bool TCore::TryGetStoredHash(size_t &out_hash) const {
-      assert(&out_hash);
       bool success = Tycon >= TTycon::Blob &&
         IndirectCoreArray.StoresHash &&
         IndirectCoreArray.UsesFullNote;
@@ -1427,8 +1421,6 @@ namespace Orly {
 
     template <typename TVal>
     inline void TCore::TNote::GetArray(TVal *&start, TVal *&limit) const {
-      assert(&start);
-      assert(&limit);
       #ifndef NDEBUG
       if (RawSize % sizeof(TVal)) {
         throw TCorrupt(HERE);

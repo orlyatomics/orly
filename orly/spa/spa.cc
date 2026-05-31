@@ -163,7 +163,6 @@ class TKey {
 
   /* We're equal iff. both method and URI are equal. */
   bool operator==(const TKey &that) const {
-    assert(&that);
     return strcmp(Method, that.Method) == 0 && strcmp(Uri, that.Uri) == 0;
   }
 
@@ -204,8 +203,6 @@ namespace std {
   };  // hash<TKey>
 
   ostream &operator<<(ostream &out, const chrono::milliseconds &that) {
-    assert(&out);
-    assert(&that);
 
     out << that.count();
 
@@ -253,7 +250,6 @@ class TSpa : public Mongoose::TMongoose {
 
       private:
       virtual void WriteAfterDesc(std::ostream &strm) const {
-        assert(&strm);
         strm << "Build: Unknown" << endl // FIXME: Use Version from SCM to tag.
              << endl
              << "Copyright Atomic Kismet Company" << endl
@@ -358,8 +354,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "GET /sys/counters". */
   bool OnGetCounters(TArgs &args, ostream &strm) {
-    assert(&args);
-    assert(&strm);
 
     args.VerifyAllUsed();
 
@@ -376,8 +370,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "GET /sys/installed". */
   bool OnGetInstalled(TArgs &args, ostream &strm) {
-    assert(&args);
-    assert(&strm);
 
     args.VerifyAllUsed();
 
@@ -392,7 +384,6 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "GET /sys/health". */
   bool OnGetHealth(TArgs &args, ostream &/*strm*/) {
-    assert(&args);
 
     args.VerifyAllUsed();
 

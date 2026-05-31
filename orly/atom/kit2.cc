@@ -259,7 +259,6 @@ TCore::TCore(TExtensibleArena *arena, const Type::TAny &type) {
     TExtensibleArena *Arena;
     TCore *Core;
   };
-  assert(&type);
   type.Accept(visitor_t(arena, this));
 }
 
@@ -599,8 +598,6 @@ bool TCore::TrySplit(TArena *arena, size_t lhs_size,
   assert(arena);
   assert(lhs_arena);
   assert(rhs_arena);
-  assert(&lhs_core);
-  assert(&rhs_core);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Sabot::State::TAny::TWrapper my_state(NewState(arena, state_alloc));
   const Sabot::State::TTuple *tuple_state = dynamic_cast<const Sabot::State::TTuple *>(my_state.get());
@@ -630,7 +627,6 @@ TCore::TCore(TExtensibleArena *arena, const char *c_str) {
 }
 
 void TCore::CopyOut(TArena *arena, string &out) const {
-  assert(&out);
   if (Tycon == TTycon::Str) {
     assert(arena);
     void *pin_alloc = alloca(sizeof(TArena::TFinalPin));
@@ -688,8 +684,6 @@ void TCore::InitStr(TExtensibleArena *arena, const char *start, const char *limi
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TUnary &type, const State::TArrayOfSingleStates &state) {
   assert(arena);
-  assert(&type);
-  assert(&state);
   if (!TryInitIndirectCoreArray(tycon, arena, state)) {
     InitIndirectCoreArray(tycon, arena, type, true);
   }
@@ -697,7 +691,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TUnary &type, bool is_exemplar) {
   assert(arena);
-  assert(&type);
   TInit1 init1 =
       [arena, &type](size_t, void *elem) {
         void *pin_alloc = alloca(Type::GetMaxTypePinSize());
@@ -710,8 +703,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TBinary &type, const State::TArrayOfPairsOfStates &state) {
   assert(arena);
-  assert(&type);
-  assert(&state);
   size_t elem_count = state.GetElemCount();
   if (elem_count) {
     void *pin_alloc = alloca(State::GetMaxStatePinSize());
@@ -731,7 +722,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TBinary &type, bool is_exemplar) {
   assert(arena);
-  assert(&type);
   TInit2 init2 =
       [arena, &type](size_t, void *lhs, void *rhs) {
         void *pin_alloc = alloca(Type::GetMaxTypePinSize());
@@ -745,7 +735,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 
 void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TTuple &type, bool is_exemplar) {
   assert(arena);
-  assert(&type);
   TInit1 init1 =
       [arena, &type](size_t elem_idx, void *elem) {
         void *pin_alloc = alloca(Type::GetMaxTypePinSize());
@@ -759,7 +748,6 @@ void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TTuple &t
 
 void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TRecord &type, bool is_exemplar) {
   assert(arena);
-  assert(&type);
   TInit2 init2 =
       [arena, &type](size_t elem_idx, void *lhs, void *rhs) {
         string field_name;
@@ -1150,7 +1138,6 @@ TCore::TNote *TCore::TNote::New(const char *start, const char *limit, bool is_ex
 }
 
 TCore::TNote *TCore::TNote::New(TTycon tycon, size_t elem_count, bool is_exemplar, const TInit1 &init1) {
-  assert(&init1);
   size_t raw_size = elem_count * sizeof(TCore);
   TNote *note = new (raw_size) TNote(tycon, is_exemplar, false , raw_size);
   try {
@@ -1166,7 +1153,6 @@ TCore::TNote *TCore::TNote::New(TTycon tycon, size_t elem_count, bool is_exempla
 }
 
 TCore::TNote *TCore::TNote::New(TTycon tycon, size_t elem_count, bool is_exemplar, const TInit2 &init2) {
-  assert(&init2);
   size_t raw_size = elem_count * sizeof(TPairOfCores);
   TNote *note = new (raw_size) TNote(tycon, is_exemplar, false, raw_size);
   try {

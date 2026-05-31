@@ -139,7 +139,6 @@ namespace Utf8 {
 
     /* True iff. this string piece and that one are pointing at the same memory. */
     bool Is(const TPiece &that) const {
-      assert(&that);
       return Start == that.Start && Limit == that.Limit;
     }
 
@@ -179,8 +178,6 @@ namespace Utf8 {
 
   /* A std stream inserter for Utf8::TPiece. */
   inline std::ostream &operator<<(std::ostream &strm, const TPiece &that) {
-    assert(&strm);
-    assert(&that);
     return strm.write(that.GetStart(), that.GetByteCount());
   }
 
@@ -192,7 +189,6 @@ namespace std {
   template <>
   struct hash<Utf8::TPiece> {
     inline size_t operator()(const Utf8::TPiece &that) const {
-      assert(&that);
       return that.GetHash();
     }
   };

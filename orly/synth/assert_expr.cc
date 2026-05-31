@@ -41,13 +41,11 @@ Expr::TAssertCase::TPtr TAssertExpr::TAssertCase::Build(const Expr::TAssert::TPt
 }
 
 void TAssertExpr::TAssertCase::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TAssertExpr::TAssertCase::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }
@@ -113,7 +111,6 @@ void TAssertExpr::Cleanup() {
 }
 
 void TAssertExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
   for (auto &assert_case : AssertCases) {
@@ -122,7 +119,6 @@ void TAssertExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TAssertExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
   for (auto &assert_case : AssertCases) {

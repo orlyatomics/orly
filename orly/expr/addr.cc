@@ -37,7 +37,6 @@ TAddr::TAddr(const TMemberVec &members, const TPosRange &pos_range)
     : TCtor(members, pos_range) {}
 
 void TAddr::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

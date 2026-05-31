@@ -21,6 +21,5 @@
 using namespace Tools::Nycr::Symbol;
 
 void TKeyword::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }

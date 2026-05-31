@@ -32,7 +32,6 @@ TFilter::TPtr TFilter::New(
 }
 
 void TFilter::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
   out << "TFilterGenerator<" << Type::UnwrapSequence(GetReturnType()) << ">::New(";
   Func->WriteName(out);
   out << ", " << Seq << ')';

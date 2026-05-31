@@ -45,7 +45,6 @@ void TAddr::Write(std::ostream &strm) const {
 }
 
 void TAddr::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

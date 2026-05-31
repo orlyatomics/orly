@@ -32,7 +32,6 @@ TTake::TPtr TTake::New(
 }
 
 void TTake::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
   out
     << "TTakeGenerator<" << Type::UnwrapSequence(GetReturnType()) << ">::New("
     << Count << ", " << Seq << ')';

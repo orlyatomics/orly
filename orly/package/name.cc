@@ -54,7 +54,6 @@ TName TName::Parse(const std::string &name) {
 }
 
 TVersionedName TVersionedName::Parse(const TPiece<const char> &name) {
-  assert(&name);
 
   auto dot_pos = find('.', name.GetLimit() - 1, name.GetStart() - 1);
   if (!dot_pos) {
@@ -69,7 +68,6 @@ TVersionedName TVersionedName::Parse(const TPiece<const char> &name) {
 }
 
 bool TVersionedName::operator==(const TVersionedName &that) const {
-  assert(&that);
 
   return that.Version == Version && that.Name == Name;
 }
@@ -83,8 +81,6 @@ Jhm::TRelPath TVersionedName::GetSoRelPath() const {
 }
 
 ostream &Orly::Package::operator<<(ostream &out, const TVersionedName &that) {
-  assert(&out);
-  assert(&that);
 
   out << that.Name << '.' << that.Version;
 

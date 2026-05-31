@@ -278,8 +278,6 @@ namespace Orly {
     /* TODO: This is an odd place for this. Oh well. */
     template <typename TRet, typename TAddr>
     TMutable<TAddr, TRet> Read(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {
-      assert(&ctx);
-      assert(&addr);
 
       /* TODO: Copy copy copy copy copy! */
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -300,8 +298,6 @@ namespace Orly {
     /* TODO: This is an odd place for this. Oh well. */
     template <typename TAddr>
     bool Exists(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {
-      assert(&ctx);
-      assert(&addr);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       return ctx.Exists(Indy::TIndexKey(index_id, Indy::TKey(Atom::TCore(ctx.GetArena(), Sabot::State::TAny::TWrapper(Native::State::New(addr, state_alloc))), ctx.GetArena())));
     }

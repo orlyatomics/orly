@@ -35,7 +35,6 @@ TCollatedBy::TPtr TCollatedBy::New(
 }
 
 void TCollatedBy::WriteExpr(TCppPrinter &out) const {
-  assert(&out);
   out << "TCollatedByGenerator<"
       << Type::UnwrapSequence(GetReturnType())
       << ", " << Type::UnwrapSequence(Seq->GetReturnType())

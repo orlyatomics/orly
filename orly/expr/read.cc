@@ -36,7 +36,6 @@ TRead::TRead(const TExpr::TPtr &expr, const Type::TType &type, const TPosRange &
     : TUnary(expr, pos_range), Type(type) {}
 
 void TRead::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

@@ -28,7 +28,6 @@ const char *TCodeLocation::GetFile() const {
 }
 
 void TCodeLocation::Write(ostream &strm) const {
-  assert(&strm);
   strm << '[' << GetFile() << ", " << LineNumber << ']';
 }
 

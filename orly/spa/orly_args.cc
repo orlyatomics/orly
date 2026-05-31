@@ -138,8 +138,6 @@ bool TArgs::TryGrabArg(const TStrPiece &name, string &out) {
 }
 
 void TArgs::GrabArg(const TStrPiece &name, string &out) {
-  assert(&name);
-  assert(&out);
 
   if(!TryGrabArg(name, out)) {
     ostringstream s;
@@ -152,8 +150,6 @@ void TArgs::GrabArg(const TStrPiece &name, string &out) {
 //TODO: Convert to Base::Convert.
 //TODO: This is very copy/pasty. Really should abstract it out more. arg value error builder :)
 void TArgs::Convert(const std::string &str, bool &val) {
-  assert(&str);
-  assert(&val);
 
   if(str == "true" || str == "t" || str == "1") {
     val = true;
@@ -165,8 +161,6 @@ void TArgs::Convert(const std::string &str, bool &val) {
 }
 
 void TArgs::Convert(const std::string &str, int &val) {
-  assert(&str);
-  assert(&val);
 
   istringstream iss(str);
   iss>>val;
@@ -177,8 +171,6 @@ void TArgs::Convert(const std::string &str, int &val) {
 }
 
 void TArgs::Convert(const std::string &str, uint64_t &val) {
-  assert(&str);
-  assert(&val);
 
   istringstream iss(str);
   iss>>val;
@@ -190,8 +182,6 @@ void TArgs::Convert(const std::string &str, uint64_t &val) {
 }
 
 void TArgs::Convert(const std::string &str, std::chrono::milliseconds &val) {
-  assert(&str);
-  assert(&val);
 
   uint64_t count;
 
@@ -200,8 +190,6 @@ void TArgs::Convert(const std::string &str, std::chrono::milliseconds &val) {
 }
 
 void TArgs::Convert(const std::string &str, long &val) {
-  assert(&str);
-  assert(&val);
 
   istringstream iss(str);
   iss>>val;
@@ -212,8 +200,6 @@ void TArgs::Convert(const std::string &str, long &val) {
 }
 
 void TArgs::Convert(const std::string &str, Base::TUuid &uuid) {
-  assert(&str);
-  assert(&uuid);
 
   if(!Base::TUuid::IsValidUuid(str.c_str())) {
     throw TIntArgError("uuid");
@@ -245,8 +231,6 @@ void TArgs::VerifyAllUsed() {
 
 template<>
 void TArgs::Get(const TStrPiece &name, std::string &str) {
-  assert(&name);
-  assert(&str);
 
   GrabArg(name, str);
 }

@@ -46,7 +46,6 @@ void Tools::Nycr::Symbol::WriteNycr(const char *root, const char *branch, const 
 
 void Tools::Nycr::Symbol::WriteNycrDecl(const TKind *kind, ostream &strm) {
   assert(kind);
-  assert(&strm);
   class TVisitor : public TKind::TVisitor {
     public:
     TVisitor(ostream &strm) : Strm(strm) {}

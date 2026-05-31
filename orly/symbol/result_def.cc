@@ -42,7 +42,6 @@ TResultDef::~TResultDef() {
 }
 
 void TResultDef::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

@@ -35,8 +35,6 @@ using namespace Base::Chrono;
 /* TODO */
 template <typename TVal>
 static void Read(TConverter &converter, TVal &part, const char *name, const char delimiter) {
-  assert(&converter);
-  assert(&part);
   converter.Read(part);
   if (delimiter != '\0') {
     if (*converter != delimiter) {
@@ -107,7 +105,6 @@ TTimeDiffInfo::TTimeDiffInfo(
 
 /* TODO */
 TTimeDiffInfo::TTimeDiffInfo(const std::string &str) {
-  assert(&str);
   TConverter converter(AsPiece(str));
   TOpt<bool> sign = converter.TryReadSign();
   IsForward = sign ? *sign : true;
@@ -126,7 +123,6 @@ TTimeDiffInfo::TTimeDiffInfo(const std::string &str) {
 /* TODO */
 TTimeDiffInfo::TTimeDiffInfo(const TTimeDiff &time_diff)
     : Nanosecond(time_diff.count()) {
-  assert(&time_diff);
   IsForward = (Nanosecond >= 0);
   Day = Nanosecond / NumNanosecond::Day;
   Nanosecond %= NumNanosecond::Day;
@@ -156,7 +152,6 @@ TTimeDiff TTimeDiffInfo::AsTimeDiff() const {
 
 /* TODO */
 void TTimeDiffInfo::Write(std::ostream &strm) const {
-  assert(&strm);
   strm
     << (IsForward ? '+' : '-')
     << Day << 'T'
@@ -184,7 +179,6 @@ TTimePntInfo::TTimePntInfo(
 /* TODO */
 TTimePntInfo::TTimePntInfo(const std::string &str)
     : UtcOffset(0) {
-  assert(&str);
   TConverter converter(AsPiece(str));
   READ(Year, '-');
   READ(Month, '-');
@@ -215,7 +209,6 @@ TTimePntInfo::TTimePntInfo(const std::string &str)
    then use info in std::tm to construct */
 TTimePntInfo::TTimePntInfo(const TTimePnt &time_pnt)
     : UtcOffset(0) { // Always go to zulu time
-  assert(&time_pnt);
 
   /* std::tm doesn't support nanoseconds so will need to add something */
   auto ms = time_pnt.time_since_epoch().count();
@@ -299,7 +292,6 @@ void TTimePntInfo::Validate(const TCodeLocation &here) const {
 
 /* TODO */
 void TTimePntInfo::Write(std::ostream &strm) const {
-  assert(&strm);
   strm
     << Year << '-'
     << Month << '-'

@@ -48,8 +48,6 @@ namespace Base {
     /* Returns the nth cached event. */
     void GetEvent(size_t n, int &fd, int &flags) const {
       assert(n < EventCount);
-      assert(&fd);
-      assert(&flags);
       const epoll_event &event = Events[n];
       fd = event.data.fd;
       flags = event.events;

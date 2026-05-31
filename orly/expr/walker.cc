@@ -321,7 +321,6 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
       Binary(that);
     }
     void Yield(const TExpr::TPtr &expr) const {
-      assert(&expr);
       assert(expr);
       // For this callback, true means stop, false means keep going
       if (!Cb(expr)) {

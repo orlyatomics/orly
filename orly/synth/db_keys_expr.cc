@@ -50,13 +50,11 @@ Expr::TExpr::TPtr TDbKeysExpr::TFixedMember::Build() const {
 }
 
 void TDbKeysExpr::TFixedMember::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TDbKeysExpr::TFixedMember::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
 }
@@ -75,7 +73,6 @@ Expr::TExpr::TPtr TDbKeysExpr::TFreeMember::Build() const {
 void TDbKeysExpr::TFreeMember::ForEachInnerScope(const std::function<void (TScope *)> &) {}
 
 void TDbKeysExpr::TFreeMember::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Type->ForEachRef(cb);
 }
@@ -161,7 +158,6 @@ void TDbKeysExpr::Cleanup() {
 }
 
 void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto member : Members) {
     member->ForEachInnerScope(cb);
@@ -169,7 +165,6 @@ void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TDbKeysExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto member : Members) {
     member->ForEachRef(cb);

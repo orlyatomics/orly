@@ -35,7 +35,6 @@ namespace Orly {
       typedef TAddrElems TElems;
 
       static TType Get(const TElems &elems) {
-        assert(&elems);
         return TInternedType::Get(elems);
       }
       const TElems &GetElems() const {
@@ -62,7 +61,6 @@ namespace std {
   struct hash<Orly::Type::TAddrElems> {
 
     size_t operator()(const Orly::Type::TAddrElems &that) const {
-      assert(&that);
       size_t result = 0;
       for (const auto &elem: that) {
         //TODO: Find a better hash

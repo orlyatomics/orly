@@ -50,9 +50,7 @@ void TBalancer::AcceptClientConnections() {
   }
 }
 
-void TBalancer::ServeClient(TFd &fd, const TAddress &client_address) {
-  assert(&fd);
-  assert(&client_address);
+void TBalancer::ServeClient(TFd &fd, const TAddress &) {
   const size_t buf_size = 4096;
   /* Figure out which host to route to. */
   const Socket::TAddress &server_address = ChooseHost();

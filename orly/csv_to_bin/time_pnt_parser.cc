@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly::CsvToBin;
 
 void TTimePntParser::Parse(TTimePnt &that) {
-  assert(&that);
   /* Parse something like 2014-07-04. */
   int64_t year;
   size_t size;
@@ -144,8 +143,6 @@ void TTimePntParser::MatchKeyword(const char *keyword) {
 }
 
 void TTimePntParser::ReadDecimalInt(int64_t &value, size_t &size) {
-  assert(&value);
-  assert(&size);
   size = 0;
   __int128 result = 0;
   uint8_t c;
@@ -203,7 +200,6 @@ bool TTimePntParser::TryMatchByte(const char *expected) {
 }
 
 bool TTimePntParser::TryMatchByte(const char *expected, uint8_t &match) {
-  assert(&match);
   uint8_t c = Peek();
   bool success = (strchr(expected, c) != nullptr);
   if (success) {

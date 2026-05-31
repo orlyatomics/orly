@@ -253,14 +253,11 @@ namespace Base {
 
             /* Read a value from a stream. */
             static void Read(std::istream &strm, TVal &val) {
-              assert(&strm);
-              assert(&val);
               strm >> val;
             }
 
             /* Read a value from a JSON object. For unknown json types, treat it as a string. */
             static void Read(const TJson &json, TVal &val) {
-              assert(&json);
               if (json.GetKind() != TJson::String) {
                 THROW_ERROR(std::invalid_argument) << "expected a json string";
               }
@@ -278,14 +275,11 @@ namespace Base {
 
             /* Write a value to a stream. */
             static void Write(std::ostream &strm, const TVal &val) {
-              assert(&strm);
-              assert(&val);
               strm << val;
             }
 
             /* Write a human-readable description of the value type. */
             static void WriteType(std::ostream &strm) {
-              assert(&strm);
               strm << Base::Demangle<TVal>();
             }
 
@@ -312,8 +306,6 @@ namespace Base {
           /* Write the contents of the container as a comma-separated list. */
           template <typename TContainer>
           static void WriteCsl(std::ostream &strm, const TContainer &container) {
-            assert(&strm);
-            assert(&container);
             bool sep_flag = true;
             for (const typename TContainer::value_type &val: container) {
               if (sep_flag) {
@@ -501,7 +493,6 @@ namespace Base {
 
         /* See base class. */
         virtual void WriteCmd(std::ostream &strm) const {
-          assert(&strm);
           strm << Base::Demangle<TSomeCmd>();
         }
 
@@ -576,7 +567,6 @@ namespace Base {
 
         /* See base class. */
         virtual void WriteCmd(std::ostream &strm) const {
-          assert(&strm);
           strm << Base::Demangle<TSomeCmd>();
         }
 
@@ -650,7 +640,6 @@ namespace Base {
           template<typename TSource>
           bool OnRecognition(const TParam *param, TCmd *cmd, TSource &&source, const TMessageConsumer &cb) {
             assert(param);
-            assert(&cb);
             size_t &count = CountByParam.insert(std::make_pair(param, Zero)).first->second;
             ++count;
             if (count > 1 && param->GetRecurrence() == Once) {
@@ -727,14 +716,10 @@ namespace Base {
     }
 
     static void Read(std::istream &strm, bool &val) {
-      assert(&strm);
-      assert(&val);
       strm >> std::boolalpha >> val;
     }
 
     static void Read(const TJson &json, bool &val) {
-      assert(&json);
-      assert(&val);
       if (json.GetKind() != TJson::Bool) {
         DEFINE_ERROR(error_t, std::invalid_argument, "incorrect type");
         THROW_ERROR(error_t) << "expected bool";
@@ -747,13 +732,10 @@ namespace Base {
     }
 
     static void Write(std::ostream &strm, const bool &val) {
-      assert(&strm);
-      assert(&val);
       strm << std::boolalpha << val;
     }
 
     static void WriteType(std::ostream &strm) {
-      assert(&strm);
       strm << "bool";
     }
 
@@ -776,14 +758,10 @@ namespace Base {
     }
 
     static void Read(std::istream &strm, double &val) {
-      assert(&strm);
-      assert(&val);
       strm >> val;
     }
 
     static void Read(const TJson &json, double &val) {
-      assert(&json);
-      assert(&val);
       if (json.GetKind() != TJson::Number) {
         DEFINE_ERROR(error_t, std::invalid_argument, "incorrect type");
         THROW_ERROR(error_t) << "expected double";
@@ -796,13 +774,10 @@ namespace Base {
     }
 
     static void Write(std::ostream &strm, const double &val) {
-      assert(&strm);
-      assert(&val);
       strm << val;
     }
 
     static void WriteType(std::ostream &strm) {
-      assert(&strm);
       strm << "double";
     }
   };  // TCmd::TMeta::TParam::TArg::ValInfo<double>
@@ -819,14 +794,10 @@ namespace Base {
     }
 
     static void Read(std::istream &strm, std::string &val) {
-      assert(&strm);
-      assert(&val);
       strm >> val;
     }
 
     static void Read(const TJson &json, std::string &val) {
-      assert(&json);
-      assert(&val);
       if (json.GetKind() != TJson::String) {
         DEFINE_ERROR(error_t, std::invalid_argument, "incorrect type");
         THROW_ERROR(error_t) << "expected string";
@@ -839,13 +810,10 @@ namespace Base {
     }
 
     static void Write(std::ostream &strm, const std::string &val) {
-      assert(&strm);
-      assert(&val);
       strm << val;
     }
 
     static void WriteType(std::ostream &strm) {
-      assert(&strm);
       strm << "string";
     }
 
@@ -864,7 +832,6 @@ namespace Base {
 
     template<typename TSource>
     static void Read(TSource &&src, std::vector<TVal> &vals) {
-      assert(&vals);
       TVal val;
       ValInfo<TVal>::Read(std::forward<TSource>(src), val);
       vals.push_back(val);
@@ -879,7 +846,6 @@ namespace Base {
     }
 
     static void WriteType(std::ostream &strm) {
-      assert(&strm);
       strm << "array of ";
       ValInfo<TVal>::WriteType(strm);
     }
@@ -900,7 +866,6 @@ namespace Base {
     template<typename TSource>
     static void Read(TSource &&src, std::set<TVal> &vals) {
       DEFINE_ERROR(error_t, std::invalid_argument, "duplicate value");
-      assert(&vals);
       TVal val;
       ValInfo<TVal>::Read(std::forward<TSource>(src), val);
       if (!vals.insert(val).second) {
@@ -917,7 +882,6 @@ namespace Base {
     }
 
     static void WriteType(std::ostream &strm) {
-      assert(&strm);
       strm << "set of ";
       ValInfo<TVal>::WriteType(strm);
     }

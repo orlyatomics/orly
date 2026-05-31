@@ -83,7 +83,6 @@ namespace Orly {
       }
 
       static TMsgHdr *TryDecode(char *&buf, TByteOrder &byte_order) {
-        assert(&byte_order);
         /* Cast to point at a potential message header. */
         auto *msg_hdr = Cast(buf);
         /* Is the byte order good? */
@@ -119,7 +118,6 @@ namespace Orly {
       }
 
       static TMsgHdr *Cast(char *&buf) {
-        assert(&buf);
         assert(buf);
         auto *msg_hdr = reinterpret_cast<TMsgHdr *>(buf);
         buf += sizeof(TMsgHdr);

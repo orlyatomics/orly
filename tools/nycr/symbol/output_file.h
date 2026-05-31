@@ -124,21 +124,18 @@ namespace Tools {
 
 /* Standard inserter for Tools::Nycr::Symbol::TPath. */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TPath &that) {
-  assert(&that);
   that.Write(strm);
   return strm;
 }
 
 /* Standard inserter for Tools::Nycr::Symbol::TScope. */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TScope &that) {
-  assert(&that);
   that.Write(strm);
   return strm;
 }
 
 /* Standard inserter for Tools::Nycr::Symbol::TUsingNamespace. */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TUsingNamespace &that) {
-  assert(&that);
   that.Write(strm);
   return strm;
 }
@@ -146,7 +143,6 @@ inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::T
 
 /* Standard inserter for Tools::Nycr::Symbol::TUnderscore. */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TUnderscore &that) {
-  assert(&that);
   that.Write(strm);
   return strm;
 }

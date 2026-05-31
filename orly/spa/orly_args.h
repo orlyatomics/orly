@@ -95,8 +95,6 @@ namespace Orly {
 
         template<typename TVal>
         void Get(const TStrPiece &name, Base::TOpt<TVal> &val) {
-          assert(&name);
-          assert(&val);
 
           std::string arg;
           if(TryGrabArg(name, arg)) {
@@ -106,8 +104,6 @@ namespace Orly {
 
         template<typename TVal>
         void Get(const TStrPiece &name, TVal &val) {
-          assert(&name);
-          assert(&val);
 
           std::string arg;
           GrabArg(name, arg);
@@ -115,8 +111,6 @@ namespace Orly {
         }
 
         bool GetOpt(const TStrPiece &name, std::string &val) {
-          assert(&name);
-          assert(&val);
 
           return TryGrabArg(name, val);
         }
@@ -124,8 +118,6 @@ namespace Orly {
 
         template<typename TVal>
         bool GetOpt(const TStrPiece &name, TVal &val) {
-          assert(&name);
-          assert(&val);
 
           std::string arg;
           if(!TryGrabArg(name, arg)) {
@@ -140,7 +132,6 @@ namespace Orly {
         template<typename TVal>
         bool GetOpt(const char *prefix, std::unordered_map<std::string, TVal> &args) {
           assert(prefix);
-          assert(&args);
 
           //TODO: Ugly copies
           std::vector<std::string> to_delete;
@@ -212,8 +203,6 @@ namespace Orly {
 
         template<typename TVal>
         void Convert(const std::string &s, Base::TOpt<TVal> &opt_val) {
-          assert(&s);
-          assert(&opt_val);
 
           if(s.size() == 0) {
             opt_val.Reset();
@@ -228,8 +217,6 @@ namespace Orly {
 
         template<typename TVal>
         void Convert(const std::string &s, Rt::TOpt<TVal> &opt_val) {
-          assert(&s);
-          assert(&opt_val);
 
           if(s.size() == 0) {
             opt_val.Reset();

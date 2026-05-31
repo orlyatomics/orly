@@ -75,7 +75,6 @@ void TObjCtor::Cleanup() {
 }
 
 void TObjCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto member : Members) {
     (member.second)->ForEachInnerScope(cb);
@@ -83,7 +82,6 @@ void TObjCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TObjCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   for (auto member : Members) {
     (member.second)->ForEachRef(cb);

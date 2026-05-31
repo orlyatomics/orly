@@ -223,7 +223,6 @@ namespace Orly {
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, std::string &name, void *buf) const override {
-            assert(&name);
             const auto &item = Record->Elems[elem_idx];
             name = item.first;
             return NewSabot(buf, item.second);

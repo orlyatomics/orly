@@ -31,8 +31,6 @@ using namespace std;
 namespace std {
   template <typename TVal>
   ostream &operator<<(ostream &strm, const vector<TVal> &vec) {
-    assert(&strm);
-    assert(&vec);
     strm << '{' << Join(vec, ',') << '}';
     return strm;
   }

@@ -565,7 +565,6 @@ namespace Orly {
             const size_t NumLogicalBlock;
             const size_t Capacity;
             bool operator !=(const TDesc &that) const {
-              assert(&that);
               return Kind != that.Kind
                 || LogicalBlockSize != that.LogicalBlockSize
                 || PhysicalBlockSize != that.PhysicalBlockSize

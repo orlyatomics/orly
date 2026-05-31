@@ -34,16 +34,12 @@ namespace Orly {
     /* Match */
     template <typename TVal>
     bool Match(const TVal &lhs, const TVal &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return lhs == rhs;
     }
 
     /* MatchLess */
     template <typename TVal>
     bool MatchLess(const TVal &lhs, const TVal &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return lhs < rhs;
     }
 
@@ -78,8 +74,6 @@ namespace Orly {
     /* Match an TOpt<TVal> and TOpt<TVal> */
     template <typename TVal>
     bool Match(const TOpt<TVal> &lhs, const TOpt<TVal> &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return lhs.IsKnown() && rhs.IsKnown() ? Match(lhs.GetVal(), rhs.GetVal())
         : lhs.IsUnknown() && rhs.IsUnknown() ? true : false;
     }
@@ -87,8 +81,6 @@ namespace Orly {
     /* Match an TOpt<TVal> and TOpt<TVal> */
     template <typename TVal>
     bool MatchLess(const TOpt<TVal> &lhs, const TOpt<TVal> &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return lhs.IsKnown() && rhs.IsKnown() ? MatchLess(lhs.GetVal(), rhs.GetVal())
         : lhs.IsUnknown() && rhs.IsUnknown() ? false : lhs.IsUnknown() ? true : false;
     }
@@ -96,8 +88,6 @@ namespace Orly {
     /* Match an TList<TVal> and TList<TVal> */
     template <typename TVal>
     bool Match(const std::vector<TVal> &lhs, const std::vector<TVal> &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       if (lhs.size() != rhs.size()) {
         return false;
       }
@@ -114,8 +104,6 @@ namespace Orly {
     /* Match an TList<TVal> and TList<TVal> */
     template <typename TVal>
     bool MatchLess(const std::vector<TVal> &lhs, const std::vector<TVal> &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       auto lhs_iter = lhs.begin();
       auto rhs_iter = rhs.begin();
       for (; lhs_iter != lhs.end() && rhs_iter != rhs.end(); ++lhs_iter, ++rhs_iter) {
@@ -134,8 +122,6 @@ namespace Orly {
     /* Match an TSet<TVal> and TSet<TVal> */
     template <typename TVal>
     bool Match(const TSet<TVal> &lhs, const TSet<TVal> &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       if (lhs.size() != rhs.size()) {
         return false;
       }
@@ -150,8 +136,6 @@ namespace Orly {
     /* Match an TDict<TVal> and TDict<TVal> */
     template <typename TKey, typename TVal>
     bool Match(const TDict<TKey, TVal> &lhs, const TDict<TKey, TVal> &rhs) {
-      assert(&lhs);
-      assert(&rhs);
       if (lhs.size() != rhs.size()) {
         return false;
       }
@@ -183,7 +167,6 @@ namespace std {
     typedef Orly::Rt::TDict<TKey, TVal> argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (const auto &elem : that) {
         result ^= hash<pair<TKey, TVal>>()(elem);
@@ -201,7 +184,6 @@ namespace std {
     typedef Orly::Rt::TSet<TVal> argument_type;
 
     result_type operator()(const argument_type &that) const {
-      assert(&that);
       result_type result = 0;
       for (const auto &elem : that) {
         result ^= hash<TVal>()(elem);

@@ -100,13 +100,11 @@ namespace Signal {
 
     /* Copy constructor. */
     TSet(const TSet &that) {
-      assert(&that);
       memcpy(&OsObj, &that.OsObj, sizeof(OsObj));
     }
 
     /* Assignment operator. */
     TSet &operator=(const TSet &that) {
-      assert(&that);
       memcpy(&OsObj, &that.OsObj, sizeof(OsObj));
       return *this;
     }

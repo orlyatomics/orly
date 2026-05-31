@@ -331,7 +331,6 @@ namespace Orly {
 
       /* TODO */
       bool operator<=(const TVar &that) const {
-        assert(&that);
         return (*this < that) || (*this == that);
       }
 
@@ -340,7 +339,6 @@ namespace Orly {
 
       /* TODO */
       bool operator>=(const TVar &that) const {
-        assert(&that);
         return (*this > that) || (*this == that);
       }
 

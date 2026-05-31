@@ -118,9 +118,6 @@ namespace Orly {
     TMutable<TAddr, TResVal> RewrapMutable(const TMutable<TAddr, TVal> &src_mutable, const TMutableParts &parts,
           const TResVal &res_val) {
 
-      assert(&src_mutable);
-      assert(&parts);
-      assert(&res_val);
       TMutableParts final_parts = src_mutable.GetParts();
       final_parts.insert(final_parts.end(), parts.begin(), parts.end());
       return TMutable<TAddr, TResVal>(src_mutable.GetOptAddr(), final_parts, res_val);
@@ -131,9 +128,6 @@ namespace Orly {
     TMutable<TAddr, TResVal> RewrapMutable(const TMutable<TAddr, TVal> &src_mutable, const Var::TVar &part,
           const TResVal &res_val) {
 
-      assert(&src_mutable);
-      assert(&part);
-      assert(&res_val);
       TMutableParts final_parts = src_mutable.GetParts();
       final_parts.push_back(part);
       return TMutable<TAddr, TResVal>(src_mutable.GetOptAddr(), final_parts, res_val);

@@ -49,14 +49,12 @@ Symbol::Stmt::TStmt::TPtr TDeleteStmt::Build() const {
 }
 
 void TDeleteStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
   ValueType->ForEachRef(cb);
 }
 
 void TDeleteStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }

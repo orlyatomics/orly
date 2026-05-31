@@ -94,7 +94,6 @@ void TIfStmt::Cleanup() {
 }
 
 void TIfStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(&cb);
   assert(cb);
   for (auto if_clause : IfClauses) {
     if_clause->ForEachRef(cb);
@@ -105,7 +104,6 @@ void TIfStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
 }
 
 void TIfStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(&cb);
   assert(cb);
   for (auto if_clause : IfClauses) {
     if_clause->ForEachInnerScope(cb);

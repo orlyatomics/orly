@@ -31,7 +31,6 @@ using namespace Orly::Client::Program;
 
 static bool ForEachXact(const Tools::Nycr::TContextBuilt<TProgram> &program, const TForXact &cb) {
   ThrowSyntaxErrors(program);
-  assert(&cb);
   auto image = dynamic_cast<const TImage *>(program.Get()->GetTop());
   if (!image) {
     DEFINE_ERROR(error_t, runtime_error, "not an image");
@@ -61,7 +60,6 @@ bool Orly::Client::Program::ParseImageStr(const char *str, const TForXact &cb) {
 
 bool Orly::Client::Program::TranslateXact(const TXact *xact, const TForKv &cb) {
   assert(xact);
-  assert(&cb);
   void
       *lhs_alloc = alloca(Sabot::State::GetMaxStateSize()),
       *rhs_alloc = alloca(Sabot::State::GetMaxStateSize());

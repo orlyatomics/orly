@@ -37,7 +37,6 @@ TObjMember::TObjMember(const TExpr::TPtr &expr, const std::string &name, const T
     : TUnary(expr, pos_range), Name(name) {}
 
 void TObjMember::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

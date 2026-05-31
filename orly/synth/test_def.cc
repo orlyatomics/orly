@@ -88,7 +88,6 @@ TAction TTestDef::Build(int pass) {
 }
 
 void TTestDef::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   if (OptWithClause) {
     OptWithClause->ForEachInnerScope(cb);
@@ -97,7 +96,6 @@ void TTestDef::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TTestDef::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   if (OptWithClause) {
     OptWithClause->ForEachRef(cb);

@@ -52,7 +52,6 @@ namespace Tools {
         void InsertIntoParent(TNode *parent, const std::string &kind) {
           assert(parent);
           assert(parent != this);
-          assert(&kind);
           RemoveFromParent();
           Kind = kind;
           Parent = parent;
@@ -112,12 +111,10 @@ namespace Tools {
       };  // TNode;
 
       static void SkipWhitespace(const char *&str) {
-        assert(&str);
         while (!isgraph(*str)) ++str;
       }
 
       static bool TryMatch(const char *&str, char expected) {
-        assert(&str);
         SkipWhitespace(str);
         bool result = *str == expected;
         if (result) ++str;
@@ -131,8 +128,6 @@ namespace Tools {
       }
 
       static void ParseString(const char *&str, std::string &out) {
-        assert(&str);
-        assert(&out);
         SkipWhitespace(str);
         const char *cur = str;
         while (isgraph(*cur) && !ispunct(*cur)) ++cur;

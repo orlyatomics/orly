@@ -33,7 +33,6 @@ Expr::TExpr::TPtr TRefExpr::Build() const {
 }
 
 void TRefExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   cb(FuncDef);
 }

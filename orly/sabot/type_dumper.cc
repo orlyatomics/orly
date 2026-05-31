@@ -126,7 +126,6 @@ void TTypeDumper::operator()(const Type::TMap &type) const {
 }
 
 void TTypeDumper::operator()(const Type::TRecord &type) const {
-  assert(&type);
   Strm << "record(";
   size_t elem_count = type.GetElemCount();
   void *pin_alloc = alloca(Type::GetMaxTypePinSize());
@@ -145,7 +144,6 @@ void TTypeDumper::operator()(const Type::TRecord &type) const {
 }
 
 void TTypeDumper::operator()(const Type::TTuple &type) const {
-  assert(&type);
   Strm << "tuple(";
   size_t elem_count = type.GetElemCount();
   void *pin_alloc = alloca(Type::GetMaxTypePinSize());
@@ -161,7 +159,6 @@ void TTypeDumper::operator()(const Type::TTuple &type) const {
 }
 
 void TTypeDumper::OnBinaryType(const char *name, const Type::TBinary &binary) const {
-  assert(&binary);
   void *pin_alloc = alloca(Type::GetMaxTypePinSize());
   void *type_alloc = alloca(Type::GetMaxTypeSize());
   Type::TBinary::TPin::TWrapper pin(binary.Pin(pin_alloc));
@@ -173,7 +170,6 @@ void TTypeDumper::OnBinaryType(const char *name, const Type::TBinary &binary) co
 }
 
 void TTypeDumper::OnUnaryType(const char *name, const Type::TUnary &unary) const {
-  assert(&unary);
   void *pin_alloc = alloca(Type::GetMaxTypePinSize());
   void *type_alloc = alloca(Type::GetMaxTypeSize());
   Type::TUnary::TPin::TWrapper pin(unary.Pin(pin_alloc));

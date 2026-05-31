@@ -162,8 +162,6 @@ class TTester {
    The boosted version should generally succeed more often than the unboosted version,
    but it's not perfect.  The ratio should be large but probably won't be 1.0. */
 static void GetBoostedSuccessRatio(size_t &boosted_successes, size_t &unboosted_successes) {
-  assert(&boosted_successes);
-  assert(&unboosted_successes);
   boosted_successes = 0;
   unboosted_successes = 0;
   int worker_count = 5, push_count = 10;

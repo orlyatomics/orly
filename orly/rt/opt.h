@@ -42,7 +42,6 @@ namespace Orly {
 
       /* Move contructor.  We get the donor's value (if any) and the donor becomes unknown. */
       TOpt(TOpt &&that) {
-        assert(&that);
         if (that.Val) {
           Val = new (Storage) TVal(std::move(*that.Val));
           that.Reset();
@@ -53,26 +52,22 @@ namespace Orly {
 
       /* Copy constructor. */
       TOpt(const TOpt &that) {
-        assert(&that);
         Val = that.Val ? new (Storage) TVal(*that.Val) : nullptr;
       }
 
       /* Construct by moving the given value into our internal storage.
          What remains of the donor is up to TVal. */
       TOpt(TVal &&that) {
-        assert(&that);
         Val = new (Storage) TVal(std::move(that));
       }
 
       /* Construct with a copy of the given value. */
       TOpt(const TVal &that) {
-        assert(&that);
         Val = new (Storage) TVal(that);
       }
 
       /* Move-construct from a Base::TOpt */
       TOpt(Base::TOpt<TVal> &&that) {
-        assert(&that);
         if (that.Val) {
           Val = new (Storage) TVal(std::move(*that));
           that.Reset();
@@ -83,7 +78,6 @@ namespace Orly {
 
       /* Copy-construct from a Base::TOpt */
       TOpt(const Base::TOpt<TVal> &that) {
-        assert(&that);
         Val = that ? new (Storage) TVal(*that) : nullptr;
       }
 
@@ -94,7 +88,6 @@ namespace Orly {
 
       /* Swaperator. */
       TOpt &operator=(TOpt &&that) {
-        assert(&that);
         if (this != &that) {
           if (Val && that.Val) {
             std::swap(*Val, *that.Val);
@@ -117,7 +110,6 @@ namespace Orly {
       /* If we're already known, swap our value with the given one;
          otherwise, move-construct the value into our storage. */
       TOpt &operator=(TVal &&that) {
-        assert(&that);
         if (Val != &that) {
           if (Val) {
             std::swap(*Val, that);

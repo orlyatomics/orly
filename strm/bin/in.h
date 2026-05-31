@@ -73,7 +73,6 @@ namespace Strm {
 
       /* Read a char as itself, a single byte. */
       TIn &operator>>(char &that) {
-        assert(&that);
         that = Pop();
         return *this;
       }
@@ -92,56 +91,48 @@ namespace Strm {
 
       /* Read an 8-bit signed integer as-is. */
       TIn &operator>>(int8_t &that) {
-        assert(&that);
         that = Pop();
         return *this;
       }
 
       /* Read a 16-bit signed integer as a zig-zag var-int. */
       TIn &operator>>(int16_t &that) {
-        assert(&that);
         that = FromZigZag<uint16_t>(ReadVarInt());
         return *this;
       }
 
       /* Read a 32-bit signed integer as a zig-zag var-int. */
       TIn &operator>>(int32_t &that) {
-        assert(&that);
         that = FromZigZag<uint32_t>(ReadVarInt());
         return *this;
       }
 
       /* Read a 64-bit signed integer as a zig-zag var-int. */
       TIn &operator>>(int64_t &that) {
-        assert(&that);
         that = FromZigZag<uint64_t>(ReadVarInt());
         return *this;
       }
 
       /* Read an 8-bit unsigned integer as-is. */
       TIn &operator>>(uint8_t &that) {
-        assert(&that);
         that = Pop();
         return *this;
       }
 
       /* Read a 16-bit unsigned integer as a var-int. */
       TIn &operator>>(uint16_t &that) {
-        assert(&that);
         that = ReadVarInt();
         return *this;
       }
 
       /* Read a 32-bit unsigned integer as a var-int. */
       TIn &operator>>(uint32_t &that) {
-        assert(&that);
         that = ReadVarInt();
         return *this;
       }
 
       /* Read a 64-bit unsigned integer as a var-int. */
       TIn &operator>>(uint64_t &that) {
-        assert(&that);
         that = ReadVarInt();
         return *this;
       }
@@ -153,7 +144,6 @@ namespace Strm {
          its underlying representation type. */
       template <typename TRep, typename TPeriod>
       TIn &operator>>(std::chrono::duration<TRep, TPeriod> &that) {
-        assert(&that);
         TRep temp;
         *this >> temp;
         that = std::chrono::duration<TRep, TPeriod>(temp);
@@ -165,7 +155,6 @@ namespace Strm {
       template <typename TClock, typename TDuration>
       TIn &operator>>(
           std::chrono::time_point<TClock, TDuration> &that) {
-        assert(&that);
         TDuration temp;
         *this >> temp;
         that = std::chrono::time_point<TClock, TDuration>(temp);
@@ -179,7 +168,6 @@ namespace Strm {
           typename = typename std::enable_if<
               std::is_enum<TSomeEnum>::value>::type>
       TIn &operator>>(TSomeEnum &that) {
-        assert(&that);
         using under_t = typename std::underlying_type<TSomeEnum>::type;
         return *this >> reinterpret_cast<under_t &>(that);
       }
@@ -189,7 +177,6 @@ namespace Strm {
          write a count, as it is implicitly exactly 2. */
       template <typename TFirst, typename TSecond>
       TIn &operator>>(std::pair<TFirst, TSecond> &that) {
-        assert(&that);
         return *this >> that.first >> that.second;
       }
 
@@ -356,7 +343,6 @@ namespace Strm {
           >::type
       >
       TIn &operator>>(TNbo<TVal> &&that) {
-        assert(&that);
         TVal temp;
         ReadShallow(temp);
         that.Val = Io::SwapEnds(temp);
@@ -381,7 +367,6 @@ namespace Strm {
       /* Used by the operator>> overloads for all varieties of std maps. */
       template <typename TCont>
       void ReadMap(TCont &that) {
-        assert(&that);
         size_t count;
         *this >> count;
         TCont temp;
@@ -396,7 +381,6 @@ namespace Strm {
       /* Used by the operator>> overloads for std lists and std vectors. */
       template <typename TCont>
       void ReadSeq(TCont &that) {
-        assert(&that);
         size_t count;
         *this >> count;
         TCont temp;
@@ -412,7 +396,6 @@ namespace Strm {
       /* Used by the operator>> overloads for all varieties of std sets. */
       template <typename TCont>
       void ReadSet(TCont &that) {
-        assert(&that);
         size_t count;
         *this >> count;
         TCont temp;

@@ -50,13 +50,11 @@ Expr::TExpr::TPtr TPostfixCast::Build() const {
 }
 
 void TPostfixCast::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
 }
 
 void TPostfixCast::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);

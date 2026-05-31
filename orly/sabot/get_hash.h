@@ -39,7 +39,6 @@ namespace Orly {
       /* TODO */
       THashVisitor(size_t &val)
           : Hash(val) {
-        assert(&val);
       }
 
       /* Overrides. */

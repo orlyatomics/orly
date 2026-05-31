@@ -98,7 +98,6 @@ void TDecl::Bind() {
 }
 
 void TDecl::BuildPredsAndSelf(int pass, bool &again) {
-  assert(&again);
   if (Readiness < pass) {
     switch (State) {
       case Unstarted: {
@@ -130,7 +129,6 @@ void TDecl::BuildPredsAndSelf(int pass, bool &again) {
 }
 
 void TDecl::ForEachUniqueDecl(const function<void (TDecl *)> &cb) {
-  assert(&cb);
   for (auto iter = DeclsByName.begin(); iter != DeclsByName.end(); ++iter) {
     const vector<TDecl *> &decls = iter->second;
     if (decls.size() == 1) {

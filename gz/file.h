@@ -45,7 +45,6 @@ namespace Gz {
 
     /* Move-construct from that file.  That file will end up closed. */
     TFile(TFile &&that) {
-      assert(&that);
       Handle = that.Handle;
       that.Handle = nullptr;
     }

@@ -23,8 +23,6 @@ using namespace Orly::Package;
 
 #if 0
 void TContext::AddEffect(const Var::TVar &addr, const Var::TPtr<Var::TChange> &change) {
-  assert(&addr);
-  assert(&change);
   assert(change);
 
   Spa::FluxCapacitor::TKV kv(addr);

@@ -30,15 +30,12 @@ using namespace Orly;
 using namespace Orly::Client::Program;
 
 void Orly::Client::Program::TranslatePackage(vector<string> &package_name, uint64_t &version_number, const TPackageName *root) {
-  assert(&package_name);
-  assert(&version_number);
   assert(root);
   TranslatePathName(package_name, root->GetNameList());
   version_number = root->GetIntExpr()->GetLexeme().AsInt();
 }
 
 void Orly::Client::Program::TranslatePathName(vector<string> &path_name, const TNameList *root) {
-  assert(&path_name);
   assert(root);
   path_name.clear();
   do {
@@ -303,7 +300,6 @@ Type::TRecordType::TPin::TPin(const TRecordType *record_type)
 }
 
 Sabot::Type::TAny *Type::TRecordType::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
-  assert(&name);
   auto member = RecordType->Members[elem_idx];
   name = member->GetName()->GetLexeme().GetText();
   return NewTypeSabot(member->GetType(), type_alloc);
@@ -343,7 +339,6 @@ Type::TRecordExpr::TPin::TPin(const TRecordExpr *record_expr)
 }
 
 Sabot::Type::TAny *Type::TRecordExpr::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
-  assert(&name);
   auto member = RecordExpr->Members[elem_idx];
   name = member->GetName()->GetLexeme().GetText();
   return NewTypeSabot(member->GetExpr(), type_alloc);

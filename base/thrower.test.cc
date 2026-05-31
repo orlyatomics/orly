@@ -28,7 +28,6 @@ using namespace Base;
 
 static void GetParts(const char *msg, vector<string> &parts) {
   assert(msg);
-  assert(&parts);
   parts.clear();
   const char
       *start  = nullptr,

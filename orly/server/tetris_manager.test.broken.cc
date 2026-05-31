@@ -104,7 +104,6 @@ class TTetrisManager final
        If the queue is non-empty, pop the next value off it, return the value via out-param, and return true.
        If the queue is empty, leave the out-param alone and return false. */
     bool TryPop(int &value) {
-      assert(&value);
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
       bool success = !Values.empty();
@@ -284,8 +283,6 @@ class TTetrisManager final
 
   /* See our base class.  We construct one of our players. */
   virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master) override {
-    assert(&parent_pov_id);
-    assert(&child_pov_id);
     return new TPlayer(this, parent_pov_id, child_pov_id, is_paused, is_master);
   }
 

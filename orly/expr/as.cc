@@ -39,7 +39,6 @@ TAs::TAs(const TExpr::TPtr &expr, const Type::TType &type, const TPosRange &pos_
     : TUnary(expr, pos_range), Type(type) {}
 
 void TAs::Accept(const TVisitor &visitor) const {
-  assert(&visitor);
   visitor(this);
 }
 

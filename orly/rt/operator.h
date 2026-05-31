@@ -36,8 +36,6 @@ namespace Orly {
       NO_CONSTRUCTION(EqEqStruct);
 
       static bool Do(const TLhs &lhs, const TRhs &rhs) {
-        assert(&lhs);
-        assert(&rhs);
         return lhs == rhs;
       }
 
@@ -49,8 +47,6 @@ namespace Orly {
       NO_CONSTRUCTION(NeqStruct);
 
       static bool Do(const TLhs &lhs, const TRhs &rhs) {
-        assert(&lhs);
-        assert(&rhs);
         return lhs != rhs;
       }
 
@@ -62,8 +58,6 @@ namespace Orly {
       NO_CONSTRUCTION(LtStruct);
 
       static bool Do(const TLhs &lhs, const TRhs &rhs) {
-        assert(&lhs);
-        assert(&rhs);
         return lhs < rhs;
       }
 
@@ -75,8 +69,6 @@ namespace Orly {
       NO_CONSTRUCTION(LtEqStruct);
 
       static bool Do(const TLhs &lhs, const TRhs &rhs) {
-        assert(&lhs);
-        assert(&rhs);
         return lhs <= rhs;
       }
 
@@ -88,8 +80,6 @@ namespace Orly {
       NO_CONSTRUCTION(GtStruct);
 
       static bool Do(const TLhs &lhs, const TRhs &rhs) {
-        assert(&lhs);
-        assert(&rhs);
         return lhs > rhs;
       }
 
@@ -101,8 +91,6 @@ namespace Orly {
       NO_CONSTRUCTION(GtEqStruct);
 
       static bool Do(const TLhs &lhs, const TRhs &rhs) {
-        assert(&lhs);
-        assert(&rhs);
         return lhs >= rhs;
       }
 
@@ -162,7 +150,6 @@ namespace Orly {
     /* Return true if the optional value is known. */
     template <typename TVal>
     bool IsKnown(const TOpt<TVal> &opt_val) {
-      assert(&opt_val);
       return opt_val.IsKnown();
     }
 
@@ -175,33 +162,28 @@ namespace Orly {
     /* Returns true if the optional value is unknown. */
     template <typename TVal>
     bool IsUnknown(const TOpt<TVal> &opt_val) {
-      assert(&opt_val);
       return opt_val.IsUnknown();
     }
 
     /* Pass-through. */
     template <typename TVal>
     const TVal &GetVal(const TVal &val) {
-      assert(&val);
       return val;
     }
 
     /* Returns the value that the optional contains. */
     template <typename TVal>
     const TVal &GetVal(const TOpt<TVal> &opt_val) {
-      assert(&opt_val);
       return opt_val.GetVal();
     }
 
     /* Returns true if the value is known and is equal to true. */
     inline bool IsKnownTrue(const TOpt<bool> &opt_val) {
-      assert(&opt_val);
       return opt_val.IsKnown() && opt_val.GetVal() == true;
     }
 
     /* Returns true if the value is known and is equal to false. */
     inline bool IsKnownFalse(const TOpt<bool> &opt_val) {
-      assert(&opt_val);
       return opt_val.IsKnown() && opt_val.GetVal() == false;
     }
 
@@ -211,8 +193,6 @@ namespace Orly {
 
     template <typename TLhs, typename TRhs>
     TOpt<bool> And(TLhs &&lhs, TRhs &&rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return IsKnownFalse(lhs) || IsKnownFalse(rhs) ? false
           : IsKnown(lhs) && IsKnown(rhs) ? And(GetVal(lhs), GetVal(rhs)) : TOpt<bool>();
     }
@@ -225,7 +205,6 @@ namespace Orly {
     inline bool Not(bool val) { return !val; }
 
     inline TOpt<bool> Not(const TOpt<bool> &opt_val) {
-      assert(&opt_val);
       return opt_val.IsKnown() ? Not(opt_val.GetVal()) : TOpt<bool>();
     }
 
@@ -233,8 +212,6 @@ namespace Orly {
 
     template <typename TLhs, typename TRhs>
     TOpt<bool> Or(TLhs &&lhs, TRhs &&rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return IsKnownTrue(lhs) || IsKnownTrue(rhs) ? true
           : IsKnown(lhs) && IsKnown(rhs) ? Or(GetVal(lhs), GetVal(rhs)) : TOpt<bool>();
     }
@@ -248,8 +225,6 @@ namespace Orly {
 
     template <typename TLhs, typename TRhs>
     TOpt<bool> Xor(TLhs &&lhs, TRhs &&rhs) {
-      assert(&lhs);
-      assert(&rhs);
       return IsKnown(lhs) && IsKnown(rhs) ? Xor(GetVal(lhs), GetVal(rhs)) : TOpt<bool>();
     }
 
@@ -257,8 +232,6 @@ namespace Orly {
     template <typename TVal>
     auto IsKnownExpr(const TOpt<TVal> &opt_val, const TVal &val)
         -> decltype(And(IsKnown(opt_val), EqEq(GetVal(opt_val), val))) {
-      assert(&opt_val);
-      assert(&val);
       return AndThen(IsKnown(opt_val), [&opt_val, &val]() { return EqEq(GetVal(opt_val), val); });
     }
 
@@ -267,9 +240,6 @@ namespace Orly {
       /* Compare an Rt::TOpt and an Rt::TOpt */
       template <typename TLhs, typename TRhs, typename TComp>
       static TOpt<bool> Compare(TLhs &&lhs, TRhs &&rhs, TComp &&comp) {
-        assert(&lhs);
-        assert(&rhs);
-        assert(&comp);
         assert(comp);
         return IsKnown(lhs) && IsKnown(rhs) ? comp(GetVal(lhs), GetVal(rhs)) : TOpt<bool>();
       }
@@ -283,8 +253,6 @@ namespace Orly {
       auto Equal(const TDict<TLhsKey, TLhsVal> &lhs, const TDict<TRhsKey, TRhsVal> &rhs, const bool is_eqeq)
               -> decltype(And(EqEq(lhs.begin()->first , rhs.begin()->first),
                               EqEq(lhs.begin()->second, rhs.begin()->second))) {
-        assert(&lhs);
-        assert(&rhs);
         if (lhs.size() != rhs.size()) {
           return !is_eqeq;
         }
@@ -332,8 +300,6 @@ namespace Orly {
       template <typename TLhs, typename TRhs>
       auto Equal(const std::vector<TLhs> &lhs, const std::vector<TRhs> &rhs, const bool is_eqeq)
             -> decltype(EqEq(*lhs.begin(), *rhs.begin())) {
-        assert(&lhs);
-        assert(&rhs);
         if (lhs.size() != rhs.size()) {
           return !is_eqeq;
         }
@@ -359,11 +325,7 @@ namespace Orly {
             const std::vector<TRhs> &rhs,
             const TElemComp &elem_comp,
             const TSizeComp &size_comp) -> decltype(elem_comp(*lhs.begin(), *rhs.begin())) {
-        assert(&lhs);
-        assert(&rhs);
-        assert(&elem_comp);
         assert(elem_comp);
-        assert(&size_comp);
         assert(size_comp);
         auto lhs_iter = lhs.begin();
         auto rhs_iter = rhs.begin();
@@ -384,8 +346,6 @@ namespace Orly {
       template <typename TLhs, typename TRhs>
       auto Equal(const TSet<TLhs> &lhs, const TSet<TRhs> &rhs, const bool is_eqeq)
             -> decltype(Contains(rhs, *lhs.begin())) {
-        assert(&lhs);
-        assert(&rhs);
         if (lhs.size() != rhs.size()) {
           return !is_eqeq;
         }
@@ -407,9 +367,6 @@ namespace Orly {
             const TSet<TLhs> &lhs,
             const TSet<TRhs> &rhs,
             const TSizeComp &size_comp) -> decltype(Contains(rhs, *lhs.begin())) {
-        assert(&lhs);
-        assert(&rhs);
-        assert(&size_comp);
         assert(size_comp);
         if (!size_comp(lhs.size(), rhs.size())) {
           return false;
@@ -1231,8 +1188,6 @@ namespace Orly {
 
     /* TODO */
     inline bool Contains(const std::string &container, const std::string &val) {
-      assert(&container);
-      assert(&val);
       return container.find(val) != std::string::npos;
     }
 
@@ -1240,8 +1195,6 @@ namespace Orly {
     template <typename TLhs, typename TRhs>
     auto Contains(const std::vector<TLhs> &container, const TRhs &val)
           -> decltype(EqEq(*container.begin(), val)) {
-      assert(&container);
-      assert(&val);
       bool unknown = false;
       auto iter = container.begin();
       for (; iter != container.end(); ++iter) {
@@ -1259,8 +1212,6 @@ namespace Orly {
     /* TODO */
     template <typename TLhs, typename TRhs>
     TOpt<bool> Contains(const TSet<TOpt<TLhs>> &container, const TRhs &val) {
-      assert(&container);
-      assert(&val);
       if (container.empty()) {
         return TOpt<bool>(false);
       }
@@ -1280,8 +1231,6 @@ namespace Orly {
     template <typename TLhs, typename TRhs>
     auto Contains(const TSet<TLhs> &container, const TRhs &val)
           -> decltype(EqEq(*container.begin(), val)) {
-      assert(&container);
-      assert(&val);
       if (container.empty()) {
         return false;
       }
@@ -1294,8 +1243,6 @@ namespace Orly {
     /* TODO */
     template <typename TLhsKey, typename TLhsVal, typename TRhsKey>
     TOpt<bool> Contains(const TDict<TOpt<TLhsKey>, TLhsVal> &container, const TRhsKey &key) {
-      assert(&container);
-      assert(&key);
       if (container.empty()) {
         return TOpt<bool>(false);
       }
@@ -1315,8 +1262,6 @@ namespace Orly {
     template <typename TLhsKey, typename TLhsVal, typename TRhsKey>
     auto Contains(const TDict<TLhsKey, TLhsVal> &container, const TRhsKey &key)
           -> decltype(EqEq(container.begin()->first, key)) {
-      assert(&container);
-      assert(&key);
       if (container.empty()) {
         return false;
       }
@@ -1329,14 +1274,12 @@ namespace Orly {
     /* TODO */
     template <typename TContainer, typename TVal>
     TOpt<bool> Contains(const TOpt<TContainer> &container, const TVal &val) {
-      assert(&container);
       return container.IsKnown() ? Contains(container.GetVal(), val) : TOpt<bool>();
     }
 
     /* TODO */
     template <typename TKey, typename TVal>
     TOpt<bool> Contains(const TOpt<TDict<TKey, TVal>> &container, const TKey &val) {
-      assert(&container);
       return container.IsKnown() ? Contains(container.GetVal(), val) : TOpt<bool>();
     }
 

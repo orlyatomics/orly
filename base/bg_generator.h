@@ -268,7 +268,6 @@ namespace Base {
     /* Swap this generator with that one.  NOTE: It's an error to do this if
        either generator has already started running. */
     TBgGenerator &Swap(TBgGenerator &that) noexcept {
-      assert(&that);
       TAnyBgGenerator::Swap(that);
       std::swap(Cache, that.Cache);
       std::swap(Generate, that.Generate);
@@ -285,7 +284,6 @@ namespace Base {
          operator++(). */
       Generate(
           [this](const TVal &val) {
-            assert(&val);
             assert(!Cache);
             Cache = &val;
             return BgYield();
