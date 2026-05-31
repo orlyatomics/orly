@@ -37,7 +37,6 @@ TExists::TExists(const TExpr::TPtr &expr, const Type::TType &value_type, const T
     : TUnary(expr, pos_range), ValueType(value_type) {}
 
 void TExists::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -66,7 +65,6 @@ Type::TType TExists::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TExistsTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TExistsTypeVisitor(type, GetPosRange()));
   return type;

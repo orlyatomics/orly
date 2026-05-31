@@ -39,7 +39,6 @@ TDefFactory::TDefFactory(const TExprFactory *expr_factory)
 TDefFactory::~TDefFactory() {}
 
 void TDefFactory::NewDefs(const Package::Syntax::TOptDefSeq *opt_def_seq) const {
-  assert(this);
   assert(opt_def_seq);
   ForEach<Package::Syntax::TDef>(opt_def_seq,
       [this](const Package::Syntax::TDef *def) -> bool {
@@ -49,7 +48,6 @@ void TDefFactory::NewDefs(const Package::Syntax::TOptDefSeq *opt_def_seq) const 
 }
 
 void TDefFactory::operator()(const Package::Syntax::TFuncDef *that) const {
-  assert(this);
   auto name = TName(that->GetName());
   TGivenCollector::TGivenSet givens;
   TGivenCollector::CollectGivens(that->GetExpr(), givens);
@@ -78,7 +76,6 @@ void TDefFactory::operator()(const Package::Syntax::TFuncDef *that) const {
 void TDefFactory::operator()(const Package::Syntax::TBadDef *) const { /* DO NOTHING */ }
 
 void TDefFactory::operator()(const Package::Syntax::TTypeDef *that) const {
-  assert(this);
   new TTypeDef(ExprFactory->OuterScope, that);
 }
 
@@ -101,6 +98,5 @@ void TDefFactory::operator()(const Package::Syntax::TPackageDef *that) const {
 }
 
 void TDefFactory::operator()(const Package::Syntax::TTestDef *that) const {
-  assert(this);
   new TTestDef(ExprFactory->OuterScope, that);
 }

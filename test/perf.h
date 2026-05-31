@@ -149,21 +149,18 @@ namespace Test {
 
     /* Increment the counter */
     TGenericCounter &operator++() {
-      assert(this);
       ++Val;
       return *this;
     }
 
     /* Decrement the counter */
     TGenericCounter &operator--() {
-      assert(this);
       --Val;
       return *this;
     }
 
     /* Reset the counter to zero. */
     void Reset() {
-      assert(this);
       Val = 0;
     }
 
@@ -195,31 +192,26 @@ namespace Test {
     }
 
     void Start() {
-      assert(this);
       assert(!StartTime);
       StartTime = TClock::now();
     }
 
     void Stop() {
-      assert(this);
       assert(StartTime);
       assert(!StopTime);
       StopTime = TClock::now();
     }
 
     const Base::TOpt<typename TClock::time_point> &GetStart() const {
-      assert(this);
       return StartTime;
     }
 
     typename TClock::duration GetElapsed() const {
-      assert(this);
       assert(StartTime && StopTime);
       return *StopTime - *StartTime;
     }
 
     Base::TOpt<typename TClock::time_point> GetStop() const {
-      assert(this);
       return StopTime;
     }
 

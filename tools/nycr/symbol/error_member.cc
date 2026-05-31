@@ -24,7 +24,6 @@ using namespace std;
 using namespace Tools::Nycr::Symbol;
 
 TErrorMember::~TErrorMember() {
-  assert(this);
   SetCompound(0);
 }
 

@@ -29,7 +29,6 @@ using namespace Orly;
 using namespace Orly::Atom;
 
 Sabot::Type::TAny *TClosure::TType::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
-  assert(this);
   assert(&name);
   auto iter = Walker[elem_idx];
   name = iter->first;
@@ -37,45 +36,37 @@ Sabot::Type::TAny *TClosure::TType::TPin::NewElem(size_t elem_idx, string &name,
 }
 
 Sabot::Type::TAny *TClosure::TType::TPin::NewElem(size_t elem_idx, void *&out_field_name_state, void *field_name_state_alloc, void *type_alloc) const {
-  assert(this);
   auto iter = Walker[elem_idx];
   out_field_name_state = Native::State::New(iter->first, field_name_state_alloc);
   return iter->second.GetType(Walker.GetClosure()->Arena.get(), type_alloc);
 }
 
 Sabot::Type::TAny *TClosure::TType::TPin::NewElem(size_t elem_idx, void *type_alloc) const {
-  assert(this);
   auto iter = Walker[elem_idx];
   return iter->second.GetType(Walker.GetClosure()->Arena.get(), type_alloc);
 }
 
 size_t TClosure::TType::GetElemCount() const {
-  assert(this);
   return Closure->CoreByName.size();
 }
 
 TClosure::TType::TPinBase *TClosure::TType::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
 Sabot::Type::TRecord *TClosure::TState::GetRecordType(void *type_alloc) const {
-  assert(this);
   return new (type_alloc) TType(Closure);
 }
 
 Sabot::State::TAny *TClosure::TState::TPin::NewElemInRange(size_t elem_idx, void *state_alloc) const {
-  assert(this);
   return Walker[elem_idx]->second.NewState(Walker.GetClosure()->Arena.get(), state_alloc);
 }
 
 TClosure::TState::TPinBase *TClosure::TState::Pin(void *alloc) const {
-  assert(this);
   return new (alloc) TPin(this);
 }
 
 void TClosure::Read(TBinaryInputStream &strm) {
-  assert(this);
   assert(&strm);
   Reset();
   strm >> MethodName;
@@ -119,19 +110,16 @@ void TClosure::Read(TBinaryInputStream &strm) {
 }
 
 bool TClosure::AddCore(const string &name, const TCore &core) {
-  assert(this);
   assert(&core);
   return CoreByName.insert(make_pair(name, core)).second;
 }
 
 void TClosure::Reset() {
-  assert(this);
   Arena = make_shared<TSuprena>();
   MethodName.clear();
 }
 
 void TClosure::Write(TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   strm << MethodName;
   TState state(this);
@@ -143,7 +131,6 @@ TClosure::TClosure(const string &method_name)
     : Arena(make_shared<TSuprena>()), MethodName(method_name) {}
 
 const TCore *TClosure::GetCore(const string &name) const {
-  assert(this);
   const TCore *result = TryGetCore(name);
   if (!result) {
     THROW_ERROR(TUnknownArgName) << '"' << name << '"';
@@ -152,7 +139,6 @@ const TCore *TClosure::GetCore(const string &name) const {
 }
 
 const TCore *TClosure::TryGetCore(const string &name) const {
-  assert(this);
   auto iter = CoreByName.find(name);
   return (iter != CoreByName.end()) ? &(iter->second): nullptr;
 }

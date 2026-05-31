@@ -105,27 +105,22 @@ TBuiltInFunction::TBuiltInFunction(
         ReturnType(return_type) {}
 
 void TBuiltInFunction::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const TBuiltInFunction::TOrderedParams &TBuiltInFunction::GetOrderedParams() const {
-  assert(this);
   return OrderedParams;
 }
 
 Type::TObj::TElems TBuiltInFunction::GetParams() const {
-  assert(this);
   return Params;
 }
 
 std::shared_ptr<const TBuiltInFunction> TBuiltInFunction::GetPtr() const {
-  assert(this);
   return shared_from_this();
 }
 
 Type::TType TBuiltInFunction::GetReturnType() const {
-  assert(this);
   return ReturnType;
 }

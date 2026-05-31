@@ -96,32 +96,27 @@ namespace Base {
 
     /* True iff. we're non-empty. */
     operator bool() const noexcept {
-      assert(this);
       return Start < Limit;
     }
 
     /* A pointer to just past the last element in the view. */
     TElem *GetLimit() const noexcept {
-      assert(this);
       return Limit;
     }
 
     /* The number of elements in the view.
        NOTE: This is NOT the number of bytes unless sizeof(TElem) == 1. */
     size_t GetSize() const noexcept {
-      assert(this);
       return Limit - Start;
     }
 
     /* A pointer to the first element in the view. */
     TElem *GetStart() const noexcept {
-      assert(this);
       return Start;
     }
 
     /* The first element in the view.  The view must be non-empty. */
     TElem &Peek() const noexcept {
-      assert(this);
       assert(Start < Limit);
       return *Start;
     }
@@ -129,7 +124,6 @@ namespace Base {
     /* Pop the first element from the view and shorten the view as per Skip().
        The view must be non-empty.  This makes a copy of the element. */
     TNonConstElem Pop() noexcept {
-      assert(this);
       assert(Start < Limit);
       return *Start++;
     }
@@ -137,7 +131,6 @@ namespace Base {
     /* Shorten the view by advancing the start past the one element.
        The view must be non-empty. */
     TArrayView &Skip() noexcept {
-      assert(this);
       assert(Start < Limit);
       ++Start;
       return *this;
@@ -145,7 +138,6 @@ namespace Base {
 
     /* Resume the default-constructed (empty) state. */
     TArrayView &Reset() noexcept {
-      assert(this);
       Start = nullptr;
       Limit = nullptr;
       return *this;

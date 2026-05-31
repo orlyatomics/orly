@@ -40,7 +40,6 @@ namespace Orly {
       /* Dependency graph */
       /* TODO: revisit dependencies */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        assert(this);
         dependency_set.insert(MatchFromText);
         MatchFromText->AppendDependsOn(dependency_set);
         dependency_set.insert(Regex);

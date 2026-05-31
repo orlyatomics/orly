@@ -136,7 +136,6 @@ namespace Base {
 
     /* Wait for the pump to become idle. */
     void WaitForIdle() const {
-      assert(this);
       std::unique_lock<std::mutex> lock(PipeMutex);
       while (!IsIdle()) {
         PipeDied.wait(lock);
@@ -148,7 +147,6 @@ namespace Base {
        If the timeout is reached first, return false. */
     template <typename TRep, typename TPeriod>
     bool WaitForIdleFor(const std::chrono::duration<TRep, TPeriod> &timeout) const {
-      assert(this);
       std::unique_lock<std::mutex> lock(PipeMutex);
       while (!IsIdle()) {
         if (PipeDied.wait_for(lock, timeout) == std::cv_status::timeout) {
@@ -162,7 +160,6 @@ namespace Base {
        If the deadline is reached first, return false. */
     template <typename TClock, typename TDuration>
     bool WaitForIdleUntil(const std::chrono::time_point<TClock, TDuration> &deadline) const {
-      assert(this);
       std::unique_lock<std::mutex> lock(PipeMutex);
       while (!IsIdle()) {
         if (PipeDied.wait_until(lock, deadline) == std::cv_status::timeout) {

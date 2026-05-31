@@ -94,14 +94,12 @@ namespace Base {
 
     /* Destroy all our key-value pairs. */
     ~TOrderedArray() noexcept {
-      assert(this);
       RemoveAll();
       free(Start);
     }
 
     /* Move into this array, leaving the donor in the default-constructed state. */
     TOrderedArray &operator=(TOrderedArray &&that) noexcept {
-      assert(this);
       assert(&that);
       Swap(that);
       that.Reset();
@@ -110,7 +108,6 @@ namespace Base {
 
     /* Copy into this array. */
     TOrderedArray &operator=(const TOrderedArray &that) {
-      assert(this);
       assert(&that);
       TOrderedArray temp(that);
       return Swap(temp);
@@ -118,14 +115,12 @@ namespace Base {
 
     /* True iff. we contain at least one key-value pair. */
     operator bool() const noexcept {
-      assert(this);
       return Start < Limit;
     }
 
     /* Find the value for the given key.
        If the array doesn't contain the key, throw. */
     const TVal &operator[](const TKey &key) const {
-      assert(this);
       return Find(key);
     }
 
@@ -133,7 +128,6 @@ namespace Base {
        If the array doesn't contain the key, insert it with a default-constructed value. */
     template <typename TKeySrc>
     TVal &operator[](TKeySrc &&key) {
-      assert(this);
       TElem *elem;
       if (!Search(key, elem)) {
         InsertAtElem(elem, std::forward<TKeySrc>(key), TVal());
@@ -143,7 +137,6 @@ namespace Base {
 
     /* True iff. this array contains the given key. */
     bool Contains(const TKey &key) const {
-      assert(this);
       TElem *elem;
       return Search(key, elem);
     }
@@ -151,20 +144,17 @@ namespace Base {
     /* Find the value for the given key.
        If the array doesn't contain the key, throw. */
     const TVal &Find(const TKey &key) const {
-      assert(this);
       return FindElem(key)->second;
     }
 
     /* Find the value for the given key.
        If the array doesn't contain the key, throw. */
     TVal &Find(const TKey &key) {
-      assert(this);
       return FindElem(key)->second;
     }
 
     /* Call back for each key-value pair in the array, in key order. */
     bool ForEach(const TReader &cb) const {
-      assert(this);
       assert(&cb);
       for (TElem *elem = Start; elem < Limit; ++elem) {
         if (!cb(elem->first, elem->second)) {
@@ -176,7 +166,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order. */
     bool ForEach(const TWriter &cb) {
-      assert(this);
       assert(&cb);
       for (TElem *elem = Start; elem < Limit; ++elem) {
         if (!cb(elem->first, elem->second)) {
@@ -188,7 +177,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order, starting with the first key >= the given key. */
     bool ForEach(const TKey &key, const TReader &cb) const {
-      assert(this);
       assert(&cb);
       TElem *elem;
       Search(key, elem);
@@ -202,7 +190,6 @@ namespace Base {
 
     /* Call back for each key-value pair in the array, in key order, starting with the first key >= the given key. */
     bool ForEach(const TKey &key, const TWriter &cb) {
-      assert(this);
       assert(&cb);
       TElem *elem;
       Search(key, elem);
@@ -216,19 +203,16 @@ namespace Base {
 
     /* The comparator which provided the current sorting of the array. */
     const TComparator &GetComparator() const noexcept {
-      assert(this);
       return Comparator;
     }
 
     /* The maximum number of key-value pairs the array can contain. */
     size_t GetMaxSize() const noexcept {
-      assert(this);
       return Capacity - Start;
     }
 
     /* The number of key-value pairs the array currently contains. */
     size_t GetSize() const noexcept {
-      assert(this);
       return Limit - Start;
     }
 
@@ -237,7 +221,6 @@ namespace Base {
        Return a reference to the value in the array. */
     template <typename TKeySrc, typename TValSrc>
     TVal &Insert(TKeySrc &&key, TValSrc &&val) {
-      assert(this);
       TElem *elem;
       if (Search(key, elem)) {
         THROW_ERROR(TKeyAlreadyInArray) << "key = " << key;
@@ -251,7 +234,6 @@ namespace Base {
        Return a reference to the value in the array. */
     template <typename TKeySrc, typename TValSrc>
     TVal &InsertOrReplace(TKeySrc &&key, TValSrc &&val) {
-      assert(this);
       TElem *elem;
       if (Search(key, elem)) {
         elem->second = std::forward<TValSrc>(val);
@@ -264,7 +246,6 @@ namespace Base {
     /* Remove the given key from the array.
        If the array does not contain the key, throw. */
     void Remove(const TKey &key) {
-      assert(this);
       TElem *elem = FindElem(key);
       elem->~TElem();
       WiggleClosed(elem);
@@ -273,7 +254,6 @@ namespace Base {
     /* Remove all key-value pairs from the array, leaving the array empty.
        Leave the array's capacity as-is. */
     void RemoveAll() noexcept {
-      assert(this);
       for (TElem *elem = Start; elem < Limit; ++elem) {
         elem->~TElem();
       }
@@ -282,7 +262,6 @@ namespace Base {
 
     /* Reset the array to the default-constructed state. */
     TOrderedArray &Reset() noexcept {
-      assert(this);
       TOrderedArray temp;
       return Swap(temp);
     }
@@ -291,7 +270,6 @@ namespace Base {
        If the number is less than the number of elements we currently hold, throw.
        If there is insufficient memory, throw. */
     void SetMaxSize(size_t max_size) {
-      assert(this);
       size_t size = GetSize();
       if (max_size < size) {
         THROW_ERROR(TMaxSizeTooSmall) << "max size = " << max_size << ", actual size = " << size;
@@ -321,7 +299,6 @@ namespace Base {
 
     /* Swap this array with that one. */
     TOrderedArray &Swap(TOrderedArray &that) noexcept {
-      assert(this);
       assert(&that);
       std::swap(Start,      that.Start     );
       std::swap(Limit,      that.Limit     );
@@ -333,7 +310,6 @@ namespace Base {
     /* Try to find the value for the given key.
        If the array contains the key, return a pointer to its value; otherwise, return a null pointer. */
     const TVal *TryFind(const TKey &key) const {
-      assert(this);
       TElem *elem = TryFindElem(key);
       return elem ? &(elem->second) : nullptr;
     }
@@ -341,7 +317,6 @@ namespace Base {
     /* Try to find the value for the given key.
        If the array contains the key, return a pointer to its value; otherwise, return a null pointer. */
     TVal *TryFind(const TKey &key) {
-      assert(this);
       TElem *elem = TryFindElem(key);
       return elem ? &(elem->second) : nullptr;
     }
@@ -349,7 +324,6 @@ namespace Base {
     /* Try to remove the given key from the array.
        If the array contains the key, remove it and return true; otherwise, just return false. */
     bool TryRemove(const TKey &key) {
-      assert(this);
       TElem *elem = TryFindElem(key);
       if (elem) {
         elem->~TElem();
@@ -371,7 +345,6 @@ namespace Base {
        If the array does not contain the key, throw.
        Never return null. */
     TElem *FindElem(const TKey &key) const {
-      assert(this);
       TElem *elem;
       if (!Search(key, elem)) {
         THROW_ERROR(TKeyNotInArray) << "key = " << key;
@@ -384,7 +357,6 @@ namespace Base {
        If the array is already full, throw. */
     template <typename TKeySrc, typename TValSrc>
     void InsertAtElem(TElem *elem, TKeySrc &&key, TValSrc &&val) {
-      assert(this);
       void *mem = WiggleOpen(elem);
       try {
         new (mem) TElem(std::forward<TKeySrc>(key), std::forward<TValSrc>(val));
@@ -399,7 +371,6 @@ namespace Base {
        If we return true, then this post-condition holds: Start <= elem < Limit;
        otherwise, this post-condition holds: Start <= elem <= Limit. */
     bool Search(const TKey &key, TElem *&elem) const {
-      assert(this);
       assert(&elem);
       assert(Comparator);
       elem = Start;
@@ -426,14 +397,12 @@ namespace Base {
     /* Return a pointer to the element with the given key.
        If the array does not contain the key, return null. */
     TElem *TryFindElem(const TKey &key) const {
-      assert(this);
       TElem *elem;
       return Search(key, elem) ? elem : nullptr;
     }
 
     /* Close up the given space in the array. */
     void WiggleClosed(void *mem) {
-      assert(this);
       assert(Start <= mem);
       assert(mem < Limit);
       for (TElem *lhs = static_cast<TElem *>(mem), *rhs = lhs + 1; rhs < Limit; ++lhs, ++rhs) {
@@ -445,7 +414,6 @@ namespace Base {
 
     /* Open up space in the array at the given position. */
     void *WiggleOpen(TElem *elem) {
-      assert(this);
       assert(Start <= elem);
       assert(elem <= Limit);
       if (Limit >= Capacity) {

@@ -35,7 +35,6 @@ TCollatedBy::TPtr TCollatedBy::New(
 }
 
 void TCollatedBy::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   out << "TCollatedByGenerator<"
       << Type::UnwrapSequence(GetReturnType())
@@ -63,7 +62,6 @@ TCollatedBy::TCollatedBy(
     Start(start) {}
 
 void TCollatedBy::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
-  assert(this);
   dependency_set.insert(Seq);
   Seq->AppendDependsOn(dependency_set);
   dependency_set.insert(Start);

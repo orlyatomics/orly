@@ -55,7 +55,6 @@ TNycr::~TNycr() = default;
 
 
 void TNycr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -67,7 +66,6 @@ void TNycr::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TNycr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -87,7 +85,6 @@ bool TNycr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const 
 }
 
 void TNoDeclSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -97,7 +94,6 @@ void TNoDeclSeq::Write(ostream &strm, size_t depth, const char *as_member) const
 }
 
 bool TNoDeclSeq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -113,7 +109,6 @@ TDeclSeq::~TDeclSeq() = default;
 
 
 void TDeclSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -126,7 +121,6 @@ void TDeclSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TDeclSeq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -156,7 +150,6 @@ TPrecLevel::~TPrecLevel() = default;
 
 
 void TPrecLevel::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -170,7 +163,6 @@ void TPrecLevel::Write(ostream &strm, size_t depth, const char *as_member) const
 }
 
 bool TPrecLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -204,7 +196,6 @@ bool TPrecLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) c
 }
 
 void TPrecKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -214,7 +205,6 @@ void TPrecKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TPrecKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -227,7 +217,6 @@ bool TPrecKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) con
 }
 
 void TName::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -237,7 +226,6 @@ void TName::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TName::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -250,7 +238,6 @@ bool TName::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const 
 }
 
 void TSemi::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -260,7 +247,6 @@ void TSemi::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TSemi::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -276,7 +262,6 @@ TOper::~TOper() = default;
 
 
 void TOper::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -293,7 +278,6 @@ void TOper::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TOper::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -351,7 +335,6 @@ TSuper::~TSuper() = default;
 
 
 void TSuper::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -364,7 +347,6 @@ void TSuper::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TSuper::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -391,7 +373,6 @@ bool TSuper::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TColon::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -401,7 +382,6 @@ void TColon::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TColon::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -414,7 +394,6 @@ bool TColon::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoSuper::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -424,7 +403,6 @@ void TNoSuper::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TNoSuper::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -440,7 +418,6 @@ TPattern::~TPattern() = default;
 
 
 void TPattern::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -454,7 +431,6 @@ void TPattern::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TPattern::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -488,7 +464,6 @@ bool TPattern::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) con
 }
 
 void TEq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -498,7 +473,6 @@ void TEq::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TEq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -511,7 +485,6 @@ bool TEq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
 }
 
 void TSingleQuotedStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -521,7 +494,6 @@ void TSingleQuotedStrLiteral::Write(ostream &strm, size_t depth, const char *as_
 }
 
 bool TSingleQuotedStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -534,7 +506,6 @@ bool TSingleQuotedStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char 
 }
 
 void TSingleQuotedRawStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -544,7 +515,6 @@ void TSingleQuotedRawStrLiteral::Write(ostream &strm, size_t depth, const char *
 }
 
 bool TSingleQuotedRawStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -557,7 +527,6 @@ bool TSingleQuotedRawStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const ch
 }
 
 void TDoubleQuotedStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -567,7 +536,6 @@ void TDoubleQuotedStrLiteral::Write(ostream &strm, size_t depth, const char *as_
 }
 
 bool TDoubleQuotedStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -580,7 +548,6 @@ bool TDoubleQuotedStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char 
 }
 
 void TDoubleQuotedRawStrLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -590,7 +557,6 @@ void TDoubleQuotedRawStrLiteral::Write(ostream &strm, size_t depth, const char *
 }
 
 bool TDoubleQuotedRawStrLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -606,7 +572,6 @@ TPriLevel::~TPriLevel() = default;
 
 
 void TPriLevel::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -619,7 +584,6 @@ void TPriLevel::Write(ostream &strm, size_t depth, const char *as_member) const 
 }
 
 bool TPriLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -646,7 +610,6 @@ bool TPriLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TPriKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -656,7 +619,6 @@ void TPriKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TPriKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -669,7 +631,6 @@ bool TPriKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) cons
 }
 
 void TIntLiteral::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -679,7 +640,6 @@ void TIntLiteral::Write(ostream &strm, size_t depth, const char *as_member) cons
 }
 
 bool TIntLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -692,7 +652,6 @@ bool TIntLiteral::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TNoPriLevel::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -702,7 +661,6 @@ void TNoPriLevel::Write(ostream &strm, size_t depth, const char *as_member) cons
 }
 
 bool TNoPriLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -715,7 +673,6 @@ bool TNoPriLevel::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TRightKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -725,7 +682,6 @@ void TRightKwd::Write(ostream &strm, size_t depth, const char *as_member) const 
 }
 
 bool TRightKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -738,7 +694,6 @@ bool TRightKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TNonassocKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -748,7 +703,6 @@ void TNonassocKwd::Write(ostream &strm, size_t depth, const char *as_member) con
 }
 
 bool TNonassocKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -761,7 +715,6 @@ bool TNonassocKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member)
 }
 
 void TLeftKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -771,7 +724,6 @@ void TLeftKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TLeftKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -787,7 +739,6 @@ TLanguage::~TLanguage() = default;
 
 
 void TLanguage::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -807,7 +758,6 @@ void TLanguage::Write(ostream &strm, size_t depth, const char *as_member) const 
 }
 
 bool TLanguage::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -886,7 +836,6 @@ TRhs::~TRhs() = default;
 
 
 void TRhs::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -900,7 +849,6 @@ void TRhs::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TRhs::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -934,7 +882,6 @@ bool TRhs::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
 }
 
 void TArrow::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -944,7 +891,6 @@ void TArrow::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TArrow::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -957,7 +903,6 @@ bool TArrow::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoMemberSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -967,7 +912,6 @@ void TNoMemberSeq::Write(ostream &strm, size_t depth, const char *as_member) con
 }
 
 bool TNoMemberSeq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -983,7 +927,6 @@ TMemberSeq::~TMemberSeq() = default;
 
 
 void TMemberSeq::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -996,7 +939,6 @@ void TMemberSeq::Write(ostream &strm, size_t depth, const char *as_member) const
 }
 
 bool TMemberSeq::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1026,7 +968,6 @@ TNamedMember::~TNamedMember() = default;
 
 
 void TNamedMember::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1040,7 +981,6 @@ void TNamedMember::Write(ostream &strm, size_t depth, const char *as_member) con
 }
 
 bool TNamedMember::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1077,7 +1017,6 @@ TErrorMember::~TErrorMember() = default;
 
 
 void TErrorMember::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1089,7 +1028,6 @@ void TErrorMember::Write(ostream &strm, size_t depth, const char *as_member) con
 }
 
 bool TErrorMember::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1109,7 +1047,6 @@ bool TErrorMember::Test(::Tools::Nycr::Test::TNode *that, const char *as_member)
 }
 
 void TErrorKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1119,7 +1056,6 @@ void TErrorKwd::Write(ostream &strm, size_t depth, const char *as_member) const 
 }
 
 bool TErrorKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1135,7 +1071,6 @@ TAnonymousMember::~TAnonymousMember() = default;
 
 
 void TAnonymousMember::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1147,7 +1082,6 @@ void TAnonymousMember::Write(ostream &strm, size_t depth, const char *as_member)
 }
 
 bool TAnonymousMember::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1170,7 +1104,6 @@ TOperRef::~TOperRef() = default;
 
 
 void TOperRef::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1183,7 +1116,6 @@ void TOperRef::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TOperRef::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1210,7 +1142,6 @@ bool TOperRef::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) con
 }
 
 void TNoOperRef::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1220,7 +1151,6 @@ void TNoOperRef::Write(ostream &strm, size_t depth, const char *as_member) const
 }
 
 bool TNoOperRef::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1236,7 +1166,6 @@ TNoRhs::~TNoRhs() = default;
 
 
 void TNoRhs::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1249,7 +1178,6 @@ void TNoRhs::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TNoRhs::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1276,7 +1204,6 @@ bool TNoRhs::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TEmptyKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1286,7 +1213,6 @@ void TEmptyKwd::Write(ostream &strm, size_t depth, const char *as_member) const 
 }
 
 bool TEmptyKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1299,7 +1225,6 @@ bool TEmptyKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TOpenAngle::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1309,7 +1234,6 @@ void TOpenAngle::Write(ostream &strm, size_t depth, const char *as_member) const
 }
 
 bool TOpenAngle::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1325,7 +1249,6 @@ TPath::~TPath() = default;
 
 
 void TPath::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1338,7 +1261,6 @@ void TPath::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TPath::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1368,7 +1290,6 @@ TPathTail::~TPathTail() = default;
 
 
 void TPathTail::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1381,7 +1302,6 @@ void TPathTail::Write(ostream &strm, size_t depth, const char *as_member) const 
 }
 
 bool TPathTail::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1408,7 +1328,6 @@ bool TPathTail::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) co
 }
 
 void TSlash::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1418,7 +1337,6 @@ void TSlash::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TSlash::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1431,7 +1349,6 @@ bool TSlash::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoPathTail::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1441,7 +1358,6 @@ void TNoPathTail::Write(ostream &strm, size_t depth, const char *as_member) cons
 }
 
 bool TNoPathTail::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1454,7 +1370,6 @@ bool TNoPathTail::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TNoPath::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1464,7 +1379,6 @@ void TNoPath::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TNoPath::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1477,7 +1391,6 @@ bool TNoPath::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) cons
 }
 
 void TCloseAngle::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1487,7 +1400,6 @@ void TCloseAngle::Write(ostream &strm, size_t depth, const char *as_member) cons
 }
 
 bool TCloseAngle::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1500,7 +1412,6 @@ bool TCloseAngle::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TNoExpectedSr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1510,7 +1421,6 @@ void TNoExpectedSr::Write(ostream &strm, size_t depth, const char *as_member) co
 }
 
 bool TNoExpectedSr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1526,7 +1436,6 @@ TExpectedSr::~TExpectedSr() = default;
 
 
 void TExpectedSr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1539,7 +1448,6 @@ void TExpectedSr::Write(ostream &strm, size_t depth, const char *as_member) cons
 }
 
 bool TExpectedSr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1566,7 +1474,6 @@ bool TExpectedSr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TSrKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1576,7 +1483,6 @@ void TSrKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TSrKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1589,7 +1495,6 @@ bool TSrKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const
 }
 
 void TNoExpectedRr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1599,7 +1504,6 @@ void TNoExpectedRr::Write(ostream &strm, size_t depth, const char *as_member) co
 }
 
 bool TNoExpectedRr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1615,7 +1519,6 @@ TExpectedRr::~TExpectedRr() = default;
 
 
 void TExpectedRr::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1628,7 +1531,6 @@ void TExpectedRr::Write(ostream &strm, size_t depth, const char *as_member) cons
 }
 
 bool TExpectedRr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1655,7 +1557,6 @@ bool TExpectedRr::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) 
 }
 
 void TRrKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1665,7 +1566,6 @@ void TRrKwd::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TRrKwd::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1681,7 +1581,6 @@ TRule::~TRule() = default;
 
 
 void TRule::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1696,7 +1595,6 @@ void TRule::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TRule::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1740,7 +1638,6 @@ TKeyword::~TKeyword() = default;
 
 
 void TKeyword::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1755,7 +1652,6 @@ void TKeyword::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TKeyword::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1799,7 +1695,6 @@ TBase::~TBase() = default;
 
 
 void TBase::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1813,7 +1708,6 @@ void TBase::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TBase::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;
@@ -1850,7 +1744,6 @@ TBadDecl::~TBadDecl() = default;
 
 
 void TBadDecl::Write(ostream &strm, size_t depth, const char *as_member) const {
-  assert(this);
   assert(&strm);
   strm << ::Tools::Nycr::TIndent(depth);
   if (as_member) {
@@ -1862,7 +1755,6 @@ void TBadDecl::Write(ostream &strm, size_t depth, const char *as_member) const {
 }
 
 bool TBadDecl::Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const {
-  assert(this);
   if (as_member && as_member != that->GetKind()) {
     cout << as_member << " != " << that->GetKind() << endl;
     return false;

@@ -25,7 +25,6 @@ IMPL_INTERNED_TYPE(TObj, TObjElems);
 TObj::~TObj() {}
 
 void TObj::Write(std::ostream &out) const {
-  assert(this);
   assert(&out);
   out << "Orly::Rt::Objects::TObj" << AsType().GetMangledName();
 }

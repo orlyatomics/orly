@@ -48,13 +48,11 @@ TSet::TSet(const TExprSet &exprs, const TPosRange &pos_range)
 }
 
 void TSet::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TSet::GetTypeImpl() const {
-  assert(this);
   if (!Type) {
     Type::TType elem = Type::Unwrap((*(GetExprs().begin()))->GetType());
     bool is_sequence = false;

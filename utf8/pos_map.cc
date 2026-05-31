@@ -39,7 +39,6 @@ TPosMap::TPosMap(const TPiece &text) {
 }
 
 TPos TPosMap::GetPos(const char *ptr) const {
-  assert(this);
   assert(ptr > Eols[0]);
   auto iter = lower_bound(Eols.begin() + 1, Eols.end(), ptr);
   assert(iter != Eols.end());

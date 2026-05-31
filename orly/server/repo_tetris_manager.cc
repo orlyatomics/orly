@@ -57,7 +57,6 @@ TRepoTetrisManager::TRepoTetrisManager(
 }
 
 TRepoTetrisManager::~TRepoTetrisManager() {
-  assert(this);
   StopAllPlayers();
 }
 
@@ -69,7 +68,6 @@ TRepoTetrisManager::TPlayer::TPlayer(TRepoTetrisManager *repo_tetris_manager, co
 }
 
 TRepoTetrisManager::TPlayer::~TPlayer() {
-  assert(this);
   assert(ChildByPovId.size() == 1UL);
   for (const auto &item: ChildByPovId) {
     delete item.second;
@@ -83,7 +81,6 @@ TRepoTetrisManager::TPlayer::TChild::TChild(TPlayer *player, const TUuid &child_
 
 bool TRepoTetrisManager::TPlayer::TChild::Play(
     const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context) {
-  assert(this);
   assert(transaction);
   bool success = TestAssertions(context);
   if (success) {
@@ -145,7 +142,6 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
 }
 
 bool TRepoTetrisManager::TPlayer::TChild::Refresh(const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction) {
-  assert(this);
   assert(transaction);
   if (Repo->GetStatus() == Orly::Indy::Normal && Repo->GetSequenceNumberStart() && !PeekedUpdate) {
     PeekedUpdate = transaction->Peek(Repo);
@@ -178,7 +174,6 @@ bool TRepoTetrisManager::TPlayer::TChild::SortsBefore(const TChild *lhs, const T
 }
 
 void TRepoTetrisManager::TPlayer::TChild::Flush() {
-  assert(this);
   PeekedUpdate.reset();
   MetaRecord = TMetaRecord();
   FuncHolderByUpdateId.clear();
@@ -202,7 +197,6 @@ namespace Orly {
 }
 
 bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context) const {
-  assert(this);
   assert(&context);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   for (const auto &item: FuncHolderByUpdateId) {
@@ -267,7 +261,6 @@ bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context
 }
 
 void TRepoTetrisManager::TPlayer::OnJoin(const TUuid &child_pov_id) {
-  assert(this);
   lock_guard<mutex> lock(Mutex);
   auto child = new TChild(this, child_pov_id);
   try {
@@ -279,7 +272,6 @@ void TRepoTetrisManager::TPlayer::OnJoin(const TUuid &child_pov_id) {
 }
 
 void TRepoTetrisManager::TPlayer::OnPart(const TUuid &child_pov_id) {
-  assert(this);
   lock_guard<mutex> lock(Mutex);
   auto iter = ChildByPovId.find(child_pov_id);
   if (iter != ChildByPovId.end()) {
@@ -289,15 +281,12 @@ void TRepoTetrisManager::TPlayer::OnPart(const TUuid &child_pov_id) {
 }
 
 void TRepoTetrisManager::TPlayer::OnPause() {
-  assert(this);
 }
 
 void TRepoTetrisManager::TPlayer::OnUnpause() {
-  assert(this);
 }
 
 void TRepoTetrisManager::TPlayer::Play() {
-  assert(this);
   Base::TCPUTimer snapshot_timer, sort_timer, play_timer, commit_timer;
   Atom::TSuprena my_arena;
   try {
@@ -349,6 +338,5 @@ void TRepoTetrisManager::TPlayer::Play() {
 }
 
 TTetrisManager::TPlayer *TRepoTetrisManager::NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master) {
-  assert(this);
   return new TPlayer(this, parent_pov_id, child_pov_id, is_paused, is_master);
 }

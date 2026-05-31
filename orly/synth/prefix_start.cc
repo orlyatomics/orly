@@ -38,7 +38,6 @@ TPrefixStart::TPrefixStart(const TExprFactory *expr_factory, const Package::Synt
 }
 
 Expr::TExpr::TPtr TPrefixStart::Build() const {
-  assert(this);
   auto start = Expr::TStart::New(Expr->Build(), GetPosRange(PrefixStart));
   auto startable = StartableExpr->GetStartableSymbol();
   if (!startable->TryGetStart()) {
@@ -50,14 +49,12 @@ Expr::TExpr::TPtr TPrefixStart::Build() const {
 }
 
 void TPrefixStart::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TPrefixStart::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

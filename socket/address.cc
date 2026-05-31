@@ -155,7 +155,6 @@ TAddress::TAddress(istream &&strm) {
 }
 
 bool TAddress::operator==(const TAddress &that) const {
-  assert(this);
   bool result = (Storage.ss_family == that.Storage.ss_family);
   if (result) {
     switch (Storage.ss_family) {
@@ -184,21 +183,18 @@ bool TAddress::operator==(const TAddress &that) const {
 }
 
 size_t TAddress::GetHash() const {
-  assert(this);
   return _Fnv_hash_bytes(&Storage, GetLen(), 0);
 }
 
 void TAddress::GetName(
     char *node_buf, size_t node_buf_size,
     char *serv_buf, size_t serv_buf_size, int flags) const {
-  assert(this);
   assert(node_buf || !node_buf_size);
   assert(serv_buf || !serv_buf_size);
   Db::IfNe0(getnameinfo(&Generic, GetLen(), node_buf, node_buf_size, serv_buf, serv_buf_size, flags));
 }
 
 in_port_t TAddress::GetPort() const {
-  assert(this);
   in_port_t result;
   switch (Storage.ss_family) {
     case AF_UNSPEC: {
@@ -219,7 +215,6 @@ in_port_t TAddress::GetPort() const {
 }
 
 TAddress &TAddress::SetPort(in_port_t port) {
-  assert(this);
   switch (Storage.ss_family) {
     case AF_UNSPEC: {
       break;
@@ -238,7 +233,6 @@ TAddress &TAddress::SetPort(in_port_t port) {
 }
 
 const char *TAddress::GetPath() const {
-  assert(this);
   const char *result = nullptr;
   switch (Storage.ss_family) {
     case AF_LOCAL: {
@@ -251,7 +245,6 @@ const char *TAddress::GetPath() const {
 }
 
 TAddress &TAddress::SetPath(const char *path) {
-  assert(this);
   switch (Storage.ss_family) {
     case AF_LOCAL: {
       strncpy(Local.sun_path, path, sizeof(Local.sun_path));
@@ -267,7 +260,6 @@ TAddress &TAddress::SetPath(const char *path) {
 }
 
 void TAddress::Write(ostream &strm) const {
-  assert(this);
   assert(&strm);
   in_port_t port = 0;
   switch (Storage.ss_family) {

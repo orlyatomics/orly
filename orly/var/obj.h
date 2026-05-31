@@ -37,7 +37,6 @@ namespace Orly {
     template <typename TCompound>
     template <typename TVal>
     void TObj::Meta<TCompound>::TField<TVal>::GetVal(const TCompound &that, Var::TVar &out) const {
-      assert(this);
       assert(&that);
       assert(&out);
       out = Var::TVar(that.*Member);
@@ -117,7 +116,6 @@ namespace Orly {
 
       /* TODO */
       const TFieldsByName &GetVal() const {
-        assert(this);
         return FieldsByName;
       }
 

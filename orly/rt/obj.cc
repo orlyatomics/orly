@@ -23,6 +23,5 @@
 using namespace Orly::Rt;
 
 Orly::Var::TVar TObj::AsVar() const {
-  assert(this);
   return Orly::Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{});
 }

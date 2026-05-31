@@ -26,7 +26,6 @@
 using namespace Base;
 
 bool TFd::IsReadable(int timeout) const {
-  assert(this);
   pollfd p;
   p.fd = OsHandle;
   p.events = POLLIN;

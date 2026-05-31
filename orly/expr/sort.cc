@@ -36,7 +36,6 @@ TSort::TSort(const TExpr::TPtr &lhs, const TPosRange &pos_range)
     : TBinary(lhs, pos_range) {};
 
 void TSort::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -63,7 +62,6 @@ Type::TType TSort::GetLhsRhsType() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TSortElemTypeVisitor
-  assert(this);
   Type::TType type;
   GetContainer()->GetType().Accept(TSortElemTypeVisitor(type, GetPosRange()));
   return type;
@@ -91,7 +89,6 @@ Type::TType TSort::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TSortTypeVisitor
-  assert(this);
   Type::TType type;
   GetContainer()->GetType().Accept(TSortTypeVisitor(type, GetPosRange()));
   if (Type::Unwrap(GetPredicate()->GetType()) != Type::TBool::Get()) {

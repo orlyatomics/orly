@@ -27,7 +27,6 @@ TPrecLevel::TPrecLevel(const TName &name, size_t idx)
 }
 
 TPrecLevel::~TPrecLevel() {
-  assert(this);
   /* This is over-kill, but we should only be destroying any single prec level when we're in the midst of destroying them all.  If this ever turns
      out not to be the case, we'll need to be smarter about how to clean up this vector.  And about how to reset the idx values of all the prec
      levels that bump down. */

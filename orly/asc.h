@@ -37,61 +37,51 @@ namespace Orly {
 
     /* Behave like a smart pointer. */
     const TVal &operator*() const {
-      assert(this);
       return Val;
     }
 
     /* Behave like a smart pointer. */
     TVal &operator*() {
-      assert(this);
       return Val;
     }
 
     /* Behave like a smart pointer. */
     const TVal *operator->() const {
-      assert(this);
       return &Val;
     }
 
     /* Behave like a smart pointer. */
     TVal *operator->() {
-      assert(this);
       return &Val;
     }
 
     /* Provide the same ordering as TVal. */
     bool operator==(const TAsc &that) const {
-      assert(this);
       return Val == that.Val;
     }
 
     /* Provide the same ordering as TVal. */
     bool operator!=(const TAsc &that) const {
-      assert(this);
       return Val != that.Val;
     }
 
     /* Provide the same ordering as TVal. */
     bool operator<(const TAsc &that) const {
-      assert(this);
       return Val < that.Val;
     }
 
     /* Provide the same ordering as TVal. */
     bool operator<=(const TAsc &that) const {
-      assert(this);
       return Val <= that.Val;
     }
 
     /* Provide the same ordering as TVal. */
     bool operator>(const TAsc &that) const {
-      assert(this);
       return Val > that.Val;
     }
 
     /* Provide the same ordering as TVal. */
     bool operator>=(const TAsc &that) const {
-      assert(this);
       return Val >= that.Val;
     }
 

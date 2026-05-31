@@ -39,7 +39,6 @@ namespace Orly {
         return TInternedType::Get(elems);
       }
       const TElems &GetElems() const {
-        assert(this);
         return std::get<0>(GetKey());
       }
 

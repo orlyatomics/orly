@@ -74,12 +74,10 @@ namespace Orly {
     inline TSuprena::~TSuprena() {}
 
     inline size_t TSuprena::GetSize() const {
-      assert(this);
       return NoteInterner.GetSize();
     }
 
     inline const TNoteInterner::TNotes &TSuprena::GetNotes() const {
-      assert(this);
       return NoteInterner.GetNotes();
     }
 

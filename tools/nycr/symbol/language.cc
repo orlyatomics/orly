@@ -21,12 +21,10 @@
 using namespace Tools::Nycr::Symbol;
 
 TLanguage::~TLanguage() {
-  assert(this);
   Languages.erase(this);
 }
 
 void TLanguage::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }

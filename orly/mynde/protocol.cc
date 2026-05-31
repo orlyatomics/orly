@@ -33,12 +33,10 @@ TBuffer::~TBuffer() {
 }
 
 uint32_t TBuffer::GetSize() const {
-  assert(this);
   return Size;
 }
 
 const uint8_t *TBuffer::GetData() const {
-  assert(this);
 
   assert(Data);
 
@@ -46,7 +44,6 @@ const uint8_t *TBuffer::GetData() const {
 }
 
 void TBuffer::Fill(uint32_t size, Strm::Bin::TIn &in) {
-  assert(this);
 
   // Buffers may only be filled once
   assert(!Data);

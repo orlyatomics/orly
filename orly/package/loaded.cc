@@ -41,12 +41,10 @@ TLoaded::TPtr TLoaded::Load(const Jhm::TTree &package_dir, const TVersionedName 
 }
 
 TLoaded::~TLoaded() {
-  assert(this);
   dlclose(Handle);
 }
 
 bool TLoaded:: ForEachTest(const function<bool (const TTest *)> &cb) const {
-  assert(this);
 
   for(auto &it: LinkInfo->PrimaryInfo->Tests) {
     if(!cb(it)) {
@@ -58,7 +56,6 @@ bool TLoaded:: ForEachTest(const function<bool (const TTest *)> &cb) const {
 }
 
 TFuncHolder::TPtr TLoaded::GetFunctionInfo(const Base::TPiece<const char> &func) const {
-  assert(this);
   assert(&func);
   string func_name(func.GetStart(), func.GetLimit());
   auto iter = LinkInfo->PrimaryInfo->Functions.find(func_name);
@@ -80,27 +77,22 @@ bool TLoaded::ForEachFunction(
 }
 
 const TVersionedName &TLoaded::GetName() const {
-  assert(this);
   return Name;
 }
 
 const TIndexByIndexId &TLoaded::GetIndexByIndexId() const {
-  assert(this);
   return LinkInfo->IndexByIndexId;
 }
 
 const TIndexIdSet &TLoaded::GetIndexIdSet() const {
-  assert(this);
   return LinkInfo->PrimaryInfo->IndexIdSet;
 }
 
 const std::string &TLoaded::GetIndexPrefix() const {
-  assert(this);
   return LinkInfo->IndexName;
 }
 
 bool TLoaded::ForEachIndexId(const std::function <bool (Base::TUuid *)> &cb) const {
-  assert(this);
   for (auto id : LinkInfo->PrimaryInfo->IndexIdSet) {
     if (!cb(id)) {
       return false;
@@ -142,19 +134,16 @@ TLoaded::TLoaded(const Jhm::TTree &package_dir, const TVersionedName &name) : Na
 }
 
 const TParamMap &TFuncHolder::GetParameters() const {
-  assert(this);
 
   return Func->Parameters;
 }
 
 const Orly::Type::TType &TFuncHolder::GetReturnType() const {
-  assert(this);
 
   return Func->ReturnType;
 }
 
 Orly::Atom::TCore TFuncHolder::Call(TContext &ctx, const TArgMap &args) const {
-  assert(this);
   assert(&ctx);
   assert(&args);
 

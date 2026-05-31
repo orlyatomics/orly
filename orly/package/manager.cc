@@ -41,7 +41,6 @@ TManager::TManager(const Jhm::TTree &package_dir) : PackageDir(package_dir) {}
 TManager::~TManager() {}
 
 TLoaded::TPtr TManager::Get(const TName &package) const {
-  assert(this);
   assert(&package);
 
   shared_lock<shared_timed_mutex> lock(InstallLock);
@@ -53,12 +52,10 @@ TLoaded::TPtr TManager::Get(const TName &package) const {
 }
 
 void TManager::Install(const TVersionedNames &packages, const std::function<void(TLoaded::TPtr, bool)> &pre_install_step) {
-  assert(this);
   Load(packages, pre_install_step);
 }
 
 void TManager::Load(const TVersionedNames &packages, const std::function<void(TLoaded::TPtr, bool)> &pre_install_step) {
-  assert(this);
   assert(&packages);
 
   unique_lock<shared_timed_mutex> lock(InstallLock);
@@ -105,18 +102,15 @@ void TManager::Load(const TVersionedNames &packages, const std::function<void(TL
 }
 
 const Jhm::TTree &TManager::GetPackageDir() const {
-  assert(this);
   return PackageDir;
 }
 
 void TManager::SetPackageDir(const Jhm::TTree &package_dir) {
-  assert(this);
   PackageDir = package_dir;
 }
 
 
 void TManager::Uninstall(const TVersionedNames &packages) {
-  assert(this);
   assert(&packages);
 
   unique_lock<shared_timed_mutex> lock(InstallLock);
@@ -134,7 +128,6 @@ void TManager::Uninstall(const TVersionedNames &packages) {
 }
 
 void TManager::YieldInstalled(std::function<bool (const TVersionedName &name)> cb) const {
-  assert(this);
   shared_lock<shared_timed_mutex> lock(InstallLock);
 
   for(const auto &it: Installed) {

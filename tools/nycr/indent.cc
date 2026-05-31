@@ -22,7 +22,6 @@ using namespace std;
 using namespace Tools::Nycr;
 
 void TIndent::Write(ostream &strm) const {
-  assert(this);
   for (size_t i = 0; i < Depth; ++i) {
     strm << "  ";
   }

@@ -26,17 +26,14 @@ using namespace Orly;
 using namespace Var;
 
 size_t TAddr::GetHash() const {
-  assert(this);
   return Hash;
 }
 
 Type::TType TAddr::GetType() const {
-  assert(this);
   return Type::TAddr::Get(TypeVec);
 }
 
 void TAddr::Write(std::ostream &strm) const {
-  assert(this);
   strm
     << GetType() << '('
     << Base::Join(Val,
@@ -48,13 +45,11 @@ void TAddr::Write(std::ostream &strm) const {
 }
 
 void TAddr::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TAddr::SetHash() {
-  assert(this);
   Hash = 0;
   size_t rotate = 0;
   //TODO: Really need to normalize the TAddr hash functions...
@@ -64,12 +59,10 @@ void TAddr::SetHash() {
 }
 
 void TAddr::Touch() {
-  assert(this);
   SetHash();
 }
 
 Var::TVar &TAddr::Index(const TVar &key) {
-  assert(this);
   int64_t idx = TVar::TDt<int64_t>::As(key);
   if (idx < 0 || idx >= static_cast<int64_t>(Val.size())) {
     throw Rt::TSystemError(HERE, "Dynamic addr index out of bounds.");
@@ -78,67 +71,54 @@ Var::TVar &TAddr::Index(const TVar &key) {
 }
 
 TAddr &TAddr::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not supported on Addr.");
 }
 
 TAddr &TAddr::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on Addr.");
 }
 
 TAddr &TAddr::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on Addr.");
 }
 
 TAddr &TAddr::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on Addr.");
 }
 
 TAddr &TAddr::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on Addr.");
 }
 
 TAddr &TAddr::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on Addr.");
 }
 
 TAddr &TAddr::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on Addr.");
 }
 
 TAddr &TAddr::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on Addr.");
 }
 
 TAddr &TAddr::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on Addr.");
 }
 
 TAddr &TAddr::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on Addr.");
 }
 
 TAddr &TAddr::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on Addr.");
 }
 
 TAddr &TAddr::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on Addr.");
 }
 
 TAddr::TAddr(const TAddrType &that) {
-  assert(this);
   for (auto iter = that.begin(); iter != that.end(); ++iter) {
     Val.push_back(*iter);
     TypeVec.push_back(std::make_pair(iter->first, iter->second.GetType()));
@@ -149,7 +129,6 @@ TAddr::TAddr(const TAddrType &that) {
 TAddr::~TAddr() {}
 
 TVar TAddr::Copy() const {
-  assert(this);
   TAddrType copy_vec;
   for (auto &iter : Val) {
     copy_vec.push_back(std::make_pair(iter.first, iter.second.Copy()));

@@ -48,7 +48,6 @@ namespace Orly {
 
           /* TODO */
           TMinHeapElem &operator=(TMinHeapElem &&that) {
-            assert(this);
             assert(&that);
             if (this != &that) {
               std::swap(Val, that.Val);
@@ -81,7 +80,6 @@ namespace Orly {
 
         /* TODO */
         ~TMinHeap() {
-          assert(this);
           for (size_t i = 0; i < NumElem; ++i) {
             Data[i].~TMinHeapElem();
           }
@@ -90,13 +88,11 @@ namespace Orly {
 
         /* TODO */
         inline operator bool() const {
-          assert(this);
           return NumElem > 0;
         }
 
         /* TODO */
         inline void Insert(const TVal &val, TRef ref) {
-          assert(this);
           assert(NumElem < MaxElem);
           size_t i = NumElem;
           ++NumElem;
@@ -109,7 +105,6 @@ namespace Orly {
 
         /* TODO */
         inline const TVal &Peek(TRef &ref) const {
-          assert(this);
           assert(NumElem > 0);
           const TMinHeapElem &min_val = Data[0];
           ref = min_val.Ref;
@@ -118,7 +113,6 @@ namespace Orly {
 
         /* TODO */
         inline const TVal &Pop(TRef &ref) {
-          assert(this);
           assert(NumElem > 0);
           const TMinHeapElem &min_val = Data[0];
           ref = min_val.Ref;
@@ -134,20 +128,17 @@ namespace Orly {
 
         /* Return the offset of the parent of offset i. */
         inline size_t Parent(size_t i) const {
-          assert(this);
           assert(i > 0);
           return ((i + 1) / 2) - 1;
         }
 
         /* Return the offset of the left child of offset i. */
         inline size_t Left(size_t i) const {
-          assert(this);
           return (2 * (i + 1)) - 1;
         }
 
         /* Return the offset of the right child of offset i. */
         inline size_t Right(size_t i) const {
-          assert(this);
           return 2 * (i + 1);
         }
 
@@ -203,7 +194,6 @@ namespace Orly {
 
           /* TODO */
           TMinHeapElem &operator=(TMinHeapElem &&that) {
-            assert(this);
             assert(&that);
             if (this != &that) {
               std::swap(Val, that.Val);
@@ -236,7 +226,6 @@ namespace Orly {
 
         /* TODO */
         ~TCopyMinHeap() {
-          assert(this);
           for (size_t i = 0; i < NumElem; ++i) {
             Data[i].~TMinHeapElem();
           }
@@ -245,14 +234,12 @@ namespace Orly {
 
         /* TODO */
         inline operator bool() const {
-          assert(this);
           return NumElem > 0;
         }
 
         /* TODO */
         template <typename... TArgs>
         inline void Emplace(TRef ref, TArgs &&...args) {
-          assert(this);
           assert(NumElem < MaxElem);
           size_t i = NumElem;
           ++NumElem;
@@ -265,7 +252,6 @@ namespace Orly {
 
         /* TODO */
         inline const TVal &Peek(TRef &ref) const {
-          assert(this);
           assert(NumElem > 0);
           const TMinHeapElem &min_val = Data[0];
           ref = min_val.Ref;
@@ -274,7 +260,6 @@ namespace Orly {
 
         /* TODO */
         inline TRef Pop(TVal &val) {
-          assert(this);
           assert(NumElem > 0);
           TMinHeapElem &min_val = Data[0];
           TRef ref = min_val.Ref;
@@ -290,20 +275,17 @@ namespace Orly {
 
         /* Return the offset of the parent of offset i. */
         inline size_t Parent(size_t i) const {
-          assert(this);
           assert(i > 0);
           return ((i + 1) / 2) - 1;
         }
 
         /* Return the offset of the left child of offset i. */
         inline size_t Left(size_t i) const {
-          assert(this);
           return (2 * (i + 1)) - 1;
         }
 
         /* Return the offset of the right child of offset i. */
         inline size_t Right(size_t i) const {
-          assert(this);
           return 2 * (i + 1);
         }
 

@@ -32,7 +32,6 @@ TPrecLevel::TPrecLevel(const Syntax::TPrecLevel *decl)
   : TDecl(decl->GetName()), Idx(NextIdx++), Symbol(0) {}
 
 bool TPrecLevel::Build(int pass) {
-  assert(this);
   switch (pass) {
     case 1: {
       Symbol = new Symbol::TPrecLevel(GetNameText(), Idx);

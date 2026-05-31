@@ -56,7 +56,6 @@ class TMyRunnable
   }
 
   ~TMyRunnable() {
-    assert(this);
     FreeMyFrame(FramePool);
   }
 

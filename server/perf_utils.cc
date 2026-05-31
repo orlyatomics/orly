@@ -71,7 +71,6 @@ class TStats {
   }
 
   void Write(ostream &strm) const {
-    assert(this);
     if (IsSingle) {
       strm << setw(4) << Mean;
     } else {

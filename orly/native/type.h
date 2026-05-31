@@ -249,7 +249,6 @@ namespace Orly {
 
           /* See Sabot::Type::TTuple. */
           virtual TAny *NewElem(size_t elem_idx, void *type_alloc) const override {
-            assert(this);
             return TupleUnroller<TElems...>::GetElem(elem_idx, type_alloc);
           }
 

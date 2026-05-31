@@ -47,7 +47,6 @@ TSlice::TSlice(
         Colon(colon) {}
 
 void TSlice::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -111,7 +110,6 @@ Type::TType TSlice::GetTypeImpl() const {
     const Expr::TExpr::TPtr &OptRhs;
     mutable Type::TMutable::TParts Parts;
   };  // TSliceTypeVisitor
-  assert(this);
   Type::TType type;
   TSliceTypeVisitor visitor(type, GetOptLhs(), HasColon(), GetOptRhs(), GetPosRange());
   GetContainer()->GetType().Accept(visitor);
@@ -120,23 +118,19 @@ Type::TType TSlice::GetTypeImpl() const {
 
 /* Return the pointer to the container */
 const TExpr::TPtr &TSlice::GetContainer() const {
-  assert(this);
   return GetExprs()[0];
 }
 
 /* Return the pointer to an optional lhs. This means the pointer can be null */
 const TExpr::TPtr &TSlice::GetOptLhs() const {
-  assert(this);
   return GetExprs()[1];
 }
 
 bool TSlice::HasColon() const {
-  assert(this);
   return Colon;
 }
 
 /* Return the pointer to an optional rhs. This means the pointer can be null */
 const TExpr::TPtr &TSlice::GetOptRhs() const {
-  assert(this);
   return GetExprs()[2];
 }

@@ -40,7 +40,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TKeyword *GetSymbolAsKeyword() const {
-        assert(this);
         assert(Symbol);
         return Symbol;
       }

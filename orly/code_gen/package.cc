@@ -161,7 +161,6 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
 TPackage::~TPackage() {}
 
 void TPackage::Emit(const Jhm::TTree &out_dir) const {;
-  assert(this);
   assert(&out_dir);
 
   /* Emit the following files:

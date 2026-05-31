@@ -53,19 +53,16 @@ namespace Tools {
 
         /* TODO */
         TAssoc GetAssoc() const {
-          assert(this);
           return Assoc;
         }
 
         /* TODO */
         size_t GetPrecLevelIdx() const {
-          assert(this);
           return PrecLevel->GetIdx();
         }
 
         /* TODO */
         TPrecLevel *GetPrecLevel() const {
-          assert(this);
           return PrecLevel;
         }
 

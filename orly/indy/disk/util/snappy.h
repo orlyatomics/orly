@@ -91,13 +91,11 @@ namespace Orly {
 
             /* TODO */
             inline virtual size_t Available() const override {
-              assert(this);
               return AvailBytes;
             }
 
             /* TODO */
             inline virtual const char* Peek(size_t *len) override {
-              assert(this);
               size_t offset_in_chunk = InStream.GetOffsetInChunk();
               *len = std::min(TDataInStream::DataChunkSize - offset_in_chunk, AvailBytes);
               return InStream.GetData();
@@ -105,7 +103,6 @@ namespace Orly {
 
             /* TODO */
             inline virtual void Skip(size_t n) override {
-              assert(this);
               assert(AvailBytes >= n);
               AvailBytes -= n;
               InStream.Skip(n);
@@ -165,20 +162,17 @@ namespace Orly {
 
             /* TODO */
             inline virtual size_t Available() const override {
-              assert(this);
               return AvailBytes;
             }
 
             /* TODO */
             inline virtual const char* Peek(size_t *len) override {
-              assert(this);
               *len = std::min(InStream.GetPeekSize(), AvailBytes);
               return InStream.Peek();
             }
 
             /* TODO */
             inline virtual void Skip(size_t n) override {
-              assert(this);
               assert(AvailBytes >= n);
               AvailBytes -= n;
               InStream.SkipExactly(n);

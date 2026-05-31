@@ -24,12 +24,10 @@ using namespace Orly;
 using namespace Orly::Var;
 
 size_t TOpt::GetHash() const {
-  assert(this);
   return Hash;
 }
 
 Type::TType TOpt::GetType() const {
-  assert(this);
   return Type::TOpt::Get(Type);
 }
 
@@ -47,83 +45,67 @@ void TOpt::Write(std::ostream &strm) const {
 }
 
 void TOpt::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TOpt::SetHash() {
-  assert(this);
   Hash = Val.IsKnown() ? Val.GetVal().GetHash() : 0;
 }
 
 void TOpt::Touch() {
-  assert(this);
   SetHash();
 }
 
 Var::TVar &TOpt::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on Opt.");
 }
 
 TOpt &TOpt::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not supported on Opt.");
 }
 
 TOpt &TOpt::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on Opt.");
 }
 
 TOpt &TOpt::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on Opt.");
 }
 
 TOpt &TOpt::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on Opt.");
 }
 
 TOpt &TOpt::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection supported on Opt.");
 }
 
 TOpt &TOpt::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on Opt.");
 }
 
 TOpt &TOpt::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on Opt.");
 }
 
 TOpt &TOpt::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on Opt.");
 }
 
 TOpt &TOpt::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on Opt.");
 }
 
 TOpt &TOpt::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on Opt.");
 }
 
 TOpt &TOpt::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on Opt.");
 }
 
 TOpt &TOpt::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on Opt.");
 }
 
@@ -132,7 +114,6 @@ TOpt::TOpt(const Rt::TOpt<TVar> &that, const Type::TType &type) : Val(that), Typ
 TOpt::~TOpt() {}
 
 TVar TOpt::Copy() const {
-  assert(this);
   if (Val.IsKnown()) {
     return (new TOpt(TOptType(Val.GetVal().Copy()), Type))->AsVar();
   } else {

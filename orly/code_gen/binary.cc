@@ -82,7 +82,6 @@ void TBinary::Template(TCppPrinter &out, const char *name) const {
 }
 
 void TBinary::Infix(TCppPrinter &out, char op) const {
-  assert(this);
   assert(&out);
   out << '(' << Lhs << ' ' << op << ' ' << Rhs << ')';
 }

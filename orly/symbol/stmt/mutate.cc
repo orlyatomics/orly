@@ -88,12 +88,10 @@ class TMutateTypeVisitor
   private:
 
   void ThrowOptError() const {
-    assert(this);
     throw TExprError(HERE, TDoubleVisitor::PosRange, "Performing a mutation to a non-optional value with an optional is not allowed.");
   }
 
   void ThrowSeqError() const {
-    assert(this);
     throw TExprError(HERE, TDoubleVisitor::PosRange, "Performing a mutation involving sequences is not allowed.");
   }
 
@@ -108,18 +106,15 @@ TMutate::TPtr TMutate::New(
 }
 
 void TMutate::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const TMutator &TMutate::GetMutator() const {
-  assert(this);
   return Mutator;
 }
 
 void TMutate::TypeCheck() const {
-  assert(this);
   Type::TType dummy;
   /* NOTE: It would be nice to use a templatized helper function for this but that would require
            the helper function and the TMutateTypeVisitor to be in the header.

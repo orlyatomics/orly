@@ -33,7 +33,6 @@ TMatch::TPtr TMatch::New(
 }
 
 void TMatch::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   out
     << "TMatchGenerator::New("

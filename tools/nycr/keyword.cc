@@ -30,13 +30,11 @@ TKeyword::TKeyword(const Syntax::TKeyword *decl)
     : TAtom(decl->GetName(), decl->GetOptSuper(), decl->GetPattern()), Symbol(0) {}
 
 Symbol::TAtom *TKeyword::GetSymbolAsAtom() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 bool TKeyword::Build(int pass) {
-  assert(this);
   bool is_done;
   switch (pass) {
     case 1: {

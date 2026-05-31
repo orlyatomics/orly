@@ -65,7 +65,6 @@ namespace Gz {
     /* Move-assign from that file to this one.  That file will end up closed.
        If this file is already open, it will close. */
     TFile &operator=(TFile &&that) {
-      assert(this);
       TFile temp;
       temp.Handle = Handle;
       Handle = that.Handle;
@@ -75,7 +74,6 @@ namespace Gz {
 
     /* True iff. the file is open. */
     operator bool() const {
-      assert(this);
       return Handle != nullptr;
     }
 

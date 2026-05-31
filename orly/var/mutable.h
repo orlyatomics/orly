@@ -74,12 +74,10 @@ namespace Orly {
 
       /* TODO */
       const Var::TVar &GetVal() const {
-        assert(this);
         return Val;
       }
 
       const Var::TVar &GetAddr() const {
-        assert(this);
         return Addr;
       }
 

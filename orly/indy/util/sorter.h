@@ -256,20 +256,17 @@ namespace Orly {
 
           /* TODO */
           virtual operator bool() const {
-            assert(this);
             return Iter != End;
           }
 
           /* TODO */
           virtual const TVal &operator*() const {
-            assert(this);
             assert(Iter != End);
             return *Iter;
           }
 
           /* TODO */
           virtual TCursor &operator++() {
-            assert(this);
             assert(Iter != End);
             ++Iter;
             return *this;
@@ -297,13 +294,11 @@ namespace Orly {
 
         /* TODO */
         virtual ~TSorter() {
-          assert(this);
           free(Data);
         }
 
         /* TODO */
         const TVal &operator[](size_t pos) const {
-          assert(this);
           assert(pos < Size);
           return *(Data + pos);
         }
@@ -318,31 +313,26 @@ namespace Orly {
 
         /* TODO */
         size_t GetSize() const {
-          assert(this);
           return Size;
         }
 
         /* TODO */
         bool IsFull() const {
-          assert(this);
           return Size == MaxSize;
         }
 
         /* TODO */
         TRandomIterator<TVal> begin() const {
-          assert(this);
           return TRandomIterator<TVal>(Data);
         }
 
         /* TODO */
         TRandomIterator<TVal> end() const {
-          assert(this);
           return TRandomIterator<TVal>(Data + Size);
         }
 
         /* TODO */
         void Clear() {
-          assert(this);
           Size = 0U;
         }
 

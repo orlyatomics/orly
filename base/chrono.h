@@ -71,32 +71,26 @@ namespace Base {
 
       /* Accessors */
       int64_t getDay() const {
-        assert(this);
         return Day;
       }
 
       int64_t getHour() const {
-        assert(this);
         return Hour;
       }
 
       bool getIsForward() const {
-        assert(this);
         return IsForward;
       }
 
       int64_t getNanosecond() const {
-        assert(this);
         return Nanosecond;
       }
 
       int64_t getMinute() const {
-        assert(this);
         return Minute;
       }
 
       int64_t getSecond() const {
-        assert(this);
         return Second;
       }
 
@@ -141,42 +135,34 @@ namespace Base {
 
       /* Accessors */
       uint64_t getDay() const {
-        assert(this);
         return Day;
       }
 
       uint64_t getHour() const {
-        assert(this);
         return Hour;
       }
 
       uint64_t getNanosecond() const {
-        assert(this);
         return Nanosecond;
       }
 
       uint64_t getMinute() const {
-        assert(this);
         return Minute;
       }
 
       uint64_t getMonth() const {
-        assert(this);
         return Month;
       }
 
       uint64_t getSecond() const {
-        assert(this);
         return Second;
       }
 
       int64_t getUtcOffset() const {
-        assert(this);
         return UtcOffset;
       }
 
       uint64_t getYear() const {
-        assert(this);
         return Year;
       }
 

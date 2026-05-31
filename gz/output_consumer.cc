@@ -24,7 +24,6 @@ using namespace std;
 using namespace Gz;
 
 void TOutputConsumer::ConsumeOutput(const shared_ptr<const TChunk> &chunk) {
-  assert(this);
   assert(&chunk);
   const char *start, *limit;
   chunk->GetData(start, limit);

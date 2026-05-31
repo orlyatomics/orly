@@ -41,7 +41,6 @@ TMap::TMap(const L0::TPackage *package,
       Seqs(seqs) {}
 
 void TMap::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   if(Seqs.size() != 1) {
     //NOTE: For proper code printing we must take all the correllated sequences as a sequence of objects.
@@ -54,7 +53,6 @@ void TMap::WriteExpr(TCppPrinter &out) const {
 }
 
 void TMap::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
-  assert(this);
   for (const auto &iter : Seqs) {
     dependency_set.insert(iter);
     iter->AppendDependsOn(dependency_set);

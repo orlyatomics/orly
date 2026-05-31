@@ -47,7 +47,6 @@ TCommonContext::TCommonContext(const Rpc::TProtocol &protocol,
 }
 
 bool TCommonContext::Queue() {
-  assert(this);
   switch (ReaderState) {
     case Connected : {
       switch (WorkerState) {

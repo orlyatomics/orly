@@ -281,12 +281,10 @@ namespace Orly {
         *************/
 
       inline size_t TFileService::GetNumFiles() const {
-        assert(this);
         return NumFiles;
       }
 
       inline void TFileService::TOp::Apply(size_t *buf) const {
-        assert(this);
         uuid_copy(*reinterpret_cast<uuid_t *>(buf), FileUUID.GetRaw());
         buf[2] = FileObj.GenId; // file_gen
         buf[3] = FileObj.StartingBlockId; // starting_block_id
@@ -333,17 +331,14 @@ namespace Orly {
       inline TFileService::TOp::~TOp() {}
 
       inline TFileService::TOp::TQueueMembership *TFileService::TOp::GetQueueMembership() {
-        assert(this);
         return &QueueMembership;
       }
 
       inline void TFileService::TOp::Remove() {
-        assert(this);
         QueueMembership.Remove();
       }
 
       inline void TFileService::TOp::Complete(TDiskResult result, const char *err_str) {
-        assert(this);
         Trigger.Callback(result, err_str);
       }
 

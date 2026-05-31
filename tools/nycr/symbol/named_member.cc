@@ -24,23 +24,19 @@ using namespace std;
 using namespace Tools::Nycr::Symbol;
 
 TNamedMember::~TNamedMember() {
-  assert(this);
   SetCompound(0);
 }
 
 const TName &TNamedMember::GetName() const {
-  assert(this);
   return Name;
 }
 
 void TNamedMember::WriteRhs(ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm << TLower(Name) << ':' << TLower(GetKind()->GetName());
 }
 
 void TNamedMember::WriteXml(ostream &strm) const {
-  assert(this);
   assert(&strm);
   strm << TXmlTag(TXmlTag::NamedMember, Open)
        << TXml(GetName())

@@ -47,7 +47,6 @@ TTest::TTest(
         PosRange(pos_range) {}
 
 TTest::~TTest() {
-  assert(this);
   auto scope = TryGetScope();
   if (scope) {
     scope->Remove(shared_from_this());
@@ -55,7 +54,6 @@ TTest::~TTest() {
 }
 
 const TPosRange &TTest::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
@@ -64,22 +62,18 @@ TScope::TPtr TTest::GetScope() const {
 }
 
 const TWithClause::TPtr &TTest::GetOptWithClause() const {
-  assert(this);
   return OptWithClause;
 }
 
 const TTestCaseBlock::TPtr &TTest::GetTestCaseBlock() const {
-  assert(this);
   return TestCaseBlock;
 }
 
 TScope::TPtr TTest::TryGetScope() const {
-  assert(this);
   return Scope.lock();
 }
 
 void TTest::TypeCheck() const {
-  assert(this);
   if (OptWithClause) {
     OptWithClause->TypeCheck();
   }

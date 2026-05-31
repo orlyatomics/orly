@@ -30,11 +30,9 @@ TUnary::TUnary(const TStmtArg::TPtr &stmt_arg, const TPosRange &pos_range)
 }
 
 TUnary::~TUnary() {
-  assert(this);
   StmtArg->UnsetStmt(this);
 }
 
 const TStmtArg::TPtr &TUnary::GetStmtArg() const {
-  assert(this);
   return StmtArg;
 }

@@ -33,7 +33,6 @@ using namespace Util;
 TDirWalker::~TDirWalker() {}
 
 bool TDirWalker::Walk(const char *root) {
-  assert(this);
   bool result = true;  // Captures the result of the walker's event handlers.  If it ever becomes false, we abort the walk.
   TEntry
       entry,        // Filled in and passed for all event handlers.

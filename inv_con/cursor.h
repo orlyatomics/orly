@@ -55,14 +55,12 @@ namespace InvCon {
 
       /* True iff. we are currently pointing to a membership. */
       operator bool() const {
-        assert(this);
         return Membership != 0;
       }
 
       /* Move in the direction of our orientation.
          Calling this function when we're not currently pointing at a membership is an error. */
       TCursor &operator++() {
-        assert(this);
         assert(Membership);
         switch (Orient) {
           case Fwd: {
@@ -81,7 +79,6 @@ namespace InvCon {
       /* Move in the opposite direction of our orientation.
          Calling this function when we're not currently pointing at a membership is an error. */
       TCursor &operator--() {
-        assert(this);
         assert(Membership);
         switch (Orient) {
           case Fwd: {
@@ -100,7 +97,6 @@ namespace InvCon {
       /* The member at which we're currently pointing.
          Calling this function when we're not currently pointing at a membership is an error. */
       TMember &operator*() const {
-        assert(this);
         assert(Membership);
         return *(Membership->GetMember());
       }
@@ -108,7 +104,6 @@ namespace InvCon {
       /* The member at which we're currently pointing.
          Calling this function when we're not currently pointing at a membership is an error. */
       TMember *operator->() const {
-        assert(this);
         assert(Membership);
         return Membership->GetMember();
       }
@@ -116,7 +111,6 @@ namespace InvCon {
       /* The membership at which we're currently pointing.
          Calling this function when we're not currently pointing at a membership is an error. */
       TMembership *GetMembership() const {
-        assert(this);
         assert(Membership);
         return Membership;
       }

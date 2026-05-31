@@ -49,14 +49,12 @@ TCollatedByExpr::TCollatedByExpr(const TExprFactory *expr_factory, const Package
 }
 
 TCollatedByExpr::~TCollatedByExpr() {
-  assert(this);
   delete Seq;
   delete Reduce;
   delete Having;
 }
 
 Expr::TExpr::TPtr TCollatedByExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I set rhs seperately, take a look at <orly/synth/thatable_expr.h>
   Symbol = Expr::TCollatedBy::New(Seq->Build(), GetPosRange(CollatedByExpr));
@@ -66,7 +64,6 @@ Expr::TExpr::TPtr TCollatedByExpr::Build() const {
 }
 
 void TCollatedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Seq->ForEachInnerScope(cb);
@@ -75,7 +72,6 @@ void TCollatedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb
 }
 
 void TCollatedByExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Seq->ForEachRef(cb);
@@ -84,19 +80,16 @@ void TCollatedByExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TCollatedBy::TPtr &TCollatedByExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TStartable::TPtr TCollatedByExpr::GetStartableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TThatable::TPtr TCollatedByExpr::GetThatableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

@@ -38,7 +38,6 @@ namespace Utf8 {
 
     /* The number of lines in the piece.  Never zero. */
     size_t GetLineCount() const {
-      assert(this);
       return Eols.size() - 1;
     }
 

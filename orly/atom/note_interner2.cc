@@ -22,25 +22,21 @@ using namespace std;
 using namespace Orly::Atom;
 
 TNoteInterner::~TNoteInterner() {
-  assert(this);
   for (auto note: Notes) {
     delete const_cast<TCore::TNote *>(note);
   }
 }
 
 bool TNoteInterner::IsKnown(const TCore::TNote *note) const {
-  assert(this);
   return Notes.find(note) != Notes.end();
 }
 
 bool TNoteInterner::IsOwned(const TCore::TNote *note) const {
-  assert(this);
   auto iter = Notes.find(note);
   return iter != Notes.end() && *iter == note;
 }
 
 const TCore::TNote *TNoteInterner::Propose(TCore::TNote *proposed_note) {
-  assert(this);
   assert(proposed_note);
   const TCore::TNote *interned_note;
   try {

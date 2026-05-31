@@ -24,7 +24,6 @@ using namespace MultiEvent;
 TEvent::~TEvent() {}
 
 void TEvent::Fire() {
-  assert(this);
   lock_guard<mutex> lock(Mutex);
   if (!Flag) {
     Flag = true;
@@ -35,7 +34,6 @@ void TEvent::Fire() {
 }
 
 bool TWaiter::Wait(const TProducer &producer, const TConsumer &consumer, const Base::TOpt<chrono::milliseconds> &timeout) {
-  assert(this);
   assert(&producer);
   assert(&consumer);
   assert(&timeout);
@@ -91,7 +89,6 @@ bool TWaiter::Wait(const TProducer &producer, const TConsumer &consumer, const B
 }
 
 void TWaiter::Notify(const TEvent *event) {
-  assert(this);
   assert(event);
   unique_lock<mutex> lock(Mutex);
   Flag = true;
@@ -99,7 +96,6 @@ void TWaiter::Notify(const TEvent *event) {
 }
 
 void TWaiter::Reset() {
-  assert(this);
   for (auto event: Events) {
     lock_guard<mutex> lock(event->Mutex);
     event->Waiters.erase(this);

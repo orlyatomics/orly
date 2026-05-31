@@ -76,7 +76,6 @@ namespace Orly {
 
       /* TODO */
       const TOptType &GetVal() const {
-        assert(this);
         return Val;
       }
 

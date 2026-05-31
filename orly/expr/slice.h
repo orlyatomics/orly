@@ -53,7 +53,6 @@ namespace Orly {
       virtual Type::TType GetTypeImpl() const override;
 
       const TExprArray &GetExprs() const {
-        assert(this);
         return TNAry::GetContainer();
       }
 

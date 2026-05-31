@@ -49,7 +49,6 @@ namespace Orly {
 
         /* TODO */
         inline const Base::TUuid &GetIndexIdFor(const Type::TType &addr, const Type::TType &val) const {
-          assert(this);
           auto pos = ReverseAddrMap.find(
               std::make_pair(Type::UnwrapSequence(addr),
                              Type::UnwrapOptional(Type::UnwrapMutable(val))));
@@ -59,19 +58,16 @@ namespace Orly {
 
         /* TODO */
         inline const TAddrMap &GetAddrMap() const {
-          assert(this);
           return AddrMap;
         }
 
         /* TODO */
         inline const TRevAddrMap &GetReverseAddrMap() const {
-          assert(this);
           return ReverseAddrMap;
         }
 
         /* TODO */
         inline const Package::TName &GetName() const {
-          assert(this);
           assert(Symbol);
           return Symbol->GetName();
         }

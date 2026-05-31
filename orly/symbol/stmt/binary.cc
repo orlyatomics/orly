@@ -36,17 +36,14 @@ TBinary::TBinary(
 }
 
 TBinary::~TBinary() {
-  assert(this);
   Lhs->UnsetStmt(this);
   Rhs->UnsetStmt(this);
 }
 
 const TStmtArg::TPtr &TBinary::GetLhs() const {
-  assert(this);
   return Lhs;
 }
 
 const TStmtArg::TPtr &TBinary::GetRhs() const {
-  assert(this);
   return Rhs;
 }

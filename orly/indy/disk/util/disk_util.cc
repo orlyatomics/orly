@@ -136,7 +136,6 @@ TDiskUtil::TDiskUtil(Base::TScheduler *scheduler,
 }
 
 void TDiskUtil::List(std::stringstream &ss) const {
-  assert(this);
   ss << "Volumes:" << endl;
   for (const auto &vol : VolumeById) {
     ss << "ID: " << vol.first.Id << "\t" << vol.first.InstanceName << "\t" << vol.second->GetNumDevices() << endl;
@@ -154,7 +153,6 @@ void TDiskUtil::CreateVolume(const std::string &instance_name,
                              const size_t stripe_size_in_kb,
                              const TVolume::TDesc::TStorageSpeed storage_speed,
                              bool do_fsync) {
-  assert(this);
   const size_t logical_block_size = 512; /* TODO */
   const size_t physical_block_size = 512; /* TODO */
 
@@ -335,7 +333,6 @@ void TDiskUtil::CreateVolume(const std::string &instance_name,
 }
 
 TVolumeManager *TDiskUtil::GetVolumeManager(const std::string &instance_name) const {
-  assert(this);
   auto ret = VolumeManagerByInstance.find(instance_name);
   if (ret == VolumeManagerByInstance.end()) {
     throw std::runtime_error("No volume(s) for given instance name. Please use the orly disk manager to create one.");

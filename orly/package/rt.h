@@ -71,26 +71,22 @@ namespace Orly {
 
       /* Add a new predicate result to the vector of predicate results */
       void AddPredicateResult(bool pred) {
-        assert(this);
         PredicateResults.push_back(pred);
       }
 
       /* Get the predicate results of an execution */
       inline const TPredicateResults &GetPredicateResults() const {
-        assert(this);
         return PredicateResults;
       }
 
       /* Get the effect map. We move this rather than copying because when used it is always to take the effect set
          and shove it into a FluxCapacitor::TUpdate */
       inline TEffects &&MoveEffects() {
-        assert(this);
         return std::move(Effects);
       }
 
       /* TODO */
       inline const TEffects &GetEffects() {
-        assert(this);
         return Effects;
       }
 
@@ -112,12 +108,10 @@ namespace Orly {
 
       /* Get the current session id. */
       inline const Base::TUuid &GetSessionId() const {
-        assert(this);
         return SessionId;
       }
 
       inline int64_t GetRandomInt(int64_t gen_id, int64_t min, int64_t max, int64_t idx) const {
-        assert(this);
         assert(gen_id >= 0);
         assert(max >= min);
         assert(idx >= 0);
@@ -143,20 +137,17 @@ namespace Orly {
       }
 
       inline const Rt::TOpt<uint32_t> &GetOptRandomSeed() const {
-        assert(this);
 
         return OptRandomSeed;
       }
 
       /* Get the current user id. */
       inline const Rt::TOpt<Base::TUuid> &GetUserId() const {
-        assert(this);
         return UserId;
       }
 
       /* Return true iff the effect set is empty. Useful for determining if a database update is needed. */
       bool HasEffects() const {
-        assert(this);
         return !Effects.empty();
       }
 
@@ -172,7 +163,6 @@ namespace Orly {
       }
 
       const Rt::TOpt<Base::Chrono::TTimePnt> &GetOptNow() const {
-        assert(this);
         return OptNow;
       }
 
@@ -248,7 +238,6 @@ namespace Orly {
 
       /* TODO */
       virtual Orly::TContextBase &GetFlux() override {
-        assert(this);
         return FluxContext;
       }
 
@@ -274,12 +263,10 @@ namespace Orly {
 
     /*** Inline ***/
     inline Atom::TCore::TExtensibleArena *TContext::GetArena() {
-      assert(this);
       return Arena;
     }
 
     inline Base::TScheduler *TContext::GetScheduler() const {
-      assert(this);
       assert(Scheduler);
       return Scheduler;
     }

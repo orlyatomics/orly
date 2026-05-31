@@ -51,7 +51,6 @@ TListCtor::~TListCtor() {
 }
 
 Expr::TExpr::TPtr TListCtor::Build() const {
-  assert(this);
   std::vector<Expr::TExpr::TPtr> exprs;
   for (auto expr : Exprs) {
     exprs.emplace_back(expr->Build());
@@ -60,21 +59,18 @@ Expr::TExpr::TPtr TListCtor::Build() const {
 }
 
 void TListCtor::Cleanup() {
-  assert(this);
   for (auto expr : Exprs) {
     delete expr;
   }
 }
 
 void TListCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   for (auto expr : Exprs) {
     expr->ForEachInnerScope(cb);
   }
 }
 
 void TListCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   for (auto expr : Exprs) {
     expr->ForEachRef(cb);
   }

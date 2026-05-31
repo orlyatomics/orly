@@ -35,7 +35,6 @@ TWhile::TWhile(const TExpr::TPtr &lhs, const TPosRange &pos_range)
     : TThatableBinary(lhs, pos_range) {}
 
 void TWhile::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -63,7 +62,6 @@ Type::TType TWhile::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TWhileTypeVisitor
-  assert(this);
   Type::TType type;
   GetLhs()->GetType().Accept(TWhileTypeVisitor(type, GetPosRange()));
   if (Type::Unwrap(GetRhs()->GetType()) != Type::TBool::Get()) {

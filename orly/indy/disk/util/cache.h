@@ -77,7 +77,6 @@ namespace Orly {
 
             /* This function assumes the data in the cache is already loaded! */
             inline const char *KnownGetData(TCache *cache) const {
-              assert(this);
               const size_t val = std::atomic_load(&BufAddr);
               assert((val & HighestBit) == HighestBit);
               assert((val & ThirdHighestBit) == 0UL);
@@ -157,7 +156,6 @@ namespace Orly {
                                            uint8_t util_src,
                                            size_t page_id,
                                            TCompletionTrigger &trigger) const {
-              assert(this);
               for (;;) {
                 size_t val = std::atomic_load(&BufAddr);
                 if ((val & HighestBit) == HighestBit) {
@@ -265,7 +263,6 @@ namespace Orly {
           /* STATS */
           #ifdef PERF_STATS
           inline size_t GetMaxCacheSize() const {
-            assert(this);
             return MaxCacheSize;
           }
           #endif
@@ -273,7 +270,6 @@ namespace Orly {
           /* STATS */
           #ifdef PERF_STATS
           inline size_t CountNumBufInLRU() const {
-            assert(this);
             size_t total = 0UL;
             for (size_t i = 0; i < NumLRU; ++i) {
               total += std::atomic_load(&(LRUArray[i].NumBufInLRU));
@@ -292,7 +288,6 @@ namespace Orly {
 
           /* Returns a pointer to the main slot object. Initializes the slot if it does not exist yet. Increments the reference count on the actual slot holding our page. */
           inline TSlot *Get(size_t page_id, TSlot *&data_slot) {
-            assert(this);
             const size_t slot_num = page_id % NumSlots;
             TSlot &slot = SlotArray[slot_num];
             _mm_prefetch(&slot, _MM_HINT_T0);
@@ -441,7 +436,6 @@ namespace Orly {
 
           /* Decrements the reference count on the given page_id for this slot. */
           inline void Release(TSlot *slot_ptr, size_t page_id) {
-            assert(this);
             assert(&SlotArray[page_id % NumSlots] == slot_ptr);
             _mm_prefetch(slot_ptr, _MM_HINT_T0);
             _mm_prefetch(reinterpret_cast<uint8_t *>(slot_ptr) + sizeof(TSlot), _MM_HINT_T0);
@@ -513,7 +507,6 @@ namespace Orly {
 
           /* TODO */
           inline void Clear(size_t page_id) {
-            assert(this);
             const size_t slot_num = page_id % NumSlots;
             TSlot &slot = SlotArray[slot_num];
             _mm_prefetch(&slot, _MM_HINT_T0);
@@ -624,7 +617,6 @@ namespace Orly {
                                     size_t num_consec_pages,
                                     bool can_release,
                                     TCompletionTrigger &async_trigger) {
-            assert(this);
             TSlot *main_slots[num_consec_pages];
             TSlot *data_slots[num_consec_pages];
             TSlot **main_slots_ptr = main_slots;
@@ -780,7 +772,6 @@ namespace Orly {
 
           /* TODO */
           inline size_t NewPageBuf() {
-            assert(this);
             int lru_start = sched_getcpu() % NumLRU;
             size_t stop_lru = NumLRU;
             for (size_t cur_lru = lru_start; cur_lru < stop_lru; ++cur_lru) {
@@ -823,7 +814,6 @@ namespace Orly {
 
           /* TODO */
           bool TryRemoveSlot(const TSlot &slot, TSlot *&slot_to_remove, size_t &out_reclaimed_page_buf, size_t &main_slot_page_id) {
-            assert(this);
             /* there are 2 cases:
                - this slot is in the main (pre-allocated) array ... common case
                - this slot is part of a chain, less common */

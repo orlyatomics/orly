@@ -29,12 +29,10 @@ TRefExpr::TRefExpr(const Package::Syntax::TRefExpr *ref_expr)
       FuncDef(RefExpr->GetName()) {}
 
 Expr::TExpr::TPtr TRefExpr::Build() const {
-  assert(this);
   return Expr::TRef::New(FuncDef->GetSymbol()->GetResultDefs()[0], GetPosRange(RefExpr));
 }
 
 void TRefExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   cb(FuncDef);

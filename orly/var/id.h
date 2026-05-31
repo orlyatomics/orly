@@ -71,7 +71,6 @@ namespace Orly {
 
       /* TODO */
       Base::TUuid GetVal() const {
-        assert(this);
         return Val;
       }
 

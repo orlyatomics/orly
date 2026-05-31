@@ -53,18 +53,15 @@ TCoreVector::TPackedArena::TPackedArena(TBinaryInputStream &strm)
 }
 
 TCoreVector::TPackedArena::~TPackedArena() {
-  assert(this);
   free(RawData);
 }
 
 void TCoreVector::TPackedArena::ReleaseNote(const TNote *, TOffset, void *, void *, void *) {}
 
 const TCoreVector::TNote *TCoreVector::TPackedArena::TryAcquireNote(TOffset offset, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   return reinterpret_cast<TNote *>(RawData + offset);
 }
 
 const TCoreVector::TNote *TCoreVector::TPackedArena::TryAcquireNote(TOffset offset, size_t /*known_size*/, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   return reinterpret_cast<TNote *>(RawData + offset);
 }

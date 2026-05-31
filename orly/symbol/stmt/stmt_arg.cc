@@ -30,20 +30,17 @@ TStmtArg::TStmtArg(const Expr::TExpr::TPtr &expr)
     : TRoot(expr), Stmt(nullptr) {}
 
 const TStmt *TStmtArg::GetStmt() const {
-  assert(this);
   assert(Stmt);
   return Stmt;
 }
 
 void TStmtArg::SetStmt(const TStmt *stmt) {
-  assert(this);
   assert(stmt);
   assert(!Stmt);
   Stmt = stmt;
 }
 
 void TStmtArg::UnsetStmt(const TStmt *stmt) {
-  assert(this);
   assert(stmt);
   assert(Stmt == stmt);
   Stmt = nullptr;

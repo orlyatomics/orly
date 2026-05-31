@@ -27,6 +27,5 @@ TAtomicType::TAtomicType(TGet get)
 void TAtomicType::ForEachRef(const std::function<void (TAnyRef &)> &) {}
 
 Type::TType TAtomicType::ComputeSymbolicType() const {
-  assert(this);
   return Get();
 }

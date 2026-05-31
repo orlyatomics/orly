@@ -111,21 +111,18 @@ namespace Orly {
 
       /* Our cached state. */
       const TCache &operator*() const {
-        assert(this);
         Refresh();
         return Cache;
       }
 
       /* Our cached state. */
       const TCache *operator->() const {
-        assert(this);
         Refresh();
         return &Cache;
       }
 
       /* Dump our cached state and advance. */
       TLevel2 &operator++() {
-        assert(this);
         Refresh();
         IsCached = false;
         return *this;
@@ -138,7 +135,6 @@ namespace Orly {
 
       /* If our cache is fresh, do nothing; otherwise, update it. */
       void Refresh() const {
-        assert(this);
         if (!IsCached) {
           const_cast<TLevel2 *>(this)->Update();
           IsCached = true;

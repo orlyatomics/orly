@@ -30,7 +30,6 @@ TAnyHoncho *TAnyHoncho::GetAnyHoncho() {
 }
 
 TAnyHoncho::~TAnyHoncho() {
-  assert(this);
   assert(AnyHoncho == this);
   AnyHoncho = nullptr;
 }

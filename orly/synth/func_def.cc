@@ -38,12 +38,10 @@ TFuncDef::TFuncDef(TScope *scope, const Package::Syntax::TFuncDef *func_def)
       Expr(nullptr) {}
 
 TFuncDef::~TFuncDef() {
-  assert(this);
   delete Expr;
 }
 
 void TFuncDef::AddParamName(const TName &name) {
-  assert(this);
   auto result = ParamNames.emplace(name);
   if (!result.second) {
     GetContext().AddError(name.GetPosRange(), Base::AsStr(std::quoted(name.GetText()), " is a duplicate parameter name"));
@@ -51,7 +49,6 @@ void TFuncDef::AddParamName(const TName &name) {
 }
 
 TAction TFuncDef::Build(int pass) {
-  assert(this);
   TAction action;
   switch (pass) {
     case 1: {
@@ -85,24 +82,20 @@ TAction TFuncDef::Build(int pass) {
 void TFuncDef::BuildSecondarySymbol() {}
 
 void TFuncDef::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(Expr);
   Expr->ForEachInnerScope(cb);
 }
 
 void TFuncDef::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(Expr);
   Expr->ForEachRef(cb);
 }
 
 Symbol::TFunction::TPtr TFuncDef::GetSymbol() const {
-  assert(this);
   return Symbol;
 }
 
 void TFuncDef::SetExpr(TExpr *expr) {
-  assert(this);
   assert(expr);
   assert(!Expr);
   Expr = expr;
@@ -125,7 +118,6 @@ TParamFuncDef::TParamFuncDef(
 }
 
 void TParamFuncDef::BuildSecondarySymbol() {
-  assert(this);
   ParamDefSymbol = Symbol::TGivenParamDef::New(
                        EnclosingFunc->GetSymbol(), /* function */
                        GetName().GetText(),        /* name */
@@ -134,12 +126,10 @@ void TParamFuncDef::BuildSecondarySymbol() {
 }
 
 const Symbol::TParamDef::TPtr &TParamFuncDef::GetParamDefSymbol() const {
-  assert(this);
   return ParamDefSymbol;
 }
 
 TType *TParamFuncDef::GetType() const {
-  assert(this);
   return Type;
 }
 

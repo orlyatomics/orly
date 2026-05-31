@@ -55,19 +55,16 @@ class TTetrisManager final
 
     /* The unique id of this pov. */
     const TUuid &GetId() const {
-      assert(this);
       return Id;
     }
 
     /* The tetris manager which owns us. */
     TTetrisManager *GetTetrisManager() const {
-      assert(this);
       return TetrisManager;
     }
 
     /* Push a new value onto this pov's queue. */
     void Push(int value) {
-      assert(this);
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
       if (Values.empty()) {
@@ -81,7 +78,6 @@ class TTetrisManager final
 
     /* Sum all the values in this pov's queue, emptying the queue in the process. */
     int Sum() {
-      assert(this);
       int result = 0;
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
@@ -101,7 +97,6 @@ class TTetrisManager final
     /* Our parent point of view, if any.
        Only the global pov has no parent. */
     TPov *TryGetParentPov() const {
-      assert(this);
       return ParentPov;
     }
 
@@ -109,7 +104,6 @@ class TTetrisManager final
        If the queue is non-empty, pop the next value off it, return the value via out-param, and return true.
        If the queue is empty, leave the out-param alone and return false. */
     bool TryPop(int &value) {
-      assert(this);
       assert(&value);
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
@@ -129,7 +123,6 @@ class TTetrisManager final
 
     /* Blocks as long as there are values in this pov's queue. */
     bool WaitUntilEmpty() const {
-      assert(this);
       IsEmpty.Sync();
       return true;
       //return IsEmpty.GetFd().IsReadable(timeout);
@@ -151,7 +144,6 @@ class TTetrisManager final
 
     /* Finishes the initialization of a newly constructed pov. */
     void FinishInit() {
-      assert(this);
       assert(TetrisManager);
       Id = TUuid::Best;
       TetrisManager->PovById.insert(make_pair(Id, this));
@@ -193,7 +185,6 @@ class TTetrisManager final
 
   /* Do-little. */
   ~TTetrisManager() {
-    assert(this);
     StopAllPlayers();  // This call is mandatory!
     for (const auto &item: PovById) {
       delete item.second;
@@ -202,14 +193,12 @@ class TTetrisManager final
 
   /* The global pov of this tetris manager.  Never null. */
   TPov *GetGlobalPov() const {
-    assert(this);
     return GlobalPov;
   }
 
   /* Look up the given pov id and return the pov to which it maps.
      The id must refer to a valid pov. */
   TPov *GetPov(const TUuid &id) {
-    assert(this);
     auto iter = PovById.find(id);
     assert(iter != PovById.end());
     return iter->second;
@@ -233,7 +222,6 @@ class TTetrisManager final
 
     /* See our base class.  We add the child pov to our set, with proper syncrhonization against Play(). */
     virtual void OnJoin(const TUuid &child_pov_id) override {
-      assert(this);
       //lock_guard<mutex> lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
       ChildPovs.insert(TetrisManager->GetPov(child_pov_id));
@@ -241,7 +229,6 @@ class TTetrisManager final
 
     /* See our base class.  We remove the child pov from our set, with proper syncrhonization against Play(). */
     virtual void OnPart(const TUuid &child_pov_id) override {
-      assert(this);
       //lock_guard<mutex> lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
       ChildPovs.erase(TetrisManager->GetPov(child_pov_id));
@@ -255,7 +242,6 @@ class TTetrisManager final
 
     /* See our base class.  We play the tetris here. */
     virtual void Play() override {
-      assert(this);
       /* Nab a copy of our set of child points of view.
          We have to take this copy and release the lock so that our
          children can part from us when we pop them dry. */

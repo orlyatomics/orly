@@ -44,20 +44,17 @@ namespace Base {
 
     /* TODO */
     operator bool() const {
-      assert(this);
       return TryRefresh();
     }
 
     /* TODO */
     TVal &operator*() const {
-      assert(this);
       Refresh();
       return Val;
     }
 
     /* TODO */
     void operator++() {
-      assert(this);
       Refresh();
       State = Unknown;
     }
@@ -69,7 +66,6 @@ namespace Base {
 
     /* TODO */
     void Refresh() const {
-      assert(this);
       if (!TryRefresh()) {
         throw TPeekablePastEndError(HERE);
       }
@@ -77,7 +73,6 @@ namespace Base {
 
     /* TODO */
     bool TryRefresh() const {
-      assert(this);
       bool is_ready;
       switch (State) {
         case Unknown: {

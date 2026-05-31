@@ -43,13 +43,11 @@ TWhileExpr::TWhileExpr(const TExprFactory *expr_factory, const Package::Syntax::
 }
 
 TWhileExpr::~TWhileExpr() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Expr::TExpr::TPtr TWhileExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I set rhs seperately, take a look at <orly/synth/thatable_expr.h>
   Symbol = Expr::TWhile::New(Lhs->Build(), GetPosRange(InfixWhile));
@@ -58,7 +56,6 @@ Expr::TExpr::TPtr TWhileExpr::Build() const {
 }
 
 void TWhileExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
@@ -66,7 +63,6 @@ void TWhileExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TWhileExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -74,13 +70,11 @@ void TWhileExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TWhile::TPtr &TWhileExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TThatable::TPtr TWhileExpr::GetThatableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

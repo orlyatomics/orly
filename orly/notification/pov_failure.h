@@ -37,7 +37,6 @@ namespace Orly {
 
       /* The id of the pov which has failed. */
       const Base::TUuid &GetPovId() const {
-        assert(this);
         return PovId;
       }
 

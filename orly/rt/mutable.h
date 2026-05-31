@@ -59,38 +59,31 @@ namespace Orly {
           : Addr(addr), Parts(parts), Val(val) {}
 
       const TAddr &GetAddr() const {
-        assert(this);
         return Addr.GetVal();
       }
 
       const Rt::TOpt<TAddr> &GetOptAddr() const {
-        assert(this);
         return Addr;
       }
 
       const TParts &GetParts() const {
-        assert(this);
         return Parts;
       }
 
       const TVal &GetVal() const {
-        assert(this);
         return Val;
       }
 
       size_t GetHash() const {
-        assert(this);
         //TODO: Write a better hash function.
         return std::hash<TVal>()(Val) ^ std::hash<Rt::TOpt<TAddr>>()(Addr);
       }
 
       bool HasAddr() const {
-        assert(this);
         return Addr;
       }
 
       operator TVal() const {
-        assert(this);
         return Val;
       }
 

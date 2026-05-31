@@ -26,17 +26,14 @@ TBlockSource::TBlockSource(const std::unique_ptr<TBufBlock> &buf)
 TBlockSource::~TBlockSource() {}
 
 inline size_t TBlockSource::Available() const {
-  assert(this);
   return PhysicalBlockSize - BytesRead;
 }
 
 const char* TBlockSource::Peek(size_t *len) {
-  assert(this);
   *len = Available();
   return Buf->GetData() + BytesRead;
 }
 
 void TBlockSource::Skip(size_t n) {
-  assert(this);
   BytesRead += n;
 }

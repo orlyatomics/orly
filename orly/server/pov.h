@@ -81,19 +81,16 @@ namespace Orly {
 
       /* See TPov::TAudience. */
       TAudience GetAudience() const {
-        assert(this);
         return Audience;
       }
 
       /* TODO */
       virtual const char *GetKind() const noexcept override {
-        assert(this);
         return "Pov";
       }
 
       /* See TPov::TPolicy. */
       TPolicy GetPolicy() const {
-        assert(this);
         return Policy;
       }
 
@@ -102,13 +99,11 @@ namespace Orly {
 
       /* The id of the session which created this pov. */
       const Base::TUuid &GetSessionId() const {
-        assert(this);
         return SessionId;
       }
 
       /* See TSharedParents. */
       const TSharedParents &GetSharedParents() const {
-        assert(this);
         return SharedParents;
       }
 

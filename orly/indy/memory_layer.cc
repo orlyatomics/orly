@@ -29,13 +29,11 @@ TMemoryLayer::TMemoryLayer(L0::TManager *manager)
       Size(0UL) {}
 
 TMemoryLayer::~TMemoryLayer() {
-  assert(this);
   UpdateCollection.DeleteEachMember();
   EntryCollection.DeleteEachMember();
 }
 
 void TMemoryLayer::Insert(TUpdate *update) NO_THROW {
-  assert(this);
   for (TUpdate::TEntryCollection::TCursor csr(&update->EntryCollection/*, InvCon::TOrient::Rev*/); csr; ++csr) {
     ++Size;
     csr->MemoryLayerMembership.ReverseInsert(&EntryCollection);
@@ -44,7 +42,6 @@ void TMemoryLayer::Insert(TUpdate *update) NO_THROW {
 }
 
 void TMemoryLayer::ReverseInsert(TUpdate *update) NO_THROW {
-  assert(this);
   for (TUpdate::TEntryCollection::TCursor csr(&update->EntryCollection); csr; ++csr) {
     ++Size;
     csr->MemoryLayerMembership.ReverseInsert(&EntryCollection);
@@ -54,17 +51,14 @@ void TMemoryLayer::ReverseInsert(TUpdate *update) NO_THROW {
 
 std::unique_ptr<TPresentWalker> TMemoryLayer::NewPresentWalker(const TIndexKey &from,
                                                                const TIndexKey &to) const {
-  assert(this);
   return make_unique<TRangePresentWalker>(this, from, to);
 }
 
 std::unique_ptr<TPresentWalker> TMemoryLayer::NewPresentWalker(const TIndexKey &key) const {
-  assert(this);
   return make_unique<TMatchPresentWalker>(this, key);
 }
 
 std::unique_ptr<Orly::Indy::TUpdateWalker> TMemoryLayer::NewUpdateWalker(TSequenceNumber from) const {
-  assert(this);
   return make_unique<TUpdateWalker>(this, from);
 }
 
@@ -83,20 +77,17 @@ TMemoryLayer::TMatchPresentWalker::TMatchPresentWalker(const TMemoryLayer *layer
 TMemoryLayer::TMatchPresentWalker::~TMatchPresentWalker() {}
 
 inline TMemoryLayer::TMatchPresentWalker::operator bool() const {
-  assert(this);
   Refresh();
   return Valid;
 }
 
 const TPresentWalker::TItem &TMemoryLayer::TMatchPresentWalker::operator*() const {
-  assert(this);
   Refresh();
   assert(Valid);
   return Item;
 }
 
 inline TMemoryLayer::TMatchPresentWalker &TMemoryLayer::TMatchPresentWalker::operator++() {
-  assert(this);
   Cached = false;
   ++Csr;
   Refresh();
@@ -104,7 +95,6 @@ inline TMemoryLayer::TMatchPresentWalker &TMemoryLayer::TMatchPresentWalker::ope
 }
 
 void TMemoryLayer::TMatchPresentWalker::Refresh() const {
-  assert(this);
   if (Valid && !Cached) {
     void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
     void *search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
@@ -172,13 +162,11 @@ TMemoryLayer::TRangePresentWalker::TRangePresentWalker(const TMemoryLayer *layer
 TMemoryLayer::TRangePresentWalker::~TRangePresentWalker() {}
 
 TMemoryLayer::TRangePresentWalker::operator bool() const {
-  assert(this);
   Refresh();
   return Valid;
 }
 
 const TPresentWalker::TItem &TMemoryLayer::TRangePresentWalker::operator*() const {
-  assert(this);
   Refresh();
   assert(Valid);
   assert(Cached);
@@ -186,7 +174,6 @@ const TPresentWalker::TItem &TMemoryLayer::TRangePresentWalker::operator*() cons
 }
 
 TMemoryLayer::TRangePresentWalker &TMemoryLayer::TRangePresentWalker::operator++() {
-  assert(this);
   assert(Valid);
   Cached = false;
   ++Csr;
@@ -195,7 +182,6 @@ TMemoryLayer::TRangePresentWalker &TMemoryLayer::TRangePresentWalker::operator++
 }
 
 void TMemoryLayer::TRangePresentWalker::Refresh() const {
-  assert(this);
   if (Valid && !Cached) {
     void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize());
     void *key_state_alloc_2 = alloca(Sabot::State::GetMaxStateSize());
@@ -261,12 +247,10 @@ TMemoryLayer::TUpdateWalker::TUpdateWalker(const TMemoryLayer *layer, TSequenceN
 TMemoryLayer::TUpdateWalker::~TUpdateWalker() {}
 
 TMemoryLayer::TUpdateWalker::operator bool() const {
-  assert(this);
   return Valid;
 }
 
 const TUpdateWalker::TItem &TMemoryLayer::TUpdateWalker::operator*() const {
-  assert(this);
   assert(Valid);
   Item.MainArena = &Csr->GetSuprena();
   Item.SequenceNumber = Csr->GetSequenceNumber();
@@ -280,14 +264,12 @@ const TUpdateWalker::TItem &TMemoryLayer::TUpdateWalker::operator*() const {
 }
 
 TMemoryLayer::TUpdateWalker &TMemoryLayer::TUpdateWalker::operator++() {
-  assert(this);
   ++Csr;
   Refresh();
   return *this;
 }
 
 void TMemoryLayer::TUpdateWalker::Refresh() {
-  assert(this);
   Valid = false;
   for (;Csr; ++Csr) {
     if (Csr->GetSequenceNumber() >= From) {
@@ -298,13 +280,11 @@ void TMemoryLayer::TUpdateWalker::Refresh() {
 }
 
 void TMemoryLayer::ImporterAppendUpdate(TUpdate *update) {
-  assert(this);
   assert(update);
   update->MemoryLayerMembership.ReverseInsert(&UpdateCollection);
 }
 
 void TMemoryLayer::ImporterAppendEntry(TUpdate::TEntry *entry) {
-  assert(this);
   assert(entry);
   ++Size;
   entry->MemoryLayerMembership.ReverseInsert(&EntryCollection);

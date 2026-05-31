@@ -33,24 +33,20 @@ TAssertExpr::TAssertCase::TAssertCase(const Base::TOpt<std::string> &opt_name, T
     : OptName(opt_name), Expr(Base::AssertTrue(expr)) {}
 
 TAssertExpr::TAssertCase::~TAssertCase() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TAssertCase::TPtr TAssertExpr::TAssertCase::Build(const Expr::TAssert::TPtr &assert) const {
-  assert(this);
   return Expr::TAssertCase::New(assert, OptName, Expr->Build());
 }
 
 void TAssertExpr::TAssertCase::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TAssertExpr::TAssertCase::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
@@ -100,7 +96,6 @@ TAssertExpr::~TAssertExpr() {
 }
 
 Expr::TExpr::TPtr TAssertExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I build assert cases after the assert itself, take a look at <orly/synth/thatable_expr.h>
   Symbol = Expr::TAssert::New(Expr->Build(), GetPosRange(AssertExpr));
@@ -111,7 +106,6 @@ Expr::TExpr::TPtr TAssertExpr::Build() const {
 }
 
 void TAssertExpr::Cleanup() {
-  assert(this);
   delete Expr;
   for (auto &assert_case : AssertCases) {
     delete assert_case;
@@ -119,7 +113,6 @@ void TAssertExpr::Cleanup() {
 }
 
 void TAssertExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
@@ -129,7 +122,6 @@ void TAssertExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TAssertExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
@@ -139,13 +131,11 @@ void TAssertExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TAssert::TPtr &TAssertExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TThatable::TPtr TAssertExpr::GetThatableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

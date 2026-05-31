@@ -29,24 +29,20 @@ TAffixExpr::TAffixExpr(TExpr *expr, TNew new_, const TPosRange &pos_range)
     : Expr(Base::AssertTrue(expr)), New(new_), PosRange(pos_range) {}
 
 TAffixExpr::~TAffixExpr() {
-  assert(this);
   delete Expr;
 }
 
 Expr::TExpr::TPtr TAffixExpr::Build() const {
-  assert(this);
   return New(Expr->Build(), PosRange);
 }
 
 void TAffixExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
 }
 
 void TAffixExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);

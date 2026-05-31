@@ -48,25 +48,21 @@ namespace Base {
 
     /* The id of the child process. */
     int GetChildId() const {
-      assert(this);
       return ChildId;
     }
 
     /* An fd from which to read the child's stderr output. */
     const TFd &GetStdErrFromChild() const {
-      assert(this);
       return StdErrFromChild;
     }
 
     /* An fd from which to write the child's stdin input. */
     const TFd &GetStdInToChild() const {
-      assert(this);
       return StdInToChild;
     }
 
     /* An fd from which to read the child's stdout output. */
     const TFd &GetStdOutFromChild() const {
-      assert(this);
       return StdOutFromChild;
     }
 

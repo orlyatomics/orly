@@ -33,12 +33,10 @@ TCoreVectorBuilder::TCoreVectorBuilder() {
 }
 
 TCoreVectorBuilder::~TCoreVectorBuilder() {
-  assert(this);
   delete Arena;
 }
 
 void TCoreVectorBuilder::Write(TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   /* Pass once over the notes to build up a map of old offset to new. */
   uint32_t raw_size = 0;
@@ -93,7 +91,6 @@ TCoreVectorBuilder::TDirtyArena::TDirtyArena(const TCoreVectorBuilder *builder)
 }
 
 TCoreVectorBuilder::TDirtyArena::~TDirtyArena() {
-  assert(this);
   for (const auto &item: NotesByDepth) {
     for (TNote *note: item.second) {
       delete note;
@@ -102,7 +99,6 @@ TCoreVectorBuilder::TDirtyArena::~TDirtyArena() {
 }
 
 bool TCoreVectorBuilder::TDirtyArena::ForEachNote(const function<bool (const TNote *)> &cb) const {
-  assert(this);
   assert(&cb);
   for (const auto &item: NotesByDepth) {
     for (const TNote *note: item.second) {
@@ -115,7 +111,6 @@ bool TCoreVectorBuilder::TDirtyArena::ForEachNote(const function<bool (const TNo
 }
 
 TCoreVectorBuilder::TOffset TCoreVectorBuilder::TDirtyArena::Propose(TNote *proposed_note) {
-  assert(this);
   assert(proposed_note);
   try {
     static const unordered_set<TNote *> no_notes;
@@ -131,17 +126,14 @@ TCoreVectorBuilder::TOffset TCoreVectorBuilder::TDirtyArena::Propose(TNote *prop
 void TCoreVectorBuilder::TDirtyArena::ReleaseNote(const TNote */*note*/, TOffset /*offset*/, void */*data1*/, void */*data2*/, void */*data3*/) {}
 
 const TCoreVectorBuilder::TNote *TCoreVectorBuilder::TDirtyArena::TryAcquireNote(TOffset offset, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   return reinterpret_cast<TNote *>(offset);
 }
 
 const TCoreVectorBuilder::TNote *TCoreVectorBuilder::TDirtyArena::TryAcquireNote(TOffset offset, size_t /*known_size*/, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   return reinterpret_cast<TNote *>(offset);
 }
 
 void TCoreVectorBuilder::SetDepth(const Sabot::State::TAny::TWrapper &state) {
-  assert(this);
   assert(&state);
   Depth = Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(state->GetType(TypeBuffer)));
 }

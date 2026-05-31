@@ -83,13 +83,11 @@ TIsKnown::TIsKnown(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TIsKnown::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TIsKnown::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TIsKnownUnknownTypeVisitor(type, GetPosRange()));
   return type;
@@ -103,13 +101,11 @@ TIsUnknown::TIsUnknown(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TIsUnknown::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TIsUnknown::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TIsKnownUnknownTypeVisitor(type, GetPosRange()));
   return type;
@@ -123,7 +119,6 @@ TIsKnownExpr::TIsKnownExpr(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const
     : TBinary(lhs, rhs, pos_range) {}
 
 void TIsKnownExpr::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -153,7 +148,6 @@ Type::TType TIsKnownExpr::GetTypeImpl() const {
     private:
     const Type::TType &ExprType;
   };  // TIsKnownExprTypeVisitor
-  assert(this);
   Type::TType type;
   GetLhs()->GetType().Accept(TIsKnownExprTypeVisitor(type, GetRhs()->GetType(), GetPosRange()));
   return type;
@@ -167,7 +161,6 @@ TKnown::TKnown(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TKnown::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -195,7 +188,6 @@ Type::TType TKnown::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TKnownTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TKnownTypeVisitor(type, GetPosRange()));
   return type;

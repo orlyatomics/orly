@@ -40,7 +40,6 @@ namespace Orly {
 
     /* TODO */
     inline Atom::TCore::TExtensibleArena *GetArena() const {
-      assert(this);
       return Arena;
     }
 

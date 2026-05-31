@@ -47,7 +47,6 @@ namespace Orly {
       }
 
       ~TCollatedBy() {
-        assert(this);
         if (Seq) {
           Seq->UnsetExprParent(this);
         }  // if
@@ -60,13 +59,11 @@ namespace Orly {
       }
 
       virtual void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(this);
       }
 
       virtual Type::TType GetTypeImpl() const override {
-        assert(this);
         if (!GetSeq()->GetType().Is<Type::TSeq>()) {
           throw TExprError(
                   HERE,
@@ -96,40 +93,33 @@ namespace Orly {
       }
 
       Type::TType GetThatType() const {
-        assert(this);
         return Type::Unwrap(GetSeq()->GetType());
       }
 
       const TExpr::TPtr &GetSeq() const {
-        assert(this);
         assert(Seq);
         return Seq;
       }
 
       const TExpr::TPtr &GetReduce() const {
-        assert(this);
         assert(Reduce);
         return Reduce;
       }
 
       const TExpr::TPtr &GetHaving() const {
-        assert(this);
         assert(Having);
         return Having;
       }
 
       const TExpr::TPtr &TryGetReduce() const {
-        assert(this);
         return Reduce;
       }
 
       const TExpr::TPtr &TryGetHaving() const {
-        assert(this);
         return Having;
       }
 
       void SetReduce(const TExpr::TPtr &reduce) {
-        assert(this);
         assert(reduce);
         assert(!Reduce);
         Reduce = reduce;
@@ -137,7 +127,6 @@ namespace Orly {
       }
 
       void SetHaving(const TExpr::TPtr &having) {
-        assert(this);
         assert(having);
         assert(!Having);
         Having = having;

@@ -27,14 +27,12 @@ using namespace Orly::Indy;
 using namespace Orly::Server;
 
 bool TTetrisManager::IsPlayerPaused(const TUuid &parent_pov_id) const {
-  assert(this);
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
   return PausedSet.find(parent_pov_id) != PausedSet.end();
 }
 
 void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id) {
-  assert(this);
   /* Lock the map and locate (or create) the slot where this parent pov's player would be. */
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
@@ -57,7 +55,6 @@ void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id)
 }
 
 void TTetrisManager::Part(const TUuid &parent_pov_id, const TUuid &child_pov_id) {
-  assert(this);
   /* Lock the map and locate the slot where this parent pov's player would be. */
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
@@ -75,7 +72,6 @@ void TTetrisManager::Part(const TUuid &parent_pov_id, const TUuid &child_pov_id)
 }
 
 void TTetrisManager::PausePlayer(const TUuid &parent_pov_id) {
-  assert(this);
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
   PausedSet.insert(parent_pov_id);
@@ -86,7 +82,6 @@ void TTetrisManager::PausePlayer(const TUuid &parent_pov_id) {
 }
 
 void TTetrisManager::UnpausePlayer(const TUuid &parent_pov_id) {
-  assert(this);
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
   if (PausedSet.erase(parent_pov_id)) {
@@ -98,13 +93,11 @@ void TTetrisManager::UnpausePlayer(const TUuid &parent_pov_id) {
 }
 
 void TTetrisManager::TPlayer::Join(const Base::TUuid &child_pov_id) {
-  assert(this);
   ++ChildCount;
   OnJoin(child_pov_id);
 }
 
 bool TTetrisManager::TPlayer::Part(const Base::TUuid &child_pov_id) {
-  assert(this);
   bool result = --ChildCount;
   if (result) {
     OnPart(child_pov_id);
@@ -113,7 +106,6 @@ bool TTetrisManager::TPlayer::Part(const Base::TUuid &child_pov_id) {
 }
 
 void TTetrisManager::TPlayer::Pause() {
-  assert(this);
   /* Create a semaphore and wait for the player thread to push it. */
   Paused = true;
   PausedSync.WaitForMore(1);
@@ -124,7 +116,6 @@ void TTetrisManager::TPlayer::Pause() {
 }
 
 void TTetrisManager::TPlayer::Stop() {
-  assert(this);
   assert(!Stopped);
   /* Make a semaphore so we can know when the player has actually stopped. */
   CanWork.Push();
@@ -139,7 +130,6 @@ void TTetrisManager::TPlayer::Stop() {
 }
 
 void TTetrisManager::TPlayer::Unpause() {
-  assert(this);
   assert(Unpaused);
   /* Signal the player thread to continue. */
   UnpausedSync.Complete();
@@ -153,7 +143,6 @@ void TTetrisManager::TPlayer::OnClose() {
 }
 
 TTetrisManager::TPlayer::~TPlayer() {
-  assert(this);
   if (Stopped) {
     StoppedSync.Complete();
     Stopped = false;
@@ -170,7 +159,6 @@ TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
 }
 
 void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
-  assert(this);
   if (is_master) {
     CanWork.Push();
   }
@@ -202,7 +190,6 @@ void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
 }
 
 void TTetrisManager::TPlayer::Main() {
-  assert(this);
   try {
     //DEBUG_LOG("tetris player %p: entering Main()", this);
     /* wait to see if we're allowed to play tetris. This will trigger if we're master, if we just became master, or if this player should be destroyed. */
@@ -273,7 +260,6 @@ TTetrisManager::TTetrisManager(Base::TScheduler *scheduler,
 }
 
 TTetrisManager::~TTetrisManager() {
-  assert(this);
   assert(PlayerByParentPovId.empty());
   FiberScheduler.ShutDown();
   assert(FiberThread);
@@ -282,7 +268,6 @@ TTetrisManager::~TTetrisManager() {
 }
 
 void TTetrisManager::StopAllPlayers() {
-  assert(this);
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
   for (const auto &item: PlayerByParentPovId) {
@@ -292,7 +277,6 @@ void TTetrisManager::StopAllPlayers() {
 }
 
 void TTetrisManager::BecomeMaster() {
-  assert(this);
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
   //lock_guard<mutex> master_lock(MasterLock);

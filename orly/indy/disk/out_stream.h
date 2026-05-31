@@ -114,7 +114,6 @@ namespace Orly {
 
           /* TODO */
           virtual ~TOutStream() {
-            assert(this);
             if (!CurBlockIsCollision && Buf) {
             //if (!CurBlockIsCollision && Buf && ((ByteIndex % TService::BlockSize) != 0)) {
               while (BlockVec.Size() < BlockInBuf + 1) {
@@ -131,13 +130,11 @@ namespace Orly {
 
           /* TODO */
           inline size_t GetOffset() const {
-            assert(this);
             return ByteIndex;
           }
 
           /* TODO */
           inline virtual void Write(size_t out) {
-            assert(this);
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(size_t)) {
               CheckBuf();
@@ -150,7 +147,6 @@ namespace Orly {
 
           /* TODO */
           inline virtual void Write(int64_t out) {
-            assert(this);
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(int64_t)) {
               CheckBuf();
@@ -163,7 +159,6 @@ namespace Orly {
 
           /* TODO */
           inline virtual void Write(uint8_t out) {
-            assert(this);
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint8_t)) {
               CheckBuf();
@@ -176,7 +171,6 @@ namespace Orly {
 
           /* TODO */
           inline virtual void Write(uint16_t out) {
-            assert(this);
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint16_t)) {
               CheckBuf();
@@ -189,7 +183,6 @@ namespace Orly {
 
           /* TODO */
           inline virtual void Write(uint32_t out) {
-            assert(this);
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint32_t)) {
               CheckBuf();
@@ -202,7 +195,6 @@ namespace Orly {
 
           /* TODO */
           inline virtual void Write(bool out) {
-            assert(this);
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(bool)) {
               CheckBuf();
@@ -215,13 +207,11 @@ namespace Orly {
 
           /* TODO */
           inline virtual void Write(const Base::TUuid &out) {
-            assert(this);
             Write(out.GetRaw(), sizeof(uuid_t));
           }
 
           /* TODO */
           inline virtual void Write(const void *buf, size_t len) {
-            assert(this);
             size_t left = len;
             const char *ptr = reinterpret_cast<const char *>(buf);
             while (left > 0) {
@@ -237,7 +227,6 @@ namespace Orly {
 
           /* TODO */
           void MakeCurBlockCollisionBlock() {
-            assert(this);
             if (!CurBlockIsCollision && Buf /* && (ByteIndex % TService::BlockSize) != 0*/) {
               CurBlockIsCollision = true;
               assert(BlockInBuf < BlockVec.Size());
@@ -252,7 +241,6 @@ namespace Orly {
 
           /* TODO */
           void Sync() {
-            assert(this);
             if (!CurBlockIsCollision && Buf) {
               while (BlockVec.Size() < BlockInBuf + 1) {
                 BlockVec.PushBack(NewBlockCb(VolMan));
@@ -274,7 +262,6 @@ namespace Orly {
 
           /* TODO */
           inline void CheckBuf() {
-            assert(this);
             if (TBoundaryChecker<PageSize, BlockSize>::IsNewPage(ByteIndex, PageInBuf, Buf)) {
               size_t block = ByteIndex / BlockSize;
               if (block != BlockInBuf || !Buf) {
@@ -285,7 +272,6 @@ namespace Orly {
 
           /* TODO */
           inline void FetchBlock(size_t block) {
-            assert(this);
             if (!CurBlockIsCollision && Buf) {
               while (BlockVec.Size() < BlockInBuf + 1) {
                 BlockVec.PushBack(NewBlockCb(VolMan));
@@ -307,7 +293,6 @@ namespace Orly {
 
           /* TODO */
           void Flush() {
-            assert(this);
             TCompletionTrigger *completion_trigger = &CompletionTrigger;
             /* TODO: implement write groups with new volume manager. */
             for (TWriteCollection::TCursor csr(&WriteCollection); csr; ++csr) {
@@ -325,13 +310,11 @@ namespace Orly {
 
           /* TODO */
           virtual size_t GetLogicalBlockSize() const override {
-            assert(this);
             return Util::LogicalBlockSize;
           }
 
           /* TODO */
           virtual size_t GetPhysicalBlockSize() const override {
-            assert(this);
             return Util::PhysicalBlockSize;
           }
 

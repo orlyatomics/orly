@@ -32,7 +32,6 @@ TSkip::TPtr TSkip::New(
 }
 
 void TSkip::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   out
     << "TSkipGenerator<" << Type::UnwrapSequence(GetReturnType()) << ">::New("

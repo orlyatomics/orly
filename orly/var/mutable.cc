@@ -25,12 +25,10 @@ using namespace Orly;
 using namespace Orly::Var;
 
 size_t TMutable::GetHash() const {
-  assert(this);
   return Hash;
 }
 
 Type::TType TMutable::GetType() const {
-  assert(this);
   return Type;
 }
 
@@ -39,86 +37,70 @@ void TMutable::Write(std::ostream &) const {
 }
 
 void TMutable::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TMutable::SetHash() {
-  assert(this);
   //TODO: Make better hash
   Hash = Val.GetHash() ^ Addr.GetHash();
 }
 
 void TMutable::Touch() {
-  assert(this);
   SetHash();
 }
 
 Var::TVar &TMutable::Index(const TVar &that) {
-  assert(this);
 
   return Val.Index(that);
 }
 
 //TODO: We really should actually support all of these... but that requires a large refactor fo all of them...
 TVar::TImpl &TMutable::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mul not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not currently implemented on Mutable.");
 }
 
 TVar::TImpl &TMutable::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not currently implemented on Mutable.");
 }
 
@@ -131,6 +113,5 @@ TMutable::TMutable(const Var::TVar &addr, const Var::TVar &val)
 TMutable::~TMutable() {}
 
 TVar TMutable::Copy() const {
-  assert(this);
   return (new TMutable(Addr.Copy(), Val.Copy()))->AsVar();
 }

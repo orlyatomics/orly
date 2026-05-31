@@ -44,12 +44,10 @@ void TFlush::UpdateNext() {
 }
 
 TDurableManager::TMapping::~TMapping() {
-  assert(this);
   EntryCollection.DeleteEachMember();
 }
 
 void TDurableManager::TMemSlushLayer::FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const {
-  assert(this);
   for (TEntryCollection::TCursor csr(&EntryCollection); csr; ++csr) {
     int uuid_comp = uuid_compare(csr->GetId(), id.GetRaw());
     if (uuid_comp > 0) {
@@ -157,7 +155,6 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
 }
 
 TDurableManager::~TDurableManager() {
-  assert(this);
   /* we're going to lose the ones in memory because the shutdown routine we currently employ will interrupt any more disk writes
   assert(!CurMemoryLayer->GetNumEntries());
   */
@@ -178,7 +175,6 @@ void TDurableManager::CleanDisk(const Durable::TDeadline &/*now*/, Durable::TSem
 }
 
 void TDurableManager::RunLayerCleaner() {
-  assert(this);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -222,7 +218,6 @@ void TDurableManager::Delete(const Durable::TId &/*id*/, Durable::TSem */*sem*/)
 }
 
 void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &deadline, const Durable::TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem) {
-  assert(this);
   assert(serialized_form.size() > 0);
   if (serialized_form.size() >= UINT32_MAX) {
     throw std::runtime_error("Serialized Durable size >= UINT32_MAX");
@@ -258,7 +253,6 @@ bool TDurableManager::TryLoad(const Durable::TId &id, std::string &serialized_fo
 }
 
 void TDurableManager::AddMapping(TDurableLayer *layer) {
-  assert(this);
   /* acquire Mapping lock */ {
     std::lock_guard<std::mutex> mapping_lock(MappingLock);
     TMapping *last = MappingCollection.TryGetLastMember();
@@ -279,7 +273,6 @@ void TDurableManager::AddMapping(TDurableLayer *layer) {
 }
 
 void TDurableManager::RunWriter() {
-  assert(this);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -343,7 +336,6 @@ void TDurableManager::RunWriter() {
 
 
 void TDurableManager::RunMerger() {
-  assert(this);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -697,7 +689,6 @@ TDurableManager::TSortedInFile::TSortedInFile(Util::TEngine *engine, DiskPriorit
 TDurableManager::TSortedInFile::~TSortedInFile() {}
 
 size_t TDurableManager::TSortedInFile::GetFileLength() const {
-  assert(this);
   return FileLength;
 }
 
@@ -706,7 +697,6 @@ size_t TDurableManager::TSortedInFile::GetStartingBlock() const {
 }
 
 void TDurableManager::TSortedInFile::ReadMeta(size_t offset, size_t &out) const {
-  assert(this);
   assert(InStream);
   size_t cur_offset = InStream->GetOffset();
   assert(cur_offset < FileLength);
@@ -716,7 +706,6 @@ void TDurableManager::TSortedInFile::ReadMeta(size_t offset, size_t &out) const 
 }
 
 size_t TDurableManager::TSortedInFile::FindPageIdOfByte(size_t offset) const {
-  assert(this);
   assert(offset < FileLength);
   size_t num_blocks_into_file = offset / Disk::Util::LogicalBlockSize;
   if (num_blocks_into_file == 0) {
@@ -731,7 +720,6 @@ size_t TDurableManager::TSortedInFile::FindPageIdOfByte(size_t offset) const {
 }
 
 void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num, const Durable::TId &id, std::string &serialized_form_out) const {
-  assert(this);
   assert(&id);
   assert(&serialized_form_out);
   assert(&cur_max_seq_num);

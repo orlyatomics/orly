@@ -117,7 +117,6 @@ void Tools::Nycr::Symbol::WriteNycrDecl(const TKind *kind, ostream &strm) {
       }
     }
     void WriteRhs(const TCompound *that) const {
-      assert(this);
       assert(that);
       Strm << " -> ";
       const TCompound::TMembersInOrder &members_in_order = that->GetMembersInOrder();

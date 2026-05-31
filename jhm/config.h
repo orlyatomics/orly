@@ -97,7 +97,6 @@ namespace Jhm {
     bool ForEachComputed(const std::function<bool (const Base::TJson &conf)> &cb) const;
 
     const Util::TOptTimestamp &GetTimestamp() const {
-      assert(this);
       return Timestamp;
     }
 

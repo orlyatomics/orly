@@ -50,33 +50,28 @@ namespace Tools {
 
       /* Equal iff. start and limit are equal. */
       bool operator==(const TPosRange &that) const {
-        assert(this);
         assert(&that);
         return Start == that.Start && Limit == that.Limit;
       }
 
       /* Unequal iff. start or limit are unequal. */
       bool operator!=(const TPosRange &that) const {
-        assert(this);
         assert(&that);
         return Start != that.Start || Limit != that.Limit;
       }
 
       /* The limiting position of the range. */
       const TPos &GetLimit() const {
-        assert(this);
         return Limit;
       }
 
       /* The starting position of the range. */
       const TPos &GetStart() const {
-        assert(this);
         return Start;
       }
 
       /* Writes the range as line1:col1-line2:col2. */
       void Write(std::ostream &strm) const {
-        assert(this);
         assert(&strm);
         strm << Start << '-' << Limit;
       }

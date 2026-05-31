@@ -52,14 +52,12 @@ class TWsTestServer::TSessionManager
 
   /* Construct a new session and pin it. */
   virtual TWs::TSessionPin *NewSession() override {
-    assert(this);
     TUuid id(TUuid::Best);
     return (Sessions[id] = unique_ptr<TSession>(new TSession(id)))->NewPin();
   }
 
   /* Look up an existing session and pin it. */
   virtual TWs::TSessionPin *ResumeSession(const Base::TUuid &id) {
-    assert(this);
     auto iter = Sessions.find(id);
     if (iter == Sessions.end()) {
       throw invalid_argument("unknown session");
@@ -94,7 +92,6 @@ class TWsTestServer::TSessionManager
 
     /* The id by which we may be looked up and resumed later. */
     const Base::TUuid &GetId() const {
-      assert(this);
       return Id;
     }
 
@@ -111,7 +108,6 @@ class TWsTestServer::TSessionManager
 
     /* We fake this by just generating a random id. */
     TUuid NewPov(bool /*is_safe*/, bool /*is_shared*/, const TOpt<TUuid> &/*parent_id*/) {
-      assert(this);
       return TUuid(TUuid::Best);
     }
 
@@ -129,7 +125,6 @@ class TWsTestServer::TSessionManager
 
     /* We fake this by just always returning 98.6. */
     TMethodResult Try(const TMethodRequest &/*method_request*/) {
-      assert(this);
       void *alloc = alloca(Sabot::State::GetMaxStateSize());
       TSuprena arena;
       return TMethodResult(&arena, TCore(98.6, &arena, alloc), TOpt<TTracker>());
@@ -163,7 +158,6 @@ class TWsTestServer::TSessionManager
             (2) start running its time-to live clock, at the end of which it
                 would be available to be removed from disk. */
       virtual ~TPin() {
-        assert(this);
         if (Session->Pin != this) {
           throw logic_error("session pin is messed up");
         }
@@ -233,7 +227,6 @@ TWsTestServer::TWsTestServer(in_port_t port_start, size_t probe_size)
 }
 
 TWsTestServer::~TWsTestServer() {
-  assert(this);
   delete Ws;
   delete SessionManager;
 }

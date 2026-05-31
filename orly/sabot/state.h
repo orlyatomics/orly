@@ -222,7 +222,6 @@ namespace Orly {
 
           /* The limit of the array. */
           const TVal *GetLimit() const {
-            assert(this);
             return Limit;
           }
 
@@ -233,7 +232,6 @@ namespace Orly {
 
           /* The start of the array. */
           const TVal *GetStart() const {
-            assert(this);
             return Start;
           }
 
@@ -290,7 +288,6 @@ namespace Orly {
 
           /* Constructs a new state sabot for the given element. */
           TAny *NewElem(size_t elem_idx, void *state_alloc) const {
-            assert(this);
             if (elem_idx >= ElemCount) {
               throw TIdxTooBig();
             }
@@ -353,7 +350,6 @@ namespace Orly {
 
           /* Constructs a new state sabot for the given lhs. */
           TAny *NewLhs(size_t elem_idx, void *state_alloc) const {
-            assert(this);
             if (elem_idx >= ElemCount) {
               throw TIdxTooBig();
             }
@@ -362,7 +358,6 @@ namespace Orly {
 
           /* Constructs a new state sabot for the given rhs. */
           TAny *NewRhs(size_t elem_idx, void *state_alloc) const {
-            assert(this);
             if (elem_idx >= ElemCount) {
               throw TIdxTooBig();
             }
@@ -415,7 +410,6 @@ namespace Orly {
 
         /* See TArray<TElem>. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           void *type_alloc = alloca(Type::GetMaxTypeSize());
           return GetStaticElemCount(*Type::TAny::TWrapper(this->GetType(type_alloc)));
         }

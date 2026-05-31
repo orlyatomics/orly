@@ -60,7 +60,6 @@ namespace Orly {
           }
 
           operator bool() const {
-            assert(this);
             if (Iter) {
               void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
               if (Item) {
@@ -76,13 +75,11 @@ namespace Orly {
           }
 
           TVal &operator*() const {
-            assert(this);
 
             return *Item;
           }
 
           Base::TIter<TVal> &operator++() {
-            assert(this);
 
             ++Iter;
             return *this;
@@ -96,22 +93,18 @@ namespace Orly {
         }; // TCursor<TKeyGenerator<TRet>>
 
         TContext &GetContext() {
-          assert(this);
           return Ctx;
         }
 
         TContext &GetContext() const {
-          assert(this);
           return Ctx;
         }
 
         const Var::TVar &GetStart() const {
-          assert(this);
           return Start;
         }
 
         Base::TIterHolder<const TRet> NewCursor() const {
-          assert(this);
           return MakeHolder(new TCursor(this->shared_from_this()));
         }
 

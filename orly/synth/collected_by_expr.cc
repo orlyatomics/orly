@@ -43,13 +43,11 @@ TCollectedByExpr::TCollectedByExpr(const TExprFactory *expr_factory, const Packa
 }
 
 TCollectedByExpr::~TCollectedByExpr() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Expr::TExpr::TPtr TCollectedByExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I set rhs seperately, take a look at <orly/synth/lhsrhsable_expr.h>
   Symbol = Expr::TCollectedBy::New(Lhs->Build(), GetPosRange(CollectedByExpr));
@@ -58,7 +56,6 @@ Expr::TExpr::TPtr TCollectedByExpr::Build() const {
 }
 
 void TCollectedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);
@@ -66,7 +63,6 @@ void TCollectedByExpr::ForEachInnerScope(const std::function<void (TScope *)> &c
 }
 
 void TCollectedByExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -74,13 +70,11 @@ void TCollectedByExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TCollectedBy::TPtr &TCollectedByExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TLhsRhsable::TPtr TCollectedByExpr::GetLhsRhsableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

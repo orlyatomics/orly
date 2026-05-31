@@ -47,17 +47,14 @@ TUpdate *TUpdate::ShallowCopy(TUpdate *that, void *state_alloc) {
 }
 
 bool TUpdate::TEntry::TEntryKey::operator==(const TUpdate::TEntry::TEntryKey &that) const {
-  assert(this);
   return Entry->GetSequenceNumber() == that.Entry->GetSequenceNumber() && Entry->IndexKey == that.Entry->IndexKey;
 }
 
 bool TUpdate::TEntry::TEntryKey::operator!=(const TUpdate::TEntry::TEntryKey &that) const {
-  assert(this);
   return Entry->GetSequenceNumber() != that.Entry->GetSequenceNumber() || Entry->IndexKey != that.Entry->IndexKey;
 }
 
 bool TUpdate::TEntry::TEntryKey::operator<=(const TUpdate::TEntry::TEntryKey &that) const {
-  assert(this);
   TComparison comp = Atom::CompareOrdered(Entry->IndexKey.GetIndexId(), that.Entry->IndexKey.GetIndexId());
   switch (comp) {
     case Atom::TComparison::Lt: {
@@ -78,7 +75,6 @@ bool TUpdate::TEntry::TEntryKey::operator<=(const TUpdate::TEntry::TEntryKey &th
 }
 
 bool TUpdate::TEntry::TEntryKey::operator>(const TUpdate::TEntry::TEntryKey &that) const {
-  assert(this);
   TComparison comp = Atom::CompareOrdered(Entry->IndexKey.GetIndexId(), that.Entry->IndexKey.GetIndexId());
   switch (comp) {
     case Atom::TComparison::Lt: {
@@ -156,6 +152,5 @@ TUpdate::TUpdate(TSequenceNumber seq_num)
       MemoryLayerMembership(this, seq_num) {}
 
 TUpdate::~TUpdate() {
-  assert(this);
   EntryCollection.DeleteEachMember();
 }

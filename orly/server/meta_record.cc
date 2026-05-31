@@ -36,7 +36,6 @@ RECORD_ELEM(TMetaRecord::TEntry, uint32_t, RandomSeed);
 RECORD_ELEM(TMetaRecord, TMetaRecord::TEntryByUpdateId, EntryByUpdateId);
 
 const TMetaRecord::TEntry &TMetaRecord::GetEntry(const TUuid &id) const {
-  assert(this);
   auto iter = EntryByUpdateId.find(id);
   assert(iter != EntryByUpdateId.end());
   return iter->second;

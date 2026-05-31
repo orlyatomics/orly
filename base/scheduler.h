@@ -84,25 +84,21 @@ namespace Base {
 
       /* The amount of time a worker will wait before self-destructing. */
       const TTimeout &GetIdleTimeout() const {
-        assert(this);
         return IdleTimeout;
       }
 
       /* The maximum number of workers. */
       size_t GetMaxWorkerCount() const {
-        assert(this);
         return MaxWorkerCount;
       }
 
       /* The minimum number of workers. */
       size_t GetMinWorkerCount() const {
-        assert(this);
         return MinWorkerCount;
       }
 
       /* True if we're going to run threads with real-time priority. */
       bool IsRealTime() const {
-        assert(this);
         return RealTime;
       }
 
@@ -180,7 +176,6 @@ namespace Base {
 
       /* Higher priority jobs go first. */
       bool operator<(const TQueueItem &that) const {
-        assert(this);
         assert(&that);
         return Priority > that.Priority;
       }

@@ -37,7 +37,6 @@ namespace Orly {
 
       /* TODO */
       virtual bool CanLoad(const TId &id) override {
-        assert(this);
         return BlobById.find(id) != BlobById.end();
       }
 
@@ -46,7 +45,6 @@ namespace Orly {
 
       /* TODO */
       virtual void CleanDisk(const TDeadline &now, TSem *sem) override {
-        assert(this);
         assert(&now);
         assert(sem);
         std::unordered_map<TId, std::pair<TDeadline, std::string>> temp;
@@ -61,7 +59,6 @@ namespace Orly {
 
       /* TODO */
       virtual void Delete(const TId &id, TSem *sem) override {
-        assert(this);
         assert(sem);
         auto erased_count = BlobById.erase(id);
         assert(erased_count == 1);
@@ -70,7 +67,6 @@ namespace Orly {
 
       /* TODO */
       virtual void Save(const TId &id, const TDeadline &deadline, const TTtl &/*ttl*/, const std::string &blob, TSem *sem) override {
-        assert(this);
         assert(sem);
         BlobById[id] = std::make_pair(deadline, blob);
         sem->Push();
@@ -78,7 +74,6 @@ namespace Orly {
 
       /* TODO */
       virtual bool TryLoad(const TId &id, std::string &blob) override {
-        assert(this);
         assert(&blob);
         auto iter = BlobById.find(id);
         bool success = (iter != BlobById.end());

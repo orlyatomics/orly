@@ -33,17 +33,14 @@ TUnknownCtor::TUnknownCtor(const Package::Syntax::TUnknownCtor *unknown_ctor)
       Type(NewType(UnknownCtor->GetType())) {}
 
 TUnknownCtor::~TUnknownCtor() {
-  assert(this);
   delete Type;
 }
 
 Expr::TExpr::TPtr TUnknownCtor::Build() const {
-  assert(this);
   return Expr::TUnknown::New(Type->GetSymbolicType(), GetPosRange(UnknownCtor));
 }
 
 void TUnknownCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Type->ForEachRef(cb);

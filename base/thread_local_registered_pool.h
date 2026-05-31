@@ -108,7 +108,6 @@ namespace Base {
 
       /* TODO */
       inline void Free(TObjBase *obj) {
-        assert(this);
         #ifndef NDEBUG
         static_cast<TObj *>(obj)->AssertCanFree();
         #endif
@@ -119,7 +118,6 @@ namespace Base {
 
       /* TODO */
       inline TObj *Alloc() {
-        assert(this);
         TObjBase *alloc_obj = AvailableQueue;
         if (alloc_obj) {
           /* Our available queue had something to offer. */
@@ -136,7 +134,6 @@ namespace Base {
 
       /* TODO */
       inline TThreadLocalPoolManager *GetPoolManager() const {
-        assert(this);
         return Manager;
       }
 
@@ -145,7 +142,6 @@ namespace Base {
       /* TODO */
       TObjBase *TryAllocUncommon() {
         TObjBase *alloc_obj = nullptr;
-        assert(this);
         /* let's swap in our free queue and try to allocate from that. */
         TObjBase *cur_tail = __sync_lock_test_and_set(&FreeQueue, nullptr);
         if (cur_tail) {
@@ -204,7 +200,6 @@ namespace Base {
 
       /* TODO */
       inline void MakeStackAvailable(TObjBase *cur_tail) {
-        assert(this);
         /* fast pop */
         AvailableQueue = cur_tail;
         /* reverse pop (circular queue) */
@@ -243,7 +238,6 @@ namespace Base {
 
     /* TODO */
     ~TThreadLocalPoolManager() {
-      assert(this);
       size_t counter = 0UL;
       PoolCollection.ForEach([&counter](const TThreadLocalRegisteredPool &){++counter; return true;});
       if (counter != 0UL) {

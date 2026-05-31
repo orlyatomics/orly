@@ -41,14 +41,12 @@ namespace Strm {
 
     /* Get the underlying fd (To perform OS operations on it, for instance) */
     const TFd &GetFd() const {
-      assert(this);
       return Fd;
     }
 
     private:
     /* In::TProd Cycle */
     bool Cycle(size_t release_count, const uint8_t **start, const uint8_t **limit) override final {
-      assert(this);
 
       // Release our one buffer / reset it if requested.
       if (release_count) {
@@ -83,7 +81,6 @@ namespace Strm {
 
     /* Out::TCons Cycle */
     void Cycle(uint8_t *cursor, uint8_t **start, uint8_t **limit) override final {
-      assert(this);
 
       if (cursor) {
         //Cursor must be at the start of or within the buffer

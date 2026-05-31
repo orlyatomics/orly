@@ -73,7 +73,6 @@ namespace Orly {
 
       /* TODO */
       Base::Chrono::TTimePnt GetVal() const {
-        assert(this);
         return Val;
       }
 

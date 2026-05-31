@@ -125,7 +125,6 @@ class TMyManager
                                                  const Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
                                                  bool is_safe,
                                                  bool create) {
-    assert(this);
     return create ? OpenOrCreate(repo_id, ttl, parent_repo, is_safe) : ForceOpenRepo(repo_id);
   }
 

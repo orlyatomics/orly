@@ -142,25 +142,21 @@ namespace Orly {
 
       /* TODO */
       inline const Base::TUuid &GetIndexId() const {
-        assert(this);
         return IndexId;
       }
 
       /* TODO */
       inline const TKey &GetKey() const {
-        assert(this);
         return Key;
       }
 
       /* TODO */
       inline TKey &GetKey() {
-        assert(this);
         return Key;
       }
 
       /* TODO */
       inline size_t GetHash() const {
-        assert(this);
         return IndexId.GetHash() ^ Key.GetHash();
       }
 
@@ -288,7 +284,6 @@ namespace Orly {
     inline TKey::TKey(TKey &&that) : Arena(that.Arena), Core(that.Core), HashIsCached(that.HashIsCached), CachedHash(that.CachedHash) {}
 
     inline TKey &TKey::operator=(const TKey &that) {
-      assert(this);
       assert(&that);
       Arena = that.Arena;
       Core = that.Core;
@@ -298,7 +293,6 @@ namespace Orly {
     }
 
     inline TKey &TKey::operator=(TKey &&that) {
-      assert(this);
       assert(&that);
       std::swap(Arena, that.Arena);
       std::swap(Core, that.Core);
@@ -346,25 +340,21 @@ namespace Orly {
     }
 
     inline bool TKey::operator<(const TKey &that) const {
-      assert(this);
       assert(&that);
       return Atom::IsLt(Compare(that));
     }
 
     inline bool TKey::operator<=(const TKey &that) const {
-      assert(this);
       assert(&that);
       return Atom::IsLe(Compare(that));
     }
 
     inline bool TKey::operator>(const TKey &that) const {
-      assert(this);
       assert(&that);
       return Atom::IsGt(Compare(that));
     }
 
     inline bool TKey::operator>=(const TKey &that) const {
-      assert(this);
       assert(&that);
       return Atom::IsGe(Compare(that));
     }
@@ -387,33 +377,27 @@ namespace Orly {
     }
 
     inline void TKey::Dump(std::ostream &strm) const {
-      assert(this);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Sabot::State::TAny::TWrapper(GetState(state_alloc))->Accept(Sabot::TStateDumper(strm));
     }
 
     inline Atom::TCore::TArena *TKey::GetArena() const {
-      assert(this);
       return Arena;
     }
 
     inline const Atom::TCore &TKey::GetCore() const {
-      assert(this);
       return Core;
     }
 
     inline Atom::TCore &TKey::GetCore() {
-      assert(this);
       return Core;
     }
 
     inline Sabot::State::TAny *TKey::GetState(void *state_alloc) const {
-      assert(this);
       return Core.NewState(Arena, state_alloc);
     }
 
     inline size_t TKey::GetHash() const {
-      assert(this);
       assert(Arena);
       if (!HashIsCached) {
         if (!Core.TryGetQuickHash(CachedHash)) {

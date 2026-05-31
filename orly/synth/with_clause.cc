@@ -49,7 +49,6 @@ TWithClause::~TWithClause() {
 }
 
 Symbol::Test::TWithClause::TPtr TWithClause::Build() const {
-  assert(this);
   Symbol::Test::TWithClause::TNewStmtSet new_stmts;
   for (auto &test_kv_entry : TestKvEntries) {
     auto result = new_stmts.emplace(test_kv_entry->Build());
@@ -59,14 +58,12 @@ Symbol::Test::TWithClause::TPtr TWithClause::Build() const {
 }
 
 void TWithClause::Cleanup() {
-  assert(this);
   for (auto &test_kv_entry : TestKvEntries) {
     delete test_kv_entry;
   }
 }
 
 void TWithClause::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto &test_kv_entry : TestKvEntries) {
@@ -75,7 +72,6 @@ void TWithClause::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TWithClause::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto &test_kv_entry : TestKvEntries) {

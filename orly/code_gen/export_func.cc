@@ -30,7 +30,6 @@ TExportFunc::TPtr TExportFunc::New(const L0::TPackage *package,
 }
 
 void TExportFunc::WriteCcName(TCppPrinter &out) const {
-  assert(this);
 
   out << 'F' << GetName();
 }

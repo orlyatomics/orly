@@ -100,7 +100,6 @@ class TNycr {
   }
   virtual ~TNycr();
   const TOptDeclSeq *GetOptDeclSeq() const {
-    assert(this);
     return OptDeclSeq.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -137,7 +136,6 @@ class TNoDeclSeq : public TOptDeclSeq {
   public:
   TNoDeclSeq() {}
   virtual void Accept(const TOptDeclSeq::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -156,16 +154,13 @@ class TDeclSeq : public TOptDeclSeq {
   }
   virtual ~TDeclSeq();
   virtual void Accept(const TOptDeclSeq::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TDecl *GetDecl() const {
-    assert(this);
     return Decl.get();
   }
   const TOptDeclSeq *GetOptDeclSeq() const {
-    assert(this);
     return OptDeclSeq.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -212,20 +207,16 @@ class TPrecLevel : public TDecl {
   }
   virtual ~TPrecLevel();
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TPrecKwd *GetPrecKwd() const {
-    assert(this);
     return PrecKwd.get();
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -243,7 +234,6 @@ class TPrecKwd {
   TPrecKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -259,7 +249,6 @@ class TName {
   TName(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -275,7 +264,6 @@ class TSemi {
   TSemi(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -323,37 +311,29 @@ class TOper : public TKind {
   }
   virtual ~TOper();
   virtual void Accept(const TKind::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TOptSuper *GetOptSuper() const {
-    assert(this);
     return OptSuper.get();
   }
   const TPattern *GetPattern() const {
-    assert(this);
     return Pattern.get();
   }
   const TName *GetPrecLevelRef() const {
-    assert(this);
     return PrecLevelRef.get();
   }
   const TAssoc *GetAssoc() const {
-    assert(this);
     return Assoc.get();
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -398,16 +378,13 @@ class TSuper : public TOptSuper {
   }
   virtual ~TSuper();
   virtual void Accept(const TOptSuper::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TColon *GetColon() const {
-    assert(this);
     return Colon.get();
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -424,7 +401,6 @@ class TColon {
   TColon(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -439,7 +415,6 @@ class TNoSuper : public TOptSuper {
   public:
   TNoSuper() {}
   virtual void Accept(const TOptSuper::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -459,15 +434,12 @@ class TPattern {
   }
   virtual ~TPattern();
   const TEq *GetEq() const {
-    assert(this);
     return Eq.get();
   }
   const TStrLiteral *GetStrLiteral() const {
-    assert(this);
     return StrLiteral.get();
   }
   const TOptPriLevel *GetOptPriLevel() const {
-    assert(this);
     return OptPriLevel.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -485,7 +457,6 @@ class TEq {
   TEq(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -523,12 +494,10 @@ class TSingleQuotedStrLiteral : public TStrLiteral {
   TSingleQuotedStrLiteral(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TStrLiteral::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -544,12 +513,10 @@ class TSingleQuotedRawStrLiteral : public TStrLiteral {
   TSingleQuotedRawStrLiteral(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TStrLiteral::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -565,12 +532,10 @@ class TDoubleQuotedStrLiteral : public TStrLiteral {
   TDoubleQuotedStrLiteral(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TStrLiteral::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -586,12 +551,10 @@ class TDoubleQuotedRawStrLiteral : public TStrLiteral {
   TDoubleQuotedRawStrLiteral(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TStrLiteral::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -631,16 +594,13 @@ class TPriLevel : public TOptPriLevel {
   }
   virtual ~TPriLevel();
   virtual void Accept(const TOptPriLevel::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TPriKwd *GetPriKwd() const {
-    assert(this);
     return PriKwd.get();
   }
   const TIntLiteral *GetIntLiteral() const {
-    assert(this);
     return IntLiteral.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -657,7 +617,6 @@ class TPriKwd {
   TPriKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -673,7 +632,6 @@ class TIntLiteral {
   TIntLiteral(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -688,7 +646,6 @@ class TNoPriLevel : public TOptPriLevel {
   public:
   TNoPriLevel() {}
   virtual void Accept(const TOptPriLevel::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -724,12 +681,10 @@ class TRightKwd : public TAssoc {
   TRightKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TAssoc::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -745,12 +700,10 @@ class TNonassocKwd : public TAssoc {
   TNonassocKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TAssoc::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -766,12 +719,10 @@ class TLeftKwd : public TAssoc {
   TLeftKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   virtual void Accept(const TAssoc::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -798,49 +749,38 @@ class TLanguage : public TKind {
   }
   virtual ~TLanguage();
   virtual void Accept(const TKind::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TOptSuper *GetOptSuper() const {
-    assert(this);
     return OptSuper.get();
   }
   const TOptRhs *GetOptRhs() const {
-    assert(this);
     return OptRhs.get();
   }
   const TOpenAngle *GetOpenAngle() const {
-    assert(this);
     return OpenAngle.get();
   }
   const TOptPath *GetOptPath() const {
-    assert(this);
     return OptPath.get();
   }
   const TCloseAngle *GetCloseAngle() const {
-    assert(this);
     return CloseAngle.get();
   }
   const TOptExpectedSr *GetOptExpectedSr() const {
-    assert(this);
     return OptExpectedSr.get();
   }
   const TOptExpectedRr *GetOptExpectedRr() const {
-    assert(this);
     return OptExpectedRr.get();
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -889,20 +829,16 @@ class TRhs : public TOptRhs {
   }
   virtual ~TRhs();
   virtual void Accept(const TOptRhs::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TArrow *GetArrow() const {
-    assert(this);
     return Arrow.get();
   }
   const TMemberSeq *GetMemberSeq() const {
-    assert(this);
     return MemberSeq.get();
   }
   const TOptOperRef *GetOptOperRef() const {
-    assert(this);
     return OptOperRef.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -920,7 +856,6 @@ class TArrow {
   TArrow(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -955,7 +890,6 @@ class TNoMemberSeq : public TOptMemberSeq {
   public:
   TNoMemberSeq() {}
   virtual void Accept(const TOptMemberSeq::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -974,16 +908,13 @@ class TMemberSeq : public TOptMemberSeq {
   }
   virtual ~TMemberSeq();
   virtual void Accept(const TOptMemberSeq::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TMember *GetMember() const {
-    assert(this);
     return Member.get();
   }
   const TOptMemberSeq *GetOptMemberSeq() const {
-    assert(this);
     return OptMemberSeq.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1026,20 +957,16 @@ class TNamedMember : public TMember {
   }
   virtual ~TNamedMember();
   virtual void Accept(const TMember::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TColon *GetColon() const {
-    assert(this);
     return Colon.get();
   }
   const TName *GetKind() const {
-    assert(this);
     return Kind.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1060,12 +987,10 @@ class TErrorMember : public TMember {
   }
   virtual ~TErrorMember();
   virtual void Accept(const TMember::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TErrorKwd *GetErrorKwd() const {
-    assert(this);
     return ErrorKwd.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1081,7 +1006,6 @@ class TErrorKwd {
   TErrorKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1100,12 +1024,10 @@ class TAnonymousMember : public TMember {
   }
   virtual ~TAnonymousMember();
   virtual void Accept(const TMember::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1145,16 +1067,13 @@ class TOperRef : public TOptOperRef {
   }
   virtual ~TOperRef();
   virtual void Accept(const TOptOperRef::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TPrecKwd *GetPrecKwd() const {
-    assert(this);
     return PrecKwd.get();
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1170,7 +1089,6 @@ class TNoOperRef : public TOptOperRef {
   public:
   TNoOperRef() {}
   virtual void Accept(const TOptOperRef::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -1189,16 +1107,13 @@ class TNoRhs : public TOptRhs {
   }
   virtual ~TNoRhs();
   virtual void Accept(const TOptRhs::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TArrow *GetArrow() const {
-    assert(this);
     return Arrow.get();
   }
   const TEmptyKwd *GetEmptyKwd() const {
-    assert(this);
     return EmptyKwd.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1215,7 +1130,6 @@ class TEmptyKwd {
   TEmptyKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1231,7 +1145,6 @@ class TOpenAngle {
   TOpenAngle(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1271,16 +1184,13 @@ class TPath : public TOptPath {
   }
   virtual ~TPath();
   virtual void Accept(const TOptPath::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TOptPathTail *GetOptPathTail() const {
-    assert(this);
     return OptPathTail.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1321,16 +1231,13 @@ class TPathTail : public TOptPathTail {
   }
   virtual ~TPathTail();
   virtual void Accept(const TOptPathTail::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TSlash *GetSlash() const {
-    assert(this);
     return Slash.get();
   }
   const TPath *GetPath() const {
-    assert(this);
     return Path.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1347,7 +1254,6 @@ class TSlash {
   TSlash(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1362,7 +1268,6 @@ class TNoPathTail : public TOptPathTail {
   public:
   TNoPathTail() {}
   virtual void Accept(const TOptPathTail::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -1376,7 +1281,6 @@ class TNoPath : public TOptPath {
   public:
   TNoPath() {}
   virtual void Accept(const TOptPath::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -1391,7 +1295,6 @@ class TCloseAngle {
   TCloseAngle(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1426,7 +1329,6 @@ class TNoExpectedSr : public TOptExpectedSr {
   public:
   TNoExpectedSr() {}
   virtual void Accept(const TOptExpectedSr::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -1445,16 +1347,13 @@ class TExpectedSr : public TOptExpectedSr {
   }
   virtual ~TExpectedSr();
   virtual void Accept(const TOptExpectedSr::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TSrKwd *GetSrKwd() const {
-    assert(this);
     return SrKwd.get();
   }
   const TIntLiteral *GetIntLiteral() const {
-    assert(this);
     return IntLiteral.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1471,7 +1370,6 @@ class TSrKwd {
   TSrKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1506,7 +1404,6 @@ class TNoExpectedRr : public TOptExpectedRr {
   public:
   TNoExpectedRr() {}
   virtual void Accept(const TOptExpectedRr::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
@@ -1525,16 +1422,13 @@ class TExpectedRr : public TOptExpectedRr {
   }
   virtual ~TExpectedRr();
   virtual void Accept(const TOptExpectedRr::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TRrKwd *GetRrKwd() const {
-    assert(this);
     return RrKwd.get();
   }
   const TIntLiteral *GetIntLiteral() const {
-    assert(this);
     return IntLiteral.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1551,7 +1445,6 @@ class TRrKwd {
   TRrKwd(int start_line, int start_col, int limit_line, int limit_col, const char *text, int len)
       : Lexeme(start_line, start_col, limit_line, limit_col, text, len) {}
   const ::Tools::Nycr::TLexeme &GetLexeme() const {
-    assert(this);
     return Lexeme;
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1573,29 +1466,23 @@ class TRule : public TKind {
   }
   virtual ~TRule();
   virtual void Accept(const TKind::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TOptSuper *GetOptSuper() const {
-    assert(this);
     return OptSuper.get();
   }
   const TOptRhs *GetOptRhs() const {
-    assert(this);
     return OptRhs.get();
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1620,29 +1507,23 @@ class TKeyword : public TKind {
   }
   virtual ~TKeyword();
   virtual void Accept(const TKind::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TOptSuper *GetOptSuper() const {
-    assert(this);
     return OptSuper.get();
   }
   const TPattern *GetPattern() const {
-    assert(this);
     return Pattern.get();
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1666,25 +1547,20 @@ class TBase : public TKind {
   }
   virtual ~TBase();
   virtual void Accept(const TKind::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TName *GetName() const {
-    assert(this);
     return Name.get();
   }
   const TOptSuper *GetOptSuper() const {
-    assert(this);
     return OptSuper.get();
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;
@@ -1705,12 +1581,10 @@ class TBadDecl : public TDecl {
   }
   virtual ~TBadDecl();
   virtual void Accept(const TDecl::TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(this);
   }
   const TSemi *GetSemi() const {
-    assert(this);
     return Semi.get();
   }
   virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const;

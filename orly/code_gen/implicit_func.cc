@@ -37,7 +37,6 @@ TImplicitFunc::TPtr TImplicitFunc::New(const L0::TPackage *package, TCause cause
 }
 
 std::string TImplicitFunc::GetName() const {
-  assert(this);
 
   switch(Cause) {
     case TCause::Collect:
@@ -60,14 +59,12 @@ std::string TImplicitFunc::GetName() const {
 }
 
 Type::TType TImplicitFunc::GetReturnType() const {
-  assert(this);
 
   /* TODO: A little ug */
   return Type.As<Type::TFunc>()->GetReturnType();
 }
 
 Type::TType TImplicitFunc::GetType() const {
-assert(this);
 
   return Type;
 }

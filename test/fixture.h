@@ -44,19 +44,16 @@ namespace Test {
 
     /* TODO */
     TFunc GetFunc() const {
-      assert(this);
       return Func;
     }
 
     /* TODO */
     const char *GetName() const {
-      assert(this);
       return Name;
     }
 
     /* TODO */
     const TFixture *GetNextFixture() const {
-      assert(this);
       return NextFixture;
     }
 

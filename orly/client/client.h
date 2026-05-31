@@ -101,13 +101,11 @@ namespace Orly {
 
       /* TODO */
       const Base::TOpt<Base::TUuid> &GetSessionId() const {
-        assert(this);
         return SessionId;
       }
 
       /* TODO */
       const std::chrono::seconds &GetTimeToLive() const {
-        assert(this);
         return TimeToLive;
       }
 

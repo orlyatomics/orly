@@ -139,7 +139,6 @@ namespace Orly {
 
       /* TODO */
       inline void SetDurableManager(const std::shared_ptr<Durable::TManager> &durable_manager) {
-        assert(this);
         DurableManager = durable_manager;
       }
 
@@ -356,7 +355,6 @@ namespace Orly {
 
           /* TODO */
           virtual ~TFlusher() {
-            assert(this);
             InStream.reset();
             for (const auto &iter : BlockVec.GetSeqBlockMap()) {
               Engine->FreeSeqBlocks(iter.second.first, iter.second.second);
@@ -371,13 +369,11 @@ namespace Orly {
 
           /* TODO */
           const std::vector<size_t> &GetOffsetVec() const {
-            assert(this);
             return OffsetVec;
           }
 
           /* TODO */
           void SetStoredOffset() {
-            assert(this);
             OffsetVec.push_back(OutStream->GetOffset());
           }
 
@@ -388,13 +384,11 @@ namespace Orly {
 
           /* TODO */
           virtual size_t GetFileLength() const override {
-            assert(this);
             return BlockVec.Size() * Disk::Util::LogicalBlockSize;
           }
 
           /* TODO */
           virtual size_t GetStartingBlock() const override {
-            assert(this);
             assert(BlockVec.Size() > 0);
             return BlockVec.Front();
           }
@@ -406,7 +400,6 @@ namespace Orly {
 
           /* TODO */
           virtual size_t FindPageIdOfByte(size_t offset) const override {
-            assert(this);
             assert(offset <= GetFileLength());
             return ((BlockVec[offset / Disk::Util::LogicalBlockSize]) * Disk::Util::PagesPerBlock) + ((offset % Disk::Util::LogicalBlockSize) / Disk::Util::LogicalPageSize);
           }
@@ -576,7 +569,6 @@ namespace Orly {
 
       /* TODO */
       virtual void ForEachScheduler(const std::function<bool (Fiber::TRunner *)> &cb) const {
-        assert(this);
         ForEachSchedulerCb(cb);
       }
 
@@ -702,17 +694,14 @@ namespace Orly {
                                                           const Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
                                                           bool is_safe,
                                                           bool create) {
-      assert(this);
       return create ? OpenOrCreate(repo_id, ttl, parent_repo, is_safe) : ForceOpenRepo(repo_id);
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::ForceGetRepo(const Base::TUuid &repo_id) {
-      assert(this);
       return ForceOpenRepo(repo_id);
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::GetSystemRepo() const {
-      assert(this);
       return SystemRepo;
     }
 

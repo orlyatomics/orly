@@ -90,7 +90,6 @@ namespace Socket {
 
     /* Swaperator. */
     TAddress &operator=(TAddress &&that) {
-      assert(this);
       assert(&that);
       std::swap(Storage, that.Storage);
       return *this;
@@ -98,38 +97,32 @@ namespace Socket {
 
     /* Assignment operator. */
     TAddress &operator=(const TAddress &that) {
-      assert(this);
       return *this = TAddress(that);
     }
 
     /* Assign from a naked sockaddr. */
     TAddress &operator=(const sockaddr &sa) {
-      assert(this);
       return *this = TAddress(sa);
     }
 
     /* Extract from the given stream. */
     TAddress &operator=(std::istream &&strm) {
-      assert(this);
       return *this = TAddress(std::move(strm));
     }
 
     /* Assign the given special address, setting port to 0. */
     TAddress &operator=(TSpecial special) {
-      assert(this);
       return *this = TAddress(special);
     }
 
     /* Cast to a naked sockaddr. */
     operator const sockaddr *() const {
-      assert(this);
       return &Generic;
     }
 
     /* Cast to a modifiable naked sockaddr.  If you modify the structure,
        call Verify() afterward to make sure it's still in good shape. */
     operator sockaddr *() {
-      assert(this);
       return &Generic;
     }
 
@@ -143,25 +136,21 @@ namespace Socket {
 
     /* Assign the given special address and port. */
     TAddress &Assign(TSpecial special, in_port_t port = 0) {
-      assert(this);
       return *this = TAddress(special, port);
     }
 
     /* Copy the naked address to the given buffer. */
     void CopyOut(sockaddr_storage &storage) const {
-      assert(this);
       assert(&storage);
       memcpy(&storage, &Storage, GetLen());
     }
 
     /* The family of the address. */
     sa_family_t GetFamily() const {
-      assert(this);
       return Storage.ss_family;
     }
 
     TAddress &SetFamily(sa_family_t family) {
-      assert(this);
       Storage.ss_family = family;
       Verify();
       return *this;
@@ -173,7 +162,6 @@ namespace Socket {
     /* The number of bytes in use in the address.
        Use this, along with the naked cast, to make OS calls like bind(). */
     socklen_t GetLen() const {
-      assert(this);
       return GetLen(Storage.ss_family);
     }
 
@@ -203,7 +191,6 @@ namespace Socket {
        otherwise, it resets the address to the default-constructed state and
        throws an exception. */
     void Verify() {
-      assert(this);
       switch (Storage.ss_family) {
         case AF_UNSPEC:
         case AF_INET:
@@ -224,7 +211,6 @@ namespace Socket {
 
     /* Return to the default-constructed state. */
     TAddress &Reset() {
-      assert(this);
       return *this = TAddress();
     }
 

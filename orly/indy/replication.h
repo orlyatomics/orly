@@ -53,7 +53,6 @@ namespace Orly {
 
       /* TODO */
       const Atom::TCoreVector &GetCoreVec() const {
-        assert(this);
         assert(CoreVec);
         return *CoreVec;
       }
@@ -447,28 +446,24 @@ namespace Orly {
 
       /* TODO */
       inline const Atom::TCoreVector &GetIndexIdVec() const {
-        assert(this);
         assert(IndexIdVector);
         return *IndexIdVector;
       }
 
       /* TODO */
       inline const Atom::TCoreVector &GetRepoVec() const {
-        assert(this);
         assert(RepoVector);
         return *RepoVector;
       }
 
       /* TODO */
       inline const Atom::TCoreVector &GetDurableVec() const {
-        assert(this);
         assert(DurableVector);
         return *DurableVector;
       }
 
       /* TODO */
       inline const Atom::TCoreVector &GetTransactionVec() const {
-        assert(this);
         assert(TransactionVector);
         return *TransactionVector;
       }
@@ -511,72 +506,58 @@ namespace Orly {
       *************/
 
     inline bool TReplicationQueue::IsEmpty() const {
-      assert(this);
       return ItemCollection.IsEmpty();
     }
 
     inline void TReplicationQueue::Insert(TReplicationItem *item) NO_THROW {
-      assert(this);
       ItemCollection.Insert(&item->QueueMembership);
     }
 
     inline void TReplicationQueue::Clear() {
-      assert(this);
       ItemCollection.DeleteEachMember();
     }
 
     inline TReplicationQueue::TItemCollection *TReplicationQueue::GetItemCollection() const {
-      assert(this);
       return &ItemCollection;
     }
 
     inline TReplicationQueue::TReplicationItem::TKind TRepoReplication::GetKind() const {
-      assert(this);
       return TKind::Repo;
     }
 
     inline TReplicationQueue::TReplicationItem::TKind TDurableReplication::GetKind() const {
-      assert(this);
       return TKind::Durable;
     }
 
     inline const Base::TUuid &TDurableReplication::GetId() const {
-      assert(this);
       return DurableId;
     }
 
     inline const TTtl &TDurableReplication::GetTtl() const {
-      assert(this);
       return DurableTtl;
     }
 
     inline const std::string &TDurableReplication::GetSerializedObj() const {
-      assert(this);
       return SerializedObj;
     }
 
     inline TReplicationQueue::TReplicationItem::TKind TIndexIdReplication::GetKind() const {
-      assert(this);
       return TKind::IndexId;
     }
 
     inline const Base::TUuid &TIndexIdReplication::GetId() const {
-      assert(this);
       return Id;
     }
 
     inline const std::string &TIndexIdReplication::GetPkgKey() const {
-      assert(this);
       return PkgKey;
     }
 
     inline const Indy::TKey &TIndexIdReplication::GetVal() const {
-      assert(this);
       return Val;
     }
 
     inline TReplicationQueue::TReplicationItem::TKind TTransactionReplication::GetKind() const {
-      assert(this);
       return TKind::Transaction;
     }
 
@@ -649,12 +630,10 @@ namespace Orly {
     }
 
     inline const L1::TTransaction::TReplica &TTransactionReplication::GetReplica() const {
-      assert(this);
       return Replica;
     }
 
     inline void TTransactionReplication::SwapReplica(L1::TTransaction::TReplica &&replica) {
-      assert(this);
       Replica = std::move(replica);
     }
 

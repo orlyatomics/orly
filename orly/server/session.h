@@ -129,26 +129,22 @@ namespace Orly {
 
       /* TODO */
       virtual const char *GetKind() const noexcept override {
-        assert(this);
         return "Session";
       }
 
       /* The number of pending notifications. */
       size_t GetNotificationCount() const {
-        assert(this);
         std::lock_guard<std::mutex> lock(NotificationMutex);
         return NotificationBySeqNumber.size();
       }
 
       /* TODO */
       const Base::TEventSemaphore &GetNotificationSem() const {
-        assert(this);
         return NotificationSem;
       }
 
       /* The id of the user who owns this session.  If the session is anonymous, this is unknown. */
       const Base::TOpt<Base::TUuid> &GetUserId() const {
-        assert(this);
         return UserId;
       }
 

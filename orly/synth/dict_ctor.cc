@@ -53,7 +53,6 @@ TDictCtor::~TDictCtor() {
 }
 
 Expr::TExpr::TPtr TDictCtor::Build() const {
-  assert(this);
   Expr::TDict::TMemberMap members;
   for (auto member : Members) {
     /* TODO: Detect duplicate constant keys and throw */
@@ -64,7 +63,6 @@ Expr::TExpr::TPtr TDictCtor::Build() const {
 }
 
 void TDictCtor::Cleanup() {
-  assert(this);
   for (auto member : Members) {
     delete member.first;
     delete member.second;
@@ -72,7 +70,6 @@ void TDictCtor::Cleanup() {
 }
 
 void TDictCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto member : Members) {
@@ -82,7 +79,6 @@ void TDictCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TDictCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto member : Members) {

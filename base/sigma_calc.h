@@ -60,7 +60,6 @@ namespace Base {
 
     /* Go back to being empty. */
     void Reset() {
-      assert(this);
       Count = 0;
     }
 

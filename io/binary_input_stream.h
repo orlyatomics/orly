@@ -96,7 +96,6 @@ namespace Io {
 
     /* Read a string. */
     void Read(std::string &that) {
-      assert(this);
       assert(&that);
       size_t size;
       Read(size);
@@ -107,14 +106,12 @@ namespace Io {
     /* Read STL tuples. */
     template <typename... TArgs>
     void Read(std::tuple<TArgs...> &that) {
-      assert(this);
       assert(&that);
       Util::ForEach(that, TTupleHelper(*this));
     }
 
     template <typename TRep, typename TPeriod>
     void Read(std::chrono::duration<TRep, TPeriod> &that) {
-      assert(this);
       assert(&that);
       TRep rep;
       *this >> rep;
@@ -156,7 +153,6 @@ namespace Io {
     /* Read an STL container that supports push_back(). */
     template <typename TThat>
     void ReadPushableContainer(TThat &that) {
-      assert(this);
       assert(&that);
       size_t size;
       Read(size);
@@ -172,7 +168,6 @@ namespace Io {
     /* Read a built-in, converting from NBO if necessary. */
     template <typename TThat>
     void ReadWithSwap(TThat &that) {
-      assert(this);
       assert(&that);
       ReadExactly(&that, sizeof(that));
       GetFormat().ConvertInt(that);
@@ -181,7 +176,6 @@ namespace Io {
     /* Read a built-in without converting from NBO. */
     template <typename TThat>
     void ReadWithoutSwap(TThat &that) {
-      assert(this);
       assert(&that);
       ReadExactly(&that, sizeof(that));
     }
@@ -213,7 +207,6 @@ namespace Io {
   /* TODO */
   template <typename TThat>
   void TBinaryInputStream::ReadInsertableContainer(TThat &that) {
-    assert(this);
     assert(&that);
     size_t size;
     Read(size);
@@ -238,7 +231,6 @@ namespace Io {
 
     /* Stream in. */
     void Read(TBinaryInputStream &strm) {
-      assert(this);
       assert(&strm);
       TSomeInt some_int;
       strm >> some_int;

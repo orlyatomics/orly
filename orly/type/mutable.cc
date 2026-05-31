@@ -43,27 +43,22 @@ TType TMutable::Get(const TType &addr, const TParts &parts, const TType &val, co
 }
 
 TType TMutable::GetAddr() const {
-  assert(this);
   return get<0>(GetKey());
 }
 
 const TMutable::TParts &TMutable::GetParts() const {
-  assert(this);
   return get<1>(GetKey());
 }
 
 TType TMutable::GetVal() const {
-  assert(this);
   return get<2>(GetKey());
 }
 
 TType TMutable::GetSrcAtAddr() const {
-  assert(this);
   return get<3>(GetKey());
 }
 
 void TMutable::Write(ostream &strm) const {
-  assert(this);
   strm << "Orly::Rt::TMutable<" << GetAddr() << ", " << GetVal() << '>';
 }
 

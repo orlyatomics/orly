@@ -46,28 +46,24 @@ namespace Socket {
 
       /* True iff. we have a current address. */
       operator bool() const {
-        assert(this);
         TryFreshen();
         return Csr != 0;
       }
 
       /* The current address. */
       const TAddress &operator*() const {
-        assert(this);
         Freshen();
         return Address;
       }
 
       /* The current address. */
       const TAddress *operator->() const {
-        assert(this);
         Freshen();
         return &Address;
       }
 
       /* Move to the next address, if any. */
       TCursor &operator++() {
-        assert(this);
         Freshen();
         Csr = 0;
         return *this;
@@ -78,7 +74,6 @@ namespace Socket {
 
       /* Go back to the first address, if any. */
       TCursor &Rewind() {
-        assert(this);
         Csr = 0;
         Next = First;
         return *this;
@@ -88,7 +83,6 @@ namespace Socket {
 
       /* Make sure we have a current address. */
       void Freshen() const {
-        assert(this);
         TryFreshen();
         assert(Csr);
       }

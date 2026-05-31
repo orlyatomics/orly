@@ -36,7 +36,6 @@ TLengthOf::TLengthOf(const TExpr::TPtr &container, const TPosRange &pos_range)
     : TUnary(container, pos_range) {}
 
 void TLengthOf::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -69,7 +68,6 @@ Type::TType TLengthOf::GetTypeImpl() const {
     virtual void operator()(const Type::TTimeDiff *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TTimePnt  *) const { throw TExprError(HERE, PosRange); }
   };  // TLengthOfTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TLengthOfTypeVisitor(type, GetPosRange()));
   return type;

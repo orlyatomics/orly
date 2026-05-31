@@ -30,7 +30,6 @@ namespace Orly {
     template <typename TTarget>
     const TTarget *TType::As() const {
       static_assert(std::is_base_of<TType::TImpl, TTarget>::value, "TType::As<>() can only be used with final types");
-      assert(this);
 
       auto res = TryAs<TTarget>();
       assert(res);
@@ -40,7 +39,6 @@ namespace Orly {
     template <typename TTarget>
     bool TType::Is() const {
       static_assert(std::is_base_of<TType::TImpl, TTarget>::value, "TType::Is<>() can only be used with final types");
-      assert(this);
 
       return TryAs<TTarget>();
     }
@@ -48,7 +46,6 @@ namespace Orly {
     template <typename TTarget>
     const TTarget *TType::TryAs() const {
       static_assert(std::is_base_of<TType::TImpl, TTarget>::value, "TType::TryAs<>() can only be used with final types");
-      assert(this);
 
       return dynamic_cast<const TTarget*>(Impl.get());
     }

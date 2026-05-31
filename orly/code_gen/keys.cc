@@ -35,7 +35,6 @@ TKeys::TKeys(const L0::TPackage *package,
       ValType(val_type) {}
 
 void TKeys::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   #if 0

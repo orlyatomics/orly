@@ -332,6 +332,5 @@ void TType::Init() {
 }
 
 TType::operator bool() const {
-  assert(this);
   return Impl != TUnknown::Get().Impl;
 }

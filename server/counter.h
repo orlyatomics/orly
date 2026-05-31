@@ -95,33 +95,28 @@ namespace Server {
 
     /* The code location at which the counter was declared. */
     const Base::TCodeLocation &GetCodeLocation() const {
-      assert(this);
       return CodeLocation;
     }
 
     /* The count as of the last time the counters were sampled. */
     uint32_t GetCount() const {
-      assert(this);
       return SampledCount;
     }
 
     /* The name of this counter.  This should be unique within its module.
        Never null. */
     const char *GetName() const {
-      assert(this);
       return Name;
     }
 
     /* The next counter in the program, if any. */
     const TCounter *GetNextCounter() const {
-      assert(this);
       return NextCounter;
     }
 
     /* Increment the counter.  This will not change the current frozen value,
        but will be reflected in the next frozen value. */
     void Increment(uint32_t delta = 1) {
-      assert(this);
       __sync_add_and_fetch(&UnsampledCount, delta);
     }
 

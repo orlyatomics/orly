@@ -75,7 +75,6 @@ namespace Base {
 
       /* Swap constructor.  The donor ptr is left null. */
       TPtr(TPtr &&that) {
-        assert(this);
         assert(&that);
         Obj = that.Obj;
         that.Obj = 0;
@@ -83,7 +82,6 @@ namespace Base {
 
       /* Copy constructor.  This increments the reference count. */
       TPtr(const TPtr &that) {
-        assert(this);
         assert(&that);
         Obj = that.Obj;
         if (Obj) {
@@ -95,7 +93,6 @@ namespace Base {
          up-castable types. */
       template <typename TDown>
       TPtr(const TPtr<TDown> &that) {
-        assert(this);
         assert(&that);
         Obj = that.Obj;
         if (Obj) {
@@ -106,7 +103,6 @@ namespace Base {
       /* Decrements the reference count.  Destroying the last pointer
          triggers the shared object's finalization routine. */
       ~TPtr() {
-        assert(this);
         if (Obj) {
           Obj->DecrRefCount();
         }
@@ -114,7 +110,6 @@ namespace Base {
 
       /* Swaperator. */
       TPtr &operator=(TPtr &&that) {
-        assert(this);
         assert(&that);
         std::swap(Obj, that.Obj);
         return *this;
@@ -124,7 +119,6 @@ namespace Base {
          the new object and decrements the reference count of the old
          object.  The operation is exception-safe. */
       TPtr &operator=(const TPtr &that) {
-        assert(this);
         return *this = TPtr(that);
       }
 
@@ -132,34 +126,29 @@ namespace Base {
          up-castable types. */
       template <typename TDown>
       TPtr &operator=(const TPtr<TDown> &that) {
-        assert(this);
         return *this = TPtr(that);
       }
 
       /* Returns true iff. the pointer is non-null. */
       operator bool() const {
-        assert(this);
         return Obj != 0;
       }
 
       /* Returns a reference to the reference-counted object.
          This function can return null. */
       TObj &operator*() const {
-        assert(this);
         return *Obj;
       }
 
       /* Returns a reference to the reference-counted object.
          This function can return null. */
       TObj *operator->() const {
-        assert(this);
         return Obj;
       }
 
       /* Resets the pointer to the default (null) state.
         Returns a chaining reference. */
       TPtr &Reset() {
-        assert(this);
         return *this = TPtr();
       }
 
@@ -219,7 +208,6 @@ namespace Base {
     /* Decrement the ref-count.  If it has reached zero, invoke the finalizer.
        The operation is syncronized between threads. */
     void DecrRefCount() {
-      assert(this);
       int ref_count = __sync_sub_and_fetch(&RefCount, 1);
       assert(ref_count >= 0);
       if (!ref_count) {
@@ -229,7 +217,6 @@ namespace Base {
 
     /* Increment the ref-count.  The operation is syncronized between threads. */
     void IncrRefCount() {
-      assert(this);
       int ref_count = __sync_add_and_fetch(&RefCount, 1);
       assert(ref_count > 0);
     }

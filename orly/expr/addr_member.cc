@@ -34,13 +34,11 @@ TAddrMember::TAddrMember(const TExpr::TPtr &expr, size_t index, const TPosRange 
     : TUnary(expr, pos_range), Index(index) {}
 
 void TAddrMember::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 size_t TAddrMember::GetIndex() const {
-  assert(this);
   return Index;
 }
 
@@ -78,7 +76,6 @@ Type::TType TAddrMember::GetTypeImpl() const {
     private:
     size_t Index;
   };  // TAddrMemberTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TAddrMemberTypeVisitor(type, Index, GetPosRange()));
   return type;

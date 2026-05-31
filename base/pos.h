@@ -67,14 +67,12 @@ namespace Base {
 
     /* Returns true iff. this pos is the same as that one. */
     bool operator==(const TPos &that) const {
-      assert(this);
       assert(&that);
       return Offset == that.Offset && Dir == that.Dir;
     }
 
     /* Returns true iff. this pos is not the same as that one. */
     bool operator!=(const TPos &that) const {
-      assert(this);
       assert(&that);
       return Offset != that.Offset || Dir != that.Dir;
     }
@@ -82,7 +80,6 @@ namespace Base {
     /* Compute the absolute offset represented by this TPos when projected onto a sequence of the given size.  The absolute offset is always relative to the
        start of the sequence. */
     ptrdiff_t GetAbsOffset(size_t size) const {
-      assert(this);
       ptrdiff_t result;
       switch (Dir) {
         case Forward: {
@@ -100,7 +97,6 @@ namespace Base {
 
     /* Return to the default constructed state. */
     TPos &Reset() {
-      assert(this);
       Offset = 0;
       Dir = Forward;
       return *this;
@@ -108,7 +104,6 @@ namespace Base {
 
     /* Swap this pos with that one. */
     TPos &Swap(TPos &that) noexcept {
-      assert(this);
       std::swap(Offset, that.Offset);
       std::swap(Dir, that.Dir);
       return *this;

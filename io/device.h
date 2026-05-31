@@ -75,7 +75,6 @@ namespace Io {
 
     /* The file descriptor which we wrap. */
     const Base::TFd &GetFd() const {
-      assert(this);
       return Fd;
     }
 
@@ -84,7 +83,6 @@ namespace Io {
 
     /* The pool from which we acquire chunks.  Never null. */
     const std::shared_ptr<TPool> &GetPool() const {
-      assert(this);
       return Pool;
     }
 

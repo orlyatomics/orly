@@ -34,7 +34,6 @@ namespace Tools {
           : Name(name), FirstChild(0), LastChild(0), Parent(0), PrevSibling(0), NextSibling(0) {}
 
         ~TNode() {
-          assert(this);
           while (FirstChild) {
             delete FirstChild;
             FirstChild = NextSibling;
@@ -43,17 +42,14 @@ namespace Tools {
         }
 
         const std::string &GetKind() const {
-          assert(this);
           return Kind;
         }
 
         const std::string &GetName() const {
-          assert(this);
           return Name;
         }
 
         void InsertIntoParent(TNode *parent, const std::string &kind) {
-          assert(this);
           assert(parent);
           assert(parent != this);
           assert(&kind);
@@ -67,7 +63,6 @@ namespace Tools {
         }
 
         void RemoveFromParent() {
-          assert(this);
           if (Parent) {
             GetPrevLink() = NextSibling;
             GetNextLink() = PrevSibling;
@@ -79,40 +74,33 @@ namespace Tools {
         }
 
         TNode *TryGetFirstChild() const {
-          assert(this);
           return FirstChild;
         }
 
         TNode *TryGetLastChild() const {
-          assert(this);
           return LastChild;
         }
 
         TNode *TryGetParent() const {
-          assert(this);
           return Parent;
         }
 
         TNode *TryGetPrevSibling() const {
-          assert(this);
           return PrevSibling;
         }
 
         TNode *TryGetNextSibling() const {
-          assert(this);
           return NextSibling;
         }
 
       private:
 
         TNode *&GetPrevLink() const {
-          assert(this);
           assert(Parent);
           return PrevSibling ? PrevSibling->NextSibling : Parent->FirstChild;
         }
 
         TNode *&GetNextLink() const {
-          assert(this);
           assert(Parent);
           return NextSibling ? NextSibling->PrevSibling : Parent->LastChild;
         }

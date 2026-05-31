@@ -24,7 +24,6 @@ using namespace std;
 using namespace Gz;
 
 shared_ptr<const TInputProducer::TChunk> TInputProducer::TryProduceInput() {
-  assert(this);
   auto chunk = Pool->AcquireChunk();
   chunk->Commit(File.ReadAtMost(chunk->GetBuffer(), chunk->GetRemainingSize()));
   if (!chunk->GetSize()) {

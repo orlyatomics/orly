@@ -51,7 +51,6 @@ class TRouter : public TBalancer {
   }
 
   virtual const Socket::TAddress &ChooseHost() {
-    assert(this);
     std::lock_guard<std::mutex> lock(HostMutex);
     if (MasterHost) {
     } else {
@@ -243,7 +242,6 @@ class TTestServer {
   };
 
   void AcceptClientConnections() {
-    assert(this);
     try {
       TEpoll poll;
       poll.Add(MainSocket);
@@ -266,7 +264,6 @@ class TTestServer {
   }
 
   void ServeClient(TFd &fd, const TAddress &client_address) {
-    assert(this);
     assert(&fd);
     assert(&client_address);
     std::shared_ptr<TConnection> connection = make_shared<TConnection>(this, std::move(fd));

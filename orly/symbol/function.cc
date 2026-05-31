@@ -39,7 +39,6 @@ TFunction::TFunction(const TScope::TPtr &scope, const std::string &name, const T
     : TAnyFunction(name), IsRecursive(false), Scope(Base::AssertTrue(scope)), PosRange(pos_range) {}
 
 TFunction::~TFunction() {
-  assert(this);
   auto scope = TryGetScope();
   if (scope) {
     scope->Remove(shared_from_this());
@@ -47,25 +46,21 @@ TFunction::~TFunction() {
 }
 
 void TFunction::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TFunction::Add(const TParamDef::TPtr &param_def) {
-  assert(this);
   assert(param_def);
   auto result = ParamDefs.insert(param_def);
   assert(result.second);
 }
 
 const TFunction::TParamDefSet &TFunction::GetParamDefs() const {
-  assert(this);
   return ParamDefs;
 }
 
 Type::TObj::TElems TFunction::GetParams() const {
-  assert(this);
   Type::TObj::TElems elems;
   for (auto param_def : ParamDefs) {
     auto result = elems.insert(std::make_pair(param_def->GetName(), param_def->GetType()));
@@ -77,12 +72,10 @@ Type::TObj::TElems TFunction::GetParams() const {
 }
 
 const TPosRange &TFunction::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 Type::TType TFunction::GetReturnType() const {
-  assert(this);
   Type::TType type;
   if (IsRecursive) {
     type = Type::TAny::Get();
@@ -99,12 +92,10 @@ TScope::TPtr TFunction::GetScope() const {
 }
 
 void TFunction::Remove(const TParamDef::TPtr &param_def) {
-  assert(this);
   assert(param_def);
   ParamDefs.erase(param_def);
 }
 
 TScope::TPtr TFunction::TryGetScope() const {
-  assert(this);
   return Scope.lock();
 }

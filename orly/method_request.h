@@ -59,20 +59,17 @@ namespace Orly {
 
     /* A method name and set of arguments which the server is to execute. */
     const TClosure &GetClosure() const {
-      assert(this);
       return Closure;
     }
 
     /* The full package to the package in which the requested method is to be found.
        This will always end with the name of the package itself and so will never be an empty vector. */
     const TPackage &GetPackage() const {
-      assert(this);
       return Package;
     }
 
     /* The id of the private pov in which to run the method. */
     const TId &GetPovId() const {
-      assert(this);
       return PovId;
     }
 
@@ -81,7 +78,6 @@ namespace Orly {
        If the method is to be run in the past, it cannot generate an update; therefore, if this value is known,
        time-to-live must be zero. */
     const Base::TOpt<TId> &GetTrackingId() const {
-      assert(this);
       return TrackingId;
     }
 
@@ -90,7 +86,6 @@ namespace Orly {
        generate an empty update, just for the purpose of tracking.
        If the method is running in the past, then this must be zero. */
     const TTimeToLive &GetTimeToLive() const {
-      assert(this);
       return TimeToLive;
     }
 

@@ -27,13 +27,11 @@ TBinaryType::TBinaryType(TType *lhs, TType *rhs, TGet get)
     : Get(get), Lhs(Base::AssertTrue(lhs)), Rhs(Base::AssertTrue(rhs)) {}
 
 TBinaryType::~TBinaryType() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 void TBinaryType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -41,6 +39,5 @@ void TBinaryType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 Type::TType TBinaryType::ComputeSymbolicType() const {
-  assert(this);
   return Get(Lhs->GetSymbolicType(), Rhs->GetSymbolicType());
 }

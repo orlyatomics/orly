@@ -54,19 +54,16 @@ namespace Orly {
 
       /* The id of the pov which is responding to the update. */
       const Base::TUuid &GetPovId() const {
-        assert(this);
         return PovId;
       }
 
       /* The response of the pov to the update. */
       TResponse GetResponse() const {
-        assert(this);
         return Response;
       }
 
       /* The id of the update on whose progress we're reporting. */
       const Base::TUuid &GetUpdateId() const {
-        assert(this);
         return UpdateId;
       }
 

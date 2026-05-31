@@ -38,18 +38,15 @@ TCursor::TCursor(
 }
 
 TCursor::~TCursor() {
-  assert(this);
   freeaddrinfo(First);
 }
 
 TFd TCursor::NewCompatSocket() const {
-  assert(this);
   Freshen();
   return TFd(socket(Csr->ai_family, Csr->ai_socktype, Csr->ai_protocol));
 }
 
 void TCursor::TryFreshen() const {
-  assert(this);
   if (!Csr) {
     Csr = Next;
     if (Csr) {

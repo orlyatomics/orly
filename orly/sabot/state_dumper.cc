@@ -23,106 +23,89 @@ using namespace std;
 using namespace Orly::Sabot;
 
 void TStateDumper::operator()(const State::TFree &state) const {
-  assert(this);
   assert(&state);
   void *type_alloc = alloca(Type::GetMaxTypeSize());
   Type::TAny::TWrapper(state.GetType(type_alloc))->Accept(TTypeDumper(Strm));
 }
 
 void TStateDumper::operator()(const State::TTombstone &state) const {
-  assert(this);
   assert(&state);
   void *type_alloc = alloca(Type::GetMaxTypeSize());
   Type::TAny::TWrapper(state.GetType(type_alloc))->Accept(TTypeDumper(Strm));
 }
 
 void TStateDumper::operator()(const State::TVoid &state) const {
-  assert(this);
   assert(&state);
   void *type_alloc = alloca(Type::GetMaxTypeSize());
   Type::TAny::TWrapper(state.GetType(type_alloc))->Accept(TTypeDumper(Strm));
 }
 
 void TStateDumper::operator()(const State::TInt8 &state) const {
-  assert(this);
   assert(&state);
   Strm << static_cast<int>(state.Get());
 }
 
 void TStateDumper::operator()(const State::TInt16 &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TInt32 &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TInt64 &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TUInt8 &state) const {
-  assert(this);
   assert(&state);
   Strm << static_cast<unsigned>(state.Get());
 }
 
 void TStateDumper::operator()(const State::TUInt16 &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TUInt32 &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TUInt64 &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TBool &state) const {
-  assert(this);
   assert(&state);
   Strm << (state.Get() ? "true" : "false");
 }
 
 void TStateDumper::operator()(const State::TChar &state) const {
-  assert(this);
   assert(&state);
   Strm << '\'' << state.Get() << '\'';
 }
 
 void TStateDumper::operator()(const State::TFloat &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TDouble &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TDuration &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get().count() << "ns";
 }
 
 void TStateDumper::operator()(const State::TTimePoint &state) const {
-  assert(this);
   assert(&state);
   auto sys_tick = TStdTimePoint::clock::to_time_t(std::chrono::time_point_cast<std::chrono::seconds>(state.Get()));
   char buf[20];
@@ -131,13 +114,11 @@ void TStateDumper::operator()(const State::TTimePoint &state) const {
 }
 
 void TStateDumper::operator()(const State::TUuid &state) const {
-  assert(this);
   assert(&state);
   Strm << state.Get();
 }
 
 void TStateDumper::operator()(const State::TBlob &state) const {
-  assert(this);
   assert(&state);
   Strm << "{{ ";
   void *pin_alloc = alloca(State::GetMaxStatePinSize());
@@ -158,7 +139,6 @@ void TStateDumper::operator()(const State::TBlob &state) const {
 }
 
 void TStateDumper::operator()(const State::TStr &state) const {
-  assert(this);
   assert(&state);
   Strm << '"';
   void *pin_alloc = alloca(State::GetMaxStatePinSize());
@@ -201,32 +181,26 @@ void TStateDumper::operator()(const State::TStr &state) const {
 }
 
 void TStateDumper::operator()(const State::TDesc &state) const {
-  assert(this);
   OnArrayOfSingleStates("desc", "hosed-up", state);
 }
 
 void TStateDumper::operator()(const State::TOpt &state) const {
-  assert(this);
   OnArrayOfSingleStates("opt", "unknown", state);
 }
 
 void TStateDumper::operator()(const State::TSet &state) const {
-  assert(this);
   OnContainerOfSingleStates("set", state);
 }
 
 void TStateDumper::operator()(const State::TVector &state) const {
-  assert(this);
   OnContainerOfSingleStates("vector", state);
 }
 
 void TStateDumper::operator()(const State::TMap &state) const {
-  assert(this);
   OnArrayOfPairsOfStates("map", "empty", state);
 }
 
 void TStateDumper::operator()(const State::TRecord &state) const {
-  assert(this);
   assert(&state);
   size_t elem_count = state.GetElemCount();
   Strm << "record(";
@@ -251,13 +225,11 @@ void TStateDumper::operator()(const State::TRecord &state) const {
 }
 
 void TStateDumper::operator()(const State::TTuple &state) const {
-  assert(this);
   assert(&state);
   OnArrayOfSingleStates("tuple", nullptr, state);
 }
 
 void TStateDumper::OnArrayOfPairsOfStates(const char *name, const char *kwd_for_zero_size, const State::TArrayOfPairsOfStates &state) const {
-  assert(this);
   assert(name);
   assert(kwd_for_zero_size);
   assert(&state);
@@ -285,7 +257,6 @@ void TStateDumper::OnArrayOfPairsOfStates(const char *name, const char *kwd_for_
 }
 
 void TStateDumper::OnArrayOfSingleStates(const char *name, const char *kwd_for_zero_size, const State::TArrayOfSingleStates &state) const {
-  assert(this);
   assert(name);
   assert(&state);
   size_t elem_count = state.GetElemCount();
@@ -309,6 +280,5 @@ void TStateDumper::OnArrayOfSingleStates(const char *name, const char *kwd_for_z
 }
 
 void TStateDumper::OnContainerOfSingleStates(const char *name, const State::TArrayOfSingleStates &state) const {
-  assert(this);
   OnArrayOfSingleStates(name, "empty", state);
 }

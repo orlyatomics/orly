@@ -73,7 +73,6 @@ namespace Strm {
 
       /* Read a char as itself, a single byte. */
       TIn &operator>>(char &that) {
-        assert(this);
         assert(&that);
         that = Pop();
         return *this;
@@ -81,21 +80,18 @@ namespace Strm {
 
       /* Read a 32-bit float ISO 754 format; that is, as a native c-float. */
       TIn &operator>>(float &that) {
-        assert(this);
         ReadShallow(that);
         return *this;
       }
 
       /* Read a 64-bit float ISO 754 format; that is, as a native c-double. */
       TIn &operator>>(double &that) {
-        assert(this);
         ReadShallow(that);
         return *this;
       }
 
       /* Read an 8-bit signed integer as-is. */
       TIn &operator>>(int8_t &that) {
-        assert(this);
         assert(&that);
         that = Pop();
         return *this;
@@ -103,7 +99,6 @@ namespace Strm {
 
       /* Read a 16-bit signed integer as a zig-zag var-int. */
       TIn &operator>>(int16_t &that) {
-        assert(this);
         assert(&that);
         that = FromZigZag<uint16_t>(ReadVarInt());
         return *this;
@@ -111,7 +106,6 @@ namespace Strm {
 
       /* Read a 32-bit signed integer as a zig-zag var-int. */
       TIn &operator>>(int32_t &that) {
-        assert(this);
         assert(&that);
         that = FromZigZag<uint32_t>(ReadVarInt());
         return *this;
@@ -119,7 +113,6 @@ namespace Strm {
 
       /* Read a 64-bit signed integer as a zig-zag var-int. */
       TIn &operator>>(int64_t &that) {
-        assert(this);
         assert(&that);
         that = FromZigZag<uint64_t>(ReadVarInt());
         return *this;
@@ -127,7 +120,6 @@ namespace Strm {
 
       /* Read an 8-bit unsigned integer as-is. */
       TIn &operator>>(uint8_t &that) {
-        assert(this);
         assert(&that);
         that = Pop();
         return *this;
@@ -135,7 +127,6 @@ namespace Strm {
 
       /* Read a 16-bit unsigned integer as a var-int. */
       TIn &operator>>(uint16_t &that) {
-        assert(this);
         assert(&that);
         that = ReadVarInt();
         return *this;
@@ -143,7 +134,6 @@ namespace Strm {
 
       /* Read a 32-bit unsigned integer as a var-int. */
       TIn &operator>>(uint32_t &that) {
-        assert(this);
         assert(&that);
         that = ReadVarInt();
         return *this;
@@ -151,7 +141,6 @@ namespace Strm {
 
       /* Read a 64-bit unsigned integer as a var-int. */
       TIn &operator>>(uint64_t &that) {
-        assert(this);
         assert(&that);
         that = ReadVarInt();
         return *this;
@@ -164,7 +153,6 @@ namespace Strm {
          its underlying representation type. */
       template <typename TRep, typename TPeriod>
       TIn &operator>>(std::chrono::duration<TRep, TPeriod> &that) {
-        assert(this);
         assert(&that);
         TRep temp;
         *this >> temp;
@@ -177,7 +165,6 @@ namespace Strm {
       template <typename TClock, typename TDuration>
       TIn &operator>>(
           std::chrono::time_point<TClock, TDuration> &that) {
-        assert(this);
         assert(&that);
         TDuration temp;
         *this >> temp;
@@ -192,7 +179,6 @@ namespace Strm {
           typename = typename std::enable_if<
               std::is_enum<TSomeEnum>::value>::type>
       TIn &operator>>(TSomeEnum &that) {
-        assert(this);
         assert(&that);
         using under_t = typename std::underlying_type<TSomeEnum>::type;
         return *this >> reinterpret_cast<under_t &>(that);
@@ -203,7 +189,6 @@ namespace Strm {
          write a count, as it is implicitly exactly 2. */
       template <typename TFirst, typename TSecond>
       TIn &operator>>(std::pair<TFirst, TSecond> &that) {
-        assert(this);
         assert(&that);
         return *this >> that.first >> that.second;
       }
@@ -214,7 +199,6 @@ namespace Strm {
          that extracting the empty tuple reads nothing at all. */
       template <typename... TElems>
       TIn &operator>>(std::tuple<TElems...> &that) {
-        assert(this);
         Util::ForEach(that, [this](auto &elem) { *this >> elem; });
         return *this;
       }
@@ -225,7 +209,6 @@ namespace Strm {
          Note that extracting an array of size zero reads nothing at all. */
       template <typename TElem, size_t Size>
       TIn &operator>>(TElem (&elems)[Size]) {
-        assert(this);
         ReadArrayWithoutCount(elems, elems + Size);
         return *this;
       }
@@ -235,7 +218,6 @@ namespace Strm {
          of operator>>.  See ReadArrayWithCount() for more information. */
       template <typename TElem, typename TAlloc>
       TIn &operator>>(std::list<TElem, TAlloc> &that) {
-        assert(this);
         ReadSeq(that);
         return *this;
       }
@@ -247,7 +229,6 @@ namespace Strm {
       template <
           typename TKey, typename TVal, typename TCompare, typename TAlloc>
       TIn &operator>>(std::map<TKey, TVal, TCompare, TAlloc> &that) {
-        assert(this);
         ReadMap(that);
         return *this;
       }
@@ -259,7 +240,6 @@ namespace Strm {
       template <
           typename TKey, typename TVal, typename TCompare, typename TAlloc>
       TIn &operator>>(std::multimap<TKey, TVal, TCompare, TAlloc> &that) {
-        assert(this);
         ReadMap(that);
         return *this;
       }
@@ -269,7 +249,6 @@ namespace Strm {
          of operator>>.  See ReadArrayWithCount() for more information. */
       template <typename TElem, typename TCompare, typename TAlloc>
       TIn &operator>>(std::set<TElem, TCompare, TAlloc> &that) {
-        assert(this);
         ReadSet(that);
         return *this;
       }
@@ -279,7 +258,6 @@ namespace Strm {
          of operator>>.  See ReadArrayWithCount() for more information. */
       template <typename TElem, typename TCompare, typename TAlloc>
       TIn &operator>>(std::multiset<TElem, TCompare, TAlloc> &that) {
-        assert(this);
         ReadSet(that);
         return *this;
       }
@@ -293,7 +271,6 @@ namespace Strm {
           typename THash, typename TEq, typename TAlloc>
       TIn &operator>>(
           std::unordered_map<TKey, TVal, THash, TEq, TAlloc> &that) {
-        assert(this);
         ReadMap(that);
         return *this;
       }
@@ -307,7 +284,6 @@ namespace Strm {
           typename THash, typename TEq, typename TAlloc>
       TIn &operator>>(
           std::unordered_multimap<TKey, TVal, THash, TEq, TAlloc> &that) {
-        assert(this);
         ReadMap(that);
         return *this;
       }
@@ -318,7 +294,6 @@ namespace Strm {
          more information. */
       template <typename TElem, typename THash, typename TEq, typename TAlloc>
       TIn &operator>>(std::unordered_set<TElem, THash, TEq, TAlloc> &that) {
-        assert(this);
         ReadSet(that);
         return *this;
       }
@@ -330,7 +305,6 @@ namespace Strm {
       template <typename TElem, typename THash, typename TEq, typename TAlloc>
       TIn &operator>>(
           std::unordered_multiset<TElem, THash, TEq, TAlloc> &that) {
-        assert(this);
         ReadSet(that);
         return *this;
       }
@@ -340,7 +314,6 @@ namespace Strm {
          of operator>>.  See ReadArrayWithCount() for more information. */
       template <typename TElem, typename TAlloc>
       TIn &operator>>(std::vector<TElem, TAlloc> &that) {
-        assert(this);
         ReadSeq(that);
         return *this;
       }
@@ -350,7 +323,6 @@ namespace Strm {
          operator>>. */
       template <typename TIter>
       void ReadArrayWithoutCount(TIter begin, TIter end) {
-        assert(this);
         for (; begin != end; ++begin) {
           *this >> *begin;
         }
@@ -359,7 +331,6 @@ namespace Strm {
       /* Read the given structure verbatim, treating it as shallow data. */
       template <typename TThat>
       void ReadShallow(TThat &that) {
-        assert(this);
         Read(&that, sizeof(that));
       }
 
@@ -385,7 +356,6 @@ namespace Strm {
           >::type
       >
       TIn &operator>>(TNbo<TVal> &&that) {
-        assert(this);
         assert(&that);
         TVal temp;
         ReadShallow(temp);
@@ -411,7 +381,6 @@ namespace Strm {
       /* Used by the operator>> overloads for all varieties of std maps. */
       template <typename TCont>
       void ReadMap(TCont &that) {
-        assert(this);
         assert(&that);
         size_t count;
         *this >> count;
@@ -427,7 +396,6 @@ namespace Strm {
       /* Used by the operator>> overloads for std lists and std vectors. */
       template <typename TCont>
       void ReadSeq(TCont &that) {
-        assert(this);
         assert(&that);
         size_t count;
         *this >> count;
@@ -444,7 +412,6 @@ namespace Strm {
       /* Used by the operator>> overloads for all varieties of std sets. */
       template <typename TCont>
       void ReadSet(TCont &that) {
-        assert(this);
         assert(&that);
         size_t count;
         *this >> count;

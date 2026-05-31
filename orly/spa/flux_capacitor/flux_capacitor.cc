@@ -38,7 +38,6 @@ static const string EmptyString;
  */
 
 TPov::TTrailingUpdateCursor &TPov::TTrailingUpdateCursor::operator++() {
-  assert(this);
   assert(TrailingUpdate);
   TrailingUpdate = TrailingUpdate->NextTrailingUpdate;
   return *this;
@@ -49,14 +48,12 @@ TPov::TTrailingUpdateCursor &TPov::TTrailingUpdateCursor::operator++() {
  */
 
 void TPov::DeleteAllTrailingUpdate() {
-  assert(this);
   while (FirstTrailingUpdate) {
     delete FirstTrailingUpdate;
   }
 }
 
 bool TPov::HasAncestor(const TPov *ancestor) const {
-  assert(this);
   const TPov *pov = this;
   while (pov && pov != ancestor) {
     pov = pov->TryGetParentPov();
@@ -65,7 +62,6 @@ bool TPov::HasAncestor(const TPov *ancestor) const {
 }
 
 const TPov *TPov::TryGetChildPov(const TPov *target) const {
-  assert(this);
   assert(target);
   const TPov *result = 0;
   if (this != target) {
@@ -97,7 +93,6 @@ TPov::TPov()
 }
 
 TPov::~TPov() {
-  assert(this);
   assert(!FirstTrailingUpdate);
   for (size_t i = 0; i < 2; ++i) {
     close(PipeHandles[i]);
@@ -106,7 +101,6 @@ TPov::~TPov() {
 }
 
 void TPov::GetIndex(TIndex<TKV> *&out) const {
-  assert(this);
   assert(&out);
   out = KVIndex;
 }
@@ -116,7 +110,6 @@ void TPov::GetIndex(TIndex<TKV> *&out) const {
  */
 
 TParentPov::TChildPovCursor &TParentPov::TChildPovCursor::operator++() {
-  assert(this);
   assert(ChildPov);
   ChildPov = ChildPov->NextChildPov;
   return *this;
@@ -127,7 +120,6 @@ TParentPov::TChildPovCursor &TParentPov::TChildPovCursor::operator++() {
  */
 
 bool TParentPov::PlayTetris(int timeout) {
-  assert(this);
   vector<TSync::TExclusiveLock *> child_locks;
   unordered_set<TUpdate *> updates;
   epoll_event events[ChildPovCount];
@@ -171,7 +163,6 @@ TParentPov::TParentPov()
 }
 
 TParentPov::~TParentPov() {
-  assert(this);
   while (LastChildPov) {
     delete LastChildPov;
   }
@@ -183,14 +174,12 @@ TParentPov::~TParentPov() {
  */
 
 void TChildPov::Pause() {
-  assert(this);
   assert(FlowState == Running);
   FlowState = Paused;
   PartTetris();
 }
 
 void TChildPov::Unpause() {
-  assert(this);
   assert(FlowState == Paused);
   FlowState = Running;
   JoinTetris();
@@ -214,7 +203,6 @@ TChildPov::TChildPov(TParentPov *parent_pov, const TOnFail& on_fail, bool paused
 }
 
 TChildPov::~TChildPov() {
-  assert(this);
   lock_guard<recursive_mutex> lock(ParentPov->ChildListMutex);
   --(ParentPov->ChildPovCount);
   (PrevChildPov ? PrevChildPov->NextChildPov : ParentPov->FirstChildPov) = NextChildPov;
@@ -223,7 +211,6 @@ TChildPov::~TChildPov() {
 }
 
 void TChildPov::Fail() {
-  assert(this);
   assert(FlowState == Running);
   FlowState = Failed;
   PartTetris();
@@ -237,7 +224,6 @@ void TChildPov::Fail() {
 }
 
 void TChildPov::JoinTetris() {
-  assert(this);
   if (!IsJoinedToTetris) {
     lock_guard<recursive_mutex> lock(ParentPov->ChildListMutex);
     epoll_event event;
@@ -250,7 +236,6 @@ void TChildPov::JoinTetris() {
 }
 
 void TChildPov::PartTetris() {
-  assert(this);
   if (IsJoinedToTetris) {
     lock_guard<recursive_mutex> lock(ParentPov->ChildListMutex);
     epoll_ctl(ParentPov->TetrisWaitHandle, EPOLL_CTL_DEL, GetTrailingWaitHandle(), 0);
@@ -268,13 +253,11 @@ TGlobalPov::TGlobalPov(const string &/*path*/, bool /*is_create*/) {
 }
 
 TGlobalPov::~TGlobalPov() {
-  assert(this);
   delete Root;
   DeleteAllTrailingUpdate();
 }
 
 void TGlobalPov::Fail() {
-  assert(this);
   Util::Abort(HERE);
 }
 
@@ -288,7 +271,6 @@ TPrivatePov::TPrivatePov(TParentPov *parent_pov, const TOnFail &on_fail, bool pa
 }
 
 TPrivatePov::~TPrivatePov() {
-  assert(this);
   delete Leaf;
   DeleteAllTrailingUpdate();
 }
@@ -298,7 +280,6 @@ TPrivatePov::~TPrivatePov() {
  */
 
 TSharedPov::~TSharedPov() {
-  assert(this);
   DeleteAllTrailingUpdate();
 }
 
@@ -313,19 +294,16 @@ TEvent::~TEvent() {}
  */
 
 TEffect *TCause::TEffectCursor::operator*() const {
-  assert(this);
   assert(LinkToEffect);
   return LinkToEffect->Effect;
 }
 
 TEffect *TCause::TEffectCursor::operator->() const {
-  assert(this);
   assert(LinkToEffect);
   return LinkToEffect->Effect;
 }
 
 TCause::TEffectCursor &TCause::TEffectCursor::operator++() {
-  assert(this);
   assert(LinkToEffect);
   LinkToEffect = LinkToEffect->NextLinkToEffect;
   return *this;
@@ -336,7 +314,6 @@ TCause::TEffectCursor &TCause::TEffectCursor::operator++() {
  */
 
 TLink *TCause::TryGetLinkToEffect(const TEffect *effect) const {
-  assert(this);
   TEffectCursor csr(this);
   for (; csr; ++csr) {
     if (*csr == effect) {
@@ -347,12 +324,10 @@ TLink *TCause::TryGetLinkToEffect(const TEffect *effect) const {
 }
 
 TCause::~TCause() {
-  assert(this);
   assert(!FirstLinkToEffect);
 }
 
 void TCause::DeleteEachLinkToEffect() {
-  assert(this);
   while (FirstLinkToEffect) {
     delete FirstLinkToEffect;
   }
@@ -363,19 +338,16 @@ void TCause::DeleteEachLinkToEffect() {
  */
 
 TCause *TEffect::TCauseCursor::operator*() const {
-  assert(this);
   assert(LinkToCause);
   return LinkToCause->Cause;
 }
 
 TCause *TEffect::TCauseCursor::operator->() const {
-  assert(this);
   assert(LinkToCause);
   return LinkToCause->Cause;
 }
 
 TEffect::TCauseCursor &TEffect::TCauseCursor::operator++() {
-  assert(this);
   assert(LinkToCause);
   LinkToCause = LinkToCause->NextLinkToCause;
   return *this;
@@ -386,7 +358,6 @@ TEffect::TCauseCursor &TEffect::TCauseCursor::operator++() {
  */
 
 bool TEffect::GetIsTrailing() const {
-  assert(this);
   TCauseCursor csr(this);
   for (; csr; ++csr) {
     if (csr->IsLocal(this)) {
@@ -397,7 +368,6 @@ bool TEffect::GetIsTrailing() const {
 }
 
 TLink *TEffect::TryGetLinkToCause(const TCause *cause) const {
-  assert(this);
   TCauseCursor csr(this);
   for (; csr; ++csr) {
     if (*csr == cause) {
@@ -408,12 +378,10 @@ TLink *TEffect::TryGetLinkToCause(const TCause *cause) const {
 }
 
 TEffect::~TEffect() {
-  assert(this);
   assert(!FirstLinkToCause);
 }
 
 void TEffect::DeleteEachLinkToCause() {
-  assert(this);
   while (FirstLinkToCause) {
     delete FirstLinkToCause;
   }
@@ -424,7 +392,6 @@ void TEffect::DeleteEachLinkToCause() {
  */
 
 TRoot::~TRoot() {
-  assert(this);
   DeleteEachLinkToEffect();
 }
 
@@ -437,7 +404,6 @@ void TLeaf::AugmentEffectsRecursively(
     const TPov */*pov*/) const {}
 
 TLeaf::~TLeaf() {
-  assert(this);
   DeleteEachLinkToCause();
 }
 
@@ -511,7 +477,6 @@ TUpdate::TUpdate(
 }
 
 bool TUpdate::Assert(TContext &ctxt) const {
-  assert(this);
   if (AssertChecker) {
     return AssertChecker(ctxt);
   } else {
@@ -522,7 +487,6 @@ bool TUpdate::Assert(TContext &ctxt) const {
 void TUpdate::AugmentEffectsRecursively(
     unordered_set<const TUpdate *> &effects,
     const TPov *pov) const {
-  assert(this);
   assert(&effects);
   if (pov->HasAncestor(Pov)) {
     auto result = effects.insert(this);
@@ -535,7 +499,6 @@ void TUpdate::AugmentEffectsRecursively(
 }
 
 bool TUpdate::ForEachKey(const function<bool (const Var::TVar &)> &cb) const {
-  assert(this);
   assert(&cb);
   const unordered_map<TKV, TVersion<TKV> *> &version_by_key = KVCluster->GetVersionByKey();
   for (const auto &item: version_by_key) {
@@ -547,12 +510,10 @@ bool TUpdate::ForEachKey(const function<bool (const Var::TVar &)> &cb) const {
 }
 
 size_t TUpdate::GetKeyCount() const {
-  assert(this);
   return KVCluster->GetVersionByKey().size();
 }
 
 bool TUpdate::Promote() {
-  assert(this);
   assert(!LocalCauseCount);
   assert(IsLinkedToPov);
   /* Unlink from our current pov, cache it, then move up to our pov's parent, if any. */
@@ -615,7 +576,6 @@ bool TUpdate::Promote() {
 }
 
 TUpdate::~TUpdate() {
-  assert(this);
   assert(!LocalCauseCount);
   UnlinkFromPov();
   DeleteEachLinkToEffect();
@@ -624,7 +584,6 @@ TUpdate::~TUpdate() {
 }
 
 void TUpdate::LinkToPov() {
-  assert(this);
   if (!IsLinkedToPov) {
     assert(!LocalCauseCount);
     assert(!NextTrailingUpdate);
@@ -643,14 +602,12 @@ void TUpdate::LinkToPov() {
 }
 
 void TUpdate::OnLocalCauseJoin() {
-  assert(this);
   ++LocalCauseCount;
   assert(LocalCauseCount);
   UnlinkFromPov();
 }
 
 void TUpdate::OnLocalCausePart() {
-  assert(this);
   assert(LocalCauseCount);
   --LocalCauseCount;
   if (!LocalCauseCount) {
@@ -659,7 +616,6 @@ void TUpdate::OnLocalCausePart() {
 }
 
 void TUpdate::SyncWithPov() {
-  assert(this);
   if (LocalCauseCount) {
     UnlinkFromPov();
   } else {
@@ -668,7 +624,6 @@ void TUpdate::SyncWithPov() {
 }
 
 void TUpdate::UnlinkFromPov() {
-  assert(this);
   if (IsLinkedToPov) {
     assert(!LocalCauseCount);
     (PrevTrailingUpdate ? PrevTrailingUpdate->NextTrailingUpdate : Pov->FirstTrailingUpdate) = NextTrailingUpdate;
@@ -721,14 +676,12 @@ TKVIndex::TKeyIndexCursor::TKeyIndexCursor(const TKVIndex *index, const Var::TVa
 }
 
 TKVIndex::TKeyIndexCursor::~TKeyIndexCursor() {
-  assert(this);
   for (auto iter = SharedLockVec.rbegin(); iter != SharedLockVec.rend(); ++iter) {
     delete *iter;
   }
 }
 
 TKVIndex::TKeyIndexCursor &TKVIndex::TKeyIndexCursor::operator++() {
-  assert(this);
   KV = 0;
   Valid = false;
   if (Pattern) {
@@ -746,7 +699,6 @@ TKVIndex::TKeyIndexCursor &TKVIndex::TKeyIndexCursor::operator++() {
 }
 
 void TKVIndex::TKeyIndexCursor::GetValue() const {
-  assert(this);
 
   const TKV *min_kv = 0;
   if (Pattern) {
@@ -803,7 +755,6 @@ void TKVIndex::TKeyIndexCursor::GetValue() const {
 bool TNodeIndex::ForEachTour(
     const function<bool (TTour<TNode> *)> &callback,
     const string *location, const string *klass) const {
-  assert(this);
   assert(&callback);
   if (location && klass) {
     TTour<TNode> *tour = TryGetTour(TNode(*location, *klass));
@@ -834,7 +785,6 @@ bool TNodeIndex::ForEachTour(
 TKVIndex::~TKVIndex() {}
 
 void TKVIndex::OnTourJoin(const pair<TKV, TTour<TKV> *> &kt_pair) {
-  assert(this);
   try {
     InsertOrFail(K, kt_pair);
   } catch (...) {
@@ -844,6 +794,5 @@ void TKVIndex::OnTourJoin(const pair<TKV, TTour<TKV> *> &kt_pair) {
 }
 
 void TKVIndex::OnTourPart(const TKV &key) {
-  assert(this);
   K.erase(key);
 }

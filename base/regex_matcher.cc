@@ -21,7 +21,6 @@
 namespace Base {
 
 bool TRegexMatcher::TMatches::TryAdvance() const {
-  assert(this);
   /* Note: A regmatch_t with a rm_so field of -1 indicates that there are no
      more substring matches. */
   bool result = (Index < Buf.size()) && (Buf[Index].rm_so >= 0);
@@ -33,7 +32,6 @@ bool TRegexMatcher::TMatches::TryAdvance() const {
 
 bool TRegexMatcher::Match(const TPattern &pat, const char *str,
     TMatches &matches, int eflags) {
-  assert(this);
   assert(str);
   /* First clear the matches so that they will be guaranteed empty if no match
      was found or the pattern was compiled with REG_NOSUB. */

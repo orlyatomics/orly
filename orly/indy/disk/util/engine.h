@@ -93,7 +93,6 @@ namespace Orly {
 
           /* TODO */
           size_t ReserveBlock(TVolume::TDesc::TStorageSpeed storage_speed) {
-            assert(this);
             TBlockRange range;
             VolMan->TryAllocateSequentialBlocks(storage_speed, 1UL, [&](const TBlockRange &block_range) {
               range = block_range;
@@ -105,7 +104,6 @@ namespace Orly {
           /* TODO */
           /* TODO: can we get rid of this version? */
           void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, std::vector<size_t> &append_vec) {
-            assert(this);
             assert(num_blocks > 0);
             size_t left = num_blocks;
             try {
@@ -127,7 +125,6 @@ namespace Orly {
 
           /* TODO */
           void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, Indy::Util::TBlockVec &append_vec) {
-            assert(this);
             assert(num_blocks > 0);
             size_t left = num_blocks;
             while (left > 0) {
@@ -146,19 +143,16 @@ namespace Orly {
 
           /* TODO */
           void FreeBlock(size_t block_id) {
-            assert(this);
             VolMan->FreeSequentialBlocks(TBlockRange(block_id, 1UL));
           }
 
           /* TODO */
           void FreeSeqBlocks(size_t block_id, size_t num_blocks) {
-            assert(this);
             VolMan->FreeSequentialBlocks(TBlockRange(block_id, num_blocks));
           }
 
           /* TODO */
           inline TVolumeManager *GetVolMan() const {
-            assert(this);
             return VolMan;
           }
 
@@ -170,19 +164,16 @@ namespace Orly {
 
           /* TODO */
           inline TPageCache *GetPageCache() const {
-            assert(this);
             return PageCache;
           }
 
           /* TODO */
           inline TBlockCache *GetBlockCache() const {
-            assert(this);
             return BlockCache;
           }
 
           /* TODO */
           inline bool IsDiskBased() const {
-            assert(this);
             return IsDiskBasedEngine;
           }
 

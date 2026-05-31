@@ -56,7 +56,6 @@ void TDecl::DeleteEach() {
 TDecl::TAnyRef::~TAnyRef() {}
 
 void TDecl::TAnyRef::Bind() {
-  assert(this);
   assert(!IsBound);
   if (Name) {
     TDecl *decl = TryGetDecl(Name);
@@ -95,12 +94,10 @@ void TDecl::ForEachPred(int, const function<void (TDecl *)> &) {}
 void TDecl::ForEachRef(const function<void (TAnyRef &)> &) {}
 
 void TDecl::Bind() {
-  assert(this);
   ForEachRef([this](TAnyRef &ref){ ref.Bind(); });
 }
 
 void TDecl::BuildPredsAndSelf(int pass, bool &again) {
-  assert(this);
   assert(&again);
   if (Readiness < pass) {
     switch (State) {

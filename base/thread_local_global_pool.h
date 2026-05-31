@@ -86,7 +86,6 @@ namespace Base {
 
       /* TODO */
       inline void Free(TObjBase *obj) {
-        assert(this);
         #ifndef NDEBUG
         static_cast<TObj *>(obj)->AssertCanFree();
         #endif
@@ -97,7 +96,6 @@ namespace Base {
 
       /* TODO */
       inline TObj *Alloc() {
-        assert(this);
         TObjBase *alloc_obj = AvailableQueue;
         if (alloc_obj) {
           /* Our available queue had something to offer. */
@@ -114,7 +112,6 @@ namespace Base {
 
       /* TODO */
       inline TThreadLocalGlobalPoolManager *GetPoolManager() const {
-        assert(this);
         return Manager;
       }
 
@@ -123,7 +120,6 @@ namespace Base {
       /* TODO */
       TObjBase *TryAllocUncommon() {
         TObjBase *alloc_obj = nullptr;
-        assert(this);
         /* let's swap in our free queue and try to allocate from that. */
         TObjBase *cur_tail = __sync_lock_test_and_set(&FreeQueue, nullptr);
         if (cur_tail) {
@@ -186,7 +182,6 @@ namespace Base {
 
       /* TODO */
       inline void MakeStackAvailable(TObjBase *cur_tail) {
-        assert(this);
         /* fast pop */
         AvailableQueue = cur_tail;
         /* reverse pop (circular queue) */
@@ -239,7 +234,6 @@ namespace Base {
 
     /* TODO */
     ~TThreadLocalGlobalPoolManager() {
-      assert(this);
       size_t counter = 0UL;
       PoolCollection.ForEach([&counter](const TThreadLocalPool &){++counter; return true;});
       if (counter != 0UL) {
@@ -256,7 +250,6 @@ namespace Base {
 
     /* TODO */
     inline TObjBase *TryAlloc() {
-      assert(this);
       TObjBase *obj = nullptr;
       /* for now we use a spin lock. Anyone allocating from here will contend for this. The idea is that we finely distribute objects to the thread
          local pools. Once they are there they can be allocated without a lock. We will hit this function often at the early life of a local pool

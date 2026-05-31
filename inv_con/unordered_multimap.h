@@ -63,7 +63,6 @@ namespace InvCon {
          the same key, call back for the first one in the collection.  You can use TryGetNextMemberWithSameKey()
          to spin through the rest.  If the callback returns false, stop generating immediately. */
       bool ForEachUniqueMember(const std::function<bool (TMember *)> &cb) const {
-        assert(this);
         assert(&cb);
         auto csr = TryGetFirstMembership();
         bool result = true;
@@ -87,14 +86,12 @@ namespace InvCon {
 
       /* The collector which owns us.  Never null. */
       TCollector *GetCollector() const {
-        assert(this);
         return Collector;
       }
 
       /* The first member of the collection,
          or null if the collection is empty. */
       TMember *TryGetFirstMember() const {
-        assert(this);
         TTypedMembership *membership = TryGetFirstMembership();
         return membership ? membership->GetMember() : 0;
       }
@@ -102,7 +99,6 @@ namespace InvCon {
       /* The first member of the collection which matches the given key,
          or null if the collection contains no match. */
       TMember *TryGetFirstMember(const TKey &key) const {
-        assert(this);
         TTypedMembership *membership = TryGetFirstMembership(key);
         assert(membership == 0 || membership->GetKey() == key);
         return membership ? membership->GetMember() : 0;
@@ -111,7 +107,6 @@ namespace InvCon {
       /* The first membership of the collection,
          or null if the collection is empty. */
       TTypedMembership *TryGetFirstMembership() const {
-        assert(this);
         TBucket *bucket = TBucket::GetFirstNonEmptyBucket(this);
         return bucket ? bucket->TryGetFirstMembership() : 0;
       }
@@ -119,14 +114,12 @@ namespace InvCon {
       /* The first membership of the collection which matches the given key,
          or null if the collection contains no match. */
       TTypedMembership *TryGetFirstMembership(const TKey &key) const {
-        assert(this);
         return GetBucket(key)->TryGetFirstMembership(key);
       }
 
       /* The last member of the collection,
          or null if the collection is empty. */
       TMember *TryGetLastMember() const {
-        assert(this);
         TTypedMembership *membership = TryGetLastMembership();
         return membership ? membership->GetMember() : 0;
       }
@@ -134,7 +127,6 @@ namespace InvCon {
       /* The last member of the collection which matches the given key,
          or null if the collection contains no match. */
       TMember *TryGetLastMember(const TKey &key) const {
-        assert(this);
         TTypedMembership *membership = TryGetLastMembership(key);
         assert(membership == 0 || membership->GetKey() == key);
         return membership ? membership->GetMember() : 0;
@@ -143,7 +135,6 @@ namespace InvCon {
       /* The last membership of the collection,
          or null if the collection is empty. */
       TTypedMembership *TryGetLastMembership() const {
-        assert(this);
         TBucket *bucket = TBucket::GetLastNonEmptyBucket(this);
         return bucket ? bucket->TryGetLastMembership() : 0;
       }
@@ -151,13 +142,11 @@ namespace InvCon {
       /* The last membership of the collection which matches the given key,
          or null if the collection contains no match. */
       TTypedMembership *TryGetLastMembership(const TKey &key) const {
-        assert(this);
         return GetBucket(key)->TryGetLastMembership(key);
       }
 
       /* TODO */
       bool IsEmpty() const {
-        assert(this);
         for (size_t i = 0; i < BucketCount; ++i) {
           if (!BucketArray[i].IsEmpty()) {
             return false;
@@ -187,13 +176,11 @@ namespace InvCon {
 
       /* Removes each member from the collection upon destruction. */
       virtual ~TCollection() {
-        assert(this);
         delete [] BucketArray;
       }
 
       /* Delete each member. */
       void DeleteEachMember() {
-        assert(this);
         for (size_t i = 0; i < BucketCount; ++i) {
           BucketArray[i].DeleteEachMember();
         }
@@ -201,7 +188,6 @@ namespace InvCon {
 
       /* Destroy each member. */
       void DestroyEachMember() {
-        assert(this);
         for (size_t i = 0; i < BucketCount; ++i) {
           BucketArray[i].DestroyEachMember();
         }
@@ -211,14 +197,12 @@ namespace InvCon {
          If the membership is already at the correct position, do nothing.
          If the membership in a different collection, remove it from that collection before inserting. */
       void Insert(TTypedMembership *membership) {
-        assert(this);
         assert(membership);
         membership->Insert(this);
       }
 
       /* Remove each member from the collection but don't delete them. */
       void RemoveEachMember() {
-        assert(this);
         for (size_t i = 0; i < BucketCount; ++i) {
           BucketArray[i].RemoveEachMember();
         }
@@ -237,13 +221,11 @@ namespace InvCon {
 
         /* TODO */
         ~TBucket() {
-          assert(this);
           RemoveEachMember();
         }
 
         /* Delete each member. */
         void DeleteEachMember() {
-          assert(this);
           while (FirstMembership) {
             TMember *member = FirstMembership->Member;
             FirstMembership->Remove();
@@ -253,7 +235,6 @@ namespace InvCon {
 
         /* Destroy each member. */
         void DestroyEachMember() {
-          assert(this);
           while (FirstMembership) {
             TMember *member = FirstMembership->Member;
             FirstMembership->Remove();
@@ -263,7 +244,6 @@ namespace InvCon {
 
         /* TODO */
         TBucket *GetPrevNonEmptyBucket() {
-          assert(this);
           TBucket *bucket = this;
           for (;;) {
             if (bucket->Idx == 0) {
@@ -280,7 +260,6 @@ namespace InvCon {
 
         /* TODO */
         TBucket *GetNextNonEmptyBucket() {
-          assert(this);
           TBucket *bucket = this;
           for (;;) {
             if (bucket->Idx == Collection->BucketCount - 1) {
@@ -297,19 +276,16 @@ namespace InvCon {
 
         /* TODO */
         void Init(TCollection *collection, size_t idx) {
-          assert(this);
           Collection = collection;
           Idx = idx;
         }
 
         bool IsEmpty() {
-          assert(this);
           return FirstMembership == nullptr;
         }
 
         /* Remove each member from the bucket but don't delete them. */
         void RemoveEachMember() {
-          assert(this);
           while (FirstMembership) {
             FirstMembership->Remove();
           }
@@ -317,14 +293,12 @@ namespace InvCon {
 
         /* The first membership of the bucket, or null if the bucket is empty. */
         TTypedMembership *TryGetFirstMembership() const {
-          assert(this);
           return FirstMembership;
         }
 
         /* The first membership of the bucket which matches the given key,
            or null if the bucket has no match. */
         TTypedMembership *TryGetFirstMembership(const TKey &key) const {
-          assert(this);
           TTypedMembership *membership = FirstMembership;
           while (membership && !(membership->Key == key)) {
             membership = membership->NextMembership;
@@ -334,14 +308,12 @@ namespace InvCon {
 
         /* The last membership of the bucket, or null if the bucket is empty. */
         TTypedMembership *TryGetLastMembership() const {
-          assert(this);
           return LastMembership;
         }
 
         /* The last membership of the bucket which matches the given key,
            or null if the bucket has no match. */
         TTypedMembership *TryGetLastMembership(const TKey &key) const {
-          assert(this);
           TTypedMembership *membership = LastMembership;
           while (membership && !(membership->Key == key)) {
             membership = membership->PrevMembership;
@@ -387,7 +359,6 @@ namespace InvCon {
 
       /* TODO */
       TBucket *GetBucket(const TKey &key) const {
-        assert(this);
         return BucketArray + (Hash(key) % BucketCount);
       }
 
@@ -422,25 +393,21 @@ namespace InvCon {
 
       /* Get our key. */
       const TKey &GetKey() const {
-        assert(this);
         return Key;
       }
 
       /* The member which owns us.  Never null. */
       TMember *GetMember() const {
-        assert(this);
         return Member;
       }
 
       /* The collection we're in, if any. */
       TTypedCollection *TryGetCollection() const {
-        assert(this);
         return Bucket ? Bucket->Collection : 0;
       }
 
       /* The collector whose collection we're in, if any. */
       TCollector *TryGetCollector() const {
-        assert(this);
         TTypedCollection *collection = TryGetCollection();
         return collection ? collection->Collector : 0;
       }
@@ -448,14 +415,12 @@ namespace InvCon {
       /* The member before us in our collection.
          A null here means either we're first in our collection or we're not in a collection. */
       TMember *TryGetPrevMember() const {
-        assert(this);
         TMembership *membership = TryGetPrevMembership();
         return membership ? membership->Member : 0;
       }
 
       /* The member before us in our collection, iff. that member has the same key as we have. */
       TMember *TryGetPrevMemberWithSameKey() const {
-        assert(this);
         TMembership *membership = TryGetPrevMembership();
         return (membership && Key == membership->Key) ? membership->Member : 0;
       }
@@ -463,7 +428,6 @@ namespace InvCon {
       /* The membership before us in our collection.
          A null here means either we're first in our collection or we're not in a collection. */
       TMembership *TryGetPrevMembership() const {
-        assert(this);
         TMembership *membership = PrevMembership;
         if (!membership && Bucket) {
           TBucket *bucket = Bucket->GetPrevNonEmptyBucket();
@@ -475,14 +439,12 @@ namespace InvCon {
       /* The member after us in our collection.
          A null here means either we're last in our collection or we're not in a collection. */
       TMember *TryGetNextMember() const {
-        assert(this);
         TMembership *membership = TryGetNextMembership();
         return membership ? membership->Member : 0;
       }
 
       /* The member after us in our collection, iff. that member has the same key as we have. */
       TMember *TryGetNextMemberWithSameKey() const {
-        assert(this);
         TMembership *membership = TryGetNextMembership();
         return (membership && Key == membership->Key) ? membership->Member : 0;
       }
@@ -490,7 +452,6 @@ namespace InvCon {
       /* The membership after us in our collection.
          A null here means either we're last in our collection or we're not in a collection. */
       TMembership *TryGetNextMembership() const {
-        assert(this);
         TMembership *membership = NextMembership;
         if (!membership && Bucket) {
           TBucket *bucket = Bucket->GetNextNonEmptyBucket();
@@ -534,7 +495,6 @@ namespace InvCon {
 
       /* Automatically removes us from our collection (if any) before destruction. */
       virtual ~TMembership() {
-        assert(this);
         Remove();
       }
 
@@ -542,7 +502,6 @@ namespace InvCon {
          If we're already at that position, do nothing.
          If we're already in a different collection, remove us from that collection before inserting. */
       void Insert(TTypedCollection *collection) {
-        assert(this);
         assert(collection);
         TBucket *bucket = collection->GetBucket(Key);
         TMembership
@@ -571,7 +530,6 @@ namespace InvCon {
       /* Remove us from our collection.
          If we're not in a collection, this function does nothing. */
       void Remove() {
-        assert(this);
         if (Bucket) {
           /* Fixup the pointers on either side of us to point around us,
              then go back to the unlinked state. */
@@ -583,7 +541,6 @@ namespace InvCon {
       /* Set our key, relocating us within our collection, if necessary.
          If the new key is the same as the old, do nothing. */
       void SetKey(const TKey &key) {
-        assert(this);
         assert(&key);
         if (Key != key) {
           Key = key;
@@ -601,7 +558,6 @@ namespace InvCon {
       /* The fixup pointers before and after us in our collection.
          We must be in a collection or this is an error. */
       void FixupLinkage(TMembership *prev_fixup, TMembership *next_fixup) {
-        assert(this);
         assert(Bucket);
         (PrevMembership ? PrevMembership->NextMembership : Bucket->FirstMembership) = prev_fixup;
         (NextMembership ? NextMembership->PrevMembership : Bucket->LastMembership ) = next_fixup;
@@ -610,7 +566,6 @@ namespace InvCon {
       /* Reset all pointers to null.
          This function does no unlinking so make sure we're unlinked first. */
       void ZeroLinkage() {
-        assert(this);
         Bucket = 0;
         NextMembership = 0;
         PrevMembership = 0;

@@ -101,12 +101,10 @@ namespace Orly {
       }
 
       ~TNAry() {
-        assert(this);
         ForEachExpr(GetContainer(), [this](const TExpr::TPtr &expr) { expr->UnsetExprParent(this); });
       }
 
       const TContainer &GetContainer() const {
-        assert(this);
         return Container;
       }
 

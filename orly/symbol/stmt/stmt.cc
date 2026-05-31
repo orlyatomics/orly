@@ -30,25 +30,21 @@ TStmt::TStmt(const TPosRange &pos_range)
 TStmt::~TStmt() {}
 
 const TPosRange &TStmt::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 const TStmtBlock *TStmt::GetStmtBlock() const {
-  assert(this);
   assert(StmtBlock);
   return StmtBlock;
 }
 
 void TStmt::SetStmtBlock(const TStmtBlock *stmt_block) {
-  assert(this);
   assert(stmt_block);
   assert(!StmtBlock);
   StmtBlock = stmt_block;
 }
 
 void TStmt::UnsetStmtBlock(const TStmtBlock *stmt_block) {
-  assert(this);
   assert(stmt_block);
   assert(StmtBlock == stmt_block);
   StmtBlock = nullptr;

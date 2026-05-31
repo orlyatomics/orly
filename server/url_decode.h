@@ -32,7 +32,6 @@ namespace Server {
         : runtime_error(msg), Offset(offset) {}
 
     unsigned int GetOffset() const {
-      assert(this);
       return Offset;
     }
 

@@ -21,7 +21,6 @@
 using namespace Orly::CodeGen;
 
 const TId<TIdKind::Func> &TInlineFunc::GetId() const {
-  assert(this);
   return Id;
 }
 
@@ -30,7 +29,6 @@ bool TInlineFunc::IsTopLevel() const {
 }
 
 void TInlineFunc::WriteDecl(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << "std::function<" << GetReturnType() << " (";
@@ -39,7 +37,6 @@ void TInlineFunc::WriteDecl(TCppPrinter &out) const {
 }
 
 void TInlineFunc::WriteDef(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   WriteName(out);
@@ -51,7 +48,6 @@ void TInlineFunc::WriteDef(TCppPrinter &out) const {
 }
 
 void TInlineFunc::WriteName(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Id;

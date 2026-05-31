@@ -41,7 +41,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TBase *GetSymbolAsBase() const {
-        assert(this);
         assert(Symbol);
         return Symbol;
       }

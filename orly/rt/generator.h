@@ -80,14 +80,12 @@ namespace Orly {
         TCursor(TCursor &&that) : Iter(std::move(that.Iter)), Ptr(std::move(that.Ptr)), State(NotAcquired) {}
 
         operator bool() const {
-          assert(this);
           Verify();
 
           return State != AcquiredEnd;
         }
 
         TItem &operator*() const {
-          assert(this);
 
           Verify();
 
@@ -156,13 +154,11 @@ namespace Orly {
       }
 
       const TFilterFunc &GetFilter() const {
-        assert(this);
 
         return Filter;
       }
 
       const TValGenPtr &GetGenerator() const {
-        assert(this);
 
         return Generator;
       }
@@ -204,14 +200,12 @@ namespace Orly {
             : Iter(std::move(that.Iter)), Ptr(std::move(that.Ptr)), State(NotAcquired) {}
 
         operator bool() const {
-          assert(this);
           Verify();
 
           return State != AcquiredEnd;
         }
 
         TItem &operator*() const {
-          assert(this);
 
           Verify();
           assert(State == Acquired);
@@ -277,13 +271,11 @@ namespace Orly {
       }
 
       const TFunc &GetFunc() const {
-        assert(this);
 
         return Func;
       }
 
       const TValGenPtr &GetGenerator() const {
-        assert(this);
         return ValGen;
       }
 
@@ -318,19 +310,16 @@ namespace Orly {
 
         /* TODO */
         virtual operator bool() const override {
-          assert(this);
           return RegexMatcher;
         }
 
         /* TODO */
         virtual const std::string &operator*() const override {
-          assert(this);
           return *RegexMatcher;
         }
 
         /* Iterates over the split text as long as we still find delimiters */
         virtual Base::TIter<TItem> &operator++() override {
-          assert(this);
           if (!RegexMatcher) {
             throw TPastEndError(HERE);
           } else {
@@ -403,7 +392,6 @@ namespace Orly {
         TCursor(TCursor &&that) : Cur(std::move(that.Cur)), Ptr(std::move(that.Ptr)) {}
 
         operator bool() const {
-          assert(this);
 
           if (Ptr->HasEnd()) {
             bool res = (Ptr->GetStride() > 0 ? Cur < Ptr->GetLimit() : Cur > Ptr->GetLimit());
@@ -416,7 +404,6 @@ namespace Orly {
         }
 
         const int64_t &operator*() const {
-          assert(this);
           if(!*this) {
             throw Rt::TSystemError(HERE, "Tried reading past end of Range Generator");
           }
@@ -424,7 +411,6 @@ namespace Orly {
         }
 
         Base::TIter<const int64_t> &operator++() {
-          assert(this);
           if(!*this) {
             throw TPastEndError(HERE);
           }
@@ -443,29 +429,24 @@ namespace Orly {
       }
 
       int64_t GetStart() const {
-        assert(this);
         return Start;
       }
 
       int64_t GetStride() const {
-        assert(this);
         return Stride;
       }
 
       int64_t GetLimit() const {
-        assert(this);
         assert(Limit.IsKnown());
         return Limit.GetVal();
       }
 
       bool GetIncludeLimit() const {
-        assert(this);
         assert(Limit.IsKnown());
         return IncludeLimit;
       }
 
       bool HasEnd() const {
-        assert(this);
         return Limit.IsKnown();
       }
 
@@ -506,20 +487,17 @@ namespace Orly {
 
         /* TODO */
         virtual operator bool() const override {
-          assert(this);
           return HasData;
         }
 
         /* TODO */
         virtual const TRegexSplitter::TItem &operator*() const override {
-          assert(this);
           assert(HasData);
           return *RegexSplitter;
         }
 
         /* Iterates over the split text as long as we still find delimiters */
         virtual Base::TIter<TItem> &operator++() override {
-          assert(this);
           assert(HasData);
           if (std::get<1>(*RegexSplitter).IsUnknown()) {
             HasData = false;
@@ -593,12 +571,10 @@ namespace Orly {
         TCursor(TCursor &&that) : Ptr(std::move(that.Ptr)), Cur(std::move(that.Cur)), End(std::move(that.End)) {}
 
         operator bool() const {
-          assert(this);
           return Cur != End;
         }
 
         TVal &operator*() const {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -606,7 +582,6 @@ namespace Orly {
         }
 
         Base::TIter<TVal> &operator++() {
-          assert(this);
           if(!*this) {
             throw TPastEndError(HERE);
           }
@@ -621,7 +596,6 @@ namespace Orly {
       };
 
       const TContainer &GetContainer() const {
-        assert(this);
         return Data;
       }
 
@@ -672,12 +646,10 @@ namespace Orly {
         }
 
         operator bool() const {
-          assert(this);
           return Cur != End;
         }
 
         TVal &operator*() const {
-          assert(this);
           if (Cur == End) {
             throw TPastEndError(HERE);
           }
@@ -685,7 +657,6 @@ namespace Orly {
         }
 
         Base::TIter<TVal> &operator++() {
-          assert(this);
           if (Cur == End) {
             throw TPastEndError(HERE);
           }
@@ -697,7 +668,6 @@ namespace Orly {
         private:
 
         void UpdateCachedVal() {
-          assert(this);
           if (Cur != End) {
             CachedVal = *Cur;
           }
@@ -713,7 +683,6 @@ namespace Orly {
       };
 
       const std::vector<bool> &GetContainer() const {
-        assert(this);
         return Data;
       }
 
@@ -770,12 +739,10 @@ namespace Orly {
         }
 
         operator bool() const {
-          assert(this);
           return Cur != End;
         }
 
         const TTuple &operator*() const {
-          assert(this);
           if (Cur == End) {
             throw TPastEndError(HERE);
           }
@@ -783,7 +750,6 @@ namespace Orly {
         }
 
         Base::TIter<const TTuple> &operator++() {
-          assert(this);
           if (Cur == End) {
             throw TPastEndError(HERE);
           }
@@ -795,7 +761,6 @@ namespace Orly {
         private:
 
         void UpdateCachedVal() {
-          assert(this);
           if (Cur != End) {
             CachedVal = *Cur;
           }
@@ -811,7 +776,6 @@ namespace Orly {
       };
 
       const TDict<TKey, TVal> &GetContainer() const {
-        assert(this);
         return Data;
       }
 
@@ -863,12 +827,10 @@ namespace Orly {
               Ptr(std::move(that.Ptr)) {}
 
         operator bool() const {
-          assert(this);
           return Iter && CurCount < Ptr->GetCount();
         }
 
         TItem &operator*() const {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -876,7 +838,6 @@ namespace Orly {
         }
 
         Base::TIter<TItem> &operator++() {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -900,12 +861,10 @@ namespace Orly {
       }
 
       int64_t GetCount() const {
-        assert(this);
         return Count;
       }
 
       const TValGenPtr &GetGenerator() const {
-        assert(this);
         return Generator;
       }
 
@@ -961,12 +920,10 @@ namespace Orly {
         }
 
         operator bool() const {
-          assert(this);
           return Iter;
         }
 
         TItem &operator*() const {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -974,7 +931,6 @@ namespace Orly {
         }
 
         Base::TIter<TItem> &operator++() {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -998,12 +954,10 @@ namespace Orly {
       }
 
       int64_t GetCount() const {
-        assert(this);
         return Count;
       }
 
       const TValGenPtr &GetGenerator() const {
-        assert(this);
         return Generator;
       }
 
@@ -1055,12 +1009,10 @@ namespace Orly {
               Ptr(std::move(that.Ptr)) {}
 
         operator bool() const {
-          assert(this);
           return Iter && Ptr->GetWhileFunc()(*Iter);
         }
 
         TItem &operator*() const {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -1068,7 +1020,6 @@ namespace Orly {
         }
 
         Base::TIter<TItem> &operator++() {
-          assert(this);
           if (!*this) {
             throw TPastEndError(HERE);
           }
@@ -1089,12 +1040,10 @@ namespace Orly {
       }
 
       const TWhileFunc &GetWhileFunc() const {
-        assert(this);
         return WhileFunc;
       }
 
       const TValGenPtr &GetGenerator() const {
-        assert(this);
         return Generator;
       }
 

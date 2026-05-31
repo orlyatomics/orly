@@ -28,7 +28,6 @@ using namespace Orly::Indy::Disk;
 using namespace Util;
 
 void TIndyUtilReporter::Push(uint8_t source, TUtilizationReporter::TKind kind, size_t num_bytes, DiskPriority /*priority*/) {
-  assert(this);
   assert(source < NumFields);
   switch (kind) {
     case TUtilizationReporter::TKind::SyncRead: {
@@ -50,7 +49,6 @@ void TIndyUtilReporter::Push(uint8_t source, TUtilizationReporter::TKind kind, s
 }
 
 void TIndyUtilReporter::Report(std::stringstream &ss) {
-  assert(this);
   ReportTimer.Stop();
   double elapsed_time = ToSecondsDouble(ReportTimer.GetLap());
   size_t sync_read_bytes[NumFields];
@@ -85,7 +83,6 @@ void TIndyUtilReporter::Report(std::stringstream &ss) {
 }
 
 const char *TIndyUtilReporter::GetName(uint8_t source) const {
-  assert(this);
   assert(source < NumFields);
   switch (source) {
     case BlockService: {

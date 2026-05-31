@@ -37,11 +37,9 @@ TFunction::TPtr TParamDef::GetFunction() const {
 }
 
 Type::TType TParamDef::GetType() const {
-  assert(this);
   return Type;
 }
 
 TFunction::TPtr TParamDef::TryGetFunction() const {
-  assert(this);
   return Function.lock();
 }

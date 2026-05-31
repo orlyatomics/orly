@@ -51,13 +51,11 @@ TEffectingExpr::TEffectingExpr(
 }
 
 TEffectingExpr::~TEffectingExpr() {
-  assert(this);
   delete Expr;
   delete StmtBlock;
 }
 
 Expr::TExpr::TPtr TEffectingExpr::Build() const {
-  assert(this);
   assert(!Symbol);
   // NOTE: If you're wondering why I build stmt block seperately, take a look at <orly/synth/thatable_expr.h>
   Symbol = Expr::TEffect::New(Expr->Build(), GetPosRange(EffectingExpr));
@@ -66,7 +64,6 @@ Expr::TExpr::TPtr TEffectingExpr::Build() const {
 }
 
 void TEffectingExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);
@@ -76,7 +73,6 @@ void TEffectingExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb)
 }
 
 void TEffectingExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
@@ -84,13 +80,11 @@ void TEffectingExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 const Expr::TEffect::TPtr &TEffectingExpr::GetSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 Expr::TThatable::TPtr TEffectingExpr::GetThatableSymbol() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }

@@ -28,12 +28,10 @@ TCons::TCons() noexcept
     : Prod(nullptr) {}
 
 TCons::~TCons() {
-  assert(this);
   assert(!Prod);
 }
 
 void TProd::Abandon() noexcept {
-  assert(this);
   if (Start) {
     Cons->Cycle(Start, nullptr, nullptr);
     Start  = nullptr;
@@ -43,7 +41,6 @@ void TProd::Abandon() noexcept {
 }
 
 void TProd::Flush() {
-  assert(this);
   if (Cursor > Start) {
     Cons->Cycle(Cursor, nullptr, nullptr);
     Start  = nullptr;
@@ -61,7 +58,6 @@ TProd::TProd(TCons *cons) noexcept
 }
 
 TProd::~TProd() {
-  assert(this);
   assert(Cons->Prod == this);
   if (Start) {
     Cons->Cycle(Cursor, nullptr, nullptr);
@@ -70,7 +66,6 @@ TProd::~TProd() {
 }
 
 void TProd::Write(const void *data, size_t size) {
-  assert(this);
   assert(data || !size);
   auto *cursor = static_cast<const uint8_t *>(data);
   while (size) {

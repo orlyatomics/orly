@@ -34,22 +34,18 @@ namespace Orly {
       virtual ~THoncho() {}
 
       virtual Spa::FluxCapacitor::TStore<Spa::FluxCapacitor::TSessionObj> &GetSessionObjStore() {
-        assert(this);
         return SessionObjStore;
       }
 
       virtual Spa::FluxCapacitor::TStore<Spa::FluxCapacitor::TSharedPovObj> &GetSharedPovObjStore() {
-        assert(this);
         return SharedPovObjStore;
       }
 
       virtual Spa::FluxCapacitor::TStore<Spa::FluxCapacitor::TPrivatePovObj> &GetPrivatePovObjStore() {
-        assert(this);
         return PrivatePovObjStore;
       }
 
       virtual Spa::FluxCapacitor::TTetrisHandler &GetTetrisHandler() {
-        assert(this);
         return TetrisHandler;
       }
 

@@ -43,7 +43,6 @@ namespace Orly {
 
       /* Dependency graph */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        assert(this);
         if (!InDependsOn) {
           InDependsOn = true;
           dependency_set.insert(Predicate);

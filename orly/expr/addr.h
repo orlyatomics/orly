@@ -43,7 +43,6 @@ namespace Orly {
       virtual void Accept(const TVisitor &visitor) const;
 
       inline const TMemberVec &GetMembers() const {
-        assert(this);
         return GetContainer();
       }
 

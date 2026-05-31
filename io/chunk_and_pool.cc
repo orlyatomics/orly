@@ -28,14 +28,12 @@ using namespace std;
 using namespace Util;
 
 TChunk::~TChunk() {
-  assert(this);
   if (MustFree) {
     free(Start);
   }
 }
 
 size_t TChunk::Store(int fd) {
-  assert(this);
   size_t read_size = GetRemainingSize();
   if (read_size) {
     read_size = ReadAtMost(fd, Cursor, read_size);
@@ -45,7 +43,6 @@ size_t TChunk::Store(int fd) {
 }
 
 bool TChunk::Store(const char *&buf, size_t &size) {
-  assert(this);
   assert(&buf);
   assert(&size);
   assert(buf || !size);
@@ -73,7 +70,6 @@ TChunk::TChunk(size_t size) {
 }
 
 TPool::~TPool() {
-  assert(this);
   while (!FreeChunks.empty()) {
     delete FreeChunks.front();
     FreeChunks.pop();
@@ -81,7 +77,6 @@ TPool::~TPool() {
 }
 
 shared_ptr<TChunk> TPool::AcquireChunk() {
-  assert(this);
   shared_ptr<TChunk> result;
   TChunk *chunk;
   if (!FreeChunks.empty()) {
@@ -120,7 +115,6 @@ shared_ptr<TChunk> TPool::AcquireChunk() {
 }
 
 void TPool::EnqueueChunk(TChunk *chunk) {
-  assert(this);
   assert(chunk);
   try {
     FreeChunks.push(chunk);
@@ -131,7 +125,6 @@ void TPool::EnqueueChunk(TChunk *chunk) {
 }
 
 void TPool::EnqueueNewChunks(size_t chunk_count) {
-  assert(this);
   for (size_t i = 0; i < chunk_count; ++i) {
     EnqueueChunk(new TChunk(ChunkSize));
   }

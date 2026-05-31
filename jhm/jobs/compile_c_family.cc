@@ -93,7 +93,6 @@ const char *TCompileCFamily::GetName() {
 }
 
 const unordered_set<TFile*> TCompileCFamily::GetNeeds() {
-  assert(this);
 
   // Only thing needed is the dep file. The dep file by being done enusures
   // all includes exist for C/C++. Set is constructed in ctor so that we don't construct it all the time.
@@ -101,7 +100,6 @@ const unordered_set<TFile*> TCompileCFamily::GetNeeds() {
 }
 
 vector<string> TCompileCFamily::GetCmd() {
-  assert(this);
 
   // Build up the gcc call
   // add output, input filenames
@@ -130,7 +128,6 @@ TTimestamp TCompileCFamily::GetCmdTimestamp() const {
 }
 
 bool TCompileCFamily::IsComplete() {
-  assert(this);
 
   // Calculate the files which need to be linked against to make a binary with this file.
   // TODO: capture the negative (Does not exist / unproducable) .o information which is inherent in the final list as

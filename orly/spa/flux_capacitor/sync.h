@@ -80,7 +80,6 @@ namespace Orly {
 
           /* When the last instance of this class goes out of scope, the exclusive lock is released. */
           ~TExclusiveLock() {
-            assert(this);
             Local->DecrLockCount();
           }
 
@@ -99,7 +98,6 @@ namespace Orly {
 
           /* Does not return until the lock is granted. */
           TSharedLock(const TSync &sync) {
-            assert(this);
             Local = TLocal::GetLocal(sync);
             Local->IncrLockCount(false);
           }
@@ -111,7 +109,6 @@ namespace Orly {
 
           /* TODO */
           const TSync &GetSync() const {
-            assert(this);
             return Local->GetSync();
           }
 
@@ -150,7 +147,6 @@ namespace Orly {
 
           /* TODO */
           const TSync &GetSync() const {
-            assert(this);
             return Sync;
           }
 

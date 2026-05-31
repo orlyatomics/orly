@@ -28,14 +28,12 @@ TInfixExpr::TInfixExpr(TExpr *lhs, TExpr *rhs, TNew new_, const TPosRange &pos_r
 
 /* TODO */
 TInfixExpr::~TInfixExpr() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 /* TODO */
 Expr::TExpr::TPtr TInfixExpr::Build() const {
-  assert(this);
   assert(Lhs);
   assert(Rhs);
   return New(Lhs->Build(), Rhs->Build(), PosRange);
@@ -43,14 +41,12 @@ Expr::TExpr::TPtr TInfixExpr::Build() const {
 
 /* TODO */
 void TInfixExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);
 }
 
 /* TODO */
 void TInfixExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);
 }

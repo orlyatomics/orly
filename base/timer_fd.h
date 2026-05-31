@@ -39,7 +39,6 @@ namespace Base {
 
     /* TODO */
     const TFd &GetFd() const {
-      assert(this);
       return Fd;
     }
 

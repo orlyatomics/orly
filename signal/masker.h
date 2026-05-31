@@ -39,7 +39,6 @@ namespace Signal {
 
     /* Restore the mask. */
     ~TMasker() {
-      assert(this);
       pthread_sigmask(SIG_SETMASK, &OldSet, nullptr);
     }
 

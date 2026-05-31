@@ -35,7 +35,6 @@ namespace Server {
 
     /* TODO */
     int GetWaitHandle() const {
-      assert(this);
       return RecvFd;
     }
 

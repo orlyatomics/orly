@@ -26,14 +26,12 @@ TRegex::TRegex(const char *pattern, int flags)
 }
 
 bool TRegex::IsMatch(const char *text, int flags) const {
-  assert(this);
   assert(text);
   Base::TRegexMatcher::TMatches matches(1);
   return Base::TRegexMatcher().Match(Handle, text, matches, flags);
 }
 
 bool TRegex::TryGetMatch(const char *text, TPiece &piece, int flags) const {
-  assert(this);
   assert(text);
   Base::TRegexMatcher::TMatches matches(1);
   bool success = Base::TRegexMatcher().Match(Handle, text, matches, flags);

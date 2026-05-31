@@ -27,12 +27,10 @@ using namespace Util;
 using namespace Var;
 
 size_t TList::GetHash() const {
-  assert(this);
   return Hash;
 }
 
 Type::TType TList::GetType() const {
-  assert(this);
   return Type::TList::Get(Type);
 }
 
@@ -53,13 +51,11 @@ void TList::Write(std::ostream &strm) const {
 }
 
 void TList::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TList::SetHash() {
-  assert(this);
   Hash = 0;
   size_t rotate = 0;
   for (auto iter = Val.begin(); iter != Val.end(); ++iter, rotate += 5) {
@@ -68,12 +64,10 @@ void TList::SetHash() {
 }
 
 void TList::Touch() {
-  assert(this);
   SetHash();
 }
 
 Var::TVar &TList::Index(const TVar &key) {
-  assert(this);
   int64_t idx = TVar::TDt<int64_t>::As(key);
   if (idx < 0 || idx >= static_cast<int64_t>(Val.size())) {
     throw Rt::TSystemError(HERE, "Dynamic List index out of bounds.");
@@ -82,70 +76,57 @@ Var::TVar &TList::Index(const TVar &key) {
 }
 
 TList &TList::Add(const TVar &rhs) {
-  assert(this);
   TListType other = Var::TVar::TDt<TListType>::As(rhs);
   Val.insert(Val.end(), other.begin(), other.end());
   return *this;
 }
 
 TList &TList::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on list.");
 }
 
 TList &TList::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on list.");
 }
 
 TList &TList::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on list.");
 }
 
 TList &TList::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on list.");
 }
 
 TList &TList::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on list.");
 }
 
 TList &TList::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on list.");
 }
 
 TList &TList::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on list.");
 }
 
 TList &TList::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on list.");
 }
 
 TList &TList::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on list.");
 }
 
 TList &TList::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on list.");
 }
 
 TList &TList::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on list.");
 }
 
 
 TList::TList(const std::vector<TVar> &that, const Type::TType &type) : Val(that), Type(type) {
-  assert(this);
   for (auto iter = Val.begin(); iter != Val.end(); ++iter) {
     if (iter->GetType() != Type) {
       std::ostringstream oss;
@@ -163,7 +144,6 @@ TList::TList(const std::vector<TVar> &that, const Type::TType &type) : Val(that)
 TList::~TList() {}
 
 TVar TList::Copy() const {
-  assert(this);
   TListType copy_list;
   for (auto iter : Val) {
     copy_list.push_back(iter.Copy());

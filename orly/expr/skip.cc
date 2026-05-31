@@ -380,13 +380,11 @@ TSkip::TSkip(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TSkip::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TSkip::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TSkipTypeVisitor(type, GetPosRange()));
   return type;

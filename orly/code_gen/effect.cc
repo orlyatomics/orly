@@ -98,7 +98,6 @@ Type::TType TNew::GetValType() const {
 }
 
 void TNew::Write(TCppPrinter &out) const {
-  assert(this);
 
   out << "Var::TNew::New(Var::ToVar(*Sabot::State::TAny::TWrapper(Native::State::New(" << Val << ", alloca(Sabot::State::GetMaxStateSize())))))";
 }
@@ -106,7 +105,6 @@ void TNew::Write(TCppPrinter &out) const {
 TNew::TNew(const TPtrC<TInline> &val) : Val(val) {}
 
 void TMutate::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   if(Mutable->GetReturnType().Is<Type::TSeq>()) {
@@ -213,13 +211,11 @@ void TMutate::Write(TCppPrinter &out) const {
 TStmtBlock::TStmtBlock() {}
 
 void TStmtBlock::Add(const TPtrC<TStmt> &stmt) {
-  assert(this);
   assert(&stmt);
   Stmts.push_back(stmt);
 }
 
 void TStmtBlock::Add(const L0::TPackage *package, const TPtrC<TInline> &key, TMutator mutation, const TPtrC<TInline> &rhs) {
-  assert(this);
   assert(&key);
   assert(&rhs);
   assert(key);
@@ -253,12 +249,10 @@ void TStmtBlock::AddNew(const L0::TPackage *package, const TPtrC<TInline> &key, 
 }
 
 bool TStmtBlock::IsEmpty() const {
-  assert(this);
   return Stmts.empty();
 }
 
 void TStmtBlock::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   for(auto &it: Stmts) {
@@ -270,12 +264,10 @@ void TStmtBlock::Write(TCppPrinter &out) const {
 TPredicatedBlock::TPredicatedBlock(const TPtrC<TInline> &condition) : Condition(condition) {}
 
 TStmtBlock &TPredicatedBlock::GetStmts() {
-  assert(this);
   return Stmts;
 }
 
 void TPredicatedBlock::Write(TCppPrinter &out) const {
-  assert(this);
   out << "if (" << Condition << ") {" << Eol;
   /* indent */ {
     TIndent indent(out);
@@ -289,19 +281,16 @@ TIf::TIf(const L0::TPackage *package, TPredicatedBlocks &&if_clauses)
       IfClauses(std::move(if_clauses)) {}
 
 void TIf::SetOptElseClause() {
-  assert(this);
   assert(!OptElseClause);
   OptElseClause = std::make_unique<TStmtBlock>();
 }
 
 TStmtBlock &TIf::GetElseClause() {
-  assert(this);
   assert(OptElseClause);
   return *OptElseClause;
 }
 
 void TIf::Write(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   out << Base::Join(IfClauses,

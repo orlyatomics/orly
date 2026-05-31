@@ -37,12 +37,10 @@ TIfClause::TIfClause(
         StmtBlock(Base::AssertTrue(stmt_block)) {}
 
 const TStmtBlock::TPtr &TIfClause::GetStmtBlock() const {
-  assert(this);
   return StmtBlock;
 }
 
 void TIfClause::TypeCheck() const {
-  assert(this);
   if (!Type::UnwrapMutable(GetExpr()->GetType()).Is<Type::TBool>()) {
     throw TExprError(HERE, GetExpr()->GetPosRange(), "if predicates must evaluate to bool.");
   }
@@ -57,12 +55,10 @@ TElseClause::TElseClause(const TStmtBlock::TPtr &stmt_block)
     : StmtBlock(Base::AssertTrue(stmt_block)) {}
 
 const TStmtBlock::TPtr &TElseClause::GetStmtBlock() const {
-  assert(this);
   return StmtBlock;
 }
 
 void TElseClause::TypeCheck() const {
-  assert(this);
   StmtBlock->TypeCheck();
 }
 
@@ -71,23 +67,19 @@ TIf::TPtr TIf::New(const TIfClauseVec &if_cases, const TElseClause::TPtr &opt_el
 }
 
 void TIf::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const TIf::TIfClauseVec &TIf::GetIfClauses() const {
-  assert(this);
   return IfClauses;
 }
 
 const TElseClause::TPtr &TIf::GetOptElseClause() const {
-  assert(this);
   return OptElseClause;
 }
 
 void TIf::TypeCheck() const {
-  assert(this);
   for (const auto &if_clause : IfClauses) {
     if_clause->TypeCheck();
   }

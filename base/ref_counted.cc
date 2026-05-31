@@ -21,11 +21,9 @@
 using namespace Base;
 
 TRefCounted::~TRefCounted() {
-  assert(this);
   assert(!RefCount);
 }
 
 void TRefCounted::Finalize() {
-  assert(this);
   delete this;
 }

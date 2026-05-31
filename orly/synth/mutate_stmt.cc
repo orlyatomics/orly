@@ -44,13 +44,11 @@ TMutateStmt::TMutateStmt(const TExprFactory *expr_factory, const Package::Syntax
 }
 
 TMutateStmt::~TMutateStmt() {
-  assert(this);
   delete Lhs;
   delete Rhs;
 }
 
 Symbol::Stmt::TStmt::TPtr TMutateStmt::Build() const {
-  assert(this);
   class TMutationVisitor
       : public Package::Syntax::TMutation::TVisitor {
     public:
@@ -82,7 +80,6 @@ Symbol::Stmt::TStmt::TPtr TMutateStmt::Build() const {
 }
 
 void TMutateStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachRef(cb);
@@ -90,7 +87,6 @@ void TMutateStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
 }
 
 void TMutateStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Lhs->ForEachInnerScope(cb);

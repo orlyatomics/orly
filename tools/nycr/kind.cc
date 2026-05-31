@@ -27,7 +27,6 @@ using namespace std;
 using namespace Tools::Nycr;
 
 Symbol::TBase *TKind::TryGetBaseSymbol() const {
-  assert(this);
   TBase *base = *Super;
   return base ? base->GetSymbolAsBase() : 0;
 }
@@ -38,7 +37,6 @@ TKind::TKind(const Syntax::TName *name, const Syntax::TOptSuper *opt_super)
 }
 
 void TKind::ForEachPred(int pass, const function<void (TDecl *)> &cb) {
-  assert(this);
   assert(&cb);
   switch (pass) {
     case 1: {
@@ -56,7 +54,6 @@ void TKind::ForEachPred(int pass, const function<void (TDecl *)> &cb) {
 }
 
 void TKind::ForEachRef(const function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   cb(Super);
 }

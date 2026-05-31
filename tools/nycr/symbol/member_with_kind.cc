@@ -21,6 +21,5 @@
 using namespace Tools::Nycr::Symbol;
 
 const TKind *TMemberWithKind::TryGetKind() const {
-  assert(this);
   return Kind;
 }

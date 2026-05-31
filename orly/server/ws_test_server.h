@@ -44,7 +44,6 @@ namespace Orly {
 
       /* The port on which the server is accepting connections. */
       in_port_t GetPortNumber() const noexcept {
-        assert(this);
         return PortNumber;
       }
 

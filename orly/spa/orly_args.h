@@ -95,7 +95,6 @@ namespace Orly {
 
         template<typename TVal>
         void Get(const TStrPiece &name, Base::TOpt<TVal> &val) {
-          assert(this);
           assert(&name);
           assert(&val);
 
@@ -107,7 +106,6 @@ namespace Orly {
 
         template<typename TVal>
         void Get(const TStrPiece &name, TVal &val) {
-          assert(this);
           assert(&name);
           assert(&val);
 
@@ -117,7 +115,6 @@ namespace Orly {
         }
 
         bool GetOpt(const TStrPiece &name, std::string &val) {
-          assert(this);
           assert(&name);
           assert(&val);
 
@@ -127,7 +124,6 @@ namespace Orly {
 
         template<typename TVal>
         bool GetOpt(const TStrPiece &name, TVal &val) {
-          assert(this);
           assert(&name);
           assert(&val);
 
@@ -143,7 +139,6 @@ namespace Orly {
            prefix, and builds a map out of them.*/
         template<typename TVal>
         bool GetOpt(const char *prefix, std::unordered_map<std::string, TVal> &args) {
-          assert(this);
           assert(prefix);
           assert(&args);
 
@@ -193,13 +188,11 @@ namespace Orly {
           TIntArgError(const char *msg, size_t offset=0) : Msg(Base::AssertTrue(msg)), Offset(offset) {}
 
           const char *GetMsg() const {
-            assert(this);
 
             return Msg;
           }
 
           size_t GetOffset() const {
-            assert(this);
 
               return Offset;
           }
@@ -219,7 +212,6 @@ namespace Orly {
 
         template<typename TVal>
         void Convert(const std::string &s, Base::TOpt<TVal> &opt_val) {
-          assert(this);
           assert(&s);
           assert(&opt_val);
 
@@ -236,7 +228,6 @@ namespace Orly {
 
         template<typename TVal>
         void Convert(const std::string &s, Rt::TOpt<TVal> &opt_val) {
-          assert(this);
           assert(&s);
           assert(&opt_val);
 

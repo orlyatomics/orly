@@ -45,13 +45,11 @@ TTestKvEntry::TTestKvEntry(
 }
 
 TTestKvEntry::~TTestKvEntry() {
-  assert(this);
   delete Key;
   delete Val;
 }
 
 Symbol::Stmt::TNew::TPtr TTestKvEntry::Build() const {
-  assert(this);
   return Symbol::Stmt::TNew::New(
              Symbol::Stmt::TStmtArg::New(Key->Build()),
              Symbol::Stmt::TStmtArg::New(Val->Build()),
@@ -59,7 +57,6 @@ Symbol::Stmt::TNew::TPtr TTestKvEntry::Build() const {
 }
 
 void TTestKvEntry::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Key->ForEachInnerScope(cb);
@@ -67,7 +64,6 @@ void TTestKvEntry::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TTestKvEntry::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   Key->ForEachRef(cb);

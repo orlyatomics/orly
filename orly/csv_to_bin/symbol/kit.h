@@ -78,7 +78,6 @@ namespace Orly {
         /* Call back for each column. */
         bool ForEachCol(
             const std::function<bool (const TCol *)> &cb) const {
-          assert(this);
           assert(&cb);
           assert(cb);
           for (const auto &col: Cols) {
@@ -97,7 +96,6 @@ namespace Orly {
            Each column in this set must be of string type.  This set
            may be empty. */
         const std::set<const TCol *> &GetTexts() const noexcept {
-          assert(this);
           return Texts;
         }
 
@@ -107,7 +105,6 @@ namespace Orly {
         /* Call back for each secondary key. */
         bool ForEachSecondaryKey(
             const std::function<bool (const TSecondaryKey *)> &cb) const {
-          assert(this);
           assert(&cb);
           assert(cb);
           for (const auto &key: SecondaryKeys) {
@@ -120,27 +117,23 @@ namespace Orly {
 
         /* The number of columns in the table. */
         size_t GetColCount() const noexcept {
-          assert(this);
           return Cols.size();
         }
 
         /* The primary key of the table.  Never null. */
         const TPrimaryKey *GetPrimaryKey() const noexcept {
-          assert(this);
           assert(PrimaryKey);
           return PrimaryKey.get();
         }
 
         /* The number of secondary keys in the table. */
         size_t GetSecondaryKeyCount() const noexcept {
-          assert(this);
           return SecondaryKeys.size();
         }
 
         /* Assign the table its primary key.  You must do this exactly
            once. */
         void SetPrimaryKey(std::unique_ptr<TPrimaryKey> &&key) {
-          assert(this);
           assert(&key);
           assert(key);
           if (PrimaryKey) {
@@ -188,19 +181,16 @@ namespace Orly {
 
         /* The name of the column for the purposes of reference. */
         const std::string &GetName() const noexcept {
-          assert(this);
           return Name;
         }
 
         /* The type stored in this column. */
         TType GetType() const noexcept {
-          assert(this);
           return Type;
         }
 
         /* True iff. this column can contain an explicit null. */
         bool IsNull() const noexcept {
-          assert(this);
           return Null;
         }
 
@@ -236,7 +226,6 @@ namespace Orly {
 
         /* The fields indexed, in order. */
         const std::vector<TField> &GetFields() const noexcept {
-          assert(this);
           return Fields;
         }
 
@@ -275,7 +264,6 @@ namespace Orly {
 
         /* The name of the column for the purposes of reference. */
         const std::string &GetName() const noexcept {
-          assert(this);
           return Name;
         }
 

@@ -89,13 +89,11 @@ namespace Orly {
 
       /* If we're known, destroy our value as we go. */
       ~TOpt() {
-        assert(this);
         Reset();
       }
 
       /* Swaperator. */
       TOpt &operator=(TOpt &&that) {
-        assert(this);
         assert(&that);
         if (this != &that) {
           if (Val && that.Val) {
@@ -113,14 +111,12 @@ namespace Orly {
 
       /* Assignment operator. */
       TOpt &operator=(const TOpt &that) {
-        assert(this);
         return (this != &that) ? *this = TOpt(that) : *this;
       }
 
       /* If we're already known, swap our value with the given one;
          otherwise, move-construct the value into our storage. */
       TOpt &operator=(TVal &&that) {
-        assert(this);
         assert(&that);
         if (Val != &that) {
           if (Val) {
@@ -134,19 +130,16 @@ namespace Orly {
 
       /* Assume a copy of the given value.  If we weren't known before, we will be now. */
       TOpt &operator=(const TVal &that) {
-        assert(this);
         return (Val != &that) ? *this = TOpt(that) : *this;
       }
 
       /* If val is known, std::hash<TVal>() to compute the hash of Val. Otherwise return 0. */
       size_t GetHash() const {
-        assert(this);
         return Val ? std::hash<TVal>()(*Val) : 0;
       }
 
       /* Returns the containing value. Throws if unknown. */
       const TVal &GetVal() const {
-        assert(this);
         if (!Val) {
           throw TDerefUnknownError(HERE);
         }
@@ -155,7 +148,6 @@ namespace Orly {
 
       /* Returns the containing value if known. Throws if unknown. */
       TVal &GetVal() {
-        assert(this);
         if (!Val) {
           throw TDerefUnknownError(HERE);
         }
@@ -164,13 +156,11 @@ namespace Orly {
 
       /* Check if known */
       bool IsKnown() const {
-        assert(this);
         return Val;
       }
 
       /* Check if unknown */
       bool IsUnknown() const {
-        assert(this);
         return !Val;
       }
 
@@ -178,7 +168,6 @@ namespace Orly {
          Return a refernce to our (possibly new) value. */
       template <typename... TArgs>
       TVal &MakeKnown(TArgs &&... args) {
-        assert(this);
         if (!Val) {
           Val = new (Storage) TVal(args...);
         }
@@ -187,7 +176,6 @@ namespace Orly {
 
       /* Reset to the unknown state. */
       TOpt &Reset() {
-        assert(this);
         if (Val) {
           Val->~TVal();
           Val = nullptr;

@@ -58,7 +58,6 @@ namespace Tools {
 
       /* TODO */
       Symbol::TOperator *TryGetOperator() const {
-        assert(this);
         return Operator ? Operator->GetSymbolAsOperator() : 0;
       }
 
@@ -116,7 +115,6 @@ namespace Tools {
 
         /* TODO */
         Symbol::TKind *GetKind() const {
-          assert(this);
           assert(Kind);
           return Kind->GetSymbolAsKind();
         }

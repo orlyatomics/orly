@@ -84,25 +84,21 @@ namespace Orly {
 
             /* TODO */
             ~TCursor() {
-              assert(this);
             }
 
             /* TODO */
             inline virtual operator bool() const {
-              assert(this);
               return NumIntoPage != NumInCurPage || DataStream.GetOffset() < File->FileLength;
             }
 
             /* TODO */
             inline virtual const TVal &operator*() const {
-              assert(this);
               assert(BufData);
               return *(reinterpret_cast<const TVal *>(BufData) + NumIntoPage);
             }
 
             /* TODO */
             inline virtual TCursor &operator++() {
-              assert(this);
               assert(static_cast<bool>(*this));
               ++NumIntoPage;
               if (NumIntoPage >= NumInCurPage && DataStream.GetOffset() < File->FileLength) {
@@ -116,7 +112,6 @@ namespace Orly {
 
             /* TODO */
             inline void Refresh() const {
-              assert(this);
               size_t compressed_size = 0UL;
               MetaStream.Read(NumInCurPage);
               MetaStream.Read(compressed_size);
@@ -410,7 +405,6 @@ namespace Orly {
 
           /* TODO */
           ~TIndexSortFile() {
-            assert(this);
             for (const auto &iter : BlockVec.GetSeqBlockMap()) {
               Engine->FreeSeqBlocks(iter.second.first, iter.second.second);
             }
@@ -418,13 +412,11 @@ namespace Orly {
 
           /* TODO */
           virtual size_t GetFileLength() const override {
-            assert(this);
             return FileLength;
           }
 
           /* TODO */
           virtual size_t GetStartingBlock() const override {
-            assert(this);
             assert(BlockVec.Size());
             return BlockVec.Front();
           }
@@ -443,31 +435,26 @@ namespace Orly {
 
           /* TODO */
           virtual size_t GetLogicalBlockSize() const {
-            assert(this);
             return LogicalCheckedBlockSize;
           }
 
           /* TODO */
           virtual size_t GetPhysicalBlockSize() const {
-            assert(this);
             return PhysicalBlockSize;
           }
 
           /* TODO */
           inline TEngine *GetEngine() const {
-            assert(this);
             return Engine;
           }
 
           /* TODO */
           inline TBlockCache *GetBlockCache() const {
-            assert(this);
             return BlockCache;
           }
 
           /* TODO */
           inline size_t GetSize() const {
-            assert(this);
             return Size;
           }
 

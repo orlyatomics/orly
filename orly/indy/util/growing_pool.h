@@ -55,7 +55,6 @@ namespace Orly {
 
         /* TODO */
         void *Alloc(size_t size) {
-          assert(this);
           void *ptr = TryAlloc(size);
           if (!ptr) {
             syslog(LOG_EMERG, "TGrowingPool::Alloc() [%s] bad_alloc", Name);
@@ -106,17 +105,14 @@ namespace Orly {
       };  // TGrowingPool
 
       inline const char *TGrowingPool::GetName() const {
-        assert(this);
         return Name;
       }
 
       inline size_t TGrowingPool::GetNumBlocksUsed() const {
-        assert(this);
         return NumBlocksUsed;
       }
 
       inline size_t TGrowingPool::GetMaxBlocks() const {
-        assert(this);
         return MaxBlocks;
       }
 

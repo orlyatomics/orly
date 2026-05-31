@@ -26,7 +26,6 @@ using namespace Io;
 using namespace Orly::Durable;
 
 void TManager::Clean() {
-  assert(this);
   TSem sem;
   /* extra */ {
     lock_guard<mutex> lock(Mutex);
@@ -49,7 +48,6 @@ TManager::TManager(size_t max_cache_size)
     : MaxCacheSize(max_cache_size) {}
 
 TManager::~TManager() {
-  assert(this);
   for (const auto &item: OpenableObjs) {
     /* If this assertion fails, it means there is at least one ptr still alive someplace. */
     assert(item.second->PtrCount == 0);
@@ -67,7 +65,6 @@ void TManager::Clear() {
 }
 
 void TManager::DestroyObj(TObj *obj) noexcept {
-  assert(this);
   assert(obj);
   size_t erased_from_openable = OpenableObjs.erase(obj->GetId());
   assert(erased_from_openable == 1);
@@ -75,7 +72,6 @@ void TManager::DestroyObj(TObj *obj) noexcept {
 }
 
 bool TManager::TryCacheObj(TObj *obj) noexcept {
-  assert(this);
   assert(obj);
   bool success = false;
   if (MaxCacheSize) {
@@ -106,12 +102,10 @@ const char *TObj::GetKind() const noexcept {
 }
 
 void TObj::Log(int level, const char *action, const exception &ex) const noexcept {
-  assert(this);
   Log(level, action, ex.what());
 }
 
 void TObj::Log(int level, const char *action, const char *msg) const noexcept {
-  assert(this);
   assert(action);
   assert(msg);
   char buf[TId::MinBufSize];
@@ -120,14 +114,12 @@ void TObj::Log(int level, const char *action, const char *msg) const noexcept {
 }
 
 void TObj::SetTtl(const TTtl &ttl) {
-  assert(this);
   assert(ttl.count() >= 0);
   assert(!Deadline);
   Ttl = ttl;
 }
 
 void TObj::Write(TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   strm << Ttl;
 }
@@ -152,7 +144,6 @@ TObj::TObj(TManager *manager, const TId &id, Io::TBinaryInputStream &strm)
 }
 
 TObj::~TObj() {
-  assert(this);
   delete Sem;
 }
 
@@ -161,14 +152,12 @@ bool TObj::ForEachDependentPtr(const function<bool (TAnyPtr &)> &) noexcept {
 }
 
 void TObj::OnPtrAcquire() noexcept {
-  assert(this);
   lock_guard<mutex> lock(Manager->Mutex);
   PtrCount += 1;
   assert(PtrCount > 0);
 }
 
 void TObj::OnPtrRelease() noexcept {
-  assert(this);
   assert(PtrCount);
   bool async = false;
   TSem *sem = nullptr;
@@ -254,13 +243,11 @@ void TObj::OnPtrRelease() noexcept {
 }
 
 void TObj::OnPtrAdoptNew() noexcept {
-  assert(this);
   assert(!PtrCount);
   PtrCount = 1;
 }
 
 void TObj::OnPtrAdoptOld() noexcept {
-  assert(this);
   PtrCount += 1;
   assert(PtrCount > 0);
 }

@@ -40,7 +40,6 @@ TGivenParamDef::TGivenParamDef(
       : TParamDef(function, name, type, pos_range) {}
 
 TGivenParamDef::~TGivenParamDef() {
-  assert(this);
   auto function = TryGetFunction();
   if (function) {
     function->Remove(shared_from_this());
@@ -48,7 +47,6 @@ TGivenParamDef::~TGivenParamDef() {
 }
 
 void TGivenParamDef::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }

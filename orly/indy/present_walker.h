@@ -46,7 +46,6 @@ namespace Orly {
 
         /* TODO */
         bool operator<(const TItem &that) const {
-          assert(this);
           Atom::TComparison comp;
           if (KeyArena && that.KeyArena && Key.TryQuickOrderComparison(KeyArena, that.Key, that.KeyArena, comp)) {
           } else {

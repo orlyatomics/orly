@@ -120,7 +120,6 @@ namespace Orly {
       /* Extract an optional value from the current field. */
       template <typename TVal>
       TLevel3 &operator>>(Base::TOpt<TVal> &that) {
-        assert(this);
         if (!RefreshBytes(false) && Cursor == Null) {
           that.Reset();
           RefreshBytes(false);
@@ -134,7 +133,6 @@ namespace Orly {
 
       /* Use the given helper function in an extraction expression. */
       TLevel3 &operator>>(void (*helper)(TLevel3 &)) {
-        assert(this);
         assert(helper);
         helper(*this);
         return *this;
@@ -156,7 +154,6 @@ namespace Orly {
          these states.  Use this to peek where you are in a file when you're
          not sure of the layout. */
       TLevel2::TState GetState() const {
-        assert(this);
         /* Make sure we're not clinging to the end of a field of bytes. */
         if (Level2->State == TLevel2::Bytes) {
           RefreshBytes(false);
@@ -177,7 +174,6 @@ namespace Orly {
 
       /* True when we have at least one more byte to peek. */
       bool CanPeek() const {
-        assert(this);
         return RefreshBytes(false);
       }
 
@@ -195,7 +191,6 @@ namespace Orly {
 
       /* Our current byte.  Throws if we're out of bytes. */
       uint8_t Peek() const {
-        assert(this);
         RefreshBytes(true);
         return *Cursor;
       }
@@ -203,7 +198,6 @@ namespace Orly {
       /* Our current byte and advances to the next byte.  Throws if we're out
          of bytes. */
       uint8_t Pop() {
-        assert(this);
         RefreshBytes(true);
         return *Cursor++;
       }

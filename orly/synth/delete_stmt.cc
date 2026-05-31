@@ -39,19 +39,16 @@ TDeleteStmt::TDeleteStmt(
         ValueType(NewType(DeleteStmt->GetType())) {}
 
 TDeleteStmt::~TDeleteStmt() {
-  assert(this);
   delete Expr;
 }
 
 Symbol::Stmt::TStmt::TPtr TDeleteStmt::Build() const {
-  assert(this);
   return Symbol::Stmt::TDelete::New(Symbol::Stmt::TStmtArg::New(Expr->Build()),
                                     ValueType->GetSymbolicType(),
                                     GetPosRange(DeleteStmt));
 }
 
 void TDeleteStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachRef(cb);
@@ -59,7 +56,6 @@ void TDeleteStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
 }
 
 void TDeleteStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   Expr->ForEachInnerScope(cb);

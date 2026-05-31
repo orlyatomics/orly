@@ -24,12 +24,10 @@ using namespace Orly;
 using namespace Orly::Var;
 
 size_t TTimeDiff::GetHash() const {
-  assert(this);
   return std::hash<Base::Chrono::TTimeDiff>()(Val);
 }
 
 Type::TType TTimeDiff::GetType() const {
-  assert(this);
   return Type::TTimeDiff::Get();
 }
 
@@ -39,77 +37,62 @@ void TTimeDiff::Write(std::ostream &strm) const {
 }
 
 void TTimeDiff::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TTimeDiff::Touch() {
-  assert(this);
 }
 
 Var::TVar &TTimeDiff::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on time_diff.");
 }
 
 TTimeDiff &TTimeDiff::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on time_diff.");
 }
 
@@ -118,7 +101,6 @@ TTimeDiff::TTimeDiff(const Base::Chrono::TTimeDiff &that) : Val(that) {}
 TTimeDiff::~TTimeDiff() {}
 
 TVar TTimeDiff::Copy() const {
-  assert(this);
   return TTimeDiff::New(Val);
 }
 

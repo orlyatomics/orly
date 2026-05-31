@@ -52,7 +52,6 @@ class TPackageBuilder {
       : RelPath(move(that.RelPath)), Cst(move(that.Cst)), Synth(move(that.Synth)) {}
 
   void BuildSymbols(const TTree &src_root) {
-    assert(this);
     Cst = Package::Syntax::TPackage::ParseFile(AsStr(src_root.GetAbsPath(RelPath)).c_str());
     if (!Cst.HasErrors() && !Synth::GetContext().HasErrors()) {
       assert(Cst.Get());
@@ -61,12 +60,10 @@ class TPackageBuilder {
   }
 
   bool HasErrors() {
-    assert(this);
     return Cst.HasErrors() || Synth::GetContext().HasErrors();
   }
 
   void PrintErrors(ostream &out) const {
-    assert(this);
     Cst.PrintErrors(out);
     Synth::GetContext().PrintErrors(out);
   }
@@ -74,7 +71,6 @@ class TPackageBuilder {
   //TODO: be able to use temp filenames again?
   /* Generates the '.h' interfaces, as well as the '.cc' implementations. */
   void GenerateIntermediateCode(const TTree &out_root) {
-    assert(this);
     //Generate the CodeGen representation
     CodeGen::TPackage cg(Synth->GetSymbol());
     //Spit out the cc file for the package
@@ -86,20 +82,17 @@ class TPackageBuilder {
   }
 
   Package::TName GetName() const {
-    assert(this);
     assert(Synth);
     return Synth->GetName();
   }
 
   unsigned int GetVersion() const {
-    assert(this);
     assert(Synth);
 
     return Synth->GetVersion();
   }
 
   void TypeCheck() const {
-    assert(this);
     assert(Synth);
     Synth->GetSymbol()->TypeCheck();
   }

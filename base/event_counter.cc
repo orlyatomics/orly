@@ -30,18 +30,15 @@ TEventCounter::TEventCounter(uint64_t initial_count)
 
 
 const TFd &TEventCounter::GetFd() const {
-  assert(this);
   return Fd;
 }
 
 uint64_t TEventCounter::Pop() {
-  assert(this);
   uint64_t count;
   IfLt0(eventfd_read(Fd, &count));
   return count;
 }
 
 void TEventCounter::Push(uint64_t count) {
-  assert(this);
   IfLt0(eventfd_write(Fd, count));
 }

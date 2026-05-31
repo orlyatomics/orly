@@ -29,6 +29,5 @@ TNowExpr::TNowExpr(const Package::Syntax::TNowExpr *now_expr)
     : NowExpr(Base::AssertTrue(now_expr)) {}
 
 Expr::TExpr::TPtr TNowExpr::Build() const {
-  assert(this);
   return Expr::TNow::New(GetPosRange(NowExpr));
 }

@@ -32,7 +32,6 @@ using namespace Orly::Indy::L0;
 using namespace Util;
 
 TManager::TRepo::~TRepo() {
-  assert(this);
   assert(MappingCollection.IsEmpty()); /* otherwise didn't call PreDtor */
 }
 
@@ -48,24 +47,20 @@ TManager::TRepo::TMapping::TEntry::TEntry(TMapping *mapping, TDataLayer *layer)
 }
 
 TManager::TRepo::TMapping::TEntry::~TEntry() {
-  assert(this);
   assert(Layer);
   Layer->Decr();
 }
 
 TManager::TRepo::TDataLayer *TManager::TRepo::TMapping::TEntry::GetLayer() const {
-  assert(this);
   assert(Layer);
   return Layer;
 }
 
 TManager::TRepo::TMapping::TEntry *TManager::TRepo::TMapping::TEntry::TryGetNextMember() const {
-  assert(this);
   return MappingMembership.TryGetNextMember();
 }
 
 TManager::TRepo::TMapping::TEntry *TManager::TRepo::TMapping::TEntry::TryGetPrevMember() const {
-  assert(this);
   return MappingMembership.TryGetPrevMember();
 }
 
@@ -76,7 +71,6 @@ TManager::TRepo::TMapping::TMapping(TRepo *repo)
       MarkedForDelete(false) {}
 
 TManager::TRepo::TMapping::~TMapping() {
-  assert(this);
   EntryCollection.DeleteEachMember();
 }
 
@@ -92,14 +86,12 @@ TManager::TRepo::TDataLayer::~TDataLayer() {
 }
 
 void TManager::TRepo::TDataLayer::Incr() {
-  assert(this);
   assert(!RemovalMembership.TryGetCollection());
   assert(!(MarkedTaken && RefCount == 0));
   __sync_add_and_fetch(&RefCount, 1U);
 }
 
 void TManager::TRepo::TDataLayer::Decr() {
-  assert(this);
   size_t count = __sync_sub_and_fetch(&RefCount, 1U);
   if (MarkedTaken && count == 0) {
     std::lock_guard<std::mutex> removal_lock(Manager->RemovalLock);
@@ -122,7 +114,6 @@ TManager::TRepo::TRepo(TManager *manager, const TUuid &repo_id, const TTtl &ttl,
 }
 
 void TManager::TRepo::PreDtor() {
-  assert(this);
   /* We should be able to re-construct repo information by what files is made up of */
   #if 0
   if (GetTtl() > chrono::seconds(0)) {
@@ -234,7 +225,6 @@ TManager::~TManager() {
 }
 
 void TManager::CloseAllUnreferencedObjects() {
-  assert(this);
   MergeDiskQueue.RemoveEachMember();
   MergeMemQueue.RemoveEachMember();
   RemoveLayersFromQueue(); /* get rid of any layers that were previously registered in this queue */
@@ -252,7 +242,6 @@ void TManager::CloseAllUnreferencedObjects() {
 }
 
 bool TManager::PreDtor() {
-  assert(this);
   MergeDiskQueue.RemoveEachMember();
   MergeMemQueue.RemoveEachMember();
   for (const auto &item: OpenableObjs) {
@@ -268,18 +257,15 @@ Orly::Server::TTetrisManager *TManager::GetTetrisManager() const {
 }
 
 void TManager::SetTetrisManager(Orly::Server::TTetrisManager *tetris_manager) {
-  assert(this);
   assert(TetrisManager == nullptr);
   TetrisManager = tetris_manager;
 }
 
 void TManager::CompactOpemMap() {
-  assert(this);
   //throw std::logic_error("TODO: Implement CompactOpenMap()");
 }
 
 void TManager::RunLayerCleaner() {
-  assert(this);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -292,7 +278,6 @@ void TManager::RunLayerCleaner() {
 }
 
 void TManager::RunMergeMem() {
-  assert(this);
   cpu_set_t mask;
   CPU_ZERO(&mask);
   assert(MergeMemCores.size());
@@ -362,7 +347,6 @@ void TManager::RunMergeMem() {
 }
 
 void TManager::RunMergeDisk() {
-  assert(this);
   cpu_set_t mask;
   CPU_ZERO(&mask);
   assert(MergeDiskCores.size());
@@ -432,7 +416,6 @@ void TManager::RunMergeDisk() {
 }
 
 void TManager::ReportMergeCPUTime(nanoseconds &out_merge_mem, nanoseconds &out_merge_disk) {
-  assert(this);
   out_merge_mem = nanoseconds::zero();
   out_merge_disk = nanoseconds::zero();
   lock_guard<mutex> lock(MergeThreadCPUMutex);
@@ -449,12 +432,10 @@ void TManager::ReportMergeCPUTime(nanoseconds &out_merge_mem, nanoseconds &out_m
 }
 
 void TManager::GetFileGenSet(const Base::TUuid &repo_id, std::vector<Disk::TFileObj> &file_vec) {
-  assert(this);
   Engine->AppendFileGenSet(repo_id, file_vec);
 }
 
 void TManager::OnClose(TRepo *repo) {
-  assert(this);
   assert(repo);
   assert(repo->Manager == this);
   throw std::logic_error("TODO: implement TManager::OnClose()");
@@ -481,7 +462,6 @@ void TManager::EnqueueMergeDisk(TRepo *repo) {
 }
 
 void TManager::RemoveLayersFromQueue() {
-  assert(this);
   TRepo::TDataLayer *layer = nullptr;
   for (;;) {
     /* acquire Removal lock */ {
@@ -501,7 +481,6 @@ void TManager::RemoveLayersFromQueue() {
 }
 
 void TManager::DestroyObj(TObj *obj) noexcept {
-  assert(this);
   assert(obj);
   size_t erased_from_openable = OpenableObjs.erase(obj->GetId());
   assert(erased_from_openable == 1);
@@ -509,7 +488,6 @@ void TManager::DestroyObj(TObj *obj) noexcept {
 }
 
 bool TManager::TryCacheObj(TObj *obj) noexcept {
-  assert(this);
   assert(obj);
   bool success = false;
   if (MaxCacheSize) {
@@ -540,12 +518,10 @@ const char *TManager::TObj::GetKind() const noexcept {
 }
 
 void TManager::TObj::Log(int level, const char *action, const exception &ex) const noexcept {
-  assert(this);
   Log(level, action, ex.what());
 }
 
 void TManager::TObj::Log(int level, const char *action, const char *msg) const noexcept {
-  assert(this);
   assert(action);
   assert(msg);
   char buf[TId::MinBufSize];
@@ -554,7 +530,6 @@ void TManager::TObj::Log(int level, const char *action, const char *msg) const n
 }
 
 void TManager::TObj::SetTtl(const TTtl &ttl) {
-  assert(this);
   assert(ttl.count() >= 0);
   assert(!Deadline);
   Ttl = ttl;
@@ -567,7 +542,6 @@ TManager::TObj::TObj(TManager *manager, const TId &id, const TTtl &ttl)
 }
 
 TManager::TObj::~TObj() {
-  assert(this);
   delete Sem;
 }
 
@@ -576,14 +550,12 @@ bool TManager::TObj::ForEachDependentPtr(const function<bool (TAnyPtr &)> &) noe
 }
 
 void TManager::TObj::OnPtrAcquire() noexcept {
-  assert(this);
   lock_guard<mutex> lock(Manager->DurableMutex);
   PtrCount += 1;
   assert(PtrCount > 0);
 }
 
 void TManager::TObj::OnPtrRelease() noexcept {
-  assert(this);
   assert(PtrCount);
   bool async = false;
   TSem *sem = nullptr;
@@ -679,20 +651,17 @@ void TManager::TObj::OnPtrRelease() noexcept {
 }
 
 void TManager::TObj::OnPtrAdoptNew() noexcept {
-  assert(this);
   assert(!PtrCount);
   PtrCount = 1;
 }
 
 void TManager::TObj::OnPtrAdoptOld() noexcept {
-  assert(this);
   PtrCount += 1;
   assert(PtrCount > 0);
 }
 
 template <>
 TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
-  assert(this);
   std::pair<std::unordered_map<TId, TObj *>::iterator, bool> ret;
   for (;;) {
     /* Lock the manager and find/create the requested slot among the openable objects. */

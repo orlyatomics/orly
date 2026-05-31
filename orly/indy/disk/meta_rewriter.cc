@@ -34,12 +34,10 @@ class TMetaRewriteInFile
       : BlockVec(block_vec) {}
 
   virtual size_t GetFileLength() const override {
-    assert(this);
     return BlockVec.Size() * LogicalBlockSize;
   }
 
   virtual size_t GetStartingBlock() const override {
-    assert(this);
     assert(BlockVec.Size() > 0);
     return BlockVec.Front();
   }

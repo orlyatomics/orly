@@ -320,134 +320,113 @@ namespace Orly {
 
     /* TODO */
     inline void TUpdate::TPersistenceNotification::Call(TUpdate::TPersistenceNotification::TResult result) {
-      assert(this);
       Cb(result);
     }
 
     /* TODO */
     inline TSequenceNumber TUpdate::GetSequenceNumber() const {
-      assert(this);
       return MemoryLayerMembership.GetKey();
     }
 
     /* TODO */
     inline const Atom::TCore &TUpdate::GetId() const {
-      assert(this);
       return Id;
     }
 
     /* TODO */
     inline const Atom::TCore &TUpdate::GetMetadata() const {
-      assert(this);
       return Metadata;
     }
 
     /* TODO */
     inline Atom::TSuprena &TUpdate::GetSuprena() const {
-      assert(this);
       return Suprena;
     }
 
     /* TODO */
     inline void TUpdate::SetSequenceNumber(TSequenceNumber seq_num) {
-      assert(this);
       MemoryLayerMembership.SetKey(seq_num);
     }
 
     /* TODO */
     inline void TUpdate::SetMetadata(const TKey &metadata) {
-      assert(this);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Metadata = Atom::TCore(&Suprena, Sabot::State::TAny::TWrapper(metadata.GetCore().NewState(metadata.GetArena(), state_alloc)));
     }
 
     /* TODO */
     inline void TUpdate::SetId(const TKey &id) {
-      assert(this);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Id = Atom::TCore(&Suprena, Sabot::State::TAny::TWrapper(id.GetCore().NewState(id.GetArena(), state_alloc)));
     }
 
     /* TODO */
     inline void TUpdate::SetPersistenceNotification(const std::function<void (TPersistenceNotification::TResult)> &cb) {
-      assert(this);
       PersistenceNotification = std::make_shared<TPersistenceNotification>(cb);
     }
 
     /* TODO */
     inline TUpdate::TEntry *TUpdate::AddEntry(const TIndexKey &index_key, const TKey &op) {
-      assert(this);
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       return new TEntry(this, index_key, op, state_alloc);
     }
 
     /* TODO */
     inline const TKey &TUpdate::TEntry::GetKey() const {
-      assert(this);
       return IndexKey.GetKey();
     }
 
     /* TODO */
     inline const TIndexKey &TUpdate::TEntry::GetIndexKey() const {
-      assert(this);
       return IndexKey;
     }
 
     /* TODO */
     inline const Atom::TCore &TUpdate::TEntry::GetOp() const {
-      assert(this);
       return Op;
     }
 
     /* TODO */
     inline TSequenceNumber TUpdate::TEntry::GetSequenceNumber() const {
-      assert(this);
       assert(UpdateMembership.TryGetCollector());
       return UpdateMembership.TryGetCollector()->MemoryLayerMembership.GetKey();
     }
 
     /* TODO */
     inline const Atom::TCore &TUpdate::TEntry::GetMetadata() const {
-      assert(this);
       assert(UpdateMembership.TryGetCollector());
       return UpdateMembership.TryGetCollector()->Metadata;
     }
 
     /* TODO */
     inline const Atom::TCore &TUpdate::TEntry::GetId() const {
-      assert(this);
       assert(UpdateMembership.TryGetCollector());
       return UpdateMembership.TryGetCollector()->Id;
     }
 
     /* TODO */
     inline Atom::TSuprena &TUpdate::TEntry::GetSuprena() const {
-      assert(this);
       assert(UpdateMembership.TryGetCollector());
       return UpdateMembership.TryGetCollector()->Suprena;
     }
 
     /* TODO */
     inline const TUpdate *TUpdate::TEntry::GetUpdate() const {
-      assert(this);
       assert(UpdateMembership.TryGetCollector());
       return UpdateMembership.TryGetCollector();
     }
 
     inline const TUpdate::TEntry::TEntryKey &TUpdate::TEntry::GetEntryKey() const {
-      assert(this);
       return MemoryLayerMembership.GetKey();
     }
 
     /* TODO */
     inline TUpdate::TEntryCollection *TUpdate::GetEntryCollection() const {
-      assert(this);
       return &EntryCollection;
     }
 
     /* TODO */
     inline const std::shared_ptr<TUpdate::TPersistenceNotification> &TUpdate::GetPersistenceNotification() const {
-      assert(this);
       return PersistenceNotification;
     }
 

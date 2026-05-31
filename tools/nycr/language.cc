@@ -38,13 +38,11 @@ TLanguage::TLanguage(const Syntax::TLanguage *decl)
 }
 
 Symbol::TCompound *TLanguage::GetSymbolAsCompound() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 bool TLanguage::Build(int pass) {
-  assert(this);
   bool is_done;
   switch (pass) {
     case 1: {

@@ -43,7 +43,6 @@ namespace Base {
     /* TODO */
     template <typename... TCompatArgs>
     TPtr Get(TCompatArgs &&... args) {
-      assert(this);
 
       TWeak &weak = ObjByKey.insert(std::make_pair(TKey(args...), TWeak())).first->second;
       TPtr strong = weak.lock();

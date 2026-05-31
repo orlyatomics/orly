@@ -35,13 +35,11 @@ TKeys::TKeys(const TAddr::TMemberVec &members, const Type::TType &value_type, co
 }
 
 void TKeys::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TKeys::GetAddrType() const {
-  assert(this);
   Type::TAddr::TElems elems;
   bool is_sequence = false;
   for (auto member : GetMembers()) {

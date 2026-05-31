@@ -37,6 +37,5 @@ TThatExpr::TThatExpr(const TExprFactory *expr_factory, const Package::Syntax::TT
 }
 
 Expr::TExpr::TPtr TThatExpr::Build() const {
-  assert(this);
   return Expr::TThat::New(ThatableExpr->GetThatableSymbol(), GetPosRange(ThatExpr));
 }

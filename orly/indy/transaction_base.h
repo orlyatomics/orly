@@ -399,7 +399,6 @@ namespace Orly {
 
           /* TODO */
           TMutation *TryGetNextMember() const {
-            assert(this);
             return TransactionMembership.TryGetNextMember();
           }
 
@@ -646,99 +645,83 @@ namespace Orly {
 
       /* TODO */
       inline void TTransaction::CommitAction() NO_THROW {
-        assert(this);
         CommitFlag = true;
       }
 
       /* TODO */
       inline void TTransaction::DiscardAction() NO_THROW {
-        assert(this);
         CommitFlag = false;
       }
 
       /* TODO */
       inline const Atom::TCore &TTransaction::TReplica::TMutation::TUpdate::GetMetadata() const {
-        assert(this);
         return Metadata;
       }
 
       /* TODO */
       inline const Atom::TCore &TTransaction::TReplica::TMutation::TUpdate::GetId() const {
-        assert(this);
         return Id;
       }
 
       /* TODO */
       inline const TTransaction::TReplica::TMutation::TUpdate::TOpByKey &TTransaction::TReplica::TMutation::TUpdate::GetOpByKey() const {
-        assert(this);
         return OpByKey;
       }
 
       /* TODO */
       inline const std::shared_ptr<Atom::TSuprena> &TTransaction::TReplica::TMutation::TUpdate::GetSuprena() const {
-        assert(this);
         return Suprena;
       }
 
       /* TODO */
       inline void TTransaction::TReplica::TMutation::TUpdate::SetArena(const std::shared_ptr<Atom::TSuprena> &suprena) {
-        assert(this);
         Suprena = suprena;
       }
 
       /* TODO */
       inline TTransaction::TReplica::TMutation::TKind TTransaction::TReplica::TMutation::GetKind() const {
-        assert(this);
         return Kind;
       }
 
       /* TODO */
       inline const Base::TUuid &TTransaction::TReplica::TMutation::GetRepoId() const {
-        assert(this);
         return RepoId;
       }
 
       /* TODO */
       inline const Base::TOpt<TSequenceNumber> &TTransaction::TReplica::TMutation::GetSequenceNumber() const {
-        assert(this);
         return SequenceNumber;
       }
 
       /* TODO */
       inline const TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::GetUpdate() const {
-        assert(this);
         assert(Kind == Pusher);
         return Update;
       }
 
       /* TODO */
       inline TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::GetUpdate() {
-        assert(this);
         assert(Kind == Pusher);
         return Update;
       }
 
       /* TODO */
       inline void TTransaction::TReplica::TMutation::SetSequenceNumber(Base::TOpt<TSequenceNumber> seq_num) NO_THROW {
-        assert(this);
         SequenceNumber = seq_num;
       }
 
       /* TODO */
       inline TSequenceNumber &TTransaction::TReplica::TMutation::GetNextUpdate() NO_THROW {
-        assert(this);
         return NextUpdate;
       }
 
       /* TODO */
       inline TTransaction::TReplica::TMutationList &TTransaction::TReplica::GetMutationList() const {
-        assert(this);
         return MutationList;
       }
 
       /* TODO */
       inline size_t TTransaction::TReplica::GetSize() const {
-        assert(this);
         size_t count = 0U;
         for (auto iter = MutationList.begin(); iter != MutationList.end(); ++iter, ++count);
         return count;
@@ -746,55 +729,46 @@ namespace Orly {
 
       /* TODO */
       inline const Base::TUuid &TTransaction::TMutation::GetRepoId() const {
-        assert(this);
         return Repo->GetId();
       }
 
       /* TODO */
       inline TTransaction::TMutation::TKind TTransaction::TPusher::GetKind() const {
-        assert(this);
         return TMutation::Pusher;
       }
 
       /* TODO */
       inline TTransaction::TMutation::TKind TTransaction::TPopper::GetKind() const {
-        assert(this);
         return TMutation::Popper;
       }
 
       /* TODO */
       inline TTransaction::TPopper::TState TTransaction::TPopper::GetState() const {
-        assert(this);
         return State;
       }
 
       /* TODO */
       inline const std::shared_ptr<TUpdate> &TTransaction::TPopper::GetUpdate() const {
-        assert(this);
         return Update;
       }
 
       /* TODO */
       inline void TTransaction::TPopper::SetState(TState state) {
-        assert(this);
         State = state;
       }
 
       /* TODO */
       inline TTransaction::TMutation::TKind TTransaction::TStatusChanger::GetKind() const {
-        assert(this);
         return TMutation::StatusChanger;
       }
 
       /* TODO */
       inline bool TTransaction::GetCommitFlag() const {
-        assert(this);
         return CommitFlag;
       }
 
       /* TODO */
       inline void TTransaction::TTransactionCompletion::SetCb(const std::shared_ptr<std::function<void (TTransactionResult)>> &cb) {
-        assert(this);
         Cb = cb;
       }
 

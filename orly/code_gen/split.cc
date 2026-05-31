@@ -33,7 +33,6 @@ TSplit::TPtr TSplit::New(
 }
 
 void TSplit::WriteExpr(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
   out
     << "TSplitGenerator::New("

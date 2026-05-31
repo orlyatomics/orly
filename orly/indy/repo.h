@@ -300,13 +300,11 @@ namespace Orly {
 
           /* TODO */
           virtual ~TRunnablePrep() {
-            assert(this);
           }
 
           /* TODO */
           void Compute() {
             //printf("TRunnablePrep::Compute()\n");
-            assert(this);
             assert(Walker);
             assert(Layer);
             assert(Sync);
@@ -612,7 +610,6 @@ namespace Orly {
     inline void TRepo::GetSnapshot(Base::TOpt<TSequenceNumber> &seq_num_start,
                                    Base::TOpt<TSequenceNumber> &seq_num_limit,
                                    TSequenceNumber &next_seq_num) {
-      assert(this);
       std::lock_guard<std::mutex> lock(DataLock);
       seq_num_start = LowestSeqNum;
       seq_num_limit = HighestSeqNum;
@@ -620,33 +617,27 @@ namespace Orly {
     }
 
     inline const Base::TOpt<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
-      assert(this);
       return LowestSeqNum;
     }
 
     inline const Base::TOpt<TSequenceNumber> &TRepo::GetSequenceNumberLimit() const {
-      assert(this);
       return HighestSeqNum;
     }
 
     inline TSequenceNumber TRepo::GetNextSequenceNumber() const {
-      assert(this);
       return NextUpdate;
     }
 
     inline void TRepo::SetNextSequenceNumber(TSequenceNumber next_id) {
-      assert(this);
       NextUpdate = next_id;
     }
 
     inline void TRepo::SetReleasedUpTo(TSequenceNumber released_up_to) {
-      assert(this);
       std::cout << "SetReleasedUpTo(" << released_up_to << ")" << std::endl;
       ReleasedUpTo = released_up_to;
     }
 
     inline TSequenceNumber TRepo::UseSequenceNumbers(size_t num) {
-      assert(this);
       assert(num);
       std::lock_guard<std::mutex> lock(DataLock);
       TSequenceNumber starting = NextUpdate;
@@ -659,28 +650,23 @@ namespace Orly {
     }
 
     inline TSequenceNumber TRepo::GetReleasedUpTo() const {
-      assert(this);
       return ReleasedUpTo;
     }
 
     inline const TRepo::TParentRepo &TRepo::GetParentRepo() const {
-      assert(this);
       return ParentRepo;
     }
 
     inline TRepo::TPresentWalker::operator bool() const {
-      assert(this);
       return Valid;
     }
 
     inline const TPresentWalker::TItem &TRepo::TPresentWalker::operator*() const {
-      assert(this);
       assert(Valid);
       return Item;
     }
 
     inline TRepo::TPresentWalker &TRepo::TPresentWalker::operator++() {
-      assert(this);
       assert(Valid);
       Valid = static_cast<bool>(MinHeap);
       Refresh();
@@ -688,7 +674,6 @@ namespace Orly {
     }
 
     inline void TRepo::TPresentWalker::Init() {
-      assert(this);
       bool done = false;
       while (Valid) {
         size_t pos;
@@ -716,7 +701,6 @@ namespace Orly {
     }
 
     inline void TRepo::TPresentWalker::Refresh() {
-      assert(this);
       bool done = false;
       while (Valid) {
         size_t pos;
@@ -744,7 +728,6 @@ namespace Orly {
     }
 
     inline size_t TSafeRepo::GetNextGenId() {
-      assert(this);
       return ++NextGenId;
     }
 

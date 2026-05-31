@@ -72,84 +72,72 @@ namespace Strm {
 
       /* Write a bool as 'T' or 'F'. */
       TOut &operator<<(bool that) {
-        assert(this);
         WriteShallow(that ? 'T' : 'F');
         return *this;
       }
 
       /* Write a char as itself, a single byte. */
       TOut &operator<<(char that) {
-        assert(this);
         WriteShallow(that);
         return *this;
       }
 
       /* Write a 32-bit float ISO 754 format; that is, as a native c-float. */
       TOut &operator<<(float that) {
-        assert(this);
         WriteShallow(that);
         return *this;
       }
 
       /* Write a 64-bit float ISO 754 format; that is, as a native c-double. */
       TOut &operator<<(double that) {
-        assert(this);
         WriteShallow(that);
         return *this;
       }
 
       /* Write an 8-bit signed integer as-is. */
       TOut &operator<<(int8_t that) {
-        assert(this);
         WriteShallow(that);
         return *this;
       }
 
       /* Write a 16-bit signed integer as a zig-zag var-int. */
       TOut &operator<<(int16_t that) {
-        assert(this);
         WriteVarInt(ToZigZag(that));
         return *this;
       }
 
       /* Write a 32-bit signed integer as a zig-zag var-int. */
       TOut &operator<<(int32_t that) {
-        assert(this);
         WriteVarInt(ToZigZag(that));
         return *this;
       }
 
       /* Write a 64-bit signed integer as a zig-zag var-int. */
       TOut &operator<<(int64_t that) {
-        assert(this);
         WriteVarInt(ToZigZag(that));
         return *this;
       }
 
       /* Write an 8-bit unsigned integer as-is. */
       TOut &operator<<(uint8_t that) {
-        assert(this);
         WriteShallow(that);
         return *this;
       }
 
       /* Write a 16-bit unsigned integer as a var-int. */
       TOut &operator<<(uint16_t that) {
-        assert(this);
         WriteVarInt(that);
         return *this;
       }
 
       /* Write a 32-bit unsigned integer as a var-int. */
       TOut &operator<<(uint32_t that) {
-        assert(this);
         WriteVarInt(that);
         return *this;
       }
 
       /* Write a 64-bit unsigned integer as a var-int. */
       TOut &operator<<(uint64_t that) {
-        assert(this);
         WriteVarInt(that);
         return *this;
       }
@@ -158,7 +146,6 @@ namespace Strm {
          will not include the null-terminator, nor will the terminator be
          written.  See WriteString() for more information. */
       TOut &operator<<(const char *that) {
-        assert(this);
         WriteString(that, strlen(that));
         return *this;
       }
@@ -166,7 +153,6 @@ namespace Strm {
       /* Write a std string as a length followed by bytes.  See WriteString()
          for more information. */
       TOut &operator<<(const std::string &that) {
-        assert(this);
         WriteString(that.data(), that.size());
         return *this;
       }
@@ -175,7 +161,6 @@ namespace Strm {
          its underlying representation type. */
       template <typename TRep, typename TPeriod>
       TOut &operator<<(const std::chrono::duration<TRep, TPeriod> &that) {
-        assert(this);
         assert(&that);
         return *this << that.count();
       }
@@ -185,7 +170,6 @@ namespace Strm {
       template <typename TClock, typename TDuration>
       TOut &operator<<(
           const std::chrono::time_point<TClock, TDuration> &that) {
-        assert(this);
         assert(&that);
         return *this << that.time_since_epoch();
       }
@@ -197,7 +181,6 @@ namespace Strm {
           typename = typename std::enable_if<
               std::is_enum<TSomeEnum>::value>::type>
       TOut &operator<<(TSomeEnum that) {
-        assert(this);
         using under_t = typename std::underlying_type<TSomeEnum>::type;
         return *this << static_cast<under_t>(that);
       }
@@ -207,7 +190,6 @@ namespace Strm {
          write a count, as it is implicitly exactly 2. */
       template <typename TFirst, typename TSecond>
       TOut &operator<<(const std::pair<TFirst, TSecond> &that) {
-        assert(this);
         return *this << that.first << that.second;
       }
 
@@ -226,7 +208,6 @@ namespace Strm {
          Note that inserting an array of size zero writes nothing at all. */
       template <typename TElem, size_t Size>
       TOut &operator<<(const TElem (&elems)[Size]) {
-        assert(this);
         WriteArrayWithoutCount(elems, elems + Size);
         return *this;
       }
@@ -236,7 +217,6 @@ namespace Strm {
          of operator<<.  See WriteArrayWithCount() for more information. */
       template <typename TElem, typename TAlloc>
       TOut &operator<<(const std::list<TElem, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -249,7 +229,6 @@ namespace Strm {
           typename TKey, typename TVal, typename TCompare, typename TAlloc>
       TOut &operator<<(
           const std::map<TKey, TVal, TCompare, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -262,7 +241,6 @@ namespace Strm {
           typename TKey, typename TVal, typename TCompare, typename TAlloc>
       TOut &operator<<(
           const std::multimap<TKey, TVal, TCompare, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -272,7 +250,6 @@ namespace Strm {
          of operator<<.  See WriteArrayWithCount() for more information. */
       template <typename TElem, typename TCompare, typename TAlloc>
       TOut &operator<<(const std::set<TElem, TCompare, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -283,7 +260,6 @@ namespace Strm {
       template <typename TElem, typename TCompare, typename TAlloc>
       TOut &operator<<(
           const std::multiset<TElem, TCompare, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -297,7 +273,6 @@ namespace Strm {
           typename THash, typename TEq, typename TAlloc>
       TOut &operator<<(
           const std::unordered_map<TKey, TVal, THash, TEq, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -312,7 +287,6 @@ namespace Strm {
       TOut &operator<<(
           const std::unordered_multimap<
               TKey, TVal, THash, TEq, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -324,7 +298,6 @@ namespace Strm {
       template <typename TElem, typename THash, typename TEq, typename TAlloc>
       TOut &operator<<(
           const std::unordered_set<TElem, THash, TEq, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -336,7 +309,6 @@ namespace Strm {
       template <typename TElem, typename THash, typename TEq, typename TAlloc>
       TOut &operator<<(
           const std::unordered_multiset<TElem, THash, TEq, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -346,7 +318,6 @@ namespace Strm {
          of operator<<.  See WriteArrayWithCount() for more information. */
       template <typename TElem, typename TAlloc>
       TOut &operator<<(const std::vector<TElem, TAlloc> &that) {
-        assert(this);
         WriteArrayWithCount(that.begin(), that.size());
         return *this;
       }
@@ -363,7 +334,6 @@ namespace Strm {
          appropriate overload of operator<<. */
       template <typename TIter>
       void WriteArrayWithCount(TIter iter, size_t count) {
-        assert(this);
         *this << count;
         for (; count; --count, ++iter) {
           *this << *iter;
@@ -375,7 +345,6 @@ namespace Strm {
          operator<<. */
       template <typename TIter>
       void WriteArrayWithoutCount(TIter begin, TIter end) {
-        assert(this);
         for (; begin != end; ++begin) {
           *this << *begin;
         }
@@ -384,27 +353,23 @@ namespace Strm {
       /* Write the given structure verbatim, treating it as shallow data. */
       template <typename TThat>
       void WriteShallow(const TThat &that) {
-        assert(this);
         Write(&that, sizeof(that));
       }
 
       /* Write the given string an unsigned var-int, followed by bytes. */
       template <size_t Count>
       void WriteString(const char (&that)[Count]) {
-        assert(this);
         WriteString(that, Count);
       }
 
       /* Write the given string an unsigned var-int, followed by bytes. */
       void WriteString(const char *start, const char *limit) {
-        assert(this);
         assert(start <= limit);
         WriteString(start, limit - start);
       }
 
       /* Write the given string an unsigned var-int, followed by bytes. */
       void WriteString(const char *data, size_t size) {
-        assert(this);
         *this << size;
         Write(data, size);
       }
@@ -413,20 +378,17 @@ namespace Strm {
       /* Write the given string an unsigned var-int, followed by bytes. */
       template <size_t Count>
       void WriteString(const uint8_t (&that)[Count]) {
-        assert(this);
         WriteString(that, Count);
       }
 
       /* Write the given string an unsigned var-int, followed by bytes. */
       void WriteString(const uint8_t *start, const uint8_t *limit) {
-        assert(this);
         assert(start <= limit);
         WriteString(start, limit - start);
       }
 
       /* Write the given string an unsigned var-int, followed by bytes. */
       void WriteString(const uint8_t *data, size_t size) {
-        assert(this);
         *this << size;
         Write(data, size);
       }
@@ -453,7 +415,6 @@ namespace Strm {
           >::type
       >
       TOut &operator<<(const TNbo<TVal> &that) {
-        assert(this);
         assert(&that);
         TVal temp = Io::SwapEnds(that.Val);
         WriteShallow(temp);
@@ -464,7 +425,6 @@ namespace Strm {
 
       /* Used by the operator<< overloads for multi-byte integers. */
       void WriteVarInt(uint64_t that) {
-        assert(this);
         TVarIntEncoder encoder(that);
         Write(encoder.GetStart(), encoder.GetSize());
       }

@@ -31,24 +31,20 @@ using namespace Orly;
 using namespace Orly::Synth;
 
 TIfStmt::TIfClause::~TIfClause() {
-  assert(this);
   delete Expr;
   delete StmtBlock;
 }
 
 Symbol::Stmt::TIfClause::TPtr TIfStmt::TIfClause::Build() const {
-  assert(this);
   return Symbol::Stmt::TIfClause::New(Expr->Build(), StmtBlock->Build());
 }
 
 void TIfStmt::TIfClause::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   Expr->ForEachRef(cb);
   StmtBlock->ForEachRef(cb);
 }
 
 void TIfStmt::TIfClause::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(this);
   Expr->ForEachInnerScope(cb);
   for(auto &stmt : StmtBlock->GetStmts()) {
     stmt->ForEachInnerScope(cb);
@@ -80,7 +76,6 @@ TIfStmt::~TIfStmt() {
 }
 
 Symbol::Stmt::TStmt::TPtr TIfStmt::Build() const {
-  assert(this);
   Symbol::Stmt::TIf::TIfClauseVec if_clauses;
   for (auto if_clause : IfClauses) {
     if_clauses.emplace_back(if_clause->Build());
@@ -92,7 +87,6 @@ Symbol::Stmt::TStmt::TPtr TIfStmt::Build() const {
 }
 
 void TIfStmt::Cleanup() {
-  assert(this);
   for (auto if_clause : IfClauses) {
     delete if_clause;
   }
@@ -100,7 +94,6 @@ void TIfStmt::Cleanup() {
 }
 
 void TIfStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto if_clause : IfClauses) {
@@ -112,7 +105,6 @@ void TIfStmt::ForEachRef(const std::function<void (TAnyRef &)> &cb) const {
 }
 
 void TIfStmt::ForEachInnerScope(const std::function<void (TScope *)> &cb) const {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto if_clause : IfClauses) {

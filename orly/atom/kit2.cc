@@ -373,7 +373,6 @@ TCore::TCore(TExtensibleArena *arena, const State::TAny *lhs_state, const State:
 }
 
 TCore::Type::TAny *TCore::GetType(TArena *arena, void *type_alloc) const {
-  assert(this);
   Type::TAny *result;
   switch (Tycon) {
     case TTycon::Int8     : { result = new (type_alloc) Sabot::Type::TInt8     ();            break; }
@@ -447,7 +446,6 @@ TCore::Type::TAny *TCore::GetType(TArena *arena, void *type_alloc) const {
 }
 
 TCore::State::TAny *TCore::NewState(TArena *arena, void *state_alloc) const {
-  assert(this);
   State::TAny *result;
   switch (Tycon) {
     case TTycon::Int8     : { result = new (state_alloc) SS::TInt8     (this);        break; }
@@ -491,7 +489,6 @@ TCore::State::TAny *TCore::NewState(TArena *arena, void *state_alloc) const {
 }
 
 void TCore::Remap(const TRemap &remap) {
-  assert(this);
   switch (Tycon) {
     case TTycon::Int8:
     case TTycon::Int16:
@@ -538,7 +535,6 @@ void TCore::Remap(const TRemap &remap) {
 }
 
 const TCore::TOffset *TCore::TryGetOffset() const {
-  assert(this);
   switch (Tycon) {
     case TTycon::Int8:
     case TTycon::Int16:
@@ -586,7 +582,6 @@ const TCore::TOffset *TCore::TryGetOffset() const {
 }
 
 bool TCore::TryTruncateTuple() {
-  assert(this);
   assert(Tycon == TTycon::Tuple);
   bool success = (IndirectCoreArray.ElemCount > 1);
   if (success) {
@@ -601,7 +596,6 @@ bool TCore::TryTruncateTuple() {
 bool TCore::TrySplit(TArena *arena, size_t lhs_size,
                      TExtensibleArena *lhs_arena, TCore &lhs_core,
                      TExtensibleArena *rhs_arena, TCore &rhs_core) const {
-  assert(this);
   assert(arena);
   assert(lhs_arena);
   assert(rhs_arena);
@@ -636,7 +630,6 @@ TCore::TCore(TExtensibleArena *arena, const char *c_str) {
 }
 
 void TCore::CopyOut(TArena *arena, string &out) const {
-  assert(this);
   assert(&out);
   if (Tycon == TTycon::Str) {
     assert(arena);
@@ -658,13 +651,11 @@ void TCore::CopyOut(TArena *arena, string &out) const {
 }
 
 void TCore::Init(TTycon tycon) {
-  assert(this);
   memset(DirectBlob, 0, MaxDirectSize);
   Tycon = tycon;
 }
 
 void TCore::InitBlob(TExtensibleArena *arena, const uint8_t *start, const uint8_t *limit) {
-  assert(this);
   assert(start <= limit);
   size_t size = limit - start;
   if (size <= MaxDirectSize) {
@@ -680,7 +671,6 @@ void TCore::InitBlob(TExtensibleArena *arena, const uint8_t *start, const uint8_
 }
 
 void TCore::InitStr(TExtensibleArena *arena, const char *start, const char *limit) {
-  assert(this);
   assert(start <= limit);
   assert(!limit || !*limit);
   size_t size = limit - start;
@@ -697,7 +687,6 @@ void TCore::InitStr(TExtensibleArena *arena, const char *start, const char *limi
 }
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TUnary &type, const State::TArrayOfSingleStates &state) {
-  assert(this);
   assert(arena);
   assert(&type);
   assert(&state);
@@ -707,7 +696,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 }
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TUnary &type, bool is_exemplar) {
-  assert(this);
   assert(arena);
   assert(&type);
   TInit1 init1 =
@@ -721,7 +709,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 }
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TBinary &type, const State::TArrayOfPairsOfStates &state) {
-  assert(this);
   assert(arena);
   assert(&type);
   assert(&state);
@@ -743,7 +730,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 }
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const Type::TBinary &type, bool is_exemplar) {
-  assert(this);
   assert(arena);
   assert(&type);
   TInit2 init2 =
@@ -758,7 +744,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const T
 }
 
 void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TTuple &type, bool is_exemplar) {
-  assert(this);
   assert(arena);
   assert(&type);
   TInit1 init1 =
@@ -773,7 +758,6 @@ void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TTuple &t
 }
 
 void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TRecord &type, bool is_exemplar) {
-  assert(this);
   assert(arena);
   assert(&type);
   TInit2 init2 =
@@ -791,7 +775,6 @@ void TCore::InitIndirectCoreArray(TExtensibleArena *arena, const Type::TRecord &
 }
 
 void TCore::InitIndirectCoreArray(TTycon tycon, TOffset offset, size_t elem_count, bool is_exemplar) {
-  assert(this);
   Init(tycon);
   IndirectCoreArray.Offset = offset;
   IndirectCoreArray.ElemCount = elem_count;
@@ -802,7 +785,6 @@ void TCore::InitIndirectCoreArray(TTycon tycon, TOffset offset, size_t elem_coun
 }
 
 bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &state) {
-  assert(this);
   size_t elem_count = state.GetElemCount();
   bool success = (elem_count != 0);
   if (success) {
@@ -820,7 +802,6 @@ bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, cons
 
 bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &lhs_state,
                                      const State::TArrayOfSingleStates &rhs_state) {
-  assert(this);
   size_t lhs_size = lhs_state.GetElemCount();
   size_t elem_count = lhs_size + rhs_state.GetElemCount();
   bool success = (elem_count != 0);
@@ -843,7 +824,6 @@ bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, cons
 }
 
 bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &state, size_t start, size_t limit) {
-  assert(this);
   assert(start < limit);
   size_t elem_count = limit - start;
   bool success = (elem_count != 0);
@@ -861,7 +841,6 @@ bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, cons
 }
 
 void TCore::InitIndirectScalarArray(TTycon tycon, TOffset offset, size_t size) {
-  assert(this);
   Init(tycon);
   IndirectScalarArray.Offset = offset;
   IndirectScalarArray.Size = size;
@@ -875,7 +854,6 @@ TCore::TArena::TNotFound::TNotFound()
     : runtime_error("note was not found") {}
 
 TCore::TArena::TPin::~TPin() {
-  assert(this);
   //#ifndef NDEBUG
   if (Arena) {
     Arena->ReleaseNote(Note, Offset, Data1, Data2, Data3);
@@ -1078,12 +1056,10 @@ bool TCore::TNote::TIsEq::operator()(const TNote *lhs, const TNote *rhs) const {
 }
 
 void TCore::TNote::SetUnReferenced() {
-  assert(this);
   UnReferenced = true;
 }
 
 void TCore::TNote::ForOffset(const std::function<void (Atom::TCore::TOffset)> &cb) const {
-  assert(this);
   switch (Tycon) {
     case TTycon::Blob:
     case TTycon::Str: {
@@ -1128,7 +1104,6 @@ void TCore::TNote::ForOffset(const std::function<void (Atom::TCore::TOffset)> &c
 }
 
 void TCore::TNote::Remap(const TRemap &remap) {
-  assert(this);
   switch (Tycon) {
     case TTycon::Blob:
     case TTycon::Str: {

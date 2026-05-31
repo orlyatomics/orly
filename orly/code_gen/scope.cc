@@ -30,17 +30,14 @@ TIdScope::TPtr TIdScope::New() {
 }
 
 TId<TIdKind::Arg> TIdScope::NewArg() {
-  assert(this);
   return Arg.New();
 }
 
 TId<TIdKind::Func> TIdScope::NewFunc() {
-  assert(this);
   return Func.New();
 }
 
 TId<TIdKind::Var> TIdScope::NewVar() {
-  assert(this);
   return Var.New();
 }
 
@@ -52,7 +49,6 @@ TCodeScope::~TCodeScope() {
 }
 
 void TCodeScope::AddAssertion(const std::string &name, const TInline::TPtr &assertion) {
-  assert(this);
   assert(&name);
   assert(&assertion);
 
@@ -61,7 +57,6 @@ void TCodeScope::AddAssertion(const std::string &name, const TInline::TPtr &asse
 
 /* Makes a new id, and adds the given inline to our list of locals. */
 void TCodeScope::AddLocal(const TInline::TPtr &inline_) {
-  assert(this);
   assert(&inline_);
 
   //Fast exit if we already have been common subexpression eliminated.
@@ -76,42 +71,35 @@ void TCodeScope::AddLocal(const TInline::TPtr &inline_) {
 }
 
 TIdScope::TPtr TCodeScope::GetIdScope() const {
-  assert(this);
 
   return IdScope;
 }
 
 TInterner *TCodeScope::GetInterner() const {
-  assert(this);
   return Interner;
 }
 
 const TCodeScope::TLocals &TCodeScope::GetLocals() const {
-  assert(this);
 
   return Locals;
 }
 
 TStmtBlock &TCodeScope::GetStmts() {
-  assert(this);
 
   return *Stmts;
 }
 const TStmtBlock &TCodeScope::GetStmts() const {
-  assert(this);
 
   return *Stmts;
 }
 
 
 TId<TIdKind::Arg> TCodeScope::NewArg() {
-  assert(this);
 
   return IdScope->NewArg();
 }
 
 void TCodeScope::WriteStart(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   for(auto &it: Locals) {

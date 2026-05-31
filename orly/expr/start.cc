@@ -32,12 +32,10 @@ TStart::TStart(const TExpr::TPtr &expr, const TPosRange &pos_range)
     : TUnary(expr, pos_range) {}
 
 void TStart::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TStart::GetTypeImpl() const {
-  assert(this);
   return GetExpr()->GetType();
 }

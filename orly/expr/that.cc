@@ -36,12 +36,10 @@ TThat::TThat(const TThatable *thatable, const TPosRange &pos_range)
     : TLeaf(pos_range), Thatable(thatable) {}
 
 void TThat::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TThat::GetTypeImpl() const {
-  assert(this);
   return Thatable->GetThatType();
 }

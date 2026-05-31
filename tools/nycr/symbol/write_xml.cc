@@ -75,7 +75,6 @@ const char *TXmlTag::TXmlTagStr[] = {
 };
 
 void TXmlTag::Write(ostream &strm) const {
-  assert(this);
   if (!IsOpen) --depth;
   if (HasIndent) strm << TIndent(depth);
   strm << '<';
@@ -100,13 +99,11 @@ static void WriteElem(const TKind *kind, ostream &strm) {
   public:
     TVisitor(ostream &strm) : Strm(strm) {}
     virtual void operator()(const TBase *that) const {
-      assert(this);
       Strm << TXmlTag(TXmlTag::Base, Open);
       WriteLhs(that);
       Strm << TXmlTag(TXmlTag::Base, Close);
     }
     virtual void operator()(const TLanguage *that) const {
-      assert(this);
       Strm << TXmlTag(TXmlTag::Language, Open);
       WriteLhs(that);
       WriteRhs(that);
@@ -132,7 +129,6 @@ static void WriteElem(const TKind *kind, ostream &strm) {
       Strm << TXmlTag(TXmlTag::Language, Close);
     }
     virtual void operator()(const TOperator *that) const {
-      assert(this);
       Strm << TXmlTag(TXmlTag::Operator, Open);
       WriteLhs(that);
       WritePattern(that);
@@ -162,14 +158,12 @@ static void WriteElem(const TKind *kind, ostream &strm) {
 	   << TXmlTag(TXmlTag::Operator, Close);
     }
     virtual void operator()(const TKeyword *that) const {
-      assert(this);
       Strm << TXmlTag(TXmlTag::Keyword, Open);
       WriteLhs(that);
       WritePattern(that);
       Strm << TXmlTag(TXmlTag::Keyword, Close);
     }
     virtual void operator()(const TRule *that) const {
-      assert(this);
       Strm << TXmlTag(TXmlTag::Rule, Open);
       WriteLhs(that);
       WriteRhs(that);
@@ -186,7 +180,6 @@ static void WriteElem(const TKind *kind, ostream &strm) {
       }
     }
     void WritePattern(const TAtom *that) const {
-      assert(this);
       assert(that);
       Strm << TXmlTag(TXmlTag::Pattern, Open, Indent, NoEndl)
 	   << TEscape(that->GetPattern(), TEscape::XmlStyle)
@@ -198,7 +191,6 @@ static void WriteElem(const TKind *kind, ostream &strm) {
       }
     }
     void WriteRhs(const TCompound *that) const {
-      assert(this);
       assert(that);
       const TCompound::TMembersInOrder &members_in_order = that->GetMembersInOrder();
       if (!members_in_order.empty()) {

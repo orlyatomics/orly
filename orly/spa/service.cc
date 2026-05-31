@@ -67,16 +67,13 @@ TService::~TService() {
   any_honcho->GetSharedPovObjStore().Drain();
   any_honcho->GetSessionObjStore().Drain();
   any_honcho->GetTetrisHandler().RemovePov(&GlobalPov);
-  assert(this);
 }
 
 void TService::CreateSession(const Base::TOpt<Base::TUuid> &acct, int ttl, Base::TUuid &out) {
-  assert(this);
   out = TSessionObj::TSessionHandle::New(acct, ttl)->GetUUID();
 }
 
 void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
-  assert(this);
   assert(&session_uuid);
   assert(&parent);
   assert(&out);
@@ -89,7 +86,6 @@ void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const TOpt<Base
 }
 
 void TService::CreateSharedPov(const TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
-  assert(this);
   assert(&parent);
   assert(&out);
 
@@ -101,7 +97,6 @@ void TService::CreateSharedPov(const TOpt<Base::TUuid> &parent, int ttl, bool pa
 }
 
 void TService::SaveCheckpoint(const string &filename) {
-  assert(this);
   assert(&filename);
 
   TSync::TExclusiveLock lock(GlobalPov.GetSync());
@@ -129,7 +124,6 @@ void TService::SaveCheckpoint(const string &filename) {
 
 /* TODO: Push Jhm::TAbsBase out to the api. */
 void TService::SetPackageDir(const string &dir) {
-  assert(this);
   assert(&dir);
 
   PackageManager.SetPackageDir(dir);
@@ -137,18 +131,15 @@ void TService::SetPackageDir(const string &dir) {
 
 
 void TService::Finalize() {
-  assert(this);
   //TODO: A global service lock would be nice...
   Base::AssertTrue(TAnyHoncho::GetAnyHoncho())->GetTetrisHandler().Drain();
 }
 
 Package::TManager &TService::GetPackageManager()  {
-  assert(this);
 
   return PackageManager;
 }
 const Package::TManager &TService::GetPackageManager() const {
-  assert(this);
 
   return PackageManager;
 }
@@ -159,7 +150,6 @@ void TService::Poll(
       const unordered_set<Base::TUuid> &notifiers,
       TOpt<chrono::milliseconds> timeout,
       unordered_map<Base::TUuid, TNotifierState> &out) {
-  assert(this);
   assert(&notifiers);
   assert(&out);
   assert(&session_uuid);
@@ -194,7 +184,6 @@ void TService::Try(
       Atom::TSuprena &result_arena,
       unordered_map<Base::TUuid, Base::TUuid> &notifiers) {
 
-  assert(this);
   assert(&func);
   assert(func);
   assert(&private_pov);
@@ -289,7 +278,6 @@ void NewUpdateAndWait(const TPov *target, TPrivatePov *start, std::unordered_map
 }
 
 void TService::LoadCheckpoint(const string &name) {
-  assert(this);
   Base::TUuid session_id;
   Base::TUuid ppov_id;
 
@@ -434,7 +422,6 @@ bool TService::RunTestBlock(const Base::TUuid &session, const Base::TUuid &spov,
 
 bool TService::RunTestSuite(const Package::TName &name, bool verbose) {
   assert(&name);
-  assert(this);
 
   /* TODO: We really want an API for destroying sessions explicitly */
   Base::TUuid session;

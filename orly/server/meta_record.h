@@ -56,46 +56,38 @@ namespace Orly {
 
         /* TODO */
         const TArgByName &GetArgByName() const {
-          assert(this);
           return ArgByName;
         }
 
         const TExpectedPredicateResults &GetExpectedPredicateResults() const {
-          assert(this);
           return ExpectedPredicateResults;
         }
 
         /* TODO */
         const std::string &GetMethodName() const {
-          assert(this);
           return MethodName;
         }
 
         /* TODO */
         const TPackageFqName &GetPackageFqName() const {
-          assert(this);
           return PackageFqName;
         }
 
         uint32_t GetRandomSeed() const {
-          assert(this);
           return RandomSeed;
         }
 
         const Base::Chrono::TTimePnt &GetRunTimestamp() const {
-          assert(this);
           return RunTimestamp;
         }
 
         /* TODO */
         const Base::TUuid &GetSessionId() const {
-          assert(this);
           return SessionId;
         }
 
         /* TODO */
         const Base::TOpt<Base::TUuid> &GetUserId() const {
-          assert(this);
           return UserId;
         }
 
@@ -143,7 +135,6 @@ namespace Orly {
 
       /* TODO */
       const TEntryByUpdateId &GetEntryByUpdateId() const {
-        assert(this);
         return EntryByUpdateId;
       }
 

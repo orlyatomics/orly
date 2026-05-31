@@ -60,7 +60,6 @@ namespace Orly {
 
           /* Dependency graph */
           virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &/*dependency_set*/) const override {
-            assert(this);
           }
 
           private:
@@ -129,7 +128,6 @@ namespace Orly {
 
       /* Access to body's DependsOn. */
       const TInline::TPtr &GetBody() const {
-        assert(this);
         return Body;
       }
 

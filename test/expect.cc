@@ -23,7 +23,6 @@ using namespace Base;
 using namespace Test;
 
 TExpect::~TExpect() {
-  assert(this);
   PreDtor();
   TApp::TLogger(!Pass)
     << CodeLocation << Source << "; " << Expression << "; " << (Pass ? "pass" : "fail");

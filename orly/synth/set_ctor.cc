@@ -47,7 +47,6 @@ TSetCtor::~TSetCtor() {
 }
 
 Expr::TExpr::TPtr TSetCtor::Build() const {
-  assert(this);
   Expr::TSet::TExprSet exprs;
   for (auto expr : Exprs) {
     auto result = exprs.emplace(expr->Build());
@@ -57,14 +56,12 @@ Expr::TExpr::TPtr TSetCtor::Build() const {
 }
 
 void TSetCtor::Cleanup() {
-  assert(this);
   for (auto expr : Exprs) {
     delete expr;
   }
 }
 
 void TSetCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto expr : Exprs) {
@@ -73,7 +70,6 @@ void TSetCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TSetCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto expr : Exprs) {

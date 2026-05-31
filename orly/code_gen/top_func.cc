@@ -28,7 +28,6 @@ bool TTopFunc::IsTopLevel() const {
 }
 
 void TTopFunc::WriteDecl(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   //NOTE: We prefix with 'F' to make the function name never conflict with a C++ builtin.
@@ -44,7 +43,6 @@ void TTopFunc::WriteDecl(TCppPrinter &out) const {
 }
 
 void TTopFunc::WriteDef(TCppPrinter &out) const {
-  assert(this);
   assert(&out);
 
   WriteDecl(out);

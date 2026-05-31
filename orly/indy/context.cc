@@ -119,7 +119,6 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
 TContext::TPresentWalker::~TPresentWalker() {}
 
 void TContext::TPresentWalker::Refresh() {
-  assert(this);
   bool done = false;
   size_t pos;
   while (Valid) {
@@ -168,18 +167,15 @@ TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &from,
 }
 
 TContext::TKeyCursor::~TKeyCursor() {
-  assert(this);
   ContextMembership.Remove();
 }
 
 TContext::TKeyCursor::operator bool() const {
-  assert(this);
   Refresh();
   return Valid;
 }
 
 const Indy::TKey &TContext::TKeyCursor::operator*() const {
-  assert(this);
   Refresh();
   assert(Valid);
   assert(Cached);
@@ -187,7 +183,6 @@ const Indy::TKey &TContext::TKeyCursor::operator*() const {
 }
 
 const Indy::TKey *TContext::TKeyCursor::operator->() const {
-  assert(this);
   Refresh();
   assert(Valid);
   assert(Cached);
@@ -195,7 +190,6 @@ const Indy::TKey *TContext::TKeyCursor::operator->() const {
 }
 
 TContext::TKeyCursor &TContext::TKeyCursor::operator++() {
-  assert(this);
   assert(Valid);
   Cached = false;
   ++Csr;
@@ -205,7 +199,6 @@ TContext::TKeyCursor &TContext::TKeyCursor::operator++() {
 }
 
 const TContext::TPresentWalker::TItem &TContext::TKeyCursor::GetVal() const {
-  assert(this);
   assert(Valid);
   assert(Csr);
   return *Csr;

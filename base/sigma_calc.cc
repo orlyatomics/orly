@@ -25,7 +25,6 @@ using namespace std;
 using namespace Base;
 
 void TSigmaCalc::Push(double val) {
-  assert(this);
   if (Count) {
     Min = min(Min, val);
     Max = max(Max, val);
@@ -44,7 +43,6 @@ void TSigmaCalc::Push(double val) {
 }
 
 size_t TSigmaCalc::Report(double &min, double &max, double &mean, double &sigma) const {
-  assert(this);
   assert(&min);
   assert(&max);
   assert(&mean);

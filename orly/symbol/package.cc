@@ -34,17 +34,14 @@ TPackage::TPackage(const TName &name, const std::string &index_name, unsigned in
 }
 
 const Package::TName &TPackage::GetName() const {
-  assert(this);
   return Name;
 }
 
 
 const std::string &TPackage::GetIndexName() const {
-  assert(this);
   return IndexName;
 }
 
 unsigned int TPackage::GetVersion() const {
-  assert(this);
   return Version;
 }

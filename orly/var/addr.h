@@ -80,7 +80,6 @@ namespace Orly {
 
       /* TODO */
       const TAddrType &GetVal() const {
-        assert(this);
         return Val;
       }
 
@@ -126,12 +125,10 @@ namespace Orly {
 
       template <size_t Pos>
       void Unroll(const Rt::TAddrImpl<Pos> &) {
-        assert(this);
       }
 
       template <size_t Pos, typename THead, typename... TTail>
       void Unroll(const Rt::TAddrImpl<Pos, THead, TTail...> &that) {
-        assert(this);
         Val.push_back(std::make_pair(that.GetDir(), TVar(that.GetHead())));
         TypeVec.push_back(Type::TDt<THead>::GetType());
         Unroll(that.GetTail());

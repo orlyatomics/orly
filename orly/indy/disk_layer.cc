@@ -38,7 +38,6 @@ TDiskLayer::TDiskLayer(L0::TManager *manager,
 }
 
 TDiskLayer::~TDiskLayer() {
-  assert(this);
   if (GetMarkedForDelete()) {
     assert(Repo->IsSafeRepo());
     try {
@@ -51,16 +50,13 @@ TDiskLayer::~TDiskLayer() {
 
 unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &from,
                                                         const TIndexKey &to) const {
-  assert(this);
   return Repo->NewPresentWalkerFile(GenId, from, to);
 }
 
 unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &key) const {
-  assert(this);
   return Repo->NewPresentWalkerFile(GenId, key);
 }
 
 unique_ptr<TUpdateWalker> TDiskLayer::NewUpdateWalker(TSequenceNumber from) const {
-  assert(this);
   return Repo->NewUpdateWalkerFile(GenId, from);
 }

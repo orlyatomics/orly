@@ -55,13 +55,11 @@ namespace Orly {
 
       /* Our current item. */
       const TItem &operator*() const {
-        assert(this);
         return Item;
       }
 
       /* Our current item. */
       const TItem *operator->() const {
-        assert(this);
         return &Item;
       }
 
@@ -102,13 +100,11 @@ namespace Orly {
 
       /* Our current Piece. */
       const std::string &operator*() const {
-        assert(this);
         return Matched;
       }
 
       /* Our current Piece. */
       const std::string *operator->() const {
-        assert(this);
         return &Matched;
       }
 
@@ -116,7 +112,6 @@ namespace Orly {
       TRegexMatcher &operator++();
 
       virtual operator bool() const {
-        assert(this);
         return !(Matched == "" && Next == nullptr);
       }
 

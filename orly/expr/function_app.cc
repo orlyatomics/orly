@@ -41,27 +41,23 @@ TFunctionAppArg::TFunctionAppArg(const TExpr::TPtr &expr)
     : Symbol::TRoot(expr), FunctionApp(nullptr) {}
 
 TFunctionApp *TFunctionAppArg::GetFunctionApp() const {
-  assert(this);
   assert(FunctionApp);
   return FunctionApp;
 }
 
 void TFunctionAppArg::SetFunctionApp(TFunctionApp *function_app) {
-  assert(this);
   assert(function_app);
   assert(!FunctionApp);
   FunctionApp = function_app;
 }
 
 void TFunctionAppArg::UnsetFunctionApp(TFunctionApp *function_app) {
-  assert(this);
   assert(function_app);
   assert(FunctionApp == function_app);
   FunctionApp = nullptr;
 }
 
 Symbol::TAnyFunction::TPtr TFunctionApp::GetFunction() const {
-  assert(this);
   auto ref = GetExpr()->TryAs<TRef>();
   Symbol::TAnyFunction::TPtr function = nullptr;
   if (ref) {
@@ -100,25 +96,21 @@ TFunctionApp::TFunctionApp(
 }
 
 TFunctionApp::~TFunctionApp() {
-  assert(this);
   for (auto function_app_arg : FunctionAppArgs) {
     (function_app_arg.second)->UnsetFunctionApp(this);
   }
 }
 
 void TFunctionApp::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const TFunctionApp::TFunctionAppArgMap &TFunctionApp::GetFunctionAppArgs() const {
-  assert(this);
   return FunctionAppArgs;
 }
 
 Type::TType TFunctionApp::GetTypeImpl() const {
-  assert(this);
   auto function = GetFunction();
   auto function_app_args = FunctionAppArgs;
   auto params = function->GetParams();

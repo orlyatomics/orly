@@ -82,20 +82,17 @@ namespace Orly {
 
       /* Destroy the name, freeing resources if necessary. */
       ~TName() {
-        assert(this);
         Cleanup();
       }
 
       /* Are we not null? */
       operator bool() const {
-        assert(this);
         return Lexeme != &DefaultLexeme;
       }
 
       /* Point to the given node.
          If we don't get a node, assume the 'null' state. */
       TName &operator=(const TNode *node) {
-        assert(this);
         Cleanup();
         SetLexeme(node);
         return *this;
@@ -103,7 +100,6 @@ namespace Orly {
 
       /* Regular assignment operator */
       TName &operator=(const TName &that) {
-        assert(this);
         assert(&that);
         assert(that.Text);
         assert(that.PosRange);
@@ -138,7 +134,6 @@ namespace Orly {
 
       /* Move assignment operator */
       TName &operator=(TName &&that) {
-        assert(this);
         assert(&that);
         Cleanup();
         std::swap(Lexeme, that.Lexeme);
@@ -150,7 +145,6 @@ namespace Orly {
       /* Two names are equal if their texts are equal or if they are both null.
          Positions are not considered. */
       bool operator==(const TName &that) const {
-        assert(this);
         assert(&that);
         return GetText() == that.GetText();
       }
@@ -158,14 +152,12 @@ namespace Orly {
       /* Two names are unequal if their texts are unequal of if one is null and the other is not.
          Positions are not considered. */
       bool operator!=(const TName &that) const {
-        assert(this);
         assert(&that);
         return GetText() != that.GetText();
       }
 
       /* */
       bool operator<(const TName &that) const {
-        assert(this);
         assert(&that);
         return GetText() < that.GetText();
       }
@@ -173,21 +165,18 @@ namespace Orly {
       /* The hash is based on the text of the name.
          Position is not considered. */
       size_t GetHash() const {
-        assert(this);
         return std::hash<std::string>()(GetText());
       }
 
       /* The position in the source text at which this name was given.
          If we're null, our position is (1, 1)-(1, 1). */
       const TPosRange &GetPosRange() const {
-        assert(this);
         return *PosRange;
       }
 
       /* The text of the name.
          If we're null, this is the empty string. */
       const std::string &GetText() const {
-        assert(this);
         return *Text;
       }
 
@@ -198,7 +187,6 @@ namespace Orly {
 
       /* Free resources if necessary. */
       void Cleanup() {
-        assert(this);
         if (!Lexeme) {
           delete Text;
           delete PosRange;
@@ -210,7 +198,6 @@ namespace Orly {
       /* Point at the node's lexeme.
          If there's no node, point at the default lexeme. */
       void SetLexeme(const TNode *node) {
-        assert(this);
         Lexeme = node ? &node->GetLexeme() : &DefaultLexeme;
         Text = &Lexeme->GetText();
         PosRange = &Lexeme->GetPosRange();

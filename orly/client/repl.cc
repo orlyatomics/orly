@@ -218,11 +218,9 @@ TRepl::TRepl(const TCmd &cmd)
     : Client(make_shared<TClient>(cmd.ServerAddress, cmd.SessionId, seconds(cmd.TimeToLive))) {}
 
 TRepl::~TRepl() {
-  assert(this);
 }
 
 int TRepl::Run() {
-  assert(this);
   Repl("orly> ", GetInfos(), [this](const string &str) {
     bool keep_going = true;
     try {

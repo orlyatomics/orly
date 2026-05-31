@@ -35,12 +35,10 @@ TNow::TNow(const TPosRange &pos_range)
     : TLeaf(pos_range) {}
 
 void TNow::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TNow::GetTypeImpl() const {
-  assert(this);
   return Type::TTimePnt::Get();
 }

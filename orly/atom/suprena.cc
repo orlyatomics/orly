@@ -24,7 +24,6 @@ using namespace std;
 using namespace Orly::Atom;
 
 TCore::TOffset TSuprena::Propose(TCore::TNote *proposed_note) {
-  assert(this);
   const TCore::TNote *interned_note = NoteInterner.Propose(proposed_note);
   return reinterpret_cast<TCore::TOffset>(interned_note);
 }
@@ -32,14 +31,12 @@ TCore::TOffset TSuprena::Propose(TCore::TNote *proposed_note) {
 void TSuprena::ReleaseNote(const TCore::TNote *, TCore::TOffset, void *, void *, void *) {}
 
 const TCore::TNote *TSuprena::TryAcquireNote(TCore::TOffset offset, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   auto note = reinterpret_cast<TCore::TNote *>(offset);
   assert(NoteInterner.IsOwned(note));
   return note;
 }
 
 const TCore::TNote *TSuprena::TryAcquireNote(TCore::TOffset offset, size_t known_size, void *&/*data1*/, void *&/*data2*/, void *&/*data3*/) {
-  assert(this);
   auto note = reinterpret_cast<TCore::TNote *>(offset);
   assert(note->GetRawSize() + sizeof(Atom::TCore::TNote) >= known_size);
   assert(NoteInterner.IsOwned(note));

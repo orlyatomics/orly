@@ -60,7 +60,6 @@ TObjCtor::~TObjCtor() {
 }
 
 Expr::TExpr::TPtr TObjCtor::Build() const {
-  assert(this);
   Expr::TObj::TMemberMap members;
   for (auto member : Members) {
     auto result = members.insert(std::make_pair((member.first).GetText(), (member.second)->Build()));
@@ -70,14 +69,12 @@ Expr::TExpr::TPtr TObjCtor::Build() const {
 }
 
 void TObjCtor::Cleanup() {
-  assert(this);
   for (auto member : Members) {
     delete member.second;
   }
 }
 
 void TObjCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto member : Members) {
@@ -86,7 +83,6 @@ void TObjCtor::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TObjCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   for (auto member : Members) {

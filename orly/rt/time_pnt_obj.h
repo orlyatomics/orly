@@ -63,65 +63,52 @@ namespace Orly {
 
         #if 0
         Var::TVar AsVar() const final {
-          assert(this);
           return Var::TVar::Obj(TDynamicMembers{{ "day", Var::TVar(Vday)}, { "hour", Var::TVar(Vhour)}, { "minute", Var::TVar(Vminute)}, { "month", Var::TVar(Vmonth)}, { "nanosecond", Var::TVar(Vnanosecond)}, { "second", Var::TVar(Vsecond)}, { "utc_offset", Var::TVar(Vutc_offset)}, { "year", Var::TVar(Vyear)}});
         }
         #endif
 
         size_t GetHash() const {
-          assert(this);
           return  std::hash<int64_t>()(Vday) ^ std::hash<int64_t>()(Vhour) ^ std::hash<int64_t>()(Vminute) ^ std::hash<int64_t>()(Vmonth) ^ std::hash<int64_t>()(Vnanosecond) ^ std::hash<int64_t>()(Vsecond) ^ std::hash<int64_t>()(Vutc_offset) ^ std::hash<int64_t>()(Vyear);
         }
 
         bool EqEq(const TObjO8i3dayi4houri6minutei5monthi10nanosecondi6secondi10utc_offseti4year &that) const {
-          assert(this);
           assert(&that);
           return Rt::And(Rt::EqEq(Vday, that.Vday), Rt::And(Rt::EqEq(Vhour, that.Vhour), Rt::And(Rt::EqEq(Vminute, that.Vminute), Rt::And(Rt::EqEq(Vmonth, that.Vmonth), Rt::And(Rt::EqEq(Vnanosecond, that.Vnanosecond), Rt::And(Rt::EqEq(Vsecond, that.Vsecond), Rt::And(Rt::EqEq(Vutc_offset, that.Vutc_offset), Rt::And(Rt::EqEq(Vyear, that.Vyear), true))))))));
         }
 
 
         bool Match(const TObjO8i3dayi4houri6minutei5monthi10nanosecondi6secondi10utc_offseti4year &that) const {
-          assert(this);
           assert(&that);
           return Rt::Match(Vday, that.Vday) && Rt::Match(Vhour, that.Vhour) && Rt::Match(Vminute, that.Vminute) && Rt::Match(Vmonth, that.Vmonth) && Rt::Match(Vnanosecond, that.Vnanosecond) && Rt::Match(Vsecond, that.Vsecond) && Rt::Match(Vutc_offset, that.Vutc_offset) && Rt::Match(Vyear, that.Vyear);
         }
 
         bool Neq(const TObjO8i3dayi4houri6minutei5monthi10nanosecondi6secondi10utc_offseti4year &that) const {
-          assert(this);
           assert(&that);
           return Rt::Or(Rt::Neq(Vday, that.Vday), Rt::Or(Rt::Neq(Vhour, that.Vhour), Rt::Or(Rt::Neq(Vminute, that.Vminute), Rt::Or(Rt::Neq(Vmonth, that.Vmonth), Rt::Or(Rt::Neq(Vnanosecond, that.Vnanosecond), Rt::Or(Rt::Neq(Vsecond, that.Vsecond), Rt::Or(Rt::Neq(Vutc_offset, that.Vutc_offset), Rt::Or(Rt::Neq(Vyear, that.Vyear), false))))))));
         }
 
         int64_t GetVday() const {
-          assert(this);
           return Vday;
         }
         int64_t GetVhour() const {
-          assert(this);
           return Vhour;
         }
         int64_t GetVminute() const {
-          assert(this);
           return Vminute;
         }
         int64_t GetVmonth() const {
-          assert(this);
           return Vmonth;
         }
         int64_t GetVnanosecond() const {
-          assert(this);
           return Vnanosecond;
         }
         int64_t GetVsecond() const {
-          assert(this);
           return Vsecond;
         }
         int64_t GetVutc_offset() const {
-          assert(this);
           return Vutc_offset;
         }
         int64_t GetVyear() const {
-          assert(this);
           return Vyear;
         }
 

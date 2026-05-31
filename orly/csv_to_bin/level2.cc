@@ -39,7 +39,6 @@ TLevel2::TLevel2(TLevel1 &level1, size_t buffer_size)
 }
 
 TLevel2::~TLevel2() {
-  assert(this);
   free(Start);
 }
 
@@ -83,7 +82,6 @@ const char *TLevel2::GetName(TState state) {
 }
 
 void TLevel2::Update() {
-  assert(this);
   Cache.State = NextState;
   Cache.Start = nullptr;
   Cache.Limit = nullptr;

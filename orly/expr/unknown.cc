@@ -35,13 +35,11 @@ TUnknown::TUnknown(const Type::TType &type, const TPosRange &pos_range)
     : TLeaf(pos_range), Type(type) {}
 
 void TUnknown::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 const Type::TType &TUnknown::GetCoreType() const {
-  assert(this);
   return Type;
 }
 
@@ -101,7 +99,6 @@ Type::TType TUnknown::GetTypeImpl() const {
       Type = Type::TOpt::Get(Type::TTimePnt::Get());
     }
   };  // TUnknownVisitor
-  assert(this);
   Type::TType type;
   Type.Accept(TUnknownVisitor(type, GetPosRange()));
   return type;

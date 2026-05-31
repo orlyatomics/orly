@@ -29,12 +29,10 @@ namespace Orly {
       public:
 
       const TType &GetKey() const {
-        assert(this);
         return std::get<0>(TInternedType::GetKey());
       }
 
       const TType &GetVal() const {
-        assert(this);
         return std::get<1>(TInternedType::GetKey());
       }
 

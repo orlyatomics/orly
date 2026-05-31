@@ -34,12 +34,10 @@ namespace Base {
     ~TTmpDir();
 
     const char *GetName() const {
-      assert(this);
       return &Name[0];
     }
 
     void SetDeleteOnDestroy(bool delete_on_destroy) {
-      assert(this);
       DeleteOnDestroy = delete_on_destroy;
     }
 

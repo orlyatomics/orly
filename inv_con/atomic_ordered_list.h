@@ -57,13 +57,11 @@ namespace InvCon {
 
       /* The collector which owns us.  Never null. */
       TCollector *GetCollector() const {
-        assert(this);
         return Collector;
       }
 
       /* TODO */
       void ForEach(const std::function<bool (const TMember &)> &cb) {
-        assert(this);
         bool keep_going = true;
         TTypedMembership *prev_membership = 0;
         while (FirstLock.test_and_set(std::memory_order_acquire)) {/* acquire list first lock */}
@@ -101,13 +99,11 @@ namespace InvCon {
 
       /* Remove each member from the collection upon destruction. */
       virtual ~TCollection() {
-        assert(this);
         RemoveEachMember();
       }
 
       /* Delete each member. THIS IS NOT ATOMIC... */
       void DeleteEachMember() {
-        assert(this);
         while (FirstMembership) {
           TMember *member = FirstMembership->Member;
           FirstMembership->Remove();
@@ -117,14 +113,12 @@ namespace InvCon {
 
       /* Insert the given membership at the correct position. */
       void Insert(TTypedMembership *membership) {
-        assert(this);
         assert(membership);
         membership->Insert(this);
       }
 
       /* Remove each member from the collection but don't delete them. THIS IS NOT ATOMIC...*/
       void RemoveEachMember() {
-        assert(this);
         while (FirstMembership) {
           FirstMembership->Remove();
         }
@@ -160,25 +154,21 @@ namespace InvCon {
 
       /* Get our key. */
       const TKey &GetKey() const {
-        assert(this);
         return Key;
       }
 
       /* The member which owns us.  Never null. */
       TMember *GetMember() const {
-        assert(this);
         return Member;
       }
 
       /* The collection we're in, if any. */
       TTypedCollection *TryGetCollection() const {
-        assert(this);
         return Collection;
       }
 
       /* The collector whose collection we're in, if any. */
       TCollector *TryGetCollector() const {
-        assert(this);
         return Collection ? Collection->Collector : 0;
       }
 
@@ -209,13 +199,11 @@ namespace InvCon {
 
       /* Automatically removes us from our collection (if any) before destruction. */
       virtual ~TMembership() {
-        assert(this);
         Remove();
       }
 
       /* Insert us into the given collection at the correct position. */
       void Insert(TTypedCollection *collection) {
-        assert(this);
         assert(!Collection);
         assert(collection);
         TMembership *prev_membership = 0;
@@ -254,7 +242,6 @@ namespace InvCon {
       /* Remove us from our collection.
          If we're not in a collection, this function does nothing. */
       void Remove() {
-        assert(this);
         if (Collection) {
           /* Fixup the pointers on either side of us to point around us,
              then go back to the unlinked state. */
@@ -304,7 +291,6 @@ namespace InvCon {
       /* The fixup pointers before and after us in our collection.
          We must be in a collection or this is an error. */
       void FixupLinkage(TMembership *prev_fixup, TMembership *next_fixup) {
-        assert(this);
         assert(Collection);
         (PrevMembership ? PrevMembership->NextMembership : Collection->FirstMembership) = prev_fixup;
         (NextMembership ? NextMembership->PrevMembership : Collection->LastMembership ) = next_fixup;
@@ -313,7 +299,6 @@ namespace InvCon {
       /* Reset all pointers to null.
          This function does no unlinking so make sure we're unlinked first. */
       void ZeroLinkage() {
-        assert(this);
         Collection = 0;
         NextMembership = 0;
         PrevMembership = 0;

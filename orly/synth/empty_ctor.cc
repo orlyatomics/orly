@@ -87,7 +87,6 @@ TEmptyCtor::TEmptyCtor(const Package::Syntax::TEmptyCtor *empty_ctor)
 }
 
 TEmptyCtor::~TEmptyCtor() {
-  assert(this);
   delete Type;
 }
 
@@ -128,14 +127,12 @@ Expr::TExpr::TPtr TEmptyCtor::Build() const {
     Expr::TExpr::TPtr &Expr;
     const TPosRange &PosRange;
   };  // TTypeVisitor
-  assert(this);
   Expr::TExpr::TPtr expr;
   Type->GetSymbolicType().Accept(TTypeVisitor(expr, GetPosRange(EmptyCtor)));
   return expr;
 }
 
 void TEmptyCtor::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   assert(Type);

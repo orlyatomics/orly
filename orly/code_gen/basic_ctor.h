@@ -127,7 +127,6 @@ namespace Orly {
       }
 
       size_t GetNumElements() const {
-        assert(this);
         return Elements.size();
       }
 

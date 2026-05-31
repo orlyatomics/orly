@@ -98,7 +98,6 @@ TTestServer::TTestServer(const TCmd &cmd)
 }
 
 TTestServer::~TTestServer() {
-  assert(this);
   syslog(LOG_INFO, "stopping server");
   try {
     /* Setting this flag will prevent new workers from launching and new I/O requests from starting. */
@@ -133,7 +132,6 @@ TTestServer::TConn::TConn(const TTestServer *server, TFd &&client)
 }
 
 void TTestServer::TConn::ArmDeadline(int secs) {
-  assert(this);
   itimerspec spec;
   Zero(spec);
   spec.it_value.tv_sec = secs;
@@ -143,13 +141,11 @@ void TTestServer::TConn::ArmDeadline(int secs) {
 }
 
 void TTestServer::TConn::DisarmDeadline() {
-  assert(this);
   Poller[1].revents = 0;
   DeadlineIsArmed = false;
 }
 
 size_t TTestServer::TConn::RecvAtMost(void *buf, size_t size) {
-  assert(this);
   assert(buf || !size);
   /* Wait for the client to be read-ready, then try to read some bytes.
      If we read none, or we get an error, throw appropriately. */
@@ -158,7 +154,6 @@ size_t TTestServer::TConn::RecvAtMost(void *buf, size_t size) {
 }
 
 void TTestServer::TConn::RecvExactly(void *buf, size_t size) {
-  assert(this);
   char *csr = static_cast<char *>(buf);
   while (size) {
     size_t actl = RecvAtMost(csr, size);
@@ -168,7 +163,6 @@ void TTestServer::TConn::RecvExactly(void *buf, size_t size) {
 }
 
 size_t TTestServer::TConn::SendAtMost(const void *buf, size_t size) {
-  assert(this);
   assert(buf || !size);
   /* Wait for the client to be write-ready, then try to write some bytes.
      If we write none, or we get an error, throw appropriately. */
@@ -177,7 +171,6 @@ size_t TTestServer::TConn::SendAtMost(const void *buf, size_t size) {
 }
 
 void TTestServer::TConn::SendExactly(const void *buf, size_t size) {
-  assert(this);
   const char *csr = static_cast<const char *>(buf);
   while (size) {
     size_t actl = SendAtMost(csr, size);
@@ -187,7 +180,6 @@ void TTestServer::TConn::SendExactly(const void *buf, size_t size) {
 }
 
 void TTestServer::TConn::WaitForClient(int flags) {
-  assert(this);
   /* If the server is stopping, don't even start this I/O. */
   if (Server->Stopping) {
     throw TInterrupted();
@@ -236,7 +228,6 @@ size_t TTestServer::TConn::HandleIoResult(ssize_t actl) {
 }
 
 void TTestServer::AcceptorMain(const string &worker_name) {
-  assert(this);
   assert(&worker_name);
   /* Loop here, accepting connections and launching sessions, until the server begins stopping. */
   while (!Stopping) {
@@ -265,7 +256,6 @@ void TTestServer::AcceptorMain(const string &worker_name) {
 }
 
 void TTestServer::ConnectionMain(const string &worker_name, TFd &client) {
-  assert(this);
   assert(&worker_name);
   /* Make an object to manage the I/O over this connection,
      then give the client a few tries to establish a session. */
@@ -323,7 +313,6 @@ void TTestServer::ConnectionMain(const string &worker_name, TFd &client) {
 }
 
 void TTestServer::LaunchWorker(string &&worker_name, function<void (const string &)> &&entry_point) {
-  assert(this);
   assert(&worker_name);
   assert(&entry_point);
   /* If we're stopping, throw. */
@@ -351,7 +340,6 @@ void TTestServer::LaunchWorker(string &&worker_name, function<void (const string
 }
 
 void TTestServer::WorkerWrapper(const string &worker_name, const function<void (const string &)> &entry_point) {
-  assert(this);
   assert(&worker_name);
   assert(&entry_point);
   assert(entry_point);

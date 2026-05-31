@@ -54,7 +54,6 @@ class TCmd final
   }
 
   virtual bool CheckArgs(const TMeta::TMessageConsumer &cb) override {
-    assert(this);
     if (Delim.size() != 1u && !cb("delim must be a single byte")) {
       return false;
     }

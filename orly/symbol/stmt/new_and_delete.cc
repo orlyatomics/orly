@@ -51,13 +51,11 @@ TDelete::TPtr TDelete::New(const TStmtArg::TPtr &stmt_arg, Type::TType value_typ
 }
 
 void TDelete::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TDelete::TypeCheck() const {
-  assert(this);
   Type::TType dummy;
   GetStmtArg()->GetExpr()->GetType().Accept(TAddressTypeVisitor(dummy, GetPosRange()));
 }
@@ -73,13 +71,11 @@ TNew::TPtr TNew::New(
 }
 
 void TNew::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TNew::TypeCheck() const {
-  assert(this);
   Type::TType dummy;
   GetLhs()->GetExpr()->GetType().Accept(TAddressTypeVisitor(dummy, GetPosRange()));
   /* NOTE: Maybe this should be type check rather than get type. But for now,

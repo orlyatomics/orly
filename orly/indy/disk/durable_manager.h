@@ -310,13 +310,11 @@ namespace Orly {
 
             /* TODO */
             virtual size_t GetFileLength() const override {
-              assert(this);
               return File->FileSize;
             }
 
             /* TODO */
             virtual size_t GetStartingBlock() const override {
-              assert(this);
               assert(File->BlockVec.Size() > 0);
               return File->BlockVec.Front();
             }
@@ -328,7 +326,6 @@ namespace Orly {
 
             /* TODO */
             virtual size_t FindPageIdOfByte(size_t offset) const override {
-              assert(this);
               assert(offset <= GetFileLength());
               return ((File->BlockVec[offset / Disk::Util::LogicalBlockSize]) * Disk::Util::PagesPerBlock) + ((offset % Disk::Util::LogicalBlockSize) / Disk::Util::LogicalPageSize);
             }
@@ -827,7 +824,6 @@ namespace Orly {
 
           /* TODO */
           virtual TKind GetKind() const {
-            assert(this);
             return TDurableLayer::MemSlush;
           }
 
@@ -873,7 +869,6 @@ namespace Orly {
 
           /* TODO */
           virtual TKind GetKind() const {
-            assert(this);
             return TDurableLayer::DiskOrdered;
           }
 
@@ -986,12 +981,10 @@ namespace Orly {
       }
 
       inline size_t TDurableManager::TSortedByIdFile::GetNumDurable() const {
-        assert(this);
         return NumDurable;
       }
 
       inline size_t TDurableManager::TMergeSortedByIdFile::GetNumDurable() const {
-        assert(this);
         return NumDurable;
       }
 
@@ -1002,12 +995,10 @@ namespace Orly {
           MarkedForDelete(false) {}
 
       inline void TDurableManager::TMapping::Incr() {
-        assert(this);
         __sync_add_and_fetch(&RefCount, 1U);
       }
 
       inline void TDurableManager::TMapping::Decr() {
-        assert(this);
         size_t count = __sync_sub_and_fetch(&RefCount, 1U);
         if (this != ManagerMembership.TryGetCollection()->TryGetLastMember() && count == 0) {
           delete this;
@@ -1015,12 +1006,10 @@ namespace Orly {
       }
 
       inline size_t TDurableManager::TMapping::GetRefCount() const {
-        assert(this);
         return RefCount;
       }
 
       inline TDurableManager::TMapping::TEntryCollection *TDurableManager::TMapping::GetEntryCollection() const {
-        assert(this);
         return &EntryCollection;
       }
 
@@ -1031,13 +1020,11 @@ namespace Orly {
       }
 
       inline TDurableManager::TMapping::TEntry::~TEntry() {
-        assert(this);
         assert(Layer);
         Layer->Decr();
       }
 
       inline TDurableManager::TDurableLayer *TDurableManager::TMapping::TEntry::GetLayer() const {
-        assert(this);
         return Layer;
       }
 
@@ -1051,12 +1038,10 @@ namespace Orly {
       inline TDurableManager::TDurableLayer::~TDurableLayer() {}
 
       inline void TDurableManager::TDurableLayer::Incr() {
-        assert(this);
         __sync_add_and_fetch(&RefCount, 1U);
       }
 
       inline void TDurableManager::TDurableLayer::Decr() {
-        assert(this);
         size_t count = __sync_sub_and_fetch(&RefCount, 1U);
         if (MarkedForDelete && count == 0) {
           std::lock_guard<std::mutex> removal_lock(Manager->RemovalLock);
@@ -1065,27 +1050,22 @@ namespace Orly {
       }
 
       inline void TDurableManager::TDurableLayer::RemoveFromCollection() {
-        assert(this);
         RemovalMembership.Remove();
       }
 
       inline bool TDurableManager::TDurableLayer::GetMarkedForDelete() const {
-        assert(this);
         return MarkedForDelete;
       }
 
       inline void TDurableManager::TDurableLayer::MarkForDelete() {
-        assert(this);
         MarkedForDelete = true;
       }
 
       inline bool TDurableManager::TDurableLayer::GetMarkedTaken() const {
-        assert(this);
         return MarkedTaken;
       }
 
       inline void TDurableManager::TDurableLayer::MarkTaken() {
-        assert(this);
         MarkedTaken = true;
       }
 
@@ -1093,22 +1073,18 @@ namespace Orly {
           : TDurableLayer(manager), EntryCollection(this), NumEntries(0UL), TotalSerializedSize(0UL) {}
 
       inline TDurableManager::TMemSlushLayer::~TMemSlushLayer() {
-        assert(this);
         EntryCollection.DeleteEachMember();
       }
 
       inline size_t TDurableManager::TMemSlushLayer::GetNumEntries() const {
-        assert(this);
         return NumEntries;
       }
 
       inline size_t TDurableManager::TMemSlushLayer::GetTotalSerializedSize() const {
-        assert(this);
         return TotalSerializedSize;
       }
 
       inline TDurableManager::TMemSlushLayer::TEntryCollection *TDurableManager::TMemSlushLayer::GetEntryCollection() const {
-        assert(this);
         return &EntryCollection;
       }
 
@@ -1144,27 +1120,22 @@ namespace Orly {
       }
 
       inline const uuid_t &TDurableManager::TMemSlushLayer::TDurableEntry::GetId() const {
-        assert(this);
         return SlushMembership.GetKey().Id;
       }
 
       inline TSequenceNumber TDurableManager::TMemSlushLayer::TDurableEntry::GetSeqNum() const {
-        assert(this);
         return SlushMembership.GetKey().SeqNum;
       }
 
       inline size_t TDurableManager::TMemSlushLayer::TDurableEntry::GetDeadlineCount() const {
-        assert(this);
         return DeadlineCount;
       }
 
       inline TDurableManager::TSerializedSize TDurableManager::TMemSlushLayer::TDurableEntry::GetSerializedSize() const {
-        assert(this);
         return SerializedForm.size();
       }
 
       inline const std::string &TDurableManager::TMemSlushLayer::TDurableEntry::GetSerializedForm() const {
-        assert(this);
         return SerializedForm;
       }
 
@@ -1172,27 +1143,22 @@ namespace Orly {
           : TDurableLayer(manager), Engine(engine), GenId(gen_id), NumDurable(num_durable) {}
 
       inline void TDurableManager::TDiskOrderedLayer::FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const {
-        assert(this);
         TSortedInFile(Engine, RealTime, GenId).FindInHash(cur_max_seq, id, serialized_form_out);
       }
 
       inline TDurableManager::TMapping *TDurableManager::TMapping::TView::GetMapping() const {
-        assert(this);
         return Mapping;
       }
 
       inline TDurableManager::TMemSlushLayer *TDurableManager::TMapping::TView::GetCurLayer() const {
-        assert(this);
         return CurMemLayer;
       }
 
       inline size_t TDurableManager::TDiskOrderedLayer::GetGenId() const {
-        assert(this);
         return GenId;
       }
 
       inline size_t TDurableManager::TDiskOrderedLayer::GetNumDurable() const {
-        assert(this);
         return NumDurable;
       }
 

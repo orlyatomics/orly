@@ -60,13 +60,11 @@ TTestDef::TTestDef(TScope *scope, const Package::Syntax::TTestDef *test_def)
 }
 
 TTestDef::~TTestDef() {
-  assert(this);
   delete OptWithClause;
   delete TestCaseBlock;
 }
 
 TAction TTestDef::Build(int pass) {
-  assert(this);
   TAction action;
   switch (pass) {
     case 1:
@@ -90,7 +88,6 @@ TAction TTestDef::Build(int pass) {
 }
 
 void TTestDef::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   if (OptWithClause) {
@@ -100,7 +97,6 @@ void TTestDef::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
 }
 
 void TTestDef::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   assert(cb);
   if (OptWithClause) {

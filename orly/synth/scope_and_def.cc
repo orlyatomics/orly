@@ -29,12 +29,10 @@ using namespace Orly;
 using namespace Orly::Synth;
 
 TScope::~TScope() {
-  assert(this);
   Defs.DeleteEachMember();
 }
 
 void TScope::Bind() const {
-  assert(this);
   ForEachControlledRef([this](TAnyRef &ref){ ref.Bind(this); });
   Defs.ForEachUniqueMember([](TDef *def) -> bool {
     def->BindEachRef();
@@ -43,7 +41,6 @@ void TScope::Bind() const {
 }
 
 TAction TScope::BuildEachDef(int pass) const {
-  assert(this);
   return TDef::BuildEachDef(pass, [this](const std::function<bool (TDef *)> &cb) { Defs.ForEachUniqueMember(cb); });
 }
 
@@ -53,7 +50,6 @@ TScope::TScope(TScope *parent)
 void TScope::ForEachControlledRef(const std::function<void (TAnyRef &)> &) const {}
 
 TDef *TScope::TryGetAnyDef(const TName &name) const {
-  assert(this);
   assert(&name);
   TDef *def;
   if (name) {
@@ -91,7 +87,6 @@ void TScope::AddError(const TName &name, const char *expected_type) {
 TDef::~TDef() {}
 
 void TDef::BindEachRef() {
-  assert(this);
   TScope *scope = GetOuterScope();
   ForEachRef([scope](TAnyRef &ref){ ref.Bind(scope); });
   ForEachInnerScope([](TScope *scope){ scope->Bind(); });
@@ -144,7 +139,6 @@ void TDef::ForEachPred(int, const std::function<bool (TDef *)> &) {}
 void TDef::ForEachInnerScope(const std::function<void (TScope *)> &) {}
 
 TAction TDef::BuildHelper(int pass) {
-  assert(this);
   TAction action;
   if (Readiness < pass) {
     switch (State) {

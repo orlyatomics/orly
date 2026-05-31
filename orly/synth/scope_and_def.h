@@ -59,7 +59,6 @@ namespace Orly {
 
       /* True iff. we're non-null. */
       operator bool() const {
-        assert(this);
         return Name;
       }
 
@@ -71,19 +70,16 @@ namespace Orly {
 
       /* True when we're bound, even if we're bound to null. */
       bool GetIsBound() const {
-        assert(this);
         return IsBound;
       }
 
       /* The name to which we want to bind (or have already bound). */
       const TName &GetName() const {
-        assert(this);
         return Name;
       }
 
       /* Set the name of the def to which the ref will point.  The ref must must not already be bound. */
       void SetName(const TName::TNode *node) {
-        assert(this);
         assert(!IsBound);
         Name = node;
       }
@@ -91,7 +87,6 @@ namespace Orly {
       /* Conditionally set the reference, when the name is optional.  We must not already be bound. */
       template <typename TYesNode, typename TNoNode, typename TOptNode>
       void SetName(const TOptNode *opt_node) {
-        assert(this);
         assert(!IsBound);
         const TYesNode *yes_node = TryGetNode<TYesNode, TNoNode>(opt_node);
         if (yes_node) {
@@ -107,7 +102,6 @@ namespace Orly {
 
       /* Mark us as having been bound.  We must not already be bound. */
       void SetIsBound() {
-        assert(this);
         assert(!IsBound);
         IsBound = true;
       }
@@ -169,7 +163,6 @@ namespace Orly {
 
       /* The collection of defs. */
       TDefs *GetDefs() const {
-        assert(this);
         return &Defs;
       }
 
@@ -253,21 +246,18 @@ namespace Orly {
 
         /* Dereference the reference.  We must be bound first. */
         TSomeDef *operator*() const {
-          assert(this);
           assert(GetIsBound());
           return Def;
         }
 
         /* Dereference the reference.  We must be bound first. */
         TSomeDef *operator->() const {
-          assert(this);
           assert(GetIsBound());
           return Def;
         }
 
         /* See base class. */
         virtual void Bind(const TScope *scope) {
-          assert(this);
           assert(scope);
           Def = scope->TryGetDef<TSomeDef>(GetName());
           SetIsBound();
@@ -275,7 +265,6 @@ namespace Orly {
 
         /* See base class. */
         virtual TDef *GetDef() const {
-          assert(this);
           return Def;
         }
 
@@ -295,19 +284,16 @@ namespace Orly {
 
       /* The name associated with this def. */
       const TName &GetName() const {
-        assert(this);
         return ScopeMembership.GetKey();
       }
 
       /* The scope in which we reside.  Never null. */
       TScope *GetOuterScope() const {
-        assert(this);
         return Base::AssertTrue(ScopeMembership.TryGetCollector());
       }
 
       /* Our membership in our scope's collection of defs. */
       TScopeMembership *GetScopeMembership() const {
-        assert(this);
         return &ScopeMembership;
       }
 
@@ -393,7 +379,6 @@ namespace Orly {
     /* See declaration. */
     template <typename TSomeDef>
     TSomeDef *TScope::TryGetDef(const TName &name) const {
-      assert(this);
       TSomeDef *some_def;
       TDef *def = TryGetAnyDef(name);
       if (def) {

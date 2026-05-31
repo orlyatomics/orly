@@ -52,7 +52,6 @@ class TFileSyncReadFile
 const size_t TFileSync::CopyBufSize = LogicalBlockSize;
 
 void TFileSync::Write(Io::TBinaryOutputStream &stream) const {
-  assert(this);
   assert(Type == TType::Source);
   TFileSyncReadFile sync_file(Engine, FileId, GenId);
   const size_t file_length = sync_file.GetFileLength();
@@ -74,7 +73,6 @@ void TFileSync::Write(Io::TBinaryOutputStream &stream) const {
 }
 
 void TFileSync::Read(Io::TBinaryInputStream &stream) {
-  assert(this);
   assert(Type == TType::Destination);
   size_t file_length;
   size_t starting_block_offset;

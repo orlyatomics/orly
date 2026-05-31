@@ -38,7 +38,6 @@ TKind::TKind(const TName &name, TAnyBase *base)
 }
 
 TKind::~TKind() {
-  assert(this);
   if (Base) {
     Base->SubKinds.erase(this);
   }

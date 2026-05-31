@@ -27,7 +27,6 @@ bool TTestFileService::FindFile(const Base::TUuid &file_uid,
                                 size_t &out_block_offset,
                                 size_t &out_file_size,
                                 size_t &out_num_keys) const {
-  assert(this);
   std::lock_guard<std::mutex> lock(Mutex);
   auto uid_ret = FileMap.find(file_uid);
   if (uid_ret != FileMap.end()) {
@@ -56,7 +55,6 @@ void TTestFileService::InsertFile(const Base::TUuid &file_uid,
                                   TSequenceNumber lowest_seq,
                                   TSequenceNumber highest_seq,
                                   TCompletionTrigger &completion_trigger) {
-  assert(this);
   completion_trigger.WaitForOneMore();
   /* hold the mutex */ {
     std::lock_guard<std::mutex> lock(Mutex);
@@ -68,7 +66,6 @@ void TTestFileService::InsertFile(const Base::TUuid &file_uid,
 void TTestFileService::RemoveFile(const Base::TUuid &file_uid,
                                   size_t gen_id,
                                   TCompletionTrigger &completion_trigger) {
-  assert(this);
   completion_trigger.WaitForOneMore();
   /* acquire Mutex */ {
     std::lock_guard<std::mutex> lock(Mutex);

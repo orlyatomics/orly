@@ -26,12 +26,10 @@ using namespace Orly;
 using namespace Orly::Var;
 
 size_t TFree::GetHash() const {
-  assert(this);
   return 0;
 }
 
 Type::TType TFree::GetType() const {
-  assert(this);
   return Type;
 }
 
@@ -40,77 +38,62 @@ void TFree::Write(std::ostream &) const {
 }
 
 void TFree::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TFree::Touch() {
-  assert(this);
 }
 
 Var::TVar &TFree::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on free.");
 }
 
 TFree &TFree::Add(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Add not supported on free.");
 }
 
 TFree &TFree::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on free.");
 }
 
 TFree &TFree::Div(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Div not supported on free.");
 }
 
 TFree &TFree::Exp(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Exp not supported on free.");
 }
 
 TFree &TFree::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on free.");
 }
 
 TFree &TFree::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on free.");
 }
 
 TFree &TFree::Mult(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mult not supported on free.");
 }
 
 TFree &TFree::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on free.");
 }
 
 TFree &TFree::Sub(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Sub not supported on free.");
 }
 
 TFree &TFree::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on free.");
 }
 
 TFree &TFree::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on free.");
 }
 
 TFree &TFree::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on free.");
 }
 

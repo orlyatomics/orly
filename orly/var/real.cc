@@ -24,97 +24,79 @@ using namespace Orly;
 using namespace Var;
 
 size_t TReal::GetHash() const {
-  assert(this);
   return std::hash<double>()(Val);
 }
 
 Type::TType TReal::GetType() const {
-  assert(this);
   return Type::TReal::Get();
 }
 
 void TReal::Write(std::ostream &stream) const {
-  assert(this);
   stream << std::showpoint << Val;
 }
 
 void TReal::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 void TReal::Touch() {
-  assert(this);
 }
 
 Var::TVar &TReal::Index(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Index not supported on Real.");
 }
 
 TReal &TReal::Add(const TVar &rhs) {
-  assert(this);
   Val += Var::TVar::TDt<double>::As(rhs);
   return *this;
 }
 
 TReal &TReal::And(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "And not supported on Real.");
 }
 
 TReal &TReal::Div(const TVar &rhs) {
-  assert(this);
   Val /= Var::TVar::TDt<double>::As(rhs);
   return *this;
 }
 
 TReal &TReal::Exp(const TVar &rhs) {
-  assert(this);
   Val = pow(Val, Var::TVar::TDt<double>::As(rhs));
   return *this;
 }
 
 TReal &TReal::Intersection(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Intersection not supported on Real.");
 }
 
 TReal &TReal::Mod(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Mod not supported on Real.");
 }
 
 TReal &TReal::Mult(const TVar &rhs) {
-  assert(this);
   Val *= Var::TVar::TDt<double>::As(rhs);
   return *this;
 }
 
 TReal &TReal::Or(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Or not supported on Real.");
 }
 
 TReal &TReal::Sub(const TVar &rhs) {
-  assert(this);
   Val -= Var::TVar::TDt<double>::As(rhs);
   return *this;
 }
 
 TReal &TReal::SymmetricDiff(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "SymmetricDiff not supported on Real.");
 }
 
 TReal &TReal::Union(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Union not supported on Real.");
 }
 
 TReal &TReal::Xor(const TVar &) {
-  assert(this);
   throw Rt::TSystemError(HERE, "Xor not supported on Real.");
 }
 
@@ -123,7 +105,6 @@ TReal::TReal(double that) : Val(that) {}
 TReal::~TReal() {}
 
 TVar TReal::Copy() const {
-  assert(this);
   return TReal::New(Val);
 }
 

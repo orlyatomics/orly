@@ -37,18 +37,15 @@ TDirIter::TDirIter(const char *dir)
 }
 
 TDirIter::~TDirIter() {
-  assert(this);
   closedir(Handle);
 }
 
 void TDirIter::Rewind() {
-  assert(this);
   rewinddir(Handle);
   Pos = NotFresh;
 }
 
 bool TDirIter::TryRefresh() const {
-  assert(this);
   while (Pos == NotFresh) {
     dirent *ptr;
     IfLt0(readdir_r(Handle, &DirEnt, &ptr));

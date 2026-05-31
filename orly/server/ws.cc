@@ -104,7 +104,6 @@ class TWsImpl final
 
   /* Shuts down the server. */
   virtual ~TWsImpl() {
-    assert(this);
     WsServer.stop();
     for (auto &bg_thread: BgThreads) {
       if (bg_thread.joinable()) {
@@ -184,14 +183,12 @@ class TWsImpl final
     /* True iff. we have processed an exit statement and so want the TCP
        connection to close. */
     bool IsExiting() const noexcept {
-      assert(this);
       return Exiting;
     }
 
     /* Called by TWsImpl::OnMsg(). Parses and interprets a statement sent
        to us as a text message. */
     TJson OnMsg(TMsgPtr msg) {
-      assert(this);
       assert(msg);
       TJson ret;
       ParseStmtStr(
@@ -216,7 +213,6 @@ class TWsImpl final
 
       /* Echo. */
       virtual void operator()(const TEchoStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         void *alloc = alloca(SabotStateSize);
         //NOTE: That we parse apart the json is very fugly here.
@@ -226,13 +222,11 @@ class TWsImpl final
 
       /* Exit. */
       virtual void operator()(const TExitStmt *) const override {
-        assert(this);
         Conn->Exiting = true;
       }
 
       /* New session. */
       virtual void operator()(const TNewSessionStmt *) const override {
-        assert(this);
         if (Conn->Session) {
           throw invalid_argument("session already established");
         }
@@ -242,7 +236,6 @@ class TWsImpl final
 
       /* Resume session. */
       virtual void operator()(const TResumeSessionStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         if (Conn->Session) {
           throw invalid_argument("session already established");
@@ -253,7 +246,6 @@ class TWsImpl final
 
       /* Set user id. */
       virtual void operator()(const TSetUserIdStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         TUuid user_id = Translate(stmt->GetIdExpr());
         GetSession()->SetUserId(user_id);
@@ -261,7 +253,6 @@ class TWsImpl final
 
       /* Set time-to-live. */
       virtual void operator()(const TSetTtlStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         TUuid durable_id = Translate(stmt->GetIdExpr());
         chrono::seconds ttl(stmt->GetIntExpr()->GetLexeme().AsInt());
@@ -270,7 +261,6 @@ class TWsImpl final
 
       /* Install package. */
       virtual void operator()(const TInstallStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         vector<string> package_name;
         uint64_t version;
@@ -280,7 +270,6 @@ class TWsImpl final
 
       /* Uninstall package. */
       virtual void operator()(const TUninstallStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         vector<string> package_name;
         uint64_t version;
@@ -290,7 +279,6 @@ class TWsImpl final
 
       /* New pov. */
       virtual void operator()(const TPovConsStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         bool is_safe = dynamic_cast<const TSafeGuarantee *>(stmt->GetPovGuarantee()) != nullptr;
         bool is_shared = dynamic_cast<const TSharedKind *>(stmt->GetPovKind()) != nullptr;
@@ -304,7 +292,6 @@ class TWsImpl final
 
       /* Try call. */
       virtual void operator()(const TTryStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
         vector<string> fq_name;
@@ -328,7 +315,6 @@ class TWsImpl final
 
       /* Pause or unpause a pov. */
       virtual void operator()(const TPovStatusStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         bool is_pause = dynamic_cast<const TPauseKind *>(stmt->GetStatusKind()) != nullptr;
         TUuid pov_id = Translate(stmt->GetIdExpr());
@@ -343,25 +329,21 @@ class TWsImpl final
 
       /* Tail the global pov. */
       virtual void operator()(const TTailStmt *) const override {
-        assert(this);
         GetSession()->Tail();
       }
 
       /* Begin bulk import mode. */
       virtual void operator()(const TBeginImportStmt *) const override {
-        assert(this);
         GetSession()->BeginImport();
       }
 
       /* End bulk import mode. */
       virtual void operator()(const TEndImportStmt *) const override {
-        assert(this);
         GetSession()->EndImport();
       }
 
       /* Import bulk data. */
       virtual void operator()(const TImportStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         string path = Translate(stmt->GetFile());
         int64_t
@@ -373,7 +355,6 @@ class TWsImpl final
 
       /* Compile Orlyscript into an installable package. */
       virtual void operator()(const TCompileStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         ostringstream out_strm;
         Result = TJson::Object;
@@ -395,7 +376,6 @@ class TWsImpl final
       }
 
       virtual void operator()(const TListPackageStmt *) const override {
-        assert(this);
         TJson::TArray packages;
         auto &package_manager = Conn->Ws->SessionManager->GetPackageManager();
         package_manager.YieldInstalled([&packages, &package_manager](const Package::TVersionedName &versioned_name) {
@@ -439,7 +419,6 @@ class TWsImpl final
       }
 
       virtual void operator()(const TGetSourceStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         vector<string> package_name;
         TranslatePathName(package_name, stmt->GetNameList());
@@ -470,7 +449,6 @@ class TWsImpl final
       }
 
       virtual void operator()(const TListSchemaStmt *stmt) const override {
-        assert(this);
         assert(stmt);
         Result = TJson::Object;
         Conn->Ws->SessionManager->ForEachIndex([this](const std::string &pkg,
@@ -496,7 +474,6 @@ class TWsImpl final
       /* The session we are using in this connection.  Never null.
          If no session has yet been established for this connection, throw. */
       TSessionPin *GetSession() const {
-        assert(this);
         if (!Conn->Session) {
           throw invalid_argument("session not yet established");
         }
@@ -563,7 +540,6 @@ class TWsImpl final
 
   /* Called by the ws framework when it accepts a new TCP connection. */
   void OnOpen(TConnHndl conn_hndl) {
-    assert(this);
     lock_guard<mutex> lock(Mutex);
     if (!Conns.insert(make_pair(conn_hndl, make_shared<TConn>(this, conn_hndl))).second) {
       throw invalid_argument("cannot reopen open connection");
@@ -573,7 +549,6 @@ class TWsImpl final
   /* Called by the ws framework when it closes a TCP connection (or when the
      connection is closed by the client). */
   void OnClose(TConnHndl conn_hndl) {
-    assert(this);
     lock_guard<mutex> lock(Mutex);
     auto iter = Conns.find(conn_hndl);
     if (iter == Conns.end()) {
@@ -584,7 +559,6 @@ class TWsImpl final
 
   /* Called by the ws framework each time a message arrives. */
   void OnMsg(TConnHndl conn_hndl, TMsgPtr msg) {
-    assert(this);
     /* Find the connection object established by the OnOpen() call. */
     shared_ptr<TConn> conn;
     /* extra */ {

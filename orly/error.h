@@ -30,7 +30,6 @@ namespace Orly {
     public:
 
     const TPosRange &GetPosRange() const {
-      assert(this);
       return PosRange;
     }
 

@@ -36,7 +36,6 @@ TTimerFd::TTimerFd(milliseconds ms)
 }
 
 uint64_t TTimerFd::Pop() {
-  assert(this);
   uint64_t count;
   IfLt0(read(Fd, &count, sizeof(count)));
   return count;

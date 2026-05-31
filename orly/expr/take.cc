@@ -380,13 +380,11 @@ TTake::TTake(const TExpr::TPtr &lhs, const TExpr::TPtr &rhs, const TPosRange &po
     : TBinary(lhs, rhs, pos_range) {}
 
 void TTake::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TTake::GetTypeImpl() const {
-  assert(this);
   Type::TType type;
   Type::TType::Accept(GetLhs()->GetType(), GetRhs()->GetType(), TTakeTypeVisitor(type, GetPosRange()));
   return type;

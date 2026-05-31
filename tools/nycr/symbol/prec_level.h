@@ -47,13 +47,11 @@ namespace Tools {
 
         /* TODO */
         size_t GetIdx() const {
-          assert(this);
           return Idx;
         }
 
         /* TODO */
         const TName &GetName() const {
-          assert(this);
           return Name;
         }
 

@@ -63,23 +63,19 @@ namespace Orly {
 
       /* TODO */
       inline size_t GetHash() const {
-        assert(this);
         return Base::ChainHashes(PackageKey, Val);
       }
 
       inline bool operator==(const TIndexType &that) const {
-        assert(this);
         return PackageKey == that.PackageKey && Val == that.Val;
       }
 
       const std::string &GetPackageKey() const {
-        assert(this);
         return PackageKey;
       }
 
       /* TODO */
       inline const Indy::TKey &GetVal() const {
-        assert(this);
         return Val;
       }
 
@@ -373,31 +369,26 @@ namespace Orly {
 
       /* See TSession::TServer. */
       virtual const std::shared_ptr<Durable::TManager> &GetDurableManager() const override {
-        assert(this);
         return DurableManager;
       }
 
       /* See TPov::TServer. */
       virtual const Indy::L0::TManager::TPtr<Indy::TRepo> &GetGlobalRepo() const override {
-        assert(this);
         return GlobalRepo;
       }
 
       /* See TSession::TServer. */
       virtual const Package::TManager &GetPackageManager() const override {
-        assert(this);
         return PackageManager;
       }
 
       /* See TPov::TServer. */
       virtual Orly::Indy::TManager *GetRepoManager() const override {
-        assert(this);
         return RepoManager.get();
       }
 
       /* TODO */
       virtual Base::TScheduler *GetScheduler() const override {
-        assert(this);
         assert(Scheduler);
         return Scheduler;
       }
@@ -420,7 +411,6 @@ namespace Orly {
 
         /* The session associated with this connection.  Never null. */
         const Durable::TPtr<TSession> &GetSession() const {
-          assert(this);
           return Session;
         }
 
@@ -431,73 +421,61 @@ namespace Orly {
 
         /* See <orly/protocol.h>. */
         void InstallPackage(const std::vector<std::string> &package_name, uint64_t version) {
-          assert(this);
           Server->InstallPackage(package_name, version);
         }
 
         /* See <orly/protocol.h>. */
         Base::TUuid NewFastPrivatePov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
-          assert(this);
           return Session->NewFastPrivatePov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
         Base::TUuid NewSafePrivatePov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
-          assert(this);
           return Session->NewSafePrivatePov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
         Base::TUuid NewFastSharedPov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
-          assert(this);
           return Session->NewFastSharedPov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
         Base::TUuid NewSafeSharedPov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
-          assert(this);
           return Session->NewSafeSharedPov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
         void SetTimeToLive(const Base::TUuid &durable_id, const std::chrono::seconds &time_to_live) {
-          assert(this);
           Session->SetTimeToLive(Server, durable_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
         void SetUserId(const Base::TUuid &user_id) {
-          assert(this);
           Session->SetUserId(Server, user_id);
         }
 
         /* See <orly/protocol.h>. */
         void PausePov(const Base::TUuid &pov_id) {
-          assert(this);
           Session->PausePov(Server, pov_id);
         }
 
         /* See <orly/protocol.h>. */
         void UnpausePov(const Base::TUuid &pov_id) {
-          assert(this);
           Session->UnpausePov(Server, pov_id);
         }
 
         /* See <orly/protocol.h>. */
         void UninstallPackage(const std::vector<std::string> &package_name, uint64_t version) {
-          assert(this);
           Server->UninstallPackage(package_name, version);
         }
 
         /* See <orly/protocol.h>. */
         TMethodResult Try(const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure) {
-          assert(this);
           return Session->Try(Server, pov_id, fq_name, closure);
         }
 
         /* See <orly/protocol.h>. */
         TMethodResult TryTracked(const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure) {
-          assert(this);
           return Session->TryTracked(Server, pov_id, fq_name, closure);
         }
 
@@ -509,25 +487,21 @@ namespace Orly {
 
         /* See <orly/protocol.h>. */
         void BeginImport() {
-          assert(this);
           Server->BeginImport();
         }
 
         /* See <orly/protocol.h>. */
         void EndImport() {
-          assert(this);
           Server->EndImport();
         }
 
         /* See <orly/protocol.h>. */
         void TailGlobalPov() {
-          assert(this);
           Server->TailGlobalPov();
         }
 
         /* See <orly/protocol.h>. */
         std::string ImportCoreVector(const std::string &file_pattern, const std::string &pkg_name, int64_t num_load_threads, int64_t num_merge_threads, int64_t merge_simultaneous) {
-          assert(this);
           return Server->ImportCoreVector(file_pattern, pkg_name, num_load_threads, num_merge_threads, merge_simultaneous);
         }
 
@@ -538,7 +512,6 @@ namespace Orly {
 
         /* Run the given jump-runnable on the server's websockets runner. */
         void RunWs(Indy::Fiber::TJumpRunnable &&jump_runnable) {
-          assert(this);
           Server->RunWs(std::move(jump_runnable));
         }
 
@@ -659,12 +632,10 @@ namespace Orly {
 
         /* TODO */
         virtual ~TServeClientRunnable() {
-          assert(this);
         }
 
         /* TODO */
         void Serve() {
-          assert(this);
           if(IsMemcache) {
             Server->ServeMemcacheClient(std::move(Fd), ClientAddress);
           } else {
@@ -722,7 +693,6 @@ namespace Orly {
 
       /* Run the given jump-runnable on our websockets runner. */
       void RunWs(Indy::Fiber::TJumpRunnable &&jump_runnable) {
-        assert(this);
         jump_runnable(FramePoolManager.get(), &WsRunner);
       }
 

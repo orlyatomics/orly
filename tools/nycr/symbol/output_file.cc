@@ -26,13 +26,11 @@ using namespace Tools::Nycr;
 using namespace Tools::Nycr::Symbol;
 
 void TPath::Write(ostream &strm) const {
-  assert(this);
 
   strm<< Branch << '/' << Atom << '.' << TLower(Language->GetName());
 }
 
 void TScope::Write(ostream &strm) const {
-  assert(this);
   const TLanguage::TNamespaces &namespaces = Language->GetNamespaces();
   for (auto iter = namespaces.begin(); iter != namespaces.end(); ++iter) {
     strm << TUpper(*iter) << "::";
@@ -40,7 +38,6 @@ void TScope::Write(ostream &strm) const {
 }
 
 void TUsingNamespace::Write(ostream &strm) const {
-  assert(this);
   const TLanguage::TNamespaces &namespaces = Language->GetNamespaces();
   if (!namespaces.empty()) {
     strm << "using namespace ";
@@ -55,7 +52,6 @@ void TUsingNamespace::Write(ostream &strm) const {
 }
 
 void TUnderscore::Write(ostream &strm) const {
-  assert(this);
   const TLanguage::TNamespaces &namespaces = Language->GetNamespaces();
   if (!namespaces.empty()) {
     for (auto iter = namespaces.begin(); iter != namespaces.end(); ++iter) {

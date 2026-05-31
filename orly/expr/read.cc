@@ -36,7 +36,6 @@ TRead::TRead(const TExpr::TPtr &expr, const Type::TType &type, const TPosRange &
     : TUnary(expr, pos_range), Type(type) {}
 
 void TRead::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
@@ -65,7 +64,6 @@ Type::TType TRead::GetTypeImpl() const {
     private:
     const Type::TType &AsType;
   };  // TReadTypeVisitor
-  assert(this);
   Type::TType type;
   GetExpr()->GetType().Accept(TReadTypeVisitor(type, Type, GetPosRange()));
   return type;

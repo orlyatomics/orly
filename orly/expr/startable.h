@@ -37,18 +37,15 @@ namespace Orly {
       virtual ~TStartable() {}
 
       const TStart::TPtr &GetStart() const {
-        assert(this);
         assert(Start);
         return Start;
       }
 
       const TStart::TPtr &TryGetStart() const {
-        assert(this);
         return Start;
       }
 
       void SetStart(const TStart::TPtr &start) {
-        assert(this);
         assert(start);
         assert(!Start);
         Start = start;

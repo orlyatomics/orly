@@ -71,7 +71,6 @@ namespace Test {
 
       /* TODO */
       ~TLogger() {
-        assert(this);
         if (Enabled) {
           std::cout << std::endl;
         }
@@ -80,7 +79,6 @@ namespace Test {
       /* TODO */
       template <typename TVal>
       const TLogger &Write(const TVal &val) const {
-        assert(this);
         if (Enabled) {
           std::cout << val;
         }
@@ -125,13 +123,11 @@ namespace Test {
     }
 
     ~TApp() {
-      assert(this);
       assert(App == this);
       App = nullptr;
     }
 
     const TCmd &GetCmd() const {
-      assert(this);
       return Cmd;
     }
 

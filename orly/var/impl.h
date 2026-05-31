@@ -331,7 +331,6 @@ namespace Orly {
 
       /* TODO */
       bool operator<=(const TVar &that) const {
-        assert(this);
         assert(&that);
         return (*this < that) || (*this == that);
       }
@@ -341,7 +340,6 @@ namespace Orly {
 
       /* TODO */
       bool operator>=(const TVar &that) const {
-        assert(this);
         assert(&that);
         return (*this > that) || (*this == that);
       }
@@ -351,7 +349,6 @@ namespace Orly {
 
       /* TODO */
       Var::TVar &Index(const TVar &key) {
-        assert(this);
         return Impl->Index(key);
       }
 
@@ -441,7 +438,6 @@ namespace Orly {
 
       /* TODO */
       void Accept(const TVisitor &visitor) const {
-        assert(this);
         assert(Impl);
         Impl->Accept(visitor);
       }
@@ -451,25 +447,21 @@ namespace Orly {
 
       /* TODO */
       size_t GetHash() const {
-        assert(this);
         return Impl->GetHash();
       }
 
       /* TODO */
       Type::TType GetType() const {
-        assert(this);
         return Impl->GetType();
       }
 
       /* TODO */
       TVar &Reset() {
-        assert(this);
         return *this = TVar();
       }
 
       /* TODO */
       void Touch() {
-        assert(this);
         Impl->Touch();
       }
 
@@ -480,7 +472,6 @@ namespace Orly {
 
       /* TODO */
       void Write(std::ostream &stream) const {
-        assert(this);
         Impl->Write(stream);
       }
 

@@ -172,17 +172,14 @@ namespace Orly {
       inline TCompletionTrigger::~TCompletionTrigger() {}
 
       inline void TCompletionTrigger::WaitForMore(size_t num) {
-        assert(this);
         WaitFor += num;
       }
 
       inline void TCompletionTrigger::WaitForOneMore() {
-        assert(this);
         ++WaitFor;
       }
 
       inline void TCompletionTrigger::Callback(TDiskResult disk_result, const char *err_str) {
-        assert(this);
         const size_t prev = std::atomic_fetch_add(&NumFinished, 1UL);
         switch (Result) {
           case Success : {
@@ -261,7 +258,6 @@ namespace Orly {
       }
 
       inline void TCompletionTrigger::Wait(bool come_back_right_away) {
-        assert(this);
         assert(Fiber::TFrame::LocalFrame);
         assert(Fiber::TRunner::LocalRunner);
         bool should_wait = false;

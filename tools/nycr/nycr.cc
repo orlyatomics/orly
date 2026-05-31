@@ -50,7 +50,6 @@ class TNycr : public Base::TCmd {
   }
 
   int Run() {
-    assert(this);
     int result;
     try {
       //TODO: This should go in the arg verification logic...
@@ -155,7 +154,6 @@ class TNycr : public Base::TCmd {
 
     private:
     virtual void WriteAfterDesc(std::ostream &strm) const {
-      assert(this);
       assert(&strm);
       strm << "Build: Unknown" << endl //TODO: Use Version from SCM.
            << endl
@@ -165,7 +163,6 @@ class TNycr : public Base::TCmd {
   };
 
   virtual TCmd::TMeta *NewMeta() const {
-    assert(this);
     return new TMeta();
   }
 

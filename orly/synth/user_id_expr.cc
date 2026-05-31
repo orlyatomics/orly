@@ -29,6 +29,5 @@ TUserIdExpr::TUserIdExpr(const Package::Syntax::TUserIdExpr *user_id_expr)
     : UserIdExpr(Base::AssertTrue(user_id_expr)) {}
 
 Expr::TExpr::TPtr TUserIdExpr::Build() const {
-  assert(this);
   return Expr::TUserId::New(GetPosRange(UserIdExpr));
 }

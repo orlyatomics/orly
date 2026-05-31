@@ -67,7 +67,6 @@ namespace Orly {
 
           /* TODO */
           inline void Callback(TDiskResult disk_result, const char *err_str) {
-            assert(this);
             size_t prev = std::atomic_fetch_add(&NumFinished, 1UL);
             switch (Result) {
               case Success : {
@@ -141,7 +140,6 @@ TDiskController::~TDiskController() {
 }
 
 void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, bool no_realtime, size_t core) {
-  assert(this);
   const size_t max_aio_num = 64;
   size_t inflight = 0UL;
 
@@ -804,19 +802,16 @@ namespace Orly {
 
             /* TODO */
             inline size_t GetNumRequest() const {
-              assert(this);
               return NumReq;
             }
 
             /* TODO */
             inline size_t GetTotalNumBytes() const {
-              assert(this);
               return TotalBytes;
             }
 
             /* TODO */
             inline size_t GetNumIops() const {
-              assert(this);
               return VecPerOp.size();
             }
 
@@ -841,7 +836,6 @@ namespace Orly {
 
           /* TODO */
           virtual ~TStrategy() {
-            assert(this);
             /* acquire discard lock */ {
               std::lock_guard<std::mutex> lock(DiscardMapLock);
               DiscardMapBuf.reset();
@@ -893,7 +887,6 @@ namespace Orly {
 
           /* TODO */
           inline const std::vector<TLogicalExtent> &GetLogicalExtentVec() const {
-            assert(this);
             return ExtentVec;
           }
 
@@ -922,7 +915,6 @@ namespace Orly {
           }
 
           void PostCtor() {
-            assert(this);
             Scheduler->Schedule(bind(&TVolume::TStrategy::DiscardRunner, this));
           }
 
@@ -1003,7 +995,6 @@ namespace Orly {
 
           /* TODO */
           inline void CheckRange(const TOffset start_offset, long long nbytes, const TDevice *device) {
-            assert(this);
             if (unlikely(start_offset + SuperBytes + nbytes > device->Desc.Capacity)) {
               throw std::logic_error("Accessing range on device past capacity");
             }
@@ -1081,7 +1072,6 @@ namespace Orly {
                                                                              const TOffset start_offset, long long nbytes, DiskPriority priority,
                                                                              bool abort_on_error, const TOffset logical_start_offset,
                                                                              TCompletionTrigger &trigger) {
-          assert(this);
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForMore(dev_set.size());
@@ -1100,7 +1090,6 @@ namespace Orly {
                                                                                                 bool abort_on_error,
                                                                                                 const TOffset logical_start_offset,
                                                                                                 TCompletionTrigger &trigger, const TIOCallback &cb) {
-          assert(this);
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForMore(dev_set.size());
@@ -1123,7 +1112,6 @@ namespace Orly {
                                                                             uint8_t util_src, void *buf, size_t device_num,
                                                                             const TOffset start_offset, long long nbytes, DiskPriority priority,
                                                                             bool abort_on_error, TCompletionTrigger &trigger) {
-          assert(this);
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForOneMore();
@@ -1140,7 +1128,6 @@ namespace Orly {
                                                                                                long long nbytes, DiskPriority priority,
                                                                                                bool abort_on_error, TCompletionTrigger &trigger,
                                                                                                const TIOCallback &cb) {
-          assert(this);
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForOneMore();
@@ -1163,7 +1150,6 @@ namespace Orly {
                                                                                      const Base::TCodeLocation &code_location /* DEBUG */,
                                                                                      TBufKind buf_kind, uint8_t util_src, DiskPriority priority,
                                                                                      bool abort_on_error, TCompletionTrigger &trigger) {
-          assert(this);
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           auto device = *dev_set.begin(); /* TODO: we can be smarter about choosing which device to read from */
@@ -1189,7 +1175,6 @@ namespace Orly {
                                                                                                         DiskPriority priority, bool abort_on_error,
                                                                                                         TCompletionTrigger &/*trigger*/,
                                                                                                         const TIOCallback &/*cb*/) {
-          assert(this);
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           auto device = *dev_set.begin(); /* TODO: we can be smarter about choosing which device to read from */
@@ -1213,7 +1198,6 @@ namespace Orly {
 }  // Orly
 
 inline size_t TVolume::TStrategy::GetBlock() {
-  assert(this);
   size_t *buf_ref = BlockMapBuf.get() + CachedStart;
   constexpr size_t full = -1;
   for (size_t i = CachedStart; i < BlockMapByteSize / sizeof(size_t); ++i, ++buf_ref) {
@@ -1250,7 +1234,6 @@ inline size_t TVolume::TStrategy::GetBlock() {
 }
 
 size_t TVolume::TStrategy::TryGetSeqBlocks(const size_t num_blocks, size_t &start_out) {
-  assert(this);
   size_t *buf_ref = BlockMapBuf.get() + CachedStart;
   constexpr size_t full = -1;
   constexpr size_t empty = 0UL;
@@ -1337,12 +1320,10 @@ size_t TVolume::TStrategy::TryGetSeqBlocks(const size_t num_blocks, size_t &star
 }
 
 inline void TVolume::TStrategy::PutBack(size_t block_id) {
-  assert(this);
   SetBlockBuf(block_id, false);
 }
 
 inline size_t TVolume::TStrategy::ReserveBlock(std::unique_lock<std::mutex> &lock) {
-  assert(this);
   for (;;) {
     try {
       return GetBlock();
@@ -1364,7 +1345,6 @@ inline size_t TVolume::TStrategy::ReserveBlock(std::unique_lock<std::mutex> &loc
 }
 
 inline size_t TVolume::TStrategy::TryReserveSeqBlocks(std::unique_lock<std::mutex> &lock, const size_t num_blocks, size_t &out_start) {
-  assert(this);
   for (;;) {
     size_t alloced = TryGetSeqBlocks(num_blocks, out_start);
     if (unlikely(alloced == 0)) {
@@ -1387,7 +1367,6 @@ inline size_t TVolume::TStrategy::TryReserveSeqBlocks(std::unique_lock<std::mute
 }
 
 inline void TVolume::TStrategy::SetBlockBuf(size_t block_id, bool on) {
-  assert(this);
   if (unlikely(block_id >= NumBlocks)) {
     syslog(LOG_EMERG, "Out of disk space.");
     throw std::runtime_error("Out of disk space.");
@@ -1413,7 +1392,6 @@ inline void TVolume::TStrategy::SetBlockBuf(size_t block_id, bool on) {
 }
 
 inline void TVolume::TStrategy::SetBlockBufSegment(size_t starting_block_id, bool on) {
-  assert(this);
   constexpr size_t num_per_seg = 8UL * sizeof(size_t);
   assert(starting_block_id % num_per_seg == 0UL);
   if (unlikely(starting_block_id + num_per_seg > NumBlocks)) {
@@ -1437,7 +1415,6 @@ inline void TVolume::TStrategy::SetBlockBufSegment(size_t starting_block_id, boo
 }
 
 inline void TVolume::TStrategy::SetBlockBufRange(size_t block_id, const size_t num_blocks, const bool on) {
-  assert(this);
   assert(block_id < NumBlocks);
   const size_t end = block_id + num_blocks;
   constexpr size_t num_per_seg = sizeof(size_t) * 8UL;
@@ -1478,7 +1455,6 @@ inline void TVolume::TStrategy::SetBlockBufRange(size_t block_id, const size_t n
 }
 
 inline void TVolume::TStrategy::SetDiscardRange(const size_t block_id, const size_t num_blocks, const bool on) {
-  assert(this);
   assert(block_id < NumBlocks);
   const size_t end = block_id + num_blocks;
   constexpr size_t num_per_seg = sizeof(size_t) * 8UL;
@@ -1515,7 +1491,6 @@ inline void TVolume::TStrategy::SetDiscardRange(const size_t block_id, const siz
 }
 
 inline void TVolume::TStrategy::SetDiscardBuf(size_t block_id, bool on) {
-  assert(this);
   assert(block_id < NumBlocks);
   constexpr size_t num_per_seg = 8UL * sizeof(size_t);
   size_t index = block_id / num_per_seg;
@@ -1537,7 +1512,6 @@ inline void TVolume::TStrategy::SetDiscardBuf(size_t block_id, bool on) {
 }
 
 inline bool TVolume::TStrategy::CheckBufBlock(size_t block_id) const {
-  assert(this);
   assert(block_id < NumBlocks);
   constexpr size_t num_per_seg = 8UL * sizeof(size_t);
   size_t index = block_id / num_per_seg;
@@ -1549,7 +1523,6 @@ inline bool TVolume::TStrategy::CheckBufBlock(size_t block_id) const {
 }
 
 inline bool TVolume::TStrategy::CheckDiscardBuf(size_t block_id) const {
-  assert(this);
   assert(block_id < NumBlocks);
   constexpr size_t num_per_seg = 8UL * sizeof(size_t);
   size_t index = block_id / num_per_seg;
@@ -1686,7 +1659,6 @@ class TVolume::TChainedStrategy
 };  // TChainedStrategy
 
 void TVolume::TStrategy::AppendTouchedDevicesToSet(TDeviceSet &device_set, size_t device_num) const {
-  assert(this);
   assert(device_num < DeviceVec.size());
   const TDeviceSet &my_dev_set = DeviceVec[device_num];
   /* can use insert(begin, end) if we're sure it tries to insert all elements even if the first one is rejected due to key collision... */
@@ -1696,7 +1668,6 @@ void TVolume::TStrategy::AppendTouchedDevicesToSet(TDeviceSet &device_set, size_
 }
 
 std::pair<size_t, size_t> TVolume::TStrategy::AppendUsage(std::stringstream &ss) const {
-  assert(this);
   const size_t bytes_used = BlocksUsed * Util::PhysicalBlockSize;
   const size_t total_bytes = NumBlocks * Util::PhysicalBlockSize;
   ss << "Volume_" << Volume->GetVolumeId() << " = " << bytes_used << " / " << total_bytes << std::endl;
@@ -1704,7 +1675,6 @@ std::pair<size_t, size_t> TVolume::TStrategy::AppendUsage(std::stringstream &ss)
 }
 
 inline void TVolume::TStrategy::TryAllocateSequentialBlocks(size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb) {
-  assert(this);
   assert(num_blocks > 0);
   std::unique_lock<std::mutex> lock(BlockMapLock);
   size_t init_block = -1UL;
@@ -1748,7 +1718,6 @@ inline void TVolume::TStrategy::TryAllocateSequentialBlocks(size_t num_blocks, c
   #endif
 }
 void TVolume::TStrategy::FreeSequentialBlocks(const TBlockRange &block_range) {
-  assert(this);
   const size_t &starting_block = block_range.first;
   const size_t &num_seq_blocks = block_range.second;
   const size_t start_offset = starting_block * PhysicalBlockSize;
@@ -1771,7 +1740,6 @@ void TVolume::TStrategy::FreeSequentialBlocks(const TBlockRange &block_range) {
 }
 
 void TVolume::TStrategy::MarkBlockRangeUsed(const TBlockRange &block_range) {
-  assert(this);
   const size_t &starting_block = block_range.first;
   const size_t &num_seq_blocks = block_range.second;
   const size_t start_offset = starting_block * PhysicalBlockSize;
@@ -1800,7 +1768,6 @@ void TVolume::TStrategy::MarkBlockRangeUsed(const TBlockRange &block_range) {
 }
 
 void TVolume::TStrategy::DiscardRunner() {
-  assert(this);
   constexpr size_t empty = 0UL;
   constexpr size_t num_blocks_per_buf = sizeof(size_t) * 8;
   const size_t num_devices = Volume->GetDesc().NumLogicalExtent;
@@ -1888,7 +1855,6 @@ void TVolume::TStrategy::DiscardRunner() {
 }
 
 size_t TVolume::TStripedStrategy::GetBlockMapBytesPerDiscardRange() const {
-  assert(this);
   const size_t num_logical_block_per_stripe = Volume->GetDesc().NumLogicalBlockPerStripe;
   const size_t logical_block_size = Volume->GetDesc().DeviceDesc.LogicalBlockSize;
   const size_t bytes_per_stripe = num_logical_block_per_stripe * logical_block_size;
@@ -1900,7 +1866,6 @@ size_t TVolume::TStripedStrategy::GetBlockMapBytesPerDiscardRange() const {
 }
 
 size_t TVolume::TChainedStrategy::GetBlockMapBytesPerDiscardRange() const {
-  assert(this);
   if (unlikely(NumBlocksPerExtent % 8UL != 0)) {
     throw std::runtime_error("Extent size must be a multiple of 8 Orly blocks.");
   }
@@ -1908,7 +1873,6 @@ size_t TVolume::TChainedStrategy::GetBlockMapBytesPerDiscardRange() const {
 }
 
 void TVolume::TStripedStrategy::DoDiscard(const TBlockRange &block_range) const {
-  assert(this);
   const size_t num_devices = Volume->GetDesc().NumLogicalExtent;
   const size_t num_logical_block_per_stripe = Volume->GetDesc().NumLogicalBlockPerStripe;
   const size_t logical_block_size = Volume->GetDesc().DeviceDesc.LogicalBlockSize;
@@ -1926,7 +1890,6 @@ void TVolume::TStripedStrategy::DoDiscard(const TBlockRange &block_range) const 
 }
 
 void TVolume::TChainedStrategy::DoDiscard(const TBlockRange &block_range) const {
-  assert(this);
   const size_t device_num = block_range.first / NumBlocksPerExtent;
   const size_t start_block_on_device = block_range.first % NumBlocksPerExtent;
   assert((start_block_on_device + block_range.second) < (ExtentVec[device_num].Span / PhysicalBlockSize));
@@ -1951,33 +1914,28 @@ void TVolume::TStripedStrategy::DelegateWrite(const Base::TCodeLocation &code_lo
 void TVolume::TStripedStrategy::DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                              TCompletionTrigger &trigger) {
-  assert(this);
   DoStripe(R, code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger);
 }
 
 void TVolume::TStripedStrategy::DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                              TCompletionTrigger &trigger, const TIOCallback &cb) {
-  assert(this);
   DoStripe(R, code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
 }
 
 void TVolume::TStripedStrategy::DelegateReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src,
                                               void **buf_array, size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority,
                                               bool abort_on_error, TCompletionTrigger &trigger) {
-  assert(this);
   DoStripeV(R, code_location, buf_kind, util_src, buf_array, num_buf, start_offset, nbytes, priority, abort_on_error, trigger);
 }
 
 void TVolume::TStripedStrategy::DelegateReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src,
                                               void **buf_array, size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority,
                                               bool abort_on_error, TCompletionTrigger &trigger, const TIOCallback &cb) {
-  assert(this);
   DoStripeV(R, code_location, buf_kind, util_src, buf_array, num_buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
 }
 
 void TVolume::TStripedStrategy::DelegateAppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const {
-  assert(this);
   const size_t &starting_block = block_range.first;
   const size_t &num_seq_blocks = block_range.second;
   const size_t start_offset = starting_block * PhysicalBlockSize;
@@ -2011,7 +1969,6 @@ void TVolume::TStripedStrategy::DelegateAppendTouchedDevicesToSet(TDeviceSet &de
 template <typename ...TArgs>
 void TVolume::TStripedStrategy::DoStripe(TOp op, const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                          const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args) {
-  assert(this);
   const size_t num_logical_block_per_stripe = Volume->GetDesc().NumLogicalBlockPerStripe;
   const size_t num_devices = Volume->GetDesc().NumLogicalExtent;
   const size_t end_offset = start_offset + nbytes;
@@ -2053,7 +2010,6 @@ template <typename ...TArgs>
 void TVolume::TStripedStrategy::DoStripeV(TOp op, const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src,
                                           void **buf_array, size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority
                                           , bool abort_on_error, TArgs &...args) {
-  assert(this);
   const size_t buf_size = GetPhysicalSize(buf_kind);
   assert(num_buf * buf_size == static_cast<size_t>(nbytes));
   const size_t num_logical_block_per_stripe = Volume->GetDesc().NumLogicalBlockPerStripe;
@@ -2119,35 +2075,30 @@ void TVolume::TStripedStrategy::DoStripeV(TOp op, const Base::TCodeLocation &cod
 void TVolume::TChainedStrategy::DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                               const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                               TCompletionTrigger &trigger) {
-  assert(this);
   DoChain(W, code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger);
 }
 
 void TVolume::TChainedStrategy::DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                               const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                               TCompletionTrigger &trigger, const TIOCallback &cb) {
-  assert(this);
   DoChain(W, code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
 }
 
 void TVolume::TChainedStrategy::DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                              TCompletionTrigger &trigger) {
-  assert(this);
   DoChain(R, code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger);
 }
 
 void TVolume::TChainedStrategy::DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                                              TCompletionTrigger &trigger, const TIOCallback &cb) {
-  assert(this);
   DoChain(R, code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
 }
 
 void TVolume::TChainedStrategy::DelegateReadV(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
                                               void **/*buf_array*/, size_t /*num_buf*/, const TOffset /*start_offset*/, long long /*nbytes*/,
                                               DiskPriority /*priority*/, bool /*abort_on_error*/, TCompletionTrigger &/*trigger*/) {
-  assert(this);
   throw std::logic_error("TODO: implement TChainedStrategy::DelegateReadV");
 }
 
@@ -2155,7 +2106,6 @@ void TVolume::TChainedStrategy::DelegateReadV(const Base::TCodeLocation &/*code_
                                               void **/*buf_array*/, size_t /*num_buf*/, const TOffset /*start_offset*/, long long /*nbytes*/,
                                               DiskPriority /*priority*/, bool /*abort_on_error*/, TCompletionTrigger &/*trigger*/,
                                               const TIOCallback &/*cb*/) {
-  assert(this);
   throw std::logic_error("TODO: implement TChainedStrategy::DelegateReadV");
 }
 
@@ -2177,7 +2127,6 @@ void TVolume::TChainedStrategy::DelegateAppendTouchedDevicesToSet(TDeviceSet &de
 template <typename... TArgs>
 void TVolume::TChainedStrategy::DoChain(TOp op, const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                                         const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args) {
-  assert(this);
   const size_t end_offset = start_offset + nbytes;
   for (size_t extent_num = 0UL; extent_num < ExtentVec.size(); ++extent_num) {
     const TLogicalExtent &extent = ExtentVec[extent_num];
@@ -2233,7 +2182,6 @@ bool TVolume::TStrategy::Init(const TExtentSet &extent_set) {
 }
 
 void TDevice::ApplyCorruptionCheck(TBufKind buf_kind, void *buf, const TOffset offset, long long nbytes) const {
-  assert(this);
   assert(offset - Util::PhysicalBlockSize /* super block */ + nbytes <= Desc.Capacity);
   switch (buf_kind) {
     case SectorCheckedBlock: {
@@ -2295,7 +2243,6 @@ void TDevice::ApplyCorruptionCheck(TBufKind buf_kind, void *buf, const TOffset o
 }
 
 bool TDevice::CheckCorruptCheck(TBufKind buf_kind, void *buf, const TOffset offset, long long nbytes) const {
-  assert(this);
   if (likely(DoCorruptionCheck)) {
     bool passed_corruption_check = true;
     switch (buf_kind) {
@@ -2387,7 +2334,6 @@ void TMemoryDevice::Write(const Base::TCodeLocation &code_location /* DEBUG */, 
 
 void TMemoryDevice::WriteImpl(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind buf_kind, uint8_t /*util_src*/, void *buf,
                               const TOffset offset, long long nbytes, DiskPriority /*priority*/, bool /*abort_on_error*/) {
-  assert(this);
   // we probably don't intend to abort on memory writes...
   ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
   memcpy(Data.get() + offset, buf, nbytes);
@@ -2395,7 +2341,6 @@ void TMemoryDevice::WriteImpl(const Base::TCodeLocation &/*code_location*/ /* DE
 
 void TMemoryDevice::Read(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset offset,
                          long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger) {
-  assert(this);
   if (ReadImpl(code_location, buf_kind, util_src, buf, offset, nbytes, priority, abort_on_error)) {
     trigger.Callback(Success, "");
   } else {
@@ -2405,7 +2350,6 @@ void TMemoryDevice::Read(const Base::TCodeLocation &code_location /* DEBUG */, T
 
 void TMemoryDevice::Read(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset offset,
                          long long nbytes, DiskPriority priority, bool abort_on_error, const TIOCallback &cb) {
-  assert(this);
   if (ReadImpl(code_location, buf_kind, util_src, buf, offset, nbytes, priority, abort_on_error)) {
     cb(Success, "");
   } else {
@@ -2465,7 +2409,6 @@ void TMemoryDevice::ReadV(const Base::TCodeLocation &code_location /* DEBUG */,
 
 bool TMemoryDevice::ReadImpl(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind buf_kind, uint8_t /*util_src*/, void *buf,
                              const TOffset offset, long long nbytes, DiskPriority /*priority*/, bool abort_on_error) {
-  assert(this);
   assert(offset + nbytes <= Desc.Capacity);
   memcpy(buf, Data.get() + offset, nbytes);
   bool ret = CheckCorruptCheck(buf_kind, buf, offset, nbytes);
@@ -2485,7 +2428,6 @@ void TPersistentDevice::Write(const Base::TCodeLocation &code_location /* DEBUG 
                               bool abort_on_error,
                               const TOffset logical_start_offset,
                               TCompletionTrigger &trigger) {
-  assert(this);
   assert(TDiskController::TEvent::LocalEventPool);
   ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
 
@@ -2515,7 +2457,6 @@ void TPersistentDevice::Write(const Base::TCodeLocation &code_location /* DEBUG 
                               bool abort_on_error,
                               const TOffset logical_start_offset,
                               const TIOCallback &cb) {
-  assert(this);
   assert(TDiskController::TEvent::LocalEventPool);
   ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
   TDiskController::TEvent *new_event = TDiskController::TEvent::LocalEventPool->Alloc();
@@ -2543,7 +2484,6 @@ void TPersistentDevice::Read(const Base::TCodeLocation &code_location /* DEBUG *
                              DiskPriority priority,
                              bool abort_on_error,
                              TCompletionTrigger &trigger) {
-  assert(this);
   assert(TDiskController::TEvent::LocalEventPool);
   TDiskController::TEvent *new_event = TDiskController::TEvent::LocalEventPool->Alloc();
   new_event->Init(this,
@@ -2570,7 +2510,6 @@ void TPersistentDevice::Read(const Base::TCodeLocation &code_location /* DEBUG *
                              DiskPriority priority,
                              bool abort_on_error,
                              const TIOCallback &cb) {
-  assert(this);
   assert(TDiskController::TEvent::LocalEventPool);
   TDiskController::TEvent *new_event = TDiskController::TEvent::LocalEventPool->Alloc();
   new_event->Init(this,
@@ -2597,7 +2536,6 @@ void TPersistentDevice::ReadV(const Base::TCodeLocation &code_location /* DEBUG 
                               DiskPriority priority,
                               bool abort_on_error,
                               TCompletionTrigger &trigger) {
-  assert(this);
   assert(TDiskController::TEvent::LocalEventPool);
   TDiskController::TEvent *new_event = TDiskController::TEvent::LocalEventPool->Alloc();
   new_event->Init(this,
@@ -2624,7 +2562,6 @@ void TPersistentDevice::ReadV(const Base::TCodeLocation &code_location /* DEBUG 
                               DiskPriority priority,
                               bool abort_on_error,
                               TGroupRequest *group_request) {
-  assert(this);
   assert(TDiskController::TEvent::LocalEventPool);
   TDiskController::TEvent *new_event = TDiskController::TEvent::LocalEventPool->Alloc();
   new_event->Init(this,
@@ -2689,12 +2626,10 @@ TVolume::TVolume(TDesc desc, const TCacheCb &cache_cb, Base::TScheduler *schedul
 }
 
 TVolume::~TVolume() {
-  assert(this);
   delete Strategy;
 }
 
 const std::vector<TLogicalExtent> &TVolume::GetLogicalExtentVec() const {
-  assert(this);
   assert(Strategy);
   return Strategy->GetLogicalExtentVec();
 }
@@ -2711,7 +2646,6 @@ namespace Orly {
         void TVolume::Write(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                             const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCacheInstr cache_instr,
                             TArgs &...args) {
-          assert(this);
           DoCache(cache_instr, start_offset, buf, nbytes);
           Strategy->DelegateWrite(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, args...);
         }
@@ -2721,7 +2655,6 @@ namespace Orly {
                                                                   uint8_t util_src, void *buf, const TOffset start_offset, long long nbytes,
                                                                   DiskPriority priority, bool abort_on_error, TCacheInstr cache_instr,
                                                                   TCompletionTrigger &trigger) {
-          assert(this);
           DoCache(cache_instr, start_offset, buf, nbytes);
           Strategy->DelegateWrite(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger);
         }
@@ -2733,7 +2666,6 @@ namespace Orly {
                                                                                      DiskPriority priority, bool abort_on_error,
                                                                                      TCacheInstr cache_instr, TCompletionTrigger &trigger,
                                                                                      const TIOCallback &cb) {
-          assert(this);
           DoCache(cache_instr, start_offset, buf, nbytes);
           Strategy->DelegateWrite(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
         }
@@ -2741,7 +2673,6 @@ namespace Orly {
         template <typename... TArgs>
         void TVolume::Read(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                            const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args) {
-          assert(this);
           Strategy->DelegateRead(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, args...);
         }
 
@@ -2749,7 +2680,6 @@ namespace Orly {
         void TVolume::Read<Orly::Indy::Disk::TCompletionTrigger>(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind,
                                                                  uint8_t util_src, void *buf, const TOffset start_offset, long long nbytes,
                                                                  DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger) {
-          assert(this);
           Strategy->DelegateRead(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger);
         }
 
@@ -2759,7 +2689,6 @@ namespace Orly {
                                                                                     const TOffset start_offset, long long nbytes,
                                                                                     DiskPriority priority, bool abort_on_error,
                                                                                     TCompletionTrigger &trigger, const TIOCallback &cb) {
-          assert(this);
           Strategy->DelegateRead(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
         }
 
@@ -2767,7 +2696,6 @@ namespace Orly {
         void TVolume::ReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array,
                             size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                             TArgs &...args) {
-          assert(this);
           Strategy->DelegateReadV(code_location, buf_kind, util_src, buf_array, num_buf, start_offset, nbytes, priority, abort_on_error, args...);
         }
 
@@ -2776,7 +2704,6 @@ namespace Orly {
                                                                   uint8_t util_src, void **buf_array, size_t num_buf, const TOffset start_offset,
                                                                   long long nbytes, DiskPriority priority, bool abort_on_error,
                                                                   TCompletionTrigger &trigger) {
-          assert(this);
           Strategy->DelegateReadV(code_location, buf_kind, util_src, buf_array, num_buf, start_offset, nbytes, priority, abort_on_error, trigger);
         }
 
@@ -2786,7 +2713,6 @@ namespace Orly {
                                                                                      size_t num_buf, const TOffset start_offset, long long nbytes,
                                                                                      DiskPriority priority, bool abort_on_error,
                                                                                      TCompletionTrigger &trigger, const TIOCallback &cb) {
-          assert(this);
           Strategy->DelegateReadV(code_location, buf_kind, util_src, buf_array, num_buf, start_offset, nbytes, priority, abort_on_error, trigger, cb);
         }
 
@@ -2799,36 +2725,30 @@ namespace Orly {
 }
 
 inline void TVolume::TryAllocateSequentialBlocks(size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb) {
-  assert(this);
   assert(Strategy);
   Strategy->TryAllocateSequentialBlocks(num_blocks, cb);
 }
 
 void TVolume::FreeSequentialBlocks(const TBlockRange &block_range) {
-  assert(this);
   assert(Strategy);
   Strategy->FreeSequentialBlocks(block_range);
 }
 
 void TVolume::MarkBlockRangeUsed(const TBlockRange &block_range) {
-  assert(this);
   assert(Strategy);
   Strategy->MarkBlockRangeUsed(block_range);
 }
 
 void TVolume::AppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const {
-  assert(this);
   Strategy->DelegateAppendTouchedDevicesToSet(device_set, block_range);
 }
 
 std::pair<size_t, size_t> TVolume::AppendUsage(std::stringstream &ss) const {
-  assert(this);
   assert(Strategy);
   return Strategy->AppendUsage(ss);
 }
 
 bool TVolume::Init(const TExtentSet &extent_set) {
-  assert(this);
   bool success = true;
   switch (Desc.Kind) {
     case TDesc::Striped: {
@@ -2861,7 +2781,6 @@ TVolumeManager::TVolumeManager(Base::TScheduler *scheduler)
 TVolumeManager::~TVolumeManager() {}
 
 bool TVolumeManager::AddNewVolume(TVolume *volume) {
-  assert(this);
   TExtentSet logical_extent_set;
   AllocateLogicalExtents(logical_extent_set, volume->GetDesc().NumLogicalExtent, volume->GetDesc().DeviceDesc.Capacity, volume);
   bool success = volume->Init(logical_extent_set);
@@ -2872,7 +2791,6 @@ bool TVolumeManager::AddNewVolume(TVolume *volume) {
 }
 
 void TVolumeManager::AddExistingVolume(TVolume *volume, size_t volume_id) {
-  assert(this);
   volume->SetVolumeId(volume_id);
   const size_t num_dev = volume->GetNumDevices();
   bool success = (volume->GetLogicalExtentVec().size() == num_dev && num_dev > 0);
@@ -2896,7 +2814,6 @@ void TVolumeManager::AddExistingVolume(TVolume *volume, size_t volume_id) {
 }
 
 void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb) {
-  assert(this);
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
     if (csr->GetDesc().StorageSpeed == storage_speed) {
       try {
@@ -2919,7 +2836,6 @@ void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed s
 }
 
 void TVolumeManager::MarkBlockRangeUsed(const TBlockRange &block_range) {
-  assert(this);
   assert(block_range.second > 0);
   const size_t &starting_block = block_range.first;
   const size_t &num_seq_blocks = block_range.second;
@@ -2938,7 +2854,6 @@ void TVolumeManager::MarkBlockRangeUsed(const TBlockRange &block_range) {
 }
 
 void TVolumeManager::FreeSequentialBlocks(const TBlockRange &block_range) {
-  assert(this);
   const size_t &starting_block = block_range.first;
   const size_t &num_seq_blocks = block_range.second;
   const size_t start_extent_address = starting_block * PhysicalBlockSize;
@@ -2956,7 +2871,6 @@ void TVolumeManager::FreeSequentialBlocks(const TBlockRange &block_range) {
 }
 
 void TVolumeManager::SyncToDisk(const std::vector<TBlockRange> &block_range_vec) {
-  assert(this);
   assert(block_range_vec.size());
   TDeviceSet device_set;
   for (const auto &block_range : block_range_vec) {
@@ -3000,7 +2914,6 @@ void TVolumeManager::SyncToDisk(const std::vector<TBlockRange> &block_range_vec)
 }
 
 void TVolumeManager::AppendVolumeUsageReport(std::stringstream &ss) const {
-  assert(this);
   std::pair<size_t, size_t> total_usage = make_pair(0UL, 0UL);
   std::pair<size_t, size_t> slow_usage = make_pair(0UL, 0UL);
   std::pair<size_t, size_t> fast_usage = make_pair(0UL, 0UL);
@@ -3031,7 +2944,6 @@ void TVolumeManager::AppendVolumeUsageReport(std::stringstream &ss) const {
 }
 
 void TVolumeManager::AllocateLogicalExtents(TExtentSet &logical_extent_set, size_t num_extent, size_t extent_size, TVolume *volume) {
-  assert(this);
   assert(logical_extent_set.empty());
   const size_t required_consecutive_extent = ceil(static_cast<double>(extent_size) / ExtentAllocationBlockSize);
   size_t consective_found = 0UL;
@@ -3063,7 +2975,6 @@ void TVolumeManager::AllocateLogicalExtents(TExtentSet &logical_extent_set, size
 }
 
 void TVolumeManager::DiscardAllDevices() {
-  assert(this);
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
     csr->DiscardAll();
   }

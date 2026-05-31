@@ -75,7 +75,6 @@ namespace Orly {
 
       /* TODO */
       bool GetVal() const {
-        assert(this);
         return Val;
       }
 

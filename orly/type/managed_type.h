@@ -60,7 +60,6 @@ namespace Orly {
       typedef std::unordered_map<TKey, TWeak> TTypeByKey;
 
       void Accept(const TType::TVisitor &visitor) const {
-        assert(this);
         assert(&visitor);
         visitor(Base::AssertTrue(dynamic_cast<const TFinal*>(this)));
       }
@@ -86,7 +85,6 @@ namespace Orly {
       TInternedType(TCompatArgs &&...key) : Key(std::forward<TCompatArgs>(key)...) {}
 
       ~TInternedType() {
-        assert(this);
         if (TypeByKey) {
           TypeByKey->erase(Key);
         }
@@ -108,7 +106,6 @@ namespace Orly {
       }
 
       bool CanDeleteImpl() const {
-        assert(this);
 
         //TODO: Would be nice to use the weak pointer we get from TType::TImpl's shared_from_this here.
 
@@ -124,7 +121,6 @@ namespace Orly {
       }
 
       const TKey &GetKey() const {
-        assert(this);
         return Key;
       }
 
@@ -208,7 +204,6 @@ namespace Orly {
       }
 
       const TType &GetElem() const {
-        assert(this);
         //NOTE: The this-> really shuoldn't be necessary...
         return std::get<0>(this->GetKey());
       }

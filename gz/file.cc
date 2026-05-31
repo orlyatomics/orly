@@ -65,14 +65,12 @@ TFile::TFile(Base::TFd &&fd, const char *mode) {
 }
 
 TFile::~TFile() {
-  assert(this);
   if (Handle) {
     gzclose(Handle);
   }
 }
 
 size_t TFile::ReadAtMost(void *buffer, size_t size) {
-  assert(this);
   assert(buffer || !size);
   assert(Handle);
   ssize_t actl = gzread(Handle, buffer, size);
@@ -93,7 +91,6 @@ size_t TFile::ReadAtMost(void *buffer, size_t size) {
 }
 
 size_t TFile::WriteAtMost(const void *buffer, size_t size) {
-  assert(this);
   assert(buffer || !size);
   assert(Handle);
   ssize_t actl = gzwrite(Handle, buffer, size);

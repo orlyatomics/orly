@@ -50,7 +50,6 @@ namespace Tools {
 
           /* TODO */
           TCompound *GetCompound() const {
-            assert(this);
             return Compound;
           }
 
@@ -90,25 +89,21 @@ namespace Tools {
 
         /* TODO */
         const TMembersByName &GetMembersByName() const {
-          assert(this);
           return MembersByName;
         }
 
         /* TODO */
         const TMembersInOrder &GetMembersInOrder() const {
-          assert(this);
           return MembersInOrder;
         }
 
         /* TODO */
         void SetOperator(TOperator *oper) {
-          assert(this);
           Operator = oper;
         }
 
         /* TODO */
         TOperator *TryGetOperator() const {
-          assert(this);
           return Operator;
         }
 

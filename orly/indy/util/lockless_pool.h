@@ -56,7 +56,6 @@ namespace Orly {
 
         /* TODO */
         void *Alloc(size_t size) {
-          assert(this);
           void *ptr = TryAlloc(size);
           if (!ptr) {
             syslog(LOG_EMERG, "TLocklessPool::Alloc() [%s] bad_alloc", Name);
@@ -105,22 +104,18 @@ namespace Orly {
       };  // TLocklessPool
 
       inline const char *TLocklessPool::GetName() const {
-        assert(this);
         return Name;
       }
 
       inline size_t TLocklessPool::GetNumBlocksUsed() const {
-        assert(this);
         return NumBlocksUsed;
       }
 
       inline size_t TLocklessPool::GetMaxBlocks() const {
-        assert(this);
         return MaxBlocks;
       }
 
       inline void TLocklessPool::Free(void *ptr) {
-        assert(this);
         assert(ptr);
         TBlock *block = static_cast<TBlock *>(ptr);
         block->NextBlock = FirstBlock;
@@ -129,7 +124,6 @@ namespace Orly {
       }
 
       inline void *TLocklessPool::TryAlloc(size_t size) {
-        assert(this);
         assert(size <= BlockSize);
         TBlock *block = FirstBlock;
         FirstBlock = (block ? block->NextBlock : 0);

@@ -23,7 +23,6 @@ using namespace Strm::Bin;
 
 const uint8_t *TVarIntDecoder::Decode(
     const uint8_t *start, const uint8_t *limit) noexcept {
-  assert(this);
   /* If we're starting over at a new value, zero the accumulator. */
   if (!Shift) {
     Accum = 0;
@@ -48,7 +47,6 @@ const uint8_t *TVarIntDecoder::Decode(
 constexpr size_t TVarIntEncoder::MaxSize;
 
 void TVarIntEncoder::Encode(uint64_t n) noexcept {
-  assert(this);
   /* Loop until we have encoded the entire number. */
   Limit = Buffer;
   do {

@@ -49,26 +49,22 @@ namespace Orly {
 
     /* The arena in which our value lives. */
     const std::shared_ptr<TArena> &GetArena() const {
-      assert(this);
       return Arena;
     }
 
     /* The tracker of this result.
        If the method had no side-effects and no time tracking was requested, this will be unknown. */
     const Base::TOpt<TTracker> &GetTracker() const {
-      assert(this);
       return Tracker;
     }
 
     /* The value computed by the method. */
     const Atom::TCore &GetValue() const {
-      assert(this);
       return Value;
     }
 
     /* If true, the value contained here is an error; otherwise, it is a normal return. */
     bool IsError() const {
-      assert(this);
       return Error;
     }
 

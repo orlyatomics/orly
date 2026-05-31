@@ -32,18 +32,15 @@ TLiteral::TLiteral(const Var::TVar &val, const TPosRange &pos_range)
     : TLeaf(pos_range), Val(val) {}
 
 void TLiteral::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TLiteral::GetTypeImpl() const {
-  assert(this);
   return Val.GetType();
 }
 
 const Var::TVar &TLiteral::GetVal() const {
-  assert(this);
   return Val;
 }
 

@@ -28,7 +28,6 @@ using namespace Orly::Atom;
 using namespace Orly::Indy::L1;
 
 bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const Base::TOpt<TSequenceNumber> &ensure_or_discard) {
-  assert(this);
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -51,7 +50,6 @@ bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<
 }
 
 bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &ensure_or_discard) {
-  assert(this);
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -117,7 +115,6 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<T
 }
 
 bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &follow_or_discard) {
-  assert(this);
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -177,7 +174,6 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<
 }
 
 bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &follow_or_discard) {
-  assert(this);
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -194,7 +190,6 @@ bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt
 }
 
 bool TTransaction::UnPause(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &follow_or_discard) {
-  assert(this);
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -211,7 +206,6 @@ bool TTransaction::UnPause(const L0::TManager::TPtr<TRepo> &repo, const Base::TO
 }
 
 const std::shared_ptr<Orly::Indy::TUpdate> &TTransaction::Peek(const L0::TManager::TPtr<TRepo> &repo) {
-  assert(this);
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
   TPopper *popper = nullptr;
   if (mutation) {
@@ -241,7 +235,6 @@ const std::shared_ptr<Orly::Indy::TUpdate> &TTransaction::Peek(const L0::TManage
 }
 
 void TTransaction::Prepare() {
-  assert(this);
   if (!TransactionCompletion) {
     /* acquire TransactionCompletion lock */ {
       std::lock_guard<std::mutex> lock(Manager->TransactionCompletionLock);
@@ -348,7 +341,6 @@ TTransaction::TTransactionCompletion::TTransactionCompletion(TManager *manager)
     : WaitFor(0U), NumCompleted(0U), ManagerMembership(this, &manager->TransactionCompletionCollection) {}
 
 TTransaction::TTransactionCompletion::~TTransactionCompletion() {
-  assert(this);
   assert(ManagerMembership.TryGetCollector());
   /* acquire TransactionCompletion lock */ {
     std::lock_guard<std::mutex> lock(ManagerMembership.TryGetCollector()->TransactionCompletionLock);
@@ -358,7 +350,6 @@ TTransaction::TTransactionCompletion::~TTransactionCompletion() {
 
 /* TODO */
 void TTransaction::TTransactionCompletion::SetWaitFor(size_t wait_for) {
-  assert(this);
   WaitFor = wait_for;
   if (WaitFor == 0) {
     assert(Cb);
@@ -368,7 +359,6 @@ void TTransaction::TTransactionCompletion::SetWaitFor(size_t wait_for) {
 }
 
 void TTransaction::TTransactionCompletion::RegisterCompletion() {
-  assert(this);
   bool del = false;
   /* lock life-span */ {
     std::lock_guard<std::mutex> lock(Mutex);
@@ -384,7 +374,6 @@ void TTransaction::TTransactionCompletion::RegisterCompletion() {
 }
 
 void TTransaction::TTransactionCompletion::RegisterFailure() {
-  assert(this);
   /* lock life-span */ {
     std::lock_guard<std::mutex> lock(Mutex);
     (*Cb)(Failed);
@@ -404,7 +393,6 @@ TTransaction::TTransaction(TManager *manager, bool should_replicate)
       TransactionCompletion(nullptr) {}
 
 TTransaction::~TTransaction() NO_THROW {
-  assert(this);
   assert(!CommitFlag || Prepared);
 
   /* hold replication queue lock */ {
@@ -448,14 +436,12 @@ TTransaction::TReplica::TReplica() {}
 TTransaction::TReplica::~TReplica() {}
 
 TTransaction::TReplica &TTransaction::TReplica::operator=(TReplica &&that) {
-  assert(this);
   assert(&that);
   std::swap(MutationList, that.MutationList);
   return *this;
 }
 
 TTransaction::TReplica &TTransaction::TReplica::operator=(const TReplica &that) {
-  assert(this);
   return *this = TReplica(that);
 }
 
@@ -493,7 +479,6 @@ TTransaction::TReplica::TMutation::TUpdate::TUpdate(const Orly::Indy::TUpdate *t
 TTransaction::TReplica::TMutation::TUpdate::~TUpdate() {}
 
 TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::TUpdate::operator=(TUpdate &&that) {
-  assert(this);
   assert(&that);
   std::swap(Suprena, that.Suprena);
   Metadata = that.Metadata;
@@ -503,12 +488,10 @@ TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::T
 }
 
 TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::TUpdate::operator=(const TUpdate &that) {
-  assert(this);
   return *this = TUpdate(that);
 }
 
 void TTransaction::TReplica::TMutation::TUpdate::Write(Io::TBinaryOutputStream &strm, const Atom::TCore::TRemap &remap) const {
-  assert(this);
   strm << TCore(Metadata, remap)  // (Atom::TCore) Metadata
       << TCore(Id, remap)  // (Atom::TCore) Id
       << OpByKey.size();  // (size_t) num pairs of key = op
@@ -523,7 +506,6 @@ void TTransaction::TReplica::TMutation::TUpdate::Write(Io::TBinaryOutputStream &
 }
 
 void TTransaction::TReplica::TMutation::TUpdate::Read(Io::TBinaryInputStream &strm, const Atom::TCore::TRemap &remap) {
-  assert(this);
   size_t num_op_by_key;
   Base::TUuid temp_index_id;
   Atom::TCore temp_key;
@@ -588,7 +570,6 @@ TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo
 TTransaction::TReplica::TMutation::~TMutation() {}
 
 TTransaction::TReplica::TMutation &TTransaction::TReplica::TMutation::operator=(TMutation &&that) {
-  assert(this);
   assert(&that);
   std::swap(Kind, that.Kind);
   std::swap(RepoId, that.RepoId);
@@ -598,42 +579,35 @@ TTransaction::TReplica::TMutation &TTransaction::TReplica::TMutation::operator=(
 }
 
 TTransaction::TReplica::TMutation &TTransaction::TReplica::TMutation::operator=(const TMutation &that) {
-  assert(this);
   return *this = TMutation(that);
 }
 
 TTransaction::TReplica::TMutation *TTransaction::TReplica::Push(const Base::TUuid &repo_id, const TUpdate *update) {
-  assert(this);
   MutationList.emplace_front(TMutation::Pusher, repo_id, update, Base::TOpt<TSequenceNumber>());
   return &MutationList.front();
 }
 
 TTransaction::TReplica::TMutation *TTransaction::TReplica::Pop(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
-  assert(this);
   MutationList.emplace_front(TMutation::Popper, repo_id, seq_num);
   return &MutationList.front();
 }
 
 TTransaction::TReplica::TMutation *TTransaction::TReplica::Fail(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
-  assert(this);
   MutationList.emplace_front(TMutation::Failer, repo_id, seq_num);
   return &MutationList.front();
 }
 
 TTransaction::TReplica::TMutation *TTransaction::TReplica::Pause(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
-  assert(this);
   MutationList.emplace_front(TMutation::Pauser, repo_id, seq_num);
   return &MutationList.front();
 }
 
 TTransaction::TReplica::TMutation *TTransaction::TReplica::UnPause(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
-  assert(this);
   MutationList.emplace_front(TMutation::UnPauser, repo_id, seq_num);
   return &MutationList.front();
 }
 
 void TTransaction::TReplica::Reset() {
-  assert(this);
   MutationList.clear();
 }
 
@@ -651,7 +625,6 @@ TTransaction::TPusher::TPusher(TTransaction *transaction, const L0::TManager::TP
 }
 
 TTransaction::TPusher::~TPusher() NO_THROW {
-  assert(this);
   assert(TransactionMembership.TryGetCollector());
   if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
     assert(MyMutation);
@@ -666,7 +639,6 @@ TTransaction::TPopper::TPopper(TTransaction *transaction, const L0::TManager::TP
       State(state) {}
 
 TTransaction::TPopper::~TPopper() NO_THROW {
-  assert(this);
   assert(TransactionMembership.TryGetCollector());
   if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
     switch(State) {
@@ -688,7 +660,6 @@ TTransaction::TPopper::~TPopper() NO_THROW {
 }
 
 void TTransaction::TPopper::DoPeek() const {
-  assert(this);
   if (!View) {
     View = make_shared<TRepo::TView>(Repo);
     Update = Repo->GetLowestUpdate();
@@ -699,7 +670,6 @@ TTransaction::TStatusChanger::TStatusChanger(TTransaction *transaction, const L0
     : TMutation(transaction, repo), Status(status) {}
 
 TTransaction::TStatusChanger::~TStatusChanger() NO_THROW {
-  assert(this);
   assert(TransactionMembership.TryGetCollector());
   if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
     switch (Status) {
@@ -764,7 +734,6 @@ TManager::TManager(Disk::Util::TEngine *engine,
 TManager::~TManager() {}
 
 void TManager::OnCloseTransaction(TTransaction *transaction) {
-  assert(this);
   /* acquire transaction lock */ {
     std::lock_guard<std::mutex> lock(TransactionLock);
     transaction->ManagerMembership.Remove();

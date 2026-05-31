@@ -40,7 +40,6 @@ TTmpCopyToFile::TTmpCopyToFile(
 }
 
 TTmpCopyToFile::~TTmpCopyToFile() {
-  assert(this);
   Delete(Path.c_str());
 }
 

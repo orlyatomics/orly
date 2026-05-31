@@ -22,13 +22,11 @@ using namespace Io;
 using namespace Orly::Notification;
 
 bool TSystemShutdown::Matches(const TSystemShutdown &that) const {
-  assert(this);
   assert(&that);
   return TNotification::Matches(that) && Ttl == that.Ttl;
 }
 
 void TSystemShutdown::Write(TBinaryOutputStream &strm) const {
-  assert(this);
   assert(&strm);
   TNotification::Write(strm);
   strm << Ttl;

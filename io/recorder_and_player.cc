@@ -22,13 +22,11 @@ using namespace std;
 using namespace Io;
 
 void TRecorder::ConsumeOutput(const shared_ptr<const TChunk> &chunk) {
-  assert(this);
   assert(chunk);
   Chunks.push_back(chunk);
 }
 
 void TRecorder::CopyOut(string &out) const {
-  assert(this);
   assert(&out);
   size_t size = 0;
   for (const auto &chunk: Chunks) {
@@ -44,7 +42,6 @@ void TRecorder::CopyOut(string &out) const {
 }
 
 shared_ptr<const TChunk> TPlayer::TryProduceInput() {
-  assert(this);
   shared_ptr<const TChunk> chunk;
   if (Idx < Recorder->Chunks.size()) {
     chunk = Recorder->Chunks[Idx];

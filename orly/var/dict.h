@@ -78,7 +78,6 @@ namespace Orly {
 
       /* TODO */
       const TDictType &GetVal() const {
-        assert(this);
         return Val;
       }
 
@@ -90,13 +89,11 @@ namespace Orly {
 
       /* TODO */
       const Type::TType &GetKeyType() const {
-        assert(this);
         return KeyType;
       }
 
       /* TODO */
       const Type::TType &GetValType() const {
-        assert(this);
         return ValType;
       }
 

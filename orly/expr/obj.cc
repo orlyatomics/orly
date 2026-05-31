@@ -35,13 +35,11 @@ TObj::TObj(const TMemberMap &members, const TPosRange &pos_range)
     : TCtor(members, pos_range) {}
 
 void TObj::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TObj::GetTypeImpl() const {
-  assert(this);
   Type::TObj::TElems elem_map;
   bool is_sequence = false;
   for (auto member : GetMembers()) {

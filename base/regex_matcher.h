@@ -58,7 +58,6 @@ namespace Base {
       }
 
       ~TPattern() {
-        assert(this);
         regfree(&Regex);
       }
 
@@ -80,13 +79,11 @@ namespace Base {
       /* Rewind the object to the beginning.  After calling this, you can
          iterate through the matches again if desired. */
       void Rewind() {
-        assert(this);
         Index = 0;
         InvalidateCachedIndex();
       }
 
       void Clear() noexcept {
-        assert(this);
         Rewind();
         MakeEmpty();
       }
@@ -94,14 +91,12 @@ namespace Base {
       /* Return true if the iterator references a valid position (has not yet
          reached the end). */
       operator bool() const {
-        assert(this);
         return TryRefresh();
       }
 
       /* Access the value at the current iterator position.  On entry, the
          iterator must reference a valid position. */
       const regmatch_t &operator*() const {
-        assert(this);
         Refresh();
         return Buf[CachedIndex];
       }
@@ -109,7 +104,6 @@ namespace Base {
       /* Access the value at the current iterator position.  On entry, the
          iterator must reference a valid position. */
       const regmatch_t *operator->() const {
-        assert(this);
         Refresh();
         return &Buf[CachedIndex];
       }
@@ -117,7 +111,6 @@ namespace Base {
       /* Advance the iterator to the next position.  On entry, the iterator
          must be at a valid position. */
       TMatches &operator++() {
-        assert(this);
         Refresh();
         InvalidateCachedIndex();
         return *this;
@@ -128,17 +121,14 @@ namespace Base {
       friend class TRegexMatcher;  // for access to 'Buf' member
 
       bool CachedIndexIsValid() const {
-        assert(this);
         return (CachedIndex < Buf.size());
       }
 
       void InvalidateCachedIndex() {
-        assert(this);
         CachedIndex = Buf.size();
       }
 
       void MakeEmpty() noexcept {
-        assert(this);
         if (!Buf.empty()) {
           /* Mark the first regmatch_t as invalid so our sequence starts out
              empty. */
@@ -147,7 +137,6 @@ namespace Base {
       }
 
       void Refresh() const {
-        assert(this);
         if (!TryRefresh()) {
           assert(false);
         }
@@ -156,7 +145,6 @@ namespace Base {
       bool TryAdvance() const;
 
       bool TryRefresh() const {
-        assert(this);
         bool valid = CachedIndexIsValid();
         if (!valid) {
           valid = TryAdvance();

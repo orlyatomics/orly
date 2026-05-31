@@ -30,17 +30,14 @@ TWithClause::TWithClause(const TNewStmtSet &new_stmts, const TPosRange &pos_rang
     : NewStmts(new_stmts), PosRange(pos_range) {}
 
 const TWithClause::TNewStmtSet &TWithClause::GetNewStmts() const {
-  assert(this);
   return NewStmts;
 }
 
 const TPosRange &TWithClause::GetPosRange() const {
-  assert(this);
   return PosRange;
 }
 
 void TWithClause::TypeCheck() const {
-  assert(this);
   for (const auto &new_stmt : NewStmts) {
     new_stmt->TypeCheck();
   }

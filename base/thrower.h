@@ -96,7 +96,6 @@ namespace Base {
 
     /* Boom goes the dynamite. */
     [[noreturn]] ~TThrower() noexcept(false) {
-      assert(this);
       throw TError(Strm.str().c_str());
     }
 
@@ -104,7 +103,6 @@ namespace Base {
        If we're currently positioned at the end of a message part, insert a delimiter before the value. */
     template <typename TVal>
     void Write(const TVal &val) {
-      assert(this);
       if (AtEndOfPart) {
         Strm << PartDelimiter;
         AtEndOfPart = false;
@@ -115,7 +113,6 @@ namespace Base {
     /* Append the end-of-part marker to the message.
        This doesn't actually add anything to the message, it just marks the position as being the end of a part. */
     void Write(const TEndOfPart &) {
-      assert(this);
       AtEndOfPart = true;
     }
 

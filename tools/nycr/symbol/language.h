@@ -59,19 +59,16 @@ namespace Tools {
 
         /* TODO */
         const Base::TOpt<int> &GetExpectedRr() const {
-          assert(this);
           return ExpectedRr;
         }
 
         /* TODO */
         const Base::TOpt<int> &GetExpectedSr() const {
-          assert(this);
           return ExpectedSr;
         }
 
         /* TODO */
         const TNamespaces &GetNamespaces() const {
-          assert(this);
           return Namespaces;
         }
 

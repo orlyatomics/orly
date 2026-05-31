@@ -51,41 +51,35 @@ namespace Shape {
 
     /* The sum of this point and that one. */
     TPoint operator+(const TPoint &that) const {
-      assert(this);
       assert(&that);
       return TPoint(X + that.X, Y + that.Y);
     }
 
     /* The difference of this point and that one. */
     TPoint operator-(const TPoint &that) const {
-      assert(this);
       assert(&that);
       return TPoint(X - that.X, Y - that.Y);
     }
 
     /* The dot-product of this point and that one. */
     double operator*(const TPoint &that) const {
-      assert(this);
       assert(&that);
       return (X * that.X) + (Y * that.Y);
     }
 
     /* This point scaled up. */
     TPoint operator*(double that) const {
-      assert(this);
       return TPoint(X * that, Y * that);
     }
 
     /* This point scaled down. */
     TPoint operator/(double that) const {
-      assert(this);
       assert(that);
       return TPoint(X / that, Y / that);
     }
 
     /* The distance between this point and that one. */
     double operator, (const TPoint &that) const {
-      assert(this);
       assert(&that);
       TPoint diff = that - *this;
       return sqrt((diff.X * diff.X) + (diff.Y * diff.Y));
@@ -93,13 +87,11 @@ namespace Shape {
 
     /* The distance of this point from the origin. */
     double GetMagnitude() const {
-      assert(this);
       return *this, TPoint();
     }
 
     /* This point, scaled to the unit circle. */
     TPoint GetNormal() const {
-      assert(this);
       return *this / GetMagnitude();
     }
 
@@ -158,13 +150,11 @@ namespace Shape {
 
     /* The center of the circle. */
     const TPoint &GetCenter() const {
-      assert(this);
       return Center;
     }
 
     /* The radius of the circle. */
     double GetRadius() const {
-      assert(this);
       return Radius;
     }
 
@@ -191,14 +181,12 @@ namespace Shape {
 
     /* Call back for each edge of the rectangle. */
     bool ForEachEdge(const std::function<bool(const TLineSegment &)> &cb) const {
-      assert(this);
       assert(&cb);
       return cb(GetTopEdge()) && cb(GetBottomEdge()) && cb(GetLeftEdge()) && cb(GetRightEdge());
     }
 
     /* The vertical max of the rectangle. */
     double GetBottom() const {
-      assert(this);
       return Bottom;
     }
 
@@ -207,25 +195,21 @@ namespace Shape {
 
     /* The bottom-left point of the rectangle. */
     TPoint GetBottomLeft() const {
-      assert(this);
       return TPoint(Left, Bottom);
     }
 
     /* The bottom-right point of the rectangle. */
     TPoint GetBottomRight() const {
-      assert(this);
       return TPoint(Right, Bottom);
     }
 
     /* The height of the rectangle. */
     double GetHeight() const {
-      assert(this);
       return Bottom - Top;
     }
 
     /* The horizontal min of the rectangle. */
     double GetLeft() const {
-      assert(this);
       return Left;
     }
 
@@ -234,7 +218,6 @@ namespace Shape {
 
     /* The horizontal max of the rectangle. */
     double GetRight() const {
-      assert(this);
       return Right;
     }
 
@@ -243,7 +226,6 @@ namespace Shape {
 
     /* The vertical min of the rectangle. */
     double GetTop() const {
-      assert(this);
       return Top;
     }
 
@@ -252,19 +234,16 @@ namespace Shape {
 
     /* The top-left point of the rectangle. */
     TPoint GetTopLeft() const {
-      assert(this);
       return TPoint(Left, Top);
     }
 
     /* The top-right point of the rectangle. */
     TPoint GetTopRight() const {
-      assert(this);
       return TPoint(Right, Top);
     }
 
     /* The width of the rectangle. */
     double GetWidth() const {
-      assert(this);
       return Right - Left;
     }
 
@@ -319,13 +298,11 @@ namespace Shape {
   /* 9. Finish the definitions for the final classes' Accept() functions. */
 
   void TCircle::Accept(const TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(*this);
   }
 
   void TRectangle::Accept(const TVisitor &visitor) const {
-    assert(this);
     assert(&visitor);
     visitor(*this);
   }

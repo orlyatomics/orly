@@ -49,7 +49,6 @@ namespace Strm {
 
       /* The current character. */
       char32_t operator*() const {
-        assert(this);
         if (!IsCached) {
           Cache = ReadChar();
           IsCached = true;
@@ -59,7 +58,6 @@ namespace Strm {
 
       /* Advance to the next character. */
       TIn &operator++() {
-        assert(this);
         if (IsCached) {
           IsCached = false;
         } else {

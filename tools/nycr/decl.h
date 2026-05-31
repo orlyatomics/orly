@@ -70,7 +70,6 @@ namespace Tools {
 
       /* The our name as plain text. */
       const std::string &GetNameText() const {
-        assert(this);
         return Name->GetLexeme().GetText();
       }
 
@@ -100,7 +99,6 @@ namespace Tools {
 
         /* Set the reference by giving it a syntax tree node which represent it.  We must not already be bound. */
         void Set(const Syntax::TName *name) {
-          assert(this);
           assert(!IsBound);
           Name = name;
         }
@@ -108,7 +106,6 @@ namespace Tools {
         /* Conditionally set the reference, when the name is optional.  We must not already be bound. */
         template <typename TYesNode, typename TNoNode, typename TOptNode>
         void Set(const TOptNode *opt_node) {
-          assert(this);
           assert(!IsBound);
           const TYesNode *yes_node = TryGetNode<TYesNode, TNoNode>(opt_node);
           if (yes_node) {
@@ -146,21 +143,18 @@ namespace Tools {
 
         /* Are we not null? */
         operator bool() const {
-          assert(this);
           assert(IsBound);
           return SomeDecl != 0;
         }
 
         /* Dereference the reference.  We must be bound first. */
         TSomeDecl *operator*() const {
-          assert(this);
           assert(IsBound);
           return SomeDecl;
         }
 
         /* Dereference the reference.  We must be bound first. */
         TSomeDecl *operator->() const {
-          assert(this);
           assert(IsBound);
           return SomeDecl;
         }
@@ -169,7 +163,6 @@ namespace Tools {
 
         /* See our base class. */
         virtual const char *SetDecl(TDecl *decl) {
-          assert(this);
           assert(decl);
           SomeDecl = dynamic_cast<TSomeDecl *>(decl);
           return !SomeDecl ? TInfo<TSomeDecl>::Name : 0;

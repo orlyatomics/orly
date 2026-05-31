@@ -66,7 +66,6 @@ namespace Orly {
 
           /* See Sabot::Type::TUnary. */
           virtual Sabot::Type::TAny *NewElem(void *buf) const override {
-            assert(this);
             return NewSabot(buf, Elem);
           }
 
@@ -118,13 +117,11 @@ namespace Orly {
 
           /* See Sabot::Type::TBinary. */
           virtual Sabot::Type::TAny *NewLhs(void *buf) const override {
-            assert(this);
             return NewSabot(buf, Lhs);
           }
 
           /* See Sabot::Type::TBinary. */
           virtual Sabot::Type::TAny *NewRhs(void *buf) const override {
-            assert(this);
             return NewSabot(buf, Rhs);
           }
 
@@ -172,7 +169,6 @@ namespace Orly {
 
           /* See Sabot::Type::TTuple. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *buf) const override {
-            assert(this);
             const auto &field = Tuple->Addr->GetElems().at(elem_idx);
             const auto &elem = field.second;
             return (field.first != TAddrDir::Desc) ? NewSabot(buf, elem) : new (buf) TDesc(elem);
@@ -194,7 +190,6 @@ namespace Orly {
 
         /* See Sabot::Type::TNAry. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           return Addr->GetElems().size();
         }
 
@@ -228,7 +223,6 @@ namespace Orly {
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, std::string &name, void *buf) const override {
-            assert(this);
             assert(&name);
             const auto &item = Record->Elems[elem_idx];
             name = item.first;
@@ -237,7 +231,6 @@ namespace Orly {
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *&out_field_name_state, void *field_name_state_alloc, void *buf) const override {
-            assert(this);
             const auto &item = Record->Elems[elem_idx];
             out_field_name_state = Native::State::New(item.first, field_name_state_alloc);
             return NewSabot(buf, item.second);
@@ -245,7 +238,6 @@ namespace Orly {
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *buf) const override {
-            assert(this);
             const auto &item = Record->Elems[elem_idx];
             return NewSabot(buf, item.second);
           }
@@ -269,7 +261,6 @@ namespace Orly {
 
         /* See Sabot::Type::TNAry. */
         virtual size_t GetElemCount() const override {
-          assert(this);
           return Elems.size();
         }
 

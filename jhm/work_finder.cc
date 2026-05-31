@@ -287,7 +287,6 @@ bool TWorkFinder::FinishAll() {
 }
 
 bool TWorkFinder::IsDone(TJob *job) {
-  assert(this);
 
   if (!Contains(Cache, job)) {
     CacheCheck(job);

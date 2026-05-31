@@ -42,20 +42,17 @@ TOperator::TOperator(const Syntax::TOper *decl)
 }
 
 void TOperator::ForEachRef(const function<void (TAnyRef &)> &cb) {
-  assert(this);
   assert(&cb);
   TAtom::ForEachRef(cb);
   cb(PrecLevel);
 }
 
 Symbol::TAtom *TOperator::GetSymbolAsAtom() const {
-  assert(this);
   assert(Symbol);
   return Symbol;
 }
 
 bool TOperator::Build(int pass) {
-  assert(this);
   bool is_done;
   switch (pass) {
     case 1: {

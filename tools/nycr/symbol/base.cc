@@ -21,18 +21,15 @@
 using namespace Tools::Nycr::Symbol;
 
 void TBase::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 TBase *TBase::GetBase() {
-  assert(this);
   return this;
 }
 
 bool TBase::HasBase(const TBase *target) {
-  assert(this);
   bool result = (this == target);
   if (!result) {
     TBase *base = GetBase();

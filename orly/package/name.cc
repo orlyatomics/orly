@@ -69,14 +69,12 @@ TVersionedName TVersionedName::Parse(const TPiece<const char> &name) {
 }
 
 bool TVersionedName::operator==(const TVersionedName &that) const {
-  assert(this);
   assert(&that);
 
   return that.Version == Version && that.Name == Name;
 }
 
 Jhm::TRelPath TVersionedName::GetSoRelPath() const {
-  assert(this);
 
   vector<string> name(Name.Name);
   name.pop_back();

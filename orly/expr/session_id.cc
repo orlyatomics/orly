@@ -33,12 +33,10 @@ TSessionId::TSessionId(const TPosRange &pos_range)
     : TLeaf(pos_range) {}
 
 void TSessionId::Accept(const TVisitor &visitor) const {
-  assert(this);
   assert(&visitor);
   visitor(this);
 }
 
 Type::TType TSessionId::GetTypeImpl() const {
-  assert(this);
   return Type::TId::Get();
 }
