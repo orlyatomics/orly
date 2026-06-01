@@ -1,25 +1,39 @@
 <p align="center">
-  <img src="docs/branding/orly.png?raw=true" height="100" alt="Orly" />
+  <img src="docs/branding/orly.png?raw=true" height="120" alt="Orly" />
 </p>
 
-> **Status — 2026 revival.** Orly was dormant from 2019 until early 2026, when a modernization pass brought the codebase back to building and testing cleanly on a current Linux toolchain. `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13. See [#10](https://github.com/orlyatomics/orly/issues/10) for the full status and remaining gaps. No active feature development.
+<p align="center">
+  <a href="https://github.com/orlyatomics/orly/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/orlyatomics/orly/actions/workflows/ci.yml/badge.svg?branch=master" /></a>
+  &nbsp;
+  <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-23-00599C.svg" />
+  &nbsp;
+  <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" />
+</p>
 
-This is the repository for the Orly non-relational database. It's meant to be fast and to scale for billions of users. Orly provides a single path to data and will eliminate our need for memcache due to its speed and high concurrency.
+<p align="center">
+  <b>Orly</b> — a non-relational database built around <i>Points of View</i>,<br />
+  causally-ordered merge, and a compiled query language (<i>Orlyscript</i>).
+</p>
 
-## Orly features
+---
 
-* **Points of View**: This is our version of optimistic locking or isolation. In traditional databases, clients have to lock the entire database (or at least large swaths of it) before updating it to ensure data remains consistent. In Orly, clients make changes in their own private points of view, which are like small sandboxes. Changes in private points of view eventually propagate into shared points of view and eventually reach the global point of view, which is the whole database. Updates to private points of view don't lock anything: Orly determines later whether, when, and how to reconcile changes from different points of view. We also encourage field calls rather than field changes (e.g., `x += 1` is better than `x = x + 1`).
-* **Causal ordering (the _Flux Capacitor_)**: Orly's merge-conflict resolution defines its "time line" by causality rather than clock time. Instead of manipulating timestamps, it records an ordering of events (e.g., update A affects update B, so A "happens before" B), and uses that ordering to decide how concurrent writes from different POVs reconcile into global state. Note: the original 2014 README pitched this as user-facing "time travel" (consistent read at any point in time), but the implementation never exposed past-state queries — POV writes propagate to global rather than freezing snapshots. Time travel as a user-facing feature is achievable, but it lives in user-space; see [`examples/bitcoin-time-travel/`](examples/bitcoin-time-travel/) for a worked pattern (encode the version axis into the key tuple, fold on read) that gives you historical queries and branched-history multiverse queries without engine changes.
-* **Query Language**: Orly has its own high-level, compiled, type-safe, functional language called _Orlyscript_. Orlyscript is not just a query language: You can write general-purpose programs in it complete with compile-time unit tests. Orly comes with a compiler that transforms Orlyscript into shared libraries (.so files on Linux), which Orly servers load as packages.
-* **Scalability and Availability**: While we eventually plan to develop a sharded Orly machine (and actively design so that we can build such a machine), our current single-node server with fail-over/replication can handle hundreds of thousands of transactions per second. We like to say that Orly will function on a "planetary scale": Your data and computations will not only distribute across a data center, but also across many data centers across the globe. This means that no disaster short of nuking the planet fifty times over or colliding with a gigantic asteroid will destroy your data. (Even those might not be catastrophic: Maybe we'll have data centers running Orly with your replicated data on the moon or Mars.)
+> **Status — 2026 revival.** Dormant from 2019 until early 2026; a modernization pass brought the codebase back to building and testing cleanly on a current Linux toolchain. `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13. See [#10](https://github.com/orlyatomics/orly/issues/10) for the full status and remaining gaps. No active feature development; experiments and clean-up are welcome.
 
-## Supported platforms
+---
 
-Linux only, x86-64. Verified on Ubuntu 24.04. Earlier Ubuntu releases probably work too but have not been re-tested in the revival pass.
+## Features
+
+- **Points of View.** Optimistic concurrency without locking. Each client makes changes in its own private POV — a small sandbox — which eventually propagates into shared POVs and then into the global POV (the whole database). Field calls (`x += 1`) are preferred over field changes (`x = x + 1`) because they merge commutatively.
+
+- **Causal ordering (the _Flux Capacitor_).** Merge-conflict resolution defines its "time line" by causality rather than clock time. Internal mechanism; the original 2014 pitch implied user-facing "time travel" queries which the engine never grew, but the capability is achievable in user-space — see the [bitcoin time-travel example](examples/bitcoin-time-travel/).
+
+- **Orlyscript.** A high-level, compiled, type-safe, functional query and programming language. Sources are compiled to `.so` packages that `orlyi` loads at runtime. Supports inline tests, native compilation, and most of the niceties of a real language rather than just a query DSL.
+
+- **Single-node first.** Fail-over / replication / hundreds of thousands of transactions per second on one node. Sharding was designed for but never built; that part of the original pitch is currently aspirational.
 
 ## Quick start
 
-Install the system dependencies:
+System dependencies (Ubuntu 24.04):
 
 ```sh
 sudo apt-get install -y \
@@ -37,7 +51,7 @@ make test        # runs 188 test binaries
 make release     # LTO-built production binaries
 ```
 
-The four production binaries land at `../out_orly/debug/` (or `../out_orly/release/`):
+The four production binaries land in `../out_orly/debug/` (or `../out_orly/release/`):
 
 | Binary | Purpose |
 | --- | --- |
@@ -46,43 +60,53 @@ The four production binaries land at `../out_orly/debug/` (or `../out_orly/relea
 | `orly/spa/spa` | Single-process app server |
 | `orly/client/orly_client` | Interactive client shell |
 
-To exercise the Orlyscript test suite against compiled `.orly` programs:
+Exercise the Orlyscript test suite against compiled `.orly` programs:
 
 ```sh
 python3 tools/lang_test.py -d orly/data tests/lang_tests
 ```
 
-## Toolchain
+## Examples
 
-The revival pass uses:
+### [`examples/bitcoin-time-travel/`](examples/bitcoin-time-travel/) — time travel + multiverse via key-encoded version
 
-* gcc 13.3.0
-* `-std=c++23`
-* boost 1.83 (system, including `boost::beast` for the WebSocket surface)
-* Python 3.12 for `lang_test.py`
+A Bitcoin-flavoured ledger that does **historical queries** ("balance at block 5") and **branched-history multiverse queries** ("balance on the fork vs the mainnet at block 7"). The trick: encode the version axis (block height) AND the branch into the key tuple, fold over the height axis on read.
 
-Build flags live in `root.jhm` (per-target overrides in `debug.jhm` / `release.jhm` / `bootstrap.jhm`).
+| Driver | File | Notes |
+| --- | --- | --- |
+| Python | [`demo.py`](examples/bitcoin-time-travel/demo.py) | `pip install websocket-client`, then `./run.sh` |
+| Go | [`demo.go`](examples/bitcoin-time-travel/demo.go) | `gorilla/websocket` dep, then `./run-go.sh` |
+
+Both drivers exercise the identical scenario, print the same balance trajectory, and self-check 72 balance values across both branches. Smoke-tested in CI on every push.
 
 ## Walkthrough
 
-[`docs/walkthrough.md`](docs/walkthrough.md) walks through compiling an Orlyscript package with `orlyc`, loading it into a running `orlyi`, and invoking a method on it via `orly_client` — the full pipeline end-to-end.
+[`docs/walkthrough.md`](docs/walkthrough.md) — compile an Orlyscript package with `orlyc`, load it into a running `orlyi`, and invoke a method on it via `orly_client`. The full pipeline end to end.
 
-## Examples
+## Supported platforms
 
-[`examples/bitcoin-time-travel/`](examples/bitcoin-time-travel/) — a Bitcoin-flavoured ledger that does **time-travel queries** ("balance at block 5") and **branched-history multiverse queries** ("balance on the fork vs the mainnet at block 7"). Uses one small Orlyscript package and a Python driver; smoke-tested in CI on every push.
+Linux only, x86-64. Verified on Ubuntu 24.04. Earlier releases probably work; not re-tested in the revival pass.
+
+## Toolchain
+
+| Component | Version |
+| --- | --- |
+| gcc | 13.3.0 |
+| C++ standard | `-std=c++23` |
+| boost (system) | 1.83 — includes `boost::beast` for the WebSocket surface |
+| Python (for `lang_test.py`) | 3.12 |
+| Go (for the optional Go driver in `examples/`) | 1.22+ |
+
+Build flags live in [`root.jhm`](root.jhm); per-target overrides in `debug.jhm` / `release.jhm` / `bootstrap.jhm`.
 
 ## Contributing
 
-The build system (`jhm`) lives in `jhm/`; the bootstrap path is documented in `bootstrap.sh`. There's no formal style guide; match the surrounding code.
+The build system (`jhm`) lives in [`jhm/`](jhm/); the bootstrap path is documented in [`bootstrap.sh`](bootstrap.sh). There's no formal style guide; match the surrounding code.
 
 ### IDE / clangd
 
-Every successful `make debug` (or any `jhm` invocation that compiles C/C++) writes a [JSON Compilation Database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) to `compile_commands.json` at the repo root. clangd, clang-tidy, IWYU, and most C++-aware editors pick this up automatically. The file is regenerated on every build, so it's `.gitignore`d.
+Every successful `make debug` (or any `jhm` invocation that compiles C/C++) writes a [JSON Compilation Database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) to `compile_commands.json` at the repo root. clangd, clang-tidy, IWYU, and most C++-aware editors pick it up automatically. The file is regenerated on every build, so it's `.gitignore`d.
 
------
+---
 
-README.md Copyright 2010-2026 Atomic Kismet Company
-
-README.md is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
-
-You should have received a copy of the license along with this work. If not, see <http://creativecommons.org/licenses/by-sa/4.0/>.
+<sub>README.md © 2010–2026 Atomic Kismet Company. Licensed under [Creative Commons Attribution-ShareAlike 4.0 International](http://creativecommons.org/licenses/by-sa/4.0/).</sub>
