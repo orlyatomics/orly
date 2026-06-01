@@ -2,11 +2,8 @@
 *.swp
 *~
 *.*~
+__pycache__/
 tools/jhm
 tools/make_dep_file
-tools/clang
-tools/clang++
-third_party/llvm
-third_party/llvm_build
 .claude/
 
