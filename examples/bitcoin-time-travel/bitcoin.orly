@@ -1,0 +1,128 @@
+/* <examples/bitcoin-time-travel/bitcoin.orly>
+
+   A multi-branch, time-travelling toy ledger -- inspired by Bitcoin
+   chain reorgs -- demonstrating that Orly can model historical
+   queries AND branched-history multiverse queries entirely in
+   user-space, with no engine changes.
+
+   The trick: encode the version (block height) AND the branch into
+   the key tuple. Writes to different (branch, addr, height) tuples
+   never collide, so the past is structurally frozen. Reads at a
+   given height are a fold; cross-branch inheritance is a recursion
+   through a parent pointer.
+
+   Schema:
+
+     <['delta', branch, addr, h]>  : int   -- per-block delta
+     <['parent', branch]>          : str   -- the branch this branch forked from
+     <['fork_h', branch]>          : int   -- height at which we forked
+
+   The same fold pattern works for any commutative monoid; this demo
+   uses integer addition (balances), but `union` (sets), `++` (lists),
+   and `min`/`max` would all fit.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* Look up the per-block delta in this branch's own keyspace; 0 if absent. */
+local_delta = (((*<['delta', branch, addr, h]>::(int)) if *<['delta', branch, addr, h]>::(int?) is known else 0)) where {
+  branch = given::(str);
+  addr   = given::(str);
+  h      = given::(int);
+};
+
+/* The per-block delta for (addr, h) on `branch`, recursing into the
+   parent branch when h is before the fork. Returns 0 if no write
+   exists anywhere in the chain. */
+delta_at = ((
+  delta_at(.branch: *<['parent', branch]>::(str), .addr: addr, .h: h)
+  if *<['parent', branch]>::(str?) is known and_then h < *<['fork_h', branch]>::(int)
+  else local_delta(.branch: branch, .addr: addr, .h: h)
+)) where {
+  branch = given::(str);
+  addr   = given::(str);
+  h      = given::(int);
+};
+
+/* Add `amount` to the (branch, addr, h) delta. First write creates;
+   subsequent writes at the same tuple accumulate -- so multiple ops
+   inside one block compose. Returns 1 if we accumulated, 0 if we
+   created. */
+credit_at = (((1) effecting {
+  *<['delta', branch, addr, h]>::(int) += amount;
+} if *<['delta', branch, addr, h]>::(int?) is known else (0) effecting {
+  new <['delta', branch, addr, h]> <- amount;
+})) where {
+  branch = given::(str);
+  addr   = given::(str);
+  amount = given::(int);
+  h      = given::(int);
+};
+
+/* Declare that `branch` is forked from `parent` at height `fork_h`.
+   Reads on `branch` at heights < fork_h will recurse into parent;
+   at heights >= fork_h they see only what's been written into
+   `branch` itself. Each branch can only be forked once. */
+fork_from = ((1) effecting {
+  new <['parent', branch]> <- parent;
+  new <['fork_h', branch]> <- fork_h;
+}) where {
+  branch = given::(str);
+  parent = given::(str);
+  fork_h = given::(int);
+};
+
+/* The headline read: balance for `addr` on `branch` at height `h`.
+   Sums delta_at across the full causal prefix up to (and including) h. */
+balance_at = ([0..h] reduce start 0 + delta_at(.branch: branch, .addr: addr, .h: that)) where {
+  branch = given::(str);
+  addr   = given::(str);
+  h      = given::(int);
+};
+
+/* Inline tests -- 'orlyc -d bitcoin.orly' runs these. */
+test {
+  /* --- MAINNET --- */
+  t1: credit_at(.branch: "mainnet", .addr: "alice", .amount: 100, .h: 1) == 0 {
+    t2: credit_at(.branch: "mainnet", .addr: "alice", .amount: 50, .h: 3) == 0 {
+      t3: balance_at(.branch: "mainnet", .addr: "alice", .h: 3) == 150;
+
+      /* --- FORK from mainnet at h=2 --- */
+      t4: fork_from(.branch: "fork", .parent: "mainnet", .fork_h: 2) == 1 {
+        /* Pre-fork: fork inherits mainnet's state via recursion. */
+        t5: balance_at(.branch: "fork", .addr: "alice", .h: 1) == 100;
+
+        /* At and after the fork: fork is independent. No fork-local
+           writes yet, so balance stays at the pre-fork value. */
+        t6: balance_at(.branch: "fork", .addr: "alice", .h: 2) == 100;
+        t7: balance_at(.branch: "fork", .addr: "alice", .h: 3) == 100;
+
+        /* Mainnet is unaffected by the fork's existence. */
+        t8: balance_at(.branch: "mainnet", .addr: "alice", .h: 3) == 150;
+
+        /* Now write something different on the fork at h=3. */
+        t9: credit_at(.branch: "fork", .addr: "alice", .amount: 999, .h: 3) == 0 {
+          t10: balance_at(.branch: "fork", .addr: "alice", .h: 3) == 1099;
+          t11: balance_at(.branch: "mainnet", .addr: "alice", .h: 3) == 150;
+
+          /* Pre-fork heights remain identical across branches. */
+          t12: balance_at(.branch: "fork", .addr: "alice", .h: 1) == 100;
+          t13: balance_at(.branch: "mainnet", .addr: "alice", .h: 1) == 100;
+        };
+      };
+    };
+  };
+};
