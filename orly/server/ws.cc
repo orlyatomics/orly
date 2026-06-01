@@ -21,12 +21,18 @@
 #include <cassert>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
+#include <syslog.h>
+#include <thread>
 #include <vector>
 
-#include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/server.hpp>
+#include <boost/asio/dispatch.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/strand.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
 
 #include <base/as_str.h>
 #include <base/fd.h>
@@ -47,7 +53,6 @@
 #include <orly/var/sabot_to_var.h>
 
 using namespace std;
-using namespace std::placeholders;
 
 using namespace Base;
 using namespace Util;
@@ -57,7 +62,16 @@ using namespace Orly::Client::Program;
 using namespace Orly::Sabot;
 using namespace Orly::Server;
 
-/* The implementation of the TWs interface declared in the header. */
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
+
+/* The implementation of the TWs interface declared in the header.
+
+   Each connection runs on its own asio strand, so per-connection handlers
+   serialize across the io_context's thread pool. The Conns set is guarded
+   by Mutex; the strands cover everything else. */
 class TWsImpl final
     : public TWs {
   public:
@@ -68,164 +82,106 @@ class TWsImpl final
       in_port_t port_number)
       : SessionManager(session_mngr),
         TmpDirMaker(MakePath({ P_tmpdir, "orly_ws_compile" }, {})),
-        BgThreads(thread_count ? thread_count : 1) {
+        IoCtx(thread_count ? static_cast<int>(thread_count) : 1),
+        Acceptor(IoCtx) {
     assert(session_mngr);
     syslog(LOG_INFO, "ws compile tmp dir = \"%s\"", TmpDirMaker.GetPath().c_str());
-    WsServer.clear_access_channels(websocketpp::log::alevel::all);
-    WsServer.clear_error_channels(websocketpp::log::elevel::all);
-    WsServer.init_asio();
-    WsServer.set_reuse_addr(true);
-    WsServer.set_open_handler(bind(&TWsImpl::OnOpen, this, _1));
-    WsServer.set_close_handler(bind(&TWsImpl::OnClose, this, _1));
-    WsServer.set_message_handler(bind(&TWsImpl::OnMsg, this, _1, _2));
-    /* In websocketpp 0.8.2 set_socket_init_handler fires during
-       init_asio(), before the socket has an underlying file descriptor,
-       so set_option on it fails with EBADF. set_tcp_pre_init_handler
-       runs after the raw TCP connection has been established, which is
-       when TCP_NODELAY can actually be applied. */
-    WsServer.set_tcp_pre_init_handler(
-          [this] (websocketpp::connection_hdl hdl) {
-            boost::asio::ip::tcp::no_delay option(true);
-            WsServer.get_con_from_hdl(hdl)->get_raw_socket().set_option(option);
-          }
-    );
-    WsServer.set_listen_backlog(8192);
-    WsServer.listen(port_number);
-    WsServer.start_accept();
+
+    tcp::endpoint endpoint(tcp::v4(), port_number);
+    Acceptor.open(endpoint.protocol());
+    Acceptor.set_option(net::socket_base::reuse_address(true));
+    Acceptor.bind(endpoint);
+    Acceptor.listen(8192);
+
+    DoAccept();
+
+    const size_t n = thread_count ? thread_count : 1;
+    BgThreads.reserve(n);
     try {
-      for (auto &bg_thread: BgThreads) {
-        bg_thread = thread(&TWsServer::run, &WsServer);
+      for (size_t i = 0; i < n; ++i) {
+        BgThreads.emplace_back([this] { IoCtx.run(); });
       }
     } catch (...) {
-      this->~TWsImpl();
+      Shutdown();
       throw;
     }
   }
 
   /* Shuts down the server. */
-  virtual ~TWsImpl() {
-    WsServer.stop();
-    for (auto &bg_thread: BgThreads) {
-      if (bg_thread.joinable()) {
-        bg_thread.join();
-      }
-    }
-    Conns.clear();
+  ~TWsImpl() override {
+    Shutdown();
   }
 
   private:
 
-  /* We use ASIO for our socket I/O. */
-  using TAsioConfig = websocketpp::config::asio;
+  class TConn;
 
-  /* This somewhat awkward structure contains the definitions used by the
-     websocket lirbary.  It differs from TAsioConfig only in that it turns
-     the multithreading protection on.  Everything else is just copied in
-     from the standard ASIO config.  This is fragile but follows the
-     example given by the library. */
-  struct TServerConfig : TAsioConfig {
+  /* Stops the io_context, joins the worker threads, and clears the
+     connection set. Idempotent so the dtor can call it after a partially-
+     constructed start. */
+  void Shutdown() {
+    if (!IoCtx.stopped()) {
+      IoCtx.stop();
+    }
+    for (auto &t : BgThreads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+    lock_guard<mutex> lock(Mutex);
+    Conns.clear();
+  }
 
-    /* Copy in default types. */
-    using concurrency_type          = TAsioConfig::concurrency_type;
-    using request_type              = TAsioConfig::request_type;
-    using response_type             = TAsioConfig::response_type;
-    using message_type              = TAsioConfig::message_type;
-    using con_msg_manager_type      = TAsioConfig::con_msg_manager_type;
-    using endpoint_msg_manager_type = TAsioConfig::endpoint_msg_manager_type;
+  /* Queue the next accept. Self-perpetuating chain. */
+  void DoAccept();
 
-    /* Copy in more default types. */
-    using alog_type     = TAsioConfig::alog_type;
-    using elog_type     = TAsioConfig::elog_type;
-    using rng_type      = TAsioConfig::rng_type;
-    using endpoint_base = TAsioConfig::endpoint_base;
-
-    /* Do acquire and release mutexes within the server. */
-    static bool const enable_multithreading = true;
-
-    /* As TServerConfig, but for the transport layer. */
-    struct TTransportConfig : TAsioConfig::transport_config {
-
-      /* Copy in yet more default types. */
-      using concurrency_type = TAsioConfig::concurrency_type;
-      using elog_type        = TAsioConfig::elog_type;
-      using alog_type        = TAsioConfig::alog_type;
-      using request_type     = TAsioConfig::request_type;
-      using response_type    = TAsioConfig::response_type;
-
-      /* Do acquire and release mutexes within the transport layer. */
-      static bool const enable_multithreading = true;
-
-      /* Default log levels. */
-      static const websocketpp::log::level elog_level = websocketpp::log::elevel::none;
-      static const websocketpp::log::level alog_level = websocketpp::log::alevel::none;
-
-    };  // TWsImpl::TServerConfig::TTransportConfig
-
-    /* Our configured transport type. */
-    using transport_type = websocketpp::transport::asio::endpoint<TTransportConfig>;
-
-  };  // TWsImpl::TServerConfig
-
-  /* Pull in some types from the websocket ASIO implementation. */
-  using TWsServer = websocketpp::server<TServerConfig>;
-  using TMsgPtr = TWsServer::message_ptr;
-  using TConnHndl = websocketpp::connection_hdl;
-
-  /* Constructed by TWsImpl::OnOpen(), destroyed by TWsImpl::OnClose(). */
-  class TConn final {
+  /* Per-connection state.  Constructed by DoAccept(), held in Conns until
+     the connection closes or errors out.  Pinned by shared_ptr inside its
+     own async handlers so it survives until the last in-flight op
+     completes. */
+  class TConn final : public std::enable_shared_from_this<TConn> {
     NO_COPY(TConn);
     public:
 
-    /* Cache the args. */
-    TConn(TWsImpl *ws, TConnHndl hndl)
-        : Ws(ws), Hndl(hndl), Exiting(false) {}
+    TConn(TWsImpl *ws, tcp::socket sock)
+        : Ws(ws),
+          WsStream(beast::tcp_stream(std::move(sock))) {}
 
-    /* True iff. we have processed an exit statement and so want the TCP
-       connection to close. */
-    bool IsExiting() const noexcept {
-      return Exiting;
-    }
-
-    /* Called by TWsImpl::OnMsg(). Parses and interprets a statement sent
-       to us as a text message. */
-    TJson OnMsg(TMsgPtr msg) {
-      assert(msg);
-      TJson ret;
-      ParseStmtStr(
-          msg->get_payload().c_str(),
-          [this, &ret](const TStmt *stmt) {
-             stmt->Accept(TStmtVisitor(this, ret));
-          }
-      );
-      return ret;
+    /* Perform the WS handshake then start the read loop. */
+    void Run() {
+      WsStream.async_accept(
+          [self = shared_from_this()](beast::error_code ec) {
+            if (ec) {
+              self->OnError(ec, "handshake");
+              return;
+            }
+            self->DoRead();
+          });
     }
 
     private:
 
-    /* Interpret a statement. */
+    /* Interpret a statement.  Identical to the previous implementation --
+       this is the Orly business logic; the only thing that changed is
+       what's sitting between it and the wire. */
     class TStmtVisitor final
         : public TStmt::TVisitor {
       public:
 
-      /* Cache the args. */
       TStmtVisitor(TConn *conn, TJson &result)
           : Conn(conn), Result(result) {}
 
-      /* Echo. */
       virtual void operator()(const TEchoStmt *stmt) const override {
         assert(stmt);
         void *alloc = alloca(SabotStateSize);
-        //NOTE: That we parse apart the json is very fugly here.
         //TODO: Push TJson down into Var::Jsonify
         Result = TJson::Parse(AsStrFunc(&Var::Jsonify, Var::ToVar(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc)))));
       }
 
-      /* Exit. */
       virtual void operator()(const TExitStmt *) const override {
         Conn->Exiting = true;
       }
 
-      /* New session. */
       virtual void operator()(const TNewSessionStmt *) const override {
         if (Conn->Session) {
           throw invalid_argument("session already established");
@@ -234,7 +190,6 @@ class TWsImpl final
         Result = AsStr(Conn->Session->GetId());
       }
 
-      /* Resume session. */
       virtual void operator()(const TResumeSessionStmt *stmt) const override {
         assert(stmt);
         if (Conn->Session) {
@@ -244,14 +199,12 @@ class TWsImpl final
         Result = AsStr(Conn->Session->GetId());
       }
 
-      /* Set user id. */
       virtual void operator()(const TSetUserIdStmt *stmt) const override {
         assert(stmt);
         TUuid user_id = Translate(stmt->GetIdExpr());
         GetSession()->SetUserId(user_id);
       }
 
-      /* Set time-to-live. */
       virtual void operator()(const TSetTtlStmt *stmt) const override {
         assert(stmt);
         TUuid durable_id = Translate(stmt->GetIdExpr());
@@ -259,7 +212,6 @@ class TWsImpl final
         GetSession()->SetTtl(durable_id, ttl);
       }
 
-      /* Install package. */
       virtual void operator()(const TInstallStmt *stmt) const override {
         assert(stmt);
         vector<string> package_name;
@@ -268,7 +220,6 @@ class TWsImpl final
         GetSession()->InstallPackage(package_name, version);
       }
 
-      /* Uninstall package. */
       virtual void operator()(const TUninstallStmt *stmt) const override {
         assert(stmt);
         vector<string> package_name;
@@ -277,7 +228,6 @@ class TWsImpl final
         GetSession()->UninstallPackage(package_name, version);
       }
 
-      /* New pov. */
       virtual void operator()(const TPovConsStmt *stmt) const override {
         assert(stmt);
         bool is_safe = dynamic_cast<const TSafeGuarantee *>(stmt->GetPovGuarantee()) != nullptr;
@@ -290,7 +240,6 @@ class TWsImpl final
         Result = AsStr(GetSession()->NewPov(is_safe, is_shared, parent_id));
       }
 
-      /* Try call. */
       virtual void operator()(const TTryStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
@@ -313,7 +262,6 @@ class TWsImpl final
             Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)))));
       }
 
-      /* Pause or unpause a pov. */
       virtual void operator()(const TPovStatusStmt *stmt) const override {
         assert(stmt);
         bool is_pause = dynamic_cast<const TPauseKind *>(stmt->GetStatusKind()) != nullptr;
@@ -327,22 +275,18 @@ class TWsImpl final
         }
       }
 
-      /* Tail the global pov. */
       virtual void operator()(const TTailStmt *) const override {
         GetSession()->Tail();
       }
 
-      /* Begin bulk import mode. */
       virtual void operator()(const TBeginImportStmt *) const override {
         GetSession()->BeginImport();
       }
 
-      /* End bulk import mode. */
       virtual void operator()(const TEndImportStmt *) const override {
         GetSession()->EndImport();
       }
 
-      /* Import bulk data. */
       virtual void operator()(const TImportStmt *stmt) const override {
         assert(stmt);
         string path = Translate(stmt->GetFile());
@@ -353,7 +297,6 @@ class TWsImpl final
         GetSession()->Import(path, Translate(stmt->GetPkgName()), load_threads, merge_threads, merge_sim);
       }
 
-      /* Compile Orlyscript into an installable package. */
       virtual void operator()(const TCompileStmt *stmt) const override {
         assert(stmt);
         ostringstream out_strm;
@@ -441,11 +384,11 @@ class TWsImpl final
                   auto name = lexeme.GetText();
                   auto line_num = lexeme.GetPosRange().GetStart().GetLineNumber();
                   line_nums[name] = line_num;
-                }  // if
+                }
                 return true;
               });
           Result["line_nums"] = std::move(line_nums);
-        }  // if
+        }
       }
 
       virtual void operator()(const TListSchemaStmt *stmt) const override {
@@ -464,15 +407,11 @@ class TWsImpl final
 
       private:
 
-      /* The size used to alloca() space for a sabot of state. */
       static constexpr auto SabotStateSize = Orly::Sabot::State::GetMaxStateSize();
 
-      /* Pull in some stuff from sabot. */
       using TStateDumper = Orly::Sabot::TStateDumper;
       using TWrapper = Orly::Sabot::State::TAny::TWrapper;
 
-      /* The session we are using in this connection.  Never null.
-         If no session has yet been established for this connection, throw. */
       TSessionPin *GetSession() const {
         if (!Conn->Session) {
           throw invalid_argument("session not yet established");
@@ -480,19 +419,16 @@ class TWsImpl final
         return Conn->Session.get();
       }
 
-      /* Translate an Orlyscript id into a TUuid. */
       static TUuid Translate(const TIdExpr *id_expr) {
         assert(id_expr);
         return TUuid(id_expr->GetLexeme().GetText().substr(1, id_expr->GetLexeme().GetText().size() - 2).c_str());
       }
 
-      /* Translate an Orlyscript int into a 64-bit signed int. */
       static int64_t Translate(const TIntExpr *int_expr) {
         assert(int_expr);
         return int_expr->GetLexeme().AsInt();
       }
 
-      /* Translate an Orlyscript string into a std string. */
       static string Translate(const TStrExpr *str_expr) {
         assert(str_expr);
         struct visitor_t final : public TStrExpr::TVisitor {
@@ -516,78 +452,95 @@ class TWsImpl final
         return move(result);
       }
 
-      /* The connection on whose behalf we're translating. */
       TConn *Conn;
-
-      /* The JSON blob to which to write the result of our interpretation. */
       TJson &Result;
 
-    };  // TWsImpl::TStmtVisitor
+    };  // TConn::TStmtVisitor
 
-    /* The server of which this connection is a part. */
+    /* Queue a read. */
+    void DoRead() {
+      ReadBuf.consume(ReadBuf.size());
+      WsStream.async_read(
+          ReadBuf,
+          [self = shared_from_this()](beast::error_code ec, std::size_t /*n*/) {
+            if (ec == websocket::error::closed ||
+                ec == net::error::operation_aborted ||
+                ec == net::error::eof ||
+                ec == net::error::connection_reset) {
+              self->Close();
+              return;
+            }
+            if (ec) {
+              self->OnError(ec, "read");
+              return;
+            }
+            self->OnMsg();
+          });
+    }
+
+    /* Parse + run the incoming statement, format the JSON reply, write
+       it back. */
+    void OnMsg() {
+      const string payload = beast::buffers_to_string(ReadBuf.data());
+      TJson reply = TJson::Object;
+      try {
+        TJson result;
+        ParseStmtStr(
+            payload.c_str(),
+            [this, &result](const TStmt *stmt) {
+              stmt->Accept(TStmtVisitor(this, result));
+            });
+        reply["result"] = std::move(result);
+        reply["status"] = "ok";
+      } catch (const TSourceError &src_error) {
+        reply["result"] = src_error.what();
+        reply["pos"] = AsStr(src_error.GetPosRange());
+        reply["status"] = "source_error";
+      } catch (const exception &ex) {
+        reply["result"] = ex.what();
+        reply["status"] = "exception";
+      }
+      ReplyBuf = AsStr(reply);
+      WsStream.text(true);
+      WsStream.async_write(
+          net::buffer(ReplyBuf),
+          [self = shared_from_this()](beast::error_code ec, std::size_t /*n*/) {
+            if (ec) {
+              self->OnError(ec, "write");
+              return;
+            }
+            if (self->Exiting) {
+              self->WsStream.async_close(
+                  websocket::close_code::normal,
+                  [self2 = self](beast::error_code) { self2->Close(); });
+              return;
+            }
+            self->DoRead();
+          });
+    }
+
+    void OnError(beast::error_code ec, const char *where) {
+      syslog(LOG_WARNING, "ws: %s: %s", where, ec.message().c_str());
+      Close();
+    }
+
+    /* Remove ourselves from the parent's Conns set.  Any in-flight async
+       handlers still hold a shared_ptr to us via their capture, so the
+       actual destruction happens when those handlers run (or are
+       discarded when the io_context unwinds at shutdown). */
+    void Close() {
+      lock_guard<mutex> lock(Ws->Mutex);
+      Ws->Conns.erase(shared_from_this());
+    }
+
     TWsImpl *Ws;
-
-    /* The handle of this connection, used to identify its TCP socket. */
-    TConnHndl Hndl;
-
-    /* See accessor. */
-    bool Exiting;
-
-    /* The session established for this connection, if any. */
+    websocket::stream<beast::tcp_stream> WsStream;
+    beast::flat_buffer ReadBuf;
+    string ReplyBuf;
+    bool Exiting = false;
     unique_ptr<TSessionPin> Session;
 
   };  // TWsImpl::TConn
-
-  /* Called by the ws framework when it accepts a new TCP connection. */
-  void OnOpen(TConnHndl conn_hndl) {
-    lock_guard<mutex> lock(Mutex);
-    if (!Conns.insert(make_pair(conn_hndl, make_shared<TConn>(this, conn_hndl))).second) {
-      throw invalid_argument("cannot reopen open connection");
-    }
-  }
-
-  /* Called by the ws framework when it closes a TCP connection (or when the
-     connection is closed by the client). */
-  void OnClose(TConnHndl conn_hndl) {
-    lock_guard<mutex> lock(Mutex);
-    auto iter = Conns.find(conn_hndl);
-    if (iter == Conns.end()) {
-      throw invalid_argument("cannot close unopen connection");
-    }
-    Conns.erase(iter);
-  }
-
-  /* Called by the ws framework each time a message arrives. */
-  void OnMsg(TConnHndl conn_hndl, TMsgPtr msg) {
-    /* Find the connection object established by the OnOpen() call. */
-    shared_ptr<TConn> conn;
-    /* extra */ {
-      lock_guard<mutex> lock(Mutex);
-      auto iter = Conns.find(conn_hndl);
-      if (iter == Conns.end()) {
-        throw invalid_argument("cannot use unopen connection");
-      }
-      conn = iter->second;
-    }
-    /* Pass the message to the connection object for processing. */
-    TJson reply = TJson::Object;
-    try {
-      reply["result"] = conn->OnMsg(msg);
-      reply["status"] = "ok";
-    } catch (const TSourceError &src_error) {
-      reply["result"] = src_error.what();
-      reply["pos"] = AsStr(src_error.GetPosRange());
-      reply["status"] = "source_error";
-    } catch (const exception &ex) {
-      reply["result"] = ex.what();
-      reply["status"] = "exception";
-    }
-    /* Format the reply and send it back to the client. */
-    WsServer.send(conn_hndl, AsStr(reply), websocketpp::frame::opcode::text);
-    if (conn->IsExiting()) {
-      WsServer.close(conn_hndl, websocketpp::close::status::normal, "");
-    }
-  }
 
   /* The session manager interface passed to us at construction time. */
   TSessionManager *SessionManager;
@@ -595,19 +548,52 @@ class TWsImpl final
   /* Creates and destroys the tmp dir used by the compile stmt. */
   TTmpDirMaker TmpDirMaker;
 
-  /* This object handles the mechanics of the websocket protocol. */
-  TWsServer WsServer;
+  /* I/O event loop; runs on BgThreads. */
+  net::io_context IoCtx;
 
-  /* The background thread launched by the ctor. */
+  /* Accepts new TCP connections. */
+  tcp::acceptor Acceptor;
+
+  /* Worker threads pumping IoCtx.run(). */
   vector<thread> BgThreads;
 
-  /* Convers Conns. */
+  /* Guards Conns.  Per-connection state is otherwise protected by each
+     connection's strand. */
   mutex Mutex;
 
-  /* The sessions currently open. */
-  map<TConnHndl, shared_ptr<TConn>, owner_less<TConnHndl>> Conns;
+  /* The currently-live connections.  We hold shared_ptrs to keep them
+     alive at least as long as the server; handlers also hold their own
+     shared_ptrs so a connection survives in-flight ops after removal. */
+  set<shared_ptr<TConn>> Conns;
 
 };  // TWsImpl
+
+void TWsImpl::DoAccept() {
+  /* Each accepted socket is bound to its own strand, serializing the
+     per-connection async chain across the io_context thread pool. */
+  Acceptor.async_accept(
+      net::make_strand(IoCtx),
+      [this](beast::error_code ec, tcp::socket sock) {
+        if (!ec) {
+          try {
+            sock.set_option(tcp::no_delay(true));
+            auto conn = make_shared<TConn>(this, std::move(sock));
+            {
+              lock_guard<mutex> lock(Mutex);
+              Conns.insert(conn);
+            }
+            conn->Run();
+          } catch (const std::exception &ex) {
+            syslog(LOG_ERR, "ws: accept handler: %s", ex.what());
+          }
+        }
+        /* operation_aborted means the acceptor was closed (shutdown).
+           Other errors are transient and we want to keep listening. */
+        if (ec != net::error::operation_aborted) {
+          DoAccept();
+        }
+      });
+}
 
 TWs *TWs::New(
     TSessionManager *session_mngr, size_t thread_count,
