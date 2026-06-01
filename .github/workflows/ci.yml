@@ -165,6 +165,11 @@ jobs:
       - name: Install python websocket-client
         run: pip3 install --break-system-packages websocket-client
 
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
       - name: Cache build outputs
         if: github.event_name != 'schedule'
         uses: actions/cache@v5
@@ -183,8 +188,13 @@ jobs:
         run: make debug
 
       # Smoke-tests the orlyc + orlyi + WebSocket protocol end to end.
-      # demo.py asserts the full expected balance trajectory across
-      # both branches; any divergence fails CI.
-      - name: examples/bitcoin-time-travel/run.sh
+      # Both drivers (Python + Go) exercise the same scenario and
+      # self-check the full 72-value balance trajectory across both
+      # branches; any divergence fails CI.
+      - name: run.sh (python driver)
         run: ./run.sh
+        working-directory: examples/bitcoin-time-travel
+
+      - name: run-go.sh (go driver)
+        run: ./run-go.sh
         working-directory: examples/bitcoin-time-travel

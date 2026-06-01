@@ -1,0 +1,2 @@
+# Stray go-build output from `go build ./...` in this dir.
+bitcoin-time-travel
