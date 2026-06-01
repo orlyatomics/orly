@@ -214,7 +214,7 @@ Package::TVersionedName Orly::Compiler::Compile(
       out_strm << "MM_NOTICE: Compiling C++" << endl;
     }
 
-    vector<string> gcc_cmd{"g++", "-std=c++17", "-xc++", "-I" + GetSrcRoot(), "-fPIC", "-shared", "-o",
+    vector<string> gcc_cmd{"g++", "-std=c++23", "-xc++", "-I" + GetSrcRoot(), "-fPIC", "-shared", "-o",
                            AsStr(out_tree.GetAbsPath(SwapExtension(
                                TPath(core_rel.Path), {to_string(packages[core_rel]->GetVersion()), "so"}))),
                            "-iquote", AsStr(out_tree),

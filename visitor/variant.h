@@ -110,7 +110,7 @@ namespace Visitor {
 
   //TODO: This belongs somewhere in <mpl/*>
   template <bool B, typename T>
-  using requires = typename std::enable_if<B, T>::type;
+  using Require = typename std::enable_if<B, T>::type;
 
   /* Defines a class that can change its type at runtime, but only among a
      finite set of possible types. */
@@ -418,7 +418,7 @@ namespace Visitor {
       /* The other variant's value is not supported by this family.
          Throw a std::bad_cast exception. */
       template <typename TElem>
-      requires<!IsMember<TElem>::value,
+      Require<!IsMember<TElem>::value,
       const TAnyAcceptor *> operator()(TElem &&) const {
         /*std::cerr
             << "Error attempting to copy- or move- construct variants across "
@@ -432,7 +432,7 @@ namespace Visitor {
       /* The other variant's value is not supported by this family.
          Return the corresponding type-erased acceptor. */
       template <typename TElem>
-      requires<IsMember<TElem>::value,
+      Require<IsMember<TElem>::value,
       const TAnyAcceptor *> operator()(TElem &&) const {
         return TAcceptor<std::decay_t<TElem>>::Get();
       }
