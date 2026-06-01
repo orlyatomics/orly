@@ -18,13 +18,13 @@
 
 #include <orly/notification/all.h>
 
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
-#include <io/recorder_and_player.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/notification/system_shutdown.h>
 #include <orly/notification/pov_failure.h>
 #include <orly/notification/update_progress.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace chrono;

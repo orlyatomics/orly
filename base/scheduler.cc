@@ -24,9 +24,9 @@
 
 #include <base/debug_log.h>
 #include <base/zero.h>
-#include <io/input_consumer.h>
-#include <signal/masker.h>
-#include <util/error.h>
+#include <base/io/input_consumer.h>
+#include <base/signal/masker.h>
+#include <base/util/error.h>
 
 using namespace std;
 using namespace chrono;

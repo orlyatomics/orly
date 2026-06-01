@@ -18,12 +18,12 @@
 
 #pragma once
 
-#include <mpl/type_set.h>
+#include <base/mpl/type_set.h>
 #include <orly/notification/notification.h>
 #include <orly/notification/pov_failure.h>
 #include <orly/notification/system_shutdown.h>
 #include <orly/notification/update_progress.h>
-#include <visitor/visitor.h>
+#include <base/visitor/visitor.h>
 
 namespace Orly {
 

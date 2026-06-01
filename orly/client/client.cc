@@ -26,11 +26,11 @@
 
 #include <base/debug_log.h>
 #include <base/no_default_case.h>
-#include <io/binary_output_only_stream.h>
-#include <io/device.h>
-#include <io/recorder_and_player.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/device.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/protocol.h>
-#include <util/io.h>
+#include <base/util/io.h>
 
 using namespace std;
 using namespace chrono;

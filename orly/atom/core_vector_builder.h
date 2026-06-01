@@ -25,7 +25,7 @@
 #include <vector>
 
 #include <base/class_traits.h>
-#include <io/binary_output_stream.h>
+#include <base/io/binary_output_stream.h>
 #include <orly/atom/kit2.h>
 #include <orly/native/all.h>
 #include <orly/sabot/state.h>

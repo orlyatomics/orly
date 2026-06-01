@@ -19,8 +19,8 @@
 #include <cerrno>
 #include <sys/mman.h>
 
-#include <test/is_in_test.h>
-#include <util/error.h>
+#include <base/test/is_in_test.h>
+#include <base/util/error.h>
 
 void Base::MlockRaw(const void *val, uint64_t len) {
   int res = mlock(val, len);

@@ -18,8 +18,8 @@
 
 #pragma once
 
-#include <io/binary_input_stream.h>
-#include <io/binary_output_stream.h>
+#include <base/io/binary_input_stream.h>
+#include <base/io/binary_output_stream.h>
 
 namespace Orly {
 

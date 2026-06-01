@@ -26,7 +26,7 @@
 #include <orly/rt/operator.h>
 #include <orly/rt/opt.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Orly;

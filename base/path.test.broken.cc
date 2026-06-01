@@ -23,7 +23,7 @@
 #include <base/split.h>
 #include <base/syntax_error.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 using namespace std;

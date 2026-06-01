@@ -18,7 +18,7 @@
 
 #include <base/event_counter.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 

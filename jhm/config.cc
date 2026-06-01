@@ -18,7 +18,7 @@
 
 #include <jhm/config.h>
 
-#include <util/path.h>
+#include <base/util/path.h>
 
 using namespace Base;
 using namespace Jhm;

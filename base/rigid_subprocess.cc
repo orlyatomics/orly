@@ -22,8 +22,8 @@
 #include <sys/wait.h>
 
 #include <base/subprocess.h>
-#include <util/error.h>
-#include <util/io.h>
+#include <base/util/error.h>
+#include <base/util/io.h>
 
 using namespace std;
 using namespace Base;

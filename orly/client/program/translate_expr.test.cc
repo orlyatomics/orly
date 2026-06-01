@@ -25,7 +25,7 @@
 #include <orly/client/program/parse_stmt.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Orly;

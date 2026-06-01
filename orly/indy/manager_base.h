@@ -26,8 +26,8 @@
 #include <base/spin_lock.h>
 #include <base/timer_fd.h>
 #include <base/uuid.h>
-#include <inv_con/unordered_list.h>
-#include <inv_con/unordered_multimap.h>
+#include <base/inv_con/unordered_list.h>
+#include <base/inv_con/unordered_multimap.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/utilization_reporter.h>
 #include <orly/indy/fiber/fiber.h>

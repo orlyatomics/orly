@@ -27,7 +27,7 @@
 #include <base/split.h>
 #include <base/thrower.h>
 #include <base/uuid.h>
-#include <server/url_decode.h>
+#include <base/web/url_decode.h>
 #include <orly/indy/key.h>
 #include <orly/var.h>
 

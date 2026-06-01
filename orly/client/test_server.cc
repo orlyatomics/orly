@@ -26,9 +26,9 @@
 #include <sys/timerfd.h>
 
 #include <base/zero.h>
-#include <signal/masker.h>
-#include <signal/set.h>
-#include <util/error.h>
+#include <base/signal/masker.h>
+#include <base/signal/set.h>
+#include <base/util/error.h>
 
 /* Standard namespaces. */
 using namespace std;

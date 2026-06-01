@@ -18,7 +18,7 @@
 
 #include <orly/indy/file_sync.h>
 
-#include <io/recorder_and_player.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/indy/disk/indy_util_reporter.h>
 #include <orly/indy/disk/meta_rewriter.h>
 #include <orly/indy/disk/out_stream.h>

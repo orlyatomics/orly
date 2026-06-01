@@ -23,7 +23,7 @@
 
 #include <unistd.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

@@ -24,7 +24,7 @@
 
 #include <base/latch.h>
 #include <base/event_semaphore.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace chrono;

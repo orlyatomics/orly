@@ -20,7 +20,7 @@
 
 #include <orly/indy/util/sorter.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

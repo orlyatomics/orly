@@ -31,9 +31,9 @@
 #include <orly/csv_to_bin/write_cc.h>
 #include <orly/csv_to_bin/write_orly.h>
 #include <orly/code_gen/cpp_printer.h>
-#include <util/error.h>
-#include <util/io.h>
-#include <util/path.h>
+#include <base/util/error.h>
+#include <base/util/io.h>
+#include <base/util/path.h>
 
 using namespace std;
 using namespace Orly::CsvToBin;

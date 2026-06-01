@@ -17,7 +17,7 @@
 #include <orly/orly.checkpoint.cst.h>
 
 #include <tools/nycr/test.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly::Checkpoint::Syntax;
 using namespace Tools::Nycr::Test;

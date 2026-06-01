@@ -21,7 +21,7 @@
 #include <base/class_traits.h>
 #include <orly/orly.package.cst.h>
 #include <orly/synth/get_pos_range.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Orly;

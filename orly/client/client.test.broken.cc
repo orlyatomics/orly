@@ -22,9 +22,9 @@
 #include <sys/types.h>
 
 #include <base/fd.h>
-#include <socket/address.h>
+#include <base/socket/address.h>
 #include <orly/client/test_server.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 /* Standard namespaces. */
 using namespace std;

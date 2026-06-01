@@ -30,9 +30,9 @@
 
 #include <unistd.h>
 
-#include <util/error.h>
+#include <base/util/error.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

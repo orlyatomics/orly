@@ -30,7 +30,7 @@
 #include <base/scheduler.h>
 #include <base/timer_fd.h>
 #include <base/uuid.h>
-#include <socket/address.h>
+#include <base/socket/address.h>
 #include <orly/durable/kit.h>
 #include <orly/indy/manager.h>
 #include <orly/indy/disk/durable_manager.h>

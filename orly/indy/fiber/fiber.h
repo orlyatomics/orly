@@ -40,9 +40,9 @@
 #include <base/spin_lock.h>
 #include <base/thread_local_global_pool.h>
 #include <base/zero.h>
-#include <inv_con/unordered_list.h>
+#include <base/inv_con/unordered_list.h>
 #include <orly/indy/fiber/extern_fiber.h>
-#include <util/error.h>
+#include <base/util/error.h>
 
 namespace Orly {
 

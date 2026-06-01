@@ -20,8 +20,8 @@
 
 #include <poll.h>
 
-#include <strm/bin/in.h>
-#include <strm/fd.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/fd.h>
 
 using namespace Base;
 

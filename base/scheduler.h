@@ -49,8 +49,8 @@
 #include <base/opt.h>
 #include <base/shutting_down.h>
 #include <base/thrower.h>
-#include <signal/handler_installer.h>
-#include <signal/set.h>
+#include <base/signal/handler_installer.h>
+#include <base/signal/set.h>
 
 namespace Base {
 

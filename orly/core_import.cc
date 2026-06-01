@@ -24,8 +24,8 @@
 #include <syslog.h>
 
 #include <base/log.h>
-#include <io/binary_input_only_stream.h>
-#include <socket/address.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/socket/address.h>
 #include <orly/protocol.h>
 #include <orly/client/client.h>
 

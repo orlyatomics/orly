@@ -23,7 +23,7 @@
 #include <base/assert_true.h>
 #include <base/cpu_clock.h>
 #include <base/shutting_down.h>
-#include <util/time.h>
+#include <base/util/time.h>
 
 using namespace std;
 using namespace std::chrono;

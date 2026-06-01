@@ -23,9 +23,9 @@
 #include <thread>
 #include <vector>
 
-#include <util/io.h>
+#include <base/util/io.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 using namespace std;

@@ -24,9 +24,9 @@
 
 #include <iostream>
 
-#include <strm/bin/in.h>
-#include <strm/fd.h>
-#include <util/error.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/fd.h>
+#include <base/util/error.h>
 
 using namespace std;
 using namespace Base;

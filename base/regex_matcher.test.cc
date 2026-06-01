@@ -18,7 +18,7 @@
 
 #include <base/regex_matcher.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 

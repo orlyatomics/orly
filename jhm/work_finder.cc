@@ -27,9 +27,9 @@
 #include <jhm/file.h>
 #include <jhm/job.h>
 #include <jhm/status_line.h>
-#include <util/error.h>
-#include <util/path.h>
-#include <util/stl.h>
+#include <base/util/error.h>
+#include <base/util/path.h>
+#include <base/util/stl.h>
 
 using namespace Base;
 using namespace Jhm;

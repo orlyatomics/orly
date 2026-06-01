@@ -34,9 +34,9 @@
 
 #include <base/class_traits.h>
 #include <base/peekable.h>
-#include <server/half_latch.h>
-#include <util/error.h>
-#include <util/stl.h>
+#include <base/web/half_latch.h>
+#include <base/util/error.h>
+#include <base/util/stl.h>
 #include <orly/context_base.h>
 #include <orly/indy/key.h>
 #include <orly/key_generator.h>

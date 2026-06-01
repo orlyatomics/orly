@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 
 #include <base/no_default_case.h>
-#include <util/error.h>
+#include <base/util/error.h>
 
 using namespace std;
 using namespace Base;

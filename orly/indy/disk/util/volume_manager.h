@@ -42,13 +42,13 @@
 #include <base/mlock.h>
 #include <base/scheduler.h>
 #include <base/sigma_calc.h>
-#include <inv_con/ordered_list.h>
-#include <inv_con/unordered_list.h>
-#include <inv_con/unordered_multimap.h>
+#include <base/inv_con/ordered_list.h>
+#include <base/inv_con/unordered_list.h>
+#include <base/inv_con/unordered_multimap.h>
 #include <orly/indy/disk/priority.h>
 #include <orly/indy/disk/result.h>
 #include <orly/indy/disk/util/device_util.h>
-#include <util/error.h>
+#include <base/util/error.h>
 
 namespace Orly {
 

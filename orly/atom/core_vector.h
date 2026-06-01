@@ -23,7 +23,7 @@
 #include <vector>
 
 #include <base/class_traits.h>
-#include <io/binary_input_stream.h>
+#include <base/io/binary_input_stream.h>
 #include <orly/atom/kit2.h>
 
 namespace Orly {

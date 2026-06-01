@@ -24,7 +24,7 @@
 #include <jhm/jobs/flex.h>
 #include <jhm/jobs/link.h>
 #include <jhm/jobs/nycr.h>
-#include <util/path.h>
+#include <base/util/path.h>
 
 using namespace Base;
 using namespace Jhm;

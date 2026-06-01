@@ -19,7 +19,7 @@
 #include <orly/orly.package.cst.h>
 
 #include <tools/nycr/test.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly::Package::Syntax;
 using namespace Tools::Nycr::Test;

@@ -21,8 +21,8 @@
 #include <cassert>
 
 #include <orly/mynde/binary_protocol.h>
-#include <strm/bin/in.h>
-#include <strm/bin/out.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/bin/out.h>
 
 using namespace Orly::Mynde;
 

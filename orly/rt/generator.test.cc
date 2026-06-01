@@ -26,7 +26,7 @@
 #include <orly/rt/opt.h>
 #include <orly/rt/runtime_error.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly::Rt;
 

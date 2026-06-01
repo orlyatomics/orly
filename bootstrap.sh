@@ -30,27 +30,27 @@ common_flags=(
   )
 
 #Build JHM
-$CC -o tools/jhm                                                                                                       \
- "${common_flags[@]}"                                                                                                  \
-  jhm/jobs/util.cc jhm/job.cc base/slice.cc jhm/test.cc jhm/jobs/flex.cc server/daemonize.cc                           \
-  io/input_consumer.cc io/output_consumer.cc base/thrower.cc strm/bin/in.cc jhm/naming.cc jhm/jhm.cc                   \
-  io/output_producer.cc io/chunk_and_pool.cc base/pos.cc base/code_location.cc util/string.cc base/cmd.cc              \
-  base/demangle.cc base/piece.cc jhm/job_runner.cc base/subprocess.cc util/path.cc strm/bin/var_int.cc                 \
-  jhm/env.cc jhm/jobs/compile_c_family.cc util/error.cc jhm/status_line.cc io/input_producer.cc                        \
-  jhm/work_finder.cc base/fd.cc base/pump.cc util/io.cc base/split.cc jhm/config.cc jhm/jobs/link.cc                   \
-  jhm/jobs/bison.cc strm/syntax_error.cc jhm/jobs/nycr.cc base/dir_walker.cc jhm/jobs/dep.cc util/time.cc              \
-  strm/out.cc base/event_semaphore.cc strm/in.cc strm/past_end.cc base/unreachable.cc base/path.cc base/backtrace.cc   \
-  -I./ -DSRC_ROOT=\"`pwd`\"                                                                                            \
+$CC -o tools/jhm                                                                                                                              \
+ "${common_flags[@]}"                                                                                                                         \
+  jhm/jobs/util.cc jhm/job.cc base/slice.cc jhm/test.cc jhm/jobs/flex.cc base/web/daemonize.cc                                                \
+  base/io/input_consumer.cc base/io/output_consumer.cc base/thrower.cc base/strm/bin/in.cc jhm/naming.cc jhm/jhm.cc                           \
+  base/io/output_producer.cc base/io/chunk_and_pool.cc base/pos.cc base/code_location.cc base/util/string.cc base/cmd.cc                      \
+  base/demangle.cc base/piece.cc jhm/job_runner.cc base/subprocess.cc base/util/path.cc base/strm/bin/var_int.cc                              \
+  jhm/env.cc jhm/jobs/compile_c_family.cc base/util/error.cc jhm/status_line.cc base/io/input_producer.cc                                     \
+  jhm/work_finder.cc base/fd.cc base/pump.cc base/util/io.cc base/split.cc jhm/config.cc jhm/jobs/link.cc                                     \
+  jhm/jobs/bison.cc base/strm/syntax_error.cc jhm/jobs/nycr.cc base/dir_walker.cc jhm/jobs/dep.cc base/util/time.cc                           \
+  base/strm/out.cc base/event_semaphore.cc base/strm/in.cc base/strm/past_end.cc base/unreachable.cc base/path.cc base/backtrace.cc           \
+  -I./ -DSRC_ROOT=\"`pwd`\"                                                                                                                   \
   -msse2 -pthread
 
 #Build make_dep_file
-$CC -o tools/make_dep_file                                                                                             \
-  "${common_flags[@]}"                                                                                                 \
-  strm/bin/var_int.cc strm/syntax_error.cc strm/out.cc strm/past_end.cc strm/in.cc strm/bin/in.cc                      \
-  util/io.cc base/demangle.cc base/code_location.cc base/event_semaphore.cc util/error.cc base/unreachable.cc          \
-  jhm/make_dep_file.cc base/thrower.cc base/fd.cc base/split.cc base/subprocess.cc base/pump.cc base/backtrace.cc      \
-  server/daemonize.cc                                                                                                  \
-  -I./ -DSRC_ROOT=\"`pwd`\"                                                                                            \
+$CC -o tools/make_dep_file                                                                                                                    \
+  "${common_flags[@]}"                                                                                                                        \
+  base/strm/bin/var_int.cc base/strm/syntax_error.cc base/strm/out.cc base/strm/past_end.cc base/strm/in.cc base/strm/bin/in.cc               \
+  base/util/io.cc base/demangle.cc base/code_location.cc base/event_semaphore.cc base/util/error.cc base/unreachable.cc                       \
+  jhm/make_dep_file.cc base/thrower.cc base/fd.cc base/split.cc base/subprocess.cc base/pump.cc base/backtrace.cc                             \
+  base/web/daemonize.cc                                                                                                                       \
+  -I./ -DSRC_ROOT=\"`pwd`\"                                                                                                                   \
   -msse2 -pthread
 
 mkdir -p ../.jhm

@@ -30,9 +30,9 @@
 #include <linux/limits.h>
 #include <sys/stat.h>
 
-#include <util/error.h>
+#include <base/util/error.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 using namespace std;

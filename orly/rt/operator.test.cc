@@ -22,7 +22,7 @@
 #include <orly/rt/opt.h>
 #include <orly/var/impl.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Orly;

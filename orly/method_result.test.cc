@@ -20,12 +20,12 @@
 
 #include <tuple>
 
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
-#include <io/recorder_and_player.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/atom/suprena.h>
 #include <orly/indy/key.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace chrono;

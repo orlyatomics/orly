@@ -18,7 +18,7 @@
 
 #include <tools/nycr/escape.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Tools::Nycr;

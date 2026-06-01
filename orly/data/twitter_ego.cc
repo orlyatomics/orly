@@ -33,8 +33,8 @@
 #include <base/path.h>
 #include <base/split.h>
 #include <base/uuid.h>
-#include <io/binary_output_only_stream.h>
-#include <io/device.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/device.h>
 #include <orly/atom/core_vector_builder.h>
 
 using TFollows = std::vector<std::pair<int64_t, int64_t>>;

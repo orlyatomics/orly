@@ -26,9 +26,9 @@
 
 #include <base/timer.h>
 #include <base/usage_meter.h>
-#include <util/time.h>
+#include <base/util/time.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 using namespace Orly::Indy::Fiber;

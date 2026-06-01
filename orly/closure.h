@@ -24,8 +24,8 @@
 #include <string>
 
 #include <base/thrower.h>
-#include <io/binary_input_stream.h>
-#include <io/binary_output_stream.h>
+#include <base/io/binary_input_stream.h>
+#include <base/io/binary_output_stream.h>
 #include <orly/atom/kit2.h>
 #include <orly/atom/suprena.h>
 #include <orly/sabot/to_native.h>

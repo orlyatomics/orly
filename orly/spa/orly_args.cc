@@ -22,7 +22,7 @@
 
 #include <orly/spa/error.h>
 #include <orly/spa/command.h>
-#include <util/error.h>
+#include <base/util/error.h>
 
 using namespace std;
 using namespace Server;

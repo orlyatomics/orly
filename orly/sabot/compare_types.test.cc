@@ -24,7 +24,7 @@
 #include <orly/native/all.h>
 #include <orly/native/point.h>
 #include <orly/sabot/all.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

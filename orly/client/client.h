@@ -28,9 +28,9 @@
 #include <base/fd.h>
 #include <base/opt.h>
 #include <base/uuid.h>
-#include <io/device.h>
-#include <rpc/rpc.h>
-#include <socket/address.h>
+#include <base/io/device.h>
+#include <base/rpc/rpc.h>
+#include <base/socket/address.h>
 #include <orly/closure.h>
 #include <orly/method_result.h>
 

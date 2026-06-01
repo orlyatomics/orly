@@ -25,10 +25,10 @@
 #include <base/booster.h>
 #include <base/glob.h>
 #include <base/not_implemented.h>
-#include <gz/input_producer.h>
-#include <io/binary_input_only_stream.h>
-#include <io/binary_io_stream.h>
-#include <io/device.h>
+#include <base/gz/input_producer.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_io_stream.h>
+#include <base/io/device.h>
 #include <orly/atom/core_vector.h>
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/mynde/binary_protocol.h>
@@ -36,14 +36,14 @@
 #include <orly/mynde/value.h>
 #include <orly/protocol.h>
 #include <orly/sabot/to_native.h>
-#include <strm/fd.h>
-#include <strm/bin/in.h>
-#include <strm/bin/out.h>
-#include <strm/past_end.h>
-#include <util/error.h>
-#include <util/io.h>
-#include <util/path.h>
-#include <util/time.h>
+#include <base/strm/fd.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/bin/out.h>
+#include <base/strm/past_end.h>
+#include <base/util/error.h>
+#include <base/util/io.h>
+#include <base/util/path.h>
+#include <base/util/time.h>
 
 using namespace std;
 using namespace chrono;

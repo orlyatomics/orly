@@ -24,7 +24,7 @@
 #include <unistd.h>
 #include <vector>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly::Spa::FluxCapacitor;
 
