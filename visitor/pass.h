@@ -84,9 +84,9 @@ namespace Visitor {
      it or to just aggregate it directly. */
   template <typename T>
   using IsSmall =
-      std::integral_constant<bool,
-                             std::is_pod<std::decay_t<T>>::value &&
-                                 sizeof(std::decay_t<T>) <= sizeof(int *)>;
+      std::bool_constant<std::is_trivial_v<std::decay_t<T>> &&
+                         std::is_standard_layout_v<std::decay_t<T>> &&
+                         sizeof(std::decay_t<T>) <= sizeof(int *)>;
 
   /* Pass by T if T is POD and the size of T is less than or equal to a
      pointer (passing by value is more efficient or
