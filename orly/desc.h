@@ -19,6 +19,8 @@
 #pragma once
 
 #include <cassert>
+#include <type_traits>
+#include <utility>
 
 namespace Orly {
 
@@ -30,10 +32,19 @@ namespace Orly {
     /* Do-little. */
     TDesc() {}
 
-    /* Do-little. */
-    template <typename TArg>
+    /* Construct from any value convertible to TVal.  SFINAE-excludes
+       TDesc itself so this template doesn't shadow the implicit
+       copy/move ctors -- without the exclusion, `TDesc<T> b(a)` with
+       `a` a non-const lvalue TDesc<T> picks this template (it's a
+       better overload than the implicit copy ctor's const-adjusting
+       reference bind), then tries to instantiate `TVal::TVal(TDesc<T>)`
+       which fails.  Latent in C++17, exposed by C++23 overload-
+       resolution tightening. */
+    template <typename TArg,
+              typename = std::enable_if_t<
+                  !std::is_same_v<std::decay_t<TArg>, TDesc>>>
     TDesc(TArg &&arg)
-        : Val(arg) {}
+        : Val(std::forward<TArg>(arg)) {}
 
     /* Behave like a smart pointer. */
     const TVal &operator*() const {
