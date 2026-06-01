@@ -12,14 +12,21 @@ to different tuples never collide, so the past is structurally frozen
 
 ## Run it
 
+Two equivalent drivers ship -- Python and Go. Both do the same
+scenario and self-check the same 72 balance values; pick whichever
+your environment has.
+
 ```sh
 cd examples/bitcoin-time-travel
-./run.sh
+./run.sh       # python driver (requires `pip install websocket-client`)
+./run-go.sh    # go driver    (requires the `go` toolchain on PATH)
 ```
 
-Requires `make debug` to have produced `orlyi` and `orlyc`, and
-`python3 -c 'import websocket'` to work. The wrapper kills any prior
-demo instance and runs against a fresh `orlyi`, so it's reproducible.
+Either wrapper requires `make debug` to have produced `orlyi` and
+`orlyc`. Both kill any prior demo instance and run against a fresh
+`orlyi`, so they're reproducible end to end.
+
+Both drivers are exercised in CI on every push.
 
 ## What the demo does
 
@@ -161,4 +168,6 @@ domain-agnostic shape.
 |---|---|
 | `bitcoin.orly` | The Orlyscript package: `delta_at`, `credit_at`, `balance_at`, `fork_from`, plus 13 inline tests |
 | `demo.py` | Python WebSocket driver: applies the scenario, prints both chains, self-checks |
+| `demo.go` + `go.mod` + `go.sum` | Go WebSocket driver, equivalent to the Python one; single dep on `github.com/gorilla/websocket` |
 | `run.sh` | End-to-end wrapper: compiles, starts a fresh `orlyi`, runs `demo.py` |
+| `run-go.sh` | Same wrapper, but runs `demo.go` instead |
