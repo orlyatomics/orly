@@ -22,8 +22,8 @@
 #include <string>
 #include <vector>
 
-#include <strm/mem/static_in.h>
-#include <test/kit.h>
+#include <base/strm/mem/static_in.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Orly::CsvToBin;

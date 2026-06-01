@@ -23,7 +23,7 @@
 
 #include <orly/indy/update.h>
 #include <orly/indy/update_walker.h>
-#include <io/binary_output_stream.h>
+#include <base/io/binary_output_stream.h>
 
 namespace Orly {
 

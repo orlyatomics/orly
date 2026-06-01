@@ -32,10 +32,10 @@
 #include <base/opt.h>
 #include <base/thrower.h>
 #include <base/uuid.h>
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
-#include <io/binary_output_stream.h>
-#include <io/recorder_and_player.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/binary_output_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/indy/fiber/fiber.h>
 
 namespace Orly {

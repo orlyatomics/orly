@@ -38,7 +38,7 @@
 #include <jhm/status_line.h>
 #include <jhm/test.h>
 #include <jhm/work_finder.h>
-#include <util/path.h>
+#include <base/util/path.h>
 
 using namespace Base;
 using namespace Jhm;

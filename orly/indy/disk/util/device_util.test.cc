@@ -16,7 +16,7 @@
 
 #include <orly/indy/disk/util/device_util.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly::Indy::Disk::Util;
 

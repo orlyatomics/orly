@@ -23,9 +23,9 @@
 #include <orly/symbol/package.h>
 #include <orly/symbol/result_def.h>
 #include <orly/type/type_czar.h>
-#include <util/path.h>
+#include <base/util/path.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly;
 using namespace Orly::CodeGen;

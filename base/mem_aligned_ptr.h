@@ -22,7 +22,7 @@
 #include <memory>
 #include <type_traits>
 
-#include <util/error.h>
+#include <base/util/error.h>
 
 namespace Base {
   template <typename T>

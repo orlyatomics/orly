@@ -18,7 +18,7 @@
 
 #include <orly/package/name.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 #include <base/as_str.h>
 

@@ -21,14 +21,14 @@
 #include <condition_variable>
 #include <thread>
 
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
-#include <io/device.h>
-#include <io/recorder_and_player.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/device.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/atom/kit2.h>
-#include <rpc/rpc.h>
+#include <base/rpc/rpc.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

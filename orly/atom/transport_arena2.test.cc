@@ -22,13 +22,13 @@
 #include <sstream>
 #include <string>
 
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
-#include <io/recorder_and_player.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/atom/kit2.h>
 #include <orly/native/all.h>
 #include <orly/sabot/state_dumper.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Io;

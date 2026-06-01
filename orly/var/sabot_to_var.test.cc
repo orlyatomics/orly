@@ -26,7 +26,7 @@
 #include <orly/sabot/state_dumper.h>
 #include <orly/type/type_czar.h>
 #include <orly/var/new_sabot.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Orly;

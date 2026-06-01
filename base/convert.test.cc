@@ -18,7 +18,7 @@
 
 #include <base/convert.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 #include <climits> //TODO
 #include <iostream> //TODO

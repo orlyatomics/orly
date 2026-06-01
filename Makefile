@@ -34,7 +34,7 @@ test: bootstrap
 	$(JHM_CMD) --test
 
 test_lang: debug
-	lang_test.py -d orly/data orly/lang_tests
+	python3 tools/lang_test.py -d orly/data tests/lang_tests
 
 clean:
 	rm -rf ../out/

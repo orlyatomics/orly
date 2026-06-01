@@ -21,7 +21,7 @@
 #include <algorithm>
 #include <vector>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 FIXTURE(Typical) {
   // sample tuples

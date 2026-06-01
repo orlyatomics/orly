@@ -21,7 +21,7 @@
 #include <base/scheduler.h>
 #include <orly/type/type_czar.h>
 #include <orly/indy/disk/sim/mem_engine.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace chrono;

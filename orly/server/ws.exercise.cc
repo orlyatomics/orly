@@ -23,9 +23,9 @@
 #include <unistd.h>
 
 #include <orly/server/ws_test_server.h>
-#include <signal/handler_installer.h>
-#include <signal/masker.h>
-#include <signal/set.h>
+#include <base/signal/handler_installer.h>
+#include <base/signal/masker.h>
+#include <base/signal/set.h>
 
 using namespace std;
 using namespace Orly::Server;

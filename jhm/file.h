@@ -25,7 +25,7 @@
 #include <base/path.h>
 #include <jhm/config.h>
 #include <jhm/naming.h>
-#include <util/time.h>
+#include <base/util/time.h>
 
 namespace Jhm {
 

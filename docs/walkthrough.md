@@ -8,7 +8,7 @@ All paths below assume your repo is at `/home/you/orly/`; adapt as needed. The b
 
 ## The .orly file
 
-There are ~120 sample programs under `orly/lang_tests/general/` and `orly/lang_tests/samples/` that are good first targets. For this walkthrough we'll use `orly/lang_tests/samples/fizzbuzz.orly`, the simplest interesting package:
+There are ~120 sample programs under `tests/lang_tests/general/` and `tests/lang_tests/samples/` that are good first targets. For this walkthrough we'll use `tests/lang_tests/samples/fizzbuzz.orly`, the simplest interesting package:
 
 ```orly
 package #1;
@@ -37,7 +37,7 @@ Two things to notice:
 
 ```sh
 mkdir /tmp/orly_pkgs
-../out_orly/debug/orly/orlyc --debug orly/lang_tests/samples/fizzbuzz.orly -o /tmp/orly_pkgs
+../out_orly/debug/orly/orlyc --debug tests/lang_tests/samples/fizzbuzz.orly -o /tmp/orly_pkgs
 ```
 
 Output looks like:
@@ -144,9 +144,9 @@ It's normal to see a few `FATAL ERROR: Fiber Runner caught exception` lines on s
 
 ## Going further
 
-- **More packages to play with**: `orly/lang_tests/general/` has ~90 small example programs covering different language features (filter, sort, reduce, maps, sets, etc.). Most have inline `test { }` blocks that double as documentation.
+- **More packages to play with**: `tests/lang_tests/general/` has ~90 small example programs covering different language features (filter, sort, reduce, maps, sets, etc.). Most have inline `test { }` blocks that double as documentation.
 - **The full client grammar** lives in `orly/client/program/program.nycr`. The interesting verbs are `install`, `uninstall`, `new ... pov`, `try`, `echo`, `compile`, `list_packages`, `set ttl`, `pause`, `unpause`, `import`.
-- **Snapshot-based regression testing**: `python3 tools/lang_test.py -d orly/data orly/lang_tests` compiles every `.orly` file and compares the output against stored `.test.state` snapshots. Pass `--update` to refresh snapshots after a deliberate change.
+- **Snapshot-based regression testing**: `python3 tools/lang_test.py -d orly/data tests/lang_tests` compiles every `.orly` file and compares the output against stored `.test.state` snapshots. Pass `--update` to refresh snapshots after a deliberate change.
 - **What's failing today**: 3 lang tests have always-failed snapshots and one is a `Not implemented` from the compiler; `python3 tools/lang_test.py` flags these. See [#10](https://github.com/orlyatomics/orly/issues/10) for the broader status of the 2026 revival pass.
 
 ## Troubleshooting

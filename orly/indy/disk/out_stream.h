@@ -24,7 +24,7 @@
 
 #include <base/class_traits.h>
 #include <base/uuid.h>
-#include <inv_con/unordered_list.h>
+#include <base/inv_con/unordered_list.h>
 #include <orly/indy/disk/util/volume_manager.h>
 #include <orly/indy/disk/write_group.h>
 #include <orly/indy/util/block_vec.h>

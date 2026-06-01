@@ -23,8 +23,8 @@
 #include <fcntl.h>
 
 #include <base/fd.h>
-#include <util/io.h>
-#include <util/path.h>
+#include <base/util/io.h>
+#include <base/util/path.h>
 
 using namespace std;
 using namespace Base;

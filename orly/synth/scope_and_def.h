@@ -36,7 +36,7 @@
 
 #include <base/assert_true.h>
 #include <base/class_traits.h>
-#include <inv_con/unordered_multimap.h>
+#include <base/inv_con/unordered_multimap.h>
 #include <orly/symbol/scope.h>
 #include <orly/synth/cst_utils.h>
 #include <orly/synth/name.h>

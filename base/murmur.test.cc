@@ -19,7 +19,7 @@
 #include <base/murmur.h>
 
 #include <base/sigma_calc.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

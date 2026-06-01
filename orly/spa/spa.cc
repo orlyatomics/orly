@@ -42,12 +42,12 @@
 #include <orly/type/orlyify.h>
 #include <orly/var/jsonify.h>
 #include <orly/var/orlyify.h>
-#include <server/counter.h>
-#include <server/daemonize.h>
-#include <socket/address.h>
+#include <base/web/counter.h>
+#include <base/web/daemonize.h>
+#include <base/socket/address.h>
 #include <third_party/mongoose/mongoose.h>
 #include <tools/nycr/escape.h> // Sort of ug dependency here...
-#include <util/error.h>
+#include <base/util/error.h>
 
 using namespace std;
 using namespace Base;

@@ -18,7 +18,7 @@
 
 #include <base/mini_cache.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 

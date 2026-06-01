@@ -21,8 +21,8 @@
 #include <iostream>
 
 #include <base/thrower.h>
-#include <server/daemonize.h>
-#include <util/error.h>
+#include <base/web/daemonize.h>
+#include <base/util/error.h>
 
 using namespace Base;
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/branding/orly.png?raw=true" height="100" alt="Orly" />
+  <img src="docs/branding/orly.png?raw=true" height="100" alt="Orly" />
 </p>
 
 > **Status — 2026 revival.** Orly was dormant from 2019 until early 2026, when a modernization pass brought the codebase back to building and testing cleanly on a current Linux toolchain. `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13. See [#10](https://github.com/orlyatomics/orly/issues/10) for the full status and remaining gaps. No active feature development.
@@ -49,7 +49,7 @@ The four production binaries land at `../out_orly/debug/` (or `../out_orly/relea
 To exercise the Orlyscript test suite against compiled `.orly` programs:
 
 ```sh
-python3 tools/lang_test.py -d orly/data orly/lang_tests
+python3 tools/lang_test.py -d orly/data tests/lang_tests
 ```
 
 ## Toolchain

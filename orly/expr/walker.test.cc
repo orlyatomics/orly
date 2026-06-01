@@ -27,7 +27,7 @@
 #include <orly/type/object_collector.h>
 #include <orly/type/type_czar.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Orly::Package::Syntax;
 using namespace Orly;

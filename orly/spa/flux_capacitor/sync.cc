@@ -18,7 +18,7 @@
 
 #include <orly/spa/flux_capacitor/sync.h>
 
-#include <util/error.h>
+#include <base/util/error.h>
 
 using namespace Base;
 using namespace Orly::Spa::FluxCapacitor;

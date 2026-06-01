@@ -27,7 +27,7 @@
 #include <base/as_str.h>
 #include <jhm/job_runner.h>
 #include <jhm/naming.h>
-#include <util/time.h>
+#include <base/util/time.h>
 
 namespace Jhm {
 

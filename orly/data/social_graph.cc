@@ -25,10 +25,10 @@
 #include <base/chrono.h>
 #include <base/log.h>
 #include <base/tmp_file.h>
-#include <gz/output_consumer.h>
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
-#include <io/device.h>
+#include <base/gz/output_consumer.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/device.h>
 #include <orly/atom/core_vector_builder.h>
 #include <orly/atom/suprena.h>
 #include <orly/desc.h>

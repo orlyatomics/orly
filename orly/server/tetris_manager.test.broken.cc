@@ -26,7 +26,7 @@
 #include <base/event_semaphore.h>
 #include <base/scheduler.h>
 #include <base/uuid.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace chrono;

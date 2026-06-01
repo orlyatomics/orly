@@ -24,8 +24,8 @@
 
 #include <base/class_traits.h>
 #include <orly/rt/opt.h>
-#include <utf8/piece.h>
-#include <utf8/regex.h>
+#include <base/utf8/piece.h>
+#include <base/utf8/regex.h>
 
 namespace Orly {
 

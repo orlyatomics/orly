@@ -26,14 +26,14 @@
 
 #include <base/subprocess.h>
 #include <base/zero.h>
-#include <socket/address.h>
+#include <base/socket/address.h>
 #include <orly/server/server.h>
-#include <strm/fd.h>
-#include <strm/bin/in.h>
-#include <strm/bin/out.h>
-#include <util/error.h>
+#include <base/strm/fd.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/bin/out.h>
+#include <base/util/error.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace std::chrono;

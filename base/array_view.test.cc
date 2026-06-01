@@ -18,8 +18,8 @@
 
 #include <base/array_view.h>
 
-#include <test/kit.h>
-#include <test/life_tracker.h>
+#include <base/test/kit.h>
+#include <base/test/life_tracker.h>
 
 using namespace std;
 using namespace Base;

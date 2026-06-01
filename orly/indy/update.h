@@ -19,7 +19,7 @@
 #include <cassert>
 
 #include <base/class_traits.h>
-#include <inv_con/ordered_list.h>
+#include <base/inv_con/ordered_list.h>
 #include <orly/atom/kit2.h>
 #include <orly/atom/suprena.h>
 #include <orly/indy/key.h>

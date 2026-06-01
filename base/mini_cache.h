@@ -35,8 +35,8 @@
    limitations under the License. */
 
 #include <base/class_traits.h>
-#include <inv_con/unordered_list.h>
-#include <inv_con/unordered_multimap.h>
+#include <base/inv_con/unordered_list.h>
+#include <base/inv_con/unordered_multimap.h>
 
 namespace Base {
 

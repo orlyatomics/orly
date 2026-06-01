@@ -34,9 +34,9 @@
 #include <base/class_traits.h>
 #include <base/fd.h>
 #include <base/log.h>
-#include <io/endian.h>
-#include <signal/handler_installer.h>
-#include <socket/address.h>
+#include <base/io/endian.h>
+#include <base/signal/handler_installer.h>
+#include <base/socket/address.h>
 
 namespace Orly {
 

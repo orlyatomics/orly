@@ -31,9 +31,9 @@
 #include <base/no_throw.h>
 #include <base/opt.h>
 #include <base/uuid.h>
-#include <signal/handler_installer.h>
+#include <base/signal/handler_installer.h>
 #include <orly/client/client.h>
-#include <socket/address.h>
+#include <base/socket/address.h>
 
 namespace Orly {
 

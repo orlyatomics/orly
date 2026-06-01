@@ -29,7 +29,7 @@
 #include <base/likely.h>
 #include <base/mem_aligned_ptr.h>
 #include <base/mlock.h>
-#include <inv_con/atomic_unordered_list.h>
+#include <base/inv_con/atomic_unordered_list.h>
 #include <orly/indy/disk/util/hash_util.h>
 #include <orly/indy/disk/util/volume_manager.h>
 

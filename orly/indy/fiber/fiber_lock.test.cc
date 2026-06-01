@@ -26,10 +26,10 @@
 #include <unistd.h>
 
 #include <base/timer.h>
-#include <util/time.h>
-#include <util/error.h>
+#include <base/util/time.h>
+#include <base/util/error.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

@@ -19,7 +19,7 @@
 
 #include <base/tmp_file.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace Base;
 

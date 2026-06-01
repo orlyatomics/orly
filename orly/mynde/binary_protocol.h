@@ -41,8 +41,8 @@
 
 #include <cstdint>
 
-#include <strm/bin/in.h>
-#include <strm/bin/out.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/bin/out.h>
 
 namespace Orly {
 namespace Mynde {

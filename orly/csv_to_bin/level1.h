@@ -28,7 +28,7 @@
 
 #include <cassert>
 
-#include <strm/in.h>
+#include <base/strm/in.h>
 
 namespace Orly {
 

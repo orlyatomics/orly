@@ -27,7 +27,7 @@
 #include <string>
 
 #include <base/class_traits.h>
-#include <util/error.h>
+#include <base/util/error.h>
 
 namespace Base {
 

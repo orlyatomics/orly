@@ -24,7 +24,7 @@
 #include <orly/spa/honcho.h>
 #include <orly/spa/service.h>
 #include <orly/type.h>
-#include <util/path.h>
+#include <base/util/path.h>
 
 using namespace std;
 using namespace Orly;

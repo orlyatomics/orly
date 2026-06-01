@@ -25,7 +25,7 @@
 
 #include <base/zero.h>
 
-#include <util/error.h>
+#include <base/util/error.h>
 
 using namespace std;
 using namespace Base;

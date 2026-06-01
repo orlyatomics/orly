@@ -19,8 +19,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <io/binary_output_only_stream.h>
-#include <io/device.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/device.h>
 #include <orly/atom/core_vector_builder.h>
 
 using namespace std;

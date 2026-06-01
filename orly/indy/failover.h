@@ -22,8 +22,8 @@
 
 #include <base/class_traits.h>
 #include <base/uuid.h>
-#include <io/device.h>
-#include <rpc/rpc.h>
+#include <base/io/device.h>
+#include <base/rpc/rpc.h>
 #include <orly/indy/file_sync.h>
 #include <orly/indy/replication.h>
 #include <orly/indy/sequence_number.h>

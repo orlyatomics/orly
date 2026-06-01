@@ -34,7 +34,7 @@
 
 #include <base/thrower.h>
 #include <base/uuid.h>
-#include <rpc/rpc.h>
+#include <base/rpc/rpc.h>
 
 namespace Orly {
 

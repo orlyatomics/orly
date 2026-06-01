@@ -24,7 +24,7 @@
 #include <memory>
 
 #include <base/assert_true.h>
-#include <util/stl.h>
+#include <base/util/stl.h>
 
 namespace Base {
 

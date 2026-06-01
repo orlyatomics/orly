@@ -17,8 +17,8 @@
 #pragma once
 
 #include <base/uuid.h>
-#include <io/binary_input_only_stream.h>
-#include <io/binary_output_only_stream.h>
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/util/block_vec.h>
 

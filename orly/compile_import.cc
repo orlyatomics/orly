@@ -24,8 +24,8 @@
 #include <syslog.h>
 
 #include <base/log.h>
-#include <io/device.h>
-#include <io/binary_output_only_stream.h>
+#include <base/io/device.h>
+#include <base/io/binary_output_only_stream.h>
 #include <orly/atom/transport_arena2.h>
 #include <orly/client/program/parse_image.h>
 #include <orly/native/all.h>

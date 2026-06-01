@@ -24,8 +24,8 @@
 #include <ostream>
 
 #include <base/class_traits.h>
-#include <inv_con/unordered_multimap.h>
-#include <server/daemonize.h>
+#include <base/inv_con/unordered_multimap.h>
+#include <base/web/daemonize.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/disk/in_file.h>
 #include <orly/indy/disk/indy_util_reporter.h>

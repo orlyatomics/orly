@@ -145,4 +145,4 @@ jobs:
         run: make debug
 
       - name: python3 tools/lang_test.py
-        run: python3 tools/lang_test.py -d orly/data orly/lang_tests
+        run: python3 tools/lang_test.py -d orly/data tests/lang_tests

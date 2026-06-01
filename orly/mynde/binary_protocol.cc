@@ -24,7 +24,7 @@
 #include <orly/mynde/protocol.h>
 
 #include <base/not_implemented.h>
-#include <io/endian.h>
+#include <base/io/endian.h>
 
 using namespace Io;
 using namespace Strm::Bin;

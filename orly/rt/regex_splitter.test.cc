@@ -20,7 +20,7 @@
 
 #include <initializer_list>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 #include <iostream>
 

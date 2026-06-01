@@ -21,7 +21,7 @@
 #include <cassert>
 
 #include <base/class_traits.h>
-#include <inv_con/ordered_list.h>
+#include <base/inv_con/ordered_list.h>
 #include <orly/indy/disk/util/index_sort_file.h>
 #include <orly/indy/util/merge_sorter.h>
 #include <orly/indy/util/min_heap.h>

@@ -24,7 +24,7 @@
 #include <base/json.h>
 #include <base/opt.h>
 #include <base/split.h>
-#include <util/time.h>
+#include <base/util/time.h>
 
 namespace Jhm {
   /* Configuration system. Handles stacked configuration files ('parent', 'include' statements)

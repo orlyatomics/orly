@@ -22,7 +22,7 @@
 #include <orly/durable/test_manager.h>
 #include <orly/notification/all.h>
 #include <orly/notification/system_shutdown.h>
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace Base;

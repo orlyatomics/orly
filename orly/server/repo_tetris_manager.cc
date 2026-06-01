@@ -23,7 +23,7 @@
 #include <orly/mynde/protocol.h> // For Mynde::PackageName
 #include <orly/notification/pov_failure.h>
 #include <orly/notification/update_progress.h>
-#include <util/time.h>
+#include <base/util/time.h>
 
 using namespace std;
 using namespace chrono;

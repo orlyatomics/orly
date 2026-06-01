@@ -22,11 +22,11 @@
 #include <base/event_counter.h>
 #include <base/timer_fd.h>
 #include <base/uuid.h>
-#include <io/device.h>
-#include <rpc/rpc.h>
-#include <util/io.h>
+#include <base/io/device.h>
+#include <base/rpc/rpc.h>
+#include <base/util/io.h>
 
-#include <test/kit.h>
+#include <base/test/kit.h>
 
 using namespace std;
 using namespace chrono;
