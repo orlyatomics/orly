@@ -19,8 +19,11 @@
 #pragma once
 
 #include <cassert>
+#include <cstdint>
+#include <ios>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 
 #include <base/class_traits.h>
@@ -255,6 +258,24 @@ namespace Test {
     }
 
     private:
+    /* C++20 deleted operator<<(ostream&, char16_t/char32_t/char8_t) since
+       there's no agreed encoding for writing a single unicode code unit to
+       a byte stream. We just want a readable diagnostic, so print the code
+       point as U+XXXX hex. */
+    template <typename TVal>
+    static void StreamValue(std::ostream &strm, const TVal &val) {
+      using TBare = std::decay_t<TVal>;
+      if constexpr (std::is_same_v<TBare, char16_t> ||
+                    std::is_same_v<TBare, char32_t> ||
+                    std::is_same_v<TBare, char8_t>) {
+        std::ios::fmtflags saved(strm.flags());
+        strm << "U+" << std::hex << static_cast<std::uint32_t>(val);
+        strm.flags(saved);
+      } else {
+        strm << val;
+      }
+    }
+
     template <typename TLhs, typename TRhs>
     void WriteInfixOp(const char *lhs_str, const TLhs &lhs, const char *op_str, const char *rhs_str, const TRhs &rhs) {
       assert(lhs_str);
@@ -268,7 +289,9 @@ namespace Test {
       strm << rhs_str;
       Source = strm.str();
       strm.str("");
-      strm << lhs << ' ' << op_str << ' ' << rhs;
+      StreamValue(strm, lhs);
+      strm << ' ' << op_str << ' ';
+      StreamValue(strm, rhs);
       Expression = strm.str();
     }
 

@@ -19,6 +19,7 @@
 #include <orly/indy/fiber/algorithm.h>
 
 #include <algorithm>
+#include <random>
 #include <thread>
 
 #include <unistd.h>
@@ -184,6 +185,6 @@ FIXTURE(LargeParallelSort) {
     input_data.emplace_back(i, i * 10);
   }
   printf("DataSetSize = [%fMB]\n", static_cast<double>(num_elem * sizeof(TSortedObj)) / (1024 * 1024));
-  random_shuffle(input_data.begin(), input_data.end());
+  std::shuffle(input_data.begin(), input_data.end(), std::mt19937(std::random_device{}()));
   TestSort(input_data, num_workers);
 }

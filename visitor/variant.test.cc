@@ -83,7 +83,7 @@ struct TPrintName {
 };  // TPrintName
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 void> PrintName(TMember &&member) {
   TPrintName()(std::forward<TMember>(member));
 }
@@ -135,7 +135,7 @@ struct TGetInt {
 };  // TGetInt
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 int> GetInt(TMember &&member) {
   return TGetInt()(std::forward<TMember>(member));
 }
@@ -192,7 +192,7 @@ struct TWriteName {
 };  // TWriteName
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 std::ostream &> WriteName(TMember &&member, std::ostream &strm) {
   return TWriteName()(std::forward<TMember>(member), strm);
 }
@@ -261,7 +261,7 @@ struct TGetIntAndWriteVector {
 };  // TGetIntAndWriteVector
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 int> GetIntAndWriteVector(TMember &&member,
                          std::ostream &strm,
                          const std::vector<int> &ints) {
@@ -359,7 +359,7 @@ struct TToString {
 };  // TToString
 
 template <typename TMember>
-requires<IsFooBar<TMember>::value,
+Require<IsFooBar<TMember>::value,
 std::string> ToString(TMember &&member) {
   return TToString()(std::forward<TMember>(member));
 }
@@ -477,7 +477,7 @@ struct TSetDefault {
 };  // TSetDefault
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 void> SetDefault(TMember &&member) {
   TSetDefault()(std::forward<TMember>(member));
 }
@@ -536,7 +536,7 @@ struct TSetDefaultTemplate {
 };  // TSetDefaultTemplate
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 void> SetDefaultTemplate(TMember &&member) {
   TSetDefaultTemplate()(std::forward<TMember>(member));
 }
@@ -623,7 +623,7 @@ struct TWriteNameDouble {
 };  // TWriteNameDouble
 
 template <typename TLhs, typename TRhs>
-requires<IsFooBar<TLhs>::value && IsFooBar<TRhs>::value,
+Require<IsFooBar<TLhs>::value && IsFooBar<TRhs>::value,
 void> WriteNameDouble(TLhs &&lhs, TRhs &&rhs, std::ostream &strm) {
   TWriteNameDouble()(std::forward<TLhs>(lhs), std::forward<TRhs>(rhs), strm);
 }
@@ -852,7 +852,7 @@ struct TMutate {
 };  // TMutate
 
 template <typename TMember>
-requires<IsFoo<TMember>::value,
+Require<IsFoo<TMember>::value,
 void> Mutate(TMember &&member) {
   TMutate()(std::forward<TMember>(member));
 }

@@ -26,7 +26,7 @@
     ],
   "cmd": {
     "g++" : [
-      "-std=c++17",
+      "-std=c++23",
       "-Wall",
       "-Wextra",
       "-Wold-style-cast",
@@ -117,14 +117,14 @@
     "flex": {
       "g++": [
         "-DTEST_OUTPUT_DIR=\"/tmp/\"",
-        "-std=c++17",
+        "-std=c++23",
         "-pthread"
       ]
     },
     "bison": {
       "g++": [
         "-DTEST_OUTPUT_DIR=\"/tmp/\"",
-        "-std=c++17",
+        "-std=c++23",
         "-pthread"
       ]
     },
