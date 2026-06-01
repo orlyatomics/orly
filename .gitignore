@@ -6,4 +6,6 @@ __pycache__/
 tools/jhm
 tools/make_dep_file
 .claude/
+# jhm emits this on every successful build; rebuild-derivable, not committed.
+compile_commands.json
 
