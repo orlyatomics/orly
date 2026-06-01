@@ -75,6 +75,10 @@ Build flags live in `root.jhm` (per-target overrides in `debug.jhm` / `release.j
 
 The build system (`jhm`) lives in `jhm/`; the bootstrap path is documented in `bootstrap.sh`. There's no formal style guide; match the surrounding code.
 
+### IDE / clangd
+
+Every successful `make debug` (or any `jhm` invocation that compiles C/C++) writes a [JSON Compilation Database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) to `compile_commands.json` at the repo root. clangd, clang-tidy, IWYU, and most C++-aware editors pick this up automatically. The file is regenerated on every build, so it's `.gitignore`d.
+
 -----
 
 README.md Copyright 2010-2026 Atomic Kismet Company

@@ -24,6 +24,7 @@
    limitations under the License. */
 
 #include <csignal>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -31,6 +32,8 @@
 
 #include <base/backtrace.h>
 #include <base/cmd.h>
+#include <base/dir_walker.h>
+#include <base/json.h>
 #include <base/path.h>
 #include <base/split.h>
 #include <base/thrower.h>
@@ -45,6 +48,59 @@ using namespace Jhm;
 using namespace std;
 using namespace std::placeholders;
 using namespace Util;
+
+/* Walks the build output tree collecting per-compile JSON Compilation
+   Database snippets (written by TCompileCFamily::GetCmd) into one
+   `<src_root>/compile_commands.json` file, the format clangd /
+   clang-tidy / IDE tooling expect.
+
+   Per-snippet rather than in-memory accumulation: an incremental build
+   that only recompiles a handful of files preserves the entries for
+   everything that didn't change. The snippet files live next to their
+   .o output and get re-emitted whenever the file is recompiled. */
+namespace {
+
+class TCompdbCollector final : public TDirWalker {
+  public:
+  explicit TCompdbCollector(TJson::TArray *entries) : Entries(entries) {}
+  bool OnFile(const TEntry &entry) override {
+    const std::string name(entry.Name);
+    static const std::string kSuffix = ".compdb.json";
+    if (name.size() <= kSuffix.size() ||
+        name.compare(name.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
+      return true;
+    }
+    try {
+      Entries->push_back(TJson::Read(entry.AccessPath));
+    } catch (const std::exception &ex) {
+      // A malformed snippet shouldn't kill the build; just skip it.
+      std::cerr << "warning: skipping " << entry.AccessPath << ": " << ex.what() << '\n';
+    }
+    return true;
+  }
+  private:
+  TJson::TArray *Entries;
+};
+
+void WriteCompileCommandsJson(const TEnv &env) {
+  const std::string out_root = AsStr(*env.GetOut());
+  const std::string src_root = AsStr(*env.GetSrc());
+  TJson::TArray entries;
+  TCompdbCollector collector(&entries);
+  collector.Walk(out_root.c_str());
+  if (entries.empty()) {
+    return;  // nothing to write (e.g. test-only invocation, or first-ever bootstrap)
+  }
+  const std::string compdb_path = src_root + "/compile_commands.json";
+  std::ofstream out(compdb_path);
+  if (!out.is_open()) {
+    std::cerr << "warning: could not open " << compdb_path << " for write\n";
+    return;
+  }
+  out << TJson(std::move(entries));
+}
+
+}  // namespace
 
 /* Converts relative file to absolute path if needed, then has the environment find/make the actual file object. */
 TFile *FindFile(const string &cwd, TEnv &env, TWorkFinder &work_finder, const string &name) {
@@ -201,6 +257,10 @@ class TJhm : public TCmd {
     if (!work_finder.FinishAll()) {
       return 1;
     }
+
+    // All compile jobs done -- collect the per-target compile-database
+    // snippets they emitted into <src>/compile_commands.json.
+    WriteCompileCommandsJson(env);
 
     // Run all the tests if requested
     if (!RunTests) {

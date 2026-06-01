@@ -16,6 +16,10 @@
 
 #include <jhm/jobs/compile_c_family.h>
 
+#include <filesystem>
+#include <fstream>
+
+#include <base/json.h>
 #include <base/split.h>
 #include <jhm/env.h>
 #include <jhm/file.h>
@@ -114,6 +118,34 @@ vector<string> TCompileCFamily::GetCmd() {
       cmd.push_back(move(arg));
     }
 
+  }
+
+  // Emit a JSON Compilation Database entry next to the .o output. The
+  // collector at jhm.cc end-of-build walks the out tree, reads every
+  // *.compdb.json, and unions them into <src>/compile_commands.json
+  // for clangd / clang-tidy / IDE consumption. We write per-job rather
+  // than accumulating in memory so incremental builds preserve entries
+  // for files that weren't touched this run.
+  /* compdb entry */ {
+    TJson::TArray args;
+    args.reserve(cmd.size());
+    for (const auto &a : cmd) {
+      args.emplace_back(a);
+    }
+    TJson::TObject entry;
+    entry.emplace("directory", AsStr(*Env.GetSrc()));
+    entry.emplace("file", GetInput()->GetPath());
+    entry.emplace("arguments", TJson(std::move(args)));
+
+    const string out_root = AsStr(*Env.GetOut());
+    const std::filesystem::path entry_path =
+        std::filesystem::path(out_root) / (GetSoleOutput()->GetPath() + ".compdb.json");
+    // GetCmd() runs at queue time, before gcc creates the .o's directory,
+    // so we have to ensure the parent exists ourselves.
+    std::error_code ec;
+    std::filesystem::create_directories(entry_path.parent_path(), ec);
+    std::ofstream out(entry_path);
+    out << TJson(std::move(entry));
   }
 
   return cmd;
