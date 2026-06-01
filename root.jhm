@@ -88,10 +88,7 @@
       "-fno-strict-aliasing",
 
       "-DTEST_OUTPUT_DIR=\"/tmp/\"",
-      "-DORLY_HOST",
-
-      "-D_WEBSOCKETPP_CPP11_STL_",
-      "-isystem","third_party/websocketpp/"
+      "-DORLY_HOST"
     ],
     "gcc": [
       "-Wall",
