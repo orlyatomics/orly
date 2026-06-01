@@ -118,8 +118,61 @@ void TMutation::Apply(Var::TVar &var) const {
   var = Orly::Rt::Mutate(var, Mutator, Rhs);
 }
 
-void TMutation::Augment(const TPtr<const TChange> &) {
-  throw Rt::TSystemError(HERE, "Conflicting updates to the same key. Applied a partial mutation and a full mutation to the same part of a key.");
+void TMutation::Augment(const TPtr<const TChange> &change) {
+  // Combine `change` into `this` so that applying `this` afterwards has
+  // the same observable effect as having applied the two changes in
+  // sequence. Only valid when both changes are TMutations using the same
+  // commutative + associative mutator -- those compose into a single
+  // mutation by applying the mutator to their right-hand-sides.
+  //
+  // For example:  Add(5).Augment(Add(3))   -> Add(8)         (5 + 3)
+  //               Or (0xF).Augment(Or(0x10)) -> Or(0x1F)     (0xF | 0x10)
+  //               Union({a,b}).Augment(Union({c})) -> Union({a,b,c})
+  //
+  // Non-commutative or final mutators (Assign, Div, Mod, Exp, Sub) and
+  // mixed-mutator pairs (e.g. Add then Mult) still throw -- they can't
+  // be safely collapsed into a single mutation without knowing the
+  // current value of the target.
+  const TMutation *other = dynamic_cast<const TMutation *>(change.get());
+  if (!other) {
+    throw Rt::TSystemError(HERE, "Conflicting updates to the same key. A partial change cannot augment a full mutation.");
+  }
+  if (other->Mutator != Mutator) {
+    throw Rt::TSystemError(HERE, "Conflicting updates to the same key. Mixed mutators (e.g. += and *=) on the same key cannot be safely collapsed.");
+  }
+  switch (Mutator) {
+    case TMutator::Add:
+    case TMutator::Mult:
+    case TMutator::And:
+    case TMutator::Or:
+    case TMutator::Xor:
+    case TMutator::Union:
+    case TMutator::Intersection:
+    case TMutator::SymmetricDiff: {
+      // For these: `x OP a; x OP b` is equivalent to `x OP (a OP b)`,
+      // so the combined Rhs is `Rt::Mutate(Rhs, Mutator, other->Rhs)`.
+      Rhs = Orly::Rt::Mutate(Rhs, Mutator, other->Rhs);
+      return;
+    }
+    case TMutator::Assign: {
+      // Assign is `IsFinal()`; per the existing semantics a final
+      // mutation shouldn't be augmented at all.
+      throw Rt::TSystemError(HERE, "Conflicting updates to the same key. An assignment is final and cannot be augmented.");
+    }
+    case TMutator::Sub:
+    case TMutator::Div:
+    case TMutator::Mod:
+    case TMutator::Exp: {
+      // Sub / Div / Exp can compose with themselves but the combine op
+      // differs from the mutator (e.g. two Sub ops compose by *adding*
+      // their rhs values, since x - a - b = x - (a + b)). Punted to a
+      // future change -- the safe-default here is to throw rather than
+      // silently produce a wrong combined value.
+      // Mod doesn't compose at all under any reasonable rewrite.
+      throw Rt::TSystemError(HERE, "Conflicting updates to the same key. This mutator (Sub / Div / Mod / Exp) does not yet support augmentation.");
+    }
+  }
+  throw Rt::TSystemError(HERE, "Unknown mutator -- TMutation::Augment was not updated when a new TMutator was added.");
 }
 
 bool TMutation::IsDelete() const {

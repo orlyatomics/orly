@@ -1,0 +1,114 @@
+/* <examples/wikipedia-pageviews/views.orly>
+
+   Wikimedia-style hourly pageview counters, accumulated under contention
+   via Orly's field-call semantics (`+=`).
+
+   This demo showcases a feature the bitcoin-time-travel and
+   wikipedia-categories demos didn't exercise:  ORLY DOESN'T LOCK on
+   concurrent writes to the same key.
+
+   Why that works: `+= n` is a field CALL, not a field change. It's
+   not "read the value, add n, write the value back" (which would race
+   and lose updates without a lock). It's an opaque increment that
+   commutes with itself and with any other concurrent increment. The
+   merge machinery aggregates increments from many POVs without needing
+   a per-key mutex.
+
+   Equivalent operations in other databases:
+
+     Postgres:   UPDATE views SET n = n + 1 WHERE page = ?
+                 -- row lock; N writers serialize on hot pages
+     Redis:      INCR views:<page>
+                 -- atomic but single-threaded server (no real concurrency)
+     Cassandra:  UPDATE views SET n = n + 1 WHERE ...
+                 -- counter columns, but with consistency caveats
+     Orly:       *<['views', lang, page, hour]>::(int) += n
+                 -- field call; lock-free; N writers in N sessions all
+                    land their increments, sum is correct
+
+   Schema:
+
+     <['views', lang, page, hour]>  : int
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* Per-hour view count; 0 if no events landed in that hour. */
+views_in_hour = (((*<['views', lang, page, hour]>::(int)) if *<['views', lang, page, hour]>::(int?) is known else 0)) where {
+  lang = given::(str);
+  page = given::(str);
+  hour = given::(int);
+};
+
+/* The headline write -- a field-call increment. First write at this
+   tuple creates; subsequent writes accumulate. Multiple sessions
+   calling this concurrently on the same (lang, page, hour) all land
+   their increments correctly without locking. */
+increment_view = (((1) effecting {
+  *<['views', lang, page, hour]>::(int) += n;
+} if *<['views', lang, page, hour]>::(int?) is known else (0) effecting {
+  new <['views', lang, page, hour]> <- n;
+})) where {
+  lang = given::(str);
+  page = given::(str);
+  hour = given::(int);
+  n    = given::(int);
+};
+
+/* Sum of views across an inclusive hour range. */
+views_total = ([h_start..h_end] reduce start 0 + views_in_hour(.lang: lang, .page: page, .hour: that)) where {
+  lang    = given::(str);
+  page    = given::(str);
+  h_start = given::(int);
+  h_end   = given::(int);
+};
+
+test {
+  /* Unknown tuples return 0 at the top level. */
+  t1: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 100) == 0;
+  t2: views_total(.lang: "en", .page: "ChatGPT", .h_start: 0, .h_end: 1000) == 0;
+
+  /* First write creates (returns 0); subsequent writes at the same tuple
+     accumulate (return 1). The nested chain demonstrates field-call
+     accumulation: 1 + 4 + 10 = 15 visible inside the innermost block. */
+  t3: increment_view(.lang: "en", .page: "ChatGPT", .hour: 100, .n: 1) == 0 {
+    t4: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 100) == 1;
+    t5: increment_view(.lang: "en", .page: "ChatGPT", .hour: 100, .n: 4) == 1 {
+      t6: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 100) == 5;
+      t7: increment_view(.lang: "en", .page: "ChatGPT", .hour: 100, .n: 10) == 1 {
+        t8: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 100) == 15;
+
+        /* Different (page, hour) tuple, independent counter. */
+        t9: increment_view(.lang: "en", .page: "ChatGPT", .hour: 101, .n: 7) == 0 {
+          t10: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 101) == 7;
+          /* Hour 100 still 15 because hour 101 is a different key. */
+          t11: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 100) == 15;
+
+          /* The fold across the hour range. */
+          t12: views_total(.lang: "en", .page: "ChatGPT", .h_start: 100, .h_end: 101) == 22;
+          t13: views_total(.lang: "en", .page: "ChatGPT", .h_start: 100, .h_end: 100) == 15;
+          t14: views_total(.lang: "en", .page: "ChatGPT", .h_start: 50,  .h_end: 99)  == 0;
+
+          /* Different (lang, page) tuple, also independent. */
+          t15: increment_view(.lang: "es", .page: "ChatGPT", .hour: 100, .n: 3) == 0 {
+            t16: views_in_hour(.lang: "es", .page: "ChatGPT", .hour: 100) == 3;
+            t17: views_in_hour(.lang: "en", .page: "ChatGPT", .hour: 100) == 15;
+          };
+        };
+      };
+    };
+  };
+};
