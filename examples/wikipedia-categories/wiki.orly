@@ -1,0 +1,110 @@
+/* <examples/wikipedia-categories/wiki.orly>
+
+   Wikipedia-style category membership over time. A demonstration that
+   the same fold-over-keyed-versions pattern from the bitcoin time-
+   travel demo works for any commutative monoid -- here, set union
+   instead of integer addition.
+
+   Schema:
+
+     <['cat_growth', cat, year]>  : {str}    -- articles added to `cat` in `year`
+
+   Reads:
+
+     members_at(cat, since, target) =
+         [since..target] reduce start (empty {str}) | growth_in(cat, that)
+
+   The version axis is the year coordinate in the key tuple, exactly
+   as in the bitcoin demo. Only the fold operator changes: `+` for
+   integer balances became `|` for sets.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* Members added to `cat` in `year`; empty set if no growth that year. */
+growth_in = (((*<['cat_growth', cat, year]>::({str})) if *<['cat_growth', cat, year]>::({str}?) is known else empty {str})) where {
+  cat  = given::(str);
+  year = given::(int);
+};
+
+/* Record the set of new members added to `cat` in `year`.
+   One write per (cat, year) tuple; the driver pre-aggregates if
+   multiple events land in the same bucket. */
+add_growth = ((1) effecting {
+  new <['cat_growth', cat, year]> <- members;
+}) where {
+  cat     = given::(str);
+  year    = given::(int);
+  members = given::({str});
+};
+
+/* The headline read: members of `cat` as of `target` year, accumulating
+   from `since`. Fold across the year axis with set union. Pre-fork
+   pattern in spirit -- everything that was added by the target year
+   is in the result; nothing later. */
+members_at = ([since..target] reduce start (empty {str}) | growth_in(.cat: cat, .year: that)) where {
+  cat    = given::(str);
+  since = given::(int);
+  target = given::(int);
+};
+
+/* Convenience: size of the set at `target`. */
+count_at = (length_of members_at(.cat: cat, .since: since, .target: target)) where {
+  cat    = given::(str);
+  since  = given::(int);
+  target = given::(int);
+};
+
+test {
+  /* "Programming languages" minimal scenario: a couple of years, a couple of additions per year. */
+  t1: add_growth(.cat: "lang", .year: 1957, .members: {"FORTRAN"}) == 1 {
+    t2: add_growth(.cat: "lang", .year: 1958, .members: {"Lisp"}) == 1 {
+      t3: add_growth(.cat: "lang", .year: 1991, .members: {"Python", "Visual Basic"}) == 1 {
+        t4: add_growth(.cat: "lang", .year: 2010, .members: {"Rust"}) == 1 {
+
+          /* Point lookups: what was added each year? */
+          t5: growth_in(.cat: "lang", .year: 1957) == {"FORTRAN"};
+          t6: growth_in(.cat: "lang", .year: 1958) == {"Lisp"};
+          t7: growth_in(.cat: "lang", .year: 1991) == {"Python", "Visual Basic"};
+          t8: growth_in(.cat: "lang", .year: 1992) == empty {str};   /* nothing this year */
+
+          /* The fold: snapshot of the category at each year. */
+          t9:  members_at(.cat: "lang", .since: 1950, .target: 1956) == empty {str};
+          t10: members_at(.cat: "lang", .since: 1950, .target: 1957) == {"FORTRAN"};
+          t11: members_at(.cat: "lang", .since: 1950, .target: 1958) == {"FORTRAN", "Lisp"};
+          t12: members_at(.cat: "lang", .since: 1950, .target: 1991) == {"FORTRAN", "Lisp", "Python", "Visual Basic"};
+          t13: members_at(.cat: "lang", .since: 1950, .target: 2024) == {"FORTRAN", "Lisp", "Python", "Visual Basic", "Rust"};
+
+          /* Cross-category isolation: a separate `cat` keeps its own keyspace. */
+          t14: add_growth(.cat: "crypto", .year: 2009, .members: {"Bitcoin"}) == 1 {
+            t15: members_at(.cat: "crypto", .since: 2000, .target: 2024) == {"Bitcoin"};
+            /* `since: 2000` correctly excludes Python and Visual Basic (added 1991). */
+            t16: members_at(.cat: "lang",   .since: 2000, .target: 2024) == {"Rust"};
+          };
+
+          /* Count fold: |members_at(...)|. */
+          t17: count_at(.cat: "lang", .since: 1950, .target: 1957) == 1;
+          t18: count_at(.cat: "lang", .since: 1950, .target: 1991) == 4;
+          t19: count_at(.cat: "lang", .since: 1950, .target: 2024) == 5;
+
+          /* Time-travel stability: querying an old year returns the same
+             answer no matter what's been written for later years. */
+          t20: members_at(.cat: "lang", .since: 1950, .target: 1958) == {"FORTRAN", "Lisp"};
+        };
+      };
+    };
+  };
+};

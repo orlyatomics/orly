@@ -4,8 +4,8 @@
 #   1. debug-and-test     -- make debug + make test (188 binaries)
 #   2. release-build      -- jhm -c release direct + --help smoke on each binary
 #   3. lang-tests         -- make debug + python3 tools/lang_test.py
-#   4. bitcoin-time-travel -- run the examples/bitcoin-time-travel demo
-#                            end-to-end (orlyc + orlyi + WS driver)
+#   4. examples           -- run each examples/* end-to-end with both
+#                            its Python and Go drivers (orlyc + orlyi + WS)
 #
 # Caching: both apt packages and the build output tree (../out_orly,
 # ../.jhm) are cached across runs. Incremental builds rely on jhm's own
@@ -149,8 +149,8 @@ jobs:
       - name: python3 tools/lang_test.py
         run: python3 tools/lang_test.py -d orly/data tests/lang_tests
 
-  bitcoin-time-travel:
-    name: examples/bitcoin-time-travel
+  examples:
+    name: examples/* end-to-end
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -198,3 +198,14 @@ jobs:
       - name: run-go.sh (go driver)
         run: ./run-go.sh
         working-directory: examples/bitcoin-time-travel
+
+      # Same scenario as bitcoin-time-travel but uses set union instead
+      # of integer addition. Demonstrates the polymorphic-monoid claim
+      # from that demo's README: same fold pattern, different operator.
+      - name: wikipedia-categories run.sh (python driver)
+        run: ./run.sh
+        working-directory: examples/wikipedia-categories
+
+      - name: wikipedia-categories run-go.sh (go driver)
+        run: ./run-go.sh
+        working-directory: examples/wikipedia-categories

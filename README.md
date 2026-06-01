@@ -72,12 +72,13 @@ python3 tools/lang_test.py -d orly/data tests/lang_tests
 
 A Bitcoin-flavoured ledger that does **historical queries** ("balance at block 5") and **branched-history multiverse queries** ("balance on the fork vs the mainnet at block 7"). The trick: encode the version axis (block height) AND the branch into the key tuple, fold over the height axis on read.
 
-| Driver | File | Notes |
-| --- | --- | --- |
-| Python | [`demo.py`](examples/bitcoin-time-travel/demo.py) | `pip install websocket-client`, then `./run.sh` |
-| Go | [`demo.go`](examples/bitcoin-time-travel/demo.go) | `gorilla/websocket` dep, then `./run-go.sh` |
+### [`examples/wikipedia-categories/`](examples/wikipedia-categories/) — same trick, different monoid
 
-Both drivers exercise the identical scenario, print the same balance trajectory, and self-check 72 balance values across both branches. Smoke-tested in CI on every push.
+A Wikipedia-flavoured demo that does the same fold-over-keyed-versions trick, but with **set union** as the operator instead of integer addition. Watch the "Programming languages" set grow from `{FORTRAN}` in 1957 through `{...35 entries...}` in 2024 — `members_at(cat, year)` is one four-line Orlyscript function.
+
+Together the two examples prove the polymorphic-monoid claim: pick the operator (`+`, `|`, `++`, `min`, …) and the identity, get historical queries for that domain.
+
+Both examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
 
 ## Walkthrough
 
