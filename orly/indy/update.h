@@ -27,6 +27,7 @@
 #include <orly/indy/util/pool.h>
 #include <orly/sabot/all.h>
 #include <orly/sabot/assert_tuple.h>
+#include <orly/shared_enum.h>
 
 namespace Orly {
 
@@ -107,6 +108,19 @@ namespace Orly {
         /* TODO */
         inline const Atom::TCore &GetOp() const;
 
+        /* The mutator used to produce Op. For assignments (the historical
+           default and current observable behavior for all in-tree code
+           paths) this is TMutator::Assign and Op is the resolved value.
+           For commutative ops (Add, Mult, Or, And, Xor, Union, Intersection,
+           SymmetricDiff) this is the mutator that produced the entry and
+           Op is the right-hand side -- the read path will then accumulate
+           same-mutator entries on the same key.
+
+           Phase 1 of #49 added this field but every in-tree write site
+           still passes Assign by default, so observable behavior is
+           unchanged until phase 2 (session.cc emits the real mutator). */
+        inline TMutator GetMutator() const;
+
         /* TODO */
         inline TSequenceNumber GetSequenceNumber() const;
 
@@ -164,8 +178,12 @@ namespace Orly {
         typedef InvCon::OrderedList::TMembership<TEntry, TUpdate, TKey> TUpdateMembership;
         typedef InvCon::OrderedList::TMembership<TEntry, TMemoryLayer, TEntryKey> TMemoryLayerMembership;
 
-        /* TODO */
-        TEntry(TUpdate *update, const TIndexKey &key, const TKey &op, void *state_alloc);
+        /* Construct an entry. The mutator defaults to TMutator::Assign,
+           which is the historical / current behavior for every in-tree
+           write path. Phase 2 of #49 (session.cc) is where non-Assign
+           mutators start flowing through. */
+        TEntry(TUpdate *update, const TIndexKey &key, const TKey &op, void *state_alloc,
+               TMutator mutator = TMutator::Assign);
 
         /* TODO */
         inline const TEntryKey &GetEntryKey() const;
@@ -181,6 +199,10 @@ namespace Orly {
 
         /* TODO */
         Atom::TCore Op;
+
+        /* See GetMutator(). Defaults to TMutator::Assign for every
+           in-tree write path until phase 2 of #49 lands. */
+        TMutator Mutator;
 
         /* TODO */
         static Util::TPool Pool;
@@ -226,6 +248,11 @@ namespace Orly {
 
       /* TODO */
       inline TEntry *AddEntry(const TIndexKey &key, const TKey &op);
+
+      /* Add an entry that carries a mutator. The default-mutator
+         overload above forwards to this with TMutator::Assign so all
+         existing call sites stay behaviorally identical. */
+      inline TEntry *AddEntry(const TIndexKey &key, const TKey &op, TMutator mutator);
 
       /* TODO */
       static std::shared_ptr<TUpdate> NewUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id);
@@ -371,6 +398,11 @@ namespace Orly {
       return new TEntry(this, index_key, op, state_alloc);
     }
 
+    inline TUpdate::TEntry *TUpdate::AddEntry(const TIndexKey &index_key, const TKey &op, TMutator mutator) {
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      return new TEntry(this, index_key, op, state_alloc, mutator);
+    }
+
     /* TODO */
     inline const TKey &TUpdate::TEntry::GetKey() const {
       return IndexKey.GetKey();
@@ -384,6 +416,10 @@ namespace Orly {
     /* TODO */
     inline const Atom::TCore &TUpdate::TEntry::GetOp() const {
       return Op;
+    }
+
+    inline TMutator TUpdate::TEntry::GetMutator() const {
+      return Mutator;
     }
 
     /* TODO */

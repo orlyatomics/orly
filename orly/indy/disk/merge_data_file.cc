@@ -487,7 +487,7 @@ class TMergeDataFileImpl {
                 Atom::TCore val_core = cur_item.Value;
                 key_core.Remap(idx_file.KeyRemapper);
                 val_core.Remap(idx_file.ValRemapper);
-                idx_file.PushCurKey(cur_item.SeqNum, key_core, val_core);
+                idx_file.PushCurKey(cur_item.SeqNum, key_core, val_core, cur_item.Mutator);
                 last_written = cur_key;
               } else { /* history key */
                 idx_file.MyPos = pos;
@@ -495,7 +495,7 @@ class TMergeDataFileImpl {
                 Atom::TCore val_core = cur_item.Value;
                 key_core.Remap(idx_file.KeyRemapper);
                 val_core.Remap(idx_file.ValRemapper);
-                idx_file.PushHistKey(cur_item.SeqNum, key_core, val_core);
+                idx_file.PushHistKey(cur_item.SeqNum, key_core, val_core, cur_item.Mutator);
               }
               ++cur_csr;
               if (CanTail) {
@@ -529,7 +529,7 @@ class TMergeDataFileImpl {
               Atom::TCore val_core = cur_item.Value;
               key_core.Remap(idx_file.KeyRemapper);
               val_core.Remap(idx_file.ValRemapper);
-              idx_file.PushHistKey(cur_item.SeqNum, key_core, val_core);
+              idx_file.PushHistKey(cur_item.SeqNum, key_core, val_core, cur_item.Mutator);
               ++hist_csr;
               if (CanTail) {
                 size_t &cur_hist_offset = history_key_cur_idx_vec[pos / 2];
@@ -2220,16 +2220,22 @@ class TMergeDataFileImpl {
                                         WasPrepared = true;
     }
 
-    void PushCurKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val) {
+    void PushCurKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator) {
       ++NumCurKeys;
       TDataOutStream &stream = *KeyStream;
       if (!FirstKey) {
         stream << NumCurHistoryElem << ByteOffsetOfCurHistory;
+        /* Trailing TMutator (+ 4 bytes padding) for the previous current
+           key. Layout must match TKeyItem in read_file.h. */
+        stream.Write(&PrevKeyMutator, sizeof(TMutator));
+        const uint32_t mutator_padding = 0;
+        stream.Write(&mutator_padding, sizeof(mutator_padding));
         ByteOffsetOfCurHistory += NumCurHistoryElem * TData::KeyHistorySize;
         NumCurHistoryElem = 0UL;
       } else {
         FirstKey = false;
       }
+      PrevKeyMutator = mutator;
       CurKeyOffset = stream.GetOffset();
       stream << seq_num;
       stream.Write(&key, sizeof(key));
@@ -2269,23 +2275,31 @@ class TMergeDataFileImpl {
       UpdateCollector->Emplace(seq_num, CurKeyOffset, true, IndexId);
     }
 
-    void PushHistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val) {
+    void PushHistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator) {
       ++NumHistKeys;
-      HistKeyVec.emplace_back(seq_num, key, val);
+      HistKeyVec.emplace_back(seq_num, key, val, mutator);
       UpdateCollector->Emplace(seq_num, ByteOffsetOfCurHistory + NumCurHistoryElem * TData::KeyHistorySize, false, IndexId);
       ++NumCurHistoryElem;
     }
 
     void FlushHistory() {
       TDataOutStream &stream = *KeyStream;
+      const uint32_t mutator_padding = 0;
       if (!FirstKey) {
         stream << NumCurHistoryElem << ByteOffsetOfCurHistory;
+        /* Final current key's trailing TMutator (+ padding). See PushCurKey. */
+        stream.Write(&PrevKeyMutator, sizeof(TMutator));
+        stream.Write(&mutator_padding, sizeof(mutator_padding));
       }
       ByteOffsetOfHistory = stream.GetOffset();
       for (const auto &hist : HistKeyVec) {
         stream << hist.SeqNum;
         stream.Write(&hist.Key, sizeof(hist.Key));
         stream.Write(&hist.Val, sizeof(hist.Val));
+        /* Trailing TMutator (+ padding) per THistoryKeyItem in read_file.h. */
+        TMutator hist_mutator = hist.Mutator;
+        stream.Write(&hist_mutator, sizeof(TMutator));
+        stream.Write(&mutator_padding, sizeof(mutator_padding));
         assert(stream.GetOffset() <= MaxByteOffsetOfKeyStream);
       }
       EndOfHistoryStream = stream.GetOffset();
@@ -2476,14 +2490,16 @@ class TMergeDataFileImpl {
     class THistKey {
       public:
 
-      THistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val)
+      THistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator)
           : SeqNum(seq_num),
             Key(key),
-            Val(val) {}
+            Val(val),
+            Mutator(mutator) {}
 
       TSequenceNumber SeqNum;
       Atom::TCore Key;
       Atom::TCore Val;
+      TMutator Mutator;
 
     };
 
@@ -2550,6 +2566,10 @@ class TMergeDataFileImpl {
     size_t NumHashTables;
 
     bool FirstKey;
+    /* Mutator of the previous current key. Emitted as the trailing
+       portion of the on-disk TKeyItem when the next key arrives (or in
+       FlushHistory for the final one). */
+    TMutator PrevKeyMutator = TMutator::Assign;
     size_t CurKeyOffset;
     std::unique_ptr<TDataOutStream> KeyStream;
     TCompletionTrigger KeyTrigger;

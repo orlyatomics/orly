@@ -97,11 +97,12 @@ bool TUpdate::TEntry::TEntryKey::operator>(const TUpdate::TEntry::TEntryKey &tha
 TUpdate::TEntry::TEntryKey::TEntryKey(const TEntry *entry)
     : Entry(entry) {}
 
-TUpdate::TEntry::TEntry(TUpdate *update, const TIndexKey &index_key, const TKey &op, void *state_alloc)
+TUpdate::TEntry::TEntry(TUpdate *update, const TIndexKey &index_key, const TKey &op, void *state_alloc, TMutator mutator)
     : IndexKey(index_key.GetIndexId(), TKey(&update->Suprena, state_alloc, index_key.GetKey())),
       UpdateMembership(this, IndexKey.GetKey(), InvCon::TOrient::Rev, &update->EntryCollection),
       MemoryLayerMembership(this, TEntryKey(this)),
-      Op(&update->Suprena, Sabot::State::TAny::TWrapper(op.GetCore().NewState(op.GetArena(), state_alloc))) {
+      Op(&update->Suprena, Sabot::State::TAny::TWrapper(op.GetCore().NewState(op.GetArena(), state_alloc))),
+      Mutator(mutator) {
   void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
   #ifndef NDEBUG
   Sabot::AssertTuple(*Sabot::Type::TAny::TWrapper(GetKey().GetCore().GetType(&update->Suprena, type_alloc)));
@@ -132,7 +133,7 @@ TUpdate::TUpdate(const TUpdate *that, void *state_alloc)
       PersistenceNotification(that->PersistenceNotification) {
   try {
     for (TEntryCollection::TCursor csr(&that->EntryCollection, InvCon::TOrient::Fwd /*Rev*/); csr; ++csr) {
-      new TEntry(this, csr->GetIndexKey(), TKey(csr->GetOp(), static_cast<TCore::TArena *>(&that->Suprena)), state_alloc);
+      new TEntry(this, csr->GetIndexKey(), TKey(csr->GetOp(), static_cast<TCore::TArena *>(&that->Suprena)), state_alloc, csr->GetMutator());
     }
   } catch (...) {
     EntryCollection.DeleteEachMember();

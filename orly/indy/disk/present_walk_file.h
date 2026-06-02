@@ -240,7 +240,12 @@ namespace Orly {
             for (;Stream.GetOffset() < IndexFile->GetByteOffsetOfHistoryIndex();) {
               assert(Valid);
               Stream.Read(&Item.SequenceNumber, sizeof(TSequenceNumber) + sizeof(Atom::TCore) * 2);
-              Stream.Skip(sizeof(size_t) * 2U);
+              /* Skip NumHistKeys + OffsetOfHistKeys (2 size_t) then the
+                 trailing TMutator + 4 bytes padding (= sizeof(uint64_t)).
+                 Layout matches TKeyItem in read_file.h. Phase 1 of #49
+                 doesn't surface the mutator on TPresentWalker::TItem
+                 yet; phase 3 will. */
+              Stream.Skip(sizeof(size_t) * 2U + sizeof(uint64_t));
               Cached = true;
               switch (SearchKind) {
                 case Match: {

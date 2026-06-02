@@ -242,6 +242,10 @@ class TIndexFile
 
   void PushKey(TUpdate::TEntry *entry);
   Base::TOpt<Indy::TKey> PrevKeyWritten;
+  /* Mutator of the previous current-key entry. Set when PrevKeyWritten is
+     set; emitted as the trailing portion of the on-disk TKeyItem when the
+     NEXT key arrives (or in FlushHistory for the final one). */
+  TMutator PrevKeyMutator = TMutator::Assign;
   std::unordered_map<size_t, shared_ptr<const TBufBlock>> KeyCollisionMap;
   std::unique_ptr<TDataFile::TDataOutStream> KeyStream;
   size_t CurKeyOffset;
@@ -478,12 +482,18 @@ void TIndexFile::PushKey(TUpdate::TEntry *entry) {
     TDataFile::TDataOutStream &stream = *KeyStream;
     if (PrevKeyWritten) {
       stream << NumHistoryElem << ByteOffsetOfHistory;
+      /* Emit the trailing TMutator (+ 4 bytes padding) for the previous
+         current key. Layout must match TKeyItem in read_file.h. */
+      stream.Write(&PrevKeyMutator, sizeof(TMutator));
+      const uint32_t mutator_padding = 0;
+      stream.Write(&mutator_padding, sizeof(mutator_padding));
       ByteOffsetOfHistory += NumHistoryElem * TDataFile::KeyHistorySize;
       NumHistoryElem = 0UL;
     }
     const TSequenceNumber seq_num = entry->GetSequenceNumber();
     const TCore &val = entry->GetOp();
     PrevKeyWritten = key;
+    PrevKeyMutator = entry->GetMutator();
     CurKeyOffset = stream.GetOffset();
     stream << seq_num;
     TCore key_core = key.GetCore();
@@ -547,8 +557,13 @@ void TIndexFile::FlushHistory() {
   TDataFile::TDataOutStream &stream = *KeyStream;
   if (PrevKeyWritten) {
     stream << NumHistoryElem << ByteOffsetOfHistory;
+    /* Final current key's trailing TMutator (+ padding). See PushKey. */
+    stream.Write(&PrevKeyMutator, sizeof(TMutator));
+    const uint32_t mutator_padding = 0;
+    stream.Write(&mutator_padding, sizeof(mutator_padding));
   }
   ByteOffsetOfHistory = stream.GetOffset();
+  const uint32_t mutator_padding = 0;
   for (const TUpdate::TEntry *entry : HistKeys) {
     const TSequenceNumber seq_num = entry->GetSequenceNumber();
     const TKey &key = entry->GetKey();
@@ -561,6 +576,10 @@ void TIndexFile::FlushHistory() {
     val_core.Remap(ValRemapper);
     stream.Write(&key_core, sizeof(key_core));
     stream.Write(&val_core, sizeof(val_core));
+    /* Trailing TMutator (+ padding) per THistoryKeyItem in read_file.h. */
+    TMutator mutator = entry->GetMutator();
+    stream.Write(&mutator, sizeof(TMutator));
+    stream.Write(&mutator_padding, sizeof(mutator_padding));
   }
   EndOfHistoryStream = stream.GetOffset();
 }
