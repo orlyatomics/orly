@@ -53,4 +53,11 @@ if ! ss -tln 2>/dev/null | grep -q ':8082'; then
 fi
 
 echo "[5/5] run demo.py"
-python3 demo.py
+if ! python3 demo.py; then
+  echo ""
+  echo "demo.py failed; dumping orlyi.log for diagnosis:"
+  echo "=========================================================="
+  cat "$WORK/orlyi.log"
+  echo "=========================================================="
+  exit 1
+fi
