@@ -210,10 +210,15 @@ jobs:
         run: ./run-go.sh
         working-directory: examples/wikipedia-categories
 
-      # The concurrent-writers demo: 8 sessions all `+= n` into the same
+      # The concurrent-writers demo: N sessions all `+= n` into the same
       # hot keys. Self-checks that every increment lands (no lost updates).
       # This is the integration validation for the issue #49 fix --
-      # without phases 2+3, only ~1/8 of the writes survive.
+      # without phases 2+3, only ~1/N of the writes survive.
+      # DEMO_SCALE=small opts into the CI-tractable 4-writer / 800-event
+      # workload; the default (large) is the 8-writer / 2000-event
+      # local-showcase mode used in the README / tweet captures.
       - name: wikipedia-pageviews run.sh (python driver, concurrent +=)
         run: ./run.sh
         working-directory: examples/wikipedia-pageviews
+        env:
+          DEMO_SCALE: small
