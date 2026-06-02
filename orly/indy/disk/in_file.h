@@ -38,11 +38,14 @@ namespace Orly {
         NO_CONSTRUCTION(TData);
         public:
 
-        /* TODO */
-        static const size_t KeyEntrySize = sizeof(TSequenceNumber) + sizeof(Atom::TCore) + sizeof(Atom::TCore) + sizeof(size_t) + sizeof(size_t);
+        /* SequenceNumber, Key, Value, Num History Keys, Offset of History Keys,
+           Mutator (+ trailing alignment padding to 8 bytes).
+           Kept in sync with TKeyItem in read_file.h via static_assert there. */
+        static const size_t KeyEntrySize = sizeof(TSequenceNumber) + sizeof(Atom::TCore) + sizeof(Atom::TCore) + sizeof(size_t) + sizeof(size_t) + sizeof(uint64_t);
 
-        /* TODO */
-        static const size_t KeyHistorySize = sizeof(TSequenceNumber) + sizeof(Atom::TCore) + sizeof(Atom::TCore);
+        /* SequenceNumber, Key, Value, Mutator (+ trailing alignment padding to 8 bytes).
+           Kept in sync with THistoryKeyItem in read_file.h via static_assert there. */
+        static const size_t KeyHistorySize = sizeof(TSequenceNumber) + sizeof(Atom::TCore) + sizeof(Atom::TCore) + sizeof(uint64_t);
 
         /* TODO */
         static const size_t HashEntrySize = sizeof(Atom::TCore) + sizeof(size_t);

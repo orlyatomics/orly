@@ -542,7 +542,11 @@ namespace Orly {
           /* TODO */
           using TInStream = TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, 0UL /* local cache size */>;
 
-          /* TODO */
+          /* On-disk current-key entry. Read/written verbatim via
+             InStream.Read(&Item, sizeof(Item)) and the equivalent write
+             path, so layout MUST stay in sync with TData::KeyEntrySize
+             in in_file.h / TDataFile::KeyEntrySize in data_file.h
+             (validated by the static_assert below). */
           class TKeyItem {
             public:
 
@@ -552,10 +556,14 @@ namespace Orly {
             Atom::TCore Value;
             size_t NumHistKeys;
             size_t OffsetOfHistKeys;
+            /* Phase 1 of #49: default-Assign for every in-tree write
+               path. 4 bytes; trailing alignment padding pushes the
+               struct size up by 8 (see size constants in in_file.h). */
+            TMutator Mutator;
 
           };  // TKeyItem
 
-          /* TODO */
+          /* On-disk history-key entry. See note on TKeyItem above. */
           class THistoryKeyItem {
             public:
 
@@ -563,6 +571,8 @@ namespace Orly {
             TSequenceNumber SeqNum;
             Atom::TCore Key;
             Atom::TCore Value;
+            /* See TKeyItem::Mutator. */
+            TMutator Mutator;
 
           };  // THistoryKeyItem
 

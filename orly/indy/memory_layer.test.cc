@@ -152,6 +152,62 @@ FIXTURE(Free) {
   }
 }
 
+/* Phase 1 of #49: TUpdate::TEntry carries a TMutator field. Verify that
+   the field defaults to Assign for the existing TOpByKey-based API and
+   round-trips when set explicitly via the new AddEntry overload. The
+   deep-copy ctor (TUpdate::CopyUpdate) must also preserve it -- that's
+   the path the merge engine uses. */
+FIXTURE(MutatorRoundTrip) {
+  Base::TUuid int_idx(Base::TUuid::Twister);
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+
+  auto update = TUpdate::NewUpdate(
+      TUpdate::TOpByKey{
+        { TIndexKey(int_idx, TKey(std::make_tuple(int64_t(1)), &arena, state_alloc)),
+          TKey(int64_t(10), &arena, state_alloc) }
+      },
+      TKey(&arena),
+      TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc));
+
+  /* The TOpByKey path defaults every entry's mutator to Assign. */ {
+    size_t seen = 0;
+    for (TUpdate::TEntryCollection::TCursor csr(update->GetEntryCollection(), InvCon::TOrient::Fwd); csr; ++csr) {
+      EXPECT_EQ(static_cast<int>(csr->GetMutator()), static_cast<int>(TMutator::Assign));
+      ++seen;
+    }
+    EXPECT_EQ(seen, 1UL);
+  }
+
+  /* The new AddEntry(...,mutator) overload stores the mutator verbatim. */
+  update->AddEntry(
+      TIndexKey(int_idx, TKey(std::make_tuple(int64_t(2)), &arena, state_alloc)),
+      TKey(int64_t(5), &arena, state_alloc),
+      TMutator::Add);
+  /* And so does the default-mutator overload (still Assign). */
+  update->AddEntry(
+      TIndexKey(int_idx, TKey(std::make_tuple(int64_t(3)), &arena, state_alloc)),
+      TKey(int64_t(7), &arena, state_alloc));
+  size_t assign_count = 0, add_count = 0;
+  for (TUpdate::TEntryCollection::TCursor csr(update->GetEntryCollection(), InvCon::TOrient::Fwd); csr; ++csr) {
+    if (csr->GetMutator() == TMutator::Add) ++add_count;
+    else if (csr->GetMutator() == TMutator::Assign) ++assign_count;
+  }
+  EXPECT_EQ(add_count, 1UL);
+  EXPECT_EQ(assign_count, 2UL);
+
+  /* CopyUpdate (deep copy used by the merge engine) must preserve the mutator. */
+  TUpdate *copy = TUpdate::CopyUpdate(update.get(), state_alloc);
+  size_t copy_assign = 0, copy_add = 0;
+  for (TUpdate::TEntryCollection::TCursor csr(copy->GetEntryCollection(), InvCon::TOrient::Fwd); csr; ++csr) {
+    if (csr->GetMutator() == TMutator::Add) ++copy_add;
+    else if (csr->GetMutator() == TMutator::Assign) ++copy_assign;
+  }
+  EXPECT_EQ(copy_add, 1UL);
+  EXPECT_EQ(copy_assign, 2UL);
+  delete copy;
+}
+
 #if 0
 FIXTURE(Range) {
   TMemoryLayer layer(nullptr);
