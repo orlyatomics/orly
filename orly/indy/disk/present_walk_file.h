@@ -240,12 +240,15 @@ namespace Orly {
             for (;Stream.GetOffset() < IndexFile->GetByteOffsetOfHistoryIndex();) {
               assert(Valid);
               Stream.Read(&Item.SequenceNumber, sizeof(TSequenceNumber) + sizeof(Atom::TCore) * 2);
-              /* Skip NumHistKeys + OffsetOfHistKeys (2 size_t) then the
-                 trailing TMutator + 4 bytes padding (= sizeof(uint64_t)).
-                 Layout matches TKeyItem in read_file.h. Phase 1 of #49
-                 doesn't surface the mutator on TPresentWalker::TItem
-                 yet; phase 3 will. */
-              Stream.Skip(sizeof(size_t) * 2U + sizeof(uint64_t));
+              /* Skip NumHistKeys + OffsetOfHistKeys (2 size_t), then read
+                 TMutator + skip its 4 bytes of trailing alignment padding
+                 (struct ends at sizeof(uint64_t) past the 2 size_t). The
+                 mutator goes onto Item.Mutator so context.cc's fold can
+                 see it -- this is the #49 phase 3 hookup that finishes
+                 what phase 1 plumbed structurally. */
+              Stream.Skip(sizeof(size_t) * 2U);
+              Stream.Read(&Item.Mutator, sizeof(TMutator));
+              Stream.Skip(sizeof(uint64_t) - sizeof(TMutator));
               Cached = true;
               switch (SearchKind) {
                 case Match: {

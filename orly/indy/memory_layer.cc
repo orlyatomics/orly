@@ -128,6 +128,7 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
               Item.Key = Csr->GetKey().GetCore();
               Item.Op = Csr->GetOp();
               Item.SequenceNumber = Csr->GetSequenceNumber();
+              Item.Mutator = Csr->GetMutator();
               return;
               break;
             }
@@ -224,6 +225,7 @@ void TMemoryLayer::TRangePresentWalker::Refresh() const {
           Item.Key = Csr->GetKey().GetCore();
           Item.Op = Csr->GetOp();
           Item.SequenceNumber = Csr->GetSequenceNumber();
+          Item.Mutator = Csr->GetMutator();
           return;
         }
         case Atom::TComparison::Gt: {

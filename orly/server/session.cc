@@ -23,6 +23,7 @@
 #include <orly/notification/all.h>
 #include <orly/server/meta_record.h>
 #include <orly/spa/orly_args.h>
+#include <orly/var/mutation.h>
 #include <base/util/time.h>
 
 using namespace std;
@@ -169,8 +170,29 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       had_effects = true;
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
+      /* Deferred entries from #49 phase 2: defer-safe commutative
+         mutations skip the read-modify-write and get registered with
+         their mutator preserved, after NewUpdate constructs the rest.
+         This is the actual concurrent-write fix -- two sessions both
+         doing `+= 5` now each emit {Add, 5} and the read path folds
+         them, instead of both resolving against a stale read and
+         producing a lost update. */
+      std::vector<std::tuple<Indy::TIndexKey, Indy::TKey, TMutator>> deferred_entries;
       for (const auto &item: effects) {
         auto key = item.first;
+        /* Defer-safe path: single TMutation with a commutative+associative
+           mutator. Skip the read entirely; emit RHS + mutator directly.
+           Anything else (Assign, Delete, partial changes, non-commutative
+           mutators) falls through to the existing resolve-to-value path. */
+        if (auto *mut = dynamic_cast<const Var::TMutation *>(item.second.get())) {
+          if (Var::IsDeferSafeCommutative(mut->GetMutator())) {
+            deferred_entries.emplace_back(
+                key,
+                Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, mut->GetRhs())).get()),
+                mut->GetMutator());
+            continue;
+          }
+        }
         Var::TVar val;
         if (!item.second->IsDelete()) {
           if (!item.second->IsFinal()) {
@@ -214,6 +236,13 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
               run_time, random_seed)
       );
       auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
+      /* Register the defer-safe commutative mutations gathered above.
+         These don't go through TOpByKey because op_by_key is a map and
+         TUpdate's TOpByKey ctor always tags entries Assign -- the
+         AddEntry overload (added in #49 phase 1) takes the mutator. */
+      for (auto &entry : deferred_entries) {
+        update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+      }
       transaction->Push(repo, update);
       transaction->Prepare();
       transaction->CommitAction();

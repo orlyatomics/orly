@@ -26,6 +26,7 @@
 #include <orly/atom/kit2.h>
 #include <orly/indy/fiber/fiber.h>
 #include <orly/indy/sequence_number.h>
+#include <orly/shared_enum.h>
 
 namespace Orly {
 
@@ -42,7 +43,7 @@ namespace Orly {
         public:
 
         /* Do-little. */
-        TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr) {}
+        TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr), Mutator(TMutator::Assign) {}
 
         /* TODO */
         bool operator<(const TItem &that) const {
@@ -71,6 +72,14 @@ namespace Orly {
 
         /* The arena to look the op core up in. */
         Atom::TCore::TArena *OpArena;
+
+        /* The mutator that produced Op. For TMutator::Assign (every
+           in-tree entry pre-#49-phase-2), Op is the resolved value of
+           the key. For commutative non-Assign mutators (Add, Mult, Or,
+           ...), Op is the RHS of that mutation and the context-level
+           walker (orly/indy/context.cc) folds same-mutator runs to
+           produce the actual resolved value. */
+        TMutator Mutator;
 
       };  // TItem
 

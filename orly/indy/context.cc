@@ -18,6 +18,8 @@
 
 #include <orly/indy/context.h>
 
+#include <orly/rt/mutate.h>
+#include <orly/var/mutation.h>
 #include <orly/var/sabot_to_var.h>
 
 using namespace std;
@@ -76,7 +78,8 @@ bool TContext::Exists(const Indy::TIndexKey &key) {
 
 TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &key)
     : MinHeap(repo_tree.size()),
-      Valid(false) {
+      Valid(false),
+      FoldArena(ctx->GetArena()) {
   assert(Fiber::TFrame::LocalFramePool);
   size_t pos = 0;
   ctx->PresentWalkConsTimer.Start();
@@ -100,7 +103,8 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
 
 TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &from, const TIndexKey &to)
     : MinHeap(repo_tree.size()),
-      Valid(false) {
+      Valid(false),
+      FoldArena(ctx->GetArena()) {
   ctx->PresentWalkConsTimer.Start();
   size_t pos = 0;
   for (const auto &iter : repo_tree) {
@@ -140,9 +144,84 @@ void TContext::TPresentWalker::Refresh() {
     if (!done) {
       Valid = static_cast<bool>(MinHeap);
     } else {
+      /* Phase 3 of #49: if the anchor entry was produced by a defer-safe
+         commutative mutator, fold older same-mutator entries (and the
+         eventual Assign base) into a single resolved value before
+         returning. No-op when the anchor is an Assign. */
+      if (Var::IsDeferSafeCommutative(Item.Mutator)) {
+        ApplyDeferredFold();
+      }
       break;
     }
   }
+}
+
+void TContext::TPresentWalker::ApplyDeferredFold() {
+  /* Walk back through additional heap entries on the same key, folding
+     them via Rt::Mutate. The loop terminates on:
+       * Heap empty -- accumulated value stands (no Assign base existed;
+         the commutative-mutator identity is "missing", matching the
+         existing "first += against an empty key" semantics).
+       * Different key -- next call to Refresh handles that key.
+       * Tombstone on this key -- history below the tombstone is
+         invisible; accumulated value stands.
+       * Same key + Assign -- the base. Fold the accumulator onto it.
+       * Same key + a different mutator -- mixed-mutator history, which
+         TMutation::Augment already rejects at compose time. We surface
+         the accumulator as-is and let downstream typed code react. */
+  const TMutator mut = Item.Mutator;
+  void *state_alloc_a = alloca(Sabot::State::GetMaxStateSize() * 3);
+  void *state_alloc_b = static_cast<uint8_t *>(state_alloc_a) + Sabot::State::GetMaxStateSize();
+  void *state_alloc_c = static_cast<uint8_t *>(state_alloc_b) + Sabot::State::GetMaxStateSize();
+  Var::TVar acc = Var::ToVar(*Sabot::State::TAny::TWrapper(Item.Op.NewState(Item.OpArena, state_alloc_a)));
+
+  while (MinHeap) {
+    size_t peek_pos;
+    const Indy::TPresentWalker::TItem &peek = MinHeap.Peek(peek_pos);
+    if (Indy::TKey::TupleNeEq(Item.Key, Item.KeyArena, peek.Key, peek.KeyArena)) {
+      break;
+    }
+    if (peek.Op.IsTombstone()) {
+      break;
+    }
+    if (peek.Mutator != TMutator::Assign && peek.Mutator != mut) {
+      break;
+    }
+    /* Commit to consuming this item. Copy the bits we need before Pop
+       invalidates the underlying walker's Item slot. */
+    const TMutator peek_mut = peek.Mutator;
+    const Atom::TCore peek_op = peek.Op;
+    Atom::TCore::TArena *const peek_op_arena = peek.OpArena;
+
+    size_t consumed_pos;
+    MinHeap.Pop(consumed_pos);
+
+    Var::TVar peek_val = Var::ToVar(*Sabot::State::TAny::TWrapper(peek_op.NewState(peek_op_arena, state_alloc_b)));
+    if (peek_mut == TMutator::Assign) {
+      /* Base. acc represents the accumulated RHS; result is base OP acc. */
+      acc = Rt::Mutate(peek_val, mut, acc);
+    } else {
+      /* Same commutative mutator. */
+      acc = Rt::Mutate(acc, mut, peek_val);
+    }
+
+    Indy::TPresentWalker &consumed_walker = *WalkerVec[consumed_pos];
+    ++consumed_walker;
+    if (consumed_walker) {
+      MinHeap.Insert(*consumed_walker, consumed_pos);
+    }
+
+    if (peek_mut == TMutator::Assign) {
+      break;
+    }
+  }
+
+  /* Stuff the resolved value back into Item.Op via FoldArena (owned by
+     the enclosing TContext, so the TCore outlives this walker). Tag it
+     as Assign so downstream consumers don't re-attempt the fold. */
+  Item.Op = Atom::TCore(FoldArena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_c, acc)).get());
+  Item.OpArena = FoldArena;
+  Item.Mutator = TMutator::Assign;
 }
 
 TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &pattern)

@@ -140,6 +140,8 @@ void TMutation::Augment(const TPtr<const TChange> &change) {
   if (other->Mutator != Mutator) {
     throw Rt::TSystemError(HERE, "Conflicting updates to the same key. Mixed mutators (e.g. += and *=) on the same key cannot be safely collapsed.");
   }
+  // The commutative+associative cases below match IsDeferSafeCommutative()
+  // (mutation.h) -- keep the two in sync.
   switch (Mutator) {
     case TMutator::Add:
     case TMutator::Mult:

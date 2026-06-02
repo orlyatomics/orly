@@ -87,6 +87,12 @@ namespace Orly {
         /* TODO */
         void Refresh();
 
+        /* Phase 3 of #49: fold consecutive same-mutator commutative
+           entries on the current key into a single resolved value.
+           No-op when Item.Mutator is TMutator::Assign (the only case
+           pre-#49-phase-2 in-tree code ever produced). */
+        void ApplyDeferredFold();
+
         /* TODO */
         std::vector<std::shared_ptr<Indy::TPresentWalker>> WalkerVec;
 
@@ -98,6 +104,10 @@ namespace Orly {
 
         /* TODO */
         mutable TItem Item;
+
+        /* Arena that owns folded Op TCores. Borrowed from the enclosing
+           TContext, so the folded TCore outlives the walker. */
+        Atom::TCore::TExtensibleArena *FoldArena;
 
       };  // TPresentWalker
 
