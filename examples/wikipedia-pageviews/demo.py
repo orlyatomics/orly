@@ -33,10 +33,16 @@ import websocket
 
 WS_URL = "ws://127.0.0.1:8082/"
 
-NUM_WRITERS = 8
-EVENTS_PER_WRITER = 250
+NUM_WRITERS = 4
+EVENTS_PER_WRITER = 200
 PAGES = ["Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"]
-HOURS = list(range(2026_06_01_00, 2026_06_01_24))  # 24 "hour" buckets (using a YYYYMMDDHH-shaped int for readability)
+HOURS = list(range(2026_06_01_00, 2026_06_01_12))  # 12 "hour" buckets
+
+# Scaled down from 8 writers * 250 events * 96 keys so that the
+# per-layer fiber parallelism in TRepo::TPresentWalker's construction
+# doesn't exhaust orlyi's fiber pool on a 4-CPU GitHub Actions runner.
+# Still meaningfully concurrent (4 writers hammering 48 hot keys,
+# ~17 writes per key on average).
 
 
 def send(ws, stmt):
