@@ -711,7 +711,16 @@ namespace Orly {
         assert((*walker).OpArena == cur_item.OpArena);
         assert((*walker).SequenceNumber == cur_item.SequenceNumber);
         assert(Item.KeyArena != nullptr);
-        if (cur_item.SequenceNumber >= Lower && cur_item.SequenceNumber <= Upper && Indy::TKey::TupleNeEq(Item.Key, Item.KeyArena, cur_item.Key, cur_item.KeyArena) && (!IgnoreTombstone || !cur_item.Op.IsTombstone())) {
+        /* #49: the historical filter dropped same-key entries on the
+           grounds that the newest one shadowed older ones (Assign
+           overwrite semantics). After phase 2 introduced commutative
+           non-Assign entries, the older same-key entries are NOT shadowed
+           -- the read-path fold in TContext::TPresentWalker needs them
+           to compose multiple `+= n` writes. We yield all entries here
+           and rely on the context-level fold + dedup for correctness;
+           Assign-only workloads keep the same observable behavior, they
+           just pop a few extra items at the context layer. */
+        if (cur_item.SequenceNumber >= Lower && cur_item.SequenceNumber <= Upper && (!IgnoreTombstone || !cur_item.Op.IsTombstone())) {
           done = true;
           Item = cur_item;
         }
