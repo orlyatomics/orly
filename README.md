@@ -76,9 +76,24 @@ A Bitcoin-flavoured ledger that does **historical queries** ("balance at block 5
 
 A Wikipedia-flavoured demo that does the same fold-over-keyed-versions trick, but with **set union** as the operator instead of integer addition. Watch the "Programming languages" set grow from `{FORTRAN}` in 1957 through `{...35 entries...}` in 2024 — `members_at(cat, year)` is one four-line Orlyscript function.
 
-Together the two examples prove the polymorphic-monoid claim: pick the operator (`+`, `|`, `++`, `min`, …) and the identity, get historical queries for that domain.
+Together the first two examples prove the polymorphic-monoid claim: pick the operator (`+`, `|`, `++`, `min`, …) and the identity, get historical queries for that domain.
 
-Both examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
+### [`examples/wikipedia-pageviews/`](examples/wikipedia-pageviews/) — concurrent `+=` that actually composes
+
+Wikimedia-style hourly pageview counters under contention. 8 concurrent WebSocket sessions all do `*<['views', lang, page, hour]>::(int) += n` against the same hot keys; the self-check confirms every increment lands (5,938 / 5,938 events across 96 keys, zero lost updates).
+
+Most databases force a tradeoff on this workload:
+
+| Database | Statement | Behavior under N concurrent writers |
+|---|---|---|
+| Postgres | `UPDATE views SET n = n + 1 WHERE page = ?` | Row lock; writers serialize on hot pages |
+| Redis | `INCR views:<page>` | Atomic, but the server is single-threaded |
+| Cassandra | `UPDATE views SET n = n + 1 WHERE …` | Counter columns with consistency caveats |
+| **Orly** | `*<['views', …, page, hour]>::(int) += n` | Field call; lock-free; all N writers land their increments and the read folds them |
+
+The mechanism: each `+=` emits an `{Add, n}` mutation at the storage layer instead of resolving to a value at write time, and the read path folds same-mutator runs back into the resolved value. CI runs this as the workload-level integration test for the property; pass `DEMO_SCALE=small` for the CI-friendly 4-writer / 800-event variant.
+
+All three examples ship a Python driver (`./run.sh`); the bitcoin and wikipedia-categories examples also ship an equivalent Go driver (`./run-go.sh`). All are smoke-tested in CI on every push.
 
 ## Walkthrough
 
