@@ -109,7 +109,7 @@ namespace Orly {
             void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
             Metadata = Atom::TCore(&new_arena, state_alloc, item.MainArena, item.Metadata);
             Id = Atom::TCore(&new_arena, state_alloc, item.MainArena, item.Id);
-            /* TODO(#49): wire format does not yet carry Mutator. Replication
+            /* TODO(#54): wire format does not yet carry Mutator. Replication
                currently loses defer-safe mutator info -- treat as
                known followup; the demo uses --mem_sim so doesn't hit this. */
             for (const auto &iter : item.EntryVec) {
