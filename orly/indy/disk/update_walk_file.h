@@ -128,6 +128,11 @@ namespace Orly {
                 EntryStream.GoTo(offset_of_key + sizeof(TSequenceNumber));
                 EntryStream.Read(&key, sizeof(Atom::TCore));
                 EntryStream.Read(&val, sizeof(Atom::TCore));
+                /* TODO(#49): disk EntryVec walker still emits Mutator=Assign
+                   because the entry type (current vs history) is opaque at
+                   this offset and the trailing-Mutator byte is at different
+                   offsets for the two layouts. The in-memory path (used by
+                   the --mem_sim demo) is correct via TMemoryLayer::TUpdateWalker. */
                 Item.EntryVec.emplace_back(TIndexKey(ret->second->GetIndexId(), TKey(key, key_arena)), val);
               }
               Cached = true;

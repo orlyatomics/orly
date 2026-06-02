@@ -21,6 +21,7 @@
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/sequence_number.h>
+#include <orly/shared_enum.h>
 
 namespace Orly {
 
@@ -44,8 +45,21 @@ namespace Orly {
         /* TODO */
         Atom::TCore Id;
 
-        /* TODO */
-        std::vector<std::pair<TIndexKey, Atom::TCore>> EntryVec;
+        /* Per-entry mutator + payload. Mutator defaults to Assign for
+           backwards-compat with paths that don't yet populate it (notably
+           the replication wire format in util/context_streamer.h and the
+           disk update walker). For #49 the in-memory TUpdateWalker
+           populates it correctly, which is what TRepo::GetLowestUpdate
+           uses for Tetris push-to-parent. */
+        struct TEntry {
+          TIndexKey IndexKey;
+          Atom::TCore Op;
+          TMutator Mutator;
+          TEntry() : Mutator(TMutator::Assign) {}
+          TEntry(const TIndexKey &k, const Atom::TCore &op) : IndexKey(k), Op(op), Mutator(TMutator::Assign) {}
+          TEntry(const TIndexKey &k, const Atom::TCore &op, TMutator m) : IndexKey(k), Op(op), Mutator(m) {}
+        };
+        std::vector<TEntry> EntryVec;
 
         /* TODO */
         Atom::TCore::TArena *MainArena;

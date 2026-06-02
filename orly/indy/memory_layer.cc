@@ -260,7 +260,7 @@ const TUpdateWalker::TItem &TMemoryLayer::TUpdateWalker::operator*() const {
   Item.Id = Csr->GetId();
   Item.EntryVec.clear();
   for (TUpdate::TEntryCollection::TCursor csr(Csr->GetEntryCollection()); csr; ++csr) {
-    Item.EntryVec.push_back(std::make_pair(csr->GetIndexKey(), csr->GetOp()));
+    Item.EntryVec.emplace_back(csr->GetIndexKey(), csr->GetOp(), csr->GetMutator());
   }
   return Item;
 }

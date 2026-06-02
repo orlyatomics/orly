@@ -102,7 +102,7 @@ FIXTURE(Typical) {
         int64_t expected = (i / 2L * 2L);
         std::map<TIndexKey, TKey> entry_map;
         for (auto iter : (*walker).EntryVec) {
-          entry_map.insert(make_pair(iter.first, TKey(iter.second, (*walker).MainArena)));
+          entry_map.insert(make_pair(iter.IndexKey, TKey(iter.Op, (*walker).MainArena)));
         }
         EXPECT_EQ((*walker).SequenceNumber, i + 1UL);
         EXPECT_EQ(entry_map.size(), 2UL);
@@ -166,7 +166,7 @@ FIXTURE(WithMergeFile) {
         int64_t expected = ((i % 12) / 2L * 2L);
         std::map<TIndexKey, TKey> entry_map;
         for (auto iter : (*walker).EntryVec) {
-          entry_map.insert(make_pair(iter.first, TKey(iter.second, (*walker).MainArena)));
+          entry_map.insert(make_pair(iter.IndexKey, TKey(iter.Op, (*walker).MainArena)));
         }
         EXPECT_EQ((*walker).SequenceNumber, i + 1UL);
         EXPECT_EQ(entry_map.size(), 2UL);
