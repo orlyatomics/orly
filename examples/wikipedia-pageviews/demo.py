@@ -25,6 +25,7 @@ Or directly, after starting orlyi separately:
 """
 
 import json
+import os
 import random
 import sys
 import threading
@@ -33,16 +34,31 @@ import websocket
 
 WS_URL = "ws://127.0.0.1:8082/"
 
-NUM_WRITERS = 4
-EVENTS_PER_WRITER = 200
-PAGES = ["Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"]
-HOURS = list(range(2026_06_01_00, 2026_06_01_12))  # 12 "hour" buckets
+# Two workload sizes:
+#
+#   DEMO_SCALE=small  -- 4 writers x 200 events x 48 keys = 800 events.
+#                        Sized for the CI runner's fiber-pool headroom
+#                        (per-layer Fiber::TSync parallelism in
+#                        TRepo::TPresentWalker can burst large under
+#                        many concurrent reads on a 4-CPU box).
+#   anything else     -- 8 writers x 250 events x 96 keys = 2,000 events.
+#                        Local-showcase default. Matches the README
+#                        screenshots and the tweet's headline numbers.
+#
+# Both sizes demonstrate the same concurrent-`+=` property; the larger
+# one just makes the totals more impressive.
+_SCALE = os.environ.get("DEMO_SCALE", "large").lower()
+if _SCALE == "small":
+    NUM_WRITERS = 4
+    EVENTS_PER_WRITER = 200
+    _NUM_HOURS = 12
+else:
+    NUM_WRITERS = 8
+    EVENTS_PER_WRITER = 250
+    _NUM_HOURS = 24
 
-# Scaled down from 8 writers * 250 events * 96 keys so that the
-# per-layer fiber parallelism in TRepo::TPresentWalker's construction
-# doesn't exhaust orlyi's fiber pool on a 4-CPU GitHub Actions runner.
-# Still meaningfully concurrent (4 writers hammering 48 hot keys,
-# ~17 writes per key on average).
+PAGES = ["Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"]
+HOURS = list(range(2026_06_01_00, 2026_06_01_00 + _NUM_HOURS))
 
 
 def send(ws, stmt):
