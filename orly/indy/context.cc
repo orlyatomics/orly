@@ -168,12 +168,27 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
        * Same key + Assign -- the base. Fold the accumulator onto it.
        * Same key + a different mutator -- mixed-mutator history, which
          TMutation::Augment already rejects at compose time. We surface
-         the accumulator as-is and let downstream typed code react. */
+         the accumulator as-is and let downstream typed code react.
+
+     Dedup: the SAME logical update can appear in two repos briefly
+     during a Tetris push-to-parent / pop-from-child window. Both copies
+     have the same UpdateId (the per-transaction TUuid from session.cc)
+     but different per-repo SeqNums. We track seen UpdateIds and skip
+     duplicates -- without this, the Wikipedia-pageviews demo's Go
+     driver (which hammers tighter than the Python one) reproducibly
+     double-counted ~1 per ~5,000 increments under contention. Entries
+     with a zero UpdateId (e.g. the disk walker, which never hits the
+     cross-repo Tetris window) are passed through without dedup. */
   const TMutator mut = Item.Mutator;
   void *state_alloc_a = alloca(Sabot::State::GetMaxStateSize() * 3);
   void *state_alloc_b = static_cast<uint8_t *>(state_alloc_a) + Sabot::State::GetMaxStateSize();
   void *state_alloc_c = static_cast<uint8_t *>(state_alloc_b) + Sabot::State::GetMaxStateSize();
   Var::TVar acc = Var::ToVar(*Sabot::State::TAny::TWrapper(Item.Op.NewState(Item.OpArena, state_alloc_a)));
+  const Base::TUuid zero_uuid;
+  std::vector<Base::TUuid> seen_update_ids;
+  if (Item.UpdateId != zero_uuid) {
+    seen_update_ids.push_back(Item.UpdateId);
+  }
 
   while (MinHeap) {
     size_t peek_pos;
@@ -192,9 +207,36 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
     const TMutator peek_mut = peek.Mutator;
     const Atom::TCore peek_op = peek.Op;
     Atom::TCore::TArena *const peek_op_arena = peek.OpArena;
+    const Base::TUuid peek_update_id = peek.UpdateId;
 
     size_t consumed_pos;
     MinHeap.Pop(consumed_pos);
+
+    /* Advance + reinsert the walker we just popped from regardless of
+       whether we fold this entry. */
+    Indy::TPresentWalker &consumed_walker = *WalkerVec[consumed_pos];
+    ++consumed_walker;
+    if (consumed_walker) {
+      MinHeap.Insert(*consumed_walker, consumed_pos);
+    }
+
+    /* Dedup by UpdateId. If we've already consumed this logical
+       update from another repo's walker in the same fold, drop it. */
+    bool is_duplicate = false;
+    if (peek_update_id != zero_uuid) {
+      for (const auto &seen : seen_update_ids) {
+        if (seen == peek_update_id) {
+          is_duplicate = true;
+          break;
+        }
+      }
+    }
+    if (is_duplicate) {
+      continue;
+    }
+    if (peek_update_id != zero_uuid) {
+      seen_update_ids.push_back(peek_update_id);
+    }
 
     Var::TVar peek_val = Var::ToVar(*Sabot::State::TAny::TWrapper(peek_op.NewState(peek_op_arena, state_alloc_b)));
     if (peek_mut == TMutator::Assign) {
@@ -203,12 +245,6 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
     } else {
       /* Same commutative mutator. */
       acc = Rt::Mutate(acc, mut, peek_val);
-    }
-
-    Indy::TPresentWalker &consumed_walker = *WalkerVec[consumed_pos];
-    ++consumed_walker;
-    if (consumed_walker) {
-      MinHeap.Insert(*consumed_walker, consumed_pos);
     }
 
     if (peek_mut == TMutator::Assign) {

@@ -18,6 +18,8 @@
 
 #include <orly/indy/memory_layer.h>
 
+#include <orly/sabot/to_native.h>
+
 using namespace std;
 using namespace Base;
 using namespace Orly::Indy;
@@ -129,6 +131,17 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
               Item.Op = Csr->GetOp();
               Item.SequenceNumber = Csr->GetSequenceNumber();
               Item.Mutator = Csr->GetMutator();
+              /* Logical update id -- the per-transaction TUuid set in
+                 session.cc. Survives Tetris renumbering across repos,
+                 used by the context-walker fold to dedup duplicates
+                 that exist briefly in both child + parent repos during
+                 a Tetris push/pop window. */ {
+                void *id_state_alloc = alloca(Sabot::State::GetMaxStateSize());
+                const TUpdate *update_ptr = Csr->GetUpdate();
+                Sabot::ToNative(
+                    *Sabot::State::TAny::TWrapper(update_ptr->GetId().NewState(&update_ptr->GetSuprena(), id_state_alloc)),
+                    Item.UpdateId);
+              }
               return;
               break;
             }
@@ -226,6 +239,13 @@ void TMemoryLayer::TRangePresentWalker::Refresh() const {
           Item.Op = Csr->GetOp();
           Item.SequenceNumber = Csr->GetSequenceNumber();
           Item.Mutator = Csr->GetMutator();
+          /* See TMatchPresentWalker; same plumbing for the Tetris-window dedup. */ {
+            void *id_state_alloc = alloca(Sabot::State::GetMaxStateSize());
+            const TUpdate *update_ptr = Csr->GetUpdate();
+            Sabot::ToNative(
+                *Sabot::State::TAny::TWrapper(update_ptr->GetId().NewState(&update_ptr->GetSuprena(), id_state_alloc)),
+                Item.UpdateId);
+          }
           return;
         }
         case Atom::TComparison::Gt: {

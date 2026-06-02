@@ -43,7 +43,7 @@ namespace Orly {
         public:
 
         /* Do-little. */
-        TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr), Mutator(TMutator::Assign) {}
+        TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr), Mutator(TMutator::Assign), UpdateId() {}
 
         /* TODO */
         bool operator<(const TItem &that) const {
@@ -80,6 +80,18 @@ namespace Orly {
            walker (orly/indy/context.cc) folds same-mutator runs to
            produce the actual resolved value. */
         TMutator Mutator;
+
+        /* Logical update id (the per-transaction TUuid from session.cc's
+           TUpdate::NewUpdate(...)). Same logical update committed to a
+           child POV and then Tetris-pushed to a parent POV ends up
+           living in TWO TRepos with two different SequenceNumbers but
+           the SAME UpdateId. The fold in context.cc uses this to dedup:
+           without it, the brief window between Tetris push-to-parent
+           and pop-from-child causes a deferred {Add, n} to be visible
+           in both repos and double-counted. Populated by the in-memory
+           walker; defaults to a zero Uuid for disk-walker entries
+           (which can't hit the cross-repo duplication issue). */
+        Base::TUuid UpdateId;
 
       };  // TItem
 
