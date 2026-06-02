@@ -32,6 +32,38 @@ namespace Orly {
       template <typename TVal>
       using TPtr = std::shared_ptr<TVal>;
 
+      /* True iff this mutator is both commutative and associative, so that
+         a sequence of `x OP a; x OP b; x OP c` on the same key can be
+         safely re-folded as `x OP (a OP b OP c)` without knowing the
+         current value of x at any intermediate point.
+
+         This is the single source of truth for the defer-safe set: both
+         TMutation::Augment (compose-time, in this PR's predecessor #48)
+         and the session-layer emit path (#49 phase 2) gate on this. Sub,
+         Div, Mod and Exp deliberately return false here -- they compose
+         only via different operations than the mutator itself, which
+         TMutation::Augment also rejects. */
+      inline bool IsDeferSafeCommutative(TMutator mutator) {
+        switch (mutator) {
+          case TMutator::Add:
+          case TMutator::Mult:
+          case TMutator::And:
+          case TMutator::Or:
+          case TMutator::Xor:
+          case TMutator::Union:
+          case TMutator::Intersection:
+          case TMutator::SymmetricDiff:
+            return true;
+          case TMutator::Assign:
+          case TMutator::Sub:
+          case TMutator::Div:
+          case TMutator::Mod:
+          case TMutator::Exp:
+            return false;
+        }
+        return false;
+      }
+
       //NOTE: There is a class hierarchy in <orly/code_gen/mutation.h> which is almost identical to this one
       //TODO: The shared pointers in / around TChange are fugly.
       /* A database change */
@@ -156,6 +188,13 @@ namespace Orly {
         void Augment(const TPtr<const TChange> &change) final;
         bool IsDelete() const final;
         bool IsFinal() const;
+
+        /* The mutator + right-hand side that this mutation will apply.
+           Exposed so the session layer (#49 phase 2) can detect defer-safe
+           commutative mutations and emit them with their mutator preserved
+           instead of resolving them to a value at write time. */
+        TMutator GetMutator() const { return Mutator; }
+        const Var::TVar &GetRhs() const { return Rhs; }
 
         private:
         TMutation(TMutator mutator, const Var::TVar &rhs);

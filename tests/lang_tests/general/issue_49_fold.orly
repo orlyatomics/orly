@@ -1,0 +1,145 @@
+/* <orly/lang_tests/general/issue_49_fold.orly>
+
+   Targeted regression test for issue #49 phase 2+3: session.cc emits
+   defer-safe commutative mutations with their mutator preserved, and the
+   context-level read path folds runs of same-mutator entries onto an
+   Assign base.
+
+   The shape that exercises the fold is:
+     with { <[k]> <- BASE }     // Assign(BASE)
+     test { tN: mut_X(...x:A) { // emits {Mutator, A}
+              tM: mut_X(...x:B) { // emits {Mutator, B}
+                  tR: read == fold(BASE, X, A, B);
+              };
+            }; };
+
+   Each tN runs in its own transaction, so reading after both mut_X calls
+   walks back through {X, B}, {X, A}, {Assign, BASE} and the phase 3
+   read-path fold produces BASE op A op B.
+
+   Pre-fix behavior on these workloads was correct for single-writer
+   sequential tests (since each writer reads the latest committed value
+   before computing), so this test only catches a fold-implementation
+   regression -- not the underlying concurrent-write lost-update bug,
+   which a single-process lang_test cannot exercise.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_int = (*<[n]>::(int)) where {
+  n = given::(int);
+};
+
+write_int = ((true) effecting {
+  new <[n]> <- x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+add_int = ((true) effecting {
+  *<[n]>::(int) += x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+mult_int = ((true) effecting {
+  *<[n]>::(int) *= x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+read_set = (*<[n]>::({int})) where {
+  n = given::(int);
+};
+
+union_set = ((true) effecting {
+  *<[n]>::({int}) |= {x};
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+read_bool = (*<[n]>::(bool)) where {
+  n = given::(int);
+};
+
+write_bool = ((true) effecting {
+  new <[n]> <- x;
+}) where {
+  n = given::(int);
+  x = given::(bool);
+};
+
+or_bool = ((true) effecting {
+  *<[n]>::(bool) or= x;
+}) where {
+  n = given::(int);
+  x = given::(bool);
+};
+
+/* Add: two-deep fold on top of an Assign base. */
+with {
+  <[100]> <- 10;
+} test {
+  t1: read_int(.n: 100) == 10;
+  t2: add_int(.n: 100, .x: 5) {
+    t3: read_int(.n: 100) == 15;
+    t4: add_int(.n: 100, .x: 3) {
+      t5: read_int(.n: 100) == 18;
+      /* Three-deep fold. */
+      t6: add_int(.n: 100, .x: 2) {
+        t7: read_int(.n: 100) == 20;
+      };
+    };
+  };
+};
+
+/* Mult: same shape, different mutator. 7 * 2 * 3 = 42. */
+with {
+  <[101]> <- 7;
+} test {
+  t10: mult_int(.n: 101, .x: 2) {
+    t11: read_int(.n: 101) == 14;
+    t12: mult_int(.n: 101, .x: 3) {
+      t13: read_int(.n: 101) == 42;
+    };
+  };
+};
+
+/* Bool or: identity is false; folds via logical OR. */
+with {
+  <[102]> <- false;
+} test {
+  t20: or_bool(.n: 102, .x: false) {
+    t21: read_bool(.n: 102) == false;
+    t22: or_bool(.n: 102, .x: true) {
+      t23: read_bool(.n: 102) == true;
+    };
+  };
+};
+
+/* Set union, where the fold composes per-key set values. */
+with {
+  <[104]> <- {1, 2};
+} test {
+  t40: union_set(.n: 104, .x: 3) {
+    t41: read_set(.n: 104) == {1, 2, 3};
+    t42: union_set(.n: 104, .x: 4) {
+      t43: read_set(.n: 104) == {1, 2, 3, 4};
+    };
+  };
+};
