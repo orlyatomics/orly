@@ -30,12 +30,21 @@ pkill -9 -f 'instance_name=wiki_pageviews_demo' 2>/dev/null || true
 sleep 1
 
 echo "[3/5] start fresh orlyi"
+# Reduce orlyi's eager memory grab and bump the fiber pool. The fiber
+# pool is sized by orlyi's mult_factor, which scales with available RAM
+# -- on a CI runner that's ~8GB available, the default pool is too
+# small to absorb the per-layer fiber-parallel walker construction in
+# TRepo::TPresentWalker (orly/indy/repo.cc:732) under concurrent reads.
+# Caches are trimmed to give the larger fiber pool headroom.
 "$ORLYI" --mem_sim --create=true \
          --port_number=19400 --slave_port_number=19401 \
          --connection_backlog=10 \
          --instance_name=wiki_pageviews_demo \
          --starting_state=SOLO \
          --package_dir="$WORK/packages" \
+         --max_parallel_frames 4000 \
+         --page_cache_size 256 \
+         --block_cache_size 64 \
          > "$WORK/orlyi.log" 2>&1 &
 ORLYI_PID=$!
 
@@ -53,4 +62,11 @@ if ! ss -tln 2>/dev/null | grep -q ':8082'; then
 fi
 
 echo "[5/5] run demo.py"
-python3 demo.py
+if ! python3 demo.py; then
+  echo ""
+  echo "demo.py failed; dumping orlyi.log for diagnosis:"
+  echo "=========================================================="
+  cat "$WORK/orlyi.log"
+  echo "=========================================================="
+  exit 1
+fi
