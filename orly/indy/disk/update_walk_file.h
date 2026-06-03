@@ -128,12 +128,24 @@ namespace Orly {
                 EntryStream.GoTo(offset_of_key + sizeof(TSequenceNumber));
                 EntryStream.Read(&key, sizeof(Atom::TCore));
                 EntryStream.Read(&val, sizeof(Atom::TCore));
-                /* TODO(#53): disk EntryVec walker still emits Mutator=Assign
-                   because the entry type (current vs history) is opaque at
-                   this offset and the trailing-Mutator byte is at different
-                   offsets for the two layouts. The in-memory path (used by
-                   the --mem_sim demo) is correct via TMemoryLayer::TUpdateWalker. */
-                Item.EntryVec.emplace_back(TIndexKey(ret->second->GetIndexId(), TKey(key, key_arena)), val);
+                /* The bucket stores raw offsets without a per-entry type
+                   flag, but the writer places current entries in the
+                   range [ByteOffsetOfKeyIndex, ByteOffsetOfHistoryIndex)
+                   and history entries at >= ByteOffsetOfHistoryIndex.
+                   Use that boundary (per index) to pick the right
+                   trailing-Mutator offset for the read:
+                     TKeyItem (current):    Mutator follows
+                                            NumHistKeys + OffsetOfHistKeys
+                                            (2 * sizeof(size_t) bytes).
+                     THistoryKeyItem:       Mutator follows Value directly.
+                   Trailing 4 bytes after Mutator are alignment padding
+                   (see KeyEntrySize / KeyHistorySize in data_file.h). */
+                if (offset_of_key < ret->second->GetByteOffsetOfHistoryIndex()) {
+                  EntryStream.Skip(sizeof(size_t) * 2U);
+                }
+                TMutator mutator = TMutator::Assign;
+                EntryStream.Read(&mutator, sizeof(TMutator));
+                Item.EntryVec.emplace_back(TIndexKey(ret->second->GetIndexId(), TKey(key, key_arena)), val, mutator);
               }
               Cached = true;
               ++NumScanned;
