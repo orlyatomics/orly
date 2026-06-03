@@ -93,7 +93,7 @@ Most databases force a tradeoff on this workload:
 
 The mechanism: each `+=` emits an `{Add, n}` mutation at the storage layer instead of resolving to a value at write time, and the read path folds same-mutator runs back into the resolved value. CI runs this as the workload-level integration test for the property; pass `DEMO_SCALE=small` for the CI-friendly 4-writer / 800-event variant.
 
-All three examples ship a Python driver (`./run.sh`); the bitcoin and wikipedia-categories examples also ship an equivalent Go driver (`./run-go.sh`). All are smoke-tested in CI on every push.
+All three examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
 
 ## Walkthrough
 
