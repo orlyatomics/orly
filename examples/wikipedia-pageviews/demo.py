@@ -34,6 +34,13 @@ import websocket
 
 WS_URL = "ws://127.0.0.1:8082/"
 
+# Per-call recv timeout. Normal request latency is well under a second;
+# 30s is generous-but-finite so a hung orlyi surfaces as a failed read
+# rather than a multi-minute CI timeout with no diagnostic. The run.sh
+# wrapper's on-failure orlyi.log dump only fires on demo.py exit, so
+# we want demo.py to exit (failing) within a reasonable window.
+WS_TIMEOUT_S = 30
+
 # Two workload sizes:
 #
 #   DEMO_SCALE=small  -- 4 writers x 200 events x 48 keys = 800 events.
@@ -102,7 +109,7 @@ def generate_events(seed, count):
 def writer(writer_id, pov, events):
     """One writer: open a fresh WebSocket connection, open a session,
     ingest its slice of events using the shared POV."""
-    ws = websocket.create_connection(WS_URL)
+    ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
     try:
         send(ws, "new session;")
         for page, hour, n in events:
@@ -125,7 +132,7 @@ def main():
             ground_truth[(page, hour)] = ground_truth.get((page, hour), 0) + n
 
     # Open one bootstrap connection to create the shared POV and install the package.
-    boot = websocket.create_connection(WS_URL)
+    boot = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
     send(boot, "new session;")
     send(boot, "install views.1;")
     pov = send(boot, "new safe shared pov;")
