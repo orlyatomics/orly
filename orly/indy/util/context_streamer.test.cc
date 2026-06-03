@@ -198,3 +198,56 @@ FIXTURE(RPCInputToInput) {
   std::cout << "Joining server runner.." << std::endl;
   svr_run.join();
 }
+
+/* Regression test for issue #54: wire format must carry the per-entry
+   Mutator field through serialization + deserialization, otherwise
+   deferred {Mutator!=Assign, Op} entries arrive at the slave as
+   Assign(Op) and concurrent-write composition silently breaks. */
+FIXTURE(MutatorRoundTrip) {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  Atom::TSuprena arena;
+  Base::TUuid repo_id(TUuid::Best);
+  Base::TUuid idx_id(TUuid::Twister);
+
+  TContextInputStreamer out_context;
+  TContextInputStreamer::TUpdate update;
+  update.RepoId = repo_id;
+  update.SequenceNumber = 42UL;
+  update.Metadata = Atom::TCore(int64_t(1), &arena, state_alloc);
+  update.Id = Atom::TCore(Base::TUuid(TUuid::Best), &arena, state_alloc);
+  /* Three entries: Assign, Add, Mult. All three mutators should survive
+     the round-trip; pre-fix the Mutator field was just dropped. */
+  update.EntryVec.emplace_back(
+      TIndexKey(idx_id, TKey(int64_t(1), &arena, state_alloc)),
+      Atom::TCore(int64_t(10), &arena, state_alloc),
+      TMutator::Assign);
+  update.EntryVec.emplace_back(
+      TIndexKey(idx_id, TKey(int64_t(2), &arena, state_alloc)),
+      Atom::TCore(int64_t(20), &arena, state_alloc),
+      TMutator::Add);
+  update.EntryVec.emplace_back(
+      TIndexKey(idx_id, TKey(int64_t(3), &arena, state_alloc)),
+      Atom::TCore(int64_t(30), &arena, state_alloc),
+      TMutator::Mult);
+  out_context.UpdateVec.push_back(std::move(update));
+
+  /* Round-trip via the recorder. */
+  TContextInputStreamer in_context;
+  auto recorder = make_shared<TRecorder>();
+  /* Write. */ {
+    TBinaryOutputOnlyStream strm(recorder);
+    strm << out_context;
+  }
+  /* Read. */ {
+    TBinaryInputOnlyStream strm(make_shared<TPlayer>(recorder));
+    strm >> in_context;
+  }
+  if (EXPECT_EQ(in_context.UpdateVec.size(), 1UL)) {
+    const auto &in_update = in_context.UpdateVec[0];
+    if (EXPECT_EQ(in_update.EntryVec.size(), 3UL)) {
+      EXPECT_EQ(static_cast<int>(in_update.EntryVec[0].Mutator), static_cast<int>(TMutator::Assign));
+      EXPECT_EQ(static_cast<int>(in_update.EntryVec[1].Mutator), static_cast<int>(TMutator::Add));
+      EXPECT_EQ(static_cast<int>(in_update.EntryVec[2].Mutator), static_cast<int>(TMutator::Mult));
+    }
+  }
+}
