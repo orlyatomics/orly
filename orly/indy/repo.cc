@@ -1309,14 +1309,25 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
                              TSequenceNumber release_up_to,
                              bool can_tail,
                              bool can_tail_tombstone) {
-  size_t gen_id = GetNextGenId();
+  size_t intermediate_gen_id = GetNextGenId();
   bool my_can_tail = can_tail && !static_cast<bool>(GetParentRepo()) && IsTailingAllowed();
   bool my_can_tail_tombstone = my_can_tail && can_tail_tombstone && (gen_id_vec.size() == 1);
-  TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone);
-  out_num_keys = merge_data_file.GetNumKeys();
-  out_saved_low_seq = merge_data_file.GetLowestSequence();
-  out_saved_high_seq = merge_data_file.GetHighestSequence();
-  return gen_id;
+  /* Phase A: standard merge. Produces a data file at intermediate_gen_id
+     with same-mutator commutative runs still expanded -- correct but
+     unbounded in entries-per-key under contention. */
+  TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), intermediate_gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone);
+  /* Phase B (#55): fold same-mutator commutative runs in the just-merged
+     file via TMutation::Augment-equivalent logic in typed space. Output
+     entries are promoted to Assign(folded value), bringing read
+     amplification back to O(1) per key. */
+  size_t final_gen_id = GetNextGenId();
+  TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh);
+  out_num_keys = fold_data_file.GetNumKeys();
+  out_saved_low_seq = fold_data_file.GetLowestSequence();
+  out_saved_high_seq = fold_data_file.GetHighestSequence();
+  /* Reclaim the intermediate file's blocks. */
+  RemoveFile(intermediate_gen_id);
+  return final_gen_id;
 }
 
 void TSafeRepo::RemoveFile(size_t gen_id) {

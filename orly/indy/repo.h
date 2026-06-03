@@ -21,6 +21,7 @@
 #include <base/opt.h>
 #include <orly/indy/disk_layer.h>
 #include <orly/indy/disk/data_file.h>
+#include <orly/indy/disk/fold_data_file.h>
 #include <orly/indy/disk/merge_data_file.h>
 #include <orly/indy/disk/present_walk_file.h>
 #include <orly/indy/disk/update_walk_file.h>
