@@ -185,3 +185,90 @@ FIXTURE(WithMergeFile) {
     cond.notify_one();
   });
 }
+
+/* Regression test for issue #53: round-trip a non-Assign Mutator
+   (e.g. Add) through disk persistence. Before the fix at
+   update_walk_file.h:121-149, the random-access read site couldn't
+   tell which on-disk layout (TKeyItem vs THistoryKeyItem) it was
+   reading, so it defaulted Mutator to Assign and silently dropped
+   any commutative-fold-relevant info. The fix uses the per-index
+   ByteOffsetOfHistoryIndex boundary to disambiguate. */
+FIXTURE(MutatorRoundTrip) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRAIITest required_thread_locals;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler(TScheduler::TPolicy(10, 10, milliseconds(10)));
+
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+
+    Base::TUuid file_id(TUuid::TimeAndMAC);
+    TSuprena arena;
+    Base::TUuid idx(Base::TUuid::Twister);
+    const size_t gen_id = 1;
+
+    /* Build a file with one update per key, mixing Assign + commutative
+       non-Assign mutators. Multiple keys per update guarantees the
+       writer puts SOME entries in the current-keys section and SOME
+       in the history-keys section (within a single update, only one
+       entry per repeated key can be current; the rest are history). */ {
+      TMockMem mem_layer;
+      TSequenceNumber seq = 0;
+
+      /* update 1: two keys, both Assign (current entries). */ {
+        auto u = TMockUpdate::NewMockUpdate(
+            TUpdate::TOpByKey{
+                {TIndexKey(idx, TKey(make_tuple(1L), &arena, state_alloc)),
+                 TKey(int64_t(100), &arena, state_alloc)},
+                {TIndexKey(idx, TKey(make_tuple(2L), &arena, state_alloc)),
+                 TKey(int64_t(200), &arena, state_alloc)},
+            },
+            TKey(&arena),
+            TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc),
+            ++seq);
+        mem_layer.Insert(u);
+      }
+      /* update 2: same two keys re-Assigned (-> history entries when
+         merged with update 1's snapshot) PLUS one Add on key 1. */ {
+        auto u = TMockUpdate::NewMockUpdate(
+            TUpdate::TOpByKey{
+                {TIndexKey(idx, TKey(make_tuple(1L), &arena, state_alloc)),
+                 TKey(int64_t(150), &arena, state_alloc)},
+                {TIndexKey(idx, TKey(make_tuple(2L), &arena, state_alloc)),
+                 TKey(int64_t(250), &arena, state_alloc)},
+            },
+            TKey(&arena),
+            TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc),
+            ++seq);
+        /* Add(7) on key 1 via the AddEntry-with-mutator overload. */
+        u->AddEntry(
+            TIndexKey(idx, TKey(make_tuple(1L), &arena, state_alloc)),
+            TKey(int64_t(7), &arena, state_alloc),
+            TMutator::Add);
+        mem_layer.Insert(u);
+      }
+      TDataFile data_file(mem_engine.GetEngine(), Disk::Util::TVolume::TDesc::Fast,
+                          &mem_layer, file_id, gen_id, 20UL, 0U, RealTime);
+    }
+
+    /* Walk the file via TUpdateWalkFile. Per-entry Mutator should
+       survive the disk round-trip: Assign entries should be Assign,
+       the Add(7) entry should be Add. */ {
+      TUpdateWalkFile walker(mem_engine.GetEngine(), file_id, gen_id, 0U);
+      size_t total_assign = 0;
+      size_t total_add = 0;
+      for (; walker; ++walker) {
+        for (const auto &iter : (*walker).EntryVec) {
+          if (iter.Mutator == TMutator::Add) ++total_add;
+          else if (iter.Mutator == TMutator::Assign) ++total_assign;
+        }
+      }
+      /* 4 Assign entries (2 keys x 2 updates) + 1 Add entry. */
+      EXPECT_EQ(total_assign, 4U);
+      EXPECT_EQ(total_add, 1U);
+    }
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
