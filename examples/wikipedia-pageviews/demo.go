@@ -37,6 +37,14 @@ import (
 
 const wsURL = "ws://127.0.0.1:8082/"
 
+// Per-call recv timeout. Mirrors demo.py: normal latency is well under
+// a second; 30s is generous-but-finite so a hung orlyi surfaces as a
+// failed read rather than a multi-minute CI timeout with no diagnostic.
+// The run-go.sh wrapper's on-failure orlyi.log dump only fires on
+// demo.go exit, so we want it to exit (failing) within a reasonable
+// window.
+const wsTimeout = 30 * time.Second
+
 var (
 	pages = []string{"Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"}
 
@@ -68,7 +76,14 @@ type event struct {
 }
 
 func send(c *websocket.Conn, stmt string) (interface{}, error) {
+	deadline := time.Now().Add(wsTimeout)
+	if err := c.SetWriteDeadline(deadline); err != nil {
+		return nil, err
+	}
 	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
+		return nil, err
+	}
+	if err := c.SetReadDeadline(deadline); err != nil {
 		return nil, err
 	}
 	_, raw, err := c.ReadMessage()
@@ -131,7 +146,9 @@ func generateEvents(seed int64, count int) []event {
 
 func writer(pov string, events []event, wg *sync.WaitGroup) {
 	defer wg.Done()
-	c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	dialer := *websocket.DefaultDialer
+	dialer.HandshakeTimeout = wsTimeout
+	c, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -182,7 +199,9 @@ func main() {
 	}
 
 	// Bootstrap connection: install package + create the shared POV.
-	boot, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	bootDialer := *websocket.DefaultDialer
+	bootDialer.HandshakeTimeout = wsTimeout
+	boot, _, err := bootDialer.Dial(wsURL, nil)
 	if err != nil {
 		panic(err)
 	}
