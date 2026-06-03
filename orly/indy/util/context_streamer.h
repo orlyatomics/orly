@@ -88,7 +88,11 @@ namespace Orly {
             // (Base::TUuid) Repo Id; (TSequenceNumber) Sequence Number of the update; (TCore) Metadata;  (TCore) Id; (size_t) number of key-value pairs to follow
             strm << iter.RepoId << iter.SequenceNumber << Atom::TCore(iter.Metadata, remapper) << Atom::TCore(iter.Id, remapper) << iter.EntryVec.size();
             for (auto entry : iter.EntryVec) {
-              strm << entry.first.GetIndexId() << Atom::TCore(entry.first.GetKey().GetCore(), remapper) << Atom::TCore(entry.second, remapper);  // (TUuid) index_id; (TCore) Key; (TCore) Op
+              // (TUuid) index_id; (TCore) Key; (TCore) Op; (uint32_t) Mutator
+              strm << entry.IndexKey.GetIndexId()
+                   << Atom::TCore(entry.IndexKey.GetKey().GetCore(), remapper)
+                   << Atom::TCore(entry.Op, remapper)
+                   << static_cast<uint32_t>(entry.Mutator);
             }
           }
         }
@@ -98,6 +102,20 @@ namespace Orly {
         /* TODO */
         class TUpdate {
           public:
+
+          /* Per-entry payload on the wire: (IndexKey, Op, Mutator). The
+             Mutator field was added in #54 -- before that the wire format
+             dropped it, causing slaves to reconstruct deferred {Add, n}
+             entries as Assign(n) and silently lose updates on concurrent
+             writes that landed on the master. */
+          struct TEntry {
+            TIndexKey IndexKey;
+            Atom::TCore Op;
+            TMutator Mutator;
+            TEntry() : Mutator(TMutator::Assign) {}
+            TEntry(const TIndexKey &k, const Atom::TCore &op) : IndexKey(k), Op(op), Mutator(TMutator::Assign) {}
+            TEntry(const TIndexKey &k, const Atom::TCore &op, TMutator m) : IndexKey(k), Op(op), Mutator(m) {}
+          };
 
           /* TODO */
           TUpdate() {}
@@ -109,12 +127,12 @@ namespace Orly {
             void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
             Metadata = Atom::TCore(&new_arena, state_alloc, item.MainArena, item.Metadata);
             Id = Atom::TCore(&new_arena, state_alloc, item.MainArena, item.Id);
-            /* TODO(#54): wire format does not yet carry Mutator. Replication
-               currently loses defer-safe mutator info -- treat as
-               known followup; the demo uses --mem_sim so doesn't hit this. */
             for (const auto &iter : item.EntryVec) {
-              EntryVec.push_back(std::make_pair(TIndexKey(iter.IndexKey.GetIndexId(), TKey(Atom::TCore(&new_arena, state_alloc, iter.IndexKey.GetKey().GetArena(), iter.IndexKey.GetKey().GetCore()), &new_arena)),
-                                                Atom::TCore(&new_arena, state_alloc, item.MainArena, iter.Op)));
+              EntryVec.emplace_back(
+                  TIndexKey(iter.IndexKey.GetIndexId(),
+                            TKey(Atom::TCore(&new_arena, state_alloc, iter.IndexKey.GetKey().GetArena(), iter.IndexKey.GetKey().GetCore()), &new_arena)),
+                  Atom::TCore(&new_arena, state_alloc, item.MainArena, iter.Op),
+                  iter.Mutator);
             }
           }
 
@@ -131,7 +149,7 @@ namespace Orly {
           Atom::TCore Id;
 
           /* TODO */
-          std::vector<std::pair<TIndexKey, Atom::TCore>> EntryVec;
+          std::vector<TEntry> EntryVec;
 
         };  // TUpdate
 
@@ -198,6 +216,7 @@ namespace Orly {
           Base::TUuid temp_index_id;
           Atom::TCore temp_key;
           Atom::TCore temp_op;
+          uint32_t temp_mutator;
           for (size_t i = 0; i < num_updates; ++i) {
             TUpdate update;
             size_t num_entry;
@@ -208,10 +227,13 @@ namespace Orly {
             update.EntryVec.reserve(num_entry);
             for (size_t j = 0; j < num_entry; ++j) {
               // (TUuid) index_id; (TCore) Key; (TCore) Op
-              strm >> temp_index_id >> temp_key >> temp_op;
+              strm >> temp_index_id >> temp_key >> temp_op >> temp_mutator;
               temp_key.Remap(remapper);
               temp_op.Remap(remapper);
-              update.EntryVec.push_back(std::make_pair(TIndexKey(temp_index_id, TKey(temp_key, Suprena.get())), temp_op));
+              update.EntryVec.emplace_back(
+                  TIndexKey(temp_index_id, TKey(temp_key, Suprena.get())),
+                  temp_op,
+                  static_cast<TMutator>(temp_mutator));
             }
             UpdateVec.push_back(std::move(update));
           }
@@ -255,7 +277,11 @@ namespace Orly {
             // (Base::TUuid) Repo Id; (TSequenceNumber) Sequence Number of the update; (TCore) Metadata;  (TCore) Id; (size_t) number of key-value pairs to follow
             strm << iter.RepoId << iter.SequenceNumber << Atom::TCore(iter.Metadata, remapper) << Atom::TCore(iter.Id, remapper) << iter.EntryVec.size();
             for (auto entry : iter.EntryVec) {
-              strm << entry.first.GetIndexId() << Atom::TCore(entry.first.GetKey().GetCore(), remapper) << Atom::TCore(entry.second, remapper);  // (TUuid) index_id; (TCore) Key; (TCore) Op
+              // (TUuid) index_id; (TCore) Key; (TCore) Op; (uint32_t) Mutator
+              strm << entry.IndexKey.GetIndexId()
+                   << Atom::TCore(entry.IndexKey.GetKey().GetCore(), remapper)
+                   << Atom::TCore(entry.Op, remapper)
+                   << static_cast<uint32_t>(entry.Mutator);
             }
           }
         }
