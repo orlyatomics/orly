@@ -114,7 +114,21 @@ What this would normally require:
 
 Why it matters: this is exactly the topology AI extraction pipelines have — many agents reading disjoint chunks, emitting overlapping facts into one graph — and every conventional database forces you to invent a coordination protocol on top. Orly gives it to you for free, as a direct consequence of how field calls work. The driver never reads-then-writes; it only ever calls the three commutative functions in [`graph.orly`](examples/agent-swarm/graph.orly).
 
-All four examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
+### [`examples/grc20-pov/`](examples/grc20-pov/) — GRC-20 knowledge graph: event-sourced + concurrent editors + time-travel
+
+A reference impl of Geo / The Graph's [GRC-20](https://github.com/geobrowser/grc-20) knowledge-graph standard. GRC-20 models knowledge as append-only ops (`CreateEntity`, `UpdateEntity`, `CreateRelation`, `DeleteEntity`) — exactly the shape Orly stores natively. Every op becomes one `|=` into a per-`(entity, property)` history set; concurrent editors stream into the same shared POV with **no coordination**; reads replay the timestamp-sorted log to reconstruct entity state, or any historical state if you pass a cutoff.
+
+The demo runs three phases over a corpus of six Greek philosophers:
+
+| Phase | Editor | What |
+|---|---|---|
+| 1 | `wiki` | biographical facts (`name`, `born`, `died`) |
+| 2 | `stanford` | school of thought + `student_of` relations |
+| 3 | both | concurrent race on `pythagoras.born` — both events survive in history |
+
+After each phase the demo prints a snapshot reconstructed from the event log; the final editorial diff shows per-editor event counts and overlapping entities. This example is the synthesis of the other four: time-travel from [`bitcoin-time-travel`](examples/bitcoin-time-travel/) and [`wikipedia-categories`](examples/wikipedia-categories/), concurrent multi-writer from [`wikipedia-pageviews`](examples/wikipedia-pageviews/) and [`agent-swarm`](examples/agent-swarm/), applied to a published graph standard from another project rather than a synthetic workload. The entire engine side is three commutative orlyscript functions; GRC-20's op vocabulary lives entirely in the driver.
+
+All five examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
 
 ## Walkthrough
 
