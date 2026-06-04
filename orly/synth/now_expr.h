@@ -1,6 +1,7 @@
 /* <orly/synth/now_expr.h>
 
-   TODO
+   Synth-layer node for the `now` keyword (current time).
+   Singleton-shape with no operands. Lowers to `Expr::TNow`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

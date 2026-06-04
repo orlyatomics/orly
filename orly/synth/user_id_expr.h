@@ -1,6 +1,8 @@
 /* <orly/synth/user_id_expr.h>
 
-   TODO
+   Synth-layer node for the `user_id` keyword. Returns the calling
+   user's UUID (or unknown if no user is bound to the session).
+   Lowers to `Expr::TUserId`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

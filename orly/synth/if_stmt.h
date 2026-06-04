@@ -1,6 +1,9 @@
 /* <orly/synth/if_stmt.h>
 
-   TODO
+   Synth-layer node for `if pred { stmts } else { stmts }`
+   statements inside effecting blocks. Holds the predicate, the
+   then-block, and an optional else-block. Lowers to
+   `Symbol::Stmt::TIf`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

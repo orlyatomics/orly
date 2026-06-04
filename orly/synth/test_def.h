@@ -1,6 +1,10 @@
 /* <orly/synth/test_def.h>
 
-   TODO
+   Synth-layer node for a test definition
+   (`test { t1: ...; t2: ...; }`). Carries each named test
+   expression and lowers to a `Symbol::Test::TTest` -- which
+   `TPackage` collects and emits as `TTestCase` in the code-gen
+   layer.
 
    Copyright 2010-2026 Atomic Kismet Company
 

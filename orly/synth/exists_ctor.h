@@ -1,6 +1,9 @@
 /* <orly/synth/exists_ctor.h>
 
-   TODO
+   Synth-layer node for `<[key]>::(T) is known` / `... is unknown`
+   predicates. Holds the address key expression and the dereferenced
+   value type. Lowers to `Expr::TExists`, which code-gen turns into
+   a `TExists` runtime check.
 
    Copyright 2010-2026 Atomic Kismet Company
 

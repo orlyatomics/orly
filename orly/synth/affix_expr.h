@@ -1,6 +1,9 @@
 /* <orly/synth/affix_expr.h>
 
-   TODO
+   Synth-layer node for unary affix expressions (`not`, unary `-`,
+   `*` deref, etc.). Holds a single operand `TExpr` and a `TNew`
+   function pointer that selects which `Expr::T*` factory to invoke
+   at `Build()` time.
 
    Copyright 2010-2026 Atomic Kismet Company
 

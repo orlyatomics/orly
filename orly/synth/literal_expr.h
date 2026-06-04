@@ -1,6 +1,8 @@
 /* <orly/synth/literal_expr.h>
 
-   TODO
+   Synth-layer node for primitive literals (`123`, `1.5`, `true`,
+   `"foo"`, time/uuid literals). Carries the CST node and lowers to
+   `Expr::TLiteral` with a `Var::TVar` payload.
 
    Copyright 2010-2026 Atomic Kismet Company
 

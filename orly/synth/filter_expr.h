@@ -1,6 +1,8 @@
 /* <orly/synth/filter_expr.h>
 
-   TODO
+   Synth-layer node for `seq if (pred)` filter expressions. Holds
+   the sequence and the predicate body; implements `TThatableExpr`
+   for the predicate's `that` reference. Lowers to `Expr::TFilter`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

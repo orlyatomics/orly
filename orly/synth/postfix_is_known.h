@@ -1,6 +1,9 @@
 /* <orly/synth/postfix_is_known.h>
 
-   TODO
+   Synth-layer node for the `expr is known` / `expr is unknown`
+   postfix test. Lowers to `Expr::TIsKnown`. Distinct from
+   `postfix_is_known_expr.h`, which is the lhs-bound variant
+   (`expr is known otherExpr`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

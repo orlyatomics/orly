@@ -1,6 +1,8 @@
 /* <orly/synth/addr_member_expr.h>
 
-   TODO
+   Synth-layer node for `addr.<n>` -- indexed access into an
+   address tuple. Lowers to `Expr::TAddrMember` on `Build()`, which
+   code-gen emits as `TAddrMember` with the corresponding part-id.
 
    Copyright 2010-2026 Atomic Kismet Company
 

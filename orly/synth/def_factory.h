@@ -1,6 +1,11 @@
 /* <orly/synth/def_factory.h>
 
-   TODO
+   Visitor over `Package::Syntax::TDef` that creates the right
+   `TDef` subclass for each parsed definition kind (`TFuncDef`,
+   `TTypeDef`, `TTestDef`, `TImportDef`, `TGeneratorDef`,
+   `TPackageDef`). The three abstract overloads
+   (`TInstallerDef` / `TUpgraderDef` / `TUninstallerDef`) are filled
+   in by `TPackage::TTopLevelDefFactory` for package lifecycle hooks.
 
    Copyright 2010-2026 Atomic Kismet Company
 

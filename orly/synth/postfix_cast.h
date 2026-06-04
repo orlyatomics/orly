@@ -1,6 +1,8 @@
 /* <orly/synth/postfix_cast.h>
 
-   TODO
+   Synth-layer node for the `expr as T` cast operator. Holds the
+   source expression and the target type. Lowers to `Expr::TAs`,
+   which code-gen turns into a `TUnary{Cast}`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

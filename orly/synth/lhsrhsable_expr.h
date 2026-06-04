@@ -1,6 +1,10 @@
 /* <orly/synth/lhsrhsable_expr.h>
 
-   TODO
+   Mixin base for synth expressions that introduce an `lhs`/`rhs`
+   binding (notably `TSortExpr`). The outer expression's symbol
+   must be built before the rhs body so the inner `lhs`/`rhs`
+   references can be resolved to it -- the in-file comment
+   documents this ordering constraint.
 
    Copyright 2010-2026 Atomic Kismet Company
 

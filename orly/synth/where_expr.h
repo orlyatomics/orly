@@ -1,6 +1,9 @@
 /* <orly/synth/where_expr.h>
 
-   TODO
+   Synth-layer node for `expr where { definitions }` -- a body
+   expression with locally-scoped definitions. Owns an inner
+   `TScope` populated by `TDefFactory` from the parsed definitions.
+   Lowers to `Expr::TWhere`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

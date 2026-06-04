@@ -1,6 +1,9 @@
 /* <orly/synth/collated_by_expr.h>
 
-   TODO
+   Synth-layer node for `collated_by ... having ...`. Holds the
+   sequence, start, reduce body, and having body. Implements both
+   `TStartableExpr` and `TThatableExpr` so the reduce body can
+   reference `start` and `that`. Lowers to `Expr::TCollatedBy`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

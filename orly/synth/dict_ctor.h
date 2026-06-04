@@ -1,6 +1,8 @@
 /* <orly/synth/dict_ctor.h>
 
-   TODO
+   Synth-layer node for a dict literal (`{key: val, ...}`). Holds
+   the ordered key/value expression pairs from the CST. Lowers to a
+   `TBasicCtor<TDictContainer>` on `Build()`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

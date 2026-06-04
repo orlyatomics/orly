@@ -1,6 +1,9 @@
 /* <orly/synth/that_expr.h>
 
-   TODO
+   Synth-layer node for the `that` keyword. Resolves to the
+   nearest enclosing `TThatableExpr` (filter / sort comparator /
+   reduce / effecting / assert) during build and lowers to
+   `Expr::TThat`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,10 @@
 /* <orly/synth/reduce_expr.h>
 
-   TODO
+   Synth-layer node for `seq reduce start X + that` expressions.
+   Holds the sequence (lhs) and the reduce body (rhs). Implements
+   both `TStartableExpr` (so the body's `start` resolves here) and
+   `TThatableExpr` (so the body's `that` resolves here). Lowers to
+   `Expr::TReduce`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

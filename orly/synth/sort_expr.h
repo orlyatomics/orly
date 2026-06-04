@@ -1,6 +1,9 @@
 /* <orly/synth/sort_expr.h>
 
-   TODO
+   Synth-layer node for `seq sorted_by (lhs OP rhs)` expressions.
+   Holds the sequence and the comparator body. Inherits
+   `TLhsRhsableExpr` so the comparator can reference `lhs` and
+   `rhs`. Lowers to `Expr::TSort`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

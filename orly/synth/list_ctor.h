@@ -1,6 +1,8 @@
 /* <orly/synth/list_ctor.h>
 
-   TODO
+   Synth-layer node for a list literal (`[elem, elem, ...]`). Holds
+   the ordered element expressions from the CST. Lowers to a
+   `TBasicCtor<TListContainer>` on `Build()`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

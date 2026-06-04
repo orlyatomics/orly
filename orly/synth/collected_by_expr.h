@@ -1,6 +1,8 @@
 /* <orly/synth/collected_by_expr.h>
 
-   TODO
+   Synth-layer node for `collected_by`. Holds the sequence and the
+   collect body. Implements `TThatableExpr` for the body's `that`
+   reference. Lowers to `Expr::TCollectedBy`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

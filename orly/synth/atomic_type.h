@@ -1,6 +1,9 @@
 /* <orly/synth/atomic_type.h>
 
-   TODO
+   Synth-layer node for the atomic type literals (`int`, `real`,
+   `bool`, `str`, `id`, `time_diff`, `time_pnt`).
+   `ComputeSymbolicType()` resolves each one to its singleton
+   `Type::T*` (`TInt`, `TReal`, ...).
 
    Copyright 2010-2026 Atomic Kismet Company
 

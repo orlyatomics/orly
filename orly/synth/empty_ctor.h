@@ -1,6 +1,9 @@
 /* <orly/synth/empty_ctor.h>
 
-   TODO
+   Synth-layer node for typed-empty literals (`empty {T}`,
+   `empty [T]`, `empty {K:V}`, `empty <[...]>`). Carries the typed
+   element so the emitted constructor is fully resolved. Lowers to
+   an empty `TBasicCtor` of the matching container kind.
 
    Copyright 2010-2026 Atomic Kismet Company
 

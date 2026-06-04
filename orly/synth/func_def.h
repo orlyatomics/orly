@@ -1,6 +1,10 @@
 /* <orly/synth/func_def.h>
 
-   TODO
+   Synth-layer node for a function definition (`f = (body) where
+   { ... }`). Carries the parsed function symbol, the parameter
+   list, the where-clause scope, and the body expression. Drives
+   the multi-pass build: type-check the body, register the function
+   in its scope, lower to `Symbol::TFunction`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

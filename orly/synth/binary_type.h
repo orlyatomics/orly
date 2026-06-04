@@ -1,6 +1,8 @@
 /* <orly/synth/binary_type.h>
 
-   TODO
+   Synth-layer node for binary type expressions: container types
+   like `[T]`, `{T}`, `{K: V}`. `ComputeSymbolicType()` lowers to
+   the corresponding `Type::T*` (`TList`, `TSet`, `TDict`, ...).
 
    Copyright 2010-2026 Atomic Kismet Company
 

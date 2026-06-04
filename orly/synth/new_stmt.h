@@ -1,6 +1,7 @@
 /* <orly/synth/new_stmt.h>
 
-   TODO
+   Synth-layer node for `new <[key]> <- val;` statements inside
+   effecting blocks. Lowers to `Symbol::Stmt::TNew`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

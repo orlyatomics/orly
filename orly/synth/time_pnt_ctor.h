@@ -1,6 +1,9 @@
 /* <orly/synth/time_pnt_ctor.h>
 
-   TODO
+   Synth-layer node for time-point literals (the
+   `{year, month, day, ...}` record returned by `TimePnt`-shape
+   constructors). Same pattern as `time_diff_ctor.h` but for the
+   absolute-time record.
 
    Copyright 2010-2026 Atomic Kismet Company
 

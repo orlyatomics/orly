@@ -1,6 +1,8 @@
 /* <orly/synth/new_expr.h>
 
-   TODO
+   Synth-layer node for `new <[key]> <- val` expressions (the
+   creating-a-new-entry form, used outside effecting blocks).
+   Lowers to `Expr::TNew`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

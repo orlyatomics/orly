@@ -1,6 +1,8 @@
 /* <orly/synth/session_id_expr.h>
 
-   TODO
+   Synth-layer node for the `session_id` keyword. Returns the
+   calling session's UUID. Singleton-shape with no operands. Lowers
+   to `Expr::TSessionId`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

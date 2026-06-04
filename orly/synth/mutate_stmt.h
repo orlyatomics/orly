@@ -1,6 +1,8 @@
 /* <orly/synth/mutate_stmt.h>
 
-   TODO
+   Synth-layer node for mutation statements (`x += v;`, `s |= {x};`,
+   `m = v;`). Holds the lhs target, the mutator op, and the rhs
+   value. Lowers to `Symbol::Stmt::TMutate`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

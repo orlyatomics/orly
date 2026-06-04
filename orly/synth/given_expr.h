@@ -1,6 +1,9 @@
 /* <orly/synth/given_expr.h>
 
-   TODO
+   Synth-layer node for `given::(T)` -- a placeholder that becomes
+   a named function parameter at the enclosing function definition.
+   Carries the requested type expression; the actual binding happens
+   during the function-build pass via `TGivenCollector`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

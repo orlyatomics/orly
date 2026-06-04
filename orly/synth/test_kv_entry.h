@@ -1,6 +1,9 @@
 /* <orly/synth/test_kv_entry.h>
 
-   TODO
+   Synth-layer node for one entry in a `with { ... }` clause of a
+   test: the key expression on the lhs and the value expression on
+   the rhs. Lowers to a single setup write in the test's emitted
+   setup block.
 
    Copyright 2010-2026 Atomic Kismet Company
 

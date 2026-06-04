@@ -1,6 +1,9 @@
 /* <orly/synth/obj_type.h>
 
-   TODO
+   Synth-layer node for object / record type expressions
+   (`{.name1: T1, .name2: T2}`). Holds the parsed field-name to
+   type-expression map. `ComputeSymbolicType()` lowers to
+   `Type::TObj`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

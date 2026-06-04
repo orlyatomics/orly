@@ -1,6 +1,10 @@
 /* <orly/synth/package.h>
 
-   TODO
+   The synth-layer driver for a whole `.orly` source file. Inherits
+   `TScope` and owns the top-level `TDefFactory` and the symbol
+   package. `Build()` runs the multi-pass binder: discover
+   definitions, resolve references, compute types, and build the
+   `Symbol::TPackage`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

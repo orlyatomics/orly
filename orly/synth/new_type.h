@@ -1,6 +1,8 @@
 /* <orly/synth/new_type.h>
 
-   TODO
+   Synth-layer node for typed `new::(T)` markers in key patterns.
+   Carries the target type. Used in key shapes where a fresh value
+   of a specific type is being constructed.
 
    Copyright 2010-2026 Atomic Kismet Company
 

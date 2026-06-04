@@ -1,6 +1,10 @@
 /* <orly/synth/startable_expr.h>
 
-   TODO
+   Mixin base for synth expressions that introduce a `start`
+   binding (`TReduceExpr`, `TCollatedByExpr`). The outer
+   expression's symbol must be built before the rhs body so the
+   inner `start` reference can resolve to it -- counterpart of
+   `TThatableExpr` / `TLhsRhsableExpr`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/synth/postfix_slice.h>
 
-   TODO
+   Synth-layer node for `expr[idx]` (index) and `expr[lhs:rhs]`
+   (slice). `Colon` distinguishes the two forms; `OptLhs` / `OptRhs`
+   are nullable for open-ended slices. Lowers to `Expr::TSlice`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
