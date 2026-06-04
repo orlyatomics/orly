@@ -1,6 +1,8 @@
 /* <orly/expr/walker.h>
 
-   TODO
+   `ForEachExpr(root, cb, include_inner_funcs)` -- recursive tree
+   walker. Calls `cb(expr)` for every expr in the tree; if `cb`
+   returns true, doesn't recurse into that subtree.
 
    Copyright 2010-2026 Atomic Kismet Company
 

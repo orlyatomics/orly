@@ -1,6 +1,7 @@
 /* <orly/expr/sequence_of.h>
 
-   TODO
+   `TSequenceOf` -- unary `sequence_of(x)` IR node (treats `x` as
+   a sequence). Inherits `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

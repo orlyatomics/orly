@@ -1,6 +1,8 @@
 /* <orly/expr/set_ops.h>
 
-   TODO
+   The set operator IR nodes -- `TUnion`, `TIntersection`,
+   `TSymmetricDiff`. All inherit `TBinary`. `GetTypeImpl()` runs
+   `orly/type/set_ops_visitor.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

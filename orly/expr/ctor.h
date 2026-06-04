@@ -1,6 +1,9 @@
 /* <orly/expr/ctor.h>
 
-   TODO
+   `TCtor<TContainer>` -- abstract base for container-literal IR
+   nodes. Subclass of `TNAry<TContainer>`. Concrete subclasses
+   include `TList`, `TSet`, `TDict`, `TObj`, `TAddr` -- each picks
+   its own container shape.
 
    Copyright 2010-2026 Atomic Kismet Company
 

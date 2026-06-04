@@ -1,6 +1,9 @@
 /* <orly/expr/reduce.h>
 
-   TODO
+   `TReduce` -- the `seq reduce start X + that` IR node. Inherits
+   `TStartable` + `TThatableBinary` so the reduce body can
+   reference both `start` and `that`. Lowered to
+   `CodeGen::TReduce`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

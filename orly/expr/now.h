@@ -1,6 +1,7 @@
 /* <orly/expr/now.h>
 
-   TODO
+   `TNow` -- the `now` keyword IR node (current time). Inherits
+   `TLeaf`; no operands.
 
    Copyright 2010-2026 Atomic Kismet Company
 

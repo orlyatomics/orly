@@ -1,6 +1,8 @@
 /* <orly/expr/exists.h>
 
-   TODO
+   `TExists` -- the `<[key]>::(T) is known` / `is unknown` shaped
+   predicate that reaches the storage layer. Unary over the key
+   expression; carries the read value type.
 
    Copyright 2010-2026 Atomic Kismet Company
 

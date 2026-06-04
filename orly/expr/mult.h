@@ -1,6 +1,7 @@
 /* <orly/expr/mult.h>
 
-   TODO
+   `TMult` -- binary `*` (multiplication) IR node. Same pattern
+   as `TAdd`; `GetTypeImpl()` runs `orly/type/mult_visitor.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,7 @@
 /* <orly/expr/mod.h>
 
-   TODO
+   `TMod` -- binary `%` (modulo) IR node. Same pattern as `TAdd`;
+   `GetTypeImpl()` runs `orly/type/mod_visitor.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

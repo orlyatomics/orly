@@ -1,6 +1,9 @@
 /* <orly/expr/add.h>
 
-   TODO
+   `TAdd` -- the binary `+` IR node. Inherits `TBinary`.
+   `GetTypeImpl()` runs the result-type rules in
+   `orly/type/add_visitor.h`. Same skeleton as every other
+   arithmetic node in this directory.
 
    Copyright 2010-2026 Atomic Kismet Company
 

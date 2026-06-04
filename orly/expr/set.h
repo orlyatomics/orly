@@ -1,6 +1,8 @@
 /* <orly/expr/set.h>
 
-   TODO
+   `TSet` -- set literal IR node (`{a, b, c}`). Inherits
+   `TCtor<unordered_set<TExpr::TPtr>>`. Lowers to
+   `CodeGen::TBasicCtor<TSetContainer>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

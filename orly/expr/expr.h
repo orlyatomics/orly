@@ -1,6 +1,11 @@
 /* <orly/expr/expr.h>
 
-   TODO
+   `TExpr` -- abstract base for every orlyscript expression IR
+   node. Holds the position range, caches the type from
+   `GetTypeImpl()`, and tracks its parent via `TExprParent`.
+   Subclasses implement `Accept` (visitor dispatch) and
+   `GetTypeImpl` (type computation). The (very large) `TVisitor`
+   lives in `visitor.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

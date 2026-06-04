@@ -1,6 +1,8 @@
 /* <orly/expr/obj.h>
 
-   TODO
+   `TObj` -- object / record literal IR node (`{.field: val, ...}`).
+   Inherits `TCtor<map<string, TExpr::TPtr>>` (ordered by name for
+   stable iteration).
 
    Copyright 2010-2026 Atomic Kismet Company
 

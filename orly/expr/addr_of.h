@@ -1,6 +1,7 @@
 /* <orly/expr/addr_of.h>
 
-   TODO
+   `TAddrOf` -- the `addr_of` operator. Carries an expression and
+   returns its address as the wrapped value. Inherits `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

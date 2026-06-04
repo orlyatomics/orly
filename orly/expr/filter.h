@@ -1,6 +1,9 @@
 /* <orly/expr/filter.h>
 
-   TODO
+   `TFilter` -- the `seq if (pred)` filter IR node. Inherits
+   `TThatableBinary`: lhs is the sequence, rhs is the predicate,
+   and the predicate body's `that` resolves to the sequence's
+   element type via the mixin base.
 
    Copyright 2010-2026 Atomic Kismet Company
 

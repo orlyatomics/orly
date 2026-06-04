@@ -1,6 +1,8 @@
 /* <orly/expr/unknown.h>
 
-   TODO
+   `TUnknown` -- the typed-unknown literal IR node (`?T`).
+   Carries the target type so the runtime knows what kind of
+   empty value to emit. Inherits `TLeaf`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

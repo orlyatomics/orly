@@ -1,6 +1,7 @@
 /* <orly/expr/sign.h>
 
-   TODO
+   `TNegative` (unary `-x`) and `TPositive` (unary `+x`) IR nodes.
+   Both inherit `TUnary`. Result type matches the operand.
 
    Copyright 2010-2026 Atomic Kismet Company
 

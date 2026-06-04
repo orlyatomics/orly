@@ -1,6 +1,8 @@
 /* <orly/expr/sort.h>
 
-   TODO
+   `TSort` -- the `seq sorted_by (lhs OP rhs)` IR node. Inherits
+   `TLhsRhsable` + `TBinary`; the comparator body's `lhs` / `rhs`
+   resolve here via the mixin base. Lowered to `CodeGen::TSort`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

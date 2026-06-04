@@ -1,6 +1,8 @@
 /* <orly/expr/skip.h>
 
-   TODO
+   `TSkip` -- the `seq skip count` IR node. Inherits `TBinary`;
+   drops the first `count` elements of the sequence. Counterpart
+   of `TTake`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

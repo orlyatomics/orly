@@ -1,6 +1,9 @@
 /* <orly/expr/thatable_unary.h>
 
-   TODO
+   `TThatableUnary` -- helper base that multiply-inherits
+   `TThatable` + `TUnary`. Used by `TEffect`, `TAssert`,
+   `TCollectedBy` (body references `that` from the wrapped
+   expression's type).
 
    Copyright 2010-2026 Atomic Kismet Company
 

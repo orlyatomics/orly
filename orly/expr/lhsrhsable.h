@@ -1,6 +1,9 @@
 /* <orly/expr/lhsrhsable.h>
 
-   TODO
+   `TLhsRhsable` -- mixin base for `TExpr`s that introduce an
+   `lhs`/`rhs` binding (concretely, `TSort`). Provides
+   `GetLhsRhsType()` so `TLhs` / `TRhs` know what type they
+   project.
 
    Copyright 2010-2026 Atomic Kismet Company
 

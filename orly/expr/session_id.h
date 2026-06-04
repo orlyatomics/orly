@@ -1,6 +1,7 @@
 /* <orly/expr/session_id.h>
 
-   TODO
+   `TSessionId` -- the `session_id` keyword IR node. Singleton-
+   shape `TLeaf` returning the calling session's UUID.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/expr/literal.h>
 
-   TODO
+   `TLiteral` -- a runtime-known value wrapped as an expression.
+   Carries a `Var::TVar`. Inherits `TLeaf`. Lowers to
+   `CodeGen::TLiteral`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

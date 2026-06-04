@@ -1,6 +1,10 @@
 /* <orly/expr/interior.h>
 
-   TODO
+   `TInterior` -- abstract base for `TExpr`s that have child
+   expressions (the non-leaf nodes). Multiply-inherits `TExpr`
+   and `TExprParent` because an interior node is both an
+   expression and a parent of expressions. Subclassed by `TUnary`,
+   `TBinary`, `TNAry`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

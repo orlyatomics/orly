@@ -1,6 +1,8 @@
 /* <orly/expr/slice.h>
 
-   TODO
+   `TSlice` -- `container[idx]` (single) and `container[lhs:rhs]`
+   (range) IR node. Holds the container expression, two optional
+   bounds, and a colon flag to distinguish the two forms.
 
    Copyright 2010-2026 Atomic Kismet Company
 

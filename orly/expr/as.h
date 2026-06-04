@@ -1,6 +1,9 @@
 /* <orly/expr/as.h>
 
-   TODO
+   `TAs` -- the `expr as Type` cast operator. Carries the source
+   expression and a target `Type::TType`. Code-gen lowers to
+   `TUnary{Cast}` (see `orly/rt/postfix_cast.h` for the runtime
+   specialisations).
 
    Copyright 2010-2026 Atomic Kismet Company
 

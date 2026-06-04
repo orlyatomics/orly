@@ -1,6 +1,8 @@
 /* <orly/expr/start.h>
 
-   TODO
+   `TStart` -- the `start` keyword IR node inside a reduce /
+   collated_by body. Inherits `TLeaf` with a back-reference to its
+   enclosing `TStartable`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
