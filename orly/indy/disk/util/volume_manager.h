@@ -1,6 +1,12 @@
 /* <orly/indy/disk/util/volume_manager.h>
 
-   TODO
+   The bottom of the disk stack. `TVolumeManager` owns the set of
+   `TVolume`s (devices grouped by `VolumeId`) and dispatches block
+   reads / writes against the appropriate device(s) via Linux AIO.
+   `TLogicalExtent` / `TBlockRange` describe block ranges; `TBufKind`
+   enumerates the block formats (`SectorCheckedBlock`, `PageCheckedBlock`,
+   ...) that callers ask the engine to honor. Large header -- the
+   public class declarations are spread throughout.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,10 @@
 /* <orly/indy/disk/util/snappy.h>
 
-   TODO
+   Snappy compression wrapped around the disk layer's stream / block
+   interface. `TBlockSource` / `TBlockSink` adapt a `TBufBlock` to
+   `snappy::Source` / `snappy::Sink`; `TStreamSource` / `TStreamSink`
+   adapt the `TStream<>` / `TOutStream<>` cursors. Used wherever the
+   on-disk format wants compression (notably `TIndexSortFile`'s body).
 
    Copyright 2010-2026 Atomic Kismet Company
 

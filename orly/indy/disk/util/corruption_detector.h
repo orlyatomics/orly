@@ -1,6 +1,11 @@
 /* <orly/indy/disk/util/corruption_detector.h>
 
-   TODO
+   Stateless helpers that put / check a Murmur64 hash in the trailing
+   8 bytes of a block-sized buffer. `WriteMurmur` is called before
+   flush; `TryReadMurmur` / `ReadMurmur` is called after read-back to
+   detect bit-rot or partial-write corruption. Used by the disk-layer
+   read paths when the block kind (e.g. `PageCheckedBlock`) asks for
+   end-of-block checking.
 
    Copyright 2010-2026 Atomic Kismet Company
 

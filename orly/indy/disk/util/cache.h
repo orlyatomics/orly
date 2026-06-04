@@ -1,6 +1,12 @@
 /* <orly/indy/disk/util/cache.h>
 
-   TODO
+   The disk layer's templated page cache. `TCache<PageSize>` holds a
+   fixed pool of page-sized slots keyed by `page_id` with an LRU
+   eviction list, and exposes a `Get` / `Release` API plus async / sync
+   read paths. `engine.h` wires it up under two specialisations:
+   `TPageCache = TCache<PhysicalPageSize>` and `TBlockCache =
+   TCache<PhysicalBlockSize>`. Consumed by every read path in the
+   disk layer (`TStream`, `TReadFile`, the walkers, the mergers).
 
    Copyright 2010-2026 Atomic Kismet Company
 
