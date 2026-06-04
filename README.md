@@ -17,7 +17,7 @@
 
 ---
 
-> **Status — 2026 revival.** Dormant from 2019 until early 2026; a modernization pass brought the codebase back to building and testing cleanly on a current Linux toolchain. `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13. See [#10](https://github.com/orlyatomics/orly/issues/10) for the full status and remaining gaps. No active feature development; experiments and clean-up are welcome.
+> **Status — 2026 revival.** Dormant from 2019 until early 2026; a modernization pass brought the codebase back to building and testing cleanly on a current Linux toolchain. `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13. See [#10](https://github.com/orlyatomics/orly/issues/10) for the full status and remaining gaps, and [`CHANGELOG.md`](CHANGELOG.md) for what's landed since. No active feature development; experiments and clean-up are welcome.
 
 ---
 
