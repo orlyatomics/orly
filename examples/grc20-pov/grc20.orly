@@ -1,0 +1,169 @@
+/* <examples/grc20-pov/grc20.orly>
+
+   GRC-20-shaped knowledge graph as an append-only event log, backed by
+   Orly's commutative set-union field call. Multiple editors stream ops
+   into the same shared POV with no coordination; the read path
+   reconstructs the current state (or any historical state) by replaying
+   the op log in timestamp order.
+
+   GRC-20 is a property-graph standard from Geo / The Graph
+   (https://github.com/geobrowser/grc-20). Entities have typed
+   properties (TEXT, INTEGER, ...) and directed relations. The spec
+   exposes ops like CreateEntity / UpdateEntity / CreateRelation /
+   DeleteEntity, all event-sourced -- which is exactly the shape Orly
+   stores commutatively.
+
+   This package gives the engine three operations:
+
+     - append_op    : union one event into a (entity, property) history
+     - list_entities: enumerate every entity ever touched
+     - list_props   : enumerate every property ever touched on an entity
+
+   Plus their read-side counterparts (hist_for, all_entities, props_of).
+
+   The driver formats each event as a packed string
+
+     "<13-digit ms timestamp>:<editor>:<kind>:<value>"
+
+   where kind ∈ {L (text literal), I (integer literal), R (relation
+   target id), D (tombstone)} and value is the literal or the target
+   entity id. Lexicographic sort of the resulting set is chronological
+   because the timestamp prefix is fixed-width. Driver-side replay then
+   takes "latest write wins per property" semantics with tombstones, the
+   same way GRC-20 itself does.
+
+   Why driver-side replay rather than an orlyscript fold: GRC-20 ops are
+   heterogeneous (CreateEntity / SetProperty / CreateRelation /
+   DeleteEntity), and the replay is conditional on the event kind. Set
+   union over packed strings keeps the schema simple and gives the same
+   "version axis in the keyspace" guarantee as
+   examples/wikipedia-categories/: any (entity, property) pair gets one
+   set, every op is one immutable entry, the past is structurally
+   frozen.
+
+   Schema:
+
+     <['hist', entity, property]>::({str})  events for one (e, p) pair
+     <['entities']>::({str})                set of every entity id
+     <['props',  entity]>::({str})          set of every property id ever
+                                            written on this entity
+
+   Concurrent editors writing to overlapping entities/properties all
+   land their events; the post-#50 deferred-mutation + read-time-fold
+   mechanism is what makes `|=` from multiple WS sessions safe.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* ---------- per-(entity, property) event history ---------- */
+
+hist_for = (((*<['hist', entity, property]>::({str})) if *<['hist', entity, property]>::({str}?) is known else (empty {str}))) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+/* Append one event into the (entity, property) history. */
+append_op = (((1) effecting {
+  *<['hist', entity, property]>::({str}) |= {entry};
+} if *<['hist', entity, property]>::({str}?) is known else (0) effecting {
+  new <['hist', entity, property]> <- {entry};
+})) where {
+  entity   = given::(str);
+  property = given::(str);
+  entry    = given::(str);
+};
+
+/* ---------- catalogue: entities + their property set ---------- */
+
+all_entities = (((*<['entities']>::({str})) if *<['entities']>::({str}?) is known else (empty {str})));
+
+register_entity = (((1) effecting {
+  *<['entities']>::({str}) |= {entity};
+} if *<['entities']>::({str}?) is known else (0) effecting {
+  new <['entities']> <- {entity};
+})) where {
+  entity = given::(str);
+};
+
+props_of = (((*<['props', entity]>::({str})) if *<['props', entity]>::({str}?) is known else (empty {str}))) where {
+  entity = given::(str);
+};
+
+register_prop = (((1) effecting {
+  *<['props', entity]>::({str}) |= {property};
+} if *<['props', entity]>::({str}?) is known else (0) effecting {
+  new <['props', entity]> <- {property};
+})) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+/* ---------- counts (cheap orlyscript-side stats) ---------- */
+
+event_count = (length_of hist_for(.entity: entity, .property: property)) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+entity_count = (length_of all_entities);
+
+/* ---------- inline tests ---------- */
+
+test {
+  /* Empty keyspace reads as identity. */
+  t1: all_entities == (empty {str});
+  t2: props_of(.entity: "socrates") == (empty {str});
+  t3: hist_for(.entity: "socrates", .property: "name") == (empty {str});
+
+  /* Append one event creates the set with that entry. */
+  t4: append_op(.entity: "socrates", .property: "name",
+                .entry: "0000000000001:wiki:L:Socrates") == 0 {
+    t5: hist_for(.entity: "socrates", .property: "name")
+          == {"0000000000001:wiki:L:Socrates"};
+    t6: event_count(.entity: "socrates", .property: "name") == 1;
+
+    /* Second event from a different editor unions in. */
+    t7: append_op(.entity: "socrates", .property: "name",
+                  .entry: "0000000000002:stanford:L:Socrates of Athens") == 1 {
+      t8: hist_for(.entity: "socrates", .property: "name")
+            == {"0000000000001:wiki:L:Socrates",
+                "0000000000002:stanford:L:Socrates of Athens"};
+      t9: event_count(.entity: "socrates", .property: "name") == 2;
+
+      /* Idempotent: same entry re-added doesn't grow the set. */
+      t10: append_op(.entity: "socrates", .property: "name",
+                     .entry: "0000000000001:wiki:L:Socrates") == 1 {
+        t11: event_count(.entity: "socrates", .property: "name") == 2;
+      };
+    };
+  };
+
+  /* Catalogue ops are independent from history ops. */
+  t12: register_entity(.entity: "plato") == 0 {
+    t13: register_entity(.entity: "aristotle") == 1 {
+      t14: all_entities == {"aristotle", "plato"};
+      t15: entity_count == 2;
+
+      t16: register_prop(.entity: "plato", .property: "born") == 0 {
+        t17: register_prop(.entity: "plato", .property: "school") == 1 {
+          t18: props_of(.entity: "plato") == {"born", "school"};
+          /* Different entity's props don't bleed. */
+          t19: props_of(.entity: "aristotle") == (empty {str});
+        };
+      };
+    };
+  };
+};

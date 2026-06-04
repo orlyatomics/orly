@@ -248,3 +248,17 @@ jobs:
         working-directory: examples/agent-swarm
         env:
           DEMO_SCALE: small
+
+      # GRC-20 reference demo: each editor's op is one set-union into a
+      # per-(entity, property) history set; reads replay the timestamp-
+      # sorted log to reconstruct entity state (or any historical
+      # state). Three phases: wiki biographical / stanford schools +
+      # relations / concurrent race on the same attribute. Self-checks
+      # that both race events land in history.
+      - name: grc20-pov run.sh (python driver, event-sourced KG)
+        run: ./run.sh
+        working-directory: examples/grc20-pov
+
+      - name: grc20-pov run-go.sh (go driver, event-sourced KG)
+        run: ./run-go.sh
+        working-directory: examples/grc20-pov
