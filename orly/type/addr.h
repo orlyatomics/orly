@@ -1,6 +1,11 @@
 /* <orly/type/addr.h>
 
-   TODO
+   The address type for orlyscript keys: an ordered list of
+   `(TAddrDir, TType)` elements describing the key tuple's shape and
+   per-component sort direction (asc/desc). Interned by its
+   `TAddrElems` key -- two `TAddr`s with identical element lists are
+   the same pointer. Backs every `<['key', dir1, dir2, ...]>` tuple
+   in the language.
 
    Copyright 2010-2026 Atomic Kismet Company
 

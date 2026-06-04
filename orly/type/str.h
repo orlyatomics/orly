@@ -1,6 +1,8 @@
 /* <orly/type/str.h>
 
-   TODO
+   The string type. Singleton via `TSingletonType<TStr>`. Concatenable
+   with itself (`+`) and multiplicable with `TInt` for repeat (see
+   `mult_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

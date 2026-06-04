@@ -1,6 +1,11 @@
 /* <orly/type/gen_code.h>
 
-   TODO
+   `GenCode(stream, type)`: writes the C++ source representation of
+   an orly `TType` (e.g. `Orly::Rt::TDict<int64_t, std::string>` for
+   a `dict<int64_t, str>`). Called by orlyc when emitting code-gen
+   output. The in-file `TODO: move to <orly/code_gen/type.h>` comment
+   is honest -- this helper has more in common with the code-gen
+   layer than the type layer.
 
    Copyright 2010-2026 Atomic Kismet Company
 

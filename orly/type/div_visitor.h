@@ -1,6 +1,8 @@
 /* <orly/type/div_visitor.h>
 
-   TODO
+   Type-check rules for `/`. `TEqualVisitor` (same-type only).
+   `TInt / TInt` -> `TInt`, `TReal / TReal` -> `TReal`; every other
+   same-type pair throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

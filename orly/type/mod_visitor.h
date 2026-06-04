@@ -1,6 +1,9 @@
 /* <orly/type/mod_visitor.h>
 
-   TODO
+   Type-check rules for `%`. `TInfixVisitor` (mod isn't commutative).
+   `TInt % TInt` -> `TInt` is the standard rule; `TStr % TObj` ->
+   `TStr` is the one cross-type rule (string formatting). Everything
+   else throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

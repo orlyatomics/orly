@@ -1,6 +1,8 @@
 /* <orly/type/id.h>
 
-   TODO
+   The UUID type used for keys, session IDs, package IDs. Singleton
+   via `TSingletonType<TId>`. Equality / ordering only; arithmetic
+   operators reject it.
 
    Copyright 2010-2026 Atomic Kismet Company
 

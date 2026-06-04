@@ -1,6 +1,9 @@
 /* <orly/type/time_pnt.h>
 
-   TODO
+   The time-point (timestamp) type, backed by
+   `Base::Chrono::TTimePnt`. Singleton via `TSingletonType<TTimePnt>`.
+   Arithmetic with `TTimeDiff` is the only allowed operator family
+   (see `add_visitor.h` / `sub_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

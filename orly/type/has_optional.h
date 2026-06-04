@@ -1,6 +1,10 @@
 /* <orly/type/has_optional.h>
 
-   TODO
+   `HasOptional(type)`: recursive predicate that returns `true` if
+   `type` itself is a `TOpt` or contains a `TOpt` anywhere in its
+   structure (a `TList<TOpt<TInt>>` or a `TObj` with at least one
+   optional field). Used by comparison and mutation type-checkers to
+   decide whether the result type needs an outer `TOpt` wrapper.
 
    Copyright 2010-2026 Atomic Kismet Company
 

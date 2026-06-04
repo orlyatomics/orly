@@ -1,6 +1,10 @@
 /* <orly/type/ensure_empty_object.h>
 
-   TODO
+   `EnsureEmptyObject(type, pos_range)`: asserts that a given type is
+   either not a `TObj` at all or an empty `TObj` -- i.e. that the
+   function it came from took no parameters. Used by the infix
+   visitors' "TFunc unwrap" cases to ensure a parameterised function
+   call isn't accidentally treated as a value.
 
    Copyright 2010-2026 Atomic Kismet Company
 

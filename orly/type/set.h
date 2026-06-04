@@ -1,6 +1,8 @@
 /* <orly/type/set.h>
 
-   TODO
+   The set type `{TElem}`. Unary: interned by element type. Supports
+   union / intersection / symmetric-difference (see
+   `set_ops_visitor.h`) and asymmetric subtraction (`sub_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

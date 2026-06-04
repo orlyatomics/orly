@@ -1,6 +1,11 @@
 /* <orly/type/comp_visitor.h>
 
-   TODO
+   The two comparison-operator visitors. `TEqCompVisitor` checks
+   `==` / `!=` (and assign-mutation); `TIneqCompVisitor` checks
+   `<` / `<=` / `>` / `>=`. Both extend `TEqualVisitor`. Eq supports
+   every type pair (returning `TBool`, optionally `TOpt<TBool>` when
+   operands contain optionals); Ineq rejects collections / records
+   (only equality is well-defined for them).
 
    Copyright 2010-2026 Atomic Kismet Company
 

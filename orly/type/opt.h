@@ -1,6 +1,10 @@
 /* <orly/type/opt.h>
 
-   TODO
+   The optional type `T?`. Unary: interned by element type.
+   Auto-unwrapped by the infix visitor's "TOpt unwrap" cases -- once
+   one operand is optional, the result is wrapped in `TOpt` after
+   recursing on the inner type. Powers orlyscript's `?` / `known` /
+   `unknown` semantics.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/type/logical_ops_visitor.h>
 
-   TODO
+   Type-check rules for the boolean operators (`and`, `or`, `xor`).
+   `TEqualVisitor` specialisation: only `TBool` x `TBool` succeeds
+   (returning `TBool`); every other same-type pair throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,11 @@
 /* <orly/type/infix_visitor.h>
 
-   TODO
+   Abstract base for every two-operand operator's type-checker.
+   `TDoubleVisitor` subclass with pure-virtual `operator()` overloads
+   for each (TLeaf, TLeaf) pair. The `final` overloads at the bottom
+   auto-unwrap `TErr`, `TFunc`, `TMutable`, `TOpt`, `TAny`, `TSeq` so
+   concrete visitors only think about leaf types. Writes the result
+   into the `TType &` reference passed into the constructor.
 
    Copyright 2010-2026 Atomic Kismet Company
 

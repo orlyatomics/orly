@@ -1,6 +1,9 @@
 /* <orly/type/object_collector.h>
 
-   TODO
+   `CollectObjects(type, set)`: walks a type tree and inserts every
+   `TObj` it encounters into the output set. Used by code-gen when
+   emitting forward declarations for all the record types a package
+   needs.
 
    Copyright 2010-2026 Atomic Kismet Company
 

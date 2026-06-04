@@ -1,6 +1,11 @@
 /* <orly/type/func.h>
 
-   TODO
+   Function type: `(param_object, return_type)` interned pair. The
+   param object is required to be a `TObj` (asserted in `Get`) since
+   orlyscript functions are always called with named arguments.
+   Auto-unwrapped by the infix visitor's "TFunc unwrap" cases:
+   calling into a function is equivalent to working with its return
+   type.
 
    Copyright 2010-2026 Atomic Kismet Company
 

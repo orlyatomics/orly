@@ -1,6 +1,11 @@
 /* <orly/type/type_czar.h>
 
-   TODO
+   Static-initialiser owner for the interned-type machinery.
+   Constructor allocates the `Mutex` + `TypeByKey` map for every
+   registered `TInternedType` specialisation; destructor tears them
+   down. Each process holds exactly one `TTypeCzar` (asserted in
+   `TInternedType::Get`) -- typically created in `main` before any
+   type access.
 
    Copyright 2010-2026 Atomic Kismet Company
 

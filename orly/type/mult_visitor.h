@@ -1,6 +1,9 @@
 /* <orly/type/mult_visitor.h>
 
-   TODO
+   Type-check rules for `*`. `TCommutativeInfixVisitor`. Numeric
+   pairs produce their wider type; cross-type rules cover `TInt *
+   TList` -> `TList` (repeat), `TInt * TStr` -> `TStr` (repeat).
+   Everything else throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

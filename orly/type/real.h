@@ -1,6 +1,9 @@
 /* <orly/type/real.h>
 
-   TODO
+   The real (double-precision floating-point) type. Singleton via
+   `TSingletonType<TReal>`. Result type of any mixed int/real
+   arithmetic (see `add_visitor.h` / `mult_visitor.h` /
+   `div_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

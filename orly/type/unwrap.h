@@ -1,6 +1,11 @@
 /* <orly/type/unwrap.h>
 
-   TODO
+   Free-function counterparts to the wrapper-stripping logic that
+   visitors perform inline. `Unwrap(type)` removes `TMutable` and
+   `TSeq` wrappers; `UnwrapMutable` / `UnwrapOptional` /
+   `UnwrapSequence` strip the one specific wrapper named. Used in
+   type-check code that needs to compare element types regardless of
+   how they're wrapped.
 
    Copyright 2010-2026 Atomic Kismet Company
 

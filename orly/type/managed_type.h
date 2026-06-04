@@ -1,6 +1,12 @@
 /* <orly/type/managed_type.h>
 
-   TODO
+   CRTP infrastructure for type interning. `TInternedType<TFinal,
+   TArgs...>` holds a static `TypeByKey` map keyed by `tuple<TArgs...>`;
+   `TFinal::Get(args...)` returns the existing shared instance or
+   constructs one. `TSingletonType<TFinal>` is the degenerate
+   no-arguments case (used for `TBool`, `TInt`, `TAny`, etc.).
+   `IMPL_INTERNED_TYPE` / `IMPL_SINGLETON_TYPE` macros emit the static
+   storage definitions in each leaf's `.cc` file.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/type/set_ops_visitor.h>
 
-   TODO
+   Type-check rules for the set operators `|`, `&`, `^` (union,
+   intersection, symmetric difference). `TEqualVisitor` specialisation:
+   only `TSet` x `TSet` succeeds (and only when the element types
+   match modulo optionality); every other same-type pair throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 
