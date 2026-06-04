@@ -1,6 +1,11 @@
 /* <orly/indy/disk/out_stream.h>
 
-   TODO
+   The write side of the disk layer. `TOutStream<>` is the templated
+   cursor that appends bytes into block-aligned buffers and queues them
+   as a `TWriteGroup`. `TBoundaryChecker<>` tracks page-in-block
+   transitions so the writer knows when to start a new buffered page;
+   the `PageSize == BlockSize` specialization collapses to a trivial
+   "always new" check.
 
    Copyright 2010-2026 Atomic Kismet Company
 

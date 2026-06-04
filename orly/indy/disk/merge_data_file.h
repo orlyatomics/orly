@@ -1,6 +1,11 @@
 /* <orly/indy/disk/merge_data_file.h>
 
-   TODO
+   Merges a list of data files (identified by `gen_vec`) into a single
+   output file. Sequence numbers and the `Mutator` byte are carried
+   through so commutative ops still compose at read time (#49 / #53).
+   `GetNumNonAssignEntries()` is consulted by `TSafeRepo::MergeFiles`
+   to skip the subsequent `TFoldDataFile` pass when the source has
+   nothing to fold (#64).
 
    Copyright 2010-2026 Atomic Kismet Company
 

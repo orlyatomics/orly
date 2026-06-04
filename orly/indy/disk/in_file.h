@@ -1,6 +1,12 @@
 /* <orly/indy/disk/in_file.h>
 
-   TODO
+   The read side of the disk layer. `TInFile` is the minimal abstract
+   interface for "something we can read pages from"; `TStream<>` is the
+   templated cursor that does byte-by-byte reads against the page cache
+   (with optional read-ahead). `TData` collects the on-disk layout
+   constants (entry sizes, meta-field counts) consumed by readers and
+   writers in lockstep -- changes here ripple through `read_file.h`,
+   `data_file.cc`, and the merge/walker classes.
 
    Copyright 2010-2026 Atomic Kismet Company
 

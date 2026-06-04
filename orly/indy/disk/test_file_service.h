@@ -1,6 +1,10 @@
 /* <orly/indy/disk/test_file_service.h>
 
-   TODO
+   In-memory `TFileServiceBase` implementation used by disk-layer tests.
+   No runner loop, no on-disk recovery -- just a `(file_uid, gen_id) ->
+   TFileObj` map guarded by a mutex. Insert / Remove / Find / ForEach
+   all operate against the map directly so tests can assert state
+   without waiting on the production service's queue.
 
    Copyright 2010-2026 Atomic Kismet Company
 

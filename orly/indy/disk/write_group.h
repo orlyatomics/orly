@@ -1,6 +1,11 @@
 /* <orly/indy/disk/write_group.h>
 
-   TODO
+   Batches sequential block writes into a single submitted operation.
+   `Append(block_id, buf)` extends a contiguous run; a non-sequential
+   `block_id` flushes the current run and starts fresh. `TBufferedWrite`
+   is the per-block entry in the batch. Consumers: `TOutStream` (the
+   writer), `TController` and `TService` (the I/O scheduler),
+   `TIndexSortFile` (sort-file emission).
 
    Copyright 2010-2026 Atomic Kismet Company
 

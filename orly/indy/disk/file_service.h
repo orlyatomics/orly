@@ -1,6 +1,11 @@
 /* <orly/indy/disk/file_service.h>
 
-   TODO
+   On-disk file registry: maps `(file_uid, gen_id)` to a `TFileObj`
+   describing where the file's blocks live on the volume. Inserts and
+   removes are queued and applied by a runner fiber so the in-memory
+   map stays internally consistent without per-call locking. Reads the
+   `image_1`/`image_2`/`append_log` blocks at startup to recover the
+   map after a crash. Test counterpart: `test_file_service.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

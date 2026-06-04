@@ -1,6 +1,10 @@
 /* <orly/indy/disk/update_walk_file.h>
 
-   TODO
+   Read-side walker that yields a data file's updates in sequence order
+   from a starting sequence number. Used by master->slave replication
+   and by the `TUpdateWalker` consumers in `orly/indy/repo.cc` to scan
+   changes. The recorded `Mutator` byte is preserved on read-back (#53)
+   so commutative ops remain commutative when replayed downstream.
 
    Copyright 2010-2026 Atomic Kismet Company
 

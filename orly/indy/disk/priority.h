@@ -1,6 +1,9 @@
 /* <orly/indy/disk/priority.h>
 
-   TODO
+   Three-tier I/O priority: `RealTime` (synchronous user reads),
+   `Medium`, and `Low` (background compaction, merge, walkers). Used
+   by `TReadFile`, `TMergeDataFile`, and the page cache to schedule
+   disk operations against shared queue space.
 
    Copyright 2010-2026 Atomic Kismet Company
 
