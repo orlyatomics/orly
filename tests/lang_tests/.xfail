@@ -1,0 +1,16 @@
+# Tracked expected-failure tests for tools/lang_test.py.
+#
+# Format: one entry per line. Blank lines and lines starting with "# "
+# (hash + space) are comments. Each entry is a path relative to this
+# file's directory, optionally followed by "#NNN" issue references that
+# track the underlying limitation.
+#
+# A test listed here is expected to fail. The harness reports it as a
+# tracked failure (xfail) rather than a regression. Removing an entry
+# whose test still fails causes the harness to exit non-zero; leaving
+# an entry whose test now passes is also a failure (xpass), prompting
+# the maintainer to drop the entry.
+
+general/mutablefilter.orly #73
+general/unsorted/multiple_sequences.orly #74
+general/unsorted/sequence_in_effecting.orly #75
