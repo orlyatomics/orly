@@ -1,0 +1,148 @@
+/* <examples/agent-swarm/graph.orly>
+
+   Multi-agent knowledge-graph schema. N independent "agent" processes
+   stream extractions from disjoint slices of a corpus into the SAME
+   shared POV. Every write is commutative -- there is zero coordination
+   between agents:
+
+     *<['entity', e]>::({str})    |= {tag}    set union per entity
+     *<['mention', e, d]>::(int)  += 1        per (entity, doc) counter
+     *<['cooccur', a, b]>::(int)  += 1        per unordered-pair counter
+
+   This is the shape AI builders keep reinventing badly: many extractors
+   need to roll up into one knowledge graph, and the naive "read, merge,
+   write back" loop drops updates the moment two extractors hit the
+   same entity at the same time. Orly's field calls (`|=`, `+=`) don't
+   read-modify-write -- they're opaque commutative ops, so concurrent
+   writers all land their contributions and the merge machinery
+   aggregates correctly.
+
+   Each function below mirrors the pattern from
+   examples/wikipedia-pageviews/views.orly: a single function that
+   takes the `is known` branch for subsequent writes and the `new <-`
+   branch for the very first write at a key. The driver pre-initialises
+   every key before agents fan out so all concurrent writers take the
+   commutative branch (we want to isolate the +=/|= property, not the
+   create-race).
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* ---------- entity -> tag set ---------- */
+
+tags_for_entity = (((*<['entity', e]>::({str})) if *<['entity', e]>::({str}?) is known else (empty {str}))) where {
+  e = given::(str);
+};
+
+/* Union one tag into the entity's set. First call creates with {t};
+   subsequent calls union -- both shapes commute under concurrent
+   callers writing different tags at the same key. */
+add_tag = (((1) effecting {
+  *<['entity', e]>::({str}) |= {t};
+} if *<['entity', e]>::({str}?) is known else (0) effecting {
+  new <['entity', e]> <- {t};
+})) where {
+  e = given::(str);
+  t = given::(str);
+};
+
+/* ---------- per-(entity, doc) mention counter ---------- */
+
+mention_count = (((*<['mention', e, d]>::(int)) if *<['mention', e, d]>::(int?) is known else 0)) where {
+  e = given::(str);
+  d = given::(int);
+};
+
+add_mention = (((1) effecting {
+  *<['mention', e, d]>::(int) += 1;
+} if *<['mention', e, d]>::(int?) is known else (0) effecting {
+  new <['mention', e, d]> <- 1;
+})) where {
+  e = given::(str);
+  d = given::(int);
+};
+
+/* Sum mentions of one entity across an inclusive doc-id range -- a
+   per-entity total. The driver uses this for its self-check summary. */
+mentions_total = ([d_start..d_end] reduce start 0 + mention_count(.e: e, .d: that)) where {
+  e       = given::(str);
+  d_start = given::(int);
+  d_end   = given::(int);
+};
+
+/* ---------- per-unordered-pair cooccurrence counter ---------- */
+
+/* The driver canonicalises pair order (lexicographically smaller first)
+   so the database only stores one direction of each undirected edge. */
+cooccur_count = (((*<['cooccur', a, b]>::(int)) if *<['cooccur', a, b]>::(int?) is known else 0)) where {
+  a = given::(str);
+  b = given::(str);
+};
+
+add_cooccur = (((1) effecting {
+  *<['cooccur', a, b]>::(int) += 1;
+} if *<['cooccur', a, b]>::(int?) is known else (0) effecting {
+  new <['cooccur', a, b]> <- 1;
+})) where {
+  a = given::(str);
+  b = given::(str);
+};
+
+/* ---------- inline tests ---------- */
+
+test {
+  /* Unknown keys read as identity values (empty set / 0). */
+  t1: tags_for_entity(.e: "Python") == (empty {str});
+  t2: mention_count(.e: "Python", .d: 0) == 0;
+  t3: cooccur_count(.a: "Python", .b: "GPT-4") == 0;
+
+  /* First add_tag creates (returns 0); subsequent unions return 1. */
+  t4: add_tag(.e: "Python", .t: "language") == 0 {
+    t5: tags_for_entity(.e: "Python") == {"language"};
+    t6: add_tag(.e: "Python", .t: "popular") == 1 {
+      t7: tags_for_entity(.e: "Python") == {"language", "popular"};
+      /* Idempotent: re-adding doesn't grow the set. */
+      t8: add_tag(.e: "Python", .t: "popular") == 1 {
+        t9: tags_for_entity(.e: "Python") == {"language", "popular"};
+      };
+    };
+  };
+
+  /* Mention counter accumulates across calls; per-doc keys are
+     independent; the range-fold sums them all. */
+  t10: add_mention(.e: "GPT-4", .d: 0) == 0 {
+    t11: mention_count(.e: "GPT-4", .d: 0) == 1;
+    t12: add_mention(.e: "GPT-4", .d: 0) == 1 {
+      t13: mention_count(.e: "GPT-4", .d: 0) == 2;
+      t14: add_mention(.e: "GPT-4", .d: 1) == 0 {
+        t15: mention_count(.e: "GPT-4", .d: 0) == 2;
+        t16: mention_count(.e: "GPT-4", .d: 1) == 1;
+        t17: mentions_total(.e: "GPT-4", .d_start: 0, .d_end: 1) == 3;
+        t18: mentions_total(.e: "GPT-4", .d_start: 5, .d_end: 9) == 0;
+      };
+    };
+  };
+
+  /* Cooccurrence counter, same shape as mention. */
+  t19: add_cooccur(.a: "Python", .b: "GPT-4") == 0 {
+    t20: cooccur_count(.a: "Python", .b: "GPT-4") == 1;
+    t21: add_cooccur(.a: "Python", .b: "GPT-4") == 1 {
+      t22: cooccur_count(.a: "Python", .b: "GPT-4") == 2;
+      /* Reversed-order pair is a DIFFERENT key (driver canonicalises). */
+      t23: cooccur_count(.a: "GPT-4", .b: "Python") == 0;
+    };
+  };
+};

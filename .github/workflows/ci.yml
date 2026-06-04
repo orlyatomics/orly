@@ -228,3 +228,23 @@ jobs:
         working-directory: examples/wikipedia-pageviews
         env:
           DEMO_SCALE: small
+
+      # Multi-agent knowledge-graph demo: N concurrent agents each
+      # extract from a disjoint slice of a corpus, writing tags
+      # (|= set-union), per-doc mentions (+= int), and per-pair
+      # cooccurrences (+= int) into one shared POV with zero
+      # coordination. Combines both commutative-write shapes from the
+      # demos above and runs them concurrently -- the shape multi-agent
+      # LLM-extraction pipelines need. DEMO_SCALE=small uses 4 agents
+      # over 20 docs for CI tractability.
+      - name: agent-swarm run.sh (python driver, concurrent |= and +=)
+        run: ./run.sh
+        working-directory: examples/agent-swarm
+        env:
+          DEMO_SCALE: small
+
+      - name: agent-swarm run-go.sh (go driver, concurrent |= and +=)
+        run: ./run-go.sh
+        working-directory: examples/agent-swarm
+        env:
+          DEMO_SCALE: small

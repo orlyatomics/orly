@@ -93,7 +93,28 @@ Most databases force a tradeoff on this workload:
 
 The mechanism: each `+=` emits an `{Add, n}` mutation at the storage layer instead of resolving to a value at write time, and the read path folds same-mutator runs back into the resolved value. CI runs this as the workload-level integration test for the property; pass `DEMO_SCALE=small` for the CI-friendly 4-writer / 800-event variant.
 
-All three examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
+### [`examples/agent-swarm/`](examples/agent-swarm/) — multi-agent knowledge-graph extraction without coordination
+
+The shape multi-agent LLM pipelines keep reinventing badly. N independent extractor "agents" each process a disjoint slice of a corpus and stream tags, mentions, and cooccurrences into one shared knowledge graph — **with zero coordination**. No locks, no per-agent partitioning, no driver-side merge logic. Combines both commutative-write shapes from the demos above and runs them concurrently:
+
+- `*<['entity', e]>::({str}) |= {tag}` — set-union per entity (the `wikipedia-categories` operator, but concurrent)
+- `*<['mention', e, d]>::(int) += 1` — per-(entity, doc) counter
+- `*<['cooccur', a, b]>::(int) += 1` — per-unordered-pair counter
+
+8 agents extract from 40 docs concurrently, with hot entities (`Python`, `OpenAI`, `Claude`, `GPT-4`, …) deliberately round-robined across agents so they collide on the same keys; the self-check confirms every tag set, mention counter, and cooccurrence counter matches the independently-derived ground truth (25 tag sets + 105 mention counters + 76 cooccurrence pairs, zero lost extractions).
+
+What this would normally require:
+
+| Approach | Problem under N concurrent agents |
+|---|---|
+| Per-agent local graph + post-hoc merge | Doubles storage; merge logic has to commute by hand |
+| Read-modify-write per fact (`UPDATE … SET tags = tags ∪ {…}`) | Row lock per write; agents serialize on hot entities |
+| Single-writer service in front of the store | Throughput ceiling = one writer; agents queue |
+| **Orly** | `\|=` and `+=` are field calls; lock-free; all N agents land their contributions and the engine aggregates |
+
+Why it matters: this is exactly the topology AI extraction pipelines have — many agents reading disjoint chunks, emitting overlapping facts into one graph — and every conventional database forces you to invent a coordination protocol on top. Orly gives it to you for free, as a direct consequence of how field calls work. The driver never reads-then-writes; it only ever calls the three commutative functions in [`graph.orly`](examples/agent-swarm/graph.orly).
+
+All four examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
 
 ## Walkthrough
 
