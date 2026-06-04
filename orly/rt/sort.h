@@ -1,6 +1,9 @@
 /* <orly/rt/sort.h>
 
-   TODO
+   `Sort(val, comp)` for `std::vector` and `TOpt<std::vector>`.
+   Returns a sorted copy (the original is `const &`). Code-gen for
+   orlyscript's `sorted_by lhs < rhs` operator. The general template
+   is `= delete` so unsupported types fail at compile time.
 
    Copyright 2010-2026 Atomic Kismet Company
 

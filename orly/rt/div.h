@@ -1,6 +1,9 @@
 /* <orly/rt/div.h>
 
-   TODO
+   `Div(lhs, rhs)` for `int64_t` and `double`, with `TDivisionByZeroError`
+   thrown on `rhs == 0`. The opt-aware overload returns `TOpt<int64_t>`
+   when either operand is unknown -- propagating optionality through
+   division so that orlyscript's `/` operator composes with `?T`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,10 @@
 /* <orly/rt/runtime_error.h>
 
-   TODO
+   Base error classes for the runtime: `TRuntimeError` (extends
+   `std::runtime_error`) and `TSystemError` (extends `TRuntimeError`).
+   Every other rt error -- `TDivisionByZeroError`, `TAssertionError`,
+   bounds errors, etc. -- inherits one of these via the
+   `DEFINE_ERROR` macro from `base/thrower.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

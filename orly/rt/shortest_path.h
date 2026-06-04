@@ -1,6 +1,11 @@
 /* <orly/rt/shortest_path.h>
 
-   TODO
+   `BidirShortestPath<...>`: bidirectional BFS over a key-cursor
+   graph in an orly index. Returns all minimum-length paths between
+   `src` and `target` (each path expressed as a vector of edge keys).
+   Used by orlyscript's `shortest_path` builtin and the
+   `degrees.orly` / `connections.orly` / `social_graph.orly` sample
+   queries.
 
    Copyright 2010-2026 Atomic Kismet Company
 

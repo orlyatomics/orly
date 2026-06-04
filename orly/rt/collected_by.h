@@ -1,6 +1,10 @@
 /* <orly/rt/collected_by.h>
 
-   TODO
+   Implements orlyscript's `collected_by` operator: given a generator
+   of `(key, val)` pairs and a binary collect function, fold into a
+   `TDict<key, collected>` -- first occurrence inserts, repeats run
+   through `collect(existing, val)`. Loop body is NRVO-friendly so
+   the caller gets the dict by value without an extra copy.
 
    Copyright 2010-2026 Atomic Kismet Company
 

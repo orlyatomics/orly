@@ -1,6 +1,11 @@
 /* <orly/rt/mutate.h>
 
-   TODO
+   `Rt::Mutate(lhs, mutator, rhs)`: dispatches a runtime mutation
+   between two `TVar`s for the given `TMutator` enum. The
+   runtime-typed (dynamic) counterpart of the static `TMutation::Augment`
+   path in `orly/var/mutation.h`. Used wherever the engine needs to
+   apply a mutator at runtime without knowing the operand types
+   statically.
 
    Copyright 2010-2026 Atomic Kismet Company
 

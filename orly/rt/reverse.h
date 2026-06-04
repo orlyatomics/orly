@@ -1,6 +1,10 @@
 /* <orly/rt/reverse.h>
 
-   TODO
+   `Reverse(val)` for vector / string / opt-wrapped vector / opt-wrapped
+   string. Returns a freshly constructed reversed copy (not an in-place
+   reverse, because the inputs are usually `const &`). Code-gen for
+   orlyscript's `reverse_of` operator. The general template is
+   `= delete` so unsupported types fail at compile time.
 
    Copyright 2010-2026 Atomic Kismet Company
 

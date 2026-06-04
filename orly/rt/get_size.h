@@ -1,6 +1,10 @@
 /* <orly/rt/get_size.h>
 
-   TODO
+   `GetSize(val)` returning `int64_t` for strings, vectors, `TSet`s,
+   `TDict`s, `TMutable`s, and opt-wrapped values. Code-gen emits a
+   call here for orlyscript's `length_of` operator. The general
+   template is `= delete` so an unsupported `GetSize` is a compile
+   error rather than a silent fallback.
 
    Copyright 2010-2026 Atomic Kismet Company
 

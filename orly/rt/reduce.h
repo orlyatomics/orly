@@ -1,6 +1,10 @@
 /* <orly/rt/reduce.h>
 
-   TODO
+   `Reduce(gen, fn, start)` and `FastReduce(gen, fn, start)` -- the
+   former takes a `(carry, src) -> carry` fn that returns the new
+   accumulator, the latter takes a `(carry&, src) -> void` fn for
+   in-place accumulation (avoids the extra move per iteration).
+   Code-gen for orlyscript's `reduce start X + that` operator.
 
    Copyright 2010-2026 Atomic Kismet Company
 
