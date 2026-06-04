@@ -1,6 +1,9 @@
 /* <orly/symbol/root.h>
 
-   TODO
+   Holds the top-level expression of a callable. `TFunction` inherits
+   this to carry its body expression; `TRoot` itself is an
+   `Expr::TExprParent` so the expression tree can climb back to the
+   owning function.
 
    Copyright 2010-2026 Atomic Kismet Company
 

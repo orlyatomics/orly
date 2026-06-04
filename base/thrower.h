@@ -1,6 +1,10 @@
 /* <base/thrower.h>
 
-   TODO
+   Error-throwing scaffolding: `DEFINE_ERROR(TName, base_t, desc)`
+   declares a new exception class; `THROW_ERROR(TName) << "..."` and
+   `THROW << "..."` are the streaming throw macros. Each thrown
+   error carries the source `TCodeLocation` of the throw site for
+   inclusion in the message.
 
    Copyright 2010-2026 Atomic Kismet Company
 

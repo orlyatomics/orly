@@ -1,6 +1,9 @@
 /* <orly/symbol/scope.h>
 
-   TODO
+   Holds a set of functions and a list of tests. Base for `TPackage`
+   (the top-level scope) and any nested scope the compiler frontend
+   builds. `TypeCheck()` walks the contained functions for type
+   resolution; consumers call `Add` / `Remove` during construction.
 
    Copyright 2010-2026 Atomic Kismet Company
 

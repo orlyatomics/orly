@@ -1,6 +1,9 @@
 /* <orly/sabot/match_prefix_type.h>
 
-   TODO
+   The `TMatchResult` enum (`NoMatch` / `PrefixMatch` / `Unifies`)
+   and helpers; partner of `match_prefix_state.h` -- the type-level
+   prefix-match check that the state version recurses into during
+   key-pattern evaluation.
 
    Copyright 2010-2026 Atomic Kismet Company
 

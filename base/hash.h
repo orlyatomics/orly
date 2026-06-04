@@ -1,6 +1,10 @@
 /* <base/hash.h>
 
-   TODO
+   Hash-combination helpers used throughout the codebase:
+   `TTupleHash` (per-element folder for `std::tuple`),
+   `CombineHashes(lhs, rhs)` (the boost-style two-hash mixer), and
+   the variadic `HashChainer` that composes any number of hashers
+   in sequence.
 
    Copyright 2010-2026 Atomic Kismet Company
 

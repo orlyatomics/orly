@@ -1,6 +1,12 @@
 /* <orly/indy/update_walker.h>
 
-   TODO
+   Abstract base for "walk a sequence of updates in order." `TItem`
+   describes one update: sequence number, metadata, id, and a vector
+   of `(TIndexKey, Op, Mutator)` entries. The `Mutator` field defaults
+   to `Assign` for the few paths that don't yet populate it -- the
+   in-memory walker does, but historically the on-disk walker (#53)
+   and replication wire format (#54) didn't, which broke commutative
+   ops on read-back. Both are now fixed.
 
    Copyright 2010-2026 Atomic Kismet Company
 

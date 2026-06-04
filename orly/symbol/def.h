@@ -1,6 +1,10 @@
 /* <orly/symbol/def.h>
 
-   TODO
+   Abstract base for named definitions in a function's scope. The
+   visitor pattern dispatches to the two concrete kinds:
+   `TGivenParamDef` (a `given` parameter) and `TResultDef` (the symbol
+   a function expression binds). The compiler frontend uses these for
+   name resolution after parsing.
 
    Copyright 2010-2026 Atomic Kismet Company
 

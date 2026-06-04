@@ -1,6 +1,9 @@
 /* <orly/symbol/built_in_function.h>
 
-   TODO
+   Compiler-provided callable: `TimeDiff`, `TimePnt`, `RandomInt`,
+   `Replace`. Each is a singleton accessed via the `Get...()` static
+   helpers. Distinct from `TFunction` (user-defined) but visible
+   through the shared `TAnyFunction` base.
 
    Copyright 2010-2026 Atomic Kismet Company
 

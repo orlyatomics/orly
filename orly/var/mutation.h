@@ -1,6 +1,11 @@
 /* <orly/var/mutation.h>
 
-   TODO
+   The single source of truth for which mutators (`TMutator::Add`,
+   `Or`, `Union`, ...) are commutative-and-associative -- i.e. safe
+   to defer and re-fold. `IsDeferSafeCommutative` gates both
+   `TMutation::Augment` (compose-time, PR #48) and the session-layer
+   emit path (#49 phase 2). `Sub` / `Div` / `Mod` / `Exp` deliberately
+   return false here.
 
    Copyright 2010-2026 Atomic Kismet Company
 

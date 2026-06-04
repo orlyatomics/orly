@@ -1,6 +1,11 @@
 /* <orly/var/impl.h>
 
-   TODO
+   Forward declarations for every concrete `TVar` subclass
+   (`TBool`, `TInt`, `TList`, `TSet`, `TDict`, `TObj`, ...). `TVar`
+   is the runtime's dynamic value type -- a tagged variant covering
+   every orlyscript value. Full class definitions live in
+   `orly/var/all.h` and friends; this header just declares the
+   forwards consumers need.
 
    Copyright 2010-2026 Atomic Kismet Company
 

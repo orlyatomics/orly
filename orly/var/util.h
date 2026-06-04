@@ -1,6 +1,9 @@
 /* <orly/var/util.h>
 
-   TODO
+   Out-of-line template definitions for `TVar::As<T>`, `TVar::Is<T>`,
+   `TVar::TryAs<T>`. Lives in its own header (rather than `impl.h`)
+   because these templates need full visibility of the concrete
+   subclass types -- including from this header would create a cycle.
 
    Copyright 2010-2026 Atomic Kismet Company
 

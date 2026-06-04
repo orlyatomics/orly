@@ -1,6 +1,10 @@
 /* <orly/indy/context.h>
 
-   TODO
+   `TContext` (subclass of `TContextBase`) -- the per-call execution
+   context inside an `orlyi` method invocation. Holds the POV / repo
+   tree the method walks, the key-cursor collection (for iterators
+   that survive across statements), the sabot arena, and the current
+   sequence numbers. Constructed per RPC and torn down at end-of-call.
 
    Copyright 2010-2026 Atomic Kismet Company
 

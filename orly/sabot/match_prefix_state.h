@@ -1,6 +1,10 @@
 /* <orly/sabot/match_prefix_state.h>
 
-   TODO
+   `MatchPrefixState(lhs, rhs)` checks whether `lhs`'s state is a
+   prefix of `rhs`'s (returns one of `TMatchResult::NoMatch`,
+   `PrefixMatch`, or `Unifies`). Used by the key-pattern matching path
+   when the runtime evaluates `keys <[pattern]>` with `free::(T)`
+   wildcards.
 
    Copyright 2010-2026 Atomic Kismet Company
 

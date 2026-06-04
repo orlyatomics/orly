@@ -1,6 +1,9 @@
 /* <orly/sabot/order_states.h>
 
-   TODO
+   `TOrderStatesVisitor` produces a total ordering over `State::TAny`
+   values (`OrderStates(lhs, rhs)`). Used as the on-disk key ordering
+   for sorted indexes -- distinct from `CompareStates` (three-way
+   compare) in that this never returns `Unordered`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

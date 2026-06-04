@@ -1,6 +1,8 @@
 /* <orly/symbol/result_def.h>
 
-   TODO
+   The named symbol that a function's expression binds -- one of the
+   two concrete `TDef`s (alongside `TGivenParamDef`). Carries the type
+   and a `weak_ptr` to the owning `TAnyFunction`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

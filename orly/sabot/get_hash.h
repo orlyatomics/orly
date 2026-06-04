@@ -1,6 +1,9 @@
 /* <orly/sabot/get_hash.h>
 
-   TODO
+   `GetHash(state)` produces a `size_t` digest of a `State::TAny` via
+   the `THashVisitor`. Used wherever the runtime needs to put dynamic
+   values into hash-based containers (key lookup, dedup of free-form
+   args, etc.).
 
    Copyright 2010-2026 Atomic Kismet Company
 
