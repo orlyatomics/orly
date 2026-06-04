@@ -1,6 +1,9 @@
 /* <base/debug_log.h>
 
-   TODO
+   `DEBUG_LOG(msg, ...)` macro: in debug builds it forwards to
+   `syslog(LOG_DEBUG, ...)`; in release builds (`NDEBUG` defined) it
+   compiles to nothing so per-call overhead is zero. Use sparingly --
+   debug builds still pay the syslog round-trip.
 
    Copyright 2010-2026 Atomic Kismet Company
 

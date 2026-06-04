@@ -1,6 +1,9 @@
 /* <orly/symbol/given_param_def.h>
 
-   TODO
+   A function parameter introduced by a `given` clause -- one
+   concrete subclass of the visitor-friendly `TDef`. Held weakly
+   by the owning `TFunction` (the function holds the param; the
+   param holds the function back).
 
    Copyright 2010-2026 Atomic Kismet Company
 

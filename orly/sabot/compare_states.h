@@ -1,6 +1,10 @@
 /* <orly/sabot/compare_states.h>
 
-   TODO
+   `TCompareStatesVisitor` performs three-way comparison
+   (`Atom::TComparison`: `Eq` / `Lt` / `Gt` / `Unordered`) over two
+   `State::TAny`s of the same type. Used wherever the runtime needs
+   value-equality / value-ordering without committing to a static
+   type.
 
    Copyright 2010-2026 Atomic Kismet Company
 

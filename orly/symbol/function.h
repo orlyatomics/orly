@@ -1,6 +1,9 @@
 /* <orly/symbol/function.h>
 
-   TODO
+   User-defined orlyscript function. Lives in a `TScope`, owns its
+   `TParamDefSet`, holds the body expression via the inherited
+   `TRoot`. Distinct from `TBuiltInFunction` (compiler-provided) but
+   visible through the shared `TAnyFunction` base.
 
    Copyright 2010-2026 Atomic Kismet Company
 

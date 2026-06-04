@@ -1,6 +1,9 @@
 /* <orly/symbol/package.h>
 
-   TODO
+   Top-level scope: one `TPackage` per orlyscript source file. Tagged
+   with a fully-qualified `Package::TName`, an index name, and an
+   integer `version` for the `package #N;` declaration. Inherits
+   `TScope` so it holds functions and tests like any nested scope.
 
    Copyright 2010-2026 Atomic Kismet Company
 

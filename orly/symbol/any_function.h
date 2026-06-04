@@ -1,6 +1,9 @@
 /* <orly/symbol/any_function.h>
 
-   TODO
+   Abstract base for callable symbols. `TVisitor` dispatches over the
+   two concrete kinds: user-defined `TFunction` and compiler-provided
+   `TBuiltInFunction`. Used by the compiler frontend wherever a
+   "this could be either" callable is referenced.
 
    Copyright 2010-2026 Atomic Kismet Company
 

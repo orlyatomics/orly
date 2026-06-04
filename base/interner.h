@@ -1,6 +1,11 @@
 /* <base/interner.h>
 
-   TODO
+   `TInterner<TObj, TArgs...>` interns immutable objects by their
+   constructor arguments. `Get(args...)` returns the existing
+   `shared_ptr<const TObj>` or constructs one; the map holds
+   `weak_ptr`s so unused entries die naturally. Used for type
+   objects, sabot type singletons, and other "same args -> same
+   object" invariants.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/sabot/order_types.h>
 
-   TODO
+   `OrderStates` and `OrderTypes` -- total orderings over sabot
+   states and types respectively. The pair is used wherever the
+   storage layer wants a deterministic key ordering (sorted indexes,
+   merge files), and never returns `Unordered`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

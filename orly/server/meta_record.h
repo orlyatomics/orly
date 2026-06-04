@@ -1,6 +1,12 @@
 /* <orly/server/meta_record.h>
 
-   TODO
+   Per-invocation metadata captured for every `orlyi` method call.
+   `TMetaRecord::TEntry` holds session id, optional user id,
+   fully-qualified package name, method name, the named arg map,
+   expected predicate results, timestamp, and random seed. Used for
+   replay and audit -- the random seed in particular lets a
+   deterministic replay reproduce side effects that depended on
+   `RandomInt`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

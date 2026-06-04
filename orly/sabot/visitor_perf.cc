@@ -1,6 +1,9 @@
 /* <orly/sabot/visitor_perf.cc>
 
-   TODO
+   Standalone microbenchmark for the sabot visitor pattern.
+   Repeatedly compares an `int8_t` type to itself 100k times and
+   reports total / per-op latency. Useful when changing the
+   visitor-dispatch hot path; not part of any production binary.
 
    Copyright 2010-2026 Atomic Kismet Company
 

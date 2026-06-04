@@ -1,6 +1,10 @@
 /* <base/event_semaphore.h>
 
-   TODO
+   `TEventSemaphore` wraps Linux `eventfd` as a counted semaphore.
+   `Push(n)` increments the count, `Pop()` decrements by 1; the
+   blocking / non-blocking behaviour of `Pop` is selected at
+   construction. `GetFd()` returns the underlying file descriptor
+   for integration with `epoll` and friends.
 
    Copyright 2010-2026 Atomic Kismet Company
 

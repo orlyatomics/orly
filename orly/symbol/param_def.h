@@ -1,6 +1,9 @@
 /* <orly/symbol/param_def.h>
 
-   TODO
+   Concrete `TFunction::TParamDef` -- a typed parameter bound to a
+   specific `TFunction`. Carries the type and a `weak_ptr` back to
+   the owning function. Subclassed by `TGivenParamDef` for
+   `given`-clause parameters.
 
    Copyright 2010-2026 Atomic Kismet Company
 

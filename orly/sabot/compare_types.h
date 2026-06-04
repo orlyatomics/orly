@@ -1,6 +1,9 @@
 /* <orly/sabot/compare_types.h>
 
-   TODO
+   `CompareTypes(lhs, rhs)` returns three-way comparison
+   (`Atom::TComparison`) over two `Type::TAny`s; `CompareStates`
+   (in `compare_states.h`) uses this for the dispatch step before
+   recursing into element-wise state comparison.
 
    Copyright 2010-2026 Atomic Kismet Company
 
