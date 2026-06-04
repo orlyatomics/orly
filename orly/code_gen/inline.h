@@ -1,6 +1,13 @@
 /* <orly/code_gen/inline.h>
 
-   TODO
+   `TInline` is the abstract base for every code-gen expression node.
+   `WriteExpr` emits the C++ source for this expression;
+   `AppendDependsOn` declares which other inlines this one references
+   (for the common-subexpression eliminator and dependency-order
+   emission). `SetCommonSubexpressionId` is set by CSE when the same
+   `TInline` appears more than once -- subsequent `Write` calls then
+   emit the saved variable name instead of re-emitting the full
+   expression.
 
    Copyright 2010-2026 Atomic Kismet Company
 

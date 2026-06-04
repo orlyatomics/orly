@@ -1,6 +1,11 @@
 /* <orly/code_gen/implicit_func.h>
 
-   TODO
+   `TImplicitFunc` is the auto-synthesised callback that orlyc emits
+   for the implicit-lambda operators: `collected_by`, `filter`,
+   `map`, `reduce`, `sorted_by`, `while`. `TCause` records which
+   operator caused the synthesis (mainly for debugging / naming).
+   Inherits `TInlineFunc` because the result is always a lambda
+   inside the surrounding function.
 
    Copyright 2010-2026 Atomic Kismet Company
 

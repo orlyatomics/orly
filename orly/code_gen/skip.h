@@ -1,6 +1,7 @@
 /* <orly/code_gen/skip.h>
 
-   TODO
+   `TSkip` emits the `skip` sequence operator: drop the first
+   `count` elements of `seq`. Counterpart of `TTake`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

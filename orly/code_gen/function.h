@@ -1,6 +1,12 @@
 /* <orly/code_gen/function.h>
 
-   TODO
+   Abstract base for every emitted C++ function. Leaf classes are
+   `TTopFunc` (instantiable at package scope), `TInnerFunc` (named
+   lambda inside a top-level function), and `TImplicitFunc` (the
+   synthesised callback for `map` / `filter` / `reduce` / `sort` /
+   `while`). `TArg` represents one named parameter with its `TRef`
+   (the inline reference used inside the body). Argument maps are
+   always ordered by name -- callers must pass args asciibetically.
 
    Copyright 2010-2026 Atomic Kismet Company
 

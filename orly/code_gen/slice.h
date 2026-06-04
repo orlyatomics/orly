@@ -1,6 +1,9 @@
 /* <orly/code_gen/slice.h>
 
-   TODO
+   `TSlice` emits `container[idx]` indexing and `container[lhs:rhs]`
+   slicing. `Colon` distinguishes single-index from slice; `OptLhs`
+   / `OptRhs` are nullable for open-ended slices (`container[:rhs]`,
+   `container[lhs:]`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,11 @@
 /* <orly/code_gen/basic_ctor.h>
 
-   TODO
+   `TBasicCtor<TContainer>` emits a container literal: addr (vector
+   of `(dir, inline)`), dict (map of `inline -> inline`), set
+   (set of inlines), list (vector of inlines). `WriteCtorElem` is
+   the per-container element formatter (dict elements emit as
+   `{key, val}`, addr elements emit just the value because the dir
+   lives outside).
 
    Copyright 2010-2026 Atomic Kismet Company
 

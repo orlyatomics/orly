@@ -1,6 +1,10 @@
 /* <orly/code_gen/literal.h>
 
-   TODO
+   `TLiteral` wraps a runtime `Var::TVar` and emits its C++ literal
+   form (via the `<< Var` stream overload). Used for compile-time-
+   known values appearing in expressions. The in-file comment about
+   not common-subexpression-eliminating literals is a planned tweak --
+   literals are cheap enough to inline freely.
 
    Copyright 2010-2026 Atomic Kismet Company
 

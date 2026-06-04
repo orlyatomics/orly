@@ -1,6 +1,10 @@
 /* <orly/code_gen/built_in_call.h>
 
-   TODO
+   `TBuiltInCall` emits a call into one of the compiler-provided
+   builtins from `Symbol::TBuiltInFunction` (`TimeDiff`, `TimePnt`,
+   `RandomInt`, `Replace`). Distinct from `TCall` because the
+   target isn't a user-defined function with a body to recurse into;
+   it just emits the runtime helper name and forwards arguments.
 
    Copyright 2010-2026 Atomic Kismet Company
 

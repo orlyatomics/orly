@@ -1,6 +1,12 @@
 /* <orly/code_gen/binary.h>
 
-   TODO
+   `TBinary` emits a two-operand operator. `TOp` enumerates them:
+   `Add`, `And`, `Atan2`, `Div`, `EqEq`, `Exponent`, `Gt`, `GtEq`,
+   `In`, `Intersection`, `IsKnownExpr`, `Lt`, `LtEq`, `Modulo`,
+   `Mult`, `Neq`, `Or`, `Sub`, `SymmetricDiff`, `Union`, `Xor`. Each
+   `TOp` selects one of `Template` / `Infix` / `Call` / `CallReverse`
+   emit shapes (e.g. `Add` is infix `+`, `Atan2` is a function call,
+   `In` reverses operand order before calling).
 
    Copyright 2010-2026 Atomic Kismet Company
 

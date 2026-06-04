@@ -1,6 +1,10 @@
 /* <orly/code_gen/collated_by.h>
 
-   TODO
+   `TCollatedBy` emits a `collated_by ... having ...` expression:
+   groups elements of `Seq` from `Start`, reducing each group
+   through `ReduceFunc`, then filtering groups through `HavingFunc`.
+   Both functions are `TImplicitFunc`s synthesised over the inline
+   body.
 
    Copyright 2010-2026 Atomic Kismet Company
 

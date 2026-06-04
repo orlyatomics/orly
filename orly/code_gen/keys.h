@@ -1,6 +1,10 @@
 /* <orly/code_gen/keys.h>
 
-   TODO
+   `TKeys` emits a `keys <[pattern]>` expression: builds the
+   `TAddrElems` (same `(TAddrDir, TInline)` shape as
+   `TBasicCtor<TAddrContainer>`) plus the dereferenced value type
+   and emits the runtime call that walks the index for matching
+   keys.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/code_gen/range.h>
 
-   TODO
+   `TRange` emits `[start..end]` / `[start..end..stride]` /
+   `[start..]` ranges. `IncludeEnd` selects inclusive vs exclusive;
+   `OptLimit` / `OptStride` are nullable for unbounded / unit-stride
+   ranges.
 
    Copyright 2010-2026 Atomic Kismet Company
 

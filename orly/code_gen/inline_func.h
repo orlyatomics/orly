@@ -1,6 +1,10 @@
 /* <orly/code_gen/inline_func.h>
 
-   TODO
+   `TInlineFunc` is the base for functions emitted inside another
+   function (lambdas). Carries a `TId<TIdKind::Func>` for naming
+   and writes its definition / declaration via `WriteDecl` /
+   `WriteDef`. Counterpart of `TTopFunc` -- the two are virtual
+   bases that `TInnerFunc` multiply-inherits from.
 
    Copyright 2010-2026 Atomic Kismet Company
 

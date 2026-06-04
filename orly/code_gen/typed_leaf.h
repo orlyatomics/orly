@@ -1,6 +1,10 @@
 /* <orly/code_gen/typed_leaf.h>
 
-   TODO
+   `TTypedLeaf` is a parameter-less inline (no operand dependencies)
+   that emits one of the language's typed leaf forms: `TKind::Unknown`
+   for the unknown literal of a given type, `TKind::Free` for
+   `free::(T)` placeholders in key patterns (with `TAddrDir` for
+   asc/desc).
 
    Copyright 2010-2026 Atomic Kismet Company
 

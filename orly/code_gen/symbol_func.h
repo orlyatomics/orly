@@ -1,6 +1,10 @@
 /* <orly/code_gen/symbol_func.h>
 
-   TODO
+   `TSymbolFunc` is the base for any code-gen function that maps
+   back to a `Symbol::TFunction` from the language frontend. Holds
+   the symbol pointer, the body inline, and a static
+   `Symbol::TFunction*` -> `TSymbolFunc*` map so calls into the
+   same named function reuse the existing code-gen.
 
    Copyright 2010-2026 Atomic Kismet Company
 

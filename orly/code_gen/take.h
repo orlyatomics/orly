@@ -1,6 +1,7 @@
 /* <orly/code_gen/take.h>
 
-   TODO
+   `TTake` emits the `take` sequence operator: keep only the first
+   `count` elements of `seq`. Counterpart of `TSkip`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

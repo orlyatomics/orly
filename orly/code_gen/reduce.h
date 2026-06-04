@@ -1,6 +1,8 @@
 /* <orly/code_gen/reduce.h>
 
-   TODO
+   `TReduce` emits a `reduce start X + that` expression: fold
+   `Seq` starting from `Start` using `Func` (a `TImplicitFunc`
+   over the (carry, that) accumulator pair).
 
    Copyright 2010-2026 Atomic Kismet Company
 

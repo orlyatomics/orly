@@ -1,7 +1,12 @@
 
 /* <orly/code_gen/cpp_printer.h>
 
-   TODO
+   The C++ source-writing stream used by every code-gen node.
+   `TCppPrinter` wraps an output `ofstream` with indent tracking and
+   a tiny vocabulary (`TEol`, `TIndent`, `TNamespacePrinter`,
+   `TOrlyNamespacePrinter`). Construct with a target filename and
+   description; each `Write` call honours the current indent level
+   (set up by `TIndent` RAII guards).
 
    Copyright 2010-2026 Atomic Kismet Company
 

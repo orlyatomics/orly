@@ -1,6 +1,10 @@
 /* <orly/code_gen/inner_func.h>
 
-   TODO
+   `TInnerFunc` is a named lambda defined inside a top-level
+   function: inherits both `TInlineFunc` (so it emits inside another
+   function's body) and `TSymbolFunc` (so calls bind through the
+   symbol map). Used for orlyscript's `f = (...) where { ... }`
+   definitions inside function bodies.
 
    Copyright 2010-2026 Atomic Kismet Company
 

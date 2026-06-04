@@ -1,6 +1,11 @@
 /* <orly/code_gen/test.h>
 
-   TODO
+   `TTestCase` emits one test from a `with { ... } test { ... }`
+   block. Inherits `TTopFunc` because tests emit as standalone
+   functions in the .cc. `TTestBlock` is the (optional) container
+   for nested sub-tests (the `t1: { t2: ... }` structure). Each
+   test gets a `TId<TIdKind::Test>` from the package-scoped
+   generator.
 
    Copyright 2010-2026 Atomic Kismet Company
 

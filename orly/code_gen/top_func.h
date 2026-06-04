@@ -1,6 +1,10 @@
 /* <orly/code_gen/top_func.h>
 
-   TODO
+   `TTopFunc` is the base for functions emitted at package scope:
+   `TExportFunc` (user-visible) and `TTestCase` (test wrappers).
+   `IsTopLevel` returns true; `WriteDecl` / `WriteDef` emit the .h
+   declaration and .cc definition. Concrete subclasses implement
+   `WriteCcName` (the symbol name used in the .cc).
 
    Copyright 2010-2026 Atomic Kismet Company
 

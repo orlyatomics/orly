@@ -1,6 +1,9 @@
 /* <orly/code_gen/exists.h>
 
-   TODO
+   `TExists` emits an `is_known` / `keys ... is known` shaped
+   check where the underlying expression may reach the storage
+   layer. Carries the read value-type (for runtime sabot dispatch)
+   and the inline whose presence is being tested.
 
    Copyright 2010-2026 Atomic Kismet Company
 

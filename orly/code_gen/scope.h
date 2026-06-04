@@ -1,6 +1,11 @@
 /* <orly/code_gen/scope.h>
 
-   TODO
+   Per-function-body code-gen scope. `TIdScope` is the per-top-level
+   `TId<Arg|Func|Var>` generator (lambdas inside a top-level function
+   share their parent's id scope so `&` captures stay valid).
+   `TCodeScope` holds the function's locals, assertions, and the
+   `TIdScope` it draws from. Inlines flow through `AddLocal` so
+   common-subexpression elimination can attach a name.
 
    Copyright 2010-2026 Atomic Kismet Company
 
