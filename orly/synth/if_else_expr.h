@@ -1,6 +1,8 @@
 /* <orly/synth/if_else_expr.h>
 
-   TODO
+   Synth-layer node for `if pred then a else b` ternary expressions
+   (and chained `if`/`else if`). Holds the predicate and the two
+   branches. Lowers to `Expr::TIfElse`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

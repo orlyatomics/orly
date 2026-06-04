@@ -1,6 +1,9 @@
 /* <orly/synth/addr_type.h>
 
-   TODO
+   Synth-layer node for an address type (`<[type1, type2, ...]>`
+   with per-element asc/desc). Iterates element types via
+   `addr_dir_visitor.h`; `ComputeSymbolicType()` lowers to
+   `Type::TAddr`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

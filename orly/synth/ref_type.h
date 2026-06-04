@@ -1,6 +1,9 @@
 /* <orly/synth/ref_type.h>
 
-   TODO
+   Synth-layer node for a bare type-name reference. Holds an
+   unresolved `TDef::TRef<TTypeDef>` that the multi-pass build
+   driver fills in. `ComputeSymbolicType()` returns the referenced
+   type definition's `Type::TType`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

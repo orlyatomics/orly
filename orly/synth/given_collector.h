@@ -1,6 +1,9 @@
 /* <orly/synth/given_collector.h>
 
-   TODO
+   Walks an expression tree collecting every `given::(T)`
+   placeholder into a flat list. Used by `TFuncDef` to discover the
+   implicit parameters introduced by `given::(int)` etc. and build
+   the function's parameter object accordingly.
 
    Copyright 2010-2026 Atomic Kismet Company
 

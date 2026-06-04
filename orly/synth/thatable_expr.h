@@ -1,6 +1,10 @@
 /* <orly/synth/thatable_expr.h>
 
-   TODO
+   Mixin base for synth expressions that introduce a `that`
+   binding. Subclasses include `TFilterExpr`, `TReduceExpr`,
+   `TCollatedByExpr`, `TCollectedByExpr`, `TAssertExpr`,
+   `TEffectingExpr`. The outer expression's symbol is built before
+   the rhs body so the inner `that` reference can resolve to it.
 
    Copyright 2010-2026 Atomic Kismet Company
 

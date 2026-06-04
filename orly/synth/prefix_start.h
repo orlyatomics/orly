@@ -1,6 +1,9 @@
 /* <orly/synth/prefix_start.h>
 
-   TODO
+   Synth-layer node for the `start` keyword inside a reduce body.
+   Resolves to the nearest enclosing `TStartableExpr` (typically a
+   `TReduceExpr` or `TCollatedByExpr`) during build and lowers to
+   `Expr::TStart`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/synth/addr_dir_visitor.h>
 
-   TODO
+   Visitor over `Package::Syntax::TAddrDir` that resolves each
+   parsed direction token (`asc` / `desc`) to a `TAddrDir` enum
+   value. Used by every address-shaped synth node when reading the
+   direction modifiers off the CST.
 
    Copyright 2010-2026 Atomic Kismet Company
 

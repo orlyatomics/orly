@@ -1,6 +1,9 @@
 /* <orly/synth/time_diff_ctor.h>
 
-   TODO
+   Synth-layer node for time-diff literals (the
+   `{day, hour, minute, ...}` record returned by `TimeDiff`-shape
+   constructors). Carries each component expression and lowers to
+   a typed `TBasicCtor` over the `TimeDiff` object record.
 
    Copyright 2010-2026 Atomic Kismet Company
 

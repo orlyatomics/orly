@@ -1,6 +1,10 @@
 /* <orly/synth/type.h>
 
-   TODO
+   Abstract base for every synth-layer type expression. Subclasses
+   implement `ComputeSymbolicType()` to lower the CST type-node
+   into a `Type::TType`; `GetSymbolicType()` caches the result.
+   `ForEachRef` exposes nested `TAnyRef`s (e.g. typedef lookups in
+   `TRefType`) for the multi-pass build driver.
 
    Copyright 2010-2026 Atomic Kismet Company
 

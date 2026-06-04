@@ -1,6 +1,8 @@
 /* <orly/synth/unknown_ctor.h>
 
-   TODO
+   Synth-layer node for typed-unknown literals (`?T`). Carries the
+   target type so the runtime knows what kind of "no value" to
+   emit. Lowers to `Expr::TUnknown`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

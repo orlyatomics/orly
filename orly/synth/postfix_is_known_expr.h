@@ -1,6 +1,10 @@
 /* <orly/synth/postfix_is_known_expr.h>
 
-   TODO
+   Synth-layer node for `expr is known otherExpr` -- the form that
+   returns the original value if known, otherwise the alternate
+   expression. Carries both lhs and rhs. Lowers to
+   `Expr::TIsKnownExpr`. Distinct from `postfix_is_known.h`, the
+   unary form.
 
    Copyright 2010-2026 Atomic Kismet Company
 

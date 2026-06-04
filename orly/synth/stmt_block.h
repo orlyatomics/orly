@@ -1,6 +1,9 @@
 /* <orly/synth/stmt_block.h>
 
-   TODO
+   Synth-layer node for a statement block (`{ stmt; stmt; ... }`).
+   Holds the ordered statements parsed inside an
+   `effecting { ... }` block. `Build()` lowers to
+   `Symbol::Stmt::TStmtBlock`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/synth/postfix_call.h>
 
-   TODO
+   Synth-layer node for function call expressions
+   (`f(.name1: val1, ...)`). Holds the callee expression and the
+   named argument map. Lowers to `Expr::TCall` after the function
+   symbol is resolved.
 
    Copyright 2010-2026 Atomic Kismet Company
 

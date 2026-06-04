@@ -1,6 +1,9 @@
 /* <orly/synth/with_clause.h>
 
-   TODO
+   Synth-layer node for a `with { <key> <- val; ... }` clause --
+   the test-setup block that initializes keys before the test body
+   runs. Holds a vector of `TTestKvEntry`s and lowers to the
+   corresponding setup writes during test build.
 
    Copyright 2010-2026 Atomic Kismet Company
 

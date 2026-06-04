@@ -1,6 +1,8 @@
 /* <orly/synth/delete_stmt.h>
 
-   TODO
+   Synth-layer node for `delete <[key]>;` statements inside
+   effecting blocks. Holds the key expression and lowers to
+   `Symbol::Stmt::TDelete` on `Build()`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

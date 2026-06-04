@@ -1,6 +1,10 @@
 /* <orly/synth/infix_expr.h>
 
-   TODO
+   Synth-layer node for binary infix expressions (`+`, `-`, `*`,
+   `=`, `and`, `or`, `xor`, `union`, `intersection`, `member`,
+   etc.). Holds lhs / rhs subexpressions plus a `TNew` function
+   pointer that selects which `Expr::T*` factory to invoke at
+   `Build()` time.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/synth/ref_expr.h>
 
-   TODO
+   Synth-layer node for a bare name reference -- a use of a
+   function, parameter, or local definition by name. Holds an
+   unresolved `TDef::TRef<TFuncDef>` that the multi-pass build
+   driver fills in via `ForEachRef`. Lowers to `Expr::TRef`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

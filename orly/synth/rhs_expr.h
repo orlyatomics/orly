@@ -1,6 +1,8 @@
 /* <orly/synth/rhs_expr.h>
 
-   TODO
+   Synth-layer node for the `rhs` keyword inside a comparator body
+   (e.g. `sorted_by lhs < rhs`). Resolves to the nearest enclosing
+   `TLhsRhsableExpr` during build and lowers to `Expr::TRhs`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

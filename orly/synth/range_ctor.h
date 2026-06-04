@@ -1,6 +1,9 @@
 /* <orly/synth/range_ctor.h>
 
-   TODO
+   Synth-layer node for range constructors (`[start..end]`,
+   `[start..end..stride]`, `[start..]`). `EndIncluded` selects
+   inclusive vs exclusive; `OptStride` / `OptEnd` are nullable.
+   Lowers to `Expr::TRange`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/synth/read_expr.h>
 
-   TODO
+   Synth-layer node for `expr::(T)` typed-read expressions -- look
+   up the value at address `expr` with statically-known type `T`.
+   Lowers to `Expr::TRead`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

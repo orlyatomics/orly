@@ -1,6 +1,9 @@
 /* <orly/synth/type_def.h>
 
-   TODO
+   Synth-layer node for a type definition (`type Name = ...;`).
+   Holds the parsed type expression and registers itself in the
+   enclosing scope as a `TDef<TTypeDef>` that `TRefType` looks up
+   by name.
 
    Copyright 2010-2026 Atomic Kismet Company
 

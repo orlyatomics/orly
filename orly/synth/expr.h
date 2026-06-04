@@ -1,6 +1,10 @@
 /* <orly/synth/expr.h>
 
-   TODO
+   Abstract base for every synth-layer expression node. Subclasses
+   implement `Build()` to lower the CST node into an `Expr::TExpr`,
+   `ForEachInnerScope` to expose nested `TScope`s for name binding,
+   and `ForEachRef` to expose unresolved `TAnyRef`s so the build
+   driver can resolve them after all definitions are known.
 
    Copyright 2010-2026 Atomic Kismet Company
 

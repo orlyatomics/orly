@@ -1,6 +1,9 @@
 /* <orly/synth/effecting_expr.h>
 
-   TODO
+   Synth-layer node for `(expr) effecting { stmts }`. Holds the
+   value expression plus its statement block. Implements
+   `TThatableExpr` so the statements can reference `that` (the
+   value expression's result). Lowers to `Expr::TEffecting`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

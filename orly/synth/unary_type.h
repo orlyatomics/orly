@@ -1,6 +1,9 @@
 /* <orly/synth/unary_type.h>
 
-   TODO
+   Synth-layer node for unary type expressions (notably `T?` --
+   optional of `T`). Carries the inner type expression.
+   `ComputeSymbolicType()` lowers to `Type::TOpt` (or other unary
+   type wrappers).
 
    Copyright 2010-2026 Atomic Kismet Company
 

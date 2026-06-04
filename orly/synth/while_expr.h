@@ -1,6 +1,8 @@
 /* <orly/synth/while_expr.h>
 
-   TODO
+   Synth-layer node for `seq while (pred)` -- yields elements from
+   `seq` until `pred` returns false. Implements `TThatableExpr` so
+   the predicate can reference `that`. Lowers to `Expr::TWhile`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

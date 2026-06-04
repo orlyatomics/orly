@@ -1,6 +1,9 @@
 /* <orly/synth/assert_expr.h>
 
-   TODO
+   Synth-layer node for `assert { ... }` blocks. Holds a vector of
+   `TAssertCase` (each optionally named) plus an outer `TExpr`.
+   Implements `TThatableExpr` so the inner cases can reference the
+   asserted value with `that`. Lowers to `Expr::TAssert`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/synth/test_case_block.h>
 
-   TODO
+   Synth-layer node for the optional nested sub-tests inside a
+   `test { t1: ... { t2: ... } }` block. Carries the parsed CST
+   sub-test list and lowers to a vector of `Symbol::Test::TTest`
+   during the test-def build.
 
    Copyright 2010-2026 Atomic Kismet Company
 

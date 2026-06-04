@@ -1,6 +1,8 @@
 /* <orly/synth/addr_ctor.h>
 
-   TODO
+   Synth-layer node for an address literal (`<[a, b, c]>`). Holds
+   the ordered `(TAddrDir, TExpr)` element list parsed from the CST
+   and lowers to a `TBasicCtor<TAddrContainer>` on `Build()`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

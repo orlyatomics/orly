@@ -1,6 +1,8 @@
 /* <orly/synth/obj_member_expr.h>
 
-   TODO
+   Synth-layer node for `obj.field` -- named-field access on a
+   record. Carries the source expression and the field name. Lowers
+   to `Expr::TObjMember`, which code-gen emits as `TObjMember`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

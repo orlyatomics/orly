@@ -1,6 +1,10 @@
 /* <orly/synth/stmt.h>
 
-   TODO
+   Abstract base for every synth-layer statement node. Subclasses
+   implement `Build()` to lower the CST node into a
+   `Symbol::Stmt::TStmt`, `ForEachInnerScope` to expose nested
+   `TScope`s for name binding, and `ForEachRef` to expose
+   unresolved `TAnyRef`s for the multi-pass build driver.
 
    Copyright 2010-2026 Atomic Kismet Company
 

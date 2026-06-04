@@ -1,6 +1,9 @@
 /* <orly/synth/db_keys_expr.h>
 
-   TODO
+   Synth-layer node for `keys <[pattern]>` -- the index-walking
+   expression. Holds the address-shaped key pattern plus the
+   dereferenced value type. Lowers to `Expr::TDbKeys`, which
+   code-gen turns into a `TKeys` runtime call.
 
    Copyright 2010-2026 Atomic Kismet Company
 

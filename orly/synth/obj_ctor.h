@@ -1,6 +1,9 @@
 /* <orly/synth/obj_ctor.h>
 
-   TODO
+   Synth-layer node for an object / record literal
+   (`{.field: val, ...}`). Holds the ordered named-field
+   expressions from the CST. Lowers to a `TBasicCtor`-style
+   object constructor on `Build()`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
