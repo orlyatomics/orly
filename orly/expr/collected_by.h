@@ -1,6 +1,8 @@
 /* <orly/expr/collected_by.h>
 
-   TODO
+   `TCollectedBy` -- the `collected_by` operator. Folds a sequence
+   of `(key, val)` pairs into a `TDict`. Inherits `TThatableUnary`
+   for the body's `that` reference.
 
    Copyright 2010-2026 Atomic Kismet Company
 

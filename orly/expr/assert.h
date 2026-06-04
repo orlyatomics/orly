@@ -1,6 +1,9 @@
 /* <orly/expr/assert.h>
 
-   TODO
+   `TAssert` -- the `assert { case1; case2; ... }` block. Each
+   `TAssertCase` is a named (or positional) sub-assertion. Inherits
+   `TThatableUnary` so the cases can reference `that` (the asserted
+   value).
 
    Copyright 2010-2026 Atomic Kismet Company
 

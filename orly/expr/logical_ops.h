@@ -1,6 +1,9 @@
 /* <orly/expr/logical_ops.h>
 
-   TODO
+   The boolean operator IR nodes: `TAnd`, `TOr`, `TXor`, `TNot`
+   (eager forms), plus `TAndThen` and `TOrElse` (the short-circuit
+   forms whose rhs body needs its own scope). All inherit
+   `TBinary` except `TNot` which inherits `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

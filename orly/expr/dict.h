@@ -1,6 +1,8 @@
 /* <orly/expr/dict.h>
 
-   TODO
+   `TDict` -- dictionary literal IR node (`{k: v, ...}`). Inherits
+   `TCtor<unordered_map<TExpr::TPtr, TExpr::TPtr>>`. Lowers to
+   `CodeGen::TBasicCtor<TDictContainer>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

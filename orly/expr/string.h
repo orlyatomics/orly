@@ -1,6 +1,7 @@
 /* <orly/expr/string.h>
 
-   TODO
+   `TToLower` and `TToUpper` -- the two string-case unary
+   operator IR nodes. Both inherit `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

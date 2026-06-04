@@ -1,6 +1,9 @@
 /* <orly/expr/effect.h>
 
-   TODO
+   `TEffect` -- the `(expr) effecting { stmts }` IR node. Inherits
+   `TThatableUnary` so the statements can reference `that` (the
+   value expression's result). Owns the
+   `Symbol::Stmt::TStmtBlock`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

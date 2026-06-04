@@ -1,6 +1,8 @@
 /* <orly/expr/while.h>
 
-   TODO
+   `TWhile` -- the `seq while (pred)` IR node. Inherits
+   `TThatableBinary`; yields elements from the sequence until
+   `pred` returns false. Lowered to `CodeGen::TWhile`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

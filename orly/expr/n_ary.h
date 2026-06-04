@@ -1,6 +1,11 @@
 /* <orly/expr/n_ary.h>
 
-   TODO
+   `TNAry<TContainer>` -- abstract base for `TExpr`s with a
+   variadic number of children. Parameterised by the container
+   type (`vector`, `unordered_map`, `array`, `map` of string ->
+   expr). Each container has its own `ForEachExpr` overload so the
+   parent-pointer management works uniformly across container
+   shapes.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/expr/trig.h>
 
-   TODO
+   The trig operator IR nodes -- `TCos`, `TSin`, `TTan`, `TAcos`,
+   `TAsin`, `TAtan` (all `TUnary`) plus `TAtan2` (`TBinary`).
+   Result type is `TReal`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

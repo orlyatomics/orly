@@ -1,6 +1,9 @@
 /* <orly/expr/known.h>
 
-   TODO
+   The known / unknown discrimination operators on optional types:
+   `TIsKnown` (unary `x is known`), `TIsUnknown` (unary `x is
+   unknown`), and `TIsKnownExpr` (binary `x is known fallback` --
+   returns `x` if known, else `fallback`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

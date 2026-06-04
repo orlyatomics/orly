@@ -1,6 +1,7 @@
 /* <orly/expr/reverse_of.h>
 
-   TODO
+   `TReverseOf` -- unary `reverse_of(x)` IR node. Inherits
+   `TUnary`. Lowered to `CodeGen::TUnary{ReverseOf}`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

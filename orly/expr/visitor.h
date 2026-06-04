@@ -1,6 +1,9 @@
 /* <orly/expr/visitor.h>
 
-   TODO
+   `TExpr::TVisitor` -- the (very large) visitor interface with
+   one pure-virtual `operator()` overload per concrete `TExpr`
+   subclass (~95 total). Forward-declares every leaf, so concrete
+   visitors only need to include the leaves they actually handle.
 
    Copyright 2010-2026 Atomic Kismet Company
 

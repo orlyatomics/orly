@@ -1,6 +1,9 @@
 /* <orly/expr/leaf.h>
 
-   TODO
+   `TLeaf` -- abstract base for nullary `TExpr`s (no operand
+   subexpressions). Subclassed by `TLiteral`, `TNow`, `TSessionId`,
+   `TUserId`, `TUnknown`, `TFree`, `TThat`, `TStart`, `TLhs`,
+   `TRhs`, `TRef`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

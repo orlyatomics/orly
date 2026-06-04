@@ -1,6 +1,8 @@
 /* <orly/expr/keys.h>
 
-   TODO
+   `TKeys` -- the `keys <[pattern]>` IR node that walks the index
+   for matching keys. Carries the address-shaped key pattern and
+   the dereferenced value type. Lowered to `CodeGen::TKeys`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

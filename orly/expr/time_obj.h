@@ -1,6 +1,8 @@
 /* <orly/expr/time_obj.h>
 
-   TODO
+   `TTimeObj` -- IR node that produces the
+   `{day, hour, minute, ...}` record from a `TimeDiff` or
+   `TimePnt`. Inherits `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

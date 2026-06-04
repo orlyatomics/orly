@@ -1,6 +1,8 @@
 /* <orly/expr/thatable_binary.h>
 
-   TODO
+   `TThatableBinary` -- helper base that multiply-inherits
+   `TThatable` + `TBinary`. Used by `TFilter` and `TReduce` (rhs
+   body references `that` from lhs's element type).
 
    Copyright 2010-2026 Atomic Kismet Company
 

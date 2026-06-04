@@ -1,6 +1,7 @@
 /* <orly/expr/that.h>
 
-   TODO
+   `TThat` -- the `that` keyword IR node. Inherits `TLeaf` with a
+   back-reference to its enclosing `TThatable`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

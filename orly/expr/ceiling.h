@@ -1,6 +1,7 @@
 /* <orly/expr/ceiling.h>
 
-   TODO
+   `TCeiling` -- unary `ceiling(x)` (round toward positive
+   infinity). Inherits `TUnary`. Counterpart of `TFloor`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

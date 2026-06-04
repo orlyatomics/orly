@@ -1,6 +1,10 @@
 /* <orly/expr/unary.h>
 
-   TODO
+   Abstract base for one-operand IR nodes. Stores the operand and
+   inherits `TInterior`. Subclassed by every unary operator
+   (`TNot`, `TNegative`, `TCeiling`, `TFloor`, `TLog`, `TCos`,
+   `TLengthOf`, `TIsEmpty`, ...). The one-arg constructor is
+   reserved for `TWhere` where the expression binds late.
 
    Copyright 2010-2026 Atomic Kismet Company
 

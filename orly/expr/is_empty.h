@@ -1,6 +1,7 @@
 /* <orly/expr/is_empty.h>
 
-   TODO
+   `TIsEmpty` -- unary `is_empty(x)` predicate over collections.
+   Inherits `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

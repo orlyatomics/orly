@@ -1,6 +1,9 @@
 /* <orly/expr/function_app.h>
 
-   TODO
+   `TFunctionApp` -- a call expression after function resolution.
+   Carries the resolved function symbol and the named argument
+   map. Lowered to `CodeGen::TCall` (or `TBuiltInCall` when the
+   callee is a `Symbol::TBuiltInFunction`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

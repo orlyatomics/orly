@@ -1,6 +1,8 @@
 /* <orly/expr/take.h>
 
-   TODO
+   `TTake` -- the `seq take count` IR node. Inherits `TBinary`;
+   keeps the first `count` elements of the sequence. Counterpart
+   of `TSkip`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

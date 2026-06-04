@@ -1,6 +1,9 @@
 /* <orly/expr/thatable.h>
 
-   TODO
+   `TThatable` -- mixin base for `TExpr`s that introduce a `that`
+   binding (filter, reduce, collated_by, collected_by, assert,
+   effect, while). Provides `GetThatType()` so `TThat` knows the
+   type it projects.
 
    Copyright 2010-2026 Atomic Kismet Company
 

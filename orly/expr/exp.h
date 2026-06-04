@@ -1,6 +1,8 @@
 /* <orly/expr/exp.h>
 
-   TODO
+   `TExp` -- binary `**` (exponentiation) IR node. Same pattern
+   as `TAdd`; `GetTypeImpl()` runs `orly/type/exp_visitor.h`
+   (always `TReal`, even on `int ** int`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

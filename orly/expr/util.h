@@ -1,6 +1,9 @@
 /* <orly/expr/util.h>
 
-   TODO
+   Out-of-line template definitions for `TExpr::As<T>`,
+   `TExpr::Is<T>`, `TExpr::TryAs<T>`. Lives in its own header
+   because the templates need full visibility of the concrete
+   subclasses for the `dynamic_cast`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

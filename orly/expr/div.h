@@ -1,6 +1,7 @@
 /* <orly/expr/div.h>
 
-   TODO
+   `TDiv` -- binary `/` (division) IR node. Same pattern as `TAdd`;
+   `GetTypeImpl()` runs `orly/type/div_visitor.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

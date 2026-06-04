@@ -1,6 +1,9 @@
 /* <orly/expr/lhs_and_rhs.h>
 
-   TODO
+   `TLhs` and `TRhs` -- the `lhs` and `rhs` keyword IR nodes
+   inside a comparator body (e.g. `sorted_by lhs < rhs`). Each is
+   a `TLeaf` carrying a back-reference to its enclosing
+   `TLhsRhsable` (set at synth-build time).
 
    Copyright 2010-2026 Atomic Kismet Company
 

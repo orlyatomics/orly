@@ -1,6 +1,9 @@
 /* <orly/expr/collated_by.h>
 
-   TODO
+   `TCollatedBy` -- the `collated_by ... having ...` operator.
+   Holds the sequence, start, reduce body, and having body.
+   Inherits `TStartable` + `TThatable` so the bodies can reference
+   `start` and `that`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

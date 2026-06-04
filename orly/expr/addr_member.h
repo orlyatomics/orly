@@ -1,6 +1,8 @@
 /* <orly/expr/addr_member.h>
 
-   TODO
+   `TAddrMember` -- indexed access into an address tuple
+   (`addr.<n>`). Inherits `TUnary` over the source address; code-gen
+   emits `TAddrMember` with the matching part-id.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/expr/list.h>
 
-   TODO
+   `TList` -- list literal IR node (`[a, b, c]`). Inherits
+   `TCtor<vector<TExpr::TPtr>>`. Lowers to
+   `CodeGen::TBasicCtor<TListContainer>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

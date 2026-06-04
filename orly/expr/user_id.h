@@ -1,6 +1,8 @@
 /* <orly/expr/user_id.h>
 
-   TODO
+   `TUserId` -- the `user_id` keyword IR node. Inherits `TLeaf`;
+   returns the calling user's UUID (or unknown if no user is bound
+   to the session).
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/expr/comp_ops.h>
 
-   TODO
+   The six comparison operator IR nodes: `TEqEq`, `TNeq`, `TLt`,
+   `TLtEq`, `TGt`, `TGtEq`. All inherit `TBinary`. `GetTypeImpl()`
+   runs the rules in `orly/type/comp_visitor.h`; result is `TBool`
+   (or `TOpt<TBool>` if either operand carries an optional).
 
    Copyright 2010-2026 Atomic Kismet Company
 

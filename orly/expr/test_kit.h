@@ -1,6 +1,9 @@
 /* <orly/expr/test_kit.h>
 
-   TODO
+   Per-test-file include kit for `orly/expr/*.test.cc`. Pulls in
+   `orly/expr.h`, the type singletons (`bool`, `int`, `real`,
+   `str`, ...), and the type czar, then `using namespace`s the
+   orly hierarchy so test files don't need to qualify every type.
 
    Copyright 2010-2026 Atomic Kismet Company
 

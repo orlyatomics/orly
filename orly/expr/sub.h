@@ -1,6 +1,7 @@
 /* <orly/expr/sub.h>
 
-   TODO
+   `TSub` -- binary `-` (subtraction) IR node. Same pattern as
+   `TAdd`; `GetTypeImpl()` runs `orly/type/sub_visitor.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

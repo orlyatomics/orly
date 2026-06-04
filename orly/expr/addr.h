@@ -1,6 +1,9 @@
 /* <orly/expr/addr.h>
 
-   TODO
+   `TAddr` -- the address-tuple constructor (`<[a, b, c]>` with
+   per-element asc/desc). Inherits `TNAry` over a vector of
+   `(TAddrDir, TExpr::TPtr)`. Lowered to
+   `CodeGen::TBasicCtor<TAddrContainer>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

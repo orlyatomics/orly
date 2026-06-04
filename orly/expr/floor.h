@@ -1,6 +1,7 @@
 /* <orly/expr/floor.h>
 
-   TODO
+   `TFloor` -- unary `floor(x)` (round toward negative infinity).
+   Inherits `TUnary`. Counterpart of `TCeiling`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/expr/free.h>
 
-   TODO
+   `TFree` -- the `free::(T)` typed placeholder used inside key
+   patterns (`<["stuff", free::(int)]>`). Carries the target type
+   and the address direction. Inherits `TLeaf`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

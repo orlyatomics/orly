@@ -1,6 +1,9 @@
 /* <orly/expr/range.h>
 
-   TODO
+   `TRange` -- the `[start..end..stride]` range constructor IR
+   node. Holds three optional expressions (start, end, stride)
+   and an inclusive-or-exclusive end flag. Inherits
+   `TNAry<array<TExpr::TPtr, 3>>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

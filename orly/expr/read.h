@@ -1,6 +1,8 @@
 /* <orly/expr/read.h>
 
-   TODO
+   `TRead` -- the `expr::(T)` typed-read IR node. Carries the
+   source key expression and the read type; lowered to a runtime
+   database read.
 
    Copyright 2010-2026 Atomic Kismet Company
 

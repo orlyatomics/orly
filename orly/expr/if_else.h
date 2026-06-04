@@ -1,6 +1,9 @@
 /* <orly/expr/if_else.h>
 
-   TODO
+   `TIfElse` -- the ternary `if pred then a else b` IR node.
+   Inherits `TNAry<array<TExpr::TPtr, 3>>` -- predicate / true-case
+   / false-case. Type-checked to the unified type of the two
+   branches.
 
    Copyright 2010-2026 Atomic Kismet Company
 

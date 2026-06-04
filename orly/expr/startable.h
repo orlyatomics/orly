@@ -1,6 +1,9 @@
 /* <orly/expr/startable.h>
 
-   TODO
+   `TStartable` -- mixin base for `TExpr`s that introduce a
+   `start` binding (`TReduce`, `TCollatedBy`). Holds the
+   `TStart::TPtr` set during synth-build so subsequent code-gen
+   can find it.
 
    Copyright 2010-2026 Atomic Kismet Company
 

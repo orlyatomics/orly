@@ -1,6 +1,10 @@
 /* <orly/expr/binary.h>
 
-   TODO
+   Abstract base for two-operand IR nodes. Stores `Lhs` / `Rhs`
+   and inherits `TInterior` (since it has children). `TBinary`
+   itself doesn't `Accept` -- concrete subclasses (`TAdd`, `TMult`,
+   `TEqEq`, ...) do. The one-arg constructor is reserved for
+   `TThatableBinary` / `TSort` where the rhs binds late.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,7 @@
 /* <orly/expr/obj_member.h>
 
-   TODO
+   `TObjMember` -- named-field access (`obj.field`) on a record.
+   Inherits `TUnary` over the source object plus the field name.
 
    Copyright 2010-2026 Atomic Kismet Company
 

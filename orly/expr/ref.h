@@ -1,6 +1,8 @@
 /* <orly/expr/ref.h>
 
-   TODO
+   `TRef` -- a bare name reference IR node. Carries the resolved
+   symbol (function / parameter / local). Inherits `TLeaf`; no
+   child expressions.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/expr/expr_parent.h>
 
-   TODO
+   `TExprParent` -- a tiny abstract marker class for "I can be the
+   parent of one or more `TExpr`s". Used so `TExpr::ExprParent`
+   doesn't have to be `TExpr *` (the parent might be a synth- or
+   symbol-layer object that owns the expression tree).
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/expr/where.h>
 
-   TODO
+   `TWhere` -- the `expr where { defs }` IR node. Inherits
+   `TUnary` over the body expression; the definitions live in an
+   attached scope. Lowered to `CodeGen::TInlineScope` with the
+   body as its returned expression.
 
    Copyright 2010-2026 Atomic Kismet Company
 

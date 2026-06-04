@@ -1,6 +1,7 @@
 /* <orly/expr/in.h>
 
-   TODO
+   `TIn` -- the `x in container` membership test. Inherits
+   `TBinary`. Code-gen lowers to `TBinary{In}`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

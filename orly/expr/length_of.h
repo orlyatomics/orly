@@ -1,6 +1,7 @@
 /* <orly/expr/length_of.h>
 
-   TODO
+   `TLengthOf` -- unary `length_of(x)` (collection length).
+   Inherits `TUnary`. Lowered to `CodeGen::TUnary{LengthOf}`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

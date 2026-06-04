@@ -1,6 +1,7 @@
 /* <orly/expr/log.h>
 
-   TODO
+   `TLog`, `TLog2`, `TLog10` -- the three logarithm IR nodes
+   (natural, base-2, base-10). All inherit `TUnary`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
