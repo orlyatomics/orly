@@ -1,6 +1,7 @@
 /* <orly/client/program/parse_stmt.h>
 
-   TODO
+   Parser for orly client-program statements. `ParseStmtFile` /
+   `ParseStmtStr` invokes `TForStmt` per parsed `TStmt` CST node.
 
    Copyright 2010-2026 Atomic Kismet Company
 

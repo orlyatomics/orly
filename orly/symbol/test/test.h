@@ -1,6 +1,9 @@
 /* <orly/symbol/test/test.h>
 
-   TODO
+   `Symbol::Test::TTest` -- the top-level test definition. Holds
+   the scope it was declared in, an optional `TWithClause` for
+   setup writes, and a `TTestCaseBlock` for the nested test cases.
+   Type-checked as a unit.
 
    Copyright 2010-2026 Atomic Kismet Company
 

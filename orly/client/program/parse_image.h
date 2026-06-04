@@ -1,6 +1,9 @@
 /* <orly/client/program/parse_image.h>
 
-   TODO
+   Parser for the dump-image format produced by `orly_client`.
+   `ParseImageFile` / `ParseImageStr` walks the CST and invokes
+   `TForXact` per transaction; `TranslateXact` walks the
+   transaction's key-value pairs via `TForKv`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

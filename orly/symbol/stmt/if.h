@@ -1,6 +1,10 @@
 /* <orly/symbol/stmt/if.h>
 
-   TODO
+   `TIfClause` (predicate + stmt block), `TElseClause` (just a
+   stmt block), and `TIf` (a vector of `TIfClause`s plus an
+   optional `TElseClause`). Together they represent
+   `if pred { ... } else if pred { ... } else { ... }` at the
+   symbol layer.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,11 @@
 /* <orly/symbol/stmt/stmt.h>
 
-   TODO
+   Abstract base for orlyscript effecting-block statements at the
+   symbol layer. `TVisitor` dispatches over the four concrete
+   kinds: `TDelete`, `TIf`, `TMutate`, `TNew`. Each subclass
+   implements `Accept` and `TypeCheck`. Stmts attach back to their
+   enclosing `TStmtBlock` via `SetStmtBlock` for type-checking
+   lookups.
 
    Copyright 2010-2026 Atomic Kismet Company
 

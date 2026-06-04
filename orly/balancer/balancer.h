@@ -1,6 +1,9 @@
 /* <orly/balancer/balancer.h>
 
-   TODO
+   `Balancer::TBalancer` -- abstract base for orly's TCP load
+   balancer. Holds command-line parsing (`TCmd`: port + connection
+   backlog) and the abstract host-selection hook. Concrete subclass
+   is `TFailoverTestBalancer`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,10 @@
 /* <orly/indy/util/merge_sorter.h>
 
-   TODO
+   `TKeySorter<TRef>` -- an in-memory linked-list sorter that keeps
+   elements in `(key, seq_num)` order on insert (ties broken by
+   higher seq num first, so the freshest write wins on equal keys).
+   Used by the index-merge paths where elements are produced
+   incrementally and need to come out sorted.
 
    Copyright 2010-2026 Atomic Kismet Company
 

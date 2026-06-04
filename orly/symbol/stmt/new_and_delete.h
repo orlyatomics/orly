@@ -1,6 +1,10 @@
 /* <orly/symbol/stmt/new_and_delete.h>
 
-   TODO
+   `TNew` (binary: lhs key gets rhs value) and `TDelete` (unary:
+   removes the key). Both are concrete `TStmt`s. `TNew` is what
+   `with { <[k]> <- v; }` and `new <[k]> <- v;` produce;
+   `TDelete` is `delete <[k]>;`. `TDelete` carries the deleted
+   value's type so the runtime knows what kind of slot to clear.
 
    Copyright 2010-2026 Atomic Kismet Company
 

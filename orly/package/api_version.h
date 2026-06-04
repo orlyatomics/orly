@@ -1,6 +1,8 @@
 /* <orly/package/api_version.h>
 
-   TODO
+   Single `#define ORLY_API_VERSION 1` macro -- the version number
+   for the package-to-orlyi ABI. Bumped whenever the package binary
+   interface changes (today still at 1).
 
    Copyright 2010-2026 Atomic Kismet Company
 

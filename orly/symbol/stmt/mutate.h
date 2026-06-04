@@ -1,6 +1,9 @@
 /* <orly/symbol/stmt/mutate.h>
 
-   TODO
+   `TMutate` -- one mutation statement (`x += v;`, `s |= {x};`,
+   `m = v;`). Inherits `TBinary` for the lhs / rhs operands plus a
+   `TMutator` enum recording which operator (`Add`, `Or`, `Union`,
+   ...). `TypeCheck()` resolves the type rules.
 
    Copyright 2010-2026 Atomic Kismet Company
 

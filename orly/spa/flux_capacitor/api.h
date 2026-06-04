@@ -1,6 +1,9 @@
 /* <orly/spa/flux_capacitor/api.h>
 
-   TODO
+   Umbrella header for the SPA (single-process app) flux-capacitor
+   runtime: re-exports the key components so SPA-side code can
+   include just `<orly/spa/flux_capacitor/api.h>` to talk to the
+   simulator / runtime.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,10 @@
 /* <orly/closure.h>
 
-   TODO
+   `TClosure` is a name-keyed map of `Atom::TCore` values used to
+   bundle method-call arguments. Comes with a `TWalker` that
+   optimises sequential access through the underlying ordered map
+   (rewinds when you index backwards). Used by the WS protocol and
+   replay machinery to pack / unpack RPC arguments.
 
    Copyright 2010-2026 Atomic Kismet Company
 

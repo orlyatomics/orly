@@ -1,6 +1,11 @@
 /* <orly/context_base.h>
 
-   TODO
+   Abstract base for any "I can read keys from the database"
+   context. `operator[](key)` reads, `Exists(key)` tests. Lives at
+   the root of the include graph so anything that needs to consult
+   the database can take a `TContextBase &` without dragging in the
+   full storage stack. Subclassed by `Indy::TContext` and the SPA
+   flux-capacitor's KV-backed context.
 
    Copyright 2010-2026 Atomic Kismet Company
 

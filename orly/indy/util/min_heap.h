@@ -1,6 +1,9 @@
 /* <orly/indy/util/min_heap.h>
 
-   TODO
+   `TMinHeap<TVal, TRef, TComparator>` -- a min-heap that yields
+   the smallest of a set of (value, ref) pairs. Used by every k-way
+   merge in the disk layer (`TIndexManager::TCursor`,
+   the merge sorter, present/update walker fan-in).
 
    Copyright 2010-2026 Atomic Kismet Company
 

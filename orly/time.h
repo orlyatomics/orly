@@ -1,6 +1,9 @@
 /* <orly/time.h>
 
-   TODO
+   Two tiny typedefs over `std::chrono`:
+   `TTtl = std::chrono::seconds` for time-to-live values, and
+   `TDeadline = std::chrono::time_point<system_clock>` for absolute
+   deadlines. Used wherever orly schedules a delayed action.
 
    Copyright 2010-2026 Atomic Kismet Company
 

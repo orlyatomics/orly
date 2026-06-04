@@ -1,6 +1,10 @@
 /* <orly/balancer/failover_test_balancer.h>
 
-   TODO
+   `TFailoverTestBalancer` -- a `TBalancer` impl that periodically
+   probes registered backend hosts and routes new connections to
+   whichever is currently reachable. Used in failover-test rigs to
+   verify the balancer's host-selection behaviour under simulated
+   outages.
 
    Copyright 2010-2026 Atomic Kismet Company
 
