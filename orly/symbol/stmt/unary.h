@@ -1,6 +1,7 @@
 /* <orly/symbol/stmt/unary.h>
 
-   TODO
+   Abstract base for one-operand statements. Concrete subclass is
+   `TDelete` (deletes the key referenced by the stmt arg).
 
    Copyright 2010-2026 Atomic Kismet Company
 

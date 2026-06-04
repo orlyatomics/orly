@@ -1,6 +1,11 @@
 /* <orly/indy/disk/sim/mem_engine.h>
 
-   TODO
+   `Sim::TMemEngine` -- assembles a `Disk::TEngine` backed entirely
+   by in-memory simulated devices. Used in tests and by
+   `orlyi --mem_sim` to run without touching real block storage.
+   Includes the stripe-alignment rounding logic (`round_up_blocks`)
+   so requested-MB counts work cleanly with the underlying volume
+   layout.
 
    Copyright 2010-2026 Atomic Kismet Company
 

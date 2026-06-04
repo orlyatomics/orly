@@ -1,6 +1,10 @@
 /* <orly/package/loaded.h>
 
-   TODO
+   `Package::TLoaded` -- an actual `dlopen()`'d package. Holds the
+   dlopen handle, exposes per-function / per-test introspection
+   (`ForEachFunction`, `ForEachTest`, `GetFunctionInfo`).
+   Constructed by `TLoaded::Load(package_dir, name)` and held by
+   the manager for the package's lifetime.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,11 @@
 /* <orly/package/rt.h>
 
-   TODO
+   `Package::TContext` -- the per-method-invocation runtime context
+   bridge between an orlyi-loaded package and the database. Provides
+   the `AddEffect` machinery (collects writes-by-key in the effects
+   map before commit), result tracking for predicate side-conditions,
+   and the random / time hooks the runtime needs. Lives in
+   `package/` because it's the API surface a compiled package sees.
 
    Copyright 2010-2026 Atomic Kismet Company
 

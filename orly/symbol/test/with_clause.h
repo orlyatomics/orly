@@ -1,6 +1,8 @@
 /* <orly/symbol/test/with_clause.h>
 
-   TODO
+   `TWithClause` -- the `with { <key> <- val; ... }` setup block
+   of a test. Holds a set of `TNew` statements that initialise
+   database state before the test body runs.
 
    Copyright 2010-2026 Atomic Kismet Company
 

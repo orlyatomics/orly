@@ -1,6 +1,9 @@
 /* <orly/indy/util/block_vec.h>
 
-   TODO
+   `TBlockVec` -- a sparse vector mapping logical indices to
+   (size, data) ranges, exposed via a random-access iterator. Used
+   by the disk layer to track which logical blocks belong to which
+   on-disk file extents.
 
    Copyright 2010-2026 Atomic Kismet Company
 

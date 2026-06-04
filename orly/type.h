@@ -1,6 +1,12 @@
 /* <orly/type.h>
 
-   TODO
+   Umbrella header for the static type system. Re-exports every
+   concrete type (`addr`, `any`, `bool`, `dict`, `err`, `func`,
+   `id`, `int`, `list`, `mutable`, `obj`, `opt`, `real`, `seq`,
+   `set`, `str`, `time_diff`, `time_pnt`, `unknown`) plus
+   `type/util.h` (needed to complete the `TType` template
+   instantiations). One include for "I want to talk about any
+   orlyscript type".
 
    Copyright 2010-2026 Atomic Kismet Company
 

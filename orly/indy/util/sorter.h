@@ -1,6 +1,11 @@
 /* <orly/indy/util/sorter.h>
 
-   TODO
+   `Indy::Util::TSorter<TVal, MemSize>` -- abstract base for
+   sortable collections. Exposes a `TCursor` so the
+   `TIndexManager` k-way merge can treat in-memory sorters and
+   spilled `TIndexSortFile`s uniformly. Subclasses include
+   `TMemSorter` (in-memory) and `TIndexSortFile::TCursor`
+   (disk-backed).
 
    Copyright 2010-2026 Atomic Kismet Company
 

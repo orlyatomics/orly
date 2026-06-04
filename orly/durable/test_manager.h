@@ -1,6 +1,9 @@
 /* <orly/durable/test_manager.h>
 
-   TODO
+   `Durable::TTestManager` -- an in-memory `Durable::TManager` used
+   by tests. No real disk I/O; the durable layer's `CanLoad` /
+   `CleanDisk` / `Delete` operations all run against an in-memory
+   `BlobById` map.
 
    Copyright 2010-2026 Atomic Kismet Company
 

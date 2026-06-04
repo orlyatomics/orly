@@ -1,6 +1,10 @@
 /* <orly/indy/util/growing_pool.h>
 
-   TODO
+   `TGrowingPool` -- a block allocator that grows on demand.
+   Counterpart of `TPool` (fixed-capacity, mutex-guarded) and
+   `TLocklessPool` (fixed-capacity, lock-free). Used wherever the
+   disk layer needs many small allocations of a known block size
+   without knowing the count up front.
 
    Copyright 2010-2026 Atomic Kismet Company
 

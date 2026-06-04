@@ -1,6 +1,9 @@
 /* <orly/indy/util/pool.h>
 
-   TODO
+   `TPool` -- a fixed-capacity block allocator with mutex-guarded
+   alloc / free. The "boring middle" of the pool family:
+   `TLocklessPool` is faster under contention but requires atomic
+   ops; `TGrowingPool` is more flexible but pays for the grow logic.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,10 @@
 /* <orly/indy/util/lockless_pool.h>
 
-   TODO
+   `TLocklessPool` -- a fixed-capacity block allocator with no
+   internal locking, relying on atomic operations on the free-list.
+   Counterpart of `TPool` (mutex-guarded) and `TGrowingPool`
+   (resizable). Used in hot allocation paths where contention is
+   the bottleneck.
 
    Copyright 2010-2026 Atomic Kismet Company
 

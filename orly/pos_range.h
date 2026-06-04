@@ -1,6 +1,9 @@
 /* <orly/pos_range.h>
 
-   TODO
+   Tiny aliasing header: `Orly::TPosRange` is a typedef for
+   `Tools::Nycr::TPosRange` (the parser's position-range type).
+   Lives in `Orly::` so type / synth / code-gen don't have to
+   pierce the `Tools::Nycr::` namespace for every error message.
 
    Copyright 2010-2026 Atomic Kismet Company
 

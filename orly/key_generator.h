@@ -1,6 +1,9 @@
 /* <orly/key_generator.h>
 
-   TODO
+   `TKeyCursor` -- abstract iterator over database keys. Subclasses
+   produce keys lazily for the various index-walking operators
+   (`keys <[...]>`, `*<[...]>::(T)`, etc.). Holds the arena that
+   the keys' sabot states are allocated against.
 
    Copyright 2010-2026 Atomic Kismet Company
 

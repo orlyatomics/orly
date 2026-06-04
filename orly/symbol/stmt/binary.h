@@ -1,6 +1,8 @@
 /* <orly/symbol/stmt/binary.h>
 
-   TODO
+   Abstract base for two-operand statements (lhs + rhs). Concrete
+   subclasses are `TMutate` (mutator op between lhs and rhs) and
+   `TNew` (lhs key gets rhs value).
 
    Copyright 2010-2026 Atomic Kismet Company
 

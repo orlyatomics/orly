@@ -1,6 +1,9 @@
 /* <orly/symbol/stmt/stmt_arg.h>
 
-   TODO
+   `TStmtArg` -- one operand of a statement (the target of a
+   delete, the lhs / rhs of a mutate or new). Wraps an
+   `Expr::TExpr` and tracks its owning `TStmt` for back-references
+   during type-check.
 
    Copyright 2010-2026 Atomic Kismet Company
 

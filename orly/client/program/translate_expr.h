@@ -1,6 +1,12 @@
 /* <orly/client/program/translate_expr.h>
 
-   TODO
+   Bridge between client-program CST expressions and orly's sabot
+   type/state types. Templated `TUnaryExpr` / `TBinaryExpr` /
+   `TRecordExpr` / `TTupleExpr` (plus the per-leaf `State::TBool`,
+   `TInt`, `TReal`, `TStr`, ... family) adapt CST nodes to
+   `Sabot::Type` / `Sabot::State` so values typed at the client side
+   can flow into the same comparison and serialisation machinery
+   the server uses.
 
    Copyright 2010-2026 Atomic Kismet Company
 

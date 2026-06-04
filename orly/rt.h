@@ -1,6 +1,12 @@
 /* <orly/rt.h>
 
-   TODO
+   Umbrella header for the runtime helper library. Re-exports the
+   rt module set (`built_in`, `collated_by`, `collected_by`,
+   `desc`, `generator`, `mutable`, `opt`, `runtime_error`,
+   `shortest_path`, `string`, `str_replace`, `time_diff_obj`,
+   `time_pnt_obj`, `tuple`, `unknown`) plus `type/rt.h` for the
+   C++-native -> orly `TType` bridge. One include for everything
+   orlyc emits calls into.
 
    Copyright 2010-2026 Atomic Kismet Company
 

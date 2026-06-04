@@ -1,6 +1,8 @@
 /* <orly/symbol/stmt/stmt_block.h>
 
-   TODO
+   `Symbol::Stmt::TStmtBlock` -- an ordered sequence of `TStmt`s
+   parsed inside an `effecting { ... }` block. Owns the stmts and
+   ticks each through `TypeCheck()` during the symbol-build pass.
 
    Copyright 2010-2026 Atomic Kismet Company
 

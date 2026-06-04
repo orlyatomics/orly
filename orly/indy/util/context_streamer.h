@@ -1,6 +1,11 @@
 /* <orly/indy/util/context_streamer.h>
 
-   TODO
+   `TContextOutputStreamer` / `TContextInputStreamer` -- serialise
+   a sequence of updates into a binary stream and read them back.
+   Used by master->slave replication: the streamer packs
+   `TUpdateWalker::TItem`s (with their sabot arena) into a
+   transport-friendly form, the reader unpacks them on the receiver.
+   The Mutator-carrying wire format that #54 fixed lives here.
 
    Copyright 2010-2026 Atomic Kismet Company
 

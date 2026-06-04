@@ -1,6 +1,9 @@
 /* <orly/symbol/test/test_case_block.h>
 
-   TODO
+   `TTestCase` (one named test case with an expression and
+   optional nested sub-block) and `TTestCaseBlock` (the ordered
+   vector of cases). Tests can nest: `t1: pred { t2: pred }` --
+   the outer succeeds, sub-cases run in its evaluated context.
 
    Copyright 2010-2026 Atomic Kismet Company
 

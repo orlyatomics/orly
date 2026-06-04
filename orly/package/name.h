@@ -1,6 +1,10 @@
 /* <orly/package/name.h>
 
-   TODO
+   `Package::TName` (a vector-of-strings fully-qualified name) and
+   `TVersionedName` (TName + version). Plus stream operators and
+   hashers so they can flow through std containers. The format is
+   what the parser produces for `package #N;` declarations and
+   what the package manager uses to look up loaded packages.
 
    Copyright 2010-2026 Atomic Kismet Company
 

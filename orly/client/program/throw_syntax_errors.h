@@ -1,6 +1,9 @@
 /* <orly/client/program/throw_syntax_errors.h>
 
-   TODO
+   `ThrowSyntaxErrors(ctx)` -- given a Nycr parse context, collects
+   any accumulated errors and throws them as one. Called by every
+   parsing entry point in this directory so parser errors surface
+   as exceptions rather than being silently ignored.
 
    Copyright 2010-2026 Atomic Kismet Company
 
