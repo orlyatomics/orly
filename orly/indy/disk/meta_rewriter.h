@@ -1,6 +1,9 @@
 /* <orly/indy/disk/meta_rewriter.h>
 
-   TODO
+   One-shot utility that rewrites a data file's meta section in place.
+   Used during recovery / repair when the meta block needs updating
+   after the data blocks have been written. Returns the new meta
+   location as a `(starting_block, offset)` pair.
 
    Copyright 2010-2026 Atomic Kismet Company
 

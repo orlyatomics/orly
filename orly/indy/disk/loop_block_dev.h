@@ -1,6 +1,10 @@
 /* <orly/indy/disk/loop_block_dev.h>
 
-   TODO
+   Test helper that creates a loopback block device (`losetup`) backed
+   by a sparse file under `/tmp/`. Constructor shells out to `truncate`,
+   `chmod`, and `sudo losetup`; destructor tears it down. Used by
+   disk-layer tests that need a real block device but don't want to
+   assume any specific path is available.
 
    Copyright 2010-2026 Atomic Kismet Company
 

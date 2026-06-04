@@ -1,6 +1,11 @@
 /* <orly/indy/disk/utilization_reporter.h>
 
-   TODO
+   Abstract base for I/O utilization reporting. `Push(source, kind,
+   bytes, priority)` is called from the disk read/write paths;
+   `Report(ss)` emits a summary into a stringstream. Concrete impl is
+   `TIndyUtilReporter` (see `indy_util_reporter.h`); the base lives
+   separately so tests and non-orly callers can plug in their own
+   accounting.
 
    Copyright 2010-2026 Atomic Kismet Company
 

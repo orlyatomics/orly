@@ -1,6 +1,10 @@
 /* <orly/indy/disk/block_hit_counter.h>
 
-   TODO
+   Per-block access counter used by the page cache for eviction decisions.
+   Stores one byte per block in a memory-aligned buffer, log-compressed
+   (`log(exp(*val) + n)`) so a single byte tracks unbounded counts with
+   diminishing precision. Two-buffer design (Workset + Flush) lets the
+   counter accumulate against one buffer while another is being read.
 
    Copyright 2010-2026 Atomic Kismet Company
 

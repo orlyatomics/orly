@@ -1,6 +1,10 @@
 /* <orly/indy/disk/buf_block.h>
 
-   TODO
+   Page-aligned, mlock'd block allocator backing the disk-layer buffer cache.
+   `TBufBlock`'s `operator new` / `operator delete` route through the static
+   `TPool` free-list so block reuse never returns to the heap. When the pool
+   is exhausted, allocators block on a condition variable until another
+   block is freed.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <orly/indy/disk/file_service_base.h>
 
-   TODO
+   Abstract base for `TFileService` (production) and `TTestFileService`
+   (tests). Defines the file-registry API -- `InsertFile`, `RemoveFile`,
+   `FindFile`, `AppendFileGenSet`, `ForEachFile` -- plus the `TFileObj`
+   value type that describes one (`DataFile` | `DurableFile`) on disk.
 
    Copyright 2010-2026 Atomic Kismet Company
 

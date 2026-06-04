@@ -1,6 +1,11 @@
 /* <orly/indy/disk/indy_util_reporter.h>
 
-   TODO
+   I/O accounting for the disk layer. `TIndyUtilReporter` implements
+   `TUtilizationReporter` by tallying bytes and operations per `Source`
+   (`DataFile`, `MergeDataFile`, `DurableSortFile`, `PresentWalk`,
+   `UpdateWalk`, ...) split by `SyncRead` / `AsyncRead` / `Write`.
+   `Report()` emits the accumulated counters into a stringstream for
+   status pages and oncall dashboards.
 
    Copyright 2010-2026 Atomic Kismet Company
 

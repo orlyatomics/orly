@@ -1,6 +1,13 @@
 /* <orly/indy/disk/durable_manager.h>
 
-   TODO
+   Durable-state manager: tracks `Durable::TManager` objects that need
+   periodic flush-to-disk, batches their serialized form into one stream,
+   and replays them on startup. `TFlush` schedules the periodic flush
+   tick; `TDurableManager` owns the per-object layers and the runner loop
+   that processes them. Large header -- the public `TDurableManager`
+   class declaration lives well below the top.
+
+   Consumers: `orly/server/orlyi`, the replication path.
 
    Copyright 2010-2026 Atomic Kismet Company
 

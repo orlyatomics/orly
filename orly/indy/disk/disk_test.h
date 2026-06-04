@@ -1,6 +1,10 @@
 /* <orly/indy/disk/disk_test.h>
 
-   TODO
+   Test scaffolding for the disk layer: `TMockMem` (an empty `TMemoryLayer`),
+   `TMockUpdate` (a `TUpdate` that takes the sequence number directly rather
+   than from the engine), `TReader` (a `TReadFile` with internal methods
+   re-exported for assertion), and templated `Insert` helpers. Included by
+   the various `*.test.cc` files under `orly/indy/disk/`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

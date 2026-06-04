@@ -1,6 +1,11 @@
 /* <orly/indy/disk/present_walk_file.h>
 
-   TODO
+   Read-side walker for the "present" (current) state of a data file:
+   yields each (key, value) at its latest sequence number, skipping
+   superseded history entries. `TWalkerKey` identifies one walk's
+   position by `(file_id, gen_id, index_id)` for use as a cache or
+   registry key. Consumed by the `TPresentWalker` paths in
+   `orly/indy/repo.cc`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

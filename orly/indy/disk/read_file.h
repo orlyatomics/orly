@@ -1,6 +1,11 @@
 /* <orly/indy/disk/read_file.h>
 
-   TODO
+   The reader half of the data-file format: parses meta, key, history,
+   arena, hash, and update indexes off a `TInFile` cursor and exposes
+   them via `ForEachIndex`, `FindInHash`, the typed `T*Stream`s, and
+   the per-index `TDiskArena`. `TFileKey` is the `(file_id, gen_id)`
+   identity used by callers like the page cache. Large header; the
+   public template `TReadFile` starts past the helper declarations.
 
    Copyright 2010-2026 Atomic Kismet Company
 
