@@ -1,6 +1,9 @@
 /* <orly/type/int.h>
 
-   TODO
+   The integer type (`int64_t`-backed). Singleton via
+   `TSingletonType<TInt>`. Result type of integer arithmetic;
+   `TInt + TReal` and `TInt ** TInt` promote to `TReal` (see
+   `add_visitor.h` / `exp_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

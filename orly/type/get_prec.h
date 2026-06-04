@@ -1,6 +1,11 @@
 /* <orly/type/get_prec.h>
 
-   TODO
+   `GetPrec(type)` returns a type's precedence for the absolute
+   ordering used when sorting keys in the database. The `TPrec` enum
+   (`Addr` < `Bool` < `Dict` < `Id` < `Int` < `List` < `Obj` <
+   `Real` < `Set` < `Str` < `TimeDiff` < `TimePnt`) is the canonical
+   ordering -- used wherever the storage layer needs to compare keys
+   of different types deterministically.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <orly/type/unknown.h>
 
-   TODO
+   The "no value" / void type used as a placeholder for expressions
+   that don't produce a value (effecting blocks, the no-result
+   branch of conditionals). Singleton via `TSingletonType<TUnknown>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

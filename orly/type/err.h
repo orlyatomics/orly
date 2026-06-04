@@ -1,6 +1,9 @@
 /* <orly/type/err.h>
 
-   TODO
+   Error-carrying type wrapper. Unary: `TErr<T>` carries a typed
+   payload (the type the error sits in for). Used by the type checker
+   to model "this expression should have produced a `T` but reached
+   an error first" and is auto-unwrapped by every infix visitor.
 
    Copyright 2010-2026 Atomic Kismet Company
 

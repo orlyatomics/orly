@@ -1,6 +1,11 @@
 /* <orly/type/add_visitor.h>
 
-   TODO
+   Type-check rules for `+`. `TCommutativeInfixVisitor` (since `+`
+   commutes). Same-type numeric pairs produce their input type;
+   the curated cross-type rules cover `TInt + TReal` -> `TReal`,
+   `TTimeDiff + TTimeDiff` -> `TTimeDiff`, `TTimeDiff + TTimePnt`
+   -> `TTimePnt`. Lists and dicts of matching element type
+   concatenate; everything else throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

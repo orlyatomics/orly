@@ -1,6 +1,12 @@
 /* <orly/type/impl.h>
 
-   TODO
+   The static type system's foundation. `TType` is the public-facing
+   handle (a `shared_ptr<TImpl>`); `TImpl` is the abstract base each
+   concrete type derives from. `TVisitor` dispatches on one type,
+   `TDoubleVisitor` on a pair -- the same pattern every operator
+   type-check visitor in this directory extends. Forward-declares
+   every concrete type leaf so other headers don't need to include
+   them transitively.
 
    Copyright 2010-2026 Atomic Kismet Company
 

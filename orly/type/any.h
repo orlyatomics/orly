@@ -1,6 +1,9 @@
 /* <orly/type/any.h>
 
-   TODO
+   The top type: every other type is implicitly compatible with `TAny`.
+   Used by code paths that need to accept "whatever value" (the `as`
+   operator's universal target, the runtime's pass-through carrier).
+   Singleton via `TSingletonType<TAny>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

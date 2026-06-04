@@ -1,6 +1,9 @@
 /* <orly/type/dict.h>
 
-   TODO
+   The dictionary type `{TKey : TVal}`. Interned by the `(TKey,
+   TVal)` pair via `TInternedType<TDict, TType, TType>` -- two
+   `TDict::Get(k, v)` calls with the same key/value types return the
+   same instance.
 
    Copyright 2010-2026 Atomic Kismet Company
 

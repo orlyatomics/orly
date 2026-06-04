@@ -1,6 +1,12 @@
 /* <orly/type/obj.h>
 
-   TODO
+   The object / record type: `{name: TType, ...}` -- an ordered (by
+   field name, for stable iteration) map from string to type.
+   Interned by the full `TObjElems` map. `AreComparable` /
+   `IsSubsetOf` underpin record subtyping in the type checker.
+   `TObj::Meta<TCompound>` is the C++-side reflection helper that
+   lets C++ classes register their fields so `TDt<TCompound>` can
+   derive the corresponding `TObj`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

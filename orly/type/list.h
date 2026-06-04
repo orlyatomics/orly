@@ -1,6 +1,9 @@
 /* <orly/type/list.h>
 
-   TODO
+   The list type `[TElem]`. Unary: interned by element type via
+   `TUnaryType<TList>`. Supports concatenation (`+` of two lists of
+   the same element type), comparison (element-wise), and sequence
+   operations (`reverse_of`, `sorted_by`, slicing).
 
    Copyright 2010-2026 Atomic Kismet Company
 

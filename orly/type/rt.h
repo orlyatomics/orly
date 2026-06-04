@@ -1,6 +1,11 @@
 /* <orly/type/rt.h>
 
-   TODO
+   `TDt<NativeType>::GetType()` template family: maps a C++ native
+   type to its corresponding `Type::TType` instance. Bridges from
+   "I have a C++ `int64_t`" to "I have a `Type::TInt`" wherever code-
+   gen or runtime adapters need to materialise the static type for a
+   value they hold dynamically. Specialised for every primitive and
+   container the runtime knows about.
 
    Copyright 2010-2026 Atomic Kismet Company
 

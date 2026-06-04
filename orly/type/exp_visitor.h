@@ -1,6 +1,8 @@
 /* <orly/type/exp_visitor.h>
 
-   TODO
+   Type-check rules for `**` (exponentiation). `TEqualVisitor`
+   (same-type only). `TInt ** TInt` -> `TReal` (because `2 ** -1`
+   is `0.5`), `TReal ** TReal` -> `TReal`. Everything else throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

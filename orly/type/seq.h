@@ -1,6 +1,11 @@
 /* <orly/type/seq.h>
 
-   TODO
+   The sequence type `[..]T` -- a lazy stream of `T` values produced
+   by `reduce` / `take` / range expressions. Unary: interned by
+   element type. Auto-unwrapped by the infix visitor's "TSeq unwrap"
+   cases -- once one operand is a sequence, the result is wrapped in
+   `TSeq` so the lazy structure propagates through compound
+   expressions.
 
    Copyright 2010-2026 Atomic Kismet Company
 

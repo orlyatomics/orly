@@ -1,6 +1,11 @@
 /* <orly/type/equal_visitor.h>
 
-   TODO
+   `TCommutativeInfixVisitor` specialisation that pre-rejects every
+   mixed-type pair with `TExprError` (since you can't compare a
+   string to an int) and leaves only same-type pairs as pure-virtual
+   hooks. Base for the operator visitors that only make sense within
+   one type (see `comp_visitor.h`, `set_ops_visitor.h`,
+   `logical_ops_visitor.h`, `div_visitor.h`, `exp_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

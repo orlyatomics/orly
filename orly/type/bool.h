@@ -1,6 +1,7 @@
 /* <orly/type/bool.h>
 
-   TODO
+   The boolean type. Singleton via `TSingletonType<TBool>`. Result
+   type for every comparison and logical-operator visitor.
 
    Copyright 2010-2026 Atomic Kismet Company
 

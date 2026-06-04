@@ -1,6 +1,11 @@
 /* <orly/type/sub_visitor.h>
 
-   TODO
+   Type-check rules for `-`. `TInfixVisitor` (NOT commutative --
+   order matters for `T - T`). Same-type numeric pairs produce their
+   input type; curated mixed-type rules cover `TDict - TSet` (key
+   removal), `TSet - TSet` (asymmetric difference), `TTimePnt -
+   TTimePnt` -> `TTimeDiff`, `TTimePnt - TTimeDiff` -> `TTimePnt`.
+   Everything else throws.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,11 @@
 /* <orly/type/unwrap_visitor.h>
 
-   TODO
+   Abstract base for visitors that recursively peel off wrapper
+   types to act on the leaf. `TVisitor` subclass (not
+   `TDoubleVisitor`). Concrete subclasses only override the leaf
+   overloads; the `final` overloads auto-recurse into `TFunc`'s
+   return type, `TMutable`'s value, `TOpt`'s element, and `TSeq`'s
+   element, re-wrapping the result as appropriate.
 
    Copyright 2010-2026 Atomic Kismet Company
 

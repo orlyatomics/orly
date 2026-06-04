@@ -1,6 +1,10 @@
 /* <orly/type/time_diff.h>
 
-   TODO
+   The time-difference (duration) type, backed by
+   `Base::Chrono::TTimeDiffInfo`. Singleton via
+   `TSingletonType<TTimeDiff>`. `TTimeDiff + TTimePnt` -> `TTimePnt`,
+   `TTimePnt - TTimePnt` -> `TTimeDiff` (see `add_visitor.h` /
+   `sub_visitor.h`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

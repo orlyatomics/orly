@@ -1,6 +1,10 @@
 /* <orly/type/commutative_infix_visitor.h>
 
-   TODO
+   `TInfixVisitor` specialisation for commutative operators (`+`,
+   `*`, `|=`, `&=`, ...). Eliminates the swap-direction boilerplate
+   by adding `final` overloads for the (rhs, lhs) ordering of every
+   leaf pair that flips the call to the (lhs, rhs) ordering. Concrete
+   visitors only declare one direction.
 
    Copyright 2010-2026 Atomic Kismet Company
 
