@@ -102,6 +102,67 @@ def GetStateFilename(filepath):
   dirpath, filename = os.path.split(filepath)
   return os.path.join(dirpath, '.' + filename + '.test.state')
 
+def LoadXFail(directory):
+  """Load expected-failure paths from <directory>/.xfail.
+
+  Returns a dict mapping the normalised filepath (as it will appear in
+  the harness's collected list) -> list of issue refs (may be empty).
+
+  File format: one entry per line. Blank lines and lines whose first
+  non-whitespace token starts with '# ' (hash + space) are comments.
+  Each entry is a path relative to <directory>, optionally followed by
+  whitespace-separated '#NNN' issue refs."""
+  xfail_path = os.path.join(directory, '.xfail')
+  entries = {}
+  try:
+    f = open(xfail_path)
+  except (IOError, OSError) as ex:
+    if ex.errno != 2:
+      raise
+    return entries
+  with f:
+    for raw_line in f:
+      line = raw_line.strip()
+      if not line or line.startswith('# '):
+        continue
+      parts = line.split()
+      rel_path = parts[0]
+      issues = [p for p in parts[1:] if p.startswith('#')]
+      key = os.path.normpath(os.path.join(directory, rel_path))
+      entries[key] = issues
+  return entries
+
+def BuildXFailMap(input_paths, treat_as_directories):
+  """Build the merged xfail map from every .xfail file reachable from
+  the input paths. In --directories mode each input is itself a
+  directory to scan; otherwise we walk up from each file's containing
+  directory until we find an .xfail (or run out of parents)."""
+  merged = {}
+  seen_dirs = set()
+
+  def _absorb(directory):
+    directory = os.path.normpath(directory)
+    if directory in seen_dirs:
+      return
+    seen_dirs.add(directory)
+    merged.update(LoadXFail(directory))
+
+  if treat_as_directories:
+    for path in input_paths:
+      _absorb(path)
+  else:
+    for path in input_paths:
+      directory = os.path.dirname(os.path.abspath(path))
+      while True:
+        if os.path.exists(os.path.join(directory, '.xfail')):
+          _absorb(directory)
+          break
+        parent = os.path.dirname(directory)
+        if parent == directory:
+          break
+        directory = parent
+  return merged
+
 def Main():
   args = GetArgParser().parse_args()
 
@@ -129,6 +190,14 @@ def Main():
             filepaths.append(os.path.join(dirname, filename))
   else:
     filepaths = args.filepaths
+
+  xfail_map = BuildXFailMap(args.filepaths, args.directories)
+
+  def IsXFail(filepath):
+    return os.path.normpath(filepath) in xfail_map
+
+  def XFailIssues(filepath):
+    return xfail_map.get(os.path.normpath(filepath), [])
 
   changed_files = []
   passed_files = []
@@ -221,11 +290,44 @@ def Main():
   if args.update:
     return 0
 
+  # Split failures into tracked (xfail) vs unexpected, and detect any
+  # tests that were marked xfail but actually passed (xpass). xpass is
+  # treated as a failure to match pytest's xfail_strict=true semantics:
+  # either the underlying limitation is fixed and the entry should be
+  # removed, or the test is no longer exercising what it claims to.
+  unexpected_failures = [f for f in failed_files if not IsXFail(f)]
+  tracked_failures = [f for f in failed_files if IsXFail(f)]
+  unexpected_passes = [f for f in passed_files if IsXFail(f)]
+
   print('Change:', ','.join(changed_files))
   print('Pass:', ','.join(passed_files))
   print('Fail:', ','.join(failed_files))
-  print('Overall: %s changed, %s passed, %s failed' % (len(changed_files), len(passed_files), len(failed_files)))
-  return 0 if len(changed_files) == 0 else -1
+  if unexpected_passes:
+    print('XPass:', ','.join(unexpected_passes))
+
+  # 'passed' counts tests that genuinely passed and were not marked
+  # xfail; xpasses are reported in their own bucket so each test sits
+  # in exactly one column.
+  pure_passed = len(passed_files) - len(unexpected_passes)
+  summary = 'Overall: %d unexpected, %d passed, %d tracked failures (xfail)' % (
+      len(unexpected_failures), pure_passed, len(tracked_failures))
+  if unexpected_passes:
+    noun = 'pass' if len(unexpected_passes) == 1 else 'passes'
+    summary += ', %d unexpected %s (xpass)' % (len(unexpected_passes), noun)
+  print(summary)
+
+  for filepath in tracked_failures:
+    issues = XFailIssues(filepath)
+    suffix = ' (%s)' % ' '.join(issues) if issues else ''
+    print('  xfail:', filepath + suffix)
+  for filepath in unexpected_passes:
+    issues = XFailIssues(filepath)
+    suffix = ' (%s)' % ' '.join(issues) if issues else ''
+    print('  xpass:', filepath + suffix,
+          '-- remove from .xfail or update the test')
+
+  ok = (not changed_files) and (not unexpected_failures) and (not unexpected_passes)
+  return 0 if ok else -1
 
 if __name__ == '__main__':
   exit(Main())
