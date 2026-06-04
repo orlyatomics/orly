@@ -1,6 +1,11 @@
 /* <orly/code_gen/binary_scoped_rhs.h>
 
-   TODO
+   `TBinaryScopedRhs` is `TBinary`'s sibling for the two operators
+   whose rhs needs its own scope (so it can compute lazily and only
+   fire when the lhs decides): `AndThen` (`x and_then y` evaluates
+   `y` only if `x` is true) and `OrElse` (`x or_else y` evaluates
+   `y` only if `x` is false). The rhs is a `TInlineScope`, not a
+   plain `TInline`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

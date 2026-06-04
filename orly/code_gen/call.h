@@ -1,6 +1,9 @@
 /* <orly/code_gen/call.h>
 
-   TODO
+   `TCall` emits a call to a user-defined function with named
+   arguments. The args vector is required to be ordered asciibetically
+   by name (matches the function's `TNamedArgs` order). Dependency
+   graph includes both each argument and the callee's body.
 
    Copyright 2010-2026 Atomic Kismet Company
 

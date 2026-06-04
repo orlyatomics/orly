@@ -1,6 +1,10 @@
 /* <orly/code_gen/if_else.h>
 
-   TODO
+   `TIfElse` emits a ternary `if pred then true_case else false_case`
+   expression. `True` and `False` are `TInlineScope`s (not flat
+   `TInline`s) because the branches can introduce local definitions.
+   `InDependsOn` is a recursion guard so the dependency walker
+   doesn't infinitely recurse when one branch references the other.
 
    Copyright 2010-2026 Atomic Kismet Company
 

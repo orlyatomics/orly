@@ -1,6 +1,12 @@
 /* <orly/code_gen/unary.h>
 
-   TODO
+   `TUnary` emits a single-operand operator. `TOp` enumerates them:
+   `Acos`, `AddressOf`, `Asin`, `Atan`, `Cast`, `Ceiling`, `Cos`,
+   `Floor`, `IsEmpty`, `IsKnown`, `IsUnknown`, `Known`, `LengthOf`,
+   `Log`, `Log2`, `Log10`, `Negative`, `Not`, `Read`, `ReverseOf`,
+   `SequenceOf`, `Sin`, `Tan`, `TimeDiffObj`, `TimePntObj`,
+   `ToLower`, `ToUpper`, `UnwrapMutable`. Emit shape is `Call`
+   (function-call) or `Postfix`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

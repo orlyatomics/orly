@@ -1,6 +1,8 @@
 /* <orly/code_gen/sort.h>
 
-   TODO
+   `TSort` emits a `sorted_by lhs < rhs` expression. The comparator
+   is a `TImplicitFunc` synthesised over the sort predicate; the
+   emitted code copies `container` and runs `Rt::Sort` against it.
 
    Copyright 2010-2026 Atomic Kismet Company
 

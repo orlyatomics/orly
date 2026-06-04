@@ -1,6 +1,9 @@
 /* <orly/code_gen/while.h>
 
-   TODO
+   `TWhile` emits a `while` sequence operator: yields elements from
+   `Seq` until `Func` (a `TFunction` over the element type) returns
+   `false`. Used to express bounded streams over an unbounded
+   source.
 
    Copyright 2010-2026 Atomic Kismet Company
 

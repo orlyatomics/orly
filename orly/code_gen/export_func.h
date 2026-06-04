@@ -1,6 +1,10 @@
 /* <orly/code_gen/export_func.h>
 
-   TODO
+   `TExportFunc` is a top-level package function visible to other
+   packages and to the database client interface. Multiply-inherits
+   `TTopFunc` (for the emit-as-top-level wiring) and `TSymbolFunc`
+   (for the symbol-to-code-gen map). `WriteName` / `WriteCcName`
+   produce the public C++ name.
 
    Copyright 2010-2026 Atomic Kismet Company
 

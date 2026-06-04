@@ -1,6 +1,11 @@
 /* <orly/code_gen/context.h>
 
-   TODO
+   Process-singleton stack of code-gen state. Many emit paths need
+   access to the "current" scope / function / `that` arg / reduce
+   `start` arg / lhs / rhs / stmt block, so `Context` exposes them
+   as static getters. The friend `T*Ctx` classes are RAII stack-
+   frame guards that push and pop entries. Pure namespace dressed
+   as a class (`NO_CONSTRUCTION`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

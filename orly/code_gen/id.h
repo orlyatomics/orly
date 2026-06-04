@@ -1,6 +1,10 @@
 /* <orly/code_gen/id.h>
 
-   TODO
+   `TId<TIdKind>` is a unique per-scope identifier with a kind
+   prefix (`a` for args, `f` for functions, `t` for tests, `v` for
+   variables). `TGen` is the per-scope monotonic counter that hands
+   them out. The prefix lets the emitted C++ distinguish `a0` (an
+   arg) from `v0` (a local) at a glance.
 
    Copyright 2010-2026 Atomic Kismet Company
 

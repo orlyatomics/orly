@@ -1,6 +1,9 @@
 /* <orly/code_gen/error.h>
 
-   TODO
+   Single error class for the code-gen layer: `TCgError`. Defined via
+   the `DEFINE_ERROR` macro to inherit `std::runtime_error`. Thrown
+   by `TCppPrinter` when it can't open an output file, and by helpers
+   that hit unexpected state during emission.
 
    Copyright 2010-2026 Atomic Kismet Company
 

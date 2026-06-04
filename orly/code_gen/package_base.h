@@ -1,6 +1,10 @@
 /* <orly/code_gen/package_base.h>
 
-   TODO
+   The dependency-injection base for `CodeGen::TPackage`. Exposes
+   just the slice that function- and inline-builders actually need
+   (the `AddrMap` / `ReverseAddrMap` index-UUID lookup, the symbol-
+   package name) without forcing every helper to include the full
+   `CodeGen::TPackage` definition. `CodeGen::TPackage` inherits this.
 
    Copyright 2010-2026 Atomic Kismet Company
 

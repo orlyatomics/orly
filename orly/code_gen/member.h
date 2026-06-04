@@ -1,6 +1,11 @@
 /* <orly/code_gen/member.h>
 
-   TODO
+   Mutable-aware member access. `TMutableRewrap` is the base that
+   rewraps a `TMutable` result around the projected member;
+   `TAddrMember` projects element `i` from an address tuple,
+   `TObjMember` projects a named field from an object. Both emit
+   the postfix accessor (`.i` / `.name`) and the corresponding
+   part id used by the mutate machinery.
 
    Copyright 2010-2026 Atomic Kismet Company
 

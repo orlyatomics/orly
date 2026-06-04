@@ -1,6 +1,14 @@
 /* <orly/code_gen/effect.h>
 
-   TODO
+   The mutation-statement hierarchy emitted inside `effecting { ... }`
+   blocks. `TChange` is the abstract base for one change to one
+   addressable slot: `TMutation` (the `OP=` shape -- runs the
+   runtime mutator), `TDelete` (key removal), `TNew` (initial
+   assignment). `TStmt` is the abstract statement, `TStmtBlock` is
+   the container, `TPredicatedBlock` + `TIf` give conditional
+   mutation. Mirrors the runtime mutator hierarchy in
+   `orly/var/mutation.h` -- in-file note flags that they must
+   change in parallel.
 
    Copyright 2010-2026 Atomic Kismet Company
 

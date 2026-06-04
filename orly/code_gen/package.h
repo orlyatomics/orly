@@ -1,6 +1,11 @@
 /* <orly/code_gen/package.h>
 
-   TODO
+   `CodeGen::TPackage` represents one orlyscript source file being
+   emitted to C++. Holds the exported functions, tests, and object
+   types; `Emit(out_dir)` writes the per-package header / .cc / link
+   files; `EmitObjectHeaders` writes the per-`TObj` C++ struct
+   headers. Inherits `L0::TPackage` for the dependency-injection
+   seam used by the rest of the code-gen layer.
 
    Copyright 2010-2026 Atomic Kismet Company
 

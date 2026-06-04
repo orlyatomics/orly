@@ -1,6 +1,9 @@
 /* <orly/code_gen/inline_scope.h>
 
-   TODO
+   `TInlineScope` wraps a body inline together with the `TCodeScope`
+   that hosts its locals / assertions. Used wherever a
+   sub-expression needs its own scope (the branches of `TIfElse`,
+   the body of `TBinaryScopedRhs`, the bodies of test predicates).
 
    Copyright 2010-2026 Atomic Kismet Company
 

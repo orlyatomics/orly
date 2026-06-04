@@ -1,6 +1,10 @@
 /* <orly/code_gen/map.h>
 
-   TODO
+   `TMap` emits an implicit-or-explicit map expression: zips one or
+   more `Seqs` element-wise through `Func` (a `TImplicitFunc`).
+   Implicit maps are the orlyc frontend's lowering of a function
+   applied to a sequence argument -- by the time code-gen runs,
+   they've all become `TMap`s.
 
    Copyright 2010-2026 Atomic Kismet Company
 

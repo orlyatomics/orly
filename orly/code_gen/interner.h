@@ -1,6 +1,11 @@
 /* <orly/code_gen/interner.h>
 
-   TODO
+   Per-`TCodeScope` interner that deduplicates identical inlines so
+   two equivalent subexpressions in the same scope share one
+   `TInline` pointer. Holds one `Base::TInterner` per inline kind
+   (binary, call, literal, basic_ctor, member, range, slice, sort,
+   ...); `GetBinary(args)` etc. are thin wrappers that route through
+   them. Backs common-subexpression elimination.
 
    Copyright 2010-2026 Atomic Kismet Company
 

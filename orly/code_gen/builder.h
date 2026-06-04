@@ -1,6 +1,12 @@
 /* <orly/code_gen/builder.h>
 
-   TODO
+   The entry point for code-gen: turn an `Expr::TExpr` tree into a
+   `CodeGen::TInline`. `BuildInline` handles implicit maps (a
+   function applied to a sequence argument becomes an element-wise
+   map); `Build` is the raw recursive builder that the rest of the
+   code-gen machinery calls through. The "do not use directly"
+   comment on `Build` is a footgun warning -- calling it directly
+   skips the map-lowering pass.
 
    Copyright 2010-2026 Atomic Kismet Company
 

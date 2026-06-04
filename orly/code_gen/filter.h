@@ -1,6 +1,9 @@
 /* <orly/code_gen/filter.h>
 
-   TODO
+   `TFilter` emits a `seq if (...)` filter expression. The body is
+   a `TImplicitFunc` synthesised over the filter predicate; the
+   emitted code threads each element through the function and
+   yields those that return `true`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

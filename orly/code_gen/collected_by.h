@@ -1,6 +1,9 @@
 /* <orly/code_gen/collected_by.h>
 
-   TODO
+   `TCollectedBy` emits a `collected_by` expression: fold a
+   sequence of `(key, val)` pairs into a `TDict`. The `CollectFunc`
+   is a `TImplicitFunc` over the (existing, val) collision case --
+   appears in the wikipedia-categories demo, among others.
 
    Copyright 2010-2026 Atomic Kismet Company
 
