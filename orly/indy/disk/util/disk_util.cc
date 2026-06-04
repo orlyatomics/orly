@@ -1,6 +1,10 @@
 /* <orly/indy/disk/util/disk_util.cc>
 
-   TODO
+   Out-of-line member implementations for `TDiskUtil` (declared in
+   `disk_util.h`). The constructor probes every device under `/dev/`
+   via `TDeviceUtil`, groups them by `VolumeId`, and constructs the
+   right `TPersistentDevice` for each one. Used at `orlyi` startup
+   to assemble the volume topology before the engine boots.
 
    Copyright 2010-2026 Atomic Kismet Company
 

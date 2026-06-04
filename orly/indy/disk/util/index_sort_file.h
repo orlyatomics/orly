@@ -1,6 +1,11 @@
 /* <orly/indy/disk/util/index_sort_file.h>
 
-   TODO
+   One on-disk run produced by `TIndexManager`. Snappy-compressed,
+   sorted, written through the page cache. `TCursor` subclasses the
+   generic `TSorter::TCursor` so the k-way merge in `TIndexManager`
+   can treat it uniformly with in-memory cursors. `TIndexSortFile`
+   itself implements `TInFile` so it plugs into the standard read-path
+   streams.
 
    Copyright 2010-2026 Atomic Kismet Company
 

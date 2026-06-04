@@ -1,6 +1,11 @@
 /* <orly/indy/disk/util/engine.h>
 
-   TODO
+   The disk-layer's resource hub. `TEngine` bundles a `TVolumeManager`
+   (where blocks live), two `TCache`s (`TPageCache` / `TBlockCache`),
+   and a `TFileServiceBase` (the file registry) behind a single handle.
+   Passed around as `Util::TEngine *` to nearly every disk-layer
+   consumer -- readers, writers, walkers, mergers -- so they don't
+   each have to take five constructor arguments.
 
    Copyright 2010-2026 Atomic Kismet Company
 

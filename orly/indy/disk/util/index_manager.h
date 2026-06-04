@@ -1,6 +1,11 @@
 /* <orly/indy/disk/util/index_manager.h>
 
-   TODO
+   External-merge-sort coordinator. `TIndexManager<TVal, MemSize, ...>`
+   accumulates values in an in-memory sorter; when memory pressure or
+   explicit flush triggers, the contents spill to disk as a
+   `TIndexSortFile` (snappy-compressed sorted run). `TCursor` produces
+   a globally-sorted stream by min-heaping across every spilled file
+   plus the in-memory sorter -- classic k-way merge.
 
    Copyright 2010-2026 Atomic Kismet Company
 
