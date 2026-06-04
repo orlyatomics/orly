@@ -1,6 +1,8 @@
 /* <mpl/not.h>
 
-   TODO
+   Negates a predicate type-trait: `Not<P>` is `true` iff `P::value`
+   is `false`. Useful as a building block for `EnableIf` /
+   `DisableIf` and for combining with `And` / `Or`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

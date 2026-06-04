@@ -1,6 +1,10 @@
 /* <gz/input_producer.h>
 
-   TODO
+   Adapts a gzip-decoded `Gz::TFile` to `Io::TInputProducer` so
+   gzipped input flows through the same chunk-and-pool pipeline as
+   any other `Io` source. Construct with a path + mode or with a
+   moved-in `TFd`; the producer pulls chunks from `File` and hands
+   them up.
 
    Copyright 2010-2026 Atomic Kismet Company
 

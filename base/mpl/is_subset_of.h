@@ -1,6 +1,9 @@
 /* <mpl/is_subset_of.h>
 
-   TODO
+   Type-level subset check: `IsSubsetOf<L, R>` is `std::true_type`
+   iff every element of `L` appears in `R`. Used by `is_same.h`'s
+   set-equality specialisation -- two sets are equal iff each is a
+   subset of the other.
 
    Copyright 2010-2026 Atomic Kismet Company
 

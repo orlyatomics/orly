@@ -1,6 +1,10 @@
 /* <mpl/merge.h>
 
-   TODO
+   Sorted merge of two `TTypeList`s under a user-supplied template
+   comparator: `TMerge<TCompare, A, B>` zips A's and B's heads using
+   `TCompare<L, R>::value`, taking the smaller each step. Pairs
+   naturally with `Mpl::Lt` / `Mpl::Gt` from `compare.h` for the
+   comparator argument.
 
    Copyright 2010-2026 Atomic Kismet Company
 

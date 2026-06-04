@@ -1,6 +1,9 @@
 /* <mpl/extend.h>
 
-   TODO
+   Concatenates two `TTypeList`s: `TExtend<TTypeList<A...>,
+   TTypeList<B...>>` is `TTypeList<A..., B...>`. Building block for
+   the recursive list constructors (`merge`, `get_union`,
+   `get_unique`, ...).
 
    Copyright 2010-2026 Atomic Kismet Company
 

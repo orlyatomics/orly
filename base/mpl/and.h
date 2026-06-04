@@ -1,6 +1,9 @@
 /* <mpl/and.h>
 
-   TODO
+   Variadic logical conjunction of predicate type-traits. `And<>` is
+   `std::true_type`; `And<P, More...>` short-circuits via
+   `Conditional<P, And<More...>, std::false_type>` -- mirrors how
+   `&&` short-circuits at runtime.
 
    Copyright 2010-2026 Atomic Kismet Company
 

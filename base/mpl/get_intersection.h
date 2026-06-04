@@ -1,6 +1,8 @@
 /* <mpl/get_intersection.h>
 
-   TODO
+   Type-level set intersection: `GetIntersection<L, R>` is a
+   `TTypeList` of elements in both `L` and `R`. Pairs with
+   `get_union` / `get_difference` for the full set algebra.
 
    Copyright 2010-2026 Atomic Kismet Company
 

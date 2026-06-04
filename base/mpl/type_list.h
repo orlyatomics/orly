@@ -1,6 +1,9 @@
 /* <mpl/type_list.h>
 
-   TODO
+   The core container of the `Mpl::` metaprogramming library: a
+   variadic `TTypeList<TElems...>` with compile-time
+   `GetIdx<TElem>()` lookup and `GetSize()`. Almost every other
+   `Mpl::` metafunction is built on this.
 
    Copyright 2010-2026 Atomic Kismet Company
 

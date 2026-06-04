@@ -1,6 +1,8 @@
 /* <mpl/get_union.h>
 
-   TODO
+   Type-level set union: `GetUnion<L, R>` is a `TTypeList` of every
+   distinct element from `L` and `R` combined. Pairs with
+   `get_intersection` and `get_difference`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
