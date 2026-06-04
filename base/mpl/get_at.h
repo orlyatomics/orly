@@ -1,6 +1,9 @@
 /* <mpl/get_at.h>
 
-   TODO
+   `TGetAt<TList, Idx>` evaluates to the `Idx`-th element of a
+   `TTypeList`. Implemented via `TTypeListRecur`'s overload set --
+   pure compile-time work, no runtime indirection. Inverse of
+   `TGetIdx`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,9 @@
 /* <mpl/get_size.h>
 
-   TODO
+   `GetSize<TList>()` evaluates to the number of elements in a
+   `TTypeList` (or `TTypeSet`, which forwards to its underlying list)
+   as a `constexpr size_t`. Used by `IsSame`'s set-equality
+   specialisation and as a building block in slicing.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,8 @@
 /* <mpl/get_idx.h>
 
-   TODO
+   `TGetIdx<TList, TElem>` evaluates to the index at which `TElem`
+   appears in a `TTypeList`. Inverse of `TGetAt`; thin wrapper over
+   `TTypeListRecur::GetIdx`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

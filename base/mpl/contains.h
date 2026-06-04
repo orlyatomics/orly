@@ -1,6 +1,9 @@
 /* <mpl/contains.h>
 
-   TODO
+   Compile-time set membership: `Contains<TTypeList<...>, TElem>`
+   (or `TTypeSet`) is `std::true_type` iff `TElem` appears.
+   Implemented via `std::is_base_of<TNode<TElem>, ...>` against the
+   inverted-tree set representation built by `get_unique.h`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

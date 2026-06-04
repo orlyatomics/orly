@@ -1,6 +1,10 @@
 /* <mpl/enable_if.h>
 
-   TODO
+   SFINAE helper: `EnableIf<P>` is a well-formed type only when
+   `P::value` is true; otherwise the substitution fails and the
+   overload is dropped. `DisableIf<P>` is `EnableIf<Not<P>>`.
+   Used as a template default argument or return type -- the unary
+   counterpart of `std::enable_if_t`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

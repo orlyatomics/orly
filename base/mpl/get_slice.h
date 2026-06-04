@@ -1,6 +1,9 @@
 /* <mpl/get_slice.h>
 
-   TODO
+   `TGetSlice<TList, Start, End>` evaluates to a `TTypeList` of the
+   half-open `[Start, End)` slice of `TList`. Implemented recursively
+   by stepping the list head until `Start == 0`, then collecting
+   until the end index.
 
    Copyright 2010-2026 Atomic Kismet Company
 

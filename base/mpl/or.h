@@ -1,6 +1,9 @@
 /* <mpl/or.h>
 
-   TODO
+   Variadic logical disjunction of predicate type-traits. Symmetric
+   counterpart of `Mpl::And` -- `Or<>` is `std::false_type`,
+   `Or<P, More...>` short-circuits via `Conditional<P, std::true_type,
+   Or<More...>>`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

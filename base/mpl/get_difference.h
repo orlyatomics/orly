@@ -1,6 +1,8 @@
 /* <mpl/get_difference.h>
 
-   TODO
+   Type-level set difference: `GetDifference<L, R>` is a `TTypeList`
+   containing every element of `L` that is not in `R`. Pairs with
+   `get_union` and `get_intersection` for the full set algebra.
 
    Copyright 2010-2026 Atomic Kismet Company
 

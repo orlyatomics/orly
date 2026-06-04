@@ -1,6 +1,10 @@
 /* <mpl/is_same.h>
 
-   TODO
+   Specialises `std::is_same` for `Mpl::TTypeSet<...>` so two sets
+   compare equal regardless of element order (`std::is_same` on the
+   underlying tuple would require positional match). Also defines
+   `Mpl::IsSame<L, R>` -- a `decay`-aware passthrough useful for
+   template-parameter matching.
 
    Copyright 2010-2026 Atomic Kismet Company
 

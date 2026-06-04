@@ -1,6 +1,8 @@
 /* <mpl/reverse.h>
 
-   TODO
+   `TReverse<TList>` is a `TTypeList` with `TList`'s elements in
+   reverse order. Useful when a metafunction is easier to express
+   walking right-to-left than left-to-right.
 
    Copyright 2010-2026 Atomic Kismet Company
 

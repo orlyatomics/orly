@@ -1,6 +1,8 @@
 /* <mpl/conditional.h>
 
-   TODO
+   Compile-time ternary: `Conditional<Pred, T, F>` evaluates to `T`
+   if `Pred::value` is true, else `F`. Used internally by `Mpl::And`,
+   `Mpl::Or`, and most of the recursive list metafunctions.
 
    Copyright 2010-2026 Atomic Kismet Company
 

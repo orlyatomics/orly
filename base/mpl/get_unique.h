@@ -1,6 +1,9 @@
 /* <mpl/get_unique.h>
 
-   TODO
+   `TGetUnique<TList>` dedups a `TTypeList`, preserving first-seen
+   order. Builds an inverted-tree `TRoot<TNode<T>...>` for O(1)
+   membership checks via `std::is_base_of` -- the same trick that
+   backs `Mpl::Contains` and the `TTypeSet` representation.
 
    Copyright 2010-2026 Atomic Kismet Company
 

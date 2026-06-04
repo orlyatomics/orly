@@ -1,6 +1,9 @@
 /* <mpl/compare.h>
 
-   TODO
+   Type-level comparison operators on `::value` of integral-constant
+   types: `Lt`, `Gt`, `LtEq`, `GtEq`, `EqEq`, `Neq`. Composes with
+   `Mpl::And` / `Mpl::Not` so you can write `Or<Lt<A, B>, EqEq<A, B>>`
+   the way you'd write `a < b || a == b` at runtime.
 
    Copyright 2010-2026 Atomic Kismet Company
 

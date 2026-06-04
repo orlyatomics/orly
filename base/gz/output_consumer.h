@@ -1,6 +1,9 @@
 /* <gz/output_consumer.h>
 
-   TODO
+   Adapts a gzip-encoded `Gz::TFile` to `Io::TOutputConsumer` so
+   chunks emitted by an `Io` producer get gzip-compressed on the way
+   out. Construct with a path + mode; `ConsumeOutput` writes each
+   chunk through `File`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
