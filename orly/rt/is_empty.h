@@ -1,6 +1,10 @@
 /* <orly/rt/is_empty.h>
 
-   TODO
+   `IsEmpty(val)` returning `bool` for strings, vectors, `TSet`s,
+   `TDict`s, and `TMutable`s; opt-wrapped values get `TOpt<bool>`
+   so optionality propagates. Same shape and consumer set as
+   `get_size.h` -- general template is `= delete` to make unsupported
+   `IsEmpty` a compile-time error.
 
    Copyright 2010-2026 Atomic Kismet Company
 

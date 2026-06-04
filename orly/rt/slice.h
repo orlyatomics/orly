@@ -1,6 +1,10 @@
 /* <orly/rt/slice.h>
 
-   TODO
+   `SliceSingle(container, idx)` (one-element index) and
+   `SliceRange(container, start_range, idx)` (start- or end-relative).
+   Supports vectors, strings, dicts, and `TMutable` wrappers; out-of-
+   bounds throws `TSystemError`. Code-gen for orlyscript's `[idx]`
+   and `[start..end]` index / slice operators.
 
    Copyright 2010-2026 Atomic Kismet Company
 

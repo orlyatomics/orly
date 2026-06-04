@@ -1,6 +1,11 @@
 /* <orly/rt/built_in.h>
 
-   TODO
+   Umbrella header for the runtime helper library that orlyc emits
+   calls into. Re-exports the rt module set (`containers`, `get_size`,
+   `is_empty`, `opt`, `postfix_cast`, `reduce`, `reverse`, `div`,
+   `slice`, `sort`, `runtime_error`) and adds a few small helpers used
+   directly from code-gen: `AddrToPair`, `DictCtor` (with the
+   duplicate-key check), and `Assert` / `TAssertionError`.
 
    Copyright 2010-2026 Atomic Kismet Company
 

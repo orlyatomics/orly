@@ -1,6 +1,11 @@
 /* <orly/rt/operator.h>
 
-   TODO
+   The runtime's operator dispatch table. Each operator (`EqEq`, `Neq`,
+   `Lt`, `LtEq`, `Gt`, `GtEq`, `Add`, `Sub`, `Mult`, `Mod`, `Exp`,
+   `And`, `Or`, `Xor`, `Union`, `Intersection`, ...) has a templated
+   `T<Op>Struct<TLhs, TRhs>::Do(lhs, rhs)` that code-gen specialises
+   for type-specific behaviour. Large header (1200+ lines) because
+   every operator x every type pair lives here.
 
    Copyright 2010-2026 Atomic Kismet Company
 

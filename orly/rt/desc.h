@@ -1,6 +1,9 @@
 /* <orly/rt/desc.h>
 
-   TODO
+   `UnwrapDesc(val)` template overloads: peels off a `TDesc<T>`
+   wrapper if present, otherwise passes through. Used in code-gen
+   wherever descending-sort-wrapped values need to compose uniformly
+   with plain ones.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -1,6 +1,11 @@
 /* <orly/rt/postfix_cast.h>
 
-   TODO
+   `CastAs<TTo, TFrom>::Do(val)` template family: the runtime cast
+   for orlyscript's `x as type` operator. Specialisations cover
+   identity, int <-> double, container conversions (`[T] as {T}`),
+   UUID / time / string conversions, and a few more. The general
+   template's `Do` is `= delete` so an unsupported cast is a
+   compile-time error.
 
    Copyright 2010-2026 Atomic Kismet Company
 
