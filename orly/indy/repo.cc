@@ -1316,6 +1316,16 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
      with same-mutator commutative runs still expanded -- correct but
      unbounded in entries-per-key under contention. */
   TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), intermediate_gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone);
+  /* Fast path (#64): if the merge produced no non-Assign entries,
+     there's nothing to fold and the intermediate file IS the final
+     output. Skip the TFoldDataFile read+write+remove cycle entirely.
+     Most workloads are Assign-only and hit this path. */
+  if (merge_data_file.GetNumNonAssignEntries() == 0UL) {
+    out_num_keys = merge_data_file.GetNumKeys();
+    out_saved_low_seq = merge_data_file.GetLowestSequence();
+    out_saved_high_seq = merge_data_file.GetHighestSequence();
+    return intermediate_gen_id;
+  }
   /* Phase B (#55): fold same-mutator commutative runs in the just-merged
      file via TMutation::Augment-equivalent logic in typed space. Output
      entries are promoted to Assign(folded value), bringing read

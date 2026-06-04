@@ -764,9 +764,11 @@ class TMergeDataFileImpl {
         }
 
       }
-      /* compute the total number of current keys */ {
+      /* compute the total number of current keys + non-Assign entries
+         across all indices */ {
         for (const auto &idx : index_map) {
           NumKeys += idx.second->NumCurKeys;
+          NumNonAssignEntries += idx.second->NumNonAssignEntries;
         }
       }
       completion_trigger.Wait();
@@ -1943,6 +1945,13 @@ class TMergeDataFileImpl {
     return NumKeys;
   }
 
+  /* Aggregate count of entries with Mutator != Assign across all
+     indices in this merge output. Used by TSafeRepo::MergeFiles to
+     skip the TFoldDataFile pass when there's nothing to fold (#64). */
+  inline size_t GetNumNonAssignEntries() const {
+    return NumNonAssignEntries;
+  }
+
   /* TODO */
   inline TSequenceNumber GetLowestSequence() const {
     return LowestSeq;
@@ -2222,6 +2231,7 @@ class TMergeDataFileImpl {
 
     void PushCurKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator) {
       ++NumCurKeys;
+      if (mutator != TMutator::Assign) ++NumNonAssignEntries;
       TDataOutStream &stream = *KeyStream;
       if (!FirstKey) {
         stream << NumCurHistoryElem << ByteOffsetOfCurHistory;
@@ -2277,6 +2287,7 @@ class TMergeDataFileImpl {
 
     void PushHistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator) {
       ++NumHistKeys;
+      if (mutator != TMutator::Assign) ++NumNonAssignEntries;
       HistKeyVec.emplace_back(seq_num, key, val, mutator);
       UpdateCollector->Emplace(seq_num, ByteOffsetOfCurHistory + NumCurHistoryElem * TData::KeyHistorySize, false, IndexId);
       ++NumCurHistoryElem;
@@ -2555,6 +2566,12 @@ class TMergeDataFileImpl {
     std::vector<std::unique_ptr<typename TRemapResolvedSorter::TCursor>> ResolvedValSorterCursorVec;
     size_t NumCurKeys;
     size_t NumHistKeys;
+    /* Per-index count of entries with Mutator != Assign. Accumulated in
+       PushCurKey / PushHistKey. The aggregate (across indices) is
+       surfaced via TMergeDataFile::GetNumNonAssignEntries() and used by
+       TSafeRepo::MergeFiles to skip the TFoldDataFile pass on files
+       that have nothing to fold (#64). */
+    size_t NumNonAssignEntries = 0UL;
     size_t EndOfHistoryStream;
     std::vector<THistKey> HistKeyVec;
     size_t NumCurHistoryElem;
@@ -2663,6 +2680,7 @@ class TMergeDataFileImpl {
 
   /* TODO */
   size_t NumKeys;
+  size_t NumNonAssignEntries = 0UL;
   TSequenceNumber LowestSeq;
   TSequenceNumber HighestSeq;
 
@@ -2709,17 +2727,20 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
     if (can_tail_tombstone) {
       TMergeDataFileImpl<true, true> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
       NumKeys = merge_file.GetNumKeys();
+      NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
     } else {
       TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
       NumKeys = merge_file.GetNumKeys();
+      NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
     }
   } else {
     TMergeDataFileImpl<false, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
     NumKeys = merge_file.GetNumKeys();
+    NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
     LowestSeq = merge_file.GetLowestSequence();
     HighestSeq = merge_file.GetHighestSequence();
     assert(!can_tail_tombstone);

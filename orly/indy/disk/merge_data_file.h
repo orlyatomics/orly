@@ -61,6 +61,13 @@ namespace Orly {
           return NumKeys;
         }
 
+        /* Aggregate count of entries written with Mutator != Assign.
+           Used by TSafeRepo::MergeFiles to skip the TFoldDataFile pass
+           when zero -- there's nothing to fold (#64). */
+        inline size_t GetNumNonAssignEntries() const {
+          return NumNonAssignEntries;
+        }
+
         /* TODO */
         inline TSequenceNumber GetLowestSequence() const {
           return LowestSeq;
@@ -74,6 +81,7 @@ namespace Orly {
         private:
 
         size_t NumKeys;
+        size_t NumNonAssignEntries = 0UL;
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
 

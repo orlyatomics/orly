@@ -558,3 +558,71 @@ FIXTURE(JumpGrowingMainArena) {
     cond.notify_one();
   });
 }
+
+/* #64: TMergeDataFile reports a count of entries written with
+   Mutator != Assign. The aggregate is used by TSafeRepo::MergeFiles
+   to skip the TFoldDataFile pass when nothing needs folding. */
+FIXTURE(NonAssignEntryCount) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid index_id(TUuid::Twister);
+    TSuprena arena;
+
+    /* Case A: pure-Assign source. Merge should report 0. */ {
+      TMockMem mem_layer;
+      TSequenceNumber seq = 0;
+      Insert(mem_layer, ++seq, index_id, /*val*/ 10L, /*key*/ 1L);
+      Insert(mem_layer, ++seq, index_id, /*val*/ 20L, /*key*/ 2L);
+      Insert(mem_layer, ++seq, index_id, /*val*/ 30L, /*key*/ 3L);
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast,
+                          &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
+      TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast,
+                           file_id, vector<size_t>{1UL}, file_id, 2UL,
+                           0U, Low, 16384, 20UL, false, false);
+      EXPECT_EQ(merge.GetNumNonAssignEntries(), 0UL);
+    }
+
+    /* Case B: source with two Add entries plus an Assign. Merge should
+       count the two Adds. */ {
+      TMockMem mem_layer;
+      TSequenceNumber seq = 0;
+      Insert(mem_layer, ++seq, index_id, /*val*/ 100L, /*key*/ 5L);  // Assign
+      /* Two Adds via the AddEntry-with-mutator overload. */
+      auto u1 = TMockUpdate::NewMockUpdate(
+          TUpdate::TOpByKey{},
+          TKey(&arena),
+          TKey(Base::TUuid(Base::TUuid::Twister), &arena, state_alloc),
+          ++seq);
+      u1->AddEntry(
+          TIndexKey(index_id, TKey(make_tuple(5L), &arena, state_alloc)),
+          TKey(int64_t(7), &arena, state_alloc),
+          TMutator::Add);
+      mem_layer.Insert(u1);
+      auto u2 = TMockUpdate::NewMockUpdate(
+          TUpdate::TOpByKey{},
+          TKey(&arena),
+          TKey(Base::TUuid(Base::TUuid::Twister), &arena, state_alloc),
+          ++seq);
+      u2->AddEntry(
+          TIndexKey(index_id, TKey(make_tuple(5L), &arena, state_alloc)),
+          TKey(int64_t(3), &arena, state_alloc),
+          TMutator::Add);
+      mem_layer.Insert(u2);
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast,
+                          &mem_layer, file_id, 3UL, 20UL, 0U, Medium);
+      TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast,
+                           file_id, vector<size_t>{3UL}, file_id, 4UL,
+                           0U, Low, 16384, 20UL, false, false);
+      EXPECT_EQ(merge.GetNumNonAssignEntries(), 2UL);
+    }
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
