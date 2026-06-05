@@ -191,3 +191,39 @@ FIXTURE(Index) {
   EXPECT_TRUE(list_.Index(1) == TVar(2));
   EXPECT_TRUE(list_.Index(1) != TVar(1));
 }
+
+/* Regression test for issue #90: records must support both equality and a
+   strict total order at the Var level, otherwise they can't live in a
+   Var-level set (which a set-union mutation builds). */
+static TVar MakeRec(const std::string &kind, int64_t ts) {
+  return TVar::Obj(std::unordered_map<std::string, TVar>{
+      {"kind", TVar(kind)}, {"ts", TVar(ts)}});
+}
+
+FIXTURE(RecordCompare) {
+  TVar a1 = MakeRec("a", 1);
+  TVar a1_dup = MakeRec("a", 1);
+  TVar b2 = MakeRec("b", 2);
+
+  /* Equality. */
+  EXPECT_TRUE(a1 == a1_dup);
+  EXPECT_FALSE(a1 == b2);
+  EXPECT_TRUE(a1 != b2);
+
+  /* Strict total order: equal values compare neither-less, and distinct
+     values order in exactly one direction. */
+  EXPECT_FALSE(a1 < a1_dup);
+  EXPECT_FALSE(a1_dup < a1);
+  EXPECT_TRUE((a1 < b2) != (b2 < a1));
+
+  /* A Var-level set (TMatchLess comparator) can hold distinct records and
+     dedups equal ones -- the operation that regressed in #90. */
+  Rt::TSet<TVar> recs;
+  recs.insert(a1);
+  recs.insert(b2);
+  recs.insert(a1_dup);
+  EXPECT_EQ(recs.size(), 2U);
+  EXPECT_TRUE(recs.find(a1) != recs.end());
+  EXPECT_TRUE(recs.find(b2) != recs.end());
+  EXPECT_TRUE(recs.find(MakeRec("c", 3)) == recs.end());
+}
