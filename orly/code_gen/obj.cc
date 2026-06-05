@@ -20,6 +20,8 @@
 
 #include <sstream>
 
+#include <orly/code_gen/variant.h>
+
 #include <base/as_str.h>
 #include <base/not_implemented.h>
 #include <base/path.h>
@@ -69,6 +71,13 @@ void WriteLessExpr(TCppPrinter &out, Type::TObjElems::const_iterator iter, const
 }
 
 void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &obj_type) {
+
+  /* A variant type lands in the same collected-object set as records (see
+     CollectObjects); route it to the variant generator. */
+  if (obj_type.Is<Type::TVariant>()) {
+    GenVariantHeader(out_dir, obj_type);
+    return;
+  }
 
   auto obj_name = obj_type.GetMangledName();
 
@@ -466,6 +475,12 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
 }
 
 void Orly::CodeGen::GenObjInclude(const Type::TType &obj_type, TCppPrinter &out) {
+
+  /* Route variant types to the variant include. */
+  if (obj_type.Is<Type::TVariant>()) {
+    GenVariantInclude(obj_type, out);
+    return;
+  }
 
   // Check for TimePnt and TimeDiff structural types so we don't regenerate them
   const Type::TObj *result = obj_type.TryAs<Type::TObj>();
