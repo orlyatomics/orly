@@ -1,0 +1,104 @@
+/* <orly/lang_tests/general/records_storage.orly>
+
+   Regression test for issue #90: storable record values, including the
+   read-back-then-union path that previously failed.
+
+   Records (`<{.x: int, ...}>`) round-trip through storage as values, as
+   list/set/dict elements, and -- the case that regressed -- a stored
+   set-of-records can be unioned with a freshly-constructed singleton.
+
+   Two bugs sat behind the #90 symptom:
+
+     1. The generated native record struct never overrode AsVar(), so the
+        base Rt::TObj::AsVar() handed back an empty object. Any record that
+        crossed into the dynamic-var world (e.g. building a union mutation)
+        lost all its fields, tripping the "homogenous element type" check in
+        the set constructor.
+
+     2. Records had no Var-level ordering, so inserting two records into a
+        Var-level set (which a union mutation does) threw "types that are not
+        comparable".
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* --- single record value --- */
+read_rec = (*<[n]>::(<{.x: int, .y: int}>)) where {
+  n = given::(int);
+};
+
+/* --- set of records --- */
+read_rec_set = (*<[n]>::({<{.ts: int, .kind: str}>})) where {
+  n = given::(int);
+};
+
+/* Create-or-union: union a fresh singleton into the stored set if present,
+   otherwise create the key. This is the exact shape from issue #90. */
+union_rec = (((true) effecting {
+  *<[n]>::({<{.ts: int, .kind: str}>}) |= {<{.ts: ts, .kind: kind}>};
+} if *<[n]>::({<{.ts: int, .kind: str}>}?) is known else (true) effecting {
+  new <[n]> <- {<{.ts: ts, .kind: kind}>};
+})) where {
+  n = given::(int);
+  ts = given::(int);
+  kind = given::(str);
+};
+
+/* --- list of records --- */
+read_rec_list = (*<[n]>::([<{.x: int, .y: int}>])) where {
+  n = given::(int);
+};
+
+/* --- dict with record values --- */
+read_rec_dict = (*<[n]>::({str: <{.x: int, .y: int}>})) where {
+  n = given::(int);
+};
+
+/* Single record value round-trips through storage. */
+with {
+  <[300]> <- <{.x: 3, .y: 5}>;
+} test {
+  t1: read_rec(.n: 300) == <{.x: 3, .y: 5}>;
+  t2: read_rec(.n: 300).x == 3;
+};
+
+/* Set-of-records: read-back-then-union (the regressed path). */
+test {
+  /* First call creates the key. */
+  t10: union_rec(.n: 301, .ts: 1, .kind: "a") {
+    t11: read_rec_set(.n: 301) == {<{.ts: 1, .kind: "a"}>};
+    /* Second call hits the |= branch: read back, then union a fresh record. */
+    t12: union_rec(.n: 301, .ts: 2, .kind: "b") {
+      t13: read_rec_set(.n: 301) == {<{.ts: 1, .kind: "a"}>, <{.ts: 2, .kind: "b"}>};
+      /* Unioning a record already present is idempotent. */
+      t14: union_rec(.n: 301, .ts: 1, .kind: "a") {
+        t15: read_rec_set(.n: 301) == {<{.ts: 1, .kind: "a"}>, <{.ts: 2, .kind: "b"}>};
+      };
+    };
+  };
+};
+
+/* List-of-records round-trips through storage. */
+with {
+  <[302]> <- [<{.x: 1, .y: 2}>, <{.x: 3, .y: 4}>];
+} test {
+  t20: read_rec_list(.n: 302) == [<{.x: 1, .y: 2}>, <{.x: 3, .y: 4}>];
+};
+
+/* Dict-with-record-values round-trips through storage. */
+with {
+  <[303]> <- {"p": <{.x: 1, .y: 2}>, "q": <{.x: 3, .y: 4}>};
+} test {
+  t30: read_rec_dict(.n: 303) == {"p": <{.x: 1, .y: 2}>, "q": <{.x: 3, .y: 4}>};
+};

@@ -19,6 +19,8 @@
 #include <orly/var/impl.h>
 #include <orly/var.h>
 
+#include <map>
+
 #include <base/not_implemented.h>
 #include <orly/pos_range.h>
 #include <orly/type/get_prec.h>
@@ -584,10 +586,35 @@ namespace Orly {
       virtual void operator()(const TObj *, const TMutable  *) const {throw TVarCompareError(HERE);}
       virtual void operator()(const TObj *, const TOpt  *) const {throw TVarCompareError(HERE);}
       virtual void operator()(const TObj *lhs, const TObj  *rhs) const {
-        if (!IsEqeq) {
-          throw TVarCompareError(HERE);
+        if (IsEqeq) {
+          Comp = lhs->GetVal() == rhs->GetVal() ? 0 : -1;
+          return;
         }
-        Comp = lhs->GetVal() == rhs->GetVal() ? 0 : -1;
+        /* Order records field-by-field in sorted (asciibetical) field-name
+           order, then by field count. This mirrors the ordering generated for
+           native record structs and gives Var-level sets/dicts a total order
+           over record elements -- without it, building a set-of-records (e.g.
+           via a union mutation) throws when two records are compared. See #90. */
+        std::map<std::string, const TVar *> lhs_fields, rhs_fields;
+        for (const auto &item : lhs->GetVal()) {
+          lhs_fields[item.first] = &item.second;
+        }
+        for (const auto &item : rhs->GetVal()) {
+          rhs_fields[item.first] = &item.second;
+        }
+        auto lhs_iter = lhs_fields.begin();
+        auto rhs_iter = rhs_fields.begin();
+        for (; lhs_iter != lhs_fields.end() && rhs_iter != rhs_fields.end(); ++lhs_iter, ++rhs_iter) {
+          Comp = lhs_iter->first.compare(rhs_iter->first);
+          if (Comp != 0) {
+            return;
+          }
+          Var::TVar::Accept(*lhs_iter->second, *rhs_iter->second, *this);
+          if (Comp != 0) {
+            return;
+          }
+        }
+        Comp = Compare(lhs_fields.size(), rhs_fields.size());
       }
       virtual void operator()(const TObj *lhs, const TReal *rhs) const {
         Comp = CompareType(lhs->GetType(), rhs->GetType());

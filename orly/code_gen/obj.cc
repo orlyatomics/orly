@@ -96,7 +96,11 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
       << "#include <orly/rt/containers.h>" << Eol
       << "#include <orly/rt/obj.h>" << Eol
       << "#include <orly/type/obj.h>" << Eol
-      << "#include <orly/var/impl.h>" << Eol;
+      << "#include <orly/var/impl.h>" << Eol
+      // AsVar() (below) constructs a Var::TVar from each field; for nested-record
+      // fields that resolves to the templated TVar(const TCompound &) ctor whose
+      // definition lives in <orly/var/obj.h>.
+      << "#include <orly/var/obj.h>" << Eol;
 
   /* EXTRA */ {
     unordered_set<TType> obj_set;
@@ -177,17 +181,21 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
                         })
           << " {}" << Eol
           << Eol
-        #if 0
+        /* Convert this native record to a dynamic Var::TObj, populating every
+           field. Without this override the base Rt::TObj::AsVar() returns an
+           empty object, which loses all fields the moment a record crosses into
+           the dynamic-var world (e.g. building a set-union mutation). See #90. */
             << "Var::TVar AsVar() const final {" << Eol
             << "  assert(this);" << Eol
-            << "  return Var::TVar::Obj(TDynamicMembers{";
-        Base::Join(", ", obj_core_type->GetElems(), [](const TObj::TElems::value_type &it, TCppPrinter &out) {
-          out << "{ \"" << it.first << "\", Var::TVar(V"<< it.first << ")}";
-        }, out);
-        out << "});" << Eol
-            << '}' << Eol
+            << "  return Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{"
+            << Base::Join(obj_core_type->GetElems(),
+                          ", ",
+                          [](TCppPrinter &out, const TObj::TElems::value_type &it) {
+                            out << "{\"" << it.first << "\", Var::TVar(V" << it.first << ")}";
+                          })
+            << "});" << Eol
+            << "}" << Eol
             << Eol
-            #endif
         /* TODO: Should really write a generic object member function printer */
         /* helper functions (hash, equality, getters, etc.) */
         //TODO: Meta
