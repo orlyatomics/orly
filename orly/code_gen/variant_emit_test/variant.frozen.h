@@ -7,7 +7,6 @@
    by orly/code_gen/variant_emit.test.cc without depending on a build-time
    orlyc artifact. Regenerate from GenVariantHeader if the emitter changes
    -- the live emitter is also run by orly/code_gen/variant.test.cc. */
-
 #pragma once
 
 #include <cassert>
@@ -20,6 +19,7 @@
 #include <orly/var/impl.h>
 #include <orly/var/obj.h>
 #include <orly/var/new_sabot.h>
+#include <orly/sabot/to_native.h>
 
 /* Needed payload objects */
 #include <orly/code_gen/variant_emit_test/O0.frozen.h>
@@ -33,17 +33,6 @@ namespace Orly {
       class TVariantV2O07Deletedi7Integer {
         public:
         TVariantV2O07Deletedi7Integer() : Which(0) {}
-
-        TVariantV2O07Deletedi7Integer(const std::unordered_map<std::string, Var::TVar> &m) : Which(0) {
-          if (m.count("Deleted")) {
-            Which = 0;
-          }
-          else if (m.count("Integer")) {
-            Which = 1;
-            VInteger = Var::TVar::TDt<int64_t>::As(m.at("Integer"));
-          }
-          else { throw Rt::TSystemError(HERE, "stored variant has no known tag"); }
-        }
 
         static TVariantV2O07Deletedi7Integer Deleted(const Orly::Rt::Objects::TObjO0 &vv) {
           TVariantV2O07Deletedi7Integer out;
@@ -60,15 +49,7 @@ namespace Orly {
 
         TVariantV2O07Deletedi7Integer(const TVariantV2O07Deletedi7Integer &that) : Which(that.Which), VDeleted(that.VDeleted), VInteger(that.VInteger) {}
 
-        Var::TVar AsVar() const {
-          assert(this);
-          switch (Which) {
-            case 0: return Var::TVar::Variant("Deleted", Var::TVar(VDeleted));
-            case 1: return Var::TVar::Variant("Integer", Var::TVar(VInteger));
-          }
-          assert(false);
-          throw Rt::TSystemError(HERE, "variant has no active arm");
-        }
+        Var::TVar AsVar() const;
 
         size_t GetHash() const {
           assert(this);
@@ -188,6 +169,88 @@ namespace Orly {
   } // Orly
 
 } // Type
+
+namespace Orly {
+
+  namespace Rt {
+
+    namespace Variants {
+
+      inline Var::TVar TVariantV2O07Deletedi7Integer::AsVar() const {
+        assert(this);
+        switch (Which) {
+          case 0: return Var::TVar::Variant(Type::TDt<Rt::Variants::TVariantV2O07Deletedi7Integer>::GetType(), "Deleted", Var::TVar(VDeleted));
+          case 1: return Var::TVar::Variant(Type::TDt<Rt::Variants::TVariantV2O07Deletedi7Integer>::GetType(), "Integer", Var::TVar(VInteger));
+        }
+        assert(false);
+        throw Rt::TSystemError(HERE, "variant has no active arm");
+      }
+
+    } // Orly
+
+  } // Rt
+
+} // Variants
+
+namespace Orly {
+
+  namespace Sabot {
+
+    template <>
+    class TToNativeVisitor<Rt::Variants::TVariantV2O07Deletedi7Integer> final : public TStateVisitor {
+      NO_COPY(TToNativeVisitor);
+      public:
+      TToNativeVisitor(Rt::Variants::TVariantV2O07Deletedi7Integer &out) : Out(out) {}
+      virtual void operator()(const State::TFree &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TTombstone &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TVoid &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TInt8 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TInt16 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TInt32 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TInt64 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TUInt8 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TUInt16 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TUInt32 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TUInt64 &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TBool &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TChar &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TFloat &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TDouble &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TDuration &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TTimePoint &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TUuid &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TBlob &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TStr &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TDesc &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TOpt &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TSet &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TVector &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TMap &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TTuple &) const override { THROW_ERROR(TInvalidConversion); }
+      virtual void operator()(const State::TRecord &state) const override {
+        void *type_alloc = alloca(Type::GetMaxTypeSize());
+        Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));
+        void *type_pin_alloc = alloca(Type::GetMaxTypePinSize());
+        Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));
+        void *state_pin_alloc = alloca(State::GetMaxStatePinSize());
+        State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));
+        if (tpin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }
+        std::string tag;
+        void *etype_alloc = alloca(Type::GetMaxTypeSize());
+        Type::TAny::TWrapper(tpin->NewElem(0, tag, etype_alloc));
+        void *estate_alloc = alloca(State::GetMaxStateSize());
+        State::TAny::TWrapper elem_state(spin->NewElem(0, estate_alloc));
+        if (tag == "Deleted") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::Deleted(AsNative<Orly::Rt::Objects::TObjO0>(*elem_state)); }
+        else if (tag == "Integer") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::Integer(AsNative<int64_t>(*elem_state)); }
+        else { THROW_ERROR(TInvalidConversion); }
+      }
+      private:
+      Rt::Variants::TVariantV2O07Deletedi7Integer &Out;
+    }; // TToNativeVisitor
+
+  } // Orly
+
+} // Sabot
 
 namespace Orly {
 

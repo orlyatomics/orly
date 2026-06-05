@@ -83,12 +83,14 @@ FIXTURE(EmittedVariantAsVar) {
   Var::TVar v_i = i.AsVar();
   Var::TVar v_d = d.AsVar();
 
-  /* The dynamic var's type is the single-tag variant for the active arm --
-     a real Var::TVariant, NOT the #90 empty-object trap. */
-  auto integer_single = Type::TVariant::Get({{"Integer", Type::TInt::Get()}});
-  auto deleted_single = Type::TVariant::Get({{"Deleted", Type::TObj::Get({})}});
-  EXPECT_TRUE(v_i.GetType() == integer_single);
-  EXPECT_TRUE(v_d.GetType() == deleted_single);
+  /* The dynamic var is a real Var::TVariant (NOT the #90 empty-object trap),
+     and it carries the FULL declared variant type -- so every arm of one
+     declared variant reports the same type, which is what lets a set of
+     differently-tagged variants be homogeneous at the Var layer (#95). */
+  auto declared = Type::TVariant::Get(
+      {{"Deleted", Type::TObj::Get({})}, {"Integer", Type::TInt::Get()}});
+  EXPECT_TRUE(v_i.GetType() == declared);
+  EXPECT_TRUE(v_d.GetType() == declared);
 
   /* Var-level equality is consistent with native EqEq. */
   TV i2 = TV::Integer(int64_t(-384));

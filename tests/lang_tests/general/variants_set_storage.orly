@@ -1,0 +1,55 @@
+/* <orly/lang_tests/general/variants_set_storage.orly>
+
+   Tracked-failure (xfail, issue #96) test for storing a SET of variants.
+
+   Single variant values round-trip through storage today (see
+   variants_storage.orly): a variant is stored as a single-key record and
+   the call-site `::(T)` reconstructs it on read. But a SET of variants
+   does not work yet, and the reason is structural, not a loose end:
+
+     A sabot set requires a homogeneous element type. Under the
+     "variant = single-key record" encoding (#95), differently-tagged
+     variants become differently-shaped records (`<{.Integer: int}>` vs
+     `<{.Deleted: <{}>}>`), which are heterogeneous -- so the write-path
+     conversion (Var::ToVar over the serialized set) rebuilds a Var set of
+     mismatched single-key records and trips the homogeneity check in
+     orly/var/set.cc.
+
+   The fix is the dedicated variant sabot type deferred in #95: represent a
+   variant as ONE sabot type whose state carries the active tag, so a set
+   of variants is homogeneous. Until then this is a tracked failure.
+
+   When #96 is fixed, fold this back into variants_storage.orly (or keep
+   it as the set-specific regression) and drop the .xfail entry.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_var_set = (*<[n]>::({<| Integer(int) | Deleted |>})) where {
+  n = given::(int);
+};
+
+with {
+  <[402]> <- {
+    <| Integer(int) | Deleted |>.Integer(1),
+    <| Integer(int) | Deleted |>.Integer(2),
+    <| Integer(int) | Deleted |>.Deleted
+  };
+} test {
+  t1: read_var_set(.n: 402) == {
+    <| Integer(int) | Deleted |>.Integer(1),
+    <| Integer(int) | Deleted |>.Integer(2),
+    <| Integer(int) | Deleted |>.Deleted
+  };
+};

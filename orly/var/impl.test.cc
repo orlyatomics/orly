@@ -232,13 +232,19 @@ FIXTURE(RecordCompare) {
    records, and need exactly the same Var-level equality + strict total
    order so they can live in a Var-level set. Mirrors RecordCompare. */
 FIXTURE(VariantCompare) {
+  /* The full declared variant type carried by every value below:
+     { Deleted | Integer(int) }. All four values report this same type. */
+  const Type::TType vt = Type::TVariant::Get(Type::TVariantElems{
+      {"Deleted", Type::TObj::Get(Type::TObjElems{})},
+      {"Integer", Type::TInt::Get()}});
+
   /* Integer(1), a duplicate of it, Integer(2) (same tag, different
      payload), Deleted (tag-only, empty-object payload). */
-  TVar integer1 = TVar::Variant("Integer", TVar(int64_t(1)));
-  TVar integer1_dup = TVar::Variant("Integer", TVar(int64_t(1)));
-  TVar integer2 = TVar::Variant("Integer", TVar(int64_t(2)));
+  TVar integer1 = TVar::Variant(vt, "Integer", TVar(int64_t(1)));
+  TVar integer1_dup = TVar::Variant(vt, "Integer", TVar(int64_t(1)));
+  TVar integer2 = TVar::Variant(vt, "Integer", TVar(int64_t(2)));
   TVar deleted = TVar::Variant(
-      "Deleted", TVar::Obj(std::unordered_map<std::string, TVar>{}));
+      vt, "Deleted", TVar::Obj(std::unordered_map<std::string, TVar>{}));
 
   /* Equality: same tag and payload are equal; differing payload or tag
      are not. */
@@ -259,7 +265,7 @@ FIXTURE(VariantCompare) {
   /* A Var-level set holds distinct variants and dedups equal ones --
      the set-of-sums use case from #95. */
   TVar deleted_dup = TVar::Variant(
-      "Deleted", TVar::Obj(std::unordered_map<std::string, TVar>{}));
+      vt, "Deleted", TVar::Obj(std::unordered_map<std::string, TVar>{}));
   Rt::TSet<TVar> events;
   events.insert(integer1);
   events.insert(integer2);
@@ -270,6 +276,6 @@ FIXTURE(VariantCompare) {
   EXPECT_TRUE(events.find(integer1) != events.end());
   EXPECT_TRUE(events.find(integer2) != events.end());
   EXPECT_TRUE(events.find(deleted) != events.end());
-  EXPECT_TRUE(events.find(TVar::Variant("Integer", TVar(int64_t(99)))) ==
+  EXPECT_TRUE(events.find(TVar::Variant(vt, "Integer", TVar(int64_t(99)))) ==
               events.end());
 }

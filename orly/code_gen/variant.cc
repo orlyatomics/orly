@@ -89,7 +89,9 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       // definition lives in <orly/var/obj.h>.
       << "#include <orly/var/obj.h>" << Eol
       // Native::State::Factory<Var::TVar> (write-side serialization, M2).
-      << "#include <orly/var/new_sabot.h>" << Eol;
+      << "#include <orly/var/new_sabot.h>" << Eol
+      // Sabot::AsNative + the TToNativeVisitor we specialize for read-back (M2).
+      << "#include <orly/sabot/to_native.h>" << Eol;
 
   /* Pull in any record/variant payload types we reference. */ {
     unordered_set<TType> obj_set;
@@ -126,36 +128,10 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         out << class_name << "() : Which(0) {}" << Eol
             << Eol;
 
-        /* Read-back ctor (#95 Phase 3 M2). A stored variant value is a
-           single-key record (`Integer(7)` -> `<{.Integer: 7}>`); the
-           call-site ::(T) annotation drives reconstruction into THIS native
-           variant from the read-side Var::TObj's field map. The map carries
-           exactly one key -- the active tag -- so dispatch on which tag key is
-           present and convert its payload Var back to native via TDt::As. A
-           tag-only arm's payload is the empty object (the unit type); its
-           native field default-constructs, and TDt::As is not viable for an
-           empty object (it has no dynamic-members ctor), so we only set Which
-           for such arms. */
-        out << class_name << "(const std::unordered_map<std::string, Var::TVar> &m) : Which(0) {" << Eol;
-        {
-          size_t idx = 0;
-          for (const auto &elem : elems) {
-            const Type::TObj *obj = elem.second.TryAs<Type::TObj>();
-            bool is_unit = obj && obj->GetElems().empty();
-            out << "  " << (idx == 0 ? "if" : "else if")
-                << " (m.count(\"" << elem.first << "\")) {" << Eol
-                << "    Which = " << idx << ";" << Eol;
-            if (!is_unit) {
-              out << "    V" << elem.first << " = Var::TVar::TDt<" << elem.second
-                  << ">::As(m.at(\"" << elem.first << "\"));" << Eol;
-            }
-            out << "  }" << Eol;
-            ++idx;
-          }
-        }
-        out << "  else { throw Rt::TSystemError(HERE, \"stored variant has no known tag\"); }" << Eol
-            << "}" << Eol
-            << Eol;
+        /* Read-back from storage is handled by the Sabot::TToNativeVisitor
+           specialization emitted below (a stored variant is a single-key
+           record; the visitor reads the one key, dispatches on its tag, and
+           builds this native variant via the per-arm static factories). */
 
         /* One static factory per arm. */
         {
@@ -181,25 +157,11 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         out << " {}" << Eol
             << Eol;
 
-        /* AsVar(): build a Var::TVariant for the active arm. Routes through
-           the single-key-record encoding via the TVar::Variant factory; the
-           payload becomes Var::TVar(<active field>). No empty-object trap
-           (#90): even a tag-only arm carries its empty-record payload. */
-        out << "Var::TVar AsVar() const {" << Eol
-            << "  assert(this);" << Eol
-            << "  switch (Which) {" << Eol;
-        {
-          size_t idx = 0;
-          for (const auto &elem : elems) {
-            out << "    case " << idx << ": return Var::TVar::Variant(\""
-                << elem.first << "\", Var::TVar(V" << elem.first << "));" << Eol;
-            ++idx;
-          }
-        }
-        out << "  }" << Eol
-            << "  assert(false);" << Eol
-            << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
-            << "}" << Eol
+        /* AsVar(): build a Var::TVariant for the active arm. Declared here,
+           defined out-of-line below (it needs the full declared type from the
+           TDt specialization, which the value must carry so a set of
+           differently-tagged variants is homogeneous -- see #95). */
+        out << "Var::TVar AsVar() const;" << Eol
             << Eol;
 
         /* GetHash(): hash the active arm's tag-index and payload. */
@@ -368,6 +330,86 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         << Eol
         << "};" << Eol;
   } // namespace Orly::Type
+
+  out << Eol;
+
+  /* Out-of-line AsVar(): build a Var::TVariant for the active arm, carrying
+     the FULL declared variant type (from TDt above) so a set of differently-
+     tagged variants is homogeneous at the Var layer (#95). Routes through the
+     single-key-record encoding via TVar::Variant; the payload becomes
+     Var::TVar(<active field>). No empty-object trap (#90): a tag-only arm
+     still carries its empty-record payload. */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Rt", "Variants"}, out);
+    out << "inline Var::TVar " << class_name << "::AsVar() const {" << Eol
+        << "  assert(this);" << Eol
+        << "  switch (Which) {" << Eol;
+    {
+      size_t idx = 0;
+      for (const auto &elem : elems) {
+        out << "    case " << idx << ": return Var::TVar::Variant("
+            << "Type::TDt<Rt::Variants::" << class_name << ">::GetType(), \""
+            << elem.first << "\", Var::TVar(V" << elem.first << "));" << Eol;
+        ++idx;
+      }
+    }
+    out << "  }" << Eol
+        << "  assert(false);" << Eol
+        << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
+        << "}" << Eol;
+  } // namespace Orly::Rt::Variants
+
+  out << Eol;
+
+  /* Read-back (#95 Phase 3 M2): a stored variant is a single-key record
+     (`Integer(7)` -> `<{.Integer: 7}>`). The generic TToNativeVisitor walks
+     fixed record fields, which a variant doesn't have, so specialize it: read
+     the single key, dispatch on its tag, and build this native variant via the
+     per-arm static factories (payload deserialized with AsNative). */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Sabot"}, out);
+    out << "template <>" << Eol
+        << "class TToNativeVisitor<Rt::Variants::" << class_name << "> final : public TStateVisitor {" << Eol
+        << "  NO_COPY(TToNativeVisitor);" << Eol
+        << "  public:" << Eol
+        << "  TToNativeVisitor(Rt::Variants::" << class_name << " &out) : Out(out) {}" << Eol;
+    {
+      static const char *const kNonRecord[] = {
+          "TFree", "TTombstone", "TVoid", "TInt8", "TInt16", "TInt32", "TInt64",
+          "TUInt8", "TUInt16", "TUInt32", "TUInt64", "TBool", "TChar", "TFloat",
+          "TDouble", "TDuration", "TTimePoint", "TUuid", "TBlob", "TStr", "TDesc",
+          "TOpt", "TSet", "TVector", "TMap", "TTuple"};
+      for (const char *const s : kNonRecord) {
+        out << "  virtual void operator()(const State::" << s
+            << " &) const override { THROW_ERROR(TInvalidConversion); }" << Eol;
+      }
+    }
+    out << "  virtual void operator()(const State::TRecord &state) const override {" << Eol
+        << "    void *type_alloc = alloca(Type::GetMaxTypeSize());" << Eol
+        << "    Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
+        << "    void *type_pin_alloc = alloca(Type::GetMaxTypePinSize());" << Eol
+        << "    Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));" << Eol
+        << "    void *state_pin_alloc = alloca(State::GetMaxStatePinSize());" << Eol
+        << "    State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));" << Eol
+        << "    if (tpin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }" << Eol
+        << "    std::string tag;" << Eol
+        << "    void *etype_alloc = alloca(Type::GetMaxTypeSize());" << Eol
+        << "    Type::TAny::TWrapper(tpin->NewElem(0, tag, etype_alloc));" << Eol
+        << "    void *estate_alloc = alloca(State::GetMaxStateSize());" << Eol
+        << "    State::TAny::TWrapper elem_state(spin->NewElem(0, estate_alloc));" << Eol;
+    {
+      size_t idx = 0;
+      for (const auto &elem : elems) {
+        out << "    " << (idx == 0 ? "if" : "else if") << " (tag == \"" << elem.first
+            << "\") { Out = Rt::Variants::" << class_name << "::" << elem.first
+            << "(AsNative<" << elem.second << ">(*elem_state)); }" << Eol;
+        ++idx;
+      }
+    }
+    out << "    else { THROW_ERROR(TInvalidConversion); }" << Eol
+        << "  }" << Eol
+        << "  private:" << Eol
+        << "  Rt::Variants::" << class_name << " &Out;" << Eol
+        << "}; // TToNativeVisitor" << Eol;
+  } // namespace Orly::Sabot
 
   out << Eol;
 

@@ -306,9 +306,9 @@ namespace Orly {
       template <typename TVal>
       static TVar Set(const Rt::TSet<TVal> &that);
 
-      /* Construct a new variant TVar from a tag and its payload value.
-         See <orly/var/variant.h>. */
-      static TVar Variant(const std::string &tag, const TVar &payload);
+      /* Construct a new variant TVar from its full declared type, the active
+         tag, and its payload value.  See <orly/var/variant.h>. */
+      static TVar Variant(const Type::TType &variant_type, const std::string &tag, const TVar &payload);
 
       /* TODO */
       TVar Copy() const;

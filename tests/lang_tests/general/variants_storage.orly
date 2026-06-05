@@ -1,17 +1,26 @@
 /* <orly/lang_tests/general/variants_storage.orly>
 
-   First end-to-end test for issue #95 (sum types / tagged unions).
+   End-to-end test for issue #95 (sum types / tagged unions): a single
+   variant value round-trips through storage.
 
-   A variant value is stored as a single-key record (`Integer(-384)` ->
-   `<{.Integer: -384}>`); the call-site `::(T)` annotation drives
-   reconstruction as a variant on read. This test proves the whole stack:
-   the orlyscript surface (variant type + constructor, Phase 3 M1), the
-   `::(T)`-driven sabot read-back (Phase 3 M2), and the engine layers from
-   Phases 0-2 (type node, var value + ordering, code_gen struct + AsVar).
+   A variant value is stored as a single-key record (`Integer(7)` ->
+   `<{.Integer: 7}>`); the call-site `::(T)` annotation drives
+   reconstruction as a variant on read (the Sabot::TToNativeVisitor
+   specialization emitted for each generated variant struct). This proves
+   the whole stack: the orlyscript surface (variant type + constructor,
+   Phase 3 M1), `::(T)`-driven sabot read-back (Phase 3 M2), and the
+   engine layers from Phases 0-2 (type node, var value + ordering,
+   code_gen struct + AsVar).
 
    It uses a 2-arm flat variant `<| Integer(int) | Deleted |>` and asserts
-   round-tripping with `==` only -- variant equality was wired end to end
-   in Phases 0-1, so no destructuring (Phase 3 M4 / Phase 4) is needed.
+   round-tripping with `==`/`!=` only -- variant equality was wired end to
+   end in Phases 0-1, so no destructuring (Phase 3 M4 / Phase 4) is needed.
+
+   SETS of variants are a separate, deeper case (issue #96): a sabot set
+   needs a homogeneous element type, but differently-tagged variants
+   stored as single-key records are heterogeneous, so set-of-variant
+   storage needs a dedicated variant sabot type. See variants_set_storage
+   (xfail, #96).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -27,13 +36,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-/* --- single variant value --- */
 read_var = (*<[n]>::(<| Integer(int) | Deleted |>)) where {
-  n = given::(int);
-};
-
-/* --- set of variants --- */
-read_var_set = (*<[n]>::({<| Integer(int) | Deleted |>})) where {
   n = given::(int);
 };
 
@@ -54,19 +57,4 @@ with {
 } test {
   t4: read_var(.n: 401) == <| Integer(int) | Deleted |>.Deleted;
   t5: read_var(.n: 401) != <| Integer(int) | Deleted |>.Integer(0);
-};
-
-/* Set of variants round-trips through storage. */
-with {
-  <[402]> <- {
-    <| Integer(int) | Deleted |>.Integer(1),
-    <| Integer(int) | Deleted |>.Integer(2),
-    <| Integer(int) | Deleted |>.Deleted
-  };
-} test {
-  t10: read_var_set(.n: 402) == {
-    <| Integer(int) | Deleted |>.Integer(1),
-    <| Integer(int) | Deleted |>.Integer(2),
-    <| Integer(int) | Deleted |>.Deleted
-  };
 };

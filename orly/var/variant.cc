@@ -32,9 +32,10 @@ size_t TVariant::GetHash() const {
 }
 
 Type::TType TVariant::GetType() const {
-  /* The runtime value knows only its active arm, so its type is the
-     single-tag variant carrying that arm's payload type. */
-  return Type::TVariant::Get(Type::TVariantElems{{Tag, Payload.GetType()}});
+  /* The full declared variant type (all arms), carried since construction,
+     so every value of one declared variant reports the same type -- required
+     for set-of-variants homogeneity (orly/var/set.cc). */
+  return VariantType;
 }
 
 void TVariant::Write(std::ostream &) const {
@@ -106,17 +107,17 @@ TVariant &TVariant::Xor(const TVar &) {
   throw Rt::TSystemError(HERE, "Xor not supported on Variant.");
 }
 
-TVariant::TVariant(const std::string &tag, const TVar &payload)
-    : Tag(tag), Payload(payload) {
+TVariant::TVariant(const Type::TType &variant_type, const std::string &tag, const TVar &payload)
+    : VariantType(variant_type), Tag(tag), Payload(payload) {
   SetHash();
 }
 
 TVariant::~TVariant() {}
 
 TVar TVariant::Copy() const {
-  return (new TVariant(Tag, Payload.Copy()))->AsVar();
+  return (new TVariant(VariantType, Tag, Payload.Copy()))->AsVar();
 }
 
-TVar TVar::Variant(const std::string &tag, const TVar &payload) {
-  return (new TVariant(tag, payload))->AsVar();
+TVar TVar::Variant(const Type::TType &variant_type, const std::string &tag, const TVar &payload) {
+  return (new TVariant(variant_type, tag, payload))->AsVar();
 }

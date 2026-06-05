@@ -11,11 +11,14 @@
    tag-only variant (e.g. `Deleted`) holds the empty object as its
    payload (the unit value), matching `orly/type/variant.h`.
 
-   `GetType()` reports the *single-tag* variant type carrying just the
-   active tag -- `{ Integer(int) }` for `Integer(-384)`. The full
-   declared variant type (e.g. `{ Integer(int) | Deleted }`) is a
-   call-site / language-layer concern (Phase 3); the runtime value only
-   knows which arm it is.
+   `GetType()` reports the *full declared* variant type (every arm),
+   not just the active one -- `Integer(7)` and `Deleted` of the same
+   declared `{ Integer(int) | Deleted }` therefore report the SAME type.
+   That is required for a set of differently-tagged variants to be
+   homogeneous at the Var layer (see orly/var/set.cc). The value carries
+   the declared type because a single arm cannot know the others; it is
+   supplied at construction (the ctor's declared type) and re-supplied on
+   read-back via the call-site `::(T)` annotation (issue #95).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -101,7 +104,8 @@ namespace Orly {
       /* TODO */
       virtual size_t GetHash() const;
 
-      /* The single-tag variant type carrying just the active tag. */
+      /* The full declared variant type (every arm), so all values of one
+         declared variant report the same type. */
       virtual Type::TType GetType() const;
 
       /* TODO */
@@ -113,7 +117,7 @@ namespace Orly {
       private:
 
       /* TODO */
-      TVariant(const std::string &tag, const TVar &payload);
+      TVariant(const Type::TType &variant_type, const std::string &tag, const TVar &payload);
 
       /* TODO */
       virtual ~TVariant();
@@ -126,6 +130,9 @@ namespace Orly {
 
       /* TODO */
       void SetHash();
+
+      /* The full declared variant type (all arms). */
+      Type::TType VariantType;
 
       /* The active tag name. */
       std::string Tag;
