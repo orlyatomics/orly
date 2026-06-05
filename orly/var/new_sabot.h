@@ -779,6 +779,20 @@ namespace Orly {
           std::sort(Elems.begin(), Elems.end());
         }
 
+        /* A variant value serializes byte-identically to a single-key
+           record (see issue #95 / orly/var/variant.h): Integer(-384) is
+           stored exactly as <{.Integer: -384}>. We therefore reuse this
+           record-shaped sabot, giving it the single-field *record* type
+           {tag: payload-type} (not a Type::TVariant -- the stored bytes
+           carry no variant discriminator; the call-site ::(T) annotation
+           drives read-side reconstruction). */
+        TObj(const Var::TVariant *var)
+            : Type(Orly::Type::TObj::Get(
+                  std::map<std::string, Orly::Type::TType>{
+                      {var->GetTag(), var->GetVal().GetType()}})) {
+          Elems.push_back(std::make_pair(var->GetTag(), var->GetVal()));
+        }
+
         /* See Sabot::State::TRecord. */
         virtual Sabot::Type::TRecord *GetRecordType(void *buf) const override {
           return dynamic_cast<Sabot::Type::TRecord *>(Type::NewSabot(buf, Type));

@@ -142,6 +142,14 @@ void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
     virtual void operator()(const TTimePnt *that) const {
       Strm << Base::Chrono::TimeDiffCast(that->GetVal().time_since_epoch()).count();
     }
+    virtual void operator()(const TVariant *that) const {
+      /* A variant value serializes as the single-key object
+         {"<tag>": <payload>}, byte-consistent with the single-key-record
+         storage reuse described in issue #95. */
+      Strm << "{\"" << that->GetTag() << "\":";
+      that->GetVal().Accept(*this);
+      Strm << '}';
+    }
     ostream &Strm;
   };
   var.Accept(TJsonifyVisitor(strm));

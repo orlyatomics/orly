@@ -147,6 +147,15 @@ void Orly::Var::Orlyify(ostream &strm, const TVar &var) {
     virtual void operator()(const TTimePnt *that) const {
       Strm << '{' << Base::Chrono::TTimePntInfo(that->GetVal()).AsString() << '}';
     }
+    virtual void operator()(const TVariant *that) const {
+      /* No orlyscript variant literal exists yet (Phase 3 of #95), so we
+         render a variant value as its single-key-record storage shape:
+         <{.<tag>: <payload>}> -- byte-consistent with how it round-trips
+         through the record encoding. */
+      Strm << "<{." << that->GetTag() << ":";
+      that->GetVal().Accept(*this);
+      Strm << "}>";
+    }
     ostream &Strm;
   };
   var.Accept(TVisitor(strm));
