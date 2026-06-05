@@ -333,6 +333,8 @@ namespace Orly {
     TPosRange GetPosRange(const Package::Syntax::TUserIdExpr *that);
 
     template <>
+    TPosRange GetPosRange(const Package::Syntax::TWhenExpr *that);
+
     TPosRange GetPosRange(const Package::Syntax::TWhereExpr *that);
 
     template <>

@@ -1,0 +1,76 @@
+/* <orly/lang_tests/general/variants_when.orly>
+
+   End-to-end test for issue #95 Phase 4: the exhaustive `when` variant
+   match expression.
+
+   `(e) when { Tag: body; ... }` branches on the active arm of a variant
+   `e`, evaluating the matching arm's body. The arm tags must cover the
+   variant's tag set EXACTLY -- a missing, unknown, or duplicate arm is a
+   compile-time error (verified by hand; see below). The result is the
+   unified type of the arm bodies. It lowers to a nested ternary on the
+   operand's GetWhich(), reusing the Phase 3 M4 primitives; an arm body
+   reads the active payload via the `e.<Tag>` accessor (v1 has no payload
+   binder).
+
+   Syntax: `(operand) when { Tag: body; ... }` -- the operand is
+   parenthesised (like `where`/`assert`), and every arm ends in `;`.
+
+   Exhaustiveness is enforced at compile time (checked manually with
+   orlyc, not encoded here since lang_test has no "expect compile error"
+   form):
+     - `(v) when { Integer: ...; }` over `<| Integer(int) | Deleted |>`
+       -> "`when` is not exhaustive: missing arm for tag `Deleted`"
+     - an arm naming a tag not in the variant
+       -> "`when` arm `Bogus` is not a tag of the operand variant type"
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_var = (*<[n]>::(<| Integer(int) | Deleted |>)) where {
+  n = given::(int);
+};
+
+/* Exhaustive fold: the typed arm yields its payload, the tag-only arm a
+   sentinel. The arm body reads the payload via the `.Integer` accessor. */
+classify = ((v) when {
+  Integer: v.Integer;
+  Deleted: -1;
+}) where {
+  v = given::(<| Integer(int) | Deleted |>);
+};
+
+with {
+  <[400]> <- <| Integer(int) | Deleted |>.Integer(7);
+  <[401]> <- <| Integer(int) | Deleted |>.Deleted;
+} test {
+  /* `when` over a stored, read-back variant selects the right arm. */
+  t1: classify(.v: read_var(.n: 400)) == 7;
+  t2: classify(.v: read_var(.n: 401)) == -1;
+
+  /* `when` over an inline-constructed variant. */
+  t3: ((<| Integer(int) | Deleted |>.Integer(5)) when {
+         Integer: 100;
+         Deleted: 0;
+       }) == 100;
+  t4: ((<| Integer(int) | Deleted |>.Deleted) when {
+         Integer: 100;
+         Deleted: 0;
+       }) == 0;
+
+  /* Arm order does not matter; coverage does. */
+  t5: ((<| Integer(int) | Deleted |>.Integer(9)) when {
+         Deleted: 0;
+         Integer: 9;
+       }) == 9;
+};

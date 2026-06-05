@@ -58,6 +58,12 @@ class expr_visitor_t
   virtual void operator()(const TUserId *)      const {}
   virtual void operator()(const TVariantCtor *that) const { Unary(that); }
   virtual void operator()(const TVariantIs *that) const { Unary(that); }
+  virtual void operator()(const TWhen *that) const {
+    Yield(that->GetOperand());
+    for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
+      Yield(that->GetArmBody(arm_idx));
+    }
+  }
   // Trig
   virtual void operator()(const TCos *that)             const { Unary(that); }
   virtual void operator()(const TSin *that)             const { Unary(that); }
@@ -286,6 +292,12 @@ class expr_visitor_t
     virtual void operator()(const TUserId *)      const {}
     virtual void operator()(const TVariantCtor *that) const { Unary(that); }
     virtual void operator()(const TVariantIs *that) const { Unary(that); }
+    virtual void operator()(const TWhen *that) const {
+      Yield(that->GetOperand());
+      for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
+        Yield(that->GetArmBody(arm_idx));
+      }
+    }
     // Trig
     virtual void operator()(const TCos *that)             const { Unary(that); }
     virtual void operator()(const TSin *that)             const { Unary(that); }

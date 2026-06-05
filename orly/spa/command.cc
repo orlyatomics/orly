@@ -226,6 +226,7 @@ namespace FooBar {
     virtual void operator()(const Syntax::TPrefixExists *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TEffectingExpr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TAssertExpr *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const Syntax::TWhenExpr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TWhereExpr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPrefixMinus *) const;
     virtual void operator()(const Syntax::TPrefixPlus *) const;

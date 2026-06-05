@@ -33,6 +33,8 @@
 
 #include <cstddef>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <orly/code_gen/cpp_printer.h>
 #include <orly/code_gen/inline.h>
@@ -85,6 +87,38 @@ namespace Orly {
         TInline::TPtr Operand;
         std::string Tag;
     }; // TVariantMember
+
+    /* Exhaustive `(e) when { Tag: body; ... }` (#95 Phase 4) -> a nested
+       ternary on the operand's active arm:
+         ((op).GetWhich() == w0) ? (b0) : ((op).GetWhich() == w1) ? (b1) : (bN)
+       The last arm is unconditional (exhaustiveness is checked at type
+       time, so the trailing arm always applies if none earlier did). */
+    class TVariantWhen : public TInline {
+      NO_COPY(TVariantWhen);
+      public:
+
+      typedef std::vector<std::pair<size_t, TInline::TPtr>> TArmVec;
+
+      TVariantWhen(const L0::TPackage *package,
+                   const Type::TType &type,
+                   const TInline::TPtr &operand,
+                   const TArmVec &arms);
+
+      void WriteExpr(TCppPrinter &out) const;
+
+      virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
+        dependency_set.insert(Operand);
+        Operand->AppendDependsOn(dependency_set);
+        for (const auto &arm : Arms) {
+          dependency_set.insert(arm.second);
+          arm.second->AppendDependsOn(dependency_set);
+        }
+      }
+
+      private:
+        TInline::TPtr Operand;
+        TArmVec Arms;
+    }; // TVariantWhen
 
   } // CodeGen
 

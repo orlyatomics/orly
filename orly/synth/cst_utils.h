@@ -220,6 +220,27 @@ namespace Orly {
     };  // ItemInfo<Package::Syntax::TAssertion>
 
     template <>
+    struct ItemInfo<Package::Syntax::TWhenArm> {
+      NO_CONSTRUCTION(ItemInfo);
+
+      typedef Package::Syntax::TOptWhenArmSeq TOptNode;
+      typedef Package::Syntax::TNoWhenArmSeq  TNoNode;
+      typedef Package::Syntax::TWhenArmSeq    TNode;
+      typedef Package::Syntax::TWhenArm       TItem;
+
+      static const TItem *GetItem(const TNode *node) {
+        assert(node);
+        return node->GetWhenArm();
+      }
+
+      static const TNode *TryGetNext(const TNode *node) {
+        assert(node);
+        return TryGetNode<TNode, TNoNode>(node->GetOptWhenArmSeq());
+      }
+
+    };  // ItemInfo<Package::Syntax::TWhenArm>
+
+    template <>
     struct ItemInfo<Package::Syntax::TDbKeysMember> {
       NO_CONSTRUCTION(ItemInfo);
 

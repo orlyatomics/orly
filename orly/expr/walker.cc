@@ -312,6 +312,12 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
     virtual void operator()(const TVariantIs *that) const {
       Unary(that);
     }
+    virtual void operator()(const TWhen *that) const {
+      Yield(that->GetOperand());
+      for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
+        Yield(that->GetArmBody(arm_idx));
+      }
+    }
     virtual void operator()(const TWhere *that) const {
       Unary(that);
       if (IncludeInnerFuncs) {
