@@ -225,6 +225,16 @@ namespace Orly {
       virtual void operator()(const Package::Syntax::TTimePntCtor *) const { /* DO NOTHING */ }
       virtual void operator()(const Package::Syntax::TUnknownCtor *) const { /* DO NOTHING */ }
       virtual void operator()(const Package::Syntax::TUserIdExpr *) const { /* DO NOTHING */ }
+      virtual void operator()(const Package::Syntax::TVariantCtor *that) const {
+        /* Collect `given` refs in the variant payload expression (if any).
+           The leading variant type carries no expressions. */
+        const Package::Syntax::TAVariantCtorPayload *payload =
+            TryGetNode<Package::Syntax::TAVariantCtorPayload,
+                       Package::Syntax::TNoVariantCtorPayload>(that->GetOptVariantCtorPayload());
+        if (payload) {
+          Push(payload->GetExpr());
+        }
+      }
       virtual void operator()(const Package::Syntax::TWhereExpr *that) const { Push(that->GetExpr()); }
 
       /* Push expr onto the stack */

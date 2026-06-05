@@ -136,6 +136,7 @@ class TTypeVisitor : public Orly::Checkpoint::Syntax::TType::TVisitor {
   //virtual void operator()(const Orly::Checkpoint::Syntax::TResultOf *) const {NOT_IMPLEMENTED();}
   //virtual void operator()(const Orly::Checkpoint::Syntax::TParamsOf *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TFuncType *) const {NOT_IMPLEMENTED();}
+  virtual void operator()(const Orly::Checkpoint::Syntax::TVariantType *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TAddrType *that) const;
   virtual void operator()(const Orly::Checkpoint::Syntax::TObjType *) const;
 
@@ -241,6 +242,7 @@ class TExprVisitor : public Orly::Checkpoint::Syntax::TExpr::TVisitor {
   virtual void operator()(const Orly::Checkpoint::Syntax::TListCtor *) const;
   virtual void operator()(const Orly::Checkpoint::Syntax::TRangeCtor *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TObjCtor *) const;
+  virtual void operator()(const Orly::Checkpoint::Syntax::TVariantCtor *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TUnknownCtor *that) const {
     Type::TType type;
     that->GetType()->Accept(TTypeVisitor(type));
@@ -763,6 +765,7 @@ void TExprVisitor::operator()(const TEmptyCtor *that) const {
     virtual void operator()(const TIdType *) const { throw TImpossibleError(HERE, PosRange); }
     virtual void operator()(const TTimeDiffType *) const { throw TImpossibleError(HERE, PosRange); }
     virtual void operator()(const TObjType *) const { throw TImpossibleError(HERE, PosRange); }
+    virtual void operator()(const TVariantType *) const { throw TImpossibleError(HERE, PosRange); }
     virtual void operator()(const TAddrType *) const { throw TImpossibleError(HERE, PosRange); }
     virtual void operator()(const TParenType *) const { throw TImpossibleError(HERE, PosRange); }
     virtual void operator()(const TRefType *) const {

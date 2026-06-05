@@ -204,6 +204,12 @@ namespace Orly {
     TPosRange GetPosRange(const Package::Syntax::TObjCtor *that);
 
     template <>
+    TPosRange GetPosRange(const Package::Syntax::TVariantCtor *that);
+
+    template <>
+    TPosRange GetPosRange(const Package::Syntax::TVariantType *that);
+
+    template <>
     TPosRange GetPosRange(const Package::Syntax::TParenExpr *that);
 
     template <>

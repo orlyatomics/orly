@@ -71,5 +71,6 @@
 #include <orly/expr/trig.h>
 #include <orly/expr/unknown.h>
 #include <orly/expr/user_id.h>
+#include <orly/expr/variant.h>
 #include <orly/expr/where.h>
 #include <orly/expr/while.h>

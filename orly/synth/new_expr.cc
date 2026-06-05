@@ -46,6 +46,7 @@
 #include <orly/synth/now_expr.h>
 #include <orly/synth/obj_ctor.h>
 #include <orly/synth/obj_member_expr.h>
+#include <orly/synth/variant_ctor.h>
 #include <orly/synth/postfix_call.h>
 #include <orly/synth/postfix_cast.h>
 #include <orly/synth/postfix_is_known.h>
@@ -211,6 +212,7 @@ TExpr *TExprFactory::NewExpr(const Package::Syntax::TExpr *root) const {
     virtual void operator()(const Syntax::TTimeDiffCtor *that) const { Out = new TTimeDiffCtor(that); }
     virtual void operator()(const Syntax::TTimePntCtor *that) const { Out = new TTimePntCtor(that); }
     virtual void operator()(const Syntax::TUnknownCtor *that) const { Out = new TUnknownCtor(that); }
+    virtual void operator()(const Syntax::TVariantCtor *that) const { Out = new TVariantCtor(ExprFactory, that); }
     virtual void operator()(const Syntax::TUserIdExpr *that) const { Out = new TUserIdExpr(that); }
     virtual void operator()(const Syntax::TWhereExpr *that) const { Out = new TWhereExpr(ExprFactory, that); }
     private:

@@ -33,6 +33,7 @@
 #include <orly/code_gen/map.h>
 #include <orly/code_gen/match.h>
 #include <orly/code_gen/obj.h>
+#include <orly/code_gen/variant_ctor.h>
 #include <orly/code_gen/reduce.h>
 #include <orly/code_gen/skip.h>
 #include <orly/code_gen/split.h>
@@ -172,6 +173,7 @@ bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
     virtual void operator()(const Expr::TUnion         *) const {}
     virtual void operator()(const Expr::TUnknown       *) const {}
     virtual void operator()(const Expr::TUserId        *) const {}
+    virtual void operator()(const Expr::TVariantCtor   *) const {}
     virtual void operator()(const Expr::TWhere         *) const {}
     virtual void operator()(const Expr::TWhile         *) const { Res = true; }
     virtual void operator()(const Expr::TXor           *) const {}
@@ -674,6 +676,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       Res = Interner.GetTypedLeaf(Package, TTypedLeaf::Unknown, that->GetType(), /*ignored */ TAddrDir::Asc);
     }
     virtual void operator()(const Expr::TUserId *) const { Res = Interner.GetContextVar(Package, TContextVar::UserId); }
+    virtual void operator()(const Expr::TVariantCtor *that) const {
+      Res = TVariantCtor::TPtr(new TVariantCtor(Package, ReturnType, that->GetTag(), Build(Package, that->GetExpr(), false)));
+    }
     virtual void operator()(const Expr::TWhere *that) const { Res = Build(Package, that->GetExpr(), true); }
     virtual void operator()(const Expr::TWhile *that) const {
       auto seq = BuildInline(Package, that->GetLhs(), false);
