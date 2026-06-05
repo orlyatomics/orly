@@ -33,6 +33,7 @@
 #include <orly/code_gen/map.h>
 #include <orly/code_gen/match.h>
 #include <orly/code_gen/obj.h>
+#include <orly/code_gen/variant_access.h>
 #include <orly/code_gen/variant_ctor.h>
 #include <orly/code_gen/reduce.h>
 #include <orly/code_gen/skip.h>
@@ -55,6 +56,7 @@
 #include <orly/symbol/result_def.h>
 #include <orly/type.h>
 #include <orly/type/unwrap.h>
+#include <orly/type/variant.h>
 
 using namespace std;
 using namespace Orly;
@@ -174,6 +176,7 @@ bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
     virtual void operator()(const Expr::TUnknown       *) const {}
     virtual void operator()(const Expr::TUserId        *) const {}
     virtual void operator()(const Expr::TVariantCtor   *) const {}
+    virtual void operator()(const Expr::TVariantIs      *) const {}
     virtual void operator()(const Expr::TWhere         *) const {}
     virtual void operator()(const Expr::TWhile         *) const { Res = true; }
     virtual void operator()(const Expr::TXor           *) const {}
@@ -539,7 +542,15 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       Res = TObjCtor::TPtr(new TObjCtor(Package, ReturnType, move(args)));
     }
     virtual void operator()(const Expr::TObjMember *that) const {
-      Res = Interner.GetObjMember(Package, ReturnType, Build(Package, that->GetExpr(), true), that->GetName());
+      /* `e.<Tag>` overloads on operand type (matching Expr::TObjMember::
+         GetTypeImpl): a variant operand is the #95 guarded payload
+         accessor (-> GetV<Tag>()); a record operand is field access. */
+      if (Type::Unwrap(that->GetExpr()->GetType()).Is<Type::TVariant>()) {
+        Res = TVariantMember::TPtr(new TVariantMember(Package, ReturnType,
+            Build(Package, that->GetExpr(), false), that->GetName()));
+      } else {
+        Res = Interner.GetObjMember(Package, ReturnType, Build(Package, that->GetExpr(), true), that->GetName());
+      }
     }
     virtual void operator()(const Expr::TOr *that) const { Binary(Package, TBinary::Or, that); }
     virtual void operator()(const Expr::TOrElse *that) const {
@@ -678,6 +689,10 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TUserId *) const { Res = Interner.GetContextVar(Package, TContextVar::UserId); }
     virtual void operator()(const Expr::TVariantCtor *that) const {
       Res = TVariantCtor::TPtr(new TVariantCtor(Package, ReturnType, that->GetTag(), Build(Package, that->GetExpr(), false)));
+    }
+    virtual void operator()(const Expr::TVariantIs *that) const {
+      Res = TVariantIs::TPtr(new TVariantIs(Package, ReturnType,
+          Build(Package, that->GetExpr(), false), that->GetWhich()));
     }
     virtual void operator()(const Expr::TWhere *that) const { Res = Build(Package, that->GetExpr(), true); }
     virtual void operator()(const Expr::TWhile *that) const {

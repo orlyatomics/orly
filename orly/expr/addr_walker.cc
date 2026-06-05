@@ -57,6 +57,7 @@ class expr_visitor_t
   virtual void operator()(const TUnknown *)     const {}
   virtual void operator()(const TUserId *)      const {}
   virtual void operator()(const TVariantCtor *that) const { Unary(that); }
+  virtual void operator()(const TVariantIs *that) const { Unary(that); }
   // Trig
   virtual void operator()(const TCos *that)             const { Unary(that); }
   virtual void operator()(const TSin *that)             const { Unary(that); }
@@ -284,6 +285,7 @@ class expr_visitor_t
     virtual void operator()(const TUnknown *)     const {}
     virtual void operator()(const TUserId *)      const {}
     virtual void operator()(const TVariantCtor *that) const { Unary(that); }
+    virtual void operator()(const TVariantIs *that) const { Unary(that); }
     // Trig
     virtual void operator()(const TCos *that)             const { Unary(that); }
     virtual void operator()(const TSin *that)             const { Unary(that); }

@@ -14,7 +14,9 @@
 
    It uses a 2-arm flat variant `<| Integer(int) | Deleted |>` and asserts
    round-tripping with `==`/`!=` only -- variant equality was wired end to
-   end in Phases 0-1, so no destructuring (Phase 3 M4 / Phase 4) is needed.
+   end in Phases 0-1. Destructuring of a stored, read-back variant (the
+   `is <Tag>` predicate and the `.<Tag>` guarded payload accessor, Phase 3
+   M4) is exercised in the sibling variants_destructure.orly.
 
    SETS of variants are a separate, deeper case (issue #96): a sabot set
    needs a homogeneous element type, but differently-tagged variants

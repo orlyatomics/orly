@@ -51,6 +51,7 @@
 #include <orly/synth/postfix_cast.h>
 #include <orly/synth/postfix_is_known.h>
 #include <orly/synth/postfix_is_known_expr.h>
+#include <orly/synth/postfix_is_variant.h>
 #include <orly/synth/postfix_slice.h>
 #include <orly/synth/prefix_start.h>
 #include <orly/synth/random_int.h>
@@ -186,6 +187,7 @@ TExpr *TExprFactory::NewExpr(const Package::Syntax::TExpr *root) const {
     virtual void operator()(const Syntax::TPostfixIsKnown *that) const { Out = new TPostfixIsKnown(ExprFactory, that); }
     virtual void operator()(const Syntax::TPostfixIsKnownExpr *that) const { Out = new TPostfixIsKnownExpr(ExprFactory, that); }
     virtual void operator()(const Syntax::TPostfixIsUnknown *that) const { OnAffix(that->GetExpr(), Expr::TIsUnknown::New, GetPosRange(that)); }
+    virtual void operator()(const Syntax::TPostfixIsVariant *that) const { Out = new TPostfixIsVariant(ExprFactory, that); }
     virtual void operator()(const Syntax::TPostfixObjMember *that) const { Out = new TObjMemberExpr(ExprFactory, that); }
     virtual void operator()(const Syntax::TPostfixOptCheckpoint *that) const {
       throw TCompileError(HERE, GetPosRange(that), "expr ? is not allowed in orly programs. It is available only in checkpoints.");

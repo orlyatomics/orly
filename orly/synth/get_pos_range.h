@@ -237,6 +237,9 @@ namespace Orly {
     TPosRange GetPosRange(const Package::Syntax::TPostfixObjMember *that);
 
     template <>
+    TPosRange GetPosRange(const Package::Syntax::TPostfixIsVariant *that);
+
+    template <>
     TPosRange GetPosRange(const Package::Syntax::TPostfixOptCheckpoint *that);
 
     template <>

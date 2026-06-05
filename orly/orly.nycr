@@ -504,6 +504,7 @@ postfix_is_known    : postfix_expr -> expr is_kwd is_known;                 	  /
 
 postfix_is_unknown  : postfix_expr -> expr is_kwd unknown_kwd;                    /* test if value is unknown */
 postfix_is_empty    : postfix_expr -> expr is_kwd empty_kwd;                      /* test if container or string is empty */
+postfix_is_variant  : postfix_expr -> expr is_kwd name;                           /* test if a variant's active arm is <Tag> (#95) */
 postfix_cast        : postfix_expr -> expr as_kwd type;                           /* cast to new type */
 postfix_call        : postfix_expr -> expr open_paren opt_call_args close_paren;  /* call built-in or user-specifed function */
 postfix_slice       : postfix_expr -> expr open_bracket slice close_bracket;      /* slicing a list or looking up in a dict */

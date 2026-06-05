@@ -208,6 +208,7 @@ class TExprVisitor : public Orly::Checkpoint::Syntax::TExpr::TVisitor {
   virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixIsKnown *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixIsKnownExpr *) const { NOT_IMPLEMENTED(); }
   virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixIsUnknown *) const {NOT_IMPLEMENTED();}
+  virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixIsVariant *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixCast *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixAddrMember *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TPostfixSlice *) const {NOT_IMPLEMENTED();}

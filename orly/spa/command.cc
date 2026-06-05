@@ -220,6 +220,7 @@ namespace FooBar {
     virtual void operator()(const Syntax::TPostfixAddrMember *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixSlice *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixIsKnown *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const Syntax::TPostfixIsVariant *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixObjMember *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixCall *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPrefixExists *) const {NOT_IMPLEMENTED();}
