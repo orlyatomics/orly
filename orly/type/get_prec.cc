@@ -55,6 +55,9 @@ TPrec Orly::Type::GetPrec(const Type::TType &type) {
     virtual void operator()(const TObj *) const {
       Prec = TPrec::Obj;
     }
+    virtual void operator()(const TVariant *) const {
+      Prec = TPrec::Variant;
+    }
     virtual void operator()(const TOpt *) const {throw TImpossibleError(HERE);}
     virtual void operator()(const TReal *) const {
       Prec = TPrec::Real;

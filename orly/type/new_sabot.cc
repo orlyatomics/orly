@@ -74,6 +74,12 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
     virtual void operator()(const TObj *type) const override {
       Result = new (Buf) ST::TRecord(type);
     }
+    /* TODO(#95 Phase 1): a TVariant value serializes as a single-key
+       record (see issue #95 / orly/type/variant.h), so this should
+       build a TRecord-shaped sabot type from the variant's single
+       active tag. No orlyscript produces a TVariant yet, so for Phase 0
+       this is a no-op (mirroring TErr/TFunc above). */
+    virtual void operator()(const TVariant */*type*/) const override {}
     private:
     Sabot::Type::TAny *&Result;
     void *Buf;

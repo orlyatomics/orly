@@ -88,6 +88,19 @@ class TCodeGenVisitor : public TType::TVisitor {
                     })
       << "})";
   }
+  virtual void operator()(const TVariant *that) const {
+    const TVariant::TElems &elem_map = that->GetElems();
+    Strm
+      << "Orly::Type::TVariant::Get(std::map<std::string, Orly::Type::TType>{"
+      << Base::Join(elem_map,
+                    ", ",
+                    [this](ostream &strm, const TVariant::TElems::value_type &that) {
+                      strm << "{std::string(\"" << that.first << "\"), ";
+                      that.second.Accept(*this);
+                      strm << '}';
+                    })
+      << "})";
+  }
   virtual void operator()(const TOpt *that) const {
     Write("TOpt", that->GetElem());
   }

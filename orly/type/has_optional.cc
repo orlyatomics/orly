@@ -61,6 +61,11 @@ bool Orly::Type::HasOptional(const TType &type) {
         iter.second.Accept(*this);
       }
     }
+    virtual void operator()(const TVariant  *that) const {
+      for (auto iter : that->GetElems()) {
+        iter.second.Accept(*this);
+      }
+    }
     virtual void operator()(const TOpt      *) const {
       HasOptional = true;
     }

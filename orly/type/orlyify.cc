@@ -91,6 +91,18 @@ void Orly::Type::Orlyify(ostream &strm, const TType &type) {
                       })
         << "}>";
     }
+    virtual void operator()(const TVariant *that) const {
+      Strm
+        << "{ "
+        << Base::Join(that->GetElems(),
+                      " | ",
+                      [this](ostream &strm, TVariant::TElems::const_reference elem) {
+                        strm << elem.first << '(';
+                        elem.second.Accept(*this);
+                        strm << ')';
+                      })
+        << " }";
+    }
     virtual void operator()(const TOpt *that) const {
       that->GetElem().Accept(*this);
       Strm << "?";

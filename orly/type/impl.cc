@@ -32,6 +32,7 @@
 #include <orly/type/seq.h>
 #include <orly/type/set.h>
 #include <orly/type/unknown.h>
+#include <orly/type/variant.h>
 
 namespace Orly {
 
@@ -79,6 +80,9 @@ namespace Orly {
         DoubleVisitor(Lhs, rhs);
       }
       virtual void operator()(const TObj *rhs) const {
+        DoubleVisitor(Lhs, rhs);
+      }
+      virtual void operator()(const TVariant *rhs) const {
         DoubleVisitor(Lhs, rhs);
       }
       virtual void operator()(const TOpt *rhs) const {
@@ -160,6 +164,9 @@ namespace Orly {
       }
       virtual void operator()(const TObj *lhs) const {
         Rhs.Accept(TRhsVisitor<TObj>(lhs, DoubleVisitor));
+      }
+      virtual void operator()(const TVariant *lhs) const {
+        Rhs.Accept(TRhsVisitor<TVariant>(lhs, DoubleVisitor));
       }
       virtual void operator()(const TOpt *lhs) const {
         Rhs.Accept(TRhsVisitor<TOpt>(lhs, DoubleVisitor));
@@ -289,6 +296,10 @@ std::string TType::GetMangledName() const {
     }
     virtual void operator()(const TObj *that) const {
       Name = 'O';
+      Name += MangleElemMap(that->GetElems());
+    }
+    virtual void operator()(const TVariant *that) const {
+      Name = 'V';
       Name += MangleElemMap(that->GetElems());
     }
     virtual void operator()(const TOpt *that) const {

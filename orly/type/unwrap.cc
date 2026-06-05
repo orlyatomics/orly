@@ -52,6 +52,7 @@ class TUnwrapHelperVisitor
   virtual void operator()(const TInt      *that) const { Type = that->AsType(); }
   virtual void operator()(const TList     *that) const { Type = that->AsType(); }
   virtual void operator()(const TObj      *that) const { Type = that->AsType(); }
+  virtual void operator()(const TVariant  *that) const { Type = that->AsType(); }
   virtual void operator()(const TReal     *that) const { Type = that->AsType(); }
   virtual void operator()(const TSet      *that) const { Type = that->AsType(); }
   virtual void operator()(const TStr      *that) const { Type = that->AsType(); }

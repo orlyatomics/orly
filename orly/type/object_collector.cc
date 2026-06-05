@@ -61,6 +61,11 @@ void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_
         iter.second.Accept(*this);
       }
     }
+    virtual void operator()(const TVariant *that) const {
+      for (auto iter : that->GetElems()) {
+        iter.second.Accept(*this);
+      }
+    }
     virtual void operator()(const TOpt *that) const {
       that->GetElem().Accept(*this);
     }

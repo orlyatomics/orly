@@ -45,6 +45,7 @@ namespace Orly {
       virtual void operator()(const TAddr     *, const TInt      *) const = 0;
       virtual void operator()(const TAddr     *, const TList     *) const = 0;
       virtual void operator()(const TAddr     *, const TObj      *) const = 0;
+      virtual void operator()(const TAddr     *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TAddr     *, const TReal     *) const = 0;
       virtual void operator()(const TAddr     *, const TSet      *) const = 0;
       virtual void operator()(const TAddr     *, const TStr      *) const = 0;
@@ -56,6 +57,7 @@ namespace Orly {
       virtual void operator()(const TBool     *, const TInt      *) const = 0;
       virtual void operator()(const TBool     *, const TList     *) const = 0;
       virtual void operator()(const TBool     *, const TObj      *) const = 0;
+      virtual void operator()(const TBool     *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TBool     *, const TReal     *) const = 0;
       virtual void operator()(const TBool     *, const TSet      *) const = 0;
       virtual void operator()(const TBool     *, const TStr      *) const = 0;
@@ -66,6 +68,7 @@ namespace Orly {
       virtual void operator()(const TDict     *, const TInt      *) const = 0;
       virtual void operator()(const TDict     *, const TList     *) const = 0;
       virtual void operator()(const TDict     *, const TObj      *) const = 0;
+      virtual void operator()(const TDict     *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TDict     *, const TReal     *) const = 0;
       virtual void operator()(const TDict     *, const TSet      *) const = 0;
       virtual void operator()(const TDict     *, const TStr      *) const = 0;
@@ -75,6 +78,7 @@ namespace Orly {
       virtual void operator()(const TId       *, const TInt      *) const = 0;
       virtual void operator()(const TId       *, const TList     *) const = 0;
       virtual void operator()(const TId       *, const TObj      *) const = 0;
+      virtual void operator()(const TId       *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TId       *, const TReal     *) const = 0;
       virtual void operator()(const TId       *, const TSet      *) const = 0;
       virtual void operator()(const TId       *, const TStr      *) const = 0;
@@ -83,6 +87,7 @@ namespace Orly {
       virtual void operator()(const TInt      *, const TInt      *) const = 0;
       virtual void operator()(const TInt      *, const TList     *) const = 0;
       virtual void operator()(const TInt      *, const TObj      *) const = 0;
+      virtual void operator()(const TInt      *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TInt      *, const TReal     *) const = 0;
       virtual void operator()(const TInt      *, const TSet      *) const = 0;
       virtual void operator()(const TInt      *, const TStr      *) const = 0;
@@ -90,17 +95,25 @@ namespace Orly {
       virtual void operator()(const TInt      *, const TTimePnt  *) const = 0;
       virtual void operator()(const TList     *, const TList     *) const = 0;
       virtual void operator()(const TList     *, const TObj      *) const = 0;
+      virtual void operator()(const TList     *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TList     *, const TReal     *) const = 0;
       virtual void operator()(const TList     *, const TSet      *) const = 0;
       virtual void operator()(const TList     *, const TStr      *) const = 0;
       virtual void operator()(const TList     *, const TTimeDiff *) const = 0;
       virtual void operator()(const TList     *, const TTimePnt  *) const = 0;
       virtual void operator()(const TObj      *, const TObj      *) const = 0;
+      virtual void operator()(const TObj      *, const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TObj      *, const TReal     *) const = 0;
       virtual void operator()(const TObj      *, const TSet      *) const = 0;
       virtual void operator()(const TObj      *, const TStr      *) const = 0;
       virtual void operator()(const TObj      *, const TTimeDiff *) const = 0;
       virtual void operator()(const TObj      *, const TTimePnt  *) const = 0;
+      virtual void operator()(const TVariant  *, const TVariant  *) const { NOT_IMPLEMENTED(); }
+      virtual void operator()(const TVariant  *, const TReal     *) const { NOT_IMPLEMENTED(); }
+      virtual void operator()(const TVariant  *, const TSet      *) const { NOT_IMPLEMENTED(); }
+      virtual void operator()(const TVariant  *, const TStr      *) const { NOT_IMPLEMENTED(); }
+      virtual void operator()(const TVariant  *, const TTimeDiff *) const { NOT_IMPLEMENTED(); }
+      virtual void operator()(const TVariant  *, const TTimePnt  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TReal     *, const TReal     *) const = 0;
       virtual void operator()(const TReal     *, const TSet      *) const = 0;
       virtual void operator()(const TReal     *, const TStr      *) const = 0;
@@ -165,16 +178,28 @@ namespace Orly {
       virtual void operator()(const TTimeDiff *lhs, const TInt      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TTimePnt  *lhs, const TInt      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TObj      *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TAddr     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TBool     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TDict     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TId       *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TInt      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TVariant  *lhs, const TObj      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TReal     *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TSet      *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TStr      *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TTimeDiff *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TTimePnt  *lhs, const TList     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TReal     *lhs, const TObj      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TReal     *lhs, const TVariant  *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TSet      *lhs, const TObj      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TSet      *lhs, const TVariant  *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TStr      *lhs, const TObj      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TStr      *lhs, const TVariant  *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TTimeDiff *lhs, const TObj      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TTimeDiff *lhs, const TVariant  *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TTimePnt  *lhs, const TObj      *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
+      virtual void operator()(const TTimePnt  *lhs, const TVariant  *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TSet      *lhs, const TReal     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TStr      *lhs, const TReal     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
       virtual void operator()(const TTimeDiff *lhs, const TReal     *rhs) const final { TType::Accept(rhs->AsType(), lhs->AsType(), *this); }
