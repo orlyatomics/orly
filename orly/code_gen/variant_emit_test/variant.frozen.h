@@ -19,6 +19,7 @@
 #include <orly/type/variant.h>
 #include <orly/var/impl.h>
 #include <orly/var/obj.h>
+#include <orly/var/new_sabot.h>
 
 /* Needed payload objects */
 #include <orly/code_gen/variant_emit_test/O0.frozen.h>
@@ -32,6 +33,17 @@ namespace Orly {
       class TVariantV2O07Deletedi7Integer {
         public:
         TVariantV2O07Deletedi7Integer() : Which(0) {}
+
+        TVariantV2O07Deletedi7Integer(const std::unordered_map<std::string, Var::TVar> &m) : Which(0) {
+          if (m.count("Deleted")) {
+            Which = 0;
+          }
+          else if (m.count("Integer")) {
+            Which = 1;
+            VInteger = Var::TVar::TDt<int64_t>::As(m.at("Integer"));
+          }
+          else { throw Rt::TSystemError(HERE, "stored variant has no known tag"); }
+        }
 
         static TVariantV2O07Deletedi7Integer Deleted(const Orly::Rt::Objects::TObjO0 &vv) {
           TVariantV2O07Deletedi7Integer out;
@@ -176,6 +188,23 @@ namespace Orly {
   } // Orly
 
 } // Type
+
+namespace Orly {
+
+  namespace Native {
+
+    template <>
+    class State::Factory<Rt::Variants::TVariantV2O07Deletedi7Integer> final {
+      NO_CONSTRUCTION(Factory);
+      public:
+      static Sabot::State::TAny *New(const Rt::Variants::TVariantV2O07Deletedi7Integer &val, void *state_alloc) {
+        return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);
+      }
+    }; // State::Factory<TVariantV2O07Deletedi7Integer>
+
+  } // Orly
+
+} // Native
 
 namespace std {
   template<>

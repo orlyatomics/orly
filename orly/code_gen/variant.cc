@@ -25,7 +25,9 @@
 #include <orly/code_gen/obj.h>
 #include <orly/type.h>
 #include <orly/type/gen_code.h>
+#include <orly/type/obj.h>
 #include <orly/type/object_collector.h>
+#include <orly/type/util.h>
 #include <orly/type/variant.h>
 
 using namespace std;
@@ -85,7 +87,9 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       // AsVar() builds Var::TVar(<payload-field>) which, for record/variant
       // payloads, resolves to the templated TVar(const TCompound &) ctor whose
       // definition lives in <orly/var/obj.h>.
-      << "#include <orly/var/obj.h>" << Eol;
+      << "#include <orly/var/obj.h>" << Eol
+      // Native::State::Factory<Var::TVar> (write-side serialization, M2).
+      << "#include <orly/var/new_sabot.h>" << Eol;
 
   /* Pull in any record/variant payload types we reference. */ {
     unordered_set<TType> obj_set;
@@ -120,6 +124,37 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
 
         /* Default ctor: arm 0, default payloads (set/dict mandate it). */
         out << class_name << "() : Which(0) {}" << Eol
+            << Eol;
+
+        /* Read-back ctor (#95 Phase 3 M2). A stored variant value is a
+           single-key record (`Integer(7)` -> `<{.Integer: 7}>`); the
+           call-site ::(T) annotation drives reconstruction into THIS native
+           variant from the read-side Var::TObj's field map. The map carries
+           exactly one key -- the active tag -- so dispatch on which tag key is
+           present and convert its payload Var back to native via TDt::As. A
+           tag-only arm's payload is the empty object (the unit type); its
+           native field default-constructs, and TDt::As is not viable for an
+           empty object (it has no dynamic-members ctor), so we only set Which
+           for such arms. */
+        out << class_name << "(const std::unordered_map<std::string, Var::TVar> &m) : Which(0) {" << Eol;
+        {
+          size_t idx = 0;
+          for (const auto &elem : elems) {
+            const Type::TObj *obj = elem.second.TryAs<Type::TObj>();
+            bool is_unit = obj && obj->GetElems().empty();
+            out << "  " << (idx == 0 ? "if" : "else if")
+                << " (m.count(\"" << elem.first << "\")) {" << Eol
+                << "    Which = " << idx << ";" << Eol;
+            if (!is_unit) {
+              out << "    V" << elem.first << " = Var::TVar::TDt<" << elem.second
+                  << ">::As(m.at(\"" << elem.first << "\"));" << Eol;
+            }
+            out << "  }" << Eol;
+            ++idx;
+          }
+        }
+        out << "  else { throw Rt::TSystemError(HERE, \"stored variant has no known tag\"); }" << Eol
+            << "}" << Eol
             << Eol;
 
         /* One static factory per arm. */
@@ -333,6 +368,27 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         << Eol
         << "};" << Eol;
   } // namespace Orly::Type
+
+  out << Eol;
+
+  /* namespace Orly::Native: write-side serialization (#95 Phase 3 M2).
+     The generic State::Factory<TVal> assumes a fixed-shape record; a variant
+     value instead serializes as the *active arm's* single-key record. Route
+     through AsVar() -> Var::TVariant -> Var::NewSabot, which reuses the
+     Phase-1 SS::TObj(const Var::TVariant *) adapter (the single-key-record
+     encoding). The State::Factory<Var::TVar> specialization that does this
+     lives in <orly/var/new_sabot.h> (included above). */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Native"}, out);
+    out << "template <>" << Eol
+        << "class State::Factory<Rt::Variants::" << class_name << "> final {" << Eol
+        << "  NO_CONSTRUCTION(Factory);" << Eol
+        << "  public:" << Eol
+        << "  static Sabot::State::TAny *New(const Rt::Variants::" << class_name
+        << " &val, void *state_alloc) {" << Eol
+        << "    return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);" << Eol
+        << "  }" << Eol
+        << "}; // State::Factory<" << class_name << ">" << Eol;
+  } // namespace Orly::Native
 
   out << Eol;
 

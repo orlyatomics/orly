@@ -35,6 +35,7 @@
 #include <orly/type/object_collector.h> //TODO: This header should be renamed
 #include <orly/type/orlyify.h>
 #include <orly/type/util.h>
+#include <orly/type/variant.h>
 #include <orly/expr/util.h>
 #include <base/util/path.h>
 
@@ -516,6 +517,20 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                   virtual void operator()(const Type::TObj      *that) const {
                     Out
                       << "Orly::Type::TObj::Get(std::map<std::string, Orly::Type::TType> {"
+                      << Join(that->GetElems(),
+                              ", ",
+                              [this](TCppPrinter &out, const std::pair<string, Type::TType> &elem) {
+                                out << "{"
+                                    << "\"" << elem.first << "\""
+                                    << ",";
+                                elem.second.Accept(*this);
+                                out << "}";
+                              })
+                      << "})";
+                  };
+                  virtual void operator()(const Type::TVariant  *that) const {
+                    Out
+                      << "Orly::Type::TVariant::Get(std::map<std::string, Orly::Type::TType> {"
                       << Join(that->GetElems(),
                               ", ",
                               [this](TCppPrinter &out, const std::pair<string, Type::TType> &elem) {
