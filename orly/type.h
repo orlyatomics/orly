@@ -43,4 +43,5 @@
 #include <orly/type/time_diff.h>
 #include <orly/type/time_pnt.h>
 #include <orly/type/unknown.h>
+#include <orly/type/variant.h>
 #include <orly/type/util.h> //Not a type, but needed to complete the definition of TType

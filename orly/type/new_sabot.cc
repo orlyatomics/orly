@@ -74,6 +74,18 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
     virtual void operator()(const TObj *type) const override {
       Result = new (Buf) ST::TRecord(type);
     }
+    /* A *value* of a variant serializes byte-identically to a single-key
+       record, and that value-level reuse lives in
+       orly/var/new_sabot.h's SS::TObj(const Var::TVariant *) adapter,
+       which builds a single-field *record* sabot type from the value's
+       one active tag. A variant *type* node, however, generally carries
+       many tags (e.g. { A | B | C }) and so has no single record shape
+       to map to here -- the stored bytes carry no variant discriminator
+       and read-side reconstruction is driven by the call-site ::(T)
+       annotation (a Phase 1 read-back item still outstanding; see
+       orly/var/sabot_to_var.cc). So this type-sabot cell stays a no-op,
+       mirroring TErr/TFunc above. */
+    virtual void operator()(const TVariant */*type*/) const override {}
     private:
     Sabot::Type::TAny *&Result;
     void *Buf;

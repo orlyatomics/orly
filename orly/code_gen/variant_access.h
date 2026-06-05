@@ -1,0 +1,91 @@
+/* <orly/code_gen/variant_access.h>
+
+   Code-gen inline nodes for the #95 Phase 3 M4 variant-destructuring
+   surface, lowering to the primitives the generated native variant
+   struct (Phase 2, GenVariantHeader) already exposes:
+
+     - TVariantIs    -- the `expr is <Tag>` predicate. Emits
+                        `((operand).GetWhich() == <idx>)`, a bool, where
+                        <idx> is the asciibetical index of <Tag>.
+     - TVariantMember -- the `expr.<Tag>` guarded payload accessor. Emits
+                        `(operand).GetV<Tag>()`, the arm's payload (valid
+                        at runtime only when the active arm is <Tag>; the
+                        generated GetV<Tag>() asserts Which == idx).
+
+   Near-mirrors of TVariantCtor (orly/code_gen/variant_ctor.h): each wraps
+   the (already-lowered) operand inline.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+#pragma once
+
+#include <cstddef>
+#include <string>
+
+#include <orly/code_gen/cpp_printer.h>
+#include <orly/code_gen/inline.h>
+#include <orly/type/impl.h>
+
+namespace Orly {
+
+  namespace CodeGen {
+
+    /* `expr is <Tag>` -> `((operand).GetWhich() == <which>)`. */
+    class TVariantIs : public TInline {
+      NO_COPY(TVariantIs);
+      public:
+
+      TVariantIs(const L0::TPackage *package,
+                 const Type::TType &type,
+                 const TInline::TPtr &operand,
+                 size_t which);
+
+      void WriteExpr(TCppPrinter &out) const;
+
+      virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
+        dependency_set.insert(Operand);
+        Operand->AppendDependsOn(dependency_set);
+      }
+
+      private:
+        TInline::TPtr Operand;
+        size_t Which;
+    }; // TVariantIs
+
+    /* `expr.<Tag>` -> `(operand).GetV<Tag>()`. */
+    class TVariantMember : public TInline {
+      NO_COPY(TVariantMember);
+      public:
+
+      TVariantMember(const L0::TPackage *package,
+                     const Type::TType &type,
+                     const TInline::TPtr &operand,
+                     const std::string &tag);
+
+      void WriteExpr(TCppPrinter &out) const;
+
+      virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
+        dependency_set.insert(Operand);
+        Operand->AppendDependsOn(dependency_set);
+      }
+
+      private:
+        TInline::TPtr Operand;
+        std::string Tag;
+    }; // TVariantMember
+
+  } // CodeGen
+
+} // Orly

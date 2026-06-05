@@ -56,6 +56,7 @@ namespace Orly {
     class TTimeDiff;
     class TTimePnt;
     class TUnknown;
+    class TVariant;
 
     /* TOOD */
     class TType {
@@ -186,6 +187,7 @@ namespace Orly {
       str  -> 's'
       time_diff -> 't'
       time_pnt  -> 'T'
+      Variant -> 'V' MangleElemMap(tags)
       */
       std::string GetMangledName() const;
 
@@ -237,6 +239,13 @@ namespace Orly {
       virtual void operator()(const TList     *that) const = 0;
       virtual void operator()(const TMutable  *that) const = 0;
       virtual void operator()(const TObj      *that) const = 0;
+      /* NOTE: TVariant is NOT pure-virtual (unlike the other leaves). #95 added it as a purely
+               additive type with no orlyscript surface yet, so making it non-pure means the many
+               existing TVisitor subclasses don't each need a case. Visitors that genuinely handle
+               variants (orlyify, gen_code, get_prec, has_optional, object_collector, unwrap, the
+               type-level sabot, ...) override it explicitly; everyone else inherits this throw,
+               mirroring the long-standing TUnknown treatment below. */
+      virtual void operator()(const TVariant  *) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TOpt      *that) const = 0;
       virtual void operator()(const TReal     *that) const = 0;
       virtual void operator()(const TSeq      *that) const = 0;
@@ -273,6 +282,7 @@ namespace Orly {
       virtual void operator()(const TAddr *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TAddr *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TAddr *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TAddr *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TAddr *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TAddr *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TAddr *lhs, const TSeq *rhs) const = 0;
@@ -292,6 +302,7 @@ namespace Orly {
       virtual void operator()(const TAny *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TAny *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TAny *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TAny *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TAny *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TAny *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TAny *lhs, const TSeq *rhs) const = 0;
@@ -311,6 +322,7 @@ namespace Orly {
       virtual void operator()(const TBool *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TBool *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TBool *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TBool *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TBool *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TBool *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TBool *lhs, const TSeq *rhs) const = 0;
@@ -330,6 +342,7 @@ namespace Orly {
       virtual void operator()(const TDict *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TDict *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TDict *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TDict *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TDict *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TDict *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TDict *lhs, const TSeq *rhs) const = 0;
@@ -349,6 +362,7 @@ namespace Orly {
       virtual void operator()(const TErr *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TErr *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TErr *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TErr *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TErr *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TErr *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TErr *lhs, const TSeq *rhs) const = 0;
@@ -368,6 +382,7 @@ namespace Orly {
       virtual void operator()(const TFunc *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TFunc *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TFunc *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TFunc *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TFunc *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TFunc *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TFunc *lhs, const TSeq *rhs) const = 0;
@@ -387,6 +402,7 @@ namespace Orly {
       virtual void operator()(const TId *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TId *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TId *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TId *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TId *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TId *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TId *lhs, const TSeq *rhs) const = 0;
@@ -406,6 +422,7 @@ namespace Orly {
       virtual void operator()(const TInt *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TInt *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TInt *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TInt *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TInt *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TInt *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TInt *lhs, const TSeq *rhs) const = 0;
@@ -425,6 +442,7 @@ namespace Orly {
       virtual void operator()(const TList *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TList *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TList *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TList *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TList *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TList *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TList *lhs, const TSeq *rhs) const = 0;
@@ -444,6 +462,7 @@ namespace Orly {
       virtual void operator()(const TMutable *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TMutable *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TMutable *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TMutable *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TMutable *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TMutable *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TMutable *lhs, const TSeq *rhs) const = 0;
@@ -463,6 +482,7 @@ namespace Orly {
       virtual void operator()(const TOpt *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TOpt *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TOpt *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TOpt *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TOpt *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TOpt *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TOpt *lhs, const TSeq *rhs) const = 0;
@@ -482,6 +502,7 @@ namespace Orly {
       virtual void operator()(const TObj *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TObj *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TObj *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TObj *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TObj *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TObj *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TObj *lhs, const TSeq *rhs) const = 0;
@@ -489,6 +510,26 @@ namespace Orly {
       virtual void operator()(const TObj *lhs, const TTimeDiff *rhs) const = 0;
       virtual void operator()(const TObj *lhs, const TTimePnt *rhs) const = 0;
       void operator()(const TObj *, const TUnknown *) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TAddr *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TAny *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TBool *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TDict *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TErr *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TFunc *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TId *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TInt *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TList *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TMutable *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TOpt *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TObj *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TReal *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TSet *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TSeq *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TStr *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TTimeDiff *rhs) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TTimePnt *rhs) const {throw Base::TImpossibleError(HERE);}
+      void operator()(const TVariant *, const TUnknown *) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TReal *lhs, const TAddr *rhs) const = 0;
       virtual void operator()(const TReal *lhs, const TAny *rhs) const = 0;
       virtual void operator()(const TReal *lhs, const TBool *rhs) const = 0;
@@ -501,6 +542,7 @@ namespace Orly {
       virtual void operator()(const TReal *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TReal *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TReal *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TReal *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TReal *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TReal *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TReal *lhs, const TSeq *rhs) const = 0;
@@ -520,6 +562,7 @@ namespace Orly {
       virtual void operator()(const TSet *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TSet *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TSet *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TSet *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TSet *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TSet *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TSet *lhs, const TSeq *rhs) const = 0;
@@ -539,6 +582,7 @@ namespace Orly {
       virtual void operator()(const TSeq *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TSeq *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TSeq *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TSeq *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TSeq *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TSeq *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TSeq *lhs, const TSeq *rhs) const = 0;
@@ -558,6 +602,7 @@ namespace Orly {
       virtual void operator()(const TStr *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TStr *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TStr *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TStr *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TStr *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TStr *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TStr *lhs, const TSeq *rhs) const = 0;
@@ -577,6 +622,7 @@ namespace Orly {
       virtual void operator()(const TTimeDiff *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TTimeDiff *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TTimeDiff *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TTimeDiff *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TTimeDiff *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TTimeDiff *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TTimeDiff *lhs, const TSeq *rhs) const = 0;
@@ -596,6 +642,7 @@ namespace Orly {
       virtual void operator()(const TTimePnt *lhs, const TMutable *rhs) const = 0;
       virtual void operator()(const TTimePnt *lhs, const TOpt *rhs) const = 0;
       virtual void operator()(const TTimePnt *lhs, const TObj *rhs) const = 0;
+      virtual void operator()(const TTimePnt *lhs, const TVariant *rhs) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TTimePnt *lhs, const TReal *rhs) const = 0;
       virtual void operator()(const TTimePnt *lhs, const TSet *rhs) const = 0;
       virtual void operator()(const TTimePnt *lhs, const TSeq *rhs) const = 0;
@@ -615,6 +662,7 @@ namespace Orly {
       void operator()(const TUnknown *, const TMutable *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const TUnknown *, const TOpt *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const TUnknown *, const TObj *) const {throw Base::TImpossibleError(HERE);}
+      void operator()(const TUnknown *, const TVariant *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const TUnknown *, const TReal *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const TUnknown *, const TSet *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const TUnknown *, const TSeq *) const {throw Base::TImpossibleError(HERE);}

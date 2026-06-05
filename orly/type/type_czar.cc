@@ -42,9 +42,11 @@ TTypeCzar::TTypeCzar() {
   TTimeDiff::New();
   TTimePnt::New();
   TUnknown::New();
+  TVariant::New();
 }
 
 TTypeCzar::~TTypeCzar() {
+  TVariant::Delete();
   TUnknown::Delete();
   TTimePnt::Delete();
   TTimeDiff::Delete();

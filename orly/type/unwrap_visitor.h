@@ -62,6 +62,10 @@ namespace Orly {
       virtual void operator()(const TAny      *) const {
         Type = Type::TAny::Get();
       }
+      /* A variant is a leaf for unwrapping (it wraps nothing to peel). It is not pure-virtual so the
+         many TUnwrapVisitor subclasses don't each need a TVariant case; no orlyscript op currently
+         unwraps a variant, so reaching this is not implemented. (Phase 3 #95 may revisit.) */
+      virtual void operator()(const TVariant  *) const { NOT_IMPLEMENTED(); }
       virtual void operator()(const TErr      *) const final { NOT_IMPLEMENTED(); }
       virtual void operator()(const TFunc     *that) const final {
         EnsureEmptyObject(that->GetParamObject(), PosRange);

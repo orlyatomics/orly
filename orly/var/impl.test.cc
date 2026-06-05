@@ -227,3 +227,55 @@ FIXTURE(RecordCompare) {
   EXPECT_TRUE(recs.find(b2) != recs.end());
   EXPECT_TRUE(recs.find(MakeRec("c", 3)) == recs.end());
 }
+
+/* Issue #95 (sum types): variants are the heterogeneous sibling of
+   records, and need exactly the same Var-level equality + strict total
+   order so they can live in a Var-level set. Mirrors RecordCompare. */
+FIXTURE(VariantCompare) {
+  /* The full declared variant type carried by every value below:
+     { Deleted | Integer(int) }. All four values report this same type. */
+  const Type::TType vt = Type::TVariant::Get(Type::TVariantElems{
+      {"Deleted", Type::TObj::Get(Type::TObjElems{})},
+      {"Integer", Type::TInt::Get()}});
+
+  /* Integer(1), a duplicate of it, Integer(2) (same tag, different
+     payload), Deleted (tag-only, empty-object payload). */
+  TVar integer1 = TVar::Variant(vt, "Integer", TVar(int64_t(1)));
+  TVar integer1_dup = TVar::Variant(vt, "Integer", TVar(int64_t(1)));
+  TVar integer2 = TVar::Variant(vt, "Integer", TVar(int64_t(2)));
+  TVar deleted = TVar::Variant(
+      vt, "Deleted", TVar::Obj(std::unordered_map<std::string, TVar>{}));
+
+  /* Equality: same tag and payload are equal; differing payload or tag
+     are not. */
+  EXPECT_TRUE(integer1 == integer1_dup);
+  EXPECT_FALSE(integer1 == integer2);
+  EXPECT_TRUE(integer1 != integer2);
+  EXPECT_FALSE(integer1 == deleted);
+  EXPECT_TRUE(integer1 != deleted);
+
+  /* Strict total order: equal values compare neither-less; distinct
+     values (differing payload, or differing tag) order in exactly one
+     direction. */
+  EXPECT_FALSE(integer1 < integer1_dup);
+  EXPECT_FALSE(integer1_dup < integer1);
+  EXPECT_TRUE((integer1 < integer2) != (integer2 < integer1));
+  EXPECT_TRUE((integer1 < deleted) != (deleted < integer1));
+
+  /* A Var-level set holds distinct variants and dedups equal ones --
+     the set-of-sums use case from #95. */
+  TVar deleted_dup = TVar::Variant(
+      vt, "Deleted", TVar::Obj(std::unordered_map<std::string, TVar>{}));
+  Rt::TSet<TVar> events;
+  events.insert(integer1);
+  events.insert(integer2);
+  events.insert(deleted);
+  events.insert(integer1_dup);
+  events.insert(deleted_dup);
+  EXPECT_EQ(events.size(), 3U);
+  EXPECT_TRUE(events.find(integer1) != events.end());
+  EXPECT_TRUE(events.find(integer2) != events.end());
+  EXPECT_TRUE(events.find(deleted) != events.end());
+  EXPECT_TRUE(events.find(TVar::Variant(vt, "Integer", TVar(int64_t(99)))) ==
+              events.end());
+}

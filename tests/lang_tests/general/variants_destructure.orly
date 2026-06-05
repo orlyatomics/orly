@@ -1,0 +1,65 @@
+/* <orly/lang_tests/general/variants_destructure.orly>
+
+   End-to-end test for issue #95 Phase 3 M4 (variant destructuring): the
+   two Option-A surface features, proven against a stored, read-back
+   variant.
+
+     1. `e is <Tag>` predicate -> bool. True iff the active arm of the
+        variant `e` is `<Tag>`. Mirrors the optional `is known` family.
+        Lowers to `(e).GetWhich() == <idx>`, where `<idx>` is the
+        asciibetical index of `<Tag>` in the variant's tag set (the order
+        the generated native struct's `Which` follows).
+
+     2. `e.<Tag>` guarded payload accessor -> the `<Tag>` arm's declared
+        payload type. Reuses the `e.field` (postfix_obj_member) surface,
+        disambiguated from record field access by the operand type at
+        type-check time. Lowers to `(e).GetV<Tag>()`, which asserts the
+        active arm is `<Tag>` -- so it is normally gated by `e is <Tag>`,
+        exactly as the example below does.
+
+   The variant value is read back from storage (the M2 `::(T)`-driven
+   sabot read-back), so this proves destructuring works on a genuinely
+   round-tripped value, not just a freshly-constructed one.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_var = (*<[n]>::(<| Integer(int) | Deleted |>)) where {
+  n = given::(int);
+};
+
+/* Typed arm: predicate selects the active arm; the guarded accessor
+   extracts its payload. */
+with {
+  <[400]> <- <| Integer(int) | Deleted |>.Integer(7);
+} test {
+  t_isA: read_var(.n: 400) is Integer == true;
+  t_isB: read_var(.n: 400) is Deleted == false;
+  /* not over the predicate works (it is a plain bool). */
+  t_notB: not (read_var(.n: 400) is Deleted);
+  /* Guarded payload extraction: gated by the predicate, so GetVInteger()
+     is only reached when the active arm really is Integer. */
+  t_pay: (read_var(.n: 400).Integer if read_var(.n: 400) is Integer else 0) == 7;
+};
+
+/* Tag-only arm: predicate selects Deleted; the Integer accessor is gated
+   off (its predicate is false), so the conditional takes the else branch
+   and the asserting GetVInteger() is never evaluated. */
+with {
+  <[401]> <- <| Integer(int) | Deleted |>.Deleted;
+} test {
+  t_isC: read_var(.n: 401) is Deleted == true;
+  t_isD: read_var(.n: 401) is Integer == false;
+  t_payD: (read_var(.n: 401).Integer if read_var(.n: 401) is Integer else -1) == -1;
+};

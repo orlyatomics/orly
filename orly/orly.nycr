@@ -57,6 +57,7 @@ close_brace       = '"}"';
 close_bracket     = '"]"';
 close_obj         = '"}>"';
 close_paren       = '")"';
+close_variant     = '"|>"';
 collated_by_kwd   = '"collated_by"' lowest_prec left;
 collected_by_kwd  = '"collected_by"' lowest_prec left;
 colon             = '":"' lowest_prec left;
@@ -114,6 +115,7 @@ open_brace        = '"{"';
 open_bracket      = '"["' unary_prec nonassoc;
 open_obj          = '"<{"';
 open_paren        = '"("' func_and_member_prec left;
+open_variant      = '"<|"';
 package_kwd       = '"package"';
 percent           = '"%"' mul_and_div_prec left;
 plus              = '"+"' add_and_sub_prec left;
@@ -181,13 +183,13 @@ name    : opt_name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     COMMAND
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
-command -> expr <orly/command/syntax> sr 1;
+command -> expr <orly/command/syntax> sr 2;
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     CHECKPOINTS
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
 
-checkpoint -> opt_checkpoint_stmt_seq <orly/checkpoint/syntax> sr 1;
+checkpoint -> opt_checkpoint_stmt_seq <orly/checkpoint/syntax> sr 2;
 
 opt_checkpoint_stmt_seq;
 no_checkpoint_stmt_seq : opt_checkpoint_stmt_seq -> empty;
@@ -217,7 +219,7 @@ package_name -> lt package_name_member_list gt package_version;
     PACKAGES
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
 
-package -> opt_def_seq <orly/package/syntax> sr 1;
+package -> opt_def_seq <orly/package/syntax> sr 2;
 
 opt_def_seq;
 no_def_seq : opt_def_seq -> empty;
@@ -329,6 +331,23 @@ obj_type : compound_type -> open_obj opt_obj_type_member_list close_obj;  /* <{ 
 
   obj_type_member -> dot name colon type;
 
+/* The variant / tagged-union type: <| Tag(type) | Tag2 | ... |> (#95 Phase 3).
+   A distinct <| ... |> delimiter pair is used (rather than the issue's bare
+   { Tag | ... }) so the variant type cannot collide with the set / dict type
+   productions on the LR grammar. An arm is a bare tag name (tag-only, the
+   payload type is the empty object -- the unit type) or `Tag(type)`. */
+variant_type : compound_type -> open_variant variant_type_arm_list close_variant;
+
+  variant_type_arm_list -> variant_type_arm opt_variant_type_arm_list_tail;
+
+  opt_variant_type_arm_list_tail;
+  no_variant_type_arm_list_tail : opt_variant_type_arm_list_tail -> empty;
+  variant_type_arm_list_tail    : opt_variant_type_arm_list_tail -> bar variant_type_arm_list;
+
+  variant_type_arm;
+  tag_only_variant_type_arm : variant_type_arm -> name;
+  payload_variant_type_arm  : variant_type_arm -> name open_paren type close_paren;
+
 func_type : type -> params:obj_type right_arrow result:type;
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -415,6 +434,20 @@ empty_ctor : ctor -> empty_kwd type;
 
 unknown_ctor : ctor -> unknown_kwd type;
 
+/* Variant constructor (#95 Phase 3). Self-contained: the leading variant_type
+   supplies the full declared tagged-union type, `.Tag` selects the active arm,
+   and the optional `(expr)` supplies the payload (omitted for a tag-only arm,
+   whose payload is the unit empty object). E.g.
+     <| Integer(int) | Deleted |>.Integer(-384)
+     <| Integer(int) | Deleted |>.Deleted
+   Leading with the <| ... |> type keeps this conflict-free with postfix_call
+   (the function-call `Tag(payload)` collision flagged in #95). */
+variant_ctor : ctor -> variant_type dot name opt_variant_ctor_payload;
+
+  opt_variant_ctor_payload;
+  no_variant_ctor_payload : opt_variant_ctor_payload -> empty;
+  a_variant_ctor_payload  : opt_variant_ctor_payload -> open_paren expr close_paren;
+
 affix_expr : expr;
 
 prefix_expr : affix_expr;
@@ -471,6 +504,7 @@ postfix_is_known    : postfix_expr -> expr is_kwd is_known;                 	  /
 
 postfix_is_unknown  : postfix_expr -> expr is_kwd unknown_kwd;                    /* test if value is unknown */
 postfix_is_empty    : postfix_expr -> expr is_kwd empty_kwd;                      /* test if container or string is empty */
+postfix_is_variant  : postfix_expr -> expr is_kwd name;                           /* test if a variant's active arm is <Tag> (#95) */
 postfix_cast        : postfix_expr -> expr as_kwd type;                           /* cast to new type */
 postfix_call        : postfix_expr -> expr open_paren opt_call_args close_paren;  /* call built-in or user-specifed function */
 postfix_slice       : postfix_expr -> expr open_bracket slice close_bracket;      /* slicing a list or looking up in a dict */

@@ -1,0 +1,62 @@
+/* <orly/lang_tests/general/variants_storage.orly>
+
+   End-to-end test for issue #95 (sum types / tagged unions): a single
+   variant value round-trips through storage.
+
+   A variant value is stored as a single-key record (`Integer(7)` ->
+   `<{.Integer: 7}>`); the call-site `::(T)` annotation drives
+   reconstruction as a variant on read (the Sabot::TToNativeVisitor
+   specialization emitted for each generated variant struct). This proves
+   the whole stack: the orlyscript surface (variant type + constructor,
+   Phase 3 M1), `::(T)`-driven sabot read-back (Phase 3 M2), and the
+   engine layers from Phases 0-2 (type node, var value + ordering,
+   code_gen struct + AsVar).
+
+   It uses a 2-arm flat variant `<| Integer(int) | Deleted |>` and asserts
+   round-tripping with `==`/`!=` only -- variant equality was wired end to
+   end in Phases 0-1. Destructuring of a stored, read-back variant (the
+   `is <Tag>` predicate and the `.<Tag>` guarded payload accessor, Phase 3
+   M4) is exercised in the sibling variants_destructure.orly.
+
+   SETS of variants are a separate, deeper case (issue #96): a sabot set
+   needs a homogeneous element type, but differently-tagged variants
+   stored as single-key records are heterogeneous, so set-of-variant
+   storage needs a dedicated variant sabot type. See variants_set_storage
+   (xfail, #96).
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_var = (*<[n]>::(<| Integer(int) | Deleted |>)) where {
+  n = given::(int);
+};
+
+/* Single variant value (typed arm) round-trips through storage. */
+with {
+  <[400]> <- <| Integer(int) | Deleted |>.Integer(7);
+} test {
+  t1: read_var(.n: 400) == <| Integer(int) | Deleted |>.Integer(7);
+  /* A different arm is not equal. */
+  t2: read_var(.n: 400) != <| Integer(int) | Deleted |>.Deleted;
+  /* A different payload of the same arm is not equal. */
+  t3: read_var(.n: 400) != <| Integer(int) | Deleted |>.Integer(8);
+};
+
+/* Single variant value (tag-only arm) round-trips through storage. */
+with {
+  <[401]> <- <| Integer(int) | Deleted |>.Deleted;
+} test {
+  t4: read_var(.n: 401) == <| Integer(int) | Deleted |>.Deleted;
+  t5: read_var(.n: 401) != <| Integer(int) | Deleted |>.Integer(0);
+};

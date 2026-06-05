@@ -62,6 +62,9 @@ Sabot::State::TAny *Var::TryNewSabot(void *buf, const TVar &var, TAddrDir addr_d
     // n-ary
     virtual void operator()(const Var::TAddr *var) const override { Result = new (Buf) SS::TAddr(var); }
     virtual void operator()(const Var::TObj  *var) const override { Result = new (Buf) SS::TObj (var); }
+    /* A variant value reuses the single-key-record encoding (see issue
+       #95): it serializes byte-identically to <{.<tag>: <payload>}>. */
+    virtual void operator()(const Var::TVariant *var) const override { Result = new (Buf) SS::TObj (var); }
     // pass thru
     virtual void operator()(const Var::TMutable  *var) const override { Result = TryNewSabot(Buf, var->GetVal()); }
     private:

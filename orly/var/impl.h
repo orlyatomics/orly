@@ -61,6 +61,7 @@ namespace Orly {
     class TTimeDiff;
     class TTimePnt;
     class TUnknown;
+    class TVariant;
 
     // template <typename TVal> struct TRead;
 
@@ -305,6 +306,10 @@ namespace Orly {
       template <typename TVal>
       static TVar Set(const Rt::TSet<TVal> &that);
 
+      /* Construct a new variant TVar from its full declared type, the active
+         tag, and its payload value.  See <orly/var/variant.h>. */
+      static TVar Variant(const Type::TType &variant_type, const std::string &tag, const TVar &payload);
+
       /* TODO */
       TVar Copy() const;
 
@@ -534,6 +539,13 @@ namespace Orly {
       virtual void operator()(const Var::TTimeDiff *that) const = 0;
       virtual void operator()(const Var::TTimePnt *that) const = 0;
       virtual void operator()(const Var::TUnknown *) const {throw Base::TImpossibleError(HERE);}
+      /* NOTE: TVariant is a non-pure default that throws, following the
+         TUnknown precedent. Variant-aware visitors (compare, jsonify,
+         orlyify, new_sabot, and the TLhsVisitor/TRhsVisitor dispatch in
+         impl.cc) override it; the many other visitor subclasses need no
+         per-file change for a type that has no orlyscript surface yet
+         (Phase 3 of #95). */
+      virtual void operator()(const Var::TVariant *) const {throw Base::TImpossibleError(HERE);}
 
       protected:
 
@@ -839,6 +851,50 @@ namespace Orly {
       void operator()(const Var::TUnknown *, const Var::TTimeDiff *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const Var::TUnknown *, const Var::TTimePnt *) const {throw Base::TImpossibleError(HERE);}
       void operator()(const Var::TUnknown *, const Var::TUnknown *) const {throw Base::TImpossibleError(HERE);}
+      /* NOTE: The TVariant row and column are virtual with throwing
+         defaults (rather than pure) so that the only subclass --
+         TCompareDoubleVisitor (impl.cc) -- can override just the cells
+         it needs (the (TVariant, TVariant) diagonal and the cross-type
+         CompareType cells). A variant is only ever compared against a
+         variant or another type when it lives in a Var-level set, so the
+         meaningful cells are the diagonal (ordering) and cross-type
+         (type-precedence) ones; everything else defaults to throw,
+         mirroring the TUnknown row/column. */
+      virtual void operator()(const Var::TVariant *lhs, const Var::TAddr *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TBool *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TDict *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TErr *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TFree *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TId *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TInt *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TList *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TMutable *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TOpt *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TObj *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TReal *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TSet *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TStr *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TTimeDiff *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TTimePnt *rhs) const = 0;
+      virtual void operator()(const Var::TVariant *lhs, const Var::TVariant *rhs) const = 0;
+      void operator()(const Var::TVariant *, const Var::TUnknown *) const {throw Base::TImpossibleError(HERE);}
+      virtual void operator()(const Var::TAddr *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TBool *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TDict *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TErr *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TFree *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TId *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TInt *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TList *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TMutable *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TOpt *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TObj *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TReal *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TSet *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TStr *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TTimeDiff *lhs, const Var::TVariant *rhs) const = 0;
+      virtual void operator()(const Var::TTimePnt *lhs, const Var::TVariant *rhs) const = 0;
+      void operator()(const Var::TUnknown *, const Var::TVariant *) const {throw Base::TImpossibleError(HERE);}
 
       protected:
 

@@ -18,6 +18,7 @@
 
 #include <orly/expr/obj_member.h>
 
+#include <base/as_str.h>
 #include <orly/error.h>
 #include <orly/expr/visitor.h>
 #include <orly/pos_range.h>
@@ -25,6 +26,7 @@
 #include <orly/type/part.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/unwrap_visitor.h>
+#include <orly/type/variant.h>
 
 using namespace Orly;
 using namespace Orly::Expr;
@@ -41,6 +43,23 @@ void TObjMember::Accept(const TVisitor &visitor) const {
 }
 
 Type::TType TObjMember::GetTypeImpl() const {
+  /* `e.<Tag>` is overloaded: on a record operand it is field access
+     (handled by the visitor below); on a variant operand it is the
+     #95 guarded payload accessor -- it yields the `<Tag>` arm's declared
+     payload type. The runtime value is valid only when the active arm is
+     `<Tag>` (the generated native struct's GetV<Tag>() asserts this), so
+     this is normally gated by `e is <Tag>`. We disambiguate on the
+     operand type here rather than in a separate grammar production
+     (which would collide with postfix_obj_member as `expr dot name`). */
+  if (const Type::TVariant *variant = Type::Unwrap(GetExpr()->GetType()).TryAs<Type::TVariant>()) {
+    const Type::TVariantElems &elems = variant->GetElems();
+    auto iter = elems.find(Name);
+    if (iter == elems.end()) {
+      std::string msg = Base::AsStr("variant payload accessor \".", Name, "\" names a tag that is not an arm of the operand variant type");
+      throw TExprError(HERE, GetPosRange(), msg.c_str());
+    }
+    return iter->second;
+  }
   class TObjMemberTypeVisitor
       : public Type::TUnwrapVisitor {
     NO_COPY(TObjMemberTypeVisitor);

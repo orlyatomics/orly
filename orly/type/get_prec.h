@@ -42,7 +42,8 @@ namespace Orly {
       Set,
       Str,
       TimeDiff,
-      TimePnt
+      TimePnt,
+      Variant
     };  // TPrec
 
     /* TODO */

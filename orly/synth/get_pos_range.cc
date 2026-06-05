@@ -325,6 +325,16 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TObjCtor *that) {
 }
 
 template <>
+TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TVariantType *that) {
+  return Orly::Synth::GetPosRange(that->GetOpenVariant(), that->GetCloseVariant());
+}
+
+template <>
+TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TVariantCtor *that) {
+  return Orly::Synth::GetPosRange(that->GetVariantType()->GetOpenVariant(), that->GetName());
+}
+
+template <>
 TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TParenExpr *that) {
   return Orly::Synth::GetPosRange(that->GetOpenParen(), that->GetCloseParen());
 }
@@ -366,6 +376,11 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TPostfixIsUnknown *tha
 
 template <>
 TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TPostfixObjMember *that) {
+  return Orly::Synth::GetPosRange(that->GetExpr(), that->GetName());
+}
+
+template <>
+TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TPostfixIsVariant *that) {
   return Orly::Synth::GetPosRange(that->GetExpr(), that->GetName());
 }
 
@@ -634,6 +649,7 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TExpr *expr) {
     virtual void operator()(const Package::Syntax::TPostfixIsKnownExpr   *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TPostfixIsUnknown     *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TPostfixObjMember     *that) const { PosRange = Orly::Synth::GetPosRange(that); }
+    virtual void operator()(const Package::Syntax::TPostfixIsVariant     *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TPostfixOptCheckpoint *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TPostfixSlice         *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TPrefixAddrOf         *that) const { PosRange = Orly::Synth::GetPosRange(that); }
@@ -659,6 +675,7 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TExpr *expr) {
     virtual void operator()(const Package::Syntax::TTimePntCtor          *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TUnknownCtor          *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TUserIdExpr           *that) const { PosRange = Orly::Synth::GetPosRange(that); }
+    virtual void operator()(const Package::Syntax::TVariantCtor          *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TWhereExpr            *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     private:
     TPosRange &PosRange;

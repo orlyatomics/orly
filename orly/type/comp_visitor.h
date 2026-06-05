@@ -97,6 +97,16 @@ namespace Orly {
         }
         Type = is_optional ? TOpt::Get(TBool::Get()) : TBool::Get();
       }
+      virtual void operator()(const TVariant *lhs, const TVariant *rhs) const {
+        // Variants are equality-comparable only when they are the same interned type
+        // (invariant variant types for v1, per #95). The Var-level ordering added in
+        // Phase 1 backs set membership; here we just type the == / != result.
+        if (lhs != rhs) {
+          throw TExprError(HERE, PosRange,
+              "Equality test or mutation assignment for variants requires identical variant types");
+        }
+        Type = TBool::Get();
+      }
       virtual void operator()(const TReal *, const TReal *) const {
         Type = TBool::Get();
       }
@@ -160,6 +170,9 @@ namespace Orly {
       }
       virtual void operator()(const TObj *, const TObj *) const {
         throw TExprError(HERE, PosRange, "Objects can only be tested for equality or inequality");
+      }
+      virtual void operator()(const TVariant *, const TVariant *) const {
+        throw TExprError(HERE, PosRange, "Variants can only be tested for equality or inequality");
       }
       virtual void operator()(const TReal *, const TReal *) const {
         Type = TBool::Get();

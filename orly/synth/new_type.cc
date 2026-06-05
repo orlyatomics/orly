@@ -26,6 +26,7 @@
 #include <orly/synth/obj_type.h>
 #include <orly/synth/ref_type.h>
 #include <orly/synth/unary_type.h>
+#include <orly/synth/variant_type.h>
 
 using namespace Orly;
 using namespace Orly::Synth;
@@ -40,6 +41,7 @@ TType *Orly::Synth::NewType(const Package::Syntax::TType *root) {
     virtual void operator()(const Package::Syntax::TParenType *that) const { Out = NewType(that->GetType()); }
     virtual void operator()(const Package::Syntax::TAddrType *that) const  { Out = new TAddrType(that); }
     virtual void operator()(const Package::Syntax::TObjType *that) const   { Out = new TObjType(that); }
+    virtual void operator()(const Package::Syntax::TVariantType *that) const { Out = new TVariantType(that); }
     virtual void operator()(const Package::Syntax::TSeqType *that) const   { OnUnary(that->GetType(), Type::TSeq::Get); }
     virtual void operator()(const Package::Syntax::TErrType *that) const   { OnUnary(that->GetType(), Type::TErr::Get); }
     virtual void operator()(const Package::Syntax::TOptType *that) const   { OnUnary(that->GetType(), Type::TOpt::Get); }

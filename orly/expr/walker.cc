@@ -306,6 +306,12 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
     }
     virtual void operator()(const TUnknown *) const {}
     virtual void operator()(const TUserId *) const {}
+    virtual void operator()(const TVariantCtor *that) const {
+      Unary(that);
+    }
+    virtual void operator()(const TVariantIs *that) const {
+      Unary(that);
+    }
     virtual void operator()(const TWhere *that) const {
       Unary(that);
       if (IncludeInnerFuncs) {

@@ -45,6 +45,7 @@ class TIsEmptyObjVisitor
   virtual void operator()(const TObj      *that) const {
     IsEmpty = that->GetElems().empty();
   }
+  virtual void operator()(const TVariant  *) const { throw TImpossibleError(HERE, PosRange); }
   virtual void operator()(const TOpt      *) const { throw TImpossibleError(HERE, PosRange); }
   virtual void operator()(const TReal     *) const { throw TImpossibleError(HERE, PosRange); }
   virtual void operator()(const TSeq      *) const { throw TImpossibleError(HERE, PosRange); }

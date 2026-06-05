@@ -173,6 +173,31 @@ namespace Orly {
 
     };  // ItemInfo<Package::Syntax::TAddrTypeMember>
 
+    /* The variant-type arm list (#95 Phase 3). The list head is mandatory
+       (variant_type_arm_list -> variant_type_arm opt_..._tail), so only the
+       non-optional ForEach(node, cb) overload is used. */
+    template <>
+    struct ItemInfo<Package::Syntax::TVariantTypeArm> {
+      NO_CONSTRUCTION(ItemInfo);
+
+      typedef Package::Syntax::TNoVariantTypeArmListTail TNoListTailNode;
+      typedef Package::Syntax::TVariantTypeArmListTail   TListTailNode;
+      typedef Package::Syntax::TVariantTypeArmList       TNode;
+      typedef Package::Syntax::TVariantTypeArm           TItem;
+
+      static const TItem *GetItem(const TNode *node) {
+        assert(node);
+        return node->GetVariantTypeArm();
+      }
+
+      static const TNode *TryGetNext(const TNode *node) {
+        assert(node);
+        auto list_tail = TryGetNode<TListTailNode, TNoListTailNode>(node->GetOptVariantTypeArmListTail());
+        return list_tail ? list_tail->GetVariantTypeArmList() : nullptr;
+      }
+
+    };  // ItemInfo<Package::Syntax::TVariantTypeArm>
+
     template <>
     struct ItemInfo<Package::Syntax::TAssertion> {
       NO_CONSTRUCTION(ItemInfo);

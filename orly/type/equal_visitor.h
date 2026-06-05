@@ -58,6 +58,7 @@ namespace Orly {
       virtual void operator()(const TAddr     *, const TInt      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TAddr     *, const TList     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TAddr     *, const TObj      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TAddr     *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TAddr     *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TAddr     *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TAddr     *, const TStr      *) const { throw TExprError(HERE, PosRange); }
@@ -68,6 +69,7 @@ namespace Orly {
       virtual void operator()(const TBool     *, const TInt      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TBool     *, const TList     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TBool     *, const TObj      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TBool     *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TBool     *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TBool     *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TBool     *, const TStr      *) const { throw TExprError(HERE, PosRange); }
@@ -77,6 +79,7 @@ namespace Orly {
       virtual void operator()(const TDict     *, const TInt      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TDict     *, const TList     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TDict     *, const TObj      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TDict     *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TDict     *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TDict     *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TDict     *, const TStr      *) const { throw TExprError(HERE, PosRange); }
@@ -85,6 +88,7 @@ namespace Orly {
       virtual void operator()(const TId       *, const TInt      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TId       *, const TList     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TId       *, const TObj      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TId       *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TId       *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TId       *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TId       *, const TStr      *) const { throw TExprError(HERE, PosRange); }
@@ -92,22 +96,35 @@ namespace Orly {
       virtual void operator()(const TId       *, const TTimePnt  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TList     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TObj      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TInt      *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TStr      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TTimeDiff *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TInt      *, const TTimePnt  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TList     *, const TObj      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TList     *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TList     *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TList     *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TList     *, const TStr      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TList     *, const TTimeDiff *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TList     *, const TTimePnt  *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TObj      *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TObj      *, const TReal     *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TObj      *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TObj      *, const TStr      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TObj      *, const TTimeDiff *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TObj      *, const TTimePnt  *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TVariant  *, const TReal     *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TVariant  *, const TSet      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TVariant  *, const TStr      *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TVariant  *, const TTimeDiff *) const { throw TExprError(HERE, PosRange); }
+      virtual void operator()(const TVariant  *, const TTimePnt  *) const { throw TExprError(HERE, PosRange); }
+      /* Same-variant diagonal: not pure-virtual (unlike the other same-type pairs) so the many
+         TEqualVisitor subclasses (div/exp/mult/sub/logical/set-ops/sort/...) don't each need a
+         TVariant override. Operators for which variants are meaningful (== / !=) override this in
+         comp_visitor.h; everything else inherits this throw. */
+      virtual void operator()(const TVariant  *, const TVariant  *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TReal     *, const TSet      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TReal     *, const TStr      *) const { throw TExprError(HERE, PosRange); }
       virtual void operator()(const TReal     *, const TTimeDiff *) const { throw TExprError(HERE, PosRange); }

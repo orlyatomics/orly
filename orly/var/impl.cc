@@ -18,6 +18,7 @@
 
 #include <orly/var/impl.h>
 #include <orly/var.h>
+#include <orly/var/variant.h>
 
 #include <map>
 
@@ -92,6 +93,9 @@ namespace Orly {
       virtual void operator()(const Var::TUnknown *rhs) const {
         DoubleVisitor(Lhs, rhs);
       }
+      virtual void operator()(const Var::TVariant *rhs) const {
+        DoubleVisitor(Lhs, rhs);
+      }
 
       private:
 
@@ -163,6 +167,9 @@ namespace Orly {
       }
       virtual void operator()(const Var::TUnknown *lhs) const {
         Rhs.Accept(TRhsVisitor<Var::TUnknown>(lhs, DoubleVisitor));
+      }
+      virtual void operator()(const Var::TVariant *lhs) const {
+        Rhs.Accept(TRhsVisitor<Var::TVariant>(lhs, DoubleVisitor));
       }
 
       private:
@@ -843,6 +850,111 @@ namespace Orly {
       }
       virtual void operator()(const TTimePnt *lhs, const TTimePnt *rhs) const {
         Comp = Compare(lhs->GetVal(), rhs->GetVal());
+      }
+      /* TVariant row. Mirrors the TObj row: cross-type cells order by
+         type precedence (CompareType), the same handful that are not
+         comparable for records throw, and the diagonal does the real
+         tag-then-payload ordering below. */
+      virtual void operator()(const TVariant *lhs, const TAddr *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TBool *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TDict *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *, const TErr  *) const {throw TVarCompareError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TFree *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TId   *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TInt  *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TList *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *, const TMutable  *) const {throw TVarCompareError(HERE);}
+      virtual void operator()(const TVariant *, const TOpt  *) const {throw TVarCompareError(HERE);}
+      virtual void operator()(const TVariant *lhs, const TObj  *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TReal *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TSet  *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TStr  *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TTimeDiff *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TTimePnt  *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TVariant *lhs, const TVariant *rhs) const {
+        if (IsEqeq) {
+          Comp = (lhs->GetTag() == rhs->GetTag() && lhs->GetVal() == rhs->GetVal()) ? 0 : -1;
+          return;
+        }
+        /* Order variants by tag first, then by payload value. This gives
+           Var-level sets/dicts a total order over variant elements --
+           the same set-ordering fix #90 added for records (TObj above),
+           applied to tagged unions. */
+        Comp = lhs->GetTag().compare(rhs->GetTag());
+        if (Comp != 0) {
+          return;
+        }
+        Var::TVar::Accept(lhs->GetVal(), rhs->GetVal(), *this);
+      }
+      /* TVariant column (other-type lhs vs variant rhs). Mirrors the
+         records ordering: CompareType where comparable, throw otherwise. */
+      virtual void operator()(const TAddr *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TBool *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TDict *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TErr *, const TVariant *) const {throw TVarCompareError(HERE);}
+      virtual void operator()(const TFree *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TId *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TInt *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TList *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TMutable *, const TVariant *) const {throw TVarCompareError(HERE);}
+      virtual void operator()(const TOpt *, const TVariant *) const {throw TVarCompareError(HERE);}
+      virtual void operator()(const TObj *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TReal *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TSet *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TStr *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TTimeDiff *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
+      }
+      virtual void operator()(const TTimePnt *lhs, const TVariant *rhs) const {
+        Comp = CompareType(lhs->GetType(), rhs->GetType());
       }
 
       private:

@@ -111,6 +111,8 @@ namespace Orly {
     class TUnion;
     class TUnknown;
     class TUserId;
+    class TVariantCtor;
+    class TVariantIs;
     class TWhere;
     class TWhile;
     class TXor;
@@ -204,6 +206,8 @@ namespace Orly {
       virtual void operator()(const TUnion         *) const = 0;
       virtual void operator()(const TUnknown       *) const = 0;
       virtual void operator()(const TUserId        *) const = 0;
+      virtual void operator()(const TVariantCtor   *) const = 0;
+      virtual void operator()(const TVariantIs     *) const = 0;
       virtual void operator()(const TWhere         *) const = 0;
       virtual void operator()(const TWhile         *) const = 0;
       virtual void operator()(const TXor           *) const = 0;

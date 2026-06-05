@@ -61,6 +61,7 @@ TEmptyCtor::TEmptyCtor(const Package::Syntax::TEmptyCtor *empty_ctor)
     }
     virtual void operator()(const Package::Syntax::TMutableType  *) const { BuildError(); }
     virtual void operator()(const Package::Syntax::TObjType      *) const { BuildError(); }
+    virtual void operator()(const Package::Syntax::TVariantType  *) const { BuildError(); }
     virtual void operator()(const Package::Syntax::TOptType      *) const { BuildError(); }
     virtual void operator()(const Package::Syntax::TParenType    *that) const {
       Type = NewType(that);

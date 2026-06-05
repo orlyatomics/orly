@@ -146,6 +146,7 @@ namespace FooBar {
     //virtual void operator()(const Syntax::TResultOf *) const {NOT_IMPLEMENTED();}
     //virtual void operator()(const Syntax::TParamsOf *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TFuncType *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const Syntax::TVariantType *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TAddrType *that) const;
     virtual void operator()(const Syntax::TObjType *) const;
 
@@ -219,6 +220,7 @@ namespace FooBar {
     virtual void operator()(const Syntax::TPostfixAddrMember *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixSlice *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixIsKnown *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const Syntax::TPostfixIsVariant *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixObjMember *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPostfixCall *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TPrefixExists *) const {NOT_IMPLEMENTED();}
@@ -250,6 +252,7 @@ namespace FooBar {
     virtual void operator()(const Syntax::TListCtor *) const;
     virtual void operator()(const Syntax::TRangeCtor *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TObjCtor *) const;
+    virtual void operator()(const Syntax::TVariantCtor *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TUnknownCtor *that) const {
       Type::TType type;
       that->GetType()->Accept(TTypeVisitor(type));
@@ -703,6 +706,7 @@ namespace FooBar {
       virtual void operator()(const TIdType *) const { throw Base::TImpossibleError(HERE); }
       virtual void operator()(const TTimeDiffType *) const { throw Base::TImpossibleError(HERE); }
       virtual void operator()(const TObjType *) const { throw Base::TImpossibleError(HERE); }
+      virtual void operator()(const TVariantType *) const { throw Base::TImpossibleError(HERE); }
       virtual void operator()(const TAddrType *) const { throw Base::TImpossibleError(HERE); }
       virtual void operator()(const TParenType *) const { throw Base::TImpossibleError(HERE); }
       virtual void operator()(const TRefType *) const {
