@@ -95,20 +95,20 @@ The mechanism: each `+=` emits an `{Add, n}` mutation at the storage layer inste
 
 ### [`examples/agent-swarm/`](examples/agent-swarm/) — multi-agent knowledge-graph extraction without coordination
 
-The shape multi-agent LLM pipelines keep reinventing badly. N independent extractor "agents" each process a disjoint slice of a corpus and stream tags, mentions, and cooccurrences into one shared knowledge graph — **with zero coordination**. No locks, no per-agent partitioning, no driver-side merge logic. Combines both commutative-write shapes from the demos above and runs them concurrently:
+The shape multi-agent LLM pipelines keep reinventing badly. N independent extractor "agents" each process a disjoint slice of a corpus and stream tags, mentions, and cooccurrences into one shared knowledge graph — **with zero coordination**. No locks, no per-agent partitioning, no driver-side merge logic. Every tag carries **provenance** — the agent that asserted it — so a tag three agents independently produce is three records you can read back, not a collapsed string. Combines both commutative-write shapes from the demos above and runs them concurrently:
 
-- `*<['entity', e]>::({str}) |= {tag}` — set-union per entity (the `wikipedia-categories` operator, but concurrent)
+- `*<['entity', e]>::({<{.tag: str, .agent: str}>}) |= {<{.tag, .agent}>}` — set-union of provenance **records** per entity (the `wikipedia-categories` operator, but concurrent and structured — storable record-sets are [#90](https://github.com/orlyatomics/orly/issues/90))
 - `*<['mention', e, d]>::(int) += 1` — per-(entity, doc) counter
 - `*<['cooccur', a, b]>::(int) += 1` — per-unordered-pair counter
 
-8 agents extract from 40 docs concurrently, with hot entities (`Python`, `OpenAI`, `Claude`, `GPT-4`, …) deliberately round-robined across agents so they collide on the same keys; the self-check confirms every tag set, mention counter, and cooccurrence counter matches the independently-derived ground truth (25 tag sets + 105 mention counters + 76 cooccurrence pairs, zero lost extractions).
+8 agents extract from 40 docs concurrently, with hot entities (`Python`, `OpenAI`, `Claude`, `GPT-4`, …) deliberately round-robined across agents so they collide on the same keys; the self-check confirms every tag provenance record, mention counter, and cooccurrence counter matches the independently-derived ground truth (147 `(tag, agent)` records across 25 entities + 105 mention counters + 76 cooccurrence pairs, zero lost extractions). The per-entity rollup annotates each tag with how many distinct agents corroborated it (`language×5`).
 
 What this would normally require:
 
 | Approach | Problem under N concurrent agents |
 |---|---|
 | Per-agent local graph + post-hoc merge | Doubles storage; merge logic has to commute by hand |
-| Read-modify-write per fact (`UPDATE … SET tags = tags ∪ {…}`) | Row lock per write; agents serialize on hot entities |
+| Read-modify-write per fact (`UPDATE … SET tags = tags ∪ {…}`) | Row lock per write; agents serialize on hot entities; provenance needs a separate join table |
 | Single-writer service in front of the store | Throughput ceiling = one writer; agents queue |
 | **Orly** | `\|=` and `+=` are field calls; lock-free; all N agents land their contributions and the engine aggregates |
 
@@ -116,7 +116,7 @@ Why it matters: this is exactly the topology AI extraction pipelines have — ma
 
 ### [`examples/grc20-pov/`](examples/grc20-pov/) — GRC-20 knowledge graph: event-sourced + concurrent editors + time-travel
 
-A reference impl of Geo / The Graph's [GRC-20](https://github.com/geobrowser/grc-20) knowledge-graph standard. GRC-20 models knowledge as append-only ops (`CreateEntity`, `UpdateEntity`, `CreateRelation`, `DeleteEntity`) — exactly the shape Orly stores natively. Every op becomes one `|=` into a per-`(entity, property)` history set; concurrent editors stream into the same shared POV with **no coordination**; reads replay the timestamp-sorted log to reconstruct entity state, or any historical state if you pass a cutoff.
+A reference impl of Geo / The Graph's [GRC-20](https://github.com/geobrowser/grc-20) knowledge-graph standard. GRC-20 models knowledge as append-only ops (`CreateEntity`, `UpdateEntity`, `CreateRelation`, `DeleteEntity`) — exactly the shape Orly stores natively. Every op becomes one `|=` of an event **record** (`<{.ts: int, .editor: str, .kind: str, .val: str}>`) into a per-`(entity, property)` history set — a set of records, storable since [#90](https://github.com/orlyatomics/orly/issues/90), so the four typed fields travel end to end with no string packing. Concurrent editors stream into the same shared POV with **no coordination**; reads replay the timestamp-sorted log to reconstruct entity state, or any historical state if you pass a cutoff.
 
 The demo runs three phases over a corpus of six Greek philosophers:
 
