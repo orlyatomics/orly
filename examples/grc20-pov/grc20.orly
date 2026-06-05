@@ -21,36 +21,41 @@
 
    Plus their read-side counterparts (hist_for, all_entities, props_of).
 
-   The driver formats each event as a packed string
+   Each event is a first-class record:
 
-     "<13-digit ms timestamp>:<editor>:<kind>:<value>"
+     <{.ts: int, .editor: str, .kind: str, .val: str}>
 
-   where kind ∈ {L (text literal), I (integer literal), R (relation
-   target id), D (tombstone)} and value is the literal or the target
-   entity id. Lexicographic sort of the resulting set is chronological
-   because the timestamp prefix is fixed-width. Driver-side replay then
-   takes "latest write wins per property" semantics with tombstones, the
-   same way GRC-20 itself does.
+   where ts is a millisecond timestamp, editor is the source name, kind
+   is the op class (one of "L" text literal, "I" integer literal, "R"
+   relation target id, "D" tombstone), and val is the literal text or the
+   target entity id. The history set is a set OF these records, so the
+   structure travels end to end -- the driver hands the engine four typed
+   fields and reads back four typed fields, no string packing/unpacking.
+   Sorting the set by .ts gives chronological order; driver-side replay
+   then takes "latest write wins per property" with tombstones, the same
+   way GRC-20 itself does.
 
    Why driver-side replay rather than an orlyscript fold: GRC-20 ops are
    heterogeneous (CreateEntity / SetProperty / CreateRelation /
    DeleteEntity), and the replay is conditional on the event kind. Set
-   union over packed strings keeps the schema simple and gives the same
+   union over event records keeps the schema simple and gives the same
    "version axis in the keyspace" guarantee as
    examples/wikipedia-categories/: any (entity, property) pair gets one
-   set, every op is one immutable entry, the past is structurally
+   set, every op is one immutable record, the past is structurally
    frozen.
 
    Schema:
 
-     <['hist', entity, property]>::({str})  events for one (e, p) pair
+     <['hist', entity, property]>::({<{.ts, .editor, .kind, .val}>})
+                                            events for one (e, p) pair
      <['entities']>::({str})                set of every entity id
      <['props',  entity]>::({str})          set of every property id ever
                                             written on this entity
 
    Concurrent editors writing to overlapping entities/properties all
    land their events; the post-#50 deferred-mutation + read-time-fold
-   mechanism is what makes `|=` from multiple WS sessions safe.
+   mechanism is what makes `|=` from multiple WS sessions safe. The
+   storable-record-set support is issue #90.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -70,20 +75,23 @@ package #1;
 
 /* ---------- per-(entity, property) event history ---------- */
 
-hist_for = (((*<['hist', entity, property]>::({str})) if *<['hist', entity, property]>::({str}?) is known else (empty {str}))) where {
+hist_for = (((*<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>})) if *<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>}?) is known else (empty {<{.ts: int, .editor: str, .kind: str, .val: str}>}))) where {
   entity   = given::(str);
   property = given::(str);
 };
 
-/* Append one event into the (entity, property) history. */
+/* Append one event record into the (entity, property) history. */
 append_op = (((1) effecting {
-  *<['hist', entity, property]>::({str}) |= {entry};
-} if *<['hist', entity, property]>::({str}?) is known else (0) effecting {
-  new <['hist', entity, property]> <- {entry};
+  *<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>}) |= {<{.ts: ts, .editor: editor, .kind: kind, .val: val}>};
+} if *<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>}?) is known else (0) effecting {
+  new <['hist', entity, property]> <- {<{.ts: ts, .editor: editor, .kind: kind, .val: val}>};
 })) where {
   entity   = given::(str);
   property = given::(str);
-  entry    = given::(str);
+  ts       = given::(int);
+  editor   = given::(str);
+  kind     = given::(str);
+  val      = given::(str);
 };
 
 /* ---------- catalogue: entities + their property set ---------- */
@@ -126,26 +134,30 @@ test {
   /* Empty keyspace reads as identity. */
   t1: all_entities == (empty {str});
   t2: props_of(.entity: "socrates") == (empty {str});
-  t3: hist_for(.entity: "socrates", .property: "name") == (empty {str});
+  t3: hist_for(.entity: "socrates", .property: "name")
+        == (empty {<{.ts: int, .editor: str, .kind: str, .val: str}>});
 
-  /* Append one event creates the set with that entry. */
+  /* Append one event creates the set with that record. */
   t4: append_op(.entity: "socrates", .property: "name",
-                .entry: "0000000000001:wiki:L:Socrates") == 0 {
+                .ts: 1, .editor: "wiki", .kind: "L", .val: "Socrates") == 0 {
     t5: hist_for(.entity: "socrates", .property: "name")
-          == {"0000000000001:wiki:L:Socrates"};
+          == {<{.ts: 1, .editor: "wiki", .kind: "L", .val: "Socrates"}>};
     t6: event_count(.entity: "socrates", .property: "name") == 1;
 
     /* Second event from a different editor unions in. */
     t7: append_op(.entity: "socrates", .property: "name",
-                  .entry: "0000000000002:stanford:L:Socrates of Athens") == 1 {
+                  .ts: 2, .editor: "stanford", .kind: "L",
+                  .val: "Socrates of Athens") == 1 {
       t8: hist_for(.entity: "socrates", .property: "name")
-            == {"0000000000001:wiki:L:Socrates",
-                "0000000000002:stanford:L:Socrates of Athens"};
+            == {<{.ts: 1, .editor: "wiki", .kind: "L", .val: "Socrates"}>,
+                <{.ts: 2, .editor: "stanford", .kind: "L",
+                  .val: "Socrates of Athens"}>};
       t9: event_count(.entity: "socrates", .property: "name") == 2;
 
-      /* Idempotent: same entry re-added doesn't grow the set. */
+      /* Idempotent: same record re-added doesn't grow the set. */
       t10: append_op(.entity: "socrates", .property: "name",
-                     .entry: "0000000000001:wiki:L:Socrates") == 1 {
+                     .ts: 1, .editor: "wiki", .kind: "L",
+                     .val: "Socrates") == 1 {
         t11: event_count(.entity: "socrates", .property: "name") == 2;
       };
     };
