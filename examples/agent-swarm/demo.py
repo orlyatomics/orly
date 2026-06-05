@@ -184,21 +184,27 @@ def canonical_pair(a, b):
     return (a, b) if a < b else (b, a)
 
 
-def compute_ground_truth(docs):
-    """Derive the expected end-state from the corpus alone."""
-    expected_tags = {}        # entity -> set(tags)
-    expected_mentions = {}    # (entity, doc_id) -> 1
-    expected_cooccur = {}     # (a, b) -> count
+def compute_ground_truth(docs, num_agents):
+    """Derive the expected end-state from the corpus alone.
+
+    Tags carry provenance: doc_id `d` is processed by agent `d %
+    num_agents` (the round-robin split below), so the expected tag set
+    for an entity is the set of (tag, agent) records, not just tags."""
+    expected_tag_records = {}  # entity -> set((tag, agent))
+    expected_mentions = {}     # (entity, doc_id) -> 1
+    expected_cooccur = {}      # (a, b) -> count
     for doc_id, (_text, entities) in enumerate(docs):
+        agent_name = f"agent-{doc_id % num_agents}"
         for entity, tags in entities.items():
-            expected_tags.setdefault(entity, set()).update(tags)
+            for tag in tags:
+                expected_tag_records.setdefault(entity, set()).add((tag, agent_name))
             expected_mentions[(entity, doc_id)] = 1
         names = sorted(entities.keys())
         for i, a in enumerate(names):
             for b in names[i + 1:]:
                 key = canonical_pair(a, b)
                 expected_cooccur[key] = expected_cooccur.get(key, 0) + 1
-    return expected_tags, expected_mentions, expected_cooccur
+    return expected_tag_records, expected_mentions, expected_cooccur
 
 
 def send(ws, stmt):
@@ -209,9 +215,9 @@ def send(ws, stmt):
     return reply.get("result")
 
 
-def add_tag(ws, pov, entity, tag):
+def add_tag(ws, pov, entity, tag, agent):
     send(ws, f'try {{{pov}}} graph add_tag '
-             f'<{{.e: "{entity}", .t: "{tag}"}}>;')
+             f'<{{.e: "{entity}", .t: "{tag}", .agent: "{agent}"}}>;')
 
 
 def add_mention(ws, pov, entity, doc_id):
@@ -226,8 +232,9 @@ def add_cooccur(ws, pov, a, b):
 
 def tags_for_entity(ws, pov, entity):
     r = send(ws, f'try {{{pov}}} graph tags_for_entity <{{.e: "{entity}"}}>;')
-    # graph.orly returns a set; WS wire form is a JSON array.
-    return set(r or [])
+    # graph.orly returns a set of <{.tag, .agent}> records; WS wire form
+    # is a JSON array of objects. Surface it as a set of (tag, agent).
+    return {(rec["tag"], rec["agent"]) for rec in (r or [])}
 
 
 def mention_count(ws, pov, entity, doc_id):
@@ -250,7 +257,9 @@ def cooccur_count(ws, pov, a, b):
 
 def agent(agent_id, pov, docs):
     """One agent: open a fresh WebSocket, open a session, ingest its
-    slice of (doc_id, extraction) pairs into the shared POV."""
+    slice of (doc_id, extraction) pairs into the shared POV. Every tag
+    it asserts is stamped with this agent's name for provenance."""
+    agent_name = f"agent-{agent_id}"
     ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
     try:
         send(ws, "new session;")
@@ -259,7 +268,7 @@ def agent(agent_id, pov, docs):
             # one cooccurrence per unordered pair.
             for entity, tags in entities.items():
                 for tag in tags:
-                    add_tag(ws, pov, entity, tag)
+                    add_tag(ws, pov, entity, tag, agent_name)
                 add_mention(ws, pov, entity, doc_id)
             names = sorted(entities.keys())
             for i, a in enumerate(names):
@@ -272,7 +281,8 @@ def agent(agent_id, pov, docs):
 
 def main():
     docs = CORPUS[:NUM_DOCS]
-    expected_tags, expected_mentions, expected_cooccur = compute_ground_truth(docs)
+    expected_tag_records, expected_mentions, expected_cooccur = compute_ground_truth(
+        docs, NUM_AGENTS)
 
     # Split docs across agents round-robin so hot entities collide
     # across multiple agents (real contention on shared keys).
@@ -280,10 +290,11 @@ def main():
     for doc_id, doc in enumerate(docs):
         per_agent_docs[doc_id % NUM_AGENTS].append((doc_id, doc))
 
+    add_tag_calls = sum(len(tags) for _text, ents in docs for tags in ents.values())
     total_writes = (
-        sum(len(tags) for _e, tags in expected_tags.items())  # add_tag calls
-        + len(expected_mentions)                              # add_mention calls
-        + sum(expected_cooccur.values())                      # add_cooccur calls
+        add_tag_calls                       # add_tag calls (one per doc/entity/tag)
+        + len(expected_mentions)            # add_mention calls
+        + sum(expected_cooccur.values())    # add_cooccur calls
     )
 
     # Bootstrap connection: install graph + create the shared POV.
@@ -293,7 +304,7 @@ def main():
     pov = send(boot, "new safe shared pov;")
     print(f"pov: {pov}")
     print(f"agents: {NUM_AGENTS}, docs: {NUM_DOCS}, "
-          f"entities: {len(expected_tags)}, "
+          f"entities: {len(expected_tag_records)}, "
           f"unordered pairs: {len(expected_cooccur)}")
     print(f"total writes from agents: {total_writes:,}")
 
@@ -302,12 +313,14 @@ def main():
     # Isolates whether lost updates come from the create-race or from
     # the field-call itself -- if the demo passes, it's the field-call.
     print("\npre-initialising all keys via the bootstrap session...")
-    for entity, tags in expected_tags.items():
+    for entity, records in expected_tag_records.items():
         # Seed with one arbitrary tag so the set exists; the agents
         # union the rest. Pick the lexicographically first tag for
-        # determinism.
-        first_tag = sorted(tags)[0]
-        add_tag(boot, pov, entity, first_tag)
+        # determinism, stamped with a dedicated "seed" agent so it's a
+        # distinct, predictable provenance record.
+        first_tag = sorted({tag for tag, _agent in records})[0]
+        add_tag(boot, pov, entity, first_tag, "seed")
+        records.add((first_tag, "seed"))
     for (entity, doc_id) in expected_mentions:
         # Seed with a count of 1, then the agent's add_mention bumps
         # to the expected 2. Adjust ground truth accordingly.
@@ -341,11 +354,12 @@ def main():
     print("=== verifying knowledge graph ===")
     failures = []
 
-    for entity, want_tags in expected_tags.items():
-        got_tags = tags_for_entity(boot, pov, entity)
-        if got_tags != want_tags:
+    for entity, want_records in expected_tag_records.items():
+        got_records = tags_for_entity(boot, pov, entity)
+        if got_records != want_records:
             failures.append(
-                f"tags({entity}): got {sorted(got_tags)}, want {sorted(want_tags)}")
+                f"tags({entity}): got {sorted(got_records)}, "
+                f"want {sorted(want_records)}")
 
     for (entity, doc_id), want in expected_mention_count.items():
         got = mention_count(boot, pov, entity, doc_id)
@@ -367,14 +381,21 @@ def main():
     for (entity, _doc_id), v in expected_mention_count.items():
         per_entity_mentions[entity] = per_entity_mentions.get(entity, 0) + v
 
-    print(f"  {'entity':<14}  {'mentions':>9}  {'expected':>9}  {'tags'}")
+    print(f"  {'entity':<14}  {'mentions':>9}  {'expected':>9}  {'tags (×contributing agents)'}")
     print(f"  {'-'*14}  {'-'*9}  {'-'*9}  {'-'*30}")
     for entity in sorted(per_entity_mentions, key=lambda e: -per_entity_mentions[e]):
         # Doc IDs in this corpus are 0..NUM_DOCS-1, all dense.
         got_total = mentions_total(boot, pov, entity, 0, NUM_DOCS - 1)
         want_total = per_entity_mentions[entity]
         marker = "✓" if got_total == want_total else "✗"
-        tag_str = ",".join(sorted(expected_tags[entity]))
+        # Roll the provenance records up to distinct tags, annotating any
+        # tag that more than one agent independently asserted (×N).
+        tag_agents = {}
+        for tag, ag in expected_tag_records[entity]:
+            tag_agents.setdefault(tag, set()).add(ag)
+        tag_str = ",".join(
+            f"{t}×{len(ags)}" if len(ags) > 1 else t
+            for t, ags in sorted(tag_agents.items()))
         print(f"  {entity:<14}  {got_total:>9}  {want_total:>9}  "
               f"{tag_str}  {marker}")
         if got_total != want_total:
@@ -393,8 +414,9 @@ def main():
     print()
     print("=== the trick ===")
     print(f"  {NUM_AGENTS} concurrent agents all wrote into the same knowledge")
-    print(f"  graph with zero coordination. Tag-set unions and per-entity")
-    print(f"  / per-pair counters all aggregate correctly: this is the shape")
+    print(f"  graph with zero coordination. Tag records (with per-agent")
+    print(f"  provenance) union into one set per entity, and the per-entity")
+    print(f"  / per-pair counters aggregate correctly: this is the shape")
     print(f"  multi-agent LLM extraction pipelines keep reinventing badly.")
 
     send(boot, "exit;")
@@ -407,8 +429,10 @@ def main():
         if len(failures) > 20:
             print(f"  ... and {len(failures) - 20} more")
         sys.exit(1)
+    total_tag_records = sum(len(recs) for recs in expected_tag_records.values())
     print("\n=== self-check OK ===")
-    print(f"  verified {len(expected_tags)} tag sets + "
+    print(f"  verified {total_tag_records} tag provenance records across "
+          f"{len(expected_tag_records)} entities + "
           f"{len(expected_mention_count)} mention counters + "
           f"{len(expected_cooccur_count)} cooccurrence counters across "
           f"{NUM_AGENTS} concurrent agents")

@@ -192,21 +192,31 @@ type pairKey struct {
 	a, b string
 }
 
-func computeGroundTruth(docs []doc) (
-	expectedTags map[string]map[string]bool,
+// tagRecord is one provenance fact: agent asserted tag. It's the set
+// element behind <['entity', e]>::({<{.tag, .agent}>}).
+type tagRecord struct {
+	tag, agent string
+}
+
+func computeGroundTruth(docs []doc, numAgents int) (
+	expectedTagRecords map[string]map[tagRecord]bool,
 	expectedMentions map[mentionKey]int,
 	expectedCooccur map[pairKey]int,
 ) {
-	expectedTags = map[string]map[string]bool{}
+	// Tags carry provenance: doc `docID` is processed by agent
+	// `docID % numAgents` (the round-robin split in main), so the
+	// expected tag set is the set of (tag, agent) records.
+	expectedTagRecords = map[string]map[tagRecord]bool{}
 	expectedMentions = map[mentionKey]int{}
 	expectedCooccur = map[pairKey]int{}
 	for docID, d := range docs {
+		agentName := fmt.Sprintf("agent-%d", docID%numAgents)
 		for entity, tags := range d.entities {
-			if expectedTags[entity] == nil {
-				expectedTags[entity] = map[string]bool{}
+			if expectedTagRecords[entity] == nil {
+				expectedTagRecords[entity] = map[tagRecord]bool{}
 			}
 			for _, t := range tags {
-				expectedTags[entity][t] = true
+				expectedTagRecords[entity][tagRecord{t, agentName}] = true
 			}
 			expectedMentions[mentionKey{entity, docID}] = 1
 		}
@@ -261,10 +271,10 @@ func mustSend(c *websocket.Conn, stmt string) interface{} {
 	return r
 }
 
-func addTag(c *websocket.Conn, pov, entity, tag string) {
+func addTag(c *websocket.Conn, pov, entity, tag, agent string) {
 	mustSend(c, fmt.Sprintf(
-		`try {%s} graph add_tag <{.e: %q, .t: %q}>;`,
-		pov, entity, tag))
+		`try {%s} graph add_tag <{.e: %q, .t: %q, .agent: %q}>;`,
+		pov, entity, tag, agent))
 }
 
 func addMention(c *websocket.Conn, pov, entity string, docID int) {
@@ -279,16 +289,19 @@ func addCooccur(c *websocket.Conn, pov, a, b string) {
 		pov, a, b))
 }
 
-func tagsForEntity(c *websocket.Conn, pov, entity string) map[string]bool {
+func tagsForEntity(c *websocket.Conn, pov, entity string) map[tagRecord]bool {
 	r := mustSend(c, fmt.Sprintf(
 		`try {%s} graph tags_for_entity <{.e: %q}>;`,
 		pov, entity))
-	out := map[string]bool{}
+	out := map[tagRecord]bool{}
 	if r == nil {
 		return out
 	}
+	// graph.orly returns a set of <{.tag, .agent}> records; WS wire form
+	// is a JSON array of objects.
 	for _, v := range r.([]interface{}) {
-		out[v.(string)] = true
+		rec := v.(map[string]interface{})
+		out[tagRecord{rec["tag"].(string), rec["agent"].(string)}] = true
 	}
 	return out
 }
@@ -322,8 +335,10 @@ type agentDoc struct {
 
 // agent runs one writer goroutine: opens a fresh WS, opens a session,
 // ingests its slice of (doc_id, extraction) pairs into the shared POV.
-func agent(pov string, docs []agentDoc, wg *sync.WaitGroup) {
+// Every tag it asserts is stamped with this agent's name for provenance.
+func agent(id int, pov string, docs []agentDoc, wg *sync.WaitGroup) {
 	defer wg.Done()
+	agentName := fmt.Sprintf("agent-%d", id)
 	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = wsTimeout
 	c, _, err := dialer.Dial(wsURL, nil)
@@ -335,7 +350,7 @@ func agent(pov string, docs []agentDoc, wg *sync.WaitGroup) {
 	for _, ad := range docs {
 		for entity, tags := range ad.doc.entities {
 			for _, t := range tags {
-				addTag(c, pov, entity, t)
+				addTag(c, pov, entity, t, agentName)
 			}
 			addMention(c, pov, entity, ad.id)
 		}
@@ -378,7 +393,7 @@ func sortedTagList(m map[string]bool) []string {
 	return out
 }
 
-func tagSetsEqual(a, b map[string]bool) bool {
+func recordSetsEqual(a, b map[tagRecord]bool) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -390,11 +405,48 @@ func tagSetsEqual(a, b map[string]bool) bool {
 	return true
 }
 
+// sortedRecords renders a record set as sorted "tag@agent" strings, for
+// readable failure messages.
+func sortedRecords(m map[tagRecord]bool) []string {
+	out := make([]string, 0, len(m))
+	for rec := range m {
+		out = append(out, rec.tag+"@"+rec.agent)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// tagSummary rolls a provenance record set up to distinct tags,
+// annotating any tag more than one agent independently asserted (×N).
+func tagSummary(records map[tagRecord]bool) string {
+	agentsByTag := map[string]map[string]bool{}
+	for rec := range records {
+		if agentsByTag[rec.tag] == nil {
+			agentsByTag[rec.tag] = map[string]bool{}
+		}
+		agentsByTag[rec.tag][rec.agent] = true
+	}
+	tags := make([]string, 0, len(agentsByTag))
+	for t := range agentsByTag {
+		tags = append(tags, t)
+	}
+	sort.Strings(tags)
+	parts := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if n := len(agentsByTag[t]); n > 1 {
+			parts = append(parts, fmt.Sprintf("%s×%d", t, n))
+		} else {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
 func main() {
 	initScale()
 
 	docs := corpus[:numDocs]
-	expectedTags, expectedMentions, expectedCooccur := computeGroundTruth(docs)
+	expectedTagRecords, expectedMentions, expectedCooccur := computeGroundTruth(docs, numAgents)
 
 	// Round-robin assignment so hot entities collide across agents.
 	perAgent := make([][]agentDoc, numAgents)
@@ -402,10 +454,13 @@ func main() {
 		perAgent[id%numAgents] = append(perAgent[id%numAgents], agentDoc{id, d})
 	}
 
-	totalWrites := 0
-	for _, tags := range expectedTags {
-		totalWrites += len(tags) // add_tag calls
+	addTagCalls := 0 // one per (doc, entity, tag)
+	for _, d := range docs {
+		for _, tags := range d.entities {
+			addTagCalls += len(tags)
+		}
 	}
+	totalWrites := addTagCalls
 	totalWrites += len(expectedMentions) // add_mention calls
 	for _, n := range expectedCooccur {
 		totalWrites += n // add_cooccur calls
@@ -423,16 +478,22 @@ func main() {
 	pov := mustSend(boot, "new safe shared pov;").(string)
 	fmt.Printf("pov: %s\n", pov)
 	fmt.Printf("agents: %d, docs: %d, entities: %d, unordered pairs: %d\n",
-		numAgents, numDocs, len(expectedTags), len(expectedCooccur))
+		numAgents, numDocs, len(expectedTagRecords), len(expectedCooccur))
 	fmt.Printf("total writes from agents: %s\n", commaize(totalWrites))
 
 	// Pre-initialise every key so concurrent agents take the
 	// commutative |= / += branch (never the `new <-` create branch).
 	fmt.Println("\npre-initialising all keys via the bootstrap session...")
-	for entity, tags := range expectedTags {
-		// Seed with the lex-first tag for determinism; agents union the rest.
-		first := sortedTagList(tags)[0]
-		addTag(boot, pov, entity, first)
+	for entity, records := range expectedTagRecords {
+		// Seed with the lex-first tag for determinism, stamped with a
+		// dedicated "seed" agent; the agents union the rest.
+		tagset := map[string]bool{}
+		for rec := range records {
+			tagset[rec.tag] = true
+		}
+		first := sortedTagList(tagset)[0]
+		addTag(boot, pov, entity, first, "seed")
+		records[tagRecord{first, "seed"}] = true
 	}
 	for mk := range expectedMentions {
 		addMention(boot, pov, mk.entity, mk.docID)
@@ -456,7 +517,7 @@ func main() {
 	t0 := time.Now()
 	for i := 0; i < numAgents; i++ {
 		wg.Add(1)
-		go agent(pov, perAgent[i], &wg)
+		go agent(i, pov, perAgent[i], &wg)
 	}
 	wg.Wait()
 	elapsed := time.Since(t0)
@@ -471,12 +532,12 @@ func main() {
 	fmt.Println("=== verifying knowledge graph ===")
 	var failures []string
 
-	for entity, wantTags := range expectedTags {
-		gotTags := tagsForEntity(boot, pov, entity)
-		if !tagSetsEqual(gotTags, wantTags) {
+	for entity, wantRecords := range expectedTagRecords {
+		gotRecords := tagsForEntity(boot, pov, entity)
+		if !recordSetsEqual(gotRecords, wantRecords) {
 			failures = append(failures, fmt.Sprintf(
 				"tags(%s): got %v, want %v",
-				entity, sortedTagList(gotTags), sortedTagList(wantTags)))
+				entity, sortedRecords(gotRecords), sortedRecords(wantRecords)))
 		}
 	}
 	for mk, want := range expectedMentionCount {
@@ -515,7 +576,7 @@ func main() {
 	dash14 := strings.Repeat("-", 14)
 	dash9 := strings.Repeat("-", 9)
 	dash30 := strings.Repeat("-", 30)
-	fmt.Printf("  %-14s  %9s  %9s  %s\n", "entity", "mentions", "expected", "tags")
+	fmt.Printf("  %-14s  %9s  %9s  %s\n", "entity", "mentions", "expected", "tags (×contributing agents)")
 	fmt.Printf("  %-14s  %9s  %9s  %s\n", dash14, dash9, dash9, dash30)
 	for _, entity := range entitiesByHeat {
 		gotTotal := mentionsTotal(boot, pov, entity, 0, numDocs-1)
@@ -527,7 +588,7 @@ func main() {
 				"mentions_total(%s): got %d, want %d",
 				entity, gotTotal, wantTotal))
 		}
-		tagStr := strings.Join(sortedTagList(expectedTags[entity]), ",")
+		tagStr := tagSummary(expectedTagRecords[entity])
 		fmt.Printf("  %-14s  %9d  %9d  %s  %s\n",
 			entity, gotTotal, wantTotal, tagStr, marker)
 	}
@@ -566,8 +627,9 @@ func main() {
 	fmt.Println()
 	fmt.Println("=== the trick ===")
 	fmt.Printf("  %d concurrent agents all wrote into the same knowledge\n", numAgents)
-	fmt.Println("  graph with zero coordination. Tag-set unions and per-entity")
-	fmt.Println("  / per-pair counters all aggregate correctly: this is the shape")
+	fmt.Println("  graph with zero coordination. Tag records (with per-agent")
+	fmt.Println("  provenance) union into one set per entity, and the per-entity")
+	fmt.Println("  / per-pair counters aggregate correctly: this is the shape")
 	fmt.Println("  multi-agent LLM extraction pipelines keep reinventing badly.")
 
 	mustSend(boot, "exit;")
@@ -586,7 +648,11 @@ func main() {
 		}
 		os.Exit(1)
 	}
+	totalTagRecords := 0
+	for _, recs := range expectedTagRecords {
+		totalTagRecords += len(recs)
+	}
 	fmt.Println("\n=== self-check OK ===")
-	fmt.Printf("  verified %d tag sets + %d mention counters + %d cooccurrence counters across %d concurrent agents\n",
-		len(expectedTags), len(expectedMentionCount), len(expectedCooccurCount), numAgents)
+	fmt.Printf("  verified %d tag provenance records across %d entities + %d mention counters + %d cooccurrence counters across %d concurrent agents\n",
+		totalTagRecords, len(expectedTagRecords), len(expectedMentionCount), len(expectedCooccurCount), numAgents)
 }
