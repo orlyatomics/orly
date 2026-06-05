@@ -150,6 +150,7 @@ to_upper_kwd      = '"to_upper"';
 unknown_kwd       = '"unknown"' unary_prec right;
 user_id_kwd       = '"user_id"';
 using_kwd         = '"using"';
+when_kwd          = '"when"';
 where_kwd         = '"where"';
 while_kwd	  = '"while"' lowest_prec left;  /* like if */
 with_kwd          = '"with"';
@@ -563,6 +564,16 @@ assert_expr : expr -> open_paren expr close_paren assert_kwd open_brace opt_asse
   bad_assertion       : assertion -> error semi;
   labeled_assertion   : assertion -> name colon expr semi;
   unlabeled_assertion : assertion -> expr semi;
+
+when_expr : expr -> open_paren expr close_paren when_kwd open_brace opt_when_arm_seq close_brace;
+
+  opt_when_arm_seq;
+  no_when_arm_seq : opt_when_arm_seq -> empty;
+  when_arm_seq    : opt_when_arm_seq -> when_arm opt_when_arm_seq;
+
+  when_arm;
+  bad_when_arm     : when_arm -> error semi;
+  labeled_when_arm : when_arm -> name colon expr semi;
 
 effecting_expr : expr -> open_paren expr close_paren effecting_kwd stmt_block;
 

@@ -73,5 +73,6 @@
 #include <orly/expr/user_id.h>
 #include <orly/expr/variant.h>
 #include <orly/expr/variant_is.h>
+#include <orly/expr/when.h>
 #include <orly/expr/where.h>
 #include <orly/expr/while.h>

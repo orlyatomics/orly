@@ -217,6 +217,7 @@ class TExprVisitor : public Orly::Checkpoint::Syntax::TExpr::TVisitor {
   virtual void operator()(const Orly::Checkpoint::Syntax::TPrefixExists *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TEffectingExpr *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TAssertExpr *) const {NOT_IMPLEMENTED();}
+  virtual void operator()(const Orly::Checkpoint::Syntax::TWhenExpr *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TWhereExpr *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TPrefixMinus *) const;
   virtual void operator()(const Orly::Checkpoint::Syntax::TPrefixPlus *) const;

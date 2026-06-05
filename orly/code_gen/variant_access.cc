@@ -44,3 +44,20 @@ void TVariantMember::WriteExpr(TCppPrinter &out) const {
      active -- callers gate this with `is <Tag>`. */
   out << '(' << Operand << ").GetV" << Tag << "()";
 }
+
+TVariantWhen::TVariantWhen(const L0::TPackage *package,
+                           const Type::TType &type,
+                           const TInline::TPtr &operand,
+                           const TArmVec &arms)
+    : TInline(package, type), Operand(operand), Arms(arms) {}
+
+void TVariantWhen::WriteExpr(TCppPrinter &out) const {
+  /* Nested ternary on the operand's active arm. All arms but the last are
+     guarded; the last is the exhaustive fall-through. */
+  out << '(';
+  for (size_t arm_idx = 0; arm_idx + 1 < Arms.size(); ++arm_idx) {
+    out << "((" << Operand << ").GetWhich() == " << Arms[arm_idx].first
+        << ") ? (" << Arms[arm_idx].second << ") : ";
+  }
+  out << '(' << Arms.back().second << "))";
+}

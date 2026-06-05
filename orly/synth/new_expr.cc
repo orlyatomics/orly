@@ -71,6 +71,7 @@
 #include <orly/synth/time_pnt_ctor.h>
 #include <orly/synth/unknown_ctor.h>
 #include <orly/synth/user_id_expr.h>
+#include <orly/synth/when_expr.h>
 #include <orly/synth/where_expr.h>
 #include <orly/synth/while_expr.h>
 
@@ -216,6 +217,7 @@ TExpr *TExprFactory::NewExpr(const Package::Syntax::TExpr *root) const {
     virtual void operator()(const Syntax::TUnknownCtor *that) const { Out = new TUnknownCtor(that); }
     virtual void operator()(const Syntax::TVariantCtor *that) const { Out = new TVariantCtor(ExprFactory, that); }
     virtual void operator()(const Syntax::TUserIdExpr *that) const { Out = new TUserIdExpr(that); }
+    virtual void operator()(const Syntax::TWhenExpr *that) const { Out = new TWhenExpr(ExprFactory, that); }
     virtual void operator()(const Syntax::TWhereExpr *that) const { Out = new TWhereExpr(ExprFactory, that); }
     private:
     void OnAffix(const Syntax::TExpr *that, TAffixExpr::TNew new_, const TPosRange &pos_range) const {

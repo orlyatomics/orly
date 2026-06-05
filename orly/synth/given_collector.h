@@ -236,6 +236,7 @@ namespace Orly {
           Push(payload->GetExpr());
         }
       }
+      virtual void operator()(const Package::Syntax::TWhenExpr *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TWhereExpr *that) const { Push(that->GetExpr()); }
 
       /* Push expr onto the stack */

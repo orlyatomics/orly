@@ -177,6 +177,7 @@ bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
     virtual void operator()(const Expr::TUserId        *) const {}
     virtual void operator()(const Expr::TVariantCtor   *) const {}
     virtual void operator()(const Expr::TVariantIs      *) const {}
+    virtual void operator()(const Expr::TWhen          *) const {}
     virtual void operator()(const Expr::TWhere         *) const {}
     virtual void operator()(const Expr::TWhile         *) const { Res = true; }
     virtual void operator()(const Expr::TXor           *) const {}
@@ -693,6 +694,19 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TVariantIs *that) const {
       Res = TVariantIs::TPtr(new TVariantIs(Package, ReturnType,
           Build(Package, that->GetExpr(), false), that->GetWhich()));
+    }
+    virtual void operator()(const Expr::TWhen *that) const {
+      /* Lower to a nested ternary on the operand's active arm (#95 Phase 4),
+         reusing the M4 GetWhich() primitive. The operand inline is shared
+         across arms; exhaustiveness was checked at type time, so the last
+         arm is the unconditional fall-through. */
+      TInline::TPtr operand = Build(Package, that->GetOperand(), false);
+      TVariantWhen::TArmVec arms;
+      for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
+        arms.emplace_back(that->GetArmWhich(arm_idx),
+            Build(Package, that->GetArmBody(arm_idx), false));
+      }
+      Res = TInline::TPtr(new TVariantWhen(Package, ReturnType, operand, arms));
     }
     virtual void operator()(const Expr::TWhere *that) const { Res = Build(Package, that->GetExpr(), true); }
     virtual void operator()(const Expr::TWhile *that) const {
