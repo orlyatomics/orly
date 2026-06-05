@@ -1,7 +1,7 @@
 // GRC-20-shaped knowledge graph on Orly, in Go.
 //
 // Mirrors demo.py: three phases (wiki biographical / stanford schools +
-// relations / concurrent race), same encoding, same self-check.
+// relations / concurrent race), same event records, same self-check.
 // Provided so readers can pick whichever language matches their
 // environment.
 //
@@ -141,32 +141,61 @@ func sendStringSet(c *websocket.Conn, stmt string) []string {
 }
 
 // ---------------------------------------------------------------------
-// Op encoding: "<13-digit ms ts>:<editor>:<kind>:<value>".
-// Kind ∈ {L text, I integer, R relation target id, D tombstone}.
+// Event records. Each event is a first-class
+//   <{.ts: int, .editor: str, .kind: str, .val: str}>
+// stored in a set OF records (issue #90). Kind ∈ {L text, I integer,
+// R relation target id, D tombstone}. No string packing -- the four
+// typed fields travel end to end.
 // ---------------------------------------------------------------------
 
 func nowMs() int64 { return time.Now().UnixNano() / 1_000_000 }
 
-func encode(editor, kind, value string) string {
-	return fmt.Sprintf("%013d:%s:%s:%s", nowMs(), editor, kind, value)
+type event struct {
+	ts           int64
+	editor, kind string
+	val          string
 }
 
-type parsed struct {
-	ts             int64
-	editor, kind   string
-	value          string
+// Records arrive as JSON objects; ts may be a float (orlyi serialises
+// numbers as JSON floats), so decode it loosely and narrow to int64.
+type eventWire struct {
+	Ts     float64 `json:"ts"`
+	Editor string  `json:"editor"`
+	Kind   string  `json:"kind"`
+	Val    string  `json:"val"`
 }
 
-func parseEntry(entry string) parsed {
-	parts := strings.SplitN(entry, ":", 4)
-	if len(parts) != 4 {
-		die(fmt.Sprintf("bad entry %q", entry))
+// eventLess is the total order over event records: ts first, then a
+// deterministic same-ms tiebreaker (editor, kind, val).
+func eventLess(a, b event) bool {
+	if a.ts != b.ts {
+		return a.ts < b.ts
 	}
-	ts, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		die(fmt.Sprintf("bad ts in %q: %v", entry, err))
+	if a.editor != b.editor {
+		return a.editor < b.editor
 	}
-	return parsed{ts: ts, editor: parts[1], kind: parts[2], value: parts[3]}
+	if a.kind != b.kind {
+		return a.kind < b.kind
+	}
+	return a.val < b.val
+}
+
+// orlyi serialises a set of records as a JSON array of objects.
+func sendEventSet(c *websocket.Conn, stmt string) []event {
+	raw := send(c, stmt)
+	if string(raw) == "null" {
+		return nil
+	}
+	var wire []eventWire
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		die(fmt.Sprintf("expected array-of-objects result, got %s", raw))
+	}
+	out := make([]event, 0, len(wire))
+	for _, w := range wire {
+		out = append(out, event{ts: int64(w.Ts), editor: w.Editor, kind: w.Kind, val: w.Val})
+	}
+	sort.Slice(out, func(i, j int) bool { return eventLess(out[i], out[j]) })
+	return out
 }
 
 func orlyStr(s string) string {
@@ -180,10 +209,13 @@ func orlyStr(s string) string {
 // Wrappers for the grc20 package's three commutative funcs.
 // ---------------------------------------------------------------------
 
-func appendOp(c *websocket.Conn, pov, entity, prop, entry string) {
+// appendOp unions one event record into the (entity, property) history.
+// The engine builds the <{.ts, .editor, .kind, .val}> record from these
+// typed args; ts is an int literal, the rest are string literals.
+func appendOp(c *websocket.Conn, pov, entity, prop string, ts int64, editor, kind, val string) {
 	send(c, fmt.Sprintf(
-		`try {%s} grc20 append_op <{.entity: %s, .property: %s, .entry: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop), orlyStr(entry)))
+		`try {%s} grc20 append_op <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .kind: %s, .val: %s}>;`,
+		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), orlyStr(kind), orlyStr(val)))
 }
 
 func registerEntity(c *websocket.Conn, pov, entity string) {
@@ -198,8 +230,8 @@ func registerProp(c *websocket.Conn, pov, entity, prop string) {
 		pov, orlyStr(entity), orlyStr(prop)))
 }
 
-func histFor(c *websocket.Conn, pov, entity, prop string) []string {
-	return sendStringSet(c, fmt.Sprintf(
+func histFor(c *websocket.Conn, pov, entity, prop string) []event {
+	return sendEventSet(c, fmt.Sprintf(
 		`try {%s} grc20 hist_for <{.entity: %s, .property: %s}>;`,
 		pov, orlyStr(entity), orlyStr(prop)))
 }
@@ -226,26 +258,26 @@ func entityCount(c *websocket.Conn, pov string) int {
 func opCreateEntity(c *websocket.Conn, pov, editor, entity, typeName string) {
 	registerEntity(c, pov, entity)
 	registerProp(c, pov, entity, "__type")
-	appendOp(c, pov, entity, "__type", encode(editor, "L", typeName))
+	appendOp(c, pov, entity, "__type", nowMs(), editor, "L", typeName)
 }
 
 func opSetText(c *websocket.Conn, pov, editor, entity, prop, text string) {
 	registerEntity(c, pov, entity)
 	registerProp(c, pov, entity, prop)
-	appendOp(c, pov, entity, prop, encode(editor, "L", text))
+	appendOp(c, pov, entity, prop, nowMs(), editor, "L", text)
 }
 
 func opSetInt(c *websocket.Conn, pov, editor, entity, prop string, n int) {
 	registerEntity(c, pov, entity)
 	registerProp(c, pov, entity, prop)
-	appendOp(c, pov, entity, prop, encode(editor, "I", strconv.Itoa(n)))
+	appendOp(c, pov, entity, prop, nowMs(), editor, "I", strconv.Itoa(n))
 }
 
 func opCreateRelation(c *websocket.Conn, pov, editor, entity, prop, target string) {
 	registerEntity(c, pov, entity)
 	registerEntity(c, pov, target)
 	registerProp(c, pov, entity, prop)
-	appendOp(c, pov, entity, prop, encode(editor, "R", target))
+	appendOp(c, pov, entity, prop, nowMs(), editor, "R", target)
 }
 
 // ---------------------------------------------------------------------
@@ -270,7 +302,7 @@ func reconstruct(c *websocket.Conn, pov string, asOf *int64) map[string]map[stri
 			if asOf != nil {
 				filtered := entries[:0]
 				for _, e := range entries {
-					if parseEntry(e).ts <= *asOf {
+					if e.ts <= *asOf {
 						filtered = append(filtered, e)
 					}
 				}
@@ -279,12 +311,12 @@ func reconstruct(c *websocket.Conn, pov string, asOf *int64) map[string]map[stri
 			if len(entries) == 0 {
 				continue
 			}
-			p := parseEntry(entries[len(entries)-1])
+			p := entries[len(entries)-1]
 			if prop == "__deleted" && p.kind == "D" {
 				deleted = true
 				break
 			}
-			state[prop] = fact{kind: p.kind, value: p.value, editor: p.editor, ts: p.ts}
+			state[prop] = fact{kind: p.kind, value: p.val, editor: p.editor, ts: p.ts}
 		}
 		if !deleted {
 			out[eid] = state
@@ -387,13 +419,12 @@ func editorialDiff(c *websocket.Conn, pov string) {
 	entitiesByEditor := map[string]map[string]struct{}{}
 	for _, eid := range allEntities(c, pov) {
 		for _, prop := range propsOf(c, pov, eid) {
-			for _, entry := range histFor(c, pov, eid, prop) {
-				p := parseEntry(entry)
-				byEditor[p.editor]++
-				if entitiesByEditor[p.editor] == nil {
-					entitiesByEditor[p.editor] = map[string]struct{}{}
+			for _, ev := range histFor(c, pov, eid, prop) {
+				byEditor[ev.editor]++
+				if entitiesByEditor[ev.editor] == nil {
+					entitiesByEditor[ev.editor] = map[string]struct{}{}
 				}
-				entitiesByEditor[p.editor][eid] = struct{}{}
+				entitiesByEditor[ev.editor][eid] = struct{}{}
 			}
 		}
 	}
@@ -467,9 +498,8 @@ func main() {
 	raceEntries := histFor(boot, pov, raceEntity, raceProp)
 	fmt.Printf("  history for %s.%s after race (%d events, ts-sorted):\n",
 		raceEntity, raceProp, len(raceEntries))
-	for _, e := range raceEntries {
-		p := parseEntry(e)
-		fmt.Printf("    %d  %-10s %s  %s\n", p.ts, p.editor, p.kind, p.value)
+	for _, ev := range raceEntries {
+		fmt.Printf("    %d  %-10s %s  %s\n", ev.ts, ev.editor, ev.kind, ev.val)
 	}
 	finalState := reconstruct(boot, pov, &ts3)
 	winning := finalState[raceEntity][raceProp]
@@ -481,12 +511,13 @@ func main() {
 	editorialDiff(boot, pov)
 
 	fmt.Println("\n=== the trick ===")
-	fmt.Println("  Every editor |= a packed event into a per-(entity, prop)")
-	fmt.Println("  history set. Multi-editor writes never drop events (post-#50")
-	fmt.Println("  deferred-mutation fold). Reads replay the timestamp-sorted")
-	fmt.Println("  log -- pass a cutoff for time-travel, take the latest for")
-	fmt.Println("  the current value. The schema is three commutative funcs;")
-	fmt.Println("  GRC-20's op vocabulary lives entirely in the driver.")
+	fmt.Println("  Every editor |= an event record into a per-(entity, prop)")
+	fmt.Println("  set of <{.ts, .editor, .kind, .val}> (issue #90). Multi-editor")
+	fmt.Println("  writes never drop events (post-#50 deferred-mutation fold).")
+	fmt.Println("  Reads replay the timestamp-sorted log -- pass a cutoff for")
+	fmt.Println("  time-travel, take the latest for the current value. The schema")
+	fmt.Println("  is three commutative funcs; GRC-20's op vocabulary lives")
+	fmt.Println("  entirely in the driver.")
 
 	// --- Self-check (mirrors demo.py) ---
 	var failures []string

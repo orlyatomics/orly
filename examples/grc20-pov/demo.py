@@ -84,24 +84,23 @@ RACE_FACT = ("pythagoras", "born", -570, -575)
 
 
 # ---------------------------------------------------------------------
-# WS helpers + op encoding.
+# WS helpers + event records.
 #
-# Each event is encoded as "<ts>:<editor>:<kind>:<value>" where ts is
-# zero-padded 13-digit ms (sorts lexicographically = chronologically),
-# kind ∈ {L text, I integer, R relation target id, D tombstone}.
+# Each event is a first-class record
+#   <{.ts: int, .editor: str, .kind: str, .val: str}>
+# stored in a set OF records (issue #90). ts is a ms timestamp; kind ∈
+# {L text, I integer, R relation target id, D tombstone}. No string
+# packing -- the four typed fields travel end to end. Chronological
+# order is `event_key` (ts first, then a deterministic tiebreaker).
 # ---------------------------------------------------------------------
 def now_ms():
     return int(time.time() * 1000)
 
 
-def encode(editor, kind, value):
-    return f"{now_ms():013d}:{editor}:{kind}:{value}"
-
-
-def parse(entry):
-    """Returns (ts:int, editor:str, kind:str, value:str)."""
-    ts, editor, kind, value = entry.split(":", 3)
-    return int(ts), editor, kind, value
+def event_key(ev):
+    """Total order over event records: ts first, then a deterministic
+    same-ms tiebreaker (editor, kind, val)."""
+    return (ev["ts"], ev["editor"], ev["kind"], ev["val"])
 
 
 def send(ws, stmt):
@@ -118,11 +117,17 @@ def orly_str(s):
     return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
-def append_op(ws, pov, entity, prop, entry):
+def append_op(ws, pov, entity, prop, ts, editor, kind, val):
+    """Union one event record into the (entity, property) history. The
+    engine builds the <{.ts, .editor, .kind, .val}> record from these
+    typed args; ts is an int literal, the rest are string literals."""
     send(ws, (f'try {{{pov}}} grc20 append_op '
               f'<{{.entity: {orly_str(entity)}, '
               f'.property: {orly_str(prop)}, '
-              f'.entry: {orly_str(entry)}}}>;'))
+              f'.ts: {int(ts)}, '
+              f'.editor: {orly_str(editor)}, '
+              f'.kind: {orly_str(kind)}, '
+              f'.val: {orly_str(val)}}}>;'))
 
 
 def register_entity(ws, pov, entity):
@@ -137,10 +142,14 @@ def register_prop(ws, pov, entity, prop):
 
 
 def hist_for(ws, pov, entity, prop):
+    """Returns the event history as a list of dicts
+    {ts:int, editor:str, kind:str, val:str}. Records come back over the
+    wire as JSON objects; ts may arrive as a float, so normalise it."""
     r = send(ws, (f'try {{{pov}}} grc20 hist_for '
                   f'<{{.entity: {orly_str(entity)}, '
                   f'.property: {orly_str(prop)}}}>;'))
-    return list(r or [])
+    return [{"ts": int(ev["ts"]), "editor": ev["editor"],
+             "kind": ev["kind"], "val": ev["val"]} for ev in (r or [])]
 
 
 def all_entities(ws, pov):
@@ -168,31 +177,31 @@ def op_create_entity(ws, pov, editor, entity, type_name):
     property called '__type'."""
     register_entity(ws, pov, entity)
     register_prop(ws, pov, entity, "__type")
-    append_op(ws, pov, entity, "__type", encode(editor, "L", type_name))
+    append_op(ws, pov, entity, "__type", now_ms(), editor, "L", type_name)
 
 
 def op_set_text(ws, pov, editor, entity, prop, text):
     register_entity(ws, pov, entity)
     register_prop(ws, pov, entity, prop)
-    append_op(ws, pov, entity, prop, encode(editor, "L", text))
+    append_op(ws, pov, entity, prop, now_ms(), editor, "L", text)
 
 
 def op_set_int(ws, pov, editor, entity, prop, n):
     register_entity(ws, pov, entity)
     register_prop(ws, pov, entity, prop)
-    append_op(ws, pov, entity, prop, encode(editor, "I", str(n)))
+    append_op(ws, pov, entity, prop, now_ms(), editor, "I", str(n))
 
 
 def op_create_relation(ws, pov, editor, entity, prop, target):
     register_entity(ws, pov, entity)
     register_entity(ws, pov, target)
     register_prop(ws, pov, entity, prop)
-    append_op(ws, pov, entity, prop, encode(editor, "R", target))
+    append_op(ws, pov, entity, prop, now_ms(), editor, "R", target)
 
 
 def op_delete_entity(ws, pov, editor, entity):
     register_prop(ws, pov, entity, "__deleted")
-    append_op(ws, pov, entity, "__deleted", encode(editor, "D", ""))
+    append_op(ws, pov, entity, "__deleted", now_ms(), editor, "D", "")
 
 
 # ---------------------------------------------------------------------
@@ -214,17 +223,18 @@ def reconstruct(ws, pov, as_of_ts=None):
         deleted = False
         e_state = {}
         for prop in props:
-            entries = sorted(hist_for(ws, pov, eid, prop))
+            entries = sorted(hist_for(ws, pov, eid, prop), key=event_key)
             if as_of_ts is not None:
-                entries = [e for e in entries if parse(e)[0] <= as_of_ts]
+                entries = [e for e in entries if e["ts"] <= as_of_ts]
             if not entries:
                 continue
             # Latest event wins per property.
-            ts, editor, kind, value = parse(entries[-1])
-            if prop == "__deleted" and kind == "D":
+            latest = entries[-1]
+            if prop == "__deleted" and latest["kind"] == "D":
                 deleted = True
                 break
-            e_state[prop] = (kind, value, editor, ts)
+            e_state[prop] = (latest["kind"], latest["val"],
+                             latest["editor"], latest["ts"])
         if not deleted:
             out[eid] = e_state
     return out
@@ -320,8 +330,8 @@ def editorial_diff(ws, pov):
     entities_by_editor = {}       # editor -> set(entity ids)
     for eid in sorted(all_entities(ws, pov)):
         for prop in sorted(props_of(ws, pov, eid)):
-            for entry in hist_for(ws, pov, eid, prop):
-                _ts, editor, _kind, _value = parse(entry)
+            for ev in hist_for(ws, pov, eid, prop):
+                editor = ev["editor"]
                 by_editor[editor] = by_editor.get(editor, 0) + 1
                 entities_by_editor.setdefault(editor, set()).add(eid)
     print("\n=== editorial diff ===")
@@ -380,12 +390,11 @@ def main():
     print(f"  stanford -> {stanford_value}")
     phase3_race(pov)
     ts3 = now_ms()
-    race_entries = sorted(hist_for(boot, pov, entity, prop))
+    race_entries = sorted(hist_for(boot, pov, entity, prop), key=event_key)
     print(f"  history for {entity}.{prop} after race "
           f"({len(race_entries)} events, ts-sorted):")
-    for e in race_entries:
-        ts, ed, kind, val = parse(e)
-        print(f"    {ts}  {ed:<10} {kind}  {val}")
+    for ev in race_entries:
+        print(f"    {ev['ts']}  {ev['editor']:<10} {ev['kind']}  {ev['val']}")
     final_state = reconstruct(boot, pov, as_of_ts=ts3)
     winning = final_state[entity][prop]
     print(f"  -> winning event: {winning[1]} [{winning[2]}, ts={winning[3]}]")
@@ -396,12 +405,13 @@ def main():
 
     # --- Self-check ---
     print("\n=== the trick ===")
-    print("  Every editor `|=` a packed event into a per-(entity, prop)")
-    print("  history set. Multi-editor writes never drop events (post-#50")
-    print("  deferred-mutation fold). Reads replay the timestamp-sorted")
-    print("  log -- pass a cutoff for time-travel, take the latest for")
-    print("  the current value. The schema is three commutative funcs;")
-    print("  GRC-20's op vocabulary lives entirely in the driver.")
+    print("  Every editor `|=` an event record into a per-(entity, prop)")
+    print("  set of <{.ts, .editor, .kind, .val}> (issue #90). Multi-editor")
+    print("  writes never drop events (post-#50 deferred-mutation fold).")
+    print("  Reads replay the timestamp-sorted log -- pass a cutoff for")
+    print("  time-travel, take the latest for the current value. The schema")
+    print("  is three commutative funcs; GRC-20's op vocabulary lives")
+    print("  entirely in the driver.")
 
     failures = []
     # Phase-1 invariant: every philosopher has name + born + died.
