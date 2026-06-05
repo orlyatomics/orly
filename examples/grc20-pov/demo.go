@@ -1,9 +1,10 @@
 // GRC-20-shaped knowledge graph on Orly, in Go.
 //
 // Mirrors demo.py: three phases (wiki biographical / stanford schools +
-// relations / concurrent race), same event records, same self-check.
-// Provided so readers can pick whichever language matches their
-// environment.
+// relations / concurrent race), the same typed event model, the same
+// self-check. The op is a sum type (op_t) and the replay -- latest-wins,
+// tombstones, formatting, time-travel -- runs in the engine (grc20.orly);
+// this driver streams typed events and reads resolved values.
 //
 // Run via the wrapper:
 //
@@ -17,6 +18,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -28,6 +30,10 @@ import (
 )
 
 const wsURL = "ws://127.0.0.1:8082/"
+
+// A .ts beyond any real event -- "now / all events" (mirrors grc20.orly's
+// `forever`).
+const forever int64 = math.MaxInt64
 
 type philosopher struct {
 	id         string
@@ -44,8 +50,7 @@ var philosophers = []philosopher{
 	{"epicurus", "Epicurus", -341, -270},
 }
 
-// Editor 2 ("stanford") adds the school of thought for each
-// philosopher. Map iteration order is randomised; the keys/values are
+// Editor 2 ("stanford") adds the school of thought for each philosopher,
 // listed as parallel slices so the ingest order is stable.
 var schoolEntities = []string{"socrates", "plato", "aristotle", "pythagoras", "heraclitus", "epicurus"}
 var schoolValues = []string{"Classical", "Platonism", "Peripateticism", "Pythagoreanism", "Heracliteanism", "Epicureanism"}
@@ -60,8 +65,8 @@ var relations = []relation{
 }
 
 // Phase-3 race: both editors concurrently rewrite the same attribute on
-// the same entity. Whoever's event lands at the later ms wins on read;
-// the loser stays in history as an alternative-source claim.
+// the same entity. The engine's `reduce` resolves the later .ts as the
+// current value; the loser stays in history as an alternative-source claim.
 const raceEntity = "pythagoras"
 const raceProp = "born"
 const raceWiki = -570
@@ -126,6 +131,15 @@ func sendInt(c *websocket.Conn, stmt string) int {
 	return int(n)
 }
 
+func sendBool(c *websocket.Conn, stmt string) bool {
+	raw := send(c, stmt)
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		die(fmt.Sprintf("expected bool result, got %s", raw))
+	}
+	return b
+}
+
 // orlyi serialises sets as JSON arrays.
 func sendStringSet(c *websocket.Conn, stmt string) []string {
 	raw := send(c, stmt)
@@ -140,63 +154,7 @@ func sendStringSet(c *websocket.Conn, stmt string) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------
-// Event records. Each event is a first-class
-//   <{.ts: int, .editor: str, .kind: str, .val: str}>
-// stored in a set OF records (issue #90). Kind ∈ {L text, I integer,
-// R relation target id, D tombstone}. No string packing -- the four
-// typed fields travel end to end.
-// ---------------------------------------------------------------------
-
 func nowMs() int64 { return time.Now().UnixNano() / 1_000_000 }
-
-type event struct {
-	ts           int64
-	editor, kind string
-	val          string
-}
-
-// Records arrive as JSON objects; ts may be a float (orlyi serialises
-// numbers as JSON floats), so decode it loosely and narrow to int64.
-type eventWire struct {
-	Ts     float64 `json:"ts"`
-	Editor string  `json:"editor"`
-	Kind   string  `json:"kind"`
-	Val    string  `json:"val"`
-}
-
-// eventLess is the total order over event records: ts first, then a
-// deterministic same-ms tiebreaker (editor, kind, val).
-func eventLess(a, b event) bool {
-	if a.ts != b.ts {
-		return a.ts < b.ts
-	}
-	if a.editor != b.editor {
-		return a.editor < b.editor
-	}
-	if a.kind != b.kind {
-		return a.kind < b.kind
-	}
-	return a.val < b.val
-}
-
-// orlyi serialises a set of records as a JSON array of objects.
-func sendEventSet(c *websocket.Conn, stmt string) []event {
-	raw := send(c, stmt)
-	if string(raw) == "null" {
-		return nil
-	}
-	var wire []eventWire
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		die(fmt.Sprintf("expected array-of-objects result, got %s", raw))
-	}
-	out := make([]event, 0, len(wire))
-	for _, w := range wire {
-		out = append(out, event{ts: int64(w.Ts), editor: w.Editor, kind: w.Kind, val: w.Val})
-	}
-	sort.Slice(out, func(i, j int) bool { return eventLess(out[i], out[j]) })
-	return out
-}
 
 func orlyStr(s string) string {
 	// Corpus has no quotes/backslashes, but be defensive.
@@ -206,34 +164,103 @@ func orlyStr(s string) string {
 }
 
 // ---------------------------------------------------------------------
-// Wrappers for the grc20 package's three commutative funcs.
+// Event provenance. The op is a typed variant resolved by the engine, so
+// the driver only ever reads the .ts / .editor fields off the raw log --
+// for per-editor analytics, never for replay.
 // ---------------------------------------------------------------------
 
-// appendOp unions one event record into the (entity, property) history.
-// The engine builds the <{.ts, .editor, .kind, .val}> record from these
-// typed args; ts is an int literal, the rest are string literals.
-func appendOp(c *websocket.Conn, pov, entity, prop string, ts int64, editor, kind, val string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 append_op <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .kind: %s, .val: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), orlyStr(kind), orlyStr(val)))
+type eventMeta struct {
+	ts     int64
+	editor string
 }
 
+type eventWire struct {
+	Ts     float64 `json:"ts"`
+	Editor string  `json:"editor"`
+}
+
+func histMeta(c *websocket.Conn, pov, entity, prop string) []eventMeta {
+	raw := send(c, fmt.Sprintf(
+		`try {%s} grc20 hist_for <{.entity: %s, .property: %s}>;`,
+		pov, orlyStr(entity), orlyStr(prop)))
+	if string(raw) == "null" {
+		return nil
+	}
+	var wire []eventWire
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		die(fmt.Sprintf("expected array-of-objects result, got %s", raw))
+	}
+	out := make([]eventMeta, 0, len(wire))
+	for _, w := range wire {
+		out = append(out, eventMeta{ts: int64(w.Ts), editor: w.Editor})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ts != out[j].ts {
+			return out[i].ts < out[j].ts
+		}
+		return out[i].editor < out[j].editor
+	})
+	return out
+}
+
+// ---------------------------------------------------------------------
+// Writes -- typed appends; the engine builds the op_t variant.
+// ---------------------------------------------------------------------
+
 func registerEntity(c *websocket.Conn, pov, entity string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 register_entity <{.entity: %s}>;`,
+	send(c, fmt.Sprintf(`try {%s} grc20 register_entity <{.entity: %s}>;`,
 		pov, orlyStr(entity)))
 }
 
 func registerProp(c *websocket.Conn, pov, entity, prop string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 register_prop <{.entity: %s, .property: %s}>;`,
+	send(c, fmt.Sprintf(`try {%s} grc20 register_prop <{.entity: %s, .property: %s}>;`,
 		pov, orlyStr(entity), orlyStr(prop)))
 }
 
-func histFor(c *websocket.Conn, pov, entity, prop string) []event {
-	return sendEventSet(c, fmt.Sprintf(
-		`try {%s} grc20 hist_for <{.entity: %s, .property: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop)))
+func createEntity(c *websocket.Conn, pov, entity string, ts int64, editor, kind string) {
+	send(c, fmt.Sprintf(
+		`try {%s} grc20 create_entity <{.entity: %s, .ts: %d, .editor: %s, .kind: %s}>;`,
+		pov, orlyStr(entity), ts, orlyStr(editor), orlyStr(kind)))
+}
+
+func deleteEntity(c *websocket.Conn, pov, entity string, ts int64, editor string) {
+	send(c, fmt.Sprintf(
+		`try {%s} grc20 delete_entity <{.entity: %s, .ts: %d, .editor: %s}>;`,
+		pov, orlyStr(entity), ts, orlyStr(editor)))
+}
+
+func setText(c *websocket.Conn, pov, entity, prop string, ts int64, editor, text string) {
+	send(c, fmt.Sprintf(
+		`try {%s} grc20 set_text <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .text: %s}>;`,
+		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), orlyStr(text)))
+}
+
+func setNumber(c *websocket.Conn, pov, entity, prop string, ts int64, editor string, n int) {
+	send(c, fmt.Sprintf(
+		`try {%s} grc20 set_number <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .n: %d}>;`,
+		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), n))
+}
+
+func setRelation(c *websocket.Conn, pov, entity, prop string, ts int64, editor, target string) {
+	send(c, fmt.Sprintf(
+		`try {%s} grc20 set_relation <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .target: %s}>;`,
+		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), orlyStr(target)))
+}
+
+// ---------------------------------------------------------------------
+// Reads -- the engine resolves the value; the driver enumerates.
+// ---------------------------------------------------------------------
+
+func displayAsOf(c *websocket.Conn, pov, entity, prop string, asOf int64) string {
+	return sendString(c, fmt.Sprintf(
+		`try {%s} grc20 display_as_of <{.entity: %s, .property: %s, .as_of: %d}>;`,
+		pov, orlyStr(entity), orlyStr(prop), asOf))
+}
+
+func entityLiveAsOf(c *websocket.Conn, pov, entity string, asOf int64) bool {
+	return sendBool(c, fmt.Sprintf(
+		`try {%s} grc20 entity_live_as_of <{.entity: %s, .as_of: %d}>;`,
+		pov, orlyStr(entity), asOf))
 }
 
 func allEntities(c *websocket.Conn, pov string) []string {
@@ -241,8 +268,7 @@ func allEntities(c *websocket.Conn, pov string) []string {
 }
 
 func propsOf(c *websocket.Conn, pov, entity string) []string {
-	return sendStringSet(c, fmt.Sprintf(
-		`try {%s} grc20 props_of <{.entity: %s}>;`,
+	return sendStringSet(c, fmt.Sprintf(`try {%s} grc20 props_of <{.entity: %s}>;`,
 		pov, orlyStr(entity)))
 }
 
@@ -251,91 +277,54 @@ func entityCount(c *websocket.Conn, pov string) int {
 }
 
 // ---------------------------------------------------------------------
-// GRC-20-style ops (the driver owns the op vocabulary; the engine just
-// stores events).
+// GRC-20-style ops. Thin: pick the typed setter + register the property.
 // ---------------------------------------------------------------------
 
 func opCreateEntity(c *websocket.Conn, pov, editor, entity, typeName string) {
-	registerEntity(c, pov, entity)
-	registerProp(c, pov, entity, "__type")
-	appendOp(c, pov, entity, "__type", nowMs(), editor, "L", typeName)
+	createEntity(c, pov, entity, nowMs(), editor, typeName)
 }
 
 func opSetText(c *websocket.Conn, pov, editor, entity, prop, text string) {
-	registerEntity(c, pov, entity)
 	registerProp(c, pov, entity, prop)
-	appendOp(c, pov, entity, prop, nowMs(), editor, "L", text)
+	setText(c, pov, entity, prop, nowMs(), editor, text)
 }
 
 func opSetInt(c *websocket.Conn, pov, editor, entity, prop string, n int) {
-	registerEntity(c, pov, entity)
 	registerProp(c, pov, entity, prop)
-	appendOp(c, pov, entity, prop, nowMs(), editor, "I", strconv.Itoa(n))
+	setNumber(c, pov, entity, prop, nowMs(), editor, n)
 }
 
 func opCreateRelation(c *websocket.Conn, pov, editor, entity, prop, target string) {
-	registerEntity(c, pov, entity)
 	registerEntity(c, pov, target)
 	registerProp(c, pov, entity, prop)
-	appendOp(c, pov, entity, prop, nowMs(), editor, "R", target)
+	setRelation(c, pov, entity, prop, nowMs(), editor, target)
 }
 
 // ---------------------------------------------------------------------
-// Replay: build the current state of every (entity, property) by
-// walking its history set in timestamp order. Optional `asOf` cutoff
-// drops events with ts > cutoff -- that's the time-travel knob.
+// Reconstruct: enumerate the graph at `asOf`, asking the engine for each
+// value. No latest-wins loop, no tombstone bookkeeping, no formatting --
+// that all lives in grc20.orly now.
 // ---------------------------------------------------------------------
 
-type fact struct {
-	kind, value, editor string
-	ts                  int64
-}
-
-// nil asOf means "no cutoff" -- pass &someInt64 to filter.
-func reconstruct(c *websocket.Conn, pov string, asOf *int64) map[string]map[string]fact {
-	out := map[string]map[string]fact{}
+// reconstruct returns entity -> {"__type": typeStr, prop: displayStr}.
+func reconstruct(c *websocket.Conn, pov string, asOf int64) map[string]map[string]string {
+	out := map[string]map[string]string{}
 	for _, eid := range allEntities(c, pov) {
-		deleted := false
-		state := map[string]fact{}
+		if !entityLiveAsOf(c, pov, eid, asOf) {
+			continue
+		}
+		state := map[string]string{"__type": displayAsOf(c, pov, eid, "__entity", asOf)}
 		for _, prop := range propsOf(c, pov, eid) {
-			entries := histFor(c, pov, eid, prop) // already sorted
-			if asOf != nil {
-				filtered := entries[:0]
-				for _, e := range entries {
-					if e.ts <= *asOf {
-						filtered = append(filtered, e)
-					}
-				}
-				entries = filtered
+			if v := displayAsOf(c, pov, eid, prop, asOf); v != "(absent)" {
+				state[prop] = v
 			}
-			if len(entries) == 0 {
-				continue
-			}
-			p := entries[len(entries)-1]
-			if prop == "__deleted" && p.kind == "D" {
-				deleted = true
-				break
-			}
-			state[prop] = fact{kind: p.kind, value: p.val, editor: p.editor, ts: p.ts}
 		}
-		if !deleted {
-			out[eid] = state
-		}
+		out[eid] = state
 	}
 	return out
 }
 
-func formatValue(f fact) string {
-	switch f.kind {
-	case "L", "I":
-		return f.value
-	case "R":
-		return "→ " + f.value
-	}
-	return "?" + f.kind + ":" + f.value
-}
-
-func printSnapshot(label string, state map[string]map[string]fact) {
+func printSnapshot(label string, state map[string]map[string]string) {
 	fmt.Printf("\n=== %s ===\n", label)
 	if len(state) == 0 {
 		fmt.Println("  (empty graph)")
@@ -348,9 +337,9 @@ func printSnapshot(label string, state map[string]map[string]fact) {
 	sort.Strings(eids)
 	for _, eid := range eids {
 		attrs := state[eid]
-		typeName := "?"
-		if t, ok := attrs["__type"]; ok {
-			typeName = t.value
+		typeName := attrs["__type"]
+		if typeName == "" {
+			typeName = "?"
 		}
 		var props []string
 		for p := range attrs {
@@ -361,7 +350,7 @@ func printSnapshot(label string, state map[string]map[string]fact) {
 		sort.Strings(props)
 		var bits []string
 		for _, p := range props {
-			bits = append(bits, fmt.Sprintf("%s=%s [%s]", p, formatValue(attrs[p]), attrs[p].editor))
+			bits = append(bits, fmt.Sprintf("%s=%s", p, attrs[p]))
 		}
 		body := strings.Join(bits, ", ")
 		if body == "" {
@@ -418,8 +407,9 @@ func editorialDiff(c *websocket.Conn, pov string) {
 	byEditor := map[string]int{}
 	entitiesByEditor := map[string]map[string]struct{}{}
 	for _, eid := range allEntities(c, pov) {
-		for _, prop := range propsOf(c, pov, eid) {
-			for _, ev := range histFor(c, pov, eid, prop) {
+		props := append(propsOf(c, pov, eid), "__entity")
+		for _, prop := range props {
+			for _, ev := range histMeta(c, pov, eid, prop) {
 				byEditor[ev.editor]++
 				if entitiesByEditor[ev.editor] == nil {
 					entitiesByEditor[ev.editor] = map[string]struct{}{}
@@ -473,7 +463,7 @@ func main() {
 	fmt.Printf("  %d entities registered in %.2fs\n",
 		entityCount(boot, pov), time.Since(t0).Seconds())
 	printSnapshot("snapshot 1: end of phase 1 (wiki only)",
-		reconstruct(boot, pov, &ts1))
+		reconstruct(boot, pov, ts1))
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -484,7 +474,7 @@ func main() {
 	ts2 := nowMs()
 	fmt.Printf("  done in %.2fs\n", time.Since(t0).Seconds())
 	printSnapshot("snapshot 2: end of phase 2 (wiki + stanford)",
-		reconstruct(boot, pov, &ts2))
+		reconstruct(boot, pov, ts2))
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -495,64 +485,60 @@ func main() {
 	fmt.Printf("  stanford -> %d\n", raceStanford)
 	phase3Race(pov)
 	ts3 := nowMs()
-	raceEntries := histFor(boot, pov, raceEntity, raceProp)
+	raceEvents := histMeta(boot, pov, raceEntity, raceProp)
 	fmt.Printf("  history for %s.%s after race (%d events, ts-sorted):\n",
-		raceEntity, raceProp, len(raceEntries))
-	for _, ev := range raceEntries {
-		fmt.Printf("    %d  %-10s %s  %s\n", ev.ts, ev.editor, ev.kind, ev.val)
+		raceEntity, raceProp, len(raceEvents))
+	for _, ev := range raceEvents {
+		fmt.Printf("    %d  %s\n", ev.ts, ev.editor)
 	}
-	finalState := reconstruct(boot, pov, &ts3)
-	winning := finalState[raceEntity][raceProp]
-	fmt.Printf("  -> winning event: %s [%s, ts=%d]\n",
-		winning.value, winning.editor, winning.ts)
+	winning := displayAsOf(boot, pov, raceEntity, raceProp, ts3)
+	fmt.Printf("  -> engine-resolved current value: %s.%s = %s\n",
+		raceEntity, raceProp, winning)
 
 	// --- Final state + editorial diff ---
-	printSnapshot("snapshot 3: final state", finalState)
+	printSnapshot("snapshot 3: final state", reconstruct(boot, pov, ts3))
 	editorialDiff(boot, pov)
 
 	fmt.Println("\n=== the trick ===")
-	fmt.Println("  Every editor |= an event record into a per-(entity, prop)")
-	fmt.Println("  set of <{.ts, .editor, .kind, .val}> (issue #90). Multi-editor")
-	fmt.Println("  writes never drop events (post-#50 deferred-mutation fold).")
-	fmt.Println("  Reads replay the timestamp-sorted log -- pass a cutoff for")
-	fmt.Println("  time-travel, take the latest for the current value. The schema")
-	fmt.Println("  is three commutative funcs; GRC-20's op vocabulary lives")
-	fmt.Println("  entirely in the driver.")
+	fmt.Println("  Each op is a typed variant")
+	fmt.Println("    op_t is <| Text(str) | Number(int) | Relation(str) | Deleted |>")
+	fmt.Println("  unioned into a per-(entity, prop) set of <{.ts,.editor,.op}>")
+	fmt.Println("  records (storable variants, #96). Multi-editor |= never")
+	fmt.Println("  drops events (post-#50 fold). The REPLAY -- sort by .ts,")
+	fmt.Println("  reduce to the latest, when over the op to format/tombstone,")
+	fmt.Println("  filtered by an as_of cutoff for time-travel -- runs in the")
+	fmt.Println("  engine. This driver just enumerates and reads.")
 
 	// --- Self-check (mirrors demo.py) ---
 	var failures []string
-	s1 := reconstruct(boot, pov, &ts1)
+	s1 := reconstruct(boot, pov, ts1)
 	for _, p := range philosophers {
 		e := s1[p.id]
-		if name, ok := e["name"]; !ok || name.kind != "L" || name.value != p.name {
-			failures = append(failures, fmt.Sprintf("snapshot 1: %s.name = %+v", p.id, name))
+		if e["name"] != p.name {
+			failures = append(failures, fmt.Sprintf("snapshot 1: %s.name = %q", p.id, e["name"]))
 		}
-		if born, ok := e["born"]; !ok || born.kind != "I" {
-			failures = append(failures, fmt.Sprintf("snapshot 1: %s.born missing/wrong kind", p.id))
-		} else if n, err := strconv.Atoi(born.value); err != nil || n != p.born {
-			failures = append(failures, fmt.Sprintf("snapshot 1: %s.born = %s (want %d)", p.id, born.value, p.born))
+		if e["born"] != strconv.Itoa(p.born) {
+			failures = append(failures, fmt.Sprintf("snapshot 1: %s.born = %q (want %d)", p.id, e["born"], p.born))
 		}
 		if _, hasSchool := e["school"]; hasSchool {
 			failures = append(failures, fmt.Sprintf("snapshot 1: %s.school leaked from phase 2", p.id))
 		}
 	}
-	s2 := reconstruct(boot, pov, &ts2)
+	s2 := reconstruct(boot, pov, ts2)
 	for i, eid := range schoolEntities {
-		e := s2[eid]
-		if school, ok := e["school"]; !ok || school.kind != "L" || school.value != schoolValues[i] {
-			failures = append(failures, fmt.Sprintf("snapshot 2: %s.school = %+v", eid, school))
+		if s2[eid]["school"] != schoolValues[i] {
+			failures = append(failures, fmt.Sprintf("snapshot 2: %s.school = %q", eid, s2[eid]["school"]))
 		}
 	}
 	for _, r := range relations {
-		e := s2[r.subject]
-		if rel, ok := e[r.prop]; !ok || rel.kind != "R" || rel.value != r.target {
-			failures = append(failures, fmt.Sprintf("snapshot 2: %s.%s = %+v", r.subject, r.prop, rel))
+		if got := s2[r.subject][r.prop]; got != "-> "+r.target {
+			failures = append(failures, fmt.Sprintf("snapshot 2: %s.%s = %q", r.subject, r.prop, got))
 		}
 	}
-	if len(raceEntries) < 2 {
+	if len(raceEvents) < 2 {
 		failures = append(failures,
 			fmt.Sprintf("phase 3: only %d events in race history -- expected both writers to land",
-				len(raceEntries)))
+				len(raceEvents)))
 	}
 
 	send(boot, "exit;")
@@ -565,5 +551,5 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("\n=== self-check OK ===")
-	fmt.Println("  verified 3 snapshot invariants + multi-editor race")
+	fmt.Println("  verified 3 time-travel snapshot invariants + multi-editor race")
 }

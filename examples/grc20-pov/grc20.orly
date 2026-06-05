@@ -1,61 +1,73 @@
 /* <examples/grc20-pov/grc20.orly>
 
    GRC-20-shaped knowledge graph as an append-only event log, backed by
-   Orly's commutative set-union field call. Multiple editors stream ops
-   into the same shared POV with no coordination; the read path
-   reconstructs the current state (or any historical state) by replaying
-   the op log in timestamp order.
+   Orly's commutative set-union field call -- with the replay folded
+   *inside the engine* via sum types (#95), set-of-variant storage (#96),
+   `reduce`, and the exhaustive `when` match.
 
    GRC-20 is a property-graph standard from Geo / The Graph
-   (https://github.com/geobrowser/grc-20). Entities have typed
-   properties (TEXT, INTEGER, ...) and directed relations. The spec
-   exposes ops like CreateEntity / UpdateEntity / CreateRelation /
-   DeleteEntity, all event-sourced -- which is exactly the shape Orly
-   stores commutatively.
+   (https://github.com/geobrowser/grc-20). Entities have typed properties
+   (TEXT, INTEGER, ...) and directed relations. The spec exposes ops like
+   CreateEntity / SetProperty / CreateRelation / DeleteEntity, all
+   event-sourced -- exactly the shape Orly stores commutatively.
 
-   This package gives the engine three operations:
+   ## Typed events (the #95 / #96 payoff)
 
-     - append_op    : union one event into a (entity, property) history
-     - list_entities: enumerate every entity ever touched
-     - list_props   : enumerate every property ever touched on an entity
+   An op is a tagged union -- one of four typed shapes -- not a
+   string-packed `(kind, val)` pair:
 
-   Plus their read-side counterparts (hist_for, all_entities, props_of).
+     op_t  is  <| Text(str) | Number(int) | Relation(str) | Deleted |>
 
-   Each event is a first-class record:
+   and an event wraps an op with its provenance:
 
-     <{.ts: int, .editor: str, .kind: str, .val: str}>
+     evt_t is  <{.ts: int, .editor: str, .op: op_t}>
 
-   where ts is a millisecond timestamp, editor is the source name, kind
-   is the op class (one of "L" text literal, "I" integer literal, "R"
-   relation target id, "D" tombstone), and val is the literal text or the
-   target entity id. The history set is a set OF these records, so the
-   structure travels end to end -- the driver hands the engine four typed
-   fields and reads back four typed fields, no string packing/unpacking.
-   Sorting the set by .ts gives chronological order; driver-side replay
-   then takes "latest write wins per property" with tombstones, the same
-   way GRC-20 itself does.
+   The history of one (entity, property) pair is a *set of these
+   variant-bearing records* -- which is only storable because of #96
+   (a set of differently-tagged variants is homogeneous on disk). The op
+   travels end to end fully typed: the driver hands the engine a typed
+   value and the engine hands back a resolved typed value -- no
+   kind/val string packing, no driver-side `if kind == "L"` dispatch.
 
-   Why driver-side replay rather than an orlyscript fold: GRC-20 ops are
-   heterogeneous (CreateEntity / SetProperty / CreateRelation /
-   DeleteEntity), and the replay is conditional on the event kind. Set
-   union over event records keeps the schema simple and gives the same
-   "version axis in the keyspace" guarantee as
-   examples/wikipedia-categories/: any (entity, property) pair gets one
-   set, every op is one immutable record, the past is structurally
-   frozen.
+   ## In-engine replay (the capstone)
 
-   Schema:
+   The current value of a property is the replay of its event log:
+   latest-timestamp write wins, a `Deleted` op tombstones it. That replay
+   used to live in the driver (Python/Go). It now lives in orlyscript:
 
-     <['hist', entity, property]>::({<{.ts, .editor, .kind, .val}>})
-                                            events for one (e, p) pair
-     <['entities']>::({str})                set of every entity id
-     <['props',  entity]>::({str})          set of every property id ever
-                                            written on this entity
+     resolve_as_of = filter the (e, p) history to .ts <= as_of, sort by
+                     .ts, `reduce` to the last (== latest) event, take its
+                     .op                                       -> op_t
+     display_as_of = `when` over that op_t -> a formatted string
+     present_as_of = `when` over that op_t -> a liveness bool
 
-   Concurrent editors writing to overlapping entities/properties all
-   land their events; the post-#50 deferred-mutation + read-time-fold
-   mechanism is what makes `|=` from multiple WS sessions safe. The
-   storable-record-set support is issue #90.
+   `reduce`'s "exactly one start" seed is a `Deleted` sentinel, so an empty
+   (or fully-filtered) history resolves to absent for free. The `as_of`
+   cutoff is the time-travel knob -- pass `forever` (a .ts beyond any real
+   event) for the live value, or any past timestamp to replay the graph as
+   it stood then; the past is structurally frozen because every op is an
+   immutable set member. `resolve` / `display` / `is_present` are the
+   `as_of: forever` convenience forms.
+
+   Entity existence reuses the same machinery: CreateEntity sets a
+   non-Deleted marker on the reserved `"__entity"` property, DeleteEntity
+   sets `Deleted`, and `entity_live` is just `is_present(entity,
+   "__entity")` -- a never-created entity reads absent (the seed), a
+   deleted one reads `Deleted`, a live one reads its marker.
+
+   ## Schema
+
+     <['hist', entity, property]>::({evt_t})   events for one (e, p) pair
+     <['entities']>::({str})                   set of every entity id
+     <['props',  entity]>::({str})             property ids touched on it
+
+   Concurrent editors writing overlapping entities/properties all land
+   their events; the post-#50 deferred-mutation + read-time-fold mechanism
+   makes `|=` from independent WS sessions safe. Storable record/variant
+   sets are #90 / #96. The "version axis in the keyspace" guarantee
+   (cf. examples/wikipedia-categories/) holds: every op is one immutable
+   record, the past is structurally frozen, any historical state is a
+   replay over a `.ts` bound.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -73,31 +85,183 @@
 
 package #1;
 
+/* ---------- typed event model ---------- */
+
+/* One GRC-20 op, as a tagged union. Text/Number/Relation carry their
+   literal payload; Deleted is the tombstone (a unit arm). Type aliases are
+   usable wherever a *type* is expected (reads, `given`, `as`); constructing
+   a value still uses the `<| ... |>.Tag(v)` literal form. */
+op_t  is <| Text(str) | Number(int) | Relation(str) | Deleted |>;
+
+/* One event: an op plus when (ms timestamp) and who (editor). */
+evt_t is <{.ts: int, .editor: str, .op: op_t}>;
+
 /* ---------- per-(entity, property) event history ---------- */
 
-hist_for = (((*<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>})) if *<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>}?) is known else (empty {<{.ts: int, .editor: str, .kind: str, .val: str}>}))) where {
+hist_for = (((*<['hist', entity, property]>::({evt_t})) if *<['hist', entity, property]>::({evt_t}?) is known else (empty {evt_t}))) where {
   entity   = given::(str);
   property = given::(str);
 };
 
-/* Append one event record into the (entity, property) history. */
-append_op = (((1) effecting {
-  *<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>}) |= {<{.ts: ts, .editor: editor, .kind: kind, .val: val}>};
-} if *<['hist', entity, property]>::({<{.ts: int, .editor: str, .kind: str, .val: str}>}?) is known else (0) effecting {
-  new <['hist', entity, property]> <- {<{.ts: ts, .editor: editor, .kind: kind, .val: val}>};
+/* ---------- in-engine replay: resolve / display / presence ---------- */
+
+/* A .ts beyond any real (millisecond) event -- "now / all events". Pass it
+   as `as_of` to read the live value; pass a past timestamp to time-travel. */
+forever = 9223372036854775807;
+
+/* Replay one (entity, property) history as of a timestamp: keep events with
+   .ts <= as_of, sort by .ts, `reduce` to the last (latest) event, take its
+   .op. The seed is a Deleted sentinel at .ts -1, so an empty/fully-filtered
+   history resolves to Deleted == absent (and -1 never beats a real ms
+   timestamp). This is the latest-write-wins replay that used to live in the
+   driver. */
+resolve_as_of = (((**((((**hist_for(.entity: entity, .property: property)) if (that.ts <= as_of)) as [evt_t]) sorted_by lhs.ts < rhs.ts)) reduce (start seed if false else that)).op) where {
+  seed     = <{.ts: -1, .editor: "", .op: <| Text(str) | Number(int) | Relation(str) | Deleted |>.Deleted}>;
+  entity   = given::(str);
+  property = given::(str);
+  as_of    = given::(int);
+};
+
+/* The resolved op as of a timestamp, formatted for display -- the GRC-20
+   `format_value` moved in-engine. `when` is exhaustive over op_t's arms. */
+display_as_of = ((op) when {
+  Text:     op.Text;
+  Number:   (op.Number) as str;
+  Relation: "-> " + op.Relation;
+  Deleted:  "(absent)";
+}) where {
+  op       = resolve_as_of(.entity: entity, .property: property, .as_of: as_of);
+  entity   = given::(str);
+  property = given::(str);
+  as_of    = given::(int);
+};
+
+/* Is the property set as of a timestamp (latest op is not a tombstone)? */
+present_as_of = ((op) when {
+  Text:     true;
+  Number:   true;
+  Relation: true;
+  Deleted:  false;
+}) where {
+  op       = resolve_as_of(.entity: entity, .property: property, .as_of: as_of);
+  entity   = given::(str);
+  property = given::(str);
+  as_of    = given::(int);
+};
+
+/* Current-value convenience forms (as_of: forever). */
+resolve = (resolve_as_of(.entity: entity, .property: property, .as_of: forever)) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+display = (display_as_of(.entity: entity, .property: property, .as_of: forever)) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+is_present = (present_as_of(.entity: entity, .property: property, .as_of: forever)) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+/* ---------- property ops (typed appends) ---------- */
+
+/* Each set_* / clear_prop unions one typed event into the (e, p) history,
+   creating the set on first write. The event is built once in `where` and
+   referenced from both effect branches. */
+
+set_text = (((1) effecting {
+  *<['hist', entity, property]>::({evt_t}) |= {ev};
+} if *<['hist', entity, property]>::({evt_t}?) is known else (0) effecting {
+  new <['hist', entity, property]> <- {ev};
 })) where {
+  ev       = <{.ts: ts, .editor: editor, .op: <| Text(str) | Number(int) | Relation(str) | Deleted |>.Text(text)}>;
   entity   = given::(str);
   property = given::(str);
   ts       = given::(int);
   editor   = given::(str);
-  kind     = given::(str);
-  val      = given::(str);
+  text     = given::(str);
+};
+
+set_number = (((1) effecting {
+  *<['hist', entity, property]>::({evt_t}) |= {ev};
+} if *<['hist', entity, property]>::({evt_t}?) is known else (0) effecting {
+  new <['hist', entity, property]> <- {ev};
+})) where {
+  ev       = <{.ts: ts, .editor: editor, .op: <| Text(str) | Number(int) | Relation(str) | Deleted |>.Number(n)}>;
+  entity   = given::(str);
+  property = given::(str);
+  ts       = given::(int);
+  editor   = given::(str);
+  n        = given::(int);
+};
+
+set_relation = (((1) effecting {
+  *<['hist', entity, property]>::({evt_t}) |= {ev};
+} if *<['hist', entity, property]>::({evt_t}?) is known else (0) effecting {
+  new <['hist', entity, property]> <- {ev};
+})) where {
+  ev       = <{.ts: ts, .editor: editor, .op: <| Text(str) | Number(int) | Relation(str) | Deleted |>.Relation(target)}>;
+  entity   = given::(str);
+  property = given::(str);
+  ts       = given::(int);
+  editor   = given::(str);
+  target   = given::(str);
+};
+
+clear_prop = (((1) effecting {
+  *<['hist', entity, property]>::({evt_t}) |= {ev};
+} if *<['hist', entity, property]>::({evt_t}?) is known else (0) effecting {
+  new <['hist', entity, property]> <- {ev};
+})) where {
+  ev       = <{.ts: ts, .editor: editor, .op: <| Text(str) | Number(int) | Relation(str) | Deleted |>.Deleted}>;
+  entity   = given::(str);
+  property = given::(str);
+  ts       = given::(int);
+  editor   = given::(str);
+};
+
+/* ---------- entity lifecycle ---------- */
+
+/* CreateEntity: mark the reserved "__entity" property with a non-Deleted
+   op carrying the type name, and register the id in the catalogue. */
+create_entity = (((set_text(.entity: entity, .property: "__entity", .ts: ts, .editor: editor, .text: kind)) effecting {
+  *<['entities']>::({str}) |= {entity};
+} if *<['entities']>::({str}?) is known else (set_text(.entity: entity, .property: "__entity", .ts: ts, .editor: editor, .text: kind)) effecting {
+  new <['entities']> <- {entity};
+})) where {
+  entity = given::(str);
+  ts     = given::(int);
+  editor = given::(str);
+  kind   = given::(str);
+};
+
+/* DeleteEntity: tombstone the "__entity" marker. */
+delete_entity = (clear_prop(.entity: entity, .property: "__entity", .ts: ts, .editor: editor)) where {
+  entity = given::(str);
+  ts     = given::(int);
+  editor = given::(str);
+};
+
+/* An entity is live (as of a timestamp) iff its "__entity" marker resolves
+   to a non-Deleted op (never created -> absent -> not live; deleted ->
+   Deleted -> not live). */
+entity_live_as_of = (present_as_of(.entity: entity, .property: "__entity", .as_of: as_of)) where {
+  entity = given::(str);
+  as_of  = given::(int);
+};
+
+entity_live = (entity_live_as_of(.entity: entity, .as_of: forever)) where {
+  entity = given::(str);
 };
 
 /* ---------- catalogue: entities + their property set ---------- */
 
 all_entities = (((*<['entities']>::({str})) if *<['entities']>::({str}?) is known else (empty {str})));
 
+/* Bare catalogue add -- used for relation targets that may be named before
+   they are created. CreateEntity (above) registers as a side effect too. */
 register_entity = (((1) effecting {
   *<['entities']>::({str}) |= {entity};
 } if *<['entities']>::({str}?) is known else (0) effecting {
@@ -131,51 +295,94 @@ entity_count = (length_of all_entities);
 /* ---------- inline tests ---------- */
 
 test {
-  /* Empty keyspace reads as identity. */
+  /* Empty keyspace reads as identity / absent. */
   t1: all_entities == (empty {str});
   t2: props_of(.entity: "socrates") == (empty {str});
-  t3: hist_for(.entity: "socrates", .property: "name")
-        == (empty {<{.ts: int, .editor: str, .kind: str, .val: str}>});
+  t3: hist_for(.entity: "socrates", .property: "name") == (empty {evt_t});
+  t4: display(.entity: "socrates", .property: "name") == "(absent)";
+  t5: is_present(.entity: "socrates", .property: "name") == false;
+  t6: entity_live(.entity: "socrates") == false;
 
-  /* Append one event creates the set with that record. */
-  t4: append_op(.entity: "socrates", .property: "name",
-                .ts: 1, .editor: "wiki", .kind: "L", .val: "Socrates") == 0 {
-    t5: hist_for(.entity: "socrates", .property: "name")
-          == {<{.ts: 1, .editor: "wiki", .kind: "L", .val: "Socrates"}>};
-    t6: event_count(.entity: "socrates", .property: "name") == 1;
+  /* One text op sets the value; replay resolves it. */
+  t7: set_text(.entity: "socrates", .property: "name", .ts: 1, .editor: "wiki", .text: "Socrates") == 0 {
+    t8: hist_for(.entity: "socrates", .property: "name")
+          == {<{.ts: 1, .editor: "wiki", .op: <| Text(str) | Number(int) | Relation(str) | Deleted |>.Text("Socrates")}>};
+    t9: display(.entity: "socrates", .property: "name") == "Socrates";
+    t10: is_present(.entity: "socrates", .property: "name") == true;
+    t11: event_count(.entity: "socrates", .property: "name") == 1;
 
-    /* Second event from a different editor unions in. */
-    t7: append_op(.entity: "socrates", .property: "name",
-                  .ts: 2, .editor: "stanford", .kind: "L",
-                  .val: "Socrates of Athens") == 1 {
-      t8: hist_for(.entity: "socrates", .property: "name")
-            == {<{.ts: 1, .editor: "wiki", .kind: "L", .val: "Socrates"}>,
-                <{.ts: 2, .editor: "stanford", .kind: "L",
-                  .val: "Socrates of Athens"}>};
-      t9: event_count(.entity: "socrates", .property: "name") == 2;
+    /* A later op from another editor wins (latest .ts). */
+    t12: set_text(.entity: "socrates", .property: "name", .ts: 3, .editor: "sep", .text: "Socrates of Athens") == 1 {
+      t13: display(.entity: "socrates", .property: "name") == "Socrates of Athens";
+      t14: event_count(.entity: "socrates", .property: "name") == 2;
 
-      /* Idempotent: same record re-added doesn't grow the set. */
-      t10: append_op(.entity: "socrates", .property: "name",
-                     .ts: 1, .editor: "wiki", .kind: "L",
-                     .val: "Socrates") == 1 {
-        t11: event_count(.entity: "socrates", .property: "name") == 2;
+      /* An *earlier* op (lower .ts) does not change the resolved value. */
+      t15: set_text(.entity: "socrates", .property: "name", .ts: 2, .editor: "late", .text: "stale") == 1 {
+        t16: display(.entity: "socrates", .property: "name") == "Socrates of Athens";
+        t17: event_count(.entity: "socrates", .property: "name") == 3;
+
+        /* Idempotent: re-adding an identical event doesn't grow the set. */
+        t18: set_text(.entity: "socrates", .property: "name", .ts: 1, .editor: "wiki", .text: "Socrates") == 1 {
+          t19: event_count(.entity: "socrates", .property: "name") == 3;
+        };
+
+        /* A tombstone with the highest .ts clears the property. */
+        t20: clear_prop(.entity: "socrates", .property: "name", .ts: 9, .editor: "mod") == 1 {
+          t21: display(.entity: "socrates", .property: "name") == "(absent)";
+          t22: is_present(.entity: "socrates", .property: "name") == false;
+        };
       };
     };
   };
 
-  /* Catalogue ops are independent from history ops. */
-  t12: register_entity(.entity: "plato") == 0 {
-    t13: register_entity(.entity: "aristotle") == 1 {
-      t14: all_entities == {"aristotle", "plato"};
-      t15: entity_count == 2;
+  /* Heterogeneous ops on different properties of one entity. (Effects from
+     the t7 block above have rolled back, so these (e, p) pairs are fresh
+     and the first write to each returns 0.) */
+  t23: set_number(.entity: "socrates", .property: "born", .ts: 1, .editor: "wiki", .n: -470) == 0 {
+    t24: display(.entity: "socrates", .property: "born") == "-470";
+    t25: set_relation(.entity: "socrates", .property: "student", .ts: 1, .editor: "wiki", .target: "plato") == 0 {
+      t26: display(.entity: "socrates", .property: "student") == "-> plato";
+      /* The text property from the block above is unaffected. */
+      t27: display(.entity: "socrates", .property: "name") == "(absent)";
+    };
+  };
 
-      t16: register_prop(.entity: "plato", .property: "born") == 0 {
-        t17: register_prop(.entity: "plato", .property: "school") == 1 {
-          t18: props_of(.entity: "plato") == {"born", "school"};
-          /* Different entity's props don't bleed. */
-          t19: props_of(.entity: "aristotle") == (empty {str});
-        };
-      };
+  /* Entity lifecycle: create marks it live, delete tombstones it. */
+  t28: create_entity(.entity: "plato", .ts: 1, .editor: "wiki", .kind: "Person") == 0 {
+    t29: entity_live(.entity: "plato") == true;
+    t30: all_entities == {"plato"};
+    t31: entity_count == 1;
+    t32: delete_entity(.entity: "plato", .ts: 5, .editor: "mod") == 1 {
+      t33: entity_live(.entity: "plato") == false;
+      /* Still in the catalogue -- the log is append-only; liveness is a replay. */
+      t34: all_entities == {"plato"};
+    };
+  };
+
+  /* Time-travel: the same key replays to different values at different
+     `as_of` cutoffs, and `resolve` returns the typed op variant. */
+  t39: set_text(.entity: "h", .property: "name", .ts: 10, .editor: "a", .text: "old") == 0 {
+    t40: set_text(.entity: "h", .property: "name", .ts: 20, .editor: "b", .text: "new") == 1 {
+      /* live value is the latest */
+      t41: display(.entity: "h", .property: "name") == "new";
+      /* as of ts 15, only the first op is in scope */
+      t42: display_as_of(.entity: "h", .property: "name", .as_of: 15) == "old";
+      /* as of ts 5, nothing is in scope yet -> absent */
+      t43: present_as_of(.entity: "h", .property: "name", .as_of: 5) == false;
+      /* resolve hands back the typed variant, not a string */
+      t44: resolve(.entity: "h", .property: "name")
+             == <| Text(str) | Number(int) | Relation(str) | Deleted |>.Text("new");
+      t45: resolve_as_of(.entity: "h", .property: "name", .as_of: 15)
+             == <| Text(str) | Number(int) | Relation(str) | Deleted |>.Text("old");
+    };
+  };
+
+  /* Property catalogue is independent of history ops. */
+  t35: register_prop(.entity: "aristotle", .property: "born") == 0 {
+    t36: register_prop(.entity: "aristotle", .property: "school") == 1 {
+      t37: props_of(.entity: "aristotle") == {"born", "school"};
+      /* A different entity's props don't bleed. */
+      t38: props_of(.entity: "plato") == (empty {str});
     };
   };
 };
