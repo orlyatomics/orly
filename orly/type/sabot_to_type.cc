@@ -18,6 +18,11 @@
 
 #include <orly/type/sabot_to_type.h>
 
+#include <orly/type/obj.h>
+#include <orly/type/opt.h>
+#include <orly/type/util.h>
+#include <orly/type/variant.h>
+
 #include <cassert>
 
 using namespace std;
@@ -79,6 +84,24 @@ void Type::TToTypeVisitor::operator()(const Sabot::Type::TRecord &type) const   
   for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
     Sabot::Type::TAny::TWrapper(pin->NewElem(elem_idx, field_name, type_alloc))->Accept(*this);
     obj_elem_map[field_name] = Type;
+  }
+  /* A fixed-shape variant record (#96) carries the sentinel `$which` field
+     (un-expressible in orlyscript, so this can never misfire on a user
+     record). Convert it back to the variant TYPE -- `$which` plus one
+     `payload?` field per arm -> { Tag(payload) | ... } -- the dual of the
+     value reconstruction in orly/var/sabot_to_var.cc. This is what makes a
+     SET of differently-tagged variants report a single, homogeneous variant
+     element type (orly/var/set.cc) that matches the Var::TVariant values. */
+  if (obj_elem_map.find("$which") != obj_elem_map.end()) {
+    Type::TVariantElems arm_map;
+    for (const auto &field : obj_elem_map) {
+      if (field.first == "$which") {
+        continue;
+      }
+      arm_map[field.first] = field.second.As<Type::TOpt>()->GetElem();
+    }
+    Type = TVariant::Get(arm_map);
+    return;
   }
   Type = TObj::Get(obj_elem_map);
 }

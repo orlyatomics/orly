@@ -5,25 +5,21 @@
    payload type. Interned by the full `TVariantElems` map, exactly as
    `TObj` (`orly/type/obj.h`) is interned by its field map.
 
-   At the storage layer a variant value is "a record that has exactly
-   one of N possible single-key shapes" (see issue #95): `Integer(-384)`
-   round-trips as the single-field record `<{.Integer: -384}>`. So the
-   payload-type map mirrors a record's field-type map.
+   On disk a variant value serializes to a fixed-shape record (issue #96):
+   `Integer(-384)` of `{ Integer(int) | Deleted }` stores as
+   `<{.$which:1, .Deleted:<empty-opt>, .Integer:-384?}>` -- a `$which`
+   discriminant plus one optional payload field per arm. The payload-type
+   map here therefore mirrors a record's field-type map, and the variant
+   type maps to that record type in orly/type/new_sabot.cc (reversed in
+   orly/type/sabot_to_type.cc via the `$which` sentinel field).
 
    Representation choice for a tag-only variant (e.g. `Deleted`): its
    payload type is the empty object `TObj::Get({})` (the unit type).
    This reuses the existing empty-record representation -- the same
    `EnsureEmptyObject` notion used elsewhere -- rather than inventing a
-   new void type, and keeps the single-key-record storage reuse exact
-   (`Deleted` stores as `<{.Deleted: <{}>}>`). Constructors of `TVariant`
-   take whatever payload type the caller supplies; the empty-object
-   convention is purely a documented contract for the language layer
-   (Phase 3) and is not enforced here.
-
-   This type is currently purely additive: no orlyscript surface
-   produces a `TVariant` yet (that is Phase 3 of #95). It exists so the
-   type-layer visitor matrices can be threaded through ahead of the
-   language work.
+   new void type. Constructors of `TVariant` take whatever payload type the
+   caller supplies; the empty-object convention is purely a documented
+   contract for the language layer and is not enforced here.
 
    Copyright 2010-2026 Atomic Kismet Company
 

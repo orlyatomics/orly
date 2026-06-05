@@ -24,7 +24,11 @@
 #include <orly/native/state.h>
 #include <orly/sabot/state.h>
 #include <orly/sabot/type.h>
+#include <orly/type/int.h>
 #include <orly/type/new_sabot.h>
+#include <orly/type/obj.h>
+#include <orly/type/opt.h>
+#include <orly/type/variant.h>
 #include <orly/var.h>
 
 namespace Orly {
@@ -779,18 +783,52 @@ namespace Orly {
           std::sort(Elems.begin(), Elems.end());
         }
 
-        /* A variant value serializes byte-identically to a single-key
-           record (see issue #95 / orly/var/variant.h): Integer(-384) is
-           stored exactly as <{.Integer: -384}>. We therefore reuse this
-           record-shaped sabot, giving it the single-field *record* type
-           {tag: payload-type} (not a Type::TVariant -- the stored bytes
-           carry no variant discriminator; the call-site ::(T) annotation
-           drives read-side reconstruction). */
-        TObj(const Var::TVariant *var)
-            : Type(Orly::Type::TObj::Get(
-                  std::map<std::string, Orly::Type::TType>{
-                      {var->GetTag(), var->GetVal().GetType()}})) {
-          Elems.push_back(std::make_pair(var->GetTag(), var->GetVal()));
+        /* A variant value serializes as a FIXED-SHAPE record (issue #96):
+           every value of one declared variant gets the SAME record type
+
+             <{ .$which: int, .Tag0: payload0?, .Tag1: payload1?, ... }>
+
+           -- a discriminant `$which` plus one optional payload field per
+           arm. Only the active arm's optional is set; the others are empty
+           optionals of their declared payload type. `$which` holds the
+           active arm's index in asciibetical tag order (matching the native
+           `Which` and the Var-level tag ordering).
+
+           This is what makes a SET of differently-tagged variants
+           homogeneous on disk: they all share one record type. The sentinel
+           field name `$which` is un-expressible in orlyscript (names must
+           match [_a-zA-Z][_a-zA-Z0-9]*), so it can never collide with a user
+           record field or a variant tag -- which lets the Var read path
+           (orly/var/sabot_to_var.cc) recognize a variant record without the
+           call-site ::(T) annotation. Reuses Type::TObj / Sabot::State::TRecord
+           rather than a dedicated variant sabot kind (see issue #96).
+
+           A tag-only arm (e.g. `Deleted`) carries the empty object as its
+           payload type and value, so its active optional is `Opt(<{}>)` --
+           no empty-object trap (#90), and inactive optionals round-trip from
+           their type pin (the empty-optional path, see #96 Phase 0). */
+        TObj(const Var::TVariant *var) {
+          const auto *variant_type = var->GetType().As<Orly::Type::TVariant>();
+          const auto &arms = variant_type->GetElems();
+          std::map<std::string, Orly::Type::TType> rec_type;
+          rec_type["$which"] = Orly::Type::TInt::Get();
+          size_t which = 0, idx = 0;
+          for (const auto &arm: arms) {
+            if (arm.first == var->GetTag()) {
+              which = idx;
+            }
+            rec_type[arm.first] = Orly::Type::TOpt::Get(arm.second);
+            Rt::TOpt<Var::TVar> payload_opt;
+            if (arm.first == var->GetTag()) {
+              payload_opt = Rt::TOpt<Var::TVar>(var->GetVal());
+            }
+            Elems.push_back(std::make_pair(arm.first, Var::TVar::Opt(payload_opt, arm.second)));
+            ++idx;
+          }
+          Elems.push_back(std::make_pair(std::string("$which"),
+                                         Var::TVar(static_cast<int64_t>(which))));
+          Type = Orly::Type::TObj::Get(rec_type);
+          std::sort(Elems.begin(), Elems.end());
         }
 
         /* See Sabot::State::TRecord. */

@@ -1037,6 +1037,9 @@ TVar::operator bool() const {
     virtual void operator()(const Var::TTimeDiff *) const {/* DO NOTHING */}
     virtual void operator()(const Var::TTimePnt  *) const {/* DO NOTHING */}
     virtual void operator()(const Var::TUnknown  *) const {IsUnknown = true;}
+    /* A variant value is always known (a stored variant now materializes as a
+       Var::TVariant on read -- see #96 -- not a single-key Var::TObj). */
+    virtual void operator()(const Var::TVariant *) const {/* DO NOTHING */}
     private:
     bool &IsUnknown;
   };
