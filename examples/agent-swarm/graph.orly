@@ -5,9 +5,15 @@
    shared POV. Every write is commutative -- there is zero coordination
    between agents:
 
-     *<['entity', e]>::({str})    |= {tag}    set union per entity
-     *<['mention', e, d]>::(int)  += 1        per (entity, doc) counter
-     *<['cooccur', a, b]>::(int)  += 1        per unordered-pair counter
+     *<['entity', e]>::({<{.tag, .agent}>})  |= {<{.tag,.agent}>}  per entity
+     *<['mention', e, d]>::(int)             += 1   per (entity, doc) counter
+     *<['cooccur', a, b]>::(int)             += 1   per unordered-pair counter
+
+   Each tag carries provenance: the entity tag set is a set OF records
+   <{.tag: str, .agent: str}> (storable record-sets are issue #90), so a
+   tag asserted by three different agents is three records -- corroboration
+   you can read back, not a collapsed single string. Distinct tags and
+   their contributing agents both fall out of the one set on read.
 
    This is the shape AI builders keep reinventing badly: many extractors
    need to roll up into one knowledge graph, and the naive "read, merge,
@@ -41,22 +47,25 @@
 
 package #1;
 
-/* ---------- entity -> tag set ---------- */
+/* ---------- entity -> set of (tag, agent) provenance records ---------- */
 
-tags_for_entity = (((*<['entity', e]>::({str})) if *<['entity', e]>::({str}?) is known else (empty {str}))) where {
+tags_for_entity = (((*<['entity', e]>::({<{.tag: str, .agent: str}>})) if *<['entity', e]>::({<{.tag: str, .agent: str}>}?) is known else (empty {<{.tag: str, .agent: str}>}))) where {
   e = given::(str);
 };
 
-/* Union one tag into the entity's set. First call creates with {t};
-   subsequent calls union -- both shapes commute under concurrent
-   callers writing different tags at the same key. */
+/* Union one (tag, agent) record into the entity's set. First call
+   creates with the singleton; subsequent calls union -- both shapes
+   commute under concurrent callers writing different records at the
+   same key. Re-asserting the same (tag, agent) is idempotent; the same
+   tag from a different agent is a distinct provenance record. */
 add_tag = (((1) effecting {
-  *<['entity', e]>::({str}) |= {t};
-} if *<['entity', e]>::({str}?) is known else (0) effecting {
-  new <['entity', e]> <- {t};
+  *<['entity', e]>::({<{.tag: str, .agent: str}>}) |= {<{.tag: t, .agent: agent}>};
+} if *<['entity', e]>::({<{.tag: str, .agent: str}>}?) is known else (0) effecting {
+  new <['entity', e]> <- {<{.tag: t, .agent: agent}>};
 })) where {
-  e = given::(str);
-  t = given::(str);
+  e     = given::(str);
+  t     = given::(str);
+  agent = given::(str);
 };
 
 /* ---------- per-(entity, doc) mention counter ---------- */
@@ -105,44 +114,55 @@ add_cooccur = (((1) effecting {
 
 test {
   /* Unknown keys read as identity values (empty set / 0). */
-  t1: tags_for_entity(.e: "Python") == (empty {str});
+  t1: tags_for_entity(.e: "Python") == (empty {<{.tag: str, .agent: str}>});
   t2: mention_count(.e: "Python", .d: 0) == 0;
   t3: cooccur_count(.a: "Python", .b: "GPT-4") == 0;
 
   /* First add_tag creates (returns 0); subsequent unions return 1. */
-  t4: add_tag(.e: "Python", .t: "language") == 0 {
-    t5: tags_for_entity(.e: "Python") == {"language"};
-    t6: add_tag(.e: "Python", .t: "popular") == 1 {
-      t7: tags_for_entity(.e: "Python") == {"language", "popular"};
-      /* Idempotent: re-adding doesn't grow the set. */
-      t8: add_tag(.e: "Python", .t: "popular") == 1 {
-        t9: tags_for_entity(.e: "Python") == {"language", "popular"};
+  t4: add_tag(.e: "Python", .t: "language", .agent: "a1") == 0 {
+    t5: tags_for_entity(.e: "Python") == {<{.tag: "language", .agent: "a1"}>};
+    t6: add_tag(.e: "Python", .t: "popular", .agent: "a1") == 1 {
+      t7: tags_for_entity(.e: "Python")
+            == {<{.tag: "language", .agent: "a1"}>,
+                <{.tag: "popular", .agent: "a1"}>};
+      /* Re-asserting the same (tag, agent) is idempotent. */
+      t8: add_tag(.e: "Python", .t: "popular", .agent: "a1") == 1 {
+        t9: tags_for_entity(.e: "Python")
+              == {<{.tag: "language", .agent: "a1"}>,
+                  <{.tag: "popular", .agent: "a1"}>};
+        /* Same tag, different agent -> a distinct provenance record. */
+        t10: add_tag(.e: "Python", .t: "popular", .agent: "a2") == 1 {
+          t11: tags_for_entity(.e: "Python")
+                 == {<{.tag: "language", .agent: "a1"}>,
+                     <{.tag: "popular", .agent: "a1"}>,
+                     <{.tag: "popular", .agent: "a2"}>};
+        };
       };
     };
   };
 
   /* Mention counter accumulates across calls; per-doc keys are
      independent; the range-fold sums them all. */
-  t10: add_mention(.e: "GPT-4", .d: 0) == 0 {
-    t11: mention_count(.e: "GPT-4", .d: 0) == 1;
-    t12: add_mention(.e: "GPT-4", .d: 0) == 1 {
-      t13: mention_count(.e: "GPT-4", .d: 0) == 2;
-      t14: add_mention(.e: "GPT-4", .d: 1) == 0 {
-        t15: mention_count(.e: "GPT-4", .d: 0) == 2;
-        t16: mention_count(.e: "GPT-4", .d: 1) == 1;
-        t17: mentions_total(.e: "GPT-4", .d_start: 0, .d_end: 1) == 3;
-        t18: mentions_total(.e: "GPT-4", .d_start: 5, .d_end: 9) == 0;
+  t12: add_mention(.e: "GPT-4", .d: 0) == 0 {
+    t13: mention_count(.e: "GPT-4", .d: 0) == 1;
+    t14: add_mention(.e: "GPT-4", .d: 0) == 1 {
+      t15: mention_count(.e: "GPT-4", .d: 0) == 2;
+      t16: add_mention(.e: "GPT-4", .d: 1) == 0 {
+        t17: mention_count(.e: "GPT-4", .d: 0) == 2;
+        t18: mention_count(.e: "GPT-4", .d: 1) == 1;
+        t19: mentions_total(.e: "GPT-4", .d_start: 0, .d_end: 1) == 3;
+        t20: mentions_total(.e: "GPT-4", .d_start: 5, .d_end: 9) == 0;
       };
     };
   };
 
   /* Cooccurrence counter, same shape as mention. */
-  t19: add_cooccur(.a: "Python", .b: "GPT-4") == 0 {
-    t20: cooccur_count(.a: "Python", .b: "GPT-4") == 1;
-    t21: add_cooccur(.a: "Python", .b: "GPT-4") == 1 {
-      t22: cooccur_count(.a: "Python", .b: "GPT-4") == 2;
+  t21: add_cooccur(.a: "Python", .b: "GPT-4") == 0 {
+    t22: cooccur_count(.a: "Python", .b: "GPT-4") == 1;
+    t23: add_cooccur(.a: "Python", .b: "GPT-4") == 1 {
+      t24: cooccur_count(.a: "Python", .b: "GPT-4") == 2;
       /* Reversed-order pair is a DIFFERENT key (driver canonicalises). */
-      t23: cooccur_count(.a: "GPT-4", .b: "Python") == 0;
+      t25: cooccur_count(.a: "GPT-4", .b: "Python") == 0;
     };
   };
 };
