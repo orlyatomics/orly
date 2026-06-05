@@ -1,26 +1,30 @@
 /* <orly/lang_tests/general/variants_set_storage.orly>
 
-   Tracked-failure (xfail, issue #96) test for storing a SET of variants.
+   End-to-end test for storing a SET of variants (issue #96).
 
-   Single variant values round-trip through storage today (see
-   variants_storage.orly): a variant is stored as a single-key record and
-   the call-site `::(T)` reconstructs it on read. But a SET of variants
-   does not work yet, and the reason is structural, not a loose end:
+   A single variant value round-trips through storage (see
+   variants_storage.orly). A SET of variants was the deeper case: a sabot
+   set requires a homogeneous element type, but the original #95 encoding
+   stored each variant as its active arm's single-key record
+   (`<{.Integer: int}>` vs `<{.Deleted: <{}>}>`) -- differently-shaped, so
+   a set of differently-tagged variants was heterogeneous on disk and the
+   write-path conversion (Var::ToVar over the serialized set) tripped the
+   homogeneity check in orly/var/set.cc.
 
-     A sabot set requires a homogeneous element type. Under the
-     "variant = single-key record" encoding (#95), differently-tagged
-     variants become differently-shaped records (`<{.Integer: int}>` vs
-     `<{.Deleted: <{}>}>`), which are heterogeneous -- so the write-path
-     conversion (Var::ToVar over the serialized set) rebuilds a Var set of
-     mismatched single-key records and trips the homogeneity check in
-     orly/var/set.cc.
+   Issue #96 fixed this by re-encoding every value of one declared variant
+   as the SAME fixed-shape record
 
-   The fix is the dedicated variant sabot type deferred in #95: represent a
-   variant as ONE sabot type whose state carries the active tag, so a set
-   of variants is homogeneous. Until then this is a tracked failure.
+     <| Integer(int) | Deleted |>.Integer(1)
+        -> <{ .$which: 1, .Deleted: <empty-opt>, .Integer: 1? }>
 
-   When #96 is fixed, fold this back into variants_storage.orly (or keep
-   it as the set-specific regression) and drop the .xfail entry.
+   -- a `$which` discriminant (un-expressible in orlyscript, so it never
+   collides with a user field) plus one optional payload field per arm,
+   only the active arm's optional set. Every value of the variant then
+   shares one record type, so a set of differently-tagged variants is
+   homogeneous; the `$which` sentinel lets the read path reconstruct a
+   variant (value and type) without the call-site `::(T)` crutch. See
+   orly/var/new_sabot.h, orly/type/new_sabot.cc, orly/var/sabot_to_var.cc,
+   and orly/type/sabot_to_type.cc.
 
    Copyright 2010-2026 Atomic Kismet Company
 

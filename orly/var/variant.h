@@ -4,12 +4,17 @@
    runtime mirror of `orly/type/variant.h` and a near-clone of
    `orly/var/obj.h`.
 
-   At the storage layer a variant value is "a record that has exactly
-   one of N possible single-key shapes" (see issue #95): the value
-   `Integer(-384)` holds tag `"Integer"` and payload `TVar(-384)`, and
-   round-trips as the single-field record `<{.Integer: -384}>`. A
+   In memory a variant value holds one active tag plus its payload:
+   `Integer(-384)` holds tag `"Integer"` and payload `TVar(-384)`. A
    tag-only variant (e.g. `Deleted`) holds the empty object as its
    payload (the unit value), matching `orly/type/variant.h`.
+
+   On disk it serializes to a fixed-shape record (issue #96, see
+   orly/var/new_sabot.h): `<{.$which:int, .Tag:payload?, ...}>` -- a
+   `$which` discriminant plus one optional payload field per arm, only the
+   active arm's optional set. Every value of one declared variant shares
+   that record type, which is what makes a stored set of differently-tagged
+   variants homogeneous.
 
    `GetType()` reports the *full declared* variant type (every arm),
    not just the active one -- `Integer(7)` and `Deleted` of the same
@@ -17,8 +22,9 @@
    That is required for a set of differently-tagged variants to be
    homogeneous at the Var layer (see orly/var/set.cc). The value carries
    the declared type because a single arm cannot know the others; it is
-   supplied at construction (the ctor's declared type) and re-supplied on
-   read-back via the call-site `::(T)` annotation (issue #95).
+   supplied at construction and, on read-back, reconstructed from the
+   stored record's `$which`/arm fields (orly/var/sabot_to_var.cc) -- the
+   `$which` sentinel removes the need for the call-site `::(T)` crutch.
 
    Copyright 2010-2026 Atomic Kismet Company
 

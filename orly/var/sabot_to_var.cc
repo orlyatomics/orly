@@ -18,9 +18,13 @@
 
 #include <orly/var/sabot_to_var.h>
 
+#include <orly/type/opt.h>
 #include <orly/type/sabot_to_type.h>
+#include <orly/type/variant.h>
+#include <orly/var/util.h>
 
 #include <cassert>
+#include <map>
 
 using namespace std;
 using namespace Orly;
@@ -163,11 +167,49 @@ void Var::TToVarVisitor::operator()(const Sabot::State::TRecord &state) const   
   Sabot::Type::TRecord::TPin::TWrapper type_pin(record_type->Pin(type_pin_alloc));
   const size_t elem_count = pin->GetElemCount();
   std::unordered_map<std::string, TVar> state_map;
+  /* Also keep the field *types* (in asciibetical order, via std::map) so a
+     fixed-shape variant record (#96) can be reconstructed as a Var::TVariant
+     -- the declared variant type and per-arm payload types are recoverable
+     by stripping the `?` off each non-`$which` field. */
+  std::map<std::string, Type::TType> field_types;
   string field_name;
   for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
-    Sabot::Type::TAny::TWrapper(type_pin->NewElem(elem_idx, field_name, elem_type_alloc));
+    const Sabot::Type::TAny::TWrapper field_type(type_pin->NewElem(elem_idx, field_name, elem_type_alloc));
+    field_types[field_name] = Type::ToType(*field_type);
     const Sabot::State::TAny::TWrapper elem_state(pin->NewElem(elem_idx, state_alloc));
     state_map[field_name] = ToVar(*elem_state);
+  }
+  /* A variant value (#96) serializes to the fixed-shape record
+       <{ .$which: int, .Tag0: payload0?, ... }>
+     The sentinel `$which` field (un-expressible in orlyscript) is the
+     discriminator: its presence => this is a variant, not a user record.
+     Reconstruct the full declared variant type from the arm fields and build
+     a Var::TVariant for the arm named by `$which` (asciibetical index),
+     unwrapping that arm's optional for the payload. This restores variant
+     identity without the call-site ::(T) annotation, and -- crucially --
+     makes every element of a set of differently-tagged variants report the
+     same (full) variant type, so the set is homogeneous (orly/var/set.cc). */
+  if (state_map.find("$which") != state_map.end()) {
+    Type::TVariantElems arms;
+    for (const auto &field: field_types) {
+      if (field.first == "$which") {
+        continue;
+      }
+      /* Each arm field is `payload?`; strip the optional to the payload type. */
+      arms[field.first] = field.second.As<Type::TOpt>()->GetElem();
+    }
+    const size_t which = static_cast<size_t>(Var::TVar::TDt<int64_t>::As(state_map["$which"]));
+    if (which >= arms.size()) {
+      throw TVarTranslationError();
+    }
+    /* The which-th arm in asciibetical order (arms is sorted via std::map). */
+    auto arm_it = arms.begin();
+    std::advance(arm_it, which);
+    const std::string &tag = arm_it->first;
+    /* The active arm's field is a known optional; unwrap it for the payload. */
+    const TVar payload = state_map[tag].As<Var::TOpt>()->GetVal().GetVal();
+    Var = Var::TVar::Variant(Type::TVariant::Get(arms), tag, payload);
+    return;
   }
   Var = Var::TVar::Obj(state_map);
 }

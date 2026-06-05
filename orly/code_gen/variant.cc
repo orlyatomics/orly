@@ -47,8 +47,14 @@ using namespace Orly::Type;
    others hold default-constructed junk. A tag-only arm (e.g. `Deleted`)
    has the empty-object payload type (`Orly::Rt::Objects::TObjO`, the unit
    value), so its field still default-constructs to the empty record --
-   `Var::TVar(<empty-obj>)` yields `<{}>`, matching the
-   single-key-record storage `<{.Deleted: <{}>}>` (issue #95).
+   `Var::TVar(<empty-obj>)` yields `<{}>`.
+
+   On disk a variant is a fixed-shape record `<{.$which:int, .Tag:payload?,
+   ...}>` (issue #96, see orly/var/new_sabot.h): a discriminant plus one
+   optional payload per arm, only the active arm's optional set. So
+   `Deleted` stores as `<{.$which: 0, .Deleted: <{}>?, .Integer: <empty> }>`.
+   Every value of one declared variant shares that record type, which is
+   what makes a stored SET of differently-tagged variants homogeneous.
 
    This mirrors the record generator (orly/code_gen/obj.cc): one payload
    field per arm rather than a C++ union, so that nested records/variants
@@ -78,6 +84,8 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       << Eol
       << "#include <cassert>" << Eol
       << "#include <cstddef>" << Eol
+      << "#include <cstdint>" << Eol
+      << "#include <string>" << Eol
       << Eol
       << "#include <orly/rt/tuple.h>" << Eol
       << "#include <orly/rt/containers.h>" << Eol
@@ -91,7 +99,12 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       // Native::State::Factory<Var::TVar> (write-side serialization, M2).
       << "#include <orly/var/new_sabot.h>" << Eol
       // Sabot::AsNative + the TToNativeVisitor we specialize for read-back (M2).
-      << "#include <orly/sabot/to_native.h>" << Eol;
+      << "#include <orly/sabot/to_native.h>" << Eol
+      // Native::Type::For (we specialize it so a set of variants has a proper
+      // element type, #96) and Orly::Type::NewSabot (the variant->record-type
+      // sabot conversion it routes through).
+      << "#include <orly/native/type.h>" << Eol
+      << "#include <orly/type/new_sabot.h>" << Eol;
 
   /* Pull in any record/variant payload types we reference. */ {
     unordered_set<TType> obj_set;
@@ -360,11 +373,14 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
 
   out << Eol;
 
-  /* Read-back (#95 Phase 3 M2): a stored variant is a single-key record
-     (`Integer(7)` -> `<{.Integer: 7}>`). The generic TToNativeVisitor walks
-     fixed record fields, which a variant doesn't have, so specialize it: read
-     the single key, dispatch on its tag, and build this native variant via the
-     per-arm static factories (payload deserialized with AsNative). */ {
+  /* Read-back (#96): a stored variant is the fixed-shape record
+       <{ .$which: int, .Tag0: payload0?, .Tag1: payload1?, ... }>
+     (see orly/var/new_sabot.h). The generic TToNativeVisitor walks fixed
+     record fields, which this struct doesn't expose, so specialize it: read
+     `$which` to find the active arm, read that arm's optional payload, and
+     build this native variant via the per-arm static factory (payload
+     deserialized with AsNative). The inactive arms' empty optionals are
+     ignored. */ {
     TNamespacePrinter nsp(vector<string>{"Orly", "Sabot"}, out);
     out << "template <>" << Eol
         << "class TToNativeVisitor<Rt::Variants::" << class_name << "> final : public TStateVisitor {" << Eol
@@ -389,18 +405,43 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         << "    Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));" << Eol
         << "    void *state_pin_alloc = alloca(State::GetMaxStatePinSize());" << Eol
         << "    State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));" << Eol
-        << "    if (tpin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }" << Eol
-        << "    std::string tag;" << Eol
+        << "    const size_t elem_count = tpin->GetElemCount();" << Eol
         << "    void *etype_alloc = alloca(Type::GetMaxTypeSize());" << Eol
-        << "    Type::TAny::TWrapper(tpin->NewElem(0, tag, etype_alloc));" << Eol
         << "    void *estate_alloc = alloca(State::GetMaxStateSize());" << Eol
-        << "    State::TAny::TWrapper elem_state(spin->NewElem(0, estate_alloc));" << Eol;
+        << "    std::string field_name;" << Eol
+        << "    size_t which = static_cast<size_t>(-1);" << Eol;
+    /* One field-index slot per arm; the loop below records where each arm's
+       optional payload field lives. */
+    for (const auto &elem : elems) {
+      out << "    size_t idx_" << elem.first << " = static_cast<size_t>(-1);" << Eol;
+    }
+    out << "    for (size_t i = 0; i < elem_count; ++i) {" << Eol
+        << "      Type::TAny::TWrapper(tpin->NewElem(i, field_name, etype_alloc));" << Eol
+        << "      if (field_name == \"$which\") {" << Eol
+        << "        State::TAny::TWrapper which_state(spin->NewElem(i, estate_alloc));" << Eol
+        << "        which = static_cast<size_t>(AsNative<int64_t>(*which_state));" << Eol
+        << "      }" << Eol;
+    for (const auto &elem : elems) {
+      out << "      else if (field_name == \"" << elem.first << "\") { idx_"
+          << elem.first << " = i; }" << Eol;
+    }
+    out << "    }" << Eol
+        << "    void *opt_pin_alloc = alloca(State::GetMaxStatePinSize());" << Eol
+        << "    void *payload_alloc = alloca(State::GetMaxStateSize());" << Eol;
     {
       size_t idx = 0;
       for (const auto &elem : elems) {
-        out << "    " << (idx == 0 ? "if" : "else if") << " (tag == \"" << elem.first
-            << "\") { Out = Rt::Variants::" << class_name << "::" << elem.first
-            << "(AsNative<" << elem.second << ">(*elem_state)); }" << Eol;
+        out << "    " << (idx == 0 ? "if" : "else if") << " (which == " << idx << ") {" << Eol
+            << "      if (idx_" << elem.first << " == static_cast<size_t>(-1)) { THROW_ERROR(TInvalidConversion); }" << Eol
+            << "      State::TAny::TWrapper arm_state(spin->NewElem(idx_" << elem.first << ", estate_alloc));" << Eol
+            << "      const State::TOpt *opt = dynamic_cast<const State::TOpt *>(arm_state.get());" << Eol
+            << "      if (!opt) { THROW_ERROR(TInvalidConversion); }" << Eol
+            << "      State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));" << Eol
+            << "      if (opin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }" << Eol
+            << "      State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol
+            << "      Out = Rt::Variants::" << class_name << "::" << elem.first
+            << "(AsNative<" << elem.second << ">(*payload_state));" << Eol
+            << "    }" << Eol;
         ++idx;
       }
     }
@@ -413,13 +454,19 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
 
   out << Eol;
 
-  /* namespace Orly::Native: write-side serialization (#95 Phase 3 M2).
-     The generic State::Factory<TVal> assumes a fixed-shape record; a variant
-     value instead serializes as the *active arm's* single-key record. Route
-     through AsVar() -> Var::TVariant -> Var::NewSabot, which reuses the
-     Phase-1 SS::TObj(const Var::TVariant *) adapter (the single-key-record
-     encoding). The State::Factory<Var::TVar> specialization that does this
-     lives in <orly/var/new_sabot.h> (included above). */ {
+  /* namespace Orly::Native: write-side serialization (#96).
+     The generic State::Factory<TVal>/Type::For<TVal> assume a fixed-shape
+     record built from registered native fields; a variant registers none, so
+     without these specializations a variant's state serializes as an empty
+     record and its type sabot is an empty record (which breaks a SET of
+     variants -- the empty-record element type mismatches the variant values).
+
+     - State::Factory routes the VALUE through AsVar() -> Var::TVariant ->
+       Var::NewSabot, which reuses the SS::TObj(const Var::TVariant *) adapter
+       (the fixed-shape variant-record encoding).
+     - Type::For routes the TYPE through Orly::Type::NewSabot on the declared
+       variant type, which the type-sabot visitor (orly/type/new_sabot.cc)
+       maps to the same fixed-shape record. Both stay in lock-step. */ {
     TNamespacePrinter nsp(vector<string>{"Orly", "Native"}, out);
     out << "template <>" << Eol
         << "class State::Factory<Rt::Variants::" << class_name << "> final {" << Eol
@@ -429,7 +476,20 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         << " &val, void *state_alloc) {" << Eol
         << "    return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);" << Eol
         << "  }" << Eol
-        << "}; // State::Factory<" << class_name << ">" << Eol;
+        << "}; // State::Factory<" << class_name << ">" << Eol
+        << Eol
+        << "template <>" << Eol
+        << "class Type::For<Rt::Variants::" << class_name << "> final {" << Eol
+        << "  NO_CONSTRUCTION(For);" << Eol
+        << "  public:" << Eol
+        << "  static Sabot::Type::TAny *GetType(void *type_alloc) {" << Eol
+        << "    return Orly::Type::NewSabot(type_alloc, Orly::Type::TDt<Rt::Variants::"
+        << class_name << ">::GetType());" << Eol
+        << "  }" << Eol
+        << "  static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {" << Eol
+        << "    return dynamic_cast<Sabot::Type::TRecord *>(GetType(type_alloc));" << Eol
+        << "  }" << Eol
+        << "}; // Type::For<" << class_name << ">" << Eol;
   } // namespace Orly::Native
 
   out << Eol;

@@ -3,14 +3,14 @@
    End-to-end test for issue #95 (sum types / tagged unions): a single
    variant value round-trips through storage.
 
-   A variant value is stored as a single-key record (`Integer(7)` ->
-   `<{.Integer: 7}>`); the call-site `::(T)` annotation drives
+   A variant value is stored as a fixed-shape record (`Integer(7)` of
+   `<| Integer(int) | Deleted |>` -> `<{.$which:1, .Deleted:<empty>,
+   .Integer:7?}>`, issue #96); the stored `$which` sentinel drives
    reconstruction as a variant on read (the Sabot::TToNativeVisitor
    specialization emitted for each generated variant struct). This proves
    the whole stack: the orlyscript surface (variant type + constructor,
-   Phase 3 M1), `::(T)`-driven sabot read-back (Phase 3 M2), and the
-   engine layers from Phases 0-2 (type node, var value + ordering,
-   code_gen struct + AsVar).
+   Phase 3 M1), sabot read-back (Phase 3 M2), and the engine layers from
+   Phases 0-2 (type node, var value + ordering, code_gen struct + AsVar).
 
    It uses a 2-arm flat variant `<| Integer(int) | Deleted |>` and asserts
    round-tripping with `==`/`!=` only -- variant equality was wired end to
@@ -18,11 +18,9 @@
    `is <Tag>` predicate and the `.<Tag>` guarded payload accessor, Phase 3
    M4) is exercised in the sibling variants_destructure.orly.
 
-   SETS of variants are a separate, deeper case (issue #96): a sabot set
-   needs a homogeneous element type, but differently-tagged variants
-   stored as single-key records are heterogeneous, so set-of-variant
-   storage needs a dedicated variant sabot type. See variants_set_storage
-   (xfail, #96).
+   SETS of variants were a separate, deeper case, since fixed by issue #96
+   (the fixed-shape `$which` record encoding makes a set of differently-
+   tagged variants homogeneous). See variants_set_storage.orly.
 
    Copyright 2010-2026 Atomic Kismet Company
 
