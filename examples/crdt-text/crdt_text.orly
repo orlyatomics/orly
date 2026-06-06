@@ -1,0 +1,185 @@
+/* <examples/crdt-text/crdt_text.orly>
+
+   A collaborative text editor as a CRDT -- Google-Docs-style concurrent
+   editing -- where Orly's commutative storage *is* the merge. No operational
+   transform, no central reconcile step, no lock: editors stream inserts and
+   deletes into one shared POV with no coordination and converge.
+
+   ## The shape
+
+   A document is a sequence of characters. The trick that makes a sequence a
+   CRDT is to give every character a **dense, totally-ordered position id**,
+   so the document is an unordered *set* of (position, character) entries and
+   the visible text is "sort by position, drop deletes, concatenate". Two
+   editors inserting at the same spot both succeed -- their characters get
+   distinct positions and a deterministic order -- so concurrent edits can't
+   conflict and nothing is lost.
+
+   This is a **Logoot** sequence CRDT. The position id is allocated by the
+   editor (driver-side `between(p, q)`, the one real algorithm); the engine
+   only ever stores and folds. A position is a list of zero-padded digit
+   strings -- `[42, 318]` -> `["00042", "00318"]` -- which Orly's native list
+   ordering compares exactly the way Logoot needs (digit by digit, with the
+   shorter/prefix id ordering first). Concurrent inserts that happen to land
+   the same digit list are still distinct records and are ordered by the
+   `(site, clock)` tiebreak in the read-time sort, so there are no collisions.
+
+   ## In-engine replay (with time-travel)
+
+   `render_as_of(doc, as_of)` reconstructs the visible text at a logical
+   timestamp: keep inserts with `.clock <= as_of`, sort by `(pos, site,
+   clock)`, drop any whose pos was tombstoned by a delete with `.clock <=
+   as_of`, concatenate. `render`/`visible` are the `as_of: forever` (live)
+   forms. The whole replay is one `sorted_by` + `reduce` fold -- the same
+   machinery the GRC-20 demo uses for event logs, here over a *sequence*.
+
+   ## Schema
+
+     <['ins', doc]>::({<{.pos, .ch, .site, .clock}>})  inserts for one doc
+     <['del', doc]>::({<{.pos, .clock}>})              delete tombstones
+
+   Every edit is one commutative `|=`; the post-#50 deferred-mutation fold
+   makes concurrent `|=` from independent WS sessions safe (no lost writes).
+   Storable record/variant sets are #90 / #96.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* A Logoot position id: a list of zero-padded digit strings (the driver
+   pads so string order == numeric order). An event carries its position,
+   the character, the authoring site, and a logical clock. */
+posid is [str];
+ins_t is <{.pos: posid, .ch: str, .site: str, .clock: int}>;
+del_t is <{.pos: posid, .clock: int}>;
+
+/* A clock beyond any real edit -- "now / all edits" (the live read). */
+forever = 9223372036854775807;
+
+/* ---------- raw reads ---------- */
+
+inserts_of = (((*<['ins', doc]>::({ins_t})) if *<['ins', doc]>::({ins_t}?) is known else (empty {ins_t}))) where {
+  doc = given::(str);
+};
+
+deletes_of = (((*<['del', doc]>::({del_t})) if *<['del', doc]>::({del_t}?) is known else (empty {del_t}))) where {
+  doc = given::(str);
+};
+
+/* ---------- in-engine reconstruction (the CRDT read) ---------- */
+
+/* The visible characters as of a timestamp: inserts with clock <= as_of,
+   sorted by (pos, site, clock), with any tombstoned-by-as_of position
+   dropped. The `(site, clock)` tiebreak gives concurrent same-position
+   inserts a deterministic total order (no collisions). */
+visible_as_of = (
+  ((**((((**inserts_of(.doc: doc)) if (that.clock <= as_of)) as [ins_t])
+       sorted_by lhs.pos < rhs.pos
+                 or (lhs.pos == rhs.pos
+                     and (lhs.site < rhs.site
+                          or (lhs.site == rhs.site and lhs.clock < rhs.clock)))))
+     if (not (that.pos in tombs))) as [ins_t]
+) where {
+  tombs = (((**deletes_of(.doc: doc)) if (that.clock <= as_of)) reduce start (empty {posid}) | {that.pos});
+  doc   = given::(str);
+  as_of = given::(int);
+};
+
+/* The rendered text as of a timestamp -- fold the visible characters. */
+render_as_of = ((**visible_as_of(.doc: doc, .as_of: as_of) reduce start "" + that.ch)) where {
+  doc   = given::(str);
+  as_of = given::(int);
+};
+
+/* Live (as_of: forever) convenience forms. */
+visible = (visible_as_of(.doc: doc, .as_of: forever)) where {
+  doc = given::(str);
+};
+
+render = (render_as_of(.doc: doc, .as_of: forever)) where {
+  doc = given::(str);
+};
+
+char_count = (length_of visible(.doc: doc)) where {
+  doc = given::(str);
+};
+
+/* ---------- edits (commutative appends) ---------- */
+
+/* Insert one character at position `pos` (allocated driver-side). */
+insert = (((1) effecting {
+  *<['ins', doc]>::({ins_t}) |= {ev};
+} if *<['ins', doc]>::({ins_t}?) is known else (0) effecting {
+  new <['ins', doc]> <- {ev};
+})) where {
+  ev    = <{.pos: pos, .ch: ch, .site: site, .clock: clock}>;
+  doc   = given::(str);
+  pos   = given::(posid);
+  ch    = given::(str);
+  site  = given::(str);
+  clock = given::(int);
+};
+
+/* Tombstone the character at position `pos`. */
+remove = (((1) effecting {
+  *<['del', doc]>::({del_t}) |= {ev};
+} if *<['del', doc]>::({del_t}?) is known else (0) effecting {
+  new <['del', doc]> <- {ev};
+})) where {
+  ev    = <{.pos: pos, .clock: clock}>;
+  doc   = given::(str);
+  pos   = given::(posid);
+  clock = given::(int);
+};
+
+/* ---------- inline tests ---------- */
+
+test {
+  /* Empty doc renders empty. */
+  t1: render(.doc: "d") == "";
+  t2: char_count(.doc: "d") == 0;
+
+  /* Three inserts; sort by position regardless of insert order. "X" at
+     [00004] falls between "H"@[00002] and "i"@[00006]. */
+  t3: insert(.doc: "d", .pos: ["00002"], .ch: "H", .site: "a", .clock: 1) == 0 {
+    t4: insert(.doc: "d", .pos: ["00006"], .ch: "i", .site: "a", .clock: 2) == 1 {
+      t5: render(.doc: "d") == "Hi";
+      t6: insert(.doc: "d", .pos: ["00004"], .ch: "X", .site: "b", .clock: 3) == 1 {
+        t7: render(.doc: "d") == "HXi";
+        t8: char_count(.doc: "d") == 3;
+
+        /* Time-travel: as of clock 1 only "H" existed. */
+        t9: render_as_of(.doc: "d", .as_of: 1) == "H";
+        t10: render_as_of(.doc: "d", .as_of: 2) == "Hi";
+
+        /* Delete the "X" (its position) at clock 9. */
+        t11: remove(.doc: "d", .pos: ["00004"], .clock: 9) == 0 {
+          t12: render(.doc: "d") == "Hi";
+          /* but as of clock 5 -- before the delete -- it's still there */
+          t13: render_as_of(.doc: "d", .as_of: 5) == "HXi";
+        };
+      };
+    };
+  };
+
+  /* Concurrent inserts at the SAME position both survive, ordered by site
+     (the (site, clock) tiebreak) -- the no-conflict guarantee. */
+  t14: insert(.doc: "e", .pos: ["00005"], .ch: "A", .site: "alice", .clock: 1) == 0 {
+    t15: insert(.doc: "e", .pos: ["00005"], .ch: "B", .site: "bob", .clock: 1) == 1 {
+      t16: render(.doc: "e") == "AB";
+      t17: char_count(.doc: "e") == 2;
+    };
+  };
+};
