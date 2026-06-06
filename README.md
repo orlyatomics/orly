@@ -130,7 +130,11 @@ The demo runs three phases over a corpus of six Greek philosophers:
 
 After each phase the demo prints a snapshot reconstructed from the event log; the final editorial diff shows per-editor event counts and overlapping entities. This example is the synthesis of the others: time-travel from [`bitcoin-time-travel`](examples/bitcoin-time-travel/) and [`wikipedia-categories`](examples/wikipedia-categories/), concurrent multi-writer from [`wikipedia-pageviews`](examples/wikipedia-pageviews/) and [`agent-swarm`](examples/agent-swarm/), applied to a published graph standard from another project rather than a synthetic workload — and it owns the GRC-20 op vocabulary and the entire replay *in orlyscript*, using the [sum-type](#features) `reduce` + `when` fold, with the driver reduced to streaming typed events and reading resolved values.
 
-All five examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
+### [`examples/crdt-text/`](examples/crdt-text/) — collaborative text editing: the database *is* the CRDT merge
+
+A Google-Docs-style collaborative editor where Orly's commutative storage **is** the conflict-free merge — no operational transform, no central reconcile, no lock. It's a [Logoot](https://hal.inria.fr/inria-00432368/document) sequence CRDT: every character gets a dense, totally-ordered position id, so the document is an unordered *set* of `(position, char)` entries and the visible text is the engine's read-time fold — sort by position, drop tombstoned, concatenate (the same `sorted_by` + `reduce` machinery as `grc20-pov`, over a *sequence* instead of an event log). Two editors stream inserts and deletes into one shared POV with **no coordination** and converge; concurrent inserts at the same spot both survive (distinct dense positions, ties broken on `(site, clock)`), so nothing is lost. The one piece of real CRDT logic — `between(p, q)`, the dense-order position allocation — is ~12 lines in the driver; the merge, convergence, tombstones, and time-travel (version history) are all the engine. The self-check asserts three independent readers render byte-identical text.
+
+All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
 
 ## Walkthrough
 

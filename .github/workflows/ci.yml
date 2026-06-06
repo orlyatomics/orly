@@ -262,3 +262,17 @@ jobs:
       - name: grc20-pov run-go.sh (go driver, event-sourced KG)
         run: ./run-go.sh
         working-directory: examples/grc20-pov
+
+      # Collaborative text CRDT (Logoot): two editors stream inserts/deletes
+      # into one shared POV with no coordination; each character is one
+      # set-union with a dense position id, and the visible text is the
+      # engine's sort+fold. Four phases (sequential / non-overlapping /
+      # same-spot race / delete+insert). Self-checks convergence across three
+      # independent readers, no lost concurrent edits, and stable time-travel.
+      - name: crdt-text run.sh (python driver, collaborative CRDT)
+        run: ./run.sh
+        working-directory: examples/crdt-text
+
+      - name: crdt-text run-go.sh (go driver, collaborative CRDT)
+        run: ./run-go.sh
+        working-directory: examples/crdt-text
