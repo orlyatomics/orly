@@ -574,6 +574,7 @@ when_expr : expr -> open_paren expr close_paren when_kwd open_brace opt_when_arm
   when_arm;
   bad_when_arm     : when_arm -> error semi;
   labeled_when_arm : when_arm -> name colon expr semi;
+  binder_when_arm  : when_arm -> tag:name open_paren binder:name close_paren colon expr semi;
 
 effecting_expr : expr -> open_paren expr close_paren effecting_kwd stmt_block;
 

@@ -35,6 +35,13 @@ using namespace Orly::Synth;
 TFuncDef::TFuncDef(TScope *scope, const Package::Syntax::TFuncDef *func_def)
     : TDef(scope, Base::AssertTrue(func_def)->GetName()),
       FuncDef(Base::AssertTrue(func_def)),
+      PosRange(GetPosRange(func_def)),
+      Expr(nullptr) {}
+
+TFuncDef::TFuncDef(TScope *scope, const TName &name, const TPosRange &pos_range)
+    : TDef(scope, name),
+      FuncDef(nullptr),
+      PosRange(pos_range),
       Expr(nullptr) {}
 
 TFuncDef::~TFuncDef() {
@@ -59,8 +66,8 @@ TAction TFuncDef::Build(int pass) {
       Symbol = Symbol::TFunction::New(
                  GetOuterScope()->GetScopeSymbol(), /* scope */
                  GetName().GetText(), /* name */
-                 GetPosRange(FuncDef)); /* pos_range */
-      Symbol::TResultDef::New(Symbol, GetName().GetText(), GetPosRange(FuncDef));
+                 PosRange); /* pos_range */
+      Symbol::TResultDef::New(Symbol, GetName().GetText(), PosRange);
       action = Continue;
       break;
     }

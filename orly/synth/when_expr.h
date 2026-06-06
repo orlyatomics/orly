@@ -1,11 +1,14 @@
 /* <orly/synth/when_expr.h>
 
    Synth-layer node for the exhaustive `(e) when { Tag: body; ... }`
-   variant match expression (#95 Phase 4). Lowers to `Expr::TWhen`.
-   Holds the operand and the arm bodies as plain sub-expressions (arms
-   introduce no new binding -- a v1 arm body reads the active payload via
-   the `e.<Tag>` accessor), so unlike `TAssertExpr` it needs no thatable
-   or symbol machinery.
+   variant match expression (#95). Lowers to `Expr::TWhen`, holding the
+   operand and one sub-expression per arm body.
+
+   A plain `Tag: body` arm reads the active payload via the `e.<Tag>`
+   accessor. A `Tag(n): body` arm additionally binds the payload to the
+   name `n`: its body is wrapped (in when_expr.cc) in a local scope that
+   defines `n = operand.Tag`, lowering to an `Expr::TWhere` that
+   `Expr::TWhen` consumes as an ordinary arm body. See when_expr.cc.
 
    Copyright 2010-2026 Atomic Kismet Company
 

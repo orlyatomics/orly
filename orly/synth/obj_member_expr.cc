@@ -32,14 +32,21 @@ using namespace Orly::Synth;
 TObjMemberExpr::TObjMemberExpr(const TExprFactory *expr_factory, const Package::Syntax::TPostfixObjMember *postfix_obj_member)
     : PostfixObjMember(Base::AssertTrue(postfix_obj_member)),
       Expr(Base::AssertTrue(expr_factory)->NewExpr(PostfixObjMember->GetExpr())),
-      Name(PostfixObjMember->GetName()) {}
+      Name(PostfixObjMember->GetName()),
+      PosRange(GetPosRange(PostfixObjMember)) {}
+
+TObjMemberExpr::TObjMemberExpr(TExpr *source, const TName &name, const TPosRange &pos_range)
+    : PostfixObjMember(nullptr),
+      Expr(Base::AssertTrue(source)),
+      Name(name),
+      PosRange(pos_range) {}
 
 TObjMemberExpr::~TObjMemberExpr() {
   delete Expr;
 }
 
 Expr::TExpr::TPtr TObjMemberExpr::Build() const {
-  return Expr::TObjMember::New(Expr->Build(), Name.GetText(), GetPosRange(PostfixObjMember));
+  return Expr::TObjMember::New(Expr->Build(), Name.GetText(), PosRange);
 }
 
 void TObjMemberExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {

@@ -23,7 +23,9 @@
 #include <base/class_traits.h>
 #include <orly/expr/expr.h>
 #include <orly/orly.package.cst.h>
+#include <orly/pos_range.h>
 #include <orly/synth/expr.h>
+#include <orly/synth/name.h>
 
 namespace Orly {
 
@@ -41,6 +43,12 @@ namespace Orly {
       /* TODO */
       TObjMemberExpr(const TExprFactory *expr_factory, const Package::Syntax::TPostfixObjMember *postfix_obj_member);
 
+      /* Build `<source>.<name>` from an already-synthesized source
+         expression (taking ownership) rather than from a CST node -- used to
+         synthesize a `when`-arm payload binder's `operand.Tag` accessor.
+         See <orly/synth/when_expr.cc>. */
+      TObjMemberExpr(TExpr *source, const TName &name, const TPosRange &pos_range);
+
       /* TODO */
       virtual ~TObjMemberExpr();
 
@@ -55,7 +63,7 @@ namespace Orly {
 
       private:
 
-      /* TODO */
+      /* The backing CST node, or null for the synthesized accessor. */
       const Package::Syntax::TPostfixObjMember *PostfixObjMember;
 
       /* TODO */
@@ -63,6 +71,10 @@ namespace Orly {
 
       /* TODO */
       TName Name;
+
+      /* Source position -- from the CST node when there is one, else
+         supplied directly. */
+      TPosRange PosRange;
 
     };  // TObjMemberExpr
 
