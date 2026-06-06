@@ -29,6 +29,8 @@
 
 - **Orlyscript.** A high-level, compiled, type-safe, functional query and programming language. Sources are compiled to `.so` packages that `orlyi` loads at runtime. Supports inline tests, native compilation, and most of the niceties of a real language rather than just a query DSL.
 
+- **Sum types (tagged unions).** Typed heterogeneous values — `<| Text(str) | Number(int) | Deleted |>` — that construct, store (including *sets* of differently-tagged variants), and read back like any other value, with exhaustive compile-time-checked `when` matching and payload binders (`Number(n): n + 1`). This lets a heterogeneous event log be folded into its current state *in the engine* — latest-write-wins, tombstones, formatting — rather than in the driver; see the [GRC-20 example](examples/grc20-pov/).
+
 - **Single-node first.** Fail-over / replication / hundreds of thousands of transactions per second on one node. Sharding was designed for but never built; that part of the original pitch is currently aspirational.
 
 ## Quick start
@@ -116,7 +118,7 @@ Why it matters: this is exactly the topology AI extraction pipelines have — ma
 
 ### [`examples/grc20-pov/`](examples/grc20-pov/) — GRC-20 knowledge graph: event-sourced + concurrent editors + time-travel
 
-A reference impl of Geo / The Graph's [GRC-20](https://github.com/geobrowser/grc-20) knowledge-graph standard. GRC-20 models knowledge as append-only ops (`CreateEntity`, `UpdateEntity`, `CreateRelation`, `DeleteEntity`) — exactly the shape Orly stores natively. Every op becomes one `|=` of an event **record** (`<{.ts: int, .editor: str, .kind: str, .val: str}>`) into a per-`(entity, property)` history set — a set of records, storable since [#90](https://github.com/orlyatomics/orly/issues/90), so the four typed fields travel end to end with no string packing. Concurrent editors stream into the same shared POV with **no coordination**; reads replay the timestamp-sorted log to reconstruct entity state, or any historical state if you pass a cutoff.
+A reference impl of Geo / The Graph's [GRC-20](https://github.com/geobrowser/grc-20) knowledge-graph standard. GRC-20 models knowledge as append-only ops (`CreateEntity`, `SetProperty`, `CreateRelation`, `DeleteEntity`) — exactly the shape Orly stores natively. The op is a **typed tagged union** (`<| Text(str) | Number(int) | Relation(str) | Deleted |>`), and every op becomes one `|=` of an event record (`<{.ts: int, .editor: str, .op: ...}>`) into a per-`(entity, property)` history set — a set of variant-bearing records, storable since [#90](https://github.com/orlyatomics/orly/issues/90) / [#96](https://github.com/orlyatomics/orly/issues/96), so the typed op travels end to end with no string packing. Concurrent editors stream into the same shared POV with **no coordination**; reads replay the timestamp-sorted log — latest-write-wins, tombstones, value formatting, time-travel — *in the engine*, via a `reduce` + an exhaustive `when` match, not in the driver.
 
 The demo runs three phases over a corpus of six Greek philosophers:
 
@@ -126,7 +128,7 @@ The demo runs three phases over a corpus of six Greek philosophers:
 | 2 | `stanford` | school of thought + `student_of` relations |
 | 3 | both | concurrent race on `pythagoras.born` — both events survive in history |
 
-After each phase the demo prints a snapshot reconstructed from the event log; the final editorial diff shows per-editor event counts and overlapping entities. This example is the synthesis of the other four: time-travel from [`bitcoin-time-travel`](examples/bitcoin-time-travel/) and [`wikipedia-categories`](examples/wikipedia-categories/), concurrent multi-writer from [`wikipedia-pageviews`](examples/wikipedia-pageviews/) and [`agent-swarm`](examples/agent-swarm/), applied to a published graph standard from another project rather than a synthetic workload. The entire engine side is three commutative orlyscript functions; GRC-20's op vocabulary lives entirely in the driver.
+After each phase the demo prints a snapshot reconstructed from the event log; the final editorial diff shows per-editor event counts and overlapping entities. This example is the synthesis of the others: time-travel from [`bitcoin-time-travel`](examples/bitcoin-time-travel/) and [`wikipedia-categories`](examples/wikipedia-categories/), concurrent multi-writer from [`wikipedia-pageviews`](examples/wikipedia-pageviews/) and [`agent-swarm`](examples/agent-swarm/), applied to a published graph standard from another project rather than a synthetic workload — and it owns the GRC-20 op vocabulary and the entire replay *in orlyscript*, using the [sum-type](#features) `reduce` + `when` fold, with the driver reduced to streaming typed events and reading resolved values.
 
 All five examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
 
