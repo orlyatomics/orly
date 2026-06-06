@@ -12,7 +12,9 @@
    to `Tags`). The code_gen layer lowers it to a nested ternary on the
    operand's `GetWhich()` selecting the matching arm -- reusing the M4
    primitives. Arm bodies read the active payload via the `e.<Tag>`
-   accessor; v1 has no payload binder.
+   accessor, or bind it to a name with the `Tag(n): body` arm form (sugar
+   desugared in synth to `body where { n = operand.Tag; }`, so it is
+   transparent here -- a binder arm body is simply an `Expr::TWhere`).
 
    Copyright 2010-2026 Atomic Kismet Company
 

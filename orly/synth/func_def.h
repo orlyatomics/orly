@@ -26,6 +26,7 @@
 #include <unordered_set>
 
 #include <orly/orly.package.cst.h>
+#include <orly/pos_range.h>
 #include <orly/symbol/function.h>
 #include <orly/symbol/param_def.h>
 #include <orly/symbol/result_def.h>
@@ -65,14 +66,25 @@ namespace Orly {
       /* TODO */
       TFuncDef(TScope *scope, const Package::Syntax::TFuncDef *func_def);
 
+      /* Build a function def that has no backing CST node -- a synthetic
+         binding such as a `when`-arm payload binder (`Tag(n): ...`), whose
+         name, position, and body are supplied directly rather than parsed.
+         See <orly/synth/when_expr.cc>. */
+      TFuncDef(TScope *scope, const TName &name, const TPosRange &pos_range);
+
       /* TODO */
       virtual void BuildSecondarySymbol();
 
       /* TODO */
       void SetExpr(TExpr *expr);
 
-      /* TODO */
+      /* The backing CST node, or null for a synthetic def (see the
+         CST-less constructor above). */
       const Package::Syntax::TFuncDef *FuncDef;
+
+      /* The def's source position -- from the CST node when there is one,
+         else supplied directly. */
+      TPosRange PosRange;
 
       private:
 

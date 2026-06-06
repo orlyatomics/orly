@@ -9,11 +9,12 @@
    compile-time error (verified by hand; see below). The result is the
    unified type of the arm bodies. It lowers to a nested ternary on the
    operand's GetWhich(), reusing the Phase 3 M4 primitives; an arm body
-   reads the active payload via the `e.<Tag>` accessor (v1 has no payload
-   binder).
+   reads the active payload via the `e.<Tag>` accessor, or binds it to a
+   name with the `Tag(n): body` arm form (see classify_bind and t6-t10).
 
-   Syntax: `(operand) when { Tag: body; ... }` -- the operand is
-   parenthesised (like `where`/`assert`), and every arm ends in `;`.
+   Syntax: `(operand) when { Tag: body; Tag(n): body; ... }` -- the operand
+   is parenthesised (like `where`/`assert`), and every arm ends in `;`. A
+   `Tag(n)` arm binds the active payload to `n` within that arm's body.
 
    Exhaustiveness is enforced at compile time (checked manually with
    orlyc, not encoded here since lang_test has no "expect compile error"
@@ -50,6 +51,15 @@ classify = ((v) when {
   v = given::(<| Integer(int) | Deleted |>);
 };
 
+/* Payload binder: `Tag(n)` binds `n` to the active arm's payload in the
+   arm body -- sugar over the `.Tag` accessor (#95). */
+classify_bind = ((v) when {
+  Integer(n): n + 100;
+  Deleted: -1;
+}) where {
+  v = given::(<| Integer(int) | Deleted |>);
+};
+
 with {
   <[400]> <- <| Integer(int) | Deleted |>.Integer(7);
   <[401]> <- <| Integer(int) | Deleted |>.Deleted;
@@ -73,4 +83,28 @@ with {
          Deleted: 0;
          Integer: 9;
        }) == 9;
+
+  /* Payload binder over a stored, read-back variant: `n` is the payload. */
+  t6: classify_bind(.v: read_var(.n: 400)) == 107;
+  t7: classify_bind(.v: read_var(.n: 401)) == -1;
+
+  /* Binder over an inline variant; the bound name is usable like any name
+     (here referenced twice). Mixing a binder arm with a plain arm is fine. */
+  t8: ((<| Integer(int) | Deleted |>.Integer(5)) when {
+         Integer(x): x * x;
+         Deleted: 0;
+       }) == 25;
+  t9: ((<| Integer(int) | Deleted |>.Deleted) when {
+         Integer(x): x * x;
+         Deleted: 0;
+       }) == 0;
+
+  /* The binder is sugar for the accessor: both forms agree. */
+  t10: ((<| Integer(int) | Deleted |>.Integer(8)) when {
+          Integer(n): n + 1;
+          Deleted: 0;
+        }) == ((<| Integer(int) | Deleted |>.Integer(8)) when {
+          Integer: (<| Integer(int) | Deleted |>.Integer(8)).Integer + 1;
+          Deleted: 0;
+        });
 };
