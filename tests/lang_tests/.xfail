@@ -11,6 +11,5 @@
 # an entry whose test now passes is also a failure (xpass), prompting
 # the maintainer to drop the entry.
 
-general/mutablefilter.orly #73
 general/unsorted/multiple_sequences.orly #74
 general/unsorted/sequence_in_effecting.orly #75

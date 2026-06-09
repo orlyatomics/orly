@@ -1,7 +1,9 @@
 /* <orly/lang_tests/general/mutablefilter.orly>
 
-   This Orly script contains an error case where you cannot filter values
-   returned from dereferencing a set of keys directly.
+   Regression test for inline filtering of values produced by dereferencing
+   a set of keys. Filtering the dereferenced values directly (without first
+   binding them to a name) used to fail at C++ codegen time; this test pins
+   that it now works (issue #73).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -27,14 +29,14 @@ with {
 test {
 
   /* These two work just fine */
-  t1: *(keys <["stuff", free::(int) ]>)::(int) as [int] == [3,7,10,13,17];
-  t2: *(keys <["stuff", free::(int) ]> if (that.1 >= 4))::(int) as [int] == [13,17];
+  t1: *(keys(int)@<["stuff", free::(int)]>)::(int) as [int] == [3,7,10,13,17];
+  t2: *(keys(int)@<["stuff", free::(int)]> if (that.1 >= 4))::(int) as [int] == [13,17];
 
-  /* This is the case that fails because we can't filter returned values */
-  t3: ((*(keys <["stuff", free::(int)]>)::(int)) if (that > 4)) as [int] == [7,10,13,17];
+  /* The inline filter of dereferenced values -- the case #73 is about */
+  t3: ((*(keys(int)@<["stuff", free::(int)]>)::(int)) if (that > 4)) as [int] == [7,10,13,17];
 
-  /* This works though -- even though literally it's just putting that "dereference these" call into a function */
+  /* Same dereference behind a name, then filtered */
   t4: (get_me_ints if (that > 4)) as [int] == [7,10,13,17];
 };
 
-get_me_ints = *(keys <["stuff", free::(int) ]>)::(int);
+get_me_ints = *(keys(int)@<["stuff", free::(int)]>)::(int);

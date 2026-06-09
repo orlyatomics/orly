@@ -429,7 +429,14 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TExp *that) const { Binary(Package, TBinary::Exponent, that); }
     virtual void operator()(const Expr::TFilter *that) const {
-      auto seq = BuildInline(Package, that->GetLhs(), false);
+      // Build the filtered sequence keeping element mutability so that the
+      // implicit-map element type stays consistent with the "that" arg type
+      // and the generator element type. Building with keep_mutable=false would
+      // unwrap a TMutable element (emitting a spurious .GetVal()) while the
+      // map's declared return type stayed TMutable, producing C++ that fails
+      // to compile (issue #73). The outer list-materialization unwraps at the
+      // boundary, exactly as the bare-deref case already does.
+      auto seq = BuildInline(Package, that->GetLhs(), true);
 
       //TODO: Filling in the "that" arg then using GetArg to get it back is more than sort of fugly.
       //TODO: Common sub expression elimination for the filter func.
