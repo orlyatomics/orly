@@ -17,6 +17,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include <orly/atom/core_vector.h>
@@ -89,36 +90,36 @@ namespace Orly {
 
       /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewSafeRepo(const Base::TUuid &repo_id,
-                                                     const Base::TOpt<TTtl> &ttl);
+                                                     const std::optional<TTtl> &ttl);
 
       /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewSafeRepo(const Base::TUuid &repo_id,
-                                                      const Base::TOpt<TTtl> &ttl,
+                                                      const std::optional<TTtl> &ttl,
                                                       const TManager::TPtr<Indy::TRepo> &parent_repo);
 
       /* TODO */
       TManager::TPtr<Indy::TRepo> NewSafeRepo(const Base::TUuid &repo_id,
-                                              const Base::TOpt<TTtl> &ttl,
-                                              const Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
+                                              const std::optional<TTtl> &ttl,
+                                              const std::optional<TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
       /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewFastRepo(const Base::TUuid &repo_id,
-                                                     const Base::TOpt<TTtl> &ttl);
+                                                     const std::optional<TTtl> &ttl);
 
       /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewFastRepo(const Base::TUuid &repo_id,
-                                                     const Base::TOpt<TTtl> &ttl,
+                                                     const std::optional<TTtl> &ttl,
                                                      const TManager::TPtr<Indy::TRepo> &parent_repo);
 
       /* TODO */
       TManager::TPtr<Indy::TRepo> NewFastRepo(const Base::TUuid &repo_id,
-                                              const Base::TOpt<TTtl> &ttl,
-                                              const Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
+                                              const std::optional<TTtl> &ttl,
+                                              const std::optional<TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
       /* TODO */
       inline TManager::TPtr<Indy::TRepo> GetRepo(const Base::TUuid &repo_id,
-                                                 const Base::TOpt<TTtl> &deadline,
-                                                 const Base::TOpt<TManager::TPtr<TRepo>> &parent_repo,
+                                                 const std::optional<TTtl> &deadline,
+                                                 const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                                  bool is_safe,
                                                  bool create = true);
 
@@ -168,7 +169,7 @@ namespace Orly {
 
         /* TODO */
         typedef std::vector<Base::TUuid> TRootPath;
-        typedef Base::TOpt<TSequenceNumber> TOptSeq;
+        typedef std::optional<TSequenceNumber> TOptSeq;
 
         /* TODO */
         static const int Normal = 0;
@@ -291,10 +292,10 @@ namespace Orly {
         /* TODO */
         virtual void Inventory(const Base::TUuid &repo_id,
                                size_t ttl,
-                               const Base::TOpt<Base::TUuid> &parent_repo_id,
+                               const std::optional<Base::TUuid> &parent_repo_id,
                                bool is_safe,
-                               const Base::TOpt<TSequenceNumber> &lowest,
-                               const Base::TOpt<TSequenceNumber> &highest,
+                               const std::optional<TSequenceNumber> &lowest,
+                               const std::optional<TSequenceNumber> &highest,
                                TSequenceNumber next_id) override;
 
         /* TODO */
@@ -444,10 +445,10 @@ namespace Orly {
           /* TODO */
           TToSync(const Base::TUuid &repo_id,
                   size_t ttl,
-                  const Base::TOpt<Base::TUuid> &parent_repo_id,
+                  const std::optional<Base::TUuid> &parent_repo_id,
                   bool is_safe,
-                  const Base::TOpt<TSequenceNumber> &lowest,
-                  const Base::TOpt<TSequenceNumber> &highest,
+                  const std::optional<TSequenceNumber> &lowest,
+                  const std::optional<TSequenceNumber> &highest,
                   TSequenceNumber next_id)
               : RepoId(repo_id),
                 Ttl(ttl),
@@ -462,10 +463,10 @@ namespace Orly {
           /* TODO */
           Base::TUuid RepoId;
           size_t Ttl;
-          Base::TOpt<Base::TUuid> ParentRepoId;
+          std::optional<Base::TUuid> ParentRepoId;
           bool IsSafe;
-          Base::TOpt<TSequenceNumber> Lowest;
-          Base::TOpt<TSequenceNumber> Highest;
+          std::optional<TSequenceNumber> Lowest;
+          std::optional<TSequenceNumber> Highest;
           TSequenceNumber NextId;
 
           friend class TSlave;
@@ -488,8 +489,8 @@ namespace Orly {
 
       /* TODO */
       virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
-                                   const Base::TOpt<TTtl> &ttl,
-                                   const Base::TOpt<TManager::TPtr<TRepo>> &parent_repo,
+                                   const std::optional<TTtl> &ttl,
+                                   const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                    bool is_safe,
                                    bool create) override;
 
@@ -667,30 +668,30 @@ namespace Orly {
       *************/
 
     inline TManager::TPtr<Indy::TRepo> TManager::NewSafeRepo(const Base::TUuid &repo_id,
-                                                             const Base::TOpt<TTtl> &ttl) {
-      return NewSafeRepo(repo_id, ttl, Base::TOpt<TManager::TPtr<L0::TManager::TRepo>>());
+                                                             const std::optional<TTtl> &ttl) {
+      return NewSafeRepo(repo_id, ttl, std::optional<TManager::TPtr<L0::TManager::TRepo>>());
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::NewSafeRepo(const Base::TUuid &repo_id,
-                                                             const Base::TOpt<TTtl> &ttl,
+                                                             const std::optional<TTtl> &ttl,
                                                              const TManager::TPtr<Indy::TRepo> &parent_repo) {
-      return NewSafeRepo(repo_id, ttl, Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>>(parent_repo));
+      return NewSafeRepo(repo_id, ttl, std::optional<L0::TManager::TPtr<L0::TManager::TRepo>>(parent_repo));
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::NewFastRepo(const Base::TUuid &repo_id,
-                                                             const Base::TOpt<TTtl> &ttl) {
-      return NewFastRepo(repo_id, ttl, Base::TOpt<TManager::TPtr<L0::TManager::TRepo>>());
+                                                             const std::optional<TTtl> &ttl) {
+      return NewFastRepo(repo_id, ttl, std::optional<TManager::TPtr<L0::TManager::TRepo>>());
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::NewFastRepo(const Base::TUuid &repo_id,
-                                                              const Base::TOpt<TTtl> &ttl,
+                                                              const std::optional<TTtl> &ttl,
                                                               const TManager::TPtr<Indy::TRepo> &parent_repo) {
-      return NewFastRepo(repo_id, ttl, Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>>(parent_repo));
+      return NewFastRepo(repo_id, ttl, std::optional<L0::TManager::TPtr<L0::TManager::TRepo>>(parent_repo));
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::GetRepo(const Base::TUuid &repo_id,
-                                                          const Base::TOpt<TTtl> &ttl,
-                                                          const Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+                                                          const std::optional<TTtl> &ttl,
+                                                          const std::optional<TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
                                                           bool is_safe,
                                                           bool create) {
       return create ? OpenOrCreate(repo_id, ttl, parent_repo, is_safe) : ForceOpenRepo(repo_id);

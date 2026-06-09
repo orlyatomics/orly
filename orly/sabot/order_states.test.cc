@@ -18,6 +18,7 @@
 
 #include <orly/sabot/order_states.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -34,126 +35,126 @@ using namespace Orly::Native;
 static const int8_t Int8_L = -1;
 static const int8_t Int8_E = 0;
 static const int8_t Int8_G = 1;
-static const TOpt<int8_t> OptInt8(Int8_L);
+static const std::optional<int8_t> OptInt8(Int8_L);
 
 static const int16_t Int16_L = -3;
 static const int16_t Int16_E = 2;
 static const int16_t Int16_G = 3;
-static const TOpt<int16_t> OptInt16(Int16_L);
+static const std::optional<int16_t> OptInt16(Int16_L);
 
 static const int32_t Int32_L = -5;
 static const int32_t Int32_E = 4;
 static const int32_t Int32_G = 5;
-static const TOpt<int32_t> OptInt32(Int32_L);
+static const std::optional<int32_t> OptInt32(Int32_L);
 
 static const int64_t Int64_L = -7;
 static const int64_t Int64_E = 6;
 static const int64_t Int64_G = 7;
-static const TOpt<int64_t> OptInt64(Int64_L);
+static const std::optional<int64_t> OptInt64(Int64_L);
 
 static const uint8_t UInt8_L = 0;
 static const uint8_t UInt8_E = 1;
 static const uint8_t UInt8_G = 2;
-static const TOpt<uint8_t> OptUInt8(UInt8_L);
+static const std::optional<uint8_t> OptUInt8(UInt8_L);
 
 static const uint16_t UInt16_L = 3;
 static const uint16_t UInt16_E = 4;
 static const uint16_t UInt16_G = 5;
-static const TOpt<uint16_t> OptUInt16(UInt16_L);
+static const std::optional<uint16_t> OptUInt16(UInt16_L);
 
 static const uint32_t UInt32_L = 6;
 static const uint32_t UInt32_E = 7;
 static const uint32_t UInt32_G = 8;
-static const TOpt<uint32_t> OptUInt32(UInt32_L);
+static const std::optional<uint32_t> OptUInt32(UInt32_L);
 
 static const uint64_t UInt64_L = 9;
 static const uint64_t UInt64_E = 10;
 static const uint64_t UInt64_G = 11;
-static const TOpt<uint64_t> OptUInt64(UInt64_L);
+static const std::optional<uint64_t> OptUInt64(UInt64_L);
 
 static const bool Bool_F = false;
 static const bool Bool_T = true;
-static const TOpt<bool> OptBool(Bool_F);
+static const std::optional<bool> OptBool(Bool_F);
 
 static const char Char_L = 'A';
 static const char Char_E = 'M';
 static const char Char_G = 'Z';
-static const TOpt<char> OptChar(Char_G);
+static const std::optional<char> OptChar(Char_G);
 
 static const float Float_L = 0.1;
 static const float Float_E = 0.5;
 static const float Float_G = 0.9;
-static const TOpt<float> OptFloat(Float_G);
+static const std::optional<float> OptFloat(Float_G);
 
 static const double Double_L = 1.1;
 static const double Double_E = 5.5;
 static const double Double_G = 9.9;
-static const TOpt<double> OptDouble(Double_G);
+static const std::optional<double> OptDouble(Double_G);
 
 static const Sabot::TStdDuration Duration_L(100);
 static const Sabot::TStdDuration Duration_E(1000);
 static const Sabot::TStdDuration Duration_G(10000);
-static const TOpt<Sabot::TStdDuration> OptDuration(Duration_G);
+static const std::optional<Sabot::TStdDuration> OptDuration(Duration_G);
 
 static const Sabot::TStdTimePoint TimePoint_L(Duration_L);
 static const Sabot::TStdTimePoint TimePoint_E(Duration_E);
 static const Sabot::TStdTimePoint TimePoint_G(Duration_G);
-static const TOpt<Sabot::TStdTimePoint> OptTimePoint(TimePoint_G);
+static const std::optional<Sabot::TStdTimePoint> OptTimePoint(TimePoint_G);
 
 static const TUuid Uuid_L("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA");
 static const TUuid Uuid_E("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB");
 static const TUuid Uuid_G("CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC");
-static const TOpt<TUuid> OptUuid(Uuid_G);
+static const std::optional<TUuid> OptUuid(Uuid_G);
 
 static const Native::TBlob Blob_LS{'A', 'A', 'A'};
 static const Native::TBlob Blob_L {'A', 'A', 'A', 'A'};
 static const Native::TBlob Blob_E {'C', 'C', 'C', 'C'};
 static const Native::TBlob Blob_G {'F', 'F', 'F', 'F'};
 static const Native::TBlob Blob_GL{'F', 'F', 'F', 'F', 'F'};
-static const TOpt<Native::TBlob> OptBlob(Blob_GL);
+static const std::optional<Native::TBlob> OptBlob(Blob_GL);
 
 static const string String_LS = "AAAAAAA";
 static const string String_L  = "AAAAAAAA";
 static const string String_E  = "BBBBBBBB";
 static const string String_G  = "CCCCCCCC";
 static const string String_GL = "CCCCCCCCC";
-static const TOpt<string> OptString(String_GL);
+static const std::optional<string> OptString(String_GL);
 
 static const TDesc<int32_t> Desc_L(Int32_G);
 static const TDesc<int32_t> Desc_E(Int32_E);
 static const TDesc<int32_t> Desc_G(Int32_L);
-static const TOpt<TDesc<int32_t>> OptDesc(Desc_G);
+static const std::optional<TDesc<int32_t>> OptDesc(Desc_G);
 
 static const set<int32_t> Set_LS{1, 2};
 static const set<int32_t> Set_L{3, 2, 1};
 static const set<int32_t> Set_E{2, 3, 4};
 static const set<int32_t> Set_G{3, 4, 5};
 static const set<int32_t> Set_GL{3, 4, 5, 6};
-static const TOpt<set<int32_t>> OptSet(Set_GL);
+static const std::optional<set<int32_t>> OptSet(Set_GL);
 
 static const vector<int32_t> Vector_LS{1, 2};
 static const vector<int32_t> Vector_L{1, 2, 3};
 static const vector<int32_t> Vector_E{2, 3, 4};
 static const vector<int32_t> Vector_G{3, 4, 5};
 static const vector<int32_t> Vector_GL{3, 4, 5, 6};
-static const TOpt<vector<int32_t>> OptVector(Vector_GL);
+static const std::optional<vector<int32_t>> OptVector(Vector_GL);
 
 static const map<int32_t, char> Map_LS{{1, 'A'}, {2, 'B'}};
 static const map<int32_t, char> Map_L{{1, 'A'}, {2, 'B'}, {3, 'C'}};
 static const map<int32_t, char> Map_E{{1, 'B'}, {2, 'C'}, {3, 'D'}};
 static const map<int32_t, char> Map_G{{1, 'B'}, {3, 'A'}, {3, 'C'}};
 static const map<int32_t, char> Map_GL{{1, 'B'}, {3, 'A'}, {3, 'C'}, {4, 'D'}};
-static const TOpt<map<int32_t, char>> OptMap(Map_GL);
+static const std::optional<map<int32_t, char>> OptMap(Map_GL);
 
 static const TPoint Point_L(1.0, 2.0);
 static const TPoint Point_E(2.0, 3.0);
 static const TPoint Point_G(3.0, 4.0);
-static const TOpt<TPoint> OptPoint(Point_G);
+static const std::optional<TPoint> OptPoint(Point_G);
 
 static const tuple<int32_t> Tuple_L(make_tuple(Int32_L));
 static const tuple<int32_t> Tuple_E(make_tuple(Int32_E));
 static const tuple<int32_t> Tuple_G(make_tuple(Int32_G));
-static const TOpt<tuple<int32_t>> OptTuple(Tuple_G);
+static const std::optional<tuple<int32_t>> OptTuple(Tuple_G);
 
 template <typename TLhs, typename TRhs>
 TComparison CheckStates(const TLhs &lhs, const TRhs &rhs) {
@@ -221,8 +222,8 @@ FIXTURE(Void) {
 
 FIXTURE(Int8) {
   EXPECT_TRUE(IsLt(CheckStates<TFree<int8_t>,      int8_t> (Native::TFree<int8_t>::Free, Int8_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<int8_t>, TOpt<int8_t>>(Native::TFree<int8_t>::Free, OptInt8)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <int8_t>,      int8_t> (OptInt8, Int8_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<int8_t>, std::optional<int8_t>>(Native::TFree<int8_t>::Free, OptInt8)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<int8_t>,      int8_t> (OptInt8, Int8_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<int8_t, int8_t>(Int8_L, Int8_E)));
   EXPECT_TRUE(IsEq(CheckStates<int8_t, int8_t>(Int8_E, Int8_E)));
@@ -234,8 +235,8 @@ FIXTURE(Int8) {
 FIXTURE(Int16) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<int16_t>,      int8_t > (Native::TFree<int16_t>::Free, Int8_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<int16_t>,      int16_t> (Native::TFree<int16_t>::Free, Int16_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<int16_t>, TOpt<int16_t>>(Native::TFree<int16_t>::Free, OptInt16)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <int16_t>,      int16_t> (OptInt16, Int16_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<int16_t>, std::optional<int16_t>>(Native::TFree<int16_t>::Free, OptInt16)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<int16_t>,      int16_t> (OptInt16, Int16_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<int16_t, int16_t>(Int16_L, Int16_E)));
   EXPECT_TRUE(IsEq(CheckStates<int16_t, int16_t>(Int16_E, Int16_E)));
@@ -248,8 +249,8 @@ FIXTURE(Int16) {
 FIXTURE(Int32) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<int32_t>,      int16_t >(Native::TFree<int32_t>::Free, Int16_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<int32_t>,      int32_t> (Native::TFree<int32_t>::Free, Int32_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<int32_t>, TOpt<int32_t>>(Native::TFree<int32_t>::Free, OptInt32)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <int32_t>,      int32_t> (OptInt32, Int32_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<int32_t>, std::optional<int32_t>>(Native::TFree<int32_t>::Free, OptInt32)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<int32_t>,      int32_t> (OptInt32, Int32_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<int32_t, int32_t>(Int32_L, Int32_E)));
   EXPECT_TRUE(IsEq(CheckStates<int32_t, int32_t>(Int32_E, Int32_E)));
@@ -262,8 +263,8 @@ FIXTURE(Int32) {
 FIXTURE(Int64) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<int64_t>,      int32_t >(Native::TFree<int64_t>::Free, Int32_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<int64_t>,      int64_t> (Native::TFree<int64_t>::Free, Int64_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<int64_t>, TOpt<int64_t>>(Native::TFree<int64_t>::Free, OptInt64)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <int64_t>,      int64_t> (OptInt64, Int64_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<int64_t>, std::optional<int64_t>>(Native::TFree<int64_t>::Free, OptInt64)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<int64_t>,      int64_t> (OptInt64, Int64_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<int64_t, int64_t>(Int64_L, Int64_E)));
   EXPECT_TRUE(IsEq(CheckStates<int64_t, int64_t>(Int64_E, Int64_E)));
@@ -276,8 +277,8 @@ FIXTURE(Int64) {
 FIXTURE(UInt8) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<uint8_t>,      int64_t >(Native::TFree<uint8_t>::Free, Int64_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<uint8_t>,      uint8_t> (Native::TFree<uint8_t>::Free, UInt8_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<uint8_t>, TOpt<uint8_t>>(Native::TFree<uint8_t>::Free, OptUInt8)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <uint8_t>,      uint8_t> (OptUInt8, UInt8_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<uint8_t>, std::optional<uint8_t>>(Native::TFree<uint8_t>::Free, OptUInt8)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<uint8_t>,      uint8_t> (OptUInt8, UInt8_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<uint8_t, uint8_t >(UInt8_L, UInt8_E)));
   EXPECT_TRUE(IsEq(CheckStates<uint8_t, uint8_t >(UInt8_E, UInt8_E)));
@@ -290,8 +291,8 @@ FIXTURE(UInt8) {
 FIXTURE(UInt16) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<uint16_t>,      uint8_t > (Native::TFree<uint16_t>::Free, UInt8_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<uint16_t>,      uint16_t> (Native::TFree<uint16_t>::Free, UInt16_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<uint16_t>, TOpt<uint16_t>>(Native::TFree<uint16_t>::Free, OptUInt16)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <uint16_t>,      uint16_t> (OptUInt16, UInt16_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<uint16_t>, std::optional<uint16_t>>(Native::TFree<uint16_t>::Free, OptUInt16)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<uint16_t>,      uint16_t> (OptUInt16, UInt16_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<uint16_t, uint16_t>(UInt16_L, UInt16_E)));
   EXPECT_TRUE(IsEq(CheckStates<uint16_t, uint16_t>(UInt16_E, UInt16_E)));
@@ -304,8 +305,8 @@ FIXTURE(UInt16) {
 FIXTURE(UInt32) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<uint32_t>,      uint16_t >(Native::TFree<uint32_t>::Free, UInt16_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<uint32_t>,      uint32_t> (Native::TFree<uint32_t>::Free, UInt32_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<uint32_t>, TOpt<uint32_t>>(Native::TFree<uint32_t>::Free, OptUInt32)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <uint32_t>,      uint32_t> (OptUInt32, UInt32_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<uint32_t>, std::optional<uint32_t>>(Native::TFree<uint32_t>::Free, OptUInt32)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<uint32_t>,      uint32_t> (OptUInt32, UInt32_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<uint32_t, uint32_t>(UInt32_L, UInt32_E)));
   EXPECT_TRUE(IsEq(CheckStates<uint32_t, uint32_t>(UInt32_E, UInt32_E)));
@@ -318,8 +319,8 @@ FIXTURE(UInt32) {
 FIXTURE(UInt64) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<uint64_t>,      uint32_t >(Native::TFree<uint64_t>::Free, UInt32_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<uint64_t>,      uint64_t> (Native::TFree<uint64_t>::Free, UInt64_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<uint64_t>, TOpt<uint64_t>>(Native::TFree<uint64_t>::Free, OptUInt64)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <uint64_t>,      uint64_t> (OptUInt64, UInt64_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<uint64_t>, std::optional<uint64_t>>(Native::TFree<uint64_t>::Free, OptUInt64)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<uint64_t>,      uint64_t> (OptUInt64, UInt64_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<uint64_t, uint64_t>(UInt64_L, UInt64_E)));
   EXPECT_TRUE(IsEq(CheckStates<uint64_t, uint64_t>(UInt64_E, UInt64_E)));
@@ -332,8 +333,8 @@ FIXTURE(UInt64) {
 FIXTURE(Bool) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<bool>,      uint64_t>(Native::TFree<bool>::Free, UInt64_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<bool>,      bool>    (Native::TFree<bool>::Free, Bool_F)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<bool>, TOpt<bool>>   (Native::TFree<bool>::Free, OptBool)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <bool>,      bool>    (OptBool, Bool_F)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<bool>, std::optional<bool>>   (Native::TFree<bool>::Free, OptBool)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<bool>,      bool>    (OptBool, Bool_F)));
 
   EXPECT_TRUE(IsLt(CheckStates<bool, bool>    (Bool_F, Bool_T)));
   EXPECT_TRUE(IsEq(CheckStates<bool, bool>    (Bool_F, Bool_F)));
@@ -346,8 +347,8 @@ FIXTURE(Bool) {
 FIXTURE(Char) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<char>,      bool >(Native::TFree<char>::Free, Bool_T)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<char>,      char> (Native::TFree<char>::Free, Char_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<char>, TOpt<char>>(Native::TFree<char>::Free, OptChar)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <char>,      char> (OptChar, Char_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<char>, std::optional<char>>(Native::TFree<char>::Free, OptChar)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<char>,      char> (OptChar, Char_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<char, char> (Char_L, Char_E)));
   EXPECT_TRUE(IsEq(CheckStates<char, char> (Char_E, Char_E)));
@@ -360,8 +361,8 @@ FIXTURE(Char) {
 FIXTURE(Float) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<float>,      char > (Native::TFree<float>::Free, Char_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<float>,      float> (Native::TFree<float>::Free, Float_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<float>, TOpt<float>>(Native::TFree<float>::Free, OptFloat)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <float>,      float> (OptFloat, Float_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<float>, std::optional<float>>(Native::TFree<float>::Free, OptFloat)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<float>,      float> (OptFloat, Float_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<float, float> (Float_L, Float_E)));
   EXPECT_TRUE(IsEq(CheckStates<float, float> (Float_E, Float_E)));
@@ -374,8 +375,8 @@ FIXTURE(Float) {
 FIXTURE(Double) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<double>,      float > (Native::TFree<double>::Free, Float_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<double>,      double> (Native::TFree<double>::Free, Double_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<double>, TOpt<double>>(Native::TFree<double>::Free, OptDouble)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <double>,      double> (OptDouble, Double_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<double>, std::optional<double>>(Native::TFree<double>::Free, OptDouble)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<double>,      double> (OptDouble, Double_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<double, double>(Double_L, Double_E)));
   EXPECT_TRUE(IsEq(CheckStates<double, double>(Double_E, Double_E)));
@@ -388,8 +389,8 @@ FIXTURE(Double) {
 FIXTURE(Duration) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<Sabot::TStdDuration>,      double             > (Native::TFree<Sabot::TStdDuration>::Free, Double_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<Sabot::TStdDuration>,      Sabot::TStdDuration> (Native::TFree<Sabot::TStdDuration>::Free, Duration_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<Sabot::TStdDuration>, TOpt<Sabot::TStdDuration>>(Native::TFree<Sabot::TStdDuration>::Free, OptDuration)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <Sabot::TStdDuration>,      Sabot::TStdDuration> (OptDuration, Duration_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<Sabot::TStdDuration>, std::optional<Sabot::TStdDuration>>(Native::TFree<Sabot::TStdDuration>::Free, OptDuration)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<Sabot::TStdDuration>,      Sabot::TStdDuration> (OptDuration, Duration_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<Sabot::TStdDuration, Sabot::TStdDuration>(Duration_L, Duration_E)));
   EXPECT_TRUE(IsEq(CheckStates<Sabot::TStdDuration, Sabot::TStdDuration>(Duration_E, Duration_E)));
@@ -402,10 +403,10 @@ FIXTURE(Duration) {
 FIXTURE(TimePoint) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<Sabot::TStdTimePoint>,      Sabot::TStdDuration > (Native::TFree<Sabot::TStdTimePoint>::Free, Duration_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<Sabot::TStdTimePoint>,      Sabot::TStdTimePoint> (Native::TFree<Sabot::TStdTimePoint>::Free, TimePoint_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<Sabot::TStdTimePoint>, TOpt<Sabot::TStdTimePoint>>(Native::TFree<Sabot::TStdTimePoint>::Free, OptTimePoint)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <Sabot::TStdTimePoint>,      Sabot::TStdTimePoint> (OptTimePoint, TimePoint_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<Sabot::TStdTimePoint>, std::optional<Sabot::TStdTimePoint>>(Native::TFree<Sabot::TStdTimePoint>::Free, OptTimePoint)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<Sabot::TStdTimePoint>,      Sabot::TStdTimePoint> (OptTimePoint, TimePoint_L)));
 
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <Sabot::TStdDuration>,      Sabot::TStdDuration> (OptDuration, Duration_L)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<Sabot::TStdDuration>,      Sabot::TStdDuration> (OptDuration, Duration_L)));
   EXPECT_TRUE(IsLt(CheckStates<Sabot::TStdTimePoint, Sabot::TStdTimePoint>(TimePoint_L, TimePoint_E)));
   EXPECT_TRUE(IsEq(CheckStates<Sabot::TStdTimePoint, Sabot::TStdTimePoint>(TimePoint_E, TimePoint_E)));
   EXPECT_TRUE(IsGt(CheckStates<Sabot::TStdTimePoint, Sabot::TStdTimePoint>(TimePoint_G, TimePoint_E)));
@@ -417,8 +418,8 @@ FIXTURE(TimePoint) {
 FIXTURE(Uuid) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<TUuid>,      Sabot::TStdTimePoint>(Native::TFree<TUuid>::Free, TimePoint_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<TUuid>,      TUuid>               (Native::TFree<TUuid>::Free, Uuid_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<TUuid>, TOpt<TUuid>>              (Native::TFree<TUuid>::Free, OptUuid)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <TUuid>,      TUuid>               (OptUuid, Uuid_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<TUuid>, std::optional<TUuid>>              (Native::TFree<TUuid>::Free, OptUuid)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<TUuid>,      TUuid>               (OptUuid, Uuid_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<TUuid, TUuid>(Uuid_L, Uuid_E)));
   EXPECT_TRUE(IsEq(CheckStates<TUuid, TUuid>(Uuid_E, Uuid_E)));
@@ -431,8 +432,8 @@ FIXTURE(Uuid) {
 FIXTURE(Blob) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<TBlob>,      TUuid >(Native::TFree<TBlob>::Free, Uuid_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<TBlob>,      TBlob> (Native::TFree<TBlob>::Free, Blob_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<TBlob>, TOpt<TBlob>>(Native::TFree<TBlob>::Free, OptBlob)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <TBlob>,      TBlob> (OptBlob, Blob_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<TBlob>, std::optional<TBlob>>(Native::TFree<TBlob>::Free, OptBlob)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<TBlob>,      TBlob> (OptBlob, Blob_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<TBlob, TBlob >(Blob_LS, Blob_L)));
   EXPECT_TRUE(IsLt(CheckStates<TBlob, TBlob >(Blob_L , Blob_E)));
@@ -447,8 +448,8 @@ FIXTURE(Blob) {
 FIXTURE(String) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<string>,      TBlob > (Native::TFree<string>::Free, Blob_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<string>,      string> (Native::TFree<string>::Free, String_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<string>, TOpt<string>>(Native::TFree<string>::Free, OptString)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <string>,      string> (OptString, String_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<string>, std::optional<string>>(Native::TFree<string>::Free, OptString)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<string>,      string> (OptString, String_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<string, string>(String_LS, String_L)));
   EXPECT_TRUE(IsLt(CheckStates<string, string>(String_L , String_E)));
@@ -463,8 +464,8 @@ FIXTURE(String) {
 FIXTURE(Desc) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<TDesc<int32_t>>,      string        > (Native::TFree<TDesc<int32_t>>::Free, String_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<TDesc<int32_t>>,      TDesc<int32_t>> (Native::TFree<TDesc<int32_t>>::Free, Desc_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<TDesc<int32_t>>, TOpt<TDesc<int32_t>>>(Native::TFree<TDesc<int32_t>>::Free, OptDesc)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <TDesc<int32_t>>,      TDesc<int32_t>> (OptDesc, Desc_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<TDesc<int32_t>>, std::optional<TDesc<int32_t>>>(Native::TFree<TDesc<int32_t>>::Free, OptDesc)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<TDesc<int32_t>>,      TDesc<int32_t>> (OptDesc, Desc_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<TDesc<int32_t>, TDesc<int32_t>>(Desc_L, Desc_E)));
   EXPECT_TRUE(IsEq(CheckStates<TDesc<int32_t>, TDesc<int32_t>>(Desc_E, Desc_E)));
@@ -477,8 +478,8 @@ FIXTURE(Desc) {
 FIXTURE(Set) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<set<int32_t>>,      TDesc<int32_t>>(Native::TFree<set<int32_t>>::Free, Desc_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<set<int32_t>>,      set<int32_t>>  (Native::TFree<set<int32_t>>::Free, Set_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<set<int32_t>>, TOpt<set<int32_t>>> (Native::TFree<set<int32_t>>::Free, OptSet)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <set<int32_t>>,      set<int32_t>>  (OptSet, Set_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<set<int32_t>>, std::optional<set<int32_t>>> (Native::TFree<set<int32_t>>::Free, OptSet)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<set<int32_t>>,      set<int32_t>>  (OptSet, Set_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<set<int32_t>, set<int32_t>>   (Set_LS, Set_L)));
   EXPECT_TRUE(IsLt(CheckStates<set<int32_t>, set<int32_t>>   (Set_L , Set_E)));
@@ -493,8 +494,8 @@ FIXTURE(Set) {
 FIXTURE(Vector) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<vector<int32_t>>,      set<int32_t>   > (Native::TFree<vector<int32_t>>::Free, Set_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<vector<int32_t>>,      vector<int32_t>> (Native::TFree<vector<int32_t>>::Free, Vector_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<vector<int32_t>>, TOpt<vector<int32_t>>>(Native::TFree<vector<int32_t>>::Free, OptVector)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <vector<int32_t>>,      vector<int32_t>> (OptVector, Vector_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<vector<int32_t>>, std::optional<vector<int32_t>>>(Native::TFree<vector<int32_t>>::Free, OptVector)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<vector<int32_t>>,      vector<int32_t>> (OptVector, Vector_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<vector<int32_t>, vector<int32_t>>(Vector_LS, Vector_L)));
   EXPECT_TRUE(IsLt(CheckStates<vector<int32_t>, vector<int32_t>>(Vector_L , Vector_E)));
@@ -509,8 +510,8 @@ FIXTURE(Vector) {
 FIXTURE(Map) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<map<int32_t, char>>,      vector<int32_t>   > (Native::TFree<map<int32_t, char>>::Free, Vector_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<map<int32_t, char>>,      map<int32_t, char>> (Native::TFree<map<int32_t, char>>::Free, Map_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<map<int32_t, char>>, TOpt<map<int32_t, char>>>(Native::TFree<map<int32_t, char>>::Free, OptMap)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <map<int32_t, char>>,      map<int32_t, char>> (OptMap, Map_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<map<int32_t, char>>, std::optional<map<int32_t, char>>>(Native::TFree<map<int32_t, char>>::Free, OptMap)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<map<int32_t, char>>,      map<int32_t, char>> (OptMap, Map_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<map<int32_t, char>, map<int32_t, char>>(Map_LS, Map_L)));
   EXPECT_TRUE(IsLt(CheckStates<map<int32_t, char>, map<int32_t, char>>(Map_L , Map_E)));
@@ -525,8 +526,8 @@ FIXTURE(Map) {
 FIXTURE(Record) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<TPoint>,      map<int32_t, char>>(Native::TFree<TPoint>::Free, Map_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<TPoint>,      TPoint>            (Native::TFree<TPoint>::Free, Point_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<TPoint>, TOpt<TPoint>>           (Native::TFree<TPoint>::Free, OptPoint)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <TPoint>,      TPoint>            (OptPoint, Point_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<TPoint>, std::optional<TPoint>>           (Native::TFree<TPoint>::Free, OptPoint)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<TPoint>,      TPoint>            (OptPoint, Point_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<TPoint, TPoint>            (Point_L, Point_E)));
   EXPECT_TRUE(IsEq(CheckStates<TPoint, TPoint>            (Point_E, Point_E)));
@@ -539,8 +540,8 @@ FIXTURE(Record) {
 FIXTURE(Tuple) {
   EXPECT_TRUE(IsGt(CheckStates<TFree<tuple<int32_t>>,      TPoint        > (Native::TFree<tuple<int32_t>>::Free, Point_G)));
   EXPECT_TRUE(IsLt(CheckStates<TFree<tuple<int32_t>>,      tuple<int32_t>> (Native::TFree<tuple<int32_t>>::Free, Tuple_L)));
-  EXPECT_TRUE(IsLt(CheckStates<TFree<tuple<int32_t>>, TOpt<tuple<int32_t>>>(Native::TFree<tuple<int32_t>>::Free, OptTuple)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt <tuple<int32_t>>,      tuple<int32_t>> (OptTuple, Tuple_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TFree<tuple<int32_t>>, std::optional<tuple<int32_t>>>(Native::TFree<tuple<int32_t>>::Free, OptTuple)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<tuple<int32_t>>,      tuple<int32_t>> (OptTuple, Tuple_L)));
 
   EXPECT_TRUE(IsLt(CheckStates<tuple<int32_t>, tuple<int32_t>>(Tuple_L, Tuple_E)));
   EXPECT_TRUE(IsEq(CheckStates<tuple<int32_t>, tuple<int32_t>>(Tuple_E, Tuple_E)));

@@ -27,7 +27,7 @@
 
 #include <base/assert_true.h>
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <orly/expr/expr_parent.h>
 #include <orly/pos_range.h>
 #include <orly/type/impl.h>
@@ -75,7 +75,7 @@ namespace Orly {
 
       private:
 
-      mutable Base::TOpt<Type::TType> CachedType;
+      mutable std::optional<Type::TType> CachedType;
 
       const TExprParent *ExprParent;
 

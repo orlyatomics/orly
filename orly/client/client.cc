@@ -20,6 +20,7 @@
 
 #include <iomanip>  // TODO
 #include <memory>
+#include <optional>
 
 #include <poll.h>
 #include <sys/socket.h>
@@ -43,7 +44,7 @@ using namespace Orly;
 using namespace Orly::Client;
 using namespace Orly::Handshake;
 
-TClient::TClient(const TAddress &server_address, const TOpt<TUuid> &session_id, const seconds &time_to_live)
+TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &session_id, const seconds &time_to_live)
     : Rpc::TContext(TProtocol::Protocol),
       ServerAddress(server_address), SessionId(session_id), TimeToLive(time_to_live) {
   TFd fd;
@@ -72,19 +73,19 @@ shared_ptr<TFuture<void>> TClient::UnInstallPackage(const vector<string> &packag
   return Write<void>(ServerRpc::UninstallPackage, package_name, version);
 }
 
-shared_ptr<Rpc::TFuture<TUuid>> TClient::NewFastPrivatePov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
+shared_ptr<Rpc::TFuture<TUuid>> TClient::NewFastPrivatePov(const std::optional<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
   return Write<TUuid>(ServerRpc::NewFastPrivatePov, parent_pov_id, ttl);
 }
 
-shared_ptr<Rpc::TFuture<TUuid>> TClient::NewSafePrivatePov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
+shared_ptr<Rpc::TFuture<TUuid>> TClient::NewSafePrivatePov(const std::optional<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
   return Write<TUuid>(ServerRpc::NewSafePrivatePov, parent_pov_id, ttl);
 }
 
-shared_ptr<Rpc::TFuture<TUuid>> TClient::NewFastSharedPov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
+shared_ptr<Rpc::TFuture<TUuid>> TClient::NewFastSharedPov(const std::optional<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
   return Write<TUuid>(ServerRpc::NewFastSharedPov, parent_pov_id, ttl);
 }
 
-shared_ptr<Rpc::TFuture<TUuid>> TClient::NewSafeSharedPov(const TOpt<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
+shared_ptr<Rpc::TFuture<TUuid>> TClient::NewSafeSharedPov(const std::optional<TUuid> &parent_pov_id, const std::chrono::seconds &ttl) {
   return Write<TUuid>(ServerRpc::NewSafeSharedPov, parent_pov_id, ttl);
 }
 

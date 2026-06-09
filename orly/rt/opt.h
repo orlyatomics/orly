@@ -19,8 +19,8 @@
 #pragma once
 
 #include <cassert>
+#include <optional>  // For conversion from std::optional to Rt::TOpt
 
-#include <base/opt.h>  // For conversion from Base::TOpt to Rt::TOpt
 #include <orly/rt/runtime_error.h>
 
 namespace Orly {
@@ -66,18 +66,18 @@ namespace Orly {
         Val = new (Storage) TVal(that);
       }
 
-      /* Move-construct from a Base::TOpt */
-      TOpt(Base::TOpt<TVal> &&that) {
-        if (that.Val) {
+      /* Move-construct from a std::optional */
+      TOpt(std::optional<TVal> &&that) {
+        if (that) {
           Val = new (Storage) TVal(std::move(*that));
-          that.Reset();
+          that.reset();
         } else {
           Val = nullptr;
         }
       }
 
-      /* Copy-construct from a Base::TOpt */
-      TOpt(const Base::TOpt<TVal> &that) {
+      /* Copy-construct from a std::optional */
+      TOpt(const std::optional<TVal> &that) {
         Val = that ? new (Storage) TVal(*that) : nullptr;
       }
 

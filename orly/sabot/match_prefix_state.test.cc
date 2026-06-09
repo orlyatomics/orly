@@ -18,6 +18,7 @@
 
 #include <orly/sabot/match_prefix_state.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -102,9 +103,9 @@ static const TDesc<int32_t> Desc_A(Int32_A);
 static const TDesc<int32_t> Desc_B(Int32_B);
 static const TFree<TDesc<int32_t>> FreeDesc = TFree<TDesc<int32_t>>();
 
-static const TOpt<int32_t> Opt_A(Int32_A);
-static const TOpt<int32_t> Opt_B(Int32_B);
-static const TFree<TOpt<int32_t>> FreeOpt = TFree<TOpt<int32_t>>();
+static const std::optional<int32_t> Opt_A(Int32_A);
+static const std::optional<int32_t> Opt_B(Int32_B);
+static const TFree<std::optional<int32_t>> FreeOpt = TFree<std::optional<int32_t>>();
 
 static const set<int32_t> Set_A{3, 2, 1};
 static const set<int32_t> Set_B{3, 4, 5};
@@ -425,26 +426,26 @@ FIXTURE(Desc) {
   EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, TDesc<int32_t>>>(tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>(Desc_A, FreeDesc), tuple<TDesc<int32_t>, TDesc<int32_t>>(Desc_B, Desc_A))));
   EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, TDesc<int32_t>>>(tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>(Desc_A, FreeDesc), tuple<TDesc<int32_t>, TDesc<int32_t>>(Desc_A, Desc_A))));
 
-  EXPECT_TRUE(IsPrefixMatch(CheckStates<tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, TOpt<int32_t>>>(tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>(Desc_A, FreeDesc), tuple<TDesc<int32_t>, TOpt<int32_t>>(Desc_A, Opt_A))));
-  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, TOpt<int32_t>>>(tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>(Desc_A, FreeDesc), tuple<TDesc<int32_t>, TOpt<int32_t>>(Desc_B, Opt_A))));
+  EXPECT_TRUE(IsPrefixMatch(CheckStates<tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, std::optional<int32_t>>>(tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>(Desc_A, FreeDesc), tuple<TDesc<int32_t>, std::optional<int32_t>>(Desc_A, Opt_A))));
+  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, std::optional<int32_t>>>(tuple<TDesc<int32_t>, TFree<TDesc<int32_t>>>(Desc_A, FreeDesc), tuple<TDesc<int32_t>, std::optional<int32_t>>(Desc_B, Opt_A))));
 
-  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TOpt<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, TDesc<int32_t>>>(tuple<TOpt<int32_t>, TFree<TDesc<int32_t>>>(Opt_A, FreeDesc), tuple<TDesc<int32_t>, TDesc<int32_t>>(Desc_B, Desc_A))));
+  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<std::optional<int32_t>, TFree<TDesc<int32_t>>>, tuple<TDesc<int32_t>, TDesc<int32_t>>>(tuple<std::optional<int32_t>, TFree<TDesc<int32_t>>>(Opt_A, FreeDesc), tuple<TDesc<int32_t>, TDesc<int32_t>>(Desc_B, Desc_A))));
 }
 
 FIXTURE(Opt) {
-  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TFree<TOpt<int32_t>>>,           tuple<TOpt<int32_t>>>          (tuple<TFree<TOpt<int32_t>>>(FreeOpt), tuple<TOpt<int32_t>>(Opt_A))));
-  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TFree<TOpt<int32_t>>>,           tuple<TOpt<int32_t>>>          (tuple<TFree<TOpt<int32_t>>>(FreeOpt), tuple<TOpt<int32_t>>(Opt_B))));
+  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TFree<std::optional<int32_t>>>,           tuple<std::optional<int32_t>>>          (tuple<TFree<std::optional<int32_t>>>(FreeOpt), tuple<std::optional<int32_t>>(Opt_A))));
+  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TFree<std::optional<int32_t>>>,           tuple<std::optional<int32_t>>>          (tuple<TFree<std::optional<int32_t>>>(FreeOpt), tuple<std::optional<int32_t>>(Opt_B))));
 
-  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TOpt<int32_t>>,                  tuple<TOpt<int32_t>>>          (tuple<TOpt<int32_t>>(Opt_A), tuple<TOpt<int32_t>>(Opt_B))));
-  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TOpt<int32_t>>,                  tuple<TOpt<int32_t>>>          (tuple<TOpt<int32_t>>(Opt_A), tuple<TOpt<int32_t>>(Opt_A))));
+  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<std::optional<int32_t>>,                  tuple<std::optional<int32_t>>>          (tuple<std::optional<int32_t>>(Opt_A), tuple<std::optional<int32_t>>(Opt_B))));
+  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<std::optional<int32_t>>,                  tuple<std::optional<int32_t>>>          (tuple<std::optional<int32_t>>(Opt_A), tuple<std::optional<int32_t>>(Opt_A))));
 
-  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>, tuple<TOpt<int32_t>, TOpt<int32_t>>>(tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>(Opt_A, FreeOpt), tuple<TOpt<int32_t>, TOpt<int32_t>>(Opt_B, Opt_A))));
-  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>, tuple<TOpt<int32_t>, TOpt<int32_t>>>(tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>(Opt_A, FreeOpt), tuple<TOpt<int32_t>, TOpt<int32_t>>(Opt_A, Opt_A))));
+  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>, tuple<std::optional<int32_t>, std::optional<int32_t>>>(tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>(Opt_A, FreeOpt), tuple<std::optional<int32_t>, std::optional<int32_t>>(Opt_B, Opt_A))));
+  EXPECT_TRUE(IsUnifies    (CheckStates<tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>, tuple<std::optional<int32_t>, std::optional<int32_t>>>(tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>(Opt_A, FreeOpt), tuple<std::optional<int32_t>, std::optional<int32_t>>(Opt_A, Opt_A))));
 
-  EXPECT_TRUE(IsPrefixMatch(CheckStates<tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>, tuple<TOpt<int32_t>, set<int32_t>>>(tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>(Opt_A, FreeOpt), tuple<TOpt<int32_t>, set<int32_t>>(Opt_A, Set_A))));
-  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>, tuple<TOpt<int32_t>, set<int32_t>>>(tuple<TOpt<int32_t>, TFree<TOpt<int32_t>>>(Opt_A, FreeOpt), tuple<TOpt<int32_t>, set<int32_t>>(Opt_B, Set_A))));
+  EXPECT_TRUE(IsPrefixMatch(CheckStates<tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>, tuple<std::optional<int32_t>, set<int32_t>>>(tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>(Opt_A, FreeOpt), tuple<std::optional<int32_t>, set<int32_t>>(Opt_A, Set_A))));
+  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>, tuple<std::optional<int32_t>, set<int32_t>>>(tuple<std::optional<int32_t>, TFree<std::optional<int32_t>>>(Opt_A, FreeOpt), tuple<std::optional<int32_t>, set<int32_t>>(Opt_B, Set_A))));
 
-  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<set<int32_t>, TFree<TOpt<int32_t>>>, tuple<TOpt<int32_t>, TOpt<int32_t>>>(tuple<set<int32_t>, TFree<TOpt<int32_t>>>(Set_A, FreeOpt), tuple<TOpt<int32_t>, TOpt<int32_t>>(Opt_B, Opt_A))));
+  EXPECT_TRUE(IsNoMatch    (CheckStates<tuple<set<int32_t>, TFree<std::optional<int32_t>>>, tuple<std::optional<int32_t>, std::optional<int32_t>>>(tuple<set<int32_t>, TFree<std::optional<int32_t>>>(Set_A, FreeOpt), tuple<std::optional<int32_t>, std::optional<int32_t>>(Opt_B, Opt_A))));
 }
 
 FIXTURE(Set) {

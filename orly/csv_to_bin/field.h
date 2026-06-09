@@ -30,7 +30,7 @@
 #include <base/class_traits.h>
 #include <base/demangle.h>
 #include <base/json.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/thrower.h>
 #include <base/uuid.h>
 
@@ -148,9 +148,9 @@ namespace Orly {
     /* Translate optionals by accepting the JSON type 'null' or the
        type inside the TOpt. */
     template <typename TVal>
-    inline void TranslateJson(Base::TOpt<TVal> &val, const TJson &json) {
+    inline void TranslateJson(std::optional<TVal> &val, const TJson &json) {
       if (json.IsNull()) {
-        val.Reset();
+        val.reset();
       } else {
         TVal temp;
         TranslateJson(temp, json);
@@ -198,12 +198,12 @@ namespace Orly {
     /* A special-case handler for optional types.  In this case, when a JSON
        field is missing, we can just set the field unknown. */
     template <typename TVal>
-    struct NoJson<Base::TOpt<TVal>> final {
-      static inline bool TrySetNull(Base::TOpt<TVal> &val) {
-        val.Reset();
+    struct NoJson<std::optional<TVal>> final {
+      static inline bool TrySetNull(std::optional<TVal> &val) {
+        val.reset();
         return true;
       }
-    };  // NoJson<Base::TOpt<TVal>>
+    };  // NoJson<std::optional<TVal>>
 
     /* A special-case handler for unique ptrs.  In this case, when a JSON
        field is missing, we can just set the field null. */

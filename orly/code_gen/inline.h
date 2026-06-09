@@ -26,7 +26,8 @@
 #pragma once
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
+#include <unordered_set>
 #include <orly/code_gen/id.h>
 #include <orly/code_gen/package_base.h>
 #include <orly/type/impl.h>
@@ -74,7 +75,7 @@ namespace Orly {
       private:
       Type::TType ReturnType; //The return type.
       //This is set by SetCommonSubExpressionId for common subexpression elimination.
-      mutable Base::TOpt<TId<TIdKind::Var>> Id;
+      mutable std::optional<TId<TIdKind::Var>> Id;
 
     }; // TInline
 

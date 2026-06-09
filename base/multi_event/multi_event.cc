@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <base/multi_event/multi_event.h>
+#include <optional>
 
 using namespace std;
 using namespace MultiEvent;
@@ -33,7 +34,7 @@ void TEvent::Fire() {
   }
 }
 
-bool TWaiter::Wait(const TProducer &producer, const TConsumer &consumer, const Base::TOpt<chrono::milliseconds> &timeout) {
+bool TWaiter::Wait(const TProducer &producer, const TConsumer &consumer, const std::optional<chrono::milliseconds> &timeout) {
   Flag = false;
   try {
     /* Spin through our events. */

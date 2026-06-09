@@ -22,7 +22,10 @@
 #pragma once
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
+#include <string>
+#include <unordered_set>
+#include <vector>
 #include <orly/orly.package.cst.h>
 #include <orly/symbol/test/test_case_block.h>
 #include <orly/synth/expr.h>
@@ -56,7 +59,7 @@ namespace Orly {
         public:
 
         TTestCase(
-            const Base::TOpt<std::string> &name,
+            const std::optional<std::string> &name,
             TExpr *expr,
             TTestCaseBlock *opt_test_case_block,
             const TPosRange &pos_range);
@@ -73,7 +76,7 @@ namespace Orly {
 
         TExpr *Expr;
 
-        Base::TOpt<std::string> OptName;
+        std::optional<std::string> OptName;
 
         TTestCaseBlock *OptTestCaseBlock;
 

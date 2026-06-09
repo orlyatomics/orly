@@ -21,6 +21,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -107,7 +108,7 @@ class TWsTestServer::TSessionManager
     }
 
     /* We fake this by just generating a random id. */
-    TUuid NewPov(bool /*is_safe*/, bool /*is_shared*/, const TOpt<TUuid> &/*parent_id*/) {
+    TUuid NewPov(bool /*is_safe*/, bool /*is_shared*/, const std::optional<TUuid> &/*parent_id*/) {
       return TUuid(TUuid::Best);
     }
 
@@ -127,7 +128,7 @@ class TWsTestServer::TSessionManager
     TMethodResult Try(const TMethodRequest &/*method_request*/) {
       void *alloc = alloca(Sabot::State::GetMaxStateSize());
       TSuprena arena;
-      return TMethodResult(&arena, TCore(98.6, &arena, alloc), TOpt<TTracker>());
+      return TMethodResult(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
     }
 
     /* Do-little. */
@@ -174,7 +175,7 @@ class TWsTestServer::TSessionManager
         Session->Import(file_pattern, pkg_name, num_load_threads, num_merge_threads, merge_simultaneous);
       }
       virtual void InstallPackage(const vector<string> &name, uint64_t version) const override { Session->InstallPackage(name, version); }
-      virtual TUuid NewPov(bool is_safe, bool is_shared, const TOpt<TUuid> &parent_id) const override { return Session->NewPov(is_safe, is_shared, parent_id); }
+      virtual TUuid NewPov(bool is_safe, bool is_shared, const std::optional<TUuid> &parent_id) const override { return Session->NewPov(is_safe, is_shared, parent_id); }
       virtual void PausePov(const TUuid &pov_id) const override { Session->PausePov(pov_id); }
       virtual void SetTtl(const TUuid &durable_id, const chrono::seconds &ttl) const override { Session->SetTtl(durable_id, ttl); }
       virtual void SetUserId(const TUuid &user_id) const override { Session->SetUserId(user_id); }

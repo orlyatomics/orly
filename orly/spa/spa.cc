@@ -19,6 +19,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -441,7 +442,7 @@ class TSpa : public Mongoose::TMongoose {
   bool OnPoll(TArgs &args, ostream &strm) {
 
     std::unordered_set<Base::TUuid> notifiers;
-    TOpt<chrono::milliseconds> timeout;
+    std::optional<chrono::milliseconds> timeout;
     Base::TUuid session;
     args.Get("notifiers", notifiers);
     args.Get("timeout", timeout);
@@ -465,7 +466,7 @@ class TSpa : public Mongoose::TMongoose {
 
   /* Handles "POST /sys/create_session". */
   bool OnPostCreateSession(TArgs &args, ostream &strm) {
-    TOpt<Base::TUuid> acct;
+    std::optional<Base::TUuid> acct;
     int ttl;
 
     args.Get("acct", acct);
@@ -484,7 +485,7 @@ class TSpa : public Mongoose::TMongoose {
   bool OnPostCreatePrivatePov(TArgs &args, ostream &strm) {
 
     Base::TUuid session;
-    TOpt<Base::TUuid> parent;
+    std::optional<Base::TUuid> parent;
     int ttl;
     bool paused = false;
     args.Get("session", session);
@@ -504,7 +505,7 @@ class TSpa : public Mongoose::TMongoose {
   /* Handles "POST /sys/create_shared_pov". */
   bool OnPostCreateSharedPov(TArgs &args, ostream &strm) {
 
-    TOpt<Base::TUuid> parent;
+    std::optional<Base::TUuid> parent;
     int ttl;
     bool paused = false;
     args.Get("parent", parent);

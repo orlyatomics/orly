@@ -148,7 +148,7 @@ FIXTURE(SetTimeToLive) {
 FIXTURE(NewPov) {
   TTestServer server(1000);
   auto session = server.GetDurableManager()->New<TSession>(seconds(60));
-  auto pov_id = session->NewFastPrivatePov(&server, *TOpt<TUuid>::Unknown, seconds(60));
+  auto pov_id = session->NewFastPrivatePov(&server, *std::optional<TUuid>::Unknown, seconds(60));
   auto pov = server.GetDurableManager()->Open<TPov>(pov_id, seconds(60));
   EXPECT_TRUE(pov);
 }

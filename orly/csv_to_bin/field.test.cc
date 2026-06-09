@@ -71,7 +71,7 @@ class TFoo final
   Chrono::TTimePnt F;
   TGeo G;
   vector<string> H;
-  TOpt<int> P, Q;
+  std::optional<int> P, Q;
 
   /* Required by TObj. */
   virtual const TAnyFields &GetFields() const override {

@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/symbol/test/test_case_block.h>
+#include <optional>
 
 #include <orly/error.h>
 #include <orly/type/bool.h>
@@ -29,7 +30,7 @@ using namespace Orly::Symbol::Test;
 
 TTestCase::TPtr TTestCase::New(
     const Expr::TExpr::TPtr &expr,
-    const Base::TOpt<std::string> &opt_name,
+    const std::optional<std::string> &opt_name,
     const TTestCaseBlock::TPtr &opt_test_case_block,
     const TPosRange &pos_range) {
   return TTestCase::TPtr(new TTestCase(expr, opt_name, opt_test_case_block, pos_range));
@@ -37,7 +38,7 @@ TTestCase::TPtr TTestCase::New(
 
 TTestCase::TTestCase(
     const Expr::TExpr::TPtr &expr,
-    const Base::TOpt<std::string> &opt_name,
+    const std::optional<std::string> &opt_name,
     const TTestCaseBlock::TPtr &opt_test_case_block,
     const TPosRange &pos_range)
       : TRoot(expr),
@@ -55,7 +56,7 @@ const TPosRange &TTestCase::GetPosRange() const {
 }
 
 bool TTestCase::HasName() const {
-  return OptName;
+  return OptName.has_value();
 }
 
 const TTestCaseBlock::TPtr &TTestCase::GetOptTestCaseBlock() const {

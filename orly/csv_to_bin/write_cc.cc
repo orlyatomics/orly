@@ -103,7 +103,7 @@ void Orly::CsvToBin::WriteCc(ostream &strm, const Symbol::TTable *table) {
   assert(table);
   strm
       << "#include <syslog.h>" << endl
-      << "#include <base/opt.h>" << endl
+      << "#include <optional>" << endl
       << "#include <orly/csv_to_bin/level3.h>" << endl
       << "#include <orly/csv_to_bin/symbol/kit.h>" << endl
       << "#include <orly/csv_to_bin/translate.h>" << endl
@@ -233,7 +233,7 @@ void Orly::CsvToBin::DefKeyTupleType(std::ostream &strm, const Symbol::TKey *key
 
 void Orly::CsvToBin::PrintType(std::ostream &strm, Symbol::TType type, bool is_null) {
   if (is_null) {
-    strm << "Base::TOpt<";
+    strm << "std::optional<";
   }
   switch (type) {
     case Symbol::TType::Bool: {

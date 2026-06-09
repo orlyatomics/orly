@@ -21,7 +21,7 @@
 #include <cassert>
 #include <memory>
 
-#include <base/opt.h>
+#include <optional>
 #include <base/io/binary_input_stream.h>
 #include <base/io/binary_output_stream.h>
 #include <orly/tracker.h>
@@ -41,11 +41,11 @@ namespace Orly {
 
     /* Shares the given arena and shallow-copies the core.  Sets the tracker. */
     TMethodResult(
-        const std::shared_ptr<TArena> &arena, const Atom::TCore &value, const Base::TOpt<TTracker> &tracker,
+        const std::shared_ptr<TArena> &arena, const Atom::TCore &value, const std::optional<TTracker> &tracker,
         bool is_error = false);
 
     /* Constructs a new arena and deep-copies the core into it.  Sets the tracker. */
-    TMethodResult(TArena *arena, const Atom::TCore &value, const Base::TOpt<TTracker> &tracker, bool is_error = false);
+    TMethodResult(TArena *arena, const Atom::TCore &value, const std::optional<TTracker> &tracker, bool is_error = false);
 
     /* The arena in which our value lives. */
     const std::shared_ptr<TArena> &GetArena() const {
@@ -54,7 +54,7 @@ namespace Orly {
 
     /* The tracker of this result.
        If the method had no side-effects and no time tracking was requested, this will be unknown. */
-    const Base::TOpt<TTracker> &GetTracker() const {
+    const std::optional<TTracker> &GetTracker() const {
       return Tracker;
     }
 
@@ -86,7 +86,7 @@ namespace Orly {
     Atom::TCore Value;
 
     /* See accessor. */
-    Base::TOpt<TTracker> Tracker;
+    std::optional<TTracker> Tracker;
 
     /* See accessor. */
     bool Error;

@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cassert>
+#include <optional>
 
 #include <base/class_traits.h>
 #include <tools/nycr/symbol/atom.h>
@@ -43,7 +44,7 @@ namespace Tools {
 
         /* TODO */
         TOperator(
-            const TName &name, TAnyBase *base, const std::string &pattern, const Base::TOpt<int> &pri, TPrecLevel *prec_level, TAssoc assoc)
+            const TName &name, TAnyBase *base, const std::string &pattern, const std::optional<int> &pri, TPrecLevel *prec_level, TAssoc assoc)
             : TAtom(name, base, pattern, pri), PrecLevel(prec_level), Assoc(assoc) {
           assert(prec_level);
         }

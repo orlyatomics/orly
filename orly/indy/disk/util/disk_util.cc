@@ -21,6 +21,7 @@
    limitations under the License. */
 
 #include <iostream>
+#include <optional>
 #include <sstream>
 
 #include <syslog.h>
@@ -36,7 +37,7 @@ using namespace ::Util;
 
 TDiskUtil::TDiskUtil(Base::TScheduler *scheduler,
                      TDiskController *controller,
-                     const Base::TOpt<std::string> &instance_filter,
+                     const std::optional<std::string> &instance_filter,
                      bool do_fsync,
                      const TCacheCb &cache_cb,
                      bool do_corruption_check)

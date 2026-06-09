@@ -18,6 +18,7 @@
 
 #include <orly/sabot/compare_states.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -107,9 +108,9 @@ static const TDesc<int32_t> Desc_L(Int32_G);
 static const TDesc<int32_t> Desc_E(Int32_E);
 static const TDesc<int32_t> Desc_G(Int32_L);
 
-static const TOpt<int32_t> Opt_L(Int32_L);
-static const TOpt<int32_t> Opt_E(Int32_E);
-static const TOpt<int32_t> Opt_G(Int32_G);
+static const std::optional<int32_t> Opt_L(Int32_L);
+static const std::optional<int32_t> Opt_E(Int32_E);
+static const std::optional<int32_t> Opt_G(Int32_G);
 
 static const set<int32_t> Set_LS{1, 2};
 static const set<int32_t> Set_L{3, 2, 1};
@@ -323,16 +324,16 @@ FIXTURE(Desc) {
   EXPECT_TRUE(IsGt(CheckStates<TDesc<int32_t>, TDesc<int32_t>>(Desc_G, Desc_E)));
 
   EXPECT_TRUE(IsGt(CheckStates<TDesc<int32_t>, string>(Desc_G, String_G)));
-  EXPECT_TRUE(IsLt(CheckStates<TDesc<int32_t>, TOpt<int32_t>>(Desc_G, Opt_L)));
+  EXPECT_TRUE(IsLt(CheckStates<TDesc<int32_t>, std::optional<int32_t>>(Desc_G, Opt_L)));
 }
 
 FIXTURE(Opt) {
-  EXPECT_TRUE(IsLt(CheckStates<TOpt<int32_t>, TOpt<int32_t>> (Opt_L, Opt_E)));
-  EXPECT_TRUE(IsEq(CheckStates<TOpt<int32_t>, TOpt<int32_t>> (Opt_E, Opt_E)));
-  EXPECT_TRUE(IsGt(CheckStates<TOpt<int32_t>, TOpt<int32_t>> (Opt_G, Opt_E)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<int32_t>, std::optional<int32_t>> (Opt_L, Opt_E)));
+  EXPECT_TRUE(IsEq(CheckStates<std::optional<int32_t>, std::optional<int32_t>> (Opt_E, Opt_E)));
+  EXPECT_TRUE(IsGt(CheckStates<std::optional<int32_t>, std::optional<int32_t>> (Opt_G, Opt_E)));
 
-  EXPECT_TRUE(IsGt(CheckStates<TOpt<int32_t>, TDesc<int32_t>>(Opt_G, Desc_G)));
-  EXPECT_TRUE(IsLt(CheckStates<TOpt<int32_t>, set<int32_t>  >(Opt_G, Set_L)));
+  EXPECT_TRUE(IsGt(CheckStates<std::optional<int32_t>, TDesc<int32_t>>(Opt_G, Desc_G)));
+  EXPECT_TRUE(IsLt(CheckStates<std::optional<int32_t>, set<int32_t>  >(Opt_G, Set_L)));
 }
 
 FIXTURE(Set) {
@@ -342,7 +343,7 @@ FIXTURE(Set) {
   EXPECT_TRUE(IsGt(CheckStates<set<int32_t>, set<int32_t>>   (Set_G , Set_E)));
   EXPECT_TRUE(IsGt(CheckStates<set<int32_t>, set<int32_t>>   (Set_GL, Set_G)));
 
-  EXPECT_TRUE(IsGt(CheckStates<set<int32_t>, TOpt<int32_t>>  (Set_G, Opt_G)));
+  EXPECT_TRUE(IsGt(CheckStates<set<int32_t>, std::optional<int32_t>>  (Set_G, Opt_G)));
   EXPECT_TRUE(IsLt(CheckStates<set<int32_t>, vector<int32_t>>(Set_G, Vector_L)));
 }
 

@@ -22,11 +22,12 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include <base/class_traits.h>
 #include <base/event_semaphore.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/sigma_calc.h>
 #include <base/thrower.h>
 #include <base/uuid.h>
@@ -144,21 +145,21 @@ namespace Orly {
       }
 
       /* The id of the user who owns this session.  If the session is anonymous, this is unknown. */
-      const Base::TOpt<Base::TUuid> &GetUserId() const {
+      const std::optional<Base::TUuid> &GetUserId() const {
         return UserId;
       }
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewFastPrivatePov(TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      Base::TUuid NewFastPrivatePov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewFastSharedPov(TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      Base::TUuid NewFastSharedPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewSafePrivatePov(TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      Base::TUuid NewSafePrivatePov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewSafeSharedPov(TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      Base::TUuid NewSafeSharedPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
       void PausePov(TServer *server, const Base::TUuid &pov_id);
@@ -229,14 +230,14 @@ namespace Orly {
 
       /* TODO */
       Base::TUuid NewPov(
-          TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy,
+          TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy,
           const std::chrono::seconds &time_to_live);
 
       /* See base class. */
       virtual bool ForEachDependentPtr(const std::function<bool (Durable::TAnyPtr &)> &cb) noexcept override;
 
       /* See accessor. */
-      Base::TOpt<Base::TUuid> UserId;
+      std::optional<Base::TUuid> UserId;
 
       /* The sequence number to assign to the next notification. */
       uint32_t NextSeqNumber;

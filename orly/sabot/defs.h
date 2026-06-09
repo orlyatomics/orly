@@ -25,7 +25,7 @@
 #include <string>
 
 #include <base/chrono.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/uuid.h>
 
 namespace Orly {

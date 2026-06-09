@@ -20,8 +20,9 @@
 
 #include <cassert>
 #include <cstring>
-#include <utility>
+#include <optional>
 #include <type_traits>
+#include <utility>
 
 #include <base/class_traits.h>
 #include <orly/native/type.h>
@@ -463,19 +464,19 @@ namespace Orly {
 
       };  // TDesc<TElem>
 
-      /* State used for Base::TOpt<TElem>. */
+      /* State used for std::optional<TElem>. */
       template <typename TElem>
       class TOpt final
           : public TArrayOfSingleStates<Sabot::State::TOpt> {
         public:
 
         /* Do-little. */
-        TOpt(const Base::TOpt<TElem> &val)
+        TOpt(const std::optional<TElem> &val)
             : TArrayOfSingleStates<Sabot::State::TOpt>(val ? 1 : 0), Val(val) {}
 
         /* See Sabot::State::TOpt. */
         virtual Sabot::Type::TOpt *GetOptType(void *type_alloc) const override {
-          return Type::For<Base::TOpt<TElem>>::GetOptType(type_alloc);
+          return Type::For<std::optional<TElem>>::GetOptType(type_alloc);
         }
 
         private:
@@ -486,11 +487,11 @@ namespace Orly {
         }
 
         /* Cached reference to the value we are sabot to. */
-        const Base::TOpt<TElem> &Val;
+        const std::optional<TElem> &Val;
 
       };  // TOpt<TElem>
 
-      /* State used for Base::TOpt<TElem>. */
+      /* State used for std::optional<TElem>. */
       template <typename TElem>
       class TOpt2 final
           : public TArrayOfSingleStates<Sabot::State::TOpt> {
@@ -502,7 +503,7 @@ namespace Orly {
 
         /* See Sabot::State::TOpt. */
         virtual Sabot::Type::TOpt *GetOptType(void *type_alloc) const override {
-          return Type::For<Base::TOpt<TElem>>::GetOptType(type_alloc);
+          return Type::For<std::optional<TElem>>::GetOptType(type_alloc);
         }
 
         private:
@@ -857,20 +858,20 @@ namespace Orly {
 
     };  // State::Factory<Orly::TDesc<TElem>>
 
-    /* Explicit specialization for Base::TOpt<TElem>. */
+    /* Explicit specialization for std::optional<TElem>. */
     template <typename TElem>
-    class State::Factory<Base::TOpt<TElem>> final {
+    class State::Factory<std::optional<TElem>> final {
       NO_CONSTRUCTION(Factory);
       public:
 
       /* Construct a new state sabot around the value. */
-      static TAny *New(const Base::TOpt<TElem> &val, void *state_alloc) {
+      static TAny *New(const std::optional<TElem> &val, void *state_alloc) {
         return new (state_alloc) TOpt<TElem>(val);
       }
 
-    };  // State::Factory<Base::TOpt<TElem>>
+    };  // State::Factory<std::optional<TElem>>
 
-    /* Explicit specialization for Base::TOpt<TElem>. */
+    /* Explicit specialization for std::optional<TElem>. */
     template <typename TElem>
     class State::Factory<Rt::TOpt<TElem>> final {
       NO_CONSTRUCTION(Factory);

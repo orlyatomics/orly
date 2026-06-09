@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <base/class_traits.h>
 #include <orly/indy/disk/util/device_util.h>
 #include <orly/indy/disk/util/volume_manager.h>
@@ -36,7 +38,7 @@ namespace Orly {
           /* TODO */
           TDiskUtil(Base::TScheduler *scheduler,
                     TDiskController *controller,
-                    const Base::TOpt<std::string> &instance_filter,
+                    const std::optional<std::string> &instance_filter,
                     bool do_fsync,
                     const TCacheCb &cache_cb,
                     bool do_corruption_check = true);

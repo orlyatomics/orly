@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include <base/class_traits.h>
@@ -59,7 +60,7 @@ namespace Tools {
       std::string PatternText;
 
       /* TODO */
-      Base::TOpt<int> Pri;
+      std::optional<int> Pri;
 
     };  // TAtom
 

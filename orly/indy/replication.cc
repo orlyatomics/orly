@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/replication.h>
+#include <optional>
 
 #include <base/debug_log.h>
 
@@ -46,7 +47,7 @@ void TReplicationQueue::Swap(TReplicationQueue &that) {
   }
 }
 
-TRepoReplication::TRepoReplication(const Base::TUuid &repo_id, bool is_safe, const TTtl &ttl, const Base::TOpt<Base::TUuid> &opt_parent_repo_id)
+TRepoReplication::TRepoReplication(const Base::TUuid &repo_id, bool is_safe, const TTtl &ttl, const std::optional<Base::TUuid> &opt_parent_repo_id)
     : Ttl(ttl),
       RepoId(repo_id),
       IsSafe(is_safe),

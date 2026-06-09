@@ -17,8 +17,10 @@
 #pragma once
 
 #include <atomic>
+#include <unordered_map>
+#include <vector>
 
-#include <base/opt.h>
+#include <optional>
 #include <orly/indy/disk_layer.h>
 #include <orly/indy/disk/data_file.h>
 #include <orly/indy/disk/fold_data_file.h>
@@ -84,10 +86,10 @@ namespace Orly {
         }
 
         /* TODO */
-        const Base::TOpt<TSequenceNumber> &GetLower() const;
+        const std::optional<TSequenceNumber> &GetLower() const;
 
         /* TODO */
-        const Base::TOpt<TSequenceNumber> &GetUpper() const;
+        const std::optional<TSequenceNumber> &GetUpper() const;
 
         private:
 
@@ -101,10 +103,10 @@ namespace Orly {
         TMapping *Mapping;
 
         /* TODO */
-        Base::TOpt<TSequenceNumber> LowerBound;
+        std::optional<TSequenceNumber> LowerBound;
 
         /* TODO */
-        Base::TOpt<TSequenceNumber> UpperBound;
+        std::optional<TSequenceNumber> UpperBound;
 
         /* TODO */
         TSequenceNumber NextId;
@@ -112,16 +114,16 @@ namespace Orly {
       };  // TView
 
       /* get a snapshot of this repo using the data lock */
-      inline void GetSnapshot(Base::TOpt<TSequenceNumber> &seq_num_start,
-                              Base::TOpt<TSequenceNumber> &seq_num_limit,
+      inline void GetSnapshot(std::optional<TSequenceNumber> &seq_num_start,
+                              std::optional<TSequenceNumber> &seq_num_limit,
                               TSequenceNumber &next_seq_num);
 
       /* The sequence number of the oldest unpopped update. */
-      inline const Base::TOpt<TSequenceNumber> &GetSequenceNumberStart() const;
+      inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
 
       /* The sequence number of the newest update.
          This is also the total number of updates ever pushed to this repo. */
-      inline const Base::TOpt<TSequenceNumber> &GetSequenceNumberLimit() const;
+      inline const std::optional<TSequenceNumber> &GetSequenceNumberLimit() const;
 
       /* TODO */
       inline TSequenceNumber GetNextSequenceNumber() const;
@@ -175,7 +177,7 @@ namespace Orly {
       /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(const std::unique_ptr<TView> &view,
                                                                    TSequenceNumber from,
-                                                                   const Base::TOpt<TSequenceNumber> &to);
+                                                                   const std::optional<TSequenceNumber> &to);
 
       /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(const std::unique_ptr<TView> &view,
@@ -190,15 +192,15 @@ namespace Orly {
       TRepo(L0::TManager *manager,
             const Base::TUuid &repo_id,
             const TTtl &ttl,
-            const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
+            const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
       /* TODO */
       TRepo(L0::TManager *manager,
             const Base::TUuid &repo_id,
             const TTtl &ttl,
-            const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
-            const Base::TOpt<TSequenceNumber> &lowest,
-            const Base::TOpt<TSequenceNumber> &highest,
+            const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+            const std::optional<TSequenceNumber> &lowest,
+            const std::optional<TSequenceNumber> &highest,
             TSequenceNumber next_update,
             TStatus status);
 
@@ -206,16 +208,16 @@ namespace Orly {
       virtual ~TRepo();
 
       /* TODO */
-      Base::TOpt<TSequenceNumber> AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW;
+      std::optional<TSequenceNumber> AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW;
 
       /* TODO */
-      Base::TOpt<TSequenceNumber> PopLowest(TSequenceNumber &next_update) NO_THROW;
+      std::optional<TSequenceNumber> PopLowest(TSequenceNumber &next_update) NO_THROW;
 
       /* TODO */
       std::shared_ptr<TUpdate> GetLowestUpdate();
 
       /* TODO */
-      Base::TOpt<TSequenceNumber> ChangeStatus(TStatus, TSequenceNumber &next_update) NO_THROW;
+      std::optional<TSequenceNumber> ChangeStatus(TStatus, TSequenceNumber &next_update) NO_THROW;
 
       /* TODO */
       virtual void StepMergeMem() override;
@@ -375,7 +377,7 @@ namespace Orly {
         /* TODO */
         TUpdateWalker(const std::unique_ptr<TView> &view,
                       TSequenceNumber from,
-                      const Base::TOpt<TSequenceNumber> &to);
+                      const std::optional<TSequenceNumber> &to);
 
         /* TODO */
         virtual ~TUpdateWalker();
@@ -398,7 +400,7 @@ namespace Orly {
         TSequenceNumber From;
 
         /* TODO */
-        Base::TOpt<TSequenceNumber> To;
+        std::optional<TSequenceNumber> To;
 
         /* TODO */
         const std::unique_ptr<TView> &View;
@@ -424,10 +426,10 @@ namespace Orly {
       TParentRepo ParentRepo;
 
       /* TODO */
-      Base::TOpt<TSequenceNumber> LowestSeqNum;
+      std::optional<TSequenceNumber> LowestSeqNum;
 
       /* TODO */
-      Base::TOpt<TSequenceNumber> HighestSeqNum;
+      std::optional<TSequenceNumber> HighestSeqNum;
 
       /* TODO */
       TSequenceNumber NextUpdate;
@@ -465,15 +467,15 @@ namespace Orly {
       TFastRepo(L0::TManager *manager,
                 const Base::TUuid &repo_id,
                 const TTtl &ttl,
-                const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
+                const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
       /* TODO */
       TFastRepo(L0::TManager *manager,
                 const Base::TUuid &repo_id,
                 const TTtl &ttl,
-                const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
-                const Base::TOpt<TSequenceNumber> &lowest,
-                const Base::TOpt<TSequenceNumber> &highest,
+                const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+                const std::optional<TSequenceNumber> &lowest,
+                const std::optional<TSequenceNumber> &highest,
                 TSequenceNumber next_update,
                 TStatus status);
 
@@ -511,15 +513,15 @@ namespace Orly {
       TSafeRepo(L0::TManager *manager,
                 const Base::TUuid &repo_id,
                 const TTtl &ttl,
-                const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
+                const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
       /* TODO */
       TSafeRepo(L0::TManager *manager,
                 const Base::TUuid &repo_id,
                 const TTtl &ttl,
-                const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
-                const Base::TOpt<TSequenceNumber> &lowest,
-                const Base::TOpt<TSequenceNumber> &highest,
+                const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+                const std::optional<TSequenceNumber> &lowest,
+                const std::optional<TSequenceNumber> &highest,
                 TSequenceNumber next_update,
                 TStatus status);
 
@@ -608,8 +610,8 @@ namespace Orly {
       return count;
     }
 
-    inline void TRepo::GetSnapshot(Base::TOpt<TSequenceNumber> &seq_num_start,
-                                   Base::TOpt<TSequenceNumber> &seq_num_limit,
+    inline void TRepo::GetSnapshot(std::optional<TSequenceNumber> &seq_num_start,
+                                   std::optional<TSequenceNumber> &seq_num_limit,
                                    TSequenceNumber &next_seq_num) {
       std::lock_guard<std::mutex> lock(DataLock);
       seq_num_start = LowestSeqNum;
@@ -617,11 +619,11 @@ namespace Orly {
       next_seq_num = NextUpdate;
     }
 
-    inline const Base::TOpt<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
+    inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
       return LowestSeqNum;
     }
 
-    inline const Base::TOpt<TSequenceNumber> &TRepo::GetSequenceNumberLimit() const {
+    inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberLimit() const {
       return HighestSeqNum;
     }
 

@@ -22,10 +22,11 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <orly/expr/expr.h>
 #include <orly/symbol/root.h>
 
@@ -48,7 +49,7 @@ namespace Orly {
 
         static TPtr New(
             const Expr::TExpr::TPtr &expr,
-            const Base::TOpt<std::string> &name,
+            const std::optional<std::string> &name,
             const TTestCaseBlockPtr &opt_test_case_block,
             const TPosRange &pos_range);
 
@@ -66,11 +67,11 @@ namespace Orly {
 
         TTestCase(
             const Expr::TExpr::TPtr &expr,
-            const Base::TOpt<std::string> &name,
+            const std::optional<std::string> &name,
             const TTestCaseBlockPtr &opt_test_case_block,
             const TPosRange &pos_range);
 
-        Base::TOpt<std::string> OptName;
+        std::optional<std::string> OptName;
 
         TTestCaseBlockPtr OptTestCaseBlock;
 

@@ -19,10 +19,13 @@
 #pragma once
 
 #include <deque>
+#include <map>
+#include <string>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/json.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/split.h>
 #include <base/util/time.h>
 
@@ -114,7 +117,7 @@ namespace Jhm {
     void AddFile(const std::string &filename);
 
     Util::TOptTimestamp Timestamp;
-    Base::TOpt<uint32_t> ComputedStart;
+    std::optional<uint32_t> ComputedStart;
     mutable bool ComputedLocked = false; // This is purely an internal safety check / correctness check
     std::deque<Base::TJson> Config;
   };

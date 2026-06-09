@@ -18,6 +18,7 @@
 
 #include <iomanip>
 #include <iostream>
+#include <optional>
 
 #include <base/booster.h>
 #include <base/cmd.h>
@@ -146,7 +147,7 @@ int main(int argc, char *argv[]) {
   }
   TCacheCb cache_cb = [](TCacheInstr /*cache_instr*/, const TOffset /*logical_start_offset*/, void */*buf*/, size_t /*count*/) {};
   TDiskController controller;
-  TDiskUtil disk_util(&scheduler, &controller, Base::TOpt<std::string>(), false /*fsync*/, cache_cb, true);
+  TDiskUtil disk_util(&scheduler, &controller, std::optional<std::string>(), false /*fsync*/, cache_cb, true);
   if (cmd.List) {
     const char *str_pattern = "|\%12s |%7s |%15s |%5s |%5s |%21s |%20s |%7s |\n";
     const char *num_pattern = "|\%12s |%7s |%15s |%5ld |%5ld |%21ld |%20ld |%7s |\n";
@@ -201,7 +202,7 @@ int main(int argc, char *argv[]) {
         return lhs_dev_name < rhs_dev_name;
       }
     });
-    Base::TOpt<TDeviceUtil::TOrlyDevice> prev_dev_info;
+    std::optional<TDeviceUtil::TOrlyDevice> prev_dev_info;
     for (const auto &dev : device_vec) {
       bool ret = std::get<0>(dev);
       const std::string &dev_name = std::get<1>(dev);
@@ -230,7 +231,7 @@ int main(int argc, char *argv[]) {
       if (ret) {
         prev_dev_info = device_info;
       } else {
-        prev_dev_info.Reset();
+        prev_dev_info.reset();
       }
     }
     printf("%s", break_line);

@@ -22,10 +22,11 @@
 #pragma once
 
 #include <cassert>
+#include <string>
 #include <vector>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <orly/expr/assert.h>
 #include <orly/expr/thatable.h>
 #include <orly/orly.package.cst.h>
@@ -72,7 +73,7 @@ namespace Orly {
         NO_COPY(TAssertCase);
         public:
 
-        TAssertCase(const Base::TOpt<std::string> &opt_name, TExpr *expr);
+        TAssertCase(const std::optional<std::string> &opt_name, TExpr *expr);
 
         ~TAssertCase();
 
@@ -84,7 +85,7 @@ namespace Orly {
 
         private:
 
-        const Base::TOpt<std::string> OptName;
+        const std::optional<std::string> OptName;
 
         TExpr *Expr;
 

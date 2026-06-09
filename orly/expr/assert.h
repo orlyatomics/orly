@@ -21,9 +21,10 @@
 
 #pragma once
 
+#include <string>
 #include <unordered_set>
 
-#include <base/opt.h>
+#include <optional>
 #include <orly/error.h>
 #include <orly/expr/thatable_unary.h>
 #include <orly/symbol/root.h>
@@ -48,7 +49,7 @@ namespace Orly {
 
       static TPtr New(
           const TAssertPtr &assert,
-          const Base::TOpt<std::string> &opt_name,
+          const std::optional<std::string> &opt_name,
           const TExpr::TPtr &expr);
 
       ~TAssertCase();
@@ -67,12 +68,12 @@ namespace Orly {
 
       TAssertCase(
           const TAssertPtr &assert,
-          const Base::TOpt<std::string> &opt_name,
+          const std::optional<std::string> &opt_name,
           const TExpr::TPtr &expr);
 
       std::weak_ptr<TAssert> Assert;
 
-      Base::TOpt<std::string> OptName;
+      std::optional<std::string> OptName;
 
     };  // TAssertCase
 

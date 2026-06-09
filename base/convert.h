@@ -18,7 +18,7 @@
 
 #pragma once
 
-#include <base/opt.h>
+#include <optional>
 #include <base/piece.h>
 #include <base/syntax_error.h>
 
@@ -31,11 +31,11 @@ namespace Base {
     TConverter(const TPiece<const char> &buf) : Working(buf) {}
 
     /* Reads a sign (+/-) From the input stream. If + is read, then it returns true, if - is read, then it returns false. If some other character is the next
-       character at the head of the input stream, it returns a TOpt in the unknown state. */
-    TOpt<bool> TryReadSign() {
+       character at the head of the input stream, it returns a std::optional in the unknown state. */
+    std::optional<bool> TryReadSign() {
 
       if(!(*this)) {
-        return TOpt<bool>::GetUnknown();
+        return std::nullopt;
       }
 
       bool ret;
@@ -44,7 +44,7 @@ namespace Base {
       } else if(*(*this) == '-') {
         ret = false;
       } else {
-        return TOpt<bool>::GetUnknown();
+        return std::nullopt;
       }
       ++(*this);
       return ret;
@@ -53,7 +53,7 @@ namespace Base {
     /* TryReadSign wrapper that asserts that a sign is read or throws. */
     bool ReadSign() {
 
-      TOpt<bool> ret = TryReadSign();
+      std::optional<bool> ret = TryReadSign();
 
       if(ret) {
         return *ret;
@@ -160,7 +160,7 @@ namespace Base {
       /* TODO: Format strings support. */
 
       //if signed, first character may be +/- sign
-      TOpt<bool> positive_opt = TryReadSign();
+      std::optional<bool> positive_opt = TryReadSign();
       if(positive_opt) {
         if(!TryReadUnsignedInt(output, *positive_opt)) {
           throw TSyntaxError(HERE, "Consumed a sign, but didn't find any digits after it.");

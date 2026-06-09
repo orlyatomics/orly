@@ -18,6 +18,7 @@
 
 #include <orly/sabot/get_hash.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -53,7 +54,7 @@ static const Native::TBlob BlobVal{'A', '1', '3', 'F'};
 
 /* Arrays of single states. */
 static const TDesc<int32_t> DescVal(BoolVal);
-static const TOpt<float> OptVal(FloatVal);
+static const std::optional<float> OptVal(FloatVal);
 static const set<int32_t> SetVal{8, 7, 6, 5, 4, 3, 2, 1};
 static const vector<int64_t> VectorVal{8, 7, 6, 5, 4, 3, 2, 1};
 
@@ -125,7 +126,7 @@ FIXTURE(ArrayOfSingleStates) {
     ++pos;
   }
   EXPECT_EQ(GetHash<TDesc<int32_t>>(DescVal), expected_desc_hash);
-  EXPECT_EQ(GetHash<Base::TOpt<float>>(OptVal), expected_opt_hash);
+  EXPECT_EQ(GetHash<std::optional<float>>(OptVal), expected_opt_hash);
   EXPECT_EQ(GetHash<std::set<int32_t>>(SetVal), expected_set_hash);
   EXPECT_EQ(GetHash<std::vector<int64_t>>(VectorVal), expected_vec_hash);
 }

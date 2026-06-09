@@ -18,6 +18,7 @@
 
 #include <orly/sabot/type_dumper.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -63,7 +64,7 @@ FIXTURE(Typical) {
   EXPECT_EQ(ToString<void>(), "void");
   EXPECT_EQ(ToString<TDesc<double>>(), "desc(double)");
   EXPECT_EQ(ToString<Native::TFree<bool>>(), "free(bool)");
-  EXPECT_EQ(ToString<TOpt<bool>>(), "opt(bool)");
+  EXPECT_EQ(ToString<std::optional<bool>>(), "opt(bool)");
   EXPECT_EQ(ToString<set<bool>>(), "set(bool)");
   EXPECT_EQ(ToString<vector<bool>>(), "vector(bool)");
   EXPECT_EQ((ToString<map<bool, char>>()), "map(bool, char)");

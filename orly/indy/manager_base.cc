@@ -676,7 +676,7 @@ TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
         /* The object is being re-opened from a closed state, so remove it from the set of closed objects. */
         size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, id));
         assert(erased_from_closed == 1);
-        openable_obj->Deadline.Reset();
+        openable_obj->Deadline.reset();
       }
       return ptr;
     } else if (ret.second) { /* freshly inserted */

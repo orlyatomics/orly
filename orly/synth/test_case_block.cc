@@ -19,6 +19,7 @@
 #include <orly/synth/test_case_block.h>
 
 #include <iomanip>
+#include <optional>
 
 #include <base/as_str.h>
 #include <base/assert_true.h>
@@ -31,7 +32,7 @@ using namespace Orly;
 using namespace Orly::Synth;
 
 TTestCaseBlock::TTestCase::TTestCase(
-    const Base::TOpt<std::string> &opt_name,
+    const std::optional<std::string> &opt_name,
     TExpr *expr,
     TTestCaseBlock *opt_test_case_block,
     const TPosRange &pos_range)
@@ -91,11 +92,11 @@ TTestCaseBlock::TTestCaseBlock(const TExprFactory *expr_factory, const Package::
     }
     virtual void operator()(const Package::Syntax::TUnlabeledTestCase *that) const {
       AddTestCase(
-          Base::TOpt<std::string>::GetUnknown(), that->GetExpr(), that->GetOptTestCaseBlock(), GetPosRange(that));
+          std::nullopt, that->GetExpr(), that->GetOptTestCaseBlock(), GetPosRange(that));
     }
     private:
     void AddTestCase(
-        const Base::TOpt<std::string> &opt_name,
+        const std::optional<std::string> &opt_name,
         const Package::Syntax::TExpr *expr,
         const Package::Syntax::TOptTestCaseBlock *opt_test_case_block,
         const TPosRange &pos_range) const {

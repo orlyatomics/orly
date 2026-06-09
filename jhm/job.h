@@ -24,7 +24,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include <base/opt.h>
+#include <optional>
 #include <jhm/naming.h>
 #include <base/util/stl.h>
 #include <base/util/time.h>
@@ -39,7 +39,7 @@ namespace Jhm {
     const char *Name;
     // TODO: Should really be a set...
     std::vector<std::vector<std::string>> OutExtensions;
-    std::function<Base::TOpt<TRelPath> (const TRelPath &name)> TryGetInput;
+    std::function<std::optional<TRelPath> (const TRelPath &name)> TryGetInput;
     std::function<std::unique_ptr<TJob> (TEnv &env, TFile *in_file)> MakeJob;
   };
 

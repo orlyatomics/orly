@@ -21,6 +21,7 @@
 #include <cassert>
 #include <functional>
 #include <mutex>
+#include <optional>
 
 #include <base/class_traits.h>
 #include <orly/sabot/type.h>
@@ -409,9 +410,9 @@ namespace Orly {
 
     };  // Type::For<TFree<TElem>>
 
-    /* Explicit specialization for Base::TOpt<TElem>. */
+    /* Explicit specialization for std::optional<TElem>. */
     template <typename TElem>
-    class Type::For<Base::TOpt<TElem>> final {
+    class Type::For<std::optional<TElem>> final {
       public:
 
       /* See definition, below. */
@@ -424,7 +425,7 @@ namespace Orly {
         return new (type_alloc) TOpt<TElem>();
       }
 
-    };  // Type::For<Base::TOpt<TElem>>
+    };  // Type::For<std::optional<TElem>>
 
     /* Explicit specialization for std::set<TElem>. */
     template <typename TElem>

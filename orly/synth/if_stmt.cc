@@ -21,7 +21,7 @@
 #include <cassert>
 
 #include <base/assert_true.h>
-#include <base/opt.h>
+#include <optional>
 #include <orly/synth/cst_utils.h>
 #include <orly/synth/expr.h>
 #include <orly/synth/get_pos_range.h>

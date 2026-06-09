@@ -18,6 +18,7 @@
 
 #include <orly/atom/kit2.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -200,8 +201,8 @@ FIXTURE(Desc) {
 }
 
 FIXTURE(Opt) {
-  EXPECT_EQ(ToString(Base::TOpt<int>(101)), "opt(101)");
-  EXPECT_EQ(ToString(Base::TOpt<bool>()), "unknown opt(bool)");
+  EXPECT_EQ(ToString(std::optional<int>(101)), "opt(101)");
+  EXPECT_EQ(ToString(std::optional<bool>()), "unknown opt(bool)");
 }
 
 FIXTURE(Set) {

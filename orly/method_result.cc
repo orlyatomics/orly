@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/method_result.h>
+#include <optional>
 
 #include <orly/atom/suprena.h>
 #include <orly/atom/transport_arena2.h>
@@ -27,10 +28,10 @@ using namespace Io;
 using namespace Orly;
 using namespace Orly::Atom;
 
-TMethodResult::TMethodResult(const shared_ptr<TArena> &arena, const TCore &value, const TOpt<TTracker> &tracker, bool is_error)
+TMethodResult::TMethodResult(const shared_ptr<TArena> &arena, const TCore &value, const std::optional<TTracker> &tracker, bool is_error)
     : Arena(arena), Value(value), Tracker(tracker), Error(is_error) {}
 
-TMethodResult::TMethodResult(TArena *arena, const Atom::TCore &value, const Base::TOpt<TTracker> &tracker, bool is_error)
+TMethodResult::TMethodResult(TArena *arena, const Atom::TCore &value, const std::optional<TTracker> &tracker, bool is_error)
     : Tracker(tracker), Error(is_error) {
   auto new_arena = make_shared<TSuprena>();
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -47,7 +48,7 @@ void TMethodResult::Read(TBinaryInputStream &strm) {
 void TMethodResult::Reset() {
   Arena.reset();
   Value = TCore();
-  Tracker.Reset();
+  Tracker.reset();
 }
 
 void TMethodResult::Write(TBinaryOutputStream &strm) const {

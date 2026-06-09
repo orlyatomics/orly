@@ -26,7 +26,7 @@
 #include <vector>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <tools/nycr/cst_redirect.h>
 
 namespace Tools {
@@ -52,13 +52,13 @@ namespace Tools {
 
     /* Retrieve an int literal, if given. */
     template <typename TYesNode, typename TNoNode, typename TOptNode>
-    static void GetOptInt(const TOptNode *opt_node, Base::TOpt<int> &out) {
+    static void GetOptInt(const TOptNode *opt_node, std::optional<int> &out) {
       assert(opt_node);
       const TYesNode *yes_node = TryGetNode<TYesNode, TNoNode>(opt_node);
       if (yes_node) {
         out = yes_node->GetIntLiteral()->GetLexeme().AsInt();
       } else {
-        out.Reset();
+        out.reset();
       }
     }
 

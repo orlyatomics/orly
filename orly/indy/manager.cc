@@ -17,8 +17,10 @@
    limitations under the License. */
 
 #include <orly/indy/manager.h>
+#include <optional>
 
 #include <base/debug_log.h>
+#include <base/opt_ostream.h>
 #include <base/shutting_down.h>
 #include <orly/indy/file_sync.h>
 #include <orly/server/meta_record.h>
@@ -122,7 +124,7 @@ TManager::TManager(Disk::Util::TEngine *engine,
     SystemRepo = NewSafeRepo(SystemRepoId, system_ttl);
   } else {
     syslog(LOG_INFO, "Reconstructing System Repo from disk");
-    SystemRepo = GetRepo(SystemRepoId, system_ttl, Base::TOpt<L0::TManager::TPtr<TRepo>>(), true, false);
+    SystemRepo = GetRepo(SystemRepoId, system_ttl, std::optional<L0::TManager::TPtr<TRepo>>(), true, false);
     syslog(LOG_INFO, "DONE Reconstructing System Repo from disk");
   }
   switch (State) {
@@ -164,14 +166,14 @@ TManager::~TManager() {
 }
 
 L0::TManager::TPtr<TRepo> TManager::NewSafeRepo(const TUuid &repo_id,
-                                        const Base::TOpt<TTtl> &ttl,
-                                        const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
+                                        const std::optional<TTtl> &ttl,
+                                        const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
   return New(repo_id, *ttl, parent_repo, true);
 }
 
 L0::TManager::TPtr<TRepo> TManager::NewFastRepo(const TUuid &repo_id,
-                                        const Base::TOpt<TTtl> &ttl,
-                                        const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
+                                        const std::optional<TTtl> &ttl,
+                                        const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo) {
   return New(repo_id, *ttl, parent_repo, false);
 }
 
@@ -581,13 +583,13 @@ void TManager::TSlave::SyncInventory() {
   for (const auto &to_sync : ToSyncQueue) {
     const TUuid &repo_id = to_sync.RepoId;
     size_t ttl = to_sync.Ttl;
-    const Base::TOpt<TUuid> &parent_repo_id = to_sync.ParentRepoId;
+    const std::optional<TUuid> &parent_repo_id = to_sync.ParentRepoId;
     bool is_safe = to_sync.IsSafe;
-    const Base::TOpt<TSequenceNumber> &lowest = to_sync.Lowest;
-    const Base::TOpt<TSequenceNumber> &highest = to_sync.Highest;
+    const std::optional<TSequenceNumber> &lowest = to_sync.Lowest;
+    const std::optional<TSequenceNumber> &highest = to_sync.Highest;
     TSequenceNumber next_id = to_sync.NextId;
     std::cout << "TSlave::Inventory(" << repo_id << ")" << std::endl;
-    Base::TOpt<L0::TManager::TPtr<TRepo>> parent_repo;
+    std::optional<L0::TManager::TPtr<TRepo>> parent_repo;
     if (parent_repo_id) {
       std::cout << "TSlave::Inventory::ForgeGetRepo(" << *parent_repo_id << ")" << std::endl;
       parent_repo = Manager->ForceGetRepo(*parent_repo_id);
@@ -600,8 +602,8 @@ void TManager::TSlave::SyncInventory() {
     std::cout << "TSlave::Inventory (" << repo_id << ")\tSetReleasedUpTo(" << (next_id > 0UL ? next_id - 1UL : 0UL) << ")" << std::endl;
 
 
-    Base::TOpt<TSequenceNumber> snap_lowest;
-    Base::TOpt<TSequenceNumber> snap_highest;
+    std::optional<TSequenceNumber> snap_lowest;
+    std::optional<TSequenceNumber> snap_highest;
     TSequenceNumber snap_next_id;
     repo->GetSnapshot(snap_lowest, snap_highest, snap_next_id);
     //std::cout << "TSlave::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
@@ -612,7 +614,7 @@ void TManager::TSlave::SyncInventory() {
       //std::cout << "SetNextSequenceNumber [" << *lowest << "]" << std::endl;
       repo->SetNextSequenceNumber(*lowest);
       TSequenceNumber my_lowest = 0UL;
-      const Base::TOpt<TSequenceNumber> &high = repo->GetSequenceNumberLimit();
+      const std::optional<TSequenceNumber> &high = repo->GetSequenceNumberLimit();
       if (high) {
         my_lowest = std::max(*lowest, *high);
       }
@@ -728,8 +730,8 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
           mem_layer->ImporterAppendEntry(entry);
         }
       }
-      Base::TOpt<TSequenceNumber> snap_lowest;
-      Base::TOpt<TSequenceNumber> snap_highest;
+      std::optional<TSequenceNumber> snap_lowest;
+      std::optional<TSequenceNumber> snap_highest;
       TSequenceNumber snap_next_id;
       repo->GetSnapshot(snap_lowest, snap_highest, snap_next_id);
       //std::cout << "TSlave::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
@@ -786,10 +788,10 @@ size_t TManager::TSlave::TFlusher::NewBlockCb(Disk::Util::TVolumeManager */*vol_
 
 void TManager::TSlave::Inventory(const TUuid &repo_id,
                                  size_t ttl,
-                                 const Base::TOpt<TUuid> &parent_repo_id,
+                                 const std::optional<TUuid> &parent_repo_id,
                                  bool is_safe,
-                                 const Base::TOpt<TSequenceNumber> &lowest,
-                                 const Base::TOpt<TSequenceNumber> &highest,
+                                 const std::optional<TSequenceNumber> &lowest,
+                                 const std::optional<TSequenceNumber> &highest,
                                  TSequenceNumber next_id) {
   ToSyncQueue.emplace_back(repo_id, ttl, parent_repo_id, is_safe, lowest, highest, next_id);
 }
@@ -838,7 +840,7 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
             Sabot::TStdDuration repo_nsec_ttl;
             TTtl repo_ttl;
             bool is_safe;
-            Base::TOpt<Base::TUuid> opt_parent_repo_id;
+            std::optional<Base::TUuid> opt_parent_repo_id;
             for (; repo_iter != repo_end; ++repo_iter) {
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(repo_iter->NewState(repo_arena, state_alloc)), repo_id);
               ++repo_iter;
@@ -920,7 +922,7 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
             Sabot::TStdDuration repo_nsec_ttl;
             TTtl repo_ttl;
             bool is_safe;
-            Base::TOpt<Base::TUuid> opt_parent_repo_id;
+            std::optional<Base::TUuid> opt_parent_repo_id;
             for (; repo_iter != repo_end; ++repo_iter) {
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(repo_iter->NewState(repo_arena, state_alloc)), repo_id);
               ++repo_iter;
@@ -1096,8 +1098,8 @@ void TManager::TSlave::TransitionToSlave() {
 }
 
 L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
-                                             const Base::TOpt<TTtl> &ttl,
-                                             const Base::TOpt<L0::TManager::TPtr<TRepo>> &parent_repo,
+                                             const std::optional<TTtl> &ttl,
+                                             const std::optional<L0::TManager::TPtr<TRepo>> &parent_repo,
                                              bool is_safe,
                                              bool create) {
   /* TEMP DEBUG */ {
@@ -1112,7 +1114,7 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
       /* only bother marking it down if it's going to live past now. */
       //auto now = TDeadline::clock::now();
       assert(ttl);
-      Base::TOpt<Base::TUuid> opt_parent_id;
+      std::optional<Base::TUuid> opt_parent_id;
       if (parent_repo) {
         opt_parent_id = (*parent_repo)->GetId();
       }
@@ -1340,13 +1342,17 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           assert(SlaveSyncViewMap.find(repo_id) == SlaveSyncViewMap.end());
           const std::unique_ptr<Indy::TRepo::TView> &sync_view = SlaveSyncViewMap.emplace(repo_id, std::make_unique<Indy::TRepo::TView>(repo)).first->second;
 
-          Base::TOpt<Base::TUuid> parent_repo_id;
+          std::optional<Base::TUuid> parent_repo_id;
           if (repo->GetParentRepo()) {
             parent_repo_id = (*repo->GetParentRepo())->GetId();
           }
           size_t ttl = repo->GetTtl().count();
           Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
-          std::cout << "Calling Inventory on Slave (" << repo_id << ") [" << sync_view->GetLower() << " -> " << sync_view->GetUpper() << "]" << std::endl;  /* TODO : this should alse include the status */
+          std::cout << "Calling Inventory on Slave (" << repo_id << ") [";
+          if (sync_view->GetLower()) { std::cout << *sync_view->GetLower(); }
+          std::cout << " -> ";
+          if (sync_view->GetUpper()) { std::cout << *sync_view->GetUpper(); }
+          std::cout << "]" << std::endl;  /* TODO : this should alse include the status */
           std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::InventoryId, repo_id, ttl, parent_repo_id, is_safe, sync_view->GetLower(), sync_view->GetUpper(), sync_view->GetNextId());
 
           assert(future);

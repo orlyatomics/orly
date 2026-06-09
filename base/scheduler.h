@@ -46,7 +46,7 @@
 #include <utility>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/shutting_down.h>
 #include <base/thrower.h>
 #include <base/signal/handler_installer.h>
@@ -221,7 +221,7 @@ namespace Base {
     };  // TScheduler::TWorker
 
     /* Constructor delegated to by the public constructor.  Also used directly by RunUntilCtrlC(). */
-    TScheduler(const TPolicy &policy, const TOpt<pthread_t> &ctrl_c_thread, TMainJob *main_job = nullptr);
+    TScheduler(const TPolicy &policy, const std::optional<pthread_t> &ctrl_c_thread, TMainJob *main_job = nullptr);
 
     /* Try to pop a job from the queue and block until we get one or until we should shut down.
        Return true if we got a job, false if the worker should shut down.  If, in the latter case, the
@@ -260,7 +260,7 @@ namespace Base {
     std::condition_variable WorkerAwoke;
 
     /* The thread, if any, to which we should direct a ctrl-c if we quiesce. */
-    TOpt<pthread_t> CtrlCThread;
+    std::optional<pthread_t> CtrlCThread;
 
     /* True if we've reached a state of permanant quiescence. */
     bool PermanantlyQuiescent;

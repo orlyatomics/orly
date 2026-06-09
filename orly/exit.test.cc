@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/spa/service.h>
+#include <optional>
 
 #include <orly/spa/honcho.h>
 
@@ -33,7 +34,7 @@ FIXTURE(Startup) {
   service.SetPackageDir("/tmp/");
   /* Set checkpoint path and package directory */
   Base::TUuid session;
-  service.CreateSession(Base::TOpt<Base::TUuid>(), 1000, session);
+  service.CreateSession(std::optional<Base::TUuid>(), 1000, session);
   Base::TUuid private_pov;
   service.CreatePrivatePov(session, {}, 1000, false, private_pov);
 }

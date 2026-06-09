@@ -15,6 +15,7 @@
    limitations under the License. */
 
 #include <jhm/jobs/bison.h>
+#include <optional>
 
 #include <jhm/env.h>
 #include <jhm/file.h>
@@ -32,13 +33,13 @@ const static vector<vector<string>> OutExtensions = {
 };
 
 //TODO: this is duplicated / copied in both bison.cc and flex.cc
-static TOpt<TRelPath> GetInputName(const TRelPath &output) {
+static std::optional<TRelPath> GetInputName(const TRelPath &output) {
   for (const auto &ext : OutExtensions) {
     if (output.Path.EndsWith(ext)) {
       return TRelPath(AddExtension(DropExtension(TPath(output.Path), ext.size()), {"y"}));
     }
   }
-  return TOpt<TRelPath>();
+  return std::optional<TRelPath>();
 }
 
 

@@ -19,6 +19,7 @@
 #include <orly/synth/assert_expr.h>
 
 #include <cassert>
+#include <optional>
 
 #include <base/assert_true.h>
 #include <orly/synth/cst_utils.h>
@@ -29,7 +30,7 @@
 using namespace Orly;
 using namespace Orly::Synth;
 
-TAssertExpr::TAssertCase::TAssertCase(const Base::TOpt<std::string> &opt_name, TExpr *expr)
+TAssertExpr::TAssertCase::TAssertCase(const std::optional<std::string> &opt_name, TExpr *expr)
     : OptName(opt_name), Expr(Base::AssertTrue(expr)) {}
 
 TAssertExpr::TAssertCase::~TAssertCase() {
@@ -63,10 +64,10 @@ TAssertExpr::TAssertExpr(const TExprFactory *expr_factory, const Package::Syntax
       AddAssertCase(TName(that->GetName()).GetText(), that->GetExpr());
     }
     virtual void operator()(const Package::Syntax::TUnlabeledAssertion *that) const {
-      AddAssertCase(Base::TOpt<std::string>::GetUnknown(), that->GetExpr());
+      AddAssertCase(std::nullopt, that->GetExpr());
     }
     private:
-    void AddAssertCase(const Base::TOpt<std::string> &opt_name, const Package::Syntax::TExpr *expr) const {
+    void AddAssertCase(const std::optional<std::string> &opt_name, const Package::Syntax::TExpr *expr) const {
       AssertCases.emplace_back(new TAssertCase(opt_name, ExprFactory->NewExpr(expr)));
     }
     TAssertCaseVec &AssertCases;

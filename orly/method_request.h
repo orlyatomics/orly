@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include <base/opt.h>
+#include <optional>
 #include <base/uuid.h>
 #include <base/io/binary_input_stream.h>
 #include <base/io/binary_output_stream.h>
@@ -77,7 +77,7 @@ namespace Orly {
        If the method is to be run in the 'now', this will be unknown.
        If the method is to be run in the past, it cannot generate an update; therefore, if this value is known,
        time-to-live must be zero. */
-    const Base::TOpt<TId> &GetTrackingId() const {
+    const std::optional<TId> &GetTrackingId() const {
       return TrackingId;
     }
 
@@ -107,7 +107,7 @@ namespace Orly {
     TTimeToLive TimeToLive;
 
     /* See accessor. */
-    Base::TOpt<TId> TrackingId;
+    std::optional<TId> TrackingId;
 
     /* See accessor. */
     TPackage Package;

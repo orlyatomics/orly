@@ -15,6 +15,7 @@
    limitations under the License. */
 
 #include <jhm/jobs/dep.h>
+#include <optional>
 
 #include <jhm/env.h>
 #include <jhm/file.h>
@@ -30,11 +31,11 @@ static TRelPath GetOutputName(const TRelPath &input) {
   return TRelPath(AddExtension(TPath(input.Path), {"dep"}));
 }
 
-static TOpt<TRelPath> GetInputName(const TRelPath &output) {
+static std::optional<TRelPath> GetInputName(const TRelPath &output) {
   if (output.Path.EndsWith({"dep"})) {
     return TRelPath(DropExtension(TPath(output.Path), 1));
   } else {
-    return TOpt<TRelPath>();
+    return std::optional<TRelPath>();
   }
 }
 

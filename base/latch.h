@@ -21,7 +21,7 @@
 #include <cassert>
 
 #include <base/event_semaphore.h>
-#include <base/opt.h>
+#include <optional>
 
 namespace Base {
 
@@ -86,13 +86,16 @@ namespace Base {
     /* Wait for the request. */
     void PopRequest(TRequest &request) {
       TAnyLatch::PopRequest();
-      Request.Release(request);
+      request = std::move(*Request);
+      Request.reset();
     }
 
     /* Push the request. */
     template <typename... TArgs>
     void PushRequest(TArgs &&... args) {
-      Request.MakeKnown(std::forward<TArgs>(args)...);
+      if (!Request) {
+        Request.emplace(std::forward<TArgs>(args)...);
+      }
       TAnyLatch::PushRequest();
     }
 
@@ -104,7 +107,7 @@ namespace Base {
     private:
 
     /* The current request.  Only known after PushRequest() and before PopRequest(). */
-    TOpt<TRequest> Request;
+    std::optional<TRequest> Request;
 
   };  // TRequestLatch<TRequest>
 
@@ -136,13 +139,16 @@ namespace Base {
     /* Wait for the reply. */
     void PopReply(TReply &reply) {
       TAnyLatch::PopReply();
-      Reply.Release(reply);
+      reply = std::move(*Reply);
+      Reply.reset();
     }
 
     /* Push the reply. */
     template <typename... TArgs>
     void PushReply(TArgs &&... args) {
-      Reply.MakeKnown(std::forward<TArgs>(args)...);
+      if (!Reply) {
+        Reply.emplace(std::forward<TArgs>(args)...);
+      }
       TAnyLatch::PushReply();
     }
 
@@ -154,7 +160,7 @@ namespace Base {
     private:
 
     /* The current reply.  Only known after PushReply() and before PopReply(). */
-    TOpt<TReply> Reply;
+    std::optional<TReply> Reply;
 
   };  // TReplyLatch<TReply>
 

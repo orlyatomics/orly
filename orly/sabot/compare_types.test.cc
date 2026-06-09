@@ -18,6 +18,7 @@
 
 #include <orly/sabot/compare_types.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -63,7 +64,7 @@ FIXTURE(Int8) {
   EXPECT_TRUE(IsLt(CheckTypes<int8_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<int8_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int8_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<int8_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<int8_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int8_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int8_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int8_t, map<bool, char>>()));
@@ -93,7 +94,7 @@ FIXTURE(Int16) {
   EXPECT_TRUE(IsLt(CheckTypes<int16_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<int16_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int16_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<int16_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<int16_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int16_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int16_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int16_t, map<bool, char>>()));
@@ -123,7 +124,7 @@ FIXTURE(Int32) {
   EXPECT_TRUE(IsLt(CheckTypes<int32_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<int32_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int32_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<int32_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<int32_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int32_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int32_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int32_t, map<bool, char>>()));
@@ -153,7 +154,7 @@ FIXTURE(Int64) {
   EXPECT_TRUE(IsLt(CheckTypes<int64_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<int64_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int64_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<int64_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<int64_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int64_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int64_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<int64_t, map<bool, char>>()));
@@ -183,7 +184,7 @@ FIXTURE(UInt8) {
   EXPECT_TRUE(IsLt(CheckTypes<uint8_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint8_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint8_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<uint8_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<uint8_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint8_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint8_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint8_t, map<bool, char>>()));
@@ -213,7 +214,7 @@ FIXTURE(UInt16) {
   EXPECT_TRUE(IsLt(CheckTypes<uint16_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint16_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint16_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<uint16_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<uint16_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint16_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint16_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint16_t, map<bool, char>>()));
@@ -243,7 +244,7 @@ FIXTURE(UInt32) {
   EXPECT_TRUE(IsLt(CheckTypes<uint32_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint32_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint32_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<uint32_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<uint32_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint32_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint32_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint32_t, map<bool, char>>()));
@@ -273,7 +274,7 @@ FIXTURE(UInt64) {
   EXPECT_TRUE(IsLt(CheckTypes<uint64_t, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint64_t, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint64_t, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<uint64_t, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<uint64_t, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint64_t, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint64_t, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<uint64_t, map<bool, char>>()));
@@ -303,7 +304,7 @@ FIXTURE(Bool) {
   EXPECT_TRUE(IsLt(CheckTypes<bool, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<bool, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<bool, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<bool, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<bool, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<bool, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<bool, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<bool, map<bool, char>>()));
@@ -333,7 +334,7 @@ FIXTURE(Char) {
   EXPECT_TRUE(IsLt(CheckTypes<char, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<char, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<char, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<char, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<char, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<char, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<char, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<char, map<bool, char>>()));
@@ -363,7 +364,7 @@ FIXTURE(Float) {
   EXPECT_TRUE(IsLt(CheckTypes<float, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<float, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<float, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<float, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<float, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<float, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<float, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<float, map<bool, char>>()));
@@ -393,7 +394,7 @@ FIXTURE(Double) {
   EXPECT_TRUE(IsLt(CheckTypes<double, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<double, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<double, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<double, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<double, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<double, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<double, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<double, map<bool, char>>()));
@@ -423,7 +424,7 @@ FIXTURE(Duration) {
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, map<bool, char>>()));
@@ -453,7 +454,7 @@ FIXTURE(TimePoint) {
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TStdDuration, map<bool, char>>()));
@@ -483,7 +484,7 @@ FIXTURE(Uuid) {
   EXPECT_TRUE(IsLt(CheckTypes<TUuid, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<TUuid, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TUuid, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TUuid, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TUuid, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TUuid, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TUuid, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TUuid, map<bool, char>>()));
@@ -513,7 +514,7 @@ FIXTURE(Blob) {
   EXPECT_TRUE(IsLt(CheckTypes<TBlob, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<TBlob, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TBlob, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TBlob, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TBlob, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TBlob, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TBlob, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TBlob, map<bool, char>>()));
@@ -543,7 +544,7 @@ FIXTURE(String) {
   EXPECT_TRUE(IsLt(CheckTypes<string, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<string, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<string, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<string, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<string, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<string, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<string, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<string, map<bool, char>>()));
@@ -573,7 +574,7 @@ FIXTURE(Tombstone) {
   EXPECT_TRUE(IsLt(CheckTypes<TTombstone, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<TTombstone, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TTombstone, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TTombstone, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TTombstone, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TTombstone, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TTombstone, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TTombstone, map<bool, char>>()));
@@ -603,7 +604,7 @@ FIXTURE(Void) {
   EXPECT_TRUE(IsEq(CheckTypes<void, void>()));
   EXPECT_TRUE(IsLt(CheckTypes<void, TDesc<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<void, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<void, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<void, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<void, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<void, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<void, map<bool, char>>()));
@@ -637,7 +638,7 @@ FIXTURE(Desc) {
   EXPECT_TRUE(IsGt(CheckTypes<TDesc<string>, TDesc<bool>>()));
 
   EXPECT_TRUE(IsLt(CheckTypes<TDesc<bool>, TFree<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TDesc<bool>, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TDesc<bool>, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TDesc<bool>, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TDesc<bool>, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TDesc<bool>, map<bool, char>>()));
@@ -671,7 +672,7 @@ FIXTURE(Free) {
   EXPECT_TRUE(IsEq(CheckTypes<TFree<bool>, TFree<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<TFree<string>, TFree<bool>>()));
 
-  EXPECT_TRUE(IsLt(CheckTypes<TFree<bool>, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<TFree<bool>, std::optional<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TFree<bool>, set<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TFree<bool>, vector<bool>>()));
   EXPECT_TRUE(IsLt(CheckTypes<TFree<bool>, map<bool, char>>()));
@@ -680,37 +681,37 @@ FIXTURE(Free) {
 }
 
 FIXTURE(Opt) {
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, int8_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, int16_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, int32_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, int64_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, uint8_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, uint16_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, uint32_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, uint64_t>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, bool>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, char>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, float>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, double>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TStdDuration>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TStdTimePoint>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TUuid>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TBlob>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, string>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TTombstone>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, void>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TDesc<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<bool>, TFree<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, int8_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, int16_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, int32_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, int64_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, uint8_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, uint16_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, uint32_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, uint64_t>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, bool>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, char>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, float>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, double>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TStdDuration>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TStdTimePoint>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TUuid>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TBlob>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, string>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TTombstone>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, void>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TDesc<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<bool>, TFree<bool>>()));
 
-  EXPECT_TRUE(IsLt(CheckTypes<TOpt<int8_t>, TOpt<bool>>()));
-  EXPECT_TRUE(IsEq(CheckTypes<TOpt<bool>, TOpt<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TOpt<string>, TOpt<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<std::optional<int8_t>, std::optional<bool>>()));
+  EXPECT_TRUE(IsEq(CheckTypes<std::optional<bool>, std::optional<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<std::optional<string>, std::optional<bool>>()));
 
-  EXPECT_TRUE(IsLt(CheckTypes<TOpt<bool>, set<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TOpt<bool>, vector<bool>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TOpt<bool>, map<bool, char>>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TOpt<bool>, TPoint>()));
-  EXPECT_TRUE(IsLt(CheckTypes<TOpt<bool>, tuple<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<std::optional<bool>, set<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<std::optional<bool>, vector<bool>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<std::optional<bool>, map<bool, char>>()));
+  EXPECT_TRUE(IsLt(CheckTypes<std::optional<bool>, TPoint>()));
+  EXPECT_TRUE(IsLt(CheckTypes<std::optional<bool>, tuple<bool>>()));
 }
 
 FIXTURE(Set) {
@@ -735,7 +736,7 @@ FIXTURE(Set) {
   EXPECT_TRUE(IsGt(CheckTypes<set<bool>, void>()));
   EXPECT_TRUE(IsGt(CheckTypes<set<bool>, TDesc<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<set<bool>, TFree<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<set<bool>, TOpt<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<set<bool>, std::optional<bool>>()));
 
   EXPECT_TRUE(IsLt(CheckTypes<set<int8_t>, set<bool>>()));
   EXPECT_TRUE(IsEq(CheckTypes<set<bool>, set<bool>>()));
@@ -769,7 +770,7 @@ FIXTURE(Vector) {
   EXPECT_TRUE(IsGt(CheckTypes<vector<bool>, void>()));
   EXPECT_TRUE(IsGt(CheckTypes<vector<bool>, TDesc<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<vector<bool>, TFree<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<vector<bool>, TOpt<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<vector<bool>, std::optional<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<vector<bool>, set<bool>>()));
 
   EXPECT_TRUE(IsLt(CheckTypes<vector<int8_t>, vector<bool>>()));
@@ -803,7 +804,7 @@ FIXTURE(Map) {
   EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, void>()));
   EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, TDesc<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, TFree<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, TOpt<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, std::optional<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, set<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<map<bool, char>, vector<bool>>()));
 
@@ -874,7 +875,7 @@ FIXTURE(Record) {
   EXPECT_TRUE(IsGt(CheckTypes<TPoint, void>()));
   EXPECT_TRUE(IsGt(CheckTypes<TPoint, TDesc<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<TPoint, TFree<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<TPoint, TOpt<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<TPoint, std::optional<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<TPoint, set<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<TPoint, vector<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<TPoint, map<bool, char>>()));
@@ -910,7 +911,7 @@ FIXTURE(Tuple) {
   EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, void>()));
   EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, TDesc<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, TFree<bool>>()));
-  EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, TOpt<bool>>()));
+  EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, std::optional<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, set<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, vector<bool>>()));
   EXPECT_TRUE(IsGt(CheckTypes<tuple<bool>, map<bool, char>>()));

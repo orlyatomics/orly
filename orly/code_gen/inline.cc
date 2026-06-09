@@ -45,7 +45,7 @@ Orly::Type::TType TInline::GetReturnType() const {
 }
 
 bool TInline::HasId() const {
-  return Id;
+  return Id.has_value();
 }
 
 //Used by common sub expression eliminator.

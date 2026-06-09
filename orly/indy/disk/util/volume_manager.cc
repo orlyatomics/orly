@@ -22,6 +22,7 @@
 
 #include <linux/fs.h>
 #include <math.h>
+#include <optional>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 
@@ -154,9 +155,11 @@ void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, b
   CPU_ZERO(&mask);
   CPU_SET(core, &mask);
   IfLt0(sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask));
-  TOpt<TBooster> booster;
+  std::optional<TBooster> booster;
   if (!no_realtime) {
-    booster.MakeKnown(SCHED_FIFO);
+    if (!booster) {
+      booster.emplace(SCHED_FIFO);
+    }
   }
   const size_t rt_not_to_exceed_depth = 32UL;
   const size_t medium_not_to_exceed_depth = 6UL;

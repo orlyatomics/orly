@@ -23,7 +23,7 @@
 #include <map>
 #include <mutex>
 
-#include <base/opt.h>
+#include <optional>
 #include <base/util/stl.h>
 
 using namespace Base;
@@ -45,7 +45,7 @@ typedef map<uint64_t, TShutdownListener> TListenerCollection;
 
 /* We keep track of the shutdown listeners by an id so we can add/remove easily with an RAII wrapper. */
 static uint64_t ManipulateShutdownListeners(TShutdownListener new_listener,
-                                     Base::TOpt<uint64_t> remove_id,
+                                     std::optional<uint64_t> remove_id,
                                      const function<void(TShutdownListener)> &for_each_listener) {
   static TListenerCollection Listeners;
   static uint64_t NextListenerId=1; // We start at 1 so we can use 0 as "no id removed".
@@ -72,7 +72,7 @@ static uint64_t ManipulateShutdownListeners(TShutdownListener new_listener,
 void Base::ShutDown() {
   if (SetOrGetShuttingDown(true)) {
     // Notify all listeners
-    ManipulateShutdownListeners(TShutdownListener(), Base::TOpt<uint64_t>(), [](TShutdownListener cb) {
+    ManipulateShutdownListeners(TShutdownListener(), std::optional<uint64_t>(), [](TShutdownListener cb) {
       cb();
     });
   }
@@ -83,7 +83,7 @@ bool Base::IsShuttingDown() {
 }
 
 TShutdownCallback::TShutdownCallback(TShutdownListener callback)
-    : Id(ManipulateShutdownListeners(move(callback), Base::TOpt<uint64_t>(), function<void(TShutdownListener)>())) {}
+    : Id(ManipulateShutdownListeners(move(callback), std::optional<uint64_t>(), function<void(TShutdownListener)>())) {}
 
 TShutdownCallback::~TShutdownCallback() {
   ManipulateShutdownListeners(nullptr, Id, function<void(TShutdownListener)>());

@@ -24,6 +24,7 @@
 #include <cstring>
 #include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -101,6 +102,17 @@ namespace Io {
     template <typename... TArgs>
     void Write(const std::tuple<TArgs...> &that) {
       *this << Base::Concat(that);
+    }
+
+    /* Write an optional value: a bool flag, followed by the value if present.
+       Matches the wire format of the former Base::TOpt<> serializer. */
+    template <typename TVal>
+    void Write(const std::optional<TVal> &that) {
+      bool is_known = static_cast<bool>(that);
+      Write(is_known);
+      if (is_known) {
+        *this << *that;
+      }
     }
 
     template <typename TRep, typename TPeriod>
@@ -222,6 +234,10 @@ namespace Io {
   template <typename... TArgs>
   inline TBinaryOutputStream &operator<<(TBinaryOutputStream &strm, const std::tuple<TArgs...> &that) { strm.Write(that); return strm; }
 
+  /* Stream inserter for std::optional. */
+  template <typename TVal>
+  inline TBinaryOutputStream &operator<<(TBinaryOutputStream &strm, const std::optional<TVal> &that) { strm.Write(that); return strm; }
+
   /* Stream inserter for std::chrono. */
   template <typename TRep, typename TPeriod>
   inline TBinaryOutputStream &operator<<(TBinaryOutputStream &strm, const std::chrono::duration<TRep, TPeriod> &that) { strm.Write(that); return strm; }
@@ -279,6 +295,10 @@ namespace Io {
   /* Stream inserter for STL tuple. */
   template <typename... TArgs>
   inline TBinaryOutputStream &&operator<<(TBinaryOutputStream &&strm, const std::tuple<TArgs...> &that) { strm.Write(that); return std::move(strm); }
+
+  /* Stream inserter for std::optional. */
+  template <typename TVal>
+  inline TBinaryOutputStream &&operator<<(TBinaryOutputStream &&strm, const std::optional<TVal> &that) { strm.Write(that); return std::move(strm); }
 
   /* Stream inserter for std::chrono. */
   template <typename TRep, typename TPeriod>

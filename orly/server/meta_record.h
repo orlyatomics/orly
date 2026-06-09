@@ -25,6 +25,7 @@
 #pragma once
 
 #include <cassert>
+#include <optional>
 #include <utility>
 
 #include <orly/sabot/all.h>
@@ -55,7 +56,7 @@ namespace Orly {
 
         /* TODO */
         TEntry(
-            const Base::TUuid &session_id, const Base::TOpt<Base::TUuid> &user_id, const TPackageFqName &package_fq_name, const std::string &method_name, TArgByName &&arg_by_name,
+            const Base::TUuid &session_id, const std::optional<Base::TUuid> &user_id, const TPackageFqName &package_fq_name, const std::string &method_name, TArgByName &&arg_by_name,
             TExpectedPredicateResults &&expected_predicate_results, Base::Chrono::TTimePnt now, uint32_t random_seed)
             : SessionId(session_id), UserId(user_id), PackageFqName(package_fq_name), MethodName(method_name), ArgByName(std::move(arg_by_name)),
               ExpectedPredicateResults(std::move(expected_predicate_results)), RunTimestamp(now), RandomSeed(random_seed) {}
@@ -93,7 +94,7 @@ namespace Orly {
         }
 
         /* TODO */
-        const Base::TOpt<Base::TUuid> &GetUserId() const {
+        const std::optional<Base::TUuid> &GetUserId() const {
           return UserId;
         }
 
@@ -103,7 +104,7 @@ namespace Orly {
         Base::TUuid SessionId;
 
         /* TODO */
-        Base::TOpt<Base::TUuid> UserId;
+        std::optional<Base::TUuid> UserId;
 
         /* TODO */
         TPackageFqName PackageFqName;

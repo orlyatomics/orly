@@ -80,6 +80,7 @@
 #include <base/class_traits.h>
 #include <base/demangle.h>
 #include <base/json.h>
+#include <base/opt_ostream.h>
 #include <base/thrower.h>
 
 namespace Base {

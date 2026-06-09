@@ -21,6 +21,7 @@
 #include <cassert>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 
 #include <base/debug_log.h>
@@ -79,7 +80,7 @@ bool Orly::Client::Program::InterpretStmt(const TStmt *stmt, const shared_ptr<TC
     virtual void operator()(const TPovConsStmt *that) const override {
       bool is_safe = dynamic_cast<const TSafeGuarantee *>(that->GetPovGuarantee()) != nullptr;
       bool is_shared = dynamic_cast<const TSharedKind *>(that->GetPovKind()) != nullptr;
-      Base::TOpt<Base::TUuid> parent_id;
+      std::optional<Base::TUuid> parent_id;
       auto parent = dynamic_cast<const TParent *>(that->GetOptParent());
       if (parent) {
         auto id_expr = parent->GetIdExpr();

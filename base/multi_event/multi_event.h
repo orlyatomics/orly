@@ -28,7 +28,7 @@
 #include <unordered_set>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 
 namespace MultiEvent {
 
@@ -103,7 +103,7 @@ namespace MultiEvent {
        Events come from the producer.
        If one or more events fire, wake up and send them the consumer one at a time.
        Return true if we woke up; false if we timed out. */
-    bool Wait(const TProducer &producer, const TConsumer &consumer, const Base::TOpt<std::chrono::milliseconds> &timeout);
+    bool Wait(const TProducer &producer, const TConsumer &consumer, const std::optional<std::chrono::milliseconds> &timeout);
 
     /* Wait for one or more events.
        Events are the keys in a map from event to value.
@@ -112,7 +112,7 @@ namespace MultiEvent {
     template <typename TVal>
     bool Wait(
         const std::unordered_map<std::shared_ptr<TEvent>, TVal> &val_by_event,
-        const Base::TOpt<std::chrono::milliseconds> &timeout,
+        const std::optional<std::chrono::milliseconds> &timeout,
         const std::function<void (const TVal &)> &cb) {
       return Wait(Produce(val_by_event), Consume(val_by_event, cb), timeout);
     }
