@@ -89,13 +89,13 @@
 #include <cassert>
 #include <cstdlib>
 #include <memory>
+#include <concepts>
 #include <new>
 #include <typeinfo>
 #include <type_traits>
 #include <utility>
 
 #include <base/class_traits.h>
-#include <base/mpl/enable_if.h>
 
 #include <iostream>
 
@@ -286,8 +286,8 @@ namespace Visitor {
     TShared(TShared &&that) noexcept : Elem(that.Elem) { that.Elem = nullptr; }
 
     /* Steal the state from the donor. Leaving it stateless. */
-    template <typename TThatElem,
-              Mpl::EnableIf<std::is_convertible<TThatElem *, TElem *>>...>
+    template <typename TThatElem>
+      requires std::convertible_to<TThatElem *, TElem *>
     TShared(TShared<TThatElem> &&that) noexcept : Elem(that.Elem) {
       that.Elem = nullptr;
     }
@@ -296,8 +296,8 @@ namespace Visitor {
     TShared(const TShared &that) noexcept : TShared(that.Elem) {}
 
     /* Share the ownership of the managed element with that. */
-    template <typename TThatElem,
-              Mpl::EnableIf<std::is_convertible<TThatElem *, TElem *>>...>
+    template <typename TThatElem>
+      requires std::convertible_to<TThatElem *, TElem *>
     TShared(const TShared<TThatElem> &that) noexcept : TShared(that.Elem) {}
 
     /* If we're stateless, do nothing. Otherwise, decrement the shared count.
@@ -346,8 +346,8 @@ namespace Visitor {
     }
 
     /* Dereference the managed element. */
-    template <typename TElem = TElem,
-              Mpl::DisableIf<std::is_same<TElem, void>>...>
+    template <typename TElem = TElem>
+      requires (!std::same_as<TElem, void>)
     TElem &operator*() const noexcept {
       assert(Elem);
       return *Elem;
@@ -564,16 +564,16 @@ namespace Visitor {
     TWeak() noexcept : Elem(nullptr) {}
 
     /* Share the weak reference of the managed element with that. */
-    template <typename TThatElem,
-              Mpl::EnableIf<std::is_convertible<TThatElem *, TElem *>>...>
+    template <typename TThatElem>
+      requires std::convertible_to<TThatElem *, TElem *>
     TWeak(const TShared<TThatElem> &that) noexcept : TWeak(that.Get()) {}
 
     /* Share the weak reference of the managed element with that. */
     TWeak(const TWeak &that) noexcept : TWeak(that.Elem) {}
 
     /* Share the weak reference of the managed element with that. */
-    template <typename TThatElem,
-              Mpl::EnableIf<std::is_convertible<TThatElem *, TElem *>>...>
+    template <typename TThatElem>
+      requires std::convertible_to<TThatElem *, TElem *>
     TWeak(const TWeak<TThatElem> &that) noexcept : TWeak(that.Elem) {}
 
     /* If we're stateless, do nothing. Otherwise, decrement the weak count.
