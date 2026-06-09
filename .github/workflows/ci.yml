@@ -8,12 +8,14 @@
 #                            its Python and Go drivers (orlyc + orlyi + WS)
 #
 # Caching: both apt packages and the build output tree (../out_orly,
-# ../.jhm) are cached across runs. Incremental builds rely on jhm's own
-# per-file checksum tracking, which we know works (it's how `make debug`
-# after a fresh bootstrap takes seconds). To guard against silent stale-
-# cache bugs masking real issues, a `schedule:` trigger runs the
-# same jobs daily with caching disabled. If the nightly ever diverges
-# from the cached PR runs, that's the signal to investigate.
+# ../.jhm) are cached across runs. jhm decides what to rebuild by comparing
+# file mtimes, so each job runs `git restore-mtime` after checkout to date
+# every tracked file by its last commit -- otherwise actions/checkout stamps
+# everything with the clone time, every source looks newer than the cached
+# outputs, and the build is fully redone (~12 min) even on a no-op change.
+# To guard against silent stale-cache bugs masking real issues, a `schedule:`
+# trigger runs the same jobs daily with caching disabled. If the nightly ever
+# diverges from the cached PR runs, that's the signal to investigate.
 name: ci
 
 on:
@@ -31,12 +33,25 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history so git-restore-mtime (below) can date each file by
+          # its last commit; jhm keys incremental rebuilds on mtime.
+          fetch-depth: 0
 
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind
-          version: 1.0
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind git-restore-mtime
+          version: 1.1
+
+      - name: Restore source mtimes
+        # jhm decides what to rebuild by comparing file mtimes, and
+        # actions/checkout stamps every file with the clone time -- which
+        # makes every source look newer than the cached build outputs and
+        # forces a full ~12-min rebuild even on a no-op change. Reset each
+        # tracked file's mtime to its last-commit time so unchanged files
+        # stay older than the restored outputs and the build goes incremental.
+        run: git restore-mtime
 
       - name: Cache build outputs
         if: github.event_name != 'schedule'
@@ -71,12 +86,25 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history so git-restore-mtime (below) can date each file by
+          # its last commit; jhm keys incremental rebuilds on mtime.
+          fetch-depth: 0
 
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind
-          version: 1.0
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind git-restore-mtime
+          version: 1.1
+
+      - name: Restore source mtimes
+        # jhm decides what to rebuild by comparing file mtimes, and
+        # actions/checkout stamps every file with the clone time -- which
+        # makes every source look newer than the cached build outputs and
+        # forces a full ~12-min rebuild even on a no-op change. Reset each
+        # tracked file's mtime to its last-commit time so unchanged files
+        # stay older than the restored outputs and the build goes incremental.
+        run: git restore-mtime
 
       - name: Cache build outputs
         if: github.event_name != 'schedule'
@@ -122,12 +150,25 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history so git-restore-mtime (below) can date each file by
+          # its last commit; jhm keys incremental rebuilds on mtime.
+          fetch-depth: 0
 
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind
-          version: 1.0
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind git-restore-mtime
+          version: 1.1
+
+      - name: Restore source mtimes
+        # jhm decides what to rebuild by comparing file mtimes, and
+        # actions/checkout stamps every file with the clone time -- which
+        # makes every source look newer than the cached build outputs and
+        # forces a full ~12-min rebuild even on a no-op change. Reset each
+        # tracked file's mtime to its last-commit time so unchanged files
+        # stay older than the restored outputs and the build goes incremental.
+        run: git restore-mtime
 
       - name: Cache build outputs
         if: github.event_name != 'schedule'
@@ -155,12 +196,25 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history so git-restore-mtime (below) can date each file by
+          # its last commit; jhm keys incremental rebuilds on mtime.
+          fetch-depth: 0
 
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind
-          version: 1.0
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind git-restore-mtime
+          version: 1.1
+
+      - name: Restore source mtimes
+        # jhm decides what to rebuild by comparing file mtimes, and
+        # actions/checkout stamps every file with the clone time -- which
+        # makes every source look newer than the cached build outputs and
+        # forces a full ~12-min rebuild even on a no-op change. Reset each
+        # tracked file's mtime to its last-commit time so unchanged files
+        # stay older than the restored outputs and the build goes incremental.
+        run: git restore-mtime
 
       - name: Install python websocket-client
         run: pip3 install --break-system-packages websocket-client
