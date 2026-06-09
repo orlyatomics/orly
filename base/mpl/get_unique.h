@@ -24,7 +24,6 @@
 #include <type_traits>
 
 #include <base/identity.h>
-#include <base/mpl/conditional.h>
 #include <base/mpl/extend.h>
 #include <base/mpl/type_list.h>
 
@@ -49,8 +48,8 @@ namespace Mpl {
 
   /* Recursive case. */
   template <typename TList_, typename TSet_, typename TElem, typename... TMoreElems>
-  struct GetUniqueRecur<TList_, TSet_, TTypeList<TElem, TMoreElems...>> : public Mpl::Conditional<
-      std::is_base_of<TNode<TElem>, TSet_>,
+  struct GetUniqueRecur<TList_, TSet_, TTypeList<TElem, TMoreElems...>> : public std::conditional_t<
+      std::is_base_of<TNode<TElem>, TSet_>::value,
       GetUniqueRecur<TList_, TSet_, TTypeList<TMoreElems...>>,
       GetUniqueRecur<TExtend<TList_, TTypeList<TElem>>, TRoot<TSet_, TNode<TElem>>, TTypeList<TMoreElems...>>> {};
 

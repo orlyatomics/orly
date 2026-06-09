@@ -2,8 +2,9 @@
 
    Type-level comparison operators on `::value` of integral-constant
    types: `Lt`, `Gt`, `LtEq`, `GtEq`, `EqEq`, `Neq`. Composes with
-   `Mpl::And` / `Mpl::Not` so you can write `Or<Lt<A, B>, EqEq<A, B>>`
-   the way you'd write `a < b || a == b` at runtime.
+   `std::conjunction` / `std::negation` so you can write
+   `std::disjunction<Lt<A, B>, EqEq<A, B>>` the way you'd write
+   `a < b || a == b` at runtime.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -23,9 +24,6 @@
 
 #include <type_traits>
 
-#include <base/mpl/and.h>
-#include <base/mpl/not.h>
-
 namespace Mpl {
 
   template <typename Lhs, typename Rhs>
@@ -35,15 +33,15 @@ namespace Mpl {
   using Gt = Lt<Rhs, Lhs>;
 
   template <typename Lhs, typename Rhs>
-  using LtEq = Not<Gt<Lhs, Rhs>>;
+  using LtEq = std::negation<Gt<Lhs, Rhs>>;
 
   template <typename Lhs, typename Rhs>
   using GtEq = LtEq<Rhs, Lhs>;
 
   template <typename Lhs, typename Rhs>
-  using EqEq = And<LtEq<Lhs, Rhs>, GtEq<Lhs, Rhs>>;
+  using EqEq = std::conjunction<LtEq<Lhs, Rhs>, GtEq<Lhs, Rhs>>;
 
   template <typename Lhs, typename Rhs>
-  using Neq = Not<EqEq<Lhs, Rhs>>;
+  using Neq = std::negation<EqEq<Lhs, Rhs>>;
 
 }  // Mpl

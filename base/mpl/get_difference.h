@@ -23,7 +23,6 @@
 #include <type_traits>
 
 #include <base/identity.h>
-#include <base/mpl/conditional.h>
 #include <base/mpl/contains.h>
 #include <base/mpl/type_list.h>
 #include <base/mpl/type_set.h>
@@ -38,8 +37,8 @@ namespace Mpl {
   struct GetDifferenceRecur<TTypeList<TElems...>, TTypeList<>, TRhs> : public Base::identity<TTypeSet<TElems...>> {};
 
   template <typename TList, typename TElem, typename... TMoreElems, typename TRhs>
-  struct GetDifferenceRecur<TList, TTypeList<TElem, TMoreElems...>, TRhs> : public Mpl::Conditional<
-      Contains<TRhs, TElem>,
+  struct GetDifferenceRecur<TList, TTypeList<TElem, TMoreElems...>, TRhs> : public std::conditional_t<
+      Contains<TRhs, TElem>::value,
       GetDifferenceRecur<TList, TTypeList<TMoreElems...>, TRhs>,
       GetDifferenceRecur<TExtend<TList, TTypeList<TElem>>, TTypeList<TMoreElems...>, TRhs>> {};
 

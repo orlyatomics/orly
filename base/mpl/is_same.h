@@ -2,9 +2,8 @@
 
    Specialises `std::is_same` for `Mpl::TTypeSet<...>` so two sets
    compare equal regardless of element order (`std::is_same` on the
-   underlying tuple would require positional match). Also defines
-   `Mpl::IsSame<L, R>` -- a `decay`-aware passthrough useful for
-   template-parameter matching.
+   underlying tuple would require positional match). Use
+   `std::is_same`/`std::is_same_v` directly to compare type sets.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -51,11 +50,3 @@ namespace std {
                                        Mpl::TTypeSet<TRhsElems...>>()> {};
 
 }  // std
-
-namespace Mpl {
-
-  /* Decay the types and pass-through std::is_same<>. */
-  template <typename TLhs, typename TRhs>
-  struct IsSame : public std::is_same<std::decay_t<TLhs>, std::decay_t<TRhs>> {};
-
-}  // Mpl

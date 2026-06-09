@@ -2,7 +2,7 @@
 
    SFINAE helper: `EnableIf<P>` is a well-formed type only when
    `P::value` is true; otherwise the substitution fails and the
-   overload is dropped. `DisableIf<P>` is `EnableIf<Not<P>>`.
+   overload is dropped. `DisableIf<P>` is `EnableIf<std::negation<P>>`.
    Used as a template default argument or return type -- the unary
    counterpart of `std::enable_if_t`.
 
@@ -24,8 +24,6 @@
 
 #include <type_traits>
 
-#include <base/mpl/not.h>
-
 namespace Mpl {
 
   class EnableIfImpl {
@@ -44,6 +42,6 @@ namespace Mpl {
   using EnableIf = EnableIfImpl::EnableIf<Pred>;
 
   template <typename Pred>
-  using DisableIf = EnableIf<Mpl::Not<Pred>>;
+  using DisableIf = EnableIf<std::negation<Pred>>;
 
 }  // Mpl

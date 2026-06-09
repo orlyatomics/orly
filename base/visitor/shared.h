@@ -96,7 +96,6 @@
 
 #include <base/class_traits.h>
 #include <base/mpl/enable_if.h>
-#include <base/mpl/not.h>
 
 #include <iostream>
 

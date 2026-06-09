@@ -2,7 +2,7 @@
 
    Order-independent type container built on `TTypeList` by passing
    the elements through `TGetUnique`. Backs `Mpl::Contains`, the
-   `Mpl::IsSame` set-equality specialisation, and the set-ops
+   `std::is_same` set-equality specialisation, and the set-ops
    (`GetUnion`, `GetIntersection`, `GetDifference`).
 
    Copyright 2010-2026 Atomic Kismet Company
