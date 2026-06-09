@@ -16,9 +16,9 @@
 import argparse
 import itertools
 import multiprocessing
+import json
 import os
 import os.path
-import pickle
 import subprocess
 
 # Process object. wraps subprocess.Popen object to augment it with a filename.
@@ -208,13 +208,19 @@ def Main():
     result = GetResult(proc)
     filepath = proc.filepath
     if args.update:
-      with open(GetStateFilename(filepath), 'wb') as f:
-        pickle.dump(result, f)
+      # Baselines are stored as readable JSON (not pickle) so that a changed
+      # baseline shows up in `git diff` / PR review and an uncommitted
+      # regeneration shows as a dirty working tree.
+      with open(GetStateFilename(filepath), 'w') as f:
+        json.dump(result, f, indent=2)
+        f.write('\n')
       return
     else:
       try:
-        with open(GetStateFilename(filepath), 'rb') as f:
-          expected = pickle.load(f)
+        # json.load yields lists; wrap in tuple so the `result == expected`
+        # comparison below matches GetResult's (returncode, sections) tuple.
+        with open(GetStateFilename(filepath), 'r') as f:
+          expected = tuple(json.load(f))
       except (IOError, OSError) as ex:
         if ex.errno != 2:
           raise
