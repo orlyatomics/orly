@@ -35,7 +35,7 @@ using namespace Orly;
 using namespace Orly::Atom;
 
 template <typename TValue>
-static void RoundTrip(const TValue &value, const TOpt<TTracker> &actual_tracker = TOpt<TTracker>::GetUnknown()) {
+static void RoundTrip(const TValue &value, const std::optional<TTracker> &actual_tracker = std::nullopt) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   auto recorder = make_shared<TRecorder>();
   /* write */ {
@@ -49,7 +49,7 @@ static void RoundTrip(const TValue &value, const TOpt<TTracker> &actual_tracker 
   TSuprena arena;
   EXPECT_EQ(Indy::TKey(method_result.GetValue(), method_result.GetArena().get()), Indy::TKey(value, &arena, state_alloc));
   const auto &expected_tracker = method_result.GetTracker();
-  if (EXPECT_EQ(actual_tracker.IsKnown(), expected_tracker.IsKnown()) && expected_tracker.IsKnown()) {
+  if (EXPECT_EQ(actual_tracker.has_value(), expected_tracker.has_value()) && expected_tracker.has_value()) {
     EXPECT_EQ(actual_tracker->Id, expected_tracker->Id);
     EXPECT_EQ(actual_tracker->TimeToLive.count(), expected_tracker->TimeToLive.count());
   }

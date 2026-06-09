@@ -16,6 +16,7 @@
 
 #include <jhm/jobs/link.h>
 
+#include <optional>
 #include <queue>
 
 #include <base/split.h>
@@ -33,14 +34,14 @@ static TRelPath GetOutputName(const TRelPath &input) {
   return TRelPath(SwapExtension(TPath(input.Path), {""}));
 }
 
-static TOpt<TRelPath> GetInputName(const TRelPath &output) {
+static std::optional<TRelPath> GetInputName(const TRelPath &output) {
   //TODO: Allow non-trivial prefixes before the empty extension.
   const auto &ext = output.Path.Extension;
   if (ext.size() > 0 && ext.at(ext.size()-1) == "") {
     return TRelPath(SwapExtension(TPath(output.Path), {"o"}));
   }
 
-  return TOpt<TRelPath>();
+  return std::optional<TRelPath>();
 }
 
 TJobProducer TLink::GetProducer() {

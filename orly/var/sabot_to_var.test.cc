@@ -18,6 +18,7 @@
 
 #include <orly/var/sabot_to_var.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -82,8 +83,8 @@ FIXTURE(Obj) {
 }
 
 FIXTURE(Opt) {
-  Check(Base::TOpt<int64_t>(7L), Var::TVar(Rt::TOpt<int64_t>(7L)));
-  Check(Base::TOpt<int64_t>(), Var::TVar(Rt::TOpt<int64_t>()));
+  Check(std::optional<int64_t>(7L), Var::TVar(Rt::TOpt<int64_t>(7L)));
+  Check(std::optional<int64_t>(), Var::TVar(Rt::TOpt<int64_t>()));
 }
 
 FIXTURE(Real) {

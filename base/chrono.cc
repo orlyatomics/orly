@@ -18,8 +18,9 @@
 
 #include <base/chrono.h>
 
-#include <iostream>
 #include <iomanip>
+#include <iostream>
+#include <optional>
 #include <sstream>
 
 #include <base/convert.h>
@@ -106,7 +107,7 @@ TTimeDiffInfo::TTimeDiffInfo(
 /* TODO */
 TTimeDiffInfo::TTimeDiffInfo(const std::string &str) {
   TConverter converter(AsPiece(str));
-  TOpt<bool> sign = converter.TryReadSign();
+  std::optional<bool> sign = converter.TryReadSign();
   IsForward = sign ? *sign : true;
   READ(Day, 'T');
   READ(Hour, ':');

@@ -19,6 +19,7 @@
 #include <base/scheduler.h>
 
 #include <algorithm>
+#include <optional>
 
 #include <sched.h>
 
@@ -63,7 +64,7 @@ void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job) const {
 const TScheduler::TPolicy TScheduler::TPolicy::Shutdown;
 
 TScheduler::TScheduler(const TPolicy &policy)
-    : TScheduler(policy, TOpt<pthread_t>::GetUnknown()) {}
+    : TScheduler(policy, std::nullopt) {}
 
 TScheduler::~TScheduler() {
   //TODO: This shutdown should be seperate from a global shutdown.
@@ -204,7 +205,7 @@ void TScheduler::TWorker::ThreadMain() {
   }
 }
 
-TScheduler::TScheduler(const TPolicy &policy, const TOpt<pthread_t> &ctrl_c_thread, TMainJob *main_job)
+TScheduler::TScheduler(const TPolicy &policy, const std::optional<pthread_t> &ctrl_c_thread, TMainJob *main_job)
     : Policy(policy), FirstWorker(nullptr), LastWorker(nullptr), WorkerCount(0), IdleCount(0), WakingCount(0),
       CtrlCThread(ctrl_c_thread), PermanantlyQuiescent(false) {
   if (main_job) {

@@ -18,6 +18,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 #include <base/json.h>
 #include <base/split.h>
@@ -56,11 +57,11 @@ static TRelPath GetOutputName(const TRelPath &input, bool is_cpp) {
   return TRelPath(SwapExtension(TPath(input.Path), {"o"}));
 }
 
-static TOpt<TRelPath> GetInputName(const TRelPath &output, bool is_cpp) {
+static std::optional<TRelPath> GetInputName(const TRelPath &output, bool is_cpp) {
   if (output.Path.EndsWith({"o"})) {
     return TRelPath(SwapExtension(TPath(output.Path), {is_cpp ? "cc" : "c"}));
   } else {
-    return TOpt<TRelPath>();
+    return std::optional<TRelPath>();
   }
 }
 

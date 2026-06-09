@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/disk/durable_manager.h>
+#include <optional>
 
 #include <base/booster.h>
 #include <orly/indy/disk/util/hash_util.h>
@@ -435,7 +436,7 @@ TDurableManager::TSortedByIdFile::TSortedByIdFile(TMemSlushLayer *mem_layer,
   TCompletionTrigger completion_trigger;
 
   /* calculate some offset */ {
-    Base::TOpt<Base::TUuid> last_id;
+    std::optional<Base::TUuid> last_id;
     for (TMemSlushLayer::TEntryCollection::TCursor csr(mem_layer->GetEntryCollection()); csr; ++csr) {
       TSerializedSize serialized_size = (*csr).GetSerializedSize();
       const uuid_t &cur_id = (*csr).GetId();
@@ -518,7 +519,7 @@ TDurableManager::TSortedByIdFile::TSortedByIdFile(TMemSlushLayer *mem_layer,
        5. serialized string.
     */
     size_t key_offset = 0UL;
-    Base::TOpt<Base::TUuid> last_id;
+    std::optional<Base::TUuid> last_id;
     for (TMemSlushLayer::TEntryCollection::TCursor csr(mem_layer->GetEntryCollection()); csr; ++csr) {
 
 
@@ -846,7 +847,7 @@ TDurableManager::TMergeSortedByIdFile::TMergeSortedByIdFile(const std::vector<si
 
       size_t cur_deadline_count;
       TSerializedSize cur_serialized_size;
-      Base::TOpt<Base::TUuid> last_id;
+      std::optional<Base::TUuid> last_id;
       while (!sorter.IsEmpty()) {
         TSequenceNumber pop_num;
         size_t pos = sorter.Pop(pop_num, cur_id);
@@ -970,7 +971,7 @@ TDurableManager::TMergeSortedByIdFile::TMergeSortedByIdFile(const std::vector<si
 
       size_t cur_deadline_count;
       TSerializedSize cur_serialized_size;
-      Base::TOpt<Base::TUuid> last_id;
+      std::optional<Base::TUuid> last_id;
       size_t key_offset = 0UL;
       while (!sorter.IsEmpty()) {
         TSequenceNumber pop_num;

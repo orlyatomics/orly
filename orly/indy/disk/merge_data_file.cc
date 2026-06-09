@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/disk/merge_data_file.h>
+#include <optional>
 
 #include <orly/indy/disk/util/hash_util.h>
 #include <orly/indy/util/block_vec.h>
@@ -472,7 +473,7 @@ class TMergeDataFileImpl {
             ++pos;
           }
           idx_file.PrepKeyRange(max_key_count, &UpdateCollector);
-          Base::TOpt<TKey> last_written;
+          std::optional<TKey> last_written;
           while (min_heap) {
             size_t pos;
             const TSortedKey &k = min_heap.Pop(pos);
@@ -1403,7 +1404,7 @@ class TMergeDataFileImpl {
 
         void *pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin));
         void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
-        Base::TOpt<TTypeNote> prev_type;
+        std::optional<TTypeNote> prev_type;
         std::vector<std::pair<size_t, size_t>> offset_by_file_to_merge;
 
         auto merge_func = [&]() {
@@ -1612,7 +1613,7 @@ class TMergeDataFileImpl {
         }
         ++pos;
       }
-      Base::TOpt<typename TMergeDataFileImpl<CanTail, CanTailTombstones>::TL0MergeNote> prev_note;
+      std::optional<typename TMergeDataFileImpl<CanTail, CanTailTombstones>::TL0MergeNote> prev_note;
       Atom::TCore::TOffset prev_disk_offset = cur_disk_offset;
       Atom::TCore::TNote *temp_note = nullptr;
       size_t max_temp_note_size = getpagesize();
@@ -1840,7 +1841,7 @@ class TMergeDataFileImpl {
           throw std::bad_alloc();
         }
         try {
-          Base::TOpt<TMergeNote> prev_note;
+          std::optional<TMergeNote> prev_note;
           Atom::TCore::TOffset prev_disk_offset = cur_disk_offset;
           while (min_heap) {
             min_heap.Pop(pos);

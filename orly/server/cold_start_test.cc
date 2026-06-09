@@ -19,6 +19,7 @@
 #include <orly/server/server.h>
 
 #include <fstream>
+#include <optional>
 
 #include <orly/client/client.h>
 #include <orly/compiler.h>
@@ -40,7 +41,7 @@ class TExerciseClient final
     : public TClient {
   public:
 
-  TExerciseClient(const Base::TOpt<TUuid> &session_id, const TAddress &addr)
+  TExerciseClient(const std::optional<TUuid> &session_id, const TAddress &addr)
       : TClient(addr, session_id, seconds(600)) {}
 
   void WaitForReplication(const Base::TUuid &tracker_id, const Base::TUuid &repo_id) {
@@ -179,15 +180,15 @@ FIXTURE(SmallTypical) {
     /* wait for the server to start up. */
     sleep(10);
     /* install the package on the server */ {
-      auto client = make_shared<TExerciseClient>(*TOpt<TUuid>::Unknown, server_addr);
+      auto client = make_shared<TExerciseClient>(*std::optional<TUuid>::Unknown, server_addr);
       auto ack = client->InstallPackage({ "sample" }, 1);
       ack->Sync();
     }
     /* connect a client to the server and push a key */ {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      Base::TOpt<TUuid> session_id = *TOpt<TUuid>::Unknown;
+      std::optional<TUuid> session_id = *std::optional<TUuid>::Unknown;
       auto client = make_shared<TExerciseClient>(session_id, server_addr);
-      auto pov_id = client->NewFastPrivatePov(*TOpt<TUuid>::Unknown, seconds(10));
+      auto pov_id = client->NewFastPrivatePov(*std::optional<TUuid>::Unknown, seconds(10));
       Base::TUuid id_to_use = **pov_id;
       auto push_result = client->Try(id_to_use, { "sample" }, TClosure(string("insert"),
                                                                        string("a"), 1L,
@@ -196,16 +197,16 @@ FIXTURE(SmallTypical) {
                                                                        string("val"), 4L));
       bool out;
       Sabot::ToNative(*Sabot::State::TAny::TWrapper((*push_result)->GetValue().NewState((*push_result)->GetArena().get(), state_alloc)), out);
-      const Base::TOpt<TTracker> tracker = (*push_result)->GetTracker();
+      const std::optional<TTracker> tracker = (*push_result)->GetTracker();
       assert(tracker);
       client->WaitForTetris(tracker->Id, Orly::Indy::GlobalPovId);
       std::cout << "Done insert" << std::endl;
     }
     /* connect a client to the server and get the key to see if it's there. */
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      Base::TOpt<TUuid> session_id = *TOpt<TUuid>::Unknown;
+      std::optional<TUuid> session_id = *std::optional<TUuid>::Unknown;
       auto client = make_shared<TExerciseClient>(session_id, server_addr);
-      auto pov_id = client->NewFastPrivatePov(*TOpt<TUuid>::Unknown, seconds(10));
+      auto pov_id = client->NewFastPrivatePov(*std::optional<TUuid>::Unknown, seconds(10));
       Base::TUuid id_to_use = **pov_id;
       auto read_result = client->Try(id_to_use, { "sample" }, TClosure(string("get"),
                                                                        string("a"), 1L,
@@ -255,15 +256,15 @@ FIXTURE(SmallTypical) {
     sleep(10);
     /* we shouldn't have to install the package if it were stored in the system repo... */
     /* install the package on the server */ {
-      auto client = make_shared<TExerciseClient>(*TOpt<TUuid>::Unknown, server_addr);
+      auto client = make_shared<TExerciseClient>(*std::optional<TUuid>::Unknown, server_addr);
       auto ack = client->InstallPackage({ "sample" }, 1);
       ack->Sync();
     }
     /* connect a client to the server and get the key to see if it's there. */
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      Base::TOpt<TUuid> session_id = *TOpt<TUuid>::Unknown;
+      std::optional<TUuid> session_id = *std::optional<TUuid>::Unknown;
       auto client = make_shared<TExerciseClient>(session_id, server_addr);
-      auto pov_id = client->NewFastPrivatePov(*TOpt<TUuid>::Unknown, seconds(10));
+      auto pov_id = client->NewFastPrivatePov(*std::optional<TUuid>::Unknown, seconds(10));
       Base::TUuid id_to_use = **pov_id;
       auto read_result = client->Try(id_to_use, { "sample" }, TClosure(string("get"),
                                                                        string("a"), 1L,
@@ -345,15 +346,15 @@ FIXTURE(MediumTypical) {
     /* wait for the server to start up. */
     sleep(10);
     /* install the package on the server */ {
-      auto client = make_shared<TExerciseClient>(*TOpt<TUuid>::Unknown, server_addr);
+      auto client = make_shared<TExerciseClient>(*std::optional<TUuid>::Unknown, server_addr);
       auto ack = client->InstallPackage({ "sample" }, 1);
       ack->Sync();
     }
     /* connect a client to the server and push a key */ {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      Base::TOpt<TUuid> session_id = *TOpt<TUuid>::Unknown;
+      std::optional<TUuid> session_id = *std::optional<TUuid>::Unknown;
       auto client = make_shared<TExerciseClient>(session_id, server_addr);
-      auto pov_id = client->NewFastPrivatePov(*TOpt<TUuid>::Unknown, seconds(10));
+      auto pov_id = client->NewFastPrivatePov(*std::optional<TUuid>::Unknown, seconds(10));
       Base::TUuid id_to_use = **pov_id;
       std::vector<Base::TUuid> trackers;
       for (int64_t i = 0; i < num_iter; ++i) {
@@ -367,7 +368,7 @@ FIXTURE(MediumTypical) {
                                                                          string("val"), (i + 3L)));
         bool out;
         Sabot::ToNative(*Sabot::State::TAny::TWrapper((*push_result)->GetValue().NewState((*push_result)->GetArena().get(), state_alloc)), out);
-        const Base::TOpt<TTracker> tracker = (*push_result)->GetTracker();
+        const std::optional<TTracker> tracker = (*push_result)->GetTracker();
         assert(tracker);
         trackers.push_back(tracker->Id);
         if (trackers.size() > max_outstanding) {
@@ -383,9 +384,9 @@ FIXTURE(MediumTypical) {
     }
     /* connect a client to the server and get the key to see if it's there. */
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      Base::TOpt<TUuid> session_id = *TOpt<TUuid>::Unknown;
+      std::optional<TUuid> session_id = *std::optional<TUuid>::Unknown;
       auto client = make_shared<TExerciseClient>(session_id, server_addr);
-      auto pov_id = client->NewFastPrivatePov(*TOpt<TUuid>::Unknown, seconds(0));
+      auto pov_id = client->NewFastPrivatePov(*std::optional<TUuid>::Unknown, seconds(0));
       Base::TUuid id_to_use = **pov_id;
       for (int64_t i = 0L; i < num_iter; ++i) {
         auto read_result = client->Try(id_to_use, { "sample" }, TClosure(string("get"),
@@ -437,15 +438,15 @@ FIXTURE(MediumTypical) {
     sleep(10);
     /* we shouldn't have to install the package if it were stored in the system repo... */
     /* install the package on the server */ {
-      auto client = make_shared<TExerciseClient>(*TOpt<TUuid>::Unknown, server_addr);
+      auto client = make_shared<TExerciseClient>(*std::optional<TUuid>::Unknown, server_addr);
       auto ack = client->InstallPackage({ "sample" }, 1);
       ack->Sync();
     }
     /* connect a client to the server and get the key to see if it's there. */
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      Base::TOpt<TUuid> session_id = *TOpt<TUuid>::Unknown;
+      std::optional<TUuid> session_id = *std::optional<TUuid>::Unknown;
       auto client = make_shared<TExerciseClient>(session_id, server_addr);
-      auto pov_id = client->NewFastPrivatePov(*TOpt<TUuid>::Unknown, seconds(10));
+      auto pov_id = client->NewFastPrivatePov(*std::optional<TUuid>::Unknown, seconds(10));
       Base::TUuid id_to_use = **pov_id;
       for (int64_t i = 0L; i < num_iter; ++i) {
         auto read_result = client->Try(id_to_use, { "sample" }, TClosure(string("get"),

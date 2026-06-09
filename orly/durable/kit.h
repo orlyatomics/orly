@@ -25,11 +25,12 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include <base/class_traits.h>
 #include <base/event_semaphore.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/thrower.h>
 #include <base/uuid.h>
 #include <base/io/binary_input_only_stream.h>
@@ -311,7 +312,7 @@ namespace Orly {
          Once the deadline expires, the cleaner is free to destroy this object.
          If the object is open, this is unknown.
          An object which is open cannot be destroyed by the cleaner, so it has no deadline. */
-      const Base::TOpt<TDeadline> &GetDeadline() const {
+      const std::optional<TDeadline> &GetDeadline() const {
         return Deadline;
       }
 
@@ -414,7 +415,7 @@ namespace Orly {
       TTtl Ttl;
 
       /* See accessor. */
-      Base::TOpt<TDeadline> Deadline;
+      std::optional<TDeadline> Deadline;
 
       /* A semaphore to use during destruction, if we trigger asynchonous events. */
       TSem *Sem;
@@ -600,7 +601,7 @@ namespace Orly {
           /* The object is being re-opened from a closed state, so remove it from the set of closed objects. */
           size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, id));
           assert(erased_from_closed == 1);
-          openable_obj->Deadline.Reset();
+          openable_obj->Deadline.reset();
         }
         return ptr;
       }

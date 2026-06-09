@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <orly/indy/manager_base.h>
 #include <orly/indy/repo.h>
 #include <orly/indy/status.h>
@@ -44,23 +46,23 @@ namespace Orly {
         /* TODO */
         bool Push(const L0::TManager::TPtr<TRepo> &repo,
                   const std::shared_ptr<TUpdate> &update,
-                  const Base::TOpt<TSequenceNumber> &ensure_or_discard = Base::TOpt<TSequenceNumber>());
+                  const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>());
 
         /* TODO */
         bool Pop(const L0::TManager::TPtr<TRepo> &repo,
-                 const Base::TOpt<TSequenceNumber> &ensure_or_discard = Base::TOpt<TSequenceNumber>());
+                 const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>());
 
         /* TODO */
         bool Fail(const L0::TManager::TPtr<TRepo> &repo,
-                  const Base::TOpt<TSequenceNumber> &follow_or_discard = Base::TOpt<TSequenceNumber>());
+                  const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
         /* TODO */
         bool Pause(const L0::TManager::TPtr<TRepo> &repo,
-                   const Base::TOpt<TSequenceNumber> &follow_or_discard = Base::TOpt<TSequenceNumber>());
+                   const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
         /* TODO */
         bool UnPause(const L0::TManager::TPtr<TRepo> &repo,
-                     const Base::TOpt<TSequenceNumber> &follow_or_discard = Base::TOpt<TSequenceNumber>());
+                     const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
         /* TODO */
         const std::shared_ptr<TUpdate> &Peek(const L0::TManager::TPtr<TRepo> &repo);
@@ -220,13 +222,13 @@ namespace Orly {
             TMutation(const TMutation &mutation);
 
             /* TODO */
-            TMutation(TKind kind, const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num);
+            TMutation(TKind kind, const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
             /* TODO */
-            TMutation(TKind kind, const Base::TUuid &repo_id, const Orly::Indy::TUpdate *update, const Base::TOpt<TSequenceNumber> &seq_num);
+            TMutation(TKind kind, const Base::TUuid &repo_id, const Orly::Indy::TUpdate *update, const std::optional<TSequenceNumber> &seq_num);
 
             /* TODO */
-            TMutation(TKind kind, const Base::TUuid &repo_id, TUpdate &&update, const Base::TOpt<TSequenceNumber> &seq_num);
+            TMutation(TKind kind, const Base::TUuid &repo_id, TUpdate &&update, const std::optional<TSequenceNumber> &seq_num);
 
             /* TODO */
             virtual ~TMutation();
@@ -244,7 +246,7 @@ namespace Orly {
             inline const Base::TUuid &GetRepoId() const;
 
             /* TODO */
-            inline const Base::TOpt<TSequenceNumber> &GetSequenceNumber() const;
+            inline const std::optional<TSequenceNumber> &GetSequenceNumber() const;
 
             /* TODO */
             inline const TUpdate &GetUpdate() const;
@@ -253,7 +255,7 @@ namespace Orly {
             inline TUpdate &GetUpdate();
 
             /* TODO */
-            inline void SetSequenceNumber(Base::TOpt<TSequenceNumber> seq_num) NO_THROW;
+            inline void SetSequenceNumber(std::optional<TSequenceNumber> seq_num) NO_THROW;
 
             /* TODO */
             inline TSequenceNumber &GetNextUpdate() NO_THROW;
@@ -270,7 +272,7 @@ namespace Orly {
             TUpdate Update;
 
             /* TODO */
-            Base::TOpt<TSequenceNumber> SequenceNumber;
+            std::optional<TSequenceNumber> SequenceNumber;
 
             /* TODO */
             TSequenceNumber NextUpdate;
@@ -299,16 +301,16 @@ namespace Orly {
           TMutation *Push(const Base::TUuid &repo_id, const TUpdate *update);
 
           /* TODO */
-          TMutation *Pop(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num);
+          TMutation *Pop(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
           /* TODO */
-          TMutation *Fail(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num);
+          TMutation *Fail(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
           /* TODO */
-          TMutation *Pause(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num);
+          TMutation *Pause(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
           /* TODO */
-          TMutation *UnPause(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num);
+          TMutation *UnPause(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
           /* TODO */
           void Reset();
@@ -689,7 +691,7 @@ namespace Orly {
       }
 
       /* TODO */
-      inline const Base::TOpt<TSequenceNumber> &TTransaction::TReplica::TMutation::GetSequenceNumber() const {
+      inline const std::optional<TSequenceNumber> &TTransaction::TReplica::TMutation::GetSequenceNumber() const {
         return SequenceNumber;
       }
 
@@ -706,7 +708,7 @@ namespace Orly {
       }
 
       /* TODO */
-      inline void TTransaction::TReplica::TMutation::SetSequenceNumber(Base::TOpt<TSequenceNumber> seq_num) NO_THROW {
+      inline void TTransaction::TReplica::TMutation::SetSequenceNumber(std::optional<TSequenceNumber> seq_num) NO_THROW {
         SequenceNumber = seq_num;
       }
 

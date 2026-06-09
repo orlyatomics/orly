@@ -139,8 +139,8 @@ FIXTURE(Desc) {
 }
 
 FIXTURE(Opt) {
-  EXPECT_EQ(ToString(TOpt<int>(101)), "opt(101)");
-  EXPECT_EQ(ToString(TOpt<bool>()), "unknown opt(bool)");
+  EXPECT_EQ(ToString(std::optional<int>(101)), "opt(101)");
+  EXPECT_EQ(ToString(std::optional<bool>()), "unknown opt(bool)");
 }
 
 FIXTURE(Set) {

@@ -23,7 +23,7 @@
 #include <vector>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <tools/nycr/symbol/compound.h>
 
 namespace Tools {
@@ -46,7 +46,7 @@ namespace Tools {
         /* TODO */
         TLanguage(
             const TName &name, TAnyBase *base, const TNamespaces &namespaces,
-            const Base::TOpt<int> &expected_sr, const Base::TOpt<int> &expected_rr)
+            const std::optional<int> &expected_sr, const std::optional<int> &expected_rr)
             : TCompound(name, base), Namespaces(namespaces), ExpectedSr(expected_sr), ExpectedRr(expected_rr) {
           Languages.insert(this);
         }
@@ -58,12 +58,12 @@ namespace Tools {
         virtual void Accept(const TVisitor &visitor) const;
 
         /* TODO */
-        const Base::TOpt<int> &GetExpectedRr() const {
+        const std::optional<int> &GetExpectedRr() const {
           return ExpectedRr;
         }
 
         /* TODO */
-        const Base::TOpt<int> &GetExpectedSr() const {
+        const std::optional<int> &GetExpectedSr() const {
           return ExpectedSr;
         }
 
@@ -83,7 +83,7 @@ namespace Tools {
         TNamespaces Namespaces;
 
         /* TODO */
-        Base::TOpt<int> ExpectedSr, ExpectedRr;
+        std::optional<int> ExpectedSr, ExpectedRr;
 
         /* TODO */
         static TLanguages Languages;

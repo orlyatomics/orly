@@ -18,6 +18,7 @@
 
 #include <orly/sabot/get_depth.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -56,7 +57,7 @@ FIXTURE(Unary) {
   void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<TDesc<bool>>::GetType(type_alloc))), 1UL);
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<Native::TFree<bool>>::GetType(type_alloc))), 1UL);
-  EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<TOpt<bool>>::GetType(type_alloc))), 1UL);
+  EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<std::optional<bool>>::GetType(type_alloc))), 1UL);
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<set<bool>>::GetType(type_alloc))), 1UL);
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<vector<bool>>::GetType(type_alloc))), 1UL);
 }
@@ -102,6 +103,6 @@ FIXTURE(Tuple) {
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<bool>>::GetType(type_alloc))), 1UL);
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<bool, int64_t>>::GetType(type_alloc))), 1UL);
   EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<bool, set<bool>>>::GetType(type_alloc))), 2UL);
-  EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<bool, set<TOpt<bool>>>>::GetType(type_alloc))), 3UL);
-  EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<set<TOpt<bool>>, bool>>::GetType(type_alloc))), 3UL);
+  EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<bool, set<std::optional<bool>>>>::GetType(type_alloc))), 3UL);
+  EXPECT_EQ(Sabot::GetDepth(*Sabot::Type::TAny::TWrapper(Native::Type::For<tuple<set<std::optional<bool>>, bool>>::GetType(type_alloc))), 3UL);
 }

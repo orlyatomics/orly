@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/expr/assert.h>
+#include <optional>
 
 #include <orly/error.h>
 #include <orly/expr/visitor.h>
@@ -29,7 +30,7 @@ using namespace Orly::Expr;
 
 TAssertCase::TPtr TAssertCase::New(
     const TAssert::TPtr &assert,
-    const Base::TOpt<std::string> &opt_name,
+    const std::optional<std::string> &opt_name,
     const TExpr::TPtr &expr) {
   assert(assert);
   auto assert_case = TAssertCase::TPtr(new TAssertCase(assert, opt_name, expr));
@@ -39,7 +40,7 @@ TAssertCase::TPtr TAssertCase::New(
 
 TAssertCase::TAssertCase(
     const TAssert::TPtr &assert,
-    const Base::TOpt<std::string> &opt_name,
+    const std::optional<std::string> &opt_name,
     const TExpr::TPtr &expr)
       : Symbol::TRoot(expr),
         Assert(assert),
@@ -62,7 +63,7 @@ const std::string &TAssertCase::GetName() const {
 }
 
 bool TAssertCase::HasName() const {
-  return OptName;
+  return OptName.has_value();
 }
 
 TAssert::TPtr TAssertCase::TryGetAssert() const {

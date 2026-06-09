@@ -15,13 +15,16 @@
    limitations under the License. */
 
 #include <iostream>
+#include <string>
+#include <tuple>
+#include <vector>
 
 #include <syslog.h>
 
 #include <base/cmd.h>
 #include <base/glob.h>
 #include <base/log.h>
-#include <base/opt.h>
+#include <optional>
 #include <orly/csv_to_bin/field.h>
 #include <orly/csv_to_bin/json_iter.h>
 #include <orly/csv_to_bin/translate.h>
@@ -60,7 +63,7 @@ struct TUserObj :
   Base::Chrono::TTimePnt created_at;
   bool default_profile;
   bool default_profile_image;
-  Base::TOpt<std::string> description;
+  std::optional<std::string> description;
   // TEntities entities; TODO
   int64_t favourites_count;
   bool follow_request_sent;
@@ -72,7 +75,7 @@ struct TUserObj :
   bool is_translator;
   std::string lang;
   int64_t listed_count;
-  Base::TOpt<std::string> location;
+  std::optional<std::string> location;
   std::string name;
   std::string profile_background_color;
   std::string profile_background_image_url;
@@ -91,9 +94,9 @@ struct TUserObj :
   // bool show_all_inline_media; TODO: a "not present field"?
   //TStatus status; // TODO: sometimes ommited, empty, null?
   int64_t statuses_count;
-  Base::TOpt<std::string> time_zone;
-  Base::TOpt<std::string> url;
-  Base::TOpt<int64_t> utc_offset;
+  std::optional<std::string> time_zone;
+  std::optional<std::string> url;
+  std::optional<int64_t> utc_offset;
   bool verified;
   //std::string withheld_in_countries;  // TODO: another "when present" field
   //std::string withheld_scope;  // TODO: another "when present" field
@@ -205,20 +208,20 @@ struct TStatusObj :
     }
   };
 
-  //Base::TOpt<std::vector<TContributorObj>> contributors;  // TODO: issue parsing contributors for now
-  Base::TOpt<TCoordinateObj> coordinates;
+  //std::optional<std::vector<TContributorObj>> contributors;  // TODO: issue parsing contributors for now
+  std::optional<TCoordinateObj> coordinates;
   Base::Chrono::TTimePnt created_at;
   TEntitiesObj entities;
-  Base::TOpt<int64_t> favorite_count;
-  Base::TOpt<bool> favorited;
+  std::optional<int64_t> favorite_count;
+  std::optional<bool> favorited;
   //std::string filter_level;  // this field doesn't seem to exist in the data
   int64_t id;
-  Base::TOpt<std::string> in_reply_to_screen_name;
-  Base::TOpt<int64_t> in_reply_to_status_id;
-  Base::TOpt<int64_t> in_reply_to_user_id;
-  Base::TOpt<std::string> lang;
-  // Base::TOpt<TPlaceObj> place;  // TODO: place
-  //Base::TOpt<bool> possibly_sensitive;  // This field is not always present
+  std::optional<std::string> in_reply_to_screen_name;
+  std::optional<int64_t> in_reply_to_status_id;
+  std::optional<int64_t> in_reply_to_user_id;
+  std::optional<std::string> lang;
+  // std::optional<TPlaceObj> place;  // TODO: place
+  //std::optional<bool> possibly_sensitive;  // This field is not always present
   // TScopesObj scopes;  // TODO: scopes
   int64_t retweet_count;
   bool retweeted;
@@ -311,13 +314,13 @@ void TranslateUser(TJsonIter &input, const std::string &username) {
 }
 
 struct TPersonTweetedVal {
-  using TCoord = Base::TOpt<std::tuple<double, double>>;
+  using TCoord = std::optional<std::tuple<double, double>>;
   TPersonTweetedVal(int64_t reply_to_status,
                     int64_t reply_to_user,
                     int64_t _retweet_count,
                     const Base::Chrono::TTimePnt &_date,
                     const std::string &_text,
-                    const Base::TOpt<TStatusObj::TCoordinateObj> &coord)
+                    const std::optional<TStatusObj::TCoordinateObj> &coord)
       : reply_to_tweet_id(reply_to_status),
         reply_to_user_id(reply_to_user),
         retweet_count(_retweet_count),
@@ -359,13 +362,13 @@ void TranslateStatus(TJsonIter &input, const std::string &username) {
   auto person_tweeted = [&](int64_t uid,
                             const std::string &handle,
                             int64_t tid,
-                            const Base::TOpt<int64_t> &reply_to_tweet_id,
-                            const Base::TOpt<int64_t> &reply_to_user_id,
-                            const Base::TOpt<std::string> &reply_to_screen_name,
+                            const std::optional<int64_t> &reply_to_tweet_id,
+                            const std::optional<int64_t> &reply_to_user_id,
+                            const std::optional<std::string> &reply_to_screen_name,
                             int64_t retweet_count,
                             const Base::Chrono::TTimePnt &date,
                             const std::string &text,
-                            const Base::TOpt<TStatusObj::TCoordinateObj> &coordinates) {
+                            const std::optional<TStatusObj::TCoordinateObj> &coordinates) {
     person_tweeted_cvg.Push(t_person_tweeted_key(uid, tid), t_person_tweeted_val(reply_to_tweet_id ? *reply_to_tweet_id : -1,
                                                                                  reply_to_user_id ? *reply_to_user_id : -1,
                                                                                  retweet_count,

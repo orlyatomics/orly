@@ -21,6 +21,7 @@
 #include <cassert>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -232,7 +233,7 @@ class TWsImpl final
         assert(stmt);
         bool is_safe = dynamic_cast<const TSafeGuarantee *>(stmt->GetPovGuarantee()) != nullptr;
         bool is_shared = dynamic_cast<const TSharedKind *>(stmt->GetPovKind()) != nullptr;
-        TOpt<TUuid> parent_id;
+        std::optional<TUuid> parent_id;
         auto parent = dynamic_cast<const TParent *>(stmt->GetOptParent());
         if (parent) {
           parent_id = Translate(parent->GetIdExpr());

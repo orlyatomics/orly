@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/server/meta_record.h>
+#include <optional>
 
 using namespace std;
 using namespace Base;
@@ -24,7 +25,7 @@ using namespace Orly::Server;
 
 /* Metadata for TMetaRecord::TEntry. */
 RECORD_ELEM(TMetaRecord::TEntry, TUuid, SessionId);
-RECORD_ELEM(TMetaRecord::TEntry, TOpt<TUuid>, UserId);
+RECORD_ELEM(TMetaRecord::TEntry, std::optional<TUuid>, UserId);
 RECORD_ELEM(TMetaRecord::TEntry, TMetaRecord::TEntry::TPackageFqName, PackageFqName);
 RECORD_ELEM(TMetaRecord::TEntry, string, MethodName);
 RECORD_ELEM(TMetaRecord::TEntry, TMetaRecord::TEntry::TArgByName, ArgByName);

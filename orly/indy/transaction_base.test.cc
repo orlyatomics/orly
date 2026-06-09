@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/transaction_base.h>
+#include <optional>
 
 #include <base/scheduler.h>
 #include <orly/indy/disk/sim/mem_engine.h>
@@ -73,8 +74,8 @@ class TMyManager
   virtual ~TMyManager() {}
 
   virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
-                                     const Base::TOpt<TTtl> &ttl,
-                                     const Base::TOpt<TManager::TPtr<TRepo>> &parent_repo,
+                                     const std::optional<TTtl> &ttl,
+                                     const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                      bool is_safe,
                                      bool /*create*/) override {
     return is_safe ?
@@ -121,8 +122,8 @@ class TMyManager
   }
 
   inline TManager::TPtr<Indy::TRepo> GetRepo(const Base::TUuid &repo_id,
-                                                 const Base::TOpt<TTtl> &ttl,
-                                                 const Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+                                                 const std::optional<TTtl> &ttl,
+                                                 const std::optional<TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
                                                  bool is_safe,
                                                  bool create) {
     return create ? OpenOrCreate(repo_id, ttl, parent_repo, is_safe) : ForceOpenRepo(repo_id);
@@ -153,7 +154,7 @@ FIXTURE(Typical) {
     auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
     Base::TUuid repo_1_id(TUuid::Twister);
     Base::TUuid idx_id(TUuid::Twister);
-    auto repo_1 = manager->GetRepo(repo_1_id, TTtl::max(), TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>>::GetUnknown(), false, true);
+    auto repo_1 = manager->GetRepo(repo_1_id, TTtl::max(), std::nullopt, false, true);
     EXPECT_EQ(repo_1->GetStatus(), Normal);
     /* don't commit Push */ {
       auto transaction = manager->NewTransaction();
@@ -287,8 +288,8 @@ FIXTURE(Promoter) {
     Base::TUuid repo_1_id(TUuid::Twister);
     Base::TUuid repo_2_id(TUuid::Twister);
     Base::TUuid idx_id(TUuid::Twister);
-    auto repo_1 = manager->GetRepo(repo_1_id, TTtl::max(), TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>>::GetUnknown(), false, true);
-    auto repo_2 = manager->GetRepo(repo_2_id, TTtl::max(), TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>>::GetUnknown(), false, true);
+    auto repo_1 = manager->GetRepo(repo_1_id, TTtl::max(), std::nullopt, false, true);
+    auto repo_2 = manager->GetRepo(repo_2_id, TTtl::max(), std::nullopt, false, true);
     /* Push to 1*/ {
       auto transaction = manager->NewTransaction();
       EXPECT_TRUE(transaction);
@@ -357,8 +358,8 @@ FIXTURE(DiskPromoter) {
     Base::TUuid repo_1_id(TUuid::Twister);
     Base::TUuid repo_2_id(TUuid::Twister);
     Base::TUuid idx_id(TUuid::Twister);
-    auto repo_1 = manager->GetRepo(repo_1_id, TTtl::max(), TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>>::GetUnknown(), true, true);
-    auto repo_2 = manager->GetRepo(repo_2_id, TTtl::max(), TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>>::GetUnknown(), true, true);
+    auto repo_1 = manager->GetRepo(repo_1_id, TTtl::max(), std::nullopt, true, true);
+    auto repo_2 = manager->GetRepo(repo_2_id, TTtl::max(), std::nullopt, true, true);
     /* Push to 1*/ {
       auto transaction = manager->NewTransaction();
       EXPECT_TRUE(transaction);

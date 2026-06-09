@@ -24,6 +24,7 @@
 #include <cstring>
 #include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -106,6 +107,22 @@ namespace Io {
     template <typename... TArgs>
     void Read(std::tuple<TArgs...> &that) {
       Util::ForEach(that, TTupleHelper(*this));
+    }
+
+    /* Read an optional value: a bool flag, followed by the value if present.
+       Matches the wire format of the former Base::TOpt<> serializer. */
+    template <typename TVal>
+    void Read(std::optional<TVal> &that) {
+      bool is_known;
+      Read(is_known);
+      if (is_known) {
+        if (!that) {
+          that.emplace();
+        }
+        *this >> *that;
+      } else {
+        that.reset();
+      }
     }
 
     template <typename TRep, typename TPeriod>
@@ -253,6 +270,10 @@ namespace Io {
 
   /* Stream extractor for strings. */
   inline TBinaryInputStream &operator>>(TBinaryInputStream &strm, std::string &that) { strm.Read(that); return strm; }
+
+  /* Stream extractor for std::optional. */
+  template <typename TVal>
+  inline TBinaryInputStream &operator>>(TBinaryInputStream &strm, std::optional<TVal> &that) { strm.Read(that); return strm; }
 
   /* Stream extractors for STL containers. */
   template <typename TVal, typename TAlloc>

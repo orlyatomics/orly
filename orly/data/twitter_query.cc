@@ -15,6 +15,7 @@
    limitations under the License. */
 
 #include <iostream>
+#include <optional>
 
 #include <signal.h>
 #include <unistd.h>
@@ -39,7 +40,7 @@ class TExerciseClient final
    : public TClient {
  public:
 
- TExerciseClient(const Base::TOpt<TUuid> &session_id, const TAddress &addr)
+ TExerciseClient(const std::optional<TUuid> &session_id, const TAddress &addr)
      : TClient(addr, session_id, seconds(600)) {}
 
  private:
@@ -96,9 +97,9 @@ class TCmd final
 void GetUsers(const ::TCmd &cmd) {
  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
  try {
-   Base::TOpt<TUuid> session_id;
+   std::optional<TUuid> session_id;
    auto client = make_shared<TExerciseClient>(session_id, cmd.Addr);
-   auto pov_id = client->NewFastPrivatePov(TOpt<TUuid>::GetUnknown(), seconds(10));
+   auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(10));
    Base::TUuid id_to_use = **pov_id;
    std::set<int64_t> user_set;
    /* twitter.1.users */ {
@@ -193,7 +194,7 @@ int main(int argc, char *argv[]) {
  TLog log(cmd);
 
  /* install twitter.1 */ {
-   auto client = make_shared<TExerciseClient>(TOpt<TUuid>::GetUnknown(), cmd.Addr);
+   auto client = make_shared<TExerciseClient>(std::nullopt, cmd.Addr);
    auto ack = client->InstallPackage({ "twitter" }, 1);
    ack->Sync();
  }

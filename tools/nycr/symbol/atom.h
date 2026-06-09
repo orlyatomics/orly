@@ -22,7 +22,7 @@
 #include <string>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <tools/nycr/symbol/final.h>
 
 namespace Tools {
@@ -42,7 +42,7 @@ namespace Tools {
         }
 
         /* TODO */
-        const Base::TOpt<int> &GetPri() const {
+        const std::optional<int> &GetPri() const {
           return Pri;
         }
 
@@ -54,7 +54,7 @@ namespace Tools {
         protected:
 
         /* TODO */
-        TAtom(const TName &name, TAnyBase *base, const std::string &pattern, const Base::TOpt<int> &pri)
+        TAtom(const TName &name, TAnyBase *base, const std::string &pattern, const std::optional<int> &pri)
             : TFinal(name, base), Pattern(pattern), Pri(pri) {}
 
         private:
@@ -63,7 +63,7 @@ namespace Tools {
         std::string Pattern;
 
         /* TODO */
-        Base::TOpt<int> Pri;
+        std::optional<int> Pri;
 
       };  // TAtom
 

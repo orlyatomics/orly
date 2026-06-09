@@ -21,6 +21,7 @@
 #include <cassert>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 #include <base/class_traits.h>
@@ -425,22 +426,22 @@ namespace Orly {
         }
 
         /* See <orly/protocol.h>. */
-        Base::TUuid NewFastPrivatePov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
+        Base::TUuid NewFastPrivatePov(const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
           return Session->NewFastPrivatePov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
-        Base::TUuid NewSafePrivatePov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
+        Base::TUuid NewSafePrivatePov(const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
           return Session->NewSafePrivatePov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
-        Base::TUuid NewFastSharedPov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
+        Base::TUuid NewFastSharedPov(const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
           return Session->NewFastSharedPov(Server, parent_pov_id, time_to_live);
         }
 
         /* See <orly/protocol.h>. */
-        Base::TUuid NewSafeSharedPov(const Base::TOpt<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
+        Base::TUuid NewSafeSharedPov(const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live) {
           return Session->NewSafeSharedPov(Server, parent_pov_id, time_to_live);
         }
 
@@ -592,7 +593,7 @@ namespace Orly {
         virtual const Base::TUuid &GetId() const override;
         virtual void Import(const std::string &, const std::string &, int64_t, int64_t, int64_t) const override;
         virtual void InstallPackage(const std::vector<std::string> &, uint64_t) const override;
-        virtual Base::TUuid NewPov(bool, bool, const Base::TOpt<Base::TUuid> &) const override;
+        virtual Base::TUuid NewPov(bool, bool, const std::optional<Base::TUuid> &) const override;
         virtual void PausePov(const Base::TUuid &) const override;
         virtual void SetTtl(const Base::TUuid &, const std::chrono::seconds &) const override;
         virtual void SetUserId(const Base::TUuid &) const override;

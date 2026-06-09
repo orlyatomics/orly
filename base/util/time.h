@@ -26,12 +26,12 @@
 #include <string>
 #include <thread>
 
-#include <base/opt.h>
+#include <optional>
 
 namespace Util {
 
   using TTimestamp = std::chrono::time_point<std::chrono::system_clock, std::chrono::system_clock::duration>;
-  using TOptTimestamp = Base::TOpt<TTimestamp>;
+  using TOptTimestamp = std::optional<TTimestamp>;
 
   /* Returns true iff the time point has passed / now is after it. */
   template <typename TClock>
@@ -76,7 +76,7 @@ namespace Util {
   /* Get the timestamp for the given filename searching PATH or throw an exception */
   TTimestamp GetTimestampSearchingPath(const std::string &name);
 
-  /* It's either this or making operator overloads all work on Base::TOpt, for which we really don't know what the
+  /* It's either this or making operator overloads all work on std::optional, for which we really don't know what the
      "right" behavior is. */
   bool IsNewer(TTimestamp lhs, TOptTimestamp rhs);
 

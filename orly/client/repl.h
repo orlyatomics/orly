@@ -29,7 +29,7 @@
 #include <base/cmd.h>
 #include <base/log.h>
 #include <base/no_throw.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/uuid.h>
 #include <base/signal/handler_installer.h>
 #include <orly/client/client.h>
@@ -55,7 +55,7 @@ namespace Orly {
         public:
 
         /* TODO */
-        TClient(const Socket::TAddress &server_address, const Base::TOpt<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live)
+        TClient(const Socket::TAddress &server_address, const std::optional<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live)
             : Client::TClient(server_address, session_id, time_to_live) {}
 
         private:
@@ -92,7 +92,7 @@ namespace Orly {
         Socket::TAddress ServerAddress;
 
         /* The session id to use.  If not given, then we'll start a new session. */
-        Base::TOpt<Base::TUuid> SessionId;
+        std::optional<Base::TUuid> SessionId;
 
         /* The minimum number of seconds our session should live after we leave. */
         uint32_t TimeToLive;

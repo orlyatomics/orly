@@ -20,6 +20,7 @@
 
 #include <iomanip>
 #include <list>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -94,7 +95,7 @@ namespace Orly {
 
 
         template<typename TVal>
-        void Get(const TStrPiece &name, Base::TOpt<TVal> &val) {
+        void Get(const TStrPiece &name, std::optional<TVal> &val) {
 
           std::string arg;
           if(TryGrabArg(name, arg)) {
@@ -202,10 +203,10 @@ namespace Orly {
         void Convert(const std::string &s, std::chrono::milliseconds &val);
 
         template<typename TVal>
-        void Convert(const std::string &s, Base::TOpt<TVal> &opt_val) {
+        void Convert(const std::string &s, std::optional<TVal> &opt_val) {
 
           if(s.size() == 0) {
-            opt_val.Reset();
+            opt_val.reset();
           } else {
 
             //TODO: the temporary val here should be destroyed.

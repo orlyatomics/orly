@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/spa/flux_capacitor/api.h>
+#include <optional>
 
 #include <orly/spa/error.h>
 
@@ -32,7 +33,7 @@ TSessionObj::~TSessionObj() {
 }
 
 void TSessionObj::Poll(const std::unordered_set<Base::TUuid> &notifiers,
-      Base::TOpt<std::chrono::milliseconds> timeout,
+      std::optional<std::chrono::milliseconds> timeout,
       std::unordered_map<Base::TUuid, TNotifierState> &out) {
 
   unordered_map<MultiEvent::TEvent::TPtr, TNotifier*> notifier_events;
@@ -157,7 +158,7 @@ void TSessionObj::OnPovFail(TPov *pov) {
     auto uuid = range.first->second->GetUpdateId();
     const std::unordered_map<const TPov*, TNotifier*> &map = NotifiersByUpdate.find(uuid)->second;
     for(auto it = map.begin(); it != map.end(); ++it) {
-      if(it->second->TryGetState().IsUnknown()) {
+      if(!it->second->TryGetState().has_value()) {
         it->second->Fire(Failed);
       }
     }
@@ -197,7 +198,7 @@ const Base::TUuid &TSessionObj::TNotifier::GetUpdateId() const {
 }
 
 
-const Base::TOpt<TNotifierState> &TSessionObj::TNotifier::TryGetState() const {
+const std::optional<TNotifierState> &TSessionObj::TNotifier::TryGetState() const {
   return State;
 }
 

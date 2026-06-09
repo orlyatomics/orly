@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <orly/atom/core_vector.h>
 #include <orly/atom/core_vector_builder.h>
 #include <orly/indy/transaction_base.h>
@@ -159,7 +161,7 @@ namespace Orly {
         public:
 
         /* TODO */
-        inline TReplica(const Base::TUuid &id, bool is_safe, const TTtl &ttl, const Base::TOpt<Base::TUuid> &parent_id);
+        inline TReplica(const Base::TUuid &id, bool is_safe, const TTtl &ttl, const std::optional<Base::TUuid> &parent_id);
 
         /* TODO */
         inline TReplica(const TRepoReplication &replication_obj);
@@ -180,7 +182,7 @@ namespace Orly {
         inline bool GetIsSafe() const;
 
         /* TODO */
-        inline const Base::TOpt<Base::TUuid> &GetOptParentId() const;
+        inline const std::optional<Base::TUuid> &GetOptParentId() const;
 
         private:
 
@@ -194,12 +196,12 @@ namespace Orly {
         const bool IsSafe;
 
         /* TODO */
-        const Base::TOpt<Base::TUuid> OptParentId;
+        const std::optional<Base::TUuid> OptParentId;
 
       };  // TReplica
 
       /* TODO */
-      TRepoReplication(const Base::TUuid &repo_id, bool is_safe, const TTtl &ttl, const Base::TOpt<Base::TUuid> &opt_parent_repo_id);
+      TRepoReplication(const Base::TUuid &repo_id, bool is_safe, const TTtl &ttl, const std::optional<Base::TUuid> &opt_parent_repo_id);
 
       /* TODO */
       virtual ~TRepoReplication();
@@ -217,7 +219,7 @@ namespace Orly {
       inline bool GetIsSafe() const;
 
       /* TODO */
-      inline const Base::TOpt<Base::TUuid> &GetOptParentRepoId() const;
+      inline const std::optional<Base::TUuid> &GetOptParentRepoId() const;
 
       private:
 
@@ -231,7 +233,7 @@ namespace Orly {
       const bool IsSafe;
 
       /* TODO */
-      const Base::TOpt<Base::TUuid> OptParentRepoId;
+      const std::optional<Base::TUuid> OptParentRepoId;
 
     };  // TRepoReplication
 
@@ -561,7 +563,7 @@ namespace Orly {
       return TKind::Transaction;
     }
 
-    inline TRepoReplication::TReplica::TReplica(const Base::TUuid &id, bool is_safe, const TTtl &ttl, const Base::TOpt<Base::TUuid> &opt_parent_id)
+    inline TRepoReplication::TReplica::TReplica(const Base::TUuid &id, bool is_safe, const TTtl &ttl, const std::optional<Base::TUuid> &opt_parent_id)
         : Ttl(ttl), Id(id), IsSafe(is_safe), OptParentId(opt_parent_id) {}
 
     inline TRepoReplication::TReplica::TReplica(const TRepoReplication &replication_obj)
@@ -585,7 +587,7 @@ namespace Orly {
       return IsSafe;
     }
 
-    inline const Base::TOpt<Base::TUuid> &TRepoReplication::GetOptParentRepoId() const {
+    inline const std::optional<Base::TUuid> &TRepoReplication::GetOptParentRepoId() const {
       return OptParentRepoId;
     }
 
@@ -601,7 +603,7 @@ namespace Orly {
       return IsSafe;
     }
 
-    inline const Base::TOpt<Base::TUuid> &TRepoReplication::TReplica::GetOptParentId() const {
+    inline const std::optional<Base::TUuid> &TRepoReplication::TReplica::GetOptParentId() const {
       return OptParentId;
     }
 

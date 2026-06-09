@@ -18,6 +18,7 @@
 
 #include <base/multi_event/multi_event.h>
 
+#include <optional>
 #include <thread>
 
 #include <base/test/kit.h>
@@ -39,7 +40,7 @@ static bool IsEqual(const unordered_set<shared_ptr<TEvent>> &lhs, const unordere
 static bool Wait(
     const unordered_set<shared_ptr<TEvent>> &in,
     unordered_set<shared_ptr<TEvent>> &out,
-    const TOpt<chrono::milliseconds> &timeout) {
+    const std::optional<chrono::milliseconds> &timeout) {
   return TWaiter().Wait(TWaiter::Produce(in), TWaiter::Consume(out), timeout);
 }
 
@@ -47,7 +48,7 @@ static void TestWait(
     const unordered_set<shared_ptr<TEvent>> &events,
     const unordered_set<shared_ptr<TEvent>> &expected) {
   unordered_set<shared_ptr<TEvent>> actual;
-  bool timed_out = !Wait(events, actual, !expected.empty() ? TOpt<chrono::milliseconds>() : chrono::milliseconds(10));
+  bool timed_out = !Wait(events, actual, !expected.empty() ? std::optional<chrono::milliseconds>() : chrono::milliseconds(10));
   EXPECT_EQ(expected.empty(), timed_out);
   EXPECT_TRUE(IsEqual(actual, expected));
 }
@@ -103,7 +104,7 @@ FIXTURE(ByVal) {
   int actual = 0;
   TWaiter().Wait<int>(
     unordered_map<shared_ptr<TEvent>, int>({ {  e1, 101 }, { e2, 202 }, { e3, 303 } }),
-    TOpt<chrono::milliseconds>(),
+    std::optional<chrono::milliseconds>(),
     bind(
       [](const int &val, int &actual) {
         actual = val;

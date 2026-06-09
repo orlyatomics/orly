@@ -18,6 +18,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <optional>
 
 #include <base/class_traits.h>
 #include <base/cpu_clock.h>
@@ -212,7 +213,7 @@ namespace Orly {
              Once the deadline expires, the cleaner is free to destroy this object.
              If the object is open, this is unknown.
              An object which is open cannot be destroyed by the cleaner, so it has no deadline. */
-          const Base::TOpt<TDeadline> &GetDeadline() const {
+          const std::optional<TDeadline> &GetDeadline() const {
             return Deadline;
           }
 
@@ -319,7 +320,7 @@ namespace Orly {
           TTtl Ttl;
 
           /* See accessor. */
-          Base::TOpt<TDeadline> Deadline;
+          std::optional<TDeadline> Deadline;
 
           /* A semaphore to use during destruction, if we trigger asynchonous events. */
           TSem *Sem;
@@ -340,7 +341,7 @@ namespace Orly {
           public:
 
           /* TODO */
-          typedef Base::TOpt<TManager::TPtr<L0::TManager::TRepo>> TParentRepo;
+          typedef std::optional<TManager::TPtr<L0::TManager::TRepo>> TParentRepo;
 
           /* Forward Declarations. */
           class TDataLayer;
@@ -785,8 +786,8 @@ namespace Orly {
 
         /* TODO */
         TManager::TPtr<TRepo> OpenOrCreate(const TId &id,
-                                           const Base::TOpt<TTtl> &ttl,
-                                           const Base::TOpt<TPtr<TRepo>> &parent_repo,
+                                           const std::optional<TTtl> &ttl,
+                                           const std::optional<TPtr<TRepo>> &parent_repo,
                                            bool is_safe);
 
         /* TODO */
@@ -875,8 +876,8 @@ namespace Orly {
 
         /* TODO */
         virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
-                                     const Base::TOpt<TTtl> &ttl,
-                                     const Base::TOpt<TManager::TPtr<TRepo>> &parent_repo,
+                                     const std::optional<TTtl> &ttl,
+                                     const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                      bool is_safe,
                                      bool create) = 0;
 
@@ -1227,7 +1228,7 @@ namespace Orly {
               /* The object is being re-opened from a closed state, so remove it from the set of closed objects. */
               size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, id));
               assert(erased_from_closed == 1);
-              openable_obj->Deadline.Reset();
+              openable_obj->Deadline.reset();
             }
             return ptr;
           } else if (ret.second) { /* freshly inserted */
@@ -1262,8 +1263,8 @@ namespace Orly {
       TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id);
 
       inline TManager::TPtr<TManager::TRepo> TManager::OpenOrCreate(const TId &id,
-                                                                    const Base::TOpt<TTtl> &ttl,
-                                                                    const Base::TOpt<TPtr<TRepo>> &parent_repo,
+                                                                    const std::optional<TTtl> &ttl,
+                                                                    const std::optional<TPtr<TRepo>> &parent_repo,
                                                                     bool is_safe) {
         std::pair<std::unordered_map<TId, TObj *>::iterator, bool> ret;
         for (;;) {
@@ -1279,7 +1280,7 @@ namespace Orly {
               /* The object is being re-opened from a closed state, so remove it from the set of closed objects. */
               size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, id));
               assert(erased_from_closed == 1);
-              openable_obj->Deadline.Reset();
+              openable_obj->Deadline.reset();
             }
             return ptr;
           } else if (ret.second) { /* freshly inserted */

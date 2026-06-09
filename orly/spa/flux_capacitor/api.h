@@ -23,11 +23,14 @@
 
 #include <chrono>
 #include <future>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <sys/epoll.h>
 #include <thread>
 
 #include <base/assert_true.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/ref_counted.h>
 #include <base/thrower.h>
 #include <base/uuid.h>
@@ -583,7 +586,7 @@ namespace Orly {
           typedef Base::TRefCounted::TPtr<TSessionHandle> TPtr;
 
           /* TODO */
-          static TPtr New(const Base::TOpt<Base::TUuid> &acct, int ttl) {
+          static TPtr New(const std::optional<Base::TUuid> &acct, int ttl) {
             TSessionObj *session_obj = new TSessionObj(acct, ttl);
             Base::AssertTrue(TAnyHoncho::GetAnyHoncho())->GetSessionObjStore().AddToCache(session_obj);
             return AsPtr(new TSessionHandle(session_obj));
@@ -613,7 +616,7 @@ namespace Orly {
           }
 
           /* TODO */
-          const Base::TOpt<Base::TUuid> &GetAcct() const {
+          const std::optional<Base::TUuid> &GetAcct() const {
             return SessionObj->GetAcct();
           }
 
@@ -644,7 +647,7 @@ namespace Orly {
         static bool ForEachSession(const std::function<bool (TSessionObj*)> &cb);
 
         /* TODO */
-        TSessionObj(const Base::TOpt<Base::TUuid> &acct, int ttl) : Acct(acct), Ttl(ttl) {}
+        TSessionObj(const std::optional<Base::TUuid> &acct, int ttl) : Acct(acct), Ttl(ttl) {}
 
         /* TODO */
         ~TSessionObj();
@@ -653,7 +656,7 @@ namespace Orly {
         void CleanupNotifiers(const std::unordered_map<Base::TUuid, Base::TUuid> &notifier_map);
 
         /* TODO */
-        const Base::TOpt<Base::TUuid> &GetAcct() const {
+        const std::optional<Base::TUuid> &GetAcct() const {
           return Acct;
         }
 
@@ -679,7 +682,7 @@ namespace Orly {
 
         /* TODO */
         void Poll(const std::unordered_set<Base::TUuid> &notifiers,
-              Base::TOpt<std::chrono::milliseconds> timeout,
+              std::optional<std::chrono::milliseconds> timeout,
               std::unordered_map<Base::TUuid, TNotifierState> &out);
 
         private:
@@ -710,7 +713,7 @@ namespace Orly {
           const Base::TUuid &GetUpdateId() const;
 
           /* TODO */
-          const Base::TOpt<TNotifierState> &TryGetState() const;
+          const std::optional<TNotifierState> &TryGetState() const;
 
           private:
           /* TODO */
@@ -723,7 +726,7 @@ namespace Orly {
           TPov *Pov;
 
           /* TODO */
-          Base::TOpt<TNotifierState> State;
+          std::optional<TNotifierState> State;
 
           /* TODO */
           Base::TUuid UpdateId;
@@ -735,7 +738,7 @@ namespace Orly {
         Base::TUuid UUID;
 
         /* TODO */
-        Base::TOpt<Base::TUuid> Acct;
+        std::optional<Base::TUuid> Acct;
 
         /* TODO */
         int Ttl;

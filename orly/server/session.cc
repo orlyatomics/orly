@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/server/session.h>
+#include <optional>
 
 #include <orly/atom/suprena.h>
 #include <orly/indy/context.h>
@@ -58,20 +59,20 @@ const TNotification *TSession::GetFirstNotification(uint32_t &seq_number) {
   return iter->second;
 }
 
-TUuid TSession::NewFastPrivatePov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
+TUuid TSession::NewFastPrivatePov(TServer *server, const std::optional<TUuid> &parent_pov_id, const seconds &time_to_live) {
   assert(server);
   return NewPov(server, parent_pov_id, TPov::TAudience::Private, TPov::TPolicy::Fast, time_to_live);
 }
 
-TUuid TSession::NewFastSharedPov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
+TUuid TSession::NewFastSharedPov(TServer *server, const std::optional<TUuid> &parent_pov_id, const seconds &time_to_live) {
   return NewPov(server, parent_pov_id, TPov::TAudience::Shared, TPov::TPolicy::Fast, time_to_live);
 }
 
-TUuid TSession::NewSafePrivatePov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
+TUuid TSession::NewSafePrivatePov(TServer *server, const std::optional<TUuid> &parent_pov_id, const seconds &time_to_live) {
   return NewPov(server, parent_pov_id, TPov::TAudience::Private, TPov::TPolicy::Safe, time_to_live);
 }
 
-TUuid TSession::NewSafeSharedPov(TServer *server, const TOpt<TUuid> &parent_pov_id, const seconds &time_to_live) {
+TUuid TSession::NewSafeSharedPov(TServer *server, const std::optional<TUuid> &parent_pov_id, const seconds &time_to_live) {
   return NewPov(server, parent_pov_id, TPov::TAudience::Shared, TPov::TPolicy::Safe, time_to_live);
 }
 
@@ -131,7 +132,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   Base::TTimer timer;
   Base::TTimer call_timer;
   bool had_effects = false;
-  TOpt<TTracker> tracker = TOpt<TTracker>();
+  std::optional<TTracker> tracker = std::optional<TTracker>();
   size_t walker_count = 0UL;
   TSuprena my_arena;
   try {
@@ -279,7 +280,7 @@ bool TSession::RunTestSuite(TServer * /*server*/,
   server->GetPackageManager().Get(package_name)->ForEachTest(
       [this, server, &package_name, verbose](const Package::TTest *test) {
         assert(test);
-        Base::TUuid spov = NewFastSharedPov(server, *Base::TOpt<Base::TUuid>::Unknown, std::chrono::seconds(1000));
+        Base::TUuid spov = NewFastSharedPov(server, *std::optional<Base::TUuid>::Unknown, std::chrono::seconds(1000));
         PausePov(server, spov);
         if (test->WithBlock) {
           RunInPrivateChildPov(server, package_name, test->withBlock, spov);
@@ -407,7 +408,7 @@ void TSession::RunInPrivateChildPov(TServer *server,
       }
     }
     TUuid update_id(TUuid::Twister);
-    TOpt<TTracker> tracker = TTracker(update_id, std::chrono::seconds(0));
+    std::optional<TTracker> tracker = TTracker(update_id, std::chrono::seconds(0));
 #if 0
     const Package::TContext::TPredicateResults &predicate_results = indy_context.GetPredicateResults();
     TMetaRecord::TEntry::TArgByName meta_args_by_name;
@@ -464,7 +465,7 @@ void TSession::Cleanup() {
 }
 
 TUuid TSession::NewPov(
-    TServer *server, const Base::TOpt<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live) {
+    TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live) {
   assert(server);
   printf("TSession::NewPov()\n");
   auto durable_manager = server->GetDurableManager();

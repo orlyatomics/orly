@@ -21,12 +21,14 @@
 #include <cassert>
 #include <chrono>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/event_semaphore.h>
 #include <base/fd.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/uuid.h>
 #include <base/io/device.h>
 #include <base/rpc/rpc.h>
@@ -57,19 +59,19 @@ namespace Orly {
       std::shared_ptr<Rpc::TFuture<void>> UnInstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
       /* TODO */
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastPrivatePov(const Base::TOpt<Base::TUuid> &parent_pov_id,
+      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastPrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                    const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
       /* TODO */
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafePrivatePov(const Base::TOpt<Base::TUuid> &parent_pov_id,
+      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafePrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                    const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
       /* TODO */
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastSharedPov(const Base::TOpt<Base::TUuid> &parent_pov_id,
+      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                   const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
       /* TODO */
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafeSharedPov(const Base::TOpt<Base::TUuid> &parent_pov_id,
+      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafeSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                   const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
       /* TODO */
@@ -100,7 +102,7 @@ namespace Orly {
       std::shared_ptr<Rpc::TFuture<std::string>> ImportCoreVector(const std::string &file_pattern, const std::string &pkg_name, int64_t num_load_threads, int64_t num_merge_threads, int64_t merge_simultaneous);
 
       /* TODO */
-      const Base::TOpt<Base::TUuid> &GetSessionId() const {
+      const std::optional<Base::TUuid> &GetSessionId() const {
         return SessionId;
       }
 
@@ -112,7 +114,7 @@ namespace Orly {
       protected:
 
       /* TODO */
-      TClient(const Socket::TAddress &server_address, const Base::TOpt<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live);
+      TClient(const Socket::TAddress &server_address, const std::optional<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live);
 
       /* TODO */
       virtual void OnPovFailed(const Base::TUuid &repo_id) = 0;
@@ -157,7 +159,7 @@ namespace Orly {
       Socket::TAddress ServerAddress;
 
       /* TODO */
-      Base::TOpt<Base::TUuid> SessionId;
+      std::optional<Base::TUuid> SessionId;
 
       /* TODO */
       std::chrono::seconds TimeToLive;

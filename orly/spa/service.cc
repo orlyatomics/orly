@@ -21,6 +21,7 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
+#include <optional>
 #include <ostream>
 #include <sstream>
 #include <sys/stat.h>
@@ -69,11 +70,11 @@ TService::~TService() {
   any_honcho->GetTetrisHandler().RemovePov(&GlobalPov);
 }
 
-void TService::CreateSession(const Base::TOpt<Base::TUuid> &acct, int ttl, Base::TUuid &out) {
+void TService::CreateSession(const std::optional<Base::TUuid> &acct, int ttl, Base::TUuid &out) {
   out = TSessionObj::TSessionHandle::New(acct, ttl)->GetUUID();
 }
 
-void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
+void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const std::optional<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
 
   if(parent) {
     out = TPrivatePovObj::TPrivatePovHandle::New(session_uuid, *parent, ttl, bind(&TService::OnPovFail, this, _1), paused)->GetUUID();
@@ -82,7 +83,7 @@ void TService::CreatePrivatePov(const Base::TUuid &session_uuid, const TOpt<Base
   }
 }
 
-void TService::CreateSharedPov(const TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
+void TService::CreateSharedPov(const std::optional<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out) {
 
   if(parent) {
     out = TSharedPovObj::TSharedPovHandle::New(*parent, ttl, bind(&TService::OnPovFail, this, _1), paused)->GetUUID();
@@ -141,7 +142,7 @@ const Package::TManager &TService::GetPackageManager() const {
 void TService::Poll(
       const Base::TUuid &session_uuid,
       const unordered_set<Base::TUuid> &notifiers,
-      TOpt<chrono::milliseconds> timeout,
+      std::optional<chrono::milliseconds> timeout,
       unordered_map<Base::TUuid, TNotifierState> &out) {
 
   auto session = TSessionObj::TSessionHandle::Rendezvous(session_uuid);
@@ -150,7 +151,7 @@ void TService::Poll(
 
 }
 
-bool CheckAsserts(Package::TFuncHolder::TPtr func, const TService::TOrlyArg args, const Base::TOpt<Base::TUuid> acct,
+bool CheckAsserts(Package::TFuncHolder::TPtr func, const TService::TOrlyArg args, const std::optional<Base::TUuid> acct,
       const Base::TUuid session_id,  vector<bool> original_predicte_results, TContext &flux_ctx, Base::TScheduler *scheduler,
       const Rt::TOpt<Base::Chrono::TTimePnt> now, const Rt::TOpt<uint32_t> random_seed) {
 
@@ -266,8 +267,8 @@ void TService::LoadCheckpoint(const string &name) {
   Base::TUuid ppov_id;
 
   //NOTE: We would just use the flux private pov API directly here, but that creates a pretty much always-hit race between the update promotion and the KVIndex being detached.
-  CreateSession(TOpt<Base::TUuid>::GetUnknown(), 10000, session_id);
-  CreatePrivatePov(session_id, TOpt<Base::TUuid>::GetUnknown(), 1000, false, ppov_id);
+  CreateSession(std::nullopt, 10000, session_id);
+  CreatePrivatePov(session_id, std::nullopt, 1000, false, ppov_id);
   TPrivatePovObj::TPrivatePovHandle::TPtr pov_obj = TPrivatePovObj::TPrivatePovHandle::Rendezvous(ppov_id);
 
   //Read the checkpoint
@@ -403,7 +404,7 @@ bool TService::RunTestSuite(const Package::TName &name, bool verbose) {
 
   /* TODO: We really want an API for destroying sessions explicitly */
   Base::TUuid session;
-  CreateSession(  Base::TOpt<Base::TUuid>::GetUnknown(), 1000, session);
+  CreateSession(  std::nullopt, 1000, session);
   bool succeeded = true;
 
   PackageManager.Get(name)->ForEachTest(
@@ -411,7 +412,7 @@ bool TService::RunTestSuite(const Package::TName &name, bool verbose) {
         assert(test);
 
         Base::TUuid spov;
-        CreateSharedPov(TOpt<Base::TUuid>::GetUnknown(), 1000, true, spov);
+        CreateSharedPov(std::nullopt, 1000, true, spov);
 
         if (test->WithBlock) {
           RunTestAndPromoteOnceIfEffects(*this,

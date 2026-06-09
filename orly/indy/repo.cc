@@ -20,6 +20,7 @@
 
 #include <fstream>
 #include <limits>
+#include <optional>
 
 #include <base/debug_log.h>
 #include <orly/indy/disk/util/hash_util.h>
@@ -169,14 +170,14 @@ unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<T
 
 unique_ptr<Indy::TUpdateWalker> TRepo::NewUpdateWalker(const std::unique_ptr<TView> &view,
                                                        TSequenceNumber from,
-                                                       const Base::TOpt<TSequenceNumber> &to) {
+                                                       const std::optional<TSequenceNumber> &to) {
   assert(view);
   return make_unique<TUpdateWalker>(view, from, to);
 }
 
 unique_ptr<Indy::TUpdateWalker> TRepo::NewUpdateWalker(const std::unique_ptr<TView> &view,
                                                        TSequenceNumber from) {
-  return NewUpdateWalker(view, from, Base::TOpt<TSequenceNumber>());
+  return NewUpdateWalker(view, from, std::optional<TSequenceNumber>());
 }
 
 TRepo::TView::TView(const L0::TManager::TPtr<TRepo> &repo)
@@ -213,18 +214,18 @@ const TRepo::TMapping *TRepo::TView::GetMapping() const {
   return Mapping;
 }
 
-const Base::TOpt<TSequenceNumber> &TRepo::TView::GetLower() const {
+const std::optional<TSequenceNumber> &TRepo::TView::GetLower() const {
   return LowerBound;
 }
 
-const Base::TOpt<TSequenceNumber> &TRepo::TView::GetUpper() const {
+const std::optional<TSequenceNumber> &TRepo::TView::GetUpper() const {
   return UpperBound;
 }
 
 TRepo::TRepo(L0::TManager *manager,
              const TUuid &repo_id,
              const TTtl &ttl,
-             const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo)
+             const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo)
     : L0::TManager::TRepo(manager, repo_id, ttl, Normal),
       CurMemoryLayer(new TMemoryLayer(manager)),
       ParentRepo(parent_repo),
@@ -245,9 +246,9 @@ TRepo::TRepo(L0::TManager *manager,
 TRepo::TRepo(L0::TManager *manager,
              const Base::TUuid &repo_id,
              const TTtl &ttl,
-             const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
-             const Base::TOpt<TSequenceNumber> &lowest,
-             const Base::TOpt<TSequenceNumber> &highest,
+             const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+             const std::optional<TSequenceNumber> &lowest,
+             const std::optional<TSequenceNumber> &highest,
              TSequenceNumber next_update,
              TStatus status)
     : L0::TManager::TRepo(manager, repo_id, ttl, status),
@@ -279,8 +280,8 @@ TRepo::~TRepo() {
   delete CurMemoryLayer;
 }
 
-Base::TOpt<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
-  Base::TOpt<TSequenceNumber> new_seq;
+std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
+  std::optional<TSequenceNumber> new_seq;
   bool add_to_tetris = false;
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
@@ -312,11 +313,11 @@ Base::TOpt<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber
   return new_seq;
 }
 
-Base::TOpt<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_THROW {
+std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_THROW {
   assert(Status == Normal);
   assert(LowestSeqNum);
   assert(HighestSeqNum);
-  Base::TOpt<TSequenceNumber> popped_seq;
+  std::optional<TSequenceNumber> popped_seq;
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
     popped_seq = LowestSeqNum;
@@ -324,8 +325,8 @@ Base::TOpt<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_TH
     if (*LowestSeqNum < *HighestSeqNum) {
       ++(*LowestSeqNum);
     } else {
-      LowestSeqNum.Reset();
-      HighestSeqNum.Reset();
+      LowestSeqNum.reset();
+      HighestSeqNum.reset();
       if (ParentRepo) {
         assert(InTetris);
         Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
@@ -368,7 +369,7 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
   return nullptr;
 }
 
-Base::TOpt<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumber &next_update) NO_THROW {
+std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumber &next_update) NO_THROW {
   switch (Status) {
     case Normal : {
       assert(status != Normal);  // you probably meant to unpause something. if it's not already paused you may have forgotten your pause!
@@ -756,7 +757,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
 
 TRepo::TUpdateWalker::TUpdateWalker(const unique_ptr<TView> &view,
                                     TSequenceNumber from,
-                                    const Base::TOpt<TSequenceNumber> &to)
+                                    const std::optional<TSequenceNumber> &to)
     : From(from),
       To(to),
       View(view),
@@ -889,7 +890,7 @@ void TRepo::CheckRemoveDirty() {
 TFastRepo::TFastRepo(L0::TManager *manager,
                      const TUuid &repo_id,
                      const TTtl &ttl,
-                     const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo)
+                     const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo)
     : TRepo(manager,
             repo_id,
             ttl,
@@ -898,9 +899,9 @@ TFastRepo::TFastRepo(L0::TManager *manager,
 TFastRepo::TFastRepo(L0::TManager *manager,
                      const Base::TUuid &repo_id,
                      const TTtl &ttl,
-                     const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
-                     const Base::TOpt<TSequenceNumber> &lowest,
-                     const Base::TOpt<TSequenceNumber> &highest,
+                     const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+                     const std::optional<TSequenceNumber> &lowest,
+                     const std::optional<TSequenceNumber> &highest,
                      TSequenceNumber next_update,
                      TStatus status)
     : TRepo(manager,
@@ -940,7 +941,7 @@ size_t TFastRepo::AddSyncedFileToRepo(size_t /*starting_block_id*/,
 TSafeRepo::TSafeRepo(L0::TManager *manager,
                      const TUuid &repo_id,
                      const TTtl &ttl,
-                     const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo)
+                     const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo)
     : TRepo(manager,
             repo_id,
             ttl,
@@ -956,9 +957,9 @@ TSafeRepo::TSafeRepo(L0::TManager *manager,
 TSafeRepo::TSafeRepo(L0::TManager *manager,
                      const Base::TUuid &repo_id,
                      const TTtl &ttl,
-                     const Base::TOpt<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
-                     const Base::TOpt<TSequenceNumber> &lowest,
-                     const Base::TOpt<TSequenceNumber> &highest,
+                     const std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> &parent_repo,
+                     const std::optional<TSequenceNumber> &lowest,
+                     const std::optional<TSequenceNumber> &highest,
                      TSequenceNumber next_update,
                      TStatus status)
     : TRepo(manager,
@@ -1251,8 +1252,8 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
                                           const TDeadline &deadline) {
   std::vector<Disk::TFileObj> file_vec;
   manager->GetFileGenSet(repo_id, file_vec);
-  Base::TOpt<TSequenceNumber> lowest;
-  Base::TOpt<TSequenceNumber> highest;
+  std::optional<TSequenceNumber> lowest;
+  std::optional<TSequenceNumber> highest;
   TSequenceNumber next_update = 1L;
   size_t max_gen_id = 0UL;
   TParentRepo parent_repo;

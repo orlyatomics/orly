@@ -25,7 +25,7 @@
 #include <netinet/in.h>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/uuid.h>
 #include <orly/method_request.h>
 #include <orly/method_result.h>
@@ -71,7 +71,7 @@ namespace Orly {
           virtual void InstallPackage(const std::vector<std::string> &name, uint64_t version) const = 0;
 
           /* Override to perform the request. */
-          virtual Base::TUuid NewPov(bool is_safe, bool is_shared, const Base::TOpt<Base::TUuid> &parent_id) const = 0;
+          virtual Base::TUuid NewPov(bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id) const = 0;
 
           /* Override to perform the request. */
           virtual void PausePov(const Base::TUuid &pov_id) const = 0;

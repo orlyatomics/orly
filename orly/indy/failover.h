@@ -19,6 +19,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 #include <base/class_traits.h>
 #include <base/uuid.h>
@@ -221,10 +222,10 @@ namespace Orly {
           Register<TSlaveContext, void,
             Base::TUuid,
             size_t,
-            Base::TOpt<Base::TUuid>,
+            std::optional<Base::TUuid>,
             bool,
-            Base::TOpt<TSequenceNumber>,
-            Base::TOpt<TSequenceNumber>,
+            std::optional<TSequenceNumber>,
+            std::optional<TSequenceNumber>,
             TSequenceNumber>(InventoryId, &TSlaveContext::Inventory);
           Register<TSlaveContext, void, TIndexMapReplica>(IndexId, &TSlaveContext::Index);
           Register<TSlaveContext, void, TReplicationStreamer>(PushNotificationsId, &TSlaveContext::PushNotifications);
@@ -243,10 +244,10 @@ namespace Orly {
       /* TODO */
       virtual void Inventory(const Base::TUuid &repo_id,
                              size_t ttl,
-                             const Base::TOpt<Base::TUuid> &parent_repo_id,
+                             const std::optional<Base::TUuid> &parent_repo_id,
                              bool is_safe,
-                             const Base::TOpt<TSequenceNumber> &lowest,
-                             const Base::TOpt<TSequenceNumber> &highest,
+                             const std::optional<TSequenceNumber> &lowest,
+                             const std::optional<TSequenceNumber> &highest,
                              TSequenceNumber) = 0;
 
       /* TODO */

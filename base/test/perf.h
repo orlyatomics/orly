@@ -52,7 +52,7 @@
 #include <iostream>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/inv_con/ordered_list.h>
 
 #define PERF(name, max_runtime) \
@@ -202,7 +202,7 @@ namespace Test {
       StopTime = TClock::now();
     }
 
-    const Base::TOpt<typename TClock::time_point> &GetStart() const {
+    const std::optional<typename TClock::time_point> &GetStart() const {
       return StartTime;
     }
 
@@ -211,7 +211,7 @@ namespace Test {
       return *StopTime - *StartTime;
     }
 
-    Base::TOpt<typename TClock::time_point> GetStop() const {
+    std::optional<typename TClock::time_point> GetStop() const {
       return StopTime;
     }
 
@@ -224,7 +224,7 @@ namespace Test {
     }
 
     private:
-    Base::TOpt<typename TClock::time_point> StartTime, StopTime;
+    std::optional<typename TClock::time_point> StartTime, StopTime;
   };
 
   typedef TGenericTimer<> TTimer;

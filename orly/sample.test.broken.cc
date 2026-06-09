@@ -18,6 +18,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include <base/make_dir.h> //NOTE: Replace with <util/path.h> EnsureDirExists
@@ -108,7 +109,7 @@ FIXTURE(Startup) {
   /* Parse command-line arguments */
   TProgram::Service.SetPackageDir("/tmp/orly_sample/");
   Base::TUuid session;
-  TProgram::Service.CreateSession(Base::TOpt<Base::TUuid>(Base::TUuid()), 1000, session);
+  TProgram::Service.CreateSession(std::optional<Base::TUuid>(Base::TUuid()), 1000, session);
   TProgram::Service.CreatePrivatePov(session, {}, 1000, false, POV_ID);
 }
 

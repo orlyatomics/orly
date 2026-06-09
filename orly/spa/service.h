@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -65,13 +66,13 @@ namespace Orly {
       ~TService();
 
       /* TODO */
-      void CreateSession(const Base::TOpt<Base::TUuid> &acct, int ttl, Base::TUuid &out);
+      void CreateSession(const std::optional<Base::TUuid> &acct, int ttl, Base::TUuid &out);
 
       /* TODO */
-      void CreatePrivatePov(const Base::TUuid &session, const Base::TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out);
+      void CreatePrivatePov(const Base::TUuid &session, const std::optional<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out);
 
       /* TODO */
-      void CreateSharedPov(const Base::TOpt<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out);
+      void CreateSharedPov(const std::optional<Base::TUuid> &parent, int ttl, bool paused, Base::TUuid &out);
 
       /* TODO */
       void Finalize();
@@ -104,7 +105,7 @@ namespace Orly {
       void Poll(
           const Base::TUuid &session,
           const std::unordered_set<Base::TUuid> &notifiers,
-          Base::TOpt<std::chrono::milliseconds> timeout,
+          std::optional<std::chrono::milliseconds> timeout,
           std::unordered_map<Base::TUuid, FluxCapacitor::TNotifierState> &out
         );
 

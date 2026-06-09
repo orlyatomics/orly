@@ -58,7 +58,7 @@
 #include <sys/time.h>
 
 #include <base/class_traits.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/util/error.h>
 
 namespace Socket {
@@ -96,7 +96,7 @@ namespace Socket {
 
   /* Used by SO_LINGER to represent the amount of time to linger.
      The unknown value here means that the lingering feature is turned off. */
-  using TLinger = Base::TOpt<std::chrono::seconds>;
+  using TLinger = std::optional<std::chrono::seconds>;
 
   /* Used by SO_RCVTIMEO to represent timeout durations. */
   using TTimeout = std::chrono::microseconds;
@@ -188,14 +188,14 @@ namespace Socket {
       if (temp.l_onoff) {
         val = std::chrono::seconds(temp.l_linger);
       } else {
-        val.Reset();
+        val.reset();
       }
     }
 
     /* See forward declaration of generic Conv<>. */
     static void SetSockOpt(int sock, int code, const TVal &val) {
       linger temp;
-      temp.l_onoff = val;
+      temp.l_onoff = val.has_value();
       temp.l_linger = (temp.l_onoff ? val->count() : 0);
       Socket::SetSockOpt(sock, code, temp);
     }

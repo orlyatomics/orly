@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cassert>
+#include <optional>
 
 #include <base/class_traits.h>
 #include <tools/nycr/symbol/atom.h>
@@ -35,7 +36,7 @@ namespace Tools {
         public:
 
         /* TODO */
-        TKeyword(const TName &name, TAnyBase *base, const std::string &pattern, const Base::TOpt<int> &pri)
+        TKeyword(const TName &name, TAnyBase *base, const std::string &pattern, const std::optional<int> &pri)
             : TAtom(name, base, pattern, pri) {}
 
         /* TODO */

@@ -17,6 +17,7 @@
 #include <jhm/env.h>
 
 #include <cassert>
+#include <optional>
 
 #include <jhm/jobs/bison.h>
 #include <jhm/jobs/compile_c_family.h>
@@ -48,7 +49,7 @@ unordered_set<TJob *> TJobFactory::GetPotentialJobs(TEnv &env, TFile *out_file) 
     // No cache found. Build it
     // Find and instantiate possibilities based on extension
     for(const auto &producer : JobProducers) {
-      TOpt<TRelPath> opt_path = producer.TryGetInput(out_file->GetRelPath());
+      std::optional<TRelPath> opt_path = producer.TryGetInput(out_file->GetRelPath());
       if(!opt_path) {
         continue;
       }

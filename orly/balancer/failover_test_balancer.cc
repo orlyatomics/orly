@@ -71,11 +71,11 @@ void TFailoverTestBalancer::CheckHosts() {
       check_hosts.Pop();
     }
     std::lock_guard<std::mutex> lock(HostMutex);
-    MasterHost.Reset();
+    MasterHost.reset();
     for (const auto &addr : HostSet) {
       bool is_master = CheckHost(addr);
       if (MasterHost && is_master) {
-        MasterHost.Reset();
+        MasterHost.reset();
         throw std::runtime_error("There is more than 1 master");
       } else if (is_master) {
         MasterHost = addr;

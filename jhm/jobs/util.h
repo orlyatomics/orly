@@ -18,7 +18,11 @@
 
 #pragma once
 
-#include <base/opt.h>
+#include <optional>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
 #include <jhm/naming.h>
 
 namespace Jhm {

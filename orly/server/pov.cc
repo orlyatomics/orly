@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/server/pov.h>
+#include <optional>
 
 using namespace std;
 using namespace Base;
@@ -28,7 +29,7 @@ const Indy::L0::TManager::TPtr<Indy::TRepo> &TPov::GetRepo(const TServer *server
   if (!Repo) {
     assert(server);
     auto repo_manager = server->GetRepoManager();
-    TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
+    std::optional<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
     if (SharedParents.empty()) {
       parent_repo = server->GetGlobalRepo();
     } else {

@@ -22,11 +22,13 @@
 #include <iomanip>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <base/chrono.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/uuid.h>
 #include <orly/asc.h>
 #include <orly/desc.h>
@@ -58,7 +60,7 @@ namespace Orly {
 
     /* opt */
     template <typename TChild>
-    using TOpt = Base::TOpt<TChild>;
+    using TOpt = std::optional<TChild>;
 
     /* set */
     template <typename TChild>

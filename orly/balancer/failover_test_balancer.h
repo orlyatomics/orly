@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <base/event_semaphore.h>
 #include <orly/balancer/balancer.h>
 
@@ -62,7 +64,7 @@ namespace Orly {
 
       /* TODO */
       std::unordered_set<Socket::TAddress> HostSet;
-      Base::TOpt<Socket::TAddress> MasterHost;
+      std::optional<Socket::TAddress> MasterHost;
       std::mutex HostMutex;
       std::condition_variable HostCond;
 

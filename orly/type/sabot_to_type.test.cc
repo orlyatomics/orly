@@ -18,6 +18,7 @@
 
 #include <orly/type/sabot_to_type.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -69,7 +70,7 @@ FIXTURE(Obj) {
 }
 
 FIXTURE(Opt) {
-  Check<Base::TOpt<int64_t>>(TOpt::Get(TInt::Get()));
+  Check<std::optional<int64_t>>(TOpt::Get(TInt::Get()));
 }
 
 FIXTURE(Real) {

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -59,7 +60,7 @@ namespace Tools {
       std::vector<Symbol::TName> Namespaces;
 
       /* TODO */
-      Base::TOpt<int> Sr, Rr;
+      std::optional<int> Sr, Rr;
 
       /* TODO */
       Symbol::TLanguage *Symbol;

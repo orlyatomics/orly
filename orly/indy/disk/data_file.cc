@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/disk/data_file.h>
+#include <optional>
 
 #include <orly/indy/disk/in_file.h>
 #include <orly/indy/disk/indy_util_reporter.h>
@@ -241,7 +242,7 @@ class TIndexFile
   void PrepKeyRange(TDataFile::TUpdateCollector *update_collector, TDataFile::TBlockVec *block_vec);
 
   void PushKey(TUpdate::TEntry *entry);
-  Base::TOpt<Indy::TKey> PrevKeyWritten;
+  std::optional<Indy::TKey> PrevKeyWritten;
   /* Mutator of the previous current-key entry. Set when PrevKeyWritten is
      set; emitted as the trailing portion of the on-disk TKeyItem when the
      NEXT key arrives (or in FlushHistory for the final one). */
@@ -783,7 +784,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
       }
     }
     /* generate the arena index for each key index */ {
-      Base::TOpt<Base::TUuid> prev_index_id;
+      std::optional<Base::TUuid> prev_index_id;
       TUpdate::TEntry *prev_entry = nullptr;
       std::unique_ptr<TIndexFile::TOrderedNoteIndex> ordered_note_index;
       size_t cur_index_bytes = 0UL;
@@ -890,7 +891,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
                                       num_main_arena_bytes);
     }
     /* write the in-order key indexes */ {
-      Base::TOpt<Base::TUuid> prev_index_id;
+      std::optional<Base::TUuid> prev_index_id;
       TIndexFile *cur_index_file = nullptr;
       for (TMemoryLayer::TEntryCollection::TCursor csr(memory_layer->GetEntryCollection()); csr; ++csr) {
         const Base::TUuid &cur_idx_id = csr->GetIndexKey().GetIndexId();
@@ -1258,7 +1259,7 @@ size_t MakeArena(Disk::Util::TEngine *engine,
     try {
       while (ordered_csr) {
         /* insert the ordered notes first */ {
-          Base::TOpt<TIndexFile::TOrderedNote> prev_note;
+          std::optional<TIndexFile::TOrderedNote> prev_note;
           for (; ordered_csr; ++ordered_csr) {
             const TIndexFile::TOrderedNote &ordered_note = *ordered_csr;
             const TCore::TNote *const note = ordered_note.Note;

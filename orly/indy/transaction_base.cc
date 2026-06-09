@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/transaction_base.h>
+#include <optional>
 
 #include <iostream> /* TODO GET RID OF */
 
@@ -27,7 +28,7 @@ using namespace Base;
 using namespace Orly::Atom;
 using namespace Orly::Indy::L1;
 
-bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const Base::TOpt<TSequenceNumber> &ensure_or_discard) {
+bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const std::optional<TSequenceNumber> &ensure_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -49,7 +50,7 @@ bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<
   return false;
 }
 
-bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &ensure_or_discard) {
+bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optional<TSequenceNumber> &ensure_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -114,7 +115,7 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<T
   return false;
 }
 
-bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &follow_or_discard) {
+bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::optional<TSequenceNumber> &follow_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -173,7 +174,7 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<
   return false;
 }
 
-bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &follow_or_discard) {
+bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const std::optional<TSequenceNumber> &follow_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -189,7 +190,7 @@ bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt
   return false;
 }
 
-bool TTransaction::UnPause(const L0::TManager::TPtr<TRepo> &repo, const Base::TOpt<TSequenceNumber> &follow_or_discard) {
+bool TTransaction::UnPause(const L0::TManager::TPtr<TRepo> &repo, const std::optional<TSequenceNumber> &follow_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -542,14 +543,14 @@ TTransaction::TReplica::TMutation::TMutation(const TMutation &that)
       Update(that.Update),
       SequenceNumber(that.SequenceNumber) {}
 
-TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num)
+TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num)
     : Kind(kind),
       RepoId(repo_id),
       SequenceNumber(seq_num) {
   assert(Kind != Pusher);
 }
 
-TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo_id, const Orly::Indy::TUpdate *update, const Base::TOpt<TSequenceNumber> &seq_num)
+TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo_id, const Orly::Indy::TUpdate *update, const std::optional<TSequenceNumber> &seq_num)
     : Kind(kind),
       RepoId(repo_id),
       Update(update),
@@ -557,7 +558,7 @@ TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo
   assert(Kind == Pusher);
 }
 
-TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo_id, TUpdate &&update, const Base::TOpt<TSequenceNumber> &seq_num)
+TTransaction::TReplica::TMutation::TMutation(TKind kind, const Base::TUuid &repo_id, TUpdate &&update, const std::optional<TSequenceNumber> &seq_num)
     : Kind(kind),
       RepoId(repo_id),
       Update(std::move(update)),
@@ -580,26 +581,26 @@ TTransaction::TReplica::TMutation &TTransaction::TReplica::TMutation::operator=(
 }
 
 TTransaction::TReplica::TMutation *TTransaction::TReplica::Push(const Base::TUuid &repo_id, const TUpdate *update) {
-  MutationList.emplace_front(TMutation::Pusher, repo_id, update, Base::TOpt<TSequenceNumber>());
+  MutationList.emplace_front(TMutation::Pusher, repo_id, update, std::optional<TSequenceNumber>());
   return &MutationList.front();
 }
 
-TTransaction::TReplica::TMutation *TTransaction::TReplica::Pop(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
+TTransaction::TReplica::TMutation *TTransaction::TReplica::Pop(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num) {
   MutationList.emplace_front(TMutation::Popper, repo_id, seq_num);
   return &MutationList.front();
 }
 
-TTransaction::TReplica::TMutation *TTransaction::TReplica::Fail(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
+TTransaction::TReplica::TMutation *TTransaction::TReplica::Fail(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num) {
   MutationList.emplace_front(TMutation::Failer, repo_id, seq_num);
   return &MutationList.front();
 }
 
-TTransaction::TReplica::TMutation *TTransaction::TReplica::Pause(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
+TTransaction::TReplica::TMutation *TTransaction::TReplica::Pause(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num) {
   MutationList.emplace_front(TMutation::Pauser, repo_id, seq_num);
   return &MutationList.front();
 }
 
-TTransaction::TReplica::TMutation *TTransaction::TReplica::UnPause(const Base::TUuid &repo_id, const Base::TOpt<TSequenceNumber> &seq_num) {
+TTransaction::TReplica::TMutation *TTransaction::TReplica::UnPause(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num) {
   MutationList.emplace_front(TMutation::UnPauser, repo_id, seq_num);
   return &MutationList.front();
 }

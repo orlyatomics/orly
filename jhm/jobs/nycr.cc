@@ -17,6 +17,7 @@
 #include <jhm/jobs/nycr.h>
 
 #include <cassert>
+#include <optional>
 #include <stdexcept>
 
 #include <base/as_str.h>
@@ -39,12 +40,12 @@ static string GetNycrPath(TEnv &env) {
   return AsStr(*env.GetRoot()) + '/' + out_dir + "/bootstrap/tools/nycr/nycr";
 }
 
-static TOpt<TRelPath> GetNycrLangInputName(const TRelPath &output) {
+static std::optional<TRelPath> GetNycrLangInputName(const TRelPath &output) {
   if (output.Path.EndsWith({"nycr", "lang"})) {
     return TRelPath(DropExtension(TPath(output.Path), 1));
   }
 
-  return TOpt<TRelPath>();
+  return std::optional<TRelPath>();
 }
 
 TJobProducer TNycrLang::GetProducer() {
@@ -116,7 +117,7 @@ const static vector<vector<string>> LangSuffixes = {
   {"nycr"}
 };
 
-static TOpt<TRelPath> GetInputName(const TRelPath &output) {
+static std::optional<TRelPath> GetInputName(const TRelPath &output) {
   // If we end with a lang followed by a language suffix, get the nycr input name
   for (const auto &suffix: LangSuffixes) {
     if(output.Path.Extension.size() >= suffix.size() + 1 && output.Path.EndsWith(suffix)) {
@@ -124,7 +125,7 @@ static TOpt<TRelPath> GetInputName(const TRelPath &output) {
     }
   }
 
-  return TOpt<TRelPath>();
+  return std::optional<TRelPath>();
 }
 
 TJobProducer TNycr::GetProducer() {

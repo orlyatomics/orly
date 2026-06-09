@@ -18,6 +18,7 @@
 
 #include <orly/sabot/match_prefix_type.h>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -69,7 +70,7 @@ FIXTURE(Int8) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t>, tuple<map<bool, char>>>()));
@@ -96,7 +97,7 @@ FIXTURE(Int8) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t>, tuple<map<bool, char>>>()));
@@ -125,7 +126,7 @@ FIXTURE(Int16) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int16_t>, tuple<map<bool, char>>>()));
@@ -152,7 +153,7 @@ FIXTURE(Int16) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int16_t>, tuple<map<bool, char>>>()));
@@ -181,7 +182,7 @@ FIXTURE(Int32) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t>, tuple<map<bool, char>>>()));
@@ -208,7 +209,7 @@ FIXTURE(Int32) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t>, tuple<map<bool, char>>>()));
@@ -237,7 +238,7 @@ FIXTURE(Int64) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int64_t>, tuple<map<bool, char>>>()));
@@ -264,7 +265,7 @@ FIXTURE(Int64) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int64_t>, tuple<map<bool, char>>>()));
@@ -293,7 +294,7 @@ FIXTURE(UInt8) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint8_t>, tuple<map<bool, char>>>()));
@@ -320,7 +321,7 @@ FIXTURE(UInt8) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint8_t>, tuple<map<bool, char>>>()));
@@ -349,7 +350,7 @@ FIXTURE(UInt16) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint16_t>, tuple<map<bool, char>>>()));
@@ -376,7 +377,7 @@ FIXTURE(UInt16) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint16_t>, tuple<map<bool, char>>>()));
@@ -405,7 +406,7 @@ FIXTURE(UInt32) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint32_t>, tuple<map<bool, char>>>()));
@@ -432,7 +433,7 @@ FIXTURE(UInt32) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint32_t>, tuple<map<bool, char>>>()));
@@ -461,7 +462,7 @@ FIXTURE(UInt64) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<uint64_t>, tuple<map<bool, char>>>()));
@@ -488,7 +489,7 @@ FIXTURE(UInt64) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<uint64_t>, tuple<map<bool, char>>>()));
@@ -517,7 +518,7 @@ FIXTURE(Bool) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<bool>, tuple<map<bool, char>>>()));
@@ -544,7 +545,7 @@ FIXTURE(Bool) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<bool>, tuple<map<bool, char>>>()));
@@ -573,7 +574,7 @@ FIXTURE(Char) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<char>, tuple<map<bool, char>>>()));
@@ -600,7 +601,7 @@ FIXTURE(Char) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<char>, tuple<map<bool, char>>>()));
@@ -629,7 +630,7 @@ FIXTURE(Float) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<float>, tuple<map<bool, char>>>()));
@@ -656,7 +657,7 @@ FIXTURE(Float) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<float>, tuple<map<bool, char>>>()));
@@ -685,7 +686,7 @@ FIXTURE(Double) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<double>, tuple<map<bool, char>>>()));
@@ -712,7 +713,7 @@ FIXTURE(Double) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<double>, tuple<map<bool, char>>>()));
@@ -741,7 +742,7 @@ FIXTURE(Duration) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdDuration>, tuple<map<bool, char>>>()));
@@ -768,7 +769,7 @@ FIXTURE(Duration) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdDuration>, tuple<map<bool, char>>>()));
@@ -797,7 +798,7 @@ FIXTURE(Timepoint) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TStdTimePoint>, tuple<map<bool, char>>>()));
@@ -824,7 +825,7 @@ FIXTURE(Timepoint) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TStdTimePoint>, tuple<map<bool, char>>>()));
@@ -853,7 +854,7 @@ FIXTURE(Uuid) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TUuid>, tuple<map<bool, char>>>()));
@@ -880,7 +881,7 @@ FIXTURE(Uuid) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TUuid>, tuple<map<bool, char>>>()));
@@ -909,7 +910,7 @@ FIXTURE(Blob) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TBlob>, tuple<map<bool, char>>>()));
@@ -936,7 +937,7 @@ FIXTURE(Blob) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TBlob>, tuple<map<bool, char>>>()));
@@ -965,7 +966,7 @@ FIXTURE(String) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<string>, tuple<map<bool, char>>>()));
@@ -992,7 +993,7 @@ FIXTURE(String) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<string>, tuple<map<bool, char>>>()));
@@ -1021,7 +1022,7 @@ FIXTURE(Tombstone) {
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TTombstone>, tuple<map<bool, char>>>()));
@@ -1048,7 +1049,7 @@ FIXTURE(Tombstone) {
   EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TTombstone>, tuple<map<bool, char>>>()));
@@ -1077,7 +1078,7 @@ FIXTURE(Void) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<void>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<void>, tuple<map<bool, char>>>()));
@@ -1104,7 +1105,7 @@ FIXTURE(Void) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<void>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<void>, tuple<map<bool, char>>>()));
@@ -1133,7 +1134,7 @@ FIXTURE(Desc) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<void>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TDesc<bool>>, tuple<map<bool, char>>>()));
@@ -1160,7 +1161,7 @@ FIXTURE(Desc) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<void>>()));
   EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TDesc<bool>>, tuple<map<bool, char>>>()));
@@ -1169,59 +1170,59 @@ FIXTURE(Desc) {
 }
 
 FIXTURE(Opt) {
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int8_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int16_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int32_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int64_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint8_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint16_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint32_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint64_t>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<bool>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<char>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<float>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<double>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TStdDuration>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TStdTimePoint>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TUuid>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TBlob>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<string>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TTombstone>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<void>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TOpt<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<set<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<vector<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<map<bool, char>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TPoint>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TOpt<bool>>, tuple<tuple<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int8_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int16_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int32_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int64_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint8_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint16_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint32_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint64_t>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<bool>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<char>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<float>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<double>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TStdDuration>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TStdTimePoint>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TUuid>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TBlob>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<string>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TTombstone>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<void>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TDesc<bool>>>()));
+  EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<std::optional<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<set<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<vector<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<map<bool, char>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TPoint>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<std::optional<bool>>, tuple<tuple<bool>>>()));
 
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int8_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int16_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int32_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<int64_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint8_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint16_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint32_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<uint64_t>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<bool>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<char>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<float>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<double>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TStdDuration>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TStdTimePoint>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TUuid>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TBlob>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<string>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TTombstone>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<void>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TOpt<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<set<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<vector<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<map<bool, char>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<TPoint>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TOpt<bool>>, tuple<tuple<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int8_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int16_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int32_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<int64_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint8_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint16_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint32_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<uint64_t>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<bool>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<char>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<float>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<double>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TStdDuration>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TStdTimePoint>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TUuid>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TBlob>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<string>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TTombstone>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<void>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TDesc<bool>>>()));
+  EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<std::optional<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<set<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<vector<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<map<bool, char>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<TPoint>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<std::optional<bool>>, tuple<tuple<bool>>>()));
 }
 
 FIXTURE(Set) {
@@ -1245,7 +1246,7 @@ FIXTURE(Set) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<set<bool>>, tuple<map<bool, char>>>()));
@@ -1272,7 +1273,7 @@ FIXTURE(Set) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<set<bool>>, tuple<map<bool, char>>>()));
@@ -1301,7 +1302,7 @@ FIXTURE(Vector) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<vector<bool>>, tuple<map<bool, char>>>()));
@@ -1328,7 +1329,7 @@ FIXTURE(Vector) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<vector<bool>>, tuple<map<bool, char>>>()));
@@ -1357,7 +1358,7 @@ FIXTURE(Map) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<map<bool, char>>, tuple<map<bool, char>>>()));
@@ -1384,7 +1385,7 @@ FIXTURE(Map) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsNoMatch(MatchTypes<tuple<map<bool, char>>, tuple<map<bool, char>>>()));
@@ -1413,7 +1414,7 @@ FIXTURE(Point) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<TPoint>, tuple<map<bool, char>>>()));
@@ -1440,7 +1441,7 @@ FIXTURE(Point) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<TPoint>, tuple<map<bool, char>>>()));
@@ -1469,7 +1470,7 @@ FIXTURE(Tuple) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<tuple<bool>>, tuple<map<bool, char>>>()));
@@ -1496,7 +1497,7 @@ FIXTURE(Tuple) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<tuple<bool>>, tuple<map<bool, char>>>()));
@@ -1525,7 +1526,7 @@ FIXTURE(Free) {
   EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<TTombstone>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<void>>, tuple<void>>()));
   EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<TDesc<bool>>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<TOpt<bool>>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<std::optional<bool>>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<set<bool>>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<vector<bool>>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsUnifies(MatchTypes<tuple<TFree<map<bool, char>>>, tuple<map<bool, char>>>()));
@@ -1552,7 +1553,7 @@ FIXTURE(Free) {
   EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<TTombstone>>()));
   EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<void>>()));
   EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<TDesc<bool>>>()));
-  EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<TOpt<bool>>>()));
+  EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<std::optional<bool>>>()));
   EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<set<bool>>>()));
   EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<vector<bool>>>()));
   EXPECT_FALSE(IsUnifies(MatchTypes<tuple<TFree<int8_t>>, tuple<map<bool, char>>>()));
@@ -1579,7 +1580,7 @@ FIXTURE(Free) {
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<TTombstone>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<void>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<TDesc<bool>>>()));
-  EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<TOpt<bool>>>()));
+  EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<std::optional<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<set<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<vector<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<TFree<int8_t>>, tuple<map<bool, char>>>()));
@@ -1608,7 +1609,7 @@ FIXTURE(Free) {
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, TTombstone>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, void>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, TDesc<bool>>>()));
-  EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, TOpt<bool>>>()));
+  EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, std::optional<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, set<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, vector<bool>>>()));
   EXPECT_TRUE (IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int8_t, map<bool, char>>>()));
@@ -1635,7 +1636,7 @@ FIXTURE(Free) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, map<bool, char>>>()));
@@ -1662,7 +1663,7 @@ FIXTURE(Free) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int8_t, TFree<int8_t>>, tuple<int32_t, map<bool, char>>>()));
@@ -1689,7 +1690,7 @@ FIXTURE(Free) {
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, TTombstone>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, void>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, TDesc<bool>>>()));
-  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, TOpt<bool>>>()));
+  EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, std::optional<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, set<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, vector<bool>>>()));
   EXPECT_FALSE(IsPrefixMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, map<bool, char>>>()));
@@ -1716,7 +1717,7 @@ FIXTURE(Free) {
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, TTombstone>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, void>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, TDesc<bool>>>()));
-  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, TOpt<bool>>>()));
+  EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, std::optional<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, set<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, vector<bool>>>()));
   EXPECT_TRUE (IsNoMatch(MatchTypes<tuple<int32_t, TFree<int8_t>>, tuple<int8_t, map<bool, char>>>()));

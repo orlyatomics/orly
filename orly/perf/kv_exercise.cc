@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <signal.h>
 #include <unistd.h>
 #include <unordered_set>
@@ -42,7 +43,7 @@ class TExerciseClient final
     : public TClient {
   public:
 
-  TExerciseClient(const Base::TOpt<TUuid> &session_id, const TAddress &addr)
+  TExerciseClient(const std::optional<TUuid> &session_id, const TAddress &addr)
       : TClient(addr, session_id, seconds(600)) {}
 
   void WaitForReplication(const Base::TUuid &tracker_id, const Base::TUuid &repo_id) {
@@ -169,9 +170,9 @@ void Runner(int64_t start, int64_t limit, const ::TCmd &cmd) {
   std::vector<uint64_t> inserted_id_vec;
   inserted_id_vec.reserve(100000000);
   try {
-    Base::TOpt<TUuid> session_id;
+    std::optional<TUuid> session_id;
     auto client = make_shared<TExerciseClient>(session_id, cmd.Addr);
-    auto pov_id = client->NewFastPrivatePov(TOpt<TUuid>::GetUnknown(), seconds(10));
+    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(10));
     printf("Runner() new fast pov \n");
     Base::TUuid id_to_use = **pov_id;
     printf("Runner() has POV \n");
@@ -242,7 +243,7 @@ int main(int argc, char *argv[]) {
   TLog log(cmd);
   sleep(5);
   /* install kv.1 */ {
-    auto client = make_shared<TExerciseClient>(TOpt<TUuid>::GetUnknown(), cmd.Addr);
+    auto client = make_shared<TExerciseClient>(std::nullopt, cmd.Addr);
     auto ack = client->InstallPackage({ "kv" }, 1);
     assert(ack);
     ack->Sync();

@@ -188,7 +188,7 @@ void TConfig::LoadComputed(const string &filename) {
 const std::vector<Base::TJson> TConfig::GetComputed() const {
   vector<Base::TJson> ret;
   assert(ComputedStart);
-  ret.reserve(Config.size()-ComputedStart);
+  ret.reserve(Config.size()-static_cast<bool>(ComputedStart));
   ForEachComputed([&ret](const TJson &json) {
     ret.emplace_back(json);
     return true;

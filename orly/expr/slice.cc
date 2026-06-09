@@ -18,7 +18,7 @@
 
 #include <orly/expr/slice.h>
 
-#include <base/opt.h>
+#include <optional>
 #include <orly/error.h>
 #include <orly/pos_range.h>
 #include <orly/type/part.h>

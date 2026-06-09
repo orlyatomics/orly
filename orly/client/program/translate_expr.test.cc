@@ -19,6 +19,7 @@
 #include <orly/client/program/translate_expr.h>
 
 #include <functional>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -417,9 +418,9 @@ FIXTURE(Obj) {
 
 FIXTURE(Opt) {
   TFastArena arena;
-  TCore expected_1(&arena, Base::TOpt<int64_t>(45));
-  TCore expected_2(&arena, Base::TOpt<std::set<int64_t>>(std::set<int64_t>{1, 2, 3}));
-  TCore expected_3(&arena, Base::TOpt<Base::TOpt<int64_t>>(Base::TOpt<int64_t>(45)));
+  TCore expected_1(&arena, std::optional<int64_t>(45));
+  TCore expected_2(&arena, std::optional<std::set<int64_t>>(std::set<int64_t>{1, 2, 3}));
+  TCore expected_3(&arena, std::optional<std::optional<int64_t>>(std::optional<int64_t>(45)));
   Check("print 45?;", expected_1, &arena);
   Check("print {1, 2, 3}?;", expected_2, &arena);
   Check("print 45??;", expected_3, &arena);
@@ -427,8 +428,8 @@ FIXTURE(Opt) {
 
 FIXTURE(Unknown) {
   TFastArena arena;
-  TCore expected_1(&arena, Base::TOpt<int64_t>());
-  TCore expected_2(&arena, Base::TOpt<std::set<int64_t>>());
+  TCore expected_1(&arena, std::optional<int64_t>());
+  TCore expected_2(&arena, std::optional<std::set<int64_t>>());
   Check("print unknown int;", expected_1, &arena);
   Check("print unknown {int};", expected_2, &arena);
 }

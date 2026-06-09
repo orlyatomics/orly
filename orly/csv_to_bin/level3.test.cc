@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/csv_to_bin/level3.h>
+#include <optional>
 
 #include <base/strm/mem/static_in.h>
 #include <base/test/kit.h>
@@ -43,7 +44,7 @@ FIXTURE(OneLiner) {
   int64_t e;
   double f;
   Chrono::TTimePnt g;
-  Base::TOpt<int64_t> h, i;
+  std::optional<int64_t> h, i;
   level3
       >> StartOfFile >> StartOfRecord
       >> StartOfField >> a >> EndOfField
@@ -64,8 +65,8 @@ FIXTURE(OneLiner) {
   EXPECT_EQ(f, 98.6);
   EXPECT_TRUE(
       g == Chrono::CreateTimePnt(2014, 7, 4, 4, 3, 9, 102000000, -480));
-  EXPECT_FALSE(h.IsKnown());
-  EXPECT_TRUE(i.IsKnown());
+  EXPECT_FALSE(h.has_value());
+  EXPECT_TRUE(i.has_value());
   EXPECT_EQ(*i, 101);
 }
 

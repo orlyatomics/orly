@@ -72,10 +72,10 @@ FIXTURE(ConvLinger) {
   Conv<TLinger>::SetSockOpt(sock, SO_LINGER, TLinger());
   TLinger val;
   Conv<TLinger>::GetSockOpt(sock, SO_LINGER, val);
-  EXPECT_FALSE(val.IsKnown());
+  EXPECT_FALSE(val.has_value());
   Conv<TLinger>::SetSockOpt(sock, SO_LINGER, TLinger(seconds(30)));
   Conv<TLinger>::GetSockOpt(sock, SO_LINGER, val);
-  if (EXPECT_TRUE(val.IsKnown())) {
+  if (EXPECT_TRUE(val.has_value())) {
     EXPECT_EQ(val->count(), 30);
   }
 }

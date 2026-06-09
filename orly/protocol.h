@@ -28,6 +28,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 
 #include <netinet/in.h>
@@ -301,23 +302,23 @@ namespace Orly {
          Uninstall the given package, if it is installed. */
       UninstallPackage  = 1004,
 
-      /* NewFastPrivatePov(Base::TOpt<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid;
+      /* NewFastPrivatePov(std::optional<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid;
          Create a new, fast private pov.  A fast pov does not aggressively write through to durable storage and
          so responds more quickly than a safe pov; however, a fast pov may not survive a datacenter catastrophe.  If no
          parent is given, the global pov will be the parent. */
       NewFastPrivatePov = 1005,
 
-      /* NewSafePrivatePov(Base::TOpt<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid;
+      /* NewSafePrivatePov(std::optional<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid;
          Create a new, safe private pov.  A safe pov aggressively writes through to durable storage and so responds
          more slowly than a fast pov; however, a safe pov will survive a datacenter catastrophe.  If no parent is given,
          the global pov will be the parent.*/
       NewSafePrivatePov = 1006,
 
-      /* NewFastSharedPov(Base::TOpt<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid
+      /* NewFastSharedPov(std::optional<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid
          Create a new, fast shared pov.  Otherwise similar to NewFastPrivatePov(). */
       NewFastSharedPov = 1007,
 
-      /* NewSafeSharedPov(Base::TOpt<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid
+      /* NewSafeSharedPov(std::optional<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live) -> Base::TUuid
          Create a new, safe shared pov.  Otherwise similar to NewSafePrivatePov(). */
       NewSafeSharedPov = 1008,
 

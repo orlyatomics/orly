@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/balancer/balancer.h>
+#include <optional>
 
 #include <base/epoll.h>
 #include <base/event_counter.h>
@@ -120,12 +121,12 @@ class TRouter : public TBalancer {
     for (;Running;) {
       check_hosts.Pop();
       std::lock_guard<std::mutex> lock(HostMutex);
-      MasterHost.Reset();
+      MasterHost.reset();
       for (const auto &addr : HostSet) {
         bool is_master = CheckHost(addr);
         if (MasterHost && is_master) {
           std::cerr << "There is more than 1 master" << std::endl;
-          MasterHost.Reset();
+          MasterHost.reset();
           throw std::runtime_error("There is more than 1 master");
         } else if (is_master) {
           MasterHost = addr;
@@ -146,7 +147,7 @@ class TRouter : public TBalancer {
 
   std::unordered_set<Socket::TAddress> HostSet;
 
-  Base::TOpt<Socket::TAddress> MasterHost;
+  std::optional<Socket::TAddress> MasterHost;
 
   bool Running;
 

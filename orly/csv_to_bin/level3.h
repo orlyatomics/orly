@@ -23,7 +23,7 @@
 #include <utility>
 
 #include <base/chrono.h>
-#include <base/opt.h>
+#include <optional>
 #include <base/thrower.h>
 #include <base/uuid.h>
 #include <orly/csv_to_bin/level2.h>
@@ -119,9 +119,9 @@ namespace Orly {
 
       /* Extract an optional value from the current field. */
       template <typename TVal>
-      TLevel3 &operator>>(Base::TOpt<TVal> &that) {
+      TLevel3 &operator>>(std::optional<TVal> &that) {
         if (!RefreshBytes(false) && Cursor == Null) {
-          that.Reset();
+          that.reset();
           RefreshBytes(false);
         } else {
           TVal temp;

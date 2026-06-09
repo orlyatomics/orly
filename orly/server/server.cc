@@ -18,6 +18,7 @@
 
 #include <orly/server/server.h>
 
+#include <optional>
 #include <poll.h>
 #include <sys/syscall.h>
 
@@ -941,7 +942,7 @@ void TServer::Init() {
     auto global_ttl = TTtl::max();
     GlobalRepo = RepoManager->GetRepo(TSession::GlobalPovId,
                                       global_ttl,
-                                      TOpt<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>>::GetUnknown(),
+                                      std::nullopt,
                                       true,
                                       Cmd.Create);
 
@@ -1294,7 +1295,7 @@ void TServer::TSessionPin::InstallPackage(
 }
 
 Base::TUuid TServer::TSessionPin::NewPov(
-    bool is_safe, bool is_shared, const Base::TOpt<Base::TUuid> &parent_id) const {
+    bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id) const {
   const seconds ttl(600);
   auto func = is_safe
       ? (is_shared ? &TConnection::NewSafeSharedPov : &TConnection::NewSafePrivatePov)
@@ -1474,10 +1475,10 @@ TServer::TConnection::TProtocol::TProtocol() {
   Register<TConnection, string, string>(1000, &TConnection::Echo);
   Register<TConnection, void, vector<string>, uint64_t>(ServerRpc::InstallPackage, &TConnection::InstallPackage);
   Register<TConnection, void, vector<string>, uint64_t>(ServerRpc::UninstallPackage, &TConnection::UninstallPackage);
-  Register<TConnection, TUuid, TOpt<TUuid>, seconds>(ServerRpc::NewFastPrivatePov, &TConnection::NewFastPrivatePov);
-  Register<TConnection, TUuid, TOpt<TUuid>, seconds>(ServerRpc::NewFastSharedPov, &TConnection::NewFastSharedPov);
-  Register<TConnection, TUuid, TOpt<TUuid>, seconds>(ServerRpc::NewSafePrivatePov, &TConnection::NewSafePrivatePov);
-  Register<TConnection, TUuid, TOpt<TUuid>, seconds>(ServerRpc::NewSafeSharedPov, &TConnection::NewSafeSharedPov);
+  Register<TConnection, TUuid, std::optional<TUuid>, seconds>(ServerRpc::NewFastPrivatePov, &TConnection::NewFastPrivatePov);
+  Register<TConnection, TUuid, std::optional<TUuid>, seconds>(ServerRpc::NewFastSharedPov, &TConnection::NewFastSharedPov);
+  Register<TConnection, TUuid, std::optional<TUuid>, seconds>(ServerRpc::NewSafePrivatePov, &TConnection::NewSafePrivatePov);
+  Register<TConnection, TUuid, std::optional<TUuid>, seconds>(ServerRpc::NewSafeSharedPov, &TConnection::NewSafeSharedPov);
   Register<TConnection, void, TUuid>(ServerRpc::PausePov, &TConnection::PausePov);
   Register<TConnection, void, TUuid>(ServerRpc::UnpausePov, &TConnection::UnpausePov);
   Register<TConnection, void, TUuid>(ServerRpc::SetUserId, &TConnection::SetUserId);
@@ -2245,7 +2246,7 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
   // TODO: Only make this when needed. Should live with the session as a pooled resource. Recycle only when failed.
 
   // TODO: Switch to this / the wrapped variant?
-  // auto pov = session->NewFastPrivatePov(this, TOpt<TUuid>::GetUnknown(), zero_ttl);
+  // auto pov = session->NewFastPrivatePov(this, std::nullopt, zero_ttl);
   // The problem is then we jump through a lot of uuid objects for no good reason...
   // TODO: Same as above but not all wrapped up
   auto pov = DurableManager->New<TPov>(TUuid::Twister,

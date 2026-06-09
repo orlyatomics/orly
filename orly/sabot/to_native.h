@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cassert>
+#include <optional>
 
 #include <base/thrower.h>
 #include <orly/desc.h>
@@ -725,12 +726,12 @@ namespace Orly {
 
 
     template <typename TVal>
-    class TToNativeVisitor<Base::TOpt<TVal>> final
+    class TToNativeVisitor<std::optional<TVal>> final
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
       /* TODO */
-      TToNativeVisitor(Base::TOpt<TVal> &out) : Out(out) {}
+      TToNativeVisitor(std::optional<TVal> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
       virtual void operator()(const State::TTombstone &/*state*/) const override  { THROW_ERROR(TInvalidConversion); }
@@ -760,9 +761,9 @@ namespace Orly {
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
           TVal val;
           ToNative(*Sabot::State::TAny::TWrapper(pin->NewElem(0, state_alloc)), val);
-          Out = Base::TOpt<TVal>(val);
+          Out = std::optional<TVal>(val);
         } else {
-          Out.Reset();
+          Out.reset();
         }
       }
       virtual void operator()(const State::TSet &/*state*/) const override        { THROW_ERROR(TInvalidConversion); }
@@ -771,7 +772,7 @@ namespace Orly {
       virtual void operator()(const State::TRecord &/*state*/) const override     { THROW_ERROR(TInvalidConversion); }
       virtual void operator()(const State::TTuple &/*state*/) const override      { THROW_ERROR(TInvalidConversion); }
       private:
-      Base::TOpt<TVal> &Out;
+      std::optional<TVal> &Out;
     };  // TToNativeVisitor
 
     template <typename TVal>

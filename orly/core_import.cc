@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 
 #include <fcntl.h>
 #include <syslog.h>
@@ -49,7 +50,7 @@ class TCmd final
   Socket::TAddress ServerAddress;
 
   /* The session id to use.  If not given, then we'll start a new session. */
-  Base::TOpt<Base::TUuid> SessionId;
+  std::optional<Base::TUuid> SessionId;
 
   /* The minimum number of seconds our session should live after we leave. */
   uint32_t TimeToLive = 0;
