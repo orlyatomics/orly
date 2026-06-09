@@ -24,7 +24,6 @@
 
 #include <base/identity.h>
 #include <base/mpl/compare.h>
-#include <base/mpl/conditional.h>
 #include <base/mpl/get_size.h>
 #include <base/mpl/type_list.h>
 #include <base/mpl/type_set.h>
@@ -39,13 +38,13 @@ namespace Mpl {
   struct GetIntersectionRecur<TTypeList<TElems...>, TTypeList<>, TLong> : public Base::identity<TTypeSet<TElems...>> {};
 
   template <typename TList, typename TElem, typename... TMoreElems, typename TLong>
-  struct GetIntersectionRecur<TList, TTypeList<TElem, TMoreElems...>, TLong> : public Mpl::Conditional<
-      Contains<TLong, TElem>,
+  struct GetIntersectionRecur<TList, TTypeList<TElem, TMoreElems...>, TLong> : public std::conditional_t<
+      Contains<TLong, TElem>::value,
       GetIntersectionRecur<TExtend<TList, TTypeList<TElem>>, TTypeList<TMoreElems...>, TLong>,
       GetIntersectionRecur<TList, TTypeList<TMoreElems...>, TLong>> {};
 
   template <typename TLhs, typename TRhs>
-  struct GetIntersection : public Mpl::Conditional<Lt<GetSize<TLhs>, GetSize<TRhs>>,
+  struct GetIntersection : public std::conditional_t<Lt<GetSize<TLhs>, GetSize<TRhs>>::value,
                                                    GetIntersectionRecur<TTypeList<>, TGetList<TLhs>, TRhs>,
                                                    GetIntersectionRecur<TTypeList<>, TGetList<TRhs>, TLhs>> {};
 

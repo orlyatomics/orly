@@ -29,7 +29,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <base/mpl/and.h>
 #include <base/mpl/contains.h>
 #include <base/mpl/get_union.h>
 #include <base/mpl/type_set.h>

@@ -101,7 +101,6 @@
 
 #include <base/class_traits.h>
 #include <base/mpl/contains.h>
-#include <base/mpl/enable_if.h>
 #include <base/mpl/get_difference.h>
 #include <base/visitor/shared.h>
 #include <base/visitor/visitor.h>
@@ -185,7 +184,8 @@ namespace Visitor {
         : public Mpl::Contains<typename Members::All, std::decay_t<TElem>> {};
 
     /* Construct a new variant off of a non-managed element. */
-    template <typename TElem, Mpl::EnableIf<IsMember<TElem>>...>
+    template <typename TElem>
+      requires IsMember<TElem>::value
     static TVariant New(TElem &&elem) {
       using elem_t = std::decay_t<TElem>;
       return TVariant(TAcceptor<elem_t>::Get(),
@@ -203,7 +203,8 @@ namespace Visitor {
        element __must__ be managed. If the element is not managed, it will hit
        an assertion failure under debug mode and most likely seg-faults in
        release mode so be __sure__ to use it carefully! */
-    template <typename TElem, Mpl::EnableIf<IsMember<TElem>>...>
+    template <typename TElem>
+      requires IsMember<TElem>::value
     static TVariant Share(TElem &elem) {
       using elem_t = std::decay_t<TElem>;
       return TVariant(TAcceptor<elem_t>::Get(),

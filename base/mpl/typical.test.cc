@@ -11,7 +11,6 @@
 #include <base/mpl/is_same.h>
 #include <base/mpl/is_subset_of.h>
 #include <base/mpl/merge.h>
-#include <base/mpl/not.h>
 #include <base/mpl/reverse.h>
 #include <base/mpl/type_list.h>
 #include <base/mpl/type_set.h>
@@ -63,7 +62,7 @@ struct TLess
           (GetIdx<TIntegral, TLhs>::value < GetIdx<TIntegral, TRhs>::value)> {};
 
 template <typename TLhs, typename TRhs>
-using TGreater = Mpl::Not<TLess<TLhs, TRhs>>;
+using TGreater = std::negation<TLess<TLhs, TRhs>>;
 
 // Merge<TCompare, TTypeList, TTypeList>
 static_assert(
@@ -106,28 +105,28 @@ static_assert(IsSubsetOf<TTypeSet<int, double>, TTypeSet<int, double, std::strin
 static_assert(!IsSubsetOf<TTypeSet<int, double>, TTypeSet<int, std::string>>::value, "");
 static_assert(IsSubsetOf<TTypeSet<int, double, int>, TTypeSet<double, int>>::value, "");
 
-// IsSame<TLhs, TRhs>::value
-static_assert(IsSame<TTypeSet<int, double>, TTypeSet<double, int>>::value, "");
-static_assert(IsSame<TTypeSet<int, double, int>, TTypeSet<double, int>>::value, "");
-static_assert(IsSame<TTypeSet<int, double, int>, TTypeSet<double, double, int>>::value, "");
-static_assert(!IsSame<TTypeSet<int, int>, TTypeSet<double, int>>::value, "");
+// std::is_same<TLhs, TRhs>::value
+static_assert(std::is_same<TTypeSet<int, double>, TTypeSet<double, int>>::value, "");
+static_assert(std::is_same<TTypeSet<int, double, int>, TTypeSet<double, int>>::value, "");
+static_assert(std::is_same<TTypeSet<int, double, int>, TTypeSet<double, double, int>>::value, "");
+static_assert(!std::is_same<TTypeSet<int, int>, TTypeSet<double, int>>::value, "");
 
 // TGetUnion<TLhs, TRhs>
 static_assert(
-    IsSame<TGetUnion<TTypeSet<int, int, double>, TTypeSet<int, std::string>>, TTypeSet<int, double, std::string>>::value, "");
+    std::is_same<TGetUnion<TTypeSet<int, int, double>, TTypeSet<int, std::string>>, TTypeSet<int, double, std::string>>::value, "");
 static_assert(
-    IsSame<TGetUnion<TTypeSet<int, double>, TTypeSet<int>>, TTypeSet<double, int>>::value, "");
+    std::is_same<TGetUnion<TTypeSet<int, double>, TTypeSet<int>>, TTypeSet<double, int>>::value, "");
 
 // TGetDifference<TLhs, TRhs>
 static_assert(
-    IsSame<TGetDifference<TTypeSet<int, std::string, double>, TTypeSet<int, float, double>>, TTypeSet<std::string>>::value, "");
+    std::is_same<TGetDifference<TTypeSet<int, std::string, double>, TTypeSet<int, float, double>>, TTypeSet<std::string>>::value, "");
 static_assert(
-    IsSame<TGetDifference<TTypeSet<int, std::string, double>, TTypeSet<std::string, int, float, double>>, TTypeSet<>>::value, "");
+    std::is_same<TGetDifference<TTypeSet<int, std::string, double>, TTypeSet<std::string, int, float, double>>, TTypeSet<>>::value, "");
 
 // TGetIntersection<TLhs, TRhs>
 static_assert(
-    IsSame<TGetIntersection<TTypeSet<int, std::string, double>, TTypeSet<int, float, double>>, TTypeSet<int, double>>::value, "");
-static_assert(IsSame<TGetIntersection<TTypeSet<int, std::string, double>, TTypeSet<std::string, int, float, double>>,
+    std::is_same<TGetIntersection<TTypeSet<int, std::string, double>, TTypeSet<int, float, double>>, TTypeSet<int, double>>::value, "");
+static_assert(std::is_same<TGetIntersection<TTypeSet<int, std::string, double>, TTypeSet<std::string, int, float, double>>,
                      TTypeSet<int, double, std::string>>::value,
               "");
 
