@@ -101,6 +101,11 @@ class TCodeGenVisitor : public TType::TVisitor {
                     })
       << "})";
   }
+  /* Reconstructs the self-reference leaf inside a generated TDt<...>
+     specialization (the only place a self-ref's type code is emitted). */
+  virtual void operator()(const TSelfRef *that) const {
+    Strm << "Orly::Type::TSelfRef::Get(" << that->GetDepth() << ')';
+  }
   virtual void operator()(const TOpt *that) const {
     Write("TOpt", that->GetElem());
   }

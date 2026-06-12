@@ -20,6 +20,7 @@
 
 #include <base/as_str.h>
 #include <orly/error.h>
+#include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/util.h>
 #include <orly/type/variant.h>
@@ -56,11 +57,13 @@ Type::TType TVariantCtor::GetTypeImpl() const {
     throw TExprError(HERE, GetPosRange(), msg.c_str());
   }
   /* The payload expression's type must match the declared arm payload
-     type. (A tag-only arm's declared payload is the empty object and the
-     synth layer supplies an empty-object payload expression, so this check
-     covers both cases uniformly.) */
+     type, unrolled: for a recursive variant the declared payload contains
+     self-references, while the payload expression's fields are typed by
+     the variant itself (#103). (A tag-only arm's declared payload is the
+     empty object and the synth layer supplies an empty-object payload
+     expression, so this check covers both cases uniformly.) */
   Type::TType payload_type = Type::Unwrap(GetExpr()->GetType());
-  if (payload_type != iter->second) {
+  if (payload_type != Type::Unroll(iter->second, VariantType)) {
     std::string msg = Base::AsStr("variant constructor payload type does not match the declared type of arm \"", Tag, "\"");
     throw TExprError(HERE, GetPosRange(), msg.c_str());
   }

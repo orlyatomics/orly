@@ -18,6 +18,10 @@
 
 #include <orly/code_gen/variant_access.h>
 
+#include <orly/type/unroll.h>
+#include <orly/type/unwrap.h>
+#include <orly/type/variant.h>
+
 using namespace Orly;
 using namespace Orly::CodeGen;
 
@@ -41,8 +45,22 @@ TVariantMember::TVariantMember(const L0::TPackage *package,
 
 void TVariantMember::WriteExpr(TCppPrinter &out) const {
   /* GetV<Tag>() returns the active arm's payload and asserts the arm is
-     active -- callers gate this with `is <Tag>`. */
-  out << '(' << Operand << ").GetV" << Tag << "()";
+     active -- callers gate this with `is <Tag>`. For a RECURSIVE arm
+     (#103) the generated getter is a member template over the unrolled
+     payload type (which is this inline's own result type), supplied
+     explicitly here. */
+  const Type::TVariant *variant =
+      Type::Unwrap(Operand->GetReturnType()).TryAs<Type::TVariant>();
+  bool recursive_arm = false;
+  if (variant) {
+    auto iter = variant->GetElems().find(Tag);
+    recursive_arm = iter != variant->GetElems().end() && Type::HasFreeSelfRef(iter->second);
+  }
+  out << '(' << Operand << ").GetV" << Tag;
+  if (recursive_arm) {
+    out << '<' << GetReturnType() << '>';
+  }
+  out << "()";
 }
 
 TVariantWhen::TVariantWhen(const L0::TPackage *package,

@@ -6,6 +6,10 @@
    Lowers to `Expr::TVariantCtor` on `Build()`; a tag-only arm builds an
    empty-object payload (the unit value).
 
+   The payload is grammatically a positional call argument wrapping the
+   bare `<|...|>.Tag` ctor (see variant_ctor in orly.nycr, #103); the
+   expr factory folds it in through the two-argument constructor here.
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,7 +44,14 @@ namespace Orly {
       NO_COPY(TVariantCtor);
       public:
 
+      /* A tag-only constructor (`<|...|>.Deleted`). */
       TVariantCtor(const TExprFactory *expr_factory, const Package::Syntax::TVariantCtor *variant_ctor);
+
+      /* A constructor with a payload: the factory folds the positional
+         call argument (`<|...|>.Integer(-384)`) into the ctor node. */
+      TVariantCtor(const TExprFactory *expr_factory,
+                   const Package::Syntax::TVariantCtor *variant_ctor,
+                   const Package::Syntax::TExpr *payload);
 
       virtual ~TVariantCtor();
 

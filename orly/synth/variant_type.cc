@@ -26,6 +26,7 @@
 #include <orly/synth/get_pos_range.h>
 #include <orly/synth/name.h>
 #include <orly/synth/new_type.h>
+#include <orly/synth/type_def.h>
 #include <orly/pos_range.h>
 #include <orly/type/obj.h>
 #include <orly/type/variant.h>
@@ -101,6 +102,10 @@ void TVariantType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 Type::TType TVariantType::ComputeSymbolicType() const {
+  /* Track variant nesting for the in-flight type def, if any, so a
+     TRefType naming that def can mint a TSelfRef with the right de Bruijn
+     depth (issue #103). A no-op in expression contexts. */
+  TTypeDef::TVariantDepthIncr depth_incr;
   Type::TVariantElems elems;
   for (auto &arm : Arms) {
     Type::TType payload_type = arm.second

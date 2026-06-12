@@ -29,6 +29,7 @@
 #include <orly/type/mutable.h>
 #include <orly/type/obj.h>
 #include <orly/type/opt.h>
+#include <orly/type/self_ref.h>
 #include <orly/type/seq.h>
 #include <orly/type/set.h>
 #include <orly/type/unknown.h>
@@ -301,6 +302,13 @@ std::string TType::GetMangledName() const {
     virtual void operator()(const TVariant *that) const {
       Name = 'V';
       Name += MangleElemMap(that->GetElems());
+    }
+    /* A self-reference mangles by its de Bruijn depth, which keeps a
+       recursive variant's mangled name finite and canonical (#103). */
+    virtual void operator()(const TSelfRef *that) const {
+      std::ostringstream strm;
+      strm << 'X' << that->GetDepth();
+      Name = strm.str();
     }
     virtual void operator()(const TOpt *that) const {
       Name = 'P';

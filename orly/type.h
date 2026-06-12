@@ -37,6 +37,7 @@
 #include <orly/type/obj.h>
 #include <orly/type/opt.h>
 #include <orly/type/real.h>
+#include <orly/type/self_ref.h>
 #include <orly/type/seq.h>
 #include <orly/type/set.h>
 #include <orly/type/str.h>

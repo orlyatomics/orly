@@ -47,6 +47,7 @@
 #include <orly/synth/obj_ctor.h>
 #include <orly/synth/obj_member_expr.h>
 #include <orly/synth/variant_ctor.h>
+#include <orly/synth/variant_ctor_by_name.h>
 #include <orly/synth/postfix_call.h>
 #include <orly/synth/postfix_cast.h>
 #include <orly/synth/postfix_is_known.h>
@@ -182,7 +183,24 @@ TExpr *TExprFactory::NewExpr(const Package::Syntax::TExpr *root) const {
     virtual void operator()(const Syntax::TObjCtor *that) const { Out = new TObjCtor(ExprFactory, that); }
     virtual void operator()(const Syntax::TParenExpr *that) const { Out = ExprFactory->NewExpr(that->GetExpr()); }
     virtual void operator()(const Syntax::TPostfixAddrMember *that) const { Out = new TAddrMemberExpr(ExprFactory, that); }
-    virtual void operator()(const Syntax::TPostfixCall *that) const { Out = new TPostfixCall(ExprFactory, that); }
+    virtual void operator()(const Syntax::TPostfixCall *that) const {
+      /* A variant ctor's payload is grammatically a positional call
+         argument (see variant_ctor in orly.nycr): fold it back into the
+         literal ctor (`<|...|>.Integer(-384)`, #95) or build the
+         by-name form (`tree.Leaf(1)` / `tree.Nil()`, #103). Everything
+         else is a function application. */
+      const auto *positional =
+          dynamic_cast<const Syntax::TPositionalCallArgs *>(that->GetOptCallArgs());
+      const auto *literal_ctor =
+          dynamic_cast<const Syntax::TVariantCtor *>(that->GetExpr());
+      if (positional && literal_ctor) {
+        Out = new TVariantCtor(ExprFactory, literal_ctor, positional->GetExpr());
+      } else if (TVariantCtorByName::Claims(that)) {
+        Out = new TVariantCtorByName(ExprFactory, that);
+      } else {
+        Out = new TPostfixCall(ExprFactory, that);
+      }
+    }
     virtual void operator()(const Syntax::TPostfixCast *that) const { Out = new TPostfixCast(ExprFactory, that); }
     virtual void operator()(const Syntax::TPostfixIsEmpty *that) const { OnAffix(that->GetExpr(), Expr::TIsEmpty::New, GetPosRange(that)); }
     virtual void operator()(const Syntax::TPostfixIsKnown *that) const { Out = new TPostfixIsKnown(ExprFactory, that); }

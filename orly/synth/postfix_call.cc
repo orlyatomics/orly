@@ -56,6 +56,13 @@ TPostfixCall::TPostfixCall(const TExprFactory *expr_factory, const Package::Synt
       });
     }
     virtual void operator()(const Package::Syntax::TNoCallArgs *) const { /* DO NOTHING */ }
+    virtual void operator()(const Package::Syntax::TPositionalCallArgs *that) const {
+      /* The `name.Tag(payload)` shape is claimed by TVariantCtorByName in
+         the expr factory before TPostfixCall is ever constructed (#103),
+         so a positional argument reaching here has a non-ctor callee. */
+      throw TNotImplementedError(HERE, GetPosRange(that->GetExpr()),
+          "A positional argument is only valid when constructing a variant through a type name");
+    }
     virtual void operator()(const Package::Syntax::TUnrolledCallArgs *that) const {
       throw TNotImplementedError(HERE, GetPosRange(that->GetStar(), that->GetExpr()),
           "Unrolled call arguments are not yet supported");

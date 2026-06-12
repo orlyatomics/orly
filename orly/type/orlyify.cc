@@ -103,6 +103,14 @@ void Orly::Type::Orlyify(ostream &strm, const TType &type) {
                       })
         << " }";
     }
+    /* There is no orlyscript spelling for a self-reference (the user wrote
+       the type-def's own name); render the diagnostic form. */
+    virtual void operator()(const TSelfRef *that) const {
+      Strm << "self";
+      if (that->GetDepth()) {
+        Strm << '@' << that->GetDepth();
+      }
+    }
     virtual void operator()(const TOpt *that) const {
       that->GetElem().Accept(*this);
       Strm << "?";

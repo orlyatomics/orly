@@ -66,6 +66,9 @@ bool Orly::Type::HasOptional(const TType &type) {
         iter.second.Accept(*this);
       }
     }
+    /* Cycle-break: the variant a self-reference denotes is already being
+       visited, so its arms' optionality is accounted for at that level. */
+    virtual void operator()(const TSelfRef  *) const { /* DO NOTHING */ }
     virtual void operator()(const TOpt      *) const {
       HasOptional = true;
     }

@@ -24,6 +24,7 @@
 #include <orly/pos_range.h>
 #include <orly/type/impl.h>
 #include <orly/type/part.h>
+#include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/unwrap_visitor.h>
 #include <orly/type/variant.h>
@@ -58,7 +59,10 @@ Type::TType TObjMember::GetTypeImpl() const {
       std::string msg = Base::AsStr("variant payload accessor \".", Name, "\" names a tag that is not an arm of the operand variant type");
       throw TExprError(HERE, GetPosRange(), msg.c_str());
     }
-    return iter->second;
+    /* For a recursive variant the declared payload contains self-
+       references; the surfaced type is one unrolling of the mu-type
+       (every self-reference becomes the variant type itself, #103). */
+    return Type::Unroll(iter->second, variant->AsType());
   }
   class TObjMemberTypeVisitor
       : public Type::TUnwrapVisitor {
