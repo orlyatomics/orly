@@ -18,12 +18,27 @@
 
 #include <orly/synth/type_def.h>
 
+#include <vector>
+
+#include <base/as_str.h>
 #include <base/assert_true.h>
 #include <base/no_default_case.h>
+#include <orly/synth/context.h>
 #include <orly/synth/new_type.h>
+#include <orly/type/unroll.h>
 
 using namespace Orly;
 using namespace Orly::Synth;
+
+/* The in-flight stack (issue #103): one entry per type def whose symbolic
+   type is currently being computed, innermost last, each tracking how many
+   variant binders the computation has entered so far. The compiler is
+   single-threaded; thread_local for safety. */
+struct TInFlightEntry {
+  const TTypeDef *Def;
+  size_t VariantDepth;
+};  // TInFlightEntry
+static thread_local std::vector<TInFlightEntry> InFlightStack;
 
 TTypeDef::TTypeDef(TScope *scope, const Package::Syntax::TTypeDef *type_def)
     : TDef(scope, Base::AssertTrue(type_def)->GetName()),
@@ -33,10 +48,103 @@ TTypeDef::~TTypeDef() {
   delete Type;
 }
 
+const TTypeDef *TTypeDef::GetInnermostInFlight() {
+  return InFlightStack.empty() ? nullptr : InFlightStack.back().Def;
+}
+
+bool TTypeDef::IsInFlight(const TTypeDef *def) {
+  for (const auto &entry : InFlightStack) {
+    if (entry.Def == def) {
+      return true;
+    }
+  }
+  return false;
+}
+
+size_t TTypeDef::GetCurVariantDepth() {
+  return InFlightStack.empty() ? 0 : InFlightStack.back().VariantDepth;
+}
+
+TTypeDef::TVariantDepthIncr::TVariantDepthIncr() {
+  if (!InFlightStack.empty()) {
+    ++InFlightStack.back().VariantDepth;
+  }
+}
+
+TTypeDef::TVariantDepthIncr::~TVariantDepthIncr() {
+  if (!InFlightStack.empty()) {
+    --InFlightStack.back().VariantDepth;
+  }
+}
+
+void TTypeDef::NoteSelfRefMinted() {
+  assert(!InFlightStack.empty());
+  InFlightStack.back().Def->SelfRefMinted = true;
+}
+
+const Type::TType &TTypeDef::GetSymbolicType() const {
+  InFlightStack.push_back(TInFlightEntry{this, 0});
+  try {
+    const Type::TType &result = Type->GetSymbolicType();
+    InFlightStack.pop_back();
+    return result;
+  } catch (...) {
+    InFlightStack.pop_back();
+    throw;
+  }
+}
+
+/* The v1 placement rules for self-references (issue #103), enforced only
+   on a def that actually minted one (a def that merely *uses* some other
+   recursive type is exempt): the def's type must be a variant at its top
+   level -- the variant is the binder, so anything else means the
+   reference doesn't denote the def -- and each FREE self-reference must
+   sit at an arm payload's root or as a field of an arm's payload record.
+   Anything deeper (under a container, through a nested variant) has no
+   native representation yet. Reports errors against the def's name. */
+static void ValidateSelfRefPlacement(const TTypeDef *def, const Type::TType &type) {
+  const TPosRange &pos_range = def->GetName().GetPosRange();
+  const Type::TVariant *variant = type.TryAs<Type::TVariant>();
+  if (!variant) {
+    GetContext().AddError(pos_range,
+        "a recursive type definition must be a variant at its top level (issue #103)");
+    return;
+  }
+  for (const auto &arm : variant->GetElems()) {
+    const Type::TType &payload = arm.second;
+    if (payload.Is<Type::TSelfRef>()) {
+      continue;
+    }
+    const Type::TObj *rec = payload.TryAs<Type::TObj>();
+    bool ok = true;
+    if (rec) {
+      for (const auto &field : rec->GetElems()) {
+        if (!field.second.Is<Type::TSelfRef>() && Type::HasFreeSelfRef(field.second)) {
+          ok = false;
+          break;
+        }
+      }
+    } else {
+      ok = !Type::HasFreeSelfRef(payload);
+    }
+    if (!ok) {
+      GetContext().AddError(pos_range,
+          Base::AsStr("in arm \"", arm.first,
+                      "\": a self-reference may only appear as an arm's payload or as a "
+                      "field of an arm's payload record (issue #103)"));
+    }
+  }
+}
+
 TAction TTypeDef::Build(int pass) {
   switch (pass) {
     case 1: {
-      Type->GetSymbolicType();
+      /* Through the member (not Type-> directly) so the in-flight push
+         wraps the computation and self-references can resolve. */
+      const Type::TType &type = GetSymbolicType();
+      if (SelfRefMinted) {
+        ValidateSelfRefPlacement(this, type);
+      }
       break;
     }
     NO_DEFAULT_CASE;
@@ -47,8 +155,13 @@ TAction TTypeDef::Build(int pass) {
 void TTypeDef::ForEachPred(int pass, const std::function<bool (TDef *)> &cb) {
   switch (pass) {
     case 1: {
-      Type->ForEachRef([cb](TAnyRef &ref) -> bool {
-        cb(ref.GetDef());
+      Type->ForEachRef([this, cb](TAnyRef &ref) -> bool {
+        /* A def may depend on itself (direct recursion, #103); skip the
+           self-edge so the build driver's cycle detector doesn't fire. */
+        TDef *def = ref.GetDef();
+        if (def != this) {
+          cb(def);
+        }
         return true;
       });
       break;
@@ -59,10 +172,6 @@ void TTypeDef::ForEachPred(int pass, const std::function<bool (TDef *)> &cb) {
 
 void TTypeDef::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
   Type->ForEachRef(cb);
-}
-
-const Type::TType &TTypeDef::GetSymbolicType() const {
-  return Type->GetSymbolicType();
 }
 
 const char *TDef::TInfo<TTypeDef>::Name = "a type defintion";

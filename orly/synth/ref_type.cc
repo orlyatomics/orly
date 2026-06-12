@@ -19,6 +19,9 @@
 #include <orly/synth/ref_type.h>
 
 #include <base/assert_true.h>
+#include <orly/synth/context.h>
+#include <orly/type/any.h>
+#include <orly/type/self_ref.h>
 
 using namespace Orly;
 using namespace Orly::Synth;
@@ -31,5 +34,26 @@ void TRefType::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
 }
 
 Type::TType TRefType::ComputeSymbolicType() const {
+  /* A reference to the type def currently computing its symbolic type is
+     a recursive type (issue #103): mint a de Bruijn self-reference bound
+     by the nearest enclosing variant instead of recursing forever. Only
+     direct recursion through a variant arm is supported in v1. */
+  TTypeDef *def = *TypeDef;
+  if (def && TTypeDef::IsInFlight(def)) {
+    const TPosRange &pos_range = TypeDef.GetName().GetPosRange();
+    if (def != TTypeDef::GetInnermostInFlight()) {
+      GetContext().AddError(pos_range,
+          "mutually or transitively recursive type definitions are not supported (issue #103)");
+      return Type::TAny::Get();
+    }
+    size_t variant_depth = TTypeDef::GetCurVariantDepth();
+    if (!variant_depth) {
+      GetContext().AddError(pos_range,
+          "a recursive type reference must appear inside a variant arm (issue #103)");
+      return Type::TAny::Get();
+    }
+    TTypeDef::NoteSelfRefMinted();
+    return Type::TSelfRef::Get(variant_depth - 1);
+  }
   return TypeDef->GetSymbolicType();
 }

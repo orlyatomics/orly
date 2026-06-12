@@ -19,6 +19,7 @@
 #include <orly/code_gen/variant.h>
 
 #include <cstddef>
+#include <iterator>
 
 #include <base/as_str.h>
 #include <base/path.h>
@@ -27,6 +28,8 @@
 #include <orly/type/gen_code.h>
 #include <orly/type/obj.h>
 #include <orly/type/object_collector.h>
+#include <orly/type/self_ref.h>
+#include <orly/type/unroll.h>
 #include <orly/type/util.h>
 #include <orly/type/variant.h>
 
@@ -75,6 +78,45 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
   auto core_type = variant_type.As<Type::TVariant>();
   const auto &elems = core_type->GetElems();
 
+  /* Recursive-variant bookkeeping (issue #103). A recursive arm's payload
+     contains self-references and cannot be stored by value; it's stored
+     boxed instead:
+       - payload IS the self-reference: `Rt::TBox<class_name>`;
+       - payload is a record with self-referential fields: a private
+         adjacent struct (`<class_name>_Boxed<Tag>`) declared before this
+         class and defined after it, holding each self field as a TBox.
+     The construction/access surface stays in terms of the UNROLLED
+     payload type (self -> the variant itself); the recursive-arm factory
+     and getter are member templates so this header never has to include
+     the unrolled record's header (which includes this one back). */
+  /* True for the arms whose payload needs boxing: a FREE self-reference
+     in the payload is bound by THIS variant. (An arm whose payload merely
+     embeds some other, complete recursive variant has only bound
+     references and stores by value like any payload.) */
+  auto arm_is_recursive = [](const Type::TType &payload) {
+    return Type::HasFreeSelfRef(payload);
+  };
+  bool is_recursive = false;
+  for (const auto &elem : elems) {
+    if (arm_is_recursive(elem.second)) {
+      is_recursive = true;
+      break;
+    }
+  }
+  auto boxed_name = [&class_name](const string &tag) {
+    return class_name + "_Boxed" + tag;
+  };
+  /* The C++ type in which an arm's payload is stored. */
+  auto storage_type = [&](const string &tag, const Type::TType &payload) {
+    if (!Type::HasFreeSelfRef(payload)) {
+      return Base::AsStr(payload);
+    }
+    if (payload.Is<Type::TSelfRef>()) {
+      return Base::AsStr("Rt::TBox<", class_name, '>');
+    }
+    return boxed_name(tag);
+  };
+
   TCppPrinter out(AsStr(path));
   out << "/* <" << var_name << ".h>" << Eol
       << Eol
@@ -105,6 +147,12 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       // sabot conversion it routes through).
       << "#include <orly/native/type.h>" << Eol
       << "#include <orly/type/new_sabot.h>" << Eol;
+  if (is_recursive) {
+    // Rt::TBox (recursive arm storage) and Type::TSelfRef (the TDt
+    // specialization reconstructs the declared payload map, #103).
+    out << "#include <orly/rt/box.h>" << Eol
+        << "#include <orly/type/self_ref.h>" << Eol;
+  }
 
   /* Pull in any record/variant payload types we reference. */ {
     unordered_set<TType> obj_set;
@@ -132,6 +180,71 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
     TNamespacePrinter nsp(vector<string>{"Orly", "Rt"}, out);
     /* namespace Variants */ {
       TNamespacePrinter nsp(vector<string>{"Variants"}, out);
+      if (is_recursive) {
+        /* The boxed structs below hold TBox fields of the variant, and the
+           variant holds the boxed structs by value, so: forward-declare the
+           variant, declare the boxed structs (comparison bodies deferred --
+           they need the variant complete), then define the variant. */
+        out << "class " << class_name << ";" << Eol
+            << Eol;
+        for (const auto &elem : elems) {
+          const auto &payload = elem.second;
+          if (!arm_is_recursive(payload) || payload.Is<Type::TSelfRef>()) {
+            continue;
+          }
+          auto bname = boxed_name(elem.first);
+          const auto &fields = payload.As<Type::TObj>()->GetElems();
+          out << "/* Boxed storage for the self-referential payload record of arm `"
+              << elem.first << "` (#103): each self field holds the variant via Rt::TBox. */" << Eol
+              << "class " << bname << " {" << Eol
+              << "  public:" << Eol
+              << "  " << bname << "() {}" << Eol
+              << Eol
+              << "  /* From the unrolled payload record (deduced at the call site);" << Eol
+              << "     self fields box implicitly. */" << Eol
+              << "  template <typename TRec>" << Eol
+              << "  explicit " << bname << "(const TRec &rec)";
+          if (!fields.empty()) {
+            out << " : ";
+          }
+          out << Base::Join(fields,
+                            ", ",
+                            [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              strm << 'V' << it.first << "(rec.GetV" << it.first << "())";
+                            })
+              << " {}" << Eol
+              << Eol
+              << "  /* Back to the unrolled payload record. */" << Eol
+              << "  template <typename TRet>" << Eol
+              << "  TRet ToUnrolled() const {" << Eol
+              << "    return TRet("
+              << Base::Join(fields,
+                            ", ",
+                            [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              strm << 'V' << it.first;
+                              if (it.second.Is<Type::TSelfRef>()) {
+                                strm << ".Get()";
+                              }
+                            })
+              << ");" << Eol
+              << "  }" << Eol
+              << Eol
+              << "  /* Structural comparisons; defined after " << class_name << " (they" << Eol
+              << "     need it complete). EqEq is Match: a recursive payload compares" << Eol
+              << "     structurally all the way down. */" << Eol
+              << "  bool EqEq(const " << bname << " &that) const;" << Eol
+              << "  bool Match(const " << bname << " &that) const;" << Eol
+              << "  bool MatchLess(const " << bname << " &that) const;" << Eol
+              << "  size_t GetHash() const;" << Eol
+              << Eol
+              << "  private:" << Eol;
+          for (const auto &field : fields) {
+            out << "  " << storage_type(elem.first, field.second) << " V" << field.first << ";" << Eol;
+          }
+          out << "}; // " << bname << Eol
+              << Eol;
+        }
+      }
       out << "class " << class_name << " {" << Eol;
       /* Class body */ {
         TIndent indent(out);
@@ -146,17 +259,36 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
            record; the visitor reads the one key, dispatches on its tag, and
            builds this native variant via the per-arm static factories). */
 
-        /* One static factory per arm. */
+        /* One static factory per arm. A recursive arm's factory takes the
+           UNROLLED payload (deduced at the call site -- a template, so this
+           header needn't include the unrolled record's header) and stores
+           it boxed. */
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
-            out << "static " << class_name << ' ' << elem.first
-                << "(const " << elem.second << " &vv) {" << Eol
-                << "  " << class_name << " out;" << Eol
-                << "  out.Which = " << idx << ";" << Eol
-                << "  out.V" << elem.first << " = vv;" << Eol
-                << "  return out;" << Eol
-                << "}" << Eol;
+            if (arm_is_recursive(elem.second)) {
+              const bool direct_self = elem.second.Is<Type::TSelfRef>();
+              out << "template <typename TPayload>" << Eol
+                  << "static " << class_name << ' ' << elem.first
+                  << "(const TPayload &vv) {" << Eol
+                  << "  " << class_name << " out;" << Eol
+                  << "  out.Which = " << idx << ";" << Eol
+                  << "  out.V" << elem.first << " = "
+                  << (direct_self
+                          ? Base::AsStr("Rt::TBox<", class_name, ">(vv)")
+                          : Base::AsStr(boxed_name(elem.first), "(vv)"))
+                  << ";" << Eol
+                  << "  return out;" << Eol
+                  << "}" << Eol;
+            } else {
+              out << "static " << class_name << ' ' << elem.first
+                  << "(const " << elem.second << " &vv) {" << Eol
+                  << "  " << class_name << " out;" << Eol
+                  << "  out.Which = " << idx << ";" << Eol
+                  << "  out.V" << elem.first << " = vv;" << Eol
+                  << "  return out;" << Eol
+                  << "}" << Eol;
+            }
             ++idx;
           }
         }
@@ -184,8 +316,13 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
-            out << "    case " << idx << ": return std::hash<size_t>()(" << idx
-                << ") ^ std::hash<" << elem.second << ">()(V" << elem.first << ");" << Eol;
+            if (arm_is_recursive(elem.second)) {
+              out << "    case " << idx << ": return std::hash<size_t>()(" << idx
+                  << ") ^ V" << elem.first << ".GetHash();" << Eol;
+            } else {
+              out << "    case " << idx << ": return std::hash<size_t>()(" << idx
+                  << ") ^ std::hash<" << elem.second << ">()(V" << elem.first << ");" << Eol;
+            }
             ++idx;
           }
         }
@@ -204,8 +341,16 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
-            out << "    case " << idx << ": return Rt::EqEq(V" << elem.first
-                << ", that.V" << elem.first << ");" << Eol;
+            if (arm_is_recursive(elem.second)) {
+              /* Direct method call (not Rt:: dispatch): the boxed types'
+                 comparisons are declared above and defined after this
+                 class, which keeps every name resolvable right here. */
+              out << "    case " << idx << ": return V" << elem.first
+                  << ".EqEq(that.V" << elem.first << ");" << Eol;
+            } else {
+              out << "    case " << idx << ": return Rt::EqEq(V" << elem.first
+                  << ", that.V" << elem.first << ");" << Eol;
+            }
             ++idx;
           }
         }
@@ -232,8 +377,13 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
-            out << "    case " << idx << ": return Rt::Match(V" << elem.first
-                << ", that.V" << elem.first << ");" << Eol;
+            if (arm_is_recursive(elem.second)) {
+              out << "    case " << idx << ": return V" << elem.first
+                  << ".Match(that.V" << elem.first << ");" << Eol;
+            } else {
+              out << "    case " << idx << ": return Rt::Match(V" << elem.first
+                  << ", that.V" << elem.first << ");" << Eol;
+            }
             ++idx;
           }
         }
@@ -253,8 +403,13 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
-            out << "    case " << idx << ": return Rt::MatchLess(V" << elem.first
-                << ", that.V" << elem.first << ");" << Eol;
+            if (arm_is_recursive(elem.second)) {
+              out << "    case " << idx << ": return V" << elem.first
+                  << ".MatchLess(that.V" << elem.first << ");" << Eol;
+            } else {
+              out << "    case " << idx << ": return Rt::MatchLess(V" << elem.first
+                  << ", that.V" << elem.first << ");" << Eol;
+            }
             ++idx;
           }
         }
@@ -272,11 +427,26 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
-            out << elem.second << " GetV" << elem.first << "() const {" << Eol
-                << "  assert(this);" << Eol
-                << "  assert(Which == " << idx << ");" << Eol
-                << "  return V" << elem.first << ";" << Eol
-                << "}" << Eol;
+            if (arm_is_recursive(elem.second)) {
+              /* TRet is the UNROLLED payload type; the code generator
+                 supplies it explicitly at the access site
+                 (orly/code_gen/variant_access.cc). */
+              const bool direct_self = elem.second.Is<Type::TSelfRef>();
+              out << "template <typename TRet>" << Eol
+                  << "TRet GetV" << elem.first << "() const {" << Eol
+                  << "  assert(this);" << Eol
+                  << "  assert(Which == " << idx << ");" << Eol
+                  << "  return V" << elem.first
+                  << (direct_self ? ".Get()" : ".template ToUnrolled<TRet>()")
+                  << ";" << Eol
+                  << "}" << Eol;
+            } else {
+              out << elem.second << " GetV" << elem.first << "() const {" << Eol
+                  << "  assert(this);" << Eol
+                  << "  assert(Which == " << idx << ");" << Eol
+                  << "  return V" << elem.first << ";" << Eol
+                  << "}" << Eol;
+            }
             ++idx;
           }
         }
@@ -285,11 +455,90 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             << "private:" << Eol
             << "size_t Which;" << Eol;
         for (const auto &elem : elems) {
-          out << elem.second << " V" << elem.first << ";" << Eol;
+          out << storage_type(elem.first, elem.second) << " V" << elem.first << ";" << Eol;
         }
 
       } // Class body
       out << "}; // " << class_name << Eol;
+
+      /* The boxed structs' comparison bodies, deferred to here: they
+         dereference their TBox fields, which needs the variant complete. */
+      if (is_recursive) {
+        for (const auto &elem : elems) {
+          const auto &payload = elem.second;
+          if (!arm_is_recursive(payload) || payload.Is<Type::TSelfRef>()) {
+            continue;
+          }
+          auto bname = boxed_name(elem.first);
+          const auto &fields = payload.As<Type::TObj>()->GetElems();
+          auto match_term = [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+            if (it.second.Is<Type::TSelfRef>()) {
+              strm << 'V' << it.first << ".Match(that.V" << it.first << ')';
+            } else {
+              strm << "Rt::Match(V" << it.first << ", that.V" << it.first << ')';
+            }
+          };
+          auto less_term = [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+            if (it.second.Is<Type::TSelfRef>()) {
+              strm << 'V' << it.first << ".MatchLess(that.V" << it.first << ')';
+            } else {
+              strm << "Rt::MatchLess(V" << it.first << ", that.V" << it.first << ')';
+            }
+          };
+          out << Eol
+              << "inline bool " << bname << "::EqEq(const " << bname << " &that) const {" << Eol
+              << "  return Match(that);" << Eol
+              << "}" << Eol
+              << Eol
+              << "inline bool " << bname << "::Match(const " << bname << " &that) const {" << Eol
+              << "  return ";
+          if (fields.empty()) {
+            out << "true";
+          }
+          out << Base::Join(fields, " && ", match_term) << ';' << Eol
+              << "}" << Eol
+              << Eol
+              << "inline bool " << bname << "::MatchLess(const " << bname << " &that) const {" << Eol
+              << "  return ";
+          if (fields.empty()) {
+            out << "false";
+          } else {
+            /* less(a) || (match(a) && (less(b) || (match(b) && less(c)))) */
+            size_t emitted = 0;
+            for (auto iter = fields.begin(); iter != fields.end(); ++iter) {
+              if (std::next(iter) == fields.end()) {
+                less_term(out, *iter);
+              } else {
+                less_term(out, *iter);
+                out << " || (";
+                match_term(out, *iter);
+                out << " && (";
+                ++emitted;
+              }
+            }
+            out << string(2 * emitted, ')');
+          }
+          out << ';' << Eol
+              << "}" << Eol
+              << Eol
+              << "inline size_t " << bname << "::GetHash() const {" << Eol
+              << "  return ";
+          if (fields.empty()) {
+            out << "0";
+          }
+          out << Base::Join(fields,
+                            " ^ ",
+                            [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              if (it.second.Is<Type::TSelfRef>()) {
+                                strm << 'V' << it.first << ".GetHash()";
+                              } else {
+                                strm << "std::hash<" << it.second << ">()(V" << it.first << ')';
+                              }
+                            })
+              << ';' << Eol
+              << "}" << Eol;
+        }
+      }
     } // namespace Variants
 
     /* EqEq / Neq / Match / MatchLess dispatch structs, mirroring records. */
@@ -351,24 +600,35 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
      tagged variants is homogeneous at the Var layer (#95). Routes through the
      single-key-record encoding via TVar::Variant; the payload becomes
      Var::TVar(<active field>). No empty-object trap (#90): a tag-only arm
-     still carries its empty-record payload. */ {
+     still carries its empty-record payload.
+
+     A RECURSIVE variant (#103) cannot cross into the dynamic-var/sabot world
+     in v1 (the sabot type vocabulary cannot express the recursion), so its
+     AsVar() throws: storing one or returning one from a package function is
+     reported at runtime rather than silently mis-encoded. */ {
     TNamespacePrinter nsp(vector<string>{"Orly", "Rt", "Variants"}, out);
     out << "inline Var::TVar " << class_name << "::AsVar() const {" << Eol
-        << "  assert(this);" << Eol
-        << "  switch (Which) {" << Eol;
-    {
-      size_t idx = 0;
-      for (const auto &elem : elems) {
-        out << "    case " << idx << ": return Var::TVar::Variant("
-            << "Type::TDt<Rt::Variants::" << class_name << ">::GetType(), \""
-            << elem.first << "\", Var::TVar(V" << elem.first << "));" << Eol;
-        ++idx;
+        << "  assert(this);" << Eol;
+    if (is_recursive) {
+      out << "  throw Rt::TSystemError(HERE, \"a recursive variant value cannot be stored or "
+             "returned from a package function; see issue #103\");" << Eol
+          << "}" << Eol;
+    } else {
+      out << "  switch (Which) {" << Eol;
+      {
+        size_t idx = 0;
+        for (const auto &elem : elems) {
+          out << "    case " << idx << ": return Var::TVar::Variant("
+              << "Type::TDt<Rt::Variants::" << class_name << ">::GetType(), \""
+              << elem.first << "\", Var::TVar(V" << elem.first << "));" << Eol;
+          ++idx;
+        }
       }
+      out << "  }" << Eol
+          << "  assert(false);" << Eol
+          << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
+          << "}" << Eol;
     }
-    out << "  }" << Eol
-        << "  assert(false);" << Eol
-        << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
-        << "}" << Eol;
   } // namespace Orly::Rt::Variants
 
   out << Eol;
@@ -398,6 +658,12 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             << " &) const override { THROW_ERROR(TInvalidConversion); }" << Eol;
       }
     }
+    if (is_recursive) {
+      /* A recursive variant is never stored (#103: its fixed-shape record
+         type would be infinitely deep), so there is nothing to read back. */
+      out << "  virtual void operator()(const State::TRecord &) const override {"
+          << " THROW_ERROR(TInvalidConversion); }" << Eol;
+    } else {
     out << "  virtual void operator()(const State::TRecord &state) const override {" << Eol
         << "    void *type_alloc = alloca(Type::GetMaxTypeSize());" << Eol
         << "    Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
@@ -446,8 +712,9 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       }
     }
     out << "    else { THROW_ERROR(TInvalidConversion); }" << Eol
-        << "  }" << Eol
-        << "  private:" << Eol
+        << "  }" << Eol;
+    }
+    out << "  private:" << Eol
         << "  Rt::Variants::" << class_name << " &Out;" << Eol
         << "}; // TToNativeVisitor" << Eol;
   } // namespace Orly::Sabot

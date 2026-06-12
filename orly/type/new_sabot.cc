@@ -18,6 +18,7 @@
 
 #include <orly/type/new_sabot.h>
 
+#include <orly/type/unroll.h>
 #include <orly/type/util.h>
 
 #include <cassert>
@@ -86,6 +87,13 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
        reverses the mapping (the `$which` sentinel field, un-expressible in
        orlyscript, marks the record as a variant). */
     virtual void operator()(const TVariant *type) const override {
+      /* A RECURSIVE variant (issue #103) has no translation: its fixed-shape
+         record encoding would contain itself, and the sabot type vocabulary
+         cannot express the cycle. Storing (or returning to a client) a
+         recursive variant value is a v1 limitation; see issue #103. */
+      if (HasSelfRef(type->AsType())) {
+        return;
+      }
       TObjElems rec;
       rec["$which"] = TInt::Get();
       for (const auto &arm: type->GetElems()) {
@@ -93,6 +101,9 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
       }
       Result = new (Buf) ST::TRecord(TObj::Get(rec).As<TObj>());
     }
+    /* Reachable only through a recursive variant's payload map, which the
+       TVariant case above already rejects -- but be explicit anyway. */
+    virtual void operator()(const TSelfRef */*type*/) const override {}
     private:
     Sabot::Type::TAny *&Result;
     void *Buf;

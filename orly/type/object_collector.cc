@@ -20,6 +20,7 @@
 
 #include <orly/pos_range.h>
 #include <orly/type/infix_visitor.h>
+#include <orly/type/unroll.h>
 
 using namespace std;
 using namespace Orly;
@@ -56,7 +57,15 @@ void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_
       that->GetVal().Accept(*this);
     }
     virtual void operator()(const TObj *that) const {
-      ObjectSet.insert(that->AsType());
+      /* A record with FREE self-references (a recursive variant's raw
+         payload record, #103) has no standalone native header -- the
+         variant generator emits a private boxed struct for it instead --
+         so don't collect it. A record that merely embeds a complete
+         recursive variant (bound refs only, e.g. the unrolled payload)
+         is a normal record. */
+      if (!HasFreeSelfRef(that->AsType())) {
+        ObjectSet.insert(that->AsType());
+      }
       for (auto iter : that->GetElems()) {
         iter.second.Accept(*this);
       }
@@ -67,6 +76,9 @@ void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_
         iter.second.Accept(*this);
       }
     }
+    /* A leaf: the variant it denotes is the one being collected, so there
+       is nothing further to descend into (and no cycle to fall into). */
+    virtual void operator()(const TSelfRef *) const { /* DO NOTHING */ }
     virtual void operator()(const TOpt *that) const {
       that->GetElem().Accept(*this);
     }

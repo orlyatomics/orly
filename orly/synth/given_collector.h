@@ -170,7 +170,16 @@ namespace Orly {
       }
       virtual void operator()(const Package::Syntax::TParenExpr *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPostfixAddrMember *that) const { Push(that->GetExpr()); }
-      virtual void operator()(const Package::Syntax::TPostfixCall *that) const { Push(that->GetExpr()); }
+      virtual void operator()(const Package::Syntax::TPostfixCall *that) const {
+        Push(that->GetExpr());
+        /* A variant ctor's payload rides as a positional call argument
+           (see variant_ctor in orly.nycr); collect givens inside it. */
+        const auto *positional =
+            dynamic_cast<const Package::Syntax::TPositionalCallArgs *>(that->GetOptCallArgs());
+        if (positional) {
+          Push(positional->GetExpr());
+        }
+      }
       virtual void operator()(const Package::Syntax::TPostfixCast *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPostfixIsEmpty *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPostfixIsKnown *that) const { Push(that->GetExpr()); }
@@ -226,15 +235,10 @@ namespace Orly {
       virtual void operator()(const Package::Syntax::TTimePntCtor *) const { /* DO NOTHING */ }
       virtual void operator()(const Package::Syntax::TUnknownCtor *) const { /* DO NOTHING */ }
       virtual void operator()(const Package::Syntax::TUserIdExpr *) const { /* DO NOTHING */ }
-      virtual void operator()(const Package::Syntax::TVariantCtor *that) const {
-        /* Collect `given` refs in the variant payload expression (if any).
-           The leading variant type carries no expressions. */
-        const Package::Syntax::TAVariantCtorPayload *payload =
-            TryGetNode<Package::Syntax::TAVariantCtorPayload,
-                       Package::Syntax::TNoVariantCtorPayload>(that->GetOptVariantCtorPayload());
-        if (payload) {
-          Push(payload->GetExpr());
-        }
+      virtual void operator()(const Package::Syntax::TVariantCtor *) const {
+        /* The bare ctor (`<|...|>.Tag`) carries no expressions; a payload
+           is grammatically a positional call argument and is collected by
+           the TPostfixCall case. */
       }
       virtual void operator()(const Package::Syntax::TWhenExpr *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TWhereExpr *that) const { Push(that->GetExpr()); }

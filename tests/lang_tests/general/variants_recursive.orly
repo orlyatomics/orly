@@ -1,0 +1,130 @@
+/* <orly/lang_tests/general/variants_recursive.orly>
+
+   End-to-end test for issue #103: recursive sum types (self-referential
+   variants), plus the alias-constructor form they require.
+
+   A type def whose top level is a variant may refer to itself from an
+   arm's payload -- directly (`W(tree)`) or as a field of the arm's
+   payload record (`Branch(<{.l: tree, .r: tree}>)`). Construction goes
+   through the TYPE DEF'S NAME, since a recursive type's literal cannot
+   be written: `tree.Leaf(1)` takes a positional payload, `intlist.Nil()`
+   constructs a tag-only arm. (The alias-ctor form works for any variant
+   type def, recursive or not -- see t1/t2.)
+
+   Everything from #95 composes: `is <Tag>` predicates, `.<Tag>` payload
+   accessors (which yield the payload with self-references unrolled to
+   the variant type itself), exhaustive `when` with payload binders, deep
+   structural `==`, and membership in local sets. Folds over a recursive
+   value are ordinary recursive functions (see factorial.orly).
+
+   v1 limits, all reported as compile errors (verified by hand; lang_test
+   has no "expect compile error" form):
+     - mutual/transitive recursion (`a is <| X(b) |>; b is <| Y(a) |>;`)
+       -> "has a cycle in its build dependencies"
+     - a self-reference outside a variant arm (`t is <{.x: t}>;`)
+       -> "a recursive type reference must appear inside a variant arm"
+     - a self-reference under a container or nested variant
+       (`t is <| X([t]) |>;`) -> "a self-reference may only appear as an
+       arm's payload or as a field of an arm's payload record"
+     - storing a recursive value (`<[1]> <- tree.Leaf(5);`)
+       -> "a value containing a recursive variant cannot be stored"
+   Returning a recursive value to a client throws at runtime (AsVar);
+   recursive values are package-internal until the sabot type encoding
+   can express recursion.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* A flat variant, to pin the alias-ctor form on its own. */
+op_t is <| Text(str) | Number(int) | Deleted |>;
+
+/* The flagship: a binary tree. The self-references sit as fields of the
+   `Branch` arm's payload record. */
+tree is <| Leaf(int) | Branch(<{.l: tree, .r: tree}>) |>;
+
+/* A linked list: tag-only base case (`Nil`), record cons cell. */
+intlist is <| Nil | Cons(<{.head: int, .tail: intlist}>) |>;
+
+classify = ((v) when {
+  Text(t): t;
+  Number: "num";
+  Deleted: "gone";
+}) where {
+  v = given::(op_t);
+};
+
+/* Recursive folds: `when` selects the arm, the binder exposes the
+   payload (unrolled, so `b.l` is a `tree` again), recursion descends. */
+eval = ((t) when {
+  Leaf(n): n;
+  Branch(b): eval(.t: b.l) + eval(.t: b.r);
+}) where {
+  t = given::(tree);
+};
+
+leaves = ((t) when {
+  Leaf: 1;
+  Branch(b): leaves(.t: b.l) + leaves(.t: b.r);
+}) where {
+  t = given::(tree);
+};
+
+sum_list = ((xs) when {
+  Nil: 0;
+  Cons(c): c.head + sum_list(.xs: c.tail);
+}) where {
+  xs = given::(intlist);
+};
+
+/* Shared fixture values. */
+t1v = (tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)) where {};
+t2v = (tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)) where {};
+t3v = (tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(3)}>)) where {};
+
+l123 = (intlist.Cons(<{.head: 1, .tail:
+        intlist.Cons(<{.head: 2, .tail:
+        intlist.Cons(<{.head: 3, .tail: intlist.Nil()}>)}>)}>)) where {};
+
+test {
+  /* The alias-ctor form on a FLAT variant (works independently of
+     recursion; closes the "aliases not usable as ctors" gap). */
+  t1: classify(.v: op_t.Text("hello")) == "hello";
+  t2: classify(.v: op_t.Deleted()) == "gone";
+
+  /* Fold over a depth-3 tree built inline through the alias. */
+  t3: eval(.t: tree.Branch(<{.l: tree.Leaf(3), .r:
+              tree.Branch(<{.l: tree.Leaf(4), .r: tree.Leaf(5)}>)}>)) == 12;
+
+  /* Structural equality all the way down. */
+  t4: t1v == t2v;
+  t5: t1v != t3v;
+
+  /* is-destructuring and chained accessors on a recursive arm: the
+     accessor's record fields are `tree` again (one unrolling). */
+  t6: t1v is Branch;
+  t7: not (t1v is Leaf);
+  t8: (t1v.Branch).l is Leaf;
+  t9: (t1v.Branch).l.Leaf == 1;
+
+  /* Tag-only base case + fold over a 3-cell list. */
+  t10: sum_list(.xs: l123) == 6;
+  t11: sum_list(.xs: intlist.Nil()) == 0;
+
+  /* Fold over an asymmetric tree. */
+  t12: leaves(.t: tree.Branch(<{.l: t1v, .r: tree.Leaf(9)}>)) == 3;
+
+  /* Recursive variants in a local set: hashing and ordering reach
+     through the boxed payloads, so the duplicate collapses. */
+  t13: length_of {t1v, t2v, t3v} == 2;
+};

@@ -43,10 +43,50 @@ namespace Orly {
       /* TODO */
       virtual ~TTypeDef();
 
-      /* TODO */
+      /* Computes (and caches) the def's symbolic type. While the
+         computation runs the def is "in flight": a TRefType naming it
+         resolves to a Type::TSelfRef instead of recursing, which is what
+         lets a variant type def refer to itself (issue #103). */
       const Type::TType &GetSymbolicType() const;
 
+      /* The innermost def currently computing its symbolic type, or null.
+         Only the innermost may be self-referenced (direct recursion). */
+      static const TTypeDef *GetInnermostInFlight();
+
+      /* True iff the def is anywhere on the in-flight stack. A reference
+         to an in-flight def that is NOT the innermost one is transitive /
+         mutual recursion, which v1 does not support. */
+      static bool IsInFlight(const TTypeDef *def);
+
+      /* The number of variant binders entered since the innermost
+         in-flight def's computation began. Zero when no def is in flight
+         (or no variant has been entered): a self-reference is then
+         outside any variant arm and cannot be bound. */
+      static size_t GetCurVariantDepth();
+
+      /* RAII used by TVariantType::ComputeSymbolicType to track variant
+         nesting inside the innermost in-flight def's type expression.
+         A no-op when no def is in flight (variant literals in expression
+         contexts). */
+      class TVariantDepthIncr {
+        NO_COPY(TVariantDepthIncr);
+        public:
+        TVariantDepthIncr();
+        ~TVariantDepthIncr();
+      };  // TVariantDepthIncr
+
+      /* Called by TRefType when it mints a TSelfRef for the innermost
+         in-flight def. The def remembers it is recursive, which is what
+         triggers the placement validation in Build() -- a def that merely
+         *uses* some other recursive type never minted anything and is
+         exempt. */
+      static void NoteSelfRefMinted();
+
       private:
+
+      /* Sticky: set when computing this def's symbolic type minted at
+         least one self-reference. */
+      mutable bool SelfRefMinted = false;
 
       /* TODO */
       virtual TAction Build(int pass);

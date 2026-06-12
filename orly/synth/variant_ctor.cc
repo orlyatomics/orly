@@ -36,24 +36,24 @@ TVariantCtor::TVariantCtor(const TExprFactory *expr_factory, const Package::Synt
   try {
     VariantTypeNode = new TVariantType(variant_ctor->GetVariantType());
     Tag = TName(variant_ctor->GetName()).GetText();
-    /* The payload is present (`(expr)`) only for a non-tag-only arm. */
-    class TPayloadVisitor
-        : public Package::Syntax::TOptVariantCtorPayload::TVisitor {
-      NO_COPY(TPayloadVisitor);
-      public:
-      TPayloadVisitor(const TExprFactory *expr_factory, TExpr *&payload)
-          : ExprFactory(expr_factory), Payload(payload) {}
-      virtual void operator()(const Package::Syntax::TNoVariantCtorPayload *) const {
-        Payload = nullptr;
-      }
-      virtual void operator()(const Package::Syntax::TAVariantCtorPayload *that) const {
-        Payload = ExprFactory->NewExpr(that->GetExpr());
-      }
-      private:
-      const TExprFactory *ExprFactory;
-      TExpr *&Payload;
-    };  // TPayloadVisitor
-    variant_ctor->GetOptVariantCtorPayload()->Accept(TPayloadVisitor(expr_factory, Payload));
+  } catch (...) {
+    delete VariantTypeNode;
+    throw;
+  }
+}
+
+TVariantCtor::TVariantCtor(const TExprFactory *expr_factory,
+                           const Package::Syntax::TVariantCtor *variant_ctor,
+                           const Package::Syntax::TExpr *payload)
+    : VariantCtor(Base::AssertTrue(variant_ctor)),
+      VariantTypeNode(nullptr),
+      Payload(nullptr) {
+  assert(expr_factory);
+  assert(payload);
+  try {
+    VariantTypeNode = new TVariantType(variant_ctor->GetVariantType());
+    Tag = TName(variant_ctor->GetName()).GetText();
+    Payload = expr_factory->NewExpr(payload);
   } catch (...) {
     delete Payload;
     delete VariantTypeNode;

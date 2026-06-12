@@ -184,13 +184,13 @@ name    : opt_name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     COMMAND
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
-command -> expr <orly/command/syntax> sr 2;
+command -> expr <orly/command/syntax> sr 1;
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     CHECKPOINTS
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
 
-checkpoint -> opt_checkpoint_stmt_seq <orly/checkpoint/syntax> sr 2;
+checkpoint -> opt_checkpoint_stmt_seq <orly/checkpoint/syntax> sr 1;
 
 opt_checkpoint_stmt_seq;
 no_checkpoint_stmt_seq : opt_checkpoint_stmt_seq -> empty;
@@ -220,7 +220,7 @@ package_name -> lt package_name_member_list gt package_version;
     PACKAGES
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
 
-package -> opt_def_seq <orly/package/syntax> sr 2;
+package -> opt_def_seq <orly/package/syntax> sr 1;
 
 opt_def_seq;
 no_def_seq : opt_def_seq -> empty;
@@ -435,19 +435,19 @@ empty_ctor : ctor -> empty_kwd type;
 
 unknown_ctor : ctor -> unknown_kwd type;
 
-/* Variant constructor (#95 Phase 3). Self-contained: the leading variant_type
-   supplies the full declared tagged-union type, `.Tag` selects the active arm,
-   and the optional `(expr)` supplies the payload (omitted for a tag-only arm,
-   whose payload is the unit empty object). E.g.
-     <| Integer(int) | Deleted |>.Integer(-384)
+/* Variant constructor (#95 Phase 3). The leading variant_type supplies the
+   full declared tagged-union type and `.Tag` selects the active arm:
      <| Integer(int) | Deleted |>.Deleted
-   Leading with the <| ... |> type keeps this conflict-free with postfix_call
-   (the function-call `Tag(payload)` collision flagged in #95). */
-variant_ctor : ctor -> variant_type dot name opt_variant_ctor_payload;
-
-  opt_variant_ctor_payload;
-  no_variant_ctor_payload : opt_variant_ctor_payload -> empty;
-  a_variant_ctor_payload  : opt_variant_ctor_payload -> open_paren expr close_paren;
+   A payload arrives as a single positional call argument (see
+   positional_call_args above), uniformly for the literal form and for the
+   type-def-name form (#103):
+     <| Integer(int) | Deleted |>.Integer(-384)
+     tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)
+   parse as postfix_call(ctor-or-member, positional); the expr factory
+   (orly/synth/new_expr.cc) folds the payload into the constructor. The
+   ctor rule itself carrying an optional `(expr)` payload would be
+   ambiguous against that positional call. */
+variant_ctor : ctor -> variant_type dot name;
 
 affix_expr : expr;
 
@@ -541,6 +541,12 @@ postfix_opt_checkpoint : postfix_expr -> expr question_mark;                    
   no_call_args       : opt_call_args -> empty;
   unrolled_call_args : opt_call_args -> star expr;
   explicit_call_args : opt_call_args -> obj_member_list;
+  /* A single positional argument: the payload of a variant constructed
+     through a type-def name, e.g. `tree.Leaf(1)` (#103). Only valid when
+     the callee is `<name>.<Tag>` and <name> is a variant type def; the
+     synth layer (TVariantCtorByName) enforces that and rejects positional
+     arguments to ordinary function calls. */
+  positional_call_args : opt_call_args -> expr;
 
 extern_expr : expr;
 given_expr : extern_expr -> given_kwd colons open_paren type close_paren;

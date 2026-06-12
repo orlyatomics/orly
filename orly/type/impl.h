@@ -50,6 +50,7 @@ namespace Orly {
     class TObj;
     class TOpt;
     class TReal;
+    class TSelfRef;
     class TSeq;
     class TSet;
     class TStr;
@@ -188,6 +189,7 @@ namespace Orly {
       time_diff -> 't'
       time_pnt  -> 'T'
       Variant -> 'V' MangleElemMap(tags)
+      SelfRef -> 'X' depth
       */
       std::string GetMangledName() const;
 
@@ -246,6 +248,13 @@ namespace Orly {
                type-level sabot, ...) override it explicitly; everyone else inherits this throw,
                mirroring the long-standing TUnknown treatment below. */
       virtual void operator()(const TVariant  *) const {throw Base::TImpossibleError(HERE);}
+      /* TSelfRef follows the TVariant treatment, but stricter: a self-reference
+         lives only inside a variant's payload-type map and every payload type is
+         unrolled (orly/type/unroll.h) before it surfaces as an expression type,
+         so NO operator visitor should ever see one. Only the structural walkers
+         (mangling, gen_code, orlyify, has_optional, object_collector, unroll)
+         override this. */
+      virtual void operator()(const TSelfRef  *) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TOpt      *that) const = 0;
       virtual void operator()(const TReal     *that) const = 0;
       virtual void operator()(const TSeq      *that) const = 0;

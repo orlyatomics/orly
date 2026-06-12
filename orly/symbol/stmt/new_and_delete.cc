@@ -19,6 +19,7 @@
 #include <orly/symbol/stmt/new_and_delete.h>
 
 #include <orly/error.h>
+#include <orly/type/unroll.h>
 #include <orly/type/unwrap_visitor.h>
 
 using namespace Orly;
@@ -78,7 +79,15 @@ void TNew::TypeCheck() const {
   GetLhs()->GetExpr()->GetType().Accept(TAddressTypeVisitor(dummy, GetPosRange()));
   /* NOTE: Maybe this should be type check rather than get type. But for now,
            GetType() calls ComputeType() which does the type check. */
-  GetRhs()->GetExpr()->GetType();
+  Type::TType value_type = GetRhs()->GetExpr()->GetType();
+  /* A recursive variant has no storage encoding in v1 (the sabot type
+     vocabulary cannot express the recursion); reject the write here with
+     a real message rather than letting a downstream visitor choke on the
+     self-reference. See issue #103. */
+  if (Type::HasSelfRef(value_type)) {
+    throw TExprError(HERE, GetPosRange(),
+        "a value containing a recursive variant cannot be stored (issue #103)");
+  }
 }
 
 TNew::TNew(
