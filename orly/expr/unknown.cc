@@ -76,6 +76,11 @@ Type::TType TUnknown::GetTypeImpl() const {
     virtual void operator()(const Type::TObj      *that) const {
       Type = Type::TOpt::Get(that->AsType());
     }
+    /* `unknown <variant>` -- incl. a self-referential variant (#116) --
+       yields an optional of that variant, like any other leaf type. */
+    virtual void operator()(const Type::TVariant  *that) const {
+      Type = Type::TOpt::Get(that->AsType());
+    }
     virtual void operator()(const Type::TOpt      *) const {
       throw TExprError(HERE, PosRange, "Unknown optional is not allowed.");
     }

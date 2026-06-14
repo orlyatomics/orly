@@ -37,8 +37,11 @@
 #include <cassert>
 #include <functional>
 #include <memory>
+#include <vector>
 
+#include <orly/rt/containers.h>
 #include <orly/rt/operator.h>
+#include <orly/rt/opt.h>
 
 namespace Orly {
 
@@ -116,6 +119,135 @@ namespace Orly {
     template <typename TVal>
     bool MatchLess(const TBox<TVal> &lhs, const TBox<TVal> &rhs) {
       return lhs.MatchLess(rhs);
+    }
+
+    /* DeepBox / DeepUnbox: map a value between its unrolled shape and its
+       boxed storage shape, elementwise through the containers a recursive
+       arm's payload may use (issue #116): `[self]` stores as
+       `std::vector<TBox<V>>`, `self?` as `TOpt<TBox<V>>`, and so on. The
+       primary templates handle the leaves -- TBoxed constructible from
+       TVal covers both the box itself (TBox<V> from V, or a generated
+       boxed payload struct from its unrolled record) and the identity
+       copy of a self-free subvalue. The generated variant header calls
+       these from member templates only, so TVal may be incomplete where
+       the header is parsed. */
+
+    template <typename TBoxed, typename TVal>
+    struct TDeepBox {
+      static TBoxed Do(const TVal &val) {
+        return TBoxed(val);
+      }
+    };  // TDeepBox
+
+    template <typename TElemB, typename TElem>
+    struct TDeepBox<std::vector<TElemB>, std::vector<TElem>> {
+      static std::vector<TElemB> Do(const std::vector<TElem> &val) {
+        std::vector<TElemB> out;
+        out.reserve(val.size());
+        for (const auto &elem : val) {
+          out.push_back(TDeepBox<TElemB, TElem>::Do(elem));
+        }
+        return out;
+      }
+    };  // TDeepBox<vector>
+
+    template <typename TElemB, typename TElem>
+    struct TDeepBox<TOpt<TElemB>, TOpt<TElem>> {
+      static TOpt<TElemB> Do(const TOpt<TElem> &val) {
+        return val.IsKnown() ? TOpt<TElemB>(TDeepBox<TElemB, TElem>::Do(val.GetVal()))
+                             : TOpt<TElemB>();
+      }
+    };  // TDeepBox<TOpt>
+
+    template <typename TElemB, typename TElem>
+    struct TDeepBox<TSet<TElemB>, TSet<TElem>> {
+      static TSet<TElemB> Do(const TSet<TElem> &val) {
+        TSet<TElemB> out;
+        for (const auto &elem : val) {
+          out.insert(TDeepBox<TElemB, TElem>::Do(elem));
+        }
+        return out;
+      }
+    };  // TDeepBox<TSet>
+
+    template <typename TKey, typename TValB, typename TVal>
+    struct TDeepBox<TDict<TKey, TValB>, TDict<TKey, TVal>> {
+      static TDict<TKey, TValB> Do(const TDict<TKey, TVal> &val) {
+        TDict<TKey, TValB> out;
+        for (const auto &elem : val) {
+          out.insert(std::make_pair(elem.first, TDeepBox<TValB, TVal>::Do(elem.second)));
+        }
+        return out;
+      }
+    };  // TDeepBox<TDict>
+
+    template <typename TBoxed, typename TVal>
+    TBoxed DeepBox(const TVal &val) {
+      return TDeepBox<TBoxed, TVal>::Do(val);
+    }
+
+    /* The inverse: identity for self-free subvalues, TBox::Get() at the
+       box, elementwise through the containers. */
+
+    template <typename TVal, typename TBoxed>
+    struct TDeepUnbox {
+      static TVal Do(const TBoxed &boxed) {
+        return boxed;
+      }
+    };  // TDeepUnbox
+
+    template <typename TVal>
+    struct TDeepUnbox<TVal, TBox<TVal>> {
+      static TVal Do(const TBox<TVal> &boxed) {
+        return boxed.Get();
+      }
+    };  // TDeepUnbox<TBox>
+
+    template <typename TElem, typename TElemB>
+    struct TDeepUnbox<std::vector<TElem>, std::vector<TElemB>> {
+      static std::vector<TElem> Do(const std::vector<TElemB> &boxed) {
+        std::vector<TElem> out;
+        out.reserve(boxed.size());
+        for (const auto &elem : boxed) {
+          out.push_back(TDeepUnbox<TElem, TElemB>::Do(elem));
+        }
+        return out;
+      }
+    };  // TDeepUnbox<vector>
+
+    template <typename TElem, typename TElemB>
+    struct TDeepUnbox<TOpt<TElem>, TOpt<TElemB>> {
+      static TOpt<TElem> Do(const TOpt<TElemB> &boxed) {
+        return boxed.IsKnown() ? TOpt<TElem>(TDeepUnbox<TElem, TElemB>::Do(boxed.GetVal()))
+                               : TOpt<TElem>();
+      }
+    };  // TDeepUnbox<TOpt>
+
+    template <typename TElem, typename TElemB>
+    struct TDeepUnbox<TSet<TElem>, TSet<TElemB>> {
+      static TSet<TElem> Do(const TSet<TElemB> &boxed) {
+        TSet<TElem> out;
+        for (const auto &elem : boxed) {
+          out.insert(TDeepUnbox<TElem, TElemB>::Do(elem));
+        }
+        return out;
+      }
+    };  // TDeepUnbox<TSet>
+
+    template <typename TKey, typename TVal, typename TValB>
+    struct TDeepUnbox<TDict<TKey, TVal>, TDict<TKey, TValB>> {
+      static TDict<TKey, TVal> Do(const TDict<TKey, TValB> &boxed) {
+        TDict<TKey, TVal> out;
+        for (const auto &elem : boxed) {
+          out.insert(std::make_pair(elem.first, TDeepUnbox<TVal, TValB>::Do(elem.second)));
+        }
+        return out;
+      }
+    };  // TDeepUnbox<TDict>
+
+    template <typename TVal, typename TBoxed>
+    TVal DeepUnbox(const TBoxed &boxed) {
+      return TDeepUnbox<TVal, TBoxed>::Do(boxed);
     }
 
   }  // Rt

@@ -59,6 +59,10 @@ class TIsKnownUnknownTypeVisitor
       virtual void operator()(const Type::TOpt      *) const {
         throw TExprError(HERE, PosRange, "Cannot have nested optionals");
       }
+      /* An optional variant (incl. an optional self-reference, #116) is a
+         leaf here, just like a record: `x is known` / `is unknown` is a
+         bool regardless of the wrapped element. */
+      virtual void operator()(const Type::TVariant  *) const { Type = Type::TBool::Get(); }
       virtual void operator()(const Type::TReal     *) const { Type = Type::TBool::Get(); }
       virtual void operator()(const Type::TSet      *) const { Type = Type::TBool::Get(); }
       virtual void operator()(const Type::TSeq      *) const { Type = Type::TBool::Get(); }

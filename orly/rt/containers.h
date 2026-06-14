@@ -135,6 +135,24 @@ namespace Orly {
       return true;
     }
 
+    /* MatchLess a TSet<TVal> and TSet<TVal>: lexicographic over the
+       (already MatchLess-ordered) elements. Without this overload set
+       ordering falls to the generic `lhs < rhs`, which requires an
+       element operator< -- absent for e.g. Rt::TBox (#116). */
+    template <typename TVal>
+    bool MatchLess(const TSet<TVal> &lhs, const TSet<TVal> &rhs) {
+      auto lhs_iter = lhs.begin();
+      auto rhs_iter = rhs.begin();
+      for (; lhs_iter != lhs.end() && rhs_iter != rhs.end(); ++lhs_iter, ++rhs_iter) {
+        if (MatchLess(*lhs_iter, *rhs_iter)) {
+          return true;
+        } else if (!Match(*lhs_iter, *rhs_iter)) {
+          return false;
+        }
+      }
+      return lhs_iter == lhs.end() && rhs_iter != rhs.end();
+    }
+
     /* Match an TDict<TVal> and TDict<TVal> */
     template <typename TKey, typename TVal>
     bool Match(const TDict<TKey, TVal> &lhs, const TDict<TKey, TVal> &rhs) {
@@ -148,6 +166,27 @@ namespace Orly {
         }
       }
       return true;
+    }
+
+    /* MatchLess a TDict and TDict: lexicographic over the (key-ordered)
+       entries, keys first. Same rationale as the TSet overload above. */
+    template <typename TKey, typename TVal>
+    bool MatchLess(const TDict<TKey, TVal> &lhs, const TDict<TKey, TVal> &rhs) {
+      auto lhs_iter = lhs.begin();
+      auto rhs_iter = rhs.begin();
+      for (; lhs_iter != lhs.end() && rhs_iter != rhs.end(); ++lhs_iter, ++rhs_iter) {
+        if (MatchLess(lhs_iter->first, rhs_iter->first)) {
+          return true;
+        } else if (!Match(lhs_iter->first, rhs_iter->first)) {
+          return false;
+        }
+        if (MatchLess(lhs_iter->second, rhs_iter->second)) {
+          return true;
+        } else if (!Match(lhs_iter->second, rhs_iter->second)) {
+          return false;
+        }
+      }
+      return lhs_iter == lhs.end() && rhs_iter != rhs.end();
     }
 
     template <typename TAddr, typename TVal>
