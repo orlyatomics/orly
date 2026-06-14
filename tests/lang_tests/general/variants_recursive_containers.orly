@@ -1,0 +1,135 @@
+/* <orly/lang_tests/general/variants_recursive_containers.orly>
+
+   End-to-end test for issue #116 (part): a recursive variant's self-
+   reference may sit under list / set / dict-value containers, not just
+   as a bare payload or payload-record field (#103). This is what makes
+   genuinely tree-shaped, arbitrary-arity data -- JSON being the flagship
+   -- expressible:
+
+     json   is <| Null | N(int) | Str(str) | A([json]) |>;
+     tagged is <| Leaf(int) | Map({str: tagged}) |>;
+
+   A self-reference under a container stores boxed elementwise
+   (`[json]` -> `std::vector<Rt::TBox<json>>`, `{str: tagged}` ->
+   `Rt::TDict<str, Rt::TBox<tagged>>`); the `.<Tag>` accessor hands back
+   the ordinary unrolled container (`a.A : [json]`), so indexing,
+   `length_of`, deep `==`, dict lookup, and set membership all compose.
+   Construction is through the type name, as for any recursive variant.
+
+   Recursive folds over a list payload are written as ordinary recursive
+   functions: the list walk is a TOP-LEVEL mutually-recursive helper
+   (`leaves` <-> `walk_arr`) using arithmetic recursion and indexing.
+   Two forms that do NOT work are pre-existing limitations unrelated to
+   this feature:
+     - a recursive `reduce` (the recursive call's result type cannot be
+       inferred through the reduce, orly/expr/reduce.cc -- reproducible
+       with no variants at all); and
+     - a nested helper that calls its *enclosing* function (the enclosing
+       function's value isn't bound yet -> bad_function_call at runtime),
+       which is why `walk_arr` is a sibling of `leaves`, not nested.
+   (There is no generic dict-value iteration operator, so the dict case
+   is exercised for representation -- construct / lookup / equality /
+   set -- rather than a recursive fold.)
+
+   Scope notes: `opt` of self (a nullable child, `<{.next: t?}>`) is not
+   yet allowed -- it needs optional-of-variant construction/comparison,
+   which is unsupported independently of recursion (its own follow-up).
+   Self through a nested variant and mutual type recursion remain the
+   #116 remainder. All are clean compile errors.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+json is <| Null | N(int) | Str(str) | A([json]) |>;
+
+/* Count the scalar leaves of a json document. `leaves` dispatches on the
+   active arm; the array arm hands off to `walk_arr`, which walks the
+   `[json]` by index with arithmetic recursion and calls back into
+   `leaves`. The two are mutually recursive at top level. */
+leaves = ((j) when {
+  Null: 1;
+  N: 1;
+  Str: 1;
+  A(xs): walk_arr(.xs: xs, .i: 0);
+}) where {
+  j = given::(json);
+};
+
+walk_arr = ((0 if i >= length_of xs else leaves(.j: xs[i]) + walk_arr(.xs: xs, .i: i + 1))) where {
+  xs = given::([json]);
+  i = given::(int);
+};
+
+/* json fixtures (list-of-self). */
+doc = (json.A([
+  json.N(1),
+  json.Str("two"),
+  json.A([json.N(3), json.Null()]),
+  json.A([json.N(5), json.A([json.N(6), json.N(7)])])
+])) where {};
+
+a1 = (json.A([json.N(1), json.N(2)])) where {};
+a2 = (json.A([json.N(1), json.N(2)])) where {};
+a3 = (json.A([json.N(1), json.N(3)])) where {};
+
+/* tagged fixtures (dict-of-self). */
+tagged is <| Leaf(int) | Map({str: tagged}) |>;
+
+m1 = (tagged.Map({"a": tagged.Leaf(1), "b": tagged.Map({"c": tagged.Leaf(2)})})) where {};
+m2 = (tagged.Map({"a": tagged.Leaf(1), "b": tagged.Map({"c": tagged.Leaf(2)})})) where {};
+m3 = (tagged.Map({"a": tagged.Leaf(1), "b": tagged.Map({"c": tagged.Leaf(9)})})) where {};
+
+/* A flat optional-of-variant. `unknown <variant>` and `is known`/`is
+   unknown` over an optional variant were unimplemented before this work
+   (a #95-era gap); they are the groundwork for an eventual opt-of-self
+   (which also needs optional-of-variant *construction* and *equality* --
+   still missing, so opt-of-self stays gated). */
+flat is <| A | B(int) |>;
+maybe_flat = (unknown flat) where {};
+
+test {
+  /* The headline: a real recursive fold over arbitrary-depth json,
+     through the array containers, in the engine. doc's leaves are
+     1, "two", 3, Null, 5, 6, 7 = 7. */
+  t1: leaves(.j: doc) == 7;
+  t2: leaves(.j: json.N(9)) == 1;
+  t3: leaves(.j: json.A(empty [json])) == 0;
+
+  /* Deep structural equality reaches through the boxed list elements. */
+  t4: a1 == a2;
+  t5: a1 != a3;
+
+  /* The accessor returns the ordinary unrolled container; index and
+     length_of compose, and nesting peels one level at a time. */
+  t6: (a1.A)[0].N == 1;
+  t7: length_of (a1.A) == 2;
+  t8: ((doc.A)[2].A)[0].N == 3;
+
+  /* Recursive variants in a local set: hashing and ordering reach
+     through the boxed list, so the duplicate collapses. */
+  t9: length_of {a1, a2, a3} == 2;
+
+  /* Dict-of-self: construct nested, look up by key, peel to a leaf. */
+  t10: ((m1.Map)["b"].Map)["c"].Leaf == 2;
+  t11: (m1.Map)["a"].Leaf == 1;
+
+  /* Deep equality and set membership through the boxed dict values. */
+  t12: m1 == m2;
+  t13: m1 != m3;
+  t14: length_of {m1, m2, m3} == 2;
+
+  /* Optional-of-variant: unknown construction + is known / is unknown. */
+  t15: maybe_flat is unknown;
+  t16: not (maybe_flat is known);
+};

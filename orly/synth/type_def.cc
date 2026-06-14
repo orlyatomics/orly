@@ -94,14 +94,49 @@ const Type::TType &TTypeDef::GetSymbolicType() const {
   }
 }
 
-/* The v1 placement rules for self-references (issue #103), enforced only
-   on a def that actually minted one (a def that merely *uses* some other
-   recursive type is exempt): the def's type must be a variant at its top
-   level -- the variant is the binder, so anything else means the
+/* True iff every free self-reference in `t` sits where the native
+   representation can box it (issues #103/#116): at the position itself,
+   or below any chain of list/set/dict-VALUE containers. Dict keys stay
+   self-free.
+
+   `opt` of self is deliberately NOT allowed yet: a nullable child needs
+   to construct a *known* optional variant (`x as t?`) and compare one,
+   and optional-of-variant is unsupported across the cast/equality
+   operators independently of recursion -- that is its own follow-up
+   (see the issue linked from #116). `unknown t` and `is known`/`is
+   unknown` on an optional variant DO work, but that is not enough to
+   build a populated chain, so the whole position is gated for now. A
+   free reference also may not thread through a nested variant or any
+   other compound (the #116 remainder). */
+static bool SelfRefPlacementOk(const Type::TType &t) {
+  if (!Type::HasFreeSelfRef(t)) {
+    return true;
+  }
+  if (t.Is<Type::TSelfRef>()) {
+    return true;
+  }
+  if (const auto *list = t.TryAs<Type::TList>()) {
+    return SelfRefPlacementOk(list->GetElem());
+  }
+  if (const auto *set = t.TryAs<Type::TSet>()) {
+    return SelfRefPlacementOk(set->GetElem());
+  }
+  if (const auto *dict = t.TryAs<Type::TDict>()) {
+    return !Type::HasFreeSelfRef(dict->GetKey()) && SelfRefPlacementOk(dict->GetVal());
+  }
+  return false;
+}
+
+/* The placement rules for self-references (issues #103/#116), enforced
+   only on a def that actually minted one (a def that merely *uses* some
+   other recursive type is exempt): the def's type must be a variant at
+   its top level -- the variant is the binder, so anything else means the
    reference doesn't denote the def -- and each FREE self-reference must
-   sit at an arm payload's root or as a field of an arm's payload record.
-   Anything deeper (under a container, through a nested variant) has no
-   native representation yet. Reports errors against the def's name. */
+   sit at an arm payload's root, as a field of an arm's payload record,
+   or under list/set/dict-value containers within those positions.
+   Free references through a NESTED variant, in an optional, in a dict
+   key, or under any other compound have no native representation yet.
+   Reports errors against the def's name. */
 static void ValidateSelfRefPlacement(const TTypeDef *def, const Type::TType &type) {
   const TPosRange &pos_range = def->GetName().GetPosRange();
   const Type::TVariant *variant = type.TryAs<Type::TVariant>();
@@ -112,26 +147,26 @@ static void ValidateSelfRefPlacement(const TTypeDef *def, const Type::TType &typ
   }
   for (const auto &arm : variant->GetElems()) {
     const Type::TType &payload = arm.second;
-    if (payload.Is<Type::TSelfRef>()) {
-      continue;
-    }
+    bool ok;
+    /* One record layer is allowed at the payload root only. */
     const Type::TObj *rec = payload.TryAs<Type::TObj>();
-    bool ok = true;
     if (rec) {
+      ok = true;
       for (const auto &field : rec->GetElems()) {
-        if (!field.second.Is<Type::TSelfRef>() && Type::HasFreeSelfRef(field.second)) {
+        if (!SelfRefPlacementOk(field.second)) {
           ok = false;
           break;
         }
       }
     } else {
-      ok = !Type::HasFreeSelfRef(payload);
+      ok = SelfRefPlacementOk(payload);
     }
     if (!ok) {
       GetContext().AddError(pos_range,
           Base::AsStr("in arm \"", arm.first,
-                      "\": a self-reference may only appear as an arm's payload or as a "
-                      "field of an arm's payload record (issue #103)"));
+                      "\": a self-reference may only appear as an arm's payload, as a field "
+                      "of the arm's payload record, or under list/set/dict-value "
+                      "containers within those positions (issues #103/#116)"));
     }
   }
 }
