@@ -175,6 +175,17 @@ Type::TType TAs::GetTypeImpl() const {
       }
       Type = rhs->AsType();
     }
+    /* Casting a variant is only an identity cast (variants are invariant
+       in v1, #95). Its real purpose is widening to an optional variant:
+       `v as op_t?` -- the infix machinery unwraps the optional target to
+       reach (variant, variant) here, then re-wraps the result, which is
+       the only way to build a KNOWN optional variant (#118). */
+    virtual void operator()(const Type::TVariant  *lhs, const Type::TVariant  *rhs) const {
+      if (lhs != rhs) {
+        throw TExprError(HERE, PosRange, "A variant can only be cast to its own type.");
+      }
+      Type = rhs->AsType();
+    }
     virtual void operator()(const Type::TObj      *, const Type::TReal     *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TObj      *, const Type::TSet      *) const { throw TExprError(HERE, PosRange); }
     virtual void operator()(const Type::TObj      *, const Type::TStr      *) const { throw TExprError(HERE, PosRange); }

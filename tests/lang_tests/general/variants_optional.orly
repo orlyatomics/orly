@@ -1,0 +1,89 @@
+/* <orly/lang_tests/general/variants_optional.orly>
+
+   End-to-end test for issue #118: optional of a variant. Before this,
+   `op_t?` for a variant `op_t` was only half-supported -- `unknown op_t`
+   and `is known`/`is unknown` worked (groundwork from #116), but there
+   was no way to construct a *known* optional variant or compare one.
+
+   The missing piece was a single cast case: `v as op_t?` widens a
+   variant to an optional variant (the infix machinery unwraps the
+   optional target to reach the variant-to-variant cast, then re-wraps).
+   Equality then composes for free -- the comparison operators already
+   auto-unwrap optionals down to the variant-to-variant `==`, yielding an
+   optional bool exactly like any other optional comparison.
+
+   Because optional-of-variant now works, a self-reference may sit under
+   an `opt` in a recursive variant (#116): a linked list can use a
+   nullable `next` instead of a tag-only base arm:
+
+     node is <| Nd(<{.v: int, .next: node?}>) |>;
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* ---- Flat optional-of-variant ---- */
+
+op_t is <| A | B(int) |>;
+
+k  = (op_t.B(1) as op_t?) where {};   /* a known optional variant */
+k2 = (op_t.B(1) as op_t?) where {};
+ka = (op_t.A() as op_t?) where {};
+u  = (unknown op_t) where {};         /* an unknown optional variant */
+
+/* ---- opt-of-self: a linked list with a nullable next (#116 via #118) ---- */
+
+node is <| Nd(<{.v: int, .next: node?}>) |>;
+
+node_sum = ((n.Nd).v + (node_sum(.n: known (n.Nd).next) if (n.Nd).next is known else 0)) where {
+  n = given::(node);
+};
+
+node_len = (1 + (node_len(.n: known (n.Nd).next) if (n.Nd).next is known else 0)) where {
+  n = given::(node);
+};
+
+c3 = (node.Nd(<{.v: 1, .next:
+      node.Nd(<{.v: 2, .next:
+      node.Nd(<{.v: 3, .next: unknown node}>) as node?}>) as node?}>)) where {};
+c1 = (node.Nd(<{.v: 9, .next: unknown node}>)) where {};
+
+test {
+  /* Construction and known/unknown discrimination. */
+  t1: k is known;
+  t2: u is unknown;
+  t3: not (u is known);
+
+  /* `known` peels back to the underlying variant. */
+  t4: known k == op_t.B(1);
+  t5: known ka == op_t.A();
+
+  /* Equality of optional variants yields an optional bool (like any
+     optional comparison); both-known compares the payloads, and a
+     known-vs-unknown pair is itself unknown. */
+  t6: known (k == k2);
+  t7: not known (k == ka);
+  t8: (k == u) is unknown;
+  t9: known (k != ka);
+
+  /* opt-of-self: recursive fold down a nullable-next chain. */
+  t10: node_sum(.n: c3) == 6;
+  t11: node_len(.n: c3) == 3;
+  t12: node_sum(.n: c1) == 9;
+  t13: node_len(.n: c1) == 1;
+
+  /* Deep equality and set membership reach through the boxed optional. */
+  t14: c3 == c3;
+  t15: c1 != c3;
+  t16: length_of {c1, c3, c3} == 2;
+};
