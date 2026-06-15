@@ -64,7 +64,7 @@ void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_
          so don't collect it. A record that merely embeds a complete
          recursive variant (bound refs only, e.g. the unrolled payload)
          is a normal record. */
-      if (!HasFreeSelfRef(that->AsType())) {
+      if (!HasFreeSelfRef(that->AsType()) && !HasFreeGroupRef(that->AsType())) {
         ObjectSet.insert(that->AsType());
       }
       for (auto iter : that->GetElems()) {

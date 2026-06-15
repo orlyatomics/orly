@@ -218,6 +218,61 @@ bool Type::HasGroupRef(const TType &type) {
   return found;
 }
 
+bool Type::HasFreeGroupRef(const TType &type) {
+  class TVisitor
+      : public TType::TVisitor {
+    public:
+    TVisitor(bool &found) : Found(found) {}
+    virtual void operator()(const TGroupRef *) const { Found = true; }
+    virtual void operator()(const TSelfRef *) const {}
+    /* A variant is a binder boundary: group refs inside it are owned by that
+       variant (a complete sibling member), not free in `type`. Do not descend. */
+    virtual void operator()(const TVariant *) const {}
+    virtual void operator()(const TObj *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TAddr *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TDict *that) const {
+      that->GetKey().Accept(*this);
+      if (!Found) { that->GetVal().Accept(*this); }
+    }
+    virtual void operator()(const TErr *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TList *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TOpt *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TSeq *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TSet *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TFunc *that) const {
+      that->GetParamObject().Accept(*this);
+      if (!Found) { that->GetReturnType().Accept(*this); }
+    }
+    virtual void operator()(const TMutable *that) const {
+      that->GetAddr().Accept(*this);
+      if (!Found) { that->GetVal().Accept(*this); }
+    }
+    virtual void operator()(const TAny *) const {}
+    virtual void operator()(const TBool *) const {}
+    virtual void operator()(const TId *) const {}
+    virtual void operator()(const TInt *) const {}
+    virtual void operator()(const TReal *) const {}
+    virtual void operator()(const TStr *) const {}
+    virtual void operator()(const TTimeDiff *) const {}
+    virtual void operator()(const TTimePnt *) const {}
+    private:
+    bool &Found;
+  };  // TVisitor
+  bool found = false;
+  type.Accept(TVisitor(found));
+  return found;
+}
+
 /* The depth-tracking rewrite behind Unroll(). */
 static TType UnrollAtDepth(const TType &type, const TType &binder, size_t depth) {
   class TVisitor
