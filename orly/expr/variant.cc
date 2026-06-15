@@ -20,6 +20,7 @@
 
 #include <base/as_str.h>
 #include <orly/error.h>
+#include <orly/type/any.h>
 #include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/util.h>
@@ -63,7 +64,13 @@ Type::TType TVariantCtor::GetTypeImpl() const {
      empty object and the synth layer supplies an empty-object payload
      expression, so this check covers both cases uniformly.) */
   Type::TType payload_type = Type::Unwrap(GetExpr()->GetType());
-  if (payload_type != Type::Unroll(iter->second, VariantType)) {
+  /* A TAny payload is an as-yet-unresolved recursive call (the placeholder
+     from TFunction::GetReturnType); defer rather than reject, so a function
+     can construct with its own recursive result (e.g. a tree-to-tree
+     transform). This matches how operators already propagate TAny -- a
+     recursive result is not verified in this position (#128 Option A). The
+     ctor's own type is the variant regardless of the payload. */
+  if (!payload_type.Is<Type::TAny>() && payload_type != Type::Unroll(iter->second, VariantType)) {
     std::string msg = Base::AsStr("variant constructor payload type does not match the declared type of arm \"", Tag, "\"");
     throw TExprError(HERE, GetPosRange(), msg.c_str());
   }

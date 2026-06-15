@@ -24,6 +24,8 @@
 #include <orly/error.h>
 #include <orly/expr/ref.h>
 #include <orly/expr/util.h>
+#include <orly/type/any.h>
+#include <orly/type/opt.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/unwrap_visitor.h>
 #include <orly/symbol/function.h>
@@ -126,7 +128,13 @@ Type::TType TFunctionApp::GetTypeImpl() const {
     auto param_type = param.second;
     auto unwrapped_arg_type = Type::Unwrap(arg_type);
     is_sequence |= arg_type.Is<Type::TSeq>();
-    if (unwrapped_arg_type != param_type && Type::TOpt::Get(unwrapped_arg_type) != param_type) {
+    /* A TAny argument is an as-yet-unresolved recursive call (the
+       placeholder from TFunction::GetReturnType); defer rather than reject,
+       so a recursive call's result can be passed as an argument. Matches
+       how operators already propagate TAny -- the argument is not verified
+       in this position (#128 Option A). */
+    if (!unwrapped_arg_type.Is<Type::TAny>()
+        && unwrapped_arg_type != param_type && Type::TOpt::Get(unwrapped_arg_type) != param_type) {
       throw TExprError(HERE, GetPosRange(), "Function call with parameter type mismatch");
     }
     function_app_args.erase(arg);

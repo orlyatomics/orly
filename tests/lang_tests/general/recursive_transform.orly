@@ -1,0 +1,76 @@
+/* <orly/lang_tests/general/recursive_transform.orly>
+
+   Tests #128 Option A: a recursive call's result (the `TAny` placeholder
+   while the function's return type is being inferred) may now be used in
+   the two concrete positions that previously rejected it -- a variant
+   constructor payload and a function-call argument. Both now defer on
+   `TAny` instead of throwing, matching how operators and `when`/if-else
+   joins already propagate it. This unlocks recursive functions that
+   *construct with* their own result -- e.g. a tree-to-tree transform --
+   and that pass their result as an argument.
+
+   Soundness note: as with operators today, a recursive result is not
+   verified in these positions (the function's return type is fixed by its
+   base cases). Non-recursive type errors are still caught strictly; only
+   the recursive-placeholder case is deferred.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Branch(<| Un(tree) | Nil |>) |>;
+
+/* A tree-to-tree transform: negate every leaf. The `Un` arm constructs a
+   nested-variant payload from the recursive result `neg(c)` -- the case
+   that used to be rejected at the variant-ctor payload check. */
+neg = ((t) when {
+  Leaf(n): tree.Leaf(0 - n);
+  Branch(b): tree.Branch(((b) when {
+    Un(c): <| Un(tree) | Nil |>.Un(neg(.t: c));
+    Nil:  <| Un(tree) | Nil |>.Nil;
+  }));
+}) where {
+  t = given::(tree);
+};
+
+/* A recursive result passed as a function argument (`sz(c)` into max2),
+   the case that used to be rejected at the function-call argument check. */
+max2 = ((a if a > b else b)) where {
+  a = given::(int);
+  b = given::(int);
+};
+
+sz = ((t) when {
+  Leaf: 1;
+  Branch(b): ((b) when { Un(c): 1 + max2(.a: sz(.t: c), .b: 0); Nil: 1; });
+}) where {
+  t = given::(tree);
+};
+
+leaf = (tree.Leaf(5)) where {};
+one  = (tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(5)))) where {};
+two  = (tree.Branch(<| Un(tree) | Nil |>.Un(
+        tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(5)))))) where {};
+
+test {
+  /* Transform: construct with the recursive result. */
+  t1: neg(.t: leaf) == tree.Leaf(0 - 5);
+  t2: neg(.t: one) == tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(0 - 5)));
+  t3: neg(.t: neg(.t: one)) == one;        /* involution */
+  t4: neg(.t: neg(.t: two)) == two;
+
+  /* Recursive result as an argument. */
+  t5: sz(.t: leaf) == 1;
+  t6: sz(.t: one) == 2;
+  t7: sz(.t: two) == 3;
+};
