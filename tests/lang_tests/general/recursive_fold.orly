@@ -1,0 +1,84 @@
+/* <orly/lang_tests/general/recursive_fold.orly>
+
+   Tests two fold-ergonomics fixes for `when` / if-else result typing
+   (issue #126), both of which make recursive variants foldable.
+
+   1. A `when` / if-else *all* of whose arms are recursive calls now types
+      correctly. A recursive call returns the `TAny` placeholder while the
+      function's return type is being computed; the join of two `TAny`
+      arms used to throw ("missing base case"), even when the node's type
+      is anchored by a concrete arm higher up. It now defers, and the
+      genuine missing-base-case case is reported once at the function
+      level. So a nested-variant fold whose inner `when` has only recursive
+      arms (`<| L(tree) | R(tree) |>`) works, anchored by the outer `Leaf`.
+
+   2. A `when` / if-else may now have *variant-typed* result branches.
+      The join visitors previously inherited a throwing default for
+      (variant, variant); they now join equal variants (and anchor an
+      unresolved arm), mirroring `==` / `!=`. So a fold can return a
+      variant.
+
+   Still limited (a broader, separate issue): a recursive function that
+   *constructs* with its own recursive-call result -- e.g. a tree-to-tree
+   transform `Branch(b): tree.Branch(... map(child) ...)` -- is rejected,
+   because the recursive result is the `TAny` placeholder where a concrete
+   payload is expected, and accepting it there would mask real type errors
+   without a fixpoint. Folds that return a variant built from non-recursive
+   parts (below) do work.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* (1) All-recursive inner `when`, anchored by the outer concrete arm. */
+tree is <| Leaf(int) | Branch(<| L(tree) | R(tree) |>) |>;
+
+val = ((t) when {
+  Leaf(n): n;
+  Branch(b): ((b) when { L(x): val(.t: x); R(y): val(.t: y); });
+}) where {
+  t = given::(tree);
+};
+
+a    = (tree.Branch(<| L(tree) | R(tree) |>.L(tree.Leaf(5)))) where {};
+deep = (tree.Branch(<| L(tree) | R(tree) |>.R(
+        tree.Branch(<| L(tree) | R(tree) |>.L(tree.Leaf(8)))))) where {};
+
+/* (2) Variant-typed results from if-else and `when`. */
+op is <| A(int) | B(int) |>;
+
+flip = ((op.B(x.A) if (x is A) else op.A(x.B))) where {
+  x = given::(op);
+};
+
+swap = ((x) when {
+  A(n): op.B(n);
+  B(n): op.A(n);
+}) where {
+  x = given::(op);
+};
+
+test {
+  /* (1) folds with an all-recursive inner `when`. */
+  t1: val(.t: tree.Leaf(7)) == 7;
+  t2: val(.t: a) == 5;
+  t3: val(.t: deep) == 8;
+
+  /* (2) variant-returning if-else. */
+  t4: flip(.x: op.A(5)) == op.B(5);
+  t5: flip(.x: op.B(9)) == op.A(9);
+
+  /* (2) variant-returning `when`. */
+  t6: swap(.x: op.A(3)) == op.B(3);
+  t7: swap(.x: op.B(4)) == op.A(4);
+};
