@@ -69,6 +69,9 @@ bool Orly::Type::HasOptional(const TType &type) {
     /* Cycle-break: the variant a self-reference denotes is already being
        visited, so its arms' optionality is accounted for at that level. */
     virtual void operator()(const TSelfRef  *) const { /* DO NOTHING */ }
+    /* A mutual-group reference (#116) is a boxed sibling; like a self
+       reference, its optionality is accounted for at the member's own level. */
+    virtual void operator()(const TGroupRef *) const { /* DO NOTHING */ }
     virtual void operator()(const TOpt      *) const {
       HasOptional = true;
     }

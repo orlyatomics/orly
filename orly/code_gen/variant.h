@@ -39,6 +39,14 @@ namespace Orly {
     /* Emit the native C++ struct for a variant type into out_dir/<mangled>.h. */
     void GenVariantHeader(const std::string &out_dir, const Type::TType &variant_type);
 
+    /* Emit the native C++ structs for a mutually-recursive variant GROUP
+       (#116). All member classes are defined together in one header named
+       by the group's canonical-first member; each other member's
+       by-mangled-name header is a one-line shim that includes it. Routed to
+       from GenVariantHeader when `variant_type` is a registered group
+       member. Package-internal in v1 (no storage / marshaling). */
+    void GenVariantGroupHeader(const std::string &out_dir, const Type::TType &member_type);
+
     /* Emit the #include that pulls in a generated variant header. */
     void GenVariantInclude(const Type::TType &variant_type, TCppPrinter &strm);
 

@@ -44,6 +44,11 @@ namespace Orly {
        (the sabot encoders). */
     bool HasSelfRef(const TType &type);
 
+    /* True iff the type structurally contains a TGroupRef leaf (at any
+       depth) -- a reference into a mutually-recursive group (#116). The
+       mutual analogue of HasSelfRef. */
+    bool HasGroupRef(const TType &type);
+
     /* True iff the type contains a FREE self-reference: one whose de
        Bruijn depth reaches past the variants nested inside `type` itself.
        A recursive variant's raw arm payload has free self-references (they

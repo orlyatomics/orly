@@ -1,0 +1,86 @@
+/* <orly/lang_tests/general/variants_mutual_eval.orly>
+
+   End-to-end test for issue #116 Phase 2c: constructing and consuming
+   values of a mutually-recursive variant group.
+
+   `expr` and `stmt` reference each other (and `expr` also itself), forming
+   a strongly-connected component of type defs. Each member compiles to its
+   own native variant class; cross-member and self-member arms are stored
+   boxed as the (statically known) sibling class, so every recursive edge
+   resolves to a concrete member type -- no unrolling needed. The whole
+   group lives in one combined header.
+
+   Everything composes across the group boundary: alias-constructors
+   (`expr.Block(...)`, `stmt.Eval(...)`), exhaustive `when` with payload
+   binders that recurse into the *other* member (`eval`/`exec` are mutually
+   recursive folds), `is`/`.Tag` destructuring, deep structural `==`, and
+   membership in a local set.
+
+   v1 limit (Phase 2c): the values are package-internal. Storing one or
+   returning it to a client throws (the sabot type vocabulary cannot yet
+   express the recursion), exactly as a single-recursive #103 value did
+   before storage landed; and a group arm whose payload is a record or
+   container of a sibling is a tracked follow-up.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* A tiny mutually-recursive language: an expression may hold a statement
+   (`Block`) or itself (`Neg`); a statement may hold an expression (`Eval`). */
+expr is <| Lit(int) | Neg(expr) | Block(stmt) |>;
+stmt is <| Done | Eval(expr) |>;
+
+/* Mutually-recursive folds: each descends into the other member. */
+eval = ((e) when {
+  Lit(n): n;
+  Neg(x): 0 - eval(.e: x);
+  Block(s): exec(.s: s);
+}) where {
+  e = given::(expr);
+};
+
+exec = ((s) when {
+  Done: 0;
+  Eval(x): eval(.e: x);
+}) where {
+  s = given::(stmt);
+};
+
+/* Shared fixtures: e1 == e2 structurally, e3 differs. */
+e1 = (expr.Block(stmt.Eval(expr.Neg(expr.Lit(5))))) where {};
+e2 = (expr.Block(stmt.Eval(expr.Neg(expr.Lit(5))))) where {};
+e3 = (expr.Lit(7)) where {};
+
+test {
+  /* Folds, including across the member boundary and through self-recursion. */
+  t1: eval(.e: expr.Lit(42)) == 42;
+  t2: eval(.e: expr.Neg(expr.Lit(5))) == 0 - 5;
+  t3: eval(.e: e1) == 0 - 5;
+  t4: exec(.s: stmt.Done()) == 0;
+  t5: exec(.s: stmt.Eval(expr.Lit(8))) == 8;
+
+  /* Deep structural equality reaches through the boxed members. */
+  t6: e1 == e2;
+  t7: e1 != e3;
+
+  /* is / .Tag destructuring, chaining across members. */
+  t8: e1 is Block;
+  t9: not (e1 is Lit);
+  t10: (e1.Block) is Eval;
+  t11: ((e1.Block).Eval) is Neg;
+  t12: (((e1.Block).Eval).Neg).Lit == 5;
+
+  /* Recursive group values in a local set: the duplicate collapses. */
+  t13: length_of {e1, e2, e3} == 2;
+};
