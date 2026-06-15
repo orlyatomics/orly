@@ -111,6 +111,11 @@ void Orly::Type::Orlyify(ostream &strm, const TType &type) {
         Strm << '@' << that->GetDepth();
       }
     }
+    /* Likewise no spelling for a mutual-group reference (#116); render the
+       diagnostic form by member index. */
+    virtual void operator()(const TGroupRef *that) const {
+      Strm << "group@" << that->GetIndex();
+    }
     virtual void operator()(const TOpt *that) const {
       that->GetElem().Accept(*this);
       Strm << "?";

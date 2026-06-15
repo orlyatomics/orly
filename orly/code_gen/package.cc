@@ -274,6 +274,9 @@ void TPackage::WriteCc(TCppPrinter &out, const TRelPath &rel_path) const {
   //Include for the flux api, orly Rt environment
   out << Eol
       << "#include <orly/var/mutation.h>" << Eol
+      // MakeRecGroup, for the runtime reconstruction of a mutually-recursive
+      // group member's type in a function signature (#116).
+      << "#include <orly/type/rec_group.h>" << Eol
       << Eol
       << "using namespace Orly;" << Eol
       << "using namespace Orly::Rt;" << Eol

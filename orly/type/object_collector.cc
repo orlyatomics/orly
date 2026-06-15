@@ -20,6 +20,7 @@
 
 #include <orly/pos_range.h>
 #include <orly/type/infix_visitor.h>
+#include <orly/type/rec_group.h>
 #include <orly/type/unroll.h>
 
 using namespace std;
@@ -85,6 +86,16 @@ void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_
     /* A leaf: the variant it denotes is the one being collected, so there
        is nothing further to descend into (and no cycle to fall into). */
     virtual void operator()(const TSelfRef *) const { /* DO NOTHING */ }
+    /* A reference to a SIBLING member of a mutually-recursive group (#116):
+       unlike a self-reference, the sibling is a distinct closed variant that
+       needs its own header, so collect it -- but descend into it only the
+       first time, or the cycle around the group would never terminate. */
+    virtual void operator()(const TGroupRef *that) const {
+      TType member = ResolveGroupRef(that);
+      if (ObjectSet.insert(member).second) {
+        member.Accept(*this);
+      }
+    }
     virtual void operator()(const TOpt *that) const {
       that->GetElem().Accept(*this);
     }

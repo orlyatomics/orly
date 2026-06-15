@@ -25,6 +25,8 @@
 #include <orly/type/unroll.h>
 
 #include <orly/type.h>
+#include <orly/type/group_ref.h>
+#include <orly/type/rec_group.h>
 
 using namespace Orly;
 using namespace Orly::Type;
@@ -35,6 +37,9 @@ bool Type::HasSelfRef(const TType &type) {
     public:
     TVisitor(bool &found) : Found(found) {}
     virtual void operator()(const TSelfRef *) const { Found = true; }
+    /* A group reference is the mutual analogue of a self reference, not a
+       self reference itself; it does not make HasSelfRef true. */
+    virtual void operator()(const TGroupRef *) const {}
     virtual void operator()(const TVariant *that) const {
       for (const auto &elem : that->GetElems()) {
         if (Found) { return; }
@@ -97,6 +102,8 @@ static bool HasFreeSelfRefAtDepth(const TType &type, size_t depth) {
         Found = true;
       }
     }
+    /* A group reference is not a self reference. */
+    virtual void operator()(const TGroupRef *) const {}
     virtual void operator()(const TVariant *that) const {
       for (const auto &elem : that->GetElems()) {
         if (Found) { return; }
@@ -153,6 +160,64 @@ bool Type::HasFreeSelfRef(const TType &type) {
   return HasFreeSelfRefAtDepth(type, 0);
 }
 
+bool Type::HasGroupRef(const TType &type) {
+  class TVisitor
+      : public TType::TVisitor {
+    public:
+    TVisitor(bool &found) : Found(found) {}
+    virtual void operator()(const TGroupRef *) const { Found = true; }
+    virtual void operator()(const TSelfRef *) const {}
+    virtual void operator()(const TVariant *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TObj *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TAddr *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TDict *that) const {
+      that->GetKey().Accept(*this);
+      if (!Found) { that->GetVal().Accept(*this); }
+    }
+    virtual void operator()(const TErr *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TList *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TOpt *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TSeq *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TSet *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TFunc *that) const {
+      that->GetParamObject().Accept(*this);
+      if (!Found) { that->GetReturnType().Accept(*this); }
+    }
+    virtual void operator()(const TMutable *that) const {
+      that->GetAddr().Accept(*this);
+      if (!Found) { that->GetVal().Accept(*this); }
+    }
+    virtual void operator()(const TAny *) const {}
+    virtual void operator()(const TBool *) const {}
+    virtual void operator()(const TId *) const {}
+    virtual void operator()(const TInt *) const {}
+    virtual void operator()(const TReal *) const {}
+    virtual void operator()(const TStr *) const {}
+    virtual void operator()(const TTimeDiff *) const {}
+    virtual void operator()(const TTimePnt *) const {}
+    private:
+    bool &Found;
+  };  // TVisitor
+  bool found = false;
+  type.Accept(TVisitor(found));
+  return found;
+}
+
 /* The depth-tracking rewrite behind Unroll(). */
 static TType UnrollAtDepth(const TType &type, const TType &binder, size_t depth) {
   class TVisitor
@@ -166,6 +231,12 @@ static TType UnrollAtDepth(const TType &type, const TType &binder, size_t depth)
          than every enclosing binder can't be constructed by the synth
          layer, so substituting only the exact depth is exhaustive. */
       Out = that->GetDepth() == Depth ? Binder : that->AsType();
+    }
+    /* A reference to a mutually-recursive group member (#116) surfaces as
+       that member's type. The member is a complete named variant, so it is
+       not unrolled further (just like a self-reference becomes its binder). */
+    virtual void operator()(const TGroupRef *that) const {
+      Out = ResolveGroupRef(that);
     }
     virtual void operator()(const TVariant *that) const {
       TVariantElems elems;
@@ -228,7 +299,7 @@ static TType UnrollAtDepth(const TType &type, const TType &binder, size_t depth)
     const TType &Binder;
     size_t Depth;
   };  // TVisitor
-  if (!HasSelfRef(type)) {
+  if (!HasSelfRef(type) && !HasGroupRef(type)) {
     return type;
   }
   TType out;

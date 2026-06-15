@@ -53,6 +53,14 @@ namespace Orly {
        group must have been built by MakeRecGroup. */
     TType ResolveGroupRef(const TGroupRef *group_ref);
 
+    /* If `member` is a type built by MakeRecGroup, fills `members` with the
+       whole group's member types (canonical order) and `index` with
+       `member`'s position among them, and returns true. Otherwise returns
+       false. Lets codegen enumerate a group's sibling classes starting from
+       any one member. */
+    bool TryGetGroupMembers(const TType &member, std::vector<TType> &members,
+                            size_t &index);
+
   }  // Type
 
 }  // Orly

@@ -104,6 +104,8 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
     /* Reachable only through a recursive variant's payload map, which the
        TVariant case above already rejects -- but be explicit anyway. */
     virtual void operator()(const TSelfRef */*type*/) const override {}
+    /* Likewise reachable only through a mutual group's payload map (#116). */
+    virtual void operator()(const TGroupRef */*type*/) const override {}
     private:
     Sabot::Type::TAny *&Result;
     void *Buf;

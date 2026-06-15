@@ -20,6 +20,9 @@
 
 #include <base/not_implemented.h>
 #include <base/split.h>
+#include <orly/type/group_ref.h>
+#include <orly/type/rec_group.h>
+#include <orly/type/variant.h>
 
 using namespace std;
 using namespace Base;
@@ -32,7 +35,13 @@ using TTypeArray = array<TType, N>;
 class TCodeGenVisitor : public TType::TVisitor {
   public:
 
-  TCodeGenVisitor(ostream &strm) : Strm(strm) {}
+  /* `equation_mode` is set while emitting a group's member equations for
+     the MakeRecGroup reconstruction (see EmitGroupMember): there, a group
+     reference is a placeholder (empty group id + member index) rather than a
+     nested reconstruction, and a member variant is emitted as its own arms
+     rather than re-reconstructed. */
+  TCodeGenVisitor(ostream &strm, bool equation_mode = false)
+      : Strm(strm), EquationMode(equation_mode) {}
   virtual ~TCodeGenVisitor() {}
 
   private:
@@ -89,6 +98,18 @@ class TCodeGenVisitor : public TType::TVisitor {
       << "})";
   }
   virtual void operator()(const TVariant *that) const {
+    /* A member of a mutually-recursive group (#116) is reconstructed at
+       runtime via MakeRecGroup, not as a plain variant -- otherwise its
+       group-ref arms would have no interned identity. In equation mode we
+       are *inside* such a reconstruction, so emit the member's arms plainly. */
+    if (!EquationMode) {
+      std::vector<TType> members;
+      size_t index;
+      if (TryGetGroupMembers(that->AsType(), members, index)) {
+        EmitGroupMember(members, index);
+        return;
+      }
+    }
     const TVariant::TElems &elem_map = that->GetElems();
     Strm
       << "Orly::Type::TVariant::Get(std::map<std::string, Orly::Type::TType>{"
@@ -105,6 +126,20 @@ class TCodeGenVisitor : public TType::TVisitor {
      specialization (the only place a self-ref's type code is emitted). */
   virtual void operator()(const TSelfRef *that) const {
     Strm << "Orly::Type::TSelfRef::Get(" << that->GetDepth() << ')';
+  }
+  /* A reference into a mutually-recursive group (#116). In equation mode it
+     is a placeholder; otherwise it reconstructs and indexes the group. */
+  virtual void operator()(const TGroupRef *that) const {
+    if (EquationMode) {
+      Strm << "Orly::Type::TGroupRef::Get({}, " << that->GetIndex() << ')';
+      return;
+    }
+    std::vector<TType> members;
+    size_t index;
+    bool ok = TryGetGroupMembers(ResolveGroupRef(that), members, index);
+    assert(ok);
+    (void)ok;
+    EmitGroupMember(members, index);
   }
   virtual void operator()(const TOpt *that) const {
     Write("TOpt", that->GetElem());
@@ -151,7 +186,31 @@ class TCodeGenVisitor : public TType::TVisitor {
       << ')';
   }
 
+  /* Emit an expression that rebuilds the whole mutually-recursive group via
+     Orly::Type::MakeRecGroup and yields member `index`. The members are
+     emitted as equations (arms with placeholder group refs), so the result
+     is the canonical interned member type at runtime. */
+  void EmitGroupMember(const std::vector<TType> &members, size_t index) const {
+    Strm << "([]() -> Orly::Type::TType { auto __g = Orly::Type::MakeRecGroup("
+         << "std::vector<Orly::Type::TVariantElems>{";
+    for (size_t k = 0; k < members.size(); ++k) {
+      if (k) { Strm << ", "; }
+      const auto &arms = members[k].As<TVariant>()->GetElems();
+      Strm << "Orly::Type::TVariantElems{"
+           << Base::Join(arms,
+                         ", ",
+                         [](ostream &strm, const TVariant::TElems::value_type &arm) {
+                           strm << "{std::string(\"" << arm.first << "\"), ";
+                           arm.second.Accept(TCodeGenVisitor(strm, true));
+                           strm << '}';
+                         })
+           << '}';
+    }
+    Strm << "}); return __g[" << index << "]; }())";
+  }
+
   ostream &Strm;
+  bool EquationMode;
 };
 
 void Orly::Type::GenCode(ostream &strm, const TType &type) {

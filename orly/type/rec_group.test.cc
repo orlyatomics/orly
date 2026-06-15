@@ -91,6 +91,31 @@ FIXTURE(ThreeCycle) {
   EXPECT_TRUE(Nav(c.As<TVariant>()->GetElems().at("C")) == a);
 }
 
+/* From any one member, the whole group (canonical order) and the member's
+   index within it are recoverable -- what codegen needs to enumerate a
+   group's sibling classes. */
+FIXTURE(GroupMembersFromMember) {
+  TTypeCzar czar;
+  auto m = MakeRecGroup({ {{"X", Ref(1)}}, {{"Y", Ref(0)}} });
+
+  std::vector<TType> g0, g1;
+  size_t i0, i1;
+  EXPECT_TRUE(TryGetGroupMembers(m[0], g0, i0));
+  EXPECT_TRUE(TryGetGroupMembers(m[1], g1, i1));
+
+  /* Both members see the same group set, and the set holds exactly them. */
+  EXPECT_EQ(g0.size(), 2u);
+  EXPECT_TRUE(g0 == g1);
+  EXPECT_TRUE(g0[i0] == m[0]);
+  EXPECT_TRUE(g1[i1] == m[1]);
+  EXPECT_TRUE(i0 != i1);
+
+  /* A non-member type is rejected. */
+  std::vector<TType> none;
+  size_t ni;
+  EXPECT_FALSE(TryGetGroupMembers(TInt::Get(), none, ni));
+}
+
 /* A member may also carry a non-recursive arm and a record payload. */
 FIXTURE(MixedArms) {
   TTypeCzar czar;

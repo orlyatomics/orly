@@ -62,6 +62,10 @@ TPrec Orly::Type::GetPrec(const Type::TType &type) {
     virtual void operator()(const TSelfRef *) const {
       Prec = TPrec::Variant;
     }
+    /* A mutual-group reference denotes a sibling variant member (#116). */
+    virtual void operator()(const TGroupRef *) const {
+      Prec = TPrec::Variant;
+    }
     virtual void operator()(const TOpt *) const {throw TImpossibleError(HERE);}
     virtual void operator()(const TReal *) const {
       Prec = TPrec::Real;

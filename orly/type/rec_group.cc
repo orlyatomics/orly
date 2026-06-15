@@ -44,6 +44,14 @@ namespace {
     return registry;
   }
 
+  /* Reverse map: a member type -> (its group identity, its canonical index),
+     so codegen can recover a member's whole group from the member alone.
+     Each interned member type is canonical and thus unique to one group. */
+  unordered_map<TType, pair<TGroupId, size_t>> &MemberIndex() {
+    static unordered_map<TType, pair<TGroupId, size_t>> member_index;
+    return member_index;
+  }
+
   /* A placeholder sibling reference in an input equation: TGroupRef with
      the empty (not-yet-known) group identity, carrying only the member
      index. */
@@ -196,6 +204,9 @@ vector<TType> Orly::Type::MakeRecGroup(const vector<TVariantElems> &members) {
     by_pos[pos[i]] = result[i];
   }
   Registry()[gid] = by_pos;
+  for (size_t r = 0; r < n; ++r) {
+    MemberIndex()[by_pos[r]] = {gid, r};
+  }
 
   return result;
 }
@@ -206,4 +217,15 @@ TType Orly::Type::ResolveGroupRef(const TGroupRef *group_ref) {
   assert(it != Registry().end());
   assert(group_ref->GetIndex() < it->second.size());
   return it->second[group_ref->GetIndex()];
+}
+
+bool Orly::Type::TryGetGroupMembers(const TType &member, vector<TType> &members,
+                                    size_t &index) {
+  const auto it = MemberIndex().find(member);
+  if (it == MemberIndex().end()) {
+    return false;
+  }
+  members = Registry().at(it->second.first);
+  index = it->second.second;
+  return true;
 }
