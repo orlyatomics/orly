@@ -49,6 +49,15 @@ namespace Orly {
        mutual analogue of HasSelfRef. */
     bool HasGroupRef(const TType &type);
 
+    /* True iff the type contains a FREE group reference: one not nested
+       inside a TVariant. A group member's raw arm payload (`<{.head: ref}>`)
+       has free group refs (the refs are the member's recursive edges); the
+       UNROLLED payload, whose fields are complete sibling variants, has none
+       (their internal group refs are owned by those variants). The mutual
+       analogue of HasFreeSelfRef -- used to decide whether a payload needs
+       the boxed representation vs. is a normal standalone record/type. */
+    bool HasFreeGroupRef(const TType &type);
+
     /* True iff the type contains a FREE self-reference: one whose de
        Bruijn depth reaches past the variants nested inside `type` itself.
        A recursive variant's raw arm payload has free self-references (they

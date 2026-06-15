@@ -1,0 +1,89 @@
+/* <orly/lang_tests/general/variants_mutual_record.orly>
+
+   Issue #116, final placement relaxation: a mutually-recursive group arm
+   whose payload is a RECORD of siblings, or a CONTAINER of siblings.
+
+   `tree` and `forest` are mutually recursive. `forest`'s `Cons` arm carries
+   a record `<{.head: tree, .tail: forest}>` (two different sibling members
+   in one record); its `Group` arm carries `[tree]` (a list of a sibling).
+   Each group reference inside those payloads is stored boxed as the concrete
+   sibling class (`Rt::TBox<tree>` / `std::vector<Rt::TBox<tree>>`), through
+   the same `_Boxed` / `DeepBox` machinery #103 uses for self-recursion —
+   here the unrolled payload's fields are concrete sibling classes, so the
+   getter's `decltype` deduction is well-formed.
+
+   Folds across the member boundary (`tsum`/`fsum`) descend through the
+   record arm; the list arm is exercised structurally (construct, `==`,
+   accessor, indexing, nested access).
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Node(forest) |>;
+forest is <| Empty | Cons(<{.head: tree, .tail: forest}>) | Group([tree]) |>;
+
+/* Mutually-recursive folds descending through the record arm. */
+tsum = ((t) when {
+  Leaf(n): n;
+  Node(f): fsum(.f: f);
+}) where {
+  t = given::(tree);
+};
+
+fsum = ((f) when {
+  Empty: 0;
+  Cons(c): tsum(.t: c.head) + fsum(.f: c.tail);
+  Group(ts): 0;
+}) where {
+  f = given::(forest);
+};
+
+/* A forest of two leaves built through the record (Cons) arm. */
+f12 = (forest.Cons(<{.head: tree.Leaf(1), .tail:
+        forest.Cons(<{.head: tree.Leaf(2), .tail: forest.Empty()}>)}>)) where {};
+t12 = (tree.Node(f12)) where {};
+t12b = (tree.Node(f12)) where {};
+t9 = (tree.Leaf(9)) where {};
+
+/* A forest built through the container (Group) arm. */
+g = (forest.Group([tree.Leaf(3), tree.Node(forest.Empty())])) where {};
+g2 = (forest.Group([tree.Leaf(3), tree.Node(forest.Empty())])) where {};
+
+test {
+  /* Folds through the record payload, across the member boundary. */
+  t1: tsum(.t: tree.Leaf(7)) == 7;
+  t2: tsum(.t: t12) == 3;
+  t3: fsum(.f: f12) == 3;
+
+  /* Deep structural equality reaches through boxed record fields. */
+  t4: t12 == t12b;
+  t5: t12 != t9;
+
+  /* is / .Tag / record-field / chained access across members. */
+  t6: t12 is Node;
+  t7: (t12.Node) is Cons;
+  t8: ((t12.Node).Cons).head.Leaf == 1;
+  t9: ((t12.Node).Cons).tail is Cons;
+
+  /* Container-of-sibling arm: construct, equality, accessor, indexing. */
+  t10: g == g2;
+  t11: g is Group;
+  t12: length_of (g.Group) == 2;
+  t13: (g.Group)[0].Leaf == 3;
+  t14: (g.Group)[1] is Node;
+
+  /* Recursive group values (record and container shapes) in a local set. */
+  t15: length_of {t12, t12b, t9} == 2;
+  t16: length_of {g, g2} == 1;
+};

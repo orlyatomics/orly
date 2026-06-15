@@ -311,16 +311,25 @@ std::string TType::GetMangledName() const {
       strm << 'X' << that->GetDepth();
       Name = strm.str();
     }
-    /* A group reference mangles by its member index and the group identity
-       (the members' canonicalized inlined forms, which are pure de Bruijn --
-       no group refs -- so this is finite). Isomorphic groups share an
-       identity and therefore a mangled name (#116). */
+    /* A group reference mangles by its member index and a stable hash of the
+       group identity (the members' canonicalized inlined forms -- pure de
+       Bruijn, no group refs, so finite and order-canonical). Hashing rather
+       than inlining the whole identity keeps a member's name (and any record
+       that embeds members) within filesystem name limits -- the full forms
+       repeated at every group ref are quadratic and overflow 255 chars.
+       Isomorphic groups share the identity, hence the hash and name (#116).
+       FNV-1a over the concatenated member mangles; a collision would surface
+       as a duplicate C++ class name at compile, never silent corruption. */
     virtual void operator()(const TGroupRef *that) const {
-      std::ostringstream strm;
-      strm << 'Y' << that->GetIndex() << 'g' << that->GetGroup().size();
+      uint64_t h = 1469598103934665603ull;  // FNV-1a 64-bit offset basis
       for (const auto &member : that->GetGroup()) {
-        strm << member.GetMangledName();
+        for (char c : member.GetMangledName()) {
+          h = (h ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+        }
+        h = (h ^ '|') * 1099511628211ull;  // member separator
       }
+      std::ostringstream strm;
+      strm << 'Y' << that->GetIndex() << 'g' << std::hex << h;
       Name = strm.str();
     }
     virtual void operator()(const TOpt *that) const {

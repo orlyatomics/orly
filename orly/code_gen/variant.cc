@@ -1011,9 +1011,10 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
 }
 
 /* True iff `t` contains a TGroupRef anywhere (a reference into a mutually-
-   recursive group). A direct arm payload that IS a group ref is supported in
-   v1; a group ref buried in a record/container/nested variant is a tracked
-   #116 follow-up, detected here so it is reported rather than mis-emitted. */
+   recursive group) -- i.e. the arm is recursive. Supported payload shapes:
+   a direct group ref, a record of group refs, and list/set/opt/dict-value of
+   them (subst_storage walks these); a group ref under any other compound
+   throws a clear #116 error there. */
 static bool HasGroupRefDeep(const Type::TType &t) {
   if (t.Is<Type::TGroupRef>()) {
     return true;
@@ -1065,25 +1066,64 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
   }
 
   /* Primary member: emit the combined header defining every member class.
-     A recursive arm (its payload is a direct sibling/self reference, a
-     TGroupRef) is stored boxed as Rt::TBox<TVariant<sibling>> -- a concrete,
-     statically-known class, so no unrolling/decltype is needed (every
-     recursive edge in a group, even a self-edge, is a group ref). */
-  auto is_rec_arm = [](const Type::TType &payload) { return payload.Is<Type::TGroupRef>(); };
-  auto sibling_of = [](const Type::TType &payload) {
-    return Type::ResolveGroupRef(payload.As<Type::TGroupRef>());
+     A recursive arm holds a reference into the group -- a TGroupRef leaf,
+     which (#116) may be a direct sibling/self payload, a field of the
+     payload record, or under list/set/opt/dict-value within those. Because
+     a group ref resolves to a CONCRETE statically-known sibling class, it
+     boxes to Rt::TBox<sibling>; the rest reuses the #103 machinery (boxed
+     payload-record struct, DeepBox/DeepUnbox, member-template factory and
+     getter over the unrolled payload type) -- here the getter's TRet has
+     concrete sibling fields, so the decltype deduction is well-formed. */
+  auto is_rec_arm = [](const Type::TType &payload) { return HasGroupRefDeep(payload); };
+  auto sibling_of = [](const Type::TType &gr) {
+    return Type::ResolveGroupRef(gr.As<Type::TGroupRef>());
   };
-  auto storage_type = [&](const Type::TType &payload) -> string {
-    if (is_rec_arm(payload)) {
-      return Base::AsStr("Rt::TBox<", class_of(sibling_of(payload)), '>');
+  auto boxed_name = [&class_of](const Type::TType &m, const string &tag) {
+    return class_of(m) + "_Boxed" + tag;
+  };
+  /* Print a type with every group ref replaced by its boxed sibling storage,
+     elementwise through the containers placement allows. */
+  std::function<string (const Type::TType &)> subst_storage =
+      [&](const Type::TType &t) -> string {
+    if (!HasGroupRefDeep(t)) {
+      return Base::AsStr(t);
     }
-    /* v1 supports only direct sibling payloads and self-free payloads; a
-       group ref buried in a record/container is a #116 follow-up. */
-    if (HasGroupRefDeep(payload)) {
-      throw Orly::Rt::TSystemError(HERE, "a record/container/nested payload referencing a "
-                                         "mutually-recursive group member is not yet supported (#116)");
+    if (t.Is<Type::TGroupRef>()) {
+      return Base::AsStr("Rt::TBox<", class_of(sibling_of(t)), '>');
     }
-    return Base::AsStr(payload);
+    if (const auto *list = t.TryAs<Type::TList>()) {
+      return Base::AsStr("std::vector<", subst_storage(list->GetElem()), '>');
+    }
+    if (const auto *set = t.TryAs<Type::TSet>()) {
+      return Base::AsStr("Orly::Rt::TSet<", subst_storage(set->GetElem()), '>');
+    }
+    if (const auto *opt = t.TryAs<Type::TOpt>()) {
+      return Base::AsStr("Orly::Rt::TOpt<", subst_storage(opt->GetElem()), '>');
+    }
+    if (const auto *dict = t.TryAs<Type::TDict>()) {
+      return Base::AsStr("Orly::Rt::TDict<", Base::AsStr(dict->GetKey()), ", ",
+                         subst_storage(dict->GetVal()), '>');
+    }
+    /* A group ref nested in a record-within-a-container or a nested variant
+       has no native shape yet (the #116 remainder). */
+    throw Orly::Rt::TSystemError(HERE, "this mutually-recursive payload shape is not yet "
+                                       "supported (#116): a group reference may appear as an "
+                                       "arm payload, a payload-record field, or under "
+                                       "list/set/opt/dict-value within those");
+  };
+  /* An arm whose payload record holds group refs is stored as an adjacent
+     boxed struct (the variant analog of #103's _Boxed record storage). */
+  auto arm_is_record = [&is_rec_arm](const Type::TType &payload) {
+    return payload.Is<Type::TObj>() && is_rec_arm(payload);
+  };
+  /* The C++ type an arm's payload is stored in. */
+  auto storage_type = [&](const Type::TType &m, const string &tag, const Type::TType &payload) {
+    return arm_is_record(payload) ? boxed_name(m, tag) : subst_storage(payload);
+  };
+  /* A box or boxed-struct payload compares via direct method calls; a
+     CONTAINER of boxes has no methods and routes through Rt:: dispatch. */
+  auto arm_has_methods = [&arm_is_record](const Type::TType &payload) {
+    return payload.Is<Type::TGroupRef>() || arm_is_record(payload);
   };
 
   Base::TPath path(out_dir, prim_name, vector<string>{"h"});
@@ -1104,12 +1144,17 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
       << "#include <cstddef>" << Eol
       << "#include <cstdint>" << Eol
       << "#include <string>" << Eol
+      << "#include <utility>" << Eol
       << Eol
       << "#include <orly/rt/tuple.h>" << Eol
       << "#include <orly/rt/containers.h>" << Eol
       << "#include <orly/rt/obj.h>" << Eol
       << "#include <orly/rt/box.h>" << Eol
       << "#include <orly/type/variant.h>" << Eol
+      // MakeRecGroup, for the runtime TType reconstruction GenCode emits for a
+      // member (e.g. in a payload record's TDt::GetType) -- reachable from any
+      // file that includes a member via its shim header (#116).
+      << "#include <orly/type/rec_group.h>" << Eol
       << "#include <orly/var/impl.h>" << Eol
       << "#include <orly/var/obj.h>" << Eol;
 
@@ -1152,6 +1197,48 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
       }
       out << Eol;
 
+      /* Boxed payload-record structs (one per record arm, any member): each
+         group-ref field stored boxed, with templated ctor-from-unrolled and
+         ToUnrolled, comparison bodies deferred until the members complete. */
+      for (const auto &m : members) {
+        for (const auto &elem : m.As<Type::TVariant>()->GetElems()) {
+          if (!arm_is_record(elem.second)) { continue; }
+          auto bname = boxed_name(m, elem.first);
+          const auto &fields = elem.second.As<Type::TObj>()->GetElems();
+          out << "class " << bname << " {" << Eol
+              << "  public:" << Eol
+              << "  " << bname << "() {}" << Eol
+              << "  template <typename TRec>" << Eol
+              << "  explicit " << bname << "(const TRec &rec)";
+          if (!fields.empty()) { out << " : "; }
+          out << Base::Join(fields, ", ",
+                            [&subst_storage](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              strm << 'V' << it.first << "(Rt::DeepBox<" << subst_storage(it.second)
+                                   << ">(rec.GetV" << it.first << "()))";
+                            })
+              << " {}" << Eol
+              << "  template <typename TRet>" << Eol
+              << "  TRet ToUnrolled() const {" << Eol
+              << "    return TRet("
+              << Base::Join(fields, ", ",
+                            [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              strm << "Rt::DeepUnbox<decltype(std::declval<TRet>().GetV"
+                                   << it.first << "())>(V" << it.first << ')';
+                            })
+              << ");" << Eol
+              << "  }" << Eol
+              << "  bool EqEq(const " << bname << " &that) const;" << Eol
+              << "  bool Match(const " << bname << " &that) const;" << Eol
+              << "  bool MatchLess(const " << bname << " &that) const;" << Eol
+              << "  size_t GetHash() const;" << Eol
+              << "  private:" << Eol;
+          for (const auto &field : fields) {
+            out << "  " << subst_storage(field.second) << " V" << field.first << ";" << Eol;
+          }
+          out << "}; // " << bname << Eol << Eol;
+        }
+      }
+
       /* One class per member. */
       for (const auto &m : members) {
         auto cm = class_of(m);
@@ -1162,15 +1249,17 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
           out << "public:" << Eol;
           out << cm << "() : Which(0) {}" << Eol << Eol;
 
-          /* Static per-arm factories. */
+          /* Static per-arm factories. A recursive arm takes the UNROLLED
+             payload (deduced at the call site) and stores it boxed. */
           { size_t idx = 0;
             for (const auto &elem : elems) {
               if (is_rec_arm(elem.second)) {
-                auto sib = class_of(sibling_of(elem.second));
-                out << "static " << cm << " Mk" << elem.first << "(const " << sib << " &vv) {" << Eol
+                out << "template <typename TPayload>" << Eol
+                    << "static " << cm << " Mk" << elem.first << "(const TPayload &vv) {" << Eol
                     << "  " << cm << " out;" << Eol
                     << "  out.Which = " << idx << ";" << Eol
-                    << "  out.V" << elem.first << " = Rt::TBox<" << sib << ">(vv);" << Eol
+                    << "  out.V" << elem.first << " = Rt::DeepBox<"
+                    << storage_type(m, elem.first, elem.second) << ">(vv);" << Eol
                     << "  return out;" << Eol
                     << "}" << Eol;
               } else {
@@ -1203,12 +1292,13 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
               << "  switch (Which) {" << Eol;
           { size_t idx = 0;
             for (const auto &elem : elems) {
-              if (is_rec_arm(elem.second)) {
+              if (is_rec_arm(elem.second) && arm_has_methods(elem.second)) {
                 out << "    case " << idx << ": return std::hash<size_t>()(" << idx
                     << ") ^ V" << elem.first << ".GetHash();" << Eol;
               } else {
                 out << "    case " << idx << ": return std::hash<size_t>()(" << idx
-                    << ") ^ std::hash<" << storage_type(elem.second) << ">()(V" << elem.first << ");" << Eol;
+                    << ") ^ std::hash<" << storage_type(m, elem.first, elem.second)
+                    << ">()(V" << elem.first << ");" << Eol;
               }
               ++idx;
             }
@@ -1223,7 +1313,11 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
           { size_t idx = 0;
             for (const auto &elem : elems) {
               if (is_rec_arm(elem.second)) {
-                out << "    case " << idx << ": return V" << elem.first << ".EqEq(that.V" << elem.first << ");" << Eol;
+                if (arm_has_methods(elem.second)) {
+                  out << "    case " << idx << ": return V" << elem.first << ".EqEq(that.V" << elem.first << ");" << Eol;
+                } else {
+                  out << "    case " << idx << ": return Rt::Match(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
+                }
               } else {
                 out << "    case " << idx << ": return Rt::EqEq(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
               }
@@ -1241,7 +1335,7 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
               << "  switch (Which) {" << Eol;
           { size_t idx = 0;
             for (const auto &elem : elems) {
-              if (is_rec_arm(elem.second)) {
+              if (is_rec_arm(elem.second) && arm_has_methods(elem.second)) {
                 out << "    case " << idx << ": return V" << elem.first << ".Match(that.V" << elem.first << ");" << Eol;
               } else {
                 out << "    case " << idx << ": return Rt::Match(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
@@ -1257,7 +1351,7 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
               << "  switch (Which) {" << Eol;
           { size_t idx = 0;
             for (const auto &elem : elems) {
-              if (is_rec_arm(elem.second)) {
+              if (is_rec_arm(elem.second) && arm_has_methods(elem.second)) {
                 out << "    case " << idx << ": return V" << elem.first << ".MatchLess(that.V" << elem.first << ");" << Eol;
               } else {
                 out << "    case " << idx << ": return Rt::MatchLess(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
@@ -1267,16 +1361,24 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
           }
           out << "  }" << Eol << "  assert(false);" << Eol << "  return false;" << Eol << "}" << Eol << Eol;
 
-          /* Accessors. A cross/self-member arm returns a sibling class that
-             may still be incomplete here (the group is a C++ cycle), so its
-             by-value getter is only DECLARED in-class and defined out-of-line
-             below, once every member class is complete. */
+          /* Accessors. A recursive arm's getter is a member template over the
+             UNROLLED payload type (supplied by variant_access.cc): a record
+             payload converts via the boxed struct's ToUnrolled; a direct
+             group ref / container of group refs unboxes via Rt::DeepUnbox. */
           out << "size_t GetWhich() const { assert(this); return Which; }" << Eol;
           { size_t idx = 0;
             for (const auto &elem : elems) {
               if (is_rec_arm(elem.second)) {
-                auto sib = class_of(sibling_of(elem.second));
-                out << sib << " GetV" << elem.first << "() const;" << Eol;
+                const bool uses_inline_struct = arm_is_record(elem.second);
+                out << "template <typename TRet>" << Eol
+                    << "TRet GetV" << elem.first << "() const {" << Eol
+                    << "  assert(this); assert(Which == " << idx << ");" << Eol
+                    << "  return "
+                    << (uses_inline_struct
+                            ? Base::AsStr('V', elem.first, ".template ToUnrolled<TRet>()")
+                            : Base::AsStr("Rt::DeepUnbox<TRet>(V", elem.first, ')'))
+                    << ";" << Eol
+                    << "}" << Eol;
               } else {
                 out << elem.second << " GetV" << elem.first << "() const {" << Eol
                     << "  assert(this); assert(Which == " << idx << ");" << Eol
@@ -1289,27 +1391,74 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
 
           out << Eol << "private:" << Eol << "size_t Which;" << Eol;
           for (const auto &elem : elems) {
-            out << storage_type(elem.second) << " V" << elem.first << ";" << Eol;
+            out << storage_type(m, elem.first, elem.second) << " V" << elem.first << ";" << Eol;
           }
         } // class body
         out << "}; // " << cm << Eol << Eol;
       }
 
-      /* Out-of-line cross/self-member accessors, now that every member class
-         is complete (each returns a sibling by value). */
+      /* Deferred boxed-record comparison bodies (need the member classes
+         complete: they deref the TBox<sibling> fields). */
       for (const auto &m : members) {
-        auto cm = class_of(m);
-        const auto &elems = m.As<Type::TVariant>()->GetElems();
-        size_t idx = 0;
-        for (const auto &elem : elems) {
-          if (is_rec_arm(elem.second)) {
-            auto sib = class_of(sibling_of(elem.second));
-            out << "inline " << sib << " " << cm << "::GetV" << elem.first << "() const {" << Eol
-                << "  assert(this); assert(Which == " << idx << ");" << Eol
-                << "  return V" << elem.first << ".Get();" << Eol
-                << "}" << Eol;
+        for (const auto &elem : m.As<Type::TVariant>()->GetElems()) {
+          if (!arm_is_record(elem.second)) { continue; }
+          auto bname = boxed_name(m, elem.first);
+          const auto &fields = elem.second.As<Type::TObj>()->GetElems();
+          auto match_term = [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+            if (it.second.Is<Type::TGroupRef>()) {
+              strm << 'V' << it.first << ".Match(that.V" << it.first << ')';
+            } else {
+              strm << "Rt::Match(V" << it.first << ", that.V" << it.first << ')';
+            }
+          };
+          auto less_term = [](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+            if (it.second.Is<Type::TGroupRef>()) {
+              strm << 'V' << it.first << ".MatchLess(that.V" << it.first << ')';
+            } else {
+              strm << "Rt::MatchLess(V" << it.first << ", that.V" << it.first << ')';
+            }
+          };
+          out << "inline bool " << bname << "::EqEq(const " << bname << " &that) const { return Match(that); }" << Eol
+              << "inline bool " << bname << "::Match(const " << bname << " &that) const {" << Eol
+              << "  return ";
+          if (fields.empty()) { out << "true"; }
+          out << Base::Join(fields, " && ", match_term) << ';' << Eol
+              << "}" << Eol
+              << "inline bool " << bname << "::MatchLess(const " << bname << " &that) const {" << Eol
+              << "  return ";
+          if (fields.empty()) {
+            out << "false";
+          } else {
+            size_t emitted = 0;
+            for (auto iter = fields.begin(); iter != fields.end(); ++iter) {
+              if (std::next(iter) == fields.end()) {
+                less_term(out, *iter);
+              } else {
+                less_term(out, *iter);
+                out << " || (";
+                match_term(out, *iter);
+                out << " && (";
+                ++emitted;
+              }
+            }
+            out << string(2 * emitted, ')');
           }
-          ++idx;
+          out << ';' << Eol
+              << "}" << Eol
+              << "inline size_t " << bname << "::GetHash() const {" << Eol
+              << "  return ";
+          if (fields.empty()) { out << "0"; }
+          out << Base::Join(fields, " ^ ",
+                            [&subst_storage](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              if (it.second.Is<Type::TGroupRef>()) {
+                                strm << 'V' << it.first << ".GetHash()";
+                              } else {
+                                strm << "std::hash<" << subst_storage(it.second)
+                                     << ">()(V" << it.first << ')';
+                              }
+                            })
+              << ';' << Eol
+              << "}" << Eol;
         }
       }
       out << Eol;
