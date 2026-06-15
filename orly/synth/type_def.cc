@@ -18,6 +18,9 @@
 
 #include <orly/synth/type_def.h>
 
+#include <algorithm>
+#include <map>
+#include <set>
 #include <vector>
 
 #include <base/as_str.h>
@@ -25,7 +28,10 @@
 #include <base/no_default_case.h>
 #include <orly/synth/context.h>
 #include <orly/synth/new_type.h>
+#include <orly/type/group_ref.h>
+#include <orly/type/rec_group.h>
 #include <orly/type/unroll.h>
+#include <orly/type/variant.h>
 
 using namespace Orly;
 using namespace Orly::Synth;
@@ -39,6 +45,22 @@ struct TInFlightEntry {
   size_t VariantDepth;
 };  // TInFlightEntry
 static thread_local std::vector<TInFlightEntry> InFlightStack;
+
+/* The mutually-recursive group currently being resolved (issue #116):
+   maps each member def to its placeholder index. While set, a TRefType
+   naming a member resolves to a TGroupRef placeholder. Saved/restored
+   around each ResolveScc so nested group resolution (a member that uses a
+   *different* recursive group) works. */
+static thread_local std::map<const TTypeDef *, size_t> CurrentScc;
+
+bool TTypeDef::InCurrentScc(const TTypeDef *def, size_t &index) {
+  auto iter = CurrentScc.find(def);
+  if (iter == CurrentScc.end()) {
+    return false;
+  }
+  index = iter->second;
+  return true;
+}
 
 TTypeDef::TTypeDef(TScope *scope, const Package::Syntax::TTypeDef *type_def)
     : TDef(scope, Base::AssertTrue(type_def)->GetName()),
@@ -82,7 +104,111 @@ void TTypeDef::NoteSelfRefMinted() {
   InFlightStack.back().Def->SelfRefMinted = true;
 }
 
+void TTypeDef::ForwardReach(TTypeDef *start, std::set<TTypeDef *> &out) {
+  std::vector<TTypeDef *> stack;
+  start->ForEachRef([&stack](TAnyRef &ref) {
+    if (TTypeDef *td = dynamic_cast<TTypeDef *>(ref.GetDef())) {
+      stack.push_back(td);
+    }
+  });
+  while (!stack.empty()) {
+    TTypeDef *def = stack.back();
+    stack.pop_back();
+    if (!out.insert(def).second) {
+      continue;
+    }
+    def->ForEachRef([&stack](TAnyRef &ref) {
+      if (TTypeDef *td = dynamic_cast<TTypeDef *>(ref.GetDef())) {
+        stack.push_back(td);
+      }
+    });
+  }
+}
+
+const std::vector<TTypeDef *> &TTypeDef::GetScc() const {
+  if (!SccComputed) {
+    TTypeDef *self = const_cast<TTypeDef *>(this);
+    /* SCC = members reachable from self that can also reach self. */
+    std::set<TTypeDef *> fwd;
+    ForwardReach(self, fwd);
+    std::vector<TTypeDef *> scc;
+    for (TTypeDef *def : fwd) {
+      std::set<TTypeDef *> def_fwd;
+      ForwardReach(def, def_fwd);
+      if (def_fwd.count(self)) {
+        scc.push_back(def);
+      }
+    }
+    /* A non-recursive def reaches neither itself nor anything that reaches
+       it; ensure self is always present so the SCC is never empty. */
+    if (std::find(scc.begin(), scc.end(), self) == scc.end()) {
+      scc.push_back(self);
+    }
+    /* Stable order (cosmetic: the group identity is canonical regardless). */
+    std::sort(scc.begin(), scc.end(), [](TTypeDef *a, TTypeDef *b) {
+      return a->GetName().GetText() < b->GetName().GetText();
+    });
+    Scc = std::move(scc);
+    SccComputed = true;
+  }
+  return Scc;
+}
+
+void TTypeDef::ResolveScc() const {
+  if (GroupType) {
+    return;
+  }
+  const std::vector<TTypeDef *> &scc = GetScc();
+  assert(scc.size() > 1);
+
+  /* Activate placeholder mode for every member, then read each member's
+     equation: its variant arms with sibling references replaced by
+     TGroupRef placeholders (done in TRefType via InCurrentScc). */
+  std::map<const TTypeDef *, size_t> saved;
+  saved.swap(CurrentScc);
+  for (size_t i = 0; i < scc.size(); ++i) {
+    CurrentScc[scc[i]] = i;
+  }
+  std::vector<Type::TVariantElems> equations;
+  try {
+    for (TTypeDef *member : scc) {
+      const Type::TType &t = member->Type->GetSymbolicType();
+      const Type::TVariant *variant = t.TryAs<Type::TVariant>();
+      if (!variant) {
+        GetContext().AddError(member->GetName().GetPosRange(),
+            "a member of a mutually-recursive type group must be a variant "
+            "at its top level (issue #116)");
+        CurrentScc.swap(saved);
+        return;
+      }
+      equations.push_back(variant->GetElems());
+    }
+  } catch (...) {
+    CurrentScc.swap(saved);
+    throw;
+  }
+  CurrentScc.swap(saved);
+
+  /* Intern the group and cache each member's resolved type. */
+  std::vector<Type::TType> members = Type::MakeRecGroup(equations);
+  for (size_t i = 0; i < scc.size(); ++i) {
+    scc[i]->GroupType = members[i];
+  }
+}
+
 const Type::TType &TTypeDef::GetSymbolicType() const {
+  /* A member of a mutually-recursive group resolves through MakeRecGroup
+     (issue #116); resolve the whole group once and serve the cached type. */
+  if (GroupType) {
+    return *GroupType;
+  }
+  if (GetScc().size() > 1) {
+    ResolveScc();
+    assert(GroupType);
+    return *GroupType;
+  }
+
+  /* Single def: direct recursion via de Bruijn TSelfRef (issue #103). */
   InFlightStack.push_back(TInFlightEntry{this, 0});
   try {
     const Type::TType &result = Type->GetSymbolicType();
@@ -210,11 +336,16 @@ TAction TTypeDef::Build(int pass) {
 void TTypeDef::ForEachPred(int pass, const std::function<bool (TDef *)> &cb) {
   switch (pass) {
     case 1: {
-      Type->ForEachRef([this, cb](TAnyRef &ref) -> bool {
-        /* A def may depend on itself (direct recursion, #103); skip the
-           self-edge so the build driver's cycle detector doesn't fire. */
+      const std::vector<TTypeDef *> &scc = GetScc();
+      Type->ForEachRef([this, &scc, cb](TAnyRef &ref) -> bool {
+        /* A def may depend on itself (direct recursion, #103) or on a
+           sibling in its mutually-recursive group (#116); skip every
+           intra-group edge so the build driver's cycle detector doesn't
+           fire -- the group is resolved as a unit by GetSymbolicType. */
         TDef *def = ref.GetDef();
-        if (def != this) {
+        TTypeDef *td = dynamic_cast<TTypeDef *>(def);
+        bool in_scc = td && std::find(scc.begin(), scc.end(), td) != scc.end();
+        if (!in_scc) {
           cb(def);
         }
         return true;

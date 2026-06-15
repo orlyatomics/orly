@@ -1,0 +1,57 @@
+/* <orly/lang_tests/general/variants_mutual.orly>
+
+   Synth-layer test for issue #116 Phase 2b: mutually-recursive type
+   definitions typecheck.
+
+   A group of type defs whose references form a cycle no longer trips the
+   build driver's "cycle in build dependencies" detector (which #103
+   documented as the limit). The whole strongly-connected component is
+   resolved as a unit: each member's symbolic type is a variant whose
+   cross-references to its siblings are interned group references
+   (orly/type/rec_group.h), so the group has a single canonical identity.
+
+   This test only DECLARES the groups -- it does not construct or consume
+   values of them. Constructing/using a mutually-recursive value needs the
+   per-group native representation (Phase 2c); until then these types are
+   resolvable in the type checker but have no runtime form, exactly as an
+   unused self-recursive type def is resolvable without codegen.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* The minimal mutual pair: a refers to b, b refers to a. */
+a is <| X(b) |>;
+b is <| Y(a) |>;
+
+/* A three-member cycle: c -> d -> e -> c. */
+c is <| C(d) |>;
+d is <| D(e) |>;
+e is <| E(c) |>;
+
+/* A realistic mutually-recursive AST: an expression that may contain a
+   statement and a statement that may contain an expression, with
+   non-recursive arms and a record payload mixed in. */
+expr is <| Lit(int) | Neg(expr) | Block(stmt) |>;
+stmt is <| Done | Eval(expr) | Seq(<{.fst: stmt, .snd: stmt}>) |>;
+
+/* A self-recursive type def still resolves via the de Bruijn path (#103)
+   when declared alongside mutual groups -- the SCC of `tree` is just
+   itself. */
+tree is <| Leaf(int) | Branch(<{.l: tree, .r: tree}>) |>;
+
+test {
+  /* Compilation reaching here means every type def above resolved its
+     symbolic type without a build-cycle error. */
+  t1: true;
+};

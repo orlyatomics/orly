@@ -22,6 +22,9 @@
 #pragma once
 
 #include <cassert>
+#include <optional>
+#include <set>
+#include <vector>
 
 #include <orly/orly.package.cst.h>
 #include <orly/type.h>
@@ -82,11 +85,42 @@ namespace Orly {
          exempt. */
       static void NoteSelfRefMinted();
 
+      /* While a mutually-recursive group (a type-def SCC of size > 1) is
+         being resolved, a TRefType naming a member of that group resolves
+         to a TGroupRef placeholder rather than recursing (#116). Returns
+         true and the member's placeholder index iff `def` is a member of
+         the group currently being resolved. */
+      static bool InCurrentScc(const TTypeDef *def, size_t &index);
+
       private:
 
       /* Sticky: set when computing this def's symbolic type minted at
          least one self-reference. */
       mutable bool SelfRefMinted = false;
+
+      /* For a member of a mutually-recursive group (SCC size > 1), its
+         resolved group type (orly/type/rec_group.h); single-def recursion
+         keeps using the de Bruijn TSelfRef path and leaves this empty. */
+      mutable std::optional<Type::TType> GroupType;
+
+      /* This def's strongly-connected component over the type-def reference
+         graph, computed once (Tarjan-free two-reachability). Always contains
+         this; size > 1 means mutual/transitive recursion. */
+      mutable std::vector<TTypeDef *> Scc;
+      mutable bool SccComputed = false;
+
+      /* The SCC of this def (computed and cached on first use). */
+      const std::vector<TTypeDef *> &GetScc() const;
+
+      /* Every type def reachable from `start` by following the references in
+         its type expression (transitive closure, `start` included only if it
+         lies on a cycle). Used to compute SCCs by two-way reachability. */
+      static void ForwardReach(TTypeDef *start, std::set<TTypeDef *> &out);
+
+      /* Resolve a whole mutually-recursive group at once: build each
+         member's equation (sibling refs as TGroupRef placeholders) and
+         intern the group via MakeRecGroup, caching every member's GroupType. */
+      void ResolveScc() const;
 
       /* TODO */
       virtual TAction Build(int pass);

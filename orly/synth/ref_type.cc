@@ -21,6 +21,7 @@
 #include <base/assert_true.h>
 #include <orly/synth/context.h>
 #include <orly/type/any.h>
+#include <orly/type/group_ref.h>
 #include <orly/type/self_ref.h>
 
 using namespace Orly;
@@ -39,6 +40,15 @@ Type::TType TRefType::ComputeSymbolicType() const {
      by the nearest enclosing variant instead of recursing forever. Only
      direct recursion through a variant arm is supported in v1. */
   TTypeDef *def = *TypeDef;
+  /* A reference to a member of the mutually-recursive group currently being
+     resolved (issue #116): mint a TGroupRef placeholder keyed by the
+     member's index. MakeRecGroup reindexes these into the canonical group.
+     Checked before the in-flight path: during group resolution no def is
+     pushed in-flight, so the two never overlap. */
+  size_t group_index;
+  if (def && TTypeDef::InCurrentScc(def, group_index)) {
+    return Type::TGroupRef::Get({}, group_index);
+  }
   if (def && TTypeDef::IsInFlight(def)) {
     const TPosRange &pos_range = TypeDef.GetName().GetPosRange();
     if (def != TTypeDef::GetInnermostInFlight()) {
