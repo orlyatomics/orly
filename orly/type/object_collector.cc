@@ -71,7 +71,13 @@ void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_
       }
     }
     virtual void operator()(const TVariant *that) const {
-      ObjectSet.insert(that->AsType());
+      /* An OPEN variant -- one with a free self-reference, e.g. a nested
+         variant bound by an enclosing one (#116) -- has no standalone
+         header (its native shape depends on the binder); it is emitted
+         inline at its binding site. A closed variant is a normal type. */
+      if (!HasFreeSelfRef(that->AsType())) {
+        ObjectSet.insert(that->AsType());
+      }
       for (auto iter : that->GetElems()) {
         iter.second.Accept(*this);
       }
