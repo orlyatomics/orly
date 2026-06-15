@@ -30,6 +30,7 @@
 #include <orly/type/dict.h>
 #include <orly/type/err.h>
 #include <orly/type/func.h>
+#include <orly/type/group_ref.h>
 #include <orly/type/id.h>
 #include <orly/type/int.h>
 #include <orly/type/list.h>
