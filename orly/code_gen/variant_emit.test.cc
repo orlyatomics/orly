@@ -45,10 +45,10 @@ using TV = Orly::Rt::Variants::TVariantV2O07Deletedi7Integer;
 FIXTURE(EmittedVariantRoundTrips) {
   Type::TTypeCzar type_czar;
 
-  TV i  = TV::Integer(int64_t(-384));
-  TV i2 = TV::Integer(int64_t(-384));
-  TV i3 = TV::Integer(int64_t(7));
-  TV d  = TV::Deleted(Rt::Objects::TObjO0());
+  TV i  = TV::MkInteger(int64_t(-384));
+  TV i2 = TV::MkInteger(int64_t(-384));
+  TV i3 = TV::MkInteger(int64_t(7));
+  TV d  = TV::MkDeleted(Rt::Objects::TObjO0());
 
   /* GetType(): the declared 2-arm variant type. */
   auto declared = Type::TVariant::Get(
@@ -77,8 +77,8 @@ FIXTURE(EmittedVariantRoundTrips) {
 FIXTURE(EmittedVariantAsVar) {
   Type::TTypeCzar type_czar;
 
-  TV i = TV::Integer(int64_t(-384));
-  TV d = TV::Deleted(Rt::Objects::TObjO0());
+  TV i = TV::MkInteger(int64_t(-384));
+  TV d = TV::MkDeleted(Rt::Objects::TObjO0());
 
   Var::TVar v_i = i.AsVar();
   Var::TVar v_d = d.AsVar();
@@ -93,8 +93,8 @@ FIXTURE(EmittedVariantAsVar) {
   EXPECT_TRUE(v_d.GetType() == declared);
 
   /* Var-level equality is consistent with native EqEq. */
-  TV i2 = TV::Integer(int64_t(-384));
-  TV i3 = TV::Integer(int64_t(7));
+  TV i2 = TV::MkInteger(int64_t(-384));
+  TV i3 = TV::MkInteger(int64_t(7));
   EXPECT_TRUE(i.AsVar() == i2.AsVar());
   EXPECT_FALSE(i.AsVar() == i3.AsVar());
   EXPECT_FALSE(i.AsVar() == d.AsVar());

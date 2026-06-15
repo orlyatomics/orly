@@ -1,0 +1,52 @@
+/* <orly/lang_tests/general/variants_arm_names.orly>
+
+   Regression test for issue #119: a variant arm whose tag spells a
+   function-like macro broke the generated C++. The per-arm static
+   factory used to be named after the bare tag, so an arm named `S`
+   emitted `static ... S(const std::string &vv)`, which the preprocessor
+   expanded against the `S(x)` stringize macro in <base/code_location.h>
+   ("expected unqualified-id before string constant"); `HERE` would have
+   collided the same way. Factories are now `Mk<Tag>`, so any tag spelling
+   is safe. (The other tag-derived names -- GetV<Tag>, V<Tag> storage,
+   <class>_Boxed<Tag> -- were already prefixed.)
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* `S` and `HERE` are macros in <base/code_location.h>; `A` is innocuous
+   but kept for variety. */
+j is <| N(int) | S(str) | A | HERE(int) |>;
+
+classify = ((v) when {
+  N(n): n;
+  S(s): length_of s;
+  A: -1;
+  HERE(h): h * 10;
+}) where {
+  v = given::(j);
+};
+
+test {
+  /* Construct (Mk<Tag> factory) and match each macro-spelled arm. */
+  t1: classify(.v: j.N(7)) == 7;
+  t2: classify(.v: j.S("abcd")) == 4;
+  t3: classify(.v: j.A()) == -1;
+  t4: classify(.v: j.HERE(3)) == 30;
+
+  /* Equality and the .<Tag> accessor on a macro-spelled arm. */
+  t5: j.S("x") == j.S("x");
+  t6: j.S("x") != j.N(1);
+  t7: (j.S("hi")).S == "hi";
+  t8: (j.HERE(5)).HERE == 5;
+};

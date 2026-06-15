@@ -29,6 +29,8 @@ TVariantCtor::TVariantCtor(const L0::TPackage *package,
 
 void TVariantCtor::WriteExpr(TCppPrinter &out) const {
   /* GetReturnType() prints `Orly::Rt::Variants::TVariant<mangled>`; the
-     per-arm static factory is named after the tag and takes the payload. */
-  out << GetReturnType() << "::" << Tag << '(' << Payload << ')';
+     per-arm static factory is `Mk<Tag>` (the `Mk` prefix avoids macro
+     collisions on the bare tag name, e.g. an arm named `S`; see #119 and
+     orly/code_gen/variant.cc) and takes the payload. */
+  out << GetReturnType() << "::Mk" << Tag << '(' << Payload << ')';
 }
