@@ -24,6 +24,7 @@
 #include <orly/type/impl.h>
 #include <orly/type/equal_visitor.h>
 #include <orly/type/unwrap.h>
+#include <orly/type/variant.h>
 
 using namespace Orly;
 using namespace Orly::Expr;
@@ -66,12 +67,26 @@ Type::TType TIfElse::GetTypeImpl() const {
     NO_COPY(TIfElseVisitor);
     public:
     TIfElseVisitor(Type::TType &type, const TPosRange &pos_range) : TEqualVisitor(type, pos_range) {}
-    virtual void operator()(const Type::TAny *, const Type::TAny *) const {
-      throw TExprError(
-          HERE,
-          PosRange,
-          "Unable to resolve return type for if else expression. Are you missing a base case for a recursive function?");
+    virtual void operator()(const Type::TAny *lhs, const Type::TAny *) const {
+      /* Both branches are unresolved recursive calls. Defer rather than
+         throw: the node's type is anchored higher in the same function (a
+         concrete arm elsewhere), and the genuine "no base case" case is
+         caught once at the function level (TFunction::GetReturnType). See
+         #126. */
+      Type = lhs->AsType();
     }
+    /* A variant branch joins with an equal variant (variants are invariant
+       in v1, #95) or anchors an unresolved (TAny) branch. Mirrors
+       TEqCompVisitor; the base TEqualVisitor would otherwise throw (#126). */
+    virtual void operator()(const Type::TVariant *lhs, const Type::TVariant *rhs) const {
+      if (lhs != rhs) {
+        throw TExprError(HERE, PosRange,
+            "the branches of an if/else expression are different variant types");
+      }
+      Type = lhs->AsType();
+    }
+    virtual void operator()(const Type::TAny     *, const Type::TVariant  *rhs) const { Type = rhs->AsType(); }
+    virtual void operator()(const Type::TVariant *lhs, const Type::TAny    *) const final { Type = lhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TAddr     *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TBool     *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TDict     *rhs) const { Type = rhs->AsType(); }

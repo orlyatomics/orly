@@ -117,9 +117,22 @@ Type::TType TWhen::GetTypeImpl() const {
     NO_COPY(TWhenJoinVisitor);
     public:
     TWhenJoinVisitor(Type::TType &type, const TPosRange &pos_range) : TEqualVisitor(type, pos_range) {}
-    virtual void operator()(const Type::TAny *, const Type::TAny *) const {
-      throw TExprError(HERE, PosRange, "`when` arms do not resolve to a single result type");
+    virtual void operator()(const Type::TAny *lhs, const Type::TAny *) const {
+      /* Both arms are unresolved recursive calls; defer (the node's type is
+         anchored higher in the same function, and genuine "no base case" is
+         caught at the function level -- TFunction::GetReturnType). See #126. */
+      Type = lhs->AsType();
     }
+    /* A variant arm joins with an equal variant (invariant in v1) or anchors
+       an unresolved (TAny) arm; the base TEqualVisitor would throw (#126). */
+    virtual void operator()(const Type::TVariant *lhs, const Type::TVariant *rhs) const {
+      if (lhs != rhs) {
+        throw TExprError(HERE, PosRange, "`when` arms resolve to different variant types");
+      }
+      Type = lhs->AsType();
+    }
+    virtual void operator()(const Type::TAny     *, const Type::TVariant  *rhs) const { Type = rhs->AsType(); }
+    virtual void operator()(const Type::TVariant *lhs, const Type::TAny    *) const final { Type = lhs->AsType(); }
     virtual void operator()(const Type::TAny *, const Type::TAddr     *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny *, const Type::TBool     *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny *, const Type::TDict     *rhs) const { Type = rhs->AsType(); }

@@ -19,6 +19,7 @@
 #include <orly/symbol/function.h>
 
 #include <base/assert_true.h>
+#include <orly/error.h>
 #include <orly/symbol/scope.h>
 #include <orly/type/any.h>
 
@@ -77,11 +78,22 @@ const TPosRange &TFunction::GetPosRange() const {
 Type::TType TFunction::GetReturnType() const {
   Type::TType type;
   if (IsRecursive) {
+    /* Re-entered through a recursive call: the return type is not yet known.
+       TAny is the placeholder; a `when`/if-else with a concrete arm anchors
+       it, and an all-recursive node now defers rather than throwing (#126). */
     type = Type::TAny::Get();
   } else {
     IsRecursive = true;
     type = GetExpr()->GetType();
     IsRecursive = false;
+    /* If the whole body still resolves to TAny, every return path is a
+       recursive call -- a genuine missing base case. No expression produces
+       TAny except the recursive placeholder, so this is the one place the
+       diagnostic belongs (moved here from the per-node join, #126). */
+    if (type.Is<Type::TAny>()) {
+      throw TExprError(HERE, PosRange,
+          "this recursive function has no base case: every path is a recursive call");
+    }
   }
   return type;
 }
