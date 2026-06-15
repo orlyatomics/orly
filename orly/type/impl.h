@@ -43,6 +43,7 @@ namespace Orly {
     class TDict;
     class TErr;
     class TFunc;
+    class TGroupRef;
     class TId;
     class TInt;
     class TList;
@@ -255,6 +256,11 @@ namespace Orly {
          (mangling, gen_code, orlyify, has_optional, object_collector, unroll)
          override this. */
       virtual void operator()(const TSelfRef  *) const {throw Base::TImpossibleError(HERE);}
+      /* TGroupRef (mutual-recursion member reference, #116) is treated like
+         TSelfRef: a leaf that lives only inside a group member's payload map
+         and is navigated to the member type before surfacing, so only the
+         structural walkers override it. */
+      virtual void operator()(const TGroupRef  *) const {throw Base::TImpossibleError(HERE);}
       virtual void operator()(const TOpt      *that) const = 0;
       virtual void operator()(const TReal     *that) const = 0;
       virtual void operator()(const TSeq      *that) const = 0;

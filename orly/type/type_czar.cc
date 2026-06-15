@@ -37,6 +37,7 @@ TTypeCzar::TTypeCzar() {
   TOpt::New();
   TReal::New();
   TSelfRef::New();
+  TGroupRef::New();
   TSeq::New();
   TSet::New();
   TStr::New();
@@ -54,6 +55,7 @@ TTypeCzar::~TTypeCzar() {
   TStr::Delete();
   TSet::Delete();
   TSeq::Delete();
+  TGroupRef::Delete();
   TSelfRef::Delete();
   TReal::Delete();
   TOpt::Delete();

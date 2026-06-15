@@ -28,6 +28,7 @@
 #include <orly/type/list.h>
 #include <orly/type/mutable.h>
 #include <orly/type/obj.h>
+#include <orly/type/group_ref.h>
 #include <orly/type/opt.h>
 #include <orly/type/self_ref.h>
 #include <orly/type/seq.h>
@@ -308,6 +309,18 @@ std::string TType::GetMangledName() const {
     virtual void operator()(const TSelfRef *that) const {
       std::ostringstream strm;
       strm << 'X' << that->GetDepth();
+      Name = strm.str();
+    }
+    /* A group reference mangles by its member index and the group identity
+       (the members' canonicalized inlined forms, which are pure de Bruijn --
+       no group refs -- so this is finite). Isomorphic groups share an
+       identity and therefore a mangled name (#116). */
+    virtual void operator()(const TGroupRef *that) const {
+      std::ostringstream strm;
+      strm << 'Y' << that->GetIndex() << 'g' << that->GetGroup().size();
+      for (const auto &member : that->GetGroup()) {
+        strm << member.GetMangledName();
+      }
       Name = strm.str();
     }
     virtual void operator()(const TOpt *that) const {
