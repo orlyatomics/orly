@@ -34,13 +34,13 @@ namespace Orly {
         public:
         TVariantV2O07Deletedi7Integer() : Which(0) {}
 
-        static TVariantV2O07Deletedi7Integer Deleted(const Orly::Rt::Objects::TObjO0 &vv) {
+        static TVariantV2O07Deletedi7Integer MkDeleted(const Orly::Rt::Objects::TObjO0 &vv) {
           TVariantV2O07Deletedi7Integer out;
           out.Which = 0;
           out.VDeleted = vv;
           return out;
         }
-        static TVariantV2O07Deletedi7Integer Integer(const int64_t &vv) {
+        static TVariantV2O07Deletedi7Integer MkInteger(const int64_t &vv) {
           TVariantV2O07Deletedi7Integer out;
           out.Which = 1;
           out.VInteger = vv;
@@ -240,8 +240,8 @@ namespace Orly {
         Type::TAny::TWrapper(tpin->NewElem(0, tag, etype_alloc));
         void *estate_alloc = alloca(State::GetMaxStateSize());
         State::TAny::TWrapper elem_state(spin->NewElem(0, estate_alloc));
-        if (tag == "Deleted") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::Deleted(AsNative<Orly::Rt::Objects::TObjO0>(*elem_state)); }
-        else if (tag == "Integer") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::Integer(AsNative<int64_t>(*elem_state)); }
+        if (tag == "Deleted") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::MkDeleted(AsNative<Orly::Rt::Objects::TObjO0>(*elem_state)); }
+        else if (tag == "Integer") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::MkInteger(AsNative<int64_t>(*elem_state)); }
         else { THROW_ERROR(TInvalidConversion); }
       }
       private:

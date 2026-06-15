@@ -301,16 +301,23 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
            record; the visitor reads the one key, dispatches on its tag, and
            builds this native variant via the per-arm static factories). */
 
-        /* One static factory per arm. A recursive arm's factory takes the
-           UNROLLED payload (deduced at the call site -- a template, so this
-           header needn't include the unrolled record's header) and stores
-           it boxed. */
+        /* One static factory per arm, named `Mk<Tag>`. The `Mk` prefix
+           keeps the method name from colliding with a function-like macro
+           that happens to share the tag's spelling -- e.g. an arm named
+           `S` would otherwise expand the `S(x)` stringize macro from
+           <base/code_location.h> (#119). This mirrors the `V` prefix the
+           record/variant generators already use on field/payload storage
+           for the same reason. The other tag-derived names (GetV<Tag>,
+           V<Tag>, <class>_Boxed<Tag>) are already prefixed and safe.
+           A recursive arm's factory takes the UNROLLED payload (deduced
+           at the call site -- a template, so this header needn't include
+           the unrolled record's header) and stores it boxed. */
         {
           size_t idx = 0;
           for (const auto &elem : elems) {
             if (arm_is_recursive(elem.second)) {
               out << "template <typename TPayload>" << Eol
-                  << "static " << class_name << ' ' << elem.first
+                  << "static " << class_name << " Mk" << elem.first
                   << "(const TPayload &vv) {" << Eol
                   << "  " << class_name << " out;" << Eol
                   << "  out.Which = " << idx << ";" << Eol
@@ -319,7 +326,7 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                   << "  return out;" << Eol
                   << "}" << Eol;
             } else {
-              out << "static " << class_name << ' ' << elem.first
+              out << "static " << class_name << " Mk" << elem.first
                   << "(const " << elem.second << " &vv) {" << Eol
                   << "  " << class_name << " out;" << Eol
                   << "  out.Which = " << idx << ";" << Eol
@@ -755,7 +762,7 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             << "      State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));" << Eol
             << "      if (opin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }" << Eol
             << "      State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol
-            << "      Out = Rt::Variants::" << class_name << "::" << elem.first
+            << "      Out = Rt::Variants::" << class_name << "::Mk" << elem.first
             << "(AsNative<" << elem.second << ">(*payload_state));" << Eol
             << "    }" << Eol;
         ++idx;
