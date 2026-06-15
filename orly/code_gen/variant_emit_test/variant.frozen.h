@@ -11,6 +11,8 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
+#include <string>
 
 #include <orly/rt/tuple.h>
 #include <orly/rt/containers.h>
@@ -20,6 +22,8 @@
 #include <orly/var/obj.h>
 #include <orly/var/new_sabot.h>
 #include <orly/sabot/to_native.h>
+#include <orly/native/type.h>
+#include <orly/type/new_sabot.h>
 
 /* Needed payload objects */
 #include <orly/code_gen/variant_emit_test/O0.frozen.h>
@@ -234,14 +238,44 @@ namespace Orly {
         Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));
         void *state_pin_alloc = alloca(State::GetMaxStatePinSize());
         State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));
-        if (tpin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }
-        std::string tag;
+        const size_t elem_count = tpin->GetElemCount();
         void *etype_alloc = alloca(Type::GetMaxTypeSize());
-        Type::TAny::TWrapper(tpin->NewElem(0, tag, etype_alloc));
         void *estate_alloc = alloca(State::GetMaxStateSize());
-        State::TAny::TWrapper elem_state(spin->NewElem(0, estate_alloc));
-        if (tag == "Deleted") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::MkDeleted(AsNative<Orly::Rt::Objects::TObjO0>(*elem_state)); }
-        else if (tag == "Integer") { Out = Rt::Variants::TVariantV2O07Deletedi7Integer::MkInteger(AsNative<int64_t>(*elem_state)); }
+        std::string field_name;
+        size_t which = static_cast<size_t>(-1);
+        size_t idx_Deleted = static_cast<size_t>(-1);
+        size_t idx_Integer = static_cast<size_t>(-1);
+        for (size_t i = 0; i < elem_count; ++i) {
+          Type::TAny::TWrapper(tpin->NewElem(i, field_name, etype_alloc));
+          if (field_name == "$which") {
+            State::TAny::TWrapper which_state(spin->NewElem(i, estate_alloc));
+            which = static_cast<size_t>(AsNative<int64_t>(*which_state));
+          }
+          else if (field_name == "Deleted") { idx_Deleted = i; }
+          else if (field_name == "Integer") { idx_Integer = i; }
+        }
+        void *opt_pin_alloc = alloca(State::GetMaxStatePinSize());
+        void *payload_alloc = alloca(State::GetMaxStateSize());
+        if (which == 0) {
+          if (idx_Deleted == static_cast<size_t>(-1)) { THROW_ERROR(TInvalidConversion); }
+          State::TAny::TWrapper arm_state(spin->NewElem(idx_Deleted, estate_alloc));
+          const State::TOpt *opt = dynamic_cast<const State::TOpt *>(arm_state.get());
+          if (!opt) { THROW_ERROR(TInvalidConversion); }
+          State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));
+          if (opin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }
+          State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));
+          Out = Rt::Variants::TVariantV2O07Deletedi7Integer::MkDeleted(AsNative<Orly::Rt::Objects::TObjO0>(*payload_state));
+        }
+        else if (which == 1) {
+          if (idx_Integer == static_cast<size_t>(-1)) { THROW_ERROR(TInvalidConversion); }
+          State::TAny::TWrapper arm_state(spin->NewElem(idx_Integer, estate_alloc));
+          const State::TOpt *opt = dynamic_cast<const State::TOpt *>(arm_state.get());
+          if (!opt) { THROW_ERROR(TInvalidConversion); }
+          State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));
+          if (opin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }
+          State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));
+          Out = Rt::Variants::TVariantV2O07Deletedi7Integer::MkInteger(AsNative<int64_t>(*payload_state));
+        }
         else { THROW_ERROR(TInvalidConversion); }
       }
       private:
@@ -264,6 +298,18 @@ namespace Orly {
         return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);
       }
     }; // State::Factory<TVariantV2O07Deletedi7Integer>
+
+    template <>
+    class Type::For<Rt::Variants::TVariantV2O07Deletedi7Integer> final {
+      NO_CONSTRUCTION(For);
+      public:
+      static Sabot::Type::TAny *GetType(void *type_alloc) {
+        return Orly::Type::NewSabot(type_alloc, Orly::Type::TDt<Rt::Variants::TVariantV2O07Deletedi7Integer>::GetType());
+      }
+      static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {
+        return dynamic_cast<Sabot::Type::TRecord *>(GetType(type_alloc));
+      }
+    }; // Type::For<TVariantV2O07Deletedi7Integer>
 
   } // Orly
 
