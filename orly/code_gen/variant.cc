@@ -103,7 +103,10 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
      no methods and goes through the Rt:: machinery, which resolves fine
      in the variant's member bodies (complete-class context). */
   auto arm_has_methods = [](const Type::TType &payload) {
-    return payload.Is<Type::TSelfRef>() || payload.Is<Type::TObj>();
+    /* A self-ref boxes to TBox (methods), a record/open-variant payload to
+       an inline struct (methods). A container of boxes has none. */
+    return payload.Is<Type::TSelfRef>() || payload.Is<Type::TObj>()
+        || (payload.Is<Type::TVariant>() && Type::HasFreeSelfRef(payload));
   };
   bool is_recursive = false;
   for (const auto &elem : elems) {
@@ -114,6 +117,21 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
   }
   auto boxed_name = [&class_name](const string &tag) {
     return class_name + "_Boxed" + tag;
+  };
+  /* The name of the inline struct that stores an open nested-variant arm
+     payload (#116 Phase 1). Keyed by the open variant's mangled name and
+     qualified by the outer class, so it is unique within this header and
+     dedups across arms with the same nested shape. */
+  auto inline_name = [&class_name](const Type::TType &open_variant) {
+    return class_name + "_NV" + open_variant.GetMangledName();
+  };
+  /* True for an arm payload that is an open nested variant -- a variant
+     (transitively) holding a free self-reference bound by an enclosing
+     variant. Stored as an inline struct (see inline_name) rather than a
+     standalone header, since its native shape depends on the binder.
+     v1 (Phase 1) supports this only as a direct arm payload. */
+  auto arm_is_nested_variant = [](const Type::TType &payload) {
+    return payload.Is<Type::TVariant>() && Type::HasFreeSelfRef(payload);
   };
   /* Prints a type with every free self-reference replaced by its boxed
      storage, elementwise through the containers the placement rules
@@ -152,6 +170,9 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
   auto storage_type = [&](const string &tag, const Type::TType &payload) {
     if (Type::HasFreeSelfRef(payload) && payload.Is<Type::TObj>()) {
       return boxed_name(tag);
+    }
+    if (arm_is_nested_variant(payload)) {
+      return inline_name(payload);
     }
     return subst_storage(payload);
   };
@@ -285,6 +306,80 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
           }
           out << "}; // " << bname << Eol
               << Eol;
+        }
+        /* Inline structs for open nested-variant arm payloads (#116 Phase 1):
+           a variant arm whose payload is itself a variant holding a free
+           self-reference. The nested variant's native shape depends on its
+           binder (the outer), so it cannot get a standalone header keyed by
+           its binder-agnostic mangled name -- it is emitted inline here,
+           mirroring the _Boxed record structs. v1 supports a single nesting
+           level: the nested variant's arms are tag-only, scalar, or a self-
+           reference to the outer (depth 1 -> Rt::TBox<outer>). */
+        {
+          unordered_set<string> emitted_nv;
+          for (const auto &elem : elems) {
+            if (!arm_is_nested_variant(elem.second)) { continue; }
+            auto nvname = inline_name(elem.second);
+            if (!emitted_nv.insert(nvname).second) { continue; }
+            const auto &nv_elems = elem.second.As<Type::TVariant>()->GetElems();
+            auto nv_field = [&class_name](const Type::TType &p) {
+              return p.Is<Type::TSelfRef>() ? Base::AsStr("Rt::TBox<", class_name, '>')
+                                            : Base::AsStr(p);
+            };
+            out << "/* Inline storage for the open nested-variant payload of arm `"
+                << elem.first << "` (#116). */" << Eol
+                << "class " << nvname << " {" << Eol
+                << "  public:" << Eol
+                << "  " << nvname << "() : Which(0) {}" << Eol
+                << Eol
+                << "  /* From the unrolled closed nested variant (deduced); self arms box. */" << Eol
+                << "  template <typename TClosed>" << Eol
+                << "  explicit " << nvname << "(const TClosed &c) : Which(c.GetWhich()) {" << Eol
+                << "    switch (c.GetWhich()) {" << Eol;
+            {
+              size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "      case " << i << ": V" << ne.first << " = Rt::DeepBox<"
+                    << nv_field(ne.second) << ">(c.GetV" << ne.first << "()); break;" << Eol;
+                ++i;
+              }
+            }
+            out << "    }" << Eol
+                << "  }" << Eol
+                << Eol
+                << "  /* Back to the unrolled closed nested variant. */" << Eol
+                << "  template <typename TRet>" << Eol
+                << "  TRet ToUnrolled() const {" << Eol
+                << "    switch (Which) {" << Eol;
+            {
+              size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "      case " << i << ": return TRet::Mk" << ne.first
+                    << "(Rt::DeepUnbox<decltype(std::declval<TRet>().GetV" << ne.first
+                    << "())>(V" << ne.first << "));" << Eol;
+                ++i;
+              }
+            }
+            out << "    }" << Eol
+                << "    assert(false);" << Eol
+                << "    throw Rt::TSystemError(HERE, \"nested variant has no active arm\");" << Eol
+                << "  }" << Eol
+                << Eol
+                << "  /* Structural comparisons; defined after " << class_name
+                << " (they deref TBox<" << class_name << "> fields). */" << Eol
+                << "  bool EqEq(const " << nvname << " &that) const;" << Eol
+                << "  bool Match(const " << nvname << " &that) const;" << Eol
+                << "  bool MatchLess(const " << nvname << " &that) const;" << Eol
+                << "  size_t GetHash() const;" << Eol
+                << Eol
+                << "  private:" << Eol
+                << "  size_t Which;" << Eol;
+            for (const auto &ne : nv_elems) {
+              out << "  " << nv_field(ne.second) << " V" << ne.first << ";" << Eol;
+            }
+            out << "}; // " << nvname << Eol
+                << Eol;
+          }
         }
       }
       out << "class " << class_name << " {" << Eol;
@@ -484,14 +579,18 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             if (arm_is_recursive(elem.second)) {
               /* TRet is the UNROLLED payload type; the code generator
                  supplies it explicitly at the access site
-                 (orly/code_gen/variant_access.cc). */
-              const bool record_payload = elem.second.Is<Type::TObj>();
+                 (orly/code_gen/variant_access.cc). A record or open-variant
+                 payload is stored in an inline struct that converts via
+                 ToUnrolled; a self-ref / container of boxes unboxes via
+                 Rt::DeepUnbox. */
+              const bool uses_inline_struct =
+                  elem.second.Is<Type::TObj>() || arm_is_nested_variant(elem.second);
               out << "template <typename TRet>" << Eol
                   << "TRet GetV" << elem.first << "() const {" << Eol
                   << "  assert(this);" << Eol
                   << "  assert(Which == " << idx << ");" << Eol
                   << "  return "
-                  << (record_payload
+                  << (uses_inline_struct
                           ? Base::AsStr('V', elem.first, ".template ToUnrolled<TRet>()")
                           : Base::AsStr("Rt::DeepUnbox<TRet>(V", elem.first, ')'))
                   << ";" << Eol
@@ -594,6 +693,68 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                             })
               << ';' << Eol
               << "}" << Eol;
+        }
+        /* Inline nested-variant structs' comparison bodies (deferred: they
+           deref TBox<outer> fields, so the outer must be complete). */
+        {
+          unordered_set<string> done_nv;
+          for (const auto &elem : elems) {
+            if (!arm_is_nested_variant(elem.second)) { continue; }
+            auto nvname = inline_name(elem.second);
+            if (!done_nv.insert(nvname).second) { continue; }
+            const auto &nv_elems = elem.second.As<Type::TVariant>()->GetElems();
+            auto nv_field = [&class_name](const Type::TType &p) {
+              return p.Is<Type::TSelfRef>() ? Base::AsStr("Rt::TBox<", class_name, '>')
+                                            : Base::AsStr(p);
+            };
+            out << Eol
+                << "inline bool " << nvname << "::EqEq(const " << nvname
+                << " &that) const { return Match(that); }" << Eol
+                << "inline bool " << nvname << "::Match(const " << nvname << " &that) const {" << Eol
+                << "  if (Which != that.Which) { return false; }" << Eol
+                << "  switch (Which) {" << Eol;
+            {
+              size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "    case " << i << ": return Rt::Match(V" << ne.first
+                    << ", that.V" << ne.first << ");" << Eol;
+                ++i;
+              }
+            }
+            out << "  }" << Eol
+                << "  assert(false);" << Eol
+                << "  return false;" << Eol
+                << "}" << Eol
+                << "inline bool " << nvname << "::MatchLess(const " << nvname << " &that) const {" << Eol
+                << "  if (Which != that.Which) { return Which < that.Which; }" << Eol
+                << "  switch (Which) {" << Eol;
+            {
+              size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "    case " << i << ": return Rt::MatchLess(V" << ne.first
+                    << ", that.V" << ne.first << ");" << Eol;
+                ++i;
+              }
+            }
+            out << "  }" << Eol
+                << "  assert(false);" << Eol
+                << "  return false;" << Eol
+                << "}" << Eol
+                << "inline size_t " << nvname << "::GetHash() const {" << Eol
+                << "  switch (Which) {" << Eol;
+            {
+              size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "    case " << i << ": return std::hash<size_t>()(" << i
+                    << ") ^ std::hash<" << nv_field(ne.second) << ">()(V" << ne.first << ");" << Eol;
+                ++i;
+              }
+            }
+            out << "  }" << Eol
+                << "  assert(false);" << Eol
+                << "  return 0;" << Eol
+                << "}" << Eol;
+          }
         }
       }
     } // namespace Variants

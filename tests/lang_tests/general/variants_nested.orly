@@ -1,0 +1,100 @@
+/* <orly/lang_tests/general/variants_nested.orly>
+
+   End-to-end test for issue #116 Phase 1: a variant arm whose payload is
+   itself a variant that refers back to the enclosing (outer) variant -- a
+   nested self-reference (`TSelfRef` depth 1):
+
+     tree is <| Leaf(int) | Branch(<| Un(tree) | Nil |>) |>;
+
+   The nested variant `<| Un(tree) | Nil |>` has no standalone native
+   header (its shape depends on its binder, the outer `tree`), so the
+   code generator emits it as an inline struct inside `tree`'s header,
+   boxing the back-reference as `Rt::TBox<tree>` and converting to/from
+   the unrolled closed form the expression layer uses. Construction is
+   through the literal nested-variant ctor (`<| Un(tree) | Nil |>.Un(..)`,
+   tag-only `<| ... |>.Nil` takes no parens), and everything composes:
+   `is`/`.<Tag>` destructuring across both levels, deep `==`, set
+   membership, and recursive folds.
+
+   v1 scope: the nested variant must appear as a *direct* arm payload and
+   its own arms must be tag-only / scalar / a direct self-reference (not a
+   record, container, or further nested variant carrying a self-ref) --
+   those are clean compile errors for now. Deeper nesting and mutual
+   recursion are the remaining #116 work.
+
+   Fold limitation (pre-existing, not specific to nesting): a `when` or
+   if-else *all* of whose arms are recursive calls cannot have its result
+   type inferred -- it needs a concrete (non-recursive) arm to anchor
+   inference, exactly as the outer `Leaf` arm and the inner `Nil` arm do
+   below. A nested variant whose arms are *all* recursive (e.g.
+   `<| L(tree) | R(tree) |>`) can be constructed, compared, and stored,
+   but not yet folded for that reason.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Branch(<| Un(tree) | Nil |>) |>;
+
+/* Recursive fold: the outer `Leaf` arm and the inner `Nil` arm are the
+   concrete anchors; the `Un` arm recurses into the boxed child. */
+val = ((t) when {
+  Leaf(n): n;
+  Branch(b): ((b) when { Un(c): val(.t: c); Nil: 0; });
+}) where {
+  t = given::(tree);
+};
+
+depth = ((t) when {
+  Leaf: 0;
+  Branch(b): ((b) when { Un(c): 1 + depth(.t: c); Nil: 1; });
+}) where {
+  t = given::(tree);
+};
+
+/* Fixtures. */
+leaf  = (tree.Leaf(7)) where {};
+un5   = (tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(5)))) where {};
+un5b  = (tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(5)))) where {};
+un9   = (tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(9)))) where {};
+nil   = (tree.Branch(<| Un(tree) | Nil |>.Nil)) where {};
+deep  = (tree.Branch(<| Un(tree) | Nil |>.Un(
+         tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(8)))))) where {};
+
+test {
+  /* Recursive folds through the nested variant and the boxed back-ref. */
+  t1: val(.t: leaf) == 7;
+  t2: val(.t: un5) == 5;
+  t3: val(.t: nil) == 0;
+  t4: val(.t: deep) == 8;
+  t5: depth(.t: leaf) == 0;
+  t6: depth(.t: un5) == 1;
+  t7: depth(.t: deep) == 2;
+
+  /* Deep structural equality through the inline struct + boxed child. */
+  t8: un5 == un5b;
+  t9: un5 != un9;
+  t10: un5 != nil;
+
+  /* Destructuring across both levels. */
+  t11: un5 is Branch;
+  t12: not (un5 is Leaf);
+  t13: (un5.Branch) is Un;
+  t14: (nil.Branch) is Nil;
+  t15: (un5.Branch).Un is Leaf;
+  t16: (un5.Branch).Un.Leaf == 5;
+
+  /* Set membership: hashing/ordering reach through the inline struct and
+     the boxed child, so the duplicate collapses. */
+  t17: length_of {un5, un5b, un9, nil} == 3;
+};

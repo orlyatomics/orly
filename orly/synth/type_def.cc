@@ -143,6 +143,30 @@ static void ValidateSelfRefPlacement(const TTypeDef *def, const Type::TType &typ
   }
   for (const auto &arm : variant->GetElems()) {
     const Type::TType &payload = arm.second;
+    /* An open nested variant directly as an arm payload (#116 Phase 1).
+       v1 supports a single nesting level: the nested variant's own arms
+       must be tag-only / scalar / self-free, or a *direct* self-reference
+       to an enclosing variant -- not a record, container, or further
+       nested variant carrying a free self-reference. */
+    if (const Type::TVariant *nested = payload.TryAs<Type::TVariant>()) {
+      if (Type::HasFreeSelfRef(payload)) {
+        bool ok = true;
+        for (const auto &nv_arm : nested->GetElems()) {
+          if (Type::HasFreeSelfRef(nv_arm.second) && !nv_arm.second.Is<Type::TSelfRef>()) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) {
+          GetContext().AddError(pos_range,
+              Base::AsStr("in arm \"", arm.first,
+                          "\": a nested variant may currently recurse only via a direct "
+                          "self-reference arm; records, containers, and deeper nested "
+                          "variants holding a self-reference are not yet supported (#116)"));
+        }
+        continue;
+      }
+    }
     bool ok;
     /* One record layer is allowed at the payload root only. */
     const Type::TObj *rec = payload.TryAs<Type::TObj>();
