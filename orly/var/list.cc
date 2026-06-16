@@ -18,6 +18,7 @@
 
 #include <orly/var/list.h>
 
+#include <orly/type/canon.h>
 #include <orly/type/list.h>
 #include <orly/type/orlyify.h>
 #include <orly/var/int.h>
@@ -127,7 +128,7 @@ TList &TList::Xor(const TVar &) {
 
 TList::TList(const std::vector<TVar> &that, const Type::TType &type) : Val(that), Type(type) {
   for (auto iter = Val.begin(); iter != Val.end(); ++iter) {
-    if (iter->GetType() != Type) {
+    if (iter->GetType() != Type && !Type::Equiv(iter->GetType(), Type)) {
       std::ostringstream oss;
       oss << "List constructor requires homogenous element type. List type '";
       Orly::Type::Orlyify(oss, Type);
