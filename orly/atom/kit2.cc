@@ -99,6 +99,11 @@ bool TCore::TOrderedArenaCompare::operator()(const TCore &lhs, const TCore &rhs)
         assert(lhs.Tycon == rhs.Tycon);
         return lhs.ForceAs<Base::TUuid>() < rhs.ForceAs<Base::TUuid>();
       }
+      case TTycon::SelfRef: {
+        /* Recursive back-reference leaf (issue #115): order by de Bruijn depth. */
+        assert(lhs.Tycon == rhs.Tycon);
+        return lhs.ForceAs<uint64_t>() < rhs.ForceAs<uint64_t>();
+      }
       default: {
         assert(lhs.Tycon != TTycon::Str);
         assert(lhs.Tycon != TTycon::Blob);
@@ -255,6 +260,7 @@ TCore::TCore(TExtensibleArena *arena, const Type::TAny &type) {
     virtual void operator()(const Type::TMap       &type) const override { Core->InitIndirectCoreArray(TTycon::Map,    Arena, type, true ); }
     virtual void operator()(const Type::TRecord    &type) const override { Core->InitIndirectCoreArray(Arena, type, false); }
     virtual void operator()(const Type::TTuple     &type) const override { Core->InitIndirectCoreArray(Arena, type, false); }
+    virtual void operator()(const Type::TSelfRef   &type) const override { Core->InitSelfRef(type.GetDepth()); }
     private:
     TExtensibleArena *Arena;
     TCore *Core;
@@ -393,6 +399,7 @@ TCore::Type::TAny *TCore::GetType(TArena *arena, void *type_alloc) const {
     case TTycon::Str      : { result = new (type_alloc) Sabot::Type::TStr      ();            break; }
     case TTycon::Tombstone: { result = new (type_alloc) Sabot::Type::TTombstone();            break; }
     case TTycon::Void     : { result = new (type_alloc) Sabot::Type::TVoid     ();            break; }
+    case TTycon::SelfRef  : { result = new (type_alloc) Sabot::Type::TSelfRef  (ForceAs<uint64_t>()); break; }
     case TTycon::Desc     : { result = new (type_alloc) ST::TDesc              (arena, this); break; }
     case TTycon::Free     : { result = new (type_alloc) ST::TFree              (arena, this); break; }
     case TTycon::Opt      : { result = new (type_alloc) ST::TOpt               (arena, this); break; }
@@ -551,7 +558,10 @@ const TCore::TOffset *TCore::TryGetOffset() const {
     case TTycon::TimePoint:
     case TTycon::Uuid:
     case TTycon::Tombstone:
-    case TTycon::Void: {
+    case TTycon::Void:
+    /* Recursive back-reference leaf (issue #115): a direct scalar -- no
+       indirection offset. */
+    case TTycon::SelfRef: {
       break;
     }
     case TTycon::Blob:

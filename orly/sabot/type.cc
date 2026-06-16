@@ -19,6 +19,7 @@
 #include <orly/sabot/type.h>
 
 #include <cassert>
+#include <stdexcept>
 
 using namespace Orly::Sabot;
 
@@ -80,7 +81,20 @@ ACCEPT(Vector)
 ACCEPT(Map)
 ACCEPT(Record)
 ACCEPT(Tuple)
+ACCEPT(SelfRef)
 #undef ACCEPT
+
+/* The recursive back-reference leaf (issue #115) is not part of the N*N
+   double-dispatch matrix and most visitors never meet it, so both hooks below
+   default to throwing.  Consumers that genuinely handle recursive types
+   override them. */
+void TTypeVisitor::operator()(const Type::TSelfRef &) const {
+  throw std::logic_error("this sabot type visitor does not handle the recursive (TSelfRef) leaf");
+}
+
+void TTypeDoubleVisitor::OnSelfRef(const Type::TAny &, const Type::TAny &) const {
+  throw std::logic_error("this sabot type double-visitor does not handle the recursive (TSelfRef) leaf");
+}
 
 namespace Orly {
 
@@ -190,5 +204,12 @@ namespace Orly {
 }  // Orly
 
 void Orly::Sabot::AcceptDouble(const Type::TAny &lhs, const Type::TAny &rhs, const TTypeDoubleVisitor &double_visitor) {
+  /* Intercept the recursive back-reference leaf (issue #115) at this single
+     chokepoint -- through which both top-level and recursive-descent
+     comparisons flow -- so it stays out of the N*N matrix. */
+  if (lhs.IsRecursiveRef() || rhs.IsRecursiveRef()) {
+    double_visitor.OnSelfRef(lhs, rhs);
+    return;
+  }
   lhs.Accept(TLhsVisitor(rhs, double_visitor));
 }

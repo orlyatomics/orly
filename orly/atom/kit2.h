@@ -306,7 +306,14 @@ namespace Orly {
         /* And then everybody else. */
         Int8 = MaxDirectBlob + 1, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Bool, Char,
         Float, Double, Duration, TimePoint, Uuid, Blob, Str, Tombstone, Void,
-        Desc, Free, Opt, Set, Vector, Map, Record, Tuple
+        Desc, Free, Opt, Set, Vector, Map, Record, Tuple,
+
+        /* The recursive back-reference leaf of a recursive sum type's #96
+           fixed-shape record encoding (issue #115).  Appended last so every
+           existing tycon keeps its numeric value (on-disk-compatible).  Stored
+           like a direct scalar -- its de Bruijn depth lives in DirectBlob -- so
+           it only ever appears nested inside a TYPE core, never as a value. */
+        SelfRef
 
       };  // TTycon
 
@@ -352,6 +359,10 @@ namespace Orly {
       void InitDuration (const TStdDuration  &val = TStdDuration() ) { InitDirect(TTycon::Duration,  val); }
       void InitTimePoint(const TStdTimePoint &val = TStdTimePoint()) { InitDirect(TTycon::TimePoint, val); }
       void InitUuid     (const TUuid         &val = TUuid()        ) { InitDirect(TTycon::Uuid,      val); }
+
+      /* The recursive back-reference leaf (issue #115): a direct scalar holding
+         the de Bruijn depth of the enclosing variant binder it refers to. */
+      void InitSelfRef  (uint64_t             val = 0              ) { InitDirect(TTycon::SelfRef,   val); }
 
       /* If the blob is small enough, store it directly; otherwise, propose an array of bytes and take it as our state. */
       void InitBlob(TExtensibleArena *arena, const uint8_t *start, const uint8_t *limit);
@@ -963,6 +974,12 @@ namespace Orly {
             comp = QuickCompare(ForceAs<Base::TUuid>(), that_core.ForceAs<Base::TUuid>());
             return true;
           }
+          case TTycon::SelfRef: {
+            /* Recursive back-reference leaf (issue #115): order by de Bruijn
+               depth.  Only meaningful nested inside a type core. */
+            comp = QuickCompare(ForceAs<uint64_t>(), that_core.ForceAs<uint64_t>());
+            return true;
+          }
           case TTycon::Tuple: {
             void *lhs_pin_alloc = alloca(sizeof(TArena::TFinalPin) * 2);
             void *rhs_pin_alloc = reinterpret_cast<uint8_t *>(lhs_pin_alloc) + sizeof(TArena::TFinalPin);
@@ -1124,7 +1141,10 @@ namespace Orly {
           case TTycon::Double:
           case TTycon::Duration:
           case TTycon::TimePoint:
-          case TTycon::Uuid: {
+          case TTycon::Uuid:
+          /* Recursive back-reference leaf (issue #115): same-tycon leaves are a
+             type match for key purposes, like any other direct scalar. */
+          case TTycon::SelfRef: {
             return true;
           }
           case TTycon::Tombstone: {
@@ -1374,6 +1394,11 @@ namespace Orly {
         }
         case TTycon::Uuid: {
           out_hash = std::hash<Base::TUuid>()(ForceAs<Base::TUuid>());
+          return true;
+        }
+        case TTycon::SelfRef: {
+          /* Recursive back-reference leaf (issue #115): hash its de Bruijn depth. */
+          out_hash = std::hash<uint64_t>()(ForceAs<uint64_t>());
           return true;
         }
         default: {

@@ -792,6 +792,9 @@ class TCompareTypesVisitor final
   virtual void operator()(const Type::TTuple &lhs, const Type::TRecord &rhs   ) const override;
   virtual void operator()(const Type::TTuple &lhs, const Type::TTuple &rhs    ) const override;
 
+  /* The recursive back-reference leaf (issue #115). */
+  virtual void OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const override;
+
   private:
 
   /* TODO */
@@ -809,6 +812,25 @@ Atom::TComparison Orly::Sabot::CompareTypes(const Type::TAny &lhs, const Type::T
   Atom::TComparison comp;
   AcceptDouble(lhs, rhs, TCompareTypesVisitor(comp));
   return comp;
+}
+
+/* Two recursive leaves at structurally-corresponding positions are equal iff
+   they refer back to the same binder (same de Bruijn depth); the surrounding
+   structure has already been matched in lock-step to reach here.  A leaf versus
+   a non-leaf are different types -- the leaf sorts first, consistently with
+   OrderTypes. */
+void TCompareTypesVisitor::OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const {
+  const bool lhs_is_ref = lhs.IsRecursiveRef();
+  const bool rhs_is_ref = rhs.IsRecursiveRef();
+  if (lhs_is_ref && rhs_is_ref) {
+    const uint64_t lhs_depth = static_cast<const Type::TSelfRef &>(lhs).GetDepth();
+    const uint64_t rhs_depth = static_cast<const Type::TSelfRef &>(rhs).GetDepth();
+    Comparison = (lhs_depth == rhs_depth)
+        ? TComparison::Eq
+        : (lhs_depth < rhs_depth ? TComparison::Lt : TComparison::Gt);
+    return;
+  }
+  Comparison = lhs_is_ref ? TComparison::Lt : TComparison::Gt;
 }
 
 void TCompareTypesVisitor::operator()(const Type::TInt8 &/*lhs*/, const Type::TInt8 &/*rhs*/     ) const { Comparison = TComparison::Eq; }

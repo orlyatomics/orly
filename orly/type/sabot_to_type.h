@@ -77,6 +77,7 @@ namespace Orly {
       virtual void operator()(const Sabot::Type::TMap &type) const override;
       virtual void operator()(const Sabot::Type::TRecord &type) const override;
       virtual void operator()(const Sabot::Type::TTuple &type) const override;
+      virtual void operator()(const Sabot::Type::TSelfRef &type) const override;
 
       private:
 

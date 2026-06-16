@@ -23,9 +23,13 @@
 #include <sstream>
 #include <string>
 
+#include <orly/sabot/compare_types.h>
 #include <orly/sabot/type_dumper.h>
 #include <orly/native/all.h>
+#include <orly/type/sabot_to_type.h>
+#include <orly/type/self_ref.h>
 #include <orly/type/type_czar.h>
+#include <orly/type/variant.h>
 #include <base/test/kit.h>
 
 using namespace std;
@@ -56,4 +60,70 @@ FIXTURE(Typical) {
   EXPECT_EQ(ToString(Type::TAddr::Get({ { TAddrDir::Asc, Type::TReal::Get() } })), "tuple(double)");
   EXPECT_EQ(ToString(Type::TAddr::Get({ { TAddrDir::Desc, Type::TReal::Get() } })), "tuple(desc(double))");
   EXPECT_EQ(ToString(Type::TObj::Get({ { "x", Type::TReal::Get() }, { "y", Type::TReal::Get() } })), "record(x: double, y: double)");
+}
+
+/* Recursive sum types (issue #115).  A self-recursive variant translates to its
+   #96 fixed-shape record with a finite self_ref leaf at each recursion point,
+   and round-trips back to the identical interned orly type. */
+
+/* tree is <| Leaf(int) | Branch(<{ .l: tree, .r: tree }>) |> */
+static Type::TType MakeTree() {
+  Type::TVariantElems arms;
+  arms["Leaf"] = Type::TInt::Get();
+  arms["Branch"] = Type::TObj::Get({ { "l", Type::TSelfRef::Get(0) }, { "r", Type::TSelfRef::Get(0) } });
+  return Type::TVariant::Get(arms);
+}
+
+/* json is <| Null | N(int) | Arr([json]) | Obj({str: json}) |> -- self-ref under
+   a list and under a dict value (the #120 container family). */
+static Type::TType MakeJson() {
+  Type::TVariantElems arms;
+  arms["Null"] = Type::TObj::Get({});
+  arms["N"] = Type::TInt::Get();
+  arms["Arr"] = Type::TList::Get(Type::TSelfRef::Get(0));
+  arms["Obj"] = Type::TDict::Get(Type::TStr::Get(), Type::TSelfRef::Get(0));
+  return Type::TVariant::Get(arms);
+}
+
+static Type::TType RoundTrip(const Type::TType &type) {
+  return Type::ToType(*Sabot::Type::TAny::TWrapper(NewSabot(alloca(1000), type)));
+}
+
+FIXTURE(RecursiveVariantTranslates) {
+  /* The cycle becomes a finite self_ref leaf -- no infinite materialization. */
+  const string dump = ToString(MakeTree());
+  EXPECT_TRUE(dump.find("$which") != string::npos);
+  EXPECT_TRUE(dump.find("self_ref(0)") != string::npos);
+}
+
+FIXTURE(RecursiveVariantRoundTrips) {
+  /* orly type -> sabot -> orly type is the identity on the interned type. */
+  const Type::TType tree = MakeTree();
+  EXPECT_TRUE(RoundTrip(tree) == tree);
+
+  const Type::TType json = MakeJson();
+  EXPECT_TRUE(RoundTrip(json) == json);
+
+  /* Distinct recursive types stay distinct through translation. */
+  EXPECT_FALSE(RoundTrip(tree) == json);
+
+  /* A back-reference at de Bruijn depth 1 -- an inner variant whose arm refers
+     to the OUTER variant (the #125 nested-variant shape) -- carries its depth
+     through translation too. */
+  Type::TVariantElems outer;
+  outer["X"] = Type::TVariant::Get({ { "Y", Type::TSelfRef::Get(1) } });
+  const Type::TType nested = Type::TVariant::Get(outer);
+  EXPECT_TRUE(RoundTrip(nested) == nested);
+}
+
+FIXTURE(RecursiveVariantCompareTypes) {
+  /* The sabot-level CompareTypes agrees with orly-type identity for recursive
+     types (set homogeneity / key ordering rides on this). */
+  void *a = alloca(1000), *b = alloca(1000), *c = alloca(1000);
+  Sabot::Type::TAny::TWrapper tree_a(NewSabot(a, MakeTree()));
+  Sabot::Type::TAny::TWrapper tree_b(NewSabot(b, MakeTree()));
+  EXPECT_TRUE(Atom::IsEq(Sabot::CompareTypes(*tree_a, *tree_b)));
+
+  Sabot::Type::TAny::TWrapper json_c(NewSabot(c, MakeJson()));
+  EXPECT_FALSE(Atom::IsEq(Sabot::CompareTypes(*tree_a, *json_c)));
 }

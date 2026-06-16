@@ -60,6 +60,7 @@ class TDepthVisitor final
   virtual void operator()(const Type::TMap &type) const override;
   virtual void operator()(const Type::TRecord &type) const override;
   virtual void operator()(const Type::TTuple &type) const override;
+  virtual void operator()(const Type::TSelfRef &type) const override;
 
   private:
 
@@ -117,6 +118,10 @@ void TDepthVisitor::operator()(const Type::TRecord &type) const {
   }
   Depth = max_child_depth + 1UL;
 }
+/* The recursive leaf (issue #115) is finite and childless -- it is exactly the
+   device that keeps a recursive type's depth bounded, so it contributes 0.  The
+   enclosing record/variant adds its own +1 as usual. */
+void TDepthVisitor::operator()(const Type::TSelfRef & ) const { Depth = 0UL; }
 void TDepthVisitor::operator()(const Type::TTuple &type ) const {
   size_t max_child_depth = 0UL;
   size_t elem_count = type.GetElemCount();

@@ -791,6 +791,9 @@ class TOrderTypesVisitor final
   virtual void operator()(const Type::TTuple &lhs, const Type::TRecord &rhs   ) const override;
   virtual void operator()(const Type::TTuple &lhs, const Type::TTuple &rhs    ) const override;
 
+  /* The recursive back-reference leaf (issue #115). */
+  virtual void OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const override;
+
   private:
 
   /* TODO */
@@ -814,6 +817,22 @@ class TOrderTypesVisitor final
 };  // TOrderTypesVisitor
 
 /* TODO */
+/* See the matching note in compare_types.cc: equal de Bruijn depth => equal
+   recursive leaves; a leaf orders before any non-leaf, consistently. */
+void TOrderTypesVisitor::OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const {
+  const bool lhs_is_ref = lhs.IsRecursiveRef();
+  const bool rhs_is_ref = rhs.IsRecursiveRef();
+  if (lhs_is_ref && rhs_is_ref) {
+    const uint64_t lhs_depth = static_cast<const Type::TSelfRef &>(lhs).GetDepth();
+    const uint64_t rhs_depth = static_cast<const Type::TSelfRef &>(rhs).GetDepth();
+    Comparison = (lhs_depth == rhs_depth)
+        ? TComparison::Eq
+        : (lhs_depth < rhs_depth ? TComparison::Lt : TComparison::Gt);
+    return;
+  }
+  Comparison = lhs_is_ref ? TComparison::Lt : TComparison::Gt;
+}
+
 Atom::TComparison Orly::Sabot::OrderTypes(const Type::TAny &lhs, const Type::TAny &rhs) {
   Atom::TComparison comp;
   AcceptDouble(lhs, rhs, TOrderTypesVisitor(comp));

@@ -87,11 +87,17 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
        reverses the mapping (the `$which` sentinel field, un-expressible in
        orlyscript, marks the record as a variant). */
     virtual void operator()(const TVariant *type) const override {
-      /* A RECURSIVE variant (issue #103) has no translation: its fixed-shape
-         record encoding would contain itself, and the sabot type vocabulary
-         cannot express the cycle. Storing (or returning to a client) a
-         recursive variant value is a v1 limitation; see issue #103. */
-      if (HasSelfRef(type->AsType())) {
+      /* A self-recursive variant (issue #103/#115) encodes to the same #96
+         fixed-shape record; the cycle is broken by emitting a finite
+         Sabot::Type::TSelfRef leaf at each recursion point (the TSelfRef case
+         below), so the record is no longer infinitely deep.
+
+         A MUTUAL-group variant (its arms carry Type::TGroupRef, #116) is not
+         yet storable: lowering it would require inlining the group to its de
+         Bruijn form first. Those still return no translation (the TGroupRef
+         case below), so MakeRecGroup members keep failing translation cleanly
+         until that follow-on lands. */
+      if (HasGroupRef(type->AsType())) {
         return;
       }
       TObjElems rec;
@@ -101,10 +107,14 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
       }
       Result = new (Buf) ST::TRecord(TObj::Get(rec).As<TObj>());
     }
-    /* Reachable only through a recursive variant's payload map, which the
-       TVariant case above already rejects -- but be explicit anyway. */
-    virtual void operator()(const TSelfRef */*type*/) const override {}
-    /* Likewise reachable only through a mutual group's payload map (#116). */
+    /* The recursion point of a self-recursive variant (issue #115): emit the
+       finite sabot back-reference leaf carrying the de Bruijn depth.  This is
+       what stops the fixed-shape record encoding from being infinitely deep. */
+    virtual void operator()(const TSelfRef *type) const override {
+      Result = new (Buf) Sabot::Type::TSelfRef(type->GetDepth());
+    }
+    /* A mutual group's cross/self reference (#116) -- not yet translatable;
+       see the TVariant case above. */
     virtual void operator()(const TGroupRef */*type*/) const override {}
     private:
     Sabot::Type::TAny *&Result;

@@ -25,9 +25,15 @@
 
 #include <orly/native/all.h>
 #include <orly/native/point.h>
+#include <orly/sabot/compare_types.h>
 #include <orly/sabot/get_hash.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
+#include <orly/type/new_sabot.h>
+#include <orly/type/sabot_to_type.h>
+#include <orly/type/self_ref.h>
+#include <orly/type/type_czar.h>
+#include <orly/type/variant.h>
 #include <base/test/kit.h>
 
 using namespace std;
@@ -260,6 +266,37 @@ FIXTURE(Typical) {
   EXPECT_EQ(ToString<Native::TTombstone>(), "tombstone");
   EXPECT_EQ(ToString<void>(), "void");
   EXPECT_EQ(ToString<Native::TFree<bool>>(), "free(bool)");
+}
+
+/* A recursive sum type's #96 fixed-shape record survives the on-disk atom
+   codec (issue #115): the SelfRef tycon round-trips through TCore as a direct
+   scalar carrying its de Bruijn depth.  This is the on-disk half of the
+   new_sabot.test bridge round-trip. */
+FIXTURE(RecursiveType) {
+  static Type::TTypeCzar type_czar;
+  /* tree is <| Leaf(int) | Branch(<{ .l: tree, .r: tree }>) |> */
+  Type::TVariantElems arms;
+  arms["Leaf"] = Type::TInt::Get();
+  arms["Branch"] = Type::TObj::Get({ { "l", Type::TSelfRef::Get(0) }, { "r", Type::TSelfRef::Get(0) } });
+  const Type::TType tree = Type::TVariant::Get(arms);
+
+  TTestArena arena;
+  void *sabot_alloc = alloca(1000);
+  void *back_alloc = alloca(1000);
+  Sabot::Type::TAny::TWrapper sabot(Type::NewSabot(sabot_alloc, tree));
+
+  /* Encode the type to a core tree, then decode it back to a sabot type. */
+  TCore core(&arena, *sabot);
+  Sabot::Type::TAny::TWrapper back(core.GetType(&arena, back_alloc));
+
+  /* The decoded type compares equal to the original, and reverses all the way
+     back to the identical interned orly type. */
+  EXPECT_TRUE(Atom::IsEq(Sabot::CompareTypes(*sabot, *back)));
+  EXPECT_TRUE(Type::ToType(*back) == tree);
+
+  ostringstream strm;
+  back->Accept(Sabot::TTypeDumper(strm));
+  EXPECT_TRUE(strm.str().find("self_ref(0)") != string::npos);
 }
 
 FIXTURE(PinnedLongStr) {

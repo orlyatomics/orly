@@ -20,6 +20,7 @@
 
 #include <orly/type/obj.h>
 #include <orly/type/opt.h>
+#include <orly/type/self_ref.h>
 #include <orly/type/util.h>
 #include <orly/type/variant.h>
 
@@ -104,6 +105,14 @@ void Type::TToTypeVisitor::operator()(const Sabot::Type::TRecord &type) const   
     return;
   }
   Type = TObj::Get(obj_elem_map);
+}
+/* The recursive back-reference leaf (issue #115): the dual of the TSelfRef
+   case in orly/type/new_sabot.cc.  Reconstruct the orly de Bruijn self-ref at
+   the same depth; the enclosing TVariant::Get re-interns the whole recursive
+   variant (variants are the binders -- issue #103), so the round-tripped type
+   is pointer-equal to the original. */
+void Type::TToTypeVisitor::operator()(const Sabot::Type::TSelfRef &type) const       {
+  Type = Type::TSelfRef::Get(type.GetDepth());
 }
 void Type::TToTypeVisitor::operator()(const Sabot::Type::TTuple &type) const          {
   size_t elem_count = type.GetElemCount();
