@@ -1,0 +1,104 @@
+/* <orly/lang_tests/general/variants_recursive_storage.orly>
+
+   End-to-end test for issue #115: a RECURSIVE sum-type value round-trips
+   through storage (`<-` / `*`).
+
+   Recursion is closed at the sabot type layer by a finite TSelfRef leaf
+   carrying the de Bruijn depth (#115 phase 1), so a recursive variant's
+   #96 fixed-shape record is no longer infinitely deep. The VALUE is a
+   finite tree of those records; the generated AsVar walks the boxed
+   payload down to the recursion points and the Sabot::TToNativeVisitor
+   rebuilds it on read-back, re-boxing each self field (#115 phase 3).
+
+   This covers the shapes the storage path supports: a record arm with
+   self fields (`tree`, `intlist`), a tag-only base arm, and a
+   container-of-self arm (`json`'s `JArr([json])`). Mutually-recursive
+   variants (#116) are still rejected at the `<-` typecheck.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Branch(<{.l: tree, .r: tree}>) |>;
+intlist is <| Nil | Cons(<{.head: int, .tail: intlist}>) |>;
+json is <| JNull | JNum(int) | JArr([json]) |>;
+
+read_tree = (*<[n]>::(tree)) where {
+  n = given::(int);
+};
+
+read_list = (*<[n]>::(intlist)) where {
+  n = given::(int);
+};
+
+read_json = (*<[n]>::(json)) where {
+  n = given::(int);
+};
+
+read_tree_set = (*<[n]>::({tree})) where {
+  n = given::(int);
+};
+
+/* A binary tree (record arm with two self fields) round-trips. */
+with {
+  <[500]> <- tree.Branch(<{.l: tree.Leaf(1), .r:
+             tree.Branch(<{.l: tree.Leaf(2), .r: tree.Leaf(3)}>)}>);
+} test {
+  t1: read_tree(.n: 500) == tree.Branch(<{.l: tree.Leaf(1), .r:
+        tree.Branch(<{.l: tree.Leaf(2), .r: tree.Leaf(3)}>)}>);
+  /* A structurally different tree is not equal. */
+  t2: read_tree(.n: 500) != tree.Leaf(1);
+  t3: read_tree(.n: 500) != tree.Branch(<{.l: tree.Leaf(1), .r:
+        tree.Branch(<{.l: tree.Leaf(2), .r: tree.Leaf(9)}>)}>);
+  /* Read-back is destructurable like any variant. */
+  t4: read_tree(.n: 500) is Branch;
+  t5: (read_tree(.n: 500).Branch).l.Leaf == 1;
+};
+
+/* A tag-only base arm (`Leaf` here is the non-recursive arm). */
+with {
+  <[501]> <- tree.Leaf(42);
+} test {
+  t6: read_tree(.n: 501) == tree.Leaf(42);
+  t7: read_tree(.n: 501) != tree.Leaf(43);
+};
+
+/* A linked list (record arm + tag-only `Nil` base). */
+with {
+  <[502]> <- intlist.Cons(<{.head: 1, .tail:
+             intlist.Cons(<{.head: 2, .tail:
+             intlist.Cons(<{.head: 3, .tail: intlist.Nil()}>)}>)}>);
+} test {
+  t8: read_list(.n: 502) == intlist.Cons(<{.head: 1, .tail:
+        intlist.Cons(<{.head: 2, .tail:
+        intlist.Cons(<{.head: 3, .tail: intlist.Nil()}>)}>)}>);
+  t9: read_list(.n: 502) != intlist.Nil();
+};
+
+/* A container-of-self arm: `JArr([json])` (#120 family). */
+with {
+  <[503]> <- json.JArr([json.JNum(1), json.JNull(), json.JArr([json.JNum(2)])]);
+} test {
+  t10: read_json(.n: 503) == json.JArr([json.JNum(1), json.JNull(), json.JArr([json.JNum(2)])]);
+  t11: read_json(.n: 503) != json.JArr([json.JNum(1)]);
+  t12: read_json(.n: 503) is JArr;
+};
+
+/* A SET of recursive values stays homogeneous on disk (the #96 fixed-shape
+   record makes every variant value share one element type), and dedups. */
+with {
+  <[504]> <- {tree.Leaf(1), tree.Leaf(1), tree.Leaf(2),
+              tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)};
+} test {
+  t13: length_of read_tree_set(.n: 504) == 3;
+};

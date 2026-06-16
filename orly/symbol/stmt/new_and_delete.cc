@@ -80,13 +80,16 @@ void TNew::TypeCheck() const {
   /* NOTE: Maybe this should be type check rather than get type. But for now,
            GetType() calls ComputeType() which does the type check. */
   Type::TType value_type = GetRhs()->GetExpr()->GetType();
-  /* A recursive variant has no storage encoding in v1 (the sabot type
-     vocabulary cannot express the recursion); reject the write here with
-     a real message rather than letting a downstream visitor choke on the
-     self-reference. See issue #103. */
-  if (Type::HasSelfRef(value_type)) {
+  /* Self-recursive variants are now storable: their #96 fixed-shape record
+     encoding closes the cycle with a finite Sabot::Type::TSelfRef leaf, and the
+     value read/write round-trips through the boxed payload representation
+     (issue #115). A MUTUALLY-recursive variant (Type::TGroupRef) is not yet --
+     its sabot encoding needs the group inlined to de Bruijn form first -- so
+     reject that write here with a clear message rather than letting
+     orly/type/new_sabot.cc fail translation at runtime. */
+  if (Type::HasGroupRef(value_type)) {
     throw TExprError(HERE, GetPosRange(),
-        "a value containing a recursive variant cannot be stored (issue #103)");
+        "a value containing a mutually-recursive variant cannot be stored yet (issue #116/#115)");
   }
 }
 
