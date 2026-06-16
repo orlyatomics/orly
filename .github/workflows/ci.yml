@@ -347,3 +347,17 @@ jobs:
       - name: crdt-text run-go.sh (go driver, collaborative CRDT)
         run: ./run-go.sh
         working-directory: examples/crdt-text
+
+      # Recursive sum-type storage + client marshaling smoke test (issue
+      # #115): store a fixed recursive value of each shape (self-recursive
+      # tree, container-of-self doc, mutual tree/forest, nested-variant tree),
+      # read it back, and self-check the marshaled JSON. Guards the
+      # dynamic-var/WS marshaling path that the C++ lang_test (a native-read
+      # harness) cannot reach.
+      - name: recursive-variants run.sh (python driver, recursive storage)
+        run: ./run.sh
+        working-directory: examples/recursive-variants
+
+      - name: recursive-variants run-go.sh (go driver, recursive storage)
+        run: ./run-go.sh
+        working-directory: examples/recursive-variants
