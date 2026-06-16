@@ -338,6 +338,104 @@ FIXTURE(Promoter) {
   });
 }
 
+/* Issue #143: a child repo's promotion to its parent (Tetris push-to-parent
+   + pop-from-child) must never present a "neither" transient to a reader that
+   spans child + parent (which is what a shared-POV read does, since the
+   shared POV's repo is a child of the global repo). At every instant during
+   commit the in-flight update must be visible in at least one of the two
+   repos -- otherwise a concurrent read drops it (the agent-swarm symptom).
+
+   We make the window deterministic with the test-only commit hook that fires
+   between the pusher-apply pass and the popper-apply pass. From inside the
+   window we present-walk the child snapshot then the parent snapshot (the
+   same child-first union TContext performs) and assert the key is present in
+   at least one of them -- never dropped from both. */
+FIXTURE(Issue143PromotionWindow) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler,
+                                                 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TUuid global_id(TUuid::Twister);
+    Base::TUuid child_id(TUuid::Twister);
+    Base::TUuid idx_id(TUuid::Twister);
+
+    /* global repo (the promotion target / parent) and a child repo. In
+       production the child's repo is constructed with ParentRepo = global so
+       it auto-registers with the Tetris manager; here we drive the
+       child->parent promotion by hand (as TRepoTetrisManager::Play does) and
+       perform the cross-repo read by hand too, so we leave the child
+       parent-less to avoid pulling in a live Tetris player fiber. The
+       cross-repo read invariant under test is identical: a reader that unions
+       the child snapshot with the global snapshot must never see "neither". */
+    auto global_repo = manager->GetRepo(global_id, TTtl::max(), std::nullopt, false, true);
+    auto child_repo = manager->GetRepo(child_id, TTtl::max(), std::nullopt, false, true);
+
+    const TIndexKey from_key(idx_id, TKey(make_tuple(1L), &arena, state_alloc));
+    const TIndexKey to_key(idx_id, TKey(make_tuple(10L), &arena, state_alloc));
+
+    /* A reader that spans child -> parent finds the key iff a present-walk on
+       either repo's snapshot is valid. This mirrors TContext, which snapshots
+       the child view first, then each parent view (context.cc ctor), and
+       unions them. A "drop" is: found in NEITHER. */
+    auto found_in_child_or_parent = [&]() -> bool {
+      /* child snapshot first (matches TContext ctor order) */
+      auto child_view = make_unique<TRepo::TView>(child_repo);
+      auto child_walker_ptr = child_repo->NewPresentWalker(child_view, from_key, to_key);
+      bool in_child = static_cast<bool>(*child_walker_ptr);
+      /* parent snapshot second */
+      auto parent_view = make_unique<TRepo::TView>(global_repo);
+      auto parent_walker_ptr = global_repo->NewPresentWalker(parent_view, from_key, to_key);
+      bool in_parent = static_cast<bool>(*parent_walker_ptr);
+      return in_child || in_parent;
+    };
+
+    /* Push an update into the child. */
+    /* commit push to child */ {
+      auto transaction = manager->NewTransaction();
+      auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { from_key, TKey(7L, &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Best), &arena, state_alloc));
+      transaction->Push(child_repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+    EXPECT_TRUE(found_in_child_or_parent());
+
+    /* Install the test-only hook: fires inside the commit, between the
+       push-to-parent apply and the pop-from-child apply. */
+    bool window_saw_value = false;
+    L1::TTransaction::OnCommitBetweenPushAndPopForTest = [&]() {
+      window_saw_value = found_in_child_or_parent();
+    };
+
+    /* Promote: pop the lowest from the child and push it to the parent, all
+       in one transaction (this is what TRepoTetrisManager::Play registers). */
+    /* commit promotion */ {
+      auto transaction = manager->NewTransaction();
+      transaction->Pop(child_repo);
+      transaction->Push(global_repo, transaction->Peek(child_repo));
+      transaction->Prepare();
+      transaction->CommitAction();
+    }  // <-- ~TTransaction here applies push (parent), fires hook, then pop (child)
+
+    L1::TTransaction::OnCommitBetweenPushAndPopForTest = nullptr;
+
+    /* The whole point: mid-promotion the value must be observable in at least
+       one repo -- never dropped from both. */
+    EXPECT_TRUE(window_saw_value);
+
+    /* And after promotion the value lives in the parent and is still found. */
+    EXPECT_TRUE(found_in_child_or_parent());
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 FIXTURE(DiskPromoter) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TSuprena arena;

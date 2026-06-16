@@ -77,6 +77,16 @@ namespace Orly {
         /* Discard the prepared action, if any. */
         void DiscardAction() NO_THROW;
 
+        /* Test-only instrumentation hook, invoked at commit time inside
+           ~TTransaction *between* the pusher-apply pass (which makes the
+           promoted update visible in the parent repo via AppendUpdate) and
+           the popper-apply pass (which removes it from the child repo). It
+           lets a unit test deterministically observe the cross-repo
+           transition and assert there is no "neither" transient. Defaults
+           to empty; never set in production, so it is a single null check
+           on the commit path. See orly/indy/transaction_base.cc. */
+        static std::function<void ()> OnCommitBetweenPushAndPopForTest;
+
         /* TODO */
         class TTransactionCompletion {
           NO_COPY(TTransactionCompletion);
