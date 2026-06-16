@@ -18,6 +18,7 @@
 
 #include <orly/var/dict.h>
 
+#include <orly/type/canon.h>
 #include <orly/type/dict.h>
 #include <orly/var/set.h>
 
@@ -141,10 +142,10 @@ TDict &TDict::Xor(const TVar &) {
 
 TDict::TDict(const Rt::TDict<TVar, TVar> &that, const Type::TType &key_type, const Type::TType &val_type) : Val(that), KeyType(key_type), ValType(val_type) {
   for (auto iter = Val.begin(); iter != Val.end(); ++iter) {
-    if (iter->first.GetType() != KeyType) {
+    if (iter->first.GetType() != KeyType && !Type::Equiv(iter->first.GetType(), KeyType)) {
       throw Rt::TSystemError(HERE, "Dictionary constructor requires homogenous key type.");
     }
-    if (iter->second.GetType() != ValType) {
+    if (iter->second.GetType() != ValType && !Type::Equiv(iter->second.GetType(), ValType)) {
       throw Rt::TSystemError(HERE, "Dictionary constructor requires homogenous val type.");
     }
   }

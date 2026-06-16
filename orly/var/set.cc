@@ -18,6 +18,7 @@
 
 #include <orly/var/set.h>
 
+#include <orly/type/canon.h>
 #include <orly/type/set.h>
 
 using namespace Orly;
@@ -119,7 +120,7 @@ TSet &TSet::Xor(const TVar &) {
 
 TSet::TSet(const Rt::TSet<TVar> &that, const Type::TType &type) : Val(that), Type(type) {
   for (auto iter = Val.begin(); iter != Val.end(); ++iter) {
-    if (iter->GetType() != Type) {
+    if (iter->GetType() != Type && !Type::Equiv(iter->GetType(), Type)) {
       throw Rt::TSystemError(HERE, "Set constructor requires homogenous element type.");
     }
   }
