@@ -345,6 +345,7 @@ def main():
     print("read-back barrier: confirming all seeds are visible to a fresh session...")
     verifier = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
     try:
+        send(verifier, "new session;")
         deadline = time.monotonic() + 30.0
         pending = (
             [("tag", e) for e in expected_tag_records]
