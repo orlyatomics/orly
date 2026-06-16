@@ -34,6 +34,7 @@
 #include <orly/type/impl.h>
 #include <orly/type/object_collector.h> //TODO: This header should be renamed
 #include <orly/type/orlyify.h>
+#include <orly/type/self_ref.h>
 #include <orly/type/util.h>
 #include <orly/type/variant.h>
 #include <orly/expr/util.h>
@@ -544,6 +545,12 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                                 out << "}";
                               })
                       << "})";
+                  };
+                  virtual void operator()(const Type::TSelfRef  *that) const {
+                    /* The recursion point of a stored recursive variant
+                       (#115): reconstruct the de Bruijn self-reference so the
+                       enclosing TVariant::Get re-interns the recursive type. */
+                    Out << "Orly::Type::TSelfRef::Get(" << that->GetDepth() << ")";
                   };
                   virtual void operator()(const Type::TOpt      *that) const {
                     Out << "Orly::Type::TOpt::Get(";

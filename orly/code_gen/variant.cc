@@ -181,6 +181,43 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
     assert(false);
     return Base::AsStr(t);
   };
+  /* Like subst_storage, but maps a free self-reference to the variant itself
+     (`class_name`) rather than to its boxed storage -- i.e. the UNROLLED type,
+     expressed through containers WITHOUT ever naming a separate unrolled
+     record/variant class. This is the device that lets the read-back
+     (Sabot::TToNativeVisitor) and write-back (AsVar) name only the variant and
+     self-free types: naming the unrolled payload record directly would pull in
+     its header, which includes this one back -- exactly the cycle the boxed
+     member-template getter/factory design avoids (#115). A self-free subtree
+     prints verbatim; a record/variant payload is handled field-by-field by the
+     boxed struct's own AsVar/FromState, never through this helper. */
+  std::function<string (const Type::TType &)> unrolled_over_self =
+      [&](const Type::TType &t) -> string {
+    if (!Type::HasFreeSelfRef(t)) {
+      return Base::AsStr(t);
+    }
+    if (t.Is<Type::TSelfRef>()) {
+      /* Fully qualified: this string is used both in namespace
+         Orly::Rt::Variants (AsVar/FromState) and Orly::Sabot
+         (TToNativeVisitor), where the bare class name is not in scope. */
+      return Base::AsStr("Orly::Rt::Variants::", class_name);
+    }
+    if (const auto *list = t.TryAs<Type::TList>()) {
+      return Base::AsStr("std::vector<", unrolled_over_self(list->GetElem()), '>');
+    }
+    if (const auto *set = t.TryAs<Type::TSet>()) {
+      return Base::AsStr("Orly::Rt::TSet<", unrolled_over_self(set->GetElem()), '>');
+    }
+    if (const auto *opt = t.TryAs<Type::TOpt>()) {
+      return Base::AsStr("Orly::Rt::TOpt<", unrolled_over_self(opt->GetElem()), '>');
+    }
+    if (const auto *dict = t.TryAs<Type::TDict>()) {
+      return Base::AsStr("Orly::Rt::TDict<", Base::AsStr(dict->GetKey()), ", ",
+                         unrolled_over_self(dict->GetVal()), '>');
+    }
+    assert(false);
+    return Base::AsStr(t);
+  };
   /* The C++ type in which an arm's payload is stored. */
   auto storage_type = [&](const string &tag, const Type::TType &payload) {
     if (Type::HasFreeSelfRef(payload) && payload.Is<Type::TObj>()) {
@@ -315,6 +352,14 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
               << "  bool MatchLess(const " << bname << " &that) const;" << Eol
               << "  size_t GetHash() const;" << Eol
               << Eol
+              << "  /* Storage read/write (#115). Defined after " << class_name << " (they" << Eol
+              << "     recurse through it). AsVar builds a dynamic Var::TObj from the" << Eol
+              << "     fields (self fields unbox + recurse); FromState rebuilds the boxed" << Eol
+              << "     record from a stored sabot record. Both name only " << class_name << " and" << Eol
+              << "     self-free field types -- never the unrolled record (no header cycle). */" << Eol
+              << "  Var::TVar AsVar() const;" << Eol
+              << "  static " << bname << " FromState(const Orly::Sabot::State::TRecord &state);" << Eol
+              << Eol
               << "  private:" << Eol;
           for (const auto &field : fields) {
             out << "  " << subst_storage(field.second) << " V" << field.first << ";" << Eol;
@@ -438,6 +483,26 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             } else {
               out << "static " << class_name << " Mk" << elem.first
                   << "(const " << elem.second << " &vv) {" << Eol
+                  << "  " << class_name << " out;" << Eol
+                  << "  out.Which = " << idx << ";" << Eol
+                  << "  out.V" << elem.first << " = vv;" << Eol
+                  << "  return out;" << Eol
+                  << "}" << Eol;
+            }
+            ++idx;
+          }
+        }
+
+        /* Read-back factory for a boxed-record arm (#115): construct directly
+           from the already-boxed payload struct (which the storage read path
+           rebuilds via <Boxed>::FromState), bypassing the unrolled-payload
+           Mk<Tag> above so the header never names the unrolled record. */
+        {
+          size_t idx = 0;
+          for (const auto &elem : elems) {
+            if (arm_is_recursive(elem.second) && elem.second.Is<Type::TObj>()) {
+              out << "static " << class_name << " MkBoxed" << elem.first
+                  << "(const " << boxed_name(elem.first) << " &vv) {" << Eol
                   << "  " << class_name << " out;" << Eol
                   << "  out.Which = " << idx << ";" << Eol
                   << "  out.V" << elem.first << " = vv;" << Eol
@@ -708,6 +773,63 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                             })
               << ';' << Eol
               << "}" << Eol;
+
+          /* AsVar (#115): build a dynamic Var::TObj from the fields. A self /
+             container-of-self field unboxes to its UNROLLED form (naming only
+             this variant) and Var::TVar recurses into it (records/variants have
+             AsVar); a self-free field converts directly. */
+          out << Eol
+              << "inline Var::TVar " << bname << "::AsVar() const {" << Eol
+              << "  return Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{"
+              << Base::Join(fields,
+                            ", ",
+                            [&](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              strm << "{\"" << it.first << "\", Var::TVar(";
+                              if (Type::HasFreeSelfRef(it.second)) {
+                                strm << "Rt::DeepUnbox<" << unrolled_over_self(it.second)
+                                     << ">(V" << it.first << ')';
+                              } else {
+                                strm << 'V' << it.first;
+                              }
+                              strm << ")}";
+                            })
+              << "});" << Eol
+              << "}" << Eol;
+
+          /* FromState (#115): rebuild this boxed record from a stored sabot
+             record. Walk the fields by name; a self / container-of-self field
+             is reconstructed in its UNROLLED form (AsNative recurses through
+             this variant) then re-boxed, a self-free field deserializes
+             directly. */
+          out << Eol
+              << "inline " << bname << " " << bname
+              << "::FromState(const Orly::Sabot::State::TRecord &state) {" << Eol
+              << "  " << bname << " out;" << Eol
+              << "  void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());" << Eol
+              << "  Sabot::Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
+              << "  void *type_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());" << Eol
+              << "  Sabot::Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));" << Eol
+              << "  void *state_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());" << Eol
+              << "  Sabot::State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));" << Eol
+              << "  const size_t elem_count = tpin->GetElemCount();" << Eol
+              << "  void *etype_alloc = alloca(Sabot::Type::GetMaxTypeSize());" << Eol
+              << "  void *estate_alloc = alloca(Sabot::State::GetMaxStateSize());" << Eol
+              << "  std::string field_name;" << Eol
+              << "  for (size_t i = 0; i < elem_count; ++i) {" << Eol
+              << "    Sabot::Type::TAny::TWrapper(tpin->NewElem(i, field_name, etype_alloc));" << Eol
+              << "    Sabot::State::TAny::TWrapper fstate(spin->NewElem(i, estate_alloc));" << Eol;
+          for (const auto &field : fields) {
+            out << "    if (field_name == \"" << field.first << "\") { out.V" << field.first << " = ";
+            if (Type::HasFreeSelfRef(field.second)) {
+              out << "Rt::DeepBox<" << subst_storage(field.second) << ">(Sabot::AsNative<"
+                  << unrolled_over_self(field.second) << ">(*fstate)); }" << Eol;
+            } else {
+              out << "Sabot::AsNative<" << field.second << ">(*fstate); }" << Eol;
+            }
+          }
+          out << "  }" << Eol
+              << "  return out;" << Eol
+              << "}" << Eol;
         }
         /* Inline nested-variant structs' comparison bodies (deferred: they
            deref TBox<outer> fields, so the outer must be complete). */
@@ -841,27 +963,46 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
      reported at runtime rather than silently mis-encoded. */ {
     TNamespacePrinter nsp(vector<string>{"Orly", "Rt", "Variants"}, out);
     out << "inline Var::TVar " << class_name << "::AsVar() const {" << Eol
-        << "  assert(this);" << Eol;
-    if (is_recursive) {
-      out << "  throw Rt::TSystemError(HERE, \"a recursive variant value cannot be stored or "
-             "returned from a package function; see issue #103\");" << Eol
-          << "}" << Eol;
-    } else {
-      out << "  switch (Which) {" << Eol;
-      {
-        size_t idx = 0;
-        for (const auto &elem : elems) {
-          out << "    case " << idx << ": return Var::TVar::Variant("
+        << "  assert(this);" << Eol
+        << "  switch (Which) {" << Eol;
+    {
+      size_t idx = 0;
+      for (const auto &elem : elems) {
+        const auto &payload = elem.second;
+        out << "    case " << idx << ": ";
+        if (arm_is_nested_variant(payload)) {
+          /* A nested-variant arm payload (#125) is stored as an inline struct;
+             its dynamic-var/sabot marshaling is a #115 follow-on. (Statement,
+             not `return throw` -- the latter is ill-formed.) */
+          out << "throw Rt::TSystemError(HERE, \"storing a variant with a "
+                 "nested-variant arm is not yet supported; see issue #115\")";
+        } else {
+          out << "return Var::TVar::Variant("
               << "Type::TDt<Rt::Variants::" << class_name << ">::GetType(), \""
-              << elem.first << "\", Var::TVar(V" << elem.first << "));" << Eol;
-          ++idx;
+              << elem.first << "\", ";
+          if (arm_is_recursive(payload) && payload.Is<Type::TObj>()) {
+            /* Boxed-record arm: the boxed struct builds its own Var::TObj,
+               recursing into self fields -- without naming the unrolled record. */
+            out << "V" << elem.first << ".AsVar()";
+          } else if (arm_is_recursive(payload)) {
+            /* Self-ref / container-of-self / opt-of-self arm: unbox to the
+               unrolled value (naming only this variant) and let Var::TVar
+               recurse into it. */
+            out << "Var::TVar(Rt::DeepUnbox<" << unrolled_over_self(payload)
+                << ">(V" << elem.first << "))";
+          } else {
+            out << "Var::TVar(V" << elem.first << ")";
+          }
+          out << ")";
         }
+        out << ";" << Eol;
+        ++idx;
       }
-      out << "  }" << Eol
-          << "  assert(false);" << Eol
-          << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
-          << "}" << Eol;
     }
+    out << "  }" << Eol
+        << "  assert(false);" << Eol
+        << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
+        << "}" << Eol;
   } // namespace Orly::Rt::Variants
 
   out << Eol;
@@ -891,12 +1032,7 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             << " &) const override { THROW_ERROR(TInvalidConversion); }" << Eol;
       }
     }
-    if (is_recursive) {
-      /* A recursive variant is never stored (#103: its fixed-shape record
-         type would be infinitely deep), so there is nothing to read back. */
-      out << "  virtual void operator()(const State::TRecord &) const override {"
-          << " THROW_ERROR(TInvalidConversion); }" << Eol;
-    } else {
+    {
     out << "  virtual void operator()(const State::TRecord &state) const override {" << Eol
         << "    void *type_alloc = alloca(Type::GetMaxTypeSize());" << Eol
         << "    Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
@@ -937,10 +1073,29 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             << "      if (!opt) { THROW_ERROR(TInvalidConversion); }" << Eol
             << "      State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));" << Eol
             << "      if (opin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }" << Eol
-            << "      State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol
-            << "      Out = Rt::Variants::" << class_name << "::Mk" << elem.first
-            << "(AsNative<" << elem.second << ">(*payload_state));" << Eol
-            << "    }" << Eol;
+            << "      State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol;
+        const auto &payload = elem.second;
+        if (arm_is_nested_variant(payload)) {
+          /* Reading a stored nested-variant arm (#125) is a #115 follow-on. */
+          out << "      THROW_ERROR(TInvalidConversion);" << Eol;
+        } else if (arm_is_recursive(payload) && payload.Is<Type::TObj>()) {
+          /* Boxed-record arm: rebuild the boxed struct from the stored sabot
+             record (recursing through this variant), then construct the arm --
+             without the header ever naming the unrolled record. */
+          out << "      const State::TRecord *prec = dynamic_cast<const State::TRecord *>(payload_state.get());" << Eol
+              << "      if (!prec) { THROW_ERROR(TInvalidConversion); }" << Eol
+              << "      Out = Rt::Variants::" << class_name << "::MkBoxed" << elem.first
+              << "(Rt::Variants::" << boxed_name(elem.first) << "::FromState(*prec));" << Eol;
+        } else if (arm_is_recursive(payload)) {
+          /* Self-ref / container-of-self / opt-of-self arm: reconstruct the
+             unrolled payload (naming only this variant) and box it via Mk<Tag>. */
+          out << "      Out = Rt::Variants::" << class_name << "::Mk" << elem.first
+              << "(AsNative<" << unrolled_over_self(payload) << ">(*payload_state));" << Eol;
+        } else {
+          out << "      Out = Rt::Variants::" << class_name << "::Mk" << elem.first
+              << "(AsNative<" << payload << ">(*payload_state));" << Eol;
+        }
+        out << "    }" << Eol;
         ++idx;
       }
     }
