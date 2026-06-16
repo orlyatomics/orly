@@ -229,3 +229,14 @@ bool Orly::Type::TryGetGroupMembers(const TType &member, vector<TType> &members,
   index = it->second.second;
   return true;
 }
+
+TType Orly::Type::InlinedMemberType(const TType &member) {
+  const auto it = MemberIndex().find(member);
+  assert(it != MemberIndex().end());
+  /* The group identity is exactly the members' canonical inlined de Bruijn
+     forms, in canonical order; this member sits at it->second.second. */
+  const TGroupId &gid = it->second.first;
+  const size_t pos = it->second.second;
+  assert(pos < gid.size());
+  return gid[pos];
+}

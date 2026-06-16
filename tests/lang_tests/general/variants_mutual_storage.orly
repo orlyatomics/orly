@@ -1,0 +1,80 @@
+/* <orly/lang_tests/general/variants_mutual_storage.orly>
+
+   End-to-end test for issue #115 (mutual-recursion storage): a value of a
+   MUTUALLY-recursive variant group round-trips through storage (`<-` / `*`).
+
+   A group member is lowered for storage by inlining it to its canonical
+   self-recursive de Bruijn form (orly/type/new_sabot.cc), so it rides the
+   same #96 fixed-shape-record machinery as a single recursive variant. The
+   value reads back through the per-member Sabot::TToNativeVisitor, with each
+   cross-member edge reconstructed through the concrete sibling class and
+   re-boxed (#115/#116).
+
+   Covers the three group-arm shapes: a direct sibling ref (`Node(forest)`), a
+   record of siblings (`Cons(<{.head: tree, .tail: forest}>)`), and a container
+   of siblings (`Group([tree])`).
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Node(forest) |>;
+forest is <| Empty | Cons(<{.head: tree, .tail: forest}>) | Group([tree]) |>;
+
+read_tree = (*<[n]>::(tree)) where {
+  n = given::(int);
+};
+
+read_forest = (*<[n]>::(forest)) where {
+  n = given::(int);
+};
+
+/* A tree holding a forest (direct sibling ref + record-of-siblings arm). */
+with {
+  <[600]> <- tree.Node(forest.Cons(<{.head: tree.Leaf(1), .tail:
+             forest.Cons(<{.head: tree.Leaf(2), .tail: forest.Empty()}>)}>));
+} test {
+  t1: read_tree(.n: 600) == tree.Node(forest.Cons(<{.head: tree.Leaf(1), .tail:
+        forest.Cons(<{.head: tree.Leaf(2), .tail: forest.Empty()}>)}>));
+  /* A structurally different tree is not equal. */
+  t2: read_tree(.n: 600) != tree.Leaf(1);
+  t3: read_tree(.n: 600) != tree.Node(forest.Cons(<{.head: tree.Leaf(1), .tail:
+        forest.Cons(<{.head: tree.Leaf(9), .tail: forest.Empty()}>)}>));
+  /* Read-back destructures like any variant: Node's payload is a forest. */
+  t4: read_tree(.n: 600) is Node;
+};
+
+/* A tag-only base arm. */
+with {
+  <[601]> <- tree.Leaf(42);
+} test {
+  t5: read_tree(.n: 601) == tree.Leaf(42);
+  t6: read_tree(.n: 601) != tree.Leaf(43);
+};
+
+/* A forest with a container-of-sibling arm (`Group([tree])`). */
+with {
+  <[602]> <- forest.Group([tree.Leaf(3), tree.Node(forest.Empty()), tree.Leaf(5)]);
+} test {
+  t7: read_forest(.n: 602) == forest.Group([tree.Leaf(3), tree.Node(forest.Empty()), tree.Leaf(5)]);
+  t8: read_forest(.n: 602) != forest.Empty();
+  t9: read_forest(.n: 602) is Group;
+};
+
+/* The Empty base arm of the sibling member. */
+with {
+  <[603]> <- forest.Empty();
+} test {
+  t10: read_forest(.n: 603) == forest.Empty();
+  t11: read_forest(.n: 603) != forest.Group([tree.Leaf(1)]);
+};

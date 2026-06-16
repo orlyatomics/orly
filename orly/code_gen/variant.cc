@@ -1280,6 +1280,36 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
   auto arm_has_methods = [&arm_is_record](const Type::TType &payload) {
     return payload.Is<Type::TGroupRef>() || arm_is_record(payload);
   };
+  /* Like subst_storage but maps a group ref to the sibling member CLASS itself
+     (not its boxed storage) -- i.e. the UNROLLED payload, naming only concrete
+     sibling classes defined in this header. Storage read/write (#115) uses it:
+     read via Mk<Tag>(AsNative<unrolled>), write via Var::TVar(DeepUnbox<unrolled>).
+     A record-of-sibling arm is handled field-by-field by its boxed struct
+     instead, so this is only ever called on group refs and containers of them. */
+  std::function<string (const Type::TType &)> unrolled_over_group =
+      [&](const Type::TType &t) -> string {
+    if (!HasGroupRefDeep(t)) {
+      return Base::AsStr(t);
+    }
+    if (t.Is<Type::TGroupRef>()) {
+      return Base::AsStr("Orly::Rt::Variants::", class_of(sibling_of(t)));
+    }
+    if (const auto *list = t.TryAs<Type::TList>()) {
+      return Base::AsStr("std::vector<", unrolled_over_group(list->GetElem()), '>');
+    }
+    if (const auto *set = t.TryAs<Type::TSet>()) {
+      return Base::AsStr("Orly::Rt::TSet<", unrolled_over_group(set->GetElem()), '>');
+    }
+    if (const auto *opt = t.TryAs<Type::TOpt>()) {
+      return Base::AsStr("Orly::Rt::TOpt<", unrolled_over_group(opt->GetElem()), '>');
+    }
+    if (const auto *dict = t.TryAs<Type::TDict>()) {
+      return Base::AsStr("Orly::Rt::TDict<", Base::AsStr(dict->GetKey()), ", ",
+                         unrolled_over_group(dict->GetVal()), '>');
+    }
+    assert(false);
+    return Base::AsStr(t);
+  };
 
   Base::TPath path(out_dir, prim_name, vector<string>{"h"});
   TCppPrinter out(AsStr(path));
@@ -1311,7 +1341,13 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
       // file that includes a member via its shim header (#116).
       << "#include <orly/type/rec_group.h>" << Eol
       << "#include <orly/var/impl.h>" << Eol
-      << "#include <orly/var/obj.h>" << Eol;
+      << "#include <orly/var/obj.h>" << Eol
+      // Storage read/write (#115): Sabot::AsNative + the TToNativeVisitor and
+      // Native::State::Factory / Type::For specializations emitted per member.
+      << "#include <orly/var/new_sabot.h>" << Eol
+      << "#include <orly/sabot/to_native.h>" << Eol
+      << "#include <orly/native/type.h>" << Eol
+      << "#include <orly/type/new_sabot.h>" << Eol;
 
   /* Needed payload objects: scalar/closed-type arms only. Group-ref arms
      resolve to sibling member classes defined in this very file, so they
@@ -1386,6 +1422,10 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
               << "  bool Match(const " << bname << " &that) const;" << Eol
               << "  bool MatchLess(const " << bname << " &that) const;" << Eol
               << "  size_t GetHash() const;" << Eol
+              << "  /* Storage read/write (#115), deferred until the members are" << Eol
+              << "     complete (they recurse through sibling classes). */" << Eol
+              << "  Var::TVar AsVar() const;" << Eol
+              << "  static " << bname << " FromState(const Orly::Sabot::State::TRecord &state);" << Eol
               << "  private:" << Eol;
           for (const auto &field : fields) {
             out << "  " << subst_storage(field.second) << " V" << field.first << ";" << Eol;
@@ -1419,6 +1459,24 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
                     << "}" << Eol;
               } else {
                 out << "static " << cm << " Mk" << elem.first << "(const " << elem.second << " &vv) {" << Eol
+                    << "  " << cm << " out;" << Eol
+                    << "  out.Which = " << idx << ";" << Eol
+                    << "  out.V" << elem.first << " = vv;" << Eol
+                    << "  return out;" << Eol
+                    << "}" << Eol;
+              }
+              ++idx;
+            }
+          }
+
+          /* Read-back factory for a record-of-sibling arm (#115): build
+             directly from the already-boxed struct (rebuilt by <Boxed>::FromState
+             from a stored sabot record), bypassing the unrolled-record Mk<Tag>. */
+          { size_t idx = 0;
+            for (const auto &elem : elems) {
+              if (arm_is_record(elem.second)) {
+                out << "static " << cm << " MkBoxed" << elem.first
+                    << "(const " << boxed_name(m, elem.first) << " &vv) {" << Eol
                     << "  " << cm << " out;" << Eol
                     << "  out.Which = " << idx << ";" << Eol
                     << "  out.V" << elem.first << " = vv;" << Eol
@@ -1614,17 +1672,58 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
                             })
               << ';' << Eol
               << "}" << Eol;
-        }
-      }
-      out << Eol;
 
-      /* Out-of-line throwing AsVar for every member. */
-      for (const auto &m : members) {
-        auto cm = class_of(m);
-        out << "inline Var::TVar " << cm << "::AsVar() const {" << Eol
-            << "  throw Rt::TSystemError(HERE, \"a mutually-recursive variant value cannot yet be "
-               "stored or returned from a package function; see issue #116\");" << Eol
-            << "}" << Eol;
+          /* AsVar (#115): a dynamic Var::TObj of the fields; a sibling /
+             container-of-sibling field unboxes to its unrolled form (naming
+             concrete sibling classes) and Var::TVar recurses through it. */
+          out << "inline Var::TVar " << bname << "::AsVar() const {" << Eol
+              << "  return Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{"
+              << Base::Join(fields, ", ",
+                            [&](TCppPrinter &strm, const Type::TObj::TElems::value_type &it) {
+                              strm << "{\"" << it.first << "\", Var::TVar(";
+                              if (HasGroupRefDeep(it.second)) {
+                                strm << "Rt::DeepUnbox<" << unrolled_over_group(it.second)
+                                     << ">(V" << it.first << ')';
+                              } else {
+                                strm << 'V' << it.first;
+                              }
+                              strm << ")}";
+                            })
+              << "});" << Eol
+              << "}" << Eol;
+
+          /* FromState (#115): rebuild the boxed record from a stored sabot
+             record; a sibling field reconstructs via AsNative through the
+             sibling class, then re-boxes. */
+          out << "inline " << bname << " " << bname
+              << "::FromState(const Orly::Sabot::State::TRecord &state) {" << Eol
+              << "  " << bname << " out;" << Eol
+              << "  void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());" << Eol
+              << "  Sabot::Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
+              << "  void *type_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());" << Eol
+              << "  Sabot::Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));" << Eol
+              << "  void *state_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());" << Eol
+              << "  Sabot::State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));" << Eol
+              << "  const size_t elem_count = tpin->GetElemCount();" << Eol
+              << "  void *etype_alloc = alloca(Sabot::Type::GetMaxTypeSize());" << Eol
+              << "  void *estate_alloc = alloca(Sabot::State::GetMaxStateSize());" << Eol
+              << "  std::string field_name;" << Eol
+              << "  for (size_t i = 0; i < elem_count; ++i) {" << Eol
+              << "    Sabot::Type::TAny::TWrapper(tpin->NewElem(i, field_name, etype_alloc));" << Eol
+              << "    Sabot::State::TAny::TWrapper fstate(spin->NewElem(i, estate_alloc));" << Eol;
+          for (const auto &field : fields) {
+            out << "    if (field_name == \"" << field.first << "\") { out.V" << field.first << " = ";
+            if (HasGroupRefDeep(field.second)) {
+              out << "Rt::DeepBox<" << subst_storage(field.second) << ">(Sabot::AsNative<"
+                  << unrolled_over_group(field.second) << ">(*fstate)); }" << Eol;
+            } else {
+              out << "Sabot::AsNative<" << field.second << ">(*fstate); }" << Eol;
+            }
+          }
+          out << "  }" << Eol
+              << "  return out;" << Eol
+              << "}" << Eol;
+        }
       }
       out << Eol;
     } // namespace Variants
@@ -1643,6 +1742,193 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
           << "template <> inline bool MatchLess(const " << cm << " &lhs, const " << cm << " &rhs) { return lhs.MatchLess(rhs); }" << Eol;
     }
   } // namespace Orly::Rt
+
+  out << Eol;
+
+  /* TDt per member (#115): the runtime declared type. GenCode on a member
+     rebuilds the group (a MakeRecGroup IIFE) and returns this member, so a set
+     of mutual values is homogeneous at the var layer and AsVar can carry the
+     full declared type. */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Type"}, out);
+    for (const auto &m : members) {
+      out << "template <>" << Eol
+          << "struct TDt<Rt::Variants::" << class_of(m) << "> {" << Eol
+          << "  static TType GetType() {" << Eol
+          << "    return ";
+      Type::GenCode(out.GetOstream(), m);
+      out << ";" << Eol
+          << "  }" << Eol
+          << "};" << Eol;
+    }
+  } // namespace Orly::Type
+
+  out << Eol;
+
+  /* Out-of-line AsVar for every member (#115): build a Var::TVariant for the
+     active arm, carrying the full declared (group) type from TDt above so a set
+     of mutual values stays homogeneous. A sibling / container-of-sibling
+     payload unboxes to its unrolled form and Var::TVar recurses; a
+     record-of-sibling payload delegates to its boxed struct's AsVar. */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Rt", "Variants"}, out);
+    for (const auto &m : members) {
+      auto cm = class_of(m);
+      const auto &elems = m.As<Type::TVariant>()->GetElems();
+      out << "inline Var::TVar " << cm << "::AsVar() const {" << Eol
+          << "  assert(this);" << Eol
+          << "  switch (Which) {" << Eol;
+      { size_t idx = 0;
+        for (const auto &elem : elems) {
+          const auto &payload = elem.second;
+          /* Carry the member's INLINED de Bruijn type (TSelfRef arms, no group
+             refs) so the dynamic-var/sabot value encoder -- which reads the
+             variant's declared arm-payload types -- can translate it
+             (orly/type/new_sabot.cc rejects a raw TGroupRef). It is consistent
+             for every value of the member, matching the stored type. */
+          out << "    case " << idx << ": return Var::TVar::Variant("
+              << "Type::InlinedMemberType(Type::TDt<Rt::Variants::" << cm
+              << ">::GetType()), \"" << elem.first << "\", ";
+          if (arm_is_record(payload)) {
+            out << "V" << elem.first << ".AsVar()";
+          } else if (is_rec_arm(payload)) {
+            out << "Var::TVar(Rt::DeepUnbox<" << unrolled_over_group(payload)
+                << ">(V" << elem.first << "))";
+          } else {
+            out << "Var::TVar(V" << elem.first << ")";
+          }
+          out << ");" << Eol;
+          ++idx;
+        }
+      }
+      out << "  }" << Eol
+          << "  assert(false);" << Eol
+          << "  throw Rt::TSystemError(HERE, \"variant has no active arm\");" << Eol
+          << "}" << Eol;
+    }
+  } // namespace Orly::Rt::Variants
+
+  out << Eol;
+
+  /* Read-back (#115): each stored member is the fixed-shape #96 record
+     <{ .$which:int, .Tag:payload?, ... }> of its inlined de Bruijn form
+     (orly/type/new_sabot.cc inlines a group member). Specialize
+     TToNativeVisitor per member: read `$which`, read the active arm's payload,
+     and rebuild via the member's factory -- a sibling arm reconstructs through
+     the sibling class (AsNative<sibling>), a record-of-sibling arm through its
+     boxed struct's FromState. */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Sabot"}, out);
+    for (const auto &m : members) {
+      auto cm = class_of(m);
+      const auto &elems = m.As<Type::TVariant>()->GetElems();
+      out << "template <>" << Eol
+          << "class TToNativeVisitor<Rt::Variants::" << cm << "> final : public TStateVisitor {" << Eol
+          << "  NO_COPY(TToNativeVisitor);" << Eol
+          << "  public:" << Eol
+          << "  TToNativeVisitor(Rt::Variants::" << cm << " &out) : Out(out) {}" << Eol;
+      {
+        static const char *const kNonRecord[] = {
+            "TFree", "TTombstone", "TVoid", "TInt8", "TInt16", "TInt32", "TInt64",
+            "TUInt8", "TUInt16", "TUInt32", "TUInt64", "TBool", "TChar", "TFloat",
+            "TDouble", "TDuration", "TTimePoint", "TUuid", "TBlob", "TStr", "TDesc",
+            "TOpt", "TSet", "TVector", "TMap", "TTuple"};
+        for (const char *const s : kNonRecord) {
+          out << "  virtual void operator()(const State::" << s
+              << " &) const override { THROW_ERROR(TInvalidConversion); }" << Eol;
+        }
+      }
+      out << "  virtual void operator()(const State::TRecord &state) const override {" << Eol
+          << "    void *type_alloc = alloca(Type::GetMaxTypeSize());" << Eol
+          << "    Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
+          << "    void *type_pin_alloc = alloca(Type::GetMaxTypePinSize());" << Eol
+          << "    Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));" << Eol
+          << "    void *state_pin_alloc = alloca(State::GetMaxStatePinSize());" << Eol
+          << "    State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));" << Eol
+          << "    const size_t elem_count = tpin->GetElemCount();" << Eol
+          << "    void *etype_alloc = alloca(Type::GetMaxTypeSize());" << Eol
+          << "    void *estate_alloc = alloca(State::GetMaxStateSize());" << Eol
+          << "    std::string field_name;" << Eol
+          << "    size_t which = static_cast<size_t>(-1);" << Eol;
+      for (const auto &elem : elems) {
+        out << "    size_t idx_" << elem.first << " = static_cast<size_t>(-1);" << Eol;
+      }
+      out << "    for (size_t i = 0; i < elem_count; ++i) {" << Eol
+          << "      Type::TAny::TWrapper(tpin->NewElem(i, field_name, etype_alloc));" << Eol
+          << "      if (field_name == \"$which\") {" << Eol
+          << "        State::TAny::TWrapper which_state(spin->NewElem(i, estate_alloc));" << Eol
+          << "        which = static_cast<size_t>(AsNative<int64_t>(*which_state));" << Eol
+          << "      }" << Eol;
+      for (const auto &elem : elems) {
+        out << "      else if (field_name == \"" << elem.first << "\") { idx_"
+            << elem.first << " = i; }" << Eol;
+      }
+      out << "    }" << Eol
+          << "    void *opt_pin_alloc = alloca(State::GetMaxStatePinSize());" << Eol
+          << "    void *payload_alloc = alloca(State::GetMaxStateSize());" << Eol;
+      { size_t idx = 0;
+        for (const auto &elem : elems) {
+          out << "    " << (idx == 0 ? "if" : "else if") << " (which == " << idx << ") {" << Eol
+              << "      if (idx_" << elem.first << " == static_cast<size_t>(-1)) { THROW_ERROR(TInvalidConversion); }" << Eol
+              << "      State::TAny::TWrapper arm_state(spin->NewElem(idx_" << elem.first << ", estate_alloc));" << Eol
+              << "      const State::TOpt *opt = dynamic_cast<const State::TOpt *>(arm_state.get());" << Eol
+              << "      if (!opt) { THROW_ERROR(TInvalidConversion); }" << Eol
+              << "      State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));" << Eol
+              << "      if (opin->GetElemCount() != 1) { THROW_ERROR(TInvalidConversion); }" << Eol
+              << "      State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol;
+          const auto &payload = elem.second;
+          if (arm_is_record(payload)) {
+            out << "      const State::TRecord *prec = dynamic_cast<const State::TRecord *>(payload_state.get());" << Eol
+                << "      if (!prec) { THROW_ERROR(TInvalidConversion); }" << Eol
+                << "      Out = Rt::Variants::" << cm << "::MkBoxed" << elem.first
+                << "(Rt::Variants::" << boxed_name(m, elem.first) << "::FromState(*prec));" << Eol;
+          } else if (is_rec_arm(payload)) {
+            out << "      Out = Rt::Variants::" << cm << "::Mk" << elem.first
+                << "(AsNative<" << unrolled_over_group(payload) << ">(*payload_state));" << Eol;
+          } else {
+            out << "      Out = Rt::Variants::" << cm << "::Mk" << elem.first
+                << "(AsNative<" << payload << ">(*payload_state));" << Eol;
+          }
+          out << "    }" << Eol;
+          ++idx;
+        }
+      }
+      out << "    else { THROW_ERROR(TInvalidConversion); }" << Eol
+          << "  }" << Eol
+          << "  private:" << Eol
+          << "  Rt::Variants::" << cm << " &Out;" << Eol
+          << "}; // TToNativeVisitor" << Eol;
+    }
+  } // namespace Orly::Sabot
+
+  out << Eol;
+
+  /* Write-side serialization (#115/#96): route each member's VALUE through
+     AsVar() and its TYPE through Orly::Type::NewSabot (which inlines the group
+     member to its de Bruijn form), per member. */ {
+    TNamespacePrinter nsp(vector<string>{"Orly", "Native"}, out);
+    for (const auto &m : members) {
+      auto cm = class_of(m);
+      out << "template <>" << Eol
+          << "class State::Factory<Rt::Variants::" << cm << "> final {" << Eol
+          << "  NO_CONSTRUCTION(Factory);" << Eol
+          << "  public:" << Eol
+          << "  static Sabot::State::TAny *New(const Rt::Variants::" << cm
+          << " &val, void *state_alloc) {" << Eol
+          << "    return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);" << Eol
+          << "  }" << Eol
+          << "}; // State::Factory<" << cm << ">" << Eol
+          << "template <>" << Eol
+          << "class Type::For<Rt::Variants::" << cm << "> final {" << Eol
+          << "  NO_CONSTRUCTION(For);" << Eol
+          << "  public:" << Eol
+          << "  static Sabot::Type::TAny *GetType(void *type_alloc) {" << Eol
+          << "    return Orly::Type::NewSabot(type_alloc, Orly::Type::TDt<Rt::Variants::"
+          << cm << ">::GetType());" << Eol
+          << "  }" << Eol
+          << "  static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {" << Eol
+          << "    return dynamic_cast<Sabot::Type::TRecord *>(GetType(type_alloc));" << Eol
+          << "  }" << Eol
+          << "}; // Type::For<" << cm << ">" << Eol;
+    }
+  } // namespace Orly::Native
 
   out << Eol;
 

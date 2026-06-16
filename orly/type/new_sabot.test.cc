@@ -26,6 +26,8 @@
 #include <orly/sabot/compare_types.h>
 #include <orly/sabot/type_dumper.h>
 #include <orly/native/all.h>
+#include <orly/type/group_ref.h>
+#include <orly/type/rec_group.h>
 #include <orly/type/sabot_to_type.h>
 #include <orly/type/self_ref.h>
 #include <orly/type/type_czar.h>
@@ -114,6 +116,30 @@ FIXTURE(RecursiveVariantRoundTrips) {
   outer["X"] = Type::TVariant::Get({ { "Y", Type::TSelfRef::Get(1) } });
   const Type::TType nested = Type::TVariant::Get(outer);
   EXPECT_TRUE(RoundTrip(nested) == nested);
+}
+
+/* A MUTUALLY-recursive group (#116): `a is <|X(b)|>; b is <|Y(a)|>;`. Each
+   member translates for storage (issue #115) by inlining to its canonical
+   de Bruijn form -- so it no longer fails translation -- consistently (a stored
+   set stays homogeneous) and distinctly per member. */
+FIXTURE(MutualGroupTranslates) {
+  auto m = Type::MakeRecGroup({ { { "X", Type::TGroupRef::Get({}, 1) } },
+                                { { "Y", Type::TGroupRef::Get({}, 0) } } });
+  const Type::TType a = m[0], b = m[1];
+
+  void *ba = alloca(1000), *ba2 = alloca(1000), *bb = alloca(1000);
+  Sabot::Type::TAny::TWrapper a_sabot(NewSabot(ba, a));
+  Sabot::Type::TAny::TWrapper a_sabot2(NewSabot(ba2, a));
+  Sabot::Type::TAny::TWrapper b_sabot(NewSabot(bb, b));
+
+  /* Translates (no exception) and is finite/consistent for the same member. */
+  EXPECT_TRUE(Atom::IsEq(Sabot::CompareTypes(*a_sabot, *a_sabot2)));
+  /* Distinct members are distinct stored types. */
+  EXPECT_FALSE(Atom::IsEq(Sabot::CompareTypes(*a_sabot, *b_sabot)));
+
+  /* The stored type is the member's canonical inlined de Bruijn form, and
+     round-trips back to it. */
+  EXPECT_TRUE(RoundTrip(a) == Type::InlinedMemberType(a));
 }
 
 FIXTURE(RecursiveVariantCompareTypes) {
