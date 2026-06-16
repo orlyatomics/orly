@@ -1,0 +1,79 @@
+/* <examples/recursive-variants/recursive.orly>
+
+   A WS smoke test for recursive sum-type STORAGE and CLIENT MARSHALING
+   (issue #115). Each method stores a fixed recursive value under a key and
+   reads it back, so the driver -- exercising the WebSocket protocol -- sees
+   the value cross from native storage to the dynamic-var layer and out as
+   JSON. That dynamic-var/marshaling path is the one the C++ lang_test suite
+   (a native-read harness) can't reach, so this demo guards it end to end.
+
+   It covers all four recursive-variant shapes:
+     - a binary `tree`        -- self-reference in a record arm (#103)
+     - a `doc`                -- self-reference under a list (#120 container)
+     - a `mtree`/`forest` pair -- MUTUAL recursion (#116)
+     - an `ntree`             -- a NESTED-variant arm (#125)
+
+   A variant marshals to JSON as `{ "Tag": <payload> }`; a tag-only arm as
+   `{ "Tag": {} }`; numbers come back as JSON floats.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree   is <| Leaf(int) | Branch(<{.l: tree, .r: tree}>) |>;
+doc    is <| Null | Num(int) | Str(str) | Arr([doc]) |>;
+mtree  is <| MLeaf(int) | MNode(forest) |>;
+forest is <| FEmpty | FCons(<{.head: mtree, .tail: forest}>) |>;
+ntree  is <| NLeaf(int) | NBranch(<| Un(ntree) | Nil |>) |>;
+
+/* tree: self-reference in a record arm. */
+put_tree = ((1) effecting {
+  new <['tree', k]> <- tree.Branch(<{.l: tree.Leaf(1), .r:
+    tree.Branch(<{.l: tree.Leaf(2), .r: tree.Leaf(3)}>)}>);
+}) where {
+  k = given::(int);
+};
+get_tree = (*<['tree', k]>::(tree)) where {
+  k = given::(int);
+};
+
+/* doc: self-reference under a list. */
+put_doc = ((1) effecting {
+  new <['doc', k]> <- doc.Arr([doc.Num(1), doc.Str("two"), doc.Arr([doc.Num(3)]), doc.Null()]);
+}) where {
+  k = given::(int);
+};
+get_doc = (*<['doc', k]>::(doc)) where {
+  k = given::(int);
+};
+
+/* mtree/forest: mutual recursion. */
+put_mtree = ((1) effecting {
+  new <['mtree', k]> <- mtree.MNode(forest.FCons(<{.head: mtree.MLeaf(1), .tail:
+    forest.FCons(<{.head: mtree.MLeaf(2), .tail: forest.FEmpty()}>)}>));
+}) where {
+  k = given::(int);
+};
+get_mtree = (*<['mtree', k]>::(mtree)) where {
+  k = given::(int);
+};
+
+/* ntree: nested-variant arm. */
+put_ntree = ((1) effecting {
+  new <['ntree', k]> <- ntree.NBranch(<| Un(ntree) | Nil |>.Un(ntree.NLeaf(7)));
+}) where {
+  k = given::(int);
+};
+get_ntree = (*<['ntree', k]>::(ntree)) where {
+  k = given::(int);
+};
