@@ -28,6 +28,9 @@ using namespace Base;
 using namespace Orly::Atom;
 using namespace Orly::Indy::L1;
 
+/* Test-only; empty in production. See header. */
+std::function<void ()> TTransaction::OnCommitBetweenPushAndPopForTest;
+
 bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const std::optional<TSequenceNumber> &ensure_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
@@ -406,6 +409,11 @@ TTransaction::~TTransaction() NO_THROW {
       if (my_mutation->GetKind() == TMutation::Pusher) {
         delete my_mutation;
       }
+    }
+
+    /* Test-only window between the push-apply and pop-apply passes. */
+    if (CommitFlag && OnCommitBetweenPushAndPopForTest) {
+      OnCommitBetweenPushAndPopForTest();
     }
 
     /* now delete the rest */
