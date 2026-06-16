@@ -333,6 +333,44 @@ def main():
     expected_mention_count = {k: v + 1 for k, v in expected_mentions.items()}
     expected_cooccur_count = {k: v + 1 for k, v in expected_cooccur.items()}
 
+    # Read-back barrier (issue #143): the pre-init writes committed on the
+    # bootstrap session, but the agents are *different* sessions. If an agent's
+    # `is known` predicate read runs before a seed is visible to it, it takes
+    # the `new <- 1` create branch instead of the commutative `+= 1`, and that
+    # stray Assign masks the commutative run on read -> lost increments. To
+    # exclude that create-race (which the pre-init is meant to design out), open
+    # a FRESH session and confirm every seeded key is visible from it before
+    # fanning agents out; a fresh session seeing them means other fresh agent
+    # sessions will too. Poll briefly to absorb any promotion-visibility lag.
+    print("read-back barrier: confirming all seeds are visible to a fresh session...")
+    verifier = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
+    try:
+        deadline = time.monotonic() + 30.0
+        pending = (
+            [("tag", e) for e in expected_tag_records]
+            + [("mention", k) for k in expected_mentions]
+            + [("cooccur", k) for k in expected_cooccur]
+        )
+        while pending:
+            still = []
+            for kind, key in pending:
+                if kind == "tag":
+                    visible = len(tags_for_entity(verifier, pov, key)) > 0
+                elif kind == "mention":
+                    visible = mention_count(verifier, pov, key[0], key[1]) >= 1
+                else:
+                    visible = cooccur_count(verifier, pov, key[0], key[1]) >= 1
+                if not visible:
+                    still.append((kind, key))
+            pending = still
+            if pending:
+                if time.monotonic() > deadline:
+                    sys.exit(f"read-back barrier timed out; {len(pending)} seed(s) "
+                             f"never became visible to a fresh session")
+                time.sleep(0.05)
+    finally:
+        verifier.close()
+
     # Fan out: each agent opens its own WS and runs concurrently.
     threads = []
     t0 = time.monotonic()

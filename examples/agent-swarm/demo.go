@@ -512,6 +512,55 @@ func main() {
 		expectedCooccurCount[k] = v + 1
 	}
 
+	// Read-back barrier (issue #143): the pre-init writes committed on the
+	// bootstrap session, but the agents are *different* sessions. If an agent's
+	// `is known` predicate read runs before a seed is visible to it, it takes
+	// the `new <- 1` create branch instead of the commutative `+= 1`, and that
+	// stray Assign masks the commutative run on read -> lost increments. To
+	// exclude that create-race (which the pre-init is meant to design out), open
+	// a FRESH session and confirm every seeded key is visible from it before
+	// fanning agents out; a fresh session seeing them means other fresh agent
+	// sessions will too. Poll briefly to absorb any promotion-visibility lag.
+	fmt.Println("read-back barrier: confirming all seeds are visible to a fresh session...")
+	{
+		vDialer := *websocket.DefaultDialer
+		vDialer.HandshakeTimeout = wsTimeout
+		verifier, _, err := vDialer.Dial(wsURL, nil)
+		if err != nil {
+			panic(err)
+		}
+		mustSend(verifier, "new session;")
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			pending := 0
+			for e := range expectedTagRecords {
+				if len(tagsForEntity(verifier, pov, e)) == 0 {
+					pending++
+				}
+			}
+			for mk := range expectedMentions {
+				if mentionCount(verifier, pov, mk.entity, mk.docID) < 1 {
+					pending++
+				}
+			}
+			for pk := range expectedCooccur {
+				if cooccurCount(verifier, pov, pk.a, pk.b) < 1 {
+					pending++
+				}
+			}
+			if pending == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				verifier.Close()
+				fmt.Fprintf(os.Stderr, "read-back barrier timed out; %d seed(s) never became visible to a fresh session\n", pending)
+				os.Exit(1)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		verifier.Close()
+	}
+
 	// Fan out: each agent on its own WS, all concurrent.
 	var wg sync.WaitGroup
 	t0 := time.Now()
