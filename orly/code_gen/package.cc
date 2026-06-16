@@ -34,7 +34,9 @@
 #include <orly/type/impl.h>
 #include <orly/type/object_collector.h> //TODO: This header should be renamed
 #include <orly/type/orlyify.h>
+#include <orly/type/rec_group.h>
 #include <orly/type/self_ref.h>
+#include <orly/type/unroll.h>
 #include <orly/type/util.h>
 #include <orly/type/variant.h>
 #include <orly/expr/util.h>
@@ -533,6 +535,14 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                       << "})";
                   };
                   virtual void operator()(const Type::TVariant  *that) const {
+                    /* A mutual-group member (its arms carry TGroupRef, #116) is
+                       stored as its inlined de Bruijn form (orly/type/new_sabot.cc
+                       does the same), so describe the link the same way -- the
+                       inlined form has only TSelfRef, handled below (#115). */
+                    if (Type::HasGroupRef(that->AsType())) {
+                      Type::InlinedMemberType(that->AsType()).Accept(*this);
+                      return;
+                    }
                     Out
                       << "Orly::Type::TVariant::Get(std::map<std::string, Orly::Type::TType> {"
                       << Join(that->GetElems(),

@@ -61,6 +61,15 @@ namespace Orly {
     bool TryGetGroupMembers(const TType &member, std::vector<TType> &members,
                             size_t &index);
 
+    /* A group member's canonical inlined de Bruijn form: the self-recursive
+       TVariant (sibling refs expanded, cycles minted as Type::TSelfRef) that
+       MakeRecGroup already computed as the group identity. This is how a
+       mutual-group value is lowered for STORAGE (issue #115): inlining turns a
+       member into an ordinary self-recursive variant, so the sabot TSelfRef
+       leaf and the rest of the single-recursion machinery carry it. `member`
+       must be a type built by MakeRecGroup. */
+    TType InlinedMemberType(const TType &member);
+
   }  // Type
 
 }  // Orly

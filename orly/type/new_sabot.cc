@@ -18,6 +18,7 @@
 
 #include <orly/type/new_sabot.h>
 
+#include <orly/type/rec_group.h>
 #include <orly/type/unroll.h>
 #include <orly/type/util.h>
 
@@ -92,12 +93,15 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
          Sabot::Type::TSelfRef leaf at each recursion point (the TSelfRef case
          below), so the record is no longer infinitely deep.
 
-         A MUTUAL-group variant (its arms carry Type::TGroupRef, #116) is not
-         yet storable: lowering it would require inlining the group to its de
-         Bruijn form first. Those still return no translation (the TGroupRef
-         case below), so MakeRecGroup members keep failing translation cleanly
-         until that follow-on lands. */
+         A MUTUAL-group variant (its arms carry Type::TGroupRef, #116) is
+         lowered for storage (issue #115) by first inlining the group member to
+         its canonical self-recursive de Bruijn form -- siblings expanded,
+         cycles minted as Type::TSelfRef -- which the TSelfRef path then encodes
+         as an ordinary recursive #96 record. The inlined form is the same for
+         every value of the member type, so a stored set stays homogeneous and
+         `::(member)` matches it on read-back. */
       if (HasGroupRef(type->AsType())) {
+        Result = TryNewSabot(Buf, InlinedMemberType(type->AsType()));
         return;
       }
       TObjElems rec;

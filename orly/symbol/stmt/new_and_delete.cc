@@ -79,18 +79,15 @@ void TNew::TypeCheck() const {
   GetLhs()->GetExpr()->GetType().Accept(TAddressTypeVisitor(dummy, GetPosRange()));
   /* NOTE: Maybe this should be type check rather than get type. But for now,
            GetType() calls ComputeType() which does the type check. */
-  Type::TType value_type = GetRhs()->GetExpr()->GetType();
-  /* Self-recursive variants are now storable: their #96 fixed-shape record
-     encoding closes the cycle with a finite Sabot::Type::TSelfRef leaf, and the
-     value read/write round-trips through the boxed payload representation
-     (issue #115). A MUTUALLY-recursive variant (Type::TGroupRef) is not yet --
-     its sabot encoding needs the group inlined to de Bruijn form first -- so
-     reject that write here with a clear message rather than letting
-     orly/type/new_sabot.cc fail translation at runtime. */
-  if (Type::HasGroupRef(value_type)) {
-    throw TExprError(HERE, GetPosRange(),
-        "a value containing a mutually-recursive variant cannot be stored yet (issue #116/#115)");
-  }
+  GetRhs()->GetExpr()->GetType();
+  /* Recursive variants -- self-recursive (Type::TSelfRef) and mutually-recursive
+     (Type::TGroupRef) alike -- are storable (issue #115): a self-recursive value
+     closes the cycle with the finite sabot TSelfRef leaf, and a mutual-group
+     value is lowered by inlining the member to its de Bruijn form
+     (orly/type/new_sabot.cc), so it rides the same machinery. Either way the
+     value read/writes through the boxed payload representation. A mutual payload
+     shape codegen does not yet handle (a group ref under a nested variant, etc.)
+     is reported with a clear message at code generation. */
 }
 
 TNew::TNew(
