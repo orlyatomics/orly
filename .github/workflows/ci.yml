@@ -257,6 +257,7 @@ jobs:
 
       - name: make debug
         run: make debug
+        id: build
 
       # Smoke-tests the orlyc + orlyi + WebSocket protocol end to end.
       # Both drivers (Python + Go) exercise the same scenario and
@@ -264,10 +265,12 @@ jobs:
       # branches; any divergence fails CI.
       - name: run.sh (python driver)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/bitcoin-time-travel
 
       - name: run-go.sh (go driver)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/bitcoin-time-travel
 
       # Same scenario as bitcoin-time-travel but uses set union instead
@@ -275,10 +278,12 @@ jobs:
       # from that demo's README: same fold pattern, different operator.
       - name: wikipedia-categories run.sh (python driver)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/wikipedia-categories
 
       - name: wikipedia-categories run-go.sh (go driver)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/wikipedia-categories
 
       # The concurrent-writers demo: N sessions all `+= n` into the same
@@ -290,12 +295,14 @@ jobs:
       # local-showcase mode used in the README / tweet captures.
       - name: wikipedia-pageviews run.sh (python driver, concurrent +=)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/wikipedia-pageviews
         env:
           DEMO_SCALE: small
 
       - name: wikipedia-pageviews run-go.sh (go driver, concurrent +=)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/wikipedia-pageviews
         env:
           DEMO_SCALE: small
@@ -310,12 +317,14 @@ jobs:
       # over 20 docs for CI tractability.
       - name: agent-swarm run.sh (python driver, concurrent |= and +=)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/agent-swarm
         env:
           DEMO_SCALE: small
 
       - name: agent-swarm run-go.sh (go driver, concurrent |= and +=)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/agent-swarm
         env:
           DEMO_SCALE: small
@@ -328,10 +337,12 @@ jobs:
       # that both race events land in history.
       - name: grc20-pov run.sh (python driver, event-sourced KG)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/grc20-pov
 
       - name: grc20-pov run-go.sh (go driver, event-sourced KG)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/grc20-pov
 
       # Collaborative text CRDT (Logoot): two editors stream inserts/deletes
@@ -342,10 +353,12 @@ jobs:
       # independent readers, no lost concurrent edits, and stable time-travel.
       - name: crdt-text run.sh (python driver, collaborative CRDT)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/crdt-text
 
       - name: crdt-text run-go.sh (go driver, collaborative CRDT)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/crdt-text
 
       # Recursive sum-type storage + client marshaling smoke test (issue
@@ -356,8 +369,10 @@ jobs:
       # harness) cannot reach.
       - name: recursive-variants run.sh (python driver, recursive storage)
         run: ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/recursive-variants
 
       - name: recursive-variants run-go.sh (go driver, recursive storage)
         run: ./run-go.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/recursive-variants
