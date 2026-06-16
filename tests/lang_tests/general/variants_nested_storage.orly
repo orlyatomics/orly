@@ -1,0 +1,66 @@
+/* <orly/lang_tests/general/variants_nested_storage.orly>
+
+   End-to-end test for issue #115: a recursive variant with a NESTED-variant
+   arm (#125) round-trips through storage (`<-` / `*`).
+
+   `tree is <| Leaf(int) | Branch(<| Un(tree) | Nil |>) |>;` -- the Branch arm's
+   payload is an anonymous open nested variant that refers back to the outer
+   `tree`. It is stored as an inline struct in the outer's header; that struct
+   is itself a variant value, so it grows its own AsVar / read-back (#115),
+   nesting inside the outer's #96 fixed-shape record.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Branch(<| Un(tree) | Nil |>) |>;
+
+read_tree = (*<[n]>::(tree)) where {
+  n = given::(int);
+};
+
+/* Branch carrying a nested `Un(tree)` (the self arm of the nested variant). */
+with {
+  <[700]> <- tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(5)));
+} test {
+  t1: read_tree(.n: 700) == tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(5)));
+  t2: read_tree(.n: 700) != tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(9)));
+  t3: read_tree(.n: 700) != tree.Leaf(5);
+  t4: read_tree(.n: 700) is Branch;
+};
+
+/* Branch carrying the nested tag-only `Nil`. */
+with {
+  <[701]> <- tree.Branch(<| Un(tree) | Nil |>.Nil);
+} test {
+  t5: read_tree(.n: 701) == tree.Branch(<| Un(tree) | Nil |>.Nil);
+  t6: read_tree(.n: 701) != tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(0)));
+};
+
+/* A deeply-nested value: Branch(Un(Branch(Un(Leaf 8)))). */
+with {
+  <[702]> <- tree.Branch(<| Un(tree) | Nil |>.Un(
+             tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(8)))));
+} test {
+  t7: read_tree(.n: 702) == tree.Branch(<| Un(tree) | Nil |>.Un(
+        tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(8)))));
+  t8: read_tree(.n: 702) != tree.Branch(<| Un(tree) | Nil |>.Un(
+        tree.Branch(<| Un(tree) | Nil |>.Un(tree.Leaf(7)))));
+};
+
+/* The plain (non-nested) base arm still round-trips alongside. */
+with {
+  <[703]> <- tree.Leaf(42);
+} test {
+  t9: read_tree(.n: 703) == tree.Leaf(42);
+};

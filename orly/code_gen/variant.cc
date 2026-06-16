@@ -432,6 +432,14 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                 << "  bool MatchLess(const " << nvname << " &that) const;" << Eol
                 << "  size_t GetHash() const;" << Eol
                 << Eol
+                << "  /* Storage read/write (#115), deferred until " << class_name
+                << " is complete (they recurse through it via the self arm). The"
+                << " open nested variant is itself a variant value, so AsVar" << Eol
+                << "     builds a Var::TVariant; FromState rebuilds it from the"
+                << " stored #96 record. */" << Eol
+                << "  Var::TVar AsVar() const;" << Eol
+                << "  static " << nvname << " FromState(const Orly::Sabot::State::TRecord &state);" << Eol
+                << Eol
                 << "  private:" << Eol
                 << "  size_t Which;" << Eol;
             for (const auto &ne : nv_elems) {
@@ -503,6 +511,25 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             if (arm_is_recursive(elem.second) && elem.second.Is<Type::TObj>()) {
               out << "static " << class_name << " MkBoxed" << elem.first
                   << "(const " << boxed_name(elem.first) << " &vv) {" << Eol
+                  << "  " << class_name << " out;" << Eol
+                  << "  out.Which = " << idx << ";" << Eol
+                  << "  out.V" << elem.first << " = vv;" << Eol
+                  << "  return out;" << Eol
+                  << "}" << Eol;
+            }
+            ++idx;
+          }
+        }
+        /* Read-back factory for a nested-variant arm (#115/#125): construct
+           directly from the already-built inline struct (rebuilt by its
+           FromState), bypassing the closed-payload Mk<Tag> so the header never
+           names the closed nested variant. */
+        {
+          size_t idx = 0;
+          for (const auto &elem : elems) {
+            if (arm_is_nested_variant(elem.second)) {
+              out << "static " << class_name << " MkNV" << elem.first
+                  << "(const " << inline_name(elem.second) << " &vv) {" << Eol
                   << "  " << class_name << " out;" << Eol
                   << "  out.Which = " << idx << ";" << Eol
                   << "  out.V" << elem.first << " = vv;" << Eol
@@ -891,6 +918,89 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                 << "  assert(false);" << Eol
                 << "  return 0;" << Eol
                 << "}" << Eol;
+
+            /* AsVar (#115): the open nested variant is itself a variant value;
+               build a Var::TVariant for the active arm, carrying the nested
+               variant's (open, TSelfRef-bearing) type so it nests correctly
+               inside the outer's encoding. A self arm unboxes to the outer and
+               Var::TVar recurses. */
+            out << "inline Var::TVar " << nvname << "::AsVar() const {" << Eol
+                << "  switch (Which) {" << Eol;
+            { size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "    case " << i << ": return Var::TVar::Variant(";
+                Type::GenCode(out.GetOstream(), elem.second);
+                out << ", \"" << ne.first << "\", Var::TVar(";
+                if (ne.second.Is<Type::TSelfRef>()) {
+                  out << "Rt::DeepUnbox<" << class_name << ">(V" << ne.first << ')';
+                } else {
+                  out << 'V' << ne.first;
+                }
+                out << "));" << Eol;
+                ++i;
+              }
+            }
+            out << "  }" << Eol
+                << "  assert(false);" << Eol
+                << "  throw Rt::TSystemError(HERE, \"nested variant has no active arm\");" << Eol
+                << "}" << Eol;
+
+            /* FromState (#115): rebuild the inline struct from the nested
+               variant's stored #96 record -- read `$which`, read the active
+               arm's payload, box a self arm. */
+            out << "inline " << nvname << " " << nvname
+                << "::FromState(const Orly::Sabot::State::TRecord &state) {" << Eol
+                << "  " << nvname << " out;" << Eol
+                << "  void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());" << Eol
+                << "  Sabot::Type::TRecord::TWrapper rtype(state.GetRecordType(type_alloc));" << Eol
+                << "  void *type_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());" << Eol
+                << "  Sabot::Type::TRecord::TPin::TWrapper tpin(rtype->Pin(type_pin_alloc));" << Eol
+                << "  void *state_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());" << Eol
+                << "  Sabot::State::TRecord::TPin::TWrapper spin(state.Pin(state_pin_alloc));" << Eol
+                << "  const size_t elem_count = tpin->GetElemCount();" << Eol
+                << "  void *etype_alloc = alloca(Sabot::Type::GetMaxTypeSize());" << Eol
+                << "  void *estate_alloc = alloca(Sabot::State::GetMaxStateSize());" << Eol
+                << "  std::string field_name;" << Eol
+                << "  size_t which = static_cast<size_t>(-1);" << Eol;
+            for (const auto &ne : nv_elems) {
+              out << "  size_t idx_" << ne.first << " = static_cast<size_t>(-1);" << Eol;
+            }
+            out << "  for (size_t i = 0; i < elem_count; ++i) {" << Eol
+                << "    Sabot::Type::TAny::TWrapper(tpin->NewElem(i, field_name, etype_alloc));" << Eol
+                << "    if (field_name == \"$which\") {" << Eol
+                << "      Sabot::State::TAny::TWrapper ws(spin->NewElem(i, estate_alloc));" << Eol
+                << "      which = static_cast<size_t>(Sabot::AsNative<int64_t>(*ws));" << Eol
+                << "    }" << Eol;
+            for (const auto &ne : nv_elems) {
+              out << "    else if (field_name == \"" << ne.first << "\") { idx_"
+                  << ne.first << " = i; }" << Eol;
+            }
+            out << "  }" << Eol
+                << "  void *opt_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());" << Eol
+                << "  void *payload_alloc = alloca(Sabot::State::GetMaxStateSize());" << Eol;
+            { size_t i = 0;
+              for (const auto &ne : nv_elems) {
+                out << "  if (which == " << i << ") {" << Eol
+                    << "    out.Which = " << i << ";" << Eol
+                    << "    Sabot::State::TAny::TWrapper arm_state(spin->NewElem(idx_" << ne.first << ", estate_alloc));" << Eol
+                    << "    const Sabot::State::TOpt *opt = dynamic_cast<const Sabot::State::TOpt *>(arm_state.get());" << Eol
+                    << "    if (opt) {" << Eol
+                    << "      Sabot::State::TOpt::TPin::TWrapper opin(opt->Pin(opt_pin_alloc));" << Eol
+                    << "      Sabot::State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol
+                    << "      out.V" << ne.first << " = ";
+                if (ne.second.Is<Type::TSelfRef>()) {
+                  out << "Rt::DeepBox<" << nv_field(ne.second) << ">(Sabot::AsNative<"
+                      << class_name << ">(*payload_state));" << Eol;
+                } else {
+                  out << "Sabot::AsNative<" << nv_field(ne.second) << ">(*payload_state);" << Eol;
+                }
+                out << "    }" << Eol
+                    << "  }" << Eol;
+                ++i;
+              }
+            }
+            out << "  return out;" << Eol
+                << "}" << Eol;
           }
         }
       }
@@ -970,17 +1080,15 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       for (const auto &elem : elems) {
         const auto &payload = elem.second;
         out << "    case " << idx << ": ";
-        if (arm_is_nested_variant(payload)) {
-          /* A nested-variant arm payload (#125) is stored as an inline struct;
-             its dynamic-var/sabot marshaling is a #115 follow-on. (Statement,
-             not `return throw` -- the latter is ill-formed.) */
-          out << "throw Rt::TSystemError(HERE, \"storing a variant with a "
-                 "nested-variant arm is not yet supported; see issue #115\")";
-        } else {
+        {
           out << "return Var::TVar::Variant("
               << "Type::TDt<Rt::Variants::" << class_name << ">::GetType(), \""
               << elem.first << "\", ";
-          if (arm_is_recursive(payload) && payload.Is<Type::TObj>()) {
+          if (arm_is_nested_variant(payload)) {
+            /* Nested-variant arm (#125): the inline struct is itself a variant
+               value and builds its own Var::TVariant. */
+            out << "V" << elem.first << ".AsVar()";
+          } else if (arm_is_recursive(payload) && payload.Is<Type::TObj>()) {
             /* Boxed-record arm: the boxed struct builds its own Var::TObj,
                recursing into self fields -- without naming the unrolled record. */
             out << "V" << elem.first << ".AsVar()";
@@ -1076,8 +1184,13 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             << "      State::TAny::TWrapper payload_state(opin->NewElem(0, payload_alloc));" << Eol;
         const auto &payload = elem.second;
         if (arm_is_nested_variant(payload)) {
-          /* Reading a stored nested-variant arm (#125) is a #115 follow-on. */
-          out << "      THROW_ERROR(TInvalidConversion);" << Eol;
+          /* Nested-variant arm (#125): rebuild the inline struct from the
+             stored nested #96 record, then construct the arm -- without naming
+             the closed nested variant. */
+          out << "      const State::TRecord *prec = dynamic_cast<const State::TRecord *>(payload_state.get());" << Eol
+              << "      if (!prec) { THROW_ERROR(TInvalidConversion); }" << Eol
+              << "      Out = Rt::Variants::" << class_name << "::MkNV" << elem.first
+              << "(Rt::Variants::" << inline_name(payload) << "::FromState(*prec));" << Eol;
         } else if (arm_is_recursive(payload) && payload.Is<Type::TObj>()) {
           /* Boxed-record arm: rebuild the boxed struct from the stored sabot
              record (recursing through this variant), then construct the arm --
