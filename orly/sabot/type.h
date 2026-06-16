@@ -60,6 +60,16 @@ namespace Orly {
       class TTombstone;
       class TVoid;
 
+      /* A recursive back-reference leaf (issue #115).  This is how a recursive
+         sum-type's #96 fixed-shape record stops being infinitely deep: at the
+         point where the record would contain itself, we emit this finite leaf
+         instead, carrying the de Bruijn depth of the enclosing variant binder
+         it refers back to.  It is deliberately kept OUT of the N*N
+         TTypeDoubleVisitor matrix (see TTypeDoubleVisitor::OnSelfRef and
+         AcceptDouble) -- mirroring how the orly type layer keeps its own
+         Type::TSelfRef / Type::TGroupRef out of its TDoubleVisitor. */
+      class TSelfRef;
+
       /* Unary types.  These are base classes which the sabot implementer must finalize. */
       class TDesc;
       class TFree;
@@ -145,6 +155,15 @@ namespace Orly {
 
         /* TODO */
         virtual void Accept(const TTypeVisitor &vistor) const = 0;
+
+        /* True iff this is the recursive back-reference leaf (Type::TSelfRef,
+           issue #115).  Lets AcceptDouble intercept the leaf at the single
+           double-dispatch chokepoint instead of paying for a row+column in the
+           N*N TTypeDoubleVisitor.  A cheap virtual, no dynamic_cast in the hot
+           comparison path. */
+        virtual bool IsRecursiveRef() const {
+          return false;
+        }
 
         protected:
 
@@ -298,6 +317,39 @@ namespace Orly {
       NULLARY_TYPE(Tombstone)
       NULLARY_TYPE(Void)
       #undef NULLARY_TYPE
+
+      /* The recursive back-reference leaf (issue #115).  Like a nullary type --
+         no children, so no TPin -- but it carries a de Bruijn depth payload
+         identifying which enclosing variant binder it refers back to.  Built by
+         the orly->sabot bridge (orly/type/new_sabot.cc) from Type::TSelfRef /
+         Type::TGroupRef, and by the atom layer from a TTycon::SelfRef core. */
+      class TSelfRef final
+          : public TAny {
+        public:
+
+        /* Cache the de Bruijn depth this leaf refers back to. */
+        TSelfRef(uint64_t depth)
+            : Depth(depth) {}
+
+        /* See TAny. */
+        virtual void Accept(const TTypeVisitor &vistor) const override;
+
+        /* See TAny -- this is the recursive leaf. */
+        virtual bool IsRecursiveRef() const override {
+          return true;
+        }
+
+        /* The de Bruijn depth of the enclosing variant binder we refer to. */
+        uint64_t GetDepth() const {
+          return Depth;
+        }
+
+        private:
+
+        /* See accessor. */
+        uint64_t Depth;
+
+      };  // TSelfRef
 
       /* Unary types. */
       #define UNARY_TYPE(name)  \
@@ -483,6 +535,13 @@ namespace Orly {
       virtual void operator()(const Type::TMap &rhs      ) const = 0;
       virtual void operator()(const Type::TRecord &rhs   ) const = 0;
       virtual void operator()(const Type::TTuple &rhs    ) const = 0;
+
+      /* The recursive back-reference leaf (issue #115).  Deliberately NOT pure:
+         it has a default that throws, so the many existing TTypeVisitor
+         subclasses (which never encounter a recursive type) need no change.
+         The handful that do -- the orly<->sabot bridges, get_depth, the atom
+         type encoder, type_dumper -- override it. */
+      virtual void operator()(const Type::TSelfRef &rhs) const;
 
       protected:
 
@@ -1256,6 +1315,13 @@ namespace Orly {
       virtual void operator()(const Type::TTuple &lhs, const Type::TMap &rhs      ) const = 0;
       virtual void operator()(const Type::TTuple &lhs, const Type::TRecord &rhs   ) const = 0;
       virtual void operator()(const Type::TTuple &lhs, const Type::TTuple &rhs    ) const = 0;
+
+      /* The recursive back-reference leaf (issue #115).  AcceptDouble routes
+         here whenever EITHER side is a Type::TSelfRef, so the leaf never needs
+         a row or column in the N*N matrix above.  Not pure: the default throws,
+         so only the consumers that can actually meet a recursive type
+         (CompareTypes, OrderTypes) override it; the rest inherit the throw. */
+      virtual void OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const;
 
       protected:
 

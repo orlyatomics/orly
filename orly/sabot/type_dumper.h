@@ -67,6 +67,7 @@ namespace Orly {
       virtual void operator()(const Type::TMap &type) const override;
       virtual void operator()(const Type::TRecord &type) const override;
       virtual void operator()(const Type::TTuple &type) const override;
+      virtual void operator()(const Type::TSelfRef &type) const override;
 
       private:
 

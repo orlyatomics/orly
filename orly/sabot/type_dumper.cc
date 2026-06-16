@@ -143,6 +143,10 @@ void TTypeDumper::operator()(const Type::TRecord &type) const {
   Strm << ')';
 }
 
+void TTypeDumper::operator()(const Type::TSelfRef &type) const {
+  Strm << "self_ref(" << type.GetDepth() << ')';
+}
+
 void TTypeDumper::operator()(const Type::TTuple &type) const {
   Strm << "tuple(";
   size_t elem_count = type.GetElemCount();
