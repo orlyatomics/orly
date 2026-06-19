@@ -200,3 +200,105 @@ FIXTURE(Issue143FoldUndercount) {
     cond.notify_one();
   });
 }
+
+/* Issue #143 create-race characterisation.
+
+   The agent-swarm `add_mention` is a check-then-act: it emits `+= 1`
+   (TMutator::Add) when the key `is known`, else `new <- 1` -- and `new`
+   lowers to a TMutator::Assign entry (session.cc routes TNew through the
+   op_by_key/Assign path, not the deferred-commutative path). Under
+   concurrency the two branches can BOTH fire for one key when a writer's
+   read snapshot predates a concurrent create: one session sees the key
+   known and emits Add(1); another sees it absent and emits Assign(1).
+   The SeqNum is assigned at AppendUpdate (commit) time
+   (transaction_base.cc ~637), independent of when each session read, so
+   the Assign can land at a HIGHER SeqNum than the Add.
+
+   This fixture commits each ordering by hand (commit order == SeqNum
+   order; the newest entry is the fold anchor) and pins the resulting
+   read. The key finding for #143:
+
+     * `Add(1)` against an absent key folds to 1 -- the commutative
+       mutator already treats "missing" as the monoid identity (0). So
+       the `new <-` create branch is not needed for correctness; an
+       unconditional `+= 1` works on a fresh key.
+
+     * A newer Assign MASKS older Add runs (Add(1) then Assign(1) reads
+       as 1, not 2). This is the agent-swarm "got 1 want 2" undercount.
+       It is NOT a fold bug: Assign is destructive/final by definition,
+       so `x += 1; x <- 1` MUST read as 1. The fold is behaving
+       correctly; the defect is that the racy check-then-act emits a
+       destructive Assign for what is logically an initialise. The
+       engine-clean idiom is unconditional `+= 1` (no `is known` / `new`
+       branch); a deeper fix (a distinct create/upsert mutator that does
+       not mask commutative history) is a separate, larger indy change.
+
+   We therefore pin the SEMANTICALLY CORRECT values (Assign is
+   destructive), so this guard fails if a future change "fixes" #143 by
+   making Assign non-destructive -- which would corrupt legitimate
+   assign-after-increment. */
+FIXTURE(Issue143CreateRaceSemantics) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Base::TUuid idx_id(TUuid::Twister);
+    const TIndexKey counter_key(idx_id, TKey(make_tuple(1L), &arena, state_alloc));
+
+    /* Each scenario gets a FRESH repo so prior entries don't leak. The
+       order of `entries` is the COMMIT order: earliest first => lowest
+       SeqNum. At read time the heap delivers highest SeqNum (newest)
+       first, so the LAST entry committed is the fold anchor. */
+    auto run_scenario = [&](const char *name,
+                            const std::vector<std::pair<TMutator, int64_t>> &entries,
+                            int64_t want) {
+      Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+      auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+      Base::TUuid repo_id(TUuid::Twister);
+      auto repo = manager->GetRepo(repo_id, TTtl::max(), std::nullopt, true, true);
+      for (const auto &e : entries) {
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena),
+                                         TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        update->AddEntry(counter_key, TKey(e.second, &arena, state_alloc), e.first);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      EXPECT_EQ(context[counter_key], TKey(want, &arena, state_alloc));
+    };
+
+    /* Commit order is oldest->newest (newest = anchor). `want` is the
+       SEMANTICALLY CORRECT value under destructive-Assign semantics. */
+
+    /* `+= 1` on a totally absent key already folds to 1 (identity 0):
+       the create branch is unnecessary for a fresh counter. */
+    run_scenario("Add1_only_absentkey",     {{TMutator::Add,1}},                        1);
+    /* Two blind creates of the same value: latest Assign wins -> 1.
+       (A genuine user-level lost update; both writers said "set to 1".) */
+    run_scenario("Assign1_then_Assign1",     {{TMutator::Assign,1},{TMutator::Assign,1}},1);
+    /* Add anchored above an Assign base: folds base + acc -> 2. */
+    run_scenario("Assign1_then_Add1",        {{TMutator::Assign,1},{TMutator::Add,1}},   2);
+    /* THE #143 ORDERING: Add then a newer Assign. Assign is destructive
+       and masks the older increment -> 1. Correct for assignment; the
+       agent-swarm undercount is this case, caused by `new <-` emitting a
+       destructive Assign rather than an initialise. */
+    run_scenario("Add1_then_Assign1",        {{TMutator::Add,1},{TMutator::Assign,1}},   1);
+    /* Two distinct deferred increments fold -> 2 (the happy path the
+       demo wants; achieved when both writers take the `+=` branch). */
+    run_scenario("Add1_then_Add1",           {{TMutator::Add,1},{TMutator::Add,1}},      2);
+    /* Assign base + two increments -> 3. */
+    run_scenario("Assign1_Add1_Add1",        {{TMutator::Assign,1},{TMutator::Add,1},{TMutator::Add,1}}, 3);
+    /* Newer Assign masks two older increments -> 1 (destructive). */
+    run_scenario("Add1_Add1_then_Assign1",   {{TMutator::Add,1},{TMutator::Add,1},{TMutator::Assign,1}}, 1);
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
