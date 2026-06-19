@@ -3,7 +3,8 @@
    `TUnary` emits a single-operand operator. `TOp` enumerates them:
    `Acos`, `AddressOf`, `Asin`, `Atan`, `Cast`, `Ceiling`, `Cos`,
    `Floor`, `IsEmpty`, `IsKnown`, `IsUnknown`, `Known`, `LengthOf`,
-   `Log`, `Log2`, `Log10`, `Negative`, `Not`, `Read`, `ReverseOf`,
+   `Log`, `Log2`, `Log10`, `Negative`, `Not`, `Read`, `ReadOrIdentity`,
+   `ReverseOf`,
    `SequenceOf`, `Sin`, `Tan`, `TimeDiffObj`, `TimePntObj`,
    `ToLower`, `ToUpper`, `UnwrapMutable`. Emit shape is `Call`
    (function-call) or `Postfix`.
@@ -38,7 +39,7 @@ namespace Orly {
 
       //TODO: effect
       enum TOp {Acos, AddressOf, Asin, Atan, Cast, Ceiling, Cos, Floor, IsEmpty, IsKnown, IsUnknown, Known, LengthOf, Log,
-                Log2, Log10, Negative, Not, Read, ReverseOf, SequenceOf, Sin, Tan, TimeDiffObj, TimePntObj, ToLower, ToUpper, UnwrapMutable };
+                Log2, Log10, Negative, Not, Read, ReadOrIdentity, ReverseOf, SequenceOf, Sin, Tan, TimeDiffObj, TimePntObj, ToLower, ToUpper, UnwrapMutable };
 
       TUnary(const L0::TPackage *package, const Type::TType &ret_type, TOp op, const TInline::TPtr &expr);
 

@@ -1,0 +1,99 @@
+/* <orly/lang_tests/general/issue_151_commutative_upsert.orly>
+
+   Issue #151: commutative-upsert semantics. A defer-safe, identity-default
+   commutative mutation (+=, |=, or=, xor=, symmetric-diff) on a key that
+   was NEVER created must auto-initialise from the monoid identity (0 for
+   ints, false for bools, the empty set for sets) and then apply -- instead
+   of throwing "Cannot de-reference Key ... which does not exist".
+
+   Before #151 each accumulator had to be written as a non-commutative
+   check-then-act:
+       (... += 1) if k is known else (new k <- 1)
+   whose destructive `new <- ` create-arm is the root of the #143
+   create-race. After #151 the bare `+= 1` / `|= {x}` form works on a
+   fresh key, so the create-arm (and the race) go away.
+
+   NB: a PLAIN read of an absent key still throws -- only the LHS of a
+   commutative mutate auto-seeds. So every read below happens AFTER a
+   first write to the key.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_int = (*<[n]>::(int)) where {
+  n = given::(int);
+};
+
+/* Bare `+= x` -- NO `is known` guard, NO `new <-`. On an absent key this
+   used to throw; with #151 it seeds from 0 and adds. */
+add_int = ((true) effecting {
+  *<[n]>::(int) += x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+read_set = (*<[n]>::({int})) where {
+  n = given::(int);
+};
+
+/* Bare `|= {x}` on an absent key seeds from the empty set and unions. */
+union_set = ((true) effecting {
+  *<[n]>::({int}) |= {x};
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+read_bool = (*<[n]>::(bool)) where {
+  n = given::(int);
+};
+
+/* Bare `or= x` on an absent key seeds from false. */
+or_bool = ((true) effecting {
+  *<[n]>::(bool) or= x;
+}) where {
+  n = given::(int);
+  x = given::(bool);
+};
+
+/* Add on a totally fresh key (no `with` seed): 0 + 5 = 5, then +3 = 8. */
+test {
+  t1: add_int(.n: 200, .x: 5) {
+    t2: read_int(.n: 200) == 5;
+    t3: add_int(.n: 200, .x: 3) {
+      t4: read_int(.n: 200) == 8;
+    };
+  };
+};
+
+/* Union on a fresh key: {} | {1} = {1}, then | {2} = {1, 2}. */
+test {
+  t10: union_set(.n: 201, .x: 1) {
+    t11: read_set(.n: 201) == {1};
+    t12: union_set(.n: 201, .x: 2) {
+      t13: read_set(.n: 201) == {1, 2};
+    };
+  };
+};
+
+/* Bool or on a fresh key: false | false = false, then | true = true. */
+test {
+  t20: or_bool(.n: 202, .x: false) {
+    t21: read_bool(.n: 202) == false;
+    t22: or_bool(.n: 202, .x: true) {
+      t23: read_bool(.n: 202) == true;
+    };
+  };
+};

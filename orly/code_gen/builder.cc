@@ -57,6 +57,7 @@
 #include <orly/type.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/variant.h>
+#include <orly/var/mutation.h>
 
 using namespace std;
 using namespace Orly;
@@ -206,6 +207,28 @@ TInline::TPtr BuildOptInline(const L0::TPackage *package, const Expr::TExpr::TPt
   return TInline::TPtr();
 }
 
+/* Commutative-upsert (#151): build the LHS of a `*<[k]>::(T) OP= v`
+   mutation. For an identity-default commutative mutator (Add, Or, Xor,
+   Union, SymmetricDiff) whose LHS is a typed read `expr::(T)`, emit the
+   non-throwing ReadOrIdentity read so a first-write to an absent key
+   auto-initialises from the monoid identity instead of throwing
+   "Cannot de-reference Key ... which does not exist". Every other shape
+   (other mutators, non-read LHS such as `x.field`, partial mutables)
+   keeps the existing throw-on-absent Read via BuildInline. */
+TInline::TPtr BuildMutateLhs(const L0::TPackage *package, const Expr::TExpr::TPtr &lhs, TMutator mutator) {
+  if (Var::IsIdentityDefaultCommutative(mutator)) {
+    if (auto *read = dynamic_cast<const Expr::TRead *>(lhs.get())) {
+      Type::TType ret_type = Type::UnwrapSequence(read->GetType());
+      /* keep_mutable: the inner keys expr feeds a mutable read, exactly
+         as the normal TUnary::Read path does (builder Unary helper). */
+      return Context::GetInterner().GetUnary(
+          package, ret_type, TUnary::ReadOrIdentity,
+          Build(package, read->GetExpr(), false));
+    }
+  }
+  return BuildInline(package, lhs, true);
+}
+
 // Forward declaration
 void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &stmts);
 
@@ -250,7 +273,7 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
         //TODO: Embed a PosRange in a NOT_IMPLEMENTED
         NOT_IMPLEMENTED_S("Sequences in effecting blocks");
       }
-      Context::GetStmtBlock()->Add(Package, BuildInline(Package, that->GetLhs()->GetExpr(), true), that->GetMutator(),
+      Context::GetStmtBlock()->Add(Package, BuildMutateLhs(Package, that->GetLhs()->GetExpr(), that->GetMutator()), that->GetMutator(),
           Build(Package, that->GetRhs()->GetExpr(), false));
     }
     virtual void operator()(const Symbol::Stmt::TNew *that) const {

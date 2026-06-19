@@ -201,6 +201,80 @@ FIXTURE(Issue143FoldUndercount) {
   });
 }
 
+/* Issue #151 commutative-upsert read.
+
+   Exercises the statement-layer half of #151 directly at the engine: the
+   ReadOrIdentity<TRet> helper (orly/key_generator.h) that codegen now
+   emits for the LHS of a defer-safe, identity-default commutative
+   mutation (Add/Or/Xor/Union/SymmetricDiff). Where the old Read<TRet>
+   threw "Cannot de-reference Key ... which does not exist" on an absent
+   key, ReadOrIdentity must instead resolve to the monoid identity (0 for
+   ints) WITH the address kept known, so the downstream mutation effect
+   still binds to the right key.
+
+   This is what lets a bare first-write `*<[k]>::(int) += 1` on a fresh
+   key reach session.cc's deferred-commutative path and emit {Add,1}
+   (commutative) rather than throwing -- and, combined with the
+   Issue143CreateRaceSemantics guard below (which already pins
+   Add1_only_absentkey->1, Add1_then_Add1->2, Add1_then_Assign1->1),
+   closes the create-race without a destructive Assign. */
+FIXTURE(Issue151CommutativeUpsertRead) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+
+    Base::TUuid repo_id(TUuid::Twister);
+    Base::TUuid idx_id(TUuid::Twister);
+    auto repo = manager->GetRepo(repo_id, TTtl::max(), std::nullopt, true, true);
+
+    const TIndexKey counter_key(idx_id, TKey(make_tuple(1L), &arena, state_alloc));
+
+    /* (a) Absent key: ReadOrIdentity must NOT throw; it resolves to the
+       identity (0) and keeps the address known (so an effect could bind). */
+    {
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      auto m = Orly::Rt::ReadOrIdentity<int64_t>(context, make_tuple(1L), idx_id);
+      EXPECT_EQ(m.GetVal(), 0L);
+      EXPECT_TRUE(m.GetOptAddr().IsKnown());
+    }
+
+    /* Commit a single `+= 1` (Add) against the still-absent key -- exactly
+       the deferred-commutative entry session.cc emits, with NO Assign
+       base preceding it. */
+    {
+      auto transaction = manager->NewTransaction();
+      auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena),
+                                       TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+      update->AddEntry(counter_key, TKey(1L, &arena, state_alloc), TMutator::Add);
+      transaction->Push(repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+
+    /* (b) After the commutative create, ReadOrIdentity reads the folded
+       value (1), again with no throw. */
+    {
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      auto m = Orly::Rt::ReadOrIdentity<int64_t>(context, make_tuple(1L), idx_id);
+      EXPECT_EQ(m.GetVal(), 1L);
+      EXPECT_TRUE(m.GetOptAddr().IsKnown());
+      /* The plain operator[] read agrees (the #150 fold path). */
+      EXPECT_EQ(context[counter_key], TKey(1L, &arena, state_alloc));
+    }
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* Issue #143 create-race characterisation.
 
    The agent-swarm `add_mention` is a check-then-act: it emits `+= 1`

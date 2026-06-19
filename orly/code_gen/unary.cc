@@ -85,6 +85,18 @@ void TUnary::WriteExpr(TCppPrinter &out) const {
       out << "Read<" << Type::UnwrapMutable(GetReturnType()) << ">(ctx.GetFlux(), " << Expr << ", " << Package->GetName() << "::My" << uuid << ")";
       break;
     }
+    case ReadOrIdentity: {
+      /* Issue #151: commutative-upsert read. Like Read, but an absent
+         key resolves to the monoid identity instead of throwing. Only
+         emitted for the LHS of a defer-safe commutative mutation whose
+         identity is the default value (see code_gen/builder.cc). */
+      const Base::TUuid &index_id =
+          Package->GetIndexIdFor(Expr->GetReturnType(), GetReturnType());
+      char uuid[37];
+      index_id.FormatUnderscore(uuid);
+      out << "ReadOrIdentity<" << Type::UnwrapMutable(GetReturnType()) << ">(ctx.GetFlux(), " << Expr << ", " << Package->GetName() << "::My" << uuid << ")";
+      break;
+    }
     case ReverseOf: Call(out, "Reverse");
       break;
     case SequenceOf: Call(out, "MakeGenerator");
