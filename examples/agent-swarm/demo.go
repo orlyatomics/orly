@@ -384,15 +384,6 @@ func commaize(n int) string {
 	return string(out)
 }
 
-func sortedTagList(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 func recordSetsEqual(a, b map[tagRecord]bool) bool {
 	if len(a) != len(b) {
 		return false
@@ -481,85 +472,16 @@ func main() {
 		numAgents, numDocs, len(expectedTagRecords), len(expectedCooccur))
 	fmt.Printf("total writes from agents: %s\n", commaize(totalWrites))
 
-	// Pre-initialise every key so concurrent agents take the
-	// commutative |= / += branch (never the `new <-` create branch).
-	fmt.Println("\npre-initialising all keys via the bootstrap session...")
-	for entity, records := range expectedTagRecords {
-		// Seed with the lex-first tag for determinism, stamped with a
-		// dedicated "seed" agent; the agents union the rest.
-		tagset := map[string]bool{}
-		for rec := range records {
-			tagset[rec.tag] = true
-		}
-		first := sortedTagList(tagset)[0]
-		addTag(boot, pov, entity, first, "seed")
-		records[tagRecord{first, "seed"}] = true
-	}
-	for mk := range expectedMentions {
-		addMention(boot, pov, mk.entity, mk.docID)
-	}
-	for pk := range expectedCooccur {
-		addCooccur(boot, pov, pk.a, pk.b)
-	}
-
-	// Pre-init seeded each key with one of the agent ops; adjust expectations.
-	expectedMentionCount := map[mentionKey]int{}
-	for k, v := range expectedMentions {
-		expectedMentionCount[k] = v + 1
-	}
-	expectedCooccurCount := map[pairKey]int{}
-	for k, v := range expectedCooccur {
-		expectedCooccurCount[k] = v + 1
-	}
-
-	// Read-back barrier (issue #143): the pre-init writes committed on the
-	// bootstrap session, but the agents are *different* sessions. If an agent's
-	// `is known` predicate read runs before a seed is visible to it, it takes
-	// the `new <- 1` create branch instead of the commutative `+= 1`, and that
-	// stray Assign masks the commutative run on read -> lost increments. To
-	// exclude that create-race (which the pre-init is meant to design out), open
-	// a FRESH session and confirm every seeded key is visible from it before
-	// fanning agents out; a fresh session seeing them means other fresh agent
-	// sessions will too. Poll briefly to absorb any promotion-visibility lag.
-	fmt.Println("read-back barrier: confirming all seeds are visible to a fresh session...")
-	{
-		vDialer := *websocket.DefaultDialer
-		vDialer.HandshakeTimeout = wsTimeout
-		verifier, _, err := vDialer.Dial(wsURL, nil)
-		if err != nil {
-			panic(err)
-		}
-		mustSend(verifier, "new session;")
-		deadline := time.Now().Add(30 * time.Second)
-		for {
-			pending := 0
-			for e := range expectedTagRecords {
-				if len(tagsForEntity(verifier, pov, e)) == 0 {
-					pending++
-				}
-			}
-			for mk := range expectedMentions {
-				if mentionCount(verifier, pov, mk.entity, mk.docID) < 1 {
-					pending++
-				}
-			}
-			for pk := range expectedCooccur {
-				if cooccurCount(verifier, pov, pk.a, pk.b) < 1 {
-					pending++
-				}
-			}
-			if pending == 0 {
-				break
-			}
-			if time.Now().After(deadline) {
-				verifier.Close()
-				fmt.Fprintf(os.Stderr, "read-back barrier timed out; %d seed(s) never became visible to a fresh session\n", pending)
-				os.Exit(1)
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		verifier.Close()
-	}
+	// No pre-init and no read-back barrier. With commutative-upsert
+	// (issue #151) the very first write to a key is the same bare += / |=
+	// the engine treats commutatively -- an absent key folds from the
+	// monoid identity (0 / empty set) -- so concurrent agents can *create*
+	// and aggregate brand-new keys with zero coordination, no seeding, and
+	// no create-race. The expected end-state is exactly the corpus rollup:
+	// every (entity, doc) mention is written once, and each pair's
+	// cooccurrence count is its number of docs.
+	expectedMentionCount := expectedMentions
+	expectedCooccurCount := expectedCooccur
 
 	// Fan out: each agent on its own WS, all concurrent.
 	var wg sync.WaitGroup

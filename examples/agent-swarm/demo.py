@@ -308,69 +308,16 @@ def main():
           f"unordered pairs: {len(expected_cooccur)}")
     print(f"total writes from agents: {total_writes:,}")
 
-    # Pre-initialise every key so concurrent agents all take the
-    # commutative `+=` / `|=` branch (never the `new <-` create branch).
-    # Isolates whether lost updates come from the create-race or from
-    # the field-call itself -- if the demo passes, it's the field-call.
-    print("\npre-initialising all keys via the bootstrap session...")
-    for entity, records in expected_tag_records.items():
-        # Seed with one arbitrary tag so the set exists; the agents
-        # union the rest. Pick the lexicographically first tag for
-        # determinism, stamped with a dedicated "seed" agent so it's a
-        # distinct, predictable provenance record.
-        first_tag = sorted({tag for tag, _agent in records})[0]
-        add_tag(boot, pov, entity, first_tag, "seed")
-        records.add((first_tag, "seed"))
-    for (entity, doc_id) in expected_mentions:
-        # Seed with a count of 1, then the agent's add_mention bumps
-        # to the expected 2. Adjust ground truth accordingly.
-        add_mention(boot, pov, entity, doc_id)
-    for (a, b) in expected_cooccur:
-        add_cooccur(boot, pov, a, b)
-
-    # Pre-init seeded each key with exactly one of the agent ops, so
-    # the expected end-state per key bumps up by one.
-    expected_mention_count = {k: v + 1 for k, v in expected_mentions.items()}
-    expected_cooccur_count = {k: v + 1 for k, v in expected_cooccur.items()}
-
-    # Read-back barrier (issue #143): the pre-init writes committed on the
-    # bootstrap session, but the agents are *different* sessions. If an agent's
-    # `is known` predicate read runs before a seed is visible to it, it takes
-    # the `new <- 1` create branch instead of the commutative `+= 1`, and that
-    # stray Assign masks the commutative run on read -> lost increments. To
-    # exclude that create-race (which the pre-init is meant to design out), open
-    # a FRESH session and confirm every seeded key is visible from it before
-    # fanning agents out; a fresh session seeing them means other fresh agent
-    # sessions will too. Poll briefly to absorb any promotion-visibility lag.
-    print("read-back barrier: confirming all seeds are visible to a fresh session...")
-    verifier = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
-    try:
-        send(verifier, "new session;")
-        deadline = time.monotonic() + 30.0
-        pending = (
-            [("tag", e) for e in expected_tag_records]
-            + [("mention", k) for k in expected_mentions]
-            + [("cooccur", k) for k in expected_cooccur]
-        )
-        while pending:
-            still = []
-            for kind, key in pending:
-                if kind == "tag":
-                    visible = len(tags_for_entity(verifier, pov, key)) > 0
-                elif kind == "mention":
-                    visible = mention_count(verifier, pov, key[0], key[1]) >= 1
-                else:
-                    visible = cooccur_count(verifier, pov, key[0], key[1]) >= 1
-                if not visible:
-                    still.append((kind, key))
-            pending = still
-            if pending:
-                if time.monotonic() > deadline:
-                    sys.exit(f"read-back barrier timed out; {len(pending)} seed(s) "
-                             f"never became visible to a fresh session")
-                time.sleep(0.05)
-    finally:
-        verifier.close()
+    # No pre-init and no read-back barrier. With commutative-upsert
+    # (issue #151) the very first write to a key is the same bare `+= 1`
+    # / `|=` the engine treats commutatively -- an absent key folds from
+    # the monoid identity (0 / empty set) -- so concurrent agents can
+    # *create* and aggregate brand-new keys with zero coordination, no
+    # seeding, and no create-race. The expected end-state is therefore
+    # exactly the corpus rollup: every (entity, doc) mention is written
+    # once, and each pair's cooccurrence count is its number of docs.
+    expected_mention_count = expected_mentions
+    expected_cooccur_count = expected_cooccur
 
     # Fan out: each agent opens its own WS and runs concurrently.
     threads = []
