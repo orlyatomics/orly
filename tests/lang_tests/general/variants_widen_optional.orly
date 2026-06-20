@@ -1,20 +1,16 @@
 /* <orly/lang_tests/general/variants_widen_optional.orly>
 
-   Deferred v1 case for variant widening (issue #104), tracked as an xfail.
+   Widening to an OPTIONAL target variant (issue #104, phase 2).
 
-   Widening to an OPTIONAL target variant (`narrow as wide?`) -- building a
-   known-optional widened value, the variant analog of the existing
-   `v as v_t?` identity-to-optional cast -- is not implemented in v1: the
-   widening rebuild produces the bare wide struct, and there is no
-   optional-wrap path for it yet. The type checker rejects it with a clear
-   "not yet supported (#104)" rather than emitting code that cannot be
-   lowered, so this file currently FAILS to compile and is pinned in
-   tests/lang_tests/.xfail. (An IDENTITY cast to an optional variant,
-   `v as v_t?`, is unaffected and still works -- see variants_optional.orly.)
+   `narrow as wide?` widens a narrow variant value AND wraps it in a known
+   optional in one step -- the variant analog of the identity-to-optional
+   cast `v as v_t?` (#118), and the way to build a known-optional widened
+   value. Codegen rebuilds the bare wide value (TVariantWiden) and wraps it:
+   the cast from the bare wide value to `wide?` lowers to
+   `Rt::TOpt<wide>(CastAs<wide,wide>::Do(v))` (identity inner cast), reusing
+   the same optional-wrap machinery the identity cast uses.
 
-   When optional-target widening lands, this test will compile and run
-   (xpass), prompting removal of the .xfail entry and promotion to a plain
-   positive test -- the assertion below is written to pass at that point.
+   (Was an xfail under #104 until this phase landed.)
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -30,12 +26,42 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-widen_to_opt = ((<| Number(int) | Text(str) |>.Number(n)
+widen_num_opt = ((<| Number(int) | Text(str) |>.Number(n)
     as <| Deleted | Number(int) | Text(str) |>?)) where {
   n = given::(int);
+};
+widen_txt_opt = ((<| Number(int) | Text(str) |>.Text(s)
+    as <| Deleted | Number(int) | Text(str) |>?)) where {
+  s = given::(str);
 };
 
 with {
 } test {
-  t: widen_to_opt(.n: 1) is known;
+  /* The widened value is a KNOWN optional. */
+  t_known: widen_num_opt(.n: 5) is known;
+  t_not_unknown: not (widen_num_opt(.n: 5) is unknown);
+  /* `known` peels to the (remapped) wide variant value. */
+  t_peel_num: known widen_num_opt(.n: 5) == <| Deleted | Number(int) | Text(str) |>.Number(5);
+  t_peel_txt: known widen_txt_opt(.s: "hi") == <| Deleted | Number(int) | Text(str) |>.Text("hi");
+  /* It equals an optional wide value built directly (both known, payloads
+     compare equal -> the comparison is a known true). */
+  t_eq_direct: known (widen_num_opt(.n: 5)
+      == (<| Deleted | Number(int) | Text(str) |>.Number(5) as <| Deleted | Number(int) | Text(str) |>?));
+  /* A different payload after widening is not equal. */
+  t_neq: known (widen_num_opt(.n: 5)
+      != (<| Deleted | Number(int) | Text(str) |>.Number(6) as <| Deleted | Number(int) | Text(str) |>?));
+};
+
+/* Stored read widened to an optional: the source is a TMutable<narrow> read,
+   deref'd, rebuilt wide, and wrapped. */
+read_narrow = (*<[k]>::(<| Number(int) | Text(str) |>)) where {
+  k = given::(int);
+};
+
+with {
+  <[600]> <- <| Number(int) | Text(str) |>.Text("old");
+} test {
+  t_read_widen_opt:
+      known (read_narrow(.k: 600) as <| Deleted | Number(int) | Text(str) |>?)
+      == <| Deleted | Number(int) | Text(str) |>.Text("old");
 };
