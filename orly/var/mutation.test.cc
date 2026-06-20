@@ -151,3 +151,72 @@ FIXTURE(Augment_PartialChange_Throws) {
   auto thrower = [&m, &partial] { m->Augment(partial); };
   EXPECT_THROW_FUNC(std::runtime_error, thrower);
 }
+
+/* Commutative-upsert (#151): applying an identity-default commutative
+   mutation onto an EMPTY base (a key that was never created) must seed
+   from the monoid identity and apply, instead of tripping the
+   `assert(*this)` in TVar::Add / Or / Xor / Union (var/impl.h). Because
+   `identity OP rhs == rhs` for each gated op, the seeded result equals
+   the RHS, pinned to the RHS's type. This is the exact var-layer fold
+   that the Spa test engine's TContext::operator[] (flux_capacitor.h) and
+   the indy disk/memory fold both drive when reading back a bare first
+   `*<[k]>::(T) OP= v` write -- it used to crash orlyc with
+   "Assertion `*this' failed". */
+
+FIXTURE(UpsertEmptyBase_Add) {
+  /* 0 (identity) + 5 = 5 on a never-created int key. */
+  TVar val;  // empty / default TVar -- the absent-key base.
+  EXPECT_FALSE(static_cast<bool>(val));
+  TMutation::New(TMutator::Add, TVar(int64_t(5)))->Apply(val);
+  EXPECT_TRUE(static_cast<bool>(val));
+  EXPECT_EQ(val, TVar(int64_t(5)));
+}
+
+FIXTURE(UpsertEmptyBase_Add_ThenAdd) {
+  /* The two-step sequence the lang test exercises: empty +=5 then +=3.
+     First Apply seeds from identity (->5), second folds normally (->8). */
+  TVar val;
+  TMutation::New(TMutator::Add, TVar(int64_t(5)))->Apply(val);
+  TMutation::New(TMutator::Add, TVar(int64_t(3)))->Apply(val);
+  EXPECT_EQ(val, TVar(int64_t(8)));
+}
+
+FIXTURE(UpsertEmptyBase_Or_Bool) {
+  /* false (identity) | true = true on a never-created bool key. */
+  TVar val;
+  TMutation::New(TMutator::Or, TVar(true))->Apply(val);
+  EXPECT_EQ(val, TVar(true));
+}
+
+FIXTURE(UpsertEmptyBase_Xor_Bool) {
+  /* false (identity) ^ true = true on a never-created bool key. */
+  TVar val;
+  TMutation::New(TMutator::Xor, TVar(true))->Apply(val);
+  EXPECT_EQ(val, TVar(true));
+}
+
+FIXTURE(UpsertEmptyBase_Union_Set) {
+  /* {} (identity) U {1,2} = {1,2} on a never-created set key. */
+  TVar val;
+  TMutation::New(TMutator::Union, TVar(Rt::TSet<int64_t>{1, 2}))->Apply(val);
+  EXPECT_EQ(val, TVar(Rt::TSet<int64_t>{1, 2}));
+}
+
+FIXTURE(UpsertEmptyBase_SymmetricDiff_Set) {
+  /* {} (identity) symdiff {1,2} = {1,2} on a never-created set key. */
+  TVar val;
+  TMutation::New(TMutator::SymmetricDiff, TVar(Rt::TSet<int64_t>{1, 2}))->Apply(val);
+  EXPECT_EQ(val, TVar(Rt::TSet<int64_t>{1, 2}));
+}
+
+FIXTURE(UpsertEmptyBase_Mult_StillThrows) {
+  /* Mult is NOT identity-default (identity 1 != default 0), so applying
+     it onto an empty base must NOT silently seed -- it keeps the old
+     fold, which trips on the empty base. We assert it still refuses
+     (throws/aborts is acceptable; here it must not quietly succeed with
+     a wrong value). The guard is IsIdentityDefaultCommutative, so the
+     Mult branch never takes the seed path. */
+  EXPECT_FALSE(IsIdentityDefaultCommutative(TMutator::Mult));
+  EXPECT_FALSE(IsIdentityDefaultCommutative(TMutator::And));
+  EXPECT_FALSE(IsIdentityDefaultCommutative(TMutator::Intersection));
+}

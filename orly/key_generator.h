@@ -298,6 +298,41 @@ namespace Orly {
       }
     };
 
+    /* Commutative-upsert read (issue #151).
+
+       Identical to Read() above except that a key which does not yet
+       exist resolves to the monoid IDENTITY (the default-constructed
+       TRet -- 0 for ints, false for bools, the empty set for sets)
+       rather than throwing "Cannot de-reference Key ... which does not
+       exist". The returned mutable keeps its address KNOWN (we still
+       have the addr the caller asked about), so the downstream effect
+       still registers against the right key.
+
+       This is only ever emitted for the LHS of a defer-safe commutative
+       mutation whose identity equals the default value (Add, Or, Xor,
+       Union, SymmetricDiff -- see code_gen/builder.cc). For those, a
+       first-write `*<[k]>::(T) OP= v` on an absent key auto-initialises
+       from the identity and applies OP, instead of throwing -- and
+       because session.cc routes the resulting TMutation through the
+       deferred-commutative path (mutator preserved, RHS emitted as-is),
+       two concurrent first-writers both emit {OP, v} entries that the
+       read/disk fold sums, with no destructive Assign to mask either.
+       The read VALUE returned here is discarded by that deferred path;
+       it only matters as the expression's own result value. */
+    template <typename TRet, typename TAddr>
+    TMutable<TAddr, TRet> ReadOrIdentity(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      const Indy::TKey key(Atom::TCore(ctx.GetArena(), Sabot::State::TAny::TWrapper(Native::State::New(addr, state_alloc))), ctx.GetArena());
+      const Indy::TKey &val = ctx[Indy::TIndexKey(index_id, key)];
+      if (val.GetCore().IsVoid()) {
+        /* Absent key: auto-initialise from the monoid identity. Keep the
+           address known so the mutation effect still binds to this key. */
+        return TMutable<TAddr, TRet>(TOpt<TAddr>(addr), TRet());
+      }
+      return TMutable<TAddr, TRet>(TOpt<TAddr>(addr),
+          Sabot::AsNative<TRet>(*Sabot::State::TAny::TWrapper(val.GetState(state_alloc))));
+    }
+
     /* TODO: This is an odd place for this. Oh well. */
     template <typename TAddr>
     bool Exists(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {

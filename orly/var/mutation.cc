@@ -115,6 +115,23 @@ TPtr<TMutation> TMutation::New(TMutator mutator, const Var::TVar &rhs) {
 
 void TMutation::Apply(Var::TVar &var) const {
 
+  /* Commutative-upsert (#151): a first-write `*<[k]>::(T) OP= v` on a key
+     that was never created reaches the fold with an EMPTY base `var`
+     (default TVar). For an identity-default commutative mutator the
+     monoid identity equals the default value, and `identity OP rhs ==
+     rhs`, so we materialise the base by taking the RHS directly instead
+     of folding the RHS into an empty TVar -- which would trip the
+     `assert(*this)` in TVar::Add / TVar::Or / TVar::Union etc.
+     (var/impl.h). This is exactly type-correct for each gated op
+     (0 + r = r, false | r = r, false ^ r = r, {} U r = r, {} symdiff r
+     = r), and it keeps the seeded value's type pinned to the RHS rather
+     than to a guessed identity. Every other mutator (Assign, Mult, And,
+     Intersection, Sub, ...) keeps the existing fold, which still requires
+     a non-empty base. */
+  if (!var && IsIdentityDefaultCommutative(Mutator)) {
+    var = Rhs;
+    return;
+  }
   var = Orly::Rt::Mutate(var, Mutator, Rhs);
 }
 

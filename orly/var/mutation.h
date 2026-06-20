@@ -69,6 +69,50 @@ namespace Orly {
         return false;
       }
 
+      /* True iff this mutator is defer-safe commutative AND its monoid
+         IDENTITY equals the default-constructed value of the operand
+         type (0 for ints, false for bools, the empty set for sets).
+
+         This is a STRICT SUBSET of IsDeferSafeCommutative: it powers the
+         commutative-upsert (#151) statement-layer auto-initialise, where
+         a first-write `*<[k]>::(T) OP= v` on an absent key must seed the
+         LHS from the identity. The auto-seed is produced by default-
+         constructing the operand (key_generator.h ReadOrIdentity), so it
+         is only sound when default == identity.
+
+           Add  -> 0        (default int)           OK
+           Or   -> 0/false  (default)               OK
+           Xor  -> 0/false  (default)               OK
+           Union-> {}       (default set)           OK
+           SymmetricDiff -> {} (A symdiff {} == A)   OK
+
+         Excluded -- default value is NOT the identity, so seeding from
+         the default would silently corrupt a real first-write:
+           Mult         -> identity 1   (default 0)
+           And          -> identity all-ones (default 0)
+           Intersection -> identity universal-set (default {})
+         These keep the existing throw-on-absent behaviour. */
+      inline bool IsIdentityDefaultCommutative(TMutator mutator) {
+        switch (mutator) {
+          case TMutator::Add:
+          case TMutator::Or:
+          case TMutator::Xor:
+          case TMutator::Union:
+          case TMutator::SymmetricDiff:
+            return true;
+          case TMutator::Mult:
+          case TMutator::And:
+          case TMutator::Intersection:
+          case TMutator::Assign:
+          case TMutator::Sub:
+          case TMutator::Div:
+          case TMutator::Mod:
+          case TMutator::Exp:
+            return false;
+        }
+        return false;
+      }
+
       //NOTE: There is a class hierarchy in <orly/code_gen/mutation.h> which is almost identical to this one
       //TODO: The shared pointers in / around TChange are fugly.
       /* A database change */
