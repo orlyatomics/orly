@@ -1,0 +1,113 @@
+/* <orly/lang_tests/general/variants_widen.orly>
+
+   Explicit variant widening via `as` (issue #104, v1).
+
+   A value of a narrow variant type may be cast to a wider (superset)
+   variant type: `narrow_val as wide_t`, legal iff every arm of the source
+   appears identically (same tag, same payload type) in the target. The tag
+   set widens; payloads stay invariant. This is the schema-evolution story
+   for sum types -- adding an arm does not force producers of the old type
+   to be rewritten.
+
+   Widening is NOT a reinterpret. The native `Which` discriminant is the
+   arm's asciibetical index, so inserting an arm shifts the indices of every
+   later arm: `<| Number | Text |>` has Number=0, Text=1, but the wider
+   `<| Deleted | Number | Text |>` has Number=1, Text=2. The cast therefore
+   rebuilds the value through the wide struct's `Mk<Tag>` factory (code_gen
+   TVariantWiden), which assigns the wide `Which` -- so the `$which` remap
+   falls out for free, on disk too.
+
+   v1 scope: explicit `as` only (no implicit widening or `when`-result LUB);
+   payloads invariant; non-recursive variants only. The deferred cases
+   (narrowing, recursive variants, optional targets) are rejected by the
+   type checker -- see variants_widen_bad_*.orly.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* The widened value, with its arm indices remapped, equals a value built
+   directly in the wide type. Number (source Which 0) remaps to wide Which 1;
+   Text (source Which 1) remaps to wide Which 2. */
+widen_num = ((<| Number(int) | Text(str) |>.Number(n)
+    as <| Deleted | Number(int) | Text(str) |>)) where {
+  n = given::(int);
+};
+widen_txt = ((<| Number(int) | Text(str) |>.Text(s)
+    as <| Deleted | Number(int) | Text(str) |>)) where {
+  s = given::(str);
+};
+
+with {
+} test {
+  /* Widened payload arm == directly-built wide value (the $which remap). */
+  t_num: widen_num(.n: 5) == <| Deleted | Number(int) | Text(str) |>.Number(5);
+  t_txt: widen_txt(.s: "hi") == <| Deleted | Number(int) | Text(str) |>.Text("hi");
+  /* Different arm / payload after widening are still unequal. */
+  t_neq_arm: widen_num(.n: 5) != <| Deleted | Number(int) | Text(str) |>.Deleted;
+  t_neq_pay: widen_num(.n: 5) != <| Deleted | Number(int) | Text(str) |>.Number(6);
+  /* The widened value reports the active arm and payload of the source. */
+  t_is_num:  widen_num(.n: 5) is Number == true;
+  t_is_del:  widen_num(.n: 5) is Deleted == false;
+  t_payload: (widen_num(.n: 5).Number if widen_num(.n: 5) is Number else 0) == 5;
+  /* `when` over the widened value is exhaustive over the static WIDE type
+     (all three arms), and dispatches on the remapped Which. */
+  t_when: ((widen_num(.n: 7)) when {
+    Deleted:    -1;
+    Number(k):  k;
+    Text(z):    0;
+  }) == 7;
+};
+
+/* Widening a tag-only arm: `<| Off | On |>` (Off=0, On=1) into
+   `<| Dim | Off | On |>` (Dim=0, Off=1, On=2) -- the empty-object payload
+   moves through the same rebuild. */
+widen_flag = ((<| Off | On |>.On as <| Dim | Off | On |>)) where {
+  ignored = given::(int);
+};
+
+with {
+} test {
+  t_flag_eq:  widen_flag(.ignored: 0) == <| Dim | Off | On |>.On;
+  t_flag_neq: widen_flag(.ignored: 0) != <| Dim | Off | On |>.Dim;
+  t_flag_is:  widen_flag(.ignored: 0) is On == true;
+};
+
+/* Storage round-trip of a WIDENED value: it serializes as the wide shape
+   (the rebuild already produced the wide struct), so it reads back as a
+   wide value. */
+read_wide = (*<[k]>::(<| Deleted | Number(int) | Text(str) |>)) where {
+  k = given::(int);
+};
+
+with {
+  <[500]> <- (<| Number(int) | Text(str) |>.Number(42)
+      as <| Deleted | Number(int) | Text(str) |>);
+} test {
+  t_store_widened: read_wide(.k: 500) == <| Deleted | Number(int) | Text(str) |>.Number(42);
+};
+
+/* Schema evolution without a migration pass: data written as the NARROW
+   type is read back with its original narrow annotation, then widened in
+   memory at the boundary -- equal to the same value built wide. */
+read_narrow = (*<[k]>::(<| Number(int) | Text(str) |>)) where {
+  k = given::(int);
+};
+
+with {
+  <[501]> <- <| Number(int) | Text(str) |>.Text("old");
+} test {
+  t_read_old_then_widen:
+      (read_narrow(.k: 501) as <| Deleted | Number(int) | Text(str) |>)
+      == <| Deleted | Number(int) | Text(str) |>.Text("old");
+};

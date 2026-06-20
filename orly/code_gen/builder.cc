@@ -346,7 +346,25 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     //TODO: Cast should be able to maintain mutability of list elements, as well as when doing the no-op cast.
     virtual void operator()(const Expr::TAs *that) const {
-      if(that->GetExpr()->GetType().Is<Type::TSeq>()) {
+      /* A variant -> wider-variant widening (#104) is a value rebuild, not a
+         reinterpret cast: the two are distinct C++ structs with different
+         `Which` numbering. Detect it by source and result being DIFFERENT
+         variant types (the type checker has already proven the relation and
+         excluded the recursive / optional-target cases, so the result type
+         is the bare wide variant here) and lower to a TVariantWiden. */
+      const Type::TVariant *src_variant = Type::Unwrap(that->GetExpr()->GetType()).TryAs<Type::TVariant>();
+      const Type::TVariant *dst_variant = ReturnType.TryAs<Type::TVariant>();
+      if (src_variant && dst_variant && src_variant != dst_variant) {
+        TInline::TPtr operand = Build(Package, that->GetExpr(), false);
+        TVariantWiden::TArmVec arms;
+        size_t src_which = 0;
+        for (const auto &elem : src_variant->GetElems()) {
+          /* GetElems() iterates in asciibetical order, which is exactly the
+             source struct's `Which` numbering. */
+          arms.emplace_back(src_which++, elem.first);
+        }
+        Res = TInline::TPtr(new TVariantWiden(Package, ReturnType, operand, arms));
+      } else if(that->GetExpr()->GetType().Is<Type::TSeq>()) {
         Res = Interner.GetUnary(Package, ReturnType, TUnary::Cast, BuildInline(Package, that->GetExpr(), true));
       } else {
         Unary(Package, TUnary::Cast, that);

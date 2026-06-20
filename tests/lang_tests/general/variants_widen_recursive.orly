@@ -1,0 +1,43 @@
+/* <orly/lang_tests/general/variants_widen_recursive.orly>
+
+   Deferred v1 case for variant widening (issue #104), tracked as an xfail.
+
+   Widening of RECURSIVE variants is not implemented in v1. A recursive
+   variant boxes its self-edges in the native representation
+   (#103/#116/#125), so widening would have to rebuild through that boxed
+   form -- a high-cost, low-value corner left out of v1. The shared arms of
+   `rnar` and `rwid` are structurally identical (`Leaf(int)` and the
+   self-referential `Node`), so the widening relation itself holds, but the
+   type checker rejects the cast with a clear "not yet supported (#104)"
+   because a self-reference is present. This file therefore currently FAILS
+   to compile and is pinned in tests/lang_tests/.xfail.
+
+   When recursive-variant widening lands, this test will compile and run
+   (xpass), prompting removal of the .xfail entry and promotion to a plain
+   positive test -- the assertion below is written to pass at that point.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+rnar is <| Leaf(int) | Node(<{.next: rnar}>) |>;
+rwid is <| Extra | Leaf(int) | Node(<{.next: rwid}>) |>;
+
+widen_rec = ((rnar.Leaf(n) as rwid)) where {
+  n = given::(int);
+};
+
+with {
+} test {
+  t: widen_rec(.n: 1) is Leaf;
+};

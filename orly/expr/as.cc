@@ -25,8 +25,10 @@
 #include <orly/pos_range.h>
 #include <orly/type.h>
 #include <orly/type/infix_visitor.h>
+#include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/unwrap_visitor.h>
+#include <orly/type/variant.h>
 
 using namespace Orly;
 using namespace Orly::Expr;
@@ -175,14 +177,20 @@ Type::TType TAs::GetTypeImpl() const {
       }
       Type = rhs->AsType();
     }
-    /* Casting a variant is only an identity cast (variants are invariant
-       in v1, #95). Its real purpose is widening to an optional variant:
-       `v as op_t?` -- the infix machinery unwraps the optional target to
-       reach (variant, variant) here, then re-wraps the result, which is
-       the only way to build a KNOWN optional variant (#118). */
+    /* A variant cast is either an identity cast or a widening (#104):
+       `narrow as wide`, legal iff every arm of the source appears
+       identically in the target (TVariant::IsWidenableTo -- tag set widens,
+       payloads invariant). IsWidenableTo is reflexive, so it also covers the
+       identity cast, whose original purpose was widening to an optional
+       variant: `v as op_t?` -- the infix machinery unwraps the optional
+       target to reach (variant, variant) here, then re-wraps the result,
+       which is the only way to build a KNOWN optional variant (#118). The
+       v1-scope guards (recursive variants, optional-target widening) are
+       applied once, after the visitor, in GetTypeImpl. */
     virtual void operator()(const Type::TVariant  *lhs, const Type::TVariant  *rhs) const {
-      if (lhs != rhs) {
-        throw TExprError(HERE, PosRange, "A variant can only be cast to its own type.");
+      if (!lhs->IsWidenableTo(rhs)) {
+        throw TExprError(HERE, PosRange,
+            "a variant can only be cast to its own type or widened to a superset variant type");
       }
       Type = rhs->AsType();
     }
@@ -347,5 +355,44 @@ Type::TType TAs::GetTypeImpl() const {
   };  // TAsTypeVisitor
   Type::TType type;
   Type::TType::Accept(GetExpr()->GetType(), Type, TAsTypeVisitor(type, GetPosRange()));
+  /* v1-scope guards for variant widening (#104). A genuine widening is a
+     cast whose source and result both unwrap to a variant, but to DIFFERENT
+     variant types (an identity cast -- including `v as v_t?` -- has the same
+     unwrapped variant on both sides and is unaffected). Two corners are
+     deferred past v1 and rejected here with a clear message rather than
+     producing code that cannot be lowered:
+       - recursive / mutually-recursive variants (#103/#116/#125): widening
+         would have to rebuild through the boxed self-edge representation;
+       - widening to an optional target (`narrow as wide?`): the rebuild
+         produces the bare wide struct, with no optional-wrap path yet. */
+  const Type::TVariant *src_variant = Type::Unwrap(GetExpr()->GetType()).TryAs<Type::TVariant>();
+  /* The result is the bare wide variant, or `wide?` when the cast targeted
+     an optional (`narrow as wide?`); reach the variant through the optional
+     so the widen is detected either way. Unwrap (mutable/seq) does not strip
+     optional -- that needs UnwrapOptional. */
+  Type::TType result_inner = type.Is<Type::TOpt>() ? Type::UnwrapOptional(type) : type;
+  const Type::TVariant *dst_variant = Type::Unwrap(result_inner).TryAs<Type::TVariant>();
+  if (src_variant && dst_variant && src_variant != dst_variant) {
+    /* A variant's self-reference is bound by the variant itself, so it is
+       "free" only at the arm-payload level -- check each arm's payload, the
+       same level code_gen tests for the recursive `GetV<Tag>` template
+       (orly/code_gen/variant_access.cc). */
+    auto is_recursive = [](const Type::TVariant *v) {
+      for (const auto &arm : v->GetElems()) {
+        if (Type::HasFreeSelfRef(arm.second) || Type::HasGroupRef(arm.second)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    if (is_recursive(src_variant) || is_recursive(dst_variant)) {
+      throw TExprError(HERE, GetPosRange(),
+          "widening of recursive variants is not yet supported (#104)");
+    }
+    if (type.Is<Type::TOpt>()) {
+      throw TExprError(HERE, GetPosRange(),
+          "widening to an optional variant type is not yet supported (#104)");
+    }
+  }
   return type;
 }
