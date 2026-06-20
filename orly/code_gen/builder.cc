@@ -348,12 +348,14 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TAs *that) const {
       /* A variant -> wider-variant widening (#104) is a value rebuild, not a
          reinterpret cast: the two are distinct C++ structs with different
-         `Which` numbering. Detect it by source and result being DIFFERENT
-         variant types (the type checker has already proven the relation and
-         excluded the recursive / optional-target cases, so the result type
-         is the bare wide variant here) and lower to a TVariantWiden. */
+         `Which` numbering. Detect it by source and result both unwrapping to
+         a variant but to DIFFERENT types (the type checker has proven the
+         relation and excluded the recursive case). The target may be the bare
+         wide variant or `wide?`; reach the destination through the optional
+         so both lower here. */
       const Type::TVariant *src_variant = Type::Unwrap(that->GetExpr()->GetType()).TryAs<Type::TVariant>();
-      const Type::TVariant *dst_variant = ReturnType.TryAs<Type::TVariant>();
+      Type::TType result_inner = ReturnType.Is<Type::TOpt>() ? Type::UnwrapOptional(ReturnType) : ReturnType;
+      const Type::TVariant *dst_variant = Type::Unwrap(result_inner).TryAs<Type::TVariant>();
       if (src_variant && dst_variant && src_variant != dst_variant) {
         TInline::TPtr operand = Build(Package, that->GetExpr(), false);
         TVariantWiden::TArmVec arms;
@@ -363,7 +365,14 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
              source struct's `Which` numbering. */
           arms.emplace_back(src_which++, elem.first);
         }
-        Res = TInline::TPtr(new TVariantWiden(Package, ReturnType, operand, arms));
+        /* The rebuild always produces the bare wide variant. When the target
+           is optional, wrap it: a Cast from the bare wide value to `wide?`
+           lowers to `Rt::TOpt<wide>(CastAs<wide,wide>::Do(v))` (the identity
+           inner cast), the same machinery the identity `v as v_t?` uses. */
+        TInline::TPtr widened(new TVariantWiden(Package, dst_variant->AsType(), operand, arms));
+        Res = ReturnType.Is<Type::TOpt>()
+            ? Interner.GetUnary(Package, ReturnType, TUnary::Cast, widened)
+            : widened;
       } else if(that->GetExpr()->GetType().Is<Type::TSeq>()) {
         Res = Interner.GetUnary(Package, ReturnType, TUnary::Cast, BuildInline(Package, that->GetExpr(), true));
       } else {

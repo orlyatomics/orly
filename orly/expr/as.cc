@@ -355,21 +355,21 @@ Type::TType TAs::GetTypeImpl() const {
   };  // TAsTypeVisitor
   Type::TType type;
   Type::TType::Accept(GetExpr()->GetType(), Type, TAsTypeVisitor(type, GetPosRange()));
-  /* v1-scope guards for variant widening (#104). A genuine widening is a
-     cast whose source and result both unwrap to a variant, but to DIFFERENT
-     variant types (an identity cast -- including `v as v_t?` -- has the same
-     unwrapped variant on both sides and is unaffected). Two corners are
-     deferred past v1 and rejected here with a clear message rather than
-     producing code that cannot be lowered:
-       - recursive / mutually-recursive variants (#103/#116/#125): widening
-         would have to rebuild through the boxed self-edge representation;
-       - widening to an optional target (`narrow as wide?`): the rebuild
-         produces the bare wide struct, with no optional-wrap path yet. */
+  /* Remaining v1-scope guard for variant widening (#104). A genuine widening
+     is a cast whose source and result both unwrap to a variant, but to
+     DIFFERENT variant types (an identity cast -- including `v as v_t?` -- has
+     the same unwrapped variant on both sides and is unaffected). The target
+     may be bare or optional: `narrow as wide` yields the bare wide variant,
+     `narrow as wide?` yields `wide?` (codegen rebuilds the bare wide value
+     and wraps it in the optional). Recursive / mutually-recursive variants
+     (#103/#116/#125) are still deferred -- widening would have to rebuild
+     through the boxed self-edge representation -- and rejected here with a
+     clear message rather than producing code that cannot be lowered. */
   const Type::TVariant *src_variant = Type::Unwrap(GetExpr()->GetType()).TryAs<Type::TVariant>();
   /* The result is the bare wide variant, or `wide?` when the cast targeted
-     an optional (`narrow as wide?`); reach the variant through the optional
-     so the widen is detected either way. Unwrap (mutable/seq) does not strip
-     optional -- that needs UnwrapOptional. */
+     an optional; reach the variant through the optional so the widen is
+     detected either way. Unwrap (mutable/seq) does not strip optional -- that
+     needs UnwrapOptional. */
   Type::TType result_inner = type.Is<Type::TOpt>() ? Type::UnwrapOptional(type) : type;
   const Type::TVariant *dst_variant = Type::Unwrap(result_inner).TryAs<Type::TVariant>();
   if (src_variant && dst_variant && src_variant != dst_variant) {
@@ -388,10 +388,6 @@ Type::TType TAs::GetTypeImpl() const {
     if (is_recursive(src_variant) || is_recursive(dst_variant)) {
       throw TExprError(HERE, GetPosRange(),
           "widening of recursive variants is not yet supported (#104)");
-    }
-    if (type.Is<Type::TOpt>()) {
-      throw TExprError(HERE, GetPosRange(),
-          "widening to an optional variant type is not yet supported (#104)");
     }
   }
   return type;
