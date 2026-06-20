@@ -41,14 +41,20 @@ class TRouter : public TBalancer {
   NO_COPY(TRouter);
   public:
 
-  TRouter(TScheduler *scheduler, const TBalancer::TCmd &cmd, chrono::milliseconds interval) : TBalancer(scheduler, cmd), Running(true) {
+  TRouter(TScheduler *scheduler, const TBalancer::TCmd &cmd, chrono::milliseconds interval) : TBalancer(scheduler, cmd), Running(true), CheckHostsDone(false) {
     scheduler->Schedule(bind(&TRouter::CheckHosts, this, interval));
   }
 
   virtual ~TRouter() {
-    Running = false;
+    /* Stop the host-checking job and wait until it has fully exited before we
+       destroy ourselves.  We wait on a predicate (rather than a bare wait) so
+       this is correct regardless of whether CheckHosts() exited gracefully or
+       was interrupted by a scheduler shutdown. */
     std::unique_lock<std::mutex> lock(HostMutex);
-    HostCond.wait(lock);
+    Running = false;
+    while (!CheckHostsDone) {
+      HostCond.wait(lock);
+    }
   }
 
   virtual const Socket::TAddress &ChooseHost() {
@@ -117,26 +123,33 @@ class TRouter : public TBalancer {
   };
 
   void CheckHosts(chrono::milliseconds interval) {
-    Base::TTimerFd check_hosts(interval);
-    for (;Running;) {
-      check_hosts.Pop();
-      std::lock_guard<std::mutex> lock(HostMutex);
-      MasterHost.reset();
-      for (const auto &addr : HostSet) {
-        bool is_master = CheckHost(addr);
-        if (MasterHost && is_master) {
-          std::cerr << "There is more than 1 master" << std::endl;
-          MasterHost.reset();
-          throw std::runtime_error("There is more than 1 master");
-        } else if (is_master) {
-          MasterHost = addr;
+    try {
+      Base::TTimerFd check_hosts(interval);
+      for (;Running;) {
+        check_hosts.Pop();
+        std::lock_guard<std::mutex> lock(HostMutex);
+        MasterHost.reset();
+        for (const auto &addr : HostSet) {
+          bool is_master = CheckHost(addr);
+          if (MasterHost && is_master) {
+            std::cerr << "There is more than 1 master" << std::endl;
+            MasterHost.reset();
+            throw std::runtime_error("There is more than 1 master");
+          } else if (is_master) {
+            MasterHost = addr;
+          }
+        }
+        if (MasterHost) {
+          HostCond.notify_all();
         }
       }
-      if (MasterHost) {
-        HostCond.notify_all();
-      }
+    } catch (...) {
+      /* Fall through to signal completion below.  Whether we exited the loop
+         normally or via an interrupt/exception, the destructor must be told the
+         job is finished so it doesn't block forever. */
     }
     std::lock_guard<std::mutex> lock(HostMutex);
+    CheckHostsDone = true;
     HostCond.notify_all();
   }
 
@@ -151,6 +164,9 @@ class TRouter : public TBalancer {
 
   bool Running;
 
+  /* Set true by CheckHosts() once it has exited (gracefully or via interrupt). */
+  bool CheckHostsDone;
+
 };
 
 class TTestServer {
@@ -163,7 +179,7 @@ class TTestServer {
     HealthCheckId = 1003;
 
   TTestServer(TScheduler *scheduler, in_port_t port_num, char status, int connection_backlog = 5000)
-      : Running(true), Scheduler(scheduler), PortNum(port_num), Status(status) {
+      : Running(true), Done(false), Scheduler(scheduler), PortNum(port_num), Status(status) {
     /* open the main socket */ {
       TAddress address(TAddress::IPv4Any, port_num);
       MainSocket = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
@@ -176,10 +192,17 @@ class TTestServer {
   }
 
   ~TTestServer() {
+    /* Stop the accept job and wait until it (and therefore the ServeClient
+       jobs it would spawn) has finished before we destroy ourselves.  We wait
+       on a predicate so this is correct whether AcceptClientConnections()
+       exited on its own or had already been drained by a scheduler shutdown
+       before this destructor ran. */
     Running = false;
     TermFd.Push();
     std::unique_lock<std::mutex> lock(StatusLock);
-    Finish.wait(lock);
+    while (!Done) {
+      Finish.wait(lock);
+    }
   }
 
   void ChangeStatus(char status) {
@@ -261,6 +284,7 @@ class TTestServer {
       /* do nothing */
     }
     std::lock_guard<std::mutex> lock(StatusLock);
+    Done = true;
     Finish.notify_all();
   }
 
@@ -278,6 +302,9 @@ class TTestServer {
   }
 
   bool Running;
+
+  /* Set true by AcceptClientConnections() once it has exited. */
+  bool Done;
 
   std::mutex StatusLock;
   std::condition_variable Finish;
@@ -302,12 +329,22 @@ class TTestClient {
   public:
 
   TTestClient(TScheduler *scheduler, const TAddress &server_addr)
-      : ServerAddr(server_addr), Running(true) {
+      : ServerAddr(server_addr), Running(true), Done(false) {
     scheduler->Schedule(bind(&TTestClient::Runner, this));
   }
 
   ~TTestClient() {
+    /* Tell the runner to stop and wait until it has actually exited before we
+       tear ourselves (and our connection objects) down.  Without this handshake
+       the runner's job can still be calling virtual methods on this object (and
+       on the TConnection it owns) after the object's vtable has begun
+       transitioning during destruction, which manifests as a
+       'pure virtual method called' abort. */
+    std::unique_lock<std::mutex> lock(DoneMutex);
     Running = false;
+    while (!Done) {
+      DoneCond.wait(lock);
+    }
   }
 
   void Runner() {
@@ -328,6 +365,10 @@ class TTestClient {
       } catch (const std::exception &ex) {
       }
     }
+    /* Signal the destructor that the runner has fully unwound. */
+    std::lock_guard<std::mutex> lock(DoneMutex);
+    Done = true;
+    DoneCond.notify_all();
   }
 
   private:
@@ -365,6 +406,13 @@ class TTestClient {
   const TAddress ServerAddr;
 
   bool Running;
+
+  /* Covers Done. */
+  std::mutex DoneMutex;
+  std::condition_variable DoneCond;
+
+  /* Set true by Runner() once it has exited its loop. */
+  bool Done;
 
 };
 
@@ -405,16 +453,30 @@ FIXTURE(Typical) {
     std::lock_guard<std::mutex> lock(ExpectedHostLock);
     ExpectedHost = 19381;
   }
-  TTestClient client_1(&scheduler, router_address);
-  sleep(3);
-  router.RemoveHost(TAddress(TAddress::IPv4Loopback, 19381));
-  /* switch hosts */ {
-    std::lock_guard<std::mutex> lock(ExpectedHostLock);
-    test_server_1->ChangeStatus('S');
-    ExpectedHost = 19382;
-    test_server_2->ChangeStatus('M');
-    test_server_1.reset();
-  }
-  sleep(3);
+  /* The client runs inside its own scope so that its runner job is fully
+     stopped (its destructor blocks until the runner has exited) before we
+     start tearing the scheduler and the remaining objects down. */ {
+    TTestClient client_1(&scheduler, router_address);
+    sleep(3);
+    router.RemoveHost(TAddress(TAddress::IPv4Loopback, 19381));
+    /* switch hosts */ {
+      std::lock_guard<std::mutex> lock(ExpectedHostLock);
+      test_server_1->ChangeStatus('S');
+      ExpectedHost = 19382;
+      test_server_2->ChangeStatus('M');
+      test_server_1.reset();
+    }
+    sleep(3);
+  }  // client_1's runner is now stopped.
+  /* Ordered teardown.  Drain every worker job out of the scheduler while the
+     objects those jobs dispatch into (the router and the remaining test
+     server) are still fully alive.  Until this point the scheduler's worker
+     threads may still be running jobs -- the router's accept/serve loop (which
+     calls the virtual ChooseHost()/OnError() hooks) and the servers' accept
+     loop -- and if those objects were destroyed first, a worker could invoke a
+     virtual method on an object whose vtable is mid-destruction, aborting with
+     'pure virtual method called'.  Shutting the scheduler down here joins all
+     of that work to a stop before any of these objects begins destructing. */
+  scheduler.Shutdown(milliseconds(1000));
   test_server_2.reset();
 }
