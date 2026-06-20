@@ -23,13 +23,14 @@
    writers all land their contributions and the merge machinery
    aggregates correctly.
 
-   Each function below mirrors the pattern from
-   examples/wikipedia-pageviews/views.orly: a single function that
-   takes the `is known` branch for subsequent writes and the `new <-`
-   branch for the very first write at a key. The driver pre-initialises
-   every key before agents fan out so all concurrent writers take the
-   commutative branch (we want to isolate the +=/|= property, not the
-   create-race).
+   Each write function is a BARE commutative field call -- no `is known`
+   check, no `new <-` create branch. With commutative-upsert (issue #151)
+   a `+=` / `|=` on an absent key folds from the monoid identity (0 /
+   empty set), so the very first writer at a key needs no special-casing.
+   That is what makes this coordination-free: concurrent agents can both
+   *create* and aggregate the same brand-new key with no pre-init and no
+   read-back barrier -- the create-race that the old `is known` /
+   `new <-` pattern was prone to (issue #143) simply cannot arise.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -53,16 +54,15 @@ tags_for_entity = (((*<['entity', e]>::({<{.tag: str, .agent: str}>})) if *<['en
   e = given::(str);
 };
 
-/* Union one (tag, agent) record into the entity's set. First call
-   creates with the singleton; subsequent calls union -- both shapes
-   commute under concurrent callers writing different records at the
-   same key. Re-asserting the same (tag, agent) is idempotent; the same
-   tag from a different agent is a distinct provenance record. */
-add_tag = (((1) effecting {
+/* Union one (tag, agent) record into the entity's set. On an absent key
+   the set folds from empty, so the first union just yields the singleton
+   and subsequent calls accumulate -- all callers commute, so concurrent
+   agents writing different records at the same key all land. Re-asserting
+   the same (tag, agent) is idempotent; the same tag from a different
+   agent is a distinct provenance record. */
+add_tag = ((1) effecting {
   *<['entity', e]>::({<{.tag: str, .agent: str}>}) |= {<{.tag: t, .agent: agent}>};
-} if *<['entity', e]>::({<{.tag: str, .agent: str}>}?) is known else (0) effecting {
-  new <['entity', e]> <- {<{.tag: t, .agent: agent}>};
-})) where {
+}) where {
   e     = given::(str);
   t     = given::(str);
   agent = given::(str);
@@ -75,11 +75,9 @@ mention_count = (((*<['mention', e, d]>::(int)) if *<['mention', e, d]>::(int?) 
   d = given::(int);
 };
 
-add_mention = (((1) effecting {
+add_mention = ((1) effecting {
   *<['mention', e, d]>::(int) += 1;
-} if *<['mention', e, d]>::(int?) is known else (0) effecting {
-  new <['mention', e, d]> <- 1;
-})) where {
+}) where {
   e = given::(str);
   d = given::(int);
 };
@@ -101,11 +99,9 @@ cooccur_count = (((*<['cooccur', a, b]>::(int)) if *<['cooccur', a, b]>::(int?) 
   b = given::(str);
 };
 
-add_cooccur = (((1) effecting {
+add_cooccur = ((1) effecting {
   *<['cooccur', a, b]>::(int) += 1;
-} if *<['cooccur', a, b]>::(int?) is known else (0) effecting {
-  new <['cooccur', a, b]> <- 1;
-})) where {
+}) where {
   a = given::(str);
   b = given::(str);
 };
@@ -118,8 +114,9 @@ test {
   t2: mention_count(.e: "Python", .d: 0) == 0;
   t3: cooccur_count(.a: "Python", .b: "GPT-4") == 0;
 
-  /* First add_tag creates (returns 0); subsequent unions return 1. */
-  t4: add_tag(.e: "Python", .t: "language", .agent: "a1") == 0 {
+  /* Every add_tag returns 1 (the effecting branch's value); the first
+     union on an absent key just yields the singleton set. */
+  t4: add_tag(.e: "Python", .t: "language", .agent: "a1") == 1 {
     t5: tags_for_entity(.e: "Python") == {<{.tag: "language", .agent: "a1"}>};
     t6: add_tag(.e: "Python", .t: "popular", .agent: "a1") == 1 {
       t7: tags_for_entity(.e: "Python")
@@ -143,11 +140,11 @@ test {
 
   /* Mention counter accumulates across calls; per-doc keys are
      independent; the range-fold sums them all. */
-  t12: add_mention(.e: "GPT-4", .d: 0) == 0 {
+  t12: add_mention(.e: "GPT-4", .d: 0) == 1 {
     t13: mention_count(.e: "GPT-4", .d: 0) == 1;
     t14: add_mention(.e: "GPT-4", .d: 0) == 1 {
       t15: mention_count(.e: "GPT-4", .d: 0) == 2;
-      t16: add_mention(.e: "GPT-4", .d: 1) == 0 {
+      t16: add_mention(.e: "GPT-4", .d: 1) == 1 {
         t17: mention_count(.e: "GPT-4", .d: 0) == 2;
         t18: mention_count(.e: "GPT-4", .d: 1) == 1;
         t19: mentions_total(.e: "GPT-4", .d_start: 0, .d_end: 1) == 3;
@@ -157,7 +154,7 @@ test {
   };
 
   /* Cooccurrence counter, same shape as mention. */
-  t21: add_cooccur(.a: "Python", .b: "GPT-4") == 0 {
+  t21: add_cooccur(.a: "Python", .b: "GPT-4") == 1 {
     t22: cooccur_count(.a: "Python", .b: "GPT-4") == 1;
     t23: add_cooccur(.a: "Python", .b: "GPT-4") == 1 {
       t24: cooccur_count(.a: "Python", .b: "GPT-4") == 2;
