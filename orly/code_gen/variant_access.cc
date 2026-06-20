@@ -81,3 +81,26 @@ void TVariantWhen::WriteExpr(TCppPrinter &out) const {
   }
   out << '(' << Arms.back().second << "))";
 }
+
+TVariantWiden::TVariantWiden(const L0::TPackage *package,
+                             const Type::TType &type,
+                             const TInline::TPtr &operand,
+                             const TArmVec &arms)
+    : TInline(package, type), Operand(operand), Arms(arms) {}
+
+void TVariantWiden::WriteExpr(TCppPrinter &out) const {
+  /* Nested ternary on the source's active arm, each branch rebuilding the
+     value via the destination (wide) struct's `Mk<Tag>` factory.
+     GetReturnType() prints the destination's mangled struct name (as in
+     TVariantCtor); `Mk` prefixes the tag to dodge macro collisions (#119).
+     The last arm is the unconditional fall-through (the source's arm set is
+     total, so one branch always applies). */
+  out << '(';
+  for (size_t arm_idx = 0; arm_idx + 1 < Arms.size(); ++arm_idx) {
+    out << "((" << Operand << ").GetWhich() == " << Arms[arm_idx].first << ") ? "
+        << GetReturnType() << "::Mk" << Arms[arm_idx].second
+        << "((" << Operand << ").GetV" << Arms[arm_idx].second << "()) : ";
+  }
+  out << GetReturnType() << "::Mk" << Arms.back().second
+      << "((" << Operand << ").GetV" << Arms.back().second << "()))";
+}

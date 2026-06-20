@@ -1,0 +1,10 @@
+[
+  1,
+  [
+    [],
+    [
+      "Synth + Symbols",
+      "33:18-33:57 [orly/expr/as.cc, 393]widening to an optional variant type is not yet supported (#104)"
+    ]
+  ]
+]

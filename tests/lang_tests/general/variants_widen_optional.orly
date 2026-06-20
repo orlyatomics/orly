@@ -1,0 +1,41 @@
+/* <orly/lang_tests/general/variants_widen_optional.orly>
+
+   Deferred v1 case for variant widening (issue #104), tracked as an xfail.
+
+   Widening to an OPTIONAL target variant (`narrow as wide?`) -- building a
+   known-optional widened value, the variant analog of the existing
+   `v as v_t?` identity-to-optional cast -- is not implemented in v1: the
+   widening rebuild produces the bare wide struct, and there is no
+   optional-wrap path for it yet. The type checker rejects it with a clear
+   "not yet supported (#104)" rather than emitting code that cannot be
+   lowered, so this file currently FAILS to compile and is pinned in
+   tests/lang_tests/.xfail. (An IDENTITY cast to an optional variant,
+   `v as v_t?`, is unaffected and still works -- see variants_optional.orly.)
+
+   When optional-target widening lands, this test will compile and run
+   (xpass), prompting removal of the .xfail entry and promotion to a plain
+   positive test -- the assertion below is written to pass at that point.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+widen_to_opt = ((<| Number(int) | Text(str) |>.Number(n)
+    as <| Deleted | Number(int) | Text(str) |>?)) where {
+  n = given::(int);
+};
+
+with {
+} test {
+  t: widen_to_opt(.n: 1) is known;
+};

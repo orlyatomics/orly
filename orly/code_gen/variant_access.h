@@ -120,6 +120,44 @@ namespace Orly {
         TArmVec Arms;
     }; // TVariantWhen
 
+    /* `narrow_val as wide_t` -- widening a narrow variant to a superset
+       variant (#104). The narrow and wide native structs have different
+       `Which` numbering (the asciibetical arm index shifts when arms are
+       inserted) and different field sets, so this is a value rebuild, not a
+       reinterpret: a nested ternary on the source's active arm calls the
+       DESTINATION struct's `Mk<Tag>` factory, which assigns the
+       destination's own `Which` -- so the `$which` remap falls out for free:
+         ((op).GetWhich()==sw0) ? Dst::Mk<t0>((op).GetV<t0>())
+           : ... : Dst::Mk<tN>((op).GetV<tN>())
+       where `sw*` are the SOURCE arm indices and `Dst` is this inline's
+       (wide) result type. v1 handles non-recursive, non-optional widening
+       only (the type checker rejects the other cases, see orly/expr/as.cc),
+       so every `GetV<Tag>()` is a plain accessor and every arm of the source
+       has a same-payload arm in the destination. */
+    class TVariantWiden : public TInline {
+      NO_COPY(TVariantWiden);
+      public:
+
+      /* (source arm `Which` index, tag name). */
+      typedef std::vector<std::pair<size_t, std::string>> TArmVec;
+
+      TVariantWiden(const L0::TPackage *package,
+                    const Type::TType &type,
+                    const TInline::TPtr &operand,
+                    const TArmVec &arms);
+
+      void WriteExpr(TCppPrinter &out) const;
+
+      virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
+        dependency_set.insert(Operand);
+        Operand->AppendDependsOn(dependency_set);
+      }
+
+      private:
+        TInline::TPtr Operand;
+        TArmVec Arms;
+    }; // TVariantWiden
+
   } // CodeGen
 
 } // Orly

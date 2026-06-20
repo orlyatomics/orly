@@ -69,6 +69,26 @@ namespace Orly {
         return TInternedType::Get(elems);
       }
 
+      /* The widening (subtype) relation `this ⊑ wide` (issue #104): true
+         iff every `(tag → payload)` arm of `this` appears identically (same
+         tag, same payload type) in `wide`. The tag set widens; payloads stay
+         invariant. A direct mirror of `TObj::IsSubsetOf` (orly/type/obj.h) --
+         a narrow variant's arms must be a subset of the wide one's. Reflexive
+         (a type is widenable to itself). Used by the explicit `as` cast
+         (orly/expr/as.cc) to permit a narrow value to flow into a wider
+         variant context. */
+      bool IsWidenableTo(const TVariant *wide) const {
+        assert(this);
+        assert(wide);
+        for (const auto &arm : GetElems()) {
+          auto pos = wide->GetElems().find(arm.first);
+          if (pos == wide->GetElems().end() || arm.second != pos->second) {
+            return false;
+          }
+        }
+        return true;
+      }
+
       private:
       TVariant(const TVariantElems &elems) : TInternedType(elems) {}
       virtual ~TVariant();
