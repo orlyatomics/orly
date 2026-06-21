@@ -26,6 +26,7 @@
 #include <orly/synth/cst_utils.h>
 #include <orly/synth/get_pos_range.h>
 #include <orly/synth/new_expr.h>
+#include <orly/synth/postfix_cast.h>
 
 using namespace Orly;
 using namespace Orly::Synth;
@@ -62,6 +63,13 @@ TPackage::TPackage(const Package::TName &name, const Package::Syntax::TPackage *
     if (!GetContext().HasErrors()) {
       BuildSymbol();
       Build();
+      /* Turn recursive-variant `as` widenings into calls to synthesized
+         top-level folds (#104). Run after Build (every def's type is now
+         resolvable) and before TypeCheck (so the minted functions are not
+         added to the package's function set while it is being iterated). */
+      if (!GetContext().HasErrors()) {
+        SynthesizeRecursiveVariantWidenings(Symbol);
+      }
     }
   }
 }

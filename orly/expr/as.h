@@ -21,10 +21,19 @@
 
 #pragma once
 
+#include <cassert>
+#include <memory>
+
 #include <base/class_traits.h>
 #include <orly/expr/unary.h>
 
 namespace Orly {
+
+  namespace Symbol {
+
+    class TFunction;
+
+  }  // Symbol
 
   namespace Expr {
 
@@ -39,6 +48,26 @@ namespace Orly {
 
       virtual void Accept(const TVisitor &visitor) const;
 
+      /* The target type of the cast (the annotation). */
+      const Type::TType &GetCastType() const {
+        return Type;
+      }
+
+      /* The synthesized top-level fold this cast widens through, when this is
+         a recursive-variant widening (#104); null otherwise. Set by the synth
+         pass Synth::SynthesizeRecursiveVariantWidenings once -- the flat
+         reinterpret cast cannot rebuild a recursive variant through its boxed
+         self-edges, so codegen emits a call to this fold instead, and
+         GetTypeImpl accepts the otherwise-deferred widening. */
+      const std::shared_ptr<Symbol::TFunction> &GetRecursiveWidenFn() const {
+        return RecursiveWidenFn;
+      }
+
+      void SetRecursiveWidenFn(const std::shared_ptr<Symbol::TFunction> &fn) {
+        assert(!RecursiveWidenFn);
+        RecursiveWidenFn = fn;
+      }
+
       virtual Type::TType GetTypeImpl() const override;
 
       private:
@@ -46,6 +75,8 @@ namespace Orly {
       TAs(const TExpr::TPtr &expr, const Type::TType &type, const TPosRange &pos_range);
 
       const Type::TType Type;
+
+      std::shared_ptr<Symbol::TFunction> RecursiveWidenFn;
 
     };  // TAs
 

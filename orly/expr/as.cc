@@ -386,8 +386,16 @@ Type::TType TAs::GetTypeImpl() const {
       return false;
     };
     if (is_recursive(src_variant) || is_recursive(dst_variant)) {
-      throw TExprError(HERE, GetPosRange(),
-          "widening of recursive variants is not yet supported (#104)");
+      /* A recursive widening the synth pass turned into a fold call
+         (Synth::SynthesizeRecursiveVariantWidenings) is now supported: the
+         cast carries the synthesized fold and codegen emits a call to it, so
+         the result is simply the (already computed) wide type. An
+         un-annotated recursive widening uses a payload shape that is not yet
+         synthesized -- keep the canonical diagnostic for it (#104). */
+      if (!RecursiveWidenFn) {
+        throw TExprError(HERE, GetPosRange(),
+            "widening of recursive variants is not yet supported (#104)");
+      }
     }
   }
   return type;

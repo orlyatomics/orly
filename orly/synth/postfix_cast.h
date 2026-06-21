@@ -22,6 +22,7 @@
 
 #include <base/class_traits.h>
 #include <orly/orly.package.cst.h>
+#include <orly/symbol/package.h>
 #include <orly/synth/type.h>
 #include <orly/synth/expr.h>
 
@@ -65,6 +66,18 @@ namespace Orly {
       TType *Rhs;
 
     };  // TPostfixCast
+
+    /* Synthesize recursive-variant `as`-widening (#104). Run once per package
+       AFTER the multi-pass synth Build (so every def -- and therefore every
+       expression's type -- is resolvable) and BEFORE Symbol::TScope::TypeCheck
+       (so newly minted functions are not added to the package's function set
+       while it is being iterated). For each `narrow as wide` cast between
+       recursive variants, mint a deduplicated top-level widening fold into the
+       package scope and annotate the cast's `Expr::TAs` to call it; codegen
+       then emits the call instead of the (impossible) flat reinterpret cast.
+       Casts whose payloads use a shape we do not yet synthesize are left
+       un-annotated, so the type checker reports the canonical #104 message. */
+    void SynthesizeRecursiveVariantWidenings(const Symbol::TPackage::TPtr &package);
 
   }  // Synth
 
