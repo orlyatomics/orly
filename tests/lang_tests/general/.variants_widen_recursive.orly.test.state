@@ -1,10 +1,21 @@
 [
-  1,
+  0,
   [
     [],
     [
-      "Synth + Symbols",
-      "38:15-38:27 [orly/expr/as.cc, 389]widening of recursive variants is not yet supported (#104)"
+      "Synth + Symbols"
+    ],
+    [
+      "Code Gen"
+    ],
+    [
+      "Compiling C++"
+    ],
+    [
+      "Running tests"
+    ],
+    [
+      "Tests done"
     ]
   ]
 ]

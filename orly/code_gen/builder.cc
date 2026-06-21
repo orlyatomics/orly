@@ -346,6 +346,18 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     //TODO: Cast should be able to maintain mutability of list elements, as well as when doing the no-op cast.
     virtual void operator()(const Expr::TAs *that) const {
+      /* A RECURSIVE-variant widening (#104) cannot be a value rebuild here --
+         the self-edges are boxed, so the synth pass replaced it with a call
+         to a synthesized top-level fold (see
+         Synth::SynthesizeRecursiveVariantWidenings). Emit that call: it
+         lowers exactly like a TFunctionApp with the cast operand as the `t`
+         argument. */
+      if (const auto &widen_fn = that->GetRecursiveWidenFn()) {
+        TCall::TArgs args;
+        args.push_back(Build(Package, that->GetExpr(), false));
+        Res = Interner.GetCall(Package, TSymbolFunc::Find(widen_fn.get()), args);
+        return;
+      }
       /* A variant -> wider-variant widening (#104) is a value rebuild, not a
          reinterpret cast: the two are distinct C++ structs with different
          `Which` numbering. Detect it by source and result both unwrapping to

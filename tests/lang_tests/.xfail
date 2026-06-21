@@ -13,9 +13,3 @@
 
 general/unsorted/multiple_sequences.orly #74
 general/unsorted/sequence_in_effecting.orly #75
-
-# Deferred case of variant widening (#104): rejected today with a clear
-# "not yet supported" diagnostic; will xpass (and should be promoted to a
-# positive test) when recursive-variant widening is implemented.
-# (Optional-target widening landed in phase 2; its test is now a positive.)
-general/variants_widen_recursive.orly #104
