@@ -18,6 +18,7 @@
 
 #include <orly/expr/expr.h>
 
+#include <orly/type/unroll.h>
 #include <orly/type/util.h>
 
 using namespace Orly;
@@ -37,7 +38,16 @@ Type::TType TExpr::GetType() const {
   }
 
   auto type = GetTypeImpl();
-  if (!type.Is<Type::TAny>()) {
+  /* Don't memoize a type that still contains TAny anywhere -- TAny is the
+     unresolved recursive-call placeholder (TFunction::GetReturnType), so such
+     a type is provisional. Caching it would freeze the placeholder in (e.g. a
+     record `<{.next: TAny}>` built from a recursive result), and codegen would
+     later read the stale TAny and fail to emit it. Leaving it uncached makes
+     the expression recompute once the recursion resolves to a concrete type
+     (by codegen). Generalizes the old `!Is<TAny>` guard to compound types
+     (#128 Option A's caching note; needed for #104 recursive-variant widening
+     folds). */
+  if (!Type::HasAny(type)) {
     assert (!CachedType || *CachedType == type);
     CachedType = type;
   }

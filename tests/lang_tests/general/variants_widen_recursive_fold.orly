@@ -1,0 +1,70 @@
+/* <orly/lang_tests/general/variants_widen_recursive_fold.orly>
+
+   Widening a RECURSIVE variant via a hand-written fold (issue #104).
+
+   The `as` operator does not widen recursive variants (that would need an
+   auto-generated recursive conversion through the boxed self-edge
+   representation -- still deferred, see variants_widen_recursive.orly). But
+   the widening can be written directly as a recursive fold that rebuilds
+   each arm in the wide type and recurses into the self-referential payload
+   fields:
+
+     widen = ((t) when {
+       Leaf(n):   widt.Leaf(n);
+       Branch(b): widt.Branch(<{.l: widen(.t: b.l), .r: widen(.t: b.r)}>);
+     }) where { t = given::(nart); };
+
+   This was blocked until the type checker learned to defer a recursive
+   call's (TAny) result nested ANYWHERE in a constructor payload -- here the
+   `.l` / `.r` fields of the Branch record (TVariantCtor's MatchesModuloAny,
+   plus TExpr not caching a compound that still contains TAny). It is the
+   compound generalization of the shallow #128 Option A deferral.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* A binary tree; `narrow` and `wide` differ only by the extra `Empty` arm. */
+nart is <| Leaf(int) | Branch(<{.l: nart, .r: nart}>) |>;
+widt is <| Empty | Leaf(int) | Branch(<{.l: widt, .r: widt}>) |>;
+
+/* Recursive widening fold: each arm rebuilt in the wide type, recursing into
+   both self-referential fields of the Branch payload. The recursive `widen`
+   results land in the `.l`/`.r` fields of the wide Branch record. */
+widen = ((t) when {
+  Leaf(n):   widt.Leaf(n);
+  Branch(b): widt.Branch(<{.l: widen(.t: b.l), .r: widen(.t: b.r)}>);
+}) where {
+  t = given::(nart);
+};
+
+/* A depth-2 narrow tree and the equivalent wide tree built directly. */
+nv = (nart.Branch(<{
+        .l: nart.Leaf(1),
+        .r: nart.Branch(<{.l: nart.Leaf(2), .r: nart.Leaf(3)}>)}>)) where {};
+wv = (widt.Branch(<{
+        .l: widt.Leaf(1),
+        .r: widt.Branch(<{.l: widt.Leaf(2), .r: widt.Leaf(3)}>)}>)) where {};
+
+with {
+} test {
+  /* Leaf base case. */
+  t_leaf: widen(.t: nart.Leaf(7)) == widt.Leaf(7);
+  /* Deep structural widening: every node remapped, structure preserved. */
+  t_deep: widen(.t: nv) == wv;
+  /* The widened tree is genuinely the wide type -- it can hold the new arm. */
+  t_wide_arm: widt.Branch(<{.l: widen(.t: nart.Leaf(1)), .r: widt.Empty()}>)
+      == widt.Branch(<{.l: widt.Leaf(1), .r: widt.Empty()}>);
+  /* A structurally different narrow tree widens to a non-equal wide tree. */
+  t_neq: widen(.t: nart.Leaf(1)) != widt.Leaf(2);
+};

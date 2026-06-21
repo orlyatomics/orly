@@ -1,20 +1,22 @@
 /* <orly/lang_tests/general/variants_widen_recursive.orly>
 
-   Deferred v1 case for variant widening (issue #104), tracked as an xfail.
+   Deferred case for variant widening (issue #104), tracked as an xfail:
+   the `as` OPERATOR does not widen recursive variants.
 
-   Widening of RECURSIVE variants is not implemented in v1. A recursive
-   variant boxes its self-edges in the native representation
-   (#103/#116/#125), so widening would have to rebuild through that boxed
-   form -- a high-cost, low-value corner left out of v1. The shared arms of
+   A recursive variant boxes its self-edges in the native representation
+   (#103/#116/#125), so `rnar as rwid` would have to AUTO-GENERATE a recursive
+   conversion through that boxed form -- still deferred. The shared arms of
    `rnar` and `rwid` are structurally identical (`Leaf(int)` and the
    self-referential `Node`), so the widening relation itself holds, but the
-   type checker rejects the cast with a clear "not yet supported (#104)"
+   type checker rejects the CAST with a clear "not yet supported (#104)"
    because a self-reference is present. This file therefore currently FAILS
    to compile and is pinned in tests/lang_tests/.xfail.
 
-   When recursive-variant widening lands, this test will compile and run
-   (xpass), prompting removal of the .xfail entry and promotion to a plain
-   positive test -- the assertion below is written to pass at that point.
+   NOTE: recursive widening can now be written by hand as a recursive FOLD --
+   see variants_widen_recursive_fold.orly, which works today. This xfail
+   tracks only the `as`-operator sugar. When that lands, this test will
+   compile and run (xpass), prompting removal of the .xfail entry and
+   promotion to a positive test -- the assertion below is written to pass.
 
    Copyright 2010-2026 Atomic Kismet Company
 

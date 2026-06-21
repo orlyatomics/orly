@@ -37,6 +37,15 @@ namespace Orly {
 
   namespace Type {
 
+    /* True iff the type structurally contains a TAny leaf (at any depth).
+       TAny arises only from an as-yet-unresolved recursive-call result
+       (TFunction::GetReturnType), so a type for which this holds is not yet
+       fully resolved and must not be memoized: TExpr::GetType refuses to
+       cache it, so the expression recomputes (and the recursion resolves to a
+       concrete type) by codegen time. The compound generalization of the
+       shallow `Is<TAny>` check (#128 / #104 recursive-variant widening). */
+    bool HasAny(const TType &type);
+
     /* True iff the type structurally contains a TSelfRef leaf (at any
        depth, bound or free). True both for a recursive variant itself and
        for any type that embeds one (e.g. a record with a recursive-variant
