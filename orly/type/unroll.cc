@@ -31,6 +31,64 @@
 using namespace Orly;
 using namespace Orly::Type;
 
+bool Type::HasAny(const TType &type) {
+  class TVisitor
+      : public TType::TVisitor {
+    public:
+    TVisitor(bool &found) : Found(found) {}
+    virtual void operator()(const TAny *) const { Found = true; }
+    virtual void operator()(const TSelfRef *) const {}
+    virtual void operator()(const TGroupRef *) const {}
+    virtual void operator()(const TVariant *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TObj *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TAddr *that) const {
+      for (const auto &elem : that->GetElems()) {
+        if (Found) { return; }
+        elem.second.Accept(*this);
+      }
+    }
+    virtual void operator()(const TDict *that) const {
+      that->GetKey().Accept(*this);
+      if (!Found) { that->GetVal().Accept(*this); }
+    }
+    virtual void operator()(const TErr *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TList *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TOpt *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TSeq *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TSet *that) const { that->GetElem().Accept(*this); }
+    virtual void operator()(const TFunc *that) const {
+      that->GetParamObject().Accept(*this);
+      if (!Found) { that->GetReturnType().Accept(*this); }
+    }
+    virtual void operator()(const TMutable *that) const {
+      that->GetAddr().Accept(*this);
+      if (!Found) { that->GetVal().Accept(*this); }
+    }
+    virtual void operator()(const TBool *) const {}
+    virtual void operator()(const TId *) const {}
+    virtual void operator()(const TInt *) const {}
+    virtual void operator()(const TReal *) const {}
+    virtual void operator()(const TStr *) const {}
+    virtual void operator()(const TTimeDiff *) const {}
+    virtual void operator()(const TTimePnt *) const {}
+    private:
+    bool &Found;
+  };  // TVisitor
+  bool found = false;
+  type.Accept(TVisitor(found));
+  return found;
+}
+
 bool Type::HasSelfRef(const TType &type) {
   class TVisitor
       : public TType::TVisitor {
