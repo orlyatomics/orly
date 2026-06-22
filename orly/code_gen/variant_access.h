@@ -107,17 +107,28 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        dependency_set.insert(Operand);
-        Operand->AppendDependsOn(dependency_set);
-        for (const auto &arm : Arms) {
-          dependency_set.insert(arm.second);
-          arm.second->AppendDependsOn(dependency_set);
+        /* Reentrancy guard, as in TIfElse: a `when` arm may (via a map over a
+           recursive call -- a recursive-variant widening fold, #104/#159)
+           reach back into this same `when`, which would otherwise walk the
+           dependency graph forever. Stop the second entry. */
+        if (!InDependsOn) {
+          InDependsOn = true;
+          dependency_set.insert(Operand);
+          Operand->AppendDependsOn(dependency_set);
+          for (const auto &arm : Arms) {
+            dependency_set.insert(arm.second);
+            arm.second->AppendDependsOn(dependency_set);
+          }
+          InDependsOn = false;
         }
       }
 
       private:
         TInline::TPtr Operand;
         TArmVec Arms;
+
+        /* True while inside AppendDependsOn, to detect reentrant recursion. */
+        mutable bool InDependsOn = false;
     }; // TVariantWhen
 
     /* `narrow_val as wide_t` -- widening a narrow variant to a superset

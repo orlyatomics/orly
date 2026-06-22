@@ -21,10 +21,17 @@
    recursion point inside a NESTED variant payload (`Node(<| Some(self) |
    None |>)`), widened by recursing through an inline `when`. The `optnar`/
    `optwid` and `ornar`/`orwid` pairs add a recursion point under an OPTIONAL
-   (#159), widened by recursing into the optional's known case.
+   (#159), widened by recursing into the optional's known case. The `lnar`/
+   `lwid`, `snar`/`swid`, and `dnar`/`dwid` pairs add a recursion point under a
+   CONTAINER -- a list, a set, and a dict value (#159 Phase 2). The fold maps
+   itself over the container's elements (orly's implicit element-wise map over
+   a sequence, `widen(.t: **xs) as wide-container`) and collects the widened
+   elements back; the dict case maps a minted per-pair helper that widens each
+   value.
 
-   Payload shapes not yet synthesized (list / set / seq / dict of self) still
-   report the canonical "not yet supported (#104)" diagnostic.
+   Payload shapes not yet synthesized (a bare seq of self, or a nested
+   container of self such as `[[self]]`) still report the canonical "not yet
+   supported (#104)" diagnostic.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -61,6 +68,20 @@ optwid is <| Extra | Leaf(int) | Node(optwid?) |>;
 ornar is <| Leaf(int) | Node(<{.next: ornar?}>) |>;
 orwid is <| Extra | Leaf(int) | Node(<{.next: orwid?}>) |>;
 
+/* Three pairs whose recursion point sits under a CONTAINER (#159 Phase 2):
+   a list (`Node([self])`), a set (`Node({self})`), and a dict value
+   (`Node({str: self})`). The widening fold maps itself over the elements and
+   collects back into the wide container; the dict fold maps a minted per-pair
+   helper that widens each value while passing the (self-free) key through. */
+lnar is <| Leaf(int) | Node([lnar]) |>;
+lwid is <| Extra | Leaf(int) | Node([lwid]) |>;
+
+snar is <| Leaf(int) | Node({snar}) |>;
+swid is <| Extra | Leaf(int) | Node({swid}) |>;
+
+dnar is <| Leaf(int) | Node({str: dnar}) |>;
+dwid is <| Extra | Leaf(int) | Node({str: dwid}) |>;
+
 /* The `as` widening through a where-bound source: the source expression
    (`rnar.Leaf(n)`) depends on a given parameter, so its type is only known
    after the whole function has built -- which is exactly why the widening is
@@ -92,6 +113,17 @@ orw   = (orwid.Node(<{.next: orwid.Leaf(2) as orwid?}>)) where {};
 orn_u = (ornar.Node(<{.next: unknown ornar}>)) where {};
 orw_u = (orwid.Node(<{.next: unknown orwid}>)) where {};
 
+/* Container-payload trees and their directly-built wide equivalents: a
+   depth-2 list, set, and dict, so the fold maps over a nested level. */
+ln = (lnar.Node([lnar.Leaf(1), lnar.Node([lnar.Leaf(2), lnar.Leaf(3)])])) where {};
+lw = (lwid.Node([lwid.Leaf(1), lwid.Node([lwid.Leaf(2), lwid.Leaf(3)])])) where {};
+
+sn = (snar.Node({snar.Leaf(1), snar.Node({snar.Leaf(2)})})) where {};
+sw = (swid.Node({swid.Leaf(1), swid.Node({swid.Leaf(2)})})) where {};
+
+dn = (dnar.Node({"a": dnar.Leaf(1), "b": dnar.Node({"c": dnar.Leaf(2)})})) where {};
+dw = (dwid.Node({"a": dwid.Leaf(1), "b": dwid.Node({"c": dwid.Leaf(2)})})) where {};
+
 with {
 } test {
   /* The where-bound-source widening returns the wide type and preserves the
@@ -121,4 +153,16 @@ with {
   t_opt_neq:        (on_u as optwid) != ow;
   t_optrec_known:   (orn as orwid) == orw;
   t_optrec_unknown: (orn_u as orwid) == orw_u;
+  /* Widening through a CONTAINER payload (#159 Phase 2): the fold maps over
+     list / set / dict-value self-edges, descending every nested element. The
+     base (`Leaf`) case still widens directly; an empty container maps to an
+     empty wide container; a structurally different tree stays non-equal. */
+  t_list_leaf:  (lnar.Leaf(4) as lwid) == lwid.Leaf(4);
+  t_list_deep:  (ln as lwid) == lw;
+  t_list_empty: (lnar.Node(empty [lnar]) as lwid) == lwid.Node(empty [lwid]);
+  t_list_neq:   (ln as lwid) != lwid.Node(empty [lwid]);
+  t_set_leaf:   (snar.Leaf(4) as swid) == swid.Leaf(4);
+  t_set_deep:   (sn as swid) == sw;
+  t_dict_leaf:  (dnar.Leaf(4) as dwid) == dwid.Leaf(4);
+  t_dict_deep:  (dn as dwid) == dw;
 };
