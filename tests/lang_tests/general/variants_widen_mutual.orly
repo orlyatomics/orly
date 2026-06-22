@@ -1,0 +1,84 @@
+/* <orly/lang_tests/general/variants_widen_mutual.orly>
+
+   Widening a member of a MUTUALLY-RECURSIVE variant group with the `as`
+   operator (issue #104). This is the group generalization of the single-def
+   recursive widening (variants_widen_recursive.orly): there the self-edge is a
+   shared de Bruijn TSelfRef, so the narrow and wide arm payloads are literally
+   identical and TVariant::IsWidenableTo passes. In a group the cross-edges are
+   TGroupRefs keyed by group identity, so `a`'s `ToB(b)` and `a'`'s `ToB(b')`
+   differ -- the plain widenability check rejects them.
+
+   Two things make it work (Type::VariantWidensTo + the synth group pass):
+     - Widenability is checked coinductively: walk the narrow and wide groups
+       in lockstep, building a member correspondence (a <-> a', b <-> b', ...);
+       each member's tag set may widen (subset) but its arm payloads must be
+       identical EXCEPT where a TGroupRef on each side denotes a corresponding
+       member pair. This is sound -- it is NOT general payload subtyping; a
+       differing scalar or a dropped tag still rejects (see the .xfail-free
+       negative reasoning: `Leaf(int)` vs `Leaf(str)`, or a narrow-only tag,
+       are rejected by the same check).
+     - The synth mints one fold PER narrow member, wired to call one another
+       (a mutually-recursive top-level fold group, exactly what one would write
+       by hand), and annotates the cast with the cast member's fold.
+
+   `anar`/`bnar` is a 2-member group (`a` carries `b`, `b` carries `a`); the
+   wide pair adds arms to both members. `cx`/`cy`/`cz` is a 3-cycle, to drive
+   the correspondence walk and the fold group through more than two members.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* A 2-member group and a wide pair that adds an arm to EACH member (`Extra`
+   to a, `Other` to b), so both members genuinely tag-widen. */
+anar is <| Leaf(int) | ToB(bnar) |>;
+bnar is <| Node(anar) | Nil |>;
+awid is <| Extra | Leaf(int) | ToB(bwid) |>;
+bwid is <| Other | Node(awid) | Nil |>;
+
+/* A depth-2 alternating chain through both members, and its wide twin. */
+na = (anar.ToB(bnar.Node(anar.ToB(bnar.Nil())))) where {};
+wa = (awid.ToB(bwid.Node(awid.ToB(bwid.Nil())))) where {};
+
+/* A 3-cycle group: cx -> cy -> cz -> cx. */
+cx is <| C(cy) |>;
+cy is <| Y(cz) |>;
+cz is <| Z(cx) | Stop |>;
+dx is <| Extra | C(dy) |>;
+dy is <| Y(dz) |>;
+dz is <| Z(dx) | Stop |>;
+
+nc = (cx.C(cy.Y(cz.Z(cx.C(cy.Y(cz.Stop())))))) where {};
+wc = (dx.C(dy.Y(dz.Z(dx.C(dy.Y(dz.Stop())))))) where {};
+
+/* The widening through a where-bound source, so its type is only known after
+   the whole function builds (the reason the widening is a post-build pass). */
+widen_a = ((anar.Leaf(n) as awid)) where {
+  n = given::(int);
+};
+
+test {
+  /* Base arm, and the deep alternating chain: every member node remapped,
+     structure preserved. */
+  t_leaf:  (anar.Leaf(7) as awid) == awid.Leaf(7);
+  t_deep:  (na as awid) == wa;
+  t_fn:    widen_a(.n: 3) == awid.Leaf(3);
+  /* Widen starting from the OTHER member of the group -- the fold group is
+     entered at `b`, which calls `a`'s fold for its `Node` payload. */
+  t_b_nil:  (bnar.Nil() as bwid) == bwid.Nil();
+  t_b_node: (bnar.Node(anar.Leaf(3)) as bwid) == bwid.Node(awid.Leaf(3));
+  /* A 3-cycle group widens through all three members. */
+  t_cycle:  (nc as dx) == wc;
+  /* A structurally different narrow value widens to a non-equal wide value. */
+  t_neq:    (na as awid) != awid.Leaf(0);
+};

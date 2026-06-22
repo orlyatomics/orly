@@ -55,6 +55,7 @@
 #include <orly/type/list.h>
 #include <orly/type/obj.h>
 #include <orly/type/opt.h>
+#include <orly/type/rec_group.h>
 #include <orly/type/seq.h>
 #include <orly/type/set.h>
 #include <orly/type/unroll.h>
@@ -94,14 +95,16 @@ namespace {
      package function, because recursion is only supported for top-level
      functions (an inline / where-bound recursive function is rejected). */
   struct TWidenSynth {
-    /* The narrow and wide variant types: a subterm typed exactly as the
-       narrow variant is a recursion point (it widens to the wide variant via
-       a recursive call). */
-    Type::TType NarrowVariant;
-    Type::TType WideVariant;
-    /* The synthesized `widen` function's result def -- the callee of every
-       recursive call. Null while pre-flighting support with CanRebuild(). */
-    Symbol::TResultDef::TPtr WidenResult;
+    /* The widening's member correspondence: each narrow (member) variant type
+       mapped to the wide variant it widens to. A single self-recursive def has
+       one entry (`narrow -> wide`); a mutually-recursive GROUP (#104) has one
+       per member. A subterm typed as a narrow member -- after Unroll resolves
+       its self-/group-edges -- is a recursion point: it widens to the
+       corresponding wide member via a call to that member's fold. */
+    std::unordered_map<Type::TType, Type::TType> Corr;
+    /* Each narrow member's synthesized fold result def -- the callee of a
+       recursive call into that member. Empty while pre-flighting CanRebuild(). */
+    std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> Folds;
     TPosRange PosRange;
     /* For container-of-self payloads only: the package scope that minted
        helpers are added to, the base name for them, and two per-fold caches:
@@ -125,8 +128,10 @@ namespace {
       if (src == dst) {
         return true;
       }
-      /* The recursion point: narrow widens to wide via a recursive call. */
-      if (src == NarrowVariant && dst == WideVariant) {
+      /* The recursion point: a narrow member widens to its wide correspondent
+         via a recursive call into that member's fold. */
+      auto corr = Corr.find(src);
+      if (corr != Corr.end() && corr->second == dst) {
         return true;
       }
       /* Record of self: rebuildable iff every field is. */
@@ -204,17 +209,28 @@ namespace {
       return false;
     }
 
-    /* True iff every arm of the narrow variant has a payload Rebuild() can
-       convert to the wide variant's corresponding arm. */
-    bool CanSynthesize(const Type::TVariant *narrow_variant,
-                       const Type::TVariant *wide_variant) const {
-      const auto &wide_elems = wide_variant->GetElems();
-      for (const auto &arm : narrow_variant->GetElems()) {
-        auto wide_arm = wide_elems.find(arm.first);
-        assert(wide_arm != wide_elems.end());  // guaranteed by IsWidenableTo
-        if (!CanRebuild(Type::Unroll(arm.second, NarrowVariant),
-                        Type::Unroll(wide_arm->second, WideVariant))) {
+    /* True iff every member's every arm has a payload Rebuild() can convert to
+       the corresponding wide member's arm. For a single def Corr has one
+       member; for a mutually-recursive group, all members must synthesize (the
+       folds call one another). Each arm payload is Unrolled with ITS member as
+       the binder, so a self-/group-edge resolves to a recursion point. */
+    bool CanSynthesize() const {
+      for (const auto &member : Corr) {
+        const auto *narrow_variant = member.first.TryAs<Type::TVariant>();
+        const auto *wide_variant = member.second.TryAs<Type::TVariant>();
+        if (!narrow_variant || !wide_variant) {
           return false;
+        }
+        const auto &wide_elems = wide_variant->GetElems();
+        for (const auto &arm : narrow_variant->GetElems()) {
+          auto wide_arm = wide_elems.find(arm.first);
+          if (wide_arm == wide_elems.end()) {  // guaranteed by VariantWidensTo
+            return false;
+          }
+          if (!CanRebuild(Type::Unroll(arm.second, member.first),
+                          Type::Unroll(wide_arm->second, member.second))) {
+            return false;
+          }
         }
       }
       return true;
@@ -236,13 +252,15 @@ namespace {
       if (src == dst) {
         return make();
       }
-      /* The recursion point: a narrow-variant-typed value widens to the wide
-         variant via a recursive call. After Unroll, every top-level
-         self-reference in a payload appears as the narrow variant itself. */
-      if (src == NarrowVariant && dst == WideVariant) {
+      /* The recursion point: a narrow-member-typed value widens to its wide
+         correspondent via a recursive call into that member's fold. After
+         Unroll, a self-/group-edge in a payload appears as the narrow member
+         type itself, which Corr maps to the wide member it widens to. */
+      auto corr = Corr.find(src);
+      if (corr != Corr.end() && corr->second == dst) {
         Expr::TFunctionApp::TFunctionAppArgMap args;
         args["t"] = Expr::TFunctionAppArg::New(make());
-        return Expr::TFunctionApp::New(Expr::TRef::New(WidenResult, PosRange), args, PosRange);
+        return Expr::TFunctionApp::New(Expr::TRef::New(Folds.at(src), PosRange), args, PosRange);
       }
       /* Record of self (the common `Branch(<{.l: self, .r: self}>)` shape):
          rebuild field by field, each reading the source record afresh. */
@@ -326,8 +344,9 @@ namespace {
             ? src.As<Type::TList>()->GetElem() : src.As<Type::TSet>()->GetElem();
         const auto &dst_elem = dst.Is<Type::TList>()
             ? dst.As<Type::TList>()->GetElem() : dst.As<Type::TSet>()->GetElem();
-        auto map_fn = (src_elem == NarrowVariant && dst_elem == WideVariant)
-            ? WidenResult : GetOrMintElemHelper(src_elem, dst_elem);
+        auto elem_corr = Corr.find(src_elem);
+        auto map_fn = (elem_corr != Corr.end() && elem_corr->second == dst_elem)
+            ? Folds.at(src_elem) : GetOrMintElemHelper(src_elem, dst_elem);
         Expr::TFunctionApp::TFunctionAppArgMap args;
         args["t"] = Expr::TFunctionAppArg::New(Expr::TSequenceOf::New(make(), PosRange));
         auto mapped = Expr::TFunctionApp::New(Expr::TRef::New(map_fn, PosRange), args, PosRange);
@@ -431,18 +450,20 @@ namespace {
 
     /* The synthesized function's body: a `when` over the narrow arms whose
        body rebuilds each arm's payload in the wide type. The recursion points
-       inside it (via Rebuild) call back into the function via WidenResult. */
+       inside it (via Rebuild) call back into the member folds via Folds. */
     Expr::TExpr::TPtr BuildBody(const Symbol::TParamDef::TPtr &param,
                                 const Type::TVariant *narrow_variant,
                                 const Type::TVariant *wide_variant) const {
+      auto narrow_type = narrow_variant->AsType();
+      auto wide_type = wide_variant->AsType();
       std::vector<std::string> tags;
       Expr::TWhen::TExprVec bodies;
       const auto &wide_elems = wide_variant->GetElems();
       for (const auto &arm : narrow_variant->GetElems()) {
         auto wide_arm = wide_elems.find(arm.first);
-        assert(wide_arm != wide_elems.end());  // guaranteed by IsWidenableTo
-        auto src_payload = Type::Unroll(arm.second, NarrowVariant);
-        auto dst_payload = Type::Unroll(wide_arm->second, WideVariant);
+        assert(wide_arm != wide_elems.end());  // guaranteed by VariantWidensTo
+        auto src_payload = Type::Unroll(arm.second, narrow_type);
+        auto dst_payload = Type::Unroll(wide_arm->second, wide_type);
         const std::string tag = arm.first;
         /* The arm body reads the active payload via `t.Tag`, rebuilt fresh
            wherever the payload value is read (no shared Expr nodes). */
@@ -452,7 +473,7 @@ namespace {
             },
             src_payload, dst_payload);
         tags.push_back(tag);
-        bodies.push_back(Expr::TVariantCtor::New(tag, rebuilt, WideVariant, PosRange));
+        bodies.push_back(Expr::TVariantCtor::New(tag, rebuilt, wide_type, PosRange));
       }
       return Expr::TWhen::New(Expr::TRef::New(param, PosRange), tags, bodies, PosRange);
     }
@@ -465,44 +486,61 @@ namespace {
                              Symbol::TFunction::TPtr> TWidenCache;
 
   /* Look up -- or, on a miss, mint -- the top-level `widen` fold for the
-     given narrow->wide recursive-variant pair. The function is added to the
-     package scope so it is type-checked (Symbol::TScope::TypeCheck) and
-     emitted (CodeGen::TPackage) alongside the user's own top-level functions,
-     and recursion resolves to a top-level C++ function. */
+     given narrow->wide widening, returning the fold for the narrow member
+     being cast. For a single self-recursive def this is one fold; for a
+     mutually-recursive GROUP (#104) it mints one fold per member, wired to
+     call one another, and returns the cast member's. Each fold is added to the
+     package scope so it is type-checked (Symbol::TScope::TypeCheck) and emitted
+     (CodeGen::TPackage) alongside the user's own top-level functions, and
+     recursion resolves to a top-level C++ function.
+
+     `corr` is the member correspondence VariantWidensTo computed for the cast
+     (one entry for a single def, all members for a group). */
   Symbol::TFunction::TPtr GetOrMintWiden(const Symbol::TScope::TPtr &package_scope,
                                          TWidenCache &cache,
-                                         const Type::TVariant *narrow_variant,
-                                         const Type::TVariant *wide_variant,
+                                         const Type::TType &narrow_type,
+                                         const Type::TType &wide_type,
+                                         const std::unordered_map<Type::TType, Type::TType> &corr,
                                          const TPosRange &pos_range) {
-    auto narrow_type = narrow_variant->AsType();
-    auto wide_type = wide_variant->AsType();
     auto key = std::make_pair(narrow_type, wide_type);
     auto found = cache.find(key);
     if (found != cache.end()) {
-      return found->second;
+      return found->second;  // whole group already minted
     }
 
-    /* A fresh, alphanumeric name -- the C++ emitter prefixes it with 'F'
-       (orly/code_gen/export_func.cc), so it must be a valid identifier and
-       must not collide with a user function. */
-    auto name = Base::AsStr("widenRec", cache.size());
-    auto widen = Symbol::TFunction::New(package_scope, name, pos_range);
-    auto widen_result = Symbol::TResultDef::New(widen, name, pos_range);
-    auto param = Symbol::TGivenParamDef::New(widen, "t", narrow_type, pos_range);
+    /* Mint a fold (function + result def + param) for every member up front,
+       so a member's body can call any sibling -- including itself -- through a
+       resolved result def. Names are fresh alphanumeric identifiers; the C++
+       emitter prefixes them with 'F' (orly/code_gen/export_func.cc), so they
+       must be valid identifiers that cannot collide with a user function. */
+    std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> folds;
+    std::unordered_map<Type::TType,
+                       std::pair<Symbol::TFunction::TPtr, Symbol::TParamDef::TPtr>> minted;
+    for (const auto &member : corr) {
+      auto name = Base::AsStr("widenRec", cache.size());
+      auto widen = Symbol::TFunction::New(package_scope, name, pos_range);
+      auto widen_result = Symbol::TResultDef::New(widen, name, pos_range);
+      auto param = Symbol::TGivenParamDef::New(widen, "t", member.first, pos_range);
+      cache[std::make_pair(member.first, member.second)] = widen;
+      folds[member.first] = widen_result;
+      minted[member.first] = {widen, param};
+    }
 
-    /* Register before building the body so a self-recursive widening reuses
-       this same function rather than recursing here. */
-    cache[key] = widen;
-
-    /* Per-fold caches of minted container helpers (empty unless a dict-of-self
-       or nested-container-of-self payload is rebuilt); minted into the package
-       scope alongside the fold. */
+    /* Build each member's body with the shared correspondence + fold maps. The
+       container helper caches are shared across the group so a payload shape
+       appearing in several members mints a single helper. The helper names are
+       stemmed off the cast member's fold name. */
     std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> pair_helpers;
     std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> elem_helpers;
-    TWidenSynth synth{narrow_type, wide_type, widen_result, pos_range,
-                      package_scope, &pair_helpers, &elem_helpers, name};
-    widen->SetExpr(synth.BuildBody(param, narrow_variant, wide_variant));
-    return widen;
+    TWidenSynth synth{corr, folds, pos_range, package_scope,
+                      &pair_helpers, &elem_helpers, minted.at(narrow_type).first->GetName()};
+    for (const auto &member : corr) {
+      const auto &fn = minted.at(member.first).first;
+      const auto &param = minted.at(member.first).second;
+      fn->SetExpr(synth.BuildBody(param, member.first.As<Type::TVariant>(),
+                                  member.second.As<Type::TVariant>()));
+    }
+    return cache.at(key);
   }
 
   /* Collect every `Expr::TAs` reachable from `root` (including inside inner /
@@ -561,19 +599,27 @@ void Synth::SynthesizeRecursiveVariantWidenings(const Symbol::TPackage::TPtr &pa
     const Type::TVariant *src_variant = Type::Unwrap(src_type).TryAs<Type::TVariant>();
     const Type::TVariant *dst_variant = Type::Unwrap(as->GetCastType()).TryAs<Type::TVariant>();
     if (!src_variant || !dst_variant || src_variant == dst_variant
-        || !src_variant->IsWidenableTo(dst_variant)
         || !(IsRecursiveVariant(src_variant) || IsRecursiveVariant(dst_variant))) {
+      continue;
+    }
+    /* The member correspondence for this widening: one entry for a single
+       self-recursive def, all members for a mutually-recursive group. Also the
+       widenability gate -- a non-widenable cast yields an empty/false result
+       and is left for the type checker's diagnostic. */
+    auto narrow_type = src_variant->AsType();
+    auto wide_type = dst_variant->AsType();
+    std::unordered_map<Type::TType, Type::TType> corr;
+    if (!Type::VariantWidensTo(narrow_type, wide_type, corr)) {
       continue;
     }
     /* Pre-flight the payload shapes; an unsupported shape is left for the
        type checker's canonical #104 diagnostic. */
-    TWidenSynth probe{src_variant->AsType(), dst_variant->AsType(), nullptr, as->GetPosRange(),
-                      nullptr, nullptr, nullptr, std::string()};
-    if (!probe.CanSynthesize(src_variant, dst_variant)) {
+    TWidenSynth probe{corr, {}, as->GetPosRange(), nullptr, nullptr, nullptr, std::string()};
+    if (!probe.CanSynthesize()) {
       continue;
     }
     as->SetRecursiveWidenFn(
-        GetOrMintWiden(package, cache, src_variant, dst_variant, as->GetPosRange()));
+        GetOrMintWiden(package, cache, narrow_type, wide_type, corr, as->GetPosRange()));
   }
 }
 

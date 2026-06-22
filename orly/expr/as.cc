@@ -25,6 +25,7 @@
 #include <orly/pos_range.h>
 #include <orly/type.h>
 #include <orly/type/infix_visitor.h>
+#include <orly/type/rec_group.h>
 #include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/unwrap_visitor.h>
@@ -195,7 +196,16 @@ Type::TType TAs::GetTypeImpl() const {
        v1-scope guards (recursive variants, optional-target widening) are
        applied once, after the visitor, in GetTypeImpl. */
     virtual void operator()(const Type::TVariant  *lhs, const Type::TVariant  *rhs) const {
-      if (!lhs->IsWidenableTo(rhs)) {
+      /* Accept either a plain superset widening (IsWidenableTo: tag set widens,
+         payloads invariant -- covers the single-def recursive case, whose
+         self-edge is a shared de Bruijn TSelfRef) or a mutually-recursive GROUP
+         widening, where sibling cross-edges are TGroupRefs that differ between
+         the narrow and wide groups but co-widen (issue #104). The synth pass
+         turns a recursive widening into a fold; the v1-scope guard below
+         requires that fold to be present. */
+      std::unordered_map<Type::TType, Type::TType> corr;
+      if (!lhs->IsWidenableTo(rhs)
+          && !Type::VariantWidensTo(lhs->AsType(), rhs->AsType(), corr)) {
         throw TExprError(HERE, PosRange,
             "a variant can only be cast to its own type or widened to a superset variant type");
       }
