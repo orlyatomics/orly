@@ -29,9 +29,12 @@
 #include <base/hash.h>
 #include <orly/expr/as.h>
 #include <orly/expr/function_app.h>
+#include <orly/expr/if_else.h>
+#include <orly/expr/known.h>
 #include <orly/expr/obj.h>
 #include <orly/expr/obj_member.h>
 #include <orly/expr/ref.h>
+#include <orly/expr/unknown.h>
 #include <orly/expr/variant.h>
 #include <orly/expr/walker.h>
 #include <orly/expr/when.h>
@@ -45,6 +48,7 @@
 #include <orly/synth/new_type.h>
 #include <orly/type/impl.h>
 #include <orly/type/obj.h>
+#include <orly/type/opt.h>
 #include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/variant.h>
@@ -121,6 +125,14 @@ namespace {
         }
         return true;
       }
+      /* Optional of self (`Node(self?)`, or `self?` as a record field):
+         rebuildable iff the optional's element is. The element is a recursion
+         point (the only self-placement under an optional that #116 permits),
+         reached by unwrapping the known case (see Rebuild). */
+      if (const auto *src_opt = src.TryAs<Type::TOpt>()) {
+        const auto *dst_opt = dst.TryAs<Type::TOpt>();
+        return dst_opt && CanRebuild(src_opt->GetElem(), dst_opt->GetElem());
+      }
       /* Nested variant of self (a payload that is itself a variant carrying a
          self-reference, e.g. `Node(<| Some(self) | None |>)`). The outer
          Unroll has already turned its self-edges into the narrow variant, so
@@ -144,13 +156,10 @@ namespace {
         }
         return true;
       }
-      /* Optional, container (list / set / seq) and dict of self are not yet
-         synthesized; leave them to the plain cast so the type checker reports
-         the canonical #104 diagnostic. (Optional of self needs the recursive
-         call's deferred TAny result to flow through the optional construction;
-         the #128/#157 deferral covers ctor payloads but not the cast / if-else
-         path -- the type checker hits NOT_IMPLEMENTED on `(TAny, TOpt)` in
-         orly/type/infix_visitor.h. A follow-up #104 task.) */
+      /* Container (list / set / seq) and dict of self are not yet synthesized;
+         leave them to the plain cast so the type checker reports the canonical
+         #104 diagnostic. (They need the fold to map each element through the
+         recursive call -- a separate Phase 2 increment.) */
       return false;
     }
 
@@ -211,6 +220,31 @@ namespace {
               field.second, dst_field->second);
         }
         return Expr::TObj::New(members, PosRange);
+      }
+      /* Optional of self: widen the inner value only when it is known,
+         otherwise pass the unknown through.
+
+           (make() is known) ? (widen(known make()) as wide?) : (unknown wide)
+
+         The recursive-variant shape rules (#116) only let a self-reference sit
+         under an optional as the optional's element itself (`Node(self?)`, or
+         `self?` as a record field -- a record *under* an optional is rejected),
+         so the optional's element is always a recursion point. The known branch
+         widens it -- the recursive call's result is the deferred TAny
+         placeholder -- and the `as wide?` cast both lifts the bare widened value
+         into an optional and resolves the deferred result via the (TAny, TOpt)
+         cast arm (#104). The unknown branch is `unknown wide` (TUnknown takes
+         the element type, yielding `wide?`), so both branches agree on `wide?`. */
+      if (const auto *src_opt = src.TryAs<Type::TOpt>()) {
+        const auto *dst_opt = dst.As<Type::TOpt>();
+        auto widened = Rebuild(
+            [this, &make]() { return Expr::TKnown::New(make(), PosRange); },
+            src_opt->GetElem(), dst_opt->GetElem());
+        return Expr::TIfElse::New(
+            Expr::TAs::New(widened, dst, PosRange),
+            Expr::TIsKnown::New(make(), PosRange),
+            Expr::TUnknown::New(dst_opt->GetElem(), PosRange),
+            PosRange);
       }
       /* Nested variant of self: a `when` that rebuilds each arm in the wide
          nested variant (the recursion point falls inside an arm whose payload

@@ -19,10 +19,12 @@
    #116/#125 record-of-self shape, so this exercises both the direct arm
    (`Leaf`) and a record-of-self arm (`Node`). The `nvnar`/`nvwid` pair adds a
    recursion point inside a NESTED variant payload (`Node(<| Some(self) |
-   None |>)`), widened by recursing through an inline `when`.
+   None |>)`), widened by recursing through an inline `when`. The `optnar`/
+   `optwid` and `ornar`/`orwid` pairs add a recursion point under an OPTIONAL
+   (#159), widened by recursing into the optional's known case.
 
-   Payload shapes not yet synthesized (optional / list / set / seq / dict of
-   self) still report the canonical "not yet supported (#104)" diagnostic.
+   Payload shapes not yet synthesized (list / set / seq / dict of self) still
+   report the canonical "not yet supported (#104)" diagnostic.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -47,6 +49,18 @@ rwid is <| Extra | Leaf(int) | Node(<{.next: rwid}>) |>;
 nvnar is <| Leaf(int) | Node(<| Some(nvnar) | None |>) |>;
 nvwid is <| Extra | Leaf(int) | Node(<| Some(nvwid) | None |>) |>;
 
+/* Two pairs whose recursion point sits under an OPTIONAL (#159) -- the only
+   placements the recursive-variant shape rules (#116) allow for a self-edge
+   inside an optional: as the optional's element directly at the arm payload
+   (`Node(self?)`), and as the optional's element in a record field
+   (`Node(<{.next: self?}>)`). The widening fold recurses into the optional,
+   widening the element only when it is known and passing an unknown through. */
+optnar is <| Leaf(int) | Node(optnar?) |>;
+optwid is <| Extra | Leaf(int) | Node(optwid?) |>;
+
+ornar is <| Leaf(int) | Node(<{.next: ornar?}>) |>;
+orwid is <| Extra | Leaf(int) | Node(<{.next: orwid?}>) |>;
+
 /* The `as` widening through a where-bound source: the source expression
    (`rnar.Leaf(n)`) depends on a given parameter, so its type is only known
    after the whole function has built -- which is exactly why the widening is
@@ -63,6 +77,20 @@ wv = (rwid.Node(<{.next: rwid.Node(<{.next: rwid.Leaf(5)}>)}>)) where {};
 /* A nested-variant tree and its directly-built wide equivalent. */
 nvn = (nvnar.Node(<| Some(nvnar) | None |>.Some(nvnar.Leaf(9)))) where {};
 nvw = (nvwid.Node(<| Some(nvwid) | None |>.Some(nvwid.Leaf(9)))) where {};
+
+/* Optional-payload trees and their directly-built wide equivalents. `on`/`ow`
+   nest a depth-2 chain through the optional arm payload (every known edge
+   recursed into); `on_u`/`ow_u` hold an unknown (absent) edge that must pass
+   through unchanged. `orn`/`orw` repeat both via the optional record field. */
+on   = (optnar.Node(optnar.Node(optnar.Leaf(7) as optnar?) as optnar?)) where {};
+ow   = (optwid.Node(optwid.Node(optwid.Leaf(7) as optwid?) as optwid?)) where {};
+on_u = (optnar.Node(unknown optnar)) where {};
+ow_u = (optwid.Node(unknown optwid)) where {};
+
+orn   = (ornar.Node(<{.next: ornar.Leaf(2) as ornar?}>)) where {};
+orw   = (orwid.Node(<{.next: orwid.Leaf(2) as orwid?}>)) where {};
+orn_u = (ornar.Node(<{.next: unknown ornar}>)) where {};
+orw_u = (orwid.Node(<{.next: unknown orwid}>)) where {};
 
 with {
 } test {
@@ -84,4 +112,13 @@ with {
      point is inside the `Some` arm of the inner variant). */
   t_nv_leaf: (nvnar.Leaf(4) as nvwid) == nvwid.Leaf(4);
   t_nv_some: (nvn as nvwid) == nvw;
+  /* Widening through an OPTIONAL payload (#159): a known self-edge is recursed
+     into, an unknown one passes through. Both the direct optional payload and
+     the optional record field are exercised. */
+  t_opt_leaf:       (optnar.Leaf(4) as optwid) == optwid.Leaf(4);
+  t_opt_known:      (on as optwid) == ow;
+  t_opt_unknown:    (on_u as optwid) == ow_u;
+  t_opt_neq:        (on_u as optwid) != ow;
+  t_optrec_known:   (orn as orwid) == orw;
+  t_optrec_unknown: (orn_u as orwid) == orw_u;
 };
