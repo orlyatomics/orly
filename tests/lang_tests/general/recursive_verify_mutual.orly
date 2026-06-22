@@ -1,0 +1,109 @@
+/* <orly/lang_tests/general/recursive_verify_mutual.orly>
+
+   Tests #128 Option B verification across MUTUALLY-recursive function groups.
+
+   The per-function verification fixpoint (recursive_verify.orly,
+   Symbol::TFunction::VerifyRecursiveReturns) already covers a mutual group:
+   while verifying one member F, F's re-entrancy guard is set, so EVERY path
+   back to F through the group -- a direct self-call or a call routed through
+   a sibling -- returns F's concrete return-type estimate rather than the TAny
+   placeholder. Sibling members are recomputed fresh, but a member's return
+   type is pinned by its base case and is the same whether its own recursive
+   calls read as TAny or as the concrete type (v1 variants are invariant, so a
+   return type does not grow through a cycle). So a cross-function recursive
+   result is verified in the same deferred positions as a self-recursive one,
+   and no separate group fixpoint is needed.
+
+   This file is the POSITIVE side: mutual groups that use a sibling's recursive
+   result with the CORRECT type in each deferred position, so verification must
+   accept them (and they evaluate correctly):
+
+     - operator:     `1 + depth_b(.t: c)`        (sibling result in `+`)
+     - ctor payload: `tree.Branch(mapb(.t: c))`  (sibling result in a ctor arm)
+     - argument:     `add1(.x: qq(.n: n - 1))`   (sibling result as an argument)
+
+   The NEGATIVE side -- the same positions with a WRONG type, rejected with a
+   clean compile error -- is hand-verified (a rejected program cannot be a
+   green entry in this harness; see recursive_verify.orly). For the record,
+   each mutual error is caught at its strict-check site exactly as the
+   self-recursive form is, e.g. a sibling that returns `str` fed to `+ 1`
+   ("This expression is invalid.", orly/type/add_visitor.h), a `str` result
+   fed where an `int` ctor arm is wanted, and an `int` result passed to a
+   `str` parameter.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Branch(tree) |>;
+
+/* Baseline mutual recursion: classic even/odd. No deferred position, but the
+   group's return types resolve through the cycle. */
+is_even = ((true  if n == 0 else is_odd(.n: n - 1))) where { n = given::(int); };
+is_odd  = ((false if n == 0 else is_even(.n: n - 1))) where { n = given::(int); };
+
+/* (operator) Tree depth, two functions alternating: the sibling's recursive
+   result feeds `+`. */
+depth_a = ((t) when {
+  Leaf(n):   0;
+  Branch(c): 1 + depth_b(.t: c);
+}) where {
+  t = given::(tree);
+};
+depth_b = ((t) when {
+  Leaf(n):   0;
+  Branch(c): 1 + depth_a(.t: c);
+}) where {
+  t = given::(tree);
+};
+
+/* (ctor payload) Rebuild a tree through a mutual transform: the sibling's
+   recursive result lands in the Branch ctor's payload. */
+map_a = ((t) when {
+  Leaf(n):   tree.Leaf(n + 1);
+  Branch(c): tree.Branch(map_b(.t: c));
+}) where {
+  t = given::(tree);
+};
+map_b = ((t) when {
+  Leaf(n):   tree.Leaf(n + 2);
+  Branch(c): tree.Branch(map_a(.t: c));
+}) where {
+  t = given::(tree);
+};
+
+/* (argument) The sibling's recursive result is passed as an argument. */
+add1 = ((x + 1)) where { x = given::(int); };
+p_cnt = ((0 if (n <= 0) else add1(.x: q_cnt(.n: n - 1)))) where { n = given::(int); };
+q_cnt = ((0 if (n <= 0) else add1(.x: p_cnt(.n: n - 1)))) where { n = given::(int); };
+
+leaf2  = (tree.Branch(tree.Leaf(0))) where {};
+
+test {
+  /* baseline mutual recursion. */
+  t_even: is_even(.n: 4);
+  t_odd:  is_odd(.n: 3);
+
+  /* operator: sibling result in `+`. */
+  t_depth_leaf: depth_a(.t: tree.Leaf(0)) == 0;
+  t_depth_deep: depth_a(.t: leaf2) == 1;
+
+  /* ctor payload: sibling result rebuilds the tree (the two functions add
+     different amounts, so alternation is observable). */
+  t_map_leaf: map_a(.t: tree.Leaf(0)) == tree.Leaf(1);
+  t_map_deep: map_a(.t: leaf2) == tree.Branch(tree.Leaf(2));
+
+  /* argument: sibling result passed to a helper. */
+  t_cnt_p: p_cnt(.n: 3) == 3;
+  t_cnt_q: q_cnt(.n: 2) == 2;
+};
