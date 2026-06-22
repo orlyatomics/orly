@@ -1,0 +1,101 @@
+/* <orly/lang_tests/general/recursive_verify.orly>
+
+   Tests #128 Option B: the recursive-return verification fixpoint. A
+   recursive call returns the `TAny` placeholder while a function's return
+   type is being inferred, so the payload / argument / operator checks that
+   would normally fire are skipped on it (Option A, #129/#157). Option B
+   re-evaluates each function body once the return type is inferred, with
+   the recursive call resolved to that concrete type, so those checks run
+   and a genuine error in a recursive result is caught.
+
+   This file is the POSITIVE side: three recursive functions that use their
+   own recursive result in each of the deferred positions with the CORRECT
+   type, so verification must accept them (and they evaluate correctly):
+
+     - operator:     `sum(.t: b.l) + sum(.t: b.r)`     (recursive result in `+`)
+     - ctor payload: `tree.Branch(<{.l: dbl(...), ...}>)` (recursive result in a
+                     variant ctor payload field)
+     - argument:     `max2(.a: maxleaf(...), .b: ...)`  (recursive result as a
+                     function-call argument)
+
+   Each converges in one extra pass: the base-case arm fixes the return type
+   (`int` / `tree`), and feeding that back into the recursive arm reproduces
+   it.
+
+   The NEGATIVE side -- the same three positions with a WRONG type, which
+   verification now rejects with a clean compile error -- cannot be a green
+   entry in this harness (a rejected program has a non-zero exit). They are
+   hand-verified; for the record, each is rejected at its strict-check site:
+
+     - `tree.Leaf(rec)` where `rec` is a `tree` (Leaf wants int):
+         "variant constructor payload type does not match the declared type
+          of arm \"Leaf\"" (orly/expr/variant.cc)
+     - `rec + 1` where `rec` is a `str`:
+         "This expression is invalid." (orly/type/add_visitor.h)
+     - `needs_str(.s: rec)` where `rec` is an `int`:
+         "Function call with parameter type mismatch" (orly/expr/function_app.cc)
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+tree is <| Leaf(int) | Branch(<{.l: tree, .r: tree}>) |>;
+
+/* (operator) Sum the leaves: the recursive results feed `+`. */
+sum = ((t) when {
+  Leaf(n):   n;
+  Branch(b): sum(.t: b.l) + sum(.t: b.r);
+}) where {
+  t = given::(tree);
+};
+
+/* (ctor payload) Double every leaf, rebuilding the tree from the recursive
+   results in the Branch payload's `.l` / `.r` fields. */
+dbl = ((t) when {
+  Leaf(n):   tree.Leaf(n + n);
+  Branch(b): tree.Branch(<{.l: dbl(.t: b.l), .r: dbl(.t: b.r)}>);
+}) where {
+  t = given::(tree);
+};
+
+/* (argument) Largest leaf: the recursive results are passed as arguments. */
+max2 = ((a if a > b else b)) where {
+  a = given::(int);
+  b = given::(int);
+};
+
+maxleaf = ((t) when {
+  Leaf(n):   n;
+  Branch(b): max2(.a: maxleaf(.t: b.l), .b: maxleaf(.t: b.r));
+}) where {
+  t = given::(tree);
+};
+
+sample = (tree.Branch(<{
+            .l: tree.Leaf(3),
+            .r: tree.Branch(<{.l: tree.Leaf(5), .r: tree.Leaf(2)}>)}>)) where {};
+
+test {
+  /* operator: recursive results summed. */
+  t_sum_leaf: sum(.t: tree.Leaf(7)) == 7;
+  t_sum_deep: sum(.t: sample) == 10;
+
+  /* ctor payload: recursive results rebuild the tree. */
+  t_dbl_leaf: dbl(.t: tree.Leaf(4)) == tree.Leaf(8);
+  t_dbl_deep: dbl(.t: tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)) ==
+              tree.Branch(<{.l: tree.Leaf(2), .r: tree.Leaf(4)}>);
+
+  /* argument: recursive results passed to a helper. */
+  t_max_leaf: maxleaf(.t: tree.Leaf(9)) == 9;
+  t_max_deep: maxleaf(.t: sample) == 5;
+};

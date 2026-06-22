@@ -59,6 +59,14 @@ namespace Orly {
 
       Type::TType GetType() const;
 
+      /* Drop the memoized type so the next GetType() recomputes from
+         GetTypeImpl(). Used by the recursive-return verification fixpoint
+         (TFunction::VerifyRecursiveReturns, #128 Option B) to re-evaluate a
+         function body after substituting a concrete estimate for the
+         recursive-call placeholder -- a node that cached a concrete type from
+         a TAny operand (e.g. a variant ctor) would otherwise never re-check. */
+      void ClearCachedType() const;
+
       template <typename TFinal>
       bool Is() const;
 

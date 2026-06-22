@@ -65,6 +65,10 @@ void TScope::Remove(const Test::TTest::TPtr &test) {
 void TScope::TypeCheck() const {
   for (const auto &function : Functions) {
     function->GetType();
+    /* Verify recursive-call results that return-type inference left deferred
+       (#128 Option B). Runs here -- after the post-build widening passes have
+       settled every body -- so the re-evaluation sees the final tree. */
+    function->VerifyRecursiveReturns();
   }
   for (const auto &test : Tests) {
     test->TypeCheck();

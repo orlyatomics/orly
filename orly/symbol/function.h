@@ -79,6 +79,21 @@ namespace Orly {
 
       TScopePtr GetScope() const;
 
+      /* Verify recursive-call results in propagating positions (#128 Option B).
+         GetReturnType() defers a recursive call to a TAny placeholder while the
+         return type is being inferred, so a payload/argument/operator check on
+         that result is skipped (Option A). This re-evaluates the body with the
+         inferred return type substituted for the placeholder so those checks
+         fire against a concrete type and catch genuine errors -- e.g. a
+         recursive result fed to `+` against a `str`, or into a ctor arm that
+         wants a scalar. A two-pass fixpoint (re-evaluation cleared between
+         passes); self-recursion converges in one extra pass. Harmless for a
+         non-recursive function -- the re-evaluation just reproduces the
+         inferred type and raises nothing. Run once per function during
+         TypeCheck, after the post-build widening passes have settled the
+         body. */
+      void VerifyRecursiveReturns() const;
+
       void Remove(const TParamDef::TPtr &param_def);
 
       TScopePtr TryGetScope() const;
@@ -87,7 +102,27 @@ namespace Orly {
 
       TFunction(const TScopePtr &scope, const std::string &name, const TPosRange &pos_range);
 
+      /* Drop the memoized type of every node in the body expr tree (but NOT of
+         inner/where-bound function bodies -- they are their own roots and
+         fixpoint independently). Used by VerifyRecursiveReturns between passes
+         so the re-evaluation actually recomputes nodes that cached a concrete
+         type from a TAny operand. */
+      void ClearBodyCachedTypes() const;
+
+      /* Re-entrancy guard for return-type inference: set while computing the
+         body type so a recursive call returns the placeholder rather than
+         recursing forever. */
       mutable bool IsRecursive;
+
+      /* Set while VerifyRecursiveReturns re-evaluates the body: a recursive
+         call then returns RecursiveEstimate (the current concrete return-type
+         estimate) instead of the TAny placeholder, so the strict checks fire.
+         (#128 Option B.) */
+      mutable bool Verifying;
+
+      /* The concrete return-type estimate handed back to a recursive call
+         during verification. Only meaningful while Verifying is true. */
+      mutable Type::TType RecursiveEstimate;
 
       TParamDefSet ParamDefs;
 
