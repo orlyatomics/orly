@@ -27,6 +27,8 @@
 #include <base/as_str.h>
 #include <base/assert_true.h>
 #include <base/hash.h>
+#include <orly/expr/addr.h>
+#include <orly/expr/addr_member.h>
 #include <orly/expr/as.h>
 #include <orly/expr/function_app.h>
 #include <orly/expr/if_else.h>
@@ -34,6 +36,7 @@
 #include <orly/expr/obj.h>
 #include <orly/expr/obj_member.h>
 #include <orly/expr/ref.h>
+#include <orly/expr/sequence_of.h>
 #include <orly/expr/unknown.h>
 #include <orly/expr/variant.h>
 #include <orly/expr/walker.h>
@@ -46,9 +49,14 @@
 #include <orly/synth/get_pos_range.h>
 #include <orly/synth/new_expr.h>
 #include <orly/synth/new_type.h>
+#include <orly/type/addr.h>
+#include <orly/type/dict.h>
 #include <orly/type/impl.h>
+#include <orly/type/list.h>
 #include <orly/type/obj.h>
 #include <orly/type/opt.h>
+#include <orly/type/seq.h>
+#include <orly/type/set.h>
 #include <orly/type/unroll.h>
 #include <orly/type/unwrap.h>
 #include <orly/type/variant.h>
@@ -95,6 +103,13 @@ namespace {
        recursive call. Null while pre-flighting support with CanRebuild(). */
     Symbol::TResultDef::TPtr WidenResult;
     TPosRange PosRange;
+    /* For dict-of-self payloads only: the package scope that minted pair
+       helpers are added to, a per-fold cache (keyed by the dict's key type)
+       of the helper that rebuilds one key/value pair, and the base name for
+       those helpers. All null/empty while pre-flighting with CanRebuild(). */
+    Symbol::TScope::TPtr PackageScope;
+    std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> *PairHelpers;
+    std::string NameStem;
 
     /* True iff Rebuild() can convert a value of narrow subterm type `src`
        into wide type `dst`. A pure structural pre-flight (no Expr built, no
@@ -156,10 +171,37 @@ namespace {
         }
         return true;
       }
-      /* Container (list / set / seq) and dict of self are not yet synthesized;
-         leave them to the plain cast so the type checker reports the canonical
-         #104 diagnostic. (They need the fold to map each element through the
-         recursive call -- a separate Phase 2 increment.) */
+      /* List / set of self (`Node([self])`, `Node({self})`): rebuildable iff
+         the element is the recursion point itself. The fold maps the narrow
+         widening fold over the elements (`widen(.t: **xs) as wide-container`,
+         the implicit element-wise map orly applies when a function is handed a
+         sequence) -- which only type-checks when the element is the narrow
+         variant the fold takes, so a nested container of self
+         (`[[self]]`, needing a per-element fold of its own) is left to the
+         plain cast's canonical #104 diagnostic. */
+      if (const auto *src_list = src.TryAs<Type::TList>()) {
+        const auto *dst_list = dst.TryAs<Type::TList>();
+        return dst_list && src_list->GetElem() == NarrowVariant
+            && dst_list->GetElem() == WideVariant;
+      }
+      if (const auto *src_set = src.TryAs<Type::TSet>()) {
+        const auto *dst_set = dst.TryAs<Type::TSet>();
+        return dst_set && src_set->GetElem() == NarrowVariant
+            && dst_set->GetElem() == WideVariant;
+      }
+      /* Dict of self (`Node({key: self})`): the key is self-free (so identical
+         narrow/wide), the value is the recursion point. Same element-only
+         restriction as list/set -- a nested container as the value is left to
+         the plain cast. */
+      if (const auto *src_dict = src.TryAs<Type::TDict>()) {
+        const auto *dst_dict = dst.TryAs<Type::TDict>();
+        return dst_dict && src_dict->GetKey() == dst_dict->GetKey()
+            && src_dict->GetVal() == NarrowVariant
+            && dst_dict->GetVal() == WideVariant;
+      }
+      /* Any other payload shape (seq, nested containers, ...) is not yet
+         synthesized; leave it to the plain cast so the type checker reports
+         the canonical #104 diagnostic. */
       return false;
     }
 
@@ -268,9 +310,85 @@ namespace {
         }
         return Expr::TWhen::New(make(), tags, bodies, PosRange);
       }
+      /* List / set of self: map the recursive widening fold over the elements
+         and collect back into the wide container.
+
+           widen(.t: **make()) as wide-container
+
+         `**make()` turns the narrow container into a sequence of its elements
+         (each the narrow variant -- the recursion point, per CanRebuild), and
+         handing that sequence to `widen` applies it element-wise (orly's
+         implicit map over a sequence argument), yielding a sequence of widened
+         elements whose deferred TAny results the `as` collect resolves to the
+         wide container. */
+      if (src.Is<Type::TList>() || src.Is<Type::TSet>()) {
+        Expr::TFunctionApp::TFunctionAppArgMap args;
+        args["t"] = Expr::TFunctionAppArg::New(Expr::TSequenceOf::New(make(), PosRange));
+        auto mapped = Expr::TFunctionApp::New(Expr::TRef::New(WidenResult, PosRange), args, PosRange);
+        return Expr::TAs::New(mapped, dst, PosRange);
+      }
+      /* Dict of self: map a per-pair helper over the key/value sequence and
+         collect back into the wide dict.
+
+           pairHelper(.p: **make()) as wide-dict
+
+         `**make()` turns the dict into a sequence of `<[key, value]>` pairs;
+         the minted pairHelper rebuilds each pair, recursing into the value
+         (the recursion point). The `as` collects the sequence of widened pairs
+         back into the wide dict, resolving the deferred element results. */
+      if (const auto *src_dict = src.TryAs<Type::TDict>()) {
+        const auto *dst_dict = dst.As<Type::TDict>();
+        auto pair_helper = GetOrMintPairHelper(src_dict->GetKey(),
+                                               src_dict->GetVal(), dst_dict->GetVal());
+        Expr::TFunctionApp::TFunctionAppArgMap args;
+        args["p"] = Expr::TFunctionAppArg::New(Expr::TSequenceOf::New(make(), PosRange));
+        auto mapped = Expr::TFunctionApp::New(Expr::TRef::New(pair_helper, PosRange), args, PosRange);
+        return Expr::TAs::New(mapped, dst, PosRange);
+      }
       /* CanRebuild() gates every call, so any other shape is a logic error. */
       assert(false);
       return make();
+    }
+
+    /* Look up -- or, on a miss, mint -- the top-level helper that rebuilds one
+       `<[key, value]>` pair of a dict-of-self payload, widening the value:
+
+         pairHelper = ((p) <[p.0, widen(.t: p.1)]>) where {
+           p = given::(<[key, narrow]>);
+         };
+
+       It is a SIBLING top-level function (not nested in the widening fold):
+       recursion is only resolved for top-level functions, and a nested helper
+       calling the enclosing fold hits the unbound-enclosing-function
+       limitation. Cached per key type within this fold (its value widening is
+       always this fold's recursion point). */
+    Symbol::TResultDef::TPtr GetOrMintPairHelper(const Type::TType &key_type,
+                                                 const Type::TType &val_src,
+                                                 const Type::TType &val_dst) const {
+      auto found = PairHelpers->find(key_type);
+      if (found != PairHelpers->end()) {
+        return found->second;
+      }
+      auto pair_type = Type::TAddr::Get({{TAddrDir::Asc, key_type}, {TAddrDir::Asc, val_src}});
+      auto name = Base::AsStr(NameStem, "Pair", PairHelpers->size());
+      auto helper = Symbol::TFunction::New(PackageScope, name, PosRange);
+      auto result = Symbol::TResultDef::New(helper, name, PosRange);
+      auto param = Symbol::TGivenParamDef::New(helper, "p", pair_type, PosRange);
+      /* Register before building the body (mirrors GetOrMintWiden). */
+      (*PairHelpers)[key_type] = result;
+      /* Body: <[p.0, <widened p.1>]> -- a fresh accessor per read (no shared
+         Expr nodes). The value rebuild is the recursion point, so Rebuild
+         emits the `widen(.t: p.1)` recursive call. */
+      auto key_member = Expr::TAddrMember::New(Expr::TRef::New(param, PosRange), 0, PosRange);
+      auto val_widened = Rebuild(
+          [this, &param]() {
+            return Expr::TAddrMember::New(Expr::TRef::New(param, PosRange), 1, PosRange);
+          },
+          val_src, val_dst);
+      Expr::TAddr::TMemberVec members{{TAddrDir::Asc, key_member},
+                                      {TAddrDir::Asc, val_widened}};
+      helper->SetExpr(Expr::TAddr::New(members, PosRange));
+      return result;
     }
 
     /* The synthesized function's body: a `when` over the narrow arms whose
@@ -338,7 +456,11 @@ namespace {
        this same function rather than recursing here. */
     cache[key] = widen;
 
-    TWidenSynth synth{narrow_type, wide_type, widen_result, pos_range};
+    /* Per-fold cache of dict pair helpers (empty unless a dict-of-self payload
+       is rebuilt); minted into the package scope alongside the fold. */
+    std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> pair_helpers;
+    TWidenSynth synth{narrow_type, wide_type, widen_result, pos_range,
+                      package_scope, &pair_helpers, name};
     widen->SetExpr(synth.BuildBody(param, narrow_variant, wide_variant));
     return widen;
   }
@@ -405,7 +527,8 @@ void Synth::SynthesizeRecursiveVariantWidenings(const Symbol::TPackage::TPtr &pa
     }
     /* Pre-flight the payload shapes; an unsupported shape is left for the
        type checker's canonical #104 diagnostic. */
-    TWidenSynth probe{src_variant->AsType(), dst_variant->AsType(), nullptr, as->GetPosRange()};
+    TWidenSynth probe{src_variant->AsType(), dst_variant->AsType(), nullptr, as->GetPosRange(),
+                      nullptr, nullptr, std::string()};
     if (!probe.CanSynthesize(src_variant, dst_variant)) {
       continue;
     }
