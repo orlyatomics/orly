@@ -23,15 +23,22 @@
    `optwid` and `ornar`/`orwid` pairs add a recursion point under an OPTIONAL
    (#159), widened by recursing into the optional's known case. The `lnar`/
    `lwid`, `snar`/`swid`, and `dnar`/`dwid` pairs add a recursion point under a
-   CONTAINER -- a list, a set, and a dict value (#159 Phase 2). The fold maps
-   itself over the container's elements (orly's implicit element-wise map over
-   a sequence, `widen(.t: **xs) as wide-container`) and collects the widened
-   elements back; the dict case maps a minted per-pair helper that widens each
-   value.
+   CONTAINER -- a list, a set, and a dict value (#159 Phase 2). The fold maps a
+   per-element widening over the container's elements (orly's implicit
+   element-wise map over a sequence, `f(.t: **xs) as wide-container`) and
+   collects them back; the dict case maps a minted per-pair helper that widens
+   each value. The `llnar`/`llwid`, `dlnar`/`dlwid`, and `lonar`/`lowid` pairs
+   nest a container one level deeper -- list-of-list, dict-value-of-list, and
+   list-of-optional of self -- where the per-element map function is a minted
+   helper that recursively rebuilds the inner container down to the recursion
+   point.
 
-   Payload shapes not yet synthesized (a bare seq of self, or a nested
-   container of self such as `[[self]]`) still report the canonical "not yet
-   supported (#104)" diagnostic.
+   With containers nesting arbitrarily, every self-placement the #103/#116
+   shape rules allow (direct, record field, nested-variant arm, optional, and
+   list/set/opt/dict-value containers in any combination) is now widenable.
+   Mutually-recursive variant GROUPS remain out of scope (a per-variant
+   widening is not a superset cast -- rejected earlier by IsWidenableTo), as
+   does implicit widening at assignment/parameter/branch join (#104 Phase 5).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -82,6 +89,20 @@ swid is <| Extra | Leaf(int) | Node({swid}) |>;
 dnar is <| Leaf(int) | Node({str: dnar}) |>;
 dwid is <| Extra | Leaf(int) | Node({str: dwid}) |>;
 
+/* Three pairs whose recursion point sits under a NESTED container (one level
+   deeper than the Phase 2 pairs): a list of lists (`Node([[self]])`), a dict
+   value that is a list (`Node({str: [self]})`), and a list of optionals
+   (`Node([self?])`). The per-element map function is now a minted helper that
+   rebuilds the inner container, recursing down to the recursion point. */
+llnar is <| Leaf(int) | Node([[llnar]]) |>;
+llwid is <| Extra | Leaf(int) | Node([[llwid]]) |>;
+
+dlnar is <| Leaf(int) | Node({str: [dlnar]}) |>;
+dlwid is <| Extra | Leaf(int) | Node({str: [dlwid]}) |>;
+
+lonar is <| Leaf(int) | Node([lonar?]) |>;
+lowid is <| Extra | Leaf(int) | Node([lowid?]) |>;
+
 /* The `as` widening through a where-bound source: the source expression
    (`rnar.Leaf(n)`) depends on a given parameter, so its type is only known
    after the whole function has built -- which is exactly why the widening is
@@ -124,6 +145,18 @@ sw = (swid.Node({swid.Leaf(1), swid.Node({swid.Leaf(2)})})) where {};
 dn = (dnar.Node({"a": dnar.Leaf(1), "b": dnar.Node({"c": dnar.Leaf(2)})})) where {};
 dw = (dwid.Node({"a": dwid.Leaf(1), "b": dwid.Node({"c": dwid.Leaf(2)})})) where {};
 
+/* Nested-container trees: the inner level holds recursion points, so the
+   minted element helper recurses one extra step. `lon`/`low` mix a known and
+   an unknown optional element to exercise both optional branches. */
+lln = (llnar.Node([[llnar.Leaf(1), llnar.Leaf(2)], [llnar.Leaf(3)]])) where {};
+llw = (llwid.Node([[llwid.Leaf(1), llwid.Leaf(2)], [llwid.Leaf(3)]])) where {};
+
+dln = (dlnar.Node({"a": [dlnar.Leaf(1), dlnar.Leaf(2)], "b": empty [dlnar]})) where {};
+dlw = (dlwid.Node({"a": [dlwid.Leaf(1), dlwid.Leaf(2)], "b": empty [dlwid]})) where {};
+
+lon = (lonar.Node([lonar.Leaf(1) as lonar?, unknown lonar])) where {};
+low = (lowid.Node([lowid.Leaf(1) as lowid?, unknown lowid])) where {};
+
 with {
 } test {
   /* The where-bound-source widening returns the wide type and preserves the
@@ -165,4 +198,12 @@ with {
   t_set_deep:   (sn as swid) == sw;
   t_dict_leaf:  (dnar.Leaf(4) as dwid) == dwid.Leaf(4);
   t_dict_deep:  (dn as dwid) == dw;
+  /* Widening through a NESTED container: a minted element helper rebuilds the
+     inner container, recursing to the recursion point. Covers list-of-list,
+     dict-value-of-list (incl. an empty inner list), and list-of-optional
+     (both a known and an unknown optional element). */
+  t_ll_deep:   (lln as llwid) == llw;
+  t_dl_deep:   (dln as dlwid) == dlw;
+  t_lo_deep:   (lon as lowid) == low;
+  t_lo_neq:    (lon as lowid) != lowid.Node([unknown lowid, unknown lowid]);
 };
