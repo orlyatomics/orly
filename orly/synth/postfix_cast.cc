@@ -103,12 +103,16 @@ namespace {
        recursive call. Null while pre-flighting support with CanRebuild(). */
     Symbol::TResultDef::TPtr WidenResult;
     TPosRange PosRange;
-    /* For dict-of-self payloads only: the package scope that minted pair
-       helpers are added to, a per-fold cache (keyed by the dict's key type)
-       of the helper that rebuilds one key/value pair, and the base name for
-       those helpers. All null/empty while pre-flighting with CanRebuild(). */
+    /* For container-of-self payloads only: the package scope that minted
+       helpers are added to, the base name for them, and two per-fold caches:
+       PairHelpers (keyed by a dict's key type) for the helper that rebuilds
+       one key/value pair, and ElemHelpers (keyed by a list/set element type)
+       for the helper that rebuilds one element whose own shape is not the
+       bare recursion point (a NESTED container of self). All null/empty while
+       pre-flighting with CanRebuild(). */
     Symbol::TScope::TPtr PackageScope;
     std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> *PairHelpers;
+    std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> *ElemHelpers;
     std::string NameStem;
 
     /* True iff Rebuild() can convert a value of narrow subterm type `src`
@@ -172,36 +176,31 @@ namespace {
         return true;
       }
       /* List / set of self (`Node([self])`, `Node({self})`): rebuildable iff
-         the element is the recursion point itself. The fold maps the narrow
-         widening fold over the elements (`widen(.t: **xs) as wide-container`,
-         the implicit element-wise map orly applies when a function is handed a
-         sequence) -- which only type-checks when the element is the narrow
-         variant the fold takes, so a nested container of self
-         (`[[self]]`, needing a per-element fold of its own) is left to the
-         plain cast's canonical #104 diagnostic. */
+         the element is. The fold maps a per-element widening over the elements
+         (`f(.t: **xs) as wide-container`, the implicit element-wise map orly
+         applies when a function is handed a sequence) and collects the result.
+         When the element is the recursion point the map function is the fold
+         itself; when it is a NESTED container of self (`[[self]]`) a per-element
+         helper rebuilds it -- see Rebuild / GetOrMintElemHelper. */
       if (const auto *src_list = src.TryAs<Type::TList>()) {
         const auto *dst_list = dst.TryAs<Type::TList>();
-        return dst_list && src_list->GetElem() == NarrowVariant
-            && dst_list->GetElem() == WideVariant;
+        return dst_list && CanRebuild(src_list->GetElem(), dst_list->GetElem());
       }
       if (const auto *src_set = src.TryAs<Type::TSet>()) {
         const auto *dst_set = dst.TryAs<Type::TSet>();
-        return dst_set && src_set->GetElem() == NarrowVariant
-            && dst_set->GetElem() == WideVariant;
+        return dst_set && CanRebuild(src_set->GetElem(), dst_set->GetElem());
       }
       /* Dict of self (`Node({key: self})`): the key is self-free (so identical
-         narrow/wide), the value is the recursion point. Same element-only
-         restriction as list/set -- a nested container as the value is left to
-         the plain cast. */
+         narrow/wide), the value rebuildable -- the recursion point, or a nested
+         container of self as the value (`{key: [self]}`). */
       if (const auto *src_dict = src.TryAs<Type::TDict>()) {
         const auto *dst_dict = dst.TryAs<Type::TDict>();
         return dst_dict && src_dict->GetKey() == dst_dict->GetKey()
-            && src_dict->GetVal() == NarrowVariant
-            && dst_dict->GetVal() == WideVariant;
+            && CanRebuild(src_dict->GetVal(), dst_dict->GetVal());
       }
-      /* Any other payload shape (seq, nested containers, ...) is not yet
-         synthesized; leave it to the plain cast so the type checker reports
-         the canonical #104 diagnostic. */
+      /* Any other payload shape (a bare seq of self -- not a legal placement
+         anyway) is not yet synthesized; leave it to the plain cast so the type
+         checker reports the canonical #104 diagnostic. */
       return false;
     }
 
@@ -310,21 +309,28 @@ namespace {
         }
         return Expr::TWhen::New(make(), tags, bodies, PosRange);
       }
-      /* List / set of self: map the recursive widening fold over the elements
-         and collect back into the wide container.
+      /* List / set of self: map a per-element widening over the elements and
+         collect back into the wide container.
 
-           widen(.t: **make()) as wide-container
+           f(.t: **make()) as wide-container
 
-         `**make()` turns the narrow container into a sequence of its elements
-         (each the narrow variant -- the recursion point, per CanRebuild), and
-         handing that sequence to `widen` applies it element-wise (orly's
-         implicit map over a sequence argument), yielding a sequence of widened
-         elements whose deferred TAny results the `as` collect resolves to the
-         wide container. */
+         `**make()` turns the narrow container into a sequence of its elements;
+         handing that sequence to `f` applies it element-wise (orly's implicit
+         map over a sequence argument), and the `as` collect resolves the
+         (deferred) element results back into the wide container. The map
+         function `f` is the fold itself when the element is the recursion
+         point, or a minted per-element helper when the element is a nested
+         container of self (`[[self]]`). Both take a parameter named "t". */
       if (src.Is<Type::TList>() || src.Is<Type::TSet>()) {
+        const auto &src_elem = src.Is<Type::TList>()
+            ? src.As<Type::TList>()->GetElem() : src.As<Type::TSet>()->GetElem();
+        const auto &dst_elem = dst.Is<Type::TList>()
+            ? dst.As<Type::TList>()->GetElem() : dst.As<Type::TSet>()->GetElem();
+        auto map_fn = (src_elem == NarrowVariant && dst_elem == WideVariant)
+            ? WidenResult : GetOrMintElemHelper(src_elem, dst_elem);
         Expr::TFunctionApp::TFunctionAppArgMap args;
         args["t"] = Expr::TFunctionAppArg::New(Expr::TSequenceOf::New(make(), PosRange));
-        auto mapped = Expr::TFunctionApp::New(Expr::TRef::New(WidenResult, PosRange), args, PosRange);
+        auto mapped = Expr::TFunctionApp::New(Expr::TRef::New(map_fn, PosRange), args, PosRange);
         return Expr::TAs::New(mapped, dst, PosRange);
       }
       /* Dict of self: map a per-pair helper over the key/value sequence and
@@ -360,8 +366,8 @@ namespace {
        It is a SIBLING top-level function (not nested in the widening fold):
        recursion is only resolved for top-level functions, and a nested helper
        calling the enclosing fold hits the unbound-enclosing-function
-       limitation. Cached per key type within this fold (its value widening is
-       always this fold's recursion point). */
+       limitation. Cached per key type within this fold. The value rebuild is
+       the recursion point, or a nested container of self (`{key: [self]}`). */
     Symbol::TResultDef::TPtr GetOrMintPairHelper(const Type::TType &key_type,
                                                  const Type::TType &val_src,
                                                  const Type::TType &val_dst) const {
@@ -377,8 +383,8 @@ namespace {
       /* Register before building the body (mirrors GetOrMintWiden). */
       (*PairHelpers)[key_type] = result;
       /* Body: <[p.0, <widened p.1>]> -- a fresh accessor per read (no shared
-         Expr nodes). The value rebuild is the recursion point, so Rebuild
-         emits the `widen(.t: p.1)` recursive call. */
+         Expr nodes). Rebuild emits the value's widening (the recursion point's
+         `widen(.t: p.1)` call, or a nested-container map). */
       auto key_member = Expr::TAddrMember::New(Expr::TRef::New(param, PosRange), 0, PosRange);
       auto val_widened = Rebuild(
           [this, &param]() {
@@ -388,6 +394,38 @@ namespace {
       Expr::TAddr::TMemberVec members{{TAddrDir::Asc, key_member},
                                       {TAddrDir::Asc, val_widened}};
       helper->SetExpr(Expr::TAddr::New(members, PosRange));
+      return result;
+    }
+
+    /* Look up -- or, on a miss, mint -- the top-level helper that rebuilds one
+       element of a list/set whose element is itself a NESTED container of self
+       (`[[self]]`, `[{self}]`, `[{key: self}]`, `[self?]`, ...):
+
+         elemHelper = ((t) <widened t>) where { t = given::(elem_src); };
+
+       The body is the element's own Rebuild -- recursing through the inner
+       container (minting further helpers as needed) down to the recursion
+       point, which calls the fold. Like the pair helper it must be a sibling
+       top-level function, and takes a parameter named "t" so the same call
+       shape works whether the map function is the fold or this helper. Cached
+       per element type within this fold. */
+    Symbol::TResultDef::TPtr GetOrMintElemHelper(const Type::TType &elem_src,
+                                                 const Type::TType &elem_dst) const {
+      auto found = ElemHelpers->find(elem_src);
+      if (found != ElemHelpers->end()) {
+        return found->second;
+      }
+      auto name = Base::AsStr(NameStem, "Elem", ElemHelpers->size());
+      auto helper = Symbol::TFunction::New(PackageScope, name, PosRange);
+      auto result = Symbol::TResultDef::New(helper, name, PosRange);
+      auto param = Symbol::TGivenParamDef::New(helper, "t", elem_src, PosRange);
+      /* Register before building the body (mirrors GetOrMintWiden), so a
+         self-referential element shape reuses this helper rather than looping. */
+      (*ElemHelpers)[elem_src] = result;
+      auto body = Rebuild(
+          [this, &param]() { return Expr::TRef::New(param, PosRange); },
+          elem_src, elem_dst);
+      helper->SetExpr(body);
       return result;
     }
 
@@ -456,11 +494,13 @@ namespace {
        this same function rather than recursing here. */
     cache[key] = widen;
 
-    /* Per-fold cache of dict pair helpers (empty unless a dict-of-self payload
-       is rebuilt); minted into the package scope alongside the fold. */
+    /* Per-fold caches of minted container helpers (empty unless a dict-of-self
+       or nested-container-of-self payload is rebuilt); minted into the package
+       scope alongside the fold. */
     std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> pair_helpers;
+    std::unordered_map<Type::TType, Symbol::TResultDef::TPtr> elem_helpers;
     TWidenSynth synth{narrow_type, wide_type, widen_result, pos_range,
-                      package_scope, &pair_helpers, name};
+                      package_scope, &pair_helpers, &elem_helpers, name};
     widen->SetExpr(synth.BuildBody(param, narrow_variant, wide_variant));
     return widen;
   }
@@ -528,7 +568,7 @@ void Synth::SynthesizeRecursiveVariantWidenings(const Symbol::TPackage::TPtr &pa
     /* Pre-flight the payload shapes; an unsupported shape is left for the
        type checker's canonical #104 diagnostic. */
     TWidenSynth probe{src_variant->AsType(), dst_variant->AsType(), nullptr, as->GetPosRange(),
-                      nullptr, nullptr, std::string()};
+                      nullptr, nullptr, nullptr, std::string()};
     if (!probe.CanSynthesize(src_variant, dst_variant)) {
       continue;
     }
