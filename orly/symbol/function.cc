@@ -20,6 +20,7 @@
 
 #include <base/assert_true.h>
 #include <orly/error.h>
+#include <orly/expr/walker.h>
 #include <orly/symbol/scope.h>
 #include <orly/type/any.h>
 
@@ -37,7 +38,8 @@ TFunction::TPtr TFunction::New(const TScope::TPtr &scope, const std::string &nam
 }
 
 TFunction::TFunction(const TScope::TPtr &scope, const std::string &name, const TPosRange &pos_range)
-    : TAnyFunction(name), IsRecursive(false), Scope(Base::AssertTrue(scope)), PosRange(pos_range) {}
+    : TAnyFunction(name), IsRecursive(false), Verifying(false),
+      Scope(Base::AssertTrue(scope)), PosRange(pos_range) {}
 
 TFunction::~TFunction() {
   auto scope = TryGetScope();
@@ -78,10 +80,18 @@ const TPosRange &TFunction::GetPosRange() const {
 Type::TType TFunction::GetReturnType() const {
   Type::TType type;
   if (IsRecursive) {
-    /* Re-entered through a recursive call: the return type is not yet known.
-       TAny is the placeholder; a `when`/if-else with a concrete arm anchors
-       it, and an all-recursive node now defers rather than throwing (#126). */
-    type = Type::TAny::Get();
+    /* Re-entered through a recursive call: the return type is not yet known. */
+    if (Verifying) {
+      /* Verification pass (#128 Option B): hand back the concrete return-type
+         estimate so the strict payload/argument/operator checks see a real
+         type and can catch a genuine error in the recursive result. */
+      type = RecursiveEstimate;
+    } else {
+      /* Inference: TAny is the placeholder; a `when`/if-else with a concrete
+         arm anchors it, and an all-recursive node defers rather than throwing
+         (#126). */
+      type = Type::TAny::Get();
+    }
   } else {
     IsRecursive = true;
     type = GetExpr()->GetType();
@@ -96,6 +106,61 @@ Type::TType TFunction::GetReturnType() const {
     }
   }
   return type;
+}
+
+void TFunction::ClearBodyCachedTypes() const {
+  /* include_inner_funcs = false: stop at inner/where-bound function roots --
+     each has its own return-type fixpoint and clearing across them would be
+     both wrong (different recursion guard) and wasteful. */
+  Expr::ForEachExpr(GetExpr(),
+      [](const Expr::TExpr::TPtr &expr) {
+        expr->ClearCachedType();
+        return false;  // keep recursing
+      },
+      /* include_inner_funcs */ false);
+}
+
+void TFunction::VerifyRecursiveReturns() const {
+  /* Pass 1: infer the return type with today's behavior -- recursive calls
+     deferred to TAny, the #126 no-base-case diagnostic fires here. */
+  Type::TType estimate = GetReturnType();
+  /* Passes 2..N: re-evaluate the body with the recursive call resolved to the
+     current estimate. Now no operand is TAny, so the payload/argument/operator
+     checks that Option A skipped on a TAny operand run normally and reject a
+     genuine error. Iterate to a fixpoint (self-recursion converges in one
+     extra pass); cap the iteration so a pathological non-converging program
+     falls back to the inferred type rather than looping. Caching is cleared
+     before each pass so a node that memoized a concrete type from a TAny
+     operand (e.g. a variant ctor) is actually rechecked. */
+  static const int max_iters = 16;
+  for (int iter = 0; iter < max_iters; ++iter) {
+    RecursiveEstimate = estimate;
+    Verifying = true;
+    /* IsRecursive so a recursive self-call re-enters and takes the
+       Verifying branch above (returning the estimate) rather than recomputing
+       the whole body. */
+    IsRecursive = true;
+    ClearBodyCachedTypes();
+    Type::TType recomputed;
+    try {
+      recomputed = GetExpr()->GetType();
+    } catch (...) {
+      Verifying = false;
+      IsRecursive = false;
+      ClearBodyCachedTypes();
+      throw;
+    }
+    Verifying = false;
+    IsRecursive = false;
+    if (recomputed == estimate) {
+      break;
+    }
+    estimate = recomputed;
+  }
+  /* Leave no trace: drop the estimate-substituted caches so later consumers
+     (codegen) recompute through the normal inference path. The resolved types
+     are identical, but this keeps verification side-effect-free. */
+  ClearBodyCachedTypes();
 }
 
 TScope::TPtr TFunction::GetScope() const {

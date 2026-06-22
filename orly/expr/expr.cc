@@ -54,6 +54,10 @@ Type::TType TExpr::GetType() const {
   return type;
 }
 
+void TExpr::ClearCachedType() const {
+  CachedType.reset();
+}
+
 void TExpr::SetExprParent(const TExprParent *expr_parent) {
   assert(expr_parent);
   assert(!ExprParent);
