@@ -79,6 +79,16 @@ namespace Orly {
        un-annotated, so the type checker reports the canonical #104 message. */
     void SynthesizeRecursiveVariantWidenings(const Symbol::TPackage::TPtr &package);
 
+    /* Insert IMPLICIT variant widenings (#104 Phase 5). Run once per package
+       after Build and BEFORE SynthesizeRecursiveVariantWidenings: it slips an
+       `as wide` cast around any value that flows into a wider variant context
+       without an explicit cast -- a function argument whose parameter is a
+       wider variant -- so the value is widened to the expected type. The
+       inserted casts are ordinary `Expr::TAs` nodes, so the widening-synth pass
+       that runs next lowers them exactly like an explicit cast (a fold for a
+       recursive widening, a flat rebuild otherwise). */
+    void InsertImplicitVariantWidenings(const Symbol::TPackage::TPtr &package);
+
   }  // Synth
 
 }  // Orly

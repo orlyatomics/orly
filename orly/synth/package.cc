@@ -63,11 +63,16 @@ TPackage::TPackage(const Package::TName &name, const Package::Syntax::TPackage *
     if (!GetContext().HasErrors()) {
       BuildSymbol();
       Build();
-      /* Turn recursive-variant `as` widenings into calls to synthesized
-         top-level folds (#104). Run after Build (every def's type is now
-         resolvable) and before TypeCheck (so the minted functions are not
-         added to the package's function set while it is being iterated). */
+      /* Insert implicit variant widenings (#104 Phase 5) -- slip `as wide`
+         casts around values flowing into a wider variant context -- then turn
+         every recursive-variant `as` widening (explicit or just-inserted) into
+         a call to a synthesized top-level fold (#104). Both run after Build
+         (every def's type is now resolvable) and before TypeCheck (so the
+         minted functions are not added to the package's function set while it
+         is being iterated, and the inserted casts are in place when the fold
+         pass collects them). */
       if (!GetContext().HasErrors()) {
+        InsertImplicitVariantWidenings(Symbol);
         SynthesizeRecursiveVariantWidenings(Symbol);
       }
     }

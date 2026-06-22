@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <base/assert_true.h>
 #include <base/class_traits.h>
 #include <orly/expr/expr.h>
@@ -40,6 +42,14 @@ namespace Orly {
       const Expr::TExpr::TPtr &GetExpr() const;
 
       void SetExpr(const Expr::TExpr::TPtr &expr);
+
+      /* Replace the held expression with one that wraps it -- `wrap(old)` must
+         return a new expression whose construction re-parents `old` to itself
+         (e.g. `Expr::TAs::New(old, ...)`). Used by the implicit-widening pass
+         (#104 Phase 5) to slip an `as wide` cast around an argument value. The
+         old expression is detached from this root before `wrap` runs, so the
+         wrapper's constructor sees it parentless and may adopt it. */
+      void WrapExpr(const std::function<Expr::TExpr::TPtr (const Expr::TExpr::TPtr &)> &wrap);
 
       protected:
 

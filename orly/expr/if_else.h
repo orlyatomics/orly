@@ -59,6 +59,16 @@ namespace Orly {
 
       const TExpr::TPtr &GetFalse() const;
 
+      /* Wrap the true / false branch with `wrap(branch)` -- used by the
+         implicit-widening pass (#104 Phase 5) to widen the narrower branch so
+         both branches share the join type. */
+      void WrapTrue(const std::function<TExpr::TPtr (const TExpr::TPtr &)> &wrap) {
+        WrapChild(GetContainer()[0], wrap);
+      }
+      void WrapFalse(const std::function<TExpr::TPtr (const TExpr::TPtr &)> &wrap) {
+        WrapChild(GetContainer()[2], wrap);
+      }
+
       virtual Type::TType GetTypeImpl() const override;
 
       private:

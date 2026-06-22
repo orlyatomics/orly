@@ -568,7 +568,179 @@ namespace {
     }
   }
 
+  /* True iff a value of variant type `src` flows into a `dst` variant context
+     by WIDENING (#104 Phase 5): both unwrap to DISTINCT variants and src
+     widens to dst -- a plain superset (IsWidenableTo) or a mutually-recursive
+     group (VariantWidensTo). When false the value is left alone (an identity,
+     an optional auto-wrap, or a genuine type error the checker will report). */
+  bool VariantWidens(const Type::TType &src, const Type::TType &dst) {
+    if (src == dst) {
+      return false;
+    }
+    const auto *src_variant = Type::Unwrap(src).TryAs<Type::TVariant>();
+    const auto *dst_variant = Type::Unwrap(dst).TryAs<Type::TVariant>();
+    if (!src_variant || !dst_variant || src_variant == dst_variant) {
+      return false;
+    }
+    if (src_variant->IsWidenableTo(dst_variant)) {
+      return true;
+    }
+    std::unordered_map<Type::TType, Type::TType> corr;
+    return Type::VariantWidensTo(src_variant->AsType(), dst_variant->AsType(), corr);
+  }
+
+  /* Wrap every argument of `app` whose value's variant type widens to the
+     parameter's variant type in an implicit `as param` cast (#104 Phase 5). */
+  void WidenAppArgs(Expr::TFunctionApp *app) {
+    Symbol::TAnyFunction::TPtr function;
+    try {
+      function = app->GetFunction();
+    } catch (...) {
+      return;  // unresolved callee -- leave it for the type checker
+    }
+    if (!function) {
+      return;
+    }
+    auto params = function->GetParams();
+    for (const auto &arg : app->GetFunctionAppArgs()) {
+      auto param = params.find(arg.first);
+      if (param == params.end()) {
+        continue;  // unexpected argument -- the type checker reports it
+      }
+      Type::TType arg_type;
+      try {
+        arg_type = arg.second->GetExpr()->GetType();
+      } catch (...) {
+        continue;
+      }
+      const Type::TType &param_type = param->second;
+      if (VariantWidens(arg_type, param_type)) {
+        arg.second->WrapExpr([&param_type](const Expr::TExpr::TPtr &e) {
+          return Expr::TAs::New(e, param_type, e->GetPosRange());
+        });
+      }
+    }
+  }
+
+  /* Widen the narrower branch of an if/else so both branches share a join
+     type (#104 Phase 5). If one branch's variant type widens to the other's,
+     wrap it in an `as <other>` cast; otherwise leave it (the type checker
+     handles equal branches and reports a genuine mismatch). */
+  void WidenIfElse(Expr::TIfElse *if_else) {
+    Type::TType t_true, t_false;
+    try {
+      t_true = if_else->GetTrue()->GetType();
+      t_false = if_else->GetFalse()->GetType();
+    } catch (...) {
+      return;
+    }
+    if (VariantWidens(t_true, t_false)) {
+      if_else->WrapTrue([&t_false](const Expr::TExpr::TPtr &e) {
+        return Expr::TAs::New(e, t_false, e->GetPosRange());
+      });
+    } else if (VariantWidens(t_false, t_true)) {
+      if_else->WrapFalse([&t_true](const Expr::TExpr::TPtr &e) {
+        return Expr::TAs::New(e, t_true, e->GetPosRange());
+      });
+    }
+  }
+
+  /* Widen the narrower arms of a `when` so all arms share a join type (#104
+     Phase 5). The join is an arm type that every other arm equals or widens to
+     (a unique maximum); when one exists, every strictly-narrower arm is wrapped
+     in an `as <join>` cast. If no arm dominates (incomparable arm types, or an
+     unresolved TAny arm inside a fold), nothing is changed. */
+  void WidenWhen(Expr::TWhen *when) {
+    const size_t arm_count = when->GetArmCount();
+    if (arm_count < 2) {
+      return;
+    }
+    std::vector<Type::TType> types(arm_count);
+    for (size_t i = 0; i < arm_count; ++i) {
+      try {
+        types[i] = when->GetArmBody(i)->GetType();
+      } catch (...) {
+        return;
+      }
+    }
+    for (size_t j = 0; j < arm_count; ++j) {
+      const Type::TType &join = types[j];
+      bool dominates = true;
+      for (size_t i = 0; i < arm_count && dominates; ++i) {
+        dominates = (types[i] == join) || VariantWidens(types[i], join);
+      }
+      if (!dominates) {
+        continue;
+      }
+      for (size_t i = 0; i < arm_count; ++i) {
+        if (types[i] != join && VariantWidens(types[i], join)) {
+          when->WrapArmBody(i, [&join](const Expr::TExpr::TPtr &e) {
+            return Expr::TAs::New(e, join, e->GetPosRange());
+          });
+        }
+      }
+      return;
+    }
+  }
+
+  /* Every flow point the implicit-widening pass rewrites, gathered from one
+     expression tree (including inner / where-bound functions). */
+  struct TWidenSites {
+    std::vector<Expr::TFunctionApp *> Apps;
+    std::vector<Expr::TIfElse *> IfElses;
+    std::vector<Expr::TWhen *> Whens;
+  };
+
+  void CollectWidenSites(const Expr::TExpr::TPtr &root, TWidenSites &sites) {
+    if (!root) {
+      return;
+    }
+    Expr::ForEachExpr(root, [&sites](const Expr::TExpr::TPtr &expr) -> bool {
+      if (auto *app = dynamic_cast<Expr::TFunctionApp *>(expr.get())) {
+        sites.Apps.push_back(app);
+      } else if (auto *if_else = dynamic_cast<Expr::TIfElse *>(expr.get())) {
+        sites.IfElses.push_back(if_else);
+      } else if (auto *when = dynamic_cast<Expr::TWhen *>(expr.get())) {
+        sites.Whens.push_back(when);
+      }
+      return false;  // keep recursing
+    }, /* include_inner_funcs */ true);
+  }
+
+  void CollectWidenSitesInTestBlock(const Symbol::Test::TTestCaseBlock::TPtr &block,
+                                    TWidenSites &sites) {
+    if (!block) {
+      return;
+    }
+    for (const auto &test_case : block->GetTestCases()) {
+      CollectWidenSites(test_case->GetExpr(), sites);
+      CollectWidenSitesInTestBlock(test_case->GetOptTestCaseBlock(), sites);
+    }
+  }
+
 }  // namespace
+
+void Synth::InsertImplicitVariantWidenings(const Symbol::TPackage::TPtr &package) {
+  assert(package);
+  /* Collect every flow point first (mutating one must not disturb an
+     in-progress traversal), then widen. */
+  TWidenSites sites;
+  for (const auto &func : package->GetFunctions()) {
+    CollectWidenSites(func->GetExpr(), sites);
+  }
+  for (const auto &test : package->GetTests()) {
+    CollectWidenSitesInTestBlock(test->GetTestCaseBlock(), sites);
+  }
+  for (auto *app : sites.Apps) {
+    WidenAppArgs(app);
+  }
+  for (auto *if_else : sites.IfElses) {
+    WidenIfElse(if_else);
+  }
+  for (auto *when : sites.Whens) {
+    WidenWhen(when);
+  }
+}
 
 void Synth::SynthesizeRecursiveVariantWidenings(const Symbol::TPackage::TPtr &package) {
   assert(package);
