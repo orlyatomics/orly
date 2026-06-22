@@ -33,6 +33,7 @@
 
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include <orly/type/group_ref.h>
@@ -69,6 +70,25 @@ namespace Orly {
        leaf and the rest of the single-recursion machinery carry it. `member`
        must be a type built by MakeRecGroup. */
     TType InlinedMemberType(const TType &member);
+
+    /* The group-aware variant widening (subtype) relation `narrow ⊑ wide`
+       (issue #104): the coinductive generalization of TVariant::IsWidenableTo
+       across a mutually-recursive group. A `<| X(b) |> as <| Extra | X(b') |>`
+       widening, where `b`/`b'` are sibling group members, is legal iff walking
+       the two variants in lockstep -- each member's tag set may widen (subset),
+       but its arm payloads must be structurally IDENTICAL except where a
+       TGroupRef on each side denotes a corresponding member pair (which must
+       itself widen) -- succeeds. This is exactly IsWidenableTo for a single
+       def (whose self-edge is a shared de Bruijn TSelfRef, so the payloads are
+       literally identical); the relaxation is only at cross-member TGroupRef
+       leaves. NOT general payload subtyping (a differing scalar or nested
+       non-member variant fails), which keeps it sound for the rebuild codegen.
+
+       On success `corr` is filled with each reachable narrow member variant
+       mapped to its wide correspondent -- a well-defined 1:1 mapping the synth
+       uses to mint one fold per member (an inconsistent mapping fails). */
+    bool VariantWidensTo(const TType &narrow, const TType &wide,
+                         std::unordered_map<TType, TType> &corr);
 
   }  // Type
 

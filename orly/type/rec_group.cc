@@ -158,7 +158,126 @@ namespace {
     return t;
   }
 
+  /* --- Group-aware variant widening relation (issue #104). --- */
+
+  struct TWidenChecker {
+    unordered_map<TType, TType> &Corr;          // narrow member -> wide member
+    vector<pair<TType, TType>> Work;            // member pairs still to verify
+
+    /* Record a narrow->wide member correspondence; enqueue a new pair for
+       verification; reject an inconsistent remapping (each narrow member must
+       map to a single wide member -- the synth mints one fold per member). */
+    bool Link(const TType &n, const TType &w) {
+      auto it = Corr.find(n);
+      if (it != Corr.end()) {
+        return it->second == w;
+      }
+      Corr[n] = w;
+      Work.emplace_back(n, w);
+      return true;
+    }
+
+    /* Two arm-payload positions: structurally identical except that a
+       TGroupRef on each side may denote a corresponding (co-widening) member
+       pair. Compound payloads recurse; everything else must be equal. */
+    bool PayloadOk(const TType &n, const TType &w) {
+      if (n == w) {
+        return true;
+      }
+      if (const TGroupRef *ng = n.TryAs<TGroupRef>()) {
+        const TGroupRef *wg = w.TryAs<TGroupRef>();
+        return wg && Link(ResolveGroupRef(ng), ResolveGroupRef(wg));
+      }
+      if (const TObj *no = n.TryAs<TObj>()) {
+        const TObj *wo = w.TryAs<TObj>();
+        if (!wo || no->GetElems().size() != wo->GetElems().size()) {
+          return false;
+        }
+        const auto &we = wo->GetElems();
+        for (const auto &f : no->GetElems()) {
+          auto wf = we.find(f.first);
+          if (wf == we.end() || !PayloadOk(f.second, wf->second)) {
+            return false;
+          }
+        }
+        return true;
+      }
+      /* A nested non-member variant in a payload (e.g. `Some(b) | None`): its
+         tag set must be identical (only group members may tag-widen), but its
+         payloads may reach corresponding group refs. */
+      if (const TVariant *nv = n.TryAs<TVariant>()) {
+        const TVariant *wv = w.TryAs<TVariant>();
+        if (!wv || nv->GetElems().size() != wv->GetElems().size()) {
+          return false;
+        }
+        const auto &we = wv->GetElems();
+        for (const auto &arm : nv->GetElems()) {
+          auto wa = we.find(arm.first);
+          if (wa == we.end() || !PayloadOk(arm.second, wa->second)) {
+            return false;
+          }
+        }
+        return true;
+      }
+      if (const TList *nl = n.TryAs<TList>()) {
+        const TList *wl = w.TryAs<TList>();
+        return wl && PayloadOk(nl->GetElem(), wl->GetElem());
+      }
+      if (const TSet *ns = n.TryAs<TSet>()) {
+        const TSet *ws = w.TryAs<TSet>();
+        return ws && PayloadOk(ns->GetElem(), ws->GetElem());
+      }
+      if (const TOpt *no = n.TryAs<TOpt>()) {
+        const TOpt *wo = w.TryAs<TOpt>();
+        return wo && PayloadOk(no->GetElem(), wo->GetElem());
+      }
+      if (const TDict *nd = n.TryAs<TDict>()) {
+        const TDict *wd = w.TryAs<TDict>();
+        return wd && nd->GetKey() == wd->GetKey() && PayloadOk(nd->GetVal(), wd->GetVal());
+      }
+      return false;  // differing scalar / self-ref / shape: not group-widenable
+    }
+
+    /* A member variant widens: its tags are a subset and each shared arm's
+       payload is PayloadOk. */
+    bool MemberOk(const TType &n, const TType &w) {
+      const TVariant *nv = n.TryAs<TVariant>();
+      const TVariant *wv = w.TryAs<TVariant>();
+      if (!nv || !wv) {
+        return false;
+      }
+      const auto &we = wv->GetElems();
+      for (const auto &arm : nv->GetElems()) {
+        auto wa = we.find(arm.first);
+        if (wa == we.end() || !PayloadOk(arm.second, wa->second)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    bool Run(const TType &narrow, const TType &wide) {
+      if (!Link(narrow, wide)) {
+        return false;
+      }
+      while (!Work.empty()) {
+        auto pair = Work.back();
+        Work.pop_back();
+        if (!MemberOk(pair.first, pair.second)) {
+          return false;
+        }
+      }
+      return true;
+    }
+  };  // TWidenChecker
+
 }  // namespace
+
+bool Orly::Type::VariantWidensTo(const TType &narrow, const TType &wide,
+                                 unordered_map<TType, TType> &corr) {
+  TWidenChecker checker{corr, {}};
+  return checker.Run(narrow, wide);
+}
 
 vector<TType> Orly::Type::MakeRecGroup(const vector<TVariantElems> &members) {
   const size_t n = members.size();
