@@ -80,6 +80,13 @@ Type::TType TAs::GetTypeImpl() const {
     virtual void operator()(const Type::TAny      *, const Type::TInt      *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TList     *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TObj      *rhs) const { Type = rhs->AsType(); }
+    /* A recursive widening fold defers each recursive call to the TAny
+       placeholder (#128/#157), so the optional lift the synth pass wraps around
+       such a call -- `widen(..) as wide?` for an optional-of-self payload --
+       runs the cast visitor over (TAny, TOpt). The base visitor reports that as
+       NOT_IMPLEMENTED; for an explicit cast the result is simply the concrete
+       target, exactly as the other (TAny, *) arms above (#104/#159). */
+    virtual void operator()(const Type::TAny      *, const Type::TOpt      *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TReal     *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TSet      *rhs) const { Type = rhs->AsType(); }
     virtual void operator()(const Type::TAny      *, const Type::TStr      *rhs) const { Type = rhs->AsType(); }
