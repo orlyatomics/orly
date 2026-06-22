@@ -82,6 +82,19 @@ void TVariantWhen::WriteExpr(TCppPrinter &out) const {
   out << '(' << Arms.back().second << "))";
 }
 
+TOptWhen::TOptWhen(const L0::TPackage *package,
+                   const Type::TType &type,
+                   const TInline::TPtr &operand,
+                   const TInline::TPtr &known_body,
+                   const TInline::TPtr &unknown_body)
+    : TInline(package, type), Operand(operand), KnownBody(known_body), UnknownBody(unknown_body) {}
+
+void TOptWhen::WriteExpr(TCppPrinter &out) const {
+  /* Presence selects the arm; the `Known(v)` binder reads `(op).GetVal()`
+     inside the known body (an `optional.Known` accessor). */
+  out << "((" << Operand << ").IsKnown() ? (" << KnownBody << ") : (" << UnknownBody << "))";
+}
+
 TVariantWiden::TVariantWiden(const L0::TPackage *package,
                              const Type::TType &type,
                              const TInline::TPtr &operand,

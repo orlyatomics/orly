@@ -614,10 +614,16 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TObjMember *that) const {
       /* `e.<Tag>` overloads on operand type (matching Expr::TObjMember::
          GetTypeImpl): a variant operand is the #95 guarded payload
-         accessor (-> GetV<Tag>()); a record operand is field access. */
-      if (Type::Unwrap(that->GetExpr()->GetType()).Is<Type::TVariant>()) {
+         accessor (-> GetV<Tag>()); an optional operand's `.Known` is the
+         optional's payload accessor, the same unwrap as `known e` (#105);
+         a record operand is field access. */
+      const Type::TType operand_type = Type::Unwrap(that->GetExpr()->GetType());
+      if (operand_type.Is<Type::TVariant>()) {
         Res = TVariantMember::TPtr(new TVariantMember(Package, ReturnType,
             Build(Package, that->GetExpr(), false), that->GetName()));
+      } else if (operand_type.Is<Type::TOpt>()) {
+        Res = Interner.GetUnary(Package, ReturnType, TUnary::Known,
+            Build(Package, that->GetExpr(), false));
       } else {
         Res = Interner.GetObjMember(Package, ReturnType, Build(Package, that->GetExpr(), true), that->GetName());
       }
@@ -765,11 +771,26 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
           Build(Package, that->GetExpr(), false), that->GetWhich()));
     }
     virtual void operator()(const Expr::TWhen *that) const {
+      TInline::TPtr operand = Build(Package, that->GetOperand(), false);
+      /* An optional operand is the built-in sum `<| Known(T) | Unknown |>`
+         (#105): select on the presence flag rather than a `GetWhich()`. */
+      if (Type::Unwrap(that->GetOperand()->GetType()).Is<Type::TOpt>()) {
+        TInline::TPtr known_body, unknown_body;
+        for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
+          TInline::TPtr body = Build(Package, that->GetArmBody(arm_idx), false);
+          if (that->GetArmTag(arm_idx) == "Known") {
+            known_body = body;
+          } else {
+            unknown_body = body;
+          }
+        }
+        Res = TInline::TPtr(new TOptWhen(Package, ReturnType, operand, known_body, unknown_body));
+        return;
+      }
       /* Lower to a nested ternary on the operand's active arm (#95 Phase 4),
          reusing the M4 GetWhich() primitive. The operand inline is shared
          across arms; exhaustiveness was checked at type time, so the last
          arm is the unconditional fall-through. */
-      TInline::TPtr operand = Build(Package, that->GetOperand(), false);
       TVariantWhen::TArmVec arms;
       for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
         arms.emplace_back(that->GetArmWhich(arm_idx),

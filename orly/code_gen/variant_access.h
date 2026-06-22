@@ -131,6 +131,47 @@ namespace Orly {
         mutable bool InDependsOn = false;
     }; // TVariantWhen
 
+    /* `(e) when { Known(v): ...; Unknown: ...; }` over an OPTIONAL operand
+       (#105) -- the built-in sum `<| Known(T) | Unknown |>`. Lowers to a
+       ternary on the optional's presence flag rather than a `GetWhich()`:
+         ((op).IsKnown() ? (known_body) : (unknown_body))
+       The `Known(v)` payload binder reaches the value via `(op).GetVal()`
+       (an `optional.Known` accessor lowered to TUnary::Known), so this node
+       just selects the branch. */
+    class TOptWhen : public TInline {
+      NO_COPY(TOptWhen);
+      public:
+
+      TOptWhen(const L0::TPackage *package,
+               const Type::TType &type,
+               const TInline::TPtr &operand,
+               const TInline::TPtr &known_body,
+               const TInline::TPtr &unknown_body);
+
+      void WriteExpr(TCppPrinter &out) const;
+
+      virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
+        /* Reentrancy guard mirroring TVariantWhen: an arm may map over a
+           recursive call that reaches back into this same `when`. */
+        if (!InDependsOn) {
+          InDependsOn = true;
+          for (const auto &dep : {Operand, KnownBody, UnknownBody}) {
+            dependency_set.insert(dep);
+            dep->AppendDependsOn(dependency_set);
+          }
+          InDependsOn = false;
+        }
+      }
+
+      private:
+        TInline::TPtr Operand;
+        TInline::TPtr KnownBody;
+        TInline::TPtr UnknownBody;
+
+        /* True while inside AppendDependsOn, to detect reentrant recursion. */
+        mutable bool InDependsOn = false;
+    }; // TOptWhen
+
     /* `narrow_val as wide_t` -- widening a narrow variant to a superset
        variant (#104). The narrow and wide native structs have different
        `Which` numbering (the asciibetical arm index shifts when arms are
