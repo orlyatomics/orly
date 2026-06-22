@@ -1,0 +1,90 @@
+/* <orly/lang_tests/general/variants_widen_implicit.orly>
+
+   IMPLICIT variant widening (issue #104 Phase 5): a narrow variant value
+   flows into a wider variant context WITHOUT an explicit `as` cast, and is
+   widened automatically. The explicit `as` operator (the rest of #104) is the
+   substrate -- the synth pass InsertImplicitVariantWidenings simply slips an
+   `as wide` cast in wherever a value reaches a wider variant context, so the
+   existing widening machinery (a synthesized fold for a recursive widening, a
+   flat reinterpret-rebuild otherwise) lowers it. The flow points:
+
+     - a FUNCTION ARGUMENT whose parameter is a wider variant; and
+     - a BRANCH JOIN -- the arms of an `if/else` or a `when` -- where the
+       result type is the widest arm and every narrower arm widens to it.
+
+   All three widening kinds reach here: single-def recursive (`rnar`/`rwid`),
+   non-recursive (`flat_n`/`flat_w`), and a mutually-recursive group
+   (`anar`/`bnar` -> `awid`/`bwid`). A widening only happens when the source is
+   a strict-narrower variant; an exact-type argument or same-type branches are
+   untouched, and a genuinely incompatible type is still a clean error.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+rnar is <| Leaf(int) | Node(<{.next: rnar}>) |>;
+rwid is <| Extra | Leaf(int) | Node(<{.next: rwid}>) |>;
+
+flat_n is <| A | B(int) |>;
+flat_w is <| A | B(int) | C |>;
+
+anar is <| Leaf(int) | ToB(bnar) |>;
+bnar is <| Node(anar) | Nil |>;
+awid is <| Extra | Leaf(int) | ToB(bwid) |>;
+bwid is <| Other | Node(awid) | Nil |>;
+
+/* Functions whose parameters are the WIDE types; calls below pass narrow
+   values, widened implicitly at the boundary. */
+is_leaf   = ((t is Leaf)) where { t = given::(rwid); };
+echo_w    = ((v)) where { v = given::(flat_w); };
+a_is_leaf = ((t is Leaf)) where { t = given::(awid); };
+
+nn = (rnar.Node(<{.next: rnar.Leaf(5)}>)) where {};
+
+/* if/else branch join: a wide branch and a narrow branch -> the narrow branch
+   widens to the wide result type. */
+pick = ((rwid.Extra() if b else rnar.Leaf(n))) where {
+  b = given::(bool);
+  n = given::(int);
+};
+
+/* when arm join: arms of mixed narrow (flat_n) and wide (flat_w) result type
+   all widen to the common wide type. */
+classify = (((v) when {
+  A:    flat_n.B(0);
+  B(k): flat_w.B(k);
+  C:    flat_n.A();
+})) where {
+  v = given::(flat_w);
+};
+
+test {
+  /* Parameter binding -- recursive widening at the boundary. */
+  t_param_rec_leaf: is_leaf(.t: rnar.Leaf(5));
+  t_param_rec_node: not is_leaf(.t: nn);
+  /* Parameter binding -- non-recursive (flat) widening. */
+  t_param_flat_b: echo_w(.v: flat_n.B(3)) == flat_w.B(3);
+  t_param_flat_a: echo_w(.v: flat_n.A()) == flat_w.A();
+  /* Parameter binding -- mutually-recursive group widening. */
+  t_param_grp_leaf: a_is_leaf(.t: anar.Leaf(9));
+  t_param_grp_tob:  not a_is_leaf(.t: anar.ToB(bnar.Nil()));
+  /* An explicit `as` to the same wide type still works at the boundary. */
+  t_param_explicit: is_leaf(.t: (rnar.Leaf(1) as rwid));
+  /* if/else branch join widens the narrow branch to the wide result. */
+  t_if_wide:   pick(.b: true, .n: 9) == rwid.Extra();
+  t_if_narrow: pick(.b: false, .n: 9) == rwid.Leaf(9);
+  /* when arm join widens narrow arms to the common wide type. */
+  t_when_a: classify(.v: flat_w.A()) == flat_w.B(0);
+  t_when_b: classify(.v: flat_w.B(7)) == flat_w.B(7);
+  t_when_c: classify(.v: flat_w.C()) == flat_w.A();
+};

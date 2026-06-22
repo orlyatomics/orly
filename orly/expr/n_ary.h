@@ -24,6 +24,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -104,6 +105,25 @@ namespace Orly {
       }
 
       protected:
+
+      TContainer &GetContainer() {
+        return Container;
+      }
+
+      /* Replace child `slot` (a reference into Container) with `wrap(slot)`,
+         re-parenting safely: the old child is detached from this node first so
+         the wrapper's constructor may adopt it (SetExprParent asserts the
+         child is parentless), then the wrapper is parented here. Used by the
+         implicit-widening pass (#104 Phase 5) to slip an `as wide` cast around
+         a branch / arm value. */
+      void WrapChild(TExpr::TPtr &slot,
+                     const std::function<TExpr::TPtr (const TExpr::TPtr &)> &wrap) {
+        assert(slot);
+        slot->UnsetExprParent(this);
+        slot = wrap(slot);
+        assert(slot);
+        slot->SetExprParent(this);
+      }
 
       /* Empty constructor */
       TNAry(const TPosRange &pos_range)

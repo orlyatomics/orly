@@ -46,3 +46,12 @@ void TRoot::SetExpr(const Expr::TExpr::TPtr &expr) {
   Expr = expr;
   Expr->SetExprParent(this);
 }
+
+void TRoot::WrapExpr(const std::function<Expr::TExpr::TPtr (const Expr::TExpr::TPtr &)> &wrap) {
+  assert(Expr);
+  /* Detach the current expression so the wrapper's constructor can adopt it
+     (SetExprParent asserts the child is parentless), then re-root the wrapper. */
+  Expr->UnsetExprParent(this);
+  Expr = Base::AssertTrue(wrap(Expr));
+  Expr->SetExprParent(this);
+}

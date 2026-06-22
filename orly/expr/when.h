@@ -78,6 +78,14 @@ namespace Orly {
         return GetContainer()[arm_idx + 1];
       }
 
+      /* Wrap arm `arm_idx`'s body with `wrap(body)` -- used by the implicit-
+         widening pass (#104 Phase 5) to widen a narrower arm so all arms share
+         the join type. */
+      void WrapArmBody(size_t arm_idx,
+                       const std::function<TExpr::TPtr (const TExpr::TPtr &)> &wrap) {
+        WrapChild(GetContainer()[arm_idx + 1], wrap);
+      }
+
       /* The asciibetical index (the value the generated native struct's
          GetWhich() returns) of arm `arm_idx`'s tag in the operand variant
          type. Valid once the operand has type-checked as a variant. */
