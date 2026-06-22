@@ -1,0 +1,100 @@
+/* <orly/lang_tests/general/when_optional.orly>
+
+   Tests #105 Stage 1: `when` over an OPTIONAL, treating the built-in optional
+   `T?` as the sum `<| Known(T) | Unknown |>`. This shares the variant
+   destructuring surface (`when`, the `Tag(binder)` payload bind) with
+   optionals, so the `is known ... else ...` idiom can be written as an
+   exhaustive match:
+
+     (o) when {
+       Known(v): <use v, the unwrapped value>;
+       Unknown:  <the absent case>;
+     }
+
+   The `Known(v)` binder reaches the payload through an `optional.Known`
+   accessor (the same unwrap as prefix `known`); `Unknown` is the payload-less
+   arm. Exhaustiveness requires exactly the two arms `Known` and `Unknown`.
+
+   This is a surface unification only -- the optional's representation,
+   auto-unwrap-through-operators, storage, and codegen are unchanged. The
+   deeper type-level reduction of `TOpt` to a `TVariant` is out of scope
+   (blocked by variant on-disk storage being defined in terms of `TOpt`).
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* Scalar optional: bind the value in the Known arm, fall back in Unknown. */
+plus1 = ((o) when {
+  Known(v): v + 1;
+  Unknown:  0;
+}) where {
+  o = given::(int?);
+};
+
+/* The binder value is an ordinary expression -- usable anywhere. */
+doubled = ((o) when {
+  Known(v): v * 2;
+  Unknown:  -1;
+}) where {
+  o = given::(int?);
+};
+
+/* Unknown arm without binding the (absent) value; Known with binder. */
+or_zero = ((o) when {
+  Unknown:  0;
+  Known(v): v;
+}) where {
+  o = given::(int?);
+};
+
+/* Optional of a VARIANT: the Known arm binds the variant, which a nested
+   `when` then matches -- optional and variant destructuring compose. */
+col is <| Red | Green | Blue |>;
+col_name = ((o) when {
+  Known(c): ((c) when { Red: "red"; Green: "green"; Blue: "blue"; });
+  Unknown:  "none";
+}) where {
+  o = given::(col?);
+};
+
+/* Optional of a RECORD: the bound value is the record; read a field. */
+first_or = ((o) when {
+  Known(r): r.x;
+  Unknown:  -1;
+}) where {
+  o = given::(<{.x: int, .y: int}>?);
+};
+
+rec = (<{.x: 7, .y: 9}>) where {};
+
+test {
+  /* scalar optional */
+  t_plus1_known:   plus1(.o: 41 as int?) == 42;
+  t_plus1_unknown: plus1(.o: unknown int) == 0;
+  t_doubled_known: doubled(.o: 5 as int?) == 10;
+  t_doubled_unk:   doubled(.o: unknown int) == -1;
+
+  /* arm order does not matter */
+  t_orzero_known:  or_zero(.o: 8 as int?) == 8;
+  t_orzero_unk:    or_zero(.o: unknown int) == 0;
+
+  /* optional of a variant, matched by a nested `when` */
+  t_col_red:   col_name(.o: col.Red() as col?) == "red";
+  t_col_blue:  col_name(.o: col.Blue() as col?) == "blue";
+  t_col_none:  col_name(.o: unknown col) == "none";
+
+  /* optional of a record, reading a field off the bound value */
+  t_rec_known: first_or(.o: rec as <{.x: int, .y: int}>?) == 7;
+  t_rec_unk:   first_or(.o: unknown <{.x: int, .y: int}>) == -1;
+};

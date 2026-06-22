@@ -64,6 +64,20 @@ Type::TType TObjMember::GetTypeImpl() const {
        (every self-reference becomes the variant type itself, #103). */
     return Type::Unroll(iter->second, variant->AsType());
   }
+  /* An optional is the built-in sum `<| Known(T) | Unknown |>`; `.Known` is
+     its payload accessor, yielding the wrapped element type `T` (#105). This
+     is what lets the `when` payload binder `Known(v): ...` reach the value,
+     and mirrors a variant's `.Tag`. The value is valid only when the optional
+     is known (gated by the `when` arm / a prior `is known`), exactly like a
+     variant arm. `Unknown` is the payload-less arm, so no other accessor name
+     is valid on an optional. */
+  if (const Type::TOpt *opt = Type::Unwrap(GetExpr()->GetType()).TryAs<Type::TOpt>()) {
+    if (Name != "Known") {
+      std::string msg = Base::AsStr("optional payload accessor \".", Name, "\" is not valid; only `.Known` accesses an optional's payload");
+      throw TExprError(HERE, GetPosRange(), msg.c_str());
+    }
+    return opt->GetElem();
+  }
   class TObjMemberTypeVisitor
       : public Type::TUnwrapVisitor {
     NO_COPY(TObjMemberTypeVisitor);

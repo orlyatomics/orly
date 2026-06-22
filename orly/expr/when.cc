@@ -81,31 +81,55 @@ size_t TWhen::GetArmWhich(size_t arm_idx) const {
 }
 
 Type::TType TWhen::GetTypeImpl() const {
-  /* Operand must be a variant. */
-  const Type::TVariant *variant = Type::Unwrap(GetOperand()->GetType()).TryAs<Type::TVariant>();
-  if (!variant) {
-    throw TExprError(HERE, GetPosRange(), "`when` operand must be a variant type");
-  }
-  const Type::TVariantElems &elems = variant->GetElems();
+  /* The operand is a variant -- or, as the built-in 2-arm sum, an optional
+     (#105). Either way, exhaustiveness is "every declared tag has exactly one
+     arm". */
+  const Type::TType operand_type = Type::Unwrap(GetOperand()->GetType());
+  if (const Type::TVariant *variant = operand_type.TryAs<Type::TVariant>()) {
+    const Type::TVariantElems &elems = variant->GetElems();
 
-  /* Exhaustiveness: every arm names a real tag, with no duplicates, and
-     every tag of the variant has an arm. */
-  std::unordered_set<std::string> seen;
-  for (const auto &tag : Tags) {
-    if (elems.find(tag) == elems.end()) {
-      std::string msg = Base::AsStr("`when` arm `", tag, "` is not a tag of the operand variant type");
-      throw TExprError(HERE, GetPosRange(), msg.c_str());
+    /* Exhaustiveness: every arm names a real tag, with no duplicates, and
+       every tag of the variant has an arm. */
+    std::unordered_set<std::string> seen;
+    for (const auto &tag : Tags) {
+      if (elems.find(tag) == elems.end()) {
+        std::string msg = Base::AsStr("`when` arm `", tag, "` is not a tag of the operand variant type");
+        throw TExprError(HERE, GetPosRange(), msg.c_str());
+      }
+      if (!seen.insert(tag).second) {
+        std::string msg = Base::AsStr("`when` has a duplicate arm for tag `", tag, "`");
+        throw TExprError(HERE, GetPosRange(), msg.c_str());
+      }
     }
-    if (!seen.insert(tag).second) {
-      std::string msg = Base::AsStr("`when` has a duplicate arm for tag `", tag, "`");
-      throw TExprError(HERE, GetPosRange(), msg.c_str());
+    for (const auto &elem : elems) {
+      if (seen.find(elem.first) == seen.end()) {
+        std::string msg = Base::AsStr("`when` is not exhaustive: missing arm for tag `", elem.first, "`");
+        throw TExprError(HERE, GetPosRange(), msg.c_str());
+      }
     }
-  }
-  for (const auto &elem : elems) {
-    if (seen.find(elem.first) == seen.end()) {
-      std::string msg = Base::AsStr("`when` is not exhaustive: missing arm for tag `", elem.first, "`");
-      throw TExprError(HERE, GetPosRange(), msg.c_str());
+  } else if (operand_type.Is<Type::TOpt>()) {
+    /* An optional is the built-in sum `<| Known(T) | Unknown |>`, so a `when`
+       may match it with exactly the arms `Known` (payload-bearing, bindable
+       as `Known(v)`) and `Unknown` (payload-less) (#105). */
+    std::unordered_set<std::string> seen;
+    for (const auto &tag : Tags) {
+      if (tag != "Known" && tag != "Unknown") {
+        std::string msg = Base::AsStr("`when` arm `", tag, "` is not an arm of the operand optional type (expected `Known` or `Unknown`)");
+        throw TExprError(HERE, GetPosRange(), msg.c_str());
+      }
+      if (!seen.insert(tag).second) {
+        std::string msg = Base::AsStr("`when` has a duplicate arm for tag `", tag, "`");
+        throw TExprError(HERE, GetPosRange(), msg.c_str());
+      }
     }
+    if (seen.find("Known") == seen.end()) {
+      throw TExprError(HERE, GetPosRange(), "`when` on an optional is not exhaustive: missing arm for `Known`");
+    }
+    if (seen.find("Unknown") == seen.end()) {
+      throw TExprError(HERE, GetPosRange(), "`when` on an optional is not exhaustive: missing arm for `Unknown`");
+    }
+  } else {
+    throw TExprError(HERE, GetPosRange(), "`when` operand must be a variant or optional type");
   }
   if (Tags.empty()) {
     throw TExprError(HERE, GetPosRange(), "`when` must have at least one arm");
