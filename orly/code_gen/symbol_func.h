@@ -39,6 +39,10 @@ namespace Orly {
       Type::TType GetReturnType() const;
       Type::TType GetType() const;
 
+      /* For an imported value (#171), emit a cross-package call as the body
+         instead of walking the placeholder expr; otherwise build normally. */
+      virtual void Build() override;
+
       protected:
       TSymbolFunc(const L0::TPackage *package, const Symbol::TFunction::TPtr &symbol, const TIdScope::TPtr &id_scope);
 

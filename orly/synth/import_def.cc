@@ -23,6 +23,8 @@
 #include <orly/expr/unknown.h>
 #include <orly/symbol/import_function.h>
 #include <orly/symbol/result_def.h>
+#include <orly/synth/context.h>
+#include <orly/synth/cst_utils.h>
 #include <orly/synth/new_type.h>
 
 using namespace Orly;
@@ -36,11 +38,28 @@ static TPosRange ImportPosRange(const Package::Syntax::TImportDef *import_def) {
 
 TImportDef::TImportDef(TScope *scope, const Package::Syntax::TImportDef *import_def)
     : TFuncDef(scope, TName(Base::AssertTrue(import_def)->GetName()), ImportPosRange(import_def)),
-      DeclaredType(NewType(import_def->GetType())),
-      /* Stage 1 binds against the declared type; the source symbol name (opt_name)
-         and package ref are resolved in the codegen/driver stages. Default the
-         remote name to the local name until then. */
-      RemoteName(TName(import_def->GetName()).GetText()) {}
+      DeclaredType(NewType(import_def->GetType())) {
+  /* opt_name is the symbol's name in the source package; default to the local
+     name when omitted (`foo is int from <pkg>` imports `foo`). */
+  auto remote = TryGetNode<Package::Syntax::TName, Package::Syntax::TNoName>(import_def->GetOptName());
+  RemoteName = remote ? remote->GetLexeme().GetText() : TName(import_def->GetName()).GetText();
+
+  /* MVP supports only a literal package ref: `from package <a/b/c>#N`. An alias
+     ref (`from some_alias`) has no resolution table yet, so reject it clearly. */
+  auto literal = TryGetNode<Package::Syntax::TLiteralPackageRef,
+                            Package::Syntax::TAliasPackageRef>(import_def->GetPackageRef());
+  if (literal) {
+    ForEach<Package::Syntax::TName>(
+        literal->GetPackageName()->GetPackageNameMemberList(),
+        [this](const Package::Syntax::TName *name) {
+          PackageName.Name.push_back(name->GetLexeme().GetText());
+          return true;
+        });
+  } else {
+    GetContext().AddError(ImportPosRange(import_def),
+        "alias package imports are not supported yet (#171); use a literal reference: from package <a/b/c>#N");
+  }
+}
 
 TImportDef::~TImportDef() {}
 
@@ -57,6 +76,7 @@ TAction TImportDef::Build(int pass) {
                       GetName().GetText(),                 /* name */
                       PosRange,                            /* pos_range */
                       DeclaredType->GetSymbolicType(),     /* declared result type */
+                      PackageName,                         /* source package */
                       RemoteName);                         /* source symbol name */
       Symbol::TResultDef::New(symbol, GetName().GetText(), PosRange);
       SetSymbol(symbol);

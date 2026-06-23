@@ -28,9 +28,10 @@ TFunction::TPtr TImportFunction::New(const TScopePtr &scope,
                                      const std::string &name,
                                      const TPosRange &pos_range,
                                      const Type::TType &declared_return_type,
+                                     const Package::TName &package_name,
                                      const std::string &remote_name) {
   assert(scope);
-  auto function = TPtr(new TImportFunction(scope, name, pos_range, declared_return_type, remote_name));
+  auto function = TPtr(new TImportFunction(scope, name, pos_range, declared_return_type, package_name, remote_name));
   scope->Add(function);
   return function;
 }
@@ -39,9 +40,11 @@ TImportFunction::TImportFunction(const TScopePtr &scope,
                                  const std::string &name,
                                  const TPosRange &pos_range,
                                  const Type::TType &declared_return_type,
+                                 const Package::TName &package_name,
                                  const std::string &remote_name)
     : TFunction(scope, name, pos_range),
       DeclaredReturnType(declared_return_type),
+      PackageName(package_name),
       RemoteName(remote_name) {}
 
 TImportFunction::~TImportFunction() {}

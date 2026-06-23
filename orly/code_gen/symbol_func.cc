@@ -18,8 +18,24 @@
 
 #include <orly/code_gen/symbol_func.h>
 
+#include <orly/code_gen/import_call.h>
+#include <orly/symbol/import_function.h>
+
 using namespace Orly;
 using namespace Orly::CodeGen;
+
+void TSymbolFunc::Build() {
+  if (GetBody()) {
+    return;
+  }
+  /* An imported value (#171) has only a placeholder body in the symbol layer;
+     emit the real cross-package call instead of building from that placeholder. */
+  if (auto import_func = dynamic_cast<const Symbol::TImportFunction *>(Symbol.get())) {
+    SetBody(TImportCall::New(Package, import_func));
+    return;
+  }
+  TFunction::Build();
+}
 
 //TODO: Should really return a TSymbolFuncPtr...
 TFunction::TPtr TSymbolFunc::Find(const Symbol::TFunction *symbol) {

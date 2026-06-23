@@ -27,6 +27,7 @@
 #include <base/split.h>
 #include <orly/code_gen/obj.h>
 #include <orly/expr/addr_walker.h>
+#include <orly/symbol/import_function.h>
 #include <orly/expr/walker.h>
 #include <orly/expr/where.h>
 #include <orly/package/api_version.h>
@@ -143,6 +144,11 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
   //Build all the function declarations
   for(auto &func: package->GetFunctions()) {
     Exports.insert(TExportFunc::New(this, func));
+    /* An imported value (#171) calls into another package; record it so its
+       header is included (WriteImportIncludes) and it is linked (WriteLink). */
+    if(auto import_func = dynamic_cast<const Symbol::TImportFunction *>(func.get())) {
+      NeededPackages.insert(import_func->GetPackageName());
+    }
   }
 
   //Build the definitions
