@@ -908,7 +908,10 @@ namespace Orly {
                 NumBlocks(((volume->GetDesc().NumLogicalExtent / volume->GetDesc().ReplicationFactor) * volume->GetDesc().DeviceDesc.Capacity) / PhysicalBlockSize),
                 NumBlocksPerExtent(NumBlocks / Volume->GetDesc().NumLogicalExtent),
                 BlockMapByteSize(ceil(static_cast<double>(NumBlocks) / 8)),
-                BlockMapBufByteSize(ceil(static_cast<double>(NumBlocks) / (getpagesize() * 64)) * getpagesize()) {
+                BlockMapBufByteSize(ceil(static_cast<double>(NumBlocks) / (getpagesize() * 64)) * getpagesize()),
+                DiscardRunnerScheduled(false),
+                DiscardShuttingDown(false),
+                DiscardRunnerExited(false) {
             assert(NumBlocks % Volume->GetDesc().NumLogicalExtent == 0UL);
             std::lock_guard<std::mutex> lock(BlockMapLock);
             BlockMapBuf = Base::MemAlignedAllocZeroInitialized<size_t>(getpagesize(), BlockMapByteSize);
@@ -918,7 +921,15 @@ namespace Orly {
           }
 
           void PostCtor() {
-            Scheduler->Schedule(bind(&TVolume::TStrategy::DiscardRunner, this));
+            const bool scheduled = Scheduler->Schedule(bind(&TVolume::TStrategy::DiscardRunner, this));
+            std::lock_guard<std::mutex> lock(DiscardMapLock);
+            DiscardRunnerScheduled = scheduled;
+            if (!scheduled) {
+              /* The scheduler refused the job (e.g. already shutting down), so
+                 no runner will ever execute. Mark it exited so a later
+                 StopDiscardRunner() doesn't wait forever. */
+              DiscardRunnerExited = true;
+            }
           }
 
           /* TODO */
@@ -1006,6 +1017,13 @@ namespace Orly {
           /* TODO */
           void DiscardRunner();
 
+          /* Signal the background DiscardRunner job to exit and block until it
+             has actually left its loop. Idempotent. Must be called by the
+             most-derived strategy dtor (before that dtor's members / the
+             vtable / DiscardEpollFd are destroyed) so the runner never races
+             the teardown. */
+          void StopDiscardRunner();
+
           Base::TScheduler *Scheduler;
 
           /* TODO */
@@ -1027,6 +1045,22 @@ namespace Orly {
           epoll_event DiscardEvent;
           bool DiscardRan;
           std::condition_variable DiscardCond;
+
+          /* Teardown coordination for the background DiscardRunner job.
+             DiscardRunner is a fire-and-forget scheduler job (Schedule()
+             returns no join handle and the scheduler outlives any single
+             volume), so we cannot rely on scheduler shutdown to stop it at
+             volume-teardown time. Instead the most-derived strategy dtor
+             calls StopDiscardRunner(), which signals DiscardShuttingDown,
+             wakes the runner via DiscardSem, and blocks until the runner
+             confirms it has left its loop (DiscardRunnerExited). This is the
+             join-equivalent that must complete before any state the runner
+             touches -- the vtable, the block/discard maps, DiscardEpollFd --
+             is torn down. Guarded by DiscardMapLock. */
+          bool DiscardRunnerScheduled;
+          bool DiscardShuttingDown;
+          bool DiscardRunnerExited;
+          std::condition_variable DiscardRunnerDoneCond;
 
           /* TODO */
           const size_t SuperBytes;
@@ -1548,8 +1582,11 @@ class TVolume::TStripedStrategy
     PostCtor();
   }
 
-  /* TODO */
-  virtual ~TStripedStrategy() {}
+  /* Stop and join the background DiscardRunner before any derived state, the
+     vtable, or the base's maps/fds are torn down. */
+  virtual ~TStripedStrategy() {
+    StopDiscardRunner();
+  }
 
   /* TODO */
   virtual void DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
@@ -1613,8 +1650,11 @@ class TVolume::TChainedStrategy
     PostCtor();
   }
 
-  /* TODO */
-  virtual ~TChainedStrategy() {}
+  /* Stop and join the background DiscardRunner before any derived state, the
+     vtable, or the base's maps/fds are torn down. */
+  virtual ~TChainedStrategy() {
+    StopDiscardRunner();
+  }
 
   /* TODO */
   virtual void DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
@@ -1790,11 +1830,20 @@ void TVolume::TStrategy::DiscardRunner() {
   IfLt0(epoll_ctl(DiscardEpollFd, EPOLL_CTL_ADD, DiscardSem.GetFd(), &DiscardEvent));
   epoll_event event;
   int timeout = 30000;
+  /* Mark the runner as having left its loop and wake any teardown thread
+     waiting in StopDiscardRunner(). Must be done before returning/throwing so
+     the dtor can proceed to destroy the maps / fds this runner touches. */
+  auto signal_exit = [this]() {
+    std::lock_guard<std::mutex> lock(DiscardMapLock);
+    DiscardRunnerExited = true;
+    DiscardRunnerDoneCond.notify_all();
+  };
   for (;;) {
     for (;;) {
       int ret = epoll_wait(DiscardEpollFd, &event, 1, timeout);
       if (ret < 0 && errno == EINTR) {
         if (Base::IsShuttingDown()) {
+          signal_exit();
           throw TScheduler::TJobExit("Discard() runner shutting down.");
         } else {
           continue;
@@ -1808,6 +1857,18 @@ void TVolume::TStrategy::DiscardRunner() {
         break;
       }
     }
+    /* A teardown may have woken us via StopDiscardRunner(). Bail out cleanly
+       before touching any virtual methods (DoDiscard /
+       GetBlockMapBytesPerDiscardRange), the block/discard maps, or any other
+       state the most-derived dtor is about to destroy. */
+    /* acquire shutdown check lock */ {
+      std::lock_guard<std::mutex> lock(DiscardMapLock);
+      if (DiscardShuttingDown) {
+        DiscardRunnerExited = true;
+        DiscardRunnerDoneCond.notify_all();
+        return;
+      }
+    }  // release shutdown check lock
     assert(blocks_from_vec.size() == 0);
     /* acquire Discard lock */ {
       std::lock_guard<std::mutex> lock(DiscardMapLock);
@@ -1854,6 +1915,32 @@ void TVolume::TStrategy::DiscardRunner() {
       DiscardRan = true;
     }  // release DiscardRan lock
     DiscardCond.notify_one();
+  }
+}
+
+void TVolume::TStrategy::StopDiscardRunner() {
+  std::unique_lock<std::mutex> lock(DiscardMapLock);
+  if (DiscardShuttingDown) {
+    /* Already stopping/stopped (idempotent); still wait for the runner to
+       confirm exit so we never return while it is mid-loop. */
+    while (!DiscardRunnerExited) {
+      DiscardRunnerDoneCond.wait(lock);
+    }
+    return;
+  }
+  DiscardShuttingDown = true;
+  if (!DiscardRunnerScheduled) {
+    /* No runner was ever scheduled (PostCtor's Schedule() was refused), so
+       there is nothing to join. */
+    assert(DiscardRunnerExited);
+    return;
+  }
+  /* Wake the runner so it observes DiscardShuttingDown and exits, then block
+     until it has actually left its loop. This is the join-equivalent for a
+     job that the scheduler gives us no handle to. */
+  DiscardSem.Push();
+  while (!DiscardRunnerExited) {
+    DiscardRunnerDoneCond.wait(lock);
   }
 }
 
