@@ -22,8 +22,6 @@
 #include <cassert>
 #include <functional>
 
-#include <xmmintrin.h>
-
 #include <base/class_traits.h>
 #include <base/no_default_case.h>
 
@@ -231,7 +229,10 @@ namespace InvCon {
       void Insert(TTypedCollection *collection) {
         assert(!Collection);
         assert(collection);
-        _mm_prefetch(collection->LastMembership, _MM_HINT_T0);
+        /* NB: we deliberately do not prefetch collection->LastMembership here.
+           It is a shared linkage field, mutated under LastLock by FixupLinkage,
+           and reading it before we hold any lock is a data race (the value would
+           only be a speculative hint and is re-read under lock below anyway). */
         for (;;) {
           while (collection->LastLock.test_and_set(std::memory_order_acquire)) {/* acquire last lock */}
           if (collection->LastMembership) {
@@ -268,10 +269,11 @@ namespace InvCon {
         assert(Collection);
         /* Fixup the pointers on either side of us to point around us,
            then go back to the unlinked state. */
-        _mm_prefetch(&NextMembership->PrevLock, _MM_HINT_T0);
-        _mm_prefetch(reinterpret_cast<uint8_t *>(&NextMembership->Collection), _MM_HINT_T0);
-        _mm_prefetch(&PrevMembership->PrevLock, _MM_HINT_T0);
-        _mm_prefetch(reinterpret_cast<uint8_t *>(&PrevMembership->Collection), _MM_HINT_T0);
+        /* NB: we deliberately do not prefetch our neighbors here.
+           Computing &NextMembership->... / &PrevMembership->... reads our own
+           NextMembership/PrevMembership fields, which a neighbor's FixupLinkage
+           may concurrently write under lock; reading them before we hold any
+           lock is a data race.  The values are re-read under lock below. */
         for (;;) {
           while (PrevLock.test_and_set(std::memory_order_acquire)) {/* acquire prev lock */}
           if (PrevMembership) {

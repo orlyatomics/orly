@@ -26,6 +26,7 @@
 
 #include <sched.h>
 #include <unistd.h>
+#include <xmmintrin.h>
 
 #include <atomic>
 #include <stdexcept>
