@@ -24,15 +24,13 @@ Or directly, after starting orlyi separately:
     python3 demo.py
 """
 
-import json
 import os
 import random
 import sys
 import threading
 import time
-import websocket
 
-WS_URL = "ws://127.0.0.1:8082/"
+import orly
 
 # Per-call recv timeout. Normal request latency is well under a second;
 # 30s is generous-but-finite so a hung orlyi surfaces as a failed read
@@ -68,30 +66,19 @@ PAGES = ["Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"]
 HOURS = list(range(2026_06_01_00, 2026_06_01_00 + _NUM_HOURS))
 
 
-def send(ws, stmt):
-    ws.send(stmt)
-    reply = json.loads(ws.recv())
-    if reply.get("status") != "ok":
-        raise RuntimeError(f"{stmt!r}\n  -> {reply}")
-    return reply.get("result")
+def increment_view(c, pov, page, hour, n):
+    c.call(pov, "views", "increment_view",
+           {"lang": "en", "page": page, "hour": hour, "n": n})
 
 
-def increment_view(ws, pov, page, hour, n):
-    stmt = (f'try {{{pov}}} views increment_view '
-            f'<{{.lang: "en", .page: "{page}", .hour: {hour}, .n: {n}}}>;')
-    send(ws, stmt)
+def views_in_hour(c, pov, page, hour):
+    return int(c.call(pov, "views", "views_in_hour",
+                      {"lang": "en", "page": page, "hour": hour}))
 
 
-def views_in_hour(ws, pov, page, hour):
-    stmt = (f'try {{{pov}}} views views_in_hour '
-            f'<{{.lang: "en", .page: "{page}", .hour: {hour}}}>;')
-    return int(send(ws, stmt))
-
-
-def views_total(ws, pov, page, h_start, h_end):
-    stmt = (f'try {{{pov}}} views views_total '
-            f'<{{.lang: "en", .page: "{page}", .h_start: {h_start}, .h_end: {h_end}}}>;')
-    return int(send(ws, stmt))
+def views_total(c, pov, page, h_start, h_end):
+    return int(c.call(pov, "views", "views_total",
+                      {"lang": "en", "page": page, "h_start": h_start, "h_end": h_end}))
 
 
 def generate_events(seed, count):
@@ -109,13 +96,13 @@ def generate_events(seed, count):
 def writer(writer_id, pov, events):
     """One writer: open a fresh WebSocket connection, open a session,
     ingest its slice of events using the shared POV."""
-    ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
+    c = orly.connect()
     try:
-        send(ws, "new session;")
+        c.new_session()
         for page, hour, n in events:
-            increment_view(ws, pov, page, hour, n)
+            increment_view(c, pov, page, hour, n)
     finally:
-        ws.close()
+        c.close()
 
 
 def main():
@@ -132,10 +119,10 @@ def main():
             ground_truth[(page, hour)] = ground_truth.get((page, hour), 0) + n
 
     # Open one bootstrap connection to create the shared POV and install the package.
-    boot = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
-    send(boot, "new session;")
-    send(boot, "install views.1;")
-    pov = send(boot, "new safe shared pov;")
+    boot = orly.connect()
+    boot.new_session()
+    boot.install("views", 1)
+    pov = boot.new_pov()
     print(f"pov: {pov}")
     print(f"writers: {NUM_WRITERS}, events per writer: {EVENTS_PER_WRITER}, "
           f"total events: {total_events:,}")
@@ -199,8 +186,7 @@ def main():
     print(f"  {len(PAGES) * len(HOURS)} hot keys, with zero locking. Field calls")
     print(f"  commute; the merge machinery aggregates safely.")
 
-    send(boot, "exit;")
-    boot.close()
+    boot.exit()
 
     if failures:
         print("\n=== self-check FAILED ===")

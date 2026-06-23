@@ -62,7 +62,7 @@ if ! ss -tln 2>/dev/null | grep -q ':8082'; then
 fi
 
 echo "[5/5] run demo.py"
-if ! python3 demo.py; then
+if ! PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" python3 demo.py; then
   echo ""
   echo "demo.py failed; dumping orlyi.log for diagnosis:"
   echo "=========================================================="
