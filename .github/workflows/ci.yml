@@ -477,7 +477,7 @@ jobs:
             # otherwise hang the job to its timeout. exitcode=0 so a race does
             # not itself fail the run -- we count warnings from the logs.
             timeout 600 setarch "$(uname -m)" -R \
-              env TSAN_OPTIONS="halt_on_error=0 exitcode=0 history_size=4" \
+              env TSAN_OPTIONS="halt_on_error=0 exitcode=0 history_size=4 suppressions=$PWD/orly/tsan.supp" \
               "$bin" >"$log" 2>&1 || true
             n=$(grep -c "WARNING: ThreadSanitizer" "$log" || true)
             total=$((total + n))
