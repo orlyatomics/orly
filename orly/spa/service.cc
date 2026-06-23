@@ -277,9 +277,28 @@ void TService::LoadCheckpoint(const string &name) {
   Atom::TSuprena arena;
   ReadCheckpoint(name.c_str(), stmts, packages, &arena);
 
-  //TODO: the database changes and package install should be one atomic operation.
-  NewUpdateAndWait(&GlobalPov, pov_obj->GetPrivatePov(), std::move(stmts));
+  // We can't do a true two-phase commit across the Flux DB and the package manager, so we apply the two
+  // checkpoint steps as a saga: do the reversible step first, the irreversible step last, and compensate the
+  // reversible step if the irreversible one fails. That leaves no partial-failure state where the DB holds the
+  // checkpoint's data but its packages aren't installed (or vice versa).
+  //
+  //   1. Install the packages first. Install is atomic w.r.t. the package set (copy-and-swap), so if it throws
+  //      nothing was committed -- the DB is never touched and we just let it propagate. Consistent.
+  //   2. Commit the DB data. If this throws (realistically only the 2s promotion timeout in NewUpdateAndWait),
+  //      roll the install back to the exact pre-install package set so we don't leave the just-installed (or
+  //      just-upgraded) packages behind, then rethrow.
+  //
+  // We use a full snapshot/restore rather than uninstalling `packages`: a plain Uninstall would over-reach,
+  // erasing packages that were already installed before this load (Install no-ops same-version packages) and
+  // failing to put an upgraded package back at its prior version.
+  Package::TManager::TInstalledSnapshot pre_install = PackageManager.SnapshotInstalled();
   PackageManager.Install(packages);
+  try {
+    NewUpdateAndWait(&GlobalPov, pov_obj->GetPrivatePov(), std::move(stmts));
+  } catch (...) {
+    PackageManager.RestoreInstalled(std::move(pre_install));
+    throw;
+  }
 }
 
 void TService::OnPovFail(FluxCapacitor::TPov *pov) {

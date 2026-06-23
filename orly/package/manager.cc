@@ -124,6 +124,18 @@ void TManager::Uninstall(const TVersionedNames &packages) {
   std::swap(Installed, installed);
 }
 
+TManager::TInstalledSnapshot TManager::SnapshotInstalled() const {
+  shared_lock<shared_timed_mutex> lock(InstallLock);
+  // Cheap shared_ptr copy; also pins the loaded packages alive for the lifetime of the snapshot.
+  return Installed;
+}
+
+void TManager::RestoreInstalled(TInstalledSnapshot snapshot) {
+  unique_lock<shared_timed_mutex> lock(InstallLock);
+  // No-throw swap; safe to call from a rollback path.
+  std::swap(Installed, snapshot);
+}
+
 void TManager::YieldInstalled(std::function<bool (const TVersionedName &name)> cb) const {
   shared_lock<shared_timed_mutex> lock(InstallLock);
 

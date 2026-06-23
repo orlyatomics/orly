@@ -77,6 +77,21 @@ namespace Orly {
          the moment. */
       void Uninstall(const TVersionedNames &packages);
 
+      /* An opaque snapshot of the installed package set, taken by SnapshotInstalled() and given back to
+         RestoreInstalled() to exactly undo any intervening Install/Uninstall. Used to compensate (roll back) a
+         package install when a later step in a multi-step operation fails -- see TService::LoadCheckpoint. */
+      typedef TInstalled TInstalledSnapshot;
+
+      /* Capture the current installed package set so it can later be restored exactly. The map holds shared_ptrs,
+         so this is a cheap refcount-bumping copy, and it pins the loaded packages alive until the snapshot is
+         dropped (so a rollback can put back a package that the failed step would otherwise have unloaded). */
+      TInstalledSnapshot SnapshotInstalled() const;
+
+      /* Restore the installed package set to a previously captured snapshot, exactly undoing any Install/Uninstall
+         done since. No-throw swap, so it is safe to call from a rollback/compensation path. This restores upgraded
+         packages back to their prior version (which a plain Uninstall of the newly-installed set could not do). */
+      void RestoreInstalled(TInstalledSnapshot snapshot);
+
       /* Yield each installed package */
       void YieldInstalled(std::function<bool (const TVersionedName &name)> cb) const;
 
