@@ -1,0 +1,83 @@
+/* <orly/lang_tests/general/optional_variant_conformance.orly>
+
+   #105 conformance/divergence spec: the built-in optional `T?` and the
+   explicit 2-arm variant `<| Known(T) | Unknown |>` model the same sum, but
+   are kept as two implementations (an optional is the primitive
+   array-of-single-states sabot encoding; a variant is the #96 `$which` record
+   encoding). #105 deliberately does NOT reduce one to the other. Because they
+   are parallel, this test pins exactly WHERE they agree and WHERE they
+   intentionally differ, so a change to either side that breaks the
+   relationship fails here.
+
+   They CONFORM on `when` dispatch and the `is` predicate (both yield plain
+   `int` / `bool`).
+
+   They DIVERGE on `==` -- and this is by design, from the optional's
+   auto-unwrap: an optional comparison auto-lifts to `bool?` and propagates
+   unknownness (anything compared with `unknown` is `unknown`), whereas the
+   variant compares its `Unknown` arm structurally (a plain `bool`). This is
+   the single most important reason the two are not freely interchangeable, and
+   why the type-level reduction in #105 was declined -- the auto-unwrap has no
+   variant analogue. Pinning it here documents the boundary.
+
+   Out of scope: variants expose no `<` at the language level (only
+   `==`/`!=`/`when`/`is`), so ordering conformance is not testable here; storage
+   round-trip is covered for optionals by known.orly and for variants by
+   variants_storage.orly.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+iopt is <| Known(int) | Unknown |>;
+
+/* Same arm logic, once over the optional and once over the variant -- with
+   #105 Stage 1 the two `when` bodies are written identically. */
+o_class = ((o) when {
+  Known(v): v + 1;
+  Unknown:  0;
+}) where {
+  o = given::(int?);
+};
+
+v_class = ((x) when {
+  Known(v): v + 1;
+  Unknown:  0;
+}) where {
+  x = given::(iopt);
+};
+
+test {
+  /* CONFORM: `when` dispatch agrees, present and absent (both yield int). */
+  when_known:   o_class(.o: 7 as int?)   == v_class(.x: iopt.Known(7));
+  when_unknown: o_class(.o: unknown int) == v_class(.x: iopt.Unknown());
+
+  /* CONFORM: the `is` predicate agrees (optional `is known`/`is unknown`
+     vs variant `is Known`/`is Unknown`); both yield plain bool. */
+  is_present:  ((7 as int?) is known)     == (iopt.Known(7) is Known);
+  is_absent:   ((unknown int) is known)   == (iopt.Unknown() is Known);
+  is_unk_pred: ((unknown int) is unknown) == (iopt.Unknown() is Unknown);
+
+  /* CONFORM (present vs present): equal/unequal known values agree -- but the
+     optional `==` auto-lifts to `bool?`, so unwrap it to line up with the
+     variant's plain `bool`. */
+  eq_same: known ((5 as int?) == (5 as int?)) == (iopt.Known(5) == iopt.Known(5));
+  eq_diff: known ((5 as int?) == (6 as int?)) == (iopt.Known(5) == iopt.Known(6));
+
+  /* DIVERGE (by design, via auto-unwrap): any optional comparison touching
+     `unknown` yields `unknown`; the variant compares `Unknown` structurally. */
+  opt_absent_unknown:  ((5 as int?)   == (unknown int)) is unknown;
+  opt_bothabs_unknown: ((unknown int) == (unknown int)) is unknown;
+  var_absent_false:    (iopt.Known(5) == iopt.Unknown())   == false;
+  var_bothabs_true:    (iopt.Unknown() == iopt.Unknown())  == true;
+};
