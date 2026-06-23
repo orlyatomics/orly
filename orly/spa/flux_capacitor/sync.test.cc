@@ -268,3 +268,23 @@ FIXTURE(Typical) {
   TAppender appender;
   TGetter getter;
 }
+
+/* Regression for #174.  A thread that locks a target registers a thread-local TLocal that lives until
+   the thread terminates.  When a target is destroyed while such a thread is still alive, Cleanup() must
+   reclaim those TLocal objects itself: pthread_key_delete() does not run the key's destructor, so before
+   the fix they leaked.  Here the calling (test) thread takes and releases a lock -- registering its
+   TLocal -- and is still very much alive when each local TSync goes out of scope, so the destructor hits
+   exactly that path.  The loop also exercises pthread-key-slot reuse across create/destroy cycles.
+
+   Functionally this just has to not crash (a double-free or use-after-free in the sweep would abort here);
+   its leak-detection teeth come out under valgrind/ASan -- see #177. */
+FIXTURE(ReclaimsLocalOnDestroy) {
+  for (int i = 0; i < 3; ++i) {
+    TSync sync;
+    {
+      TSync::TSharedLock lock(sync);
+    }
+    /* sync is destroyed here while this thread's TLocal is still registered; Cleanup() must reclaim it. */
+  }
+  EXPECT_TRUE(true);
+}

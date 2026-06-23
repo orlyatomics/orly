@@ -75,7 +75,13 @@ void TSync::TLocal::IncrLockCount(bool is_exclusive) {
 }
 
 void TSync::TLocal::DeleteLocal(void *arg) {
-  delete static_cast<TLocal *>(arg);
+  auto *local = static_cast<TLocal *>(arg);
+  /* Stop tracking before we free, so a concurrent Cleanup() can't also reclaim this one. */
+  {
+    std::lock_guard<std::mutex> lock(local->Sync.LocalsLock);
+    local->Sync.Locals.erase(local);
+  }
+  delete local;
 }
 
 TSync::TLocal *TSync::TLocal::GetLocal(const TSync &sync) {
@@ -88,6 +94,10 @@ TSync::TLocal *TSync::TLocal::GetLocal(const TSync &sync) {
       delete local;
       throw;
     }
+    /* Track the new local so Cleanup() can reclaim it if its thread never runs DeleteLocal
+       (e.g. the thread outlives the target, or the process tears down after pthread_key_delete). */
+    std::lock_guard<std::mutex> lock(sync.LocalsLock);
+    sync.Locals.insert(local);
   }
   return local;
 }
@@ -101,11 +111,15 @@ void TSync::Cleanup() {
     pthread_rwlock_destroy(&RwLock);
   }
   if (KeyInitialized) {
+    /* Delete the key first: pthread_key_delete() does not run the key's destructor, but it does guarantee no further
+       TLocal can be registered against this target while we mow down the survivors below.  Any TLocal still tracked here
+       belongs to a thread that locked the target earlier and has not yet terminated (its DeleteLocal never ran); without
+       this sweep those objects would leak. */
     pthread_key_delete(Key);
-    /* TODO: Deleting the TLS key doesn't invoke the destructor associated with the key.  This means that we'll leak TLocal objects.
-       This isn't a huge deal because the locking threads should have already shut down by the time we're destroying the rw-lock target
-       and the threads will release their TLocal objects when they go.  Nevertheless, we should keep a list of all the TLocal instances
-       and destroy them that remain after they key is destroyed.  Destroying the key first prevents new TLocal instances from cropping
-       up while we're mowing them down. */
+    std::lock_guard<std::mutex> lock(LocalsLock);
+    for (TLocal *local : Locals) {
+      delete local;
+    }
+    Locals.clear();
   }
 }
