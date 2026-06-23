@@ -88,9 +88,11 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optiona
             assert (!ensure_or_discard || (!repo->GetSequenceNumberStart() || *(repo->GetSequenceNumberStart()) >= *ensure_or_discard));
             if (!ensure_or_discard || (repo->GetSequenceNumberStart() && *(repo->GetSequenceNumberStart()) == *ensure_or_discard)) {
               return true;
-            } else {
-              throw std::runtime_error("TODO: check behavior");
             }
+            /* ensure_or_discard is set but the repo's sequence start does not match it. The assert
+               above guarantees start >= ensure, so the repo has advanced past the requested point
+               (or has no start yet): this Pop is stale. Discard it -- leave the existing popper as it
+               is and fall through to return false, exactly as the no-mutation discard path above does. */
             break;
           }
           case TPopper::Fail : {
@@ -98,9 +100,9 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optiona
             if (!ensure_or_discard || (repo->GetSequenceNumberStart() && *(repo->GetSequenceNumberStart()) == *ensure_or_discard)) {
               popper.SetState(TPopper::Pop);
               return true;
-            } else {
-              throw std::runtime_error("TODO: check behavior");
             }
+            /* Stale Pop (sequence start past ensure_or_discard): discard it and leave the popper in
+               Fail rather than promoting it to Pop. Fall through to return false. */
             break;
           }
         }
@@ -142,9 +144,9 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
             if (!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard)) {
               popper.SetState(TPopper::Fail);
               return true;
-            } else {
-              throw std::runtime_error("TODO: check behavior");
             }
+            /* Stale Fail (sequence start past follow_or_discard): discard it and leave the popper in
+               Peek rather than transitioning to Fail. Fall through to return false. */
             break;
           }
           case TPopper::Pop : {
@@ -152,9 +154,9 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
             if ((!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard))) {
               popper.SetState(TPopper::Fail);
               return true;
-            } else {
-              throw std::runtime_error("TODO: check behavior");
             }
+            /* Stale Fail (sequence start past follow_or_discard): discard it and leave the popper in
+               Pop rather than transitioning to Fail. Fall through to return false. */
             break;
           }
           case TPopper::Fail : {
