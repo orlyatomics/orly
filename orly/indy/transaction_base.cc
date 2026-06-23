@@ -90,7 +90,6 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optiona
               return true;
             } else {
               throw std::runtime_error("TODO: check behavior");
-              delete &popper;
             }
             break;
           }
@@ -101,7 +100,6 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optiona
               return true;
             } else {
               throw std::runtime_error("TODO: check behavior");
-              delete &popper;
             }
             break;
           }
@@ -146,7 +144,6 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
               return true;
             } else {
               throw std::runtime_error("TODO: check behavior");
-              delete &popper;
             }
             break;
           }
@@ -157,7 +154,6 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
               return true;
             } else {
               throw std::runtime_error("TODO: check behavior");
-              delete &popper;
             }
             break;
           }
