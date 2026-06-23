@@ -32,18 +32,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
-
-const wsURL = "ws://127.0.0.1:8082/"
-
-// Per-call recv timeout. Mirrors demo.py: normal latency is well under
-// a second; 30s is generous-but-finite so a hung orlyi surfaces as a
-// failed read rather than a multi-minute CI timeout with no diagnostic.
-// The run-go.sh wrapper's on-failure orlyi.log dump only fires on
-// demo.go exit, so we want it to exit (failing) within a reasonable
-// window.
-const wsTimeout = 30 * time.Second
 
 var (
 	pages = []string{"Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"}
@@ -75,60 +65,46 @@ type event struct {
 	n    int
 }
 
-func send(c *websocket.Conn, stmt string) (interface{}, error) {
-	deadline := time.Now().Add(wsTimeout)
-	if err := c.SetWriteDeadline(deadline); err != nil {
-		return nil, err
-	}
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		return nil, err
-	}
-	if err := c.SetReadDeadline(deadline); err != nil {
-		return nil, err
-	}
-	_, raw, err := c.ReadMessage()
+func die(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
+}
+
+func must[T any](v T, err error) T {
 	if err != nil {
-		return nil, err
+		die(err.Error())
 	}
-	var r struct {
-		Status string      `json:"status"`
-		Result interface{} `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("bad reply json: %w (raw: %s)", err, raw)
-	}
-	if r.Status != "ok" {
-		return nil, fmt.Errorf("%s\n  -> %s", stmt, raw)
-	}
-	return r.Result, nil
+	return v
 }
 
-func mustSend(c *websocket.Conn, stmt string) interface{} {
-	r, err := send(c, stmt)
+func check(err error) {
 	if err != nil {
-		panic(err)
+		die(err.Error())
 	}
-	return r
 }
 
-func incrementView(c *websocket.Conn, pov, page string, hour, n int) {
-	mustSend(c, fmt.Sprintf(
-		`try {%s} views increment_view <{.lang: "en", .page: %q, .hour: %d, .n: %d}>;`,
-		pov, page, hour, n))
+// asInt decodes a result orlyi serialises as a JSON float into int.
+func asInt(raw json.RawMessage) int {
+	var n float64
+	if err := json.Unmarshal(raw, &n); err != nil {
+		die(fmt.Sprintf("expected number result, got %s", raw))
+	}
+	return int(n)
 }
 
-func viewsInHour(c *websocket.Conn, pov, page string, hour int) int {
-	r := mustSend(c, fmt.Sprintf(
-		`try {%s} views views_in_hour <{.lang: "en", .page: %q, .hour: %d}>;`,
-		pov, page, hour))
-	return int(r.(float64))
+func incrementView(c *orly.Client, pov, page string, hour, n int) {
+	must(c.Call(pov, "views", "increment_view",
+		map[string]any{"lang": "en", "page": page, "hour": hour, "n": n}))
 }
 
-func viewsTotal(c *websocket.Conn, pov, page string, hStart, hEnd int) int {
-	r := mustSend(c, fmt.Sprintf(
-		`try {%s} views views_total <{.lang: "en", .page: %q, .h_start: %d, .h_end: %d}>;`,
-		pov, page, hStart, hEnd))
-	return int(r.(float64))
+func viewsInHour(c *orly.Client, pov, page string, hour int) int {
+	return asInt(must(c.Call(pov, "views", "views_in_hour",
+		map[string]any{"lang": "en", "page": page, "hour": hour})))
+}
+
+func viewsTotal(c *orly.Client, pov, page string, hStart, hEnd int) int {
+	return asInt(must(c.Call(pov, "views", "views_total",
+		map[string]any{"lang": "en", "page": page, "h_start": hStart, "h_end": hEnd})))
 }
 
 func generateEvents(seed int64, count int) []event {
@@ -146,14 +122,12 @@ func generateEvents(seed int64, count int) []event {
 
 func writer(pov string, events []event, wg *sync.WaitGroup) {
 	defer wg.Done()
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = wsTimeout
-	c, _, err := dialer.Dial(wsURL, nil)
+	c, err := orly.Connect()
 	if err != nil {
-		panic(err)
+		die(err.Error())
 	}
 	defer c.Close()
-	mustSend(c, "new session;")
+	must(c.NewSession())
 	for _, e := range events {
 		incrementView(c, pov, e.page, e.hour, e.n)
 	}
@@ -199,15 +173,13 @@ func main() {
 	}
 
 	// Bootstrap connection: install package + create the shared POV.
-	bootDialer := *websocket.DefaultDialer
-	bootDialer.HandshakeTimeout = wsTimeout
-	boot, _, err := bootDialer.Dial(wsURL, nil)
+	boot, err := orly.Connect()
 	if err != nil {
-		panic(err)
+		die(err.Error())
 	}
-	mustSend(boot, "new session;")
-	mustSend(boot, "install views.1;")
-	pov := mustSend(boot, "new safe shared pov;").(string)
+	must(boot.NewSession())
+	check(boot.Install("views", 1))
+	pov := must(boot.NewPov())
 	fmt.Printf("pov: %s\n", pov)
 	fmt.Printf("writers: %d, events per writer: %d, total events: %s\n",
 		numWriters, eventsPerWriter, commaize(totalEvents))
@@ -288,7 +260,7 @@ func main() {
 	fmt.Printf("  %d hot keys, with zero locking. Field calls\n", len(pages)*len(hours))
 	fmt.Println("  commute; the merge machinery aggregates safely.")
 
-	mustSend(boot, "exit;")
+	check(boot.Exit())
 	boot.Close()
 
 	if len(failures) > 0 {

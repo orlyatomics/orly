@@ -20,10 +20,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
-
-const wsURL = "ws://127.0.0.1:8082/"
 
 type growth struct {
 	cat     string
@@ -77,56 +75,26 @@ var snapshots = []struct {
 	{"crypto", []int{2008, 2010, 2012, 2014, 2016, 2018, 2020, 2024}},
 }
 
-type reply struct {
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-}
-
 func die(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }
 
-func send(c *websocket.Conn, stmt string) json.RawMessage {
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		die(fmt.Sprintf("write %q: %v", stmt, err))
-	}
-	_, msg, err := c.ReadMessage()
+func must[T any](v T, err error) T {
 	if err != nil {
-		die(fmt.Sprintf("read after %q: %v", stmt, err))
+		die(err.Error())
 	}
-	var r reply
-	if err := json.Unmarshal(msg, &r); err != nil {
-		die(fmt.Sprintf("parse reply: %v\n  raw: %s", err, msg))
-	}
-	if r.Status != "ok" {
-		die(fmt.Sprintf("%s: %s", stmt, string(msg)))
-	}
-	return r.Result
+	return v
 }
 
-func sendString(c *websocket.Conn, stmt string) string {
-	raw := send(c, stmt)
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		die(fmt.Sprintf("expected string result, got %s", raw))
+func check(err error) {
+	if err != nil {
+		die(err.Error())
 	}
-	return s
 }
 
-// orlyi serialises numbers as JSON floats; cast to int via float64.
-func sendInt(c *websocket.Conn, stmt string) int {
-	raw := send(c, stmt)
-	var n float64
-	if err := json.Unmarshal(raw, &n); err != nil {
-		die(fmt.Sprintf("expected number result, got %s", raw))
-	}
-	return int(n)
-}
-
-// orlyi serialises sets as JSON arrays.
-func sendStringSet(c *websocket.Conn, stmt string) []string {
-	raw := send(c, stmt)
+// orlyi serialises sets as JSON arrays; decode + sort for stable comparison.
+func asStringSet(raw json.RawMessage) []string {
 	var out []string
 	if string(raw) == "null" {
 		return out
@@ -138,38 +106,35 @@ func sendStringSet(c *websocket.Conn, stmt string) []string {
 	return out
 }
 
-func setLiteral(members []string) string {
-	parts := make([]string, len(members))
+// strSet turns a []string into an orly.Set (encoded as {"a", "b"}).
+func strSet(members []string) orly.Set {
+	s := make(orly.Set, len(members))
 	for i, m := range members {
-		parts[i] = `"` + m + `"`
+		s[i] = m
 	}
-	return "{" + strings.Join(parts, ", ") + "}"
+	return s
 }
 
-func addGrowth(c *websocket.Conn, pov, cat string, year int, members []string) {
-	stmt := fmt.Sprintf(
-		`try {%s} wiki add_growth <{.cat: "%s", .year: %d, .members: %s}>;`,
-		pov, cat, year, setLiteral(members))
-	send(c, stmt)
+func addGrowth(c *orly.Client, pov, cat string, year int, members []string) {
+	must(c.Call(pov, "wiki", "add_growth",
+		map[string]any{"cat": cat, "year": year, "members": strSet(members)}))
 }
 
-func membersAt(c *websocket.Conn, pov, cat string, since, target int) []string {
-	stmt := fmt.Sprintf(
-		`try {%s} wiki members_at <{.cat: "%s", .since: %d, .target: %d}>;`,
-		pov, cat, since, target)
-	return sendStringSet(c, stmt)
+func membersAt(c *orly.Client, pov, cat string, since, target int) []string {
+	return asStringSet(must(c.Call(pov, "wiki", "members_at",
+		map[string]any{"cat": cat, "since": since, "target": target})))
 }
 
 func main() {
-	c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	c, err := orly.Connect()
 	if err != nil {
-		die(fmt.Sprintf("dial %s: %v", wsURL, err))
+		die(err.Error())
 	}
 	defer c.Close()
 
-	sendString(c, "new session;")
-	send(c, "install wiki.1;")
-	pov := sendString(c, "new safe shared pov;")
+	must(c.NewSession())
+	check(c.Install("wiki", 1))
+	pov := must(c.NewPov())
 	fmt.Printf("pov: %s\n\n", pov)
 
 	catSet := map[string]struct{}{}
@@ -252,7 +217,7 @@ func main() {
 		}
 	}
 
-	send(c, "exit;")
+	check(c.Exit())
 
 	if len(failures) > 0 {
 		fmt.Println("\n=== self-check FAILED ===")

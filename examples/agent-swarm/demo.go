@@ -28,15 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
-
-const wsURL = "ws://127.0.0.1:8082/"
-
-// Per-call recv timeout. Mirrors wikipedia-pageviews/demo.go: normal
-// latency is well under a second; 30s is generous-but-finite so a hung
-// orlyi surfaces as a failed read rather than a multi-minute CI timeout.
-const wsTimeout = 30 * time.Second
 
 // doc represents one corpus entry: the human-readable text plus the
 // "extraction" the demo treats as ground truth (entity -> tag list).
@@ -235,96 +228,76 @@ func computeGroundTruth(docs []doc, numAgents int) (
 	return
 }
 
-func send(c *websocket.Conn, stmt string) (interface{}, error) {
-	deadline := time.Now().Add(wsTimeout)
-	if err := c.SetWriteDeadline(deadline); err != nil {
-		return nil, err
-	}
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		return nil, err
-	}
-	if err := c.SetReadDeadline(deadline); err != nil {
-		return nil, err
-	}
-	_, raw, err := c.ReadMessage()
+func die(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
+}
+
+func must[T any](v T, err error) T {
 	if err != nil {
-		return nil, err
+		die(err.Error())
 	}
-	var r struct {
-		Status string      `json:"status"`
-		Result interface{} `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("bad reply json: %w (raw: %s)", err, raw)
-	}
-	if r.Status != "ok" {
-		return nil, fmt.Errorf("%s\n  -> %s", stmt, raw)
-	}
-	return r.Result, nil
+	return v
 }
 
-func mustSend(c *websocket.Conn, stmt string) interface{} {
-	r, err := send(c, stmt)
+func check(err error) {
 	if err != nil {
-		panic(err)
+		die(err.Error())
 	}
-	return r
 }
 
-func addTag(c *websocket.Conn, pov, entity, tag, agent string) {
-	mustSend(c, fmt.Sprintf(
-		`try {%s} graph add_tag <{.e: %q, .t: %q, .agent: %q}>;`,
-		pov, entity, tag, agent))
+func asInt(raw json.RawMessage) int {
+	var n float64
+	if err := json.Unmarshal(raw, &n); err != nil {
+		die(fmt.Sprintf("expected number result, got %s", raw))
+	}
+	return int(n)
 }
 
-func addMention(c *websocket.Conn, pov, entity string, docID int) {
-	mustSend(c, fmt.Sprintf(
-		`try {%s} graph add_mention <{.e: %q, .d: %d}>;`,
-		pov, entity, docID))
+func addTag(c *orly.Client, pov, entity, tag, agent string) {
+	must(c.Call(pov, "graph", "add_tag", map[string]any{"e": entity, "t": tag, "agent": agent}))
 }
 
-func addCooccur(c *websocket.Conn, pov, a, b string) {
-	mustSend(c, fmt.Sprintf(
-		`try {%s} graph add_cooccur <{.a: %q, .b: %q}>;`,
-		pov, a, b))
+func addMention(c *orly.Client, pov, entity string, docID int) {
+	must(c.Call(pov, "graph", "add_mention", map[string]any{"e": entity, "d": docID}))
 }
 
-func tagsForEntity(c *websocket.Conn, pov, entity string) map[tagRecord]bool {
-	r := mustSend(c, fmt.Sprintf(
-		`try {%s} graph tags_for_entity <{.e: %q}>;`,
-		pov, entity))
+func addCooccur(c *orly.Client, pov, a, b string) {
+	must(c.Call(pov, "graph", "add_cooccur", map[string]any{"a": a, "b": b}))
+}
+
+func tagsForEntity(c *orly.Client, pov, entity string) map[tagRecord]bool {
+	raw := must(c.Call(pov, "graph", "tags_for_entity", map[string]any{"e": entity}))
 	out := map[tagRecord]bool{}
-	if r == nil {
+	if string(raw) == "null" {
 		return out
 	}
-	// graph.orly returns a set of <{.tag, .agent}> records; WS wire form
-	// is a JSON array of objects.
-	for _, v := range r.([]interface{}) {
-		rec := v.(map[string]interface{})
-		out[tagRecord{rec["tag"].(string), rec["agent"].(string)}] = true
+	// graph.orly returns a set of <{.tag, .agent}> records; WS wire form is a
+	// JSON array of objects.
+	var recs []struct {
+		Tag   string `json:"tag"`
+		Agent string `json:"agent"`
+	}
+	if err := json.Unmarshal(raw, &recs); err != nil {
+		die(fmt.Sprintf("expected array-of-objects, got %s", raw))
+	}
+	for _, rec := range recs {
+		out[tagRecord{rec.Tag, rec.Agent}] = true
 	}
 	return out
 }
 
-func mentionCount(c *websocket.Conn, pov, entity string, docID int) int {
-	r := mustSend(c, fmt.Sprintf(
-		`try {%s} graph mention_count <{.e: %q, .d: %d}>;`,
-		pov, entity, docID))
-	return int(r.(float64))
+func mentionCount(c *orly.Client, pov, entity string, docID int) int {
+	return asInt(must(c.Call(pov, "graph", "mention_count", map[string]any{"e": entity, "d": docID})))
 }
 
-func mentionsTotal(c *websocket.Conn, pov, entity string, dStart, dEnd int) int {
-	r := mustSend(c, fmt.Sprintf(
-		`try {%s} graph mentions_total <{.e: %q, .d_start: %d, .d_end: %d}>;`,
-		pov, entity, dStart, dEnd))
-	return int(r.(float64))
+func mentionsTotal(c *orly.Client, pov, entity string, dStart, dEnd int) int {
+	return asInt(must(c.Call(pov, "graph", "mentions_total",
+		map[string]any{"e": entity, "d_start": dStart, "d_end": dEnd})))
 }
 
-func cooccurCount(c *websocket.Conn, pov, a, b string) int {
-	r := mustSend(c, fmt.Sprintf(
-		`try {%s} graph cooccur_count <{.a: %q, .b: %q}>;`,
-		pov, a, b))
-	return int(r.(float64))
+func cooccurCount(c *orly.Client, pov, a, b string) int {
+	return asInt(must(c.Call(pov, "graph", "cooccur_count", map[string]any{"a": a, "b": b})))
 }
 
 // agentDoc is one (docID, doc) pair assigned to an agent.
@@ -339,14 +312,12 @@ type agentDoc struct {
 func agent(id int, pov string, docs []agentDoc, wg *sync.WaitGroup) {
 	defer wg.Done()
 	agentName := fmt.Sprintf("agent-%d", id)
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = wsTimeout
-	c, _, err := dialer.Dial(wsURL, nil)
+	c, err := orly.Connect()
 	if err != nil {
-		panic(err)
+		die(err.Error())
 	}
 	defer c.Close()
-	mustSend(c, "new session;")
+	must(c.NewSession())
 	for _, ad := range docs {
 		for entity, tags := range ad.doc.entities {
 			for _, t := range tags {
@@ -458,15 +429,13 @@ func main() {
 	}
 
 	// Bootstrap: install graph + create the shared POV.
-	bootDialer := *websocket.DefaultDialer
-	bootDialer.HandshakeTimeout = wsTimeout
-	boot, _, err := bootDialer.Dial(wsURL, nil)
+	boot, err := orly.Connect()
 	if err != nil {
-		panic(err)
+		die(err.Error())
 	}
-	mustSend(boot, "new session;")
-	mustSend(boot, "install graph.1;")
-	pov := mustSend(boot, "new safe shared pov;").(string)
+	must(boot.NewSession())
+	check(boot.Install("graph", 1))
+	pov := must(boot.NewPov())
 	fmt.Printf("pov: %s\n", pov)
 	fmt.Printf("agents: %d, docs: %d, entities: %d, unordered pairs: %d\n",
 		numAgents, numDocs, len(expectedTagRecords), len(expectedCooccur))
@@ -603,7 +572,7 @@ func main() {
 	fmt.Println("  / per-pair counters aggregate correctly: this is the shape")
 	fmt.Println("  multi-agent LLM extraction pipelines keep reinventing badly.")
 
-	mustSend(boot, "exit;")
+	check(boot.Exit())
 	boot.Close()
 
 	if len(failures) > 0 {

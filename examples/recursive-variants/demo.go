@@ -1,63 +1,39 @@
 // Recursive sum-type storage + client marshaling demo (issue #115), in Go.
 //
-// Equivalent to demo.py -- same scenario and self-check. Connects to a
-// running orlyi over the WebSocket protocol, stores a fixed recursive value
-// of each shape, reads it back, and checks the marshaled JSON. A variant
-// marshals as {"Tag": <payload>}; a tag-only arm as {"Tag": {}}; numbers come
-// back as JSON floats. The Python and Go drivers are paired so reviewers can
-// diff them in spirit.
+// Equivalent to demo.py -- same scenario and self-check. Stores a fixed
+// recursive value of each shape, reads it back, and checks the marshaled JSON.
+// A variant marshals as {"Tag": <payload>}; a tag-only arm as {"Tag": {}};
+// numbers come back as JSON floats.
 //
-// Run via the wrapper:  ./run-go.sh
+// Uses the shared `orly` client (clients/go). Run via the wrapper: ./run-go.sh
 // Or directly, after starting orlyi separately:  go run demo.go
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"reflect"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
-
-const wsURL = "ws://127.0.0.1:8082/"
-
-type reply struct {
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-	Pos    string          `json:"pos,omitempty"`
-}
 
 func die(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }
 
-func send(c *websocket.Conn, stmt string) json.RawMessage {
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		die(fmt.Sprintf("write %q: %v", stmt, err))
-	}
-	_, msg, err := c.ReadMessage()
+func must[T any](v T, err error) T {
 	if err != nil {
-		die(fmt.Sprintf("read after %q: %v", stmt, err))
+		die(err.Error())
 	}
-	var r reply
-	if err := json.Unmarshal(msg, &r); err != nil {
-		die(fmt.Sprintf("parse reply to %q: %v\n  raw: %s", stmt, err, msg))
-	}
-	if r.Status != "ok" {
-		die(fmt.Sprintf("%s: %s", stmt, string(msg)))
-	}
-	return r.Result
+	return v
 }
 
-func sendString(c *websocket.Conn, stmt string) string {
-	var s string
-	if err := json.Unmarshal(send(c, stmt), &s); err != nil {
-		die(fmt.Sprintf("expected string result from %q", stmt))
+func check(err error) {
+	if err != nil {
+		die(err.Error())
 	}
-	return s
 }
 
 // A case: a recursive value stored then read back, with the expected
@@ -102,22 +78,21 @@ func parse(b []byte, what string) interface{} {
 }
 
 func main() {
-	u, _ := url.Parse(wsURL)
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	c, err := orly.Connect()
 	if err != nil {
-		die(fmt.Sprintf("dial %s: %v", wsURL, err))
+		die(err.Error())
 	}
 	defer c.Close()
 
-	send(c, "new session;")
-	send(c, "install recursive.0;")
-	pov := sendString(c, "new safe shared pov;")
+	must(c.NewSession())
+	check(c.Install("recursive", 0))
+	pov := must(c.NewPov())
 	fmt.Printf("pov: %s\n\n", pov)
 
 	failures := 0
 	for k, rc := range cases {
-		send(c, fmt.Sprintf("try {%s} recursive %s <{.k: %d}>;", pov, rc.put, k))
-		got := send(c, fmt.Sprintf("try {%s} recursive %s <{.k: %d}>;", pov, rc.get, k))
+		must(c.Call(pov, "recursive", rc.put, map[string]any{"k": k}))
+		got := must(c.Call(pov, "recursive", rc.get, map[string]any{"k": k}))
 		ok := reflect.DeepEqual(parse(got, "result"), parse([]byte(rc.expected), "expected"))
 		status := "ok"
 		if !ok {
@@ -130,7 +105,7 @@ func main() {
 		}
 	}
 
-	send(c, "exit;")
+	check(c.Exit())
 	if failures > 0 {
 		die(fmt.Sprintf("\n%d case(s) failed.", failures))
 	}
