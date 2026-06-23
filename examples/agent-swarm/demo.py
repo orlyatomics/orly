@@ -30,14 +30,13 @@ Or directly, after starting orlyi separately:
     python3 demo.py
 """
 
-import json
 import os
 import sys
 import threading
 import time
-import websocket
 
-WS_URL = "ws://127.0.0.1:8082/"
+import orly
+
 
 # Per-call recv timeout. Mirrors wikipedia-pageviews/demo.py: normal
 # latency is well under a second; 30s is generous-but-finite so a hung
@@ -207,52 +206,36 @@ def compute_ground_truth(docs, num_agents):
     return expected_tag_records, expected_mentions, expected_cooccur
 
 
-def send(ws, stmt):
-    ws.send(stmt)
-    reply = json.loads(ws.recv())
-    if reply.get("status") != "ok":
-        raise RuntimeError(f"{stmt!r}\n  -> {reply}")
-    return reply.get("result")
+def add_tag(c, pov, entity, tag, agent):
+    c.call(pov, "graph", "add_tag", {"e": entity, "t": tag, "agent": agent})
 
 
-def add_tag(ws, pov, entity, tag, agent):
-    send(ws, f'try {{{pov}}} graph add_tag '
-             f'<{{.e: "{entity}", .t: "{tag}", .agent: "{agent}"}}>;')
+def add_mention(c, pov, entity, doc_id):
+    c.call(pov, "graph", "add_mention", {"e": entity, "d": doc_id})
 
 
-def add_mention(ws, pov, entity, doc_id):
-    send(ws, f'try {{{pov}}} graph add_mention '
-             f'<{{.e: "{entity}", .d: {doc_id}}}>;')
+def add_cooccur(c, pov, a, b):
+    c.call(pov, "graph", "add_cooccur", {"a": a, "b": b})
 
 
-def add_cooccur(ws, pov, a, b):
-    send(ws, f'try {{{pov}}} graph add_cooccur '
-             f'<{{.a: "{a}", .b: "{b}"}}>;')
-
-
-def tags_for_entity(ws, pov, entity):
-    r = send(ws, f'try {{{pov}}} graph tags_for_entity <{{.e: "{entity}"}}>;')
+def tags_for_entity(c, pov, entity):
+    r = c.call(pov, "graph", "tags_for_entity", {"e": entity})
     # graph.orly returns a set of <{.tag, .agent}> records; WS wire form
     # is a JSON array of objects. Surface it as a set of (tag, agent).
     return {(rec["tag"], rec["agent"]) for rec in (r or [])}
 
 
-def mention_count(ws, pov, entity, doc_id):
-    r = send(ws, f'try {{{pov}}} graph mention_count '
-                 f'<{{.e: "{entity}", .d: {doc_id}}}>;')
-    return int(r)
+def mention_count(c, pov, entity, doc_id):
+    return int(c.call(pov, "graph", "mention_count", {"e": entity, "d": doc_id}))
 
 
-def mentions_total(ws, pov, entity, d_start, d_end):
-    r = send(ws, f'try {{{pov}}} graph mentions_total '
-                 f'<{{.e: "{entity}", .d_start: {d_start}, .d_end: {d_end}}}>;')
-    return int(r)
+def mentions_total(c, pov, entity, d_start, d_end):
+    return int(c.call(pov, "graph", "mentions_total",
+                      {"e": entity, "d_start": d_start, "d_end": d_end}))
 
 
-def cooccur_count(ws, pov, a, b):
-    r = send(ws, f'try {{{pov}}} graph cooccur_count '
-                 f'<{{.a: "{a}", .b: "{b}"}}>;')
-    return int(r)
+def cooccur_count(c, pov, a, b):
+    return int(c.call(pov, "graph", "cooccur_count", {"a": a, "b": b}))
 
 
 def agent(agent_id, pov, docs):
@@ -260,23 +243,23 @@ def agent(agent_id, pov, docs):
     slice of (doc_id, extraction) pairs into the shared POV. Every tag
     it asserts is stamped with this agent's name for provenance."""
     agent_name = f"agent-{agent_id}"
-    ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
+    c = orly.connect()
     try:
-        send(ws, "new session;")
+        c.new_session()
         for doc_id, (_text, entities) in docs:
             # Per doc: tag every entity, mention every entity, and emit
             # one cooccurrence per unordered pair.
             for entity, tags in entities.items():
                 for tag in tags:
-                    add_tag(ws, pov, entity, tag, agent_name)
-                add_mention(ws, pov, entity, doc_id)
+                    add_tag(c, pov, entity, tag, agent_name)
+                add_mention(c, pov, entity, doc_id)
             names = sorted(entities.keys())
             for i, a in enumerate(names):
                 for b in names[i + 1:]:
                     pa, pb = canonical_pair(a, b)
-                    add_cooccur(ws, pov, pa, pb)
+                    add_cooccur(c, pov, pa, pb)
     finally:
-        ws.close()
+        c.close()
 
 
 def main():
@@ -298,10 +281,10 @@ def main():
     )
 
     # Bootstrap connection: install graph + create the shared POV.
-    boot = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
-    send(boot, "new session;")
-    send(boot, "install graph.1;")
-    pov = send(boot, "new safe shared pov;")
+    boot = orly.connect()
+    boot.new_session()
+    boot.install("graph", 1)
+    pov = boot.new_pov()
     print(f"pov: {pov}")
     print(f"agents: {NUM_AGENTS}, docs: {NUM_DOCS}, "
           f"entities: {len(expected_tag_records)}, "
@@ -405,8 +388,7 @@ def main():
     print(f"  / per-pair counters aggregate correctly: this is the shape")
     print(f"  multi-agent LLM extraction pipelines keep reinventing badly.")
 
-    send(boot, "exit;")
-    boot.close()
+    boot.exit()
 
     if failures:
         print("\n=== self-check FAILED ===")
