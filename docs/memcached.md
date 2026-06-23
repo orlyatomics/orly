@@ -1,6 +1,8 @@
 Memcached on Orly
 =================
 
+> **⚠️ Experimental / incomplete.** This document describes a Memcached-protocol frontend that is not a finished, supported surface. Several sections below are placeholders (`TODO` / `TBD`), and some behaviors are unspecified or not yet implemented. Treat it as a design sketch, not a description of guaranteed current behavior.
+
 In addition to it's own custom protocol, Orly speaks Memcached to be more easily accessible from arbitrary languages/hosts/etc. Memcached is literally available everywhere at this point.
 
 # Overview
