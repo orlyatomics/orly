@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <base/assert_true.h>
 #include <base/class_traits.h>
 #include <base/test/app.h>
@@ -77,8 +79,14 @@ namespace Test {
     /* TODO */
     const TFixture *Fixture;
 
-    /* TODO */
-    bool Pass;
+    /* The fixture's running pass/fail state. A multi-threaded fixture fires
+       `EXPECT_*` from worker threads, so every `TExpect` destructor folds its
+       result into this flag (see OnExpectDtor) from whatever thread it runs
+       on. The flag only ever moves true -> false, but the concurrent
+       read-modify-writes are still a data race on a plain bool (flagged by
+       ThreadSanitizer, issue #184). Making it atomic turns the fold into an
+       idempotent relaxed store and de-noises every multi-threaded test. */
+    std::atomic<bool> Pass;
 
     /* TODO */
     static TRunner *Runner;

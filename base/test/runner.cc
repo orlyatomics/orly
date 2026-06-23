@@ -44,18 +44,20 @@ TRunner::TRunner(TApp *app, const TFixture *fixture)
 TRunner::~TRunner() {
   assert(Runner == this);
   PreDtor();
-  TApp::TLogger(!Pass)
+  const bool pass = Pass.load(std::memory_order_relaxed);
+  TApp::TLogger(!pass)
       << "end " << Fixture->GetName()
-      << "; " << (Pass ? "pass" : "fail");
+      << "; " << (pass ? "pass" : "fail");
   Runner = 0;
 }
 
 TRunner::operator bool() const {
-  return Pass;
+  return Pass.load(std::memory_order_relaxed);
 }
 
 void TRunner::Run() {
-  Pass = true;
+  /* Single-threaded: this runs before the fixture spawns any worker threads. */
+  Pass.store(true, std::memory_order_relaxed);
   try {
     (*Fixture->GetFunc())();
   } catch (const exception &ex) {
@@ -71,7 +73,13 @@ void TRunner::Run() {
 
 void TRunner::OnExpectDtor(const TExpect *expect) {
   assert(expect);
-  Pass = Pass && *expect;
+  /* Fold this expectation's result in. The flag only ever moves true -> false,
+     so a failed expectation stores false and a passing one leaves it alone --
+     an idempotent, order-independent update that is safe to run concurrently
+     from the worker threads of a multi-threaded fixture (issue #184). */
+  if (!bool(*expect)) {
+    Pass.store(false, std::memory_order_relaxed);
+  }
 }
 
 TRunner *TRunner::Runner = 0;
