@@ -500,19 +500,22 @@ namespace Orly {
       /* TODO */
       virtual bool CanLoad(const L0::TId &id) override;
 
-      /* TODO */
+      /* The L0 manager's load/save/delete of durable objects by id. Not wired up: the call sites
+         are gated off (TObj::OnDisk is never set true; the loader is #if 0'd), so these are
+         unreachable today. This is distinct from the server's working persistence (the spa
+         checkpoint replays statements; orlyi runs on a real disk engine) -- it is specifically the
+         in-process reload-from-on-disk-image path that was never ported. Fail clearly rather than
+         with a bare TODO if a path ever reaches them. See issue #173. */
       virtual void Delete(const L0::TId &/*id*/, L0::TSem */*sem*/) override {
-        throw std::logic_error("TODO: TManager::Delete()");
+        throw std::logic_error("TManager::Delete not implemented: durable on-disk object deletion was never ported (#173).");
       }
 
-      /* TODO */
       virtual void Save(const L0::TId &/*id*/, const L0::TDeadline &/*deadline*/, const std::string &/*blob*/, L0::TSem */*sem*/) override {
-        throw std::logic_error("TODO: TManager::Save()");
+        throw std::logic_error("TManager::Save not implemented: durable on-disk object save was never ported (#173).");
       }
 
-      /* TODO */
       virtual bool TryLoad(const L0::TId &/*id*/, std::string &/*blob*/) override {
-        throw std::logic_error("TODO: TManager::TryLoad()");
+        throw std::logic_error("TManager::TryLoad not implemented: durable on-disk object load was never ported (#173).");
       }
 
       /* TODO */

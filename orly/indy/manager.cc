@@ -1188,7 +1188,11 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
         }
       }
       Indy::TRepo::TParentRepo parent_repo;
-      throw std::runtime_error("TODO : set parent repo");
+      /* This is the repo-reload boundary (ReconstructRepo -> ConstructRepo with a saved image).
+         It is not implemented: the parent repo and ttl below were never resolved, so durable
+         on-disk repo reload does not work (it was never ported, see issue #173). The construction
+         sketch below is kept, unreached, as a starting point for whoever implements reload. */
+      throw std::runtime_error("TManager::ConstructRepo: reconstructing a repo from a saved on-disk image is not implemented (the indy L0 reload-from-disk path was never ported, #173).");
       assert(ttl); /* TODO fill in */
       return saved_repo.IsSafe ?
           static_cast<TRepo *>(new TSafeRepo(this, repo_id, *ttl /* todo fill in with correct val */, parent_repo, saved_repo.LowestSequenceNumber, saved_repo.HighestSequenceNumber, saved_repo.NextUpdate, status)) :

@@ -1042,7 +1042,9 @@ namespace Orly {
       }
 
       inline void TManager::TRepo::RemoveFromClosedBuffer() {
-        throw std::logic_error("TODO: implement TRepo::RemoveFromClosedBuffer");
+        /* Never called: the on-disk closed-object buffer is not wired up. Fail clearly if a
+           path ever reaches it -- the indy L0 reload-from-disk path was never ported (#173). */
+        throw std::logic_error("TManager::TRepo::RemoveFromClosedBuffer not implemented: the on-disk closed-object buffer is never wired up (the indy L0 reload-from-disk path was never ported, #173).");
       }
 
       inline const std::chrono::steady_clock::time_point &TManager::TRepo::GetTimeOfNextMergeMem() const {
@@ -1249,7 +1251,7 @@ namespace Orly {
           openable_obj = some_obj;
           return TPtr<TSomeObj>(some_obj, Orly::Indy::L0::New);
           #endif
-          throw std::logic_error("TODO: implement L0::TManager Load from disk");
+          throw std::logic_error("TManager::Open: loading a durable object from disk is not implemented (the indy L0 reload-from-disk path was never ported, #173).");
         } catch (...) {
           /* We could not find the object on disk or the object's constructor failed.
              Either way, we need to dispose of the slot we made before continuing to handle the error. */
