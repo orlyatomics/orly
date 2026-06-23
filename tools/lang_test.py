@@ -19,6 +19,7 @@ import multiprocessing
 import json
 import os
 import os.path
+import re
 import subprocess
 
 # Process object. wraps subprocess.Popen object to augment it with a filename.
@@ -91,10 +92,27 @@ def GetArgParser():
       help='Specify the number of workers for the script. (default: ' + str(default_worker_count) + ')')
   return parser
 
+# Compiler diagnostics embed the THROW site's source location via the HERE
+# macro -- e.g. `@["orly/code_gen/builder.cc":259]` (errors) or
+# `[orly/compiler.cc, 202]` (compile failures). Baselines captured that line
+# number verbatim, so any edit shifting lines in a file named in a diagnostic
+# silently invalidated the checked-in `.state` (it bit #73; #75's baseline had
+# drifted 259 -> 282). Strip just the line number, keeping the filename (which
+# still says which check fired). Test-file positions like `19:4-19:5` have no
+# bracketed path and are left intact.
+_SRC_LOC_QUOTED = re.compile(r'(\["[^"]+"):\d+\]')                       # ["path":NNN] -> ["path"]
+_SRC_LOC_BARE = re.compile(r'(\[[^][,]+\.(?:cc|h|hh|hpp|cpp|cxx)), \d+\]')  # [path.cc, NNN] -> [path.cc]
+
+def NormalizeSourceLocations(text):
+  text = _SRC_LOC_QUOTED.sub(r'\1]', text)
+  text = _SRC_LOC_BARE.sub(r'\1]', text)
+  return text
+
 def GetResult(proc):
   output = proc.stdout.read()
   if isinstance(output, bytes):
     output = output.decode('utf-8', errors='replace')
+  output = NormalizeSourceLocations(output)
   sections = [x.splitlines() for x in output.split('MM_NOTICE: ')]
   return proc.returncode(), sections
 
