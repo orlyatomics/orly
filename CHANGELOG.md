@@ -7,6 +7,7 @@ The project does not currently cut numbered releases. Entries reference the orig
 ## [Unreleased]
 
 ### Added
+- **Client protocol doc** (`docs/PROTOCOL.md`). The WebSocket + JSON contract an application uses to talk to a running `orlyi` — connection, the statement set (`new session` / `install` / `new … pov` / `try {pov} …` / pause / tail / `exit`), and the JSON marshaling quirks (ints→floats, sets→arrays, variants as `{"Tag": …}`). The single spec the per-demo Python/Go drivers should be consolidated against, ahead of a real client SDK. (2026-06-23)
 - **Architecture doc for the concurrency model** (`docs/architecture.md`). POV / Flux Capacitor / Tetris / merge-semantics overview that previously lived only in headers and this changelog. (#180, closes #179, 2026-06-22)
 - **ThreadSanitizer CI job.** Validates the lock-free claim — data-race freedom is the one property the existing suite (unit + integration) didn't cover. Introduced non-gating; made **gating** once the curated set was cleaned (see the #184 hardening under Fixed). (#183, closes #177, 2026-06-22)
 - **`when` over optionals.** A `T?` may be matched as the built-in sum `<| Known(T) | Unknown |>` — payload binder `Known(v)`, exhaustive `Known`/`Unknown` — so the `is known … else …` idiom becomes an exhaustive match. Plus a conformance spec pinning where an optional and the equivalent variant agree (`when`, `is`) and intentionally diverge (`==`, via auto-unwrap). Surface unification only; the type-level reduction of `TOpt` to a variant was evaluated and declined. (#167, #168, #105, 2026-06-22)
