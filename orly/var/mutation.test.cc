@@ -38,11 +38,13 @@ FIXTURE(Typical) {
 }
 
 /* TMutation::Augment combines two same-mutator commutative+associative
-   ops into one. Until this change Augment unconditionally threw -- the
-   data-model side of the "field calls compose under contention" story
-   the README has always claimed. Concrete consumers (the Tetris merge
-   path that collides cross-POV mutations on the same key) are not yet
-   wired up; this is the building block they need. */
+   ops into one. Until #48 Augment unconditionally threw -- the data-model
+   side of the "field calls compose under contention" story the README has
+   always claimed. The consumers are now wired (the rest of the #49 arc):
+   the session deferred-commutative path emits the mutations, the read path
+   and TFoldDataFile fold same-mutator runs, and concurrent cross-POV `+=`
+   composes end-to-end (validated by examples/wikipedia-pageviews/). See
+   docs/architecture.md sec. 5. */
 
 FIXTURE(Augment_AddAdd) {
   /* (x += 5) augmented with (x += 3) is equivalent to (x += 8). */
