@@ -26,6 +26,7 @@
 #include <orly/synth/context.h>
 #include <orly/synth/cst_utils.h>
 #include <orly/synth/given_collector.h>
+#include <orly/synth/import_def.h>
 #include <orly/synth/new_expr.h>
 #include <orly/synth/test_def.h>
 #include <orly/synth/type_def.h>
@@ -80,9 +81,7 @@ void TDefFactory::operator()(const Package::Syntax::TTypeDef *that) const {
 }
 
 void TDefFactory::operator()(const Package::Syntax::TImportDef *that) const {
-  throw TNotImplementedError(HERE, TPosRange(
-      that->GetName()->GetLexeme().GetPosRange(),
-      that->GetSemi()->GetLexeme().GetPosRange()));
+  new TImportDef(ExprFactory->OuterScope, that);
 }
 
 void TDefFactory::operator()(const Package::Syntax::TGeneratorDef *that) const {

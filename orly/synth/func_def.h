@@ -78,6 +78,13 @@ namespace Orly {
       /* TODO */
       void SetExpr(TExpr *expr);
 
+      /* Install the lowered function symbol directly. Used by a subclass whose
+         symbol is not a plain TFunction built in the default pass-2 path -- e.g.
+         an import def, which lowers to a TImportFunction with a declared result
+         type and no body (#171). GetSymbol() then returns it for the ordinary
+         function-reference path. */
+      void SetSymbol(const Symbol::TFunction::TPtr &symbol);
+
       /* The backing CST node, or null for a synthetic def (see the
          CST-less constructor above). */
       const Package::Syntax::TFuncDef *FuncDef;
