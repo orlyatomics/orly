@@ -43,14 +43,11 @@ Or directly, after starting orlyi separately:
     python3 demo.py
 """
 
-import json
 import sys
 import threading
 import time
-import websocket
 
-WS_URL = "ws://127.0.0.1:8082/"
-WS_TIMEOUT_S = 30
+import orly
 
 # A .ts beyond any real event -- "now / all events" (mirrors grc20.orly's
 # `forever`). int64 max.
@@ -100,66 +97,46 @@ def now_ms():
     return int(time.time() * 1000)
 
 
-def send(ws, stmt):
-    ws.send(stmt)
-    reply = json.loads(ws.recv())
-    if reply.get("status") != "ok":
-        raise RuntimeError(f"{stmt!r}\n  -> {reply}")
-    return reply.get("result")
-
-
-def orly_str(s):
-    """Escape a Python string for an Orlyscript string literal."""
-    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
-
-
 # ---------------------------------------------------------------------
 # Writes. The engine owns the op vocabulary now: the driver hands it
 # typed scalars and orlyscript builds the `op_t` variant. ts is supplied
 # by the driver (now_ms) so concurrent writers get a real wall-clock
 # order; the engine resolves latest-.ts-wins.
 # ---------------------------------------------------------------------
-def register_entity(ws, pov, entity):
-    send(ws, (f'try {{{pov}}} grc20 register_entity '
-              f'<{{.entity: {orly_str(entity)}}}>;'))
+def register_entity(c, pov, entity):
+    c.call(pov, "grc20", "register_entity", {"entity": entity})
 
 
-def register_prop(ws, pov, entity, prop):
-    send(ws, (f'try {{{pov}}} grc20 register_prop '
-              f'<{{.entity: {orly_str(entity)}, '
-              f'.property: {orly_str(prop)}}}>;'))
+def register_prop(c, pov, entity, prop):
+    c.call(pov, "grc20", "register_prop", {"entity": entity, "property": prop})
 
 
-def create_entity(ws, pov, entity, ts, editor, kind):
-    send(ws, (f'try {{{pov}}} grc20 create_entity '
-              f'<{{.entity: {orly_str(entity)}, .ts: {int(ts)}, '
-              f'.editor: {orly_str(editor)}, .kind: {orly_str(kind)}}}>;'))
+def create_entity(c, pov, entity, ts, editor, kind):
+    c.call(pov, "grc20", "create_entity",
+           {"entity": entity, "ts": int(ts), "editor": editor, "kind": kind})
 
 
-def delete_entity(ws, pov, entity, ts, editor):
-    send(ws, (f'try {{{pov}}} grc20 delete_entity '
-              f'<{{.entity: {orly_str(entity)}, .ts: {int(ts)}, '
-              f'.editor: {orly_str(editor)}}}>;'))
+def delete_entity(c, pov, entity, ts, editor):
+    c.call(pov, "grc20", "delete_entity",
+           {"entity": entity, "ts": int(ts), "editor": editor})
 
 
-def set_text(ws, pov, entity, prop, ts, editor, text):
-    send(ws, (f'try {{{pov}}} grc20 set_text '
-              f'<{{.entity: {orly_str(entity)}, .property: {orly_str(prop)}, '
-              f'.ts: {int(ts)}, .editor: {orly_str(editor)}, '
-              f'.text: {orly_str(text)}}}>;'))
+def set_text(c, pov, entity, prop, ts, editor, text):
+    c.call(pov, "grc20", "set_text",
+           {"entity": entity, "property": prop, "ts": int(ts),
+            "editor": editor, "text": text})
 
 
-def set_number(ws, pov, entity, prop, ts, editor, n):
-    send(ws, (f'try {{{pov}}} grc20 set_number '
-              f'<{{.entity: {orly_str(entity)}, .property: {orly_str(prop)}, '
-              f'.ts: {int(ts)}, .editor: {orly_str(editor)}, .n: {int(n)}}}>;'))
+def set_number(c, pov, entity, prop, ts, editor, n):
+    c.call(pov, "grc20", "set_number",
+           {"entity": entity, "property": prop, "ts": int(ts),
+            "editor": editor, "n": int(n)})
 
 
-def set_relation(ws, pov, entity, prop, ts, editor, target):
-    send(ws, (f'try {{{pov}}} grc20 set_relation '
-              f'<{{.entity: {orly_str(entity)}, .property: {orly_str(prop)}, '
-              f'.ts: {int(ts)}, .editor: {orly_str(editor)}, '
-              f'.target: {orly_str(target)}}}>;'))
+def set_relation(c, pov, entity, prop, ts, editor, target):
+    c.call(pov, "grc20", "set_relation",
+           {"entity": entity, "property": prop, "ts": int(ts),
+            "editor": editor, "target": target})
 
 
 # ---------------------------------------------------------------------
@@ -169,28 +146,28 @@ def set_relation(ws, pov, entity, prop, ts, editor, target):
 # the engine's `entity_live` reads back); it is deliberately NOT listed
 # as a normal property.
 # ---------------------------------------------------------------------
-def op_create_entity(ws, pov, editor, entity, type_name):
-    create_entity(ws, pov, entity, now_ms(), editor, type_name)
+def op_create_entity(c, pov, editor, entity, type_name):
+    create_entity(c, pov, entity, now_ms(), editor, type_name)
 
 
-def op_set_text(ws, pov, editor, entity, prop, text):
-    register_prop(ws, pov, entity, prop)
-    set_text(ws, pov, entity, prop, now_ms(), editor, text)
+def op_set_text(c, pov, editor, entity, prop, text):
+    register_prop(c, pov, entity, prop)
+    set_text(c, pov, entity, prop, now_ms(), editor, text)
 
 
-def op_set_int(ws, pov, editor, entity, prop, n):
-    register_prop(ws, pov, entity, prop)
-    set_number(ws, pov, entity, prop, now_ms(), editor, n)
+def op_set_int(c, pov, editor, entity, prop, n):
+    register_prop(c, pov, entity, prop)
+    set_number(c, pov, entity, prop, now_ms(), editor, n)
 
 
-def op_create_relation(ws, pov, editor, entity, prop, target):
-    register_entity(ws, pov, target)
-    register_prop(ws, pov, entity, prop)
-    set_relation(ws, pov, entity, prop, now_ms(), editor, target)
+def op_create_relation(c, pov, editor, entity, prop, target):
+    register_entity(c, pov, target)
+    register_prop(c, pov, entity, prop)
+    set_relation(c, pov, entity, prop, now_ms(), editor, target)
 
 
-def op_delete_entity(ws, pov, editor, entity):
-    delete_entity(ws, pov, entity, now_ms(), editor)
+def op_delete_entity(c, pov, editor, entity):
+    delete_entity(c, pov, entity, now_ms(), editor)
 
 
 # ---------------------------------------------------------------------
@@ -199,41 +176,36 @@ def op_delete_entity(ws, pov, editor, entity):
 # current value (or "(absent)" for an unset/deleted property);
 # `entity_live_as_of` replays the entity tombstone.
 # ---------------------------------------------------------------------
-def display_as_of(ws, pov, entity, prop, as_of):
-    return send(ws, (f'try {{{pov}}} grc20 display_as_of '
-                     f'<{{.entity: {orly_str(entity)}, '
-                     f'.property: {orly_str(prop)}, .as_of: {int(as_of)}}}>;'))
+def display_as_of(c, pov, entity, prop, as_of):
+    return c.call(pov, "grc20", "display_as_of",
+                  {"entity": entity, "property": prop, "as_of": int(as_of)})
 
 
-def entity_live_as_of(ws, pov, entity, as_of):
-    return bool(send(ws, (f'try {{{pov}}} grc20 entity_live_as_of '
-                          f'<{{.entity: {orly_str(entity)}, '
-                          f'.as_of: {int(as_of)}}}>;')))
+def entity_live_as_of(c, pov, entity, as_of):
+    return bool(c.call(pov, "grc20", "entity_live_as_of",
+                       {"entity": entity, "as_of": int(as_of)}))
 
 
-def all_entities(ws, pov):
-    r = send(ws, f'try {{{pov}}} grc20 all_entities <{{}}>;')
+def all_entities(c, pov):
+    r = c.call(pov, "grc20", "all_entities")
     return list(r or [])
 
 
-def props_of(ws, pov, entity):
-    r = send(ws, (f'try {{{pov}}} grc20 props_of '
-                  f'<{{.entity: {orly_str(entity)}}}>;'))
+def props_of(c, pov, entity):
+    r = c.call(pov, "grc20", "props_of", {"entity": entity})
     return list(r or [])
 
 
-def entity_count(ws, pov):
-    return int(send(ws, f'try {{{pov}}} grc20 entity_count <{{}}>;'))
+def entity_count(c, pov):
+    return int(c.call(pov, "grc20", "entity_count"))
 
 
-def hist_meta(ws, pov, entity, prop):
+def hist_meta(c, pov, entity, prop):
     """Raw event log for one (entity, property), but only the provenance
     fields (.ts, .editor) -- used for per-editor analytics, never for
     replay. The typed .op is resolved by the engine, so the driver does
     not parse it."""
-    r = send(ws, (f'try {{{pov}}} grc20 hist_for '
-                  f'<{{.entity: {orly_str(entity)}, '
-                  f'.property: {orly_str(prop)}}}>;'))
+    r = c.call(pov, "grc20", "hist_for", {"entity": entity, "property": prop})
     return [{"ts": int(ev["ts"]), "editor": ev["editor"]} for ev in (r or [])]
 
 
@@ -243,15 +215,15 @@ def hist_meta(ws, pov, entity, prop):
 # that all moved into grc20.orly. Live entities only (entity tombstone is
 # an engine replay), present properties only ("(absent)" filtered out).
 # ---------------------------------------------------------------------
-def reconstruct(ws, pov, as_of=FOREVER):
+def reconstruct(c, pov, as_of=FOREVER):
     """Returns {entity_id: {"__type": type_str, property: display_str}}."""
     out = {}
-    for eid in sorted(all_entities(ws, pov)):
-        if not entity_live_as_of(ws, pov, eid, as_of):
+    for eid in sorted(all_entities(c, pov)):
+        if not entity_live_as_of(c, pov, eid, as_of):
             continue
-        e_state = {"__type": display_as_of(ws, pov, eid, "__entity", as_of)}
-        for prop in sorted(props_of(ws, pov, eid)):
-            value = display_as_of(ws, pov, eid, prop, as_of)
+        e_state = {"__type": display_as_of(c, pov, eid, "__entity", as_of)}
+        for prop in sorted(props_of(c, pov, eid)):
+            value = display_as_of(c, pov, eid, prop, as_of)
             if value != "(absent)":
                 e_state[prop] = value
         out[eid] = e_state
@@ -277,28 +249,28 @@ def print_snapshot(label, state):
 # interleaving happens on the wire.
 # ---------------------------------------------------------------------
 def phase1_wiki(pov):
-    ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
+    c = orly.connect()
     try:
-        send(ws, "new session;")
+        c.new_session()
         for eid, name, born, died in PHILOSOPHERS:
-            op_create_entity(ws, pov, "wiki", eid, "Person")
-            op_set_text(ws, pov, "wiki", eid, "name", name)
-            op_set_int(ws, pov, "wiki", eid, "born", born)
-            op_set_int(ws, pov, "wiki", eid, "died", died)
+            op_create_entity(c, pov, "wiki", eid, "Person")
+            op_set_text(c, pov, "wiki", eid, "name", name)
+            op_set_int(c, pov, "wiki", eid, "born", born)
+            op_set_int(c, pov, "wiki", eid, "died", died)
     finally:
-        ws.close()
+        c.close()
 
 
 def phase2_stanford(pov):
-    ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
+    c = orly.connect()
     try:
-        send(ws, "new session;")
+        c.new_session()
         for eid, school in SCHOOLS.items():
-            op_set_text(ws, pov, "stanford", eid, "school", school)
+            op_set_text(c, pov, "stanford", eid, "school", school)
         for subject, prop, target in RELATIONS:
-            op_create_relation(ws, pov, "stanford", subject, prop, target)
+            op_create_relation(c, pov, "stanford", subject, prop, target)
     finally:
-        ws.close()
+        c.close()
 
 
 def phase3_race(pov):
@@ -308,12 +280,12 @@ def phase3_race(pov):
     entity, prop, wiki_value, stanford_value = RACE_FACT
 
     def writer(editor, value):
-        ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
+        c = orly.connect()
         try:
-            send(ws, "new session;")
-            op_set_int(ws, pov, editor, entity, prop, value)
+            c.new_session()
+            op_set_int(c, pov, editor, entity, prop, value)
         finally:
-            ws.close()
+            c.close()
 
     threads = [
         threading.Thread(target=writer, args=("wiki", wiki_value)),
@@ -323,13 +295,13 @@ def phase3_race(pov):
     for t in threads: t.join()
 
 
-def editorial_diff(ws, pov):
+def editorial_diff(c, pov):
     """Per-editor event count + overlap analysis, over the raw log."""
     by_editor = {}                # editor -> int (event count)
     entities_by_editor = {}       # editor -> set(entity ids)
-    for eid in sorted(all_entities(ws, pov)):
-        for prop in sorted(props_of(ws, pov, eid)) + ["__entity"]:
-            for ev in hist_meta(ws, pov, eid, prop):
+    for eid in sorted(all_entities(c, pov)):
+        for prop in sorted(props_of(c, pov, eid)) + ["__entity"]:
+            for ev in hist_meta(c, pov, eid, prop):
                 editor = ev["editor"]
                 by_editor[editor] = by_editor.get(editor, 0) + 1
                 entities_by_editor.setdefault(editor, set()).add(eid)
@@ -346,10 +318,10 @@ def editorial_diff(ws, pov):
 
 
 def main():
-    boot = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
-    send(boot, "new session;")
-    send(boot, "install grc20.1;")
-    pov = send(boot, "new safe shared pov;")
+    boot = orly.connect()
+    boot.new_session()
+    boot.install("grc20", 1)
+    pov = boot.new_pov()
     print(f"pov: {pov}")
     print(f"corpus: {len(PHILOSOPHERS)} entities, "
           f"{len(SCHOOLS)} schools, {len(RELATIONS)} relations")
@@ -438,8 +410,7 @@ def main():
         failures.append(f"phase 3: only {len(race_events)} events in race "
                         f"history -- expected both writers to land")
 
-    send(boot, "exit;")
-    boot.close()
+    boot.exit()
 
     if failures:
         print("\n=== self-check FAILED ===")
