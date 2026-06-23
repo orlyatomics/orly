@@ -9,10 +9,11 @@
 #
 # A fifth job, `tsan`, builds the concurrency tests under ThreadSanitizer to
 # validate the lock-free / commutative-merge claim at the memory level (data-
-# race freedom). It is NON-GATING (continue-on-error) and skips pull_request
-# events -- sanitizer builds are slow, and an engine revived from 2014 still
-# surfaces races we have not triaged yet. It runs on push-to-master, the
-# nightly schedule, and manual dispatch. See issue #177.
+# race freedom). It is GATING (issue #184): the curated set is clean, so the
+# job FAILS on any un-suppressed race. Provably-benign reports are documented
+# and suppressed in orly/tsan.supp. Sanitizer builds are slow, so it still
+# skips pull_request events and runs on push-to-master, the nightly schedule,
+# and manual dispatch. See issues #177 and #184.
 #
 # Caching: apt packages and the ccache store are cached across runs. The
 # ~4.5 GB build-output tree is too large to persist in the 10 GB Actions
@@ -386,14 +387,16 @@ jobs:
         working-directory: examples/recursive-variants
 
   tsan:
-    name: ThreadSanitizer (non-gating)
-    # Sanitizer builds are slow, so skip pull_request events to keep PR latency
-    # low; runs on push-to-master, the nightly schedule, and manual dispatch.
-    # continue-on-error makes it informational: the engine still surfaces races
-    # we have not triaged, and a known-incomplete surface should inform, not
-    # block. Triage findings and ratchet toward gating. See issue #177.
+    name: ThreadSanitizer
+    # GATING (issue #184): the curated concurrency set is clean under TSan, so
+    # this job now FAILS if any un-suppressed ThreadSanitizer warning appears
+    # (see the "fail on any race" check below). Provably-benign reports are
+    # documented and suppressed in orly/tsan.supp, never ignored here.
+    # Sanitizer builds are slow, so we still skip pull_request events to keep PR
+    # latency low; the gate runs on push-to-master, the nightly schedule, and
+    # manual dispatch (so a race that lands reds master immediately). Extending
+    # the gate to pull_request events is a possible future tightening.
     if: github.event_name != 'pull_request'
-    continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -486,8 +489,16 @@ jobs:
           echo "$line"
           echo "Total ThreadSanitizer warnings: $total"
           echo
-          echo "Full reports are uploaded as the 'tsan-logs' artifact. This job"
-          echo "is non-gating; triage findings and ratchet toward gating (#177)."
+          echo "Full reports are uploaded as the 'tsan-logs' artifact."
+          # GATING (#184): the curated set is clean, so any un-suppressed race is
+          # a regression. Provably-benign reports are documented + suppressed in
+          # orly/tsan.supp (applied via TSAN_OPTIONS suppressions= above), so a
+          # non-zero count here is a real, untriaged data race -> fail the job.
+          if [ "$total" -ne 0 ]; then
+            echo "::error::$total un-suppressed ThreadSanitizer warning(s) -- a data-race regression. See the tsan-logs artifact; if provably benign, document and add a suppression to orly/tsan.supp."
+            exit 1
+          fi
+          echo "No un-suppressed ThreadSanitizer warnings."
 
       - name: Upload TSan reports
         if: always()

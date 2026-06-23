@@ -83,9 +83,12 @@ setarch "$(uname -m)" -R ../out_orly/tsan/orly/indy/context_fold.test
 
 The `setarch -R` (disable ASLR) is required on modern kernels — without it
 libtsan aborts at startup with *"unexpected memory mapping"*. CI runs a curated
-set of concurrency tests this way in a **non-gating** job (it still surfaces
-untriaged races); see [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and
-[#177](https://github.com/orlyatomics/orly/issues/177).
+set of concurrency tests this way in a **gating** job — the set is clean under
+TSan, so the job fails on any un-suppressed race; provably-benign reports are
+documented and suppressed in [`orly/tsan.supp`](orly/tsan.supp). See
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and issues
+[#177](https://github.com/orlyatomics/orly/issues/177) /
+[#184](https://github.com/orlyatomics/orly/issues/184).
 
 ## Examples
 

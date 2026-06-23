@@ -49,3 +49,27 @@
 # to a single global order would change the synchronisation semantics under
 # test, so the report is suppressed rather than "fixed".
 deadlock:Orly::Spa::FluxCapacitor::TSync::TLocal::IncrLockCount
+
+# ---------------------------------------------------------------------------
+# orly/indy/fiber/algorithm.test -- frame-pool teardown vs finished-fiber write
+# ---------------------------------------------------------------------------
+# WARNING: ThreadSanitizer: data race
+#   Write of size 8 (free) by main thread:
+#     Base::TThreadLocalGlobalPoolManager<Orly::Indy::Fiber::TFrame, ...>::~...()
+#   Previous atomic write of size 1 by thread T17 (finished):
+#     Orly::Indy::Fiber::TFrame::Run()   // the DebugIsRunning tripwire flag
+#
+# At teardown the main thread frees the fiber frame-pool storage while TSan
+# still holds a finished fiber's last write to TFrame::DebugIsRunning.  This is
+# debug-only (DebugIsRunning, a "freed while still running" tripwire, exists
+# only in non-NDEBUG builds; #184 / PR #199 already made it std::atomic, so it
+# is not a memory-model UB race) and benign: the fiber framework guarantees
+# every frame has completed before its pool is torn down, but that ordering
+# travels through the manual ucontext stack-switch machinery, which
+# ThreadSanitizer cannot model as a happens-before the way it tracks
+# pthread_join.  TSan reports an ordering it cannot prove safe, not a reachable
+# race.
+#
+# Tracked for a proper fix (annotate fiber completion / order the pool free
+# after all frames are joined, then remove this entry) in issue #200.
+race:Base::TThreadLocalGlobalPoolManager<Orly::Indy::Fiber::TFrame
