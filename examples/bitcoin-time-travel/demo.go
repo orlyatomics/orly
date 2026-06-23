@@ -16,14 +16,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
 
 const (
-	wsURL      = "ws://127.0.0.1:8082/"
 	satPerBTC  = 100_000_000
 	forkHeight = 6
 )
@@ -85,47 +83,28 @@ var (
 	}
 )
 
-// One orlyi reply -- {"status": "ok|...", "result": ...}. result varies
-// (string for `new pov`, number for `balance_at`, null for void methods).
-type reply struct {
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-	Pos    string          `json:"pos,omitempty"`
+func die(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
 }
 
-// send a statement and return the raw result JSON; bail on non-OK.
-func send(c *websocket.Conn, stmt string) json.RawMessage {
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		die(fmt.Sprintf("write %q: %v", stmt, err))
-	}
-	_, msg, err := c.ReadMessage()
+func must[T any](v T, err error) T {
 	if err != nil {
-		die(fmt.Sprintf("read after %q: %v", stmt, err))
+		die(err.Error())
 	}
-	var r reply
-	if err := json.Unmarshal(msg, &r); err != nil {
-		die(fmt.Sprintf("parse reply to %q: %v\n  raw: %s", stmt, err, msg))
-	}
-	if r.Status != "ok" {
-		die(fmt.Sprintf("%s: %s", stmt, string(msg)))
-	}
-	return r.Result
+	return v
 }
 
-func sendString(c *websocket.Conn, stmt string) string {
-	raw := send(c, stmt)
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		die(fmt.Sprintf("expected string result, got %s", raw))
+func check(err error) {
+	if err != nil {
+		die(err.Error())
 	}
-	return s
 }
 
-func sendInt(c *websocket.Conn, stmt string) int64 {
-	// orlyi serialises numbers as JSON floats (e.g. `5000000000.0`), so we
-	// unmarshal into float64 and cast. Our domain is integer satoshi well
-	// inside float64's exact-integer range (2^53), so no precision loss.
-	raw := send(c, stmt)
+// asInt decodes a result that orlyi serialises as a JSON float (e.g.
+// `5000000000.0`) into int64. Integer satoshi stay inside float64's exact
+// range (2^53), so there's no precision loss.
+func asInt(raw json.RawMessage) int64 {
 	var n float64
 	if err := json.Unmarshal(raw, &n); err != nil {
 		die(fmt.Sprintf("expected number result, got %s", raw))
@@ -133,38 +112,27 @@ func sendInt(c *websocket.Conn, stmt string) int64 {
 	return int64(n)
 }
 
-// Convenience wrappers that build the right `try {pov} bitcoin <method> <{args}>;`.
-func creditAt(c *websocket.Conn, pov, branch, addr string, amount int64, h int) {
-	stmt := fmt.Sprintf(
-		`try {%s} bitcoin credit_at <{.branch: "%s", .addr: "%s", .amount: %d, .h: %d}>;`,
-		pov, branch, addr, amount, h)
-	send(c, stmt)
+// Convenience wrappers over the shared client.
+func creditAt(c *orly.Client, pov, branch, addr string, amount int64, h int) {
+	must(c.Call(pov, "bitcoin", "credit_at",
+		map[string]any{"branch": branch, "addr": addr, "amount": amount, "h": h}))
 }
 
-func balanceAt(c *websocket.Conn, pov, branch, addr string, h int) int64 {
-	stmt := fmt.Sprintf(
-		`try {%s} bitcoin balance_at <{.branch: "%s", .addr: "%s", .h: %d}>;`,
-		pov, branch, addr, h)
-	return sendInt(c, stmt)
+func balanceAt(c *orly.Client, pov, branch, addr string, h int) int64 {
+	return asInt(must(c.Call(pov, "bitcoin", "balance_at",
+		map[string]any{"branch": branch, "addr": addr, "h": h})))
 }
 
-func forkFrom(c *websocket.Conn, pov, branch, parent string, h int) {
-	stmt := fmt.Sprintf(
-		`try {%s} bitcoin fork_from <{.branch: "%s", .parent: "%s", .fork_h: %d}>;`,
-		pov, branch, parent, h)
-	send(c, stmt)
-}
-
-func die(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
-	os.Exit(1)
+func forkFrom(c *orly.Client, pov, branch, parent string, h int) {
+	must(c.Call(pov, "bitcoin", "fork_from",
+		map[string]any{"branch": branch, "parent": parent, "fork_h": h}))
 }
 
 func fmtBTC(satoshi int64) string {
 	return fmt.Sprintf("%7.2f", float64(satoshi)/satPerBTC)
 }
 
-func printChain(c *websocket.Conn, pov, branch string, maxH int) {
+func printChain(c *orly.Client, pov, branch string, maxH int) {
 	fmt.Printf("  %-3s  ", "h")
 	for _, a := range watch {
 		fmt.Printf("%7s  ", a)
@@ -189,16 +157,15 @@ func dashes(n int) string {
 }
 
 func main() {
-	u, _ := url.Parse(wsURL)
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	c, err := orly.Connect()
 	if err != nil {
-		die(fmt.Sprintf("dial %s: %v", wsURL, err))
+		die(err.Error())
 	}
 	defer c.Close()
 
-	sendString(c, "new session;")
-	send(c, "install bitcoin.1;")
-	pov := sendString(c, "new safe shared pov;")
+	must(c.NewSession())
+	check(c.Install("bitcoin", 1))
+	pov := must(c.NewPov())
 	fmt.Printf("pov: %s\n\n", pov)
 
 	fmt.Printf("applying mainnet (%d blocks)...\n", len(mainnetBlocks))
@@ -264,7 +231,7 @@ func main() {
 		}
 	}
 
-	send(c, "exit;")
+	check(c.Exit())
 
 	if len(failures) > 0 {
 		fmt.Println("\n=== self-check FAILED ===")
