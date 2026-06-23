@@ -26,10 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
 
-const wsURL = "ws://127.0.0.1:8082/"
 
 // A .ts beyond any real event -- "now / all events" (mirrors grc20.orly's
 // `forever`).
@@ -76,44 +75,26 @@ const raceStanford = -575
 // WS helpers.
 // ---------------------------------------------------------------------
 
-type reply struct {
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-}
 
 func die(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }
 
-func dial() *websocket.Conn {
-	c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+func must[T any](v T, err error) T {
 	if err != nil {
-		die(fmt.Sprintf("dial %s: %v", wsURL, err))
+		die(err.Error())
 	}
-	return c
+	return v
 }
 
-func send(c *websocket.Conn, stmt string) json.RawMessage {
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		die(fmt.Sprintf("write %q: %v", stmt, err))
-	}
-	_, msg, err := c.ReadMessage()
+func check(err error) {
 	if err != nil {
-		die(fmt.Sprintf("read after %q: %v", stmt, err))
+		die(err.Error())
 	}
-	var r reply
-	if err := json.Unmarshal(msg, &r); err != nil {
-		die(fmt.Sprintf("parse reply: %v\n  raw: %s", err, msg))
-	}
-	if r.Status != "ok" {
-		die(fmt.Sprintf("%s: %s", stmt, string(msg)))
-	}
-	return r.Result
 }
 
-func sendString(c *websocket.Conn, stmt string) string {
-	raw := send(c, stmt)
+func asString(raw json.RawMessage) string {
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
 		die(fmt.Sprintf("expected string result, got %s", raw))
@@ -122,8 +103,7 @@ func sendString(c *websocket.Conn, stmt string) string {
 }
 
 // orlyi serialises numbers as JSON floats; cast to int via float64.
-func sendInt(c *websocket.Conn, stmt string) int {
-	raw := send(c, stmt)
+func asInt(raw json.RawMessage) int {
 	var n float64
 	if err := json.Unmarshal(raw, &n); err != nil {
 		die(fmt.Sprintf("expected number result, got %s", raw))
@@ -131,8 +111,7 @@ func sendInt(c *websocket.Conn, stmt string) int {
 	return int(n)
 }
 
-func sendBool(c *websocket.Conn, stmt string) bool {
-	raw := send(c, stmt)
+func asBool(raw json.RawMessage) bool {
 	var b bool
 	if err := json.Unmarshal(raw, &b); err != nil {
 		die(fmt.Sprintf("expected bool result, got %s", raw))
@@ -141,8 +120,7 @@ func sendBool(c *websocket.Conn, stmt string) bool {
 }
 
 // orlyi serialises sets as JSON arrays.
-func sendStringSet(c *websocket.Conn, stmt string) []string {
-	raw := send(c, stmt)
+func asStringSet(raw json.RawMessage) []string {
 	if string(raw) == "null" {
 		return nil
 	}
@@ -156,11 +134,13 @@ func sendStringSet(c *websocket.Conn, stmt string) []string {
 
 func nowMs() int64 { return time.Now().UnixNano() / 1_000_000 }
 
-func orlyStr(s string) string {
-	// Corpus has no quotes/backslashes, but be defensive.
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
+func connect() *orly.Client {
+	c, err := orly.Connect()
+	if err != nil {
+		die(err.Error())
+	}
+	must(c.NewSession())
+	return c
 }
 
 // ---------------------------------------------------------------------
@@ -179,10 +159,8 @@ type eventWire struct {
 	Editor string  `json:"editor"`
 }
 
-func histMeta(c *websocket.Conn, pov, entity, prop string) []eventMeta {
-	raw := send(c, fmt.Sprintf(
-		`try {%s} grc20 hist_for <{.entity: %s, .property: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop)))
+func histMeta(c *orly.Client, pov, entity, prop string) []eventMeta {
+	raw := must(c.Call(pov, "grc20", "hist_for", map[string]any{"entity": entity, "property": prop}))
 	if string(raw) == "null" {
 		return nil
 	}
@@ -207,94 +185,84 @@ func histMeta(c *websocket.Conn, pov, entity, prop string) []eventMeta {
 // Writes -- typed appends; the engine builds the op_t variant.
 // ---------------------------------------------------------------------
 
-func registerEntity(c *websocket.Conn, pov, entity string) {
-	send(c, fmt.Sprintf(`try {%s} grc20 register_entity <{.entity: %s}>;`,
-		pov, orlyStr(entity)))
+func registerEntity(c *orly.Client, pov, entity string) {
+	must(c.Call(pov, "grc20", "register_entity", map[string]any{"entity": entity}))
 }
 
-func registerProp(c *websocket.Conn, pov, entity, prop string) {
-	send(c, fmt.Sprintf(`try {%s} grc20 register_prop <{.entity: %s, .property: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop)))
+func registerProp(c *orly.Client, pov, entity, prop string) {
+	must(c.Call(pov, "grc20", "register_prop", map[string]any{"entity": entity, "property": prop}))
 }
 
-func createEntity(c *websocket.Conn, pov, entity string, ts int64, editor, kind string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 create_entity <{.entity: %s, .ts: %d, .editor: %s, .kind: %s}>;`,
-		pov, orlyStr(entity), ts, orlyStr(editor), orlyStr(kind)))
+func createEntity(c *orly.Client, pov, entity string, ts int64, editor, kind string) {
+	must(c.Call(pov, "grc20", "create_entity",
+		map[string]any{"entity": entity, "ts": ts, "editor": editor, "kind": kind}))
 }
 
-func deleteEntity(c *websocket.Conn, pov, entity string, ts int64, editor string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 delete_entity <{.entity: %s, .ts: %d, .editor: %s}>;`,
-		pov, orlyStr(entity), ts, orlyStr(editor)))
+func deleteEntity(c *orly.Client, pov, entity string, ts int64, editor string) {
+	must(c.Call(pov, "grc20", "delete_entity",
+		map[string]any{"entity": entity, "ts": ts, "editor": editor}))
 }
 
-func setText(c *websocket.Conn, pov, entity, prop string, ts int64, editor, text string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 set_text <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .text: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), orlyStr(text)))
+func setText(c *orly.Client, pov, entity, prop string, ts int64, editor, text string) {
+	must(c.Call(pov, "grc20", "set_text",
+		map[string]any{"entity": entity, "property": prop, "ts": ts, "editor": editor, "text": text}))
 }
 
-func setNumber(c *websocket.Conn, pov, entity, prop string, ts int64, editor string, n int) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 set_number <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .n: %d}>;`,
-		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), n))
+func setNumber(c *orly.Client, pov, entity, prop string, ts int64, editor string, n int) {
+	must(c.Call(pov, "grc20", "set_number",
+		map[string]any{"entity": entity, "property": prop, "ts": ts, "editor": editor, "n": n}))
 }
 
-func setRelation(c *websocket.Conn, pov, entity, prop string, ts int64, editor, target string) {
-	send(c, fmt.Sprintf(
-		`try {%s} grc20 set_relation <{.entity: %s, .property: %s, .ts: %d, .editor: %s, .target: %s}>;`,
-		pov, orlyStr(entity), orlyStr(prop), ts, orlyStr(editor), orlyStr(target)))
+func setRelation(c *orly.Client, pov, entity, prop string, ts int64, editor, target string) {
+	must(c.Call(pov, "grc20", "set_relation",
+		map[string]any{"entity": entity, "property": prop, "ts": ts, "editor": editor, "target": target}))
 }
 
 // ---------------------------------------------------------------------
 // Reads -- the engine resolves the value; the driver enumerates.
 // ---------------------------------------------------------------------
 
-func displayAsOf(c *websocket.Conn, pov, entity, prop string, asOf int64) string {
-	return sendString(c, fmt.Sprintf(
-		`try {%s} grc20 display_as_of <{.entity: %s, .property: %s, .as_of: %d}>;`,
-		pov, orlyStr(entity), orlyStr(prop), asOf))
+func displayAsOf(c *orly.Client, pov, entity, prop string, asOf int64) string {
+	return asString(must(c.Call(pov, "grc20", "display_as_of",
+		map[string]any{"entity": entity, "property": prop, "as_of": asOf})))
 }
 
-func entityLiveAsOf(c *websocket.Conn, pov, entity string, asOf int64) bool {
-	return sendBool(c, fmt.Sprintf(
-		`try {%s} grc20 entity_live_as_of <{.entity: %s, .as_of: %d}>;`,
-		pov, orlyStr(entity), asOf))
+func entityLiveAsOf(c *orly.Client, pov, entity string, asOf int64) bool {
+	return asBool(must(c.Call(pov, "grc20", "entity_live_as_of",
+		map[string]any{"entity": entity, "as_of": asOf})))
 }
 
-func allEntities(c *websocket.Conn, pov string) []string {
-	return sendStringSet(c, fmt.Sprintf(`try {%s} grc20 all_entities <{}>;`, pov))
+func allEntities(c *orly.Client, pov string) []string {
+	return asStringSet(must(c.Call(pov, "grc20", "all_entities", nil)))
 }
 
-func propsOf(c *websocket.Conn, pov, entity string) []string {
-	return sendStringSet(c, fmt.Sprintf(`try {%s} grc20 props_of <{.entity: %s}>;`,
-		pov, orlyStr(entity)))
+func propsOf(c *orly.Client, pov, entity string) []string {
+	return asStringSet(must(c.Call(pov, "grc20", "props_of", map[string]any{"entity": entity})))
 }
 
-func entityCount(c *websocket.Conn, pov string) int {
-	return sendInt(c, fmt.Sprintf(`try {%s} grc20 entity_count <{}>;`, pov))
+func entityCount(c *orly.Client, pov string) int {
+	return asInt(must(c.Call(pov, "grc20", "entity_count", nil)))
 }
 
 // ---------------------------------------------------------------------
 // GRC-20-style ops. Thin: pick the typed setter + register the property.
 // ---------------------------------------------------------------------
 
-func opCreateEntity(c *websocket.Conn, pov, editor, entity, typeName string) {
+func opCreateEntity(c *orly.Client, pov, editor, entity, typeName string) {
 	createEntity(c, pov, entity, nowMs(), editor, typeName)
 }
 
-func opSetText(c *websocket.Conn, pov, editor, entity, prop, text string) {
+func opSetText(c *orly.Client, pov, editor, entity, prop, text string) {
 	registerProp(c, pov, entity, prop)
 	setText(c, pov, entity, prop, nowMs(), editor, text)
 }
 
-func opSetInt(c *websocket.Conn, pov, editor, entity, prop string, n int) {
+func opSetInt(c *orly.Client, pov, editor, entity, prop string, n int) {
 	registerProp(c, pov, entity, prop)
 	setNumber(c, pov, entity, prop, nowMs(), editor, n)
 }
 
-func opCreateRelation(c *websocket.Conn, pov, editor, entity, prop, target string) {
+func opCreateRelation(c *orly.Client, pov, editor, entity, prop, target string) {
 	registerEntity(c, pov, target)
 	registerProp(c, pov, entity, prop)
 	setRelation(c, pov, entity, prop, nowMs(), editor, target)
@@ -307,7 +275,7 @@ func opCreateRelation(c *websocket.Conn, pov, editor, entity, prop, target strin
 // ---------------------------------------------------------------------
 
 // reconstruct returns entity -> {"__type": typeStr, prop: displayStr}.
-func reconstruct(c *websocket.Conn, pov string, asOf int64) map[string]map[string]string {
+func reconstruct(c *orly.Client, pov string, asOf int64) map[string]map[string]string {
 	out := map[string]map[string]string{}
 	for _, eid := range allEntities(c, pov) {
 		if !entityLiveAsOf(c, pov, eid, asOf) {
@@ -365,9 +333,8 @@ func printSnapshot(label string, state map[string]map[string]string) {
 // ---------------------------------------------------------------------
 
 func phase1Wiki(pov string) {
-	c := dial()
+	c := connect()
 	defer c.Close()
-	send(c, "new session;")
 	for _, p := range philosophers {
 		opCreateEntity(c, pov, "wiki", p.id, "Person")
 		opSetText(c, pov, "wiki", p.id, "name", p.name)
@@ -377,9 +344,8 @@ func phase1Wiki(pov string) {
 }
 
 func phase2Stanford(pov string) {
-	c := dial()
+	c := connect()
 	defer c.Close()
-	send(c, "new session;")
 	for i, eid := range schoolEntities {
 		opSetText(c, pov, "stanford", eid, "school", schoolValues[i])
 	}
@@ -392,10 +358,9 @@ func phase3Race(pov string) {
 	var wg sync.WaitGroup
 	writer := func(editor string, value int) {
 		defer wg.Done()
-		c := dial()
+		c := connect()
 		defer c.Close()
-		send(c, "new session;")
-		opSetInt(c, pov, editor, raceEntity, raceProp, value)
+			opSetInt(c, pov, editor, raceEntity, raceProp, value)
 	}
 	wg.Add(2)
 	go writer("wiki", raceWiki)
@@ -403,7 +368,7 @@ func phase3Race(pov string) {
 	wg.Wait()
 }
 
-func editorialDiff(c *websocket.Conn, pov string) {
+func editorialDiff(c *orly.Client, pov string) {
 	byEditor := map[string]int{}
 	entitiesByEditor := map[string]map[string]struct{}{}
 	for _, eid := range allEntities(c, pov) {
@@ -446,11 +411,10 @@ func editorialDiff(c *websocket.Conn, pov string) {
 // ---------------------------------------------------------------------
 
 func main() {
-	boot := dial()
+	boot := connect()
 	defer boot.Close()
-	sendString(boot, "new session;")
-	send(boot, "install grc20.1;")
-	pov := sendString(boot, "new safe shared pov;")
+	check(boot.Install("grc20", 1))
+	pov := must(boot.NewPov())
 	fmt.Printf("pov: %s\n", pov)
 	fmt.Printf("corpus: %d entities, %d schools, %d relations\n",
 		len(philosophers), len(schoolEntities), len(relations))
@@ -541,7 +505,7 @@ func main() {
 				len(raceEvents)))
 	}
 
-	send(boot, "exit;")
+	check(boot.Exit())
 
 	if len(failures) > 0 {
 		fmt.Println("\n=== self-check FAILED ===")
