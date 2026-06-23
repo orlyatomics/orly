@@ -376,10 +376,10 @@ namespace Orly {
           TRunnerCons(size_t num_runners)
               : NumRunners(num_runners), NextId(0UL) {
             syslog(LOG_INFO, "TRunnerCons [%ld]", num_runners);
-            RunnerArray = new TRunner *[num_runners];
+            RunnerArray = new std::atomic<TRunner *>[num_runners];
             syslog(LOG_INFO, "TRunnerCons [%ld] A", num_runners);
             for (size_t i = 0; i < num_runners; ++i) {
-              RunnerArray[i] = nullptr;
+              RunnerArray[i].store(nullptr, std::memory_order_relaxed);
             }
             syslog(LOG_INFO, "TRunnerCons [%ld] B", num_runners);
           }
@@ -409,26 +409,32 @@ namespace Orly {
           /* TODO */
           size_t NextId;
 
-          /* TODO */
-          TRunner **RunnerArray;
+          /* Per-runner publication slots. A TRunner publishes itself into its
+             own slot in its ctor (store/release) and other runner threads read
+             the slots in TRunner::Run (load/acquire), so the element type must
+             be atomic. */
+          std::atomic<TRunner *> *RunnerArray;
 
           friend class TRunner;
 
         };  // TRunnerCons
 
         TRunner(TRunnerCons &runner_cons) : TRunner(runner_cons.NumRunners, runner_cons.GetNewId(), runner_cons.RunnerArray) {
-          runner_cons.RunnerArray[RunnerId] = this;
+          /* Publish ourselves into the shared runner array. Release so that a
+             peer runner that reads this slot (acquire) in TRunner::Run sees a
+             fully constructed TRunner -- in particular our QueueArray. */
+          runner_cons.RunnerArray[RunnerId].store(this, std::memory_order_release);
         }
 
         /* TODO */
-        TRunner(size_t total_num_runners, size_t runner_id, TRunner **runner_array)
+        TRunner(size_t total_num_runners, size_t runner_id, std::atomic<TRunner *> *runner_array)
             : FreeFrame(nullptr),
               FreeFramePool(nullptr),
               //MyFrameQueue(this),
               ReadyToRunQueue(nullptr),
               NewReadyToRunQueue(nullptr),
               KeepRunning(true),
-              InboundFrameQueue(nullptr),
+              InboundFrameQueue{nullptr},
               ForeignRunnerToMoveFrameTo(nullptr),
               FrameToMoveToForeignRunner(nullptr),
               TotalNumRunners(total_num_runners),
@@ -442,13 +448,13 @@ namespace Orly {
           #endif
           QueueArray = new TOutboundQueue[total_num_runners];
           for (size_t i = 0; i < total_num_runners; ++i) {
-            QueueArray[i].Ptr = nullptr;
+            QueueArray[i].Ptr.store(nullptr, std::memory_order_relaxed);
           }
         }
 
         /* TODO */
         ~TRunner() {
-          RunnerArray[RunnerId] = nullptr;
+          RunnerArray[RunnerId].store(nullptr, std::memory_order_release);
           delete[] QueueArray;
         }
 
@@ -494,6 +500,9 @@ namespace Orly {
 
         inline void ScheduleFrameSlow(TRunner *other_runner, TFrame *frame);
 
+        /* Push 'frame' onto a Treiber-stack queue head (see definition). */
+        static inline void PushFrameOntoQueue(std::atomic<TFrame *> &head, TFrame *frame);
+
         /* TODO */
         //mutable TFrameQueue::TImpl MyFrameQueue;
         TFrame *ReadyToRunQueue;
@@ -502,10 +511,15 @@ namespace Orly {
         /* TODO */
         std::atomic<bool> KeepRunning;
 
-        /* TODO */
-        TFrame *InboundFrameQueue;
+        /* Treiber-stack head for frames scheduled onto this runner from a
+           thread that has no LocalRunner. Pushers CAS (release) onto it; the
+           owning runner drains it with exchange (acquire) in TRunner::Run. */
+        std::atomic<TFrame *> InboundFrameQueue;
         struct alignas(64) TOutboundQueue {
-          TFrame *Ptr;
+          /* Treiber-stack head: frames this runner wants to hand to runner i
+             live in this->QueueArray[i]. Pusher CAS (release); the consuming
+             runner drains with exchange (acquire). */
+          std::atomic<TFrame *> Ptr;
         };
         TOutboundQueue *QueueArray;
 
@@ -518,7 +532,7 @@ namespace Orly {
         size_t RunnerId alignas(64);
         size_t blank_buf[7];
 
-        TRunner **RunnerArray;
+        std::atomic<TRunner *> *RunnerArray;
 
         /* Access to ComeBackSoon */
         friend class TFrame;
@@ -679,7 +693,7 @@ namespace Orly {
             //printf("TFrame [%p] calling func\n", this);
 
             #ifndef NDEBUG
-            DebugIsRunning = true;
+            DebugIsRunning.store(true, std::memory_order_relaxed);
             #endif
             TRunnable::TFunc runnable_func = RunnableFunc;
             TRunnable *const runnable = Runnable;
@@ -692,7 +706,7 @@ namespace Orly {
               //abort();
             }
             #ifndef NDEBUG
-            DebugIsRunning = false;
+            DebugIsRunning.store(false, std::memory_order_relaxed);
             #endif
             //printf("TFrame [%p] FINISH calling func\n", this);
 
@@ -703,10 +717,10 @@ namespace Orly {
 
         #ifndef NDEBUG
         void AssertCanFree() {
-          if (DebugIsRunning) {
+          if (DebugIsRunning.load(std::memory_order_relaxed)) {
             throw std::logic_error("Cannot Free Frame that is still running");
           }
-          assert(!DebugIsRunning);
+          assert(!DebugIsRunning.load(std::memory_order_relaxed));
         }
         #endif
 
@@ -735,7 +749,7 @@ namespace Orly {
         }
 
         #ifndef NDEBUG
-        bool DebugIsRunning;
+        std::atomic<bool> DebugIsRunning;
         #endif
 
         /* TODO */
@@ -1175,17 +1189,25 @@ namespace Orly {
 
       };  // TSwitchToRunner
 
+      /* Push 'frame' onto a Treiber-stack queue head. The next-link field is a
+         plain TFrame member written here and read by the draining runner; the
+         head's release CAS / acquire exchange publishes it across threads, so
+         it needs no atomic of its own. We relaxed-load the current head to seed
+         the link and let compare_exchange_weak refresh 'expected' on failure. */
+      inline void TRunner::PushFrameOntoQueue(std::atomic<TFrame *> &head, TFrame *frame) {
+        TFrame *expected = head.load(std::memory_order_relaxed);
+        do {
+          frame->InboundQueueNextFrame = expected;
+        } while (!head.compare_exchange_weak(
+            expected, frame, std::memory_order_release, std::memory_order_relaxed));
+      }
+
       inline void TRunner::ScheduleFrameSlow(TFrame *frame) {
         assert(frame);
         if (LocalRunner) {
-          TFrame *&outbound_queue = LocalRunner->QueueArray[RunnerId].Ptr;
-          do {
-            frame->InboundQueueNextFrame = outbound_queue;
-          } while (!__sync_bool_compare_and_swap(&outbound_queue, frame->InboundQueueNextFrame, frame));
+          PushFrameOntoQueue(LocalRunner->QueueArray[RunnerId].Ptr, frame);
         } else {
-          do {
-            frame->InboundQueueNextFrame = InboundFrameQueue;
-          } while (!__sync_bool_compare_and_swap(&InboundFrameQueue, frame->InboundQueueNextFrame, frame));
+          PushFrameOntoQueue(InboundFrameQueue, frame);
         }
       }
 
@@ -1193,10 +1215,7 @@ namespace Orly {
         assert(LocalRunner);
         assert(other_runner);
         assert(frame);
-        TFrame *&outbound_queue = QueueArray[other_runner->RunnerId].Ptr;
-        do {
-          frame->InboundQueueNextFrame = outbound_queue;
-        } while (!__sync_bool_compare_and_swap(&outbound_queue, frame->InboundQueueNextFrame, frame));
+        PushFrameOntoQueue(QueueArray[other_runner->RunnerId].Ptr, frame);
       }
 
       inline void TRunner::ScheduleFrame(TFrame *frame) {
