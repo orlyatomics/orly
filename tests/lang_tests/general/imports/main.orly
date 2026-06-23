@@ -1,0 +1,30 @@
+/* <orly/lang_tests/general/imports/main.orly>
+
+   Stage 0 (issue #171): the importing half of a two-package cross-import test.
+   It imports `get_answer` from the `imports/lib` package as a local `int` named
+   `answer` and asserts the value. Cross-package imports are not implemented yet
+   (synth throws TNotImplementedError on the import def), so this is an EXPECTED
+   FAILURE tracked in .xfail until the staged implementation lands. It is the
+   end-to-end target that Stages 1-4 will turn green.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+answer is int get_answer from package <imports/lib>#1;
+
+test {
+  t1: answer == 42;
+};
