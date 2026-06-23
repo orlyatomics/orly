@@ -7,6 +7,13 @@
 #   4. examples           -- run each examples/* end-to-end with both
 #                            its Python and Go drivers (orlyc + orlyi + WS)
 #
+# A fifth job, `tsan`, builds the concurrency tests under ThreadSanitizer to
+# validate the lock-free / commutative-merge claim at the memory level (data-
+# race freedom). It is NON-GATING (continue-on-error) and skips pull_request
+# events -- sanitizer builds are slow, and an engine revived from 2014 still
+# surfaces races we have not triaged yet. It runs on push-to-master, the
+# nightly schedule, and manual dispatch. See issue #177.
+#
 # Caching: apt packages and the ccache store are cached across runs. The
 # ~4.5 GB build-output tree is too large to persist in the 10 GB Actions
 # cache, so we cache ccache instead: jhm and orlyc both invoke g++/gcc by
@@ -26,6 +33,7 @@ on:
   schedule:
     # Daily at 05:17 UTC -- off-peak, avoids the top-of-hour scheduler rush.
     - cron: '17 5 * * *'
+  workflow_dispatch:
 
 jobs:
   debug-and-test:
@@ -376,3 +384,115 @@ jobs:
         run: ./run-go.sh
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/recursive-variants
+
+  tsan:
+    name: ThreadSanitizer (non-gating)
+    # Sanitizer builds are slow, so skip pull_request events to keep PR latency
+    # low; runs on push-to-master, the nightly schedule, and manual dispatch.
+    # continue-on-error makes it informational: the engine still surfaces races
+    # we have not triaged, and a known-incomplete surface should inform, not
+    # block. Triage findings and ratchet toward gating. See issue #177.
+    if: github.event_name != 'pull_request'
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          version: 1.2
+
+      - name: Set up ccache
+        # Same masquerade as the other jobs: jhm/orlyc invoke g++/gcc by bare
+        # name via execvp, so symlink them ahead of /usr/bin to route compiles
+        # through ccache. TSan objects are large, hence the bigger ceiling.
+        run: |
+          for c in gcc g++ cc c++; do
+            sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"
+          done
+          {
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=3G"
+            echo "CCACHE_COMPRESS=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Cache ccache
+        # Cache on every trigger (including schedule): unlike the stale-cache
+        # canary the other jobs run nightly, this job's value is the race
+        # report, not cache-correctness, and a cold TSan build is expensive.
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-${{ github.job }}-
+            orly-ccache-${{ runner.os }}-
+
+      # ThreadSanitizer's shadow memory needs lower ASLR entropy than modern
+      # kernels default to; otherwise libtsan aborts at startup with
+      # "FATAL: ThreadSanitizer: unexpected memory mapping". Lower it for the
+      # job, and additionally run each binary under `setarch -R` (no per-process
+      # randomization) as belt-and-suspenders.
+      - name: Lower ASLR entropy for TSan
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Bootstrap jhm
+        run: make bootstrap
+
+      - name: Build & run concurrency tests under TSan
+        run: |
+          set -u
+          # Concurrency-focused targets: the synchronization primitive, the
+          # fiber scheduler and lock pools, the Tetris promotion logic, and the
+          # cross-repo / fold merge tests the lock-free claim rests on.
+          TESTS="
+          base/scheduler.test
+          base/event_semaphore.test
+          base/pump.test
+          base/thread_local_global_pool.test
+          base/thread_local_registered_pool.test
+          orly/indy/fiber/fiber.test
+          orly/indy/fiber/fiber_lock.test
+          orly/indy/fiber/algorithm.test
+          orly/spa/flux_capacitor/sync.test
+          orly/spa/flux_capacitor/tetris_piece.test
+          orly/indy/context_fold.test
+          orly/indy/context_xrepo.test
+          "
+          PATH="$PWD/tools:$PATH" tools/jhm -c tsan $TESTS
+
+          mkdir -p tsan-logs
+          total=0
+          line="----------------------------------------------------------------"
+          fmt='%-48s %s\n'
+          printf "$fmt" "TEST" "TSAN WARNINGS"
+          echo "$line"
+          for t in $TESTS; do
+            bin="../out_orly/tsan/$t"
+            log="tsan-logs/$(echo "$t" | tr / _).log"
+            # Per-test wall-clock guard: a real deadlock under TSan would
+            # otherwise hang the job to its timeout. exitcode=0 so a race does
+            # not itself fail the run -- we count warnings from the logs.
+            timeout 600 setarch "$(uname -m)" -R \
+              env TSAN_OPTIONS="halt_on_error=0 exitcode=0 history_size=4" \
+              "$bin" >"$log" 2>&1 || true
+            n=$(grep -c "WARNING: ThreadSanitizer" "$log" || true)
+            total=$((total + n))
+            printf "$fmt" "$t" "$n"
+          done
+          echo "$line"
+          echo "Total ThreadSanitizer warnings: $total"
+          echo
+          echo "Full reports are uploaded as the 'tsan-logs' artifact. This job"
+          echo "is non-gating; triage findings and ratchet toward gating (#177)."
+
+      - name: Upload TSan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsan-logs
+          path: tsan-logs/
+          if-no-files-found: warn
