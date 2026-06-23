@@ -93,6 +93,13 @@ void Orly::Indy::ExternFiber::TSync::WaitForMore(size_t num) {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 void TRunner::Run() {
   LocalRunner = this;
+  #if defined(__SANITIZE_THREAD__)
+  /* The scheduler loop runs on this OS thread's native stack. Adopt the
+     current TSan fiber as MainFiber's handle so that every switch back to the
+     scheduler (switch_to_fiber(..., MainFiber)) announces a real destination
+     fiber. We borrow it -- it must never be created or destroyed here. */
+  MainFiber.tsan_fiber = TSanFiber::Current();
+  #endif
   TFrame *rt_queue = nullptr; /* we use this to push come back right away jobs to the front... */
   TFrame *next_frame = nullptr; /* we use this to loop through a queue... */
   try {

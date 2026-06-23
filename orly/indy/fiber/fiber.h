@@ -44,6 +44,53 @@
 #include <orly/indy/fiber/extern_fiber.h>
 #include <base/util/error.h>
 
+/* ThreadSanitizer fiber annotations.
+
+   This fiber runtime switches stacks by hand (setjmp/longjmp on the
+   FAST_SWITCH path, swapcontext during fiber creation). TSan models a
+   program as a fixed set of OS threads and cannot follow a manual stack
+   switch; left unannotated it mis-attributes a fiber's memory accesses to
+   whichever OS thread last touched the stack (producing spurious data-race
+   reports) and treats a longjmp into a different stack as a wild jump,
+   aborting the process with "longjmp causes uninitialized stack frame".
+
+   The TSan fiber API (see <sanitizer/tsan_interface.h>) lets us tell the
+   sanitizer that each fiber is its own logical thread of execution: we
+   associate a fiber handle with each ucontext, and immediately before every
+   stack switch we announce which fiber we are switching to. These calls are
+   *only* compiled when building under -fsanitize=thread (gcc defines
+   __SANITIZE_THREAD__), so non-TSan builds carry zero overhead and have no
+   dependency on the sanitizer interface. */
+#if defined(__SANITIZE_THREAD__)
+#include <sanitizer/tsan_interface.h>
+namespace Orly {
+  namespace Indy {
+    namespace Fiber {
+      namespace TSanFiber {
+        inline void *Current() { return __tsan_get_current_fiber(); }
+        inline void *Create() { return __tsan_create_fiber(0); }
+        inline void Destroy(void *fiber) { __tsan_destroy_fiber(fiber); }
+        inline void SwitchTo(void *fiber) { __tsan_switch_to_fiber(fiber, 0); }
+      }  // TSanFiber
+    }  // Fiber
+  }  // Indy
+}  // Orly
+#else
+namespace Orly {
+  namespace Indy {
+    namespace Fiber {
+      namespace TSanFiber {
+        /* No-ops: compile away entirely when not building under TSan. */
+        inline void *Current() { return nullptr; }
+        inline void *Create() { return nullptr; }
+        inline void Destroy(void *) {}
+        inline void SwitchTo(void *) {}
+      }  // TSanFiber
+    }  // Fiber
+  }  // Indy
+}  // Orly
+#endif
+
 namespace Orly {
 
   namespace Indy {
@@ -103,6 +150,15 @@ namespace Orly {
       #define FAST_SWITCH
 
       #ifdef FAST_SWITCH
+
+      #if !defined(__SANITIZE_THREAD__)
+
+      /* ============================ FAST PATH ============================
+         Production fibers: context switches are a bare setjmp/longjmp pair,
+         which is dramatically cheaper than swapcontext (no syscall, no signal
+         mask save/restore). ucontext is used only once, to bootstrap each
+         fiber's jmp_buf. This is the only path compiled in normal builds. */
+
       /* TODO */
       struct fiber_t {
         ucontext_t fib;
@@ -175,6 +231,98 @@ namespace Orly {
           _longjmp(fib.jmp, 1);
         }
       }
+
+      #else  // __SANITIZE_THREAD__
+
+      /* ========================= THREADSANITIZER =========================
+         ThreadSanitizer models a fixed set of OS threads and cannot follow a
+         manual stack switch. The fast setjmp/longjmp switch above is opaque to
+         it: a longjmp onto another fiber's stack trips TSan's longjmp guard
+         ("longjmp causes uninitialized stack frame") and aborts the process,
+         and accesses on a fiber get mis-attributed to whichever OS thread last
+         ran it, yielding spurious data races.
+
+         Under TSan we therefore switch fibers with swapcontext, which TSan's
+         own fiber API understands, and pair every switch with
+         __tsan_switch_to_fiber so TSan tracks each fiber as its own logical
+         thread of execution. Each fiber carries the same fields as the fast
+         path PLUS a TSan fiber handle and the entry function/argument (the
+         fast path consumes those during bootstrap; here the fiber is not
+         entered until its first real switch, so we must keep them).
+
+         This path is ONLY compiled under -fsanitize=thread; it never affects
+         production builds, which use the setjmp/longjmp path above. */
+
+      /* TODO */
+      struct fiber_t {
+        ucontext_t fib;
+        jmp_buf jmp;  // unused under TSan; kept so layout/_mm_prefetch sites compile.
+        uint8_t *start_of_stack;
+        /* The TSan handle for this fiber's logical thread of execution. Minted
+           in create_fiber, released in free_fiber. The scheduler's MainFiber
+           instead borrows the OS thread's current fiber (see TRunner::Run) and
+           must never be created or destroyed. */
+        void *tsan_fiber = nullptr;
+        /* Entry point, deferred until the first switch into this fiber. */
+        void (*entry_fnc)(void *) = nullptr;
+        void *entry_ctx = nullptr;
+      };
+
+      /* TODO */
+      static void fiber_start_fnc(void *p) {
+        fiber_t *fib = reinterpret_cast<fiber_t *>(p);
+        fib->entry_fnc(fib->entry_ctx);
+      }
+
+      /* TODO */
+      inline void create_fiber(fiber_t &fib, void(*ufnc)(void *), void *uctx, size_t stack_size) {
+        getcontext(&fib.fib);
+        fib.start_of_stack = reinterpret_cast<uint8_t *>(malloc(stack_size));
+        if (mlock(fib.start_of_stack, stack_size) < 0 && errno != ENOMEM && errno != EPERM) {
+          Util::ThrowSystemError(errno);
+        }
+        // init the fiber locals
+        size_t bytes_of_loc = 0UL;
+        fib.fib.uc_stack.ss_sp = fib.start_of_stack;
+        for (const auto *loc = FiberLocal::TFiberLocal::GetRoot(); loc; loc = loc->GetNext()) {
+          const size_t nbytes = loc->Init(fib.fib.uc_stack.ss_sp);
+          reinterpret_cast<uint8_t *&>(fib.fib.uc_stack.ss_sp) += nbytes;
+          bytes_of_loc += nbytes;
+        }
+        fib.fib.uc_stack.ss_size = stack_size - bytes_of_loc;
+        fib.fib.uc_link = 0;
+        fib.entry_fnc = ufnc;
+        fib.entry_ctx = uctx;
+        fib.tsan_fiber = TSanFiber::Create();
+        /* The fiber is not entered now; fiber_start_fnc runs on first switch.
+           We pass &fib so the entry point can be recovered from the fiber. */
+        makecontext(&fib.fib, reinterpret_cast<void(*)()>(fiber_start_fnc), 1, &fib);
+      }
+
+      /* TODO */
+      inline size_t get_stack_size(fiber_t &fib) {
+        return fib.fib.uc_stack.ss_size;
+      }
+
+      /* TODO */
+      inline void free_fiber(fiber_t &fib) {
+        assert(fib.start_of_stack);
+        if (fib.tsan_fiber) {
+          TSanFiber::Destroy(fib.tsan_fiber);
+          fib.tsan_fiber = nullptr;
+        }
+        free(fib.start_of_stack);
+      }
+
+      /* TODO */
+      inline void switch_to_fiber(fiber_t &fib, fiber_t &prv) {
+        /* Announce the switch to TSan, then swapcontext (which saves our
+           resume point into prv.fib and resumes fib.fib). */
+        TSanFiber::SwitchTo(fib.tsan_fiber);
+        swapcontext(&prv.fib, &fib.fib);
+      }
+
+      #endif  // __SANITIZE_THREAD__
 
       #else
 
