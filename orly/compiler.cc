@@ -31,6 +31,7 @@
 #include <base/subprocess.h>
 #include <orly/code_gen/package.h>
 #include <orly/orly.package.cst.h>
+#include <orly/symbol/import_function.h>
 #include <orly/synth/context.h>
 #include <orly/synth/package.h>
 
@@ -97,6 +98,29 @@ class TPackageBuilder {
     Synth->GetSymbol()->TypeCheck();
   }
 
+  /* The source-relative paths of the packages this one imports (#171). Each
+     import lowered to a Symbol::TImportFunction carrying its source package name
+     (e.g. `imports/lib`); convert that to the package's `.orly` rel path so the
+     compile driver can build it as a dependency. Call after BuildSymbols. */
+  std::vector<TRelPath> GetImportPackages() const {
+    assert(Synth);
+    std::vector<TRelPath> ret;
+    for (const auto &func : Synth->GetSymbol()->GetFunctions()) {
+      auto import_func = dynamic_cast<const Symbol::TImportFunction *>(func.get());
+      if (!import_func) {
+        continue;
+      }
+      const auto &parts = import_func->GetPackageName().Name;
+      assert(!parts.empty());
+      Base::TPath path(
+          Base::TPath::TStrList(parts.begin(), parts.end() - 1),  // namespace
+          parts.back(),                                           // name
+          Base::TPath::TStrList{"orly"});                         // extension
+      ret.emplace_back(move(path));
+    }
+    return ret;
+  }
+
   private:
   TRelPath RelPath;
 
@@ -123,7 +147,28 @@ Package::TVersionedName Orly::Compiler::Compile(
   lock_guard<mutex> lock_compiling(Compiling);
   Synth::GetContext().ClearErrors();
 
-  TTree src_tree(move(core_file.Namespace));
+  /* Find the package-tree root: the nearest ancestor directory holding an
+     `__orly__` marker. Inside a tree, every package (the core file and any it
+     imports) is named relative to that root, so cross-package refs like
+     `package <imports/lib>#1` resolve against one shared src tree. Outside a
+     tree (no `__orly__`), keep the legacy behavior -- the file's own directory
+     is the root and its package name is just the file name -- and imports are
+     rejected (see the dependency loop below). */
+  std::string core_dir;
+  for (const auto &part : core_file.Namespace) {
+    core_dir += '/';
+    core_dir += part;
+  }
+  bool found_root = false;
+  TTree root_tree = TTree::Find(core_dir, "__orly__", found_root);
+
+  /* Copy the namespace for the no-root fallback tree: we still need core_file's
+     namespace below to compute core_rel, so it must not be moved out here. */
+  TTree src_tree = found_root ? root_tree : TTree(std::vector<std::string>(core_file.Namespace));
+  /* core_rel = the core file relative to src_tree: strip the root's namespace
+     components (none when there is no root, leaving just the file name). */
+  size_t strip = found_root ? root_tree.Root.size() : core_file.Namespace.size();
+  core_file.Namespace.erase(core_file.Namespace.begin(), core_file.Namespace.begin() + strip);
   const TRelPath core_rel(move(core_file));
   //NOTE: As of here, core_file has nothing left in it.
 
@@ -169,19 +214,23 @@ Package::TVersionedName Orly::Compiler::Compile(
         failed = true;
         break;
       }
-      //TODO: Imports
-      /* TODO
-      for (const auto &dep: builder->GetSymbols().GetImportPackages()) {
+      /* Imports (#171): enqueue each imported package as a dependency to build.
+         The end-of-compile link step then links every package in the map. */
+      for (const auto &dep : builder->GetImportPackages()) {
         if (packages.count(dep)) {
-          break;
+          continue;  // already queued / built (dedup; the dependency graph may share packages)
         }
         if (!found_root) {
-          throw TCompileFailure(HERE, "Unless you're in a Orly package tree (Has a __orly__ file in the tld), you can not use scopes")
+          out_strm << "Cross-package imports require an Orly package tree (an __orly__ file at its root)." << endl;
+          failed = true;
+          break;
         }
-        packages.insert(make_pair(dep, unique_ptr<TPackageBuilder>(new TPackageBuilder(dep))));
+        packages.insert(make_pair(dep, make_unique<TPackageBuilder>(dep)));
         todo.push(dep);
       }
-      */
+      if (failed) {
+        break;
+      }
       if (machine_mode) {
         out_strm << "MM_NOTICE: Code Gen" << endl;
       }
