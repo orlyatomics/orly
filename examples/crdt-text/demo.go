@@ -21,10 +21,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/gorilla/websocket"
+	orly "github.com/orlyatomics/orly/clients/go"
 )
 
-const wsURL = "ws://127.0.0.1:8082/"
 
 // Logoot digit base: interior digits 1..BASE-1; 0 and BASE bracket the doc
 // (begin = [], end = [BASE]). width zero-pads a digit so string order ==
@@ -92,76 +91,59 @@ func tick() int64 { return atomic.AddInt64(&clockCounter, 1) }
 // ---------------------------------------------------------------------
 // WS plumbing.
 // ---------------------------------------------------------------------
-type reply struct {
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-}
 
 func die(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }
 
-func dial() *websocket.Conn {
-	c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+func must[T any](v T, err error) T {
 	if err != nil {
-		die(fmt.Sprintf("dial %s: %v", wsURL, err))
+		die(err.Error())
 	}
-	return c
+	return v
 }
 
-func send(c *websocket.Conn, stmt string) json.RawMessage {
-	if err := c.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		die(fmt.Sprintf("write %q: %v", stmt, err))
-	}
-	_, msg, err := c.ReadMessage()
+func check(err error) {
 	if err != nil {
-		die(fmt.Sprintf("read after %q: %v", stmt, err))
+		die(err.Error())
 	}
-	var r reply
-	if err := json.Unmarshal(msg, &r); err != nil {
-		die(fmt.Sprintf("parse reply: %v\n  raw: %s", err, msg))
-	}
-	if r.Status != "ok" {
-		die(fmt.Sprintf("%s: %s", stmt, string(msg)))
-	}
-	return r.Result
 }
 
-func sendString(c *websocket.Conn, stmt string) string {
+func asString(raw json.RawMessage) string {
 	var s string
-	if err := json.Unmarshal(send(c, stmt), &s); err != nil {
-		die(fmt.Sprintf("expected string, got error %v", err))
+	if err := json.Unmarshal(raw, &s); err != nil {
+		die(fmt.Sprintf("expected string, got %s", raw))
 	}
 	return s
 }
 
-func sendInt(c *websocket.Conn, stmt string) int {
+func asInt(raw json.RawMessage) int {
 	var n float64
-	if err := json.Unmarshal(send(c, stmt), &n); err != nil {
-		die(fmt.Sprintf("expected number, got error %v", err))
+	if err := json.Unmarshal(raw, &n); err != nil {
+		die(fmt.Sprintf("expected number, got %s", raw))
 	}
 	return int(n)
 }
 
-func connect() *websocket.Conn {
-	c := dial()
-	send(c, "new session;")
+func connect() *orly.Client {
+	c, err := orly.Connect()
+	if err != nil {
+		die(err.Error())
+	}
+	must(c.NewSession())
 	return c
 }
 
-func orlyStr(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
-}
-
-func orlyPos(ints []int) string {
-	parts := make([]string, 0, len(ints))
-	for _, s := range enc(ints) {
-		parts = append(parts, orlyStr(s))
+// posLit renders a dense int position as the engine's [str] form, as an
+// []any orly.Lit encodes to a list literal ["000NN", ...].
+func posLit(ints []int) []any {
+	enced := enc(ints)
+	out := make([]any, len(enced))
+	for i, s := range enced {
+		out[i] = s
 	}
-	return "[" + strings.Join(parts, ", ") + "]"
+	return out
 }
 
 // ---------------------------------------------------------------------
@@ -171,14 +153,14 @@ const pkg = "crdt_text"
 
 var povGlobal, docGlobal string
 
-func opInsert(c *websocket.Conn, pos []int, ch, site string, clock int64) {
-	send(c, fmt.Sprintf(`try {%s} %s insert <{.doc: %s, .pos: %s, .ch: %s, .site: %s, .clock: %d}>;`,
-		povGlobal, pkg, orlyStr(docGlobal), orlyPos(pos), orlyStr(ch), orlyStr(site), clock))
+func opInsert(c *orly.Client, pos []int, ch, site string, clock int64) {
+	must(c.Call(povGlobal, pkg, "insert", map[string]any{
+		"doc": docGlobal, "pos": posLit(pos), "ch": ch, "site": site, "clock": clock}))
 }
 
-func opRemove(c *websocket.Conn, pos []int, clock int64) {
-	send(c, fmt.Sprintf(`try {%s} %s remove <{.doc: %s, .pos: %s, .clock: %d}>;`,
-		povGlobal, pkg, orlyStr(docGlobal), orlyPos(pos), clock))
+func opRemove(c *orly.Client, pos []int, clock int64) {
+	must(c.Call(povGlobal, pkg, "remove", map[string]any{
+		"doc": docGlobal, "pos": posLit(pos), "clock": clock}))
 }
 
 type vchar struct {
@@ -194,9 +176,9 @@ type vwire struct {
 	Clock float64  `json:"clock"`
 }
 
-func visibleAsOf(c *websocket.Conn, asOf int64) []vchar {
-	raw := send(c, fmt.Sprintf(`try {%s} %s visible_as_of <{.doc: %s, .as_of: %d}>;`,
-		povGlobal, pkg, orlyStr(docGlobal), asOf))
+func visibleAsOf(c *orly.Client, asOf int64) []vchar {
+	raw := must(c.Call(povGlobal, pkg, "visible_as_of",
+		map[string]any{"doc": docGlobal, "as_of": asOf}))
 	if string(raw) == "null" {
 		return nil
 	}
@@ -211,19 +193,20 @@ func visibleAsOf(c *websocket.Conn, asOf int64) []vchar {
 	return out
 }
 
-func renderAsOf(c *websocket.Conn, asOf int64) string {
-	return sendString(c, fmt.Sprintf(`try {%s} %s render_as_of <{.doc: %s, .as_of: %d}>;`,
-		povGlobal, pkg, orlyStr(docGlobal), asOf))
+func renderAsOf(c *orly.Client, asOf int64) string {
+	return asString(must(c.Call(povGlobal, pkg, "render_as_of",
+		map[string]any{"doc": docGlobal, "as_of": asOf})))
 }
 
-func charCount(c *websocket.Conn) int {
-	return sendInt(c, fmt.Sprintf(`try {%s} %s char_count <{.doc: %s}>;`, povGlobal, pkg, orlyStr(docGlobal)))
+func charCount(c *orly.Client) int {
+	return asInt(must(c.Call(povGlobal, pkg, "char_count",
+		map[string]any{"doc": docGlobal})))
 }
 
 // ---------------------------------------------------------------------
 // Editor-side ops, built on between().
 // ---------------------------------------------------------------------
-func insertText(c *websocket.Conn, index int, text, site string, rng *rand.Rand) {
+func insertText(c *orly.Client, index int, text, site string, rng *rand.Rand) {
 	seq := visibleAsOf(c, forever)
 	var left, right []int
 	if index > 0 {
@@ -244,7 +227,7 @@ func insertText(c *websocket.Conn, index int, text, site string, rng *rand.Rand)
 	}
 }
 
-func deleteRange(c *websocket.Conn, start, count int) {
+func deleteRange(c *orly.Client, start, count int) {
 	seq := visibleAsOf(c, forever)
 	for _, v := range seq[start : start+count] {
 		opRemove(c, v.pos, tick())
@@ -261,7 +244,7 @@ func runConcurrent(fns ...func()) {
 	wg.Wait()
 }
 
-func show(c *websocket.Conn, label string) string {
+func show(c *orly.Client, label string) string {
 	text := renderAsOf(c, forever)
 	fmt.Printf("  %-34s %q\n", label, text)
 	return text
@@ -271,10 +254,9 @@ func show(c *websocket.Conn, label string) string {
 // main
 // ---------------------------------------------------------------------
 func main() {
-	boot := dial()
-	send(boot, "new session;")
-	send(boot, "install crdt_text.1;")
-	povGlobal = sendString(boot, "new safe shared pov;")
+	boot := connect()
+	check(boot.Install("crdt_text", 1))
+	povGlobal = must(boot.NewPov())
 	docGlobal = "doc"
 	fmt.Printf("pov: %s\n", povGlobal)
 	fmt.Printf("document: %q -- two editors (alice, bob) on one shared POV\n\n", docGlobal)
@@ -385,7 +367,7 @@ func main() {
 		failures = append(failures, "time-travel: phase-2 snapshot drifted")
 	}
 
-	send(boot, "exit;")
+	check(boot.Exit())
 
 	if len(failures) > 0 {
 		fmt.Println("\n=== self-check FAILED ===")
