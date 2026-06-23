@@ -20,6 +20,8 @@
 
 #include <cassert>
 #include <exception>
+#include <mutex>
+#include <unordered_set>
 #include <pthread.h>
 
 #include <base/class_traits.h>
@@ -130,6 +132,11 @@ namespace Orly {
         /* Each thread has a local instance of this class.  It tracks the kind and number of locks the thread currently holds on this target. */
         class TLocal {
           NO_COPY(TLocal);
+
+          /* TSync owns the lifetime of every TLocal (it tracks them in Locals and reclaims the survivors in Cleanup()),
+             so it needs access to the private destructor. */
+          friend class TSync;
+
           public:
 
           /* When the count reaches zero, the lock is released. */
@@ -183,6 +190,14 @@ namespace Orly {
 
         /* The rw-lock for which threads will contend.  It's mutable so we can lock and unlock a constant target. */
         mutable pthread_rwlock_t RwLock;
+
+        /* Every TLocal currently alive for this target.  pthread_key_delete() does not run the key's destructor, so a
+           TLocal whose owning thread outlives the target (or simply hasn't terminated yet) would leak.  GetLocal() registers
+           each new TLocal here and DeleteLocal() removes it; Cleanup() reclaims whatever remains.  Mutable for the same
+           reason RwLock is: locks are taken through a const target.  Guarded by LocalsLock because TLocals are created and
+           destroyed from many threads concurrently. */
+        mutable std::mutex LocalsLock;
+        mutable std::unordered_set<TLocal *> Locals;
 
       };  // TSync
 
