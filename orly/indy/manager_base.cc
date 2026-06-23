@@ -438,7 +438,10 @@ void TManager::GetFileGenSet(const Base::TUuid &repo_id, std::vector<Disk::TFile
 void TManager::OnClose(TRepo *repo) {
   assert(repo);
   assert(repo->Manager == this);
-  throw std::logic_error("TODO: implement TManager::OnClose()");
+  /* OnCloseCb is bound to this but never invoked: repos are not closed-to-disk in supported
+     workflows. Fail clearly if a path ever reaches it -- durable on-disk persistence/reload
+     was never ported (see issue #173). */
+  throw std::logic_error("TManager::OnClose not implemented: repo close-to-disk is never wired up (the indy L0 reload-from-disk path was never ported, #173).");
 }
 
 void TManager::EnqueueMergeMem(TRepo *repo) {
@@ -686,7 +689,9 @@ TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
     }
   }
   try {
-    /* Load the object from disk and keep it in the openable set. */
+    /* Reopen the repo from disk. The actual reload boundary is ReconstructRepo ->
+       ConstructRepo, which is not implemented (durable on-disk persistence/reload was never
+       ported, see issue #173); it fails there with a descriptive error if ever reached. */
     TRepo *repo = ReconstructRepo(id);
     std::lock_guard<std::mutex> lock(DurableMutex);
     TObj *&openable_obj = ret.first->second;
@@ -694,7 +699,6 @@ TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
     openable_obj = repo;
     DurableCond.notify_all();
     return TPtr<TManager::TRepo>(repo, Orly::Indy::L0::New);
-    throw std::logic_error("TODO: implement L0::TManager Load from disk");
   } catch (...) {
     /* We could not find the object on disk or the object's constructor failed.
        Either way, we need to dispose of the slot we made before continuing to handle the error. */

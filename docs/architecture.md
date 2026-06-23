@@ -285,6 +285,32 @@ retries/fails — the classic lost-update serialization that field calls avoid.
 - The merge/Tetris core has **quarantined tests** (`*.test.broken.cc` for
   `orly/indy/context`, `orly/server/tetris_manager`, `orly/server/repo_tetris_manager`)
   — issue #178.
-- Several persistence/load paths are unimplemented stubs (issue #173); the
-  transaction popper has an undecided-semantics branch (issue #172); cross-package
-  imports were never re-ported (issue #171).
+- Several persistence/load paths are unimplemented stubs (issue #173 — see the
+  persistence boundary below); cross-package imports were never re-ported (issue #171).
+
+### Persistence boundary (issue #173)
+
+Orly **does** persist and restart — two mechanisms exist:
+
+- **`spa` checkpoints (logical replay).** The single-process app server saves the global
+  state as a set of key→change statements plus installed packages (`SaveCheckpoint`), and on
+  startup replays them into a fresh global POV (`LoadCheckpoint` → `NewUpdateAndWait(&GlobalPov, …)`,
+  `orly/spa/service.cc`), driven by the `--checkpoint` flag (`orly/spa/spa.cc`). This is a
+  working restart-from-disk path (modulo the non-atomic load called out in issue #175).
+- **`orlyi` on a real disk engine.** The indy server runs on `TDiskEngine` (`orly/server/server.cc`)
+  with fsync, an append log, and named instances; memory layers flush to disk and the merge /
+  compaction passes run, so a live repo's reads union its in-memory and on-disk layers.
+
+What issue #173's stubs gate is narrower: the indy **L0 manager's path that turns a saved
+on-disk repo/durable-object image back into a live in-memory object** — used for in-process
+repo reopen / raw-image reload. That path was never ported, and now fails with an explicit
+"not implemented" error (rather than a bare `TODO`) if ever reached:
+
+- **Repo reconstruct** — `ReconstructRepo` → `TManager::ConstructRepo` (`orly/indy/manager.cc`)
+  never resolves a reconstructed repo's parent or TTL.
+- **Durable-object load** — `L0::TManager::Open`'s load-from-disk arm (`orly/indy/manager_base.h`)
+  and the `Delete`/`Save`/`TryLoad` overrides (`orly/indy/manager.h`), gated off because
+  `TObj::OnDisk` is never set and the loader is `#if 0`'d.
+
+So: durability/restart at the **server** layer works via the spa checkpoint; what is missing is
+the indy-layer raw repo/object reload-from-image. Wiring that up is a separate effort.

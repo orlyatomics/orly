@@ -343,14 +343,15 @@ class TIndexFile
     */
   }
 
-  /* TODO */
+  /* TIndexFile is a write-only sink: it flushes a memory layer to disk and is never read back
+     through this interface, so the TInFile read accessors are unreachable here. Fail clearly if
+     that ever changes -- the indy L0 reload-from-disk path was never ported (see issue #173). */
   virtual size_t GetStartingBlock() const override {
-    throw std::logic_error("TODO: implement TIndexFile::GetStartingBlock");
+    throw std::logic_error("TIndexFile::GetStartingBlock not implemented: TIndexFile is write-only and never read back (the indy L0 reload-from-disk path was never ported, #173).");
   }
 
-  /* TODO */
   virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
-    throw std::logic_error("TODO: implement TIndexFile::ReadMeta");
+    throw std::logic_error("TIndexFile::ReadMeta not implemented: TIndexFile is write-only and never read back (the indy L0 reload-from-disk path was never ported, #173).");
   }
 
   /* TODO */
