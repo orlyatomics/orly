@@ -7,24 +7,13 @@ mutual tree/forest, nested-variant tree), reads it back, and self-checks the
 marshaled JSON. A variant marshals as {"Tag": <payload>}; a tag-only arm as
 {"Tag": {}}; numbers come back as JSON floats.
 
-Run via the wrapper:  ./run.sh
+Uses the shared `orly` client (clients/python). Run via the wrapper: ./run.sh
 Or directly, after starting orlyi separately:  python3 demo.py
 """
 
-import json
 import sys
 
-import websocket
-
-WS_URL = "ws://127.0.0.1:8082/"
-
-
-def send(ws, stmt):
-    ws.send(stmt)
-    reply = json.loads(ws.recv())
-    if reply.get("status") != "ok":
-        sys.exit(f"FAIL: {stmt}\n  -> {reply}")
-    return reply.get("result")
+import orly
 
 
 # Each case: (label, put-method, get-method, expected round-tripped JSON).
@@ -56,25 +45,25 @@ CASES = [
 
 
 def main():
-    ws = websocket.create_connection(WS_URL)
-    send(ws, "new session;")
-    send(ws, "install recursive.0;")
-    pov = send(ws, "new safe shared pov;")
+    c = orly.connect()
+    c.new_session()
+    c.install("recursive", 0)
+    pov = c.new_pov()
     print(f"pov: {pov}\n")
 
     failures = 0
     for kk, (label, put, get, expected) in enumerate(CASES):
-        send(ws, f"try {{{pov}}} recursive {put} <{{.k: {kk}}}>;")
-        got = send(ws, f"try {{{pov}}} recursive {get} <{{.k: {kk}}}>;")
+        c.call(pov, "recursive", put, {"k": kk})
+        got = c.call(pov, "recursive", get, {"k": kk})
         ok = got == expected
         print(f"  [{'ok' if ok else 'FAIL'}] {label}")
         if not ok:
+            import json
             print(f"        expected: {json.dumps(expected)}")
             print(f"        got:      {json.dumps(got)}")
             failures += 1
 
-    send(ws, "exit;")
-    ws.close()
+    c.exit()
 
     if failures:
         sys.exit(f"\n{failures} case(s) failed.")
