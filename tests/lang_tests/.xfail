@@ -13,3 +13,8 @@
 
 general/unsorted/multiple_sequences.orly #74
 general/unsorted/sequence_in_effecting.orly #75
+
+# Stage 0 of cross-package imports: a two-package import (main.orly imports a
+# symbol from imports/lib) currently fails at synth (import not implemented).
+# This is the end-to-end target the staged implementation will turn green.
+general/imports/main.orly #171
