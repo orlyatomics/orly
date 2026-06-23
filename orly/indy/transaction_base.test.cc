@@ -436,6 +436,74 @@ FIXTURE(Issue143PromotionWindow) {
   });
 }
 
+/* Issue #172: a Pop/Fail that lands on an already-attached popper with a stale
+   ensure_or_discard -- the repo's sequence start has advanced past the requested
+   point -- must be *discarded* (return false, leave the popper's state untouched),
+   not crash with runtime_error("TODO: check behavior"). We attach a popper in each
+   reachable state (Pop / Fail / Peek) and then issue the mismatching call. The repo
+   holds one committed update (sequence start 1), so passing ensure/follow = 0 never
+   matches and exercises the discard branch with the start-aware assert satisfied
+   (start 1 >= 0). Before the fix each of these threw; here they must return false. */
+FIXTURE(Issue172StaleDiscard) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TUuid repo_id(TUuid::Twister);
+    Base::TUuid idx_id(TUuid::Twister);
+    auto repo = manager->GetRepo(repo_id, TTtl::max(), std::nullopt, false, true);
+
+    /* commit one update so the repo has a sequence start of 1 */ {
+      auto transaction = manager->NewTransaction();
+      auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(1L), &arena, state_alloc)), TKey(10L, &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Best), &arena, state_alloc));
+      transaction->Push(repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+
+    const std::optional<TSequenceNumber> stale(0);  // start is 1, so 0 never matches -> discard
+
+    /* Pop reaching an existing Pop-state popper (was: throw at transaction_base.cc Pop/Pop) */ {
+      auto transaction = manager->NewTransaction();
+      EXPECT_TRUE(transaction->Pop(repo));          // attach popper in Pop
+      EXPECT_FALSE(transaction->Pop(repo, stale));   // stale -> discard, must not throw
+    }
+    /* Pop reaching an existing Fail-state popper (was: throw at Pop/Fail) */ {
+      auto transaction = manager->NewTransaction();
+      EXPECT_TRUE(transaction->Fail(repo));         // attach popper in Fail
+      EXPECT_FALSE(transaction->Pop(repo, stale));
+    }
+    /* Fail reaching an existing Peek-state popper (was: throw at Fail/Peek) */ {
+      auto transaction = manager->NewTransaction();
+      transaction->Peek(repo);                      // attach popper in Peek
+      EXPECT_FALSE(transaction->Fail(repo, stale));
+    }
+    /* Fail reaching an existing Pop-state popper (was: throw at Fail/Pop) */ {
+      auto transaction = manager->NewTransaction();
+      EXPECT_TRUE(transaction->Pop(repo));          // attach popper in Pop
+      EXPECT_FALSE(transaction->Fail(repo, stale));
+    }
+
+    /* None of the discarded ops were committed, so the repo is untouched: still
+       Normal, with the original update still present. */
+    EXPECT_EQ(repo->GetStatus(), Normal);
+    {
+      auto view = make_unique<TRepo::TView>(repo);
+      auto walker_ptr = repo->NewPresentWalker(view, TIndexKey(idx_id, TKey(make_tuple(1L), &arena, state_alloc)), TIndexKey(idx_id, TKey(make_tuple(10L), &arena, state_alloc)));
+      auto &walker = *walker_ptr;
+      EXPECT_TRUE(static_cast<bool>(walker));
+    }
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 FIXTURE(DiskPromoter) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TSuprena arena;
