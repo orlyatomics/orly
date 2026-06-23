@@ -35,14 +35,11 @@ Or directly (orlyi already up):  python3 demo.py
 """
 
 import itertools
-import json
 import sys
 import threading
 import time
-import websocket
 
-WS_URL = "ws://127.0.0.1:8082/"
-WS_TIMEOUT_S = 30
+import orly
 
 # Logoot digit base: interior digits are 1..BASE-1; 0 and BASE bracket the
 # document (begin = [], end = [BASE]). WIDTH zero-pads a digit so that string
@@ -98,86 +95,66 @@ def tick():
 # ---------------------------------------------------------------------
 # WS plumbing.
 # ---------------------------------------------------------------------
-def send(ws, stmt):
-    ws.send(stmt)
-    reply = json.loads(ws.recv())
-    if reply.get("status") != "ok":
-        raise RuntimeError(f"{stmt!r}\n  -> {reply}")
-    return reply.get("result")
-
-
-def orly_str(s):
-    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
-
-
-def orly_pos(ints):
-    return "[" + ", ".join(orly_str(s) for s in enc(ints)) + "]"
-
-
 # ---------------------------------------------------------------------
-# Engine ops.
+# Engine ops (over the shared `orly` client). A position is a dense int
+# list; enc() renders it to the engine's ['000NN', ...] string form,
+# which orly.lit encodes as a list literal.
 # ---------------------------------------------------------------------
-def op_insert(ws, pov, doc, pos, ch, site, clock):
-    send(ws, (f'try {{{pov}}} crdt_text insert '
-              f'<{{.doc: {orly_str(doc)}, .pos: {orly_pos(pos)}, '
-              f'.ch: {orly_str(ch)}, .site: {orly_str(site)}, '
-              f'.clock: {int(clock)}}}>;'))
+def op_insert(c, pov, doc, pos, ch, site, clock):
+    c.call(pov, "crdt_text", "insert",
+           {"doc": doc, "pos": enc(pos), "ch": ch, "site": site, "clock": int(clock)})
 
 
-def op_remove(ws, pov, doc, pos, clock):
-    send(ws, (f'try {{{pov}}} crdt_text remove '
-              f'<{{.doc: {orly_str(doc)}, .pos: {orly_pos(pos)}, '
-              f'.clock: {int(clock)}}}>;'))
+def op_remove(c, pov, doc, pos, clock):
+    c.call(pov, "crdt_text", "remove",
+           {"doc": doc, "pos": enc(pos), "clock": int(clock)})
 
 
-def visible(ws, pov, doc, as_of=FOREVER):
+def visible(c, pov, doc, as_of=FOREVER):
     """Ordered visible chars as [(pos_ints, ch, site, clock), ...]."""
-    r = send(ws, (f'try {{{pov}}} crdt_text visible_as_of '
-                  f'<{{.doc: {orly_str(doc)}, .as_of: {int(as_of)}}}>;'))
+    r = c.call(pov, "crdt_text", "visible_as_of", {"doc": doc, "as_of": int(as_of)})
     return [(dec(e["pos"]), e["ch"], e["site"], int(e["clock"])) for e in (r or [])]
 
 
-def render(ws, pov, doc, as_of=FOREVER):
-    return send(ws, (f'try {{{pov}}} crdt_text render_as_of '
-                     f'<{{.doc: {orly_str(doc)}, .as_of: {int(as_of)}}}>;'))
+def render(c, pov, doc, as_of=FOREVER):
+    return c.call(pov, "crdt_text", "render_as_of", {"doc": doc, "as_of": int(as_of)})
 
 
-def char_count(ws, pov, doc):
-    return int(send(ws, (f'try {{{pov}}} crdt_text char_count '
-                         f'<{{.doc: {orly_str(doc)}}}>;')))
+def char_count(c, pov, doc):
+    return int(c.call(pov, "crdt_text", "char_count", {"doc": doc}))
 
 
 # ---------------------------------------------------------------------
 # Editor-side ops, built on between(). Each reads the current visible
 # sequence, picks the bookends around the edit index, and mints positions.
 # ---------------------------------------------------------------------
-def insert_text(ws, pov, doc, index, text, site, rng):
+def insert_text(c, pov, doc, index, text, site, rng):
     """Insert `text` so it lands at visible position `index`."""
-    seq = visible(ws, pov, doc)
+    seq = visible(c, pov, doc)
     left = seq[index - 1][0] if index > 0 else BEGIN
     right = seq[index][0] if index < len(seq) else END
     prev = left
     for ch in text:
         pos = between(prev, right, rng)
-        op_insert(ws, pov, doc, pos, ch, site, tick())
+        op_insert(c, pov, doc, pos, ch, site, tick())
         prev = pos
 
 
-def delete_range(ws, pov, doc, start, count):
+def delete_range(c, pov, doc, start, count):
     """Tombstone `count` visible chars starting at visible index `start`."""
-    seq = visible(ws, pov, doc)
+    seq = visible(c, pov, doc)
     for pos, _ch, _site, _clk in seq[start:start + count]:
-        op_remove(ws, pov, doc, pos, tick())
+        op_remove(c, pov, doc, pos, tick())
 
 
 def connect():
-    ws = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
-    send(ws, "new session;")
-    return ws
+    c = orly.connect()
+    c.new_session()
+    return c
 
 
-def show(ws, pov, doc, label):
-    text = render(ws, pov, doc)
+def show(c, pov, doc, label):
+    text = render(c, pov, doc)
     print(f"  {label:<34} {text!r}")
     return text
 
@@ -186,10 +163,10 @@ def show(ws, pov, doc, label):
 # main
 # ---------------------------------------------------------------------
 def main():
-    boot = websocket.create_connection(WS_URL, timeout=WS_TIMEOUT_S)
-    send(boot, "new session;")
-    send(boot, "install crdt_text.1;")
-    pov = send(boot, "new safe shared pov;")
+    boot = orly.connect()
+    boot.new_session()
+    boot.install("crdt_text", 1)
+    pov = boot.new_pov()
     doc = "doc"
     print(f"pov: {pov}")
     print(f"document: {doc!r} -- two editors (alice, bob) on one shared POV\n")
@@ -294,8 +271,7 @@ def main():
     if render(boot, pov, doc, clock_p2) != after_p2:
         failures.append("time-travel: phase-2 snapshot drifted")
 
-    send(boot, "exit;")
-    boot.close()
+    boot.exit()
 
     if failures:
         print("\n=== self-check FAILED ===")
