@@ -3,8 +3,21 @@
   [
     [],
     [
-      "Synth + Symbols",
-      "26:1-26:55 [orly/synth/def_factory.cc]This feature is not yet implemented"
+      "Synth + Symbols"
+    ],
+    [
+      "Code Gen"
+    ],
+    [
+      "Compiling C++",
+      "/tmp/orly_compiler/main.cc: In function \u2018int64_t NSmain::Fanswer(Orly::Package::TContext&)\u2019:",
+      "/tmp/orly_compiler/main.cc:74:22: error: cannot convert \u2018Orly::Rt::TOpt<long int>\u2019 to \u2018int64_t\u2019 {aka \u2018long int\u2019} in return",
+      "   74 |     return Orly::Rt::TOpt<int64_t>();",
+      "      |                      ^~~~~~~~~~~~~~~",
+      "      |                      |",
+      "      |                      Orly::Rt::TOpt<long int>",
+      "Error while compiling an Intermediate Representation. See a Orly team member with your Orly code for support",
+      "compile failure: compile failure[orly/compiler.cc]; Compiling C++ and linking"
     ]
   ]
 ]

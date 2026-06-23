@@ -108,6 +108,12 @@ void TFuncDef::SetExpr(TExpr *expr) {
   Expr = expr;
 }
 
+void TFuncDef::SetSymbol(const Symbol::TFunction::TPtr &symbol) {
+  assert(symbol);
+  assert(!Symbol);
+  Symbol = symbol;
+}
+
 const char *TDef::TInfo<TFuncDef>::Name = "a function defintion";
 
 TParamFuncDef::TParamFuncDef(

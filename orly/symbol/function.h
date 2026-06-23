@@ -92,15 +92,19 @@ namespace Orly {
          inferred type and raises nothing. Run once per function during
          TypeCheck, after the post-build widening passes have settled the
          body. */
-      void VerifyRecursiveReturns() const;
+      /* Virtual so an import function (#171), whose result type is declared and
+         which has only a placeholder body, can skip the body re-evaluation. */
+      virtual void VerifyRecursiveReturns() const;
 
       void Remove(const TParamDef::TPtr &param_def);
 
       TScopePtr TryGetScope() const;
 
-      private:
+      protected:
 
       TFunction(const TScopePtr &scope, const std::string &name, const TPosRange &pos_range);
+
+      private:
 
       /* Drop the memoized type of every node in the body expr tree (but NOT of
          inner/where-bound function bodies -- they are their own roots and
