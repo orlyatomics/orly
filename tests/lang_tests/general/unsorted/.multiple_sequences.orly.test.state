@@ -35,7 +35,7 @@
       "210:3-210:4 syntax error, unexpected CloseBrace, expecting end of file",
       "220:1-220:2 syntax error, unexpected CloseBrace, expecting end of file",
       "225:1-225:2 syntax error, unexpected CloseBrace, expecting end of file",
-      "compile failure: compile failure[orly/compiler.cc, 202]; Compiling Orly language"
+      "compile failure: compile failure[orly/compiler.cc]; Compiling Orly language"
     ]
   ]
 ]
