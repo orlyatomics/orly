@@ -1,0 +1,44 @@
+{
+  "test": {
+    "build_with_default_targets": true,
+    "excluded": [
+      "third_party",
+      ".git"
+    ]
+  },
+  "cmd": {
+    "+g++": [
+      "-DDEBUG",
+      "-g",
+      "-O1",
+      "-fsanitize=thread",
+      "-fno-omit-frame-pointer"
+    ],
+    "+gcc": [
+      "-DDEBUG",
+      "-g",
+      "-O1",
+      "-fsanitize=thread",
+      "-fno-omit-frame-pointer"
+    ],
+    "flex": {
+      "+g++": [
+        "-g",
+        "-DDEBUG",
+        "-fsanitize=thread"
+      ]
+    },
+    "bison": {
+      "+g++": [
+        "-g",
+        "-DDEBUG",
+        "-fsanitize=thread"
+      ]
+    },
+    "ld": {
+      "+flags": [
+        "-fsanitize=thread"
+      ]
+    }
+  }
+}

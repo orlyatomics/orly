@@ -68,6 +68,23 @@ Exercise the Orlyscript test suite against compiled `.orly` programs:
 python3 tools/lang_test.py -d orly/data tests/lang_tests
 ```
 
+### ThreadSanitizer build
+
+A `tsan` config builds with ThreadSanitizer (`-fsanitize=thread`) to check the
+lock-free / commutative-merge machinery for data races. Build a target and run
+it under TSan:
+
+```sh
+tools/jhm -c tsan orly/indy/context_fold.test          # output: ../out_orly/tsan/...
+setarch "$(uname -m)" -R ../out_orly/tsan/orly/indy/context_fold.test
+```
+
+The `setarch -R` (disable ASLR) is required on modern kernels — without it
+libtsan aborts at startup with *"unexpected memory mapping"*. CI runs a curated
+set of concurrency tests this way in a **non-gating** job (it still surfaces
+untriaged races); see [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and
+[#177](https://github.com/orlyatomics/orly/issues/177).
+
 ## Examples
 
 ### [`examples/bitcoin-time-travel/`](examples/bitcoin-time-travel/) — time travel + multiverse via key-encoded version
