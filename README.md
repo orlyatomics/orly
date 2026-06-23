@@ -17,7 +17,7 @@
 
 ---
 
-> **Status — 2026.** Dormant from 2019 until early 2026. A modernization pass brought the codebase back to building and testing cleanly on a current toolchain — `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13 — and a substantial language arc followed: sum types / tagged unions, recursive and mutually-recursive variants (storable and client-transmissible), variant widening, and recursive-return type verification. The issue tracker is currently clear (zero open issues); see [`CHANGELOG.md`](CHANGELOG.md) for what's landed and [#10](https://github.com/orlyatomics/orly/issues/10) for the original revival status. Contributions welcome.
+> **Status — 2026.** Dormant from 2019 until early 2026. A modernization pass brought the codebase back to building and testing cleanly on a current toolchain — `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13 — and a substantial language arc followed: sum types / tagged unions, recursive and mutually-recursive variants (storable and client-transmissible), variant widening, and recursive-return type verification. See [`CHANGELOG.md`](CHANGELOG.md) for what's landed and [#10](https://github.com/orlyatomics/orly/issues/10) for the original revival status; the open issues track an engine-integrity and test-hardening backlog (latent revival defects plus sanitizer / coverage gaps). Contributions welcome.
 
 ---
 
