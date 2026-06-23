@@ -99,8 +99,10 @@ namespace Orly {
 
       void AddChild(const std::shared_ptr<TInlineFunc> &func);
 
-      /* Build the function body, if necessary. */
-      void Build();
+      /* Build the function body, if necessary. Virtual so TSymbolFunc can emit a
+         cross-package call body for an imported value (#171) instead of walking a
+         placeholder expr. */
+      virtual void Build();
 
       TArg::TRef::TPtr GetArg(const std::string &name) const;
       const TArgs &GetArgs() const;
@@ -142,6 +144,10 @@ namespace Orly {
 
       //TODO: I think the PostCtor could go away...
       void PostCtor(const TNamedArgs &args, const Expr::TExpr::TPtr &expr, bool keep_mutable, bool implicit=false);
+
+      /* Install a body directly, bypassing the expr-walking Build(). Used by a
+         subclass that synthesizes its body (e.g. an import's cross-package call). */
+      void SetBody(const TInline::TPtr &body);
 
       //TODO: These should really be private
       TCodeScope CodeScope;

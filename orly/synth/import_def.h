@@ -31,6 +31,7 @@
 #include <string>
 
 #include <orly/orly.package.cst.h>
+#include <orly/package/name.h>
 #include <orly/synth/func_def.h>
 #include <orly/synth/scope_and_def.h>
 #include <orly/synth/type.h>
@@ -62,6 +63,9 @@ namespace Orly {
 
       /* The declared type the local name is bound at. */
       TType *DeclaredType;
+
+      /* The source package (from a literal package_ref `package <a/b/c>#N`). */
+      Package::TName PackageName;
 
       /* The symbol's name in the source package (opt_name, or the local name). */
       std::string RemoteName;

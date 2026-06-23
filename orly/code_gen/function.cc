@@ -64,6 +64,12 @@ void TFunction::AddChild(const std::shared_ptr<TInlineFunc> &func) {
   ChildFuncs.insert(func);
 }
 
+void TFunction::SetBody(const TInline::TPtr &body) {
+  assert(body);
+  assert(!Body);
+  Body = body;
+}
+
 void TFunction::Build() {
   //Only build if we haven't already built.
   if(Body) {

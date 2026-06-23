@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 
+#include <orly/package/name.h>
 #include <orly/pos_range.h>
 #include <orly/symbol/function.h>
 #include <orly/type.h>
@@ -51,9 +52,13 @@ namespace Orly {
                                  const std::string &name,
                                  const TPosRange &pos_range,
                                  const Type::TType &declared_return_type,
+                                 const Package::TName &package_name,
                                  const std::string &remote_name);
 
       virtual ~TImportFunction();
+
+      /* The source package the symbol is imported from (for codegen). */
+      const Package::TName &GetPackageName() const { return PackageName; }
 
       /* The declared type, not an inference over a (nonexistent) body. */
       virtual Type::TType GetReturnType() const override;
@@ -70,9 +75,12 @@ namespace Orly {
                       const std::string &name,
                       const TPosRange &pos_range,
                       const Type::TType &declared_return_type,
+                      const Package::TName &package_name,
                       const std::string &remote_name);
 
       Type::TType DeclaredReturnType;
+
+      Package::TName PackageName;
 
       std::string RemoteName;
 
