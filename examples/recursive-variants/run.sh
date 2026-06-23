@@ -69,4 +69,5 @@ if ! ss -tln 2>/dev/null | grep -q ':8082'; then
 fi
 
 echo "[5/5] run demo.py"
-python3 demo.py
+# Make the shared `orly` client (clients/python) importable without an install.
+PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" python3 demo.py

@@ -22,11 +22,9 @@ Or directly, after starting orlyi separately:
     python3 demo.py
 """
 
-import json
 import sys
-import websocket
 
-WS_URL = "ws://127.0.0.1:8082/"
+import orly
 
 
 # Each entry: (category, year, [articles added that year])
@@ -77,53 +75,37 @@ SNAPSHOTS = {
 }
 
 
-def send(ws, stmt):
-    ws.send(stmt)
-    reply = json.loads(ws.recv())
-    if reply.get("status") != "ok":
-        raise RuntimeError(f"{stmt!r}\n  -> {reply}")
-    return reply.get("result")
+def add_growth(c, pov, cat, year, members):
+    c.call(pov, "wiki", "add_growth",
+           {"cat": cat, "year": year, "members": set(members)})
 
 
-def set_literal(members):
-    """Format a Python iterable as an Orlyscript string-set literal."""
-    return "{" + ", ".join(f'"{m}"' for m in members) + "}"
-
-
-def add_growth(ws, pov, cat, year, members):
-    stmt = (f'try {{{pov}}} wiki add_growth '
-            f'<{{.cat: "{cat}", .year: {year}, .members: {set_literal(members)}}}>;')
-    send(ws, stmt)
-
-
-def members_at(ws, pov, cat, since, target):
+def members_at(c, pov, cat, since, target):
     """Returns a sorted list of articles in `cat` from `since` through `target`."""
-    stmt = (f'try {{{pov}}} wiki members_at '
-            f'<{{.cat: "{cat}", .since: {since}, .target: {target}}}>;')
-    result = send(ws, stmt)
+    result = c.call(pov, "wiki", "members_at",
+                    {"cat": cat, "since": since, "target": target})
     # Orlyi serialises sets as JSON arrays.
     return sorted(result) if result else []
 
 
-def count_at(ws, pov, cat, since, target):
-    stmt = (f'try {{{pov}}} wiki count_at '
-            f'<{{.cat: "{cat}", .since: {since}, .target: {target}}}>;')
-    result = send(ws, stmt)
+def count_at(c, pov, cat, since, target):
+    result = c.call(pov, "wiki", "count_at",
+                    {"cat": cat, "since": since, "target": target})
     return int(result) if result is not None else 0
 
 
 def main():
-    ws = websocket.create_connection(WS_URL)
-    send(ws, "new session;")
-    send(ws, "install wiki.1;")
-    pov = send(ws, "new safe shared pov;")
+    c = orly.connect()
+    c.new_session()
+    c.install("wiki", 1)
+    pov = c.new_pov()
     print(f"pov: {pov}\n")
 
     # Ingest the timeline.
     print(f"ingesting {len(EVENTS)} growth events across "
           f"{len({e[0] for e in EVENTS})} categories...")
     for cat, year, members in EVENTS:
-        add_growth(ws, pov, cat, year, members)
+        add_growth(c, pov, cat, year, members)
 
     # The headline output: snapshots of each category at chosen years.
     cat_pretty = {"languages": "Programming languages", "crypto": "Cryptocurrencies"}
@@ -131,7 +113,7 @@ def main():
         print()
         print(f"=== {cat_pretty[cat]} ===")
         for y in years:
-            members = members_at(ws, pov, cat, 0, y)
+            members = members_at(c, pov, cat, 0, y)
             count = len(members)
             print(f"  {y}  ({count:>2}): {', '.join(members) if members else '(empty)'}")
 
@@ -139,8 +121,8 @@ def main():
     # and querying one doesn't bleed into the other.
     print()
     print("=== cross-category isolation ===")
-    lang_2024 = set(members_at(ws, pov, "languages", 0, 2024))
-    crypto_2024 = set(members_at(ws, pov, "crypto", 0, 2024))
+    lang_2024 = set(members_at(c, pov, "languages", 0, 2024))
+    crypto_2024 = set(members_at(c, pov, "crypto", 0, 2024))
     overlap = lang_2024 & crypto_2024
     print(f"  |languages 2024| = {len(lang_2024)}")
     print(f"  |crypto 2024|    = {len(crypto_2024)}")
@@ -168,12 +150,11 @@ def main():
                           "Litecoin", "Monero", "Namecoin", "Ripple", "Solana"]),
     ]
     for cat, year, expected in expectations:
-        got = members_at(ws, pov, cat, 0, year)
+        got = members_at(c, pov, cat, 0, year)
         if got != expected:
             failures.append(f"{cat} at {year}: got {got!r}, want {expected!r}")
 
-    send(ws, "exit;")
-    ws.close()
+    c.exit()
 
     if failures:
         print("\n=== self-check FAILED ===")

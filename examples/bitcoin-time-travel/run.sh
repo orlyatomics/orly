@@ -70,4 +70,4 @@ if ! ss -tln 2>/dev/null | grep -q ':8082'; then
 fi
 
 echo "[5/5] run demo.py"
-python3 demo.py
+PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" python3 demo.py

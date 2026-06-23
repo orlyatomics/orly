@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orly"
+version = "0.1.0"
+description = "Python client for the Orly database (WebSocket + JSON protocol)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+dependencies = ["websocket-client>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/orlyatomics/orly"
+Protocol = "https://github.com/orlyatomics/orly/blob/master/docs/PROTOCOL.md"
+
+[tool.setuptools]
+packages = ["orly"]
