@@ -109,9 +109,12 @@ void TRunner::Run() {
     for (; likely(KeepRunning.load());) {
       assert(!ReadyToRunQueue);
       /* check for inbound frames */ {
-        if (InboundFrameQueue) {
+        if (InboundFrameQueue.load(std::memory_order_acquire)) {
           assert(rt_queue == nullptr);
-          TFrame *cur_tail = __sync_lock_test_and_set(&InboundFrameQueue, nullptr);
+          /* Drain the whole Treiber stack in one shot. Acquire pairs with the
+             pushers' release CAS so the frames' InboundQueueNextFrame links we
+             walk below are visible. */
+          TFrame *cur_tail = InboundFrameQueue.exchange(nullptr, std::memory_order_acquire);
           for (TFrame *frame = cur_tail; frame; frame = next_frame) {
             assert(frame->InboundQueueNextFrame != frame);
             next_frame = frame->InboundQueueNextFrame;
@@ -136,12 +139,14 @@ void TRunner::Run() {
           rt_queue = nullptr;
         } else {
           for (size_t i = 0; i < TotalNumRunners; ++i) {
-            TRunner *cur_runner = RunnerArray[i];
+            TRunner *cur_runner = RunnerArray[i].load(std::memory_order_acquire);
             if (cur_runner) {
-              TFrame *&cur_inbound_queue = cur_runner->QueueArray[RunnerId].Ptr;
-              if (cur_inbound_queue) {
+              std::atomic<TFrame *> &cur_inbound_queue = cur_runner->QueueArray[RunnerId].Ptr;
+              if (cur_inbound_queue.load(std::memory_order_acquire)) {
                 assert(rt_queue == nullptr);
-                TFrame *cur_tail = __sync_lock_test_and_set(&cur_inbound_queue, nullptr);
+                /* Drain the whole Treiber stack; acquire pairs with the
+                   pushers' release CAS (see InboundFrameQueue above). */
+                TFrame *cur_tail = cur_inbound_queue.exchange(nullptr, std::memory_order_acquire);
                 for (TFrame *frame = cur_tail; frame; frame = next_frame) {
                   assert(frame->InboundQueueNextFrame != frame);
                   next_frame = frame->InboundQueueNextFrame;

@@ -100,7 +100,7 @@ FIXTURE(Typical) {
   const size_t num_runnable_per_thread = 256UL;
   size_t num_threads = 1UL;
   std::vector<TRunner *> runner_vec;
-  TRunner *runner_array[num_threads];
+  std::atomic<TRunner *> runner_array[num_threads];
   for (size_t i = 0; i < num_threads; ++i) {
     runner_array[i] = nullptr;
   }
