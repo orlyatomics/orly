@@ -23,6 +23,8 @@
 
 ## Features
 
+> The concurrency model behind the first two features — POVs, the Tetris merge, the Flux Capacitor's causal ordering, and commutative field-call folding — is documented in depth in [`docs/architecture.md`](docs/architecture.md).
+
 - **Points of View.** Optimistic concurrency without locking. Each client makes changes in its own private POV — a small sandbox — which eventually propagates into shared POVs and then into the global POV (the whole database). Field calls (`x += 1`) are preferred over field changes (`x = x + 1`) because they merge commutatively.
 
 - **Causal ordering (the _Flux Capacitor_).** Merge-conflict resolution defines its "time line" by causality rather than clock time. Internal mechanism; the original 2014 pitch implied user-facing "time travel" queries which the engine never grew, but the capability is achievable in user-space — see the [bitcoin time-travel example](examples/bitcoin-time-travel/).
