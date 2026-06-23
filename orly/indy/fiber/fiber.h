@@ -631,6 +631,15 @@ namespace Orly {
           CheckFrameUnwound();
           assert(Runnable == nullptr);
           assert(RunnableFunc == nullptr);
+          #ifndef NDEBUG
+          /* Acquire-load pairs with the release-stores to DebugIsRunning in Run(),
+             giving ThreadSanitizer a happens-before from a fiber's last write to
+             this teardown so the pool free that follows is not reported as racing
+             it (#200). Not a tripwire: a frame may be parked mid-runnable here
+             (DebugIsRunning still true) when a test tears the pool down, so we only
+             need the synchronization edge, not an assertion. */
+          (void)DebugIsRunning.load(std::memory_order_acquire);
+          #endif
           free_fiber(MyFiber);
         }
 
@@ -693,7 +702,10 @@ namespace Orly {
             //printf("TFrame [%p] calling func\n", this);
 
             #ifndef NDEBUG
-            DebugIsRunning.store(true, std::memory_order_relaxed);
+            /* Release (paired with the acquire-load in ~TFrame, #200) so that even
+               a frame parked mid-runnable at teardown has its last DebugIsRunning
+               write synchronize with the pool free. */
+            DebugIsRunning.store(true, std::memory_order_release);
             #endif
             TRunnable::TFunc runnable_func = RunnableFunc;
             TRunnable *const runnable = Runnable;
@@ -706,7 +718,13 @@ namespace Orly {
               //abort();
             }
             #ifndef NDEBUG
-            DebugIsRunning.store(false, std::memory_order_relaxed);
+            /* Release so the acquire-load in ~TFrame (run on the teardown thread)
+               synchronizes-with this write, giving ThreadSanitizer a happens-before
+               from a finished fiber's last writes to the frame-pool free -- an
+               ordering that physically holds (frames complete before teardown) but
+               travels through the ucontext stack switch, which TSan can't model as
+               a happens-before the way it does pthread_join (#200). */
+            DebugIsRunning.store(false, std::memory_order_release);
             #endif
             //printf("TFrame [%p] FINISH calling func\n", this);
 
