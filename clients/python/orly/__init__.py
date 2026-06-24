@@ -23,14 +23,20 @@ callers compare numerically / as sets accordingly.
 """
 
 import json as _json
+import time as _time
 
 import websocket  # the `websocket-client` package
 
-__all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "OrlyError", "Lit", "lit",
-           "Client", "connect"]
+__all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RETRIES",
+           "DEFAULT_BACKOFF_S", "OrlyError", "Lit", "lit", "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
 DEFAULT_TIMEOUT_S = 30
+# A freshly started or heavily loaded orlyi can briefly refuse the connection
+# or time out the WebSocket handshake before it is ready. connect() retries
+# that window with exponential backoff: DEFAULT_BACKOFF_S, doubling each time.
+DEFAULT_RETRIES = 5
+DEFAULT_BACKOFF_S = 0.25
 
 
 class OrlyError(RuntimeError):
@@ -162,6 +168,23 @@ class Client:
         return False
 
 
-def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S):
-    """Open a WebSocket to a running ``orlyi`` and return a :class:`Client`."""
-    return Client(websocket.create_connection(url, timeout=timeout))
+def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S,
+            retries=DEFAULT_RETRIES, backoff=DEFAULT_BACKOFF_S):
+    """Open a WebSocket to a running ``orlyi`` and return a :class:`Client`.
+
+    A just-started or heavily loaded ``orlyi`` can refuse the connection or time
+    out the WebSocket handshake briefly before it is ready to serve. To keep
+    demos and tests from flaking on that window, the connection is retried up to
+    ``retries`` times with exponential backoff (``backoff`` seconds, doubling
+    each attempt). The last error is re-raised once the retries are exhausted;
+    pass ``retries=0`` to fail fast on the first attempt.
+    """
+    delay = backoff
+    for attempt in range(retries + 1):
+        try:
+            return Client(websocket.create_connection(url, timeout=timeout))
+        except (websocket.WebSocketException, OSError):
+            if attempt == retries:
+                raise
+            _time.sleep(delay)
+            delay *= 2
