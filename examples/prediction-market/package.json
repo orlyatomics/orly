@@ -1,0 +1,14 @@
+{
+  "name": "orly-example-prediction-market",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A parimutuel prediction market on Orly, driven from TypeScript via the orly client",
+  "dependencies": {
+    "orly": "file:../../clients/ts",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
