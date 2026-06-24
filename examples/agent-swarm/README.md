@@ -66,9 +66,17 @@ That trailing-`free` shape is exactly what Orly's sorted index seeks straight to
 
 ```orly
 neighbors = (keys (int) @ <['adj', e, free::(str)]>) union_map {that.2}   # one hop
-grow      = v | ((**v) union_map neighbors(.e: that))                     # expand a frontier
-reach     = [1..k] reduce grow(.v: start ({seed}))                        # k-hop closure
 ```
+
+The naive closure folds a whole-set expansion `k` times — correct, but it re-reads already-settled nodes every hop (O(k · |visited| · degree)). [`graph.orly`](graph.orly)'s `reach` is instead a proper **frontier-delta BFS**: the accumulator carries `<{.seen, .frontier}>`, and each step expands *only* the frontier, so each node's adjacency is read exactly once (O(edges)):
+
+```orly
+step  = <{.seen: acc.seen | fresh, .frontier: fresh}>            # fresh = frontier's new neighbours
+        where { fresh = ((**acc.frontier) union_map neighbors(.e: that)) - acc.seen; ... }
+reach = ([1..k] reduce step(.acc: start (<{.seen: {seed}, .frontier: {seed}}>))).seen
+```
+
+The inline tests assert the delta BFS returns the same set as the naive whole-set fold, hop for hop.
 
 The driver verifies `reach(seed, k)` against a plain-Python BFS over the same graph, then showcases a neighbourhood — e.g. from **Claude**, ~92% of the graph is reachable within 3 hops. The point: the graph was assembled by N agents with **zero coordination**, and it's still **traversable transitively** — concurrent construction *and* graph queries in one store, which Neo4j (single-primary writes) and Cayley (a query layer over a store) don't combine.
 

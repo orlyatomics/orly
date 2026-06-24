@@ -124,20 +124,40 @@ neighbors = (((keys (int) @ <['adj', e, free::(str)]>) union_map {that.2})) wher
   e = given::(str);
 };
 
-/* One BFS hop: the frontier set V plus the union of every frontier node's
-   neighbours -- `union_map` maps each frontier node to its neighbour set
-   and unions them. */
+/* One NAIVE BFS hop: the whole set V plus the union of every node's
+   neighbours. Simple and correct, but re-reads already-settled nodes on
+   every call -- kept as the readable reference that `reach` matches. */
 grow = ((v | ((**v) union_map neighbors(.e: that)))) where {
   v = given::({str});
 };
 
+/* Naive k-hop reachability: fold `grow` over a depth range. Correct, and
+   the accumulating visited set makes cycles terminate -- but it re-expands
+   the ENTIRE visited set every hop, so it costs O(k * |visited| * degree). */
+reach_naive = (([1..k] reduce grow(.v: start ({seed})))) where {
+  seed = given::(str);
+  k    = given::(int);
+};
+
+/* One FRONTIER-DELTA BFS step. The accumulator carries
+   <{.seen, .frontier}>; each step expands ONLY the frontier (not all of
+   seen), and the newly-discovered nodes (`fresh` = the frontier's
+   neighbours minus what we've already seen) become the next frontier. So
+   every node's adjacency is read exactly once across the whole traversal.
+   An empty frontier makes further steps no-ops, so cycles still terminate.
+   (`fresh`, not `new` -- `new` is the reserved create-statement keyword.) */
+step = ((<{.seen: acc.seen | fresh, .frontier: fresh}>)) where {
+  acc   = given::(<{.seen: {str}, .frontier: {str}}>);
+  fresh = (((**acc.frontier) union_map neighbors(.e: that)) - acc.seen);
+};
+
 /* Every entity reachable from `seed` within `k` cooccurrence hops
-   (inclusive of seed): k applications of `grow`. The accumulating visited
-   set makes cycles terminate -- a coordination-free knowledge graph,
-   traversed transitively. The adjacency needed no new storage (it is
-   already index-free); `union_map` is just the terse surface for the
-   per-hop frontier expansion (it desugars to a reduce). */
-reach = (([1..k] reduce grow(.v: start ({seed})))) where {
+   (inclusive of seed), as a proper BFS: fold `step` over the depth range
+   carrying (seen, frontier), then read the accumulated `seen`. Same result
+   as `reach_naive`, but O(edges) total instead of O(k * edges) -- each
+   node is expanded once, which is what makes traversal scale past toy
+   graphs. The drivers call this. */
+reach = ((([1..k] reduce step(.acc: start (<{.seen: {seed}, .frontier: {seed}}>))).seen)) where {
   seed = given::(str);
   k    = given::(int);
 };
@@ -219,6 +239,12 @@ test {
           t38: reach(.seed: "D", .k: 2) == {"A", "B", "C", "D"};
           /* the A-B-C cycle terminates: extra hops add nothing */
           t39: reach(.seed: "D", .k: 5) == {"A", "B", "C", "D"};
+          /* the frontier-delta BFS agrees with the naive whole-set fold,
+             hop for hop -- same reachable set, each node expanded once. */
+          t40: reach(.seed: "D", .k: 1) == reach_naive(.seed: "D", .k: 1);
+          t41: reach(.seed: "D", .k: 2) == reach_naive(.seed: "D", .k: 2);
+          t42: reach(.seed: "A", .k: 3) == reach_naive(.seed: "A", .k: 3);
+          t43: reach(.seed: "B", .k: 5) == reach_naive(.seed: "B", .k: 5);
         };
       };
     };

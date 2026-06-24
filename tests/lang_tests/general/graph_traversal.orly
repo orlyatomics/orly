@@ -3,7 +3,13 @@
    edge-existence keys; adjacency via a trailing-free prefix scan; bounded
    reachability as a reduce over a depth range, accumulating a visited set
    (which gives cycle handling for free). The agent-swarm example does the
-   same over a coordination-free knowledge graph. */
+   same over a coordination-free knowledge graph.
+
+   `reach` here uses no new primitive (a plain reduce). `reach_delta` below
+   is the frontier-delta BFS (#219 phase 3): same result, but it expands
+   only the new frontier each hop -- O(edges) instead of O(k*edges) -- and
+   uses `union_map` (#219 phase 2) to expand a frontier in one step. The
+   tests assert the two agree. */
 
 /* out-neighbours of n: scan all <['edge', n, *]> keys, fold the dst
    (tuple element .2) into a set. */
@@ -22,6 +28,20 @@ reach = (([1..k] reduce expand(.v: start ({seed})))) where {
   k    = given::(int);
 };
 
+/* Frontier-delta BFS (#219 phase 3): same reachable set as `reach`, but
+   each step expands ONLY the new frontier (not the whole visited set), so
+   each node's adjacency is read once -- O(edges) instead of O(k*edges).
+   Uses union_map (#219 phase 2) to expand the frontier in one step. */
+step = ((<{.seen: acc.seen | fresh, .frontier: fresh}>)) where {
+  acc   = given::(<{.seen: {int}, .frontier: {int}}>);
+  fresh = (((**acc.frontier) union_map neighbors(.n: that)) - acc.seen);
+};
+
+reach_delta = ((([1..k] reduce step(.acc: start (<{.seen: {seed}, .frontier: {seed}}>))).seen)) where {
+  seed = given::(int);
+  k    = given::(int);
+};
+
 /* graph:  1 -> 2 -> 3 -> 1 (cycle),  1 -> 4 */
 with {
   <['edge', 1, 2]> <- true;
@@ -34,4 +54,10 @@ with {
   t3: reach(.seed: 1, .k: 2) == {1, 2, 3, 4};
   t4: reach(.seed: 1, .k: 5) == {1, 2, 3, 4};   /* cycle does not loop forever */
   t5: reach(.seed: 4, .k: 5) == {4};            /* sink */
+  /* the frontier-delta BFS agrees with the naive whole-set fold. */
+  t6: reach_delta(.seed: 1, .k: 1) == reach(.seed: 1, .k: 1);
+  t7: reach_delta(.seed: 1, .k: 2) == reach(.seed: 1, .k: 2);
+  t8: reach_delta(.seed: 1, .k: 5) == reach(.seed: 1, .k: 5);
+  t9: reach_delta(.seed: 4, .k: 5) == reach(.seed: 4, .k: 5);
+  t10: reach_delta(.seed: 1, .k: 2) == {1, 2, 3, 4};
 };
