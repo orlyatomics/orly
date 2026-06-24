@@ -1,3 +1,10 @@
+# TypeScript driver build artifacts.
 node_modules/
 package-lock.json
 demo.js
+
+# orlyc build artifacts (e.g. `orlyc -d market.orly` emits these alongside).
+*.cc
+*.h
+*.so
+*.orly.sig
