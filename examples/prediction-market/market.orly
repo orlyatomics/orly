@@ -1,0 +1,170 @@
+/* <examples/prediction-market/market.orly>
+
+   A small parimutuel prediction market -- a "Polymarket clone" reduced
+   to the mechanism that shows off Orly: many traders bet concurrently
+   on the outcomes of a market, the implied probabilities are a fold
+   over the trade log, and any past price is a query.
+
+   It is a *parimutuel pool*, not an order book: a bet adds `amount` to
+   the chosen outcome's pool; the implied probability of an outcome is
+   its pool divided by the total pool; on resolution, holders of the
+   winning outcome split the entire pool in proportion to their stake.
+   That mechanism is *entirely commutative*: every write is a `+=` / `|=`,
+   so N traders can bet on the same market at the same instant with zero
+   coordination and not a single bet is lost.
+
+   Time-travel is free: bets are bucketed by a monotonic `round`, so the
+   price/pool "as of round t" is `[0..t] reduce start 0 + per_round` --
+   the same version-axis fold as the bitcoin demo, here over money.
+
+   Schema (every value reached by a commutative op):
+
+     <['stake', m, o, t]>  : int    -- amount staked on outcome o, in round t
+     <['total', m, t]>     : int    -- total staked across all outcomes, round t
+     <['user',  m, u, o]>  : int    -- user u's cumulative stake on outcome o
+     <['book',  m]>        : {str}  -- the set of outcomes seen in market m
+     <['won',   m]>        : str    -- the resolved winning outcome
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #0;
+
+/* Amount staked on outcome o in market m during round t; 0 if no bet
+   landed in that round. */
+stake_in = ((*<['stake', m, o, t]>::(int) if *<['stake', m, o, t]>::(int?) is known else 0)) where {
+  m = given::(str);
+  o = given::(str);
+  t = given::(int);
+};
+
+/* Cumulative stake on outcome o as of round t -- a fold over the rounds. */
+staked = ([0..t] reduce start 0 + stake_in(.m: m, .o: o, .t: that)) where {
+  m = given::(str);
+  o = given::(str);
+  t = given::(int);
+};
+
+/* Total staked across all outcomes during round t; 0 if none. */
+total_in = ((*<['total', m, t]>::(int) if *<['total', m, t]>::(int?) is known else 0)) where {
+  m = given::(str);
+  t = given::(int);
+};
+
+/* Total pool as of round t. */
+pool = ([0..t] reduce start 0 + total_in(.m: m, .t: that)) where {
+  m = given::(str);
+  t = given::(int);
+};
+
+/* Place a bet: `amount` on outcome o in market m, in round t, by user u.
+   Every write is commutative, so concurrent bettors compose with no
+   coordination and no lost updates. Returns 1. */
+place_bet = ((1) effecting {
+  *<['stake', m, o, t]>::(int) += amount;
+  *<['total', m, t]>::(int) += amount;
+  *<['user', m, u, o]>::(int) += amount;
+  *<['book', m]>::({str}) |= {o};
+}) where {
+  m = given::(str);
+  o = given::(str);
+  u = given::(str);
+  amount = given::(int);
+  t = given::(int);
+};
+
+/* Implied probability of outcome o as of round t, in basis points
+   (0..10000, i.e. percent * 100). Parimutuel: stake_on_o / total_pool.
+   0 when nothing has been staked yet. */
+price = ((
+  (staked(.m: m, .o: o, .t: t) * 10000) / pool(.m: m, .t: t)
+    if pool(.m: m, .t: t) > 0 else 0
+)) where {
+  m = given::(str);
+  o = given::(str);
+  t = given::(int);
+};
+
+/* The outcomes seen in market m (empty until the first bet). */
+outcomes = ((*<['book', m]>::({str}) if *<['book', m]>::({str}?) is known else empty {str})) where {
+  m = given::(str);
+};
+
+/* A user's cumulative stake on an outcome; 0 if none. */
+position = ((*<['user', m, u, o]>::(int) if *<['user', m, u, o]>::(int?) is known else 0)) where {
+  m = given::(str);
+  u = given::(str);
+  o = given::(str);
+};
+
+/* Resolve the market: declare the winning outcome (set once). Returns 1. */
+resolve = ((1) effecting {
+  new <['won', m]> <- o;
+}) where {
+  m = given::(str);
+  o = given::(str);
+};
+
+/* The resolved winning outcome, or "" if the market is still open. */
+winner = ((*<['won', m]>::(str) if *<['won', m]>::(str?) is known else "")) where {
+  m = given::(str);
+};
+
+/* Parimutuel payout to user u, given the final round `t`: their stake on
+   the winning outcome times the whole pool, divided by the total staked
+   on the winning outcome. 0 if the market is unresolved or u holds none
+   of the winning outcome. */
+payout = ((
+  (position(.m: m, .u: u, .o: w) * pool(.m: m, .t: t)) / staked(.m: m, .o: w, .t: t)
+    if w != "" and_then staked(.m: m, .o: w, .t: t) > 0 else 0
+)) where {
+  m = given::(str);
+  u = given::(str);
+  t = given::(int);
+  w = winner(.m: m);
+};
+
+/* Inline tests -- `orlyc -d market.orly` runs these.
+   Scenario: a binary market; three bettors stake across two rounds, the
+   price tracks the pool split, time-travel recovers the round-1 price,
+   and a resolution pays the winners out parimutuel-style. */
+test {
+  /* Round 0: alice 60 on YES, bob 40 on NO. Pool 100; YES = 60%. */
+  r1: place_bet(.m: "mkt", .o: "YES", .u: "alice", .amount: 60, .t: 0) == 1 {
+    r2: place_bet(.m: "mkt", .o: "NO", .u: "bob", .amount: 40, .t: 0) == 1 {
+      t_pool0: pool(.m: "mkt", .t: 0) == 100;
+      t_yes0: price(.m: "mkt", .o: "YES", .t: 0) == 6000;
+      t_no0:  price(.m: "mkt", .o: "NO", .t: 0) == 4000;
+      t_book: outcomes(.m: "mkt") == {"YES", "NO"};
+
+      /* Round 1: carol piles 100 onto YES. Pool 200; YES = 160/200 = 80%. */
+      r3: place_bet(.m: "mkt", .o: "YES", .u: "carol", .amount: 100, .t: 1) == 1 {
+        t_pool1: pool(.m: "mkt", .t: 1) == 200;
+        t_yes1: price(.m: "mkt", .o: "YES", .t: 1) == 8000;
+
+        /* Time-travel: the round-0 price is unchanged by the round-1 bet. */
+        t_yes0_again: price(.m: "mkt", .o: "YES", .t: 0) == 6000;
+
+        /* Resolve YES. Winning stake = 160 (alice 60 + carol 100), pool 200.
+           alice: 60 * 200 / 160 = 75. carol: 100 * 200 / 160 = 125. bob: 0. */
+        rr: resolve(.m: "mkt", .o: "YES") == 1 {
+          t_win:   winner(.m: "mkt") == "YES";
+          t_alice: payout(.m: "mkt", .u: "alice", .t: 1) == 75;
+          t_carol: payout(.m: "mkt", .u: "carol", .t: 1) == 125;
+          t_bob:   payout(.m: "mkt", .u: "bob", .t: 1) == 0;
+        };
+      };
+    };
+  };
+};
