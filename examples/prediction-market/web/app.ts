@@ -7,8 +7,8 @@
 // coordination between tabs -- because every bet is a commutative `+=` in the
 // engine and the price is a read-time fold of the trade log.
 //
-// Built with esbuild (see build.sh). NOTE: written but not verified in a real
-// browser in this repo's sandbox -- run it and confirm.
+// Built with esbuild (see build.sh); exercised in a real headless browser by
+// the Playwright test in e2e/ (two tabs trading concurrently on one market).
 
 import { connect, Client } from "orly";
 

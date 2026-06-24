@@ -5,6 +5,7 @@
   "description": "Browser UI for the Orly prediction-market demo (on the orly TypeScript client)",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@playwright/test": "^1.44.0",
     "@types/node": "^20.0.0",
     "esbuild": "^0.21.0",
     "typescript": "^5.4.0"

@@ -6,8 +6,12 @@
 #   3. lang-tests         -- make debug + python3 tools/lang_test.py
 #   4. examples           -- run each examples/* end-to-end with both
 #                            its Python and Go drivers (orlyc + orlyi + WS)
+#   5. prediction-market-e2e -- the TS-only prediction-market example: its
+#                            terminal driver (run-ts.sh) plus a headless-browser
+#                            Playwright test driving two tabs trading on one
+#                            market (run-e2e.sh)
 #
-# A fifth job, `tsan`, builds the concurrency tests under ThreadSanitizer to
+# A sixth job, `tsan`, builds the concurrency tests under ThreadSanitizer to
 # validate the lock-free / commutative-merge claim at the memory level (data-
 # race freedom). It is GATING (issue #184): the curated set is clean, so the
 # job FAILS on any un-suppressed race. Provably-benign reports are documented
@@ -385,6 +389,74 @@ jobs:
         run: ./run-go.sh
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/recursive-variants
+
+  prediction-market-e2e:
+    name: prediction-market headless browser (Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          version: 1.2
+
+      - name: Set up ccache
+        # Same masquerade-symlink trick as the examples job: route every compile
+        # through ccache so the build (and orlyc codegen) hit the cache.
+        run: |
+          for c in gcc g++ cc c++; do
+            sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"
+          done
+          {
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_COMPRESS=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache ccache
+        if: github.event_name != 'schedule'
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-${{ github.job }}-
+            orly-ccache-${{ runner.os }}-
+
+      - name: make debug
+        run: make debug
+        id: build
+
+      # Terminal driver (orly TS client): concurrent traders on shared per-round
+      # keys via Promise.all, time-travel price history, resolution + payout, all
+      # self-checked against an independently computed ground truth.
+      - name: run-ts.sh (terminal driver, self-check)
+        run: ./run-ts.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: examples/prediction-market
+
+      # The browser's @playwright/test + a headless Chromium with its system
+      # libs (libnss3/libnspr4/libasound2, ...). --with-deps installs those.
+      - name: Install Playwright Chromium
+        run: npm install && npx playwright install --with-deps chromium
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: examples/prediction-market/web
+
+      # Headless browser gate: two browser contexts on the same #pov= link both
+      # bet (one YES, one NO) concurrently; the test asserts the pool reaches $20
+      # and the price moves to 50/50 live in both -- the two-tab story, automated.
+      - name: run-e2e.sh (headless browser, two-tab concurrency)
+        run: ./run-e2e.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: examples/prediction-market/web
 
   tsan:
     name: ThreadSanitizer

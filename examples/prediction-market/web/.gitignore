@@ -1,3 +1,7 @@
 node_modules/
 package-lock.json
 app.js
+
+# Playwright
+test-results/
+playwright-report/
