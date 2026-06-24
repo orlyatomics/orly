@@ -150,7 +150,9 @@ What this would normally require:
 | Single-writer service in front of the store | Throughput ceiling = one writer; agents queue |
 | **Orly** | `\|=` and `+=` are field calls; lock-free; all N agents land their contributions and the engine aggregates |
 
-Why it matters: this is exactly the topology AI extraction pipelines have — many agents reading disjoint chunks, emitting overlapping facts into one graph — and every conventional database forces you to invent a coordination protocol on top. Orly gives it to you for free, as a direct consequence of how field calls work. The driver never reads-then-writes; it only ever calls the three commutative functions in [`graph.orly`](examples/agent-swarm/graph.orly).
+Why it matters: this is exactly the topology AI extraction pipelines have — many agents reading disjoint chunks, emitting overlapping facts into one graph — and every conventional database forces you to invent a coordination protocol on top. Orly gives it to you for free, as a direct consequence of how field calls work. The driver never reads-then-writes; it only ever calls the commutative functions in [`graph.orly`](examples/agent-swarm/graph.orly).
+
+And the graph it builds is **traversable**: cooccurrences are stored as a symmetric `<['adj', a, b]>` adjacency — a trailing-`free` prefix scan the sorted index seeks straight to (index-free adjacency) — so bounded k-hop reachability is a `reduce` over a depth range with a visited set, no new engine primitive. Concurrent multi-writer construction *and* transitive graph queries in one store, which Neo4j (single-primary writes) and Cayley (a query layer over a store) don't combine.
 
 ### [`examples/grc20-pov/`](examples/grc20-pov/) — GRC-20 knowledge graph: event-sourced + concurrent editors + time-travel
 
