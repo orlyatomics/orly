@@ -1,0 +1,57 @@
+/* <orly/lang_tests/general/mult_upsert.orly>
+
+   Issue #213 (PR2): close the absent-key upsert gap for `*=` (mult).
+
+   mult is already a working commutative merge op for existing keys (it
+   folds and composes through the deferred-commutative path like `+=`).
+   Its only gap was the first write: `*= n` on a key that was NEVER
+   created used to throw, because mult's monoid identity is 1 -- NOT the
+   default-constructed 0 -- so the old auto-seed could not materialise it.
+
+   The #213 identity/seed refactor seeds an absent key DIRECTLY from the
+   RHS (the fold of mult over a single element is that element: 1 * n = n),
+   so the bare `*= n` now upserts a fresh key just like `+= n`.
+
+   NB: a PLAIN read of an absent key still throws -- only the LHS of a
+   commutative mutate auto-seeds. Every read below happens AFTER a first
+   write to its key.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_int = (*<[n]>::(int)) where {
+  n = given::(int);
+};
+
+/* Bare `*= x` -- NO `is known` guard, NO `new <-`. On an absent key this
+   used to throw; with #213 PR2 it seeds from x (== 1 * x) and multiplies. */
+mult_int = ((true) effecting {
+  *<[n]>::(int) *= x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+/* Mult on a totally fresh key: seed 6, then 6*3 = 18, then 18*2 = 36. */
+test {
+  t1: mult_int(.n: 400, .x: 6) {
+    t2: read_int(.n: 400) == 6;
+    t3: mult_int(.n: 400, .x: 3) {
+      t4: read_int(.n: 400) == 18;
+      t5: mult_int(.n: 400, .x: 2) {
+        t6: read_int(.n: 400) == 36;
+      };
+    };
+  };
+};

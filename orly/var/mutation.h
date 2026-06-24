@@ -94,6 +94,9 @@ namespace Orly {
            Intersection  : intersection(r)  == r      (#213 -- identity is
                             the universal set, NOT representable as a value,
                             but the singleton fold is still just r)
+           Mult          : 1 * r            == r      (#213 PR2 -- identity
+                            1, also not the default 0, but again the
+                            singleton fold is just r)
 
          So the seed is taken as `var = Rhs` in TMutation::Apply
          (mutation.cc) -- NOT by default-constructing the operand -- and the
@@ -103,9 +106,8 @@ namespace Orly {
          and the read/disk fold seeds from the RHS, so two concurrent
          first-writers compose without a lost update.
 
-         Excluded for now -- their singleton fold is ALSO r, so they could
-         ride this path, but they are deferred to a follow-up (no current
-         demand): Mult (identity 1; PR2 of #213) and And (identity
+         Excluded for now -- And's singleton fold is ALSO r, so it could
+         ride this path, but it is deferred (no current demand; identity
          all-ones). A plain read of an absent key (outside a commutative
          mutation) still throws for every mutator. */
       inline bool IsAbsentKeySeedRhs(TMutator mutator) {
@@ -118,8 +120,8 @@ namespace Orly {
           case TMutator::Min:
           case TMutator::Max:
           case TMutator::Intersection:
-            return true;
           case TMutator::Mult:
+            return true;
           case TMutator::And:
           case TMutator::Assign:
           case TMutator::Sub:

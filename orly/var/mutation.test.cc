@@ -247,6 +247,27 @@ FIXTURE(UpsertEmptyBase_Intersection_Set) {
   EXPECT_EQ(val, TVar(Rt::TSet<int64_t>{1, 2, 3}));
 }
 
+FIXTURE(UpsertEmptyBase_Mult_Int) {
+  /* 1 (identity) * 6 == 6 on a never-created int key: a first `*= 6`
+     seeds the value directly from the RHS (#213 PR2). Mult's identity is
+     1, not the default 0, but the singleton fold is still the RHS, so the
+     seed is correct -- a default-construct-then-multiply (0 * 6 = 0) would
+     have been wrong, which is why Mult used to throw on an absent key. */
+  TVar val;
+  EXPECT_FALSE(static_cast<bool>(val));
+  TMutation::New(TMutator::Mult, TVar(int64_t(6)))->Apply(val);
+  EXPECT_TRUE(static_cast<bool>(val));
+  EXPECT_EQ(val, TVar(int64_t(6)));
+}
+
+FIXTURE(UpsertEmptyBase_Mult_ThenMult) {
+  /* empty *= 6 seeds (->6), then *= 3 folds to 18. */
+  TVar val;
+  TMutation::New(TMutator::Mult, TVar(int64_t(6)))->Apply(val);
+  TMutation::New(TMutator::Mult, TVar(int64_t(3)))->Apply(val);
+  EXPECT_EQ(val, TVar(int64_t(18)));
+}
+
 FIXTURE(MinMax_Augment_Fold) {
   /* min/max are commutative + associative, so two same-key mutations
      compose: Min(7).Augment(Min(3)) -> Min(3); Max(3).Augment(Max(7))
@@ -275,8 +296,8 @@ FIXTURE(AbsentKeySeed_Membership) {
   EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Min));
   EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Max));
   EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Intersection));
-  /* Deferred to a follow-up (no current demand): Mult (PR2) and And. */
-  EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::Mult));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Mult));
+  /* Deferred (no current demand; identity all-ones): And. */
   EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::And));
   /* Never seedable. */
   EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::Assign));

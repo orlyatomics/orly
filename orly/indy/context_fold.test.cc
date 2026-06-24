@@ -442,3 +442,57 @@ FIXTURE(MinMaxDeferredFold) {
     cond.notify_one();
   });
 }
+
+/* Issue #213 PR2: mult (`*=`) absent-key upsert through the real indy
+   fold. Mult was already defer-safe for existing keys; the only change is
+   that a first entry on an absent key now seeds from its RHS (1 * r == r)
+   instead of throwing. Identical fold mechanism to Add, exercised here for
+   the mult op specifically. */
+FIXTURE(MultDeferredFold) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Base::TUuid idx_id(TUuid::Twister);
+    const TIndexKey prod_key(idx_id, TKey(make_tuple(1L), &arena, state_alloc));
+
+    auto run_scenario = [&](const char *name,
+                            const std::vector<std::pair<TMutator, int64_t>> &entries,
+                            int64_t want) {
+      Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+      auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+      Base::TUuid repo_id(TUuid::Twister);
+      auto repo = manager->GetRepo(repo_id, TTtl::max(), std::nullopt, true, true);
+      for (const auto &e : entries) {
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena),
+                                         TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        update->AddEntry(prod_key, TKey(e.second, &arena, state_alloc), e.first);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      EXPECT_EQ(context[prod_key], TKey(want, &arena, state_alloc));
+    };
+
+    /* Single `*= 6` on a totally absent key seeds from the RHS (== 1*6). */
+    run_scenario("Mult6_only_absentkey",   {{TMutator::Mult,6}},                          6);
+    /* Two deferred mults fold: 6 * 3 = 18. */
+    run_scenario("Mult6_then_Mult3",       {{TMutator::Mult,6},{TMutator::Mult,3}},        18);
+    /* Three-deep: 2 * 3 * 5 = 30 regardless of commit order. */
+    run_scenario("Mult_2_3_5",             {{TMutator::Mult,2},{TMutator::Mult,3},{TMutator::Mult,5}}, 30);
+    /* Assign base then a mult folds against the base: 4 * 5 = 20. */
+    run_scenario("Assign4_then_Mult5",     {{TMutator::Assign,4},{TMutator::Mult,5}},       20);
+    /* A newer destructive Assign masks older mult history. */
+    run_scenario("Mult6_then_Assign10",    {{TMutator::Mult,6},{TMutator::Assign,10}},      10);
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
