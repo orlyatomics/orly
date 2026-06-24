@@ -300,6 +300,94 @@ func cooccurCount(c *orly.Client, pov, a, b string) int {
 	return asInt(must(c.Call(pov, "graph", "cooccur_count", map[string]any{"a": a, "b": b})))
 }
 
+// --- graph traversal (mirrors demo.py) ---
+
+type strSet map[string]bool
+
+func decodeStrSet(raw json.RawMessage) strSet {
+	out := strSet{}
+	if string(raw) == "null" {
+		return out
+	}
+	var xs []string
+	if err := json.Unmarshal(raw, &xs); err != nil {
+		die(fmt.Sprintf("expected array-of-strings, got %s", raw))
+	}
+	for _, x := range xs {
+		out[x] = true
+	}
+	return out
+}
+
+func neighbors(c *orly.Client, pov, entity string) strSet {
+	return decodeStrSet(must(c.Call(pov, "graph", "neighbors", map[string]any{"e": entity})))
+}
+
+func reach(c *orly.Client, pov, seed string, k int) strSet {
+	return decodeStrSet(must(c.Call(pov, "graph", "reach", map[string]any{"seed": seed, "k": k})))
+}
+
+// buildAdjacency derives the symmetric adjacency from the canonical
+// cooccurrence pairs -- mirrors graph.orly's both-directions
+// <['adj', a, b]> / <['adj', b, a]> writes.
+func buildAdjacency(expectedCooccur map[pairKey]int) map[string]strSet {
+	adj := map[string]strSet{}
+	add := func(a, b string) {
+		if adj[a] == nil {
+			adj[a] = strSet{}
+		}
+		adj[a][b] = true
+	}
+	for pk := range expectedCooccur {
+		add(pk.a, pk.b)
+		add(pk.b, pk.a)
+	}
+	return adj
+}
+
+// reachWithin is the plain-Go mirror of graph.orly's reach: k hops,
+// expanding the whole visited set each step, inclusive of seed.
+func reachWithin(adj map[string]strSet, seed string, k int) strSet {
+	visited := strSet{seed: true}
+	for i := 0; i < k; i++ {
+		next := strSet{}
+		for n := range visited {
+			next[n] = true
+		}
+		for n := range visited {
+			for m := range adj[n] {
+				next[m] = true
+			}
+		}
+		if len(next) == len(visited) {
+			break
+		}
+		visited = next
+	}
+	return visited
+}
+
+func strSetEqual(a, b strSet) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedSet(s strSet) []string {
+	out := make([]string, 0, len(s))
+	for k := range s {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // agentDoc is one (docID, doc) pair assigned to an agent.
 type agentDoc struct {
 	id  int
@@ -564,6 +652,59 @@ func main() {
 		fmt.Printf("  %-32s  %4d  (want %d)  %s\n", label, got, want, marker)
 	}
 
+	// Graph traversal: verify neighbours + k-hop reachability against a
+	// plain-Go BFS over the same ground-truth graph, then showcase a
+	// neighbourhood. graph.orly does this with no new engine primitive --
+	// a trailing-free prefix scan for adjacency, a reduce-over-depth for
+	// the bounded transitive closure.
+	adj := buildAdjacency(expectedCooccurCount)
+	seeds := []string{}
+	for _, s := range []string{"Python", "OpenAI", "Claude", "Rust", "Llama"} {
+		if adj[s] != nil {
+			seeds = append(seeds, s)
+		}
+	}
+	for _, s := range seeds {
+		if !strSetEqual(neighbors(boot, pov, s), adj[s]) {
+			failures = append(failures, fmt.Sprintf(
+				"neighbors(%s): mismatch vs ground truth", s))
+		}
+		for _, k := range []int{1, 2, 3} {
+			if !strSetEqual(reach(boot, pov, s, k), reachWithin(adj, s, k)) {
+				failures = append(failures, fmt.Sprintf(
+					"reach(%s, %d): mismatch vs Go BFS", s, k))
+			}
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("=== graph traversal: k-hop reachability over the cooccurrence graph ===")
+	showcase := ""
+	for _, s := range []string{"Claude", "Python", "OpenAI"} {
+		if adj[s] != nil {
+			showcase = s
+			break
+		}
+	}
+	if showcase == "" && len(seeds) > 0 {
+		showcase = seeds[0]
+	}
+	if showcase != "" {
+		total := len(adj)
+		nbrs := sortedSet(neighbors(boot, pov, showcase))
+		fmt.Printf("  seed: %s   (graph has %d entities)\n", showcase, total)
+		fmt.Printf("  %-20s: %3d  (%s)\n", "direct neighbours", len(nbrs), strings.Join(nbrs, ", "))
+		for _, k := range []int{1, 2, 3} {
+			r := sortedSet(reach(boot, pov, showcase, k))
+			tail := ""
+			if len(r) <= 14 {
+				tail = "  (" + strings.Join(r, ", ") + ")"
+			}
+			fmt.Printf("  within %d hop(s)%-7s: %3d  %3d%% of the graph%s\n",
+				k, "", len(r), len(r)*100/total, tail)
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("=== the trick ===")
 	fmt.Printf("  %d concurrent agents all wrote into the same knowledge\n", numAgents)
@@ -571,6 +712,9 @@ func main() {
 	fmt.Println("  provenance) union into one set per entity, and the per-entity")
 	fmt.Println("  / per-pair counters aggregate correctly: this is the shape")
 	fmt.Println("  multi-agent LLM extraction pipelines keep reinventing badly.")
+	fmt.Println("  And the graph they built is traversable transitively -- the")
+	fmt.Println("  k-hop reachability above runs over that same coordination-free")
+	fmt.Println("  adjacency, with no new engine primitive (issue #219).")
 
 	check(boot.Exit())
 	boot.Close()
@@ -595,4 +739,5 @@ func main() {
 	fmt.Println("\n=== self-check OK ===")
 	fmt.Printf("  verified %d tag provenance records across %d entities + %d mention counters + %d cooccurrence counters across %d concurrent agents\n",
 		totalTagRecords, len(expectedTagRecords), len(expectedMentionCount), len(expectedCooccurCount), numAgents)
+	fmt.Printf("  + transitive k-hop reachability over the cooccurrence graph for %d seed entities, matching a Go BFS\n", len(seeds))
 }
