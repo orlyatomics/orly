@@ -60,6 +60,7 @@
 #include <orly/synth/read_expr.h>
 #include <orly/synth/reduce_expr.h>
 #include <orly/synth/ref_expr.h>
+#include <orly/synth/union_map_expr.h>
 #include <orly/synth/rhs_expr.h>
 #include <orly/synth/set_ctor.h>
 #include <orly/synth/session_id_expr.h>
@@ -171,6 +172,7 @@ TExpr *TExprFactory::NewExpr(const Package::Syntax::TExpr *root) const {
     virtual void operator()(const Syntax::TInfixOrElse *that) const { OnInfix(that->GetLhs(), that->GetRhs(), Expr::TOrElse::New, GetPosRange(that)); }
     virtual void operator()(const Syntax::TInfixPlus *that) const { OnInfix(that->GetLhs(), that->GetRhs(), Expr::TAdd::New, GetPosRange(that)); }
     virtual void operator()(const Syntax::TInfixReduce *that) const { Out = new TReduceExpr(ExprFactory, that); }
+    virtual void operator()(const Syntax::TUnionMapExpr *that) const { Out = new TUnionMapExpr(ExprFactory, that); }
     virtual void operator()(const Syntax::TInfixSort *that) const { Out = new TSortExpr(ExprFactory, that); }
     virtual void operator()(const Syntax::TInfixTake *that) const { OnInfix(that->GetLhs(), that->GetRhs(), Expr::TTake::New, GetPosRange(that)); }
     virtual void operator()(const Syntax::TInfixSkip *that) const { OnInfix(that->GetLhs(), that->GetRhs(), Expr::TSkip::New, GetPosRange(that)); }

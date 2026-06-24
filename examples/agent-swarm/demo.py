@@ -420,9 +420,9 @@ def main():
     # concurrent agents with zero coordination; now traverse it
     # transitively. Verify 1-hop neighbours + k-hop reachability against a
     # plain-Python BFS over the same ground-truth graph -- then showcase a
-    # neighbourhood. (graph.orly does this with no new engine primitive:
-    # a trailing-free prefix scan for adjacency, a reduce-over-depth for
-    # the bounded transitive closure.)
+    # neighbourhood. (graph.orly does this over already-index-free
+    # adjacency -- a trailing-free prefix scan -- with `union_map` as the
+    # terse surface for each hop's frontier expansion.)
     # ------------------------------------------------------------------
     adj = build_adjacency(expected_cooccur_count)
     seeds = [s for s in ("Python", "OpenAI", "Claude", "Rust", "Llama")
@@ -464,7 +464,8 @@ def main():
     print(f"  multi-agent LLM extraction pipelines keep reinventing badly.")
     print(f"  And the graph they built is traversable transitively -- the")
     print(f"  k-hop reachability above runs over that same coordination-free")
-    print(f"  adjacency, with no new engine primitive (issue #219).")
+    print(f"  adjacency (already index-free), expanded one hop at a time with")
+    print(f"  union_map -- a one-line surface over a reduce (issue #219).")
 
     boot.exit()
 

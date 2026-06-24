@@ -53,6 +53,7 @@
 #include <orly/expr/read.h>
 #include <orly/expr/reduce.h>
 #include <orly/expr/ref.h>
+#include <orly/expr/union_map.h>
 #include <orly/expr/reverse_of.h>
 #include <orly/expr/sequence_of.h>
 #include <orly/expr/session_id.h>

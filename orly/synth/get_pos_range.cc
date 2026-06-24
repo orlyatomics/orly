@@ -232,6 +232,10 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TInfixReduce *that) {
   return Orly::Synth::GetPosRange(that->GetLhs(), that->GetRhs());
 }
 
+TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TUnionMapExpr *that) {
+  return Orly::Synth::GetPosRange(that->GetSeq(), that->GetElem());
+}
+
 template <>
 TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TInfixSort *that) {
   return Orly::Synth::GetPosRange(that->GetLhs(), that->GetRhs());
@@ -634,6 +638,7 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TExpr *expr) {
     virtual void operator()(const Package::Syntax::TInfixOrElse          *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TInfixPlus            *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TInfixReduce          *that) const { PosRange = Orly::Synth::GetPosRange(that); }
+    virtual void operator()(const Package::Syntax::TUnionMapExpr          *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TInfixSort            *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TInfixTake            *that) const { PosRange = Orly::Synth::GetPosRange(that); }
     virtual void operator()(const Package::Syntax::TInfixSkip            *that) const { PosRange = Orly::Synth::GetPosRange(that); }

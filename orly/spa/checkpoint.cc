@@ -173,6 +173,7 @@ class TExprVisitor : public Orly::Checkpoint::Syntax::TExpr::TVisitor {
   virtual void operator()(const Orly::Checkpoint::Syntax::TBuiltInToUpper *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TCollatedByExpr *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TCollectedByExpr *) const {NOT_IMPLEMENTED();}
+  virtual void operator()(const Orly::Checkpoint::Syntax::TUnionMapExpr *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TInfixBitwiseOr *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TInfixDiv *) const {NOT_IMPLEMENTED();}
   virtual void operator()(const Orly::Checkpoint::Syntax::TInfixLogicalOr *) const {NOT_IMPLEMENTED();}

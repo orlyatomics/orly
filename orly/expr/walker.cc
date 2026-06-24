@@ -298,6 +298,9 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
     virtual void operator()(const TUnion *that) const {
       Binary(that);
     }
+    virtual void operator()(const TUnionMap *that) const {
+      BinaryRhsInnerFunc(that);
+    }
     virtual void operator()(const TToLower *that) const {
       Unary(that);
     }

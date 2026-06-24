@@ -149,6 +149,7 @@ time_obj_kwd	  = '"time_obj"';
 time_pnt_kwd      = '"time_pnt"';
 to_lower_kwd      = '"to_lower"';
 to_upper_kwd      = '"to_upper"';
+union_map_kwd     = '"union_map"' lowest_prec left;
 unknown_kwd       = '"unknown"' unary_prec right;
 user_id_kwd       = '"user_id"';
 using_kwd         = '"using"';
@@ -603,6 +604,11 @@ db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr op
 collated_by_expr : expr -> seq:expr collated_by_kwd reduce:expr having_kwd having:expr;
 
 collected_by_expr : expr -> seq:expr collected_by_kwd collect:expr;
+
+/* union_map (#219): map each element of a sequence to a set, union the
+   results. `seq union_map elem` == `seq reduce start (empty {T}) | elem`,
+   but the empty-set identity is implicit so the surface stays terse. */
+union_map_expr : expr -> seq:expr union_map_kwd elem:expr;
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     STATEMENTS

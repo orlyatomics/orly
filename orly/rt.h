@@ -29,6 +29,7 @@
 #include <orly/rt/collected_by.h>
 #include <orly/rt/desc.h>
 #include <orly/rt/generator.h>
+#include <orly/rt/union_map.h>
 #include <orly/rt/mutable.h>
 #include <orly/rt/opt.h>
 #include <orly/rt/runtime_error.h>

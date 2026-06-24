@@ -654,9 +654,9 @@ func main() {
 
 	// Graph traversal: verify neighbours + k-hop reachability against a
 	// plain-Go BFS over the same ground-truth graph, then showcase a
-	// neighbourhood. graph.orly does this with no new engine primitive --
-	// a trailing-free prefix scan for adjacency, a reduce-over-depth for
-	// the bounded transitive closure.
+	// neighbourhood. graph.orly does this over already-index-free
+	// adjacency -- a trailing-free prefix scan -- with `union_map` as the
+	// terse surface for each hop's frontier expansion.
 	adj := buildAdjacency(expectedCooccurCount)
 	seeds := []string{}
 	for _, s := range []string{"Python", "OpenAI", "Claude", "Rust", "Llama"} {
@@ -714,7 +714,8 @@ func main() {
 	fmt.Println("  multi-agent LLM extraction pipelines keep reinventing badly.")
 	fmt.Println("  And the graph they built is traversable transitively -- the")
 	fmt.Println("  k-hop reachability above runs over that same coordination-free")
-	fmt.Println("  adjacency, with no new engine primitive (issue #219).")
+	fmt.Println("  adjacency (already index-free), expanded one hop at a time with")
+	fmt.Println("  union_map -- a one-line surface over a reduce (issue #219).")
 
 	check(boot.Exit())
 	boot.Close()
