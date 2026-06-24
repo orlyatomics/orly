@@ -50,6 +50,10 @@ namespace Orly {
       /* TODO */
       virtual TInt &Intersection(const TVar &);
 
+      /* The max / min merge-mutation operators (#213). */
+      virtual TInt &Max(const TVar &);
+      virtual TInt &Min(const TVar &);
+
       /* TODO */
       virtual TInt &Mod(const TVar &);
 

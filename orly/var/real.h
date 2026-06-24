@@ -49,6 +49,10 @@ namespace Orly {
       /* TODO */
       virtual TReal &Intersection(const TVar &);
 
+      /* The max / min merge-mutation operators (#213). */
+      virtual TReal &Max(const TVar &);
+      virtual TReal &Min(const TVar &);
+
       /* TODO */
       virtual TReal &Mod(const TVar &);
 

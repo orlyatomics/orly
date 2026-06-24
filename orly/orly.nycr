@@ -102,6 +102,8 @@ log_10_kwd        = '"log10"';
 lt                = '"<"' inequality_prec left;
 lt_eq             = '"<="' inequality_prec left;
 match_kwd         = '"match"' lowest_prec left;
+max_assign        = '">?="';                          /* max-assign mutation operator: x >?= v  ==>  x = max(x, v) */
+min_assign        = '"<?="';                          /* min-assign mutation operator: x <?= v  ==>  x = min(x, v) */
 minus             = '"-"' add_and_sub_prec left;
 mutable_kwd       = '"mutable"' lowest_prec right;
 neq               = '"!="' equality_prec left;
@@ -644,6 +646,8 @@ mutate_stmt : stmt -> lhs:expr mutation rhs:expr semi;
   mutation_bitwise_and : mutation -> ampersand eq;
   mutation_bitwise_or  : mutation -> bar eq;
   mutation_bitwise_xor : mutation -> hat eq;
+  mutation_min         : mutation -> min_assign;
+  mutation_max         : mutation -> max_assign;
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     TODO

@@ -38,7 +38,7 @@ namespace Orly {
   std::ostream &Write(std::ostream &strm, TAddrDir dir);
   std::ostream &WriteCppType(std::ostream &strm, TAddrDir dir);
 
-  enum class TMutator { Add, And, Assign, Div, Exp, Intersection, Mod, Mult, Or, SymmetricDiff, Sub, Union, Xor };
+  enum class TMutator { Add, And, Assign, Div, Exp, Intersection, Max, Min, Mod, Mult, Or, SymmetricDiff, Sub, Union, Xor };
 
   std::ostream &operator<<(std::ostream &strm, TAddrDir dir);
 

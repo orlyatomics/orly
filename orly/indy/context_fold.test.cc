@@ -376,3 +376,69 @@ FIXTURE(Issue143CreateRaceSemantics) {
     cond.notify_one();
   });
 }
+
+/* Issue #213: the min (`<?=`) / max (`>?=`) merge mutators fold through the
+   exact same deferred-commutative read path as `+=` (ApplyDeferredFold).
+   min/max are commutative, associative AND idempotent, so a run of same-key
+   entries collapses to a single value regardless of order, and a first
+   entry on an absent key seeds from its own RHS (the singleton fold ==
+   the element). This mirrors Issue143CreateRaceSemantics but pins the
+   min/max results, exercising the real indy memory/disk fold rather than
+   just the var-layer TMutation::Apply unit. */
+FIXTURE(MinMaxDeferredFold) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Base::TUuid idx_id(TUuid::Twister);
+    const TIndexKey gauge_key(idx_id, TKey(make_tuple(1L), &arena, state_alloc));
+
+    auto run_scenario = [&](const char *name,
+                            const std::vector<std::pair<TMutator, int64_t>> &entries,
+                            int64_t want) {
+      Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+      auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+      Base::TUuid repo_id(TUuid::Twister);
+      auto repo = manager->GetRepo(repo_id, TTtl::max(), std::nullopt, true, true);
+      for (const auto &e : entries) {
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena),
+                                         TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        update->AddEntry(gauge_key, TKey(e.second, &arena, state_alloc), e.first);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      EXPECT_EQ(context[gauge_key], TKey(want, &arena, state_alloc));
+    };
+
+    /* Single min/max on a totally absent key seeds from the RHS. */
+    run_scenario("Min7_only_absentkey",   {{TMutator::Min,7}},                          7);
+    run_scenario("Max3_only_absentkey",   {{TMutator::Max,3}},                          3);
+    /* Two deferred mins/maxes fold; idempotent + commutative => the bound
+       wins regardless of commit order. */
+    run_scenario("Min7_then_Min3",        {{TMutator::Min,7},{TMutator::Min,3}},        3);
+    run_scenario("Min3_then_Min7",        {{TMutator::Min,3},{TMutator::Min,7}},        3);
+    run_scenario("Max3_then_Max7",        {{TMutator::Max,3},{TMutator::Max,7}},        7);
+    run_scenario("Max7_then_Max3",        {{TMutator::Max,7},{TMutator::Max,3}},        7);
+    /* Three-deep folds. */
+    run_scenario("Min_5_2_9",             {{TMutator::Min,5},{TMutator::Min,2},{TMutator::Min,9}}, 2);
+    run_scenario("Max_5_9_2",             {{TMutator::Max,5},{TMutator::Max,9},{TMutator::Max,2}}, 9);
+    /* Assign base then a min/max above it folds against the base. */
+    run_scenario("Assign10_then_Min3",    {{TMutator::Assign,10},{TMutator::Min,3}},    3);
+    run_scenario("Assign10_then_Min30",   {{TMutator::Assign,10},{TMutator::Min,30}},   10);
+    run_scenario("Assign2_then_Max9",     {{TMutator::Assign,2},{TMutator::Max,9}},     9);
+    /* A newer destructive Assign masks older min/max history (same
+       destructive semantics pinned in Issue143CreateRaceSemantics). */
+    run_scenario("Min3_then_Assign10",    {{TMutator::Min,3},{TMutator::Assign,10}},    10);
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}

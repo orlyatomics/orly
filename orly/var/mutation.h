@@ -58,6 +58,10 @@ namespace Orly {
           case TMutator::Union:
           case TMutator::Intersection:
           case TMutator::SymmetricDiff:
+          /* min / max are commutative, associative AND idempotent (a
+             semilattice) -- the cleanest possible merge ops (#213). */
+          case TMutator::Min:
+          case TMutator::Max:
             return true;
           case TMutator::Assign:
           case TMutator::Sub:
@@ -69,40 +73,54 @@ namespace Orly {
         return false;
       }
 
-      /* True iff this mutator is defer-safe commutative AND its monoid
-         IDENTITY equals the default-constructed value of the operand
-         type (0 for ints, false for bools, the empty set for sets).
+      /* True iff a first-write `*<[k]>::(T) OP= v` to an ABSENT key should
+         auto-initialise (upsert) by seeding the value DIRECTLY from the
+         RHS, rather than throwing "Cannot de-reference Key ... which does
+         not exist".
 
-         This is a STRICT SUBSET of IsDeferSafeCommutative: it powers the
-         commutative-upsert (#151) statement-layer auto-initialise, where
-         a first-write `*<[k]>::(T) OP= v` on an absent key must seed the
-         LHS from the identity. The auto-seed is produced by default-
-         constructing the operand (key_generator.h ReadOrIdentity), so it
-         is only sound when default == identity.
+         This is the absent-key half of the commutative-upsert work
+         (#151/#152, extended in #213). It is a subset of
+         IsDeferSafeCommutative. Seeding from the RHS is correct precisely
+         because folding any commutative merge op over a SINGLE element
+         yields that element:
 
-           Add  -> 0        (default int)           OK
-           Or   -> 0/false  (default)               OK
-           Xor  -> 0/false  (default)               OK
-           Union-> {}       (default set)           OK
-           SymmetricDiff -> {} (A symdiff {} == A)   OK
+           Add          : 0 + r            == r
+           Or           : false | r        == r
+           Xor           : false ^ r        == r
+           Union         : {} U r           == r
+           SymmetricDiff : {} symdiff r     == r
+           Min           : min(r)           == r      (#213)
+           Max           : max(r)           == r      (#213)
+           Intersection  : intersection(r)  == r      (#213 -- identity is
+                            the universal set, NOT representable as a value,
+                            but the singleton fold is still just r)
 
-         Excluded -- default value is NOT the identity, so seeding from
-         the default would silently corrupt a real first-write:
-           Mult         -> identity 1   (default 0)
-           And          -> identity all-ones (default 0)
-           Intersection -> identity universal-set (default {})
-         These keep the existing throw-on-absent behaviour. */
-      inline bool IsIdentityDefaultCommutative(TMutator mutator) {
+         So the seed is taken as `var = Rhs` in TMutation::Apply
+         (mutation.cc) -- NOT by default-constructing the operand -- and the
+         matching LHS read is emitted as the non-throwing ReadOrIdentity
+         (code_gen/builder.cc). The read's own value is discarded: the
+         deferred-commutative path (server/session.cc) emits {mutator, RHS}
+         and the read/disk fold seeds from the RHS, so two concurrent
+         first-writers compose without a lost update.
+
+         Excluded for now -- their singleton fold is ALSO r, so they could
+         ride this path, but they are deferred to a follow-up (no current
+         demand): Mult (identity 1; PR2 of #213) and And (identity
+         all-ones). A plain read of an absent key (outside a commutative
+         mutation) still throws for every mutator. */
+      inline bool IsAbsentKeySeedRhs(TMutator mutator) {
         switch (mutator) {
           case TMutator::Add:
           case TMutator::Or:
           case TMutator::Xor:
           case TMutator::Union:
           case TMutator::SymmetricDiff:
+          case TMutator::Min:
+          case TMutator::Max:
+          case TMutator::Intersection:
             return true;
           case TMutator::Mult:
           case TMutator::And:
-          case TMutator::Intersection:
           case TMutator::Assign:
           case TMutator::Sub:
           case TMutator::Div:

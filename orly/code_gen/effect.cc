@@ -49,6 +49,10 @@ void TMutation::Write(TCppPrinter &out) const {
       break;
     case TMutator::Intersection: out << "Intersection";
       break;
+    case TMutator::Max: out << "Max";
+      break;
+    case TMutator::Min: out << "Min";
+      break;
     case TMutator::Mod: out << "Mod";
       break;
     case TMutator::Mult: out << "Mult";

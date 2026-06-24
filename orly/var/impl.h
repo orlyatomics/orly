@@ -110,6 +110,13 @@ namespace Orly {
         /* TODO */
         virtual TImpl &Mod(const TVar &) = 0;
 
+        /* The min / max merge-mutation operators (#213). Unlike the
+           operators above these are NOT pure: only TInt / TReal override
+           them; the base throws (see impl.cc), so every other TVar type
+           rejects `<?=` / `>?=` without a per-type stub. */
+        virtual TImpl &Max(const TVar &);
+        virtual TImpl &Min(const TVar &);
+
         /* TODO */
         virtual TImpl &Mult(const TVar &) = 0;
 
@@ -399,6 +406,20 @@ namespace Orly {
       Var::TVar &Mod(const TVar &rhs) {
         assert(*this);
         Impl->Mod(rhs);
+        return *this;
+      }
+
+      /* TODO */
+      Var::TVar &Max(const TVar &rhs) {
+        assert(*this);
+        Impl->Max(rhs);
+        return *this;
+      }
+
+      /* TODO */
+      Var::TVar &Min(const TVar &rhs) {
+        assert(*this);
+        Impl->Min(rhs);
         return *this;
       }
 

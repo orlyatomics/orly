@@ -24,6 +24,7 @@
 
 #include <base/not_implemented.h>
 #include <orly/pos_range.h>
+#include <orly/rt/runtime_error.h>
 #include <orly/type/get_prec.h>
 
 namespace Orly {
@@ -990,6 +991,18 @@ TVar::TVisitor::~TVisitor() {}
 TVar::TDoubleVisitor::~TDoubleVisitor() {}
 
 TVar::TImpl::~TImpl() {}
+
+/* Base min / max (#213): only TInt / TReal override these; every other
+   TVar type inherits these throwing defaults, so `<?=` / `>?=` against a
+   non-numeric value fails the same way the per-type throw-stubs do for
+   the other set/bitwise mutators. */
+TVar::TImpl &TVar::TImpl::Max(const TVar &) {
+  throw Rt::TSystemError(HERE, "Max (>?=) is only supported on int and real values.");
+}
+
+TVar::TImpl &TVar::TImpl::Min(const TVar &) {
+  throw Rt::TSystemError(HERE, "Min (<?=) is only supported on int and real values.");
+}
 
 void TVar::TImpl::Delete(TImpl *impl) {
   delete impl;

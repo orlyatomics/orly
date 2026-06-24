@@ -308,11 +308,12 @@ namespace Orly {
        have the addr the caller asked about), so the downstream effect
        still registers against the right key.
 
-       This is only ever emitted for the LHS of a defer-safe commutative
-       mutation whose identity equals the default value (Add, Or, Xor,
-       Union, SymmetricDiff -- see code_gen/builder.cc). For those, a
-       first-write `*<[k]>::(T) OP= v` on an absent key auto-initialises
-       from the identity and applies OP, instead of throwing -- and
+       This is only ever emitted for the LHS of an absent-key-seedable
+       commutative mutation (Add, Or, Xor, Union, SymmetricDiff, Min, Max,
+       Intersection -- IsAbsentKeySeedRhs, see code_gen/builder.cc). For
+       those, a first-write `*<[k]>::(T) OP= v` on an absent key
+       auto-initialises by seeding from the RHS at fold time, instead of
+       throwing -- and
        because session.cc routes the resulting TMutation through the
        deferred-commutative path (mutator preserved, RHS emitted as-is),
        two concurrent first-writers both emit {OP, v} entries that the

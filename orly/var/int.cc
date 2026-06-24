@@ -69,6 +69,22 @@ TInt &TInt::Intersection(const TVar &) {
   throw Rt::TSystemError(HERE, "Intersection not supported on Int.");
 }
 
+TInt &TInt::Max(const TVar &rhs) {
+  int64_t r = Var::TVar::TDt<int64_t>::As(rhs);
+  if (r > Val) {
+    Val = r;
+  }
+  return *this;
+}
+
+TInt &TInt::Min(const TVar &rhs) {
+  int64_t r = Var::TVar::TDt<int64_t>::As(rhs);
+  if (r < Val) {
+    Val = r;
+  }
+  return *this;
+}
+
 TInt &TInt::Mod(const TVar &rhs) {
   Val %= Var::TVar::TDt<int64_t>::As(rhs);
   return *this;

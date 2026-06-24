@@ -211,14 +211,74 @@ FIXTURE(UpsertEmptyBase_SymmetricDiff_Set) {
   EXPECT_EQ(val, TVar(Rt::TSet<int64_t>{1, 2}));
 }
 
-FIXTURE(UpsertEmptyBase_Mult_StillThrows) {
-  /* Mult is NOT identity-default (identity 1 != default 0), so applying
-     it onto an empty base must NOT silently seed -- it keeps the old
-     fold, which trips on the empty base. We assert it still refuses
-     (throws/aborts is acceptable; here it must not quietly succeed with
-     a wrong value). The guard is IsIdentityDefaultCommutative, so the
-     Mult branch never takes the seed path. */
-  EXPECT_FALSE(IsIdentityDefaultCommutative(TMutator::Mult));
-  EXPECT_FALSE(IsIdentityDefaultCommutative(TMutator::And));
-  EXPECT_FALSE(IsIdentityDefaultCommutative(TMutator::Intersection));
+FIXTURE(UpsertEmptyBase_Min_Int) {
+  /* min(7) == 7 on a never-created int key: a first `<?= 7` seeds the
+     value directly from the RHS (#213). */
+  TVar val;
+  EXPECT_FALSE(static_cast<bool>(val));
+  TMutation::New(TMutator::Min, TVar(int64_t(7)))->Apply(val);
+  EXPECT_TRUE(static_cast<bool>(val));
+  EXPECT_EQ(val, TVar(int64_t(7)));
+}
+
+FIXTURE(UpsertEmptyBase_Min_ThenMin) {
+  /* empty <?= 7 seeds (->7), then <?= 3 folds to min(7,3) == 3. */
+  TVar val;
+  TMutation::New(TMutator::Min, TVar(int64_t(7)))->Apply(val);
+  TMutation::New(TMutator::Min, TVar(int64_t(3)))->Apply(val);
+  EXPECT_EQ(val, TVar(int64_t(3)));
+}
+
+FIXTURE(UpsertEmptyBase_Max_ThenMax) {
+  /* empty >?= 3 seeds (->3), then >?= 7 folds to max(3,7) == 7. */
+  TVar val;
+  TMutation::New(TMutator::Max, TVar(int64_t(3)))->Apply(val);
+  TMutation::New(TMutator::Max, TVar(int64_t(7)))->Apply(val);
+  EXPECT_EQ(val, TVar(int64_t(7)));
+}
+
+FIXTURE(UpsertEmptyBase_Intersection_Set) {
+  /* intersection over the singleton {1,2,3} == {1,2,3} on a never-created
+     set key. The identity (universal set) is not representable, but the
+     singleton fold is still the RHS, so seeding from the RHS is correct
+     (#213). */
+  TVar val;
+  TMutation::New(TMutator::Intersection, TVar(Rt::TSet<int64_t>{1, 2, 3}))->Apply(val);
+  EXPECT_EQ(val, TVar(Rt::TSet<int64_t>{1, 2, 3}));
+}
+
+FIXTURE(MinMax_Augment_Fold) {
+  /* min/max are commutative + associative, so two same-key mutations
+     compose: Min(7).Augment(Min(3)) -> Min(3); Max(3).Augment(Max(7))
+     -> Max(7). */
+  auto lo = TMutation::New(TMutator::Min, TVar(int64_t(7)));
+  lo->Augment(TMutation::New(TMutator::Min, TVar(int64_t(3))));
+  TVar a(int64_t(5));
+  lo->Apply(a);
+  EXPECT_EQ(a, TVar(int64_t(3)));  // min(5, min(7,3)) == 3
+
+  auto hi = TMutation::New(TMutator::Max, TVar(int64_t(3)));
+  hi->Augment(TMutation::New(TMutator::Max, TVar(int64_t(7))));
+  TVar b(int64_t(5));
+  hi->Apply(b);
+  EXPECT_EQ(b, TVar(int64_t(7)));  // max(5, max(3,7)) == 7
+}
+
+FIXTURE(AbsentKeySeed_Membership) {
+  /* The seed-from-RHS set (#151/#152/#213): the commutative ops whose
+     singleton fold is the RHS and which therefore upsert an absent key. */
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Add));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Or));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Xor));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Union));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::SymmetricDiff));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Min));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Max));
+  EXPECT_TRUE(IsAbsentKeySeedRhs(TMutator::Intersection));
+  /* Deferred to a follow-up (no current demand): Mult (PR2) and And. */
+  EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::Mult));
+  EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::And));
+  /* Never seedable. */
+  EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::Assign));
+  EXPECT_FALSE(IsAbsentKeySeedRhs(TMutator::Sub));
 }

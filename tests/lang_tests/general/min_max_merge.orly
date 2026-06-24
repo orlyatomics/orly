@@ -1,0 +1,130 @@
+/* <orly/lang_tests/general/min_max_merge.orly>
+
+   Issue #213: the `<?=` (min) and `>?=` (max) commutative merge-mutation
+   operators, plus the intersection (`&=`) absent-key upsert that rides the
+   same identity/seed refactor.
+
+   min / max are commutative, associative AND idempotent (a semilattice) --
+   the cleanest possible coordination-free merge ops. A run of same-key
+   writes folds to a single value regardless of order, so concurrent
+   writers compose without a lost update, exactly like `+=` / `|=`.
+
+   Absent-key semantics (D2 of #213): a first `<?= v` / `>?= v` / `&= {v}`
+   on a key that was NEVER created seeds the value directly from the RHS --
+   because folding the op over a single element yields that element
+   (min(v) == v, max(v) == v, intersection({v}) == {v}). So the bare op
+   "just works" on a fresh key, no `is known` guard / `new <-` create-arm.
+
+   NB: a PLAIN read of an absent key still throws -- only the LHS of a
+   commutative mutate auto-seeds. Every read below happens AFTER a first
+   write to its key.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+read_int = (*<[n]>::(int)) where {
+  n = given::(int);
+};
+
+/* Bare `<?= x` (min-assign). On an absent key seeds from x, else folds
+   to min(current, x). */
+min_int = ((true) effecting {
+  *<[n]>::(int) <?= x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+/* Bare `>?= x` (max-assign). On an absent key seeds from x, else folds
+   to max(current, x). */
+max_int = ((true) effecting {
+  *<[n]>::(int) >?= x;
+}) where {
+  n = given::(int);
+  x = given::(int);
+};
+
+read_real = (*<[n]>::(real)) where {
+  n = given::(int);
+};
+
+max_real = ((true) effecting {
+  *<[n]>::(real) >?= x;
+}) where {
+  n = given::(int);
+  x = given::(real);
+};
+
+read_set = (*<[n]>::({int})) where {
+  n = given::(int);
+};
+
+/* Bare `&= {x}` (intersection). On an absent key seeds from {x}, else
+   folds to current INTERSECT {x}. */
+intersect_set = ((true) effecting {
+  *<[n]>::({int}) &= s;
+}) where {
+  n = given::(int);
+  s = given::({int});
+};
+
+/* min on a totally fresh key: seed 7, then min(7,3)=3, then min(3,9)=3. */
+test {
+  t1: min_int(.n: 300, .x: 7) {
+    t2: read_int(.n: 300) == 7;
+    t3: min_int(.n: 300, .x: 3) {
+      t4: read_int(.n: 300) == 3;
+      t5: min_int(.n: 300, .x: 9) {
+        t6: read_int(.n: 300) == 3;
+      };
+    };
+  };
+};
+
+/* max on a fresh key: seed 3, then max(3,7)=7, then max(7,1)=7. */
+test {
+  t10: max_int(.n: 310, .x: 3) {
+    t11: read_int(.n: 310) == 3;
+    t12: max_int(.n: 310, .x: 7) {
+      t13: read_int(.n: 310) == 7;
+      t14: max_int(.n: 310, .x: 1) {
+        t15: read_int(.n: 310) == 7;
+      };
+    };
+  };
+};
+
+/* max on reals (high-water mark): seed 1.5, then max(1.5, 4.25) = 4.25. */
+test {
+  t20: max_real(.n: 320, .x: 1.5) {
+    t21: read_real(.n: 320) == 1.5;
+    t22: max_real(.n: 320, .x: 4.25) {
+      t23: read_real(.n: 320) == 4.25;
+    };
+  };
+};
+
+/* intersection on a fresh set key: seed {1,2,3}, then INTERSECT {2,3,4}
+   = {2,3}, then INTERSECT {3,9} = {3}. */
+test {
+  t30: intersect_set(.n: 330, .s: {1, 2, 3}) {
+    t31: read_set(.n: 330) == {1, 2, 3};
+    t32: intersect_set(.n: 330, .s: {2, 3, 4}) {
+      t33: read_set(.n: 330) == {2, 3};
+      t34: intersect_set(.n: 330, .s: {3, 9}) {
+        t35: read_set(.n: 330) == {3};
+      };
+    };
+  };
+};

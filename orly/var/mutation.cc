@@ -115,20 +115,19 @@ TPtr<TMutation> TMutation::New(TMutator mutator, const Var::TVar &rhs) {
 
 void TMutation::Apply(Var::TVar &var) const {
 
-  /* Commutative-upsert (#151): a first-write `*<[k]>::(T) OP= v` on a key
-     that was never created reaches the fold with an EMPTY base `var`
-     (default TVar). For an identity-default commutative mutator the
-     monoid identity equals the default value, and `identity OP rhs ==
-     rhs`, so we materialise the base by taking the RHS directly instead
-     of folding the RHS into an empty TVar -- which would trip the
-     `assert(*this)` in TVar::Add / TVar::Or / TVar::Union etc.
-     (var/impl.h). This is exactly type-correct for each gated op
-     (0 + r = r, false | r = r, false ^ r = r, {} U r = r, {} symdiff r
-     = r), and it keeps the seeded value's type pinned to the RHS rather
-     than to a guessed identity. Every other mutator (Assign, Mult, And,
-     Intersection, Sub, ...) keeps the existing fold, which still requires
-     a non-empty base. */
-  if (!var && IsIdentityDefaultCommutative(Mutator)) {
+  /* Commutative-upsert (#151/#152, extended #213): a first-write
+     `*<[k]>::(T) OP= v` on a key that was never created reaches the fold
+     with an EMPTY base `var` (default TVar). For an absent-key-seedable
+     commutative mutator, folding the op over the single RHS element yields
+     the RHS itself, so we materialise the base by taking the RHS directly
+     instead of folding it into an empty TVar -- which would trip the
+     `assert(*this)` in TVar::Add / Min / Intersection etc. (var/impl.h).
+     This is exactly correct for each gated op (0 + r = r, false | r = r,
+     {} U r = r, min(r) = r, max(r) = r, intersection(r) = r) and pins the
+     seeded value's type to the RHS rather than to a guessed identity.
+     Every other mutator (Assign, Mult, And, Sub, ...) keeps the existing
+     fold, which still requires a non-empty base. */
+  if (!var && IsAbsentKeySeedRhs(Mutator)) {
     var = Rhs;
     return;
   }
@@ -167,9 +166,12 @@ void TMutation::Augment(const TPtr<const TChange> &change) {
     case TMutator::Xor:
     case TMutator::Union:
     case TMutator::Intersection:
-    case TMutator::SymmetricDiff: {
+    case TMutator::SymmetricDiff:
+    case TMutator::Min:
+    case TMutator::Max: {
       // For these: `x OP a; x OP b` is equivalent to `x OP (a OP b)`,
       // so the combined Rhs is `Rt::Mutate(Rhs, Mutator, other->Rhs)`.
+      // (min/max also: max(x,a,b) == max(x, max(a,b)).)
       Rhs = Orly::Rt::Mutate(Rhs, Mutator, other->Rhs);
       return;
     }
