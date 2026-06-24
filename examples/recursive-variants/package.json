@@ -1,0 +1,14 @@
+{
+  "name": "orly-example-recursive-variants",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TypeScript driver for the recursive-variants demo, on the orly client",
+  "dependencies": {
+    "orly": "file:../../clients/ts",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
