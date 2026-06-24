@@ -123,10 +123,10 @@ void TMutation::Apply(Var::TVar &var) const {
      instead of folding it into an empty TVar -- which would trip the
      `assert(*this)` in TVar::Add / Min / Intersection etc. (var/impl.h).
      This is exactly correct for each gated op (0 + r = r, false | r = r,
-     {} U r = r, min(r) = r, max(r) = r, intersection(r) = r) and pins the
-     seeded value's type to the RHS rather than to a guessed identity.
-     Every other mutator (Assign, Mult, And, Sub, ...) keeps the existing
-     fold, which still requires a non-empty base. */
+     {} U r = r, min(r) = r, max(r) = r, intersection(r) = r, 1 * r = r)
+     and pins the seeded value's type to the RHS rather than to a guessed
+     identity. Every other mutator (Assign, And, Sub, ...) keeps the
+     existing fold, which still requires a non-empty base. */
   if (!var && IsAbsentKeySeedRhs(Mutator)) {
     var = Rhs;
     return;

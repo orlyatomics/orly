@@ -209,8 +209,8 @@ TInline::TPtr BuildOptInline(const L0::TPackage *package, const Expr::TExpr::TPt
 
 /* Commutative-upsert (#151/#152, extended #213): build the LHS of a
    `*<[k]>::(T) OP= v` mutation. For an absent-key-seedable commutative
-   mutator (Add, Or, Xor, Union, SymmetricDiff, Min, Max, Intersection)
-   whose LHS is a typed read `expr::(T)`, emit the non-throwing
+   mutator (Add, Or, Xor, Union, SymmetricDiff, Min, Max, Intersection,
+   Mult) whose LHS is a typed read `expr::(T)`, emit the non-throwing
    ReadOrIdentity read so a first-write to an absent key auto-initialises
    (seeding from the RHS at fold time) instead of throwing "Cannot
    de-reference Key ... which does not exist". Every other shape (other

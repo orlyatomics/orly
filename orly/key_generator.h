@@ -310,7 +310,8 @@ namespace Orly {
 
        This is only ever emitted for the LHS of an absent-key-seedable
        commutative mutation (Add, Or, Xor, Union, SymmetricDiff, Min, Max,
-       Intersection -- IsAbsentKeySeedRhs, see code_gen/builder.cc). For
+       Intersection, Mult -- IsAbsentKeySeedRhs, see code_gen/builder.cc).
+       For
        those, a first-write `*<[k]>::(T) OP= v` on an absent key
        auto-initialises by seeding from the RHS at fold time, instead of
        throwing -- and
