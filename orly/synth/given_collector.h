@@ -152,6 +152,7 @@ namespace Orly {
       virtual void operator()(const Package::Syntax::TInfixOrElse *that) const { Push(that->GetLhs(), that->GetRhs()); }
       virtual void operator()(const Package::Syntax::TInfixPlus *that) const { Push(that->GetLhs(), that->GetRhs()); }
       virtual void operator()(const Package::Syntax::TInfixReduce *that) const { Push(that->GetLhs(), that->GetRhs()); }
+      virtual void operator()(const Package::Syntax::TUnionMapExpr *that) const { Push(that->GetSeq(), that->GetElem()); }
       virtual void operator()(const Package::Syntax::TInfixSort *that) const { Push(that->GetLhs(), that->GetRhs()); }
       virtual void operator()(const Package::Syntax::TInfixTake *that) const { Push(that->GetLhs(), that->GetRhs()); }
       virtual void operator()(const Package::Syntax::TInfixSkip *that) const { Push(that->GetLhs(), that->GetRhs()); }

@@ -139,6 +139,7 @@ class expr_visitor_t
   virtual void operator()(const TSymmetricDiff *that)   const { Binary(that); }
   virtual void operator()(const TTake *that)            const { Binary(that); }
   virtual void operator()(const TUnion *that)           const { Binary(that); }
+  virtual void operator()(const TUnionMap *that)        const { Binary(that); }
   virtual void operator()(const TWhile *that)           const { Binary(that); }
   virtual void operator()(const TXor *that)             const { Binary(that); }
   // Nary
@@ -361,6 +362,7 @@ class expr_visitor_t
     virtual void operator()(const TSymmetricDiff *that)   const { Binary(that); }
     virtual void operator()(const TTake *that)            const { Binary(that); }
     virtual void operator()(const TUnion *that)           const { Binary(that); }
+    virtual void operator()(const TUnionMap *that)        const { Binary(that); }
     virtual void operator()(const TWhile *that)           const { Binary(that); }
     virtual void operator()(const TXor *that)             const { Binary(that); }
     // Nary

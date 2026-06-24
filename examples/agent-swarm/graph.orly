@@ -116,23 +116,27 @@ add_cooccur = ((1) effecting {
 
 /* ---------- graph traversal over the cooccurrence adjacency ---------- */
 
-/* Out-neighbours of entity e: one prefix scan of <['adj', e, *]>, folding
-   each neighbour (tuple element .2) into a set. Index-free adjacency --
-   the sorted index seeks straight to the e-prefix run (issue #219). */
-neighbors = (((keys (int) @ <['adj', e, free::(str)]>) reduce start (empty {str}) | {that.2})) where {
+/* Out-neighbours of entity e: one prefix scan of <['adj', e, *]>, mapping
+   each key to its neighbour (tuple element .2) and unioning. Index-free
+   adjacency -- the sorted index seeks straight to the e-prefix run, and
+   `union_map` collapses the scan-and-collect into one step (issue #219). */
+neighbors = (((keys (int) @ <['adj', e, free::(str)]>) union_map {that.2})) where {
   e = given::(str);
 };
 
 /* One BFS hop: the frontier set V plus the union of every frontier node's
-   neighbours. */
-grow = ((v | ((**v) reduce start (empty {str}) | neighbors(.e: that)))) where {
+   neighbours -- `union_map` maps each frontier node to its neighbour set
+   and unions them. */
+grow = ((v | ((**v) union_map neighbors(.e: that)))) where {
   v = given::({str});
 };
 
 /* Every entity reachable from `seed` within `k` cooccurrence hops
    (inclusive of seed): k applications of `grow`. The accumulating visited
    set makes cycles terminate -- a coordination-free knowledge graph,
-   traversed transitively, with no new engine primitive. */
+   traversed transitively. The adjacency needed no new storage (it is
+   already index-free); `union_map` is just the terse surface for the
+   per-hop frontier expansion (it desugars to a reduce). */
 reach = (([1..k] reduce grow(.v: start ({seed})))) where {
   seed = given::(str);
   k    = given::(int);

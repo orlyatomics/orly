@@ -181,6 +181,7 @@ namespace FooBar {
     virtual void operator()(const Syntax::TBuiltInToLower *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TCollatedByExpr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TCollectedByExpr *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const Syntax::TUnionMapExpr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TBuiltInToUpper *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TInfixBitwiseOr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const Syntax::TInfixDiv *) const {NOT_IMPLEMENTED();}

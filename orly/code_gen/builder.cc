@@ -37,6 +37,7 @@
 #include <orly/code_gen/variant_ctor.h>
 #include <orly/code_gen/reduce.h>
 #include <orly/code_gen/skip.h>
+#include <orly/code_gen/union_map.h>
 #include <orly/code_gen/split.h>
 #include <orly/code_gen/symbol_func.h>
 #include <orly/code_gen/take.h>
@@ -174,6 +175,7 @@ bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
     virtual void operator()(const Expr::TToLower       *) const {}
     virtual void operator()(const Expr::TToUpper       *) const {}
     virtual void operator()(const Expr::TUnion         *) const {}
+    virtual void operator()(const Expr::TUnionMap      *) const {}
     virtual void operator()(const Expr::TUnknown       *) const {}
     virtual void operator()(const Expr::TUserId        *) const {}
     virtual void operator()(const Expr::TVariantCtor   *) const {}
@@ -653,6 +655,18 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       //TODO: Intern this (Functions aren't interned, so doing it now doesn't make sense.
       Res = TReduce::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false),
           Build(Package, that->GetStart()->GetExpr(), false), func);
+    }
+
+    virtual void operator()(const Expr::TUnionMap *that) const {
+      // Map func: each element `that` -> a set (the rhs body). The element
+      // scope binds `that`, exactly like filter's predicate.
+      TImplicitFunc::TPtr func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Map,
+          that->GetRhs()->GetType(), {{"that", that->GetThatType()}}, that->GetRhs(), false);
+      /* Map ctx */ {
+        TFilterCtx ctx(func->GetArg("that"));
+        func->Build();
+      }
+      Res = TUnionMap::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false), func);
     }
     virtual void operator()(const Expr::TRef *that) const {
       class TVisitor : public Symbol::TDef::TVisitor {

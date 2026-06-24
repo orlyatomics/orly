@@ -109,6 +109,7 @@ namespace Orly {
     class TToLower;
     class TToUpper;
     class TUnion;
+    class TUnionMap;
     class TUnknown;
     class TUserId;
     class TVariantCtor;
@@ -205,6 +206,7 @@ namespace Orly {
       virtual void operator()(const TToLower       *) const = 0;
       virtual void operator()(const TToUpper       *) const = 0;
       virtual void operator()(const TUnion         *) const = 0;
+      virtual void operator()(const TUnionMap      *) const = 0;
       virtual void operator()(const TUnknown       *) const = 0;
       virtual void operator()(const TUserId        *) const = 0;
       virtual void operator()(const TVariantCtor   *) const = 0;

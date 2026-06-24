@@ -62,11 +62,12 @@ A knowledge graph you can only point-query is half a graph database. The co-occu
 *<['adj', b, a]>::(int) += 1
 ```
 
-That trailing-`free` shape is exactly what Orly's sorted index seeks straight to — **index-free adjacency** ([issue #219](https://github.com/orlyatomics/orly/issues/219)), the thing graph engines are built on. On top of it, transitive traversal needs **no new engine primitive** — a `reduce` over a depth range, accumulating a visited set (so cycles terminate):
+That trailing-`free` shape is exactly what Orly's sorted index seeks straight to — **index-free adjacency** ([issue #219](https://github.com/orlyatomics/orly/issues/219)), the thing graph engines are built on. On top of it, transitive traversal needs **no new storage or engine capability** — just a `reduce` over a depth range, accumulating a visited set (so cycles terminate). `union_map` (map each element of a sequence to a set, union the results) is the terse surface for the per-hop frontier expansion; it desugars to `reduce start (empty {T}) | …`:
 
 ```orly
-neighbors = (keys (int) @ <['adj', e, free::(str)]>) reduce start (empty {str}) | {that.2}   # one hop
-reach     = [1..k] reduce grow(.v: start ({seed}))                                            # k-hop closure
+neighbors = (keys (int) @ <['adj', e, free::(str)]>) union_map {that.2}   # one hop
+grow      = v | ((**v) union_map neighbors(.e: that))                     # expand a frontier
+reach     = [1..k] reduce grow(.v: start ({seed}))                        # k-hop closure
 ```
 
 The driver verifies `reach(seed, k)` against a plain-Python BFS over the same graph, then showcases a neighbourhood — e.g. from **Claude**, ~92% of the graph is reachable within 3 hops. The point: the graph was assembled by N agents with **zero coordination**, and it's still **traversable transitively** — concurrent construction *and* graph queries in one store, which Neo4j (single-primary writes) and Cayley (a query layer over a store) don't combine.

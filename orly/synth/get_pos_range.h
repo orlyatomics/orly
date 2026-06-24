@@ -160,6 +160,7 @@ namespace Orly {
 
     template <>
     TPosRange GetPosRange(const Package::Syntax::TInfixReduce *that);
+    TPosRange GetPosRange(const Package::Syntax::TUnionMapExpr *that);
 
     template <>
     TPosRange GetPosRange(const Package::Syntax::TInfixSort *that);
