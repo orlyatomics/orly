@@ -69,6 +69,22 @@ TReal &TReal::Intersection(const TVar &) {
   throw Rt::TSystemError(HERE, "Intersection not supported on Real.");
 }
 
+TReal &TReal::Max(const TVar &rhs) {
+  double r = Var::TVar::TDt<double>::As(rhs);
+  if (r > Val) {
+    Val = r;
+  }
+  return *this;
+}
+
+TReal &TReal::Min(const TVar &rhs) {
+  double r = Var::TVar::TDt<double>::As(rhs);
+  if (r < Val) {
+    Val = r;
+  }
+  return *this;
+}
+
 TReal &TReal::Mod(const TVar &) {
   throw Rt::TSystemError(HERE, "Mod not supported on Real.");
 }

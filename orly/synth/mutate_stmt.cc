@@ -63,6 +63,8 @@ Symbol::Stmt::TStmt::TPtr TMutateStmt::Build() const {
     virtual void operator()(const Package::Syntax::TMutationLogicalAnd *) const { Mutator = TMutator::And;           }
     virtual void operator()(const Package::Syntax::TMutationLogicalOr  *) const { Mutator = TMutator::Or;            }
     virtual void operator()(const Package::Syntax::TMutationLogicalXor *) const { Mutator = TMutator::Xor;           }
+    virtual void operator()(const Package::Syntax::TMutationMin        *) const { Mutator = TMutator::Min;           }
+    virtual void operator()(const Package::Syntax::TMutationMax        *) const { Mutator = TMutator::Max;           }
     virtual void operator()(const Package::Syntax::TMutationMinus      *) const { Mutator = TMutator::Sub;           }
     virtual void operator()(const Package::Syntax::TMutationMod        *) const { Mutator = TMutator::Mod;           }
     virtual void operator()(const Package::Syntax::TMutationMul        *) const { Mutator = TMutator::Mult;          }

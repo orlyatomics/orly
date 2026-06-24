@@ -25,6 +25,7 @@
 #include <orly/type/exp_visitor.h>
 #include <orly/type/infix_visitor.h>
 #include <orly/type/logical_ops_visitor.h>
+#include <orly/type/min_max_visitor.h>
 #include <orly/type/mod_visitor.h>
 #include <orly/type/mult_visitor.h>
 #include <orly/type/set_ops_visitor.h>
@@ -161,6 +162,14 @@ void TMutate::TypeCheck() const {
           GetLhs()->GetExpr()->GetType(),
           GetRhs()->GetExpr()->GetType(),
           TMutateTypeVisitor<Type::TSetOpsVisitor>(dummy, GetPosRange()));
+      break;
+    }
+    case TMutator::Max:
+    case TMutator::Min: {
+      Type::TType::Accept(
+          GetLhs()->GetExpr()->GetType(),
+          GetRhs()->GetExpr()->GetType(),
+          TMutateTypeVisitor<Type::TMinMaxVisitor>(dummy, GetPosRange()));
       break;
     }
     case TMutator::Mod: {

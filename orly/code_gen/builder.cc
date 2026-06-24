@@ -207,16 +207,17 @@ TInline::TPtr BuildOptInline(const L0::TPackage *package, const Expr::TExpr::TPt
   return TInline::TPtr();
 }
 
-/* Commutative-upsert (#151): build the LHS of a `*<[k]>::(T) OP= v`
-   mutation. For an identity-default commutative mutator (Add, Or, Xor,
-   Union, SymmetricDiff) whose LHS is a typed read `expr::(T)`, emit the
-   non-throwing ReadOrIdentity read so a first-write to an absent key
-   auto-initialises from the monoid identity instead of throwing
-   "Cannot de-reference Key ... which does not exist". Every other shape
-   (other mutators, non-read LHS such as `x.field`, partial mutables)
-   keeps the existing throw-on-absent Read via BuildInline. */
+/* Commutative-upsert (#151/#152, extended #213): build the LHS of a
+   `*<[k]>::(T) OP= v` mutation. For an absent-key-seedable commutative
+   mutator (Add, Or, Xor, Union, SymmetricDiff, Min, Max, Intersection)
+   whose LHS is a typed read `expr::(T)`, emit the non-throwing
+   ReadOrIdentity read so a first-write to an absent key auto-initialises
+   (seeding from the RHS at fold time) instead of throwing "Cannot
+   de-reference Key ... which does not exist". Every other shape (other
+   mutators, non-read LHS such as `x.field`, partial mutables) keeps the
+   existing throw-on-absent Read via BuildInline. */
 TInline::TPtr BuildMutateLhs(const L0::TPackage *package, const Expr::TExpr::TPtr &lhs, TMutator mutator) {
-  if (Var::IsIdentityDefaultCommutative(mutator)) {
+  if (Var::IsAbsentKeySeedRhs(mutator)) {
     if (auto *read = dynamic_cast<const Expr::TRead *>(lhs.get())) {
       Type::TType ret_type = Type::UnwrapSequence(read->GetType());
       /* keep_mutable: the inner keys expr feeds a mutable read, exactly

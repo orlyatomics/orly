@@ -50,6 +50,14 @@ Var::TVar Orly::Rt::Mutate(const Var::TVar &lhs, TMutator mutator, const Var::TV
       result.Intersection(rhs);
       break;
     }
+    case TMutator::Max: {
+      result.Max(rhs);
+      break;
+    }
+    case TMutator::Min: {
+      result.Min(rhs);
+      break;
+    }
     case TMutator::Mod: {
       result.Mod(rhs);
       break;
