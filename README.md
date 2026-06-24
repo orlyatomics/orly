@@ -15,6 +15,20 @@
   causally-ordered merge, and a compiled query language (<i>Orlyscript</i>).
 </p>
 
+<p align="center">
+  <b>Write from many clients at once — no locks, no conflict-resolution code — and query any past state.</b>
+</p>
+
+Concurrent commutative writes (`x += 1`, set-union `|=`) merge without losing
+updates, and every value is a fold over its own history, so a point-in-time read
+is just a query at an earlier version. The clearest showcase is a small
+**[parimutuel prediction market](examples/prediction-market/)** ("Polymarket
+clone"): N traders bet on one market *concurrently* — zero coordination, not a
+single bet lost — the implied prices are a read-time fold of the trade log, and
+the price history is time-travel. Build on it from **[Python](clients/python)**,
+**[Go](clients/go)**, or **[TypeScript](clients/ts)** (browser + Node), all
+speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
+
 ---
 
 > **Status — 2026.** Dormant from 2019 until early 2026. A modernization pass brought the codebase back to building and testing cleanly on a current toolchain — `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13 — and a substantial language arc followed: sum types / tagged unions, recursive and mutually-recursive variants (storable and client-transmissible), variant widening, and recursive-return type verification. See [`CHANGELOG.md`](CHANGELOG.md) for what's landed and [#10](https://github.com/orlyatomics/orly/issues/10) for the original revival status; the open issues track an engine-integrity and test-hardening backlog (latent revival defects plus sanitizer / coverage gaps). Contributions welcome.
@@ -27,7 +41,7 @@
 
 - **Points of View.** Optimistic concurrency without locking. Each client makes changes in its own private POV — a small sandbox — which eventually propagates into shared POVs and then into the global POV (the whole database). Field calls (`x += 1`) are preferred over field changes (`x = x + 1`) because they merge commutatively.
 
-- **Causal ordering (the _Flux Capacitor_).** Merge-conflict resolution defines its "time line" by causality rather than clock time. Internal mechanism; the original 2014 pitch implied user-facing "time travel" queries which the engine never grew, but the capability is achievable in user-space — see the [bitcoin time-travel example](examples/bitcoin-time-travel/).
+- **Causal ordering (the _Flux Capacitor_).** Merge-conflict resolution defines its "time line" by causality rather than clock time. Internal mechanism; the original 2014 pitch implied a built-in user-facing "time travel" query operator which the engine never grew — but the *capability* falls out in user-space by encoding a version axis in the key and folding on read, with no engine changes. See the [bitcoin](examples/bitcoin-time-travel/), [GRC-20](examples/grc20-pov/), and [prediction-market](examples/prediction-market/) examples.
 
 - **Orlyscript.** A high-level, compiled, type-safe, functional query and programming language. Sources are compiled to `.so` packages that `orlyi` loads at runtime. Supports inline tests, native compilation, and most of the niceties of a real language rather than just a query DSL.
 
