@@ -25,13 +25,15 @@ debug build (`make debug`) and Node 18+.
 esbuild — useful in CI; the SDK's Node-only `import("ws")` is left external and
 never runs in the browser.)
 
-## Honesty note
+## Verification
 
-The build is verified (type-checks under `tsc --strict` + DOM, bundles clean),
-but the **in-browser runtime was not verified in this repo's CI/sandbox** (no
-headless browser). If you hit a rough edge running it, that's why — please file
-it. The terminal driver ([`../demo.ts`](../demo.ts), via `../run-ts.sh`) *is*
-verified end-to-end and is the canonical proof of the engine behavior.
+The build is verified in CI-style checks (type-checks under `tsc --strict` +
+DOM, bundles clean), and the **in-browser runtime has been confirmed by hand** —
+two tabs trading live on one market, prices moving with zero coordination. It is
+not yet exercised by an automated/headless-browser test, so treat the *build* as
+the gated check and the runtime as manually verified. The terminal driver
+([`../demo.ts`](../demo.ts), via `../run-ts.sh`) remains the fully end-to-end
+verified proof of the engine behavior.
 
 ## Files
 

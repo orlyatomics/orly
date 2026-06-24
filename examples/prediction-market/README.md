@@ -67,8 +67,8 @@ inline tests: `orlyc -d market.orly`.
 
 There's also a **browser UI** in [`web/`](web/) — `cd web && ./serve.sh`, then
 open the printed URL in two tabs to trade against yourself and watch the price
-move live (build-verified; in-browser runtime not yet CI-verified — see its
-README).
+move live (build-verified in CI-style checks; in-browser runtime confirmed by
+hand, not yet headless-tested — see its README).
 
 ## Files
 
