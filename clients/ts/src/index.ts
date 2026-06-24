@@ -28,6 +28,17 @@
 
 export const DEFAULT_URL = "ws://127.0.0.1:8082/";
 
+// setTimeout is provided by both the browser and Node at runtime; declare it
+// minimally so this isomorphic client type-checks under its lean lib config
+// (es2020, no DOM / no @types/node) without pulling those in.
+declare function setTimeout(handler: () => void, ms: number): unknown;
+
+// A just-started or heavily loaded orlyi can briefly refuse the connection or
+// time out the WebSocket handshake before it is ready. connect() retries that
+// window with exponential backoff: DEFAULT_BACKOFF_MS, doubling each attempt.
+export const DEFAULT_RETRIES = 5;
+export const DEFAULT_BACKOFF_MS = 250;
+
 /** Thrown when the server replies with a non-`ok` status. */
 export class OrlyError extends Error {
   constructor(
@@ -210,13 +221,34 @@ async function resolveWebSocket(): Promise<new (url: string) => SocketLike> {
   return (mod.default ?? mod.WebSocket) as new (url: string) => SocketLike;
 }
 
-/** Open a WebSocket to a running `orlyi` and resolve a {@link Client}. */
-export async function connect(url: string = DEFAULT_URL): Promise<Client> {
+/**
+ * Open a WebSocket to a running `orlyi` and resolve a {@link Client}.
+ *
+ * A just-started or heavily loaded `orlyi` can refuse the connection or time
+ * out the handshake briefly before it is ready, so the connection is retried
+ * up to `opts.retries` times with exponential backoff (`opts.backoffMs`,
+ * doubling each attempt). The last error is re-thrown once retries are
+ * exhausted; pass `retries: 0` to fail fast on the first attempt.
+ */
+export async function connect(
+  url: string = DEFAULT_URL,
+  opts: { retries?: number; backoffMs?: number } = {},
+): Promise<Client> {
+  const retries = opts.retries ?? DEFAULT_RETRIES;
+  let delay = opts.backoffMs ?? DEFAULT_BACKOFF_MS;
   const WS = await resolveWebSocket();
-  const ws = new WS(url);
-  await new Promise<void>((resolve, reject) => {
-    ws.addEventListener("open", () => resolve());
-    ws.addEventListener("error", (ev: any) => reject(ev instanceof Error ? ev : new Error("orly: connect failed")));
-  });
-  return new Client(ws);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const ws = new WS(url);
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve());
+        ws.addEventListener("error", (ev: any) => reject(ev instanceof Error ? ev : new Error("orly: connect failed")));
+      });
+      return new Client(ws);
+    } catch (e) {
+      if (attempt >= retries) throw e;
+      await new Promise<void>((r) => setTimeout(() => r(), delay));
+      delay *= 2;
+    }
+  }
 }

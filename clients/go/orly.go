@@ -28,12 +28,21 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 // DefaultURL is the WebSocket endpoint a local orlyi listens on.
 const DefaultURL = "ws://127.0.0.1:8082/"
+
+// A just-started or heavily loaded orlyi can briefly refuse the connection or
+// time out the WebSocket handshake before it is ready. ConnectURL retries that
+// window with exponential backoff: defaultBackoff, doubling each attempt.
+const (
+	DefaultRetries = 5
+	defaultBackoff = 250 * time.Millisecond
+)
 
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
@@ -48,13 +57,25 @@ type reply struct {
 // Connect dials a running orlyi at DefaultURL.
 func Connect() (*Client, error) { return ConnectURL(DefaultURL) }
 
-// ConnectURL dials a running orlyi at the given ws:// URL.
+// ConnectURL dials a running orlyi at the given ws:// URL. It retries a
+// failed dial up to DefaultRetries times with exponential backoff, so a
+// just-started or loaded orlyi that is not yet accepting connections does not
+// flake the caller; the last error is returned once the retries are exhausted.
 func ConnectURL(url string) (*Client, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("orly: dial %s: %w", url, err)
+	delay := defaultBackoff
+	var err error
+	for attempt := 0; ; attempt++ {
+		var conn *websocket.Conn
+		conn, _, err = websocket.DefaultDialer.Dial(url, nil)
+		if err == nil {
+			return &Client{conn: conn}, nil
+		}
+		if attempt >= DefaultRetries {
+			return nil, fmt.Errorf("orly: dial %s (after %d attempts): %w", url, attempt+1, err)
+		}
+		time.Sleep(delay)
+		delay *= 2
 	}
-	return &Client{conn: conn}, nil
 }
 
 // Close closes the underlying WebSocket.
