@@ -1,2 +1,7 @@
 # Stray go-build output from `go build ./...` in this dir.
 recursive-variants
+
+# TypeScript driver build artifacts.
+node_modules/
+package-lock.json
+demo.js

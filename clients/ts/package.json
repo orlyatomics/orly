@@ -1,0 +1,20 @@
+{
+  "name": "orly",
+  "version": "0.1.0",
+  "description": "TypeScript client for the Orly database (WebSocket + JSON protocol)",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/orlyatomics/orly",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc"
+  },
+  "optionalDependencies": {
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ws": "^8.0.0"
+  }
+}
