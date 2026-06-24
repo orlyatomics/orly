@@ -27,13 +27,21 @@ never runs in the browser.)
 
 ## Verification
 
-The build is verified in CI-style checks (type-checks under `tsc --strict` +
-DOM, bundles clean), and the **in-browser runtime has been confirmed by hand** —
-two tabs trading live on one market, prices moving with zero coordination. It is
-not yet exercised by an automated/headless-browser test, so treat the *build* as
-the gated check and the runtime as manually verified. The terminal driver
-([`../demo.ts`](../demo.ts), via `../run-ts.sh`) remains the fully end-to-end
-verified proof of the engine behavior.
+The runtime is exercised by an **automated headless-browser test**
+([`e2e/market.spec.ts`](e2e/market.spec.ts), Playwright): it opens the page in
+**two browser contexts on the same `#pov=` link**, has one buy YES and the other
+buy NO concurrently, and asserts both tabs see the pool reach `$20` and the
+price move to `50.0% / 50.0%` live — the two-tab story, automated. Run it with:
+
+```sh
+./run-e2e.sh         # serve.sh's setup + `npx playwright test` against it
+```
+
+It needs a headless Chromium (`npx playwright install --with-deps chromium`).
+The same flow runs as a gating job in CI. The build itself is also checked
+independently (type-checks under `tsc --strict` + DOM, bundles clean). The
+terminal driver ([`../demo.ts`](../demo.ts), via `../run-ts.sh`) remains the
+fully end-to-end verified proof of the engine behavior.
 
 ## Files
 

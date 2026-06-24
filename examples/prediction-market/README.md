@@ -67,8 +67,9 @@ inline tests: `orlyc -d market.orly`.
 
 There's also a **browser UI** in [`web/`](web/) — `cd web && ./serve.sh`, then
 open the printed URL in two tabs to trade against yourself and watch the price
-move live (build-verified in CI-style checks; in-browser runtime confirmed by
-hand, not yet headless-tested — see its README).
+move live. It has a headless-browser test (`web/run-e2e.sh`, Playwright) that
+drives two tabs trading concurrently on one market — gated in CI; see its
+README.
 
 ## Files
 
