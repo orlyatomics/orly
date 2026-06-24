@@ -1,0 +1,12 @@
+{
+  "name": "orly-prediction-market-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser UI for the Orly prediction-market demo (on the orly TypeScript client)",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  }
+}
