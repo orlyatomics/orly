@@ -27,11 +27,23 @@ import time as _time
 
 import websocket  # the `websocket-client` package
 
-__all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RETRIES",
-           "DEFAULT_BACKOFF_S", "OrlyError", "Lit", "lit", "Client", "connect"]
+__all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
+           "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "Lit", "lit",
+           "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
+# Connect-handshake timeout. Kept short so a not-yet-ready orlyi fails fast and
+# the retry below covers the startup window.
 DEFAULT_TIMEOUT_S = 30
+# Per-call recv() timeout, set on the socket AFTER connecting. Decoupled from
+# the connect timeout: a method reply should arrive in milliseconds, so a recv
+# that takes this long means a severely starved server (e.g. a CI runner under
+# the load of every demo at once), not a hung one -- giving it generous headroom
+# stops a transient latency spike from killing an otherwise-fine call (issue
+# #224). A genuinely hung orlyi still surfaces, just later; the CI job timeout is
+# the backstop. Retrying the call instead is unsafe -- a resent write could
+# double-apply -- so we wait rather than retry.
+DEFAULT_RECV_TIMEOUT_S = 120
 # A freshly started or heavily loaded orlyi can briefly refuse the connection
 # or time out the WebSocket handshake before it is ready. connect() retries
 # that window with exponential backoff: DEFAULT_BACKOFF_S, doubling each time.
@@ -169,6 +181,7 @@ class Client:
 
 
 def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S,
+            recv_timeout=DEFAULT_RECV_TIMEOUT_S,
             retries=DEFAULT_RETRIES, backoff=DEFAULT_BACKOFF_S):
     """Open a WebSocket to a running ``orlyi`` and return a :class:`Client`.
 
@@ -178,11 +191,20 @@ def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S,
     ``retries`` times with exponential backoff (``backoff`` seconds, doubling
     each attempt). The last error is re-raised once the retries are exhausted;
     pass ``retries=0`` to fail fast on the first attempt.
+
+    ``timeout`` bounds the connect handshake (kept short so the retry covers
+    startup). ``recv_timeout`` bounds each subsequent ``recv()`` and is set
+    generously: a method reply is normally milliseconds, so a long recv means a
+    starved server, not a hung one, and we would rather wait it out than fail an
+    otherwise-fine call (issue #224).
     """
     delay = backoff
     for attempt in range(retries + 1):
         try:
-            return Client(websocket.create_connection(url, timeout=timeout))
+            ws = websocket.create_connection(url, timeout=timeout)
+            # Decouple the per-call recv timeout from the connect timeout.
+            ws.settimeout(recv_timeout)
+            return Client(ws)
         except (websocket.WebSocketException, OSError):
             if attempt == retries:
                 raise
