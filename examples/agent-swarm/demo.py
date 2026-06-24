@@ -238,6 +238,41 @@ def cooccur_count(c, pov, a, b):
     return int(c.call(pov, "graph", "cooccur_count", {"a": a, "b": b}))
 
 
+def neighbors(c, pov, entity):
+    # graph.orly returns a set {str}; WS wire form is a JSON array.
+    return set(c.call(pov, "graph", "neighbors", {"e": entity}) or [])
+
+
+def reach(c, pov, seed, k):
+    return set(c.call(pov, "graph", "reach", {"seed": seed, "k": k}) or [])
+
+
+def build_adjacency(expected_cooccur):
+    """Symmetric adjacency from the canonical cooccurrence pairs: every
+    pair (a, b) is one undirected edge -- matches the both-directions
+    <['adj', a, b]> / <['adj', b, a]> writes in graph.orly's add_cooccur."""
+    adj = {}
+    for (a, b) in expected_cooccur:
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    return adj
+
+
+def reach_within(adj, seed, k):
+    """k-hop reachable set, inclusive of seed. Plain-Python mirror of
+    graph.orly's `reach`: each hop expands the whole visited set by its
+    neighbours; cycles terminate because the set saturates."""
+    visited = {seed}
+    for _ in range(k):
+        nxt = set(visited)
+        for n in visited:
+            nxt |= adj.get(n, set())
+        if nxt == visited:
+            break
+        visited = nxt
+    return visited
+
+
 def agent(agent_id, pov, docs):
     """One agent: open a fresh WebSocket, open a session, ingest its
     slice of (doc_id, extraction) pairs into the shared POV. Every tag
@@ -380,6 +415,46 @@ def main():
         marker = "✓" if got == want else "✗"
         print(f"  {a + ' & ' + b:<32}  {got:>4}  (want {want})  {marker}")
 
+    # ------------------------------------------------------------------
+    # Graph traversal. The cooccurrence adjacency was assembled by N
+    # concurrent agents with zero coordination; now traverse it
+    # transitively. Verify 1-hop neighbours + k-hop reachability against a
+    # plain-Python BFS over the same ground-truth graph -- then showcase a
+    # neighbourhood. (graph.orly does this with no new engine primitive:
+    # a trailing-free prefix scan for adjacency, a reduce-over-depth for
+    # the bounded transitive closure.)
+    # ------------------------------------------------------------------
+    adj = build_adjacency(expected_cooccur_count)
+    seeds = [s for s in ("Python", "OpenAI", "Claude", "Rust", "Llama")
+             if s in adj]
+    for s in seeds:
+        want_nbrs = adj.get(s, set())
+        got_nbrs = neighbors(boot, pov, s)
+        if got_nbrs != want_nbrs:
+            failures.append(
+                f"neighbors({s}): got {sorted(got_nbrs)}, want {sorted(want_nbrs)}")
+        for k in (1, 2, 3):
+            want_r = reach_within(adj, s, k)
+            got_r = reach(boot, pov, s, k)
+            if got_r != want_r:
+                failures.append(
+                    f"reach({s}, {k}): got {sorted(got_r)}, want {sorted(want_r)}")
+
+    print()
+    print("=== graph traversal: k-hop reachability over the cooccurrence graph ===")
+    showcase = next((s for s in ("Claude", "Python", "OpenAI") if s in adj),
+                    seeds[0] if seeds else None)
+    if showcase:
+        nbrs = sorted(neighbors(boot, pov, showcase))
+        total = len(adj)
+        print(f"  seed: {showcase}   (graph has {total} entities)")
+        print(f"  {'direct neighbours':<20}: {len(nbrs):>3}  ({', '.join(nbrs)})")
+        for k in (1, 2, 3):
+            r = sorted(reach(boot, pov, showcase, k))
+            tail = f"  ({', '.join(r)})" if len(r) <= 14 else ""
+            print(f"  within {k} hop{'s' if k > 1 else ' '}{'':<13}: "
+                  f"{len(r):>3}  {len(r) * 100 // total:>3}% of the graph{tail}")
+
     print()
     print("=== the trick ===")
     print(f"  {NUM_AGENTS} concurrent agents all wrote into the same knowledge")
@@ -387,6 +462,9 @@ def main():
     print(f"  provenance) union into one set per entity, and the per-entity")
     print(f"  / per-pair counters aggregate correctly: this is the shape")
     print(f"  multi-agent LLM extraction pipelines keep reinventing badly.")
+    print(f"  And the graph they built is traversable transitively -- the")
+    print(f"  k-hop reachability above runs over that same coordination-free")
+    print(f"  adjacency, with no new engine primitive (issue #219).")
 
     boot.exit()
 
@@ -404,6 +482,8 @@ def main():
           f"{len(expected_mention_count)} mention counters + "
           f"{len(expected_cooccur_count)} cooccurrence counters across "
           f"{NUM_AGENTS} concurrent agents")
+    print(f"  + transitive k-hop reachability over the cooccurrence graph "
+          f"for {len(seeds)} seed entities, matching a Python BFS")
 
 
 if __name__ == "__main__":

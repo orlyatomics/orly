@@ -101,9 +101,41 @@ cooccur_count = (((*<['cooccur', a, b]>::(int)) if *<['cooccur', a, b]>::(int?) 
 
 add_cooccur = ((1) effecting {
   *<['cooccur', a, b]>::(int) += 1;
+  /* Symmetric adjacency for traversal: store BOTH directions so a node's
+     neighbours are always a trailing-free prefix scan <['adj', n, *]> --
+     the efficient index-free-adjacency shape (issue #219). Still
+     coordination-free: the edge weight accumulates via += like every
+     other field call, so concurrent agents asserting the same edge land
+     correctly with no read-modify-write. */
+  *<['adj', a, b]>::(int) += 1;
+  *<['adj', b, a]>::(int) += 1;
 }) where {
   a = given::(str);
   b = given::(str);
+};
+
+/* ---------- graph traversal over the cooccurrence adjacency ---------- */
+
+/* Out-neighbours of entity e: one prefix scan of <['adj', e, *]>, folding
+   each neighbour (tuple element .2) into a set. Index-free adjacency --
+   the sorted index seeks straight to the e-prefix run (issue #219). */
+neighbors = (((keys (int) @ <['adj', e, free::(str)]>) reduce start (empty {str}) | {that.2})) where {
+  e = given::(str);
+};
+
+/* One BFS hop: the frontier set V plus the union of every frontier node's
+   neighbours. */
+grow = ((v | ((**v) reduce start (empty {str}) | neighbors(.e: that)))) where {
+  v = given::({str});
+};
+
+/* Every entity reachable from `seed` within `k` cooccurrence hops
+   (inclusive of seed): k applications of `grow`. The accumulating visited
+   set makes cycles terminate -- a coordination-free knowledge graph,
+   traversed transitively, with no new engine primitive. */
+reach = (([1..k] reduce grow(.v: start ({seed})))) where {
+  seed = given::(str);
+  k    = given::(int);
 };
 
 /* ---------- inline tests ---------- */
@@ -160,6 +192,31 @@ test {
       t24: cooccur_count(.a: "Python", .b: "GPT-4") == 2;
       /* Reversed-order pair is a DIFFERENT key (driver canonicalises). */
       t25: cooccur_count(.a: "GPT-4", .b: "Python") == 0;
+    };
+  };
+};
+
+/* ---------- traversal over a graph built through add_cooccur ---------- */
+
+/* Triangle A-B-C plus pendant D-A, assembled through the REAL ingest
+   path (each add_cooccur writes the symmetric adjacency), then traversed.
+   This is the end-to-end shape the driver exercises concurrently. */
+test {
+  t30: add_cooccur(.a: "A", .b: "B") == 1 {
+    t31: add_cooccur(.a: "B", .b: "C") == 1 {
+      t32: add_cooccur(.a: "A", .b: "C") == 1 {
+        t33: add_cooccur(.a: "A", .b: "D") == 1 {
+          /* one prefix-scan adjacency, both directions present */
+          t34: neighbors(.e: "A") == {"B", "C", "D"};
+          t35: neighbors(.e: "D") == {"A"};
+          /* k-hop transitive reachability (inclusive of seed) */
+          t36: reach(.seed: "A", .k: 1) == {"A", "B", "C", "D"};
+          t37: reach(.seed: "D", .k: 1) == {"D", "A"};
+          t38: reach(.seed: "D", .k: 2) == {"A", "B", "C", "D"};
+          /* the A-B-C cycle terminates: extra hops add nothing */
+          t39: reach(.seed: "D", .k: 5) == {"A", "B", "C", "D"};
+        };
+      };
     };
   };
 };

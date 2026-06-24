@@ -1,0 +1,37 @@
+/* Graph traversal (#219): bounded transitive reachability expressed in
+   orlyscript with NO new engine primitive. A directed graph stored as
+   edge-existence keys; adjacency via a trailing-free prefix scan; bounded
+   reachability as a reduce over a depth range, accumulating a visited set
+   (which gives cycle handling for free). The agent-swarm example does the
+   same over a coordination-free knowledge graph. */
+
+/* out-neighbours of n: scan all <['edge', n, *]> keys, fold the dst
+   (tuple element .2) into a set. */
+neighbors = (((keys (bool) @ <['edge', n, free::(int)]>) reduce start (empty {int}) | {that.2})) where {
+  n = given::(int);
+};
+
+/* one hop: V together with the union of every frontier node's neighbours. */
+expand = ((v | ((**v) reduce start (empty {int}) | neighbors(.n: that)))) where {
+  v = given::({int});
+};
+
+/* all nodes reachable from seed within k hops (k applications of expand). */
+reach = (([1..k] reduce expand(.v: start ({seed})))) where {
+  seed = given::(int);
+  k    = given::(int);
+};
+
+/* graph:  1 -> 2 -> 3 -> 1 (cycle),  1 -> 4 */
+with {
+  <['edge', 1, 2]> <- true;
+  <['edge', 2, 3]> <- true;
+  <['edge', 3, 1]> <- true;
+  <['edge', 1, 4]> <- true;
+} test {
+  t1: neighbors(.n: 1) == {2, 4};
+  t2: reach(.seed: 1, .k: 1) == {1, 2, 4};
+  t3: reach(.seed: 1, .k: 2) == {1, 2, 3, 4};
+  t4: reach(.seed: 1, .k: 5) == {1, 2, 3, 4};   /* cycle does not loop forever */
+  t5: reach(.seed: 4, .k: 5) == {4};            /* sink */
+};

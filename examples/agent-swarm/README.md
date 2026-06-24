@@ -51,7 +51,25 @@ Exit code is non-zero if the verifier finds any tag provenance set, mention coun
 
 - **No lost extractions under contention.** Hot entities (Python, OpenAI, Anthropic, Claude, GPT-4, Microsoft, Google) appear in many docs; agents are assigned docs round-robin so multiple agents hit the same entity concurrently. Every `add_tag` / `add_mention` / `add_cooccur` call lands.
 - **Tag provenance sets converge.** Different docs assign different tags to the same entity (Python picks up `language` from some docs, `popular` from others), and different agents independently corroborate the same tag. The on-disk set of `(tag, agent)` records after ingest equals the union derived from the corpus — every contributing agent is preserved.
-- **No driver-side merge logic.** The driver never reads-then-writes. It only ever calls the three field-call functions in [`graph.orly`](graph.orly). Aggregation is the engine's job.
+- **No driver-side merge logic.** The driver never reads-then-writes. It only ever calls the field-call functions in [`graph.orly`](graph.orly). Aggregation is the engine's job.
+
+## Traversing the graph
+
+A knowledge graph you can only point-query is half a graph database. The co-occurrences the agents stream form an **undirected graph** — entities are nodes, a shared document is an edge. `add_cooccur` writes that edge **both ways** as a symmetric adjacency, so a node's neighbours are one prefix scan:
+
+```orly
+*<['adj', a, b]>::(int) += 1   # both directions, still a coordination-free field call
+*<['adj', b, a]>::(int) += 1
+```
+
+That trailing-`free` shape is exactly what Orly's sorted index seeks straight to — **index-free adjacency** ([issue #219](https://github.com/orlyatomics/orly/issues/219)), the thing graph engines are built on. On top of it, transitive traversal needs **no new engine primitive** — a `reduce` over a depth range, accumulating a visited set (so cycles terminate):
+
+```orly
+neighbors = (keys (int) @ <['adj', e, free::(str)]>) reduce start (empty {str}) | {that.2}   # one hop
+reach     = [1..k] reduce grow(.v: start ({seed}))                                            # k-hop closure
+```
+
+The driver verifies `reach(seed, k)` against a plain-Python BFS over the same graph, then showcases a neighbourhood — e.g. from **Claude**, ~92% of the graph is reachable within 3 hops. The point: the graph was assembled by N agents with **zero coordination**, and it's still **traversable transitively** — concurrent construction *and* graph queries in one store, which Neo4j (single-primary writes) and Cayley (a query layer over a store) don't combine.
 
 ## Related demos
 
