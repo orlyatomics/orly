@@ -65,6 +65,11 @@ likewise folds (`market.orly`'s `payout`).
 Needs a debug build (`make debug`) and Node 18+. The orlyscript logic also has
 inline tests: `orlyc -d market.orly`.
 
+There's also a **browser UI** in [`web/`](web/) — `cd web && ./serve.sh`, then
+open the printed URL in two tabs to trade against yourself and watch the price
+move live (build-verified; in-browser runtime not yet CI-verified — see its
+README).
+
 ## Files
 
 - [`market.orly`](market.orly) — the engine: commutative `place_bet`, fold reads
