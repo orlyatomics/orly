@@ -83,7 +83,10 @@ async function bet(o: string): Promise<void> {
 async function main(): Promise<void> {
   el("question").textContent = QUESTION;
   el("me").textContent = me;
-  client = await connect(); // browser: native WebSocket to ws://127.0.0.1:8082/
+  // Point the WebSocket at the same host the page was served from, so this
+  // works whether you open it as localhost or over the network (e.g. a WSL IP
+  // from a Windows browser), not just 127.0.0.1.
+  client = await connect(`ws://${location.hostname || "127.0.0.1"}:8082/`);
   await client.newSession();
   await client.install("market", 0); // idempotent: no-op if already installed
   pov = await ensurePov();
