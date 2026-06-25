@@ -97,6 +97,24 @@ ReadInts(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id, const
   return out;
 }
 
+/* Read the per-current-key mutators out of a folded file (#227: a
+   pure-commutative run must stay under its own mutator, not collapse to
+   Assign, or it would cap the read-path fold across LSM files). */
+static std::vector<TMutator>
+ReadMutators(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id, const TUuid &index_id) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, gen_id);
+  TReader::TArena main_arena(&reader,
+      mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  TReader::TIndexFile idx_file(&reader, index_id, RealTime);
+  TReader::TArena idx_arena(&idx_file,
+      mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  std::vector<TMutator> out;
+  for (TReader::TIndexFile::TKeyCursor csr(&idx_file); csr; ++csr) {
+    out.push_back((*csr).Mutator);
+  }
+  return out;
+}
+
 FIXTURE(FoldsAddsOntoAssignBase) {
   TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -157,11 +175,19 @@ FIXTURE(FoldsAddsWithoutAssignBase) {
     EXPECT_EQ(fold.GetNumKeys(), 1UL);
 
     /* No Assign base + commutative-mutator identity = 0 for Add, so the
-       folded value should be 1+2+4 = 7, materialised as Assign(7). */
+       folded value should be 1+2+4 = 7. #227: a pure-Add run must be
+       materialised back under its OWN mutator (Add), NOT Assign -- a hot
+       key's increments span several LSM files, each folded independently,
+       and an Assign(partial) here would cap the read-path fold and shadow
+       the other files' partials. */
     auto pairs = ReadInts(mem_engine, file_id, dst_gen, index_id);
     if (EXPECT_EQ(pairs.size(), 1UL)) {
       EXPECT_EQ(pairs[0].first, 7L);
       EXPECT_EQ(pairs[0].second, 7L);
+    }
+    auto muts = ReadMutators(mem_engine, file_id, dst_gen, index_id);
+    if (EXPECT_EQ(muts.size(), 1UL)) {
+      EXPECT_TRUE(muts[0] == TMutator::Add);
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

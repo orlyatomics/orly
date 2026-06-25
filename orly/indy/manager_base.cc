@@ -314,7 +314,13 @@ void TManager::RunMergeMem() {
         deadline = repo->GetTimeOfNextMergeMem();
         bool cont = false;
         auto now = steady_clock::now();
-        if (deadline < now) {
+        /* #227: merge when the repo's next-merge deadline has arrived
+           (deadline <= now). The comparison was inverted, so a repo --
+           whose deadline starts at construction time and is only advanced
+           inside the merge branch below -- was perpetually seen as "not yet
+           due", StepMergeMem never ran, and the memory layer grew unbounded
+           under sustained writes (O(N) per write => O(N^2) to write N keys). */
+        if (deadline > now) {
           should_sleep = true;
           cont = true;
         } else {
@@ -383,7 +389,11 @@ void TManager::RunMergeDisk() {
         deadline = repo->GetTimeOfNextMergeDisk();
         bool cont = false;
         auto now = steady_clock::now();
-        if (deadline < now) {
+        /* #227: same inverted-deadline bug as RunMergeMem (above). Without
+           this, StepMergeDisk never ran, so the disk-layer files produced by
+           a now-working mem->disk merge would accumulate without compaction,
+           re-introducing an O(layers) scan on the read/Tetris path. */
+        if (deadline > now) {
           should_sleep = true;
           cont = true;
         } else {

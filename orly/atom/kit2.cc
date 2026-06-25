@@ -473,6 +473,14 @@ TCore::State::TAny *TCore::NewState(TArena *arena, void *state_alloc) const {
     case TTycon::Str      : { result = new (state_alloc) SS::TStr      (arena, this); break; }
     case TTycon::Tombstone: { result = new (state_alloc) SS::TTombstone();            break; }
     case TTycon::Void     : { result = new (state_alloc) SS::TVoid     ();            break; }
+    /* Recursive back-reference leaf (issue #115): a direct scalar holding a de
+       Bruijn depth inline (InitDirect(TTycon::SelfRef, uint64)). It has no
+       arena offset and no children, so it traverses exactly like a UInt64
+       scalar -- the on-disk Tycon byte is preserved verbatim, so read-back via
+       NewType still reconstructs the recursive type. Only the disk-flush value
+       traversal (dormant until the merge was reactivated) reaches it, which is
+       why a stored recursive variant tripped TCorrupt here. */
+    case TTycon::SelfRef  : { result = new (state_alloc) SS::TUInt64    (this);        break; }
     case TTycon::Free     : { result = new (state_alloc) SS::TFree     (arena, this); break; }
     case TTycon::Desc     : { result = new (state_alloc) SS::TDesc     (arena, this); break; }
     case TTycon::Opt      : { result = new (state_alloc) SS::TOpt      (arena, this); break; }
@@ -512,6 +520,13 @@ void TCore::Remap(const TRemap &remap) {
     case TTycon::TimePoint:
     case TTycon::Uuid:
     case TTycon::Tombstone:
+    /* Recursive back-reference leaf (issue #115): a direct scalar storing a
+       de Bruijn depth inline -- no indirection offset to remap. Matches the
+       direct-scalar treatment in TryGetOffset / compare / hash. Without this
+       the disk-flush serialization path (the only caller of Remap, dormant
+       until the merge subsystem was reactivated) throws TCorrupt on any stored
+       recursive-variant value whose type core embeds a SelfRef. */
+    case TTycon::SelfRef:
     case TTycon::Void: {
       break;
     }
@@ -972,7 +987,11 @@ bool TCore::TNote::TOrderedArenaCompare::operator()(const TNote &lhs, const TNot
       assert(!lhs.Exemplar);
       assert(!rhs.Exemplar);
       assert(lhs_size == rhs_size);
-      assert(lhs_size > 0); /* we don't support empty tuple */
+      /* An empty tuple is trivially equal to an empty tuple -- the loop below
+         is a no-op and returns "equal". The old assert(lhs_size > 0) was a
+         debug-only over-guard (release already handled the zero case); it
+         crashed the disk flush on stored empty tuples once the merge subsystem
+         was reactivated. */
       for (const TCore *lhs_core = lhs_start, *rhs_core = rhs_start; lhs_core < lhs_limit && rhs_core < rhs_limit; ++lhs_core, ++rhs_core) {
         if (OrderedCoreCompare(*lhs_core, *rhs_core)) {
           return true;
@@ -994,7 +1013,11 @@ bool TCore::TNote::TOrderedArenaCompare::operator()(const TNote &lhs, const TNot
       const size_t rhs_size = rhs_limit - rhs_start;
       #endif
       assert(lhs_size == rhs_size);
-      assert(lhs_size > 0); /* we don't support empty record */
+      /* An empty record is trivially equal to an empty record -- the loop below
+         is a no-op. The old assert(lhs_size > 0) was a debug-only over-guard
+         (release already handled it) that crashed the disk flush on a stored
+         empty record (e.g. a no-payload variant case) once the merge subsystem
+         was reactivated. */
       for (const TPairOfCores *lhs_core = lhs_start, *rhs_core = rhs_start; lhs_core < lhs_limit && rhs_core < rhs_limit; ++lhs_core, ++rhs_core) {
         if (OrderedCoreCompare(lhs_core->first, rhs_core->first)) {
           return true;

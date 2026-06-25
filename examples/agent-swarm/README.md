@@ -78,9 +78,9 @@ reach = ([1..k] reduce step(.acc: start (<{.seen: {seed}, .frontier: {seed}}>)))
 
 The inline tests assert the delta BFS returns the same set as the naive whole-set fold, hop for hop.
 
-### Scale (and a known limitation)
+### Scale
 
-[`benchmark.py`](benchmark.py) (run via [`run-bench.sh`](run-bench.sh)) was built to measure traversal at non-toy scale. It instead surfaced [**#227**](https://github.com/orlyatomics/orly/issues/227): writing N distinct keys to a POV is **O(N²)** — the mem→disk merge is enqueued only on the empty→non-empty edge, so under sustained writes the memory layer grows unbounded and every write pays an O(layer-size) scan. The benchmark is the reproduction: it shows per-write latency climbing as writes accumulate (and *not* resetting after an idle pause), with a verdict that flips from `GROWING` to `FLAT` once #227 is fixed. Until then you cannot build a large enough graph to benchmark the traversal itself — fixing the write path is the prerequisite for any "scales past toy graphs" claim.
+[`benchmark.py`](benchmark.py) (run via [`run-bench.sh`](run-bench.sh)) was built to measure traversal at non-toy scale. It instead surfaced [**#227**](https://github.com/orlyatomics/orly/issues/227): writing N keys to a POV was **O(N²)** — the mem→disk merge was enqueued only on the empty→non-empty edge, so under sustained writes the memory layer grew unbounded and every write paid an O(layer-size) scan. The root cause was a *dormant* merge subsystem — an inverted scheduler deadline meant the mem→disk merge never ran at all — and fixing it uncovered a cascade of latent disk-compaction correctness and stability bugs that had never been exercised. All are now fixed (#227). The benchmark is the reproduction: its per-write verdict flips from `GROWING` to `FLAT` (~2 ms/write, flat to 8 000 writes), so the write path is no longer the bottleneck for building a non-toy graph.
 
 The driver verifies `reach(seed, k)` against a plain-Python BFS over the same graph, then showcases a neighbourhood — e.g. from **Claude**, ~92% of the graph is reachable within 3 hops. The point: the graph was assembled by N agents with **zero coordination**, and it's still **traversable transitively** — concurrent construction *and* graph queries in one store, which Neo4j (single-primary writes) and Cayley (a query layer over a store) don't combine.
 

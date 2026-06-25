@@ -103,14 +103,18 @@ namespace {
     // Assign base) onto the accumulator.
     const TMutator mut = anchor.Mutator;
     Var::TVar acc = anchor.Op;
+    bool hit_assign_base = false;  // did this run bottom out at an Assign?
+    bool hit_tombstone = false;
     for (size_t i = 1; i < entries.size(); ++i) {
       const TFoldEntry &e = entries[i];
       if (e.IsTombstone) {
+        hit_tombstone = true;
         break;  // wipe what's below; the post-tombstone accumulator stands
       }
       if (e.Mutator == TMutator::Assign) {
         // Base. acc-as-RHS folded onto the base value.
         acc = Rt::Mutate(e.Op, mut, acc);
+        hit_assign_base = true;
         break;
       }
       if (e.Mutator != mut) {
@@ -121,11 +125,21 @@ namespace {
       acc = Rt::Mutate(acc, mut, e.Op);
     }
 
-    // Promote to Assign. Identity-OP-folded_RHS == folded_RHS for every
-    // commutative mutator we accept, so Assign(acc) matches what the
-    // read-path fold would produce -- and it keeps disk-side readers
-    // that aren't yet Mutator-aware (#53) working unchanged.
-    TFoldEntry out{anchor.SeqNum, TMutator::Assign, acc, /*IsTombstone=*/false};
+    // #227: keep the output COMMUTATIVE when this run was pure commutative
+    // (no Assign base, no tombstone below it). A key's increments routinely
+    // span several LSM files -- each gets folded independently, and the
+    // read-path fold (and later compactions) must keep SUMMING the per-file
+    // partials. Promoting a pure-commutative fold to Assign breaks that: with
+    // "latest-assign-wins" semantics, a partial fold from one generation
+    // shadows/drops the partials from the others (a hot key written N times
+    // across ~N/batch files read back as just the last batch). Emitting the
+    // resolved value under the SAME commutative mutator keeps it foldable, and
+    // costs nothing on the disk side: un-folded commutative entries already
+    // live on disk as their mutator (Add/Or/...), so readers already handle
+    // it. Only when the run actually bottomed out at an Assign base (or was
+    // cut by a tombstone) does Assign correctly shadow everything below it.
+    const TMutator out_mut = (hit_assign_base || hit_tombstone) ? TMutator::Assign : mut;
+    TFoldEntry out{anchor.SeqNum, out_mut, acc, /*IsTombstone=*/false};
     return {out};
   }
 
@@ -229,13 +243,29 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
               &out_arena,
               Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, e.Op)).get());
         }
-        TUpdate::TOpByKey op_by_key{
-            {TIndexKey(index_id, g.Key), op_key}
-        };
+        const TIndexKey index_key(index_id, g.Key);
+        /* Build the entry under its OWN mutator. NewUpdate(op_by_key, ...)
+           tags every entry Assign, which is wrong for a folded run that
+           stays commutative (FoldOneKey returns out.Mutator == the source
+           commutative mutator when the run never bottomed out at an Assign
+           base or tombstone). Emitting such a run as Assign would make it
+           cap the read-path fold (latest-assign-wins), shadowing the same
+           key's partials in the other LSM files -- a hot key written N
+           times across many files would read back as just one folded
+           group. So Assign entries go through the TOpByKey ctor (existing
+           semantics) and non-Assign entries go through AddEntry post-
+           construction, mirroring TRepo::GetLowestUpdate. */
+        TUpdate::TOpByKey op_by_key;
+        if (e.Mutator == TMutator::Assign) {
+          op_by_key.insert(std::make_pair(index_key, op_key));
+        }
         auto update = TUpdate::NewUpdate(
             op_by_key,
             Indy::TKey(&out_arena),
             Indy::TKey(TUuid(TUuid::Twister), &out_arena, state_alloc));
+        if (e.Mutator != TMutator::Assign) {
+          update->AddEntry(index_key, op_key, e.Mutator);
+        }
         update->SetSequenceNumber(e.SeqNum);
         out_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
 

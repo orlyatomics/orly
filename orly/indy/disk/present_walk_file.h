@@ -242,16 +242,38 @@ namespace Orly {
             void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
             void *search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
             #endif
+            /* #227 / #49: replay the current key's history increments (set up
+               on the previous current-key yield) before advancing to the next
+               current key, so the fold sees every commutative increment. */
+            if (HistRemaining && HistCursor && *HistCursor) {
+              const auto &h = **HistCursor;
+              Item.SequenceNumber = h.SeqNum;
+              Item.Key = h.Key;
+              Item.Op = h.Value;
+              Item.Mutator = h.Mutator;
+              /* Item.KeyArena / Item.OpArena were set in the ctor and are the
+                 same arenas the history cores live in. UpdateId stays zero
+                 (disk entries do not participate in cross-repo dedup -- the
+                 child-POV release filter in TRepo::StepMergeMem keeps released
+                 duplicates off disk; see #227). */
+              ++(*HistCursor);
+              --HistRemaining;
+              Cached = true;
+              return;
+            }
+            HistRemaining = 0UL;
+            HistCursor.reset();
             for (;Stream.GetOffset() < IndexFile->GetByteOffsetOfHistoryIndex();) {
               assert(Valid);
               Stream.Read(&Item.SequenceNumber, sizeof(TSequenceNumber) + sizeof(Atom::TCore) * 2);
-              /* Skip NumHistKeys + OffsetOfHistKeys (2 size_t), then read
-                 TMutator + skip its 4 bytes of trailing alignment padding
-                 (struct ends at sizeof(uint64_t) past the 2 size_t). The
-                 mutator goes onto Item.Mutator so context.cc's fold can
-                 see it -- this is the #49 phase 3 hookup that finishes
-                 what phase 1 plumbed structurally. */
-              Stream.Skip(sizeof(size_t) * 2U);
+              /* Read NumHistKeys + OffsetOfHistKeys (2 size_t) -- needed to
+                 replay this key's history below -- then read TMutator + skip
+                 its 4 bytes of trailing alignment padding (struct ends at
+                 sizeof(uint64_t) past the 2 size_t). The mutator goes onto
+                 Item.Mutator so context.cc's fold can see it. */
+              size_t num_hist_keys = 0UL, offset_of_hist_keys = 0UL;
+              Stream.Read(&num_hist_keys, sizeof(size_t));
+              Stream.Read(&offset_of_hist_keys, sizeof(size_t));
               Stream.Read(&Item.Mutator, sizeof(TMutator));
               Stream.Skip(sizeof(uint64_t) - sizeof(TMutator));
               Cached = true;
@@ -266,6 +288,7 @@ namespace Orly {
                   switch (res) {
                     case Sabot::TMatchResult::Unifies: {
                       /* we found a match. */
+                      ArmHistory(num_hist_keys, offset_of_hist_keys);
                       return;
                       break;
                     }
@@ -293,6 +316,7 @@ namespace Orly {
                     return;
                   } else {
                     /* we're still in the valid range. */
+                    ArmHistory(num_hist_keys, offset_of_hist_keys);
                     return;
                   }
                   break;
@@ -300,6 +324,18 @@ namespace Orly {
               }
             }
             Valid = false;
+          }
+
+          /* #227 / #49: after yielding a current key that is a deferred
+             commutative mutator, set up a cursor over its history entries so
+             the next Refresh() replays them into the fold. No-op for Assign
+             (latest-wins) keys and keys with no history. */
+          void ArmHistory(size_t num_hist_keys, size_t offset_of_hist_keys) const {
+            if (Item.Mutator != TMutator::Assign && num_hist_keys) {
+              HistCursor = std::make_unique<typename TMyReadFile::TIndexFile::THistoryKeyCursor>(
+                  IndexFile, offset_of_hist_keys / TData::KeyHistorySize);
+              HistRemaining = num_hist_keys;
+            }
           }
 
           /* TODO */
@@ -338,6 +374,17 @@ namespace Orly {
 
           /* TODO */
           mutable size_t Offset;
+
+          /* #227 / #49: when the current key just yielded is a deferred
+             commutative mutator, its earlier increments live as HISTORY
+             entries in this file (PushKey makes a key's first entry current
+             and the rest history). The read-time fold (context.cc
+             ApplyDeferredFold) needs every increment, so after yielding the
+             current entry we replay this key's history entries through the
+             same TItem. Without this, a commutative key that has been merged
+             to disk reads back as only its single current increment. */
+          mutable std::unique_ptr<typename TMyReadFile::TIndexFile::THistoryKeyCursor> HistCursor;
+          mutable size_t HistRemaining = 0UL;
 
           /* TODO */
           TLoaderObj *LoaderObj;
