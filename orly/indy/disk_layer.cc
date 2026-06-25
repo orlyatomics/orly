@@ -18,6 +18,8 @@
 
 #include <orly/indy/disk_layer.h>
 
+#include <syslog.h>
+
 using namespace std;
 using namespace Base;
 using namespace Orly::Indy;
@@ -44,6 +46,17 @@ TDiskLayer::~TDiskLayer() {
       Repo->RemoveFile(GenId);
     } catch (const Disk::TDiskServiceShutdown &/*ex*/) {
       /*ignore, we're shutting down by force! */
+    } catch (const std::exception &ex) {
+      /* A destructor must never let an exception escape: doing so calls
+         std::terminate and brings down the whole server. This one ran on
+         layer-cleanup (TManager::RunLayerCleaner deleting a marked-for-delete
+         disk layer). RemoveFile only reclaims the blocks of a file that is
+         already being deleted, so a failure here -- e.g. a device-capacity or
+         I/O error surfacing during cleanup -- is at worst a recoverable block
+         leak, never data loss. Log and swallow rather than terminate. */
+      syslog(LOG_ERR, "TDiskLayer::~TDiskLayer RemoveFile(%ld) failed: %s", GenId, ex.what());
+    } catch (...) {
+      syslog(LOG_ERR, "TDiskLayer::~TDiskLayer RemoveFile(%ld) failed: unknown exception", GenId);
     }
   }
 }
