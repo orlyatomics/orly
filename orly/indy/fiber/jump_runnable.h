@@ -63,13 +63,19 @@ namespace Orly {
           EnsureLocalFramePool(frame_pool_mngr);
           /* The fiber will set this flag when it's done. */
           Flag = false;
+          /* Remember the pool the frame is drawn from so Main() can return it
+             once the closure completes.  The frame is allocated on this (calling)
+             thread but runs on the runner's thread, where TFrame::LocalFramePool
+             names a different pool -- so we capture the origin pool here and the
+             fiber frees back to it.  Published to Main() through the Latch below. */
+          FramePool = Fiber::TFrame::LocalFramePool;
           /* Make a frame and latch it into the runner. */
-          auto *frame = Fiber::TFrame::LocalFramePool->Alloc();
+          auto *frame = FramePool->Alloc();
           assert(frame);
           try {
             frame->Latch(runner, this, static_cast<Fiber::TRunnable::TFunc>(&TJumpRunnable::Main));
           } catch (...) {
-            Fiber::TFrame::LocalFramePool->Free(frame);
+            FramePool->Free(frame);
             throw;
           }
           /* Wait for the flag to be set. */
@@ -113,12 +119,28 @@ namespace Orly {
           } catch (...) {
             ExceptionPtr = std::current_exception();
           }
+          /* Return our frame to the pool it came from.  FreeMyFrame() only
+             records the frame with the local runner; the scheduler reclaims it
+             when this fiber switches back to it after Main() returns.  We must do
+             this -- and read FramePool -- BEFORE signalling the waiter, because
+             once Flag is set the waiting thread may return from operator() and
+             destroy *this (the closure is typically a temporary).  FreeMyFrame()
+             touches only thread-locals, never *this, so it is safe to call after
+             we have copied the pool pointer out. */
+          auto *pool = FramePool;
+          Fiber::FreeMyFrame(pool);
           Flag = true;
           FlagSet.notify_one();
         }
 
         /* The closure we run in fiber-land. */
         TFunc Func;
+
+        /* The thread-local frame pool the frame was allocated from in operator().
+           Captured on the calling thread and read by Main() on the runner thread
+           (published via the Latch) so the fiber returns its frame to the right
+           pool. */
+        TFramePool::TThreadLocalPool *FramePool = nullptr;
 
         /* Covers 'Flag', below. */
         std::mutex Mutex;
