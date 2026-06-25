@@ -573,10 +573,29 @@ class TMergeDataFileImpl {
           idx_file.FlushHashes();
         }
       }
-      /* calculate how many updates we have */ {
-        for (const auto &read_file : ReadFileVec) {
-          /* we should be more clever about this. for now we're just grabbing all of them. */
-          NumUpdates += read_file->GetNumUpdates();
+      /* Calculate how many update (sequence-number) entries the index will
+         hold. This MUST equal the number of distinct sequence numbers the
+         write loop below actually emits: the seq region is reserved as
+         NumUpdates * UpdateEntrySize bytes and the bucket region is placed
+         immediately after it, so an over-estimate leaves an unwritten gap
+         (allocated-but-unwritten blocks -> the merge aborts) and persists a
+         wrong update count that the reader would scan past. Summing the input
+         files' update counts over-counts, because a merge folds/drops history
+         and dedups across files, so we count the distinct sequence numbers of
+         the entries that actually survived into the UpdateCollector. The
+         collector is sorted by sequence number (TUpdateObj::operator<), so a
+         single linear pass counting transitions mirrors the write loop. */ {
+        typename TUpdateCollector::TCursor count_csr(&UpdateCollector, MaxBlockCacheReadSlotsAllowed);
+        if (count_csr) {
+          TSequenceNumber prev_seq = (*count_csr).SequenceNumber;
+          NumUpdates = 1UL;
+          for (++count_csr; count_csr; ++count_csr) {
+            const TSequenceNumber seq = (*count_csr).SequenceNumber;
+            if (seq != prev_seq) {
+              ++NumUpdates;
+              prev_seq = seq;
+            }
+          }
         }
       }
       TCompletionTrigger completion_trigger;

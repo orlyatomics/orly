@@ -779,11 +779,9 @@ TDataFile::TDataFile(Util::TEngine *engine,
         HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
     std::unordered_map<Base::TUuid, std::unique_ptr<TIndexFile> > index_map;
     size_t main_arena_max_bytes = 0UL;
-    /* compute the number of updates */ {
-      for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr; ++csr) {
-        ++NumUpdates;
-      }
-    }
+    /* NumUpdates (the count of distinct sequence numbers in the update index)
+       is computed below, just before the update-index reservation, from the
+       fully-populated UpdateCollector -- see the comment there. */
     /* generate the arena index for each key index */ {
       std::optional<Base::TUuid> prev_index_id;
       TUpdate::TEntry *prev_entry = nullptr;
@@ -947,6 +945,34 @@ TDataFile::TDataFile(Util::TEngine *engine,
     }
 
     TCompletionTrigger completion_trigger;
+    /* The update index stores ONE entry per distinct sequence number (the
+       write loop below groups by SequenceNumber), so NumUpdates -- which
+       drives both the seq-region reservation and the bucket-region offset --
+       must equal that distinct count. Counting memory-layer updates over-
+       counts whenever several updates share a sequence number (e.g. the
+       folded layer TFoldDataFile produces, where many keys folded from the
+       same source transaction each become a TUpdate carrying that shared
+       SeqNum). An over-count leaves an unwritten gap between the seq and
+       bucket regions (allocated-but-unwritten blocks -> the flush aborts) and
+       persists a wrong count the reader would scan past. The UpdateCollector
+       is sorted by sequence number (TUpdateObj::operator<), so a single
+       linear pass counting transitions mirrors the write loop exactly. For a
+       normal flush -- one transaction per sequence number -- this equals the
+       memory-layer update count, so it is a no-op there. */ {
+      NumUpdates = 0UL;
+      TUpdateCollector::TCursor count_csr(&UpdateCollector, 32UL);
+      if (count_csr) {
+        TSequenceNumber prev_seq = (*count_csr).SequenceNumber;
+        NumUpdates = 1UL;
+        for (++count_csr; count_csr; ++count_csr) {
+          const TSequenceNumber seq = (*count_csr).SequenceNumber;
+          if (seq != prev_seq) {
+            ++NumUpdates;
+            prev_seq = seq;
+          }
+        }
+      }
+    }
     const size_t num_bytes_required_for_update_idx = (NumUpdates * UpdateBucketEntrySize) + (UpdateCollector.GetSize() * UpdateKeyPtrSize);
     const size_t byte_offset_of_update_entries = BlockVec.Size() * Disk::Util::LogicalBlockSize;
     const size_t byte_offset_of_bucket_entries = byte_offset_of_update_entries + (NumUpdates * UpdateBucketEntrySize);
