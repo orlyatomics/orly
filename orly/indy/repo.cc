@@ -551,7 +551,10 @@ void TRepo::StepMergeMem() {
                       const TUpdate::TEntry &cur_entry = *csr;
                       const auto iter = update_remap.find(cur_entry.GetUpdate());
                       assert(iter != update_remap.end());
-                      TUpdate::TEntry *new_entry = iter->second->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()));
+                      /* #227: MUST pass the mutator -- the 2-arg AddEntry defaults
+                         it to Assign (update.h), which silently turns a commutative
+                         Add into an Assign and caps the read-time fold. */
+                      TUpdate::TEntry *new_entry = iter->second->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()), cur_entry.GetMutator());
                       new_mem->ImporterAppendEntry(new_entry);
                     }
                   }
@@ -619,7 +622,13 @@ void TRepo::StepMergeMem() {
                     const auto iter = update_remap.find(cur_update);
                     assert(iter != update_remap.end());
                     TUpdate *new_update = iter->second;
-                    TUpdate::TEntry *new_entry = new_update->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()));
+                    /* #227: pass the mutator (see the size==1 path) -- the 2-arg
+                       AddEntry defaults to Assign and would turn a commutative
+                       Add into an Assign during this mem-layer consolidation,
+                       seeding the disk Assign that caps the read fold. This
+                       latent bug was dormant until the merge scheduler fix made
+                       StepMergeMem actually run. */
+                    TUpdate::TEntry *new_entry = new_update->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()), cur_entry.GetMutator());
                     new_mem->ImporterAppendEntry(new_entry);
                   }
                   ++csr;
