@@ -243,13 +243,29 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
               &out_arena,
               Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, e.Op)).get());
         }
-        TUpdate::TOpByKey op_by_key{
-            {TIndexKey(index_id, g.Key), op_key}
-        };
+        const TIndexKey index_key(index_id, g.Key);
+        /* Build the entry under its OWN mutator. NewUpdate(op_by_key, ...)
+           tags every entry Assign, which is wrong for a folded run that
+           stays commutative (FoldOneKey returns out.Mutator == the source
+           commutative mutator when the run never bottomed out at an Assign
+           base or tombstone). Emitting such a run as Assign would make it
+           cap the read-path fold (latest-assign-wins), shadowing the same
+           key's partials in the other LSM files -- a hot key written N
+           times across many files would read back as just one folded
+           group. So Assign entries go through the TOpByKey ctor (existing
+           semantics) and non-Assign entries go through AddEntry post-
+           construction, mirroring TRepo::GetLowestUpdate. */
+        TUpdate::TOpByKey op_by_key;
+        if (e.Mutator == TMutator::Assign) {
+          op_by_key.insert(std::make_pair(index_key, op_key));
+        }
         auto update = TUpdate::NewUpdate(
             op_by_key,
             Indy::TKey(&out_arena),
             Indy::TKey(TUuid(TUuid::Twister), &out_arena, state_alloc));
+        if (e.Mutator != TMutator::Assign) {
+          update->AddEntry(index_key, op_key, e.Mutator);
+        }
         update->SetSequenceNumber(e.SeqNum);
         out_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
 
