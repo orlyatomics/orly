@@ -138,13 +138,22 @@ void TRepo::AddFileToRepo(size_t gen_id, TSequenceNumber saved_low_seq, TSequenc
 }
 
 void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
-  assert(seq_num < NextUpdate);
-  assert(seq_num == ReleasedUpTo + 1L || ensure_or_discard);
-  if (!ensure_or_discard || seq_num == ReleasedUpTo + 1L) {
-    ReleasedUpTo = seq_num;
-  }
+  /* #227: publish ReleasedUpTo UNDER DataLock. StepMergeMem reads it (also
+     under DataLock) as the high-water mark below which a child repo DROPS its
+     mem entries -- on the contract that everything <= ReleasedUpTo is already
+     promoted to the parent. The store was previously done lock-free, so the
+     merge could read a racy/half-published ReleasedUpTo and drop child entries
+     whose promotion wasn't yet visible, losing ~50% of a concurrent fresh-key
+     burst (only surfaced once the merge scheduler fix made StepMergeMem run).
+     Serializing it with the seq-number state the merge snapshots closes that
+     window. */
   /* Acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
+    assert(seq_num < NextUpdate);
+    assert(seq_num == ReleasedUpTo + 1L || ensure_or_discard);
+    if (!ensure_or_discard || seq_num == ReleasedUpTo + 1L) {
+      ReleasedUpTo = seq_num;
+    }
     if ((HighestSeqNum && seq_num == *HighestSeqNum) || (!HighestSeqNum && seq_num == NextUpdate - 1)) {
       if (!IsSafeRepo()) {
         RemoveFromDirty();
