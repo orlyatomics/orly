@@ -484,10 +484,25 @@ void TRepo::StepMergeMem() {
           //syslog(LOG_INFO, "Layout Disk=[%ld]\tMem=[%ld]\tToMerge=[%ld]\t\t\tTaken=[%ld]", num_disk, total_count - num_disk, mem_to_merge_vec.size(), taken);
           if (mem_to_merge_vec.size() == 1) {
               //syslog(LOG_INFO, "mem_to_merge_vec.size() == 1");
-              if (IsSafeRepo() && !reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0])->IsEmpty()) {
+              if (IsSafeRepo() && !ParentRepo && !reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0])->IsEmpty()) {
+                /* #227: ONLY the root repo (safe, no parent -- the global pov)
+                   flushes to disk. The root is the durable home of record, so
+                   its entries must NOT be dropped (nothing else holds them);
+                   write the whole layer. Child POVs deliberately fall through
+                   to the in-memory path below: a child's durable home is its
+                   parent (its writes are Tetris-promoted up), so its own
+                   disk copy is always redundant. Crucially, never letting a
+                   child reach disk is what keeps reads correct -- a child copy
+                   that landed on disk would carry a zero UpdateId and so escape
+                   the cross-repo Tetris-window dedup in context.cc, making
+                   commutative `+=` double-count. Keeping child data in memory
+                   (where the walker reports the real UpdateId) lets that dedup
+                   work. See the RunMergeMem deadline fix that first made any of
+                   this code actually run. */
+                TMemoryLayer *const src = reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0]);
                 size_t num_keys = 0U;
                 TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
-                size_t gen_id = WriteFile(reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0]), storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
+                size_t gen_id = WriteFile(src, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
                 {
                   std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                   Manager->MergeMemAverageKeysCalc.Push(num_keys);
@@ -496,15 +511,52 @@ void TRepo::StepMergeMem() {
                 delete new_mem;
                 new_mem = nullptr;
               } else {
-                if (mem_to_merge_vec[0]->GetSize() && mem_to_merge_vec[0]->GetUpdateCollection()->TryGetLastMember()->GetSequenceNumber() <= lower_seq_bound) {
+                /* #227: not the flushing root. This is a child POV (safe or
+                   fast) or a non-safe root. Keep data in memory; for a child,
+                   drop entries already released to the parent so they do not
+                   linger to duplicate the parent's on-disk (zero-UpdateId) copy
+                   and defeat the cross-repo dedup. */
+                TMemoryLayer *const src = reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0]);
+                const bool empty = (src->GetSize() == 0UL);
+                const TSequenceNumber last_seq = empty ? 0UL : src->GetUpdateCollection()->TryGetLastMember()->GetSequenceNumber();
+                const TSequenceNumber first_seq = empty ? 0UL : src->GetUpdateCollection()->TryGetFirstMember()->GetSequenceNumber();
+                if (!empty && last_seq <= lower_seq_bound) {
+                  /* every entry already released -> drop the whole layer. */
                   DEBUG_LOG("Skipping because of lower_seq_bound [%ld]", lower_seq_bound);
                   delete new_mem;
                   new_mem = nullptr;
-                } else {
-                  mem_to_merge_vec[0]->UnmarkTaken();
+                } else if (empty || !ParentRepo || first_seq > lower_seq_bound) {
+                  /* nothing to drop (root keeps everything; or a child whose
+                     entries are all still unreleased) -> leave the single layer
+                     in place with no copy, as the original fast path did. */
+                  src->UnmarkTaken();
                   delete new_mem;
                   ReleaseMapping(mapping);
                   return;
+                } else {
+                  /* child with a mix of released + unreleased entries -> keep
+                     only the unreleased remainder in memory; the released ones
+                     live in the parent. */
+                  std::unordered_map<const TUpdate *, TUpdate *> update_remap;
+                  for (TMemoryLayer::TUpdateCollection::TCursor csr(src->GetUpdateCollection()); csr; ++csr) {
+                    if (csr->GetSequenceNumber() > lower_seq_bound) {
+                      TUpdate *new_update = TUpdate::ShallowCopy(&*csr, state_alloc);
+                      auto ret = update_remap.insert(make_pair(&*csr, new_update));
+                      assert(ret.second);
+                      new_mem->ImporterAppendUpdate(new_update);
+                    }
+                  }
+                  for (TMemoryLayer::TEntryCollection::TCursor csr(src->GetEntryCollection()); csr; ++csr) {
+                    if (csr->GetSequenceNumber() > lower_seq_bound) {
+                      const TUpdate::TEntry &cur_entry = *csr;
+                      const auto iter = update_remap.find(cur_entry.GetUpdate());
+                      assert(iter != update_remap.end());
+                      TUpdate::TEntry *new_entry = iter->second->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()));
+                      new_mem->ImporterAppendEntry(new_entry);
+                    }
+                  }
+                  /* new_mem (unreleased remainder) is added to the mapping
+                     below; src is MarkForDelete'd there. */
                 }
               }
             } else if(mem_to_merge_vec.size() >= 2) {
@@ -542,7 +594,11 @@ void TRepo::StepMergeMem() {
                   TUpdate *cur_update = update_sorter.Pop(pos);
                   auto &csr = update_csr_vec[pos];
                   assert(cur_update == &*csr);
-                  if (csr->GetSequenceNumber() > lower_seq_bound) {
+                  /* #227: only a CHILD repo may drop released entries (the
+                     parent retains them). The ROOT (no parent) is the durable
+                     home and must keep everything, else flushing released
+                     entries to disk would lose them. */
+                  if (!ParentRepo || csr->GetSequenceNumber() > lower_seq_bound) {
                     TUpdate *new_update = TUpdate::ShallowCopy(cur_update, state_alloc);
                     auto ret = update_remap.insert(make_pair(cur_update, new_update));
                     assert(ret.second);
@@ -557,7 +613,8 @@ void TRepo::StepMergeMem() {
                   size_t pos = entry_sorter.Pop();
                   auto &csr = entry_csr_vec[pos];
                   const TUpdate::TEntry &cur_entry = *csr;
-                  if (csr->GetSequenceNumber() > lower_seq_bound) {
+                  /* #227: see the update-loop above -- root keeps all, child drops released. */
+                  if (!ParentRepo || csr->GetSequenceNumber() > lower_seq_bound) {
                     const TUpdate *cur_update = cur_entry.GetUpdate();
                     const auto iter = update_remap.find(cur_update);
                     assert(iter != update_remap.end());
@@ -571,15 +628,23 @@ void TRepo::StepMergeMem() {
                   }
                 }
               }  // end sorter alloca scope
-              if (IsSafeRepo() && !new_mem->IsEmpty()) {
-                size_t num_keys = 0U;
-                TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
-                size_t gen_id = WriteFile(new_mem, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
-                {
-                  std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
-                  Manager->MergeMemAverageKeysCalc.Push(num_keys);
+              if (IsSafeRepo() && !ParentRepo) {
+                /* #227: ONLY the root flushes (see the size==1 path above).
+                   A safe ROOT always consumes new_mem here; it may come out
+                   EMPTY only if the whole layer was empty, but free/null it
+                   either way. Safe CHILD repos do NOT flush -- their (filtered,
+                   unreleased) new_mem stays in memory and is added to the
+                   mapping below, exactly like a fast repo. */
+                if (!new_mem->IsEmpty()) {
+                  size_t num_keys = 0U;
+                  TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
+                  size_t gen_id = WriteFile(new_mem, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
+                  {
+                    std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
+                    Manager->MergeMemAverageKeysCalc.Push(num_keys);
+                  }
+                  new_disk = new TDiskLayer(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
                 }
-                new_disk = new TDiskLayer(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
                 delete new_mem;
                 new_mem = nullptr;
               }
@@ -616,7 +681,12 @@ void TRepo::StepMergeMem() {
                 }
               }
               if (new_mem) {
-                assert(!IsSafeRepo());
+                /* #227: new_mem survives to the mapping only for repos that do
+                   NOT flush to disk -- fast repos (!IsSafeRepo) and safe CHILD
+                   repos (ParentRepo), which keep their unreleased data in
+                   memory so the cross-repo dedup keeps working. The safe ROOT
+                   always flushed + nulled new_mem above. */
+                assert(!IsSafeRepo() || ParentRepo);
                 assert(new_mem->IsEmpty() == (new_mem->GetSize() == 0UL));
                 if (new_mem->IsEmpty()) {
                   DEBUG_LOG("New mem is empty, resetting to nullptr");
