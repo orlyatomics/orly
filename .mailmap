@@ -1,0 +1,7 @@
+# Canonicalize author/committer display names without rewriting history
+# (see git-shortlog(1), "MAPPING AUTHORS"). Older commits from the 2014/ASF
+# era used "Patrick Reilly <preilly@php.net>"; the correct spelling is
+# "Patrick O'Reilly". Mapping the display name keeps the original email, so
+# GitHub attribution is unchanged — only the spelling is corrected everywhere
+# (git log / blame / shortlog and GitHub's UI).
+Patrick O'Reilly <preilly@php.net>
