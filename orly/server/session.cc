@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/server/session.h>
+#include <algorithm>
 #include <optional>
 
 #include <orly/atom/suprena.h>
@@ -240,7 +241,21 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       /* Register the defer-safe commutative mutations gathered above.
          These don't go through TOpByKey because op_by_key is a map and
          TUpdate's TOpByKey ctor always tags entries Assign -- the
-         AddEntry overload (added in #49 phase 1) takes the mutator. */
+         AddEntry overload (added in #49 phase 1) takes the mutator.
+
+         #perf: the deferred entries arrive in write order. AddEntry
+         ReverseInserts each into update->EntryCollection, which is ordered by
+         TKey; in write order across several indices each insert scans O(N) to
+         find its slot, so committing a transaction of N commutative writes
+         (e.g. a batched bulk load) is O(N^2) -- the dominant cost of a large
+         batch once the per-write read was removed. Sorting by TKey first makes
+         each ReverseInsert append in O(1) (O(N log N) total). Correct
+         regardless of sort quality: ReverseInsert always finds the right slot;
+         only the scan length depends on the order. */
+      std::ranges::sort(deferred_entries, {},
+                        [](const auto &entry) -> const Indy::TKey & {
+                          return std::get<0>(entry).GetKey();
+                        });
       for (auto &entry : deferred_entries) {
         update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
       }
