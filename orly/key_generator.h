@@ -335,6 +335,24 @@ namespace Orly {
           Sabot::AsNative<TRet>(*Sabot::State::TAny::TWrapper(val.GetState(state_alloc))));
     }
 
+    /* Commutative-upsert LHS *address* (#151/#152). The codegen emits this for
+       the left side of a defer-safe commutative `*<[k]>::(T) OP= v` mutation
+       and only ever consumes its `.GetAddr()` -- the value is never read (see
+       code_gen/effect.cc, which emits `.GetAddr()`, never `.GetVal()`, for a
+       TMutable mutable). Unlike ReadOrIdentity it therefore does NOT read the
+       current value: the mutation is recorded directly on the address and an
+       absent key auto-initialises from the monoid identity at fold time, so
+       the read served no purpose. Skipping it makes a commutative write O(1)
+       instead of paying an O(pending-writes) TContext::operator[] lookup --
+       which turned a transaction of N commutative writes into O(N^2), and a
+       2x cost even on single writes. It also keeps a coordination-free `+=`
+       from creating a spurious read-dependency (#49). The value slot holds the
+       monoid identity and is unused. */
+    template <typename TRet, typename TAddr>
+    TMutable<TAddr, TRet> IdentityAddr(TContextBase &/*ctx*/, const TAddr &addr, const Base::TUuid &/*index_id*/) {
+      return TMutable<TAddr, TRet>(TOpt<TAddr>(addr), TRet());
+    }
+
     /* TODO: This is an odd place for this. Oh well. */
     template <typename TAddr>
     bool Exists(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {
