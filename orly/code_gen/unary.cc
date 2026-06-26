@@ -86,15 +86,19 @@ void TUnary::WriteExpr(TCppPrinter &out) const {
       break;
     }
     case ReadOrIdentity: {
-      /* Issue #151: commutative-upsert read. Like Read, but an absent
-         key resolves to the monoid identity instead of throwing. Only
-         emitted for the LHS of a defer-safe commutative mutation whose
-         identity is the default value (see code_gen/builder.cc). */
+      /* Issue #151: commutative-upsert LHS. Only emitted for the LHS of a
+         defer-safe commutative mutation, where the codegen consumes only the
+         ADDRESS (.GetAddr()) and an absent key auto-initialises from the monoid
+         identity at fold time. We therefore emit IdentityAddr, which provides
+         the address WITHOUT reading the current value -- the read was pure
+         overhead (an O(pending-writes) flux lookup per write, O(N^2) for a
+         batched transaction) and risked a spurious read-dependency on a
+         coordination-free write. See orly/key_generator.h. */
       const Base::TUuid &index_id =
           Package->GetIndexIdFor(Expr->GetReturnType(), GetReturnType());
       char uuid[37];
       index_id.FormatUnderscore(uuid);
-      out << "ReadOrIdentity<" << Type::UnwrapMutable(GetReturnType()) << ">(ctx.GetFlux(), " << Expr << ", " << Package->GetName() << "::My" << uuid << ")";
+      out << "IdentityAddr<" << Type::UnwrapMutable(GetReturnType()) << ">(ctx.GetFlux(), " << Expr << ", " << Package->GetName() << "::My" << uuid << ")";
       break;
     }
     case ReverseOf: Call(out, "Reverse");

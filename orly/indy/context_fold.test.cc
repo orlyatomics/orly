@@ -269,6 +269,19 @@ FIXTURE(Issue151CommutativeUpsertRead) {
       EXPECT_EQ(context[counter_key], TKey(1L, &arena, state_alloc));
     }
 
+    /* (c) IdentityAddr -- what the codegen actually emits for the
+       commutative-upsert LHS. It hands back the address WITHOUT reading the
+       current value (so it never throws and is O(1), regardless of how many
+       writes are pending in the transaction); the absent-key seed happens at
+       fold time, and callers consume only .GetAddr(). The address must be
+       known whether or not the key already exists. */
+    {
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      auto m = Orly::Rt::IdentityAddr<int64_t>(context, make_tuple(1L), idx_id);
+      EXPECT_TRUE(m.GetOptAddr().IsKnown());
+    }
+
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();
