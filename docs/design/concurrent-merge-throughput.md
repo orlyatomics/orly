@@ -1,8 +1,9 @@
 # Design: Concurrent write throughput — the single-threaded global merge
 
-> Status: **gated RFC** (verified findings + design; not yet scheduled). Same
-> bar as the merge/graph RFCs — do not implement until there is demand, and
-> implement in a fresh session behind the TSan gate (#201).
+> Status: **gated RFC** (verified findings + design; not yet scheduled),
+> tracked by **issue #234**. Same bar as the merge/graph RFCs — do not
+> implement until there is demand, and implement in a fresh session behind the
+> TSan gate (#201).
 
 ## 0. The key realization
 
