@@ -307,6 +307,12 @@ namespace Orly {
         /* TODO */
         bool LogAssertionFailures;
 
+        /* If true, the global-POV merge promotes ALL ready commutative
+           (assertion-free) children per round instead of one, collapsing the
+           O(N^2) per-round re-snapshot/re-sort into O(N). Default off until the
+           TSan gate + soak sign off (issue #234). */
+        bool TetrisCommutativeFastlane;
+
         /******** Object Pools ********/
 
         /* TODO */
