@@ -42,6 +42,27 @@ void TSigmaCalc::Push(double val) {
   ++Count;
 }
 
+void TSigmaCalc::Add(const TSigmaCalc &that) {
+  if (!that.Count) {
+    return;
+  }
+  if (!Count) {
+    *this = that;
+    return;
+  }
+  const size_t combined_count = Count + that.Count;
+  const double delta = that.MovingMean - MovingMean;
+  /* MovingSquare is the sum of squared deviations from the mean (Welford's M2);
+     the cross term accounts for the shift between the two partial means. */
+  MovingSquare += that.MovingSquare +
+      delta * delta * (static_cast<double>(Count) * static_cast<double>(that.Count) /
+                       static_cast<double>(combined_count));
+  MovingMean += delta * static_cast<double>(that.Count) / static_cast<double>(combined_count);
+  Min = min(Min, that.Min);
+  Max = max(Max, that.Max);
+  Count = combined_count;
+}
+
 size_t TSigmaCalc::Report(double &min, double &max, double &mean, double &sigma) const {
   if (Count) {
     min   = Min;

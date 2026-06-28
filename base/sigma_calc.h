@@ -39,6 +39,13 @@ namespace Base {
     /* Push a value into the calculator. */
     void Push(double val);
 
+    /* Combine the accumulated stats of another calculator into this one, as if
+       every value that had been pushed into `that` were pushed into this. Uses
+       the parallel (Chan et al.) form of Welford's algorithm so it is exact and
+       order-independent -- this lets per-thread calculators be merged into a
+       single aggregate without serializing the hot Push() path. */
+    void Add(const TSigmaCalc &that);
+
     /* If Push() has been called at least once, return the stats via the out-params and return the
        number of pushes; otherwise, leave the out-params alone and return zero. */
     size_t Report(double &min, double &max, double &mean, double &sigma) const;
