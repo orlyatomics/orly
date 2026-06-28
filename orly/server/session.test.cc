@@ -54,22 +54,21 @@ Orly::Indy::Util::TPool TRepo::TDataLayer::Pool(max(sizeof(TMemoryLayer), sizeof
 Orly::Indy::Util::TPool L1::TTransaction::TMutation::Pool(max(max(sizeof(L1::TTransaction::TPusher), sizeof(L1::TTransaction::TPopper)), sizeof(L1::TTransaction::TStatusChanger)), "Transaction::TMutation");
 Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transaction");
 
-Base::TSigmaCalc TSession::TServer::TryReadTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryReadCPUTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteCPUTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryWalkerCountCalc;
-Base::TSigmaCalc TSession::TServer::TryCallCPUTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryReadCallTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteCallTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryWalkerConsTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryFetchCountCalc;
-Base::TSigmaCalc TSession::TServer::TryHashHitCountCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteSyncHitCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteSyncTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryReadSyncHitCalc;
-Base::TSigmaCalc TSession::TServer::TryReadSyncTimeCalc;
-std::mutex       TSession::TServer::TryTimeLock;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadCPUTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteCPUTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWalkerCountCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryCallCPUTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadCallTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteCallTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWalkerConsTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryFetchCountCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryHashHitCountCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteSyncHitCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteSyncTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadSyncHitCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadSyncTimeCalc;
 
 static const size_t WarningCount = 3;
 

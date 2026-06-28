@@ -82,22 +82,21 @@ Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update");
 Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry");
 Disk::TBufBlock::TPool Disk::TBufBlock::Pool(BlockSize);
 
-Base::TSigmaCalc TSession::TServer::TryReadTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryReadCPUTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteCPUTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryWalkerCountCalc;
-Base::TSigmaCalc TSession::TServer::TryCallCPUTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryReadCallTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteCallTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryWalkerConsTimerCalc;
-Base::TSigmaCalc TSession::TServer::TryFetchCountCalc;
-Base::TSigmaCalc TSession::TServer::TryHashHitCountCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteSyncHitCalc;
-Base::TSigmaCalc TSession::TServer::TryWriteSyncTimeCalc;
-Base::TSigmaCalc TSession::TServer::TryReadSyncHitCalc;
-Base::TSigmaCalc TSession::TServer::TryReadSyncTimeCalc;
-std::mutex       TSession::TServer::TryTimeLock;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadCPUTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteCPUTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWalkerCountCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryCallCPUTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadCallTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteCallTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWalkerConsTimerCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryFetchCountCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryHashHitCountCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteSyncHitCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryWriteSyncTimeCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadSyncHitCalc;
+Base::TThreadLocalSigmaCalc TSession::TServer::TryReadSyncTimeCalc;
 
 TServer::TCmd::TMeta::TMeta(const char *desc)
     : TLog::TCmd::TMeta(desc) {
@@ -2854,37 +2853,28 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
     Server->GetRepoManager()->MergeDiskAverageKeysCalc.Reset();
   }
 
-  /* acquire TryTime lock */ {
-    std::lock_guard<std::mutex> lock(Server->TryTimeLock);
-    try_read_count = TServer::TryReadTimeCalc.Report(try_read_min, try_read_max, try_read_mean, try_read_sigma);
-    TServer::TryReadCPUTimeCalc.Report(try_read_cpu_min, try_read_cpu_max, try_read_cpu_mean, try_read_cpu_sigma);
-    TServer::TryReadTimeCalc.Reset();
-    TServer::TryReadCPUTimeCalc.Reset();
-    try_write_count = TServer::TryWriteTimeCalc.Report(try_write_min, try_write_max, try_write_mean, try_write_sigma);
-    TServer::TryWriteCPUTimeCalc.Report(try_write_cpu_min, try_write_cpu_max, try_write_cpu_mean, try_write_cpu_sigma);
-    TServer::TryWriteTimeCalc.Reset();
-    TServer::TryWriteCPUTimeCalc.Reset();
+  /* TThreadLocalSigmaCalc folds across all producer threads internally, so no
+     external lock is needed here. Drain() atomically reports-and-resets each
+     calculator, so no concurrently-pushed sample is lost in a report/reset gap. */ {
+    try_read_count = TServer::TryReadTimeCalc.Drain(try_read_min, try_read_max, try_read_mean, try_read_sigma);
+    TServer::TryReadCPUTimeCalc.Drain(try_read_cpu_min, try_read_cpu_max, try_read_cpu_mean, try_read_cpu_sigma);
+    try_write_count = TServer::TryWriteTimeCalc.Drain(try_write_min, try_write_max, try_write_mean, try_write_sigma);
+    TServer::TryWriteCPUTimeCalc.Drain(try_write_cpu_min, try_write_cpu_max, try_write_cpu_mean, try_write_cpu_sigma);
 
-    TServer::TryWalkerCountCalc.Report(try_walker_count_min, try_walker_count_max, try_walker_count_mean, try_walker_count_sigma);
-    TServer::TryWalkerCountCalc.Reset();
+    TServer::TryWalkerCountCalc.Drain(try_walker_count_min, try_walker_count_max, try_walker_count_mean, try_walker_count_sigma);
 
-    TServer::TryCallCPUTimerCalc.Report(try_call_cpu_time_min, try_call_cpu_time_max, try_call_cpu_time_mean, try_call_cpu_time_sigma);
-    TServer::TryCallCPUTimerCalc.Reset();
+    TServer::TryCallCPUTimerCalc.Drain(try_call_cpu_time_min, try_call_cpu_time_max, try_call_cpu_time_mean, try_call_cpu_time_sigma);
 
-    TServer::TryReadCallTimerCalc.Report(try_read_call_time_min, try_read_call_time_max, try_read_call_time_mean, try_read_call_time_sigma);
-    TServer::TryReadCallTimerCalc.Reset();
+    TServer::TryReadCallTimerCalc.Drain(try_read_call_time_min, try_read_call_time_max, try_read_call_time_mean, try_read_call_time_sigma);
 
-    TServer::TryWriteCallTimerCalc.Report(try_write_call_time_min, try_write_call_time_max, try_write_call_time_mean, try_write_call_time_sigma);
-    TServer::TryWriteCallTimerCalc.Reset();
+    TServer::TryWriteCallTimerCalc.Drain(try_write_call_time_min, try_write_call_time_max, try_write_call_time_mean, try_write_call_time_sigma);
 
-    TServer::TryWalkerConsTimerCalc.Report(try_walker_cons_time_min, try_walker_cons_time_max, try_walker_cons_time_mean, try_walker_cons_time_sigma);
-    TServer::TryWalkerConsTimerCalc.Reset();
+    TServer::TryWalkerConsTimerCalc.Drain(try_walker_cons_time_min, try_walker_cons_time_max, try_walker_cons_time_mean, try_walker_cons_time_sigma);
 
-    TServer::TryFetchCountCalc.Report(try_fetch_count_min, try_fetch_count_max, try_fetch_count_mean, try_fetch_count_sigma);
-    TServer::TryFetchCountCalc.Reset();
+    TServer::TryFetchCountCalc.Drain(try_fetch_count_min, try_fetch_count_max, try_fetch_count_mean, try_fetch_count_sigma);
 
     try_count = try_read_count + try_write_count;
-  }  // release TryTime lock
+  }  // Try stats
   ReportTimer.Stop();
   double elapsed_time = ToSecondsDouble(ReportTimer.GetLap());
   #ifdef PERF_STATS

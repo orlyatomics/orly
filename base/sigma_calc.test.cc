@@ -58,6 +58,42 @@ FIXTURE(Large) {
   }
 }
 
+FIXTURE(Add) {
+  /* Merging two partial calculators must equal pushing every value into one. */
+  constexpr int vals[] = { 4, 2, 5, 8, 6, 1, 9, 3, 7 };
+  constexpr size_t val_count = sizeof(vals) / sizeof(vals[0]);
+
+  TSigmaCalc whole;
+  for (size_t i = 0; i < val_count; ++i) {
+    whole.Push(vals[i]);
+  }
+
+  for (size_t split = 0; split <= val_count; ++split) {
+    TSigmaCalc left, right;
+    for (size_t i = 0; i < val_count; ++i) {
+      (i < split ? left : right).Push(vals[i]);
+    }
+    left.Add(right);
+    double wmin, wmax, wmean, wsigma;
+    double amin, amax, amean, asigma;
+    whole.Report(wmin, wmax, wmean, wsigma);
+    EXPECT_EQ(left.Report(amin, amax, amean, asigma), val_count);
+    EXPECT_EQ(amin, wmin);
+    EXPECT_EQ(amax, wmax);
+    EXPECT_TRUE(fabs(amean - wmean) < 1e-9);
+    EXPECT_TRUE(fabs(asigma - wsigma) < 1e-9);
+  }
+
+  /* Adding an empty calculator is a no-op; adding to an empty one copies. */
+  TSigmaCalc empty;
+  TSigmaCalc copy;
+  copy.Add(whole);
+  double cmin, cmax, cmean, csigma;
+  EXPECT_EQ(copy.Report(cmin, cmax, cmean, csigma), val_count);
+  copy.Add(empty);
+  EXPECT_EQ(copy.Report(cmin, cmax, cmean, csigma), val_count);
+}
+
 FIXTURE(Write) {
   TSigmaCalc calc;
   ostringstream strm;

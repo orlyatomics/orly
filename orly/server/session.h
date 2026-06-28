@@ -29,6 +29,7 @@
 #include <base/event_semaphore.h>
 #include <optional>
 #include <base/sigma_calc.h>
+#include <base/thread_local_sigma_calc.h>
 #include <base/thrower.h>
 #include <base/uuid.h>
 #include <orly/durable/kit.h>
@@ -69,25 +70,27 @@ namespace Orly {
         /* TODO */
         virtual Base::TScheduler *GetScheduler() const = 0;
 
-        /* TODO */
-        static Base::TSigmaCalc TryReadTimeCalc;
-        static Base::TSigmaCalc TryReadCPUTimeCalc;
-        static Base::TSigmaCalc TryWriteTimeCalc;
-        static Base::TSigmaCalc TryWriteCPUTimeCalc;
-        static Base::TSigmaCalc TryWalkerCountCalc;
-        static Base::TSigmaCalc TryWalkerConsTimerCalc;
-        static Base::TSigmaCalc TryCallCPUTimerCalc;
-        static Base::TSigmaCalc TryReadCallTimerCalc;
-        static Base::TSigmaCalc TryWriteCallTimerCalc;
-        static Base::TSigmaCalc TryFetchCountCalc;
-        static Base::TSigmaCalc TryHashHitCountCalc;
+        /* Per-`Try` latency/counter statistics. These are pushed on every read
+           and write (the hot path) and folded into a single aggregate by the
+           periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator
+           per producing thread so Push() takes no globally-contended lock --
+           the old per-`Try` `TryTimeLock` mutex is gone. */
+        static Base::TThreadLocalSigmaCalc TryReadTimeCalc;
+        static Base::TThreadLocalSigmaCalc TryReadCPUTimeCalc;
+        static Base::TThreadLocalSigmaCalc TryWriteTimeCalc;
+        static Base::TThreadLocalSigmaCalc TryWriteCPUTimeCalc;
+        static Base::TThreadLocalSigmaCalc TryWalkerCountCalc;
+        static Base::TThreadLocalSigmaCalc TryWalkerConsTimerCalc;
+        static Base::TThreadLocalSigmaCalc TryCallCPUTimerCalc;
+        static Base::TThreadLocalSigmaCalc TryReadCallTimerCalc;
+        static Base::TThreadLocalSigmaCalc TryWriteCallTimerCalc;
+        static Base::TThreadLocalSigmaCalc TryFetchCountCalc;
+        static Base::TThreadLocalSigmaCalc TryHashHitCountCalc;
 
-        static Base::TSigmaCalc TryWriteSyncHitCalc;
-        static Base::TSigmaCalc TryWriteSyncTimeCalc;
-        static Base::TSigmaCalc TryReadSyncHitCalc;
-        static Base::TSigmaCalc TryReadSyncTimeCalc;
-
-        static std::mutex TryTimeLock;
+        static Base::TThreadLocalSigmaCalc TryWriteSyncHitCalc;
+        static Base::TThreadLocalSigmaCalc TryWriteSyncTimeCalc;
+        static Base::TThreadLocalSigmaCalc TryReadSyncHitCalc;
+        static Base::TThreadLocalSigmaCalc TryReadSyncTimeCalc;
 
         protected:
 

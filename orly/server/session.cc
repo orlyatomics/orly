@@ -265,18 +265,18 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();
-    /* Acquire TryTime lock */ {
-      std::lock_guard<std::mutex> lock(TServer::TryTimeLock);
-      if (had_effects) {
-        TServer::TryWriteTimeCalc.Push(ToSecondsDouble(timer.GetTotal()));
-        TServer::TryWriteCallTimerCalc.Push(ToSecondsDouble(call_timer.GetTotal()));
-      } else {
-        TServer::TryReadTimeCalc.Push(ToSecondsDouble(timer.GetTotal()));
-        TServer::TryReadCallTimerCalc.Push(ToSecondsDouble(call_timer.GetTotal()));
-      }
-      TServer::TryWalkerCountCalc.Push(walker_count);
-      TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
+    /* Record per-`Try` stats. TThreadLocalSigmaCalc::Push is lock-free across
+       threads (each thread accumulates into its own calculator), so concurrent
+       writers/readers no longer serialize here on a global mutex. */
+    if (had_effects) {
+      TServer::TryWriteTimeCalc.Push(ToSecondsDouble(timer.GetTotal()));
+      TServer::TryWriteCallTimerCalc.Push(ToSecondsDouble(call_timer.GetTotal()));
+    } else {
+      TServer::TryReadTimeCalc.Push(ToSecondsDouble(timer.GetTotal()));
+      TServer::TryReadCallTimerCalc.Push(ToSecondsDouble(call_timer.GetTotal()));
     }
+    TServer::TryWalkerCountCalc.Push(walker_count);
+    TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
     return TMethodResult(indy_context.GetArena(), result_core, tracker);
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::Try : [%s]", ex.what());
