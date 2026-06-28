@@ -424,31 +424,46 @@ split (`server.cc:552`, the `num_proc >= 8` branch on this 8-core box) gives
 `FastCoreVec = {3,6,7}` — **3 runners**. The numbers fit exactly: `740 × 3 ≈ 2200`;
 K=4 hits 3.06× then goes flat.
 
-### 9.4 Confirming experiment — it scales with fast cores
+### 9.4 Confirming experiment — adding fast cores raises throughput
 
-Raised the pool from 3 → 5 fast cores (`--fast_cores`). Throughput rose ~linearly:
+Raised the pool from 3 → 5 fast cores via `--fast_cores`:
 
 | fast cores | single-writer w/s | plateau w/s |
 |---|---:|---:|
-| 3 (default) | 740 | ~2200 |
-| 5 (+2) | 1215 | ~4000 |
-| ratio | 1.64× | 1.82× |
+| 3 (default, cores `{3,6,7}`) | 740 | ~2200 |
+| 5 (default + `{0,1}`) | 1215 | ~4000 |
 
-Core ratio 5/3 = 1.67×; both single-writer and aggregate tracked it. Even the
-single-writer number rose, so per-call latency itself was inflated by fast-runner
-contention at 3 cores — the per-write work is not confined to one runner. Clean
-linear scaling rules out a global-lock wall.
+So more fast cores raised throughput, confirming the cap is fast-scheduler
+execution capacity (and ruling out a global-lock wall — per-runner throughput is
+not pinned to a single serialized critical section). Even single-writer throughput
+rose, so per-call latency is inflated by fast-runner contention; the per-write work
+is not confined to one runner.
 
-> Caveat: `--fast_cores` **appends** to the auto-derived defaults rather than
-> overriding them (the defaults are computed in the `TCmd` ctor *before* arg parse),
-> so over-provisioning past the physical core count oversubscribes and destabilizes
-> (8 fast cores on an 8-core box → connection timeouts). Tracked as its own bug.
+> **⚠️ Correction (2026-06-27): this is NOT linear in core *count* — core
+> *placement* dominates.** A follow-up, after fixing the `--fast_cores` override
+> bug (#240, so flags replace the default instead of appending), measured **2
+> runners pinned to cores `{0,1}` = ~4500 w/s**, *beating* 5 runners spanning
+> `{3,6,7,0,1}` (~4000) and far above 3 runners on `{3,6,7}` (~2200). Cores 0,1
+> are ~3× more effective per runner than 3,6,7 on this box (topology/contention —
+> 6,7 are likely SMT siblings or contend with the merge/controller threads on
+> 2,4,5). The 3→5 table above therefore reflects *adding the favorable cores 0,1*,
+> not a clean count scaling. **Corrected takeaway:** throughput is bound by fast-
+> scheduler execution capacity, which depends on core count **and**
+> placement/contention — still not the merge.
+
+The `--fast_cores` flag originally **appended** to the auto-derived defaults
+(defaults computed in the `TCmd` ctor before arg parse; vector params accumulate),
+so over-provisioning oversubscribed and destabilized the server (8 fast cores on an
+8-core box → connection timeouts). Fixed in #240 (#242): flags now override their
+defaults, and the resolved core assignment is logged at startup.
 
 ### 9.5 The two real levers (neither is the merge)
 
-1. **Horizontal — more fast cores / runners.** Scales throughput ~linearly until
-   another resource binds; the pool is a deliberate fraction of cores (3 of 8 here,
-   ~14 on a 32-core box). Works today (modulo the `--fast_cores` append bug).
+1. **Horizontal — more (and better-placed) fast cores / runners.** Adding fast
+   cores raises throughput, but the gain depends on *which* cores (placement/
+   contention), not just the count — see the §9.4 correction. The pool is a
+   deliberate fraction of cores (3 of 8 here). Tunable via `--fast_cores` (now an
+   override, #242).
 2. **Algorithmic — less per-write work per runner.** ~0.8–1.35 ms of pool-bound
    work per write (parse + execute the orlyscript method + build/commit the
    transaction). Lowering it raises per-runner throughput. This is the only
@@ -456,6 +471,6 @@ linear scaling rules out a global-lock wall.
    concurrency machinery, and not in #234's merge tournament.
 
 **Net:** #234 as originally framed (single-threaded one-per-round merge = the cap)
-is closed as not-the-bottleneck. Concurrent-write throughput is parallelism-bound
-on the fast scheduler and scales with it; the remaining algorithmic win is in the
-per-write acceptance path, a separate investigation.
+is closed as not-the-bottleneck. Concurrent-write throughput is bound by fast-
+scheduler execution capacity (core count *and* placement); the remaining algorithmic
+win is in the per-write acceptance path, a separate investigation (tracked in #241).
