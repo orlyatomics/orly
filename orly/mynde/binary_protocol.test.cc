@@ -56,9 +56,23 @@ class TSubprocServer final {
     }
     auto *f = fdopen(Subprocess->GetStdErrFromChild(), "r");
     char line[2048];
-    do {
-      fgets(line, sizeof(line), f);
-    } while (!strstr(line, "TServer::Init end"));
+    std::string captured;
+    bool ready = false;
+    while (fgets(line, sizeof(line), f)) {
+      captured += line;
+      if (strstr(line, "TServer::Init end")) {
+        ready = true;
+        break;
+      }
+    }
+    if (!ready) {
+      /* The child closed its stderr before announcing readiness, i.e. the
+         server failed to start. Fail fast with the child's output instead of
+         spinning forever on fgets() returning EOF (which previously hung the
+         whole `make test` job to the 30-minute CI timeout). */
+      throw std::runtime_error(
+          "orly server subprocess exited before 'TServer::Init end'; child stderr:\n" + captured);
+    }
     // NOTE: We're leaking f.  Big deal.
   }
 
@@ -85,6 +99,11 @@ class TSubprocServer final {
         MemorySimMB = 512;
         MemorySimSlowMB = 256;
         EnableMemcache = true;
+        /* Populate the hardware-derived core assignment. orlyi does this
+           post-Parse via ResolveCoreVecDefaults() (#240/#242); a TServer::TCmd
+           built directly here must call it too, else the core vectors are empty
+           and TServer construction aborts with "SlowCoreVec is required ...". */
+        ResolveCoreVecDefaults();
       }
     } cmd;
     TLog log(cmd);
