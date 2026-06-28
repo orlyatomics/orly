@@ -311,13 +311,13 @@ it adds no new race.** Two corrections to the original plan fell out:
   session/connection code). Gating the default flip on "clean full-orlyi tsan"
   would require a separate engine-wide cleanup unrelated to #234.
 - The pre-existing `AppendUpdate` vs `GetLowestUpdate` memory-layer race is real
-  and worth its own engine issue (it exists on master, flag off), but it is
-  orthogonal to this change.
+  and tracked as its own engine issue (#237) — it exists on master, flag off,
+  and is orthogonal to this change.
 
 ### 8.6 Remaining before S2 (flip default on)
 
-- File the pre-existing `TRepo::AppendUpdate` vs `GetLowestUpdate` memory-layer
-  race as its own engine issue (orthogonal to #234; surfaced by the gate above).
+- Fix the pre-existing `TRepo::AppendUpdate` vs `GetLowestUpdate` memory-layer
+  race (#237; orthogonal to #234, surfaced by the gate above).
 - Sustained K=8/16 soak on a release build showing throughput scales (not
   regresses) once the merge thread saturates.
 - Design B (key-range sharding) remains optional/later for the RMW path.
