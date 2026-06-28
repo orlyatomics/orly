@@ -385,3 +385,77 @@ of writes across many POVs faster than one-per-round can drain, or a merge stall
 The honest next step for the *actual* cap is to profile the write-acceptance path
 and re-run with a non-Python multi-process client to remove the GIL confound — a
 separate investigation from #234.
+
+## 9. Write-acceptance profiling — the actual cap is fast-scheduler parallelism (2026-06-27)
+
+Followed §8.7's "next step": profiled the write-acceptance path and re-ran with a
+non-Python-threaded client. **The concurrent-write cap is the fast-scheduler pool
+size (number of fast cores), and it scales ~linearly with that pool. It is not an
+algorithmic serialization bottleneck, not a global lock, and not the merge.**
+
+### 9.1 The GIL confound was real — but the cap is still server-side
+
+Re-ran the disjoint-key `add_mention` workload with a **multiprocess** client
+(`examples/agent-swarm/concurrent_bench_mp.py`, `BENCH_BACKEND=process`, no shared
+GIL). It still plateaus, so the cap is genuinely server-side:
+
+| K (process client, 3 fast cores) | w/s | per-writer |
+|---|---:|---:|
+| 1 | 740 | 740 |
+| 4 | 2264 | 566 |
+| 8 | 2181 | 273 |
+| 16 | 2310 | 144 |
+| 32 | 2155 | 67 |
+
+Aggregate flat ~2200; per-writer falls as 1/K → one finite resource. (The
+*threaded* client additionally degraded and timed out connections at K≥8 — that
+"regression past K=4" in the original RFC was largely a client artifact.)
+
+### 9.2 It is not one saturated thread / not a lock
+
+Under K=16 load, CPU is spread across ~12 `orlyi` threads at 14–43% each, none near
+100%, with idle headroom. So it is not one fiber spinning and not a CPU wall.
+
+### 9.3 The resource: the FastRunner pool
+
+Write-acceptance work (`TSession::Try` → execute method → build/commit txn, server.cc
+/ session.cc) runs on `FastRunnerVec`, sized from `FastCoreVec`. The default core
+split (`server.cc:552`, the `num_proc >= 8` branch on this 8-core box) gives
+`FastCoreVec = {3,6,7}` — **3 runners**. The numbers fit exactly: `740 × 3 ≈ 2200`;
+K=4 hits 3.06× then goes flat.
+
+### 9.4 Confirming experiment — it scales with fast cores
+
+Raised the pool from 3 → 5 fast cores (`--fast_cores`). Throughput rose ~linearly:
+
+| fast cores | single-writer w/s | plateau w/s |
+|---|---:|---:|
+| 3 (default) | 740 | ~2200 |
+| 5 (+2) | 1215 | ~4000 |
+| ratio | 1.64× | 1.82× |
+
+Core ratio 5/3 = 1.67×; both single-writer and aggregate tracked it. Even the
+single-writer number rose, so per-call latency itself was inflated by fast-runner
+contention at 3 cores — the per-write work is not confined to one runner. Clean
+linear scaling rules out a global-lock wall.
+
+> Caveat: `--fast_cores` **appends** to the auto-derived defaults rather than
+> overriding them (the defaults are computed in the `TCmd` ctor *before* arg parse),
+> so over-provisioning past the physical core count oversubscribes and destabilizes
+> (8 fast cores on an 8-core box → connection timeouts). Tracked as its own bug.
+
+### 9.5 The two real levers (neither is the merge)
+
+1. **Horizontal — more fast cores / runners.** Scales throughput ~linearly until
+   another resource binds; the pool is a deliberate fraction of cores (3 of 8 here,
+   ~14 on a 32-core box). Works today (modulo the `--fast_cores` append bug).
+2. **Algorithmic — less per-write work per runner.** ~0.8–1.35 ms of pool-bound
+   work per write (parse + execute the orlyscript method + build/commit the
+   transaction). Lowering it raises per-runner throughput. This is the only
+   code-level lever, and it lives in the per-call acceptance path — not in any
+   concurrency machinery, and not in #234's merge tournament.
+
+**Net:** #234 as originally framed (single-threaded one-per-round merge = the cap)
+is closed as not-the-bottleneck. Concurrent-write throughput is parallelism-bound
+on the fast scheduler and scales with it; the remaining algorithmic win is in the
+per-write acceptance path, a separate investigation.
