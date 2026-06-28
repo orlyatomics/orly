@@ -46,6 +46,9 @@ class TCmd final
   TCmd(int argc, char *argv[])
       : TCmd() {
     Parse(argc, argv, TMeta());
+    /* Resolve core-assignment defaults AFTER parsing so --fast_cores etc.
+       override the hardware defaults instead of appending to them (issue #240). */
+    ResolveCoreVecDefaults();
   }
 
   /* Parameters for the scheduler policy. */
