@@ -1,9 +1,10 @@
 # Design: Concurrent write throughput — the single-threaded global merge
 
-> Status: **gated RFC** (verified findings + design; not yet scheduled),
-> tracked by **issue #234**. Same bar as the merge/graph RFCs — do not
-> implement until there is demand, and implement in a fresh session behind the
-> TSan gate (#201).
+> Status: **S1 implemented behind a default-off flag** (`--tetris_commutative_fastlane`),
+> tracked by **issue #234**. The original gated RFC follows; the implemented
+> design and its measured results are in [§8 (Implementation addendum)](#8-implementation-addendum-implemented).
+> The flag stays **off by default** until the TSan gate (#201) + a sustained soak
+> sign off on flipping it (S2).
 
 ## 0. The key realization
 
@@ -169,3 +170,154 @@ a cross-shard story for multi-key updates. Only pursue if A proves insufficient.
 Findings verified 2026-06-27 (post #231/#232) by read-only investigation +
 one throwaway spike (master left clean). Measurements: `--mem_sim`, 12 cores,
 `examples/agent-swarm/graph.orly` workload (`add_cooccur`, all commutative).
+
+## 8. Implementation addendum (implemented)
+
+S1 shipped, but **not** as Design A above. The read-only investigation that
+preceded it overturned two of the RFC's premises; the implemented design is
+both safer and more faithful. This section is the source of truth for what was
+built.
+
+### 8.1 Why Design A (merge into one update) was rejected
+
+Design A proposed merging K children's updates into a single global update.
+Tracing the metadata path killed it:
+
+- `TUpdate::TEntry::GetMetadata()` returns the **update-level** `Metadata`
+  (`orly/indy/update.h`, `TEntry::GetMetadata` → `UpdateMembership.TryGetCollector()->Metadata`).
+  There is no per-entry metadata. Merging K children therefore collapses K
+  distinct session-ids into one.
+- That session-id is **load-bearing for one path**: slave-side *"Replicated"*
+  notification routing (`orly/indy/manager.cc` extracts the session-id from the
+  promoted update's metadata and routes the notification to it). Reads,
+  replication *apply*, and recovery treat the metadata as opaque pass-through —
+  but collapsing it would **silently drop replication notifications** for K−1
+  of every K merged writers.
+
+So merging is not semantically transparent. Design A was abandoned.
+
+### 8.2 The implemented design — per-round, per-child fast-lane
+
+The real cost was never "one Pusher per transaction." It is that **each
+`Play()` round `Refresh()`es (re-snapshots) *every* waiting child and then
+promotes one**, so draining N queued children costs N rounds × O(children) =
+**O(N²)** re-snapshot — the same family as #229/#232.
+
+`TRepoTetrisManager::TPlayer::Play()` (`orly/server/repo_tetris_manager.cc`),
+under `--tetris_commutative_fastlane`:
+
+1. Snapshot + sort all ready children **once** per round (unchanged).
+2. Promote **every** assertion-free child this round — *each in its own
+   transaction*, on which the child is **re-`Peek`'d first** (`Flush()` the
+   snapshot peek, `Refresh()` on the per-child txn, then `Play()`). A
+   transaction applies its `Push` on destruction (`~TPusher` →
+   `TRepo::AppendUpdate`), so each promotion is scoped to one loop iteration.
+   One Pusher per repo per transaction is preserved exactly, so the invariant
+   the throwaway spike violated (`MutationCollection` is keyed by repo-id; a 2nd
+   `Push` to the same parent in one txn throws) is never touched. Each child
+   keeps its own update and its own session-id metadata → replication
+   notifications stay faithful.
+3. Only if **no** commutative promotion happened this round, fall back to the
+   exact current discipline for assertion-bearing (RMW) children: at most one
+   per round, tested against the round-start snapshot. This guarantees an RMW
+   assertion is never evaluated against a parent the same round's commutative
+   writes already mutated — RMW semantics are byte-for-byte unchanged.
+
+`TChild::IsAssertionFree()` classifies a child: every refreshed entry has an
+empty `GetExpectedPredicateResults()` and none is a Mynde entry (architecture.md
+§5: such children carry no assertion and provably cannot conflict).
+
+Subtlety the first cut got wrong — and why the re-`Peek` is load-bearing: the
+`Peek` and the `Pop` for a child **must live on the same transaction**. `Peek`
+installs a `Peek`-state `TPopper` keyed by the child repo-id; `Pop` on that same
+txn *promotes* that popper to `Pop` state (one mutation, Peek→Pop). If instead
+the child is `Peek`'d on `snapshot_txn` but `Pop`'d on a fresh per-child txn, the
+fresh txn has no mutation for that repo, so `Pop` mints a **second**, independent
+`Pop`-state popper while `snapshot_txn` still holds the first one's read `View`.
+`TRepo::PopLowest` then runs against a child whose last update may already have
+been promoted/Part-deleted out from under the dangling snapshot `View` — which
+crashed reliably at K≥4. Re-`Peek`ing on the per-child txn collapses Peek and Pop
+back onto one popper, so `Push`/`Pop`/commit are a single atomic unit per child
+and `PopLowest` fires exactly once against the snapshot it was classified on. The
+leftover `snapshot_txn` Peek popper for the same child is then a true no-op at
+destruction (`~TPopper`, `case Peek: break` — releases only its read `View`).
+
+### 8.3 Measured (debug build, `--mem_sim`, 32 child POVs × 200 commutative `+=`)
+
+A new reporter counter, **`Tetris Children Considered / Push`**, makes the
+quadratic directly observable (it equals "re-snapshots paid per promotion"):
+
+| metric | baseline | fast-lane |
+|---|---:|---:|
+| Children Considered / Push | **30.1** | **1.0** |
+| Children Considered / s (snapshot CPU proxy) | 6617 | 201 |
+| Rounds / s | 219.6 (1 push/round) | 39 (~5 push/round) |
+
+The ratio for baseline tracks the active-POV count (≈32 here) and grows without
+bound; the fast-lane holds it at ~1. That is the O(N²) → O(N) collapse: **33×
+less merge snapshot CPU per promotion** at 32 POVs, more at higher fan-out.
+Client-observed write-*acceptance* rate is unchanged in this config because it
+is latency-bound (a `try` returns on child-POV acceptance, before promotion);
+the snapshot-CPU headroom is the lever that lifts the cap once the single merge
+thread is the bottleneck (release build, more writers/POVs).
+
+Correctness oracle held under the flag: 32 writers issuing concurrent `+=` to
+one hot key read back the exact total (zero lost), and the full
+`examples/agent-swarm/` self-check (`+=`, `|=` set-union, assertion-bearing
+tags across 8 concurrent agents) passes identically with the flag on.
+
+### 8.4 Reproduce
+
+```
+# baseline vs fast-lane, same build:
+examples/agent-swarm/run-concurrent-bench.sh
+ORLYI_EXTRA_FLAGS=--tetris_commutative_fastlane examples/agent-swarm/run-concurrent-bench.sh
+```
+
+### 8.5 TSan gate — run (2026-06-27)
+
+Ran the ThreadSanitizer gate (`tools/jhm -c tsan`, `setarch -R`, suppressions =
+`orly/tsan.supp`). Three parts:
+
+1. **Curated merge unit tests** (`context_fold`, `context_xrepo`,
+   `tetris_piece`): **0 warnings**. (`tetris_manager.test` shows one *pre-existing*
+   `ChildCount` race in base-class `TTetrisManager` — untouched by this change,
+   and not in the CI tsan set.)
+2. **Full `orlyi` under TSan, flag ON, under the concurrent bench** (the only way
+   to exercise the new path — no unit test drives it). Result, after triage:
+   **the fast-lane promotion code is never the site of a race.** `RepeekAndPlay`
+   / the per-child Push/Pop/commit (repo_tetris_manager.cc:193/383/388) never
+   appears as a racing access (TSan frame #0/#1) and never as a participant
+   thread in any new finding. Every race site is in flag-independent engine /
+   IO / fiber machinery.
+3. **flag-ON vs flag-OFF diff** (decisive). Of 86 distinct race sites under the
+   flag, **all but four also appear with the flag off**; the four "fast-lane-only"
+   sites are all one pre-existing engine race — `TRepo::AppendUpdate` (a client
+   write committing via `~TPusher`, repo.cc:297/311) vs `TRepo::GetLowestUpdate`
+   (repo.cc:351/353) reading the repo's update ordered-list from *another* client
+   `TSession::Try` or from the merge fiber's **unchanged** snapshot loop
+   (`Play():340`, identical in both modes). They appear only under the flag
+   because the fast-lane *completes the full bench workload* (more writes/rounds
+   → hits the window) while the flag-off run, ~3× slower per drain under TSan,
+   timed out mid-bench (truncated sample). Not introduced by the fast-lane.
+
+**Conclusion: S1 (fast-lane behind the default-off flag) is TSan-safe to land —
+it adds no new race.** Two corrections to the original plan fell out:
+
+- **A clean full-`orlyi` TSan run is not an achievable S2 gate.** Full `orlyi`
+  has never been TSan-clean — the #184 gate only ever covered a curated *unit-test*
+  set, never the running server (~80+ pre-existing race sites in
+  manager_base refcounts, the fiber pool [#200], boost::beast websocket I/O,
+  session/connection code). Gating the default flip on "clean full-orlyi tsan"
+  would require a separate engine-wide cleanup unrelated to #234.
+- The pre-existing `AppendUpdate` vs `GetLowestUpdate` memory-layer race is real
+  and tracked as its own engine issue (#237) — it exists on master, flag off,
+  and is orthogonal to this change.
+
+### 8.6 Remaining before S2 (flip default on)
+
+- Fix the pre-existing `TRepo::AppendUpdate` vs `GetLowestUpdate` memory-layer
+  race (#237; orthogonal to #234, surfaced by the gate above).
+- Sustained K=8/16 soak on a release build showing throughput scales (not
+  regresses) once the merge thread saturates.
+- Design B (key-range sharding) remains optional/later for the RMW path.

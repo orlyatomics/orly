@@ -41,12 +41,15 @@ TRepoTetrisManager::TRepoTetrisManager(
     Indy::TManager *repo_manager,
     Package::TManager *package_manager,
     Durable::TManager *durable_manager,
-    bool log_assertion_failures)
+    bool log_assertion_failures,
+    bool commutative_fastlane)
     : TTetrisManager(scheduler, runner_cons, frame_pool_manager, runner_setup_cb, is_master),
       PushCount(0UL),
       PopCount(0UL),
       FailCount(0UL),
       RoundCount(0UL),
+      ChildrenConsideredCount(0UL),
+      CommutativeFastlane(commutative_fastlane),
       RepoManager(repo_manager),
       PackageManager(package_manager),
       DurableManager(durable_manager),
@@ -179,6 +182,17 @@ void TRepoTetrisManager::TPlayer::TChild::Flush() {
   FuncHolderByUpdateId.clear();
 }
 
+bool TRepoTetrisManager::TPlayer::TChild::RepeekAndPlay(
+    const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context) {
+  assert(transaction);
+  /* Drop the snapshot-phase Peek (it lives on a different transaction) so the
+     Refresh below re-Peeks this child on `transaction`; the subsequent Pop in
+     Play then promotes that very popper (Peek->Pop) instead of minting a second
+     one. Refresh re-parses the metadata Flush just cleared. */
+  Flush();
+  return Refresh(transaction) && Play(transaction, context);
+}
+
 namespace Orly {
   namespace Rt {
     template <typename TVal>
@@ -257,6 +271,30 @@ bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context
   return true;
 }
 
+bool TRepoTetrisManager::TPlayer::TChild::IsAssertionFree() const {
+  if (FuncHolderByUpdateId.empty()) {
+    /* Nothing refreshed -- be conservative and let the ordinary
+       one-per-round path handle it. */
+    return false;
+  }
+  for (const auto &item: FuncHolderByUpdateId) {
+    const auto &entry = MetaRecord.GetEntry(item.first);
+    /* Mynde entries hard-code their own assertion/replay handling
+       (TestAssertions special-cases them); keep them on the conservative
+       one-per-round path. */
+    if (entry.GetPackageFqName() == Mynde::PackageName) {
+      return false;
+    }
+    /* Any non-empty expected-predicate set means this is an assertion-bearing
+       read-modify-write that must be tested against the round-start snapshot
+       one at a time. */
+    if (entry.GetExpectedPredicateResults().size()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void TRepoTetrisManager::TPlayer::OnJoin(const TUuid &child_pov_id) {
   lock_guard<mutex> lock(Mutex);
   auto child = new TChild(this, child_pov_id);
@@ -287,8 +325,11 @@ void TRepoTetrisManager::TPlayer::Play() {
   Base::TCPUTimer snapshot_timer, sort_timer, play_timer, commit_timer;
   Atom::TSuprena my_arena;
   try {
-    /* Begin a transaction and make a vector of all our children who are ready to participate in it. */
-    unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> transaction = RepoTetrisManager->RepoManager->NewTransaction();
+    /* Snapshot every child that is ready to participate this round. The Peek
+       in Refresh attaches to `snapshot_txn`; it carries no Push/Pop so it costs
+       nothing to discard, and it is the transaction the assertion-bearing
+       (one-per-round) promotion below reuses. */
+    unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> snapshot_txn = RepoTetrisManager->RepoManager->NewTransaction();
     vector<TChild *> children;
     snapshot_timer.Start();
     /* extra */ {
@@ -296,29 +337,77 @@ void TRepoTetrisManager::TPlayer::Play() {
       children.reserve(ChildByPovId.size());
       for (const auto &item: ChildByPovId) {
         TChild *child = item.second;
-        if (child->Refresh(transaction)) {
+        if (child->Refresh(snapshot_txn)) {
           children.push_back(child);
         }
       }
     }
     snapshot_timer.Stop();
+    RepoTetrisManager->ChildrenConsideredCount += children.size();
     /* Sort by decreasing promote-ness. */
     sort_timer.Start();
     sort(children.begin(), children.end(), TChild::SortsBefore);
     sort_timer.Stop();
-    /* Give each child a chance to play.  At most one will be permitted to promote (for now), but any number might fail
-       due to age. */
+
     play_timer.Start();
     Indy::TContext context(Repo, &my_arena);
-    for (TChild *child: children) {
-      if (child->Play(transaction, context)) {
-        break;
+    if (RepoTetrisManager->CommutativeFastlane) {
+      /* #234 fast-lane. Assertion-free children are pure commutative field
+         calls that provably cannot conflict (architecture.md §5), so promote
+         ALL ready ones this round -- each in its own transaction so the
+         one-Pusher-per-repo invariant and each child's own session-id metadata
+         (load-bearing for replication notifications) are preserved exactly.
+         A transaction applies its Push on destruction, so each promotion is
+         scoped to one loop iteration.
+
+         Assertion-bearing (read-modify-write) children keep today's discipline:
+         at most one per round, tested against the round-start snapshot. We only
+         take that path when NO commutative promotion happened this round, so an
+         RMW assertion is never evaluated against a parent the same round's
+         commutative writes have already mutated. */
+      bool promoted_commutative = false;
+      for (TChild *child: children) {
+        if (child->IsAssertionFree()) {
+          /* Promote on a dedicated transaction, re-Peeking the child on THAT
+             transaction first. The snapshot-phase Peek attached to snapshot_txn
+             and was only used to classify + sort; if we Pop'd on a fresh txn
+             whose Peek lived on snapshot_txn, the Peek and the Pop would land on
+             two different poppers (two different transactions) for the same
+             child repo -- the Pop creates a brand-new Pop-state popper while the
+             snapshot_txn popper still holds the read View. Re-binding the Peek
+             to this txn makes the Pop promote the very popper the Peek created
+             (Peek->Pop on one mutation), so Peek/Push/Pop/commit are one atomic
+             unit and the child's PopLowest (which may Part-delete it) runs
+             exactly once against the snapshot it was tested on. */
+          unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> txn = RepoTetrisManager->RepoManager->NewTransaction();
+          if (child->RepeekAndPlay(txn, context)) {
+            txn->Prepare();
+            txn->CommitAction();
+            promoted_commutative = true;
+          }
+        }  // txn destroyed here -> AppendUpdate applies the promotion
+      }
+      if (!promoted_commutative) {
+        for (TChild *child: children) {
+          if (!child->IsAssertionFree() && child->Play(snapshot_txn, context)) {
+            break;
+          }
+        }
+      }
+    } else {
+      /* Give each child a chance to play.  At most one will be permitted to
+         promote (for now), but any number might fail due to age. */
+      for (TChild *child: children) {
+        if (child->Play(snapshot_txn, context)) {
+          break;
+        }
       }
     }
     play_timer.Stop();
-    /* Commit. */
-    transaction->Prepare();
-    transaction->CommitAction();
+    /* Commit the snapshot transaction (carries the at-most-one assertion-bearing
+       promotion, if any; a no-op otherwise). */
+    snapshot_txn->Prepare();
+    snapshot_txn->CommitAction();
     commit_timer.Start();
     ++(RepoTetrisManager->RoundCount);
   } catch (const std::exception &ex) {

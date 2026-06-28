@@ -293,6 +293,12 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       &TCmd::LogAssertionFailures, "log_assertion_failures", Optional, "laf\0",
       "Log tetris assertion failures to LOG_INFO."
   );
+  Param(
+      &TCmd::TetrisCommutativeFastlane, "tetris_commutative_fastlane", Optional, "tetris_commutative_fastlane\0tcf\0",
+      "Promote ALL ready commutative (assertion-free) children per global-merge "
+      "round instead of one, collapsing the O(N^2) per-round re-snapshot into "
+      "O(N) (issue #234). Default off."
+  );
 
   /******** Object Pools ********/
 
@@ -414,6 +420,7 @@ TServer::TCmd::TCmd()
       NoRealtime(false),
       DoFsync(true),
       LogAssertionFailures(true),
+      TetrisCommutativeFastlane(false),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -1053,7 +1060,7 @@ void TServer::Init() {
       Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
     };
 
-    TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures);
+    TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
     RepoManager->SetTetrisManager(TetrisManager);
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
@@ -2866,10 +2873,16 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
   size_t tetris_pop_count = Server->TetrisManager->PopCount.exchange(0UL);
   size_t tetris_fail_count = Server->TetrisManager->FailCount.exchange(0UL);
   size_t tetris_round_count = Server->TetrisManager->RoundCount.exchange(0UL);
+  size_t tetris_children_considered = Server->TetrisManager->ChildrenConsideredCount.exchange(0UL);
   ss << "Tetris Push Transactions / s = " << (tetris_push_count / elapsed_time) << endl;
   ss << "Tetris Pop Transactions / s = " << (tetris_pop_count / elapsed_time) << endl;
   ss << "Tetris Fail Transactions / s = " << (tetris_fail_count / elapsed_time) << endl;
   ss << "Tetris Rounds / s = " << (tetris_round_count / elapsed_time) << endl;
+  /* Children re-snapshotted per promotion: ~1 means the merge keeps up; a large
+     and growing ratio is the #234 O(N^2) re-snapshot backlog. */
+  ss << "Tetris Children Considered / s = " << (tetris_children_considered / elapsed_time) << endl;
+  ss << "Tetris Children Considered / Push = "
+     << (tetris_push_count ? (static_cast<double>(tetris_children_considered) / tetris_push_count) : 0.0) << endl;
 
   size_t tetris_timer_count = 0UL;
   double

@@ -50,7 +50,8 @@ namespace Orly {
           Indy::TManager *repo_manager,
           Package::TManager *package_manager,
           Durable::TManager *durable_manager,
-          bool log_assertion_failures);
+          bool log_assertion_failures,
+          bool commutative_fastlane = false);
 
       /* TODO */
       virtual ~TRepoTetrisManager();
@@ -60,6 +61,15 @@ namespace Orly {
       std::atomic<size_t> PopCount;
       std::atomic<size_t> FailCount;
       std::atomic<size_t> RoundCount;
+
+      /* Total children Refresh()ed (re-snapshotted) across all rounds. Under
+         the one-promote-per-round discipline this grows ~O(N^2) in the backlog,
+         which is the #234 cap; the commutative fast-lane drives it toward O(N).
+         Observable in the server stats so the cap is visible in CI. */
+      std::atomic<size_t> ChildrenConsideredCount;
+
+      /* If true, promote ALL ready assertion-free children per round (#234). */
+      const bool CommutativeFastlane;
 
       /* TODO */
       Base::TSigmaCalc TetrisSnapshotCPUTime;
@@ -100,6 +110,26 @@ namespace Orly {
 
           /* TODO */
           static bool SortsBefore(const TChild *lhs, const TChild *rhs);
+
+          /* True iff this child carries no assertions -- every refreshed entry
+             is a pure commutative field call (`+=` / `|=`, empty
+             GetExpectedPredicateResults) and none is a Mynde entry. Such a
+             child provably cannot conflict (architecture.md §5), so the
+             fast-lane may promote it in the same round as any other
+             assertion-free child. Requires a prior Refresh(). */
+          bool IsAssertionFree() const;
+
+          /* Fast-lane promotion (#234): drop any prior snapshot Peek, re-Peek
+             this child on `transaction`, and -- if an update is present --
+             promote it (Push to parent + Pop) on that SAME transaction.
+             Returns true iff a promotion was issued. Keeping the Peek and the
+             Pop on one transaction is load-bearing: a Pop on a transaction that
+             did not Peek the child mints a second, independent popper while the
+             snapshot peek's read View is still live, and PopLowest then fires
+             against a child that may already have been promoted out from under
+             it (crashes at K>=4). See concurrent-merge-throughput.md §8.2. */
+          bool RepeekAndPlay(
+              const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
           private:
 
