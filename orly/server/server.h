@@ -282,6 +282,12 @@ namespace Orly {
         /* TODO */
         std::vector<size_t> DiskMergeCoreVec;
 
+        /* Fill the hardware-derived default core assignment into any of the
+           *CoreVec members the user did NOT specify on the command line, leaving
+           user-provided vectors untouched. Must be called AFTER Parse() so the
+           flags override the defaults rather than appending to them (issue #240). */
+        void ResolveCoreVecDefaults();
+
         /* TODO */
         size_t NumFiberFrames;
 

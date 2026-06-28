@@ -548,85 +548,11 @@ TServer::TCmd::TCmd()
     const size_t br_disk_events = NumDiskEvents * sizeof(Disk::Util::TDiskController::TEvent);
     bytes_available -= br_disk_events;
 
-    /* Fast Core Vector */
-    if (num_proc < 2) {
-      syslog(LOG_ERR, "Indy is not supported on single processor machines");
-    } else if (num_proc >= 64) {
-      for (size_t i = 0; i < 12; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 32; i < 44; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 12; i < 16; ++i) {
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-      for (size_t i = 44; i < 48; ++i) {
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-
-      DiskControllerCoreVec.emplace_back(16UL);
-      DiskControllerCoreVec.emplace_back(48UL);
-      for (size_t i = 17; i < 32; ++i) {FastCoreVec.emplace_back(i);}
-      for (size_t i = 49; i < 64; ++i) {FastCoreVec.emplace_back(i);}
-    } else if (num_proc >= 32) {
-      for (size_t i = 0; i < 6; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 16; i < 24; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 6; i < 8; ++i) {
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-      for (size_t i = 22; i < 24; ++i) {
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-
-      DiskControllerCoreVec.emplace_back(8UL);
-      DiskControllerCoreVec.emplace_back(24UL);
-      for (size_t i = 9; i < 16; ++i) {FastCoreVec.emplace_back(i);}
-      for (size_t i = 25; i < 32; ++i) {FastCoreVec.emplace_back(i);}
-    } else if (num_proc >= 16) {
-      for (size_t i = 0; i < 3; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 8; i < 11; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 3; i < 4; ++i) {
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-      for (size_t i = 11; i < 12; ++i) {
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-
-      DiskControllerCoreVec.emplace_back(4UL);
-      DiskControllerCoreVec.emplace_back(12UL);
-      for (size_t i = 5; i < 8; ++i) {FastCoreVec.emplace_back(i);}
-      for (size_t i = 13; i < 16; ++i) {FastCoreVec.emplace_back(i);}
-    } else if (num_proc >= 8) {
-
-      for (size_t i = 0; i < 2; ++i) {SlowCoreVec.emplace_back(i);}
-      for (size_t i = 4; i < 6; ++i) {
-        SlowCoreVec.emplace_back(i);
-        MemMergeCoreVec.emplace_back(i);
-        DiskMergeCoreVec.emplace_back(i);
-      }
-
-      DiskControllerCoreVec.emplace_back(2UL);
-      for (size_t i = 3; i < 4; ++i) {FastCoreVec.emplace_back(i);}
-      for (size_t i = 6; i < 8; ++i) {FastCoreVec.emplace_back(i);}
-    } else if (num_proc >= 4) {
-      MemMergeCoreVec.emplace_back(2UL);
-      DiskMergeCoreVec.emplace_back(2UL);
-
-      SlowCoreVec.emplace_back(0UL);
-
-      DiskControllerCoreVec.emplace_back(2UL);
-      FastCoreVec.emplace_back(1UL);
-      FastCoreVec.emplace_back(3UL);
-    } else if (num_proc >= 2) {
-      MemMergeCoreVec.emplace_back(0UL);
-      DiskMergeCoreVec.emplace_back(0UL);
-      SlowCoreVec.emplace_back(0UL);
-      DiskControllerCoreVec.emplace_back(0UL);
-      FastCoreVec.emplace_back(1UL);
-    }
+    /* Fast Core Vector: the hardware-derived defaults are now computed in
+       ResolveCoreVecDefaults(), which must be called AFTER command-line parsing
+       so that --fast_cores / --slow_cores / etc. OVERRIDE these defaults instead
+       of appending to them (issue #240). This constructor runs before Parse(),
+       so populating the core vectors here would be the appended-to default. */
 
     ss << "bytes_available left = [" << bytes_available << "]" << endl
       << "[" << (100 * static_cast<double>(br_dynamic_alloc) / bytes_alloted) << "%] br_dynamic_alloc left = [" << br_dynamic_alloc << "]" << endl
@@ -653,6 +579,126 @@ TServer::TCmd::TCmd()
       << "[" << (100 * static_cast<double>(br_disk_events) / bytes_alloted) << "%] br_disk_events = [" << br_disk_events << "]" << endl;
     std::cout << ss.str();
   }
+}
+
+void TServer::TCmd::ResolveCoreVecDefaults() {
+  /* Fill in the hardware-derived default core assignment, but ONLY for the core
+     vectors the user did not specify on the command line (issue #240). Any
+     vector the user provided via --fast_cores / --slow_cores / --mem_merge_cores
+     / --disk_merge_cores / --disk_controller_cores is left exactly as parsed, so
+     the flag overrides the default rather than appending to it. Must be called
+     after Parse(). */
+  const std::vector<size_t> user_fast = FastCoreVec, user_slow = SlowCoreVec,
+                            user_mem = MemMergeCoreVec, user_disk = DiskMergeCoreVec,
+                            user_ctl = DiskControllerCoreVec;
+  FastCoreVec.clear();
+  SlowCoreVec.clear();
+  MemMergeCoreVec.clear();
+  DiskMergeCoreVec.clear();
+  DiskControllerCoreVec.clear();
+
+  int num_proc = sysconf(_SC_NPROCESSORS_ONLN);
+  /* Fast Core Vector */
+  if (num_proc < 2) {
+    syslog(LOG_ERR, "Indy is not supported on single processor machines");
+  } else if (num_proc >= 64) {
+    for (size_t i = 0; i < 12; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 32; i < 44; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 12; i < 16; ++i) {
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+    for (size_t i = 44; i < 48; ++i) {
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+
+    DiskControllerCoreVec.emplace_back(16UL);
+    DiskControllerCoreVec.emplace_back(48UL);
+    for (size_t i = 17; i < 32; ++i) {FastCoreVec.emplace_back(i);}
+    for (size_t i = 49; i < 64; ++i) {FastCoreVec.emplace_back(i);}
+  } else if (num_proc >= 32) {
+    for (size_t i = 0; i < 6; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 16; i < 24; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 6; i < 8; ++i) {
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+    for (size_t i = 22; i < 24; ++i) {
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+
+    DiskControllerCoreVec.emplace_back(8UL);
+    DiskControllerCoreVec.emplace_back(24UL);
+    for (size_t i = 9; i < 16; ++i) {FastCoreVec.emplace_back(i);}
+    for (size_t i = 25; i < 32; ++i) {FastCoreVec.emplace_back(i);}
+  } else if (num_proc >= 16) {
+    for (size_t i = 0; i < 3; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 8; i < 11; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 3; i < 4; ++i) {
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+    for (size_t i = 11; i < 12; ++i) {
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+
+    DiskControllerCoreVec.emplace_back(4UL);
+    DiskControllerCoreVec.emplace_back(12UL);
+    for (size_t i = 5; i < 8; ++i) {FastCoreVec.emplace_back(i);}
+    for (size_t i = 13; i < 16; ++i) {FastCoreVec.emplace_back(i);}
+  } else if (num_proc >= 8) {
+
+    for (size_t i = 0; i < 2; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 4; i < 6; ++i) {
+      SlowCoreVec.emplace_back(i);
+      MemMergeCoreVec.emplace_back(i);
+      DiskMergeCoreVec.emplace_back(i);
+    }
+
+    DiskControllerCoreVec.emplace_back(2UL);
+    for (size_t i = 3; i < 4; ++i) {FastCoreVec.emplace_back(i);}
+    for (size_t i = 6; i < 8; ++i) {FastCoreVec.emplace_back(i);}
+  } else if (num_proc >= 4) {
+    MemMergeCoreVec.emplace_back(2UL);
+    DiskMergeCoreVec.emplace_back(2UL);
+
+    SlowCoreVec.emplace_back(0UL);
+
+    DiskControllerCoreVec.emplace_back(2UL);
+    FastCoreVec.emplace_back(1UL);
+    FastCoreVec.emplace_back(3UL);
+  } else if (num_proc >= 2) {
+    MemMergeCoreVec.emplace_back(0UL);
+    DiskMergeCoreVec.emplace_back(0UL);
+    SlowCoreVec.emplace_back(0UL);
+    DiskControllerCoreVec.emplace_back(0UL);
+    FastCoreVec.emplace_back(1UL);
+  }
+
+  /* Restore any user-specified vectors, overriding the defaults just computed. */
+  if (!user_fast.empty()) {FastCoreVec = user_fast;}
+  if (!user_slow.empty()) {SlowCoreVec = user_slow;}
+  if (!user_mem.empty()) {MemMergeCoreVec = user_mem;}
+  if (!user_disk.empty()) {DiskMergeCoreVec = user_disk;}
+  if (!user_ctl.empty()) {DiskControllerCoreVec = user_ctl;}
+
+  /* Log the resolved core assignment (issue #240): makes the effective config
+     visible and distinguishes user overrides from hardware defaults. */
+  auto join_cores = [](const std::vector<size_t> &v) {
+    std::stringstream s;
+    for (size_t i = 0; i < v.size(); ++i) { s << (i ? "," : "") << v[i]; }
+    return s.str();
+  };
+  std::cout << "resolved core assignment:"
+            << " fast=[" << join_cores(FastCoreVec) << "]"
+            << " slow=[" << join_cores(SlowCoreVec) << "]"
+            << " mem_merge=[" << join_cores(MemMergeCoreVec) << "]"
+            << " disk_merge=[" << join_cores(DiskMergeCoreVec) << "]"
+            << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]"
+            << std::endl;
 }
 
 TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
