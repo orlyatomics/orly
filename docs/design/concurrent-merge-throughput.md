@@ -1,10 +1,15 @@
 # Design: Concurrent write throughput — the single-threaded global merge
 
-> Status: **S1 implemented behind a default-off flag** (`--tetris_commutative_fastlane`),
-> tracked by **issue #234**. The original gated RFC follows; the implemented
-> design and its measured results are in [§8 (Implementation addendum)](#8-implementation-addendum-implemented).
-> The flag stays **off by default** until the TSan gate (#201) + a sustained soak
-> sign off on flipping it (S2).
+> Status: **S1 implemented behind a default-off flag** (`--tetris_commutative_fastlane`,
+> merged PR #236), tracked by **issue #234**. **The default stays OFF and is not
+> recommended to flip:** a release-build soak ([§8.7](#87-release-soak--negative-result-2026-06-27))
+> shows the fast-lane yields **no throughput improvement**, because the global
+> merge is not the binding constraint under real load — it keeps up (backlog
+> ≈1.3 children/round), so there is nothing for the fast-lane to drain. The
+> change is safe and correct (TSan-clean, zero lost updates) and still helps the
+> genuine-backlog regime, but the headline concurrent-write cap is upstream in
+> the write-*acceptance* path, not the merge. The original gated RFC follows; the
+> implemented design and measurements are in [§8](#8-implementation-addendum-implemented).
 
 ## 0. The key realization
 
@@ -261,6 +266,13 @@ is latency-bound (a `try` returns on child-POV acceptance, before promotion);
 the snapshot-CPU headroom is the lever that lifts the cap once the single merge
 thread is the bottleneck (release build, more writers/POVs).
 
+> **⚠️ Corrected by the release soak (§8.7).** The 30.1 baseline ratio here is a
+> *debug-config artifact*: it came from 32 child POVs left mostly **idle** while
+> being re-snapshotted each round (high N because they sit there, not because
+> writes backlog the merge). Under real concurrent write load the backlog depth
+> is ~1.3, so the "lever" hypothesis in the last sentence above did **not** pan
+> out — see §8.7. Keep this table as the *mechanism* demonstration only.
+
 Correctness oracle held under the flag: 32 writers issuing concurrent `+=` to
 one hot key read back the exact total (zero lost), and the full
 `examples/agent-swarm/` self-check (`+=`, `|=` set-union, assertion-bearing
@@ -318,6 +330,58 @@ it adds no new race.** Two corrections to the original plan fell out:
 
 - Fix the pre-existing `TRepo::AppendUpdate` vs `GetLowestUpdate` memory-layer
   race (#237; orthogonal to #234, surfaced by the gate above).
-- Sustained K=8/16 soak on a release build showing throughput scales (not
-  regresses) once the merge thread saturates.
+- ~~Sustained K=8/16 soak on a release build showing throughput scales~~ — **done,
+  and it does NOT scale; see §8.7.** This was the prerequisite for flipping the
+  default; the soak is the evidence to **keep it off**.
 - Design B (key-range sharding) remains optional/later for the RMW path.
+
+### 8.7 Release soak — negative result (2026-06-27)
+
+The S2 prerequisite was a release-build soak showing throughput *scales* with the
+flag on. It was run (release `orlyi` + `orlyc`, `--mem_sim`, `concurrent_bench.py`,
+8000 writes/K, K ∈ {1,2,4,8,16}). **The fast-lane produced no throughput change**:
+
+| K | baseline w/s | fast-lane w/s |
+|---|---:|---:|
+| 1 | 1246 | 1259 |
+| 2 | 2233 | 2372 |
+| 4 | 2494 | 2607 |
+| 8 | 1927 | 1893 |
+| 16 | 2053 | 2036 |
+
+Both peak at K=4 and **regress** at K=8 — identical within run-to-run noise, with
+zero lost updates in both.
+
+**Why — the merge is not the bottleneck under load.** Server-side reporter stats
+(port 19388, ground truth, client-independent), sampled under sustained K=8 load:
+
+| `Tetris Children Considered / Push` | baseline | fast-lane |
+|---|---:|---:|
+| steady-state under load | **1.3 – 1.5** | **1.0** |
+
+The baseline backlog is only ~1.3 children per round — the one-promote-per-round
+merge *keeps up*; children are promoted about as fast as they arrive, so N never
+grows and O(N²) ≈ O(1). The fast-lane collapses 1.3 → 1.0 exactly as designed,
+but there is essentially nothing to drain, hence the flat throughput. (The §8.3
+debug ratio of 30.1 was an artifact of 32 *idle* POVs being re-snapshotted, not a
+write backlog.)
+
+**Where the real cap is.** A client write `try` returns on **child-POV
+acceptance**, *before* the global merge promotes it; the merge runs asynchronously
+behind acceptance (Push ≈645–1860/s while clients report ≈2000–2600/s aggregate).
+So client-observed throughput — and its regression past K=4 — lives in the
+write-*acceptance* path (scheduler/fiber/lock contention as K grows), **upstream
+of and decoupled from** the merge tournament the fast-lane optimizes.
+
+**Confound (stated for honesty):** the bench client is Python with K threads, so
+the ≈2000–2600 plateau may be partly GIL/client-bound. But the server-side merge
+ratio (≈1.3) is client-independent and on its own proves the merge has slack.
+
+**Decision: keep the flag default-OFF; do not flip it.** #234's premise — that the
+single-threaded one-promote-per-round merge is *the* concurrent-write cap — does
+**not** hold for this workload. The implementation stays in tree: it is safe,
+correct, and still the right behavior for a genuine merge-backlog regime (a burst
+of writes across many POVs faster than one-per-round can drain, or a merge stall).
+The honest next step for the *actual* cap is to profile the write-acceptance path
+and re-run with a non-Python multi-process client to remove the GIL confound — a
+separate investigation from #234.
