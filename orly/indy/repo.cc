@@ -302,16 +302,12 @@ TRepo::~TRepo() {
 
 std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
   std::optional<TSequenceNumber> new_seq;
-  bool add_to_tetris = false;
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
     HighestSeqNum = NextUpdate;
     ++NextUpdate;
     next_update = NextUpdate;
     if (!LowestSeqNum) {
-      if (ParentRepo) {
-        add_to_tetris = true;
-      }
       LowestSeqNum = *HighestSeqNum;
     }
     new_seq = HighestSeqNum;
@@ -324,10 +320,27 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
       EnqueueMergeMem();
     }
     MakeDirty();
-    if (add_to_tetris && Status == Normal) {
-      assert(!InTetris);
-      Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-      InTetris = true;
+    /* Join the parent's Tetris player so this child's updates get promoted.
+       This is the one allocating call reachable from the noexcept commit path
+       (~TPusher -> AppendUpdate): TTetrisManager::Join does a std::map::insert
+       and may construct a new player. Under memory pressure that throws
+       bad_alloc; letting it escape a noexcept function terminates the whole
+       server (#250). The update is already durable in CurMemoryLayer above
+       (reads see it), so on failure we log and leave InTetris false -- the
+       child→parent promotion-join is merely deferred and the next AppendUpdate
+       to this repo retries it, rather than crashing the process.
+
+       Gating on !InTetris (instead of the old "first update only" flag)
+       preserves the success-path semantics -- a repo joins once while it has
+       un-promoted updates and re-joins after PopLowest drains and Parts it --
+       and additionally retries a previously-failed join. */
+    if (ParentRepo && Status == Normal && !InTetris) {
+      try {
+        Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
+        InTetris = true;
+      } catch (const std::exception &ex) {
+        syslog(LOG_ERR, "AppendUpdate: deferred Tetris join under memory pressure: %s", ex.what());
+      }
     }
   }  // release Data lock
   return new_seq;

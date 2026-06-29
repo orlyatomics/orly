@@ -629,12 +629,21 @@ TTransaction::TPusher::TPusher(TTransaction *transaction, const L0::TManager::TP
 }
 
 TTransaction::TPusher::~TPusher() NO_THROW {
-  assert(TransactionMembership.TryGetCollector());
-  if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
-    assert(MyMutation);
-    MyMutation->SetSequenceNumber(Repo->AppendUpdate(Update, MyMutation->GetNextUpdate()));
-  } else {
-    delete Update;
+  /* This destructor is the commit point for a pushed update and is NO_THROW.
+     AppendUpdate is engineered not to throw (the one allocating call it makes,
+     the Tetris join, is guarded internally -- #250), but we keep a catch-all
+     here so no allocation ever added to the commit path can turn a recoverable
+     failure into std::terminate. */
+  try {
+    assert(TransactionMembership.TryGetCollector());
+    if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
+      assert(MyMutation);
+      MyMutation->SetSequenceNumber(Repo->AppendUpdate(Update, MyMutation->GetNextUpdate()));
+    } else {
+      delete Update;
+    }
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "~TPusher: swallowing exception on commit path to avoid terminate (#250): %s", ex.what());
   }
 }
 
@@ -643,23 +652,29 @@ TTransaction::TPopper::TPopper(TTransaction *transaction, const L0::TManager::TP
       State(state) {}
 
 TTransaction::TPopper::~TPopper() NO_THROW {
-  assert(TransactionMembership.TryGetCollector());
-  if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
-    switch(State) {
-      case Peek : {
-        break;
-      };
-      case Pop : {
-        assert(MyMutation);
-        MyMutation->SetSequenceNumber(Repo->PopLowest(MyMutation->GetNextUpdate()));
-        break;
-      };
-      case Fail : {
-        assert(MyMutation);
-        MyMutation->SetSequenceNumber(Repo->ChangeStatus(Failed, MyMutation->GetNextUpdate()));
-        break;
-      };
+  /* NO_THROW commit point; guard the whole body so an allocation failure on the
+     promote/fail path degrades to a logged error rather than terminate (#250). */
+  try {
+    assert(TransactionMembership.TryGetCollector());
+    if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
+      switch(State) {
+        case Peek : {
+          break;
+        };
+        case Pop : {
+          assert(MyMutation);
+          MyMutation->SetSequenceNumber(Repo->PopLowest(MyMutation->GetNextUpdate()));
+          break;
+        };
+        case Fail : {
+          assert(MyMutation);
+          MyMutation->SetSequenceNumber(Repo->ChangeStatus(Failed, MyMutation->GetNextUpdate()));
+          break;
+        };
+      }
     }
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "~TPopper: swallowing exception on commit path to avoid terminate (#250): %s", ex.what());
   }
 }
 
@@ -674,24 +689,30 @@ TTransaction::TStatusChanger::TStatusChanger(TTransaction *transaction, const L0
     : TMutation(transaction, repo), Status(status) {}
 
 TTransaction::TStatusChanger::~TStatusChanger() NO_THROW {
-  assert(TransactionMembership.TryGetCollector());
-  if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
-    switch (Status) {
-      case Normal : {
-        assert(MyMutation);
-        MyMutation->SetSequenceNumber(Repo->ChangeStatus(Status, MyMutation->GetNextUpdate()));
-        break;
-      }
-      case Paused : {
-        assert(MyMutation);
-        MyMutation->SetSequenceNumber(Repo->ChangeStatus(Status, MyMutation->GetNextUpdate()));
-        break;
-      }
-      case Failed : {
-        assert(false);  // A status changer should never be failing a repo. Only tetris should fail repo's through a popper
-        break;
+  /* NO_THROW commit point; guard the whole body so an allocation failure on the
+     status-change path degrades to a logged error rather than terminate (#250). */
+  try {
+    assert(TransactionMembership.TryGetCollector());
+    if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
+      switch (Status) {
+        case Normal : {
+          assert(MyMutation);
+          MyMutation->SetSequenceNumber(Repo->ChangeStatus(Status, MyMutation->GetNextUpdate()));
+          break;
+        }
+        case Paused : {
+          assert(MyMutation);
+          MyMutation->SetSequenceNumber(Repo->ChangeStatus(Status, MyMutation->GetNextUpdate()));
+          break;
+        }
+        case Failed : {
+          assert(false);  // A status changer should never be failing a repo. Only tetris should fail repo's through a popper
+          break;
+        }
       }
     }
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "~TStatusChanger: swallowing exception on commit path to avoid terminate (#250): %s", ex.what());
   }
 }
 
