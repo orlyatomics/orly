@@ -103,6 +103,9 @@ TUpdate::TEntry::TEntry(TUpdate *update, const TIndexKey &index_key, const TKey 
       MemoryLayerMembership(this, TEntryKey(this)),
       Op(&update->Suprena, Sabot::State::TAny::TWrapper(op.GetCore().NewState(op.GetArena(), state_alloc))),
       Mutator(mutator) {
+  for (auto &fwd : SkipFwd) {
+    fwd.store(nullptr, std::memory_order_relaxed);
+  }
   void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
   #ifndef NDEBUG
   Sabot::AssertTuple(*Sabot::Type::TAny::TWrapper(GetKey().GetCore().GetType(&update->Suprena, type_alloc)));

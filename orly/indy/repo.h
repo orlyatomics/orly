@@ -192,7 +192,8 @@ namespace Orly {
       /* TODO */
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const std::unique_ptr<TView> &view,
                                                                      const TIndexKey &key,
-                                                                     bool ignore_tombstone = false);
+                                                                     bool ignore_tombstone = false,
+                                                                     bool exact_point = false);
 
       /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(const std::unique_ptr<TView> &view,
@@ -282,7 +283,8 @@ namespace Orly {
 
         TPresentWalker(const std::unique_ptr<TView> &view,
                        const TIndexKey &key,
-                       bool ignore_tombstone);
+                       bool ignore_tombstone,
+                       bool exact_point);
 
         /* TODO */
         inline virtual ~TPresentWalker() {}
@@ -332,7 +334,7 @@ namespace Orly {
             assert(Layer);
             assert(Sync);
             assert(Fiber::TFrame::LocalFrame == Frame);
-            Walker->WalkerVec.emplace_back(Layer->NewPresentWalker(Walker->From));
+            Walker->WalkerVec.emplace_back(Layer->NewPresentWalker(Walker->From, Walker->ExactPoint));
             Sync->Complete();
             Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
           }
@@ -385,6 +387,11 @@ namespace Orly {
 
         /* TODO */
         const bool IgnoreTombstone;
+
+        /* Fully-bound point read: layers may seek instead of head-scan (#257).
+           Only the single-key ctor sets this true; the range ctor leaves it
+           false. */
+        bool ExactPoint = false;
 
       };  // TPresentWalker
 

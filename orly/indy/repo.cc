@@ -172,9 +172,10 @@ unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<T
 
 unique_ptr<Indy::TPresentWalker> TRepo::NewPresentWalker(const std::unique_ptr<TView> &view,
                                                          const TIndexKey &key,
-                                                         bool ignore_tombstone) {
+                                                         bool ignore_tombstone,
+                                                         bool exact_point) {
   assert(view);
-  return make_unique<TPresentWalker>(view, key, ignore_tombstone);
+  return make_unique<TPresentWalker>(view, key, ignore_tombstone, exact_point);
 }
 
 unique_ptr<Indy::TUpdateWalker> TRepo::NewUpdateWalker(const std::unique_ptr<TView> &view,
@@ -841,7 +842,8 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
 
 TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
                                       const TIndexKey &key,
-                                      bool ignore_tombstone)
+                                      bool ignore_tombstone,
+                                      bool exact_point)
     : Orly::Indy::TPresentWalker(Match),
       From(key),
       View(view),
@@ -849,7 +851,8 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       Upper(View->GetUpper() ? *View->GetUpper() : 0UL),
       MinHeap(View->GetNumEntries() + 1UL),
       Valid(false),
-      IgnoreTombstone(ignore_tombstone) {
+      IgnoreTombstone(ignore_tombstone),
+      ExactPoint(exact_point) {
   if (View->GetLower() && View->GetUpper()) {
     size_t pos = 0UL;
     Fiber::TSync sync(View->GetNumEntries());
@@ -867,7 +870,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       ++pos;
     }
     assert(View->GetCurMem());
-    WalkerVec.emplace_back(View->GetCurMem()->NewPresentWalker(From));
+    WalkerVec.emplace_back(View->GetCurMem()->NewPresentWalker(From, ExactPoint));
     Indy::TPresentWalker &mem_walker = *WalkerVec.back();
     if (mem_walker) {
       MinHeap.Insert(*mem_walker, pos);

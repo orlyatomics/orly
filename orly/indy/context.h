@@ -69,7 +69,10 @@ namespace Orly {
         using TItem = Orly::Indy::TPresentWalker::TItem;
 
         /* TODO */
-        TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &key);
+        /* exact_point true => fully-bound point read (operator[]/Exists), so
+           layers may seek instead of head-scanning (#257). The TKeyCursor path
+           leaves it false because its pattern may be a prefix. */
+        TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &key, bool exact_point = false);
 
         /* TODO */
         TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &from, const TIndexKey &to);
