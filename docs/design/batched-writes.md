@@ -88,7 +88,8 @@ Fully general: a list of distinct calls committed atomically together.
   pin down (per-call package/function resolution, mixed commutative/assign
   ordering, partial-failure policy) and the least-requested. **Out of scope for
   v1; B's server path generalizes to it later** (the fold loop just varies the
-  function per element).
+  function per element). Tracked as a gated follow-up in
+  [#255](https://github.com/orlyatomics/orly/issues/255) — implement on demand.
 
 ## 3. Recommendation
 
@@ -177,7 +178,8 @@ exact values, so correctness is gated for free).
   caller stays at the ~800 µs floor; this is throughput, not latency.
 - **Metadata semantics** (§4) is the one behavior change — settle it in review
   before coding, and keep the replication-notification contract intact.
-- **Heterogeneous (C) and best-effort/partial-failure** modes are deferred.
+- **Heterogeneous (C) and best-effort/partial-failure** modes are deferred —
+  option C tracked in [#255](https://github.com/orlyatomics/orly/issues/255).
 - **No engine/storage change.** If a design step here implies touching the merge
   or storage path, that's a signal the scope is wrong — the whole point is that
   the fold already exists and we are only feeding it more entries per update.
