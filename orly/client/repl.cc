@@ -58,6 +58,11 @@ namespace {
                        "try {pov_id} package method <{.name: val}>;",
                        "Try invoking a method"});
     }
+    virtual void operator()(const TTryBatchStmt *) const override {
+      Infos.push_back({"try (batch)",
+                       "try {pov_id} package method [<{.name: v1}>, <{.name: v2}>];",
+                       "Try a method against N arg records in one transaction"});
+    }
     virtual void operator()(const TSetUserIdStmt *) const override {
       Infos.push_back({"set user", "set user {user_id};", "Set a user id"});
     }
@@ -141,6 +146,7 @@ namespace {
                    TTailStmt,
                    TSetTtlStmt,
                    TTryStmt,
+                   TTryBatchStmt,
                    TSetUserIdStmt,
                    TPovStatusStmt,
                    TPovConsStmt,

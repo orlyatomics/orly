@@ -263,6 +263,39 @@ class TWsImpl final
             Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)))));
       }
 
+      virtual void operator()(const TTryBatchStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetPovId());
+        vector<string> fq_name;
+        TranslatePathName(fq_name, stmt->GetPackage());
+        string method_name = stmt->GetMethodName()->GetLexeme().GetText();
+        void *alloc = alloca(SabotStateSize);
+        /* Build one TClosure per argument record in the bracketed list, reusing
+           the same per-record member walk as TTryStmt. The server folds all N
+           calls into a single transaction (#253). */
+        std::vector<TClosure> closures;
+        auto list = stmt->GetObjExprList();
+        while (list) {
+          TClosure closure(method_name);
+          auto members = dynamic_cast<const TObjMemberList *>(list->GetObjExpr()->GetOptObjMemberList());
+          while (members) {
+            auto member = members->GetObjMember();
+            TWrapper state(NewStateSabot(member->GetExpr(), alloc));
+            closure.AddArgBySabot(member->GetName()->GetLexeme().GetText(), state);
+            auto member_tail = dynamic_cast<const TObjMemberListTail *>(members->GetOptObjMemberListTail());
+            members = member_tail ? member_tail->GetObjMemberList() : nullptr;
+          }
+          closures.push_back(std::move(closure));
+          auto list_tail = dynamic_cast<const TObjExprListTail *>(list->GetOptObjExprListTail());
+          list = list_tail ? list_tail->GetObjExprList() : nullptr;
+        }
+        TMethodResult result = GetSession()->TryBatch(pov_id, fq_name, closures);
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        Result = TJson::Parse(AsStrFunc(
+            &Var::Jsonify,
+            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)))));
+      }
+
       virtual void operator()(const TPovStatusStmt *stmt) const override {
         assert(stmt);
         bool is_pause = dynamic_cast<const TPauseKind *>(stmt->GetStatusKind()) != nullptr;

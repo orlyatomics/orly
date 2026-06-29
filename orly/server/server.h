@@ -508,6 +508,12 @@ namespace Orly {
           return Session->Try(Server, pov_id, fq_name, closure);
         }
 
+        /* Batch of N calls of one method, folded into a single transaction (#253). */
+        TMethodResult TryBatch(
+            const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const std::vector<TClosure> &closures) {
+          return Session->TryBatch(Server, pov_id, fq_name, closures);
+        }
+
         /* See <orly/protocol.h>. */
         TMethodResult TryTracked(const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure) {
           return Session->TryTracked(Server, pov_id, fq_name, closure);
@@ -632,6 +638,8 @@ namespace Orly {
         virtual void SetUserId(const Base::TUuid &) const override;
         virtual void Tail() const override;
         virtual TMethodResult Try(const TMethodRequest &) const override;
+        virtual TMethodResult TryBatch(
+            const Base::TUuid &, const std::vector<std::string> &, const std::vector<TClosure> &) const override;
         virtual void UninstallPackage(const std::vector<std::string> &, uint64_t) const override;
         virtual void UnpausePov(const Base::TUuid &) const override;
 

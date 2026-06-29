@@ -156,6 +156,21 @@ class Client:
         """
         return self.send(f"try {{{pov}}} {package} {method} {lit(args or {})};")
 
+    def call_batch(self, pov, package, method, args_list):
+        """Call ``package method`` on ``pov`` once per record in ``args_list``,
+        folding all N calls into a **single transaction** (#253).
+
+        Builds ``try {<pov>} <package> <method> [<{...}>, <{...}>, ...];`` and
+        returns a JSON **array** of the N per-call results, in order. This is a
+        write-coalescing primitive for commutative fan-in / bulk load: every call
+        runs against the same pre-batch snapshot (no read-your-writes within a
+        batch) and the batch is all-or-nothing (one bad record rejects the set).
+        """
+        if not args_list:
+            raise ValueError("call_batch requires at least one argument record")
+        records = lit([dict(a or {}) for a in args_list])
+        return self.send(f"try {{{pov}}} {package} {method} {records};")
+
     def pause(self, pov):
         return self.send(f"pause pov {lit(pov)};")
 

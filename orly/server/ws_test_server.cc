@@ -131,6 +131,13 @@ class TWsTestServer::TSessionManager
       return TMethodResult(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
     }
 
+    /* Fake batch: same 98.6 marker regardless of N (#253). */
+    TMethodResult TryBatch(const TUuid &/*pov_id*/, const vector<string> &/*fq_name*/, const vector<TClosure> &/*closures*/) {
+      void *alloc = alloca(Sabot::State::GetMaxStateSize());
+      TSuprena arena;
+      return TMethodResult(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
+    }
+
     /* Do-little. */
     void UninstallPackage(const vector<string> &/*name*/, uint64_t /*version*/) {}
 
@@ -181,6 +188,7 @@ class TWsTestServer::TSessionManager
       virtual void SetUserId(const TUuid &user_id) const override { Session->SetUserId(user_id); }
       virtual void Tail() const override { Session->Tail(); }
       virtual TMethodResult Try(const TMethodRequest &method_request) const override { return Session->Try(method_request); }
+      virtual TMethodResult TryBatch(const TUuid &pov_id, const vector<string> &fq_name, const vector<TClosure> &closures) const override { return Session->TryBatch(pov_id, fq_name, closures); }
       virtual void UninstallPackage(const vector<string> &name, uint64_t version) const override { Session->UninstallPackage(name, version); }
       virtual void UnpausePov(const TUuid &pov_id) const override { Session->UnpausePov(pov_id); }
 

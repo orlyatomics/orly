@@ -133,6 +133,9 @@ bool Orly::Client::Program::InterpretStmt(const TStmt *stmt, const shared_ptr<TC
       Sabot::State::TAny::TWrapper((*result)->GetValue().NewState((*result)->GetArena().get(), state_alloc))->Accept(Sabot::TStateDumper(cout));
       cout << endl;
     }
+    virtual void operator()(const TTryBatchStmt *) const override {
+      throw runtime_error("'try' batch stmt not implemented in this interface");
+    }
     // misc
     virtual void operator()(const TSetTtlStmt *that) const override {
       string tmp = that->GetIdExpr()->GetLexeme().GetText().substr(1, that->GetIdExpr()->GetLexeme().GetText().size() - 2);

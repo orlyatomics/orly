@@ -188,6 +188,13 @@ namespace Orly {
       /* See <orly/protocol.h>. */
       TMethodResult Try(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
 
+      /* Batched write (#253): invoke one method (resolved once) against each of
+         the given argument closures, accumulating every call's effects into a
+         single transaction committed once. Returns a list-typed result with one
+         entry per call, in order. All-or-nothing: a throw in any call aborts the
+         whole batch before commit. */
+      TMethodResult TryBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const std::vector<TClosure> &closures);
+
       /* See <orly/protocol.h>. */
       bool RunTestSuite(TServer *server, const std::vector<std::string> &package_name, uint64_t package_version, bool verbose);
 
