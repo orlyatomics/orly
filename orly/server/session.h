@@ -70,6 +70,10 @@ namespace Orly {
         /* TODO */
         virtual Base::TScheduler *GetScheduler() const = 0;
 
+        /* Write-backpressure high-watermark (#234); 0 disables. The accept path
+           in Try() yields until a writer's POV child drains below this. */
+        virtual size_t GetWriteBackpressureThreshold() const = 0;
+
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
            periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator

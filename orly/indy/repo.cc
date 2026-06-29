@@ -197,14 +197,25 @@ TRepo::TView::TView(TRepo *repo)
   assert(Repo);
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(Repo->DataLock);
-    Mapping = Repo->AcquireCurrentMapping();
-    CurrentMemoryLayer = Repo->CurMemoryLayer;
-    assert(CurrentMemoryLayer);
-    CurrentMemoryLayer->Incr();
-    LowerBound = Repo->LowestSeqNum;
-    UpperBound = Repo->HighestSeqNum;
-    NextId = Repo->NextUpdate;
+    Snapshot();
   }  // release DataLayer lock
+}
+
+TRepo::TView::TView(TRepo *repo, TDataLockHeld)
+    : Repo(repo) {
+  assert(Repo);
+  /* Caller holds Repo->DataLock (#237); snapshot without re-locking. */
+  Snapshot();
+}
+
+void TRepo::TView::Snapshot() {
+  Mapping = Repo->AcquireCurrentMapping();
+  CurrentMemoryLayer = Repo->CurMemoryLayer;
+  assert(CurrentMemoryLayer);
+  CurrentMemoryLayer->Incr();
+  LowerBound = Repo->LowestSeqNum;
+  UpperBound = Repo->HighestSeqNum;
+  NextId = Repo->NextUpdate;
 }
 
 TRepo::TView::~TView() {
@@ -347,9 +358,19 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
 }
 
 std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
+  /* Hold DataLock across the whole read. The memtable walk below reads the
+     repo's in-memory update-list linkage, which AppendUpdate (TCollection
+     insert) and PopLowest mutate under DataLock; without sharing the lock the
+     walk races the insert (#237 -- the race the #234 commutative fast-lane
+     amplifies by promoting many children per round). The TView is built with
+     the DataLockHeld tag so it snapshots without re-locking the non-recursive
+     DataLock; no walker machinery re-acquires DataLock, and ~TView /
+     AcquireCurrentMapping take only MappingLock, preserving the established
+     DataLock->MappingLock order, so this cannot deadlock. */
+  std::lock_guard<std::mutex> lock(DataLock);
   assert(LowestSeqNum);
   assert(HighestSeqNum);
-  auto view = make_unique<TRepo::TView>(this);
+  auto view = make_unique<TRepo::TView>(this, TView::TDataLockHeld{});
   auto walker_ptr = NewUpdateWalker(view, *LowestSeqNum, *LowestSeqNum);
   auto &walker = *walker_ptr;
   assert(walker);

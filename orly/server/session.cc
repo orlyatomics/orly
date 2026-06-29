@@ -263,6 +263,23 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       transaction->Prepare();
       transaction->CommitAction();
     }
+    /* Write backpressure (#234). The transaction above is now destroyed, so its
+       Pusher has applied AppendUpdate to `repo`'s memtable. If that memtable has
+       backed up past the high-watermark, the global merge is not draining this
+       writer fast enough; cooperatively yield this fiber until it drains, so
+       sustained accept paces to promote instead of growing the memtable without
+       bound (bad_alloc at high K). We hold no repo lock here and the merge runs
+       on its own runner, so YieldSlow lets it make progress; the loop re-reads
+       the live depth and always terminates because every memtable drains
+       (Tetris promote for children, disk merge for safe repos). */
+    if (had_effects) {
+      const size_t backpressure_threshold = server->GetWriteBackpressureThreshold();
+      if (backpressure_threshold) {
+        while (repo->GetMemBacklogDepth() > backpressure_threshold) {
+          Indy::Fiber::YieldSlow();
+        }
+      }
+    }
     walker_count = context.GetWalkerCount();
     timer.Stop();
     /* Record per-`Try` stats. TThreadLocalSigmaCalc::Push is lock-free across

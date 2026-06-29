@@ -1,15 +1,21 @@
 # Design: Concurrent write throughput — the single-threaded global merge
 
-> Status: **S1 implemented behind a default-off flag** (`--tetris_commutative_fastlane`,
-> merged PR #236), tracked by **issue #234**. **The default stays OFF and is not
-> recommended to flip:** a release-build soak ([§8.7](#87-release-soak--negative-result-2026-06-27))
-> shows the fast-lane yields **no throughput improvement**, because the global
-> merge is not the binding constraint under real load — it keeps up (backlog
-> ≈1.3 children/round), so there is nothing for the fast-lane to drain. The
-> change is safe and correct (TSan-clean, zero lost updates) and still helps the
-> genuine-backlog regime, but the headline concurrent-write cap is upstream in
-> the write-*acceptance* path, not the merge. The original gated RFC follows; the
-> implemented design and measurements are in [§8](#8-implementation-addendum-implemented).
+> Status: **fast-lane stays default-OFF; the default-on flip was investigated and
+> declined** (`--tetris_commutative_fastlane`, default off; PR #236 shipped it),
+> tracked by **issue #234**. The two §8.6 prerequisites for a flip were resolved —
+> the pre-existing memory-layer race the fast-lane amplified is **fixed** (#237,
+> [§8.8](#88-the-237-race-fix-prerequisite-for-the-default-flip--2026-06-29)) and
+> **write backpressure** was added ([§8.9](#89-the-default-flip-investigation--why-it-stays-off--2026-06-29)) —
+> but a K=24 release soak then measured the flag throughput- *and*
+> sustainability-neutral: with it on or off a sustained concurrent-writer run
+> degrades identically (same RSS, same timeouts at high volume), because the
+> binding constraint is the per-write acceptance path / fast-scheduler capacity,
+> not the merge tournament (the merge keeps up — backlog ≈1.3 children/round —
+> so there is nothing for the fast-lane to drain). This independently reproduces
+> [§8.7](#87-release-soak--negative-result-2026-06-27)/[§8.10](#810-conclusion)
+> at higher K. The flag, the #237 fix, and backpressure remain available for the
+> genuine deep-backlog regime. The original gated RFC follows; the implemented
+> design and measurements are in [§8](#8-implementation-addendum-implemented).
 
 ## 0. The key realization
 
@@ -326,13 +332,15 @@ it adds no new race.** Two corrections to the original plan fell out:
   and tracked as its own engine issue (#237) — it exists on master, flag off,
   and is orthogonal to this change.
 
-### 8.6 Remaining before S2 (flip default on)
+### 8.6 Remaining before S2 (flip default on) — ADDRESSED; flip declined
 
-- Fix the pre-existing `TRepo::AppendUpdate` vs `GetLowestUpdate` memory-layer
-  race (#237; orthogonal to #234, surfaced by the gate above).
-- ~~Sustained K=8/16 soak on a release build showing throughput scales~~ — **done,
-  and it does NOT scale; see §8.7.** This was the prerequisite for flipping the
-  default; the soak is the evidence to **keep it off**.
+- ~~Fix the pre-existing `TRepo::AppendUpdate` vs `GetLowestUpdate` memory-layer
+  race (#237).~~ **Done — §8.8.**
+- ~~Sustained K=8/16 soak on a release build showing throughput *scales*.~~ Done,
+  extended to **K=24** on the *sustainability* axis as well — and the flag is
+  neutral on both (§8.9). The flip was therefore **declined**; the flag stays off.
+- **Write backpressure** was added regardless (§8.9) as the more fundamental
+  safety net for the deep-backlog regime, independent of the merge fast-lane.
 - Design B (key-range sharding) remains optional/later for the RMW path.
 
 ### 8.7 Release soak — negative result (2026-06-27)
@@ -474,3 +482,81 @@ defaults, and the resolved core assignment is logged at startup.
 is closed as not-the-bottleneck. Concurrent-write throughput is bound by fast-
 scheduler execution capacity (core count *and* placement); the remaining algorithmic
 win is in the per-write acceptance path, a separate investigation (tracked in #241).
+
+### 8.8 The #237 race fix (prerequisite for the default flip) — 2026-06-29
+
+The flag-ON-vs-OFF TSan diff in §8.5 isolated the only fast-lane-amplified race:
+`TRepo::GetLowestUpdate` (the Tetris-merge peek) walked a repo's in-memory update
+ordered-list holding **no lock**, while a concurrent client write committing via
+`~TPusher → TRepo::AppendUpdate` mutates that same linkage under `DataLock`. A real
+data race on the list; pre-existing on master, but the fast-lane samples the window
+far more often (it completes the full bench workload, and promotes many children
+per round).
+
+Fix: `GetLowestUpdate` now takes `DataLock` for the whole read — the walk is
+serialized with `AppendUpdate`/`PopLowest`, which already mutate the list under
+`DataLock`. The wrinkle is that the `TView` snapshot helper itself acquires
+`DataLock`, and the mutex is non-recursive; so a tag-dispatched ctor
+(`TView(repo, TView::TDataLockHeld{})`) snapshots `{Mapping, mem-layer(+Incr),
+bounds}` under the already-held lock without re-locking. No walker machinery
+re-acquires `DataLock`; `~TView` and `AcquireCurrentMapping` take only
+`MappingLock`, preserving the established `DataLock → MappingLock` order, so the
+hold cannot deadlock (verified against every `GetLowestUpdate` caller — only the
+transaction `DoPeek`, which holds no repo lock at the call site).
+
+Verification: rebuilt `orlyi` under TSan, re-ran the concurrent-writer bench under
+`setarch -R` + `orly/tsan.supp`. The `GetLowestUpdate` race site **no longer
+appears** in the report (0 occurrences); the curated CI tsan set
+(`context_xrepo`, `context_fold`, `tetris_piece`, `sync`, `fiber`, `fiber_lock`)
+stays at 0 warnings. The full-`orlyi` run still reports the ~80 pre-existing,
+flag-independent engine races (manager_base refcounts, the fiber pool [#200],
+boost::beast websocket I/O, and a `MakeDirty`/`RemoveFromDirty` dirty-pointer race)
+— all out of scope here and unchanged by this fix, exactly as §8.5 anticipated.
+(#237)
+
+### 8.9 The default-flip investigation — why it stays off — 2026-06-29
+
+With #237 fixed (§8.8) the flag was TSan-safe to default on, so the question was
+whether it *helps*. The hypothesis going in (from the original RFC and prior
+notes) was a *sustainability* win the throughput soak (§8.7) had missed: that as
+concurrency rises the one-per-round merge falls behind, child memtables back up,
+and `orlyi` OOMs at K≥16 unless the fast-lane drains them. The flip was to rest on
+that. **The measurements did not support it.** Release `orlyi`, `--mem_sim`,
+Tetris-path concurrent-writer soak at **K=24**, fast-lane on vs off, sampling
+`orlyi` RSS:
+
+| load | fast-lane OFF | fast-lane ON |
+|---|---|---|
+| synchronous, 48 000 writes | completes, zero lost | completes, zero lost |
+| synchronous, 96 000 writes | client `WebSocketTimeout`, RSS 9063→9475 MB | client `WebSocketTimeout`, RSS 9086→9499 MB |
+| pipelined, 64 in-flight, 400 000 writes | RSS +474 MB then plateau, no OOM | RSS +494 MB then plateau, no OOM |
+
+On vs off is **indistinguishable** — same RSS trajectory, same timeout at the
+same volume, neither OOMs. The reason is the one §8.7/§8.10 already gave, and it
+holds at K=24: the merge is *not* the binding constraint. Even at K=24 the
+steady-state backlog is ≈1.3 children/round (server reporter) — the merge keeps
+up, so there is nothing for the fast-lane to drain. What saturates first is the
+per-write **acceptance path** (3 fast cores vs 24 writers); when the server
+stalls it is the round-trip that times out, identically with the flag on or off.
+The earlier-looking "off times out, on completes" was a *volume* artifact (240 k
+vs 48 k), not a flag effect — at equal volume both behave the same.
+
+**Conclusion:** the default-on flip is **declined**. The fast-lane is correct and
+TSan-safe (and still collapses the merge tournament from O(N²) to O(N) for the
+genuine deep-backlog regime), but it does not move throughput or sustainability at
+the loads this server actually reaches, so turning it on by default would add risk
+surface for no measured benefit. The flag stays off and available. The real
+concurrent-write lever is the acceptance path (#241), as §8.10 concludes.
+
+**Write backpressure** was added anyway as the more fundamental safety net, since
+it is independent of the merge fast-lane. `--tetris_backpressure_threshold`
+(default 50000; 0 disables): after committing a write, if the writer's POV child
+has more than the threshold of un-promoted updates in its memtable, the accept
+path `Fiber::YieldSlow`s until the global merge drains it below the watermark. The
+transaction is already committed and no repo lock is held, so the merge fiber (a
+separate runner) keeps draining; the loop re-reads the live depth and always
+terminates because every memtable drains. This converts "accept outruns promote →
+grow until `bad_alloc`" into a graceful slowdown that paces accept to promote. At
+the tested loads the steady-state backlog stays far below the default threshold,
+so it is inert here; it is insurance for a deeper-backlog regime than this
+server's acceptance path currently admits. (#234)
