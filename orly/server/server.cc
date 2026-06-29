@@ -296,7 +296,18 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       &TCmd::TetrisCommutativeFastlane, "tetris_commutative_fastlane", Optional, "tetris_commutative_fastlane\0tcf\0",
       "Promote ALL ready commutative (assertion-free) children per global-merge "
       "round instead of one, collapsing the O(N^2) per-round re-snapshot into "
-      "O(N) (issue #234). Default off."
+      "O(N) (issue #234). Default off: measured throughput- and "
+      "sustainability-neutral under tested loads (the binding constraint is the "
+      "per-write acceptance path, not the merge -- see "
+      "docs/design/concurrent-merge-throughput.md)."
+  );
+  Param(
+      &TCmd::TetrisBackpressureThreshold, "tetris_backpressure_threshold", Optional, "tetris_backpressure_threshold\0tbt\0",
+      "Write-backpressure high-watermark (issue #234): when a writer's POV child "
+      "repo has more than this many un-promoted updates backed up in its memtable, "
+      "the accept path cooperatively yields until the global merge drains below "
+      "the watermark, so accept paces to promote instead of growing memtables "
+      "without bound. 0 disables. Default 50000."
   );
 
   /******** Object Pools ********/
@@ -420,6 +431,7 @@ TServer::TCmd::TCmd()
       DoFsync(true),
       LogAssertionFailures(true),
       TetrisCommutativeFastlane(false),
+      TetrisBackpressureThreshold(50000UL),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),

@@ -315,9 +315,25 @@ namespace Orly {
 
         /* If true, the global-POV merge promotes ALL ready commutative
            (assertion-free) children per round instead of one, collapsing the
-           O(N^2) per-round re-snapshot/re-sort into O(N). Default off until the
-           TSan gate + soak sign off (issue #234). */
+           O(N^2) per-round re-snapshot/re-sort into O(N). The per-child-
+           transaction promotion preserves the one-Pusher-per-repo invariant, and
+           assertion-bearing children keep the one-per-round discipline. Default
+           OFF (issue #234): a K=24 soak measured it throughput- and
+           sustainability-neutral -- the binding concurrent-write constraint is
+           the per-write acceptance path, not the merge tournament (see
+           docs/design/concurrent-merge-throughput.md S8.7/S8.10). The flag and
+           its #237 race fix + write backpressure remain available for the
+           genuine deep-backlog regime. */
         bool TetrisCommutativeFastlane;
+
+        /* High-watermark for write backpressure (#234). When a writer's POV
+           child repo has more than this many un-promoted updates backed up in
+           its memtable, the global merge is falling behind that writer; the
+           accept path cooperatively yields its fiber until the merge drains the
+           backlog below the watermark, so sustained accept paces to promote
+           instead of growing memtables without bound (bad_alloc at high K). 0
+           disables backpressure. */
+        size_t TetrisBackpressureThreshold;
 
         /******** Object Pools ********/
 
@@ -404,6 +420,11 @@ namespace Orly {
       virtual Base::TScheduler *GetScheduler() const override {
         assert(Scheduler);
         return Scheduler;
+      }
+
+      /* Write-backpressure high-watermark (#234); 0 disables. See TCmd. */
+      size_t GetWriteBackpressureThreshold() const override {
+        return Cmd.TetrisBackpressureThreshold;
       }
 
       /* Called when the websockets server wishes to create a new session. */

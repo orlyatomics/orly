@@ -68,6 +68,16 @@ namespace Orly {
         /* TODO */
         TView(TRepo *repo);
 
+        /* Tag selecting the snapshot ctor below. */
+        struct TDataLockHeld final {};
+
+        /* Snapshot variant for callers that ALREADY hold Repo->DataLock (e.g.
+           TRepo::GetLowestUpdate, which must hold DataLock across its whole
+           memtable walk so the update-list linkage it reads cannot be mutated
+           by a concurrent AppendUpdate -- #237). Tag-dispatched so it does not
+           re-lock the non-recursive DataLock. */
+        TView(TRepo *repo, TDataLockHeld);
+
         /* TODO */
         ~TView();
 
@@ -93,6 +103,10 @@ namespace Orly {
 
         private:
 
+        /* Snapshot {Mapping, CurrentMemoryLayer(+Incr), bounds, NextId} from
+           Repo. The caller MUST hold Repo->DataLock; both ctors funnel here. */
+        void Snapshot();
+
         /* TODO */
         TRepo *Repo;
 
@@ -117,6 +131,12 @@ namespace Orly {
       inline void GetSnapshot(std::optional<TSequenceNumber> &seq_num_start,
                               std::optional<TSequenceNumber> &seq_num_limit,
                               TSequenceNumber &next_seq_num);
+
+      /* Count of un-promoted updates sitting in this repo's memtable
+         (HighestSeqNum - LowestSeqNum + 1), or 0 if empty / bounds unset. This
+         is the global-merge backlog depth for a Tetris child; read under
+         DataLock. Used by write backpressure (#234) to pace accept to promote. */
+      inline size_t GetMemBacklogDepth();
 
       /* The sequence number of the oldest unpopped update. */
       inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
@@ -617,6 +637,14 @@ namespace Orly {
       seq_num_start = LowestSeqNum;
       seq_num_limit = HighestSeqNum;
       next_seq_num = NextUpdate;
+    }
+
+    inline size_t TRepo::GetMemBacklogDepth() {
+      std::lock_guard<std::mutex> lock(DataLock);
+      if (!LowestSeqNum || !HighestSeqNum || *HighestSeqNum < *LowestSeqNum) {
+        return 0UL;
+      }
+      return static_cast<size_t>(*HighestSeqNum - *LowestSeqNum) + 1UL;
     }
 
     inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
