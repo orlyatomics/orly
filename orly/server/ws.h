@@ -88,6 +88,13 @@ namespace Orly {
           /* Override to perform the request. */
           virtual TMethodResult Try(const TMethodRequest &method_request) const = 0;
 
+          /* Override to perform a batch request: one method against N argument
+             records, folded into a single transaction (#253). Returns a
+             list-typed result with one entry per call, in statement order. */
+          virtual TMethodResult TryBatch(
+              const Base::TUuid &pov_id, const std::vector<std::string> &fq_name,
+              const std::vector<TClosure> &closures) const = 0;
+
           /* Override to perform the request. */
           virtual void UninstallPackage(const std::vector<std::string> &name, uint64_t version) const = 0;
 

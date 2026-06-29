@@ -46,6 +46,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Uninstall package | `uninstall <pkg>.<version>;` | — |
 | New POV | `new [safe] [shared\|private] pov [parent <id>];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |
+| Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause pov <id>;` / `unpause pov <id>;` | `"paused"` / `"unpaused"` |
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
@@ -63,6 +64,25 @@ exit;
 - **`try` args** are an orlyscript object literal: `<{.name: expr, ...}>` (empty:
   `<{}>`). Scalars, strings, records, sets, etc. are written as orlyscript
   literals; string values must be escaped for an orlyscript string literal.
+- **Batched `try`** (`#253`) invokes **one** `(pkg, method)` against **N** argument
+  records — a bracketed, comma-separated list (`[<{...}>, <{...}>, ...]`, at least
+  one) — folding all N calls into a **single transaction**. It exists to amortize
+  the fixed per-round-trip cost (parse, pov-open + context build, commit, network
+  round-trip) across a bulk load or commutative fan-in; expect ~3–5× write
+  throughput on batchable workloads. `result` is a JSON **array** with one entry
+  per call, in statement order (pure-effect methods yield `null`s). Semantics:
+  - **All-or-nothing.** The batch is one transaction; a throw in any call aborts
+    the whole batch before commit (error reply, no partial write).
+  - **Snapshot isolation, no read-your-writes.** Every call reads the *same*
+    pre-batch snapshot — call *k+1* does **not** see call *k*'s mutation. A batch
+    is a write-coalescing primitive, **not** a transaction script;
+    sequential-dependent writes must stay separate `try` calls.
+  - **Commutative folds, assigns collapse last-wins.** Commutative ops (`+=`, `|=`,
+    …) to the same key across calls fold (summed on read — the win); a non-commutative
+    `=`/delete to the same key within one batch collapses in statement order.
+  - One update ⇒ **one** meta record / replication notification per batch (records
+    the method plus all N arg sets under index-prefixed names).
+  - Clients: `call_batch` (python), `CallBatch` (go), `callBatch` (ts).
 - **POV flavors**: `safe` vs unsafe (conflict guarantee), `shared` vs `private`
   (visibility), optional `parent`. Demos use `new safe shared pov;`.
 - **Time-travel is not a protocol verb.** Historical / as-of reads are expressed

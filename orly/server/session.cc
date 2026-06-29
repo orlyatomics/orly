@@ -301,6 +301,178 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   }
 }
 
+/* Batched write (#253). One method, resolved once, invoked against each of N
+   argument closures on the SAME context; every call's effects accumulate into
+   one effect set (TContext::AddEffect already Augments same-key changes -- the
+   identical accumulation a single method doing several `+=` to one key relies
+   on), which folds into ONE TUpdate committed ONCE. Mirrors Try() and reuses
+   its exact deferred-entry fold; the only differences are the call loop, the
+   one-entry-per-call list result, and a batch-shaped meta record. */
+TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const vector<TClosure> &closures) {
+  assert(Indy::Fiber::TRunner::LocalRunner);
+  assert(!closures.empty());  // grammar guarantees N >= 1
+  size_t prev_assignment_count = std::atomic_fetch_add(&server->FastAssignmentCounter, 1UL);
+  Indy::Fiber::TSwitchToRunner RunnerSwitcher(server->FastRunnerVec[prev_assignment_count % server->FastRunnerVec.size()].get());
+  Base::TTimer timer;
+  Base::TTimer call_timer;
+  bool had_effects = false;
+  std::optional<TTracker> tracker = std::optional<TTracker>();
+  size_t walker_count = 0UL;
+  TSuprena my_arena;
+  try {
+    void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize() * 2);
+    void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
+    void *call_state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    // Open the pov and its repo and prepare the data and package contexts -- ONCE for the whole batch.
+    auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
+    if (!pov) {
+      DEFINE_ERROR(error_t, runtime_error, "unknown pov_id");
+      THROW_ERROR(error_t) << pov_id;
+    }
+    AddPov(pov);
+    auto repo = pov->GetRepo(server);
+    Indy::TContext context(repo, &my_arena);
+    Rt::TOpt<Base::TUuid> user_id;
+    if (UserId) {
+      user_id = UserId->GetRaw();
+    }
+    Base::TUuid session_id = GetId().GetRaw();
+    Indy::TIndyContext indy_context(user_id, session_id, context, &my_arena, server->GetScheduler(),
+      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint32_t>());
+    // Resolve the function ONCE (same method for every call in the batch).
+    auto func = server->GetPackageManager().Get(Package::TName{fq_name})->GetFunctionInfo(AsPiece(closures.front().GetMethodName()));
+    // Run each call against the same context. Each call reads the SAME pre-batch
+    // snapshot (no read-your-writes within a batch -- this is a write-coalescing
+    // primitive, not a transaction script); effects accumulate across calls.
+    std::vector<Var::TVar> results;
+    results.reserve(closures.size());
+    call_timer.Start();
+    for (const auto &closure: closures) {
+      Spa::TArgs::TOrlyArg prog_args;
+      auto arena = closure.GetArena().get();
+      for (const auto &item: closure.GetCoreByName()) {
+        prog_args.insert(make_pair(item.first, Indy::TKey(item.second, arena)));
+      }
+      TCore call_core = func->Call(indy_context, prog_args);
+      results.push_back(Var::ToVar(*Sabot::State::TAny::TWrapper(
+          Indy::TKey(call_core, indy_context.GetArena()).GetState(call_state_alloc))));
+    }
+    call_timer.Stop();
+    Package::TContext::TEffects effects = indy_context.MoveEffects();
+    if (!effects.empty()) {
+      had_effects = true;
+      auto transaction = server->GetRepoManager()->NewTransaction();
+      Indy::TUpdate::TOpByKey op_by_key;
+      /* Identical deferred-entry fold to Try() (#49/#232): defer-safe commutative
+         mutations skip the read and emit RHS + mutator directly; everything else
+         resolves against the snapshot into op_by_key. The effect set here spans
+         all N calls, already Augment-merged per key by AddEffect. */
+      std::vector<std::tuple<Indy::TIndexKey, Indy::TKey, TMutator>> deferred_entries;
+      for (const auto &item: effects) {
+        auto key = item.first;
+        if (auto *mut = dynamic_cast<const Var::TMutation *>(item.second.get())) {
+          if (Var::IsDeferSafeCommutative(mut->GetMutator())) {
+            deferred_entries.emplace_back(
+                key,
+                Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, mut->GetRhs())).get()),
+                mut->GetMutator());
+            continue;
+          }
+        }
+        Var::TVar val;
+        if (!item.second->IsDelete()) {
+          if (!item.second->IsFinal()) {
+            val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
+          }
+          item.second->Apply(val);
+          op_by_key[key] =
+              Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, val)).get());
+        }
+        else {
+          op_by_key[key] =
+              Indy::TKey(Native::TTombstone::Tombstone, &my_arena, state_alloc_2);
+        }
+      }
+      TUuid update_id(TUuid::Twister);
+      tracker = TTracker(update_id, seconds(0));
+      const auto &predicate_results = indy_context.GetPredicateResults();
+      /* One meta record for the whole batch. The method is shared; each call's
+         args are recorded under an index prefix ("<i>.<name>") so all N arg sets
+         are preserved losslessly in the flat TArgByName map. Predicate results
+         span every call, in order. */
+      TMetaRecord::TEntry::TArgByName meta_args_by_name;
+      for (size_t i = 0; i < closures.size(); ++i) {
+        auto closure_arena = closures[i].GetArena().get();
+        std::string prefix = std::to_string(i) + ".";
+        for (const auto &item: closures[i].GetCoreByName()) {
+          auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)));
+          meta_args_by_name.insert(make_pair(prefix + item.first, arg));
+        }
+      }
+
+      uint32_t random_seed = 0;
+      if(indy_context.GetOptRandomSeed().IsKnown()) {
+        random_seed = indy_context.GetOptRandomSeed().GetVal();
+      }
+      Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
+      if(indy_context.GetOptNow().IsKnown()) {
+        run_time = indy_context.GetOptNow().GetVal();
+      }
+
+      TMetaRecord meta_record(
+          update_id,
+          TMetaRecord::TEntry(
+              GetId(), GetUserId(), fq_name, closures.front().GetMethodName(),
+              TMetaRecord::TEntry::TArgByName(meta_args_by_name.begin(), meta_args_by_name.end()),
+              TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
+              run_time, random_seed)
+      );
+      auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
+      std::ranges::sort(deferred_entries, {},
+                        [](const auto &entry) -> const Indy::TKey & {
+                          return std::get<0>(entry).GetKey();
+                        });
+      for (auto &entry : deferred_entries) {
+        update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+      }
+      transaction->Push(repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+    /* Write backpressure (#234), applied once per batch (one transaction). */
+    if (had_effects) {
+      const size_t backpressure_threshold = server->GetWriteBackpressureThreshold();
+      if (backpressure_threshold) {
+        while (repo->GetMemBacklogDepth() > backpressure_threshold) {
+          Indy::Fiber::YieldSlow();
+        }
+      }
+    }
+    walker_count = context.GetWalkerCount();
+    timer.Stop();
+    if (had_effects) {
+      TServer::TryWriteTimeCalc.Push(ToSecondsDouble(timer.GetTotal()));
+      TServer::TryWriteCallTimerCalc.Push(ToSecondsDouble(call_timer.GetTotal()));
+    } else {
+      TServer::TryReadTimeCalc.Push(ToSecondsDouble(timer.GetTotal()));
+      TServer::TryReadCallTimerCalc.Push(ToSecondsDouble(call_timer.GetTotal()));
+    }
+    TServer::TryWalkerCountCalc.Push(walker_count);
+    TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
+    // Aggregate the N per-call results into one list-typed core (one entry per
+    // call, in order); the ws marshal renders it as a JSON array. Built in the
+    // indy_context arena and deep-copied out by the TMethodResult ctor, exactly
+    // as Try() returns its single result_core.
+    Var::TVar list_var = Var::TVar::List(results, results.front().GetType());
+    TCore list_core(indy_context.GetArena(),
+        Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_1, list_var)).get());
+    return TMethodResult(indy_context.GetArena(), list_core, tracker);
+  } catch (const exception &ex) {
+    syslog(LOG_ERR, "Error in Session::TryBatch : [%s]", ex.what());
+    throw;
+  }
+}
+
 bool TSession::RunTestSuite(TServer * /*server*/,
     const std::vector<std::string> & /*package_name*/,
     uint64_t /*package_version*/, bool /*verbose*/) {

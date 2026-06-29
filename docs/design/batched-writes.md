@@ -1,7 +1,11 @@
 # Design: Batched / pipelined writes — amortizing the per-write round-trip
 
-> Status: **gated RFC, for review.** Not implemented. This proposes a batch
-> write verb that folds N method calls into **one** transaction, motivated by the
+> Status: **IMPLEMENTED** (option B, #253). The batch write verb
+> `try {pov} pkg method [<{...}>, <{...}>, ...];` folds N method calls into
+> **one** transaction; reply is a JSON array of the N per-call results. See
+> `TSession::TryBatch` (`orly/server/session.cc`), the `try_batch_stmt` grammar
+> rule, `docs/PROTOCOL.md`, and the `call_batch`/`CallBatch`/`callBatch` clients.
+> The design below is the original proposal, motivated by the
 > write-path characterization in
 > [`concurrent-merge-throughput.md`](concurrent-merge-throughput.md) §8–§9: single-write
 > latency (~800 µs) sits at the architecture's floor and is ~100% server-side, so

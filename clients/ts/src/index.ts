@@ -193,6 +193,23 @@ export class Client {
     return this.send(`try {${pov}} ${pkg} ${method} ${lit(args)};`);
   }
 
+  /**
+   * Call `package method` on `pov` once per record in `argsList`, folding all N
+   * calls into a single transaction (#253):
+   * `try {pov} package method [<{.k: v1}>, <{.k: v2}>, ...];`.
+   *
+   * Resolves to a JSON array of the N per-call results, in order. A
+   * write-coalescing primitive for commutative fan-in / bulk load: the batch is
+   * all-or-nothing (one bad record rejects the set) and every call runs against
+   * the same pre-batch snapshot (no read-your-writes within a batch).
+   */
+  callBatch(pov: string, pkg: string, method: string, argsList: Args[]): Promise<unknown> {
+    if (argsList.length === 0) {
+      throw new TypeError("orly: callBatch requires at least one argument record");
+    }
+    return this.send(`try {${pov}} ${pkg} ${method} ${lit(argsList)};`);
+  }
+
   pause(pov: string): Promise<unknown> {
     return this.send(`pause pov ${lit(pov)};`);
   }

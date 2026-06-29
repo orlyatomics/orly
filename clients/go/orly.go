@@ -142,6 +142,28 @@ func (c *Client) Call(pov, pkg, method string, args map[string]any) (json.RawMes
 	return c.Send(fmt.Sprintf("try {%s} %s %s %s;", pov, pkg, method, lit))
 }
 
+// CallBatch invokes pkg method on pov once per record in argsList, folding all N
+// calls into a single transaction (#253). It builds
+// `try {pov} pkg method [<{...}>, <{...}>, ...];` and returns a JSON array of the
+// N per-call results, in order. The batch is all-or-nothing (one bad record
+// rejects the set) and every call runs against the same pre-batch snapshot
+// (no read-your-writes within a batch) -- a write-coalescing primitive for
+// commutative fan-in / bulk load.
+func (c *Client) CallBatch(pov, pkg, method string, argsList []map[string]any) (json.RawMessage, error) {
+	if len(argsList) == 0 {
+		return nil, fmt.Errorf("CallBatch requires at least one argument record")
+	}
+	recs := make([]string, 0, len(argsList))
+	for _, a := range argsList {
+		r, err := litRecord(a)
+		if err != nil {
+			return nil, err
+		}
+		recs = append(recs, r)
+	}
+	return c.Send(fmt.Sprintf("try {%s} %s %s [%s];", pov, pkg, method, strings.Join(recs, ", ")))
+}
+
 // Exit ends the session.
 func (c *Client) Exit() error {
 	_, err := c.Send("exit;")

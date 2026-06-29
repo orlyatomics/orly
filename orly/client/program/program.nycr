@@ -134,6 +134,7 @@ pov_status_stmt     : stmt -> status_kind id_expr semi;
 set_user_id_stmt    : stmt -> set_kwd user_id_kwd id_expr semi;
 set_ttl_stmt        : stmt -> set_kwd ttl_kwd id_expr to_kwd int_expr semi;
 try_stmt            : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name args:obj_expr semi;
+try_batch_stmt      : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name open_bracket obj_expr_list close_bracket semi;
 echo_stmt           : stmt -> echo_kwd expr semi;
 tail_stmt           : stmt -> tail_kwd semi;
 new_session_stmt    : stmt -> new_kwd session_kwd semi;
@@ -273,3 +274,11 @@ obj_expr : expr -> open_obj opt_obj_member_list close_obj;  /* <{ .name : expr, 
   obj_member_list_tail    : opt_obj_member_list_tail -> comma obj_member_list;
 
   obj_member -> dot name colon expr;
+
+/* A bracketed list of object literals -- the argument form of try_batch_stmt
+   (one method, N arg records, folded into one transaction). Mirrors expr_list. */
+obj_expr_list -> obj_expr opt_obj_expr_list_tail;
+
+  opt_obj_expr_list_tail;
+  no_obj_expr_list_tail : opt_obj_expr_list_tail -> empty;
+  obj_expr_list_tail    : opt_obj_expr_list_tail -> comma obj_expr_list;

@@ -22,27 +22,41 @@ verdict that flips from "GROWING" to "FLAT" once #227 is fixed.
 """
 
 import os
+import sys
 import time
 
 import orly
 
 TOTAL = int(os.environ.get("BENCH_WRITES", "2000"))
 WINDOW = max(TOTAL // 8, 50)
+# Batched writes (#253): fold this many add_mention calls into one transaction.
+# 1 = unbatched (one `try` per write). Override with `--batch N` or BENCH_BATCH=N.
+BATCH = int(os.environ.get("BENCH_BATCH", "1"))
 
 
 def p(*a):
     print(*a, flush=True)
 
 
-def run_burst(c, pov, key_for, total):
-    """Write `total` keys, returning (ms/write of the first window, of the
-    last window, and the full per-window list)."""
+def run_burst(c, pov, key_for, total, batch=1):
+    """Write `total` keys, returning the full per-window (i, ms/write) list.
+
+    With `batch > 1`, coalesce consecutive writes into one `call_batch` so the
+    per-round-trip cost (parse, context, commit, I/O) is amortized across the
+    batch (#253). ms/write is still reported per logical write, so batched and
+    unbatched runs are directly comparable."""
     windows = []
     t0 = time.monotonic()
     last_t, last_i = t0, 0
-    for i in range(1, total + 1):
-        c.call(pov, "graph", "add_mention", key_for(i))
-        if i % WINDOW == 0:
+    i = 0
+    while i < total:
+        n = min(batch, total - i)
+        if n == 1:
+            c.call(pov, "graph", "add_mention", key_for(i + 1))
+        else:
+            c.call_batch(pov, "graph", "add_mention", [key_for(i + k + 1) for k in range(n)])
+        i += n
+        if i % WINDOW < n or i == total:
             now = time.monotonic()
             ms = (now - last_t) * 1000 / (i - last_i)
             windows.append((i, ms))
@@ -63,25 +77,31 @@ def verdict(windows, label):
 
 
 def main():
-    p(f"=== #227 write-scaling reproduction (TOTAL={TOTAL}, window={WINDOW}) ===\n")
+    batch = BATCH
+    if "--batch" in sys.argv:
+        batch = int(sys.argv[sys.argv.index("--batch") + 1])
+    mode = f"batch={batch}" if batch > 1 else "unbatched"
+    p(f"=== #227 write-scaling reproduction (TOTAL={TOTAL}, window={WINDOW}, {mode}) ===\n")
+    if batch > 1:
+        p(f"(#253) folding {batch} add_mention calls per transaction\n")
     c = orly.connect()
     c.new_session()
     c.install("graph", 1)
 
     p("A. DISTINCT keys -- a new key every write:")
     pov = c.new_pov()
-    w = run_burst(c, pov, lambda i: {"e": f"e{i}", "d": i}, TOTAL)
+    w = run_burst(c, pov, lambda i: {"e": f"e{i}", "d": i}, TOTAL, batch)
     verdict(w, "distinct")
 
     p("\nB. SAME key -- one hot key, repeated +=:")
     pov = c.new_pov()
-    w = run_burst(c, pov, lambda i: {"e": "hot", "d": 0}, TOTAL)
+    w = run_burst(c, pov, lambda i: {"e": "hot", "d": 0}, TOTAL, batch)
     verdict(w, "same-key")
 
     p("\nC. PAUSE mid-run -- does an idle gap let the merge catch up?")
     pov = c.new_pov()
     half = TOTAL // 2
-    run_burst(c, pov, lambda i: {"e": f"p{i}", "d": i}, half)
+    run_burst(c, pov, lambda i: {"e": f"p{i}", "d": i}, half, batch)
     p("    --- idle 8s (background merge would run here) ---")
     time.sleep(8)
     p("    resuming:")

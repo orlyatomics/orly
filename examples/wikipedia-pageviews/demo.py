@@ -62,6 +62,11 @@ else:
     EVENTS_PER_WRITER = 250
     _NUM_HOURS = 24
 
+# Batched ingest (#253): fold this many events into one transaction per
+# call_batch. Default 1 = unbatched (CI behavior unchanged). Set DEMO_BATCH>1
+# to exercise batched writes; the exact-counter self-check must still pass.
+BATCH = int(os.environ.get("DEMO_BATCH", "1"))
+
 PAGES = ["Donald_Trump", "Taylor_Swift", "ChatGPT", "Wikipedia"]
 HOURS = list(range(2026_06_01_00, 2026_06_01_00 + _NUM_HOURS))
 
@@ -95,12 +100,24 @@ def generate_events(seed, count):
 
 def writer(writer_id, pov, events):
     """One writer: open a fresh WebSocket connection, open a session,
-    ingest its slice of events using the shared POV."""
+    ingest its slice of events using the shared POV.
+
+    With DEMO_BATCH=N (#253), coalesce N events into one `call_batch` (one
+    transaction) instead of N separate `increment_view` calls. The self-check
+    below must produce the *identical* counters either way -- batched commutative
+    `+=` folds to the same totals -- so it gates batch correctness for free."""
     c = orly.connect()
     try:
         c.new_session()
-        for page, hour, n in events:
-            increment_view(c, pov, page, hour, n)
+        if BATCH > 1:
+            for k in range(0, len(events), BATCH):
+                chunk = events[k:k + BATCH]
+                c.call_batch(pov, "views", "increment_view",
+                             [{"lang": "en", "page": p, "hour": h, "n": n}
+                              for (p, h, n) in chunk])
+        else:
+            for page, hour, n in events:
+                increment_view(c, pov, page, hour, n)
     finally:
         c.close()
 
