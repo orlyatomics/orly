@@ -38,7 +38,6 @@ class TReader
   NO_COPY(TReader);
   public:
 
-  /* TODO */
   typedef TStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedPage, 0UL> TInStream;
   typedef Orly::Indy::Disk::TReadFile<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedPage> TMyReadFile;
 
@@ -464,10 +463,8 @@ std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumb
 class TUpdateSortComparator {
   public:
 
-  /* TODO */
   TUpdateSortComparator() {}
 
-  /* TODO */
   bool operator()(const TUpdate *lhs, const TUpdate *rhs) const {
     assert(lhs);
     assert(rhs);

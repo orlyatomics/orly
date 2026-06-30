@@ -31,21 +31,17 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TStrReplace
         : public TExpr {
       NO_COPY(TStrReplace);
       public:
 
-      /* TODO */
       TStrReplace(const Package::Syntax::TBuiltInReplace *str_replace);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TBuiltInReplace *StrReplace;
 
     };  // TStrReplace

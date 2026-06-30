@@ -38,16 +38,13 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       template <bool ScanAheadAllowed>
       using TDataDiskArena = TDiskArena<Util::LogicalBlockSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::PageCheckedBlock, DiskArenaMaxCacheSize, ScanAheadAllowed>;
 
-      /* TODO */
       class TMergeDataFile {
         NO_COPY(TMergeDataFile);
         public:
 
-        /* TODO */
         TMergeDataFile(Util::TEngine *engine,
                        Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                        const Base::TUuid &file_uuid,
@@ -61,7 +58,6 @@ namespace Orly {
                        bool can_tail,
                        bool can_tail_tombstone);
 
-        /* TODO */
         inline size_t GetNumKeys() const {
           return NumKeys;
         }
@@ -73,12 +69,10 @@ namespace Orly {
           return NumNonAssignEntries;
         }
 
-        /* TODO */
         inline TSequenceNumber GetLowestSequence() const {
           return LowestSeq;
         }
 
-        /* TODO */
         inline TSequenceNumber GetHighestSequence() const {
           return HighestSeq;
         }

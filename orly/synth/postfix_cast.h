@@ -30,39 +30,29 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TPostfixCast
         : public TExpr {
       NO_COPY(TPostfixCast);
       public:
 
-      /* TODO */
       TPostfixCast(const TExprFactory *expr_factory, const Package::Syntax::TPostfixCast *postfix_cast);
 
-      /* TODO */
       virtual ~TPostfixCast();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TPostfixCast *PostfixCast;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TType *Rhs;
 
     };  // TPostfixCast

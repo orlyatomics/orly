@@ -34,27 +34,21 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExpr;
     class TExprFactory;
 
-    /* TODO */
     class TStmtBlock {
       NO_COPY(TStmtBlock);
       public:
 
       typedef std::vector<TStmt *> TStmtVec;
 
-      /* TODO */
       TStmtBlock(const TExprFactory *expr_factory, const Package::Syntax::TStmtBlock *stmt_block);
 
-      /* TODO */
       virtual ~TStmtBlock();
 
-      /* TODO */
       Symbol::Stmt::TStmtBlock::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) const;
 
       /* Do-little */
@@ -64,13 +58,10 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TStmtBlock *StmtBlock;
 
-      /* TODO */
       TStmtVec Stmts;
 
     };  // TStmtBlock

@@ -36,39 +36,29 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TAssertExpr
         : public TThatableExpr {
       NO_COPY(TAssertExpr);
       public:
 
-      /* TODO */
       TAssertExpr(const TExprFactory *expr_factory, const Package::Syntax::TAssertExpr *assert_expr);
 
-      /* TODO */
       virtual ~TAssertExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TAssert::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TThatable::TPtr GetThatableSymbol() const;
 
       private:
 
-      /* TODO */
       class TAssertCase {
         NO_COPY(TAssertCase);
         public:
@@ -91,21 +81,16 @@ namespace Orly {
 
       };  // TAssertCase
 
-      /* TODO */
       typedef std::vector<TAssertCase *> TAssertCaseVec;
 
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TAssertExpr *AssertExpr;
 
-      /* TODO */
       TAssertCaseVec AssertCases;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       mutable Expr::TAssert::TPtr Symbol;
 
     };  // TAssertExpr

@@ -93,47 +93,38 @@ namespace Orly {
       >;  // Sum
       #endif
 
-      /* TODO */
       static constexpr size_t GetMaxTypePinSize() { return 88; }
       static constexpr size_t GetMaxTypeSize() { return 40; }
 
-      /* TODO */
       template <typename TVal>
       class TWrapperBase {
         NO_COPY(TWrapperBase);
         public:
 
-        /* TODO */
         TWrapperBase(TVal *val) : Val(val) {}
 
-        /* TODO */
         ~TWrapperBase() {
           Val->~TVal();
         }
 
-        /* TODO */
         TVal *operator->() const {
           return Val;
         }
 
-        /* TODO */
         const TVal &operator*() const {
           return *Val;
         }
 
-        /* TODO */
         operator TVal *() const {
           return Val;
         }
 
-        /* TODO */
         TVal *get() const {
           return Val;
         }
 
         private:
 
-        /* TODO */
         TVal *Val;
 
       };  // TWrapperBase
@@ -147,13 +138,11 @@ namespace Orly {
         NO_COPY(TAny);
         public:
 
-        /* TODO */
         using TWrapper = TWrapperBase<TAny>;
 
         /* Do-little. */
         virtual ~TAny() {}
 
-        /* TODO */
         virtual void Accept(const TTypeVisitor &vistor) const = 0;
 
         /* True iff this is the recursive back-reference leaf (Type::TSelfRef,
@@ -177,7 +166,6 @@ namespace Orly {
           : public TAny {
         public:
 
-        /* TODO */
         using TWrapper = TWrapperBase<TUnary>;
 
         /* Keeps the array in memory. */
@@ -185,7 +173,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TWrapperBase<TPin>;
 
           /* Do-little. */
@@ -221,7 +208,6 @@ namespace Orly {
           : public TAny {
         public:
 
-        /* TODO */
         using TWrapper = TWrapperBase<TBinary>;
 
         /* Keeps the array in memory. */
@@ -229,7 +215,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TWrapperBase<TPin>;
 
           /* Do-little. */
@@ -268,7 +253,6 @@ namespace Orly {
           : public TAny {
         public:
 
-        /* TODO */
         using TWrapper = TWrapperBase<TNAry>;
 
         /* Override to return the number of elements in the type. */
@@ -384,7 +368,6 @@ namespace Orly {
           : public TNAry {
         public:
 
-        /* TODO */
         using TWrapper = TWrapperBase<TRecord>;
 
         /* See TAny. */
@@ -395,7 +378,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TWrapperBase<TPin>;
 
           /* Do-little. */
@@ -445,7 +427,6 @@ namespace Orly {
           : public TNAry {
         public:
 
-        /* TODO */
         using TWrapper = TWrapperBase<TTuple>;
 
         /* The type of our callback. */
@@ -459,7 +440,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TWrapperBase<TPin>;
 
           /* Do-little. */
@@ -500,12 +480,10 @@ namespace Orly {
 
     };  // Type
 
-    /* TODO */
     class TTypeVisitor {
       NO_COPY(TTypeVisitor);
       public:
 
-      /* TODO */
       virtual ~TTypeVisitor() {}
 
       virtual void operator()(const Type::TInt8 &rhs     ) const = 0;
@@ -545,18 +523,15 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TTypeVisitor() {}
 
     };  // TTypeVisitor
 
 
-    /* TODO */
     class TTypeDoubleVisitor {
       NO_COPY(TTypeDoubleVisitor);
       public:
 
-      /* TODO */
       virtual ~TTypeDoubleVisitor() {}
 
       /* double visitor */
@@ -1325,7 +1300,6 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TTypeDoubleVisitor() {}
 
     };  // TTypeDoubleVisitor

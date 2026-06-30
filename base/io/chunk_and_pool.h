@@ -237,7 +237,6 @@ namespace Io {
          If this is zero, the pool will be of fixed size. */
       size_t AdditionalChunkCount;
 
-      /* TODO */
       std::shared_ptr<std::function<TChunk *()>> NextChunkCb;
 
     };  // Args
@@ -290,7 +289,6 @@ namespace Io {
     /* The queue of free chunks.  This may be empty.  It will never contains nulls. */
     std::queue<TChunk *> FreeChunks;
 
-    /* TODO */
     std::shared_ptr<std::function<TChunk *()>> NextChunkCb;
 
   };  // TPool

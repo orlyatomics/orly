@@ -29,29 +29,23 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TAnonymousMember
           : public TMemberWithKind {
         NO_COPY(TAnonymousMember);
         public:
 
-        /* TODO */
         TAnonymousMember(TCompound *compound, TKind *kind)
             : TMemberWithKind(kind) {
           assert(compound);
           SetCompound(compound);
         }
 
-        /* TODO */
         virtual ~TAnonymousMember();
 
-        /* TODO */
         virtual const TName &GetName() const;
 
-        /* TODO */
         virtual void WriteRhs(std::ostream &strm) const;
 
-      	/* TODO */
       	virtual void WriteXml(std::ostream &strm) const;
 
       };  // TAnonymousMember

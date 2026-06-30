@@ -25,7 +25,6 @@ namespace Orly {
 
     namespace Fiber {
 
-      /* TODO */
       class TFiberTestRunner
           : public Indy::Fiber::TRunnable {
         NO_COPY(TFiberTestRunner);

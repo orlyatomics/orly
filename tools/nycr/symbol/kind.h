@@ -30,114 +30,87 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TBase;
       class TKeyword;
       class TLanguage;
       class TOperator;
       class TRule;
 
-      /* TODO */
       class TKind {
         NO_COPY(TKind);
         public:
 
-        /* TODO */
         class TAnyBase {
           NO_COPY(TAnyBase);
           public:
 
-          /* TODO */
           typedef std::unordered_set<TKind *> TSubKinds;
 
-          /* TODO */
           const TSubKinds &GetSubKinds() const {
             return SubKinds;
           }
 
           protected:
 
-          /* TODO */
           TAnyBase() {}
 
-          /* TODO */
           virtual ~TAnyBase();
 
-          /* TODO */
           virtual TBase *GetBase() = 0;
 
-          /* TODO */
           virtual bool HasBase(const TBase *target) = 0;
 
-          /* TODO */
           TSubKinds SubKinds;
 
-          /* TODO */
           friend class TKind;
 
         };  // TBase
 
-        /* TODO */
         class TVisitor {
           public:
 
-          /* TODO */
           virtual ~TVisitor();
 
-          /* TODO */
           virtual void operator()(const TBase *that) const = 0;
 
-          /* TODO */
           virtual void operator()(const TKeyword *that) const = 0;
 
-          /* TODO */
           virtual void operator()(const TLanguage *that) const = 0;
 
-          /* TODO */
           virtual void operator()(const TOperator *that) const = 0;
 
-          /* TODO */
           virtual void operator()(const TRule *that) const = 0;
 
           protected:
 
-          /* TODO */
           TVisitor() {}
 
         };  // TVisitor
 
-        /* TODO */
         virtual ~TKind();
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const = 0;
 
-        /* TODO */
         TBase *GetBase() const {
           return Base ? Base->GetBase() : 0;
         }
 
-        /* TODO */
         const TName &GetName() const {
           return Name;
         }
 
-        /* TODO */
         bool HasBase(const TBase *target) const {
           return Base ? Base->HasBase(target) : false;
         }
 
         protected:
 
-        /* TODO */
         TKind(const TName &name, TAnyBase *base);
 
         private:
 
-        /* TODO */
         TName Name;
 
-        /* TODO */
         TAnyBase *Base;
 
       };  // TKind

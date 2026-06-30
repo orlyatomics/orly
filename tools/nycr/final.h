@@ -25,21 +25,17 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TBase;
 
-    /* TODO */
     class TFinal
         : public TKind {
       NO_COPY(TFinal);
       protected:
 
-      /* TODO */
       TFinal(const Syntax::TName *name, const Syntax::TOptSuper *opt_super);
 
     };  // TFinal
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TFinal> {
       static const char *Name;

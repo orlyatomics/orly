@@ -33,31 +33,24 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TType {
       NO_COPY(TType);
       public:
 
-      /* TODO */
       virtual ~TType();
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) = 0;
 
-      /* TODO */
       const Type::TType &GetSymbolicType() const;
 
       protected:
 
-      /* TODO */
       TType();
 
-      /* TODO */
       virtual Type::TType ComputeSymbolicType() const = 0;
 
       private:
 
-      /* TODO */
       mutable Type::TType CachedSymbolicType;
 
     };  // TType

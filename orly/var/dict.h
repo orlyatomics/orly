@@ -33,85 +33,61 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       typedef Rt::TDict<TVar, TVar> TDictType;
       typedef TDictType TElems;
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TDict &Add(const TVar &);
 
-      /* TODO */
       virtual TDict &And(const TVar &);
 
-      /* TODO */
       virtual TDict &Div(const TVar &);
 
-      /* TODO */
       virtual TDict &Exp(const TVar &);
 
-      /* TODO */
       virtual TDict &Intersection(const TVar &);
 
-      /* TODO */
       virtual TDict &Mod(const TVar &);
 
-      /* TODO */
       virtual TDict &Mult(const TVar &);
 
-      /* TODO */
       virtual TDict &Or(const TVar &);
 
-      /* TODO */
       virtual TDict &Sub(const TVar &);
 
-      /* TODO */
       virtual TDict &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TDict &Union(const TVar &);
 
-      /* TODO */
       virtual TDict &Xor(const TVar &);
 
-      /* TODO */
       const TDictType &GetVal() const {
         return Val;
       }
 
-      /* TODO */
       void Insert(const TDictType::const_iterator &begin, const TDictType::const_iterator &end);
 
-      /* TODO */
       void Remove(const Rt::TSet<TVar> &keys);
 
-      /* TODO */
       const Type::TType &GetKeyType() const {
         return KeyType;
       }
 
-      /* TODO */
       const Type::TType &GetValType() const {
         return ValType;
       }
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
       private:
 
-      /* TODO */
       #if defined(ORLY_HOST)
       template <typename TVal, typename TKey>
       TDict(const Rt::TDict<TKey, TVal> &that) : KeyType(Type::TDt<TKey>::GetType()), ValType(Type::TDt<TVal>::GetType()) {
@@ -122,39 +98,28 @@ namespace Orly {
       }
       #endif
 
-      /* TODO */
       TDict(const Rt::TDict<TVar, TVar> &that, const Type::TType &key_type, const Type::TType &val_type);
 
-      /* TODO */
       virtual ~TDict();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       void SetHash();
 
-      /* TODO */
       TDictType Val;
 
-      /* TODO */
       Type::TType KeyType;
 
-      /* TODO */
       Type::TType ValType;
 
-      /* TODO */
       size_t Hash;
 
-      /* TODO */
       friend class TVar;
 
     };  // TDict
 
-    /* TODO */
     template <typename TKey, typename TVal>
     TVar TVar::Dict(const Rt::TDict<TKey, TVal> &that) {
       Rt::TDict<TVar, TVar> val;
@@ -164,11 +129,9 @@ namespace Orly {
       return (new TDict(val, Type::TDt<TKey>::GetType(), Type::TDt<TVal>::GetType()))->AsVar();
     }
 
-    /* TODO */
     template<typename TKey, typename TVal>
     struct TVar::TDt<Rt::TDict<TKey, TVal>> {
 
-      /* TODO */
       Rt::TDict<TKey, TVal> static As(const TVar &that) {
         TDict *ptr = dynamic_cast<TDict *>(that.Impl.get());
         if (ptr) {

@@ -51,7 +51,6 @@ namespace Io {
     /* Flushing is publicly available. */
     using TOutputProducer::Flush;
 
-    /* TODO */
     using TOutputProducer::WriteExactly;
 
     /* Write built-in types. */

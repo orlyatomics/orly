@@ -26,31 +26,24 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TEscape {
       public:
 
-      /* TODO */
       enum TEscapeStyle { CStyle, XmlStyle };
 
-      /* TODO */
       TEscape(const std::string &text, TEscapeStyle escape_style = CStyle)
           : Text(text), EscapeStyle(escape_style) {}
 
-      /* TODO  */
       void Write(std::ostream &strm) const;
 
       private:
 
-      /* TODO  */
       const std::string &Text;
 
-      /* TODO  */
       const TEscapeStyle EscapeStyle;
 
     };  // TEscape
 
-    /* TODO */
     inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::TEscape &that) {
       that.Write(strm);
       return strm;

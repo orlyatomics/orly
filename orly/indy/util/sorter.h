@@ -36,241 +36,194 @@ namespace Orly {
 
     namespace Util {
 
-      /* TODO */
       template<typename TVal>
       class TRandomIterator
             : public std::iterator<std::random_access_iterator_tag, TVal> {
         protected:
 
-        /* TODO */
         TVal *Data;
 
         public:
 
-        /* TODO */
         typedef std::random_access_iterator_tag iterator_category;
         typedef typename std::iterator<std::random_access_iterator_tag, TVal>::value_type value_type;
         typedef typename std::iterator<std::random_access_iterator_tag, TVal>::difference_type difference_type;
         typedef typename std::iterator<std::random_access_iterator_tag, TVal>::reference reference;
         typedef typename std::iterator<std::random_access_iterator_tag, TVal>::pointer pointer;
 
-        /* TODO */
         TRandomIterator()
             : Data(0) {}
 
-        /* TODO */
         template<typename T2>
         TRandomIterator(const TRandomIterator<T2>& r)
             : Data(&(*r)) {}
 
-        /* TODO */
         TRandomIterator(pointer data)
             : Data(data) {}
 
-        /* TODO */
         template<typename T2>
         TRandomIterator& operator=(const TRandomIterator<T2>& r) {
           Data = &(*r);
           return *this;
         }
 
-        /* TODO */
         TRandomIterator& operator++() {
           ++Data;
           return *this;
         }
 
-        /* TODO */
         TRandomIterator& operator--() {
           --Data;
           return *this;
         }
 
-        /* TODO */
         TRandomIterator operator++(int) {
           return TRandomIterator(Data++);
         }
 
-        /* TODO */
         TRandomIterator operator--(int) {
           return TRandomIterator(Data--);
         }
 
-        /* TODO */
         TRandomIterator operator+(const difference_type& n) const {
           return TRandomIterator(Data + n);
         }
 
-        /* TODO */
         TRandomIterator& operator+=(const difference_type& n) {
           Data += n;
           return *this;
         }
 
-        /* TODO */
         TRandomIterator operator-(const difference_type& n) const {
           return TRandomIterator(pointer(Data - n));
         }
 
-        /* TODO */
         TRandomIterator& operator-=(const difference_type& n) {
           Data -= n;
           return *this;
         }
 
-        /* TODO */
         reference operator*() const {
           return *Data;
         }
 
-        /* TODO */
         pointer operator->() const {
           return Data;
         }
 
-        /* TODO */
         reference operator[](const difference_type& n) const {
           return Data[n];
         }
 
-        /* TODO */
         template<typename T>
         friend bool operator==(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend bool operator!=(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend bool operator<(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend bool operator>(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend bool operator<=(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend bool operator>=(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend typename TRandomIterator<T>::difference_type operator+(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
-        /* TODO */
         template<typename T>
         friend typename TRandomIterator<T>::difference_type operator-(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2);
 
       };  // TRandomIterator
 
-      /* TODO */
       template<typename T>
       bool operator==(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data == r2.Data;
       }
 
-      /* TODO */
       template<typename T>
       bool operator!=(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data != r2.Data;
       }
 
-      /* TODO */
       template<typename T>
       bool operator<(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data < r2.Data;
       }
 
-      /* TODO */
       template<typename T>
       bool operator>(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data > r2.Data;
       }
 
-      /* TODO */
       template<typename T>
       bool operator<=(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data <= r2.Data;
       }
 
-      /* TODO */
       template<typename T>
       bool operator>=(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data >= r2.Data;
       }
 
-      /* TODO */
       template<typename T>
       typename TRandomIterator<T>::difference_type operator+(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return TRandomIterator<T>(r1.Data + r2.Data);
       }
 
-      /* TODO */
       template<typename T>
       typename TRandomIterator<T>::difference_type operator-(const TRandomIterator<T>& r1, const TRandomIterator<T>& r2) {
         return r1.Data - r2.Data;
       }
 
-      /* TODO */
       template <typename TVal, size_t MaxSize>
       class TSorter {
         NO_COPY(TSorter);
         public:
 
-        /* TODO */
         class TCursor {
           NO_COPY(TCursor);
           public:
 
-          /* TODO */
           virtual operator bool() const = 0;
 
-          /* TODO */
           virtual const TVal &operator*() const = 0;
 
-          /* TODO */
           virtual TCursor &operator++() = 0;
 
-          /* TODO */
           virtual ~TCursor() {}
 
           protected:
 
-          /* TODO */
           TCursor() {}
 
         };  // TCursor
 
-        /* TODO */
         class TMemCursor
             : public TCursor {
           NO_COPY(TMemCursor);
           public:
 
-          /* TODO */
           TMemCursor(TSorter *sorter)
               : Iter(sorter->begin()),
                 End(sorter->end()) {}
 
-          /* TODO */
           virtual ~TMemCursor() {}
 
-          /* TODO */
           virtual operator bool() const {
             return Iter != End;
           }
 
-          /* TODO */
           virtual const TVal &operator*() const {
             assert(Iter != End);
             return *Iter;
           }
 
-          /* TODO */
           virtual TCursor &operator++() {
             assert(Iter != End);
             ++Iter;
@@ -279,15 +232,12 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           TRandomIterator<TVal> Iter;
 
-          /* TODO */
           TRandomIterator<TVal> End;
 
         };  // TMemCursor
 
-        /* TODO */
         TSorter()
             : Size(0U) {
           Data = reinterpret_cast<TVal *>(malloc(sizeof(TVal) * MaxSize));
@@ -297,18 +247,15 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         virtual ~TSorter() {
           free(Data);
         }
 
-        /* TODO */
         const TVal &operator[](size_t pos) const {
           assert(pos < Size);
           return *(Data + pos);
         }
 
-        /* TODO */
         template <class... Args>
         void Emplace(Args &&... args) {
           assert(Size < MaxSize);
@@ -316,42 +263,34 @@ namespace Orly {
           ++Size;
         }
 
-        /* TODO */
         size_t GetSize() const {
           return Size;
         }
 
-        /* TODO */
         bool IsFull() const {
           return Size == MaxSize;
         }
 
-        /* TODO */
         TRandomIterator<TVal> begin() const {
           return TRandomIterator<TVal>(Data);
         }
 
-        /* TODO */
         TRandomIterator<TVal> end() const {
           return TRandomIterator<TVal>(Data + Size);
         }
 
-        /* TODO */
         void Clear() {
           Size = 0U;
         }
 
-        /* TODO */
         static size_t GetMaxSize() {
           return MaxSize;
         }
 
         private:
 
-        /* TODO */
         size_t Size;
 
-        /* TODO */
         TVal *Data;
 
       };  // TSorter

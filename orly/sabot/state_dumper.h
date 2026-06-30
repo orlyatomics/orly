@@ -71,13 +71,10 @@ namespace Orly {
       /* The stream to which we dump. */
       std::ostream &Strm;
 
-      /* TODO */
       void OnArrayOfPairsOfStates(const char *name, const char *kwd_for_zero_size, const State::TArrayOfPairsOfStates &state) const;
 
-      /* TODO */
       void OnArrayOfSingleStates(const char *name, const char *kwd_for_zero_size, const State::TArrayOfSingleStates &state) const;
 
-      /* TODO */
       void OnContainerOfSingleStates(const char *name, const State::TArrayOfSingleStates &state) const;
 
     };  // TTypeDumper

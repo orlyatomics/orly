@@ -37,10 +37,8 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       static constexpr size_t UpdateWalkerLocalCacheSize = 64;
 
-      /* TODO */
       class TUpdateWalkFile
           : public TReadFile<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage>,
             public TUpdateWalker {
@@ -49,11 +47,9 @@ namespace Orly {
 
         using TArena = TDiskArena<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, DiskArenaMaxCacheSize, true>;
 
-        /* TODO */
         typedef TStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, UpdateWalkerLocalCacheSize> TInStream;
         typedef Orly::Indy::Disk::TReadFile<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage> TMyReadFile;
 
-        /* TODO */
         TUpdateWalkFile(Util::TEngine *engine,
                         const Base::TUuid &file_id,
                         size_t gen_id,
@@ -72,7 +68,6 @@ namespace Orly {
           Refresh();
         }
 
-        /* TODO */
         virtual ~TUpdateWalkFile() {}
 
         /* True iff. we have an item. */
@@ -97,7 +92,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         void Refresh() const {
           if (Valid && !Cached) {
             if (NumScanned < GetNumUpdates()) {
@@ -159,32 +153,23 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         mutable TArena MainArena;
         std::unordered_map<Base::TUuid, std::unique_ptr<TArena>> ArenaByIndexId;
 
-        /* TODO */
         TSequenceNumber From;
 
-        /* TODO */
         mutable size_t NumScanned;
 
-        /* TODO */
         mutable TInStream IndexStream;
 
-        /* TODO */
         mutable TInStream BucketStream;
 
-        /* TODO */
         mutable TInStream EntryStream;
 
-        /* TODO */
         mutable bool Valid;
 
-        /* TODO */
         mutable bool Cached;
 
-        /* TODO */
         mutable TItem Item;
 
       };  // TUpdateWalkFile

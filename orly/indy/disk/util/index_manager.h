@@ -40,23 +40,19 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         template <typename TVal, size_t MemSize, size_t MinParallelSortThreshold, class TComparator = std::less<TVal>>
         class TIndexManager {
           NO_COPY(TIndexManager);
           public:
 
-          /* TODO */
           typedef TIndexManager<TVal, MemSize, MinParallelSortThreshold, TComparator> TMe;
           typedef TIndexSortFile<TIndexManager, TVal, MemSize, TComparator> TSortFile;
           typedef InvCon::OrderedList::TCollection<TIndexManager, TSortFile, size_t> TSortFileCollection;
 
-          /* TODO */
           class TCursor {
             NO_COPY(TCursor);
             public:
 
-            /* TODO */
             TCursor(TIndexManager *manager, size_t total_read_ahead_slots)
                 : Manager(manager) {
               Manager->SortMem();
@@ -76,16 +72,13 @@ namespace Orly {
               }
             }
 
-            /* TODO */
             ~TCursor() {
             }
 
-            /* TODO */
             operator bool() const {
               return static_cast<bool>(*MinHeap);
             }
 
-            /* TODO */
             const TVal &operator*() const {
               #ifndef NDEBUG
               if (!static_cast<bool>(*MinHeap)) {
@@ -97,7 +90,6 @@ namespace Orly {
               return MinHeap->Peek(dummy);
             }
 
-            /* TODO */
             const TVal *operator->() const {
               #ifndef NDEBUG
               if (!static_cast<bool>(*MinHeap)) {
@@ -109,7 +101,6 @@ namespace Orly {
               return &(MinHeap->Peek(dummy));
             }
 
-            /* TODO */
             TCursor &operator++() {
               size_t pos = 0U;
               MinHeap->Pop(pos);
@@ -124,18 +115,14 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             TIndexManager *Manager;
 
-            /* TODO */
             std::vector<std::unique_ptr<typename Indy::Util::TSorter<TVal, MemSize>::TCursor>> CsrVec;
 
-            /* TODO */
             std::unique_ptr<Indy::Util::TMinHeap<TVal, size_t, TComparator>> MinHeap;
 
           };  // TCursor
 
-          /* TODO */
           TIndexManager(const Base::TCodeLocation &code_location /* DEBUG */,
                         uint8_t util_src,
                         size_t consolidation_threshold,
@@ -158,12 +145,10 @@ namespace Orly {
             assert(consolidation_threshold > 0UL);
           }
 
-          /* TODO */
           ~TIndexManager() {
             SortFileCollection.DeleteEachMember();
           }
 
-          /* TODO */
           template <class... Args>
           void Emplace(Args &&... args) {
             if (MemSorter.IsFull()) {
@@ -197,7 +182,6 @@ namespace Orly {
             ++Size;
           }
 
-          /* TODO */
           void Clear() {
             MemSorter.Clear();
             MemSorted = false;
@@ -205,14 +189,12 @@ namespace Orly {
             Size = 0UL;
           }
 
-          /* TODO */
           inline size_t GetSize() const {
             return Size;
           }
 
           private:
 
-          /* TODO */
           void SortMem() {
             if (!MemSorted) {
               if (Size >= MinParallelSortThreshold) {
@@ -225,48 +207,35 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void ConsolidateGeneration(size_t gen, size_t num) {
             new TSortFile(CodeLocation, UtilSrc, StorageSpeed, Engine, VolMan, BlockCache, gen, num, SortFileCollection, 10UL, Comp, CacheInstr);
           }
 
-          /* TODO */
           TVolume::TDesc::TStorageSpeed StorageSpeed;
 
-          /* TODO */
           TEngine *Engine;
 
-          /* TODO */
           TVolumeManager *VolMan;
 
-          /* TODO */
           TBlockCache *BlockCache;
 
-          /* TODO */
           TCacheInstr CacheInstr;
 
-          /* TODO */
           size_t Size;
 
-          /* TODO */
           Indy::Util::TSorter<TVal, MemSize> MemSorter;
 
-          /* TODO */
           mutable typename TSortFileCollection::TImpl SortFileCollection;
 
-          /* TODO */
           bool MemSorted;
 
-          /* TODO */
           TComparator Comp;
 
           /* DEBUG */
           const Base::TCodeLocation CodeLocation;
 
-          /* TODO */
           const uint8_t UtilSrc;
 
-          /* TODO */
           size_t ConsolidationThreshold;
 
         };  // TIndexManager

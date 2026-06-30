@@ -29,32 +29,25 @@
 
 namespace Orly {
 
-  /* TODO */
   class TContextBase {
     NO_COPY(TContextBase);
     public:
 
-    /* TODO */
     virtual ~TContextBase() {}
 
-    /* TODO */
     virtual Indy::TKey operator[](const Indy::TIndexKey &key) = 0;
 
-    /* TODO */
     virtual bool Exists(const Indy::TIndexKey &key) = 0;
 
-    /* TODO */
     inline Atom::TCore::TExtensibleArena *GetArena() const {
       return Arena;
     }
 
     protected:
 
-    /* TODO */
     TContextBase(Atom::TCore::TExtensibleArena *arena)
         : Arena(arena) {}
 
-    /* TODO */
     Atom::TCore::TExtensibleArena *Arena;
 
     private:

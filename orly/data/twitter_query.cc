@@ -71,7 +71,6 @@ class TCmd final
    Parse(argc, argv, TMeta());
  }
 
- /* TODO  */
  Socket::TAddress Addr;
 
  private:

@@ -116,7 +116,6 @@ namespace Tools {
       };  // TUnderscore
 
 
-    /* TODO */
     enum TCommentStyle { CStyle, XmlStyle };
 
     /* Creates an output file and writes its header comment. Returns an open stream to the file. */

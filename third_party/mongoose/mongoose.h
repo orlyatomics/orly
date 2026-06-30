@@ -221,28 +221,23 @@ void mg_md5(char *buf, ...);
 
 namespace Mongoose {
 
-  /* TODO */
   class TMongoose {
     NO_COPY(TMongoose);
     protected:
 
-    /* TODO */
     TMongoose()
         : Handle(0) {}
 
-    /* TODO */
     virtual ~TMongoose() {
       assert(this);
       assert(!Handle);
     }
 
-    /* TODO */
     void Reset(const char **new_options) {
       Stop();
       Start(new_options);
     }
 
-    /* TODO */
     void Start(const char **options) {
       assert(this);
       Stop();
@@ -252,7 +247,6 @@ namespace Mongoose {
       }
     }
 
-    /* TODO */
     void Stop() {
       assert(this);
       if (Handle) {
@@ -261,17 +255,14 @@ namespace Mongoose {
       }
     }
 
-    /* TODO */
     virtual void *OnEvent(mg_event event, mg_connection *conn, const mg_request_info *request_info) = 0;
 
     private:
 
-    /* TODO */
     static void *Callback(mg_event event, mg_connection *conn, const mg_request_info *request_info) {
       return reinterpret_cast<TMongoose *>(request_info->user_data)->OnEvent(event, conn, request_info);
     }
 
-    /* TODO */
     mg_context *Handle;
 
   };  // TMongoose

@@ -40,7 +40,6 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       template <size_t PageSize, size_t BlockSize>
       class TBoundaryChecker {
         NO_CONSTRUCTION(TBoundaryChecker);
@@ -49,7 +48,6 @@ namespace Orly {
         static constexpr size_t PagesInBlock = BlockSize / PageSize;
         static_assert(PagesInBlock > 1, "TBoundaryChecker requires template specialization for PagesInBlock == 1");
 
-        /* TODO */
         static inline bool IsNewPage(const size_t byte_index, size_t &page_in_buf, const TBufBlock *buf) {
           size_t page = (byte_index / PageSize) % PagesInBlock;
           if (page != page_in_buf || !buf) {
@@ -61,19 +59,16 @@ namespace Orly {
 
       };  // TBoundaryChecker
 
-      /* TODO */
       template <size_t SameSize>
       class TBoundaryChecker<SameSize, SameSize> {
         NO_CONSTRUCTION(TBoundaryChecker);
         public:
 
-        /* TODO */
         static inline bool IsNewPage(const size_t /*byte_index*/, size_t &/*page_in_buf*/, const TBufBlock */*buf*/) {
           return true;
         }
       };  // TBoundaryChecker<SameSize, SameSize>
 
-      /* TODO */
       template <size_t PageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind>
         class TOutStream
             : public TWriteGroup {
@@ -83,7 +78,6 @@ namespace Orly {
           static constexpr size_t PagesInBlock = BlockSize / PageSize;
           static constexpr size_t PhysicalPageSize = PhysicalBlockSize / PagesInBlock;
 
-          /* TODO */
           TOutStream(const Base::TCodeLocation &code_location /* DEBUG */,
                      uint8_t util_src,
                      Util::TVolumeManager *vol_man,
@@ -117,7 +111,6 @@ namespace Orly {
                 UtilSrc(util_src) {
           }
 
-          /* TODO */
           virtual ~TOutStream() {
             if (!CurBlockIsCollision && Buf) {
             //if (!CurBlockIsCollision && Buf && ((ByteIndex % TService::BlockSize) != 0)) {
@@ -133,12 +126,10 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline size_t GetOffset() const {
             return ByteIndex;
           }
 
-          /* TODO */
           inline virtual void Write(size_t out) {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(size_t)) {
@@ -150,7 +141,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline virtual void Write(int64_t out) {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(int64_t)) {
@@ -162,7 +152,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline virtual void Write(uint8_t out) {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint8_t)) {
@@ -174,7 +163,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline virtual void Write(uint16_t out) {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint16_t)) {
@@ -186,7 +174,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline virtual void Write(uint32_t out) {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint32_t)) {
@@ -198,7 +185,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline virtual void Write(bool out) {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(bool)) {
@@ -210,12 +196,10 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline virtual void Write(const Base::TUuid &out) {
             Write(out.GetRaw(), sizeof(uuid_t));
           }
 
-          /* TODO */
           inline virtual void Write(const void *buf, size_t len) {
             size_t left = len;
             const char *ptr = reinterpret_cast<const char *>(buf);
@@ -230,7 +214,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void MakeCurBlockCollisionBlock() {
             if (!CurBlockIsCollision && Buf /* && (ByteIndex % TService::BlockSize) != 0*/) {
               CurBlockIsCollision = true;
@@ -244,7 +227,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void Sync() {
             if (!CurBlockIsCollision && Buf) {
               while (BlockVec.Size() < BlockInBuf + 1) {
@@ -265,7 +247,6 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           inline void CheckBuf() {
             if (TBoundaryChecker<PageSize, BlockSize>::IsNewPage(ByteIndex, PageInBuf, Buf)) {
               size_t block = ByteIndex / BlockSize;
@@ -275,7 +256,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline void FetchBlock(size_t block) {
             if (!CurBlockIsCollision && Buf) {
               while (BlockVec.Size() < BlockInBuf + 1) {
@@ -296,7 +276,6 @@ namespace Orly {
             BlockInBuf = block;
           }
 
-          /* TODO */
           void Flush() {
             TCompletionTrigger *completion_trigger = &CompletionTrigger;
             /* TODO: implement write groups with new volume manager. */
@@ -313,45 +292,33 @@ namespace Orly {
             TWriteGroup::Flush();
           }
 
-          /* TODO */
           virtual size_t GetLogicalBlockSize() const override {
             return Util::LogicalBlockSize;
           }
 
-          /* TODO */
           virtual size_t GetPhysicalBlockSize() const override {
             return Util::PhysicalBlockSize;
           }
 
-          /* TODO */
           Util::TVolumeManager *VolMan;
 
-          /* TODO */
           bool DoCache;
 
-          /* TODO */
           size_t ByteIndex;
 
-          /* TODO */
           std::unordered_map<size_t, std::shared_ptr<const TBufBlock>> &BlockCollisionMap;
 
-          /* TODO */
           Indy::Util::TBlockVec &BlockVec;
 
-          /* TODO */
           const TBufBlock *Buf;
 
-          /* TODO */
           size_t BlockInBuf;
           size_t PageInBuf;
 
-          /* TODO */
           bool CurBlockIsCollision;
 
-          /* TODO */
           TCompletionTrigger &CompletionTrigger;
 
-          /* TODO */
           const std::function<size_t (Disk::Util::TVolumeManager *)> NewBlockCb;
 
           #ifndef NDEBUG
@@ -359,13 +326,11 @@ namespace Orly {
           std::unordered_set<size_t> &WrittenToSet;
           #endif
 
-          /* TODO */
           DiskPriority Priority;
 
           /* DEBUG */
           const Base::TCodeLocation CodeLocation;
 
-          /* TODO */
           uint8_t UtilSrc;
 
         };  // TOutStream

@@ -24,26 +24,20 @@
 
 namespace Base {
 
-  /* TODO */
   class TEventCounter {
     NO_COPY(TEventCounter);
     public:
 
-    /* TODO */
     TEventCounter(uint64_t initial_count = 0);
 
-    /* TODO */
     const TFd &GetFd() const;
 
-    /* TODO */
     uint64_t Pop();
 
-    /* TODO */
     void Push(uint64_t count = 1);
 
     private:
 
-    /* TODO */
     TFd Fd;
 
   };  // TEventCounter

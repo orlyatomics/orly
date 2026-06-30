@@ -54,15 +54,12 @@ namespace Orly {
 
   namespace Server {
 
-    /* TODO */
     class TIndexType {
       public:
 
-      /* TODO */
       TIndexType(std::string &&package_key, Indy::TKey &&val)
           : PackageKey(std::move(package_key)), Val(std::move(val)) {}
 
-      /* TODO */
       inline size_t GetHash() const {
         return Base::ChainHashes(PackageKey, Val);
       }
@@ -75,7 +72,6 @@ namespace Orly {
         return PackageKey;
       }
 
-      /* TODO */
       inline const Indy::TKey &GetVal() const {
         return Val;
       }
@@ -112,58 +108,44 @@ namespace Orly {
     /* Forward Declarations. */
     class TServer;
 
-    /* TODO */
     class TIndyReporter {
       NO_COPY(TIndyReporter);
       public:
 
-      /* TODO */
       TIndyReporter(const TServer *server, Base::TScheduler *scheduler, int port_number);
 
       private:
 
-        /* TODO */
       void AcceptClientConnections();
 
-      /* TODO */
       void ServeClient(Base::TFd &fd);
 
-      /* TODO */
       void AddReport(std::stringstream &ss) const;
 
-      /* TODO */
       const TServer *Server;
 
-      /* TODO */
       Base::TFd Socket;
 
-      /* TODO */
       Base::TScheduler *Scheduler;
 
-      /* TODO */
       mutable Base::TTimer ReportTimer;
 
-      /* TODO */
       typedef std::chrono::system_clock TClock;
 
-      /* TODO */
       typedef std::chrono::time_point<TClock, std::chrono::nanoseconds> TTimePoint;
 
       static const size_t NanoToSecond = 1000000000UL;
 
     };  // TIndyReporter
 
-    /* TODO */
     class TServer final
         : public TSession::TServer, public Indy::Fiber::TRunnable,
           public TWs::TSessionManager {
       NO_COPY(TServer);
       public:
 
-      /* TODO */
       static constexpr size_t NumSlowRunners = 8UL;
 
-      /* TODO */
       using TTimePoint = std::chrono::time_point<std::chrono::system_clock>;
 
       /* Command-line arguments. */
@@ -213,73 +195,51 @@ namespace Orly {
         /* The number of files that can be in a single generation of temporary files before they get merged into the next generation. */
         size_t TempFileConsolidationThreshold;
 
-        /* TODO */
         std::string InstanceName;
 
-        /* TODO */
         size_t PageCacheSizeMB;
 
-        /* TODO */
         size_t BlockCacheSizeMB;
 
-        /* TODO */
         size_t FileServiceAppendLogMB;
 
-        /* TODO */
         size_t DiskMaxAioNum;
 
-        /* TODO */
         double HighDiskUtilizationThreshold;
 
-        /* TODO */
         bool DiscardOnCreate;
 
-        /* TODO */
         size_t ReplicationSyncBufMB;
 
-        /* TODO */
         size_t MergeMemInterval;
 
-        /* TODO */
         size_t MergeDiskInterval;
 
-        /* TODO */
         size_t ReplicationInterval;
 
-        /* TODO */
         size_t DurableWriteInterval;
 
-        /* TODO */
         size_t DurableMergeInterval;
 
-        /* TODO */
         std::string StartingState;
 
-        /* TODO */
         size_t NumMemMergeThreads;
 
-        /* TODO */
         size_t NumDiskMergeThreads;
 
         /* The number of threads to use for answering websocket requests. */
         size_t NumWsThreads;
 
-        /* TODO */
         size_t MaxRepoCacheSize;
 
-        /* TODO */
         std::vector<size_t> FastCoreVec;
 
-        /* TODO */
         std::vector<size_t> SlowCoreVec;
 
-        /* TODO */
         std::vector<size_t> DiskControllerCoreVec;
 
-        /* TODO */
         std::vector<size_t> MemMergeCoreVec;
 
-        /* TODO */
         std::vector<size_t> DiskMergeCoreVec;
 
         /* Fill the hardware-derived default core assignment into any of the
@@ -288,10 +248,8 @@ namespace Orly {
            flags override the defaults rather than appending to them (issue #240). */
         void ResolveCoreVecDefaults();
 
-        /* TODO */
         size_t NumFiberFrames;
 
-        /* TODO */
         size_t NumDiskEvents;
 
         /* The port on which we respond to HTTP by giving a status report. */
@@ -310,7 +268,6 @@ namespace Orly {
         /* Controls whether fsync is used when writing to disk */
         bool DoFsync;
 
-        /* TODO */
         bool LogAssertionFailures;
 
         /* If true, the global-POV merge promotes ALL ready commutative
@@ -337,37 +294,29 @@ namespace Orly {
 
         /******** Object Pools ********/
 
-        /* TODO */
         size_t DurableMappingPoolSize;
         size_t DurableMappingEntryPoolSize;
         size_t DurableLayerPoolSize;
         size_t DurableMemEntryPoolSize;
 
-        /* TODO */
         size_t RepoMappingPoolSize;
         size_t RepoMappingEntryPoolSize;
         size_t RepoDataLayerPoolSize;
 
-        /* TODO */
         size_t TransactionMutationPoolSize;
         size_t TransactionPoolSize;
 
-        /* TODO */
         size_t UpdatePoolSize;
         size_t UpdateEntryPoolSize;
 
-        /* TODO */
         size_t DiskBufferBlockPoolSize;
 
         /******** End Object Pools ********/
 
-        /* TODO */
         Socket::TAddress AddressOfMaster;
 
-        /* TODO */
         std::string PackageDirectory;
 
-        /* TODO */
         bool Create;
 
         protected:
@@ -416,7 +365,6 @@ namespace Orly {
         return RepoManager.get();
       }
 
-      /* TODO */
       virtual Base::TScheduler *GetScheduler() const override {
         assert(Scheduler);
         return Scheduler;
@@ -607,16 +555,12 @@ namespace Orly {
 
         };  // TServer::TConnection::TProtocol
 
-        /* TODO */
         TConnection(TServer *server, const Durable::TPtr<TSession> &session);
 
-        /* TODO */
         static void OnRelease(TConnection *connection);
 
-        /* TODO */
         TServer *const Server;
 
-        /* TODO */
         const Durable::TPtr<TSession> Session;
 
       };  // TServer::TConnection
@@ -657,13 +601,11 @@ namespace Orly {
 
       };  // TServer::TSessionPin
 
-      /* TODO */
       class TServeClientRunnable
           : public Indy::Fiber::TRunnable {
         NO_COPY(TServeClientRunnable);
         public:
 
-        /* TODO */
         TServeClientRunnable(TServer *server, Indy::Fiber::TRunner *runner, Base::TFd &&fd, const Socket::TAddress &client_address, bool is_memcache)
             : Server(server),
               Fd(fd),
@@ -679,11 +621,9 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         virtual ~TServeClientRunnable() {
         }
 
-        /* TODO */
         void Serve() {
           if(IsMemcache) {
             Server->ServeMemcacheClient(std::move(Fd), ClientAddress);
@@ -696,17 +636,14 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         TServer *Server;
 
-        /* TODO */
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
         Indy::Fiber::TFrame *Frame;
 
         /* TODO: Push <strm/fd.h> up to here, that should own our Fd and be our common Io library */
         Base::TFd Fd;
 
-        /* TODO */
         const Socket::TAddress ClientAddress;
 
         bool IsMemcache;
@@ -751,19 +688,15 @@ namespace Orly {
       /* Serves a client which speaks the memcached protocol. */
       void ServeMemcacheClient(Base::TFd &&fd, const Socket::TAddress &client_address);
 
-      /* TODO */
       void StateChangeCb(Orly::Indy::TManager::TState state);
 
       /* See <orly/protocol.h>. */
       void UninstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      /* TODO */
       void WaitForSlave();
 
-      /* TODO */
       Indy::Fiber::TFrame *Frame;
 
-      /* TODO */
       std::vector<Indy::Fiber::TFrame *> MergeMemFrameVec;
       std::vector<std::unique_ptr<Indy::Fiber::TRunner>> MergeMemRunnerVec;
       std::vector<Indy::Fiber::TFrame *> MergeDiskFrameVec;
@@ -778,7 +711,6 @@ namespace Orly {
       Indy::Fiber::TRunner WsRunner;
       std::unordered_set<Indy::Fiber::TRunner *> ForEachSchedCallbackExtraSet;
 
-      /* TODO */
       std::unordered_map<TIndexType, Base::TUuid> IndexByIndexId;
       std::unordered_set<Base::TUuid> IndexIdSet;
       Atom::TSuprena IndexMapArena;
@@ -790,16 +722,12 @@ namespace Orly {
       /* Used when not running in memory simulation mode. */
       std::unique_ptr<Indy::Disk::Util::TDiskEngine> DiskEngine;
 
-      /* TODO */
       std::unique_ptr<Orly::Indy::TManager> RepoManager;
 
-      /* TODO */
       Orly::Indy::L0::TManager::TPtr<Indy::TRepo> GlobalRepo;
 
-      /* TODO */
       Orly::Indy::TManager::TState RepoState;
 
-      /* TODO */
       Orly::Package::TManager PackageManager;
 
       /* This is necessary to make the type singletons and interners visible to the packages being loaded. */
@@ -832,16 +760,12 @@ namespace Orly {
       /* All our open connections. */
       std::unordered_map<Base::TUuid, std::weak_ptr<TConnection>> ConnectionBySessionId;
 
-      /* TODO */
       std::unique_ptr<TIndyReporter> Reporter;
 
-      /* TODO */
       std::shared_ptr<Orly::Indy::Disk::TIndyUtilReporter> UtilReporter;
 
-      /* TODO */
       std::shared_ptr<std::function<void (const Base::TFd &)>> WaitForSlaveActionCb;
 
-      /* TODO */
       bool InitFinished;
       std::condition_variable InitCond;
       std::mutex InitMutex;
@@ -852,7 +776,6 @@ namespace Orly {
       /* The thread on which WsRunner runs. */
       std::thread WsThread;
 
-      /* TODO */
       friend class TIndyReporter;
 
     };  // TServer

@@ -28,25 +28,20 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TBase
           : public TKind, public TKind::TAnyBase {
         NO_COPY(TBase);
         public:
 
-        /* TODO */
         TBase(const TName &name, TKind::TAnyBase *base = 0)
             : TKind(name, base) {}
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const;
 
         private:
 
-        /* TODO */
         virtual TBase *GetBase();
 
-        /* TODO */
         virtual bool HasBase(const TBase *target);
 
       };  // TBase

@@ -37,36 +37,27 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TWalkerKey {
         public:
 
-        /* TODO */
         TWalkerKey(const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) : FileId(file_id), GenId(gen_id), IndexId(index_id) {}
 
-        /* TODO */
         TWalkerKey(Base::TUuid &&file_id, size_t gen_id, Base::TUuid &&index_id) : FileId(std::move(file_id)), GenId(gen_id), IndexId(std::move(index_id)) {}
 
-        /* TODO */
         Base::TUuid FileId;
 
-        /* TODO */
         size_t GenId;
 
-        /* TODO */
         Base::TUuid IndexId;
 
-        /* TODO */
         inline size_t GetHash() const {
           return GenId ^ FileId.GetHash()^ IndexId.GetHash();
         }
 
-        /* TODO */
         inline bool operator==(const TWalkerKey &that) const {
           return FileId == that.FileId && GenId == that.GenId && IndexId == that.IndexId;
         }
 
-        /* TODO */
         inline bool operator!=(const TWalkerKey &that) const {
           return FileId != that.FileId || GenId != that.GenId || IndexId != that.IndexId;
         }
@@ -99,30 +90,24 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TLocalWalkerCache {
         NO_COPY(TLocalWalkerCache);
         public:
 
-        /* TODO */
         TLocalWalkerCache() : LoaderCollection(this) {}
 
         /* Forward Declaration */
         class TLoaderObj;
 
-        /* TODO */
         class TPresentWalkFile
             : public TPresentWalker {
           NO_COPY(TPresentWalkFile);
           public:
 
-          /* TODO */
           static constexpr size_t PhysicalCachePageSize = Util::PhysicalBlockSize / (Util::LogicalBlockSize / Util::LogicalPageSize);
 
-          /* TODO */
           using TArena = TDiskArena<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, DiskArenaMaxCacheSize, true>;
 
-          /* TODO */
           using TInStream = TStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, 0UL>;
           using TMyReadFile = Orly::Indy::Disk::TReadFile<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage>;
 
@@ -151,10 +136,8 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           struct TDeleter {
 
-            /* TODO */
             void operator ()(TPresentWalkFile *p) const {
               p->LoaderObj->Free(p);
             };
@@ -207,7 +190,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           virtual ~TPresentWalkFile() {}
 
           /* True iff. we have an item. */
@@ -234,7 +216,6 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           void Refresh() const {
             assert (!Cached);
             assert(Valid);
@@ -338,41 +319,29 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           Base::TUuid IndexId;
 
-          /* TODO */
           TMyReadFile *MyReadFile;
 
-          /* TODO */
           typename TMyReadFile::TIndexFile *IndexFile;
 
-          /* TODO */
           TArena MainArena;
           std::unique_ptr<TArena> IndexArena;
 
-          /* TODO */
           TKey From;
 
-          /* TODO */
           TKey To;
 
-          /* TODO */
           mutable TInStream Stream;
 
-          /* TODO */
           mutable TInStream IndexStream;
 
-          /* TODO */
           mutable bool Valid;
 
-          /* TODO */
           mutable bool Cached;
 
-          /* TODO */
           mutable TItem Item;
 
-          /* TODO */
           mutable size_t Offset;
 
           /* #227 / #49: when the current key just yielded is a deferred
@@ -386,10 +355,8 @@ namespace Orly {
           mutable std::unique_ptr<typename TMyReadFile::TIndexFile::THistoryKeyCursor> HistCursor;
           mutable size_t HistRemaining = 0UL;
 
-          /* TODO */
           TLoaderObj *LoaderObj;
 
-          /* TODO */
           TPresentWalkFile *NextWalker;
 
           friend class TLoaderObj;
@@ -397,7 +364,6 @@ namespace Orly {
 
         };  // TPresentWalkFile
 
-        /* TODO */
         TPresentWalkFile *Get(Util::TEngine *engine,
                               const Base::TUuid &file_id,
                               size_t gen_id,
@@ -409,29 +375,23 @@ namespace Orly {
           return loader->GetNewFile(engine, file_id, gen_id, index_id);
         }
 
-        /* TODO */
         void Clear(const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
           delete loader;
         }
 
-        /* TODO */
         static __thread TLocalWalkerCache *Cache;
 
-        /* TODO */
         class TLoaderObj {
           NO_COPY(TLoaderObj);
           public:
 
-          /* TODO */
           typedef InvCon::UnorderedMultimap::TMembership<TLoaderObj, TLocalWalkerCache, TWalkerKey> TCacheMembership;
 
-          /* TODO */
           TLoaderObj(TLocalWalkerCache *cache, const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id)
               : FreeQueue(nullptr),
                 CacheMembership(this, TWalkerKey(file_id, gen_id, index_id), &cache->LoaderCollection) {}
 
-          /* TODO */
           ~TLoaderObj() {
             for (TPresentWalkFile *file = FreeQueue; file;) {
               TPresentWalkFile *to_delete = file;
@@ -440,7 +400,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           TPresentWalkFile *GetNewFile(Util::TEngine *engine, const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
             if (!FreeQueue) {
               return new TPresentWalkFile(engine, file_id, gen_id, index_id, this);
@@ -451,7 +410,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void Free(TPresentWalkFile *walker) {
             walker->NextWalker = FreeQueue;
             FreeQueue = walker;
@@ -459,31 +417,25 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           TPresentWalkFile *FreeQueue;
 
-          /* TODO */
           typename TCacheMembership::TImpl CacheMembership;
 
         };  // TLoaderObj
 
         private:
 
-        /* TODO */
         typedef InvCon::UnorderedMultimap::TCollection<TLocalWalkerCache, TLoaderObj, TWalkerKey> TLoaderCollection;
 
-        /* TODO */
         mutable typename TLoaderCollection::TImpl LoaderCollection;
 
       };  // TLocalWalkerCache
 
-      /* TODO */
       class TPresentWalkFileWrapper
           : public TPresentWalker {
         NO_COPY(TPresentWalkFileWrapper);
         public:
 
-        /* TODO */
         TPresentWalkFileWrapper(Util::TEngine *engine,
                                 const Base::TUuid &file_id,
                                 size_t gen_id,
@@ -495,7 +447,6 @@ namespace Orly {
           File->Init(from, to);
         }
 
-        /* TODO */
         TPresentWalkFileWrapper(Util::TEngine *engine,
                                 const Base::TUuid &file_id,
                                 size_t gen_id,
@@ -506,7 +457,6 @@ namespace Orly {
           File->Init(key);
         }
 
-        /* TODO */
         virtual ~TPresentWalkFileWrapper() {
           assert(File);
           assert(File->LoaderObj);
@@ -531,7 +481,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         TLocalWalkerCache::TPresentWalkFile *File;
 
       };  // TPresentWalkFileWrapper

@@ -39,12 +39,10 @@ namespace Orly {
 
     };  // TVarTranslationError
 
-    /* TODO */
     class TToVarVisitor final
         : public Sabot::TStateVisitor {
       public:
 
-      /* TODO */
       TToVarVisitor(Var::TVar &var)
           : Var(var) {
       }
@@ -80,12 +78,10 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       Var::TVar &Var;
 
     };  // TToVarVisitor
 
-    /* TODO */
     inline Var::TVar ToVar(const Sabot::State::TAny &state) {
       Var::TVar var;
       state.Accept(TToVarVisitor(var));
@@ -96,7 +92,6 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     inline void ToNative(const Sabot::State::TAny &state, Var::TVar &val) {
       val = Var::ToVar(state);
     }

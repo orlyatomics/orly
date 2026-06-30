@@ -35,15 +35,12 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TTypeDef
         : public TDef {
       public:
 
-      /* TODO */
       TTypeDef(TScope *scope, const Package::Syntax::TTypeDef *type_def);
 
-      /* TODO */
       virtual ~TTypeDef();
 
       /* Computes (and caches) the def's symbolic type. While the
@@ -122,21 +119,16 @@ namespace Orly {
          intern the group via MakeRecGroup, caching every member's GroupType. */
       void ResolveScc() const;
 
-      /* TODO */
       virtual TAction Build(int pass);
 
-      /* TODO */
       virtual void ForEachPred(int pass, const std::function<bool (TDef *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       TType *Type;
 
     };  // TTypeDef
 
-    /* TODO */
     template <>
     struct TDef::TInfo<TTypeDef> {
       static const char *Name;

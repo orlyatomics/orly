@@ -29,7 +29,6 @@
 
 namespace Test {
 
-  /* TODO */
   class TFixture;
 
   class TApp final {
@@ -59,24 +58,20 @@ namespace Test {
       bool VerboseMember;
     };
 
-    /* TODO */
     class TLogger {
       NO_COPY(TLogger);
       public:
 
-      /* TODO */
       TLogger(bool is_critical = false) {
         Enabled = is_critical || TApp::IsVerbose();
       }
 
-      /* TODO */
       ~TLogger() {
         if (Enabled) {
           std::cout << std::endl;
         }
       }
 
-      /* TODO */
       template <typename TVal>
       const TLogger &Write(const TVal &val) const {
         if (Enabled) {
@@ -87,30 +82,23 @@ namespace Test {
 
       private:
 
-      /* TODO */
       bool Enabled;
     };
 
-    /* TODO */
     class TRunner {
       NO_COPY(TRunner);
       public:
 
-      /* TODO */
       virtual ~TRunner();
 
-      /* TODO */
       virtual operator bool() const = 0;
 
-      /* TODO */
       static void Run(TApp *app, const TFixture *fixture);
 
       protected:
 
-      /* TODO */
       TRunner(TApp *app) : App(app) {}
 
-      /* TODO */
       void PreDtor();
 
       TApp *App;

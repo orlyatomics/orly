@@ -28,39 +28,29 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TAddrMemberExpr
         : public TExpr {
       NO_COPY(TAddrMemberExpr);
       public:
 
-      /* TODO */
       TAddrMemberExpr(const TExprFactory *expr_factory, const Package::Syntax::TPostfixAddrMember *that);
 
-      /* TODO */
       virtual ~TAddrMemberExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TPostfixAddrMember *AddrMember;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       size_t Index;
 
     };  // TAddrMemberExpr

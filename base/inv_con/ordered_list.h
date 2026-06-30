@@ -121,7 +121,6 @@ namespace InvCon {
         return (membership && !(membership->Key < key)) ? membership : 0;
       }
 
-      /* TODO */
       bool IsEmpty() const {
         return FirstMembership == 0;
       }
@@ -156,7 +155,6 @@ namespace InvCon {
         membership->Insert(this);
       }
 
-      /* TODO */
       void ReverseInsert(TTypedMembership *membership) {
         assert(membership);
         membership->ReverseInsert(this);
@@ -304,7 +302,6 @@ namespace InvCon {
         }
       }
 
-      /* TODO */
       void ReverseInsert(TTypedCollection *collection) {
         assert(collection);
         TMembership

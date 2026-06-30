@@ -48,7 +48,6 @@ namespace Orly {
         class TIndexSortFile;
       }  // Util
 
-      /* TODO */
       class TWriteGroup {
         NO_COPY(TWriteGroup);
         protected:
@@ -56,79 +55,61 @@ namespace Orly {
         /* Forward Declarations. */
         class TBufferedWrite;
 
-        /* TODO */
         typedef InvCon::UnorderedList::TCollection<TWriteGroup, TBufferedWrite> TWriteCollection;
 
-        /* TODO */
         class TBufferedWrite {
           NO_COPY(TBufferedWrite);
           public:
 
-          /* TODO */
           typedef InvCon::UnorderedList::TMembership<TBufferedWrite, TWriteGroup> TMembership;
 
-          /* TODO */
           TBufferedWrite(TWriteGroup *write_group, size_t block_id, const TBufBlock *buf)
               : Membership(this, &write_group->WriteCollection),
                 BlockId(block_id),
                 Buf(buf) {}
 
-          /* TODO */
           ~TBufferedWrite() {}
 
-          /* TODO */
           const TBufBlock *GetBuf() const {
             return Buf;
           }
 
-          /* TODO */
           size_t GetBlockId() const {
             return BlockId;
           }
 
           private:
 
-          /* TODO */
           TMembership::TImpl Membership;
 
-          /* TODO */
           size_t BlockId;
 
-          /* TODO */
           const TBufBlock *Buf;
 
-          /* TODO */
           friend class TWriteGroup;
 
         };  // TBufferedWrite
 
-        /* TODO */
         TWriteGroup(size_t max_group_size)
             : WriteCollection(this),
               QueueSize(0UL),
               MaxGroupSize(max_group_size) {}
 
-        /* TODO */
         virtual ~TWriteGroup() {}
 
-        /* TODO */
         virtual void Flush() {
           WriteCollection.DeleteEachMember();
           QueueSize = 0UL;
         }
 
-        /* TODO */
         virtual size_t GetLogicalBlockSize() const = 0;
 
-        /* TODO */
         virtual size_t GetPhysicalBlockSize() const = 0;
 
-        /* TODO */
         size_t GetSize() const {
           return QueueSize;
         }
 
-        /* TODO */
         void Append(size_t cur_block_id, const TBufBlock *buf) {
           auto handle = WriteCollection.TryGetLastMember();
           if (!handle) {
@@ -156,16 +137,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         mutable TWriteCollection::TImpl WriteCollection;
 
-        /* TODO */
         size_t QueueSize;
 
-        /* TODO */
         size_t MaxGroupSize;
 
-        /* TODO */
         friend class TController;
         friend class TService;
         template <size_t PageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind>

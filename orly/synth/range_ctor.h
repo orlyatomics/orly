@@ -30,47 +30,35 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TRangeCtor
         : public TExpr {
       NO_COPY(TRangeCtor);
       public:
 
-      /* TODO */
       TRangeCtor(const TExprFactory *expr_factory, const Package::Syntax::TRangeCtor *range_ctor);
 
-      /* TODO */
       virtual ~TRangeCtor();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TRangeCtor *RangeCtor;
 
-      /* TODO */
       bool EndIncluded;
 
-      /* TODO */
       TExpr *Start;
 
-      /* TODO */
       TExpr *OptStride;
 
-      /* TODO */
       TExpr *OptEnd;
 
     };  // TRangeCtor

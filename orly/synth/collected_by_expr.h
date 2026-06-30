@@ -32,50 +32,37 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TCollectedByExpr
         : public TLhsRhsableExpr {
       NO_COPY(TCollectedByExpr);
       public:
 
-      /* TODO */
       TCollectedByExpr(
           const TExprFactory *expr_factory,
           const Package::Syntax::TCollectedByExpr *collected_by_expr);
 
-      /* TODO */
       virtual ~TCollectedByExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TCollectedBy::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TLhsRhsable::TPtr GetLhsRhsableSymbol() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TCollectedByExpr *CollectedByExpr;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
-      /* TODO */
       mutable Expr::TCollectedBy::TPtr Symbol;
 
     };  // TCollectedByExpr

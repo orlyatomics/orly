@@ -48,7 +48,6 @@ namespace Io {
     NO_COPY(TBinaryInputStream);
     public:
 
-    /* TODO */
     using TInputConsumer::ReadExactly;
 
     /* If someone wants to be able to consume this data in chunks without copying it. */
@@ -156,7 +155,6 @@ namespace Io {
 
     };  // TTupleHelper
 
-    /* TODO */
     template <typename TVal>
     class TypeHelper;
 
@@ -193,29 +191,24 @@ namespace Io {
 
   };  // TBinaryInputStream
 
-  /* TODO */
   template <typename TVal>
   class TBinaryInputStream::TypeHelper {
     NO_CONSTRUCTION(TypeHelper);
     public:
 
-    /* TODO */
     typedef TVal TType;
 
   };  // TypeHelper
 
-  /* TODO */
   template <typename TFirst, typename TSecond>
   class TBinaryInputStream::TypeHelper<std::pair<const TFirst, TSecond>> {
     NO_CONSTRUCTION(TypeHelper);
     public:
 
-    /* TODO */
     typedef std::pair<TFirst, TSecond> TType;
 
   };
 
-  /* TODO */
   template <typename TThat>
   void TBinaryInputStream::ReadInsertableContainer(TThat &that) {
     size_t size;

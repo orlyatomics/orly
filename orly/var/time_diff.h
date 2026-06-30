@@ -32,89 +32,63 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Add(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &And(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Div(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Exp(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Intersection(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Mod(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Mult(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Or(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Sub(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Union(const TVar &);
 
-      /* TODO */
       virtual TTimeDiff &Xor(const TVar &);
 
-      /* TODO */
       Base::Chrono::TTimeDiff GetVal() const {
         return Val;
       }
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &strm) const;
 
-      /* TODO */
       static TVar New(const Base::Chrono::TTimeDiff &that);
 
       private:
 
-      /* TODO */
       TTimeDiff(const Base::Chrono::TTimeDiff &that);
 
-      /* TODO */
       virtual ~TTimeDiff();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       Base::Chrono::TTimeDiff Val;
 
     };  // TTimeDiff
 
-    /* TODO */
     template <>
     struct TVar::TDt<Base::Chrono::TTimeDiff> {
 
-      /* TODO */
       Base::Chrono::TTimeDiff static As(const TVar &that) {
         TTimeDiff *ptr = dynamic_cast<TTimeDiff *>(that.Impl.get());
         if (ptr) {

@@ -40,23 +40,19 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         class TCorruptionDetector {
           NO_CONSTRUCTION(TCorruptionDetector);
           public:
 
-          /* TODO */
           static void inline WriteMurmur(size_t *buf, size_t buf_size, size_t key) {
             *reinterpret_cast<uint64_t *>(reinterpret_cast<uint8_t *>(buf) + buf_size - sizeof(size_t)) = Base::Murmur(buf, (buf_size / sizeof(size_t) - 1), key);
           }
 
-          /* TODO */
           static bool inline TryReadMurmur(size_t *buf, size_t buf_size, size_t key) {
             uint64_t hash = *reinterpret_cast<uint64_t *>(reinterpret_cast<uint8_t *>(buf) + buf_size - sizeof(size_t));
             return hash == Base::Murmur(buf, (buf_size / sizeof(size_t) - 1), key);
           }
 
-          /* TODO */
           static void inline ReadMurmur(size_t *buf, size_t buf_size, size_t key) {
             if (!TryReadMurmur(buf, buf_size, key)) {
               throw std::runtime_error("Caught Disk Corruption");

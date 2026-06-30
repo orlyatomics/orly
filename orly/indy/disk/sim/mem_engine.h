@@ -34,12 +34,10 @@ namespace Orly {
 
       namespace Sim {
 
-        /* TODO */
         class TMemEngine {
           NO_COPY(TMemEngine);
           public:
 
-          /* TODO */
           TMemEngine(Base::TScheduler *scheduler, size_t num_mb, size_t num_slow_mb, size_t page_cache_size, size_t num_page_lru, size_t block_cache_size, size_t num_block_lru) {
             const size_t logical_block_size = 512;
             const size_t physical_block_size = 512;
@@ -160,22 +158,18 @@ namespace Orly {
             Engine = std::make_unique<Util::TEngine>(VolMan.get(), PageCache.get(), BlockCache.get(), &TestFileService, false);
           }
 
-          /* TODO */
           Util::TEngine *GetEngine() const {
             return Engine.get();
           }
 
-          /* TODO */
           Util::TPageCache *GetPageCache() const {
             return PageCache.get();
           }
 
-          /* TODO */
           Util::TBlockCache *GetBlockCache() const {
             return BlockCache.get();
           }
 
-          /* TODO */
           Util::TVolumeManager *GetVolMan() const {
             return VolMan.get();
           }
@@ -186,22 +180,18 @@ namespace Orly {
 
           static constexpr size_t NumSlowMemDevice = 1UL;
 
-          /* TODO */
           TTestFileService TestFileService;
 
-          /* TODO */
           std::unique_ptr<Util::TMemoryDevice> FastMemDeviceArray[NumFastMemDevice];
           std::unique_ptr<Util::TMemoryDevice> SlowMemDeviceArray[NumSlowMemDevice];
           std::unique_ptr<Util::TVolume> FastVolume;
           std::unique_ptr<Util::TVolume> SlowVolume;
           std::unique_ptr<Util::TVolumeManager> VolMan;
 
-          /* TODO */
           std::unique_ptr<Util::TPageCache> PageCache;
           std::unique_ptr<Util::TBlockCache> BlockCache;
           std::unique_ptr<Util::TEngine> Engine;
 
-          /* TODO */
           Util::TCacheCb CacheCb;
 
         };

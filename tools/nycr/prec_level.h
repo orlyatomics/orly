@@ -26,16 +26,13 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TPrecLevel
         : public TDecl {
       NO_COPY(TPrecLevel);
       public:
 
-      /* TODO */
       TPrecLevel(const Syntax::TPrecLevel *decl);
 
-      /* TODO */
       Symbol::TPrecLevel *GetSymbol() const {
         assert(Symbol);
         return Symbol;
@@ -43,19 +40,16 @@ namespace Tools {
 
       private:
 
-      /* TODO */
       virtual bool Build(int pass);
 
       size_t Idx;
 
       static size_t NextIdx;
 
-      /* TODO */
       Symbol::TPrecLevel *Symbol;
 
     };  // TPrecLevel
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TPrecLevel> {
       static const char *Name;

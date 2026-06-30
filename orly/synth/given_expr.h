@@ -30,30 +30,23 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TParamFuncDef;
 
-    /* TODO */
     class TGivenExpr
         : public TExpr {
       NO_COPY(TGivenExpr);
       public:
 
-      /* TODO */
       TGivenExpr(const TParamFuncDef *param_func_def, const Package::Syntax::TGivenExpr *given_expr);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TGivenExpr *GivenExpr;
 
-      /* TODO */
       const TParamFuncDef *ParamFuncDef;
 
     };  // TGivenExpr

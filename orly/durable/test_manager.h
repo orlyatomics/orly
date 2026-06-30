@@ -27,26 +27,21 @@ namespace Orly {
 
   namespace Durable {
 
-    /* TODO */
     class TTestManager final
         : public TManager {
       public:
 
-      /* TODO */
       TTestManager(size_t max_cache_size)
           : TManager(max_cache_size) {}
 
       private:
 
-      /* TODO */
       virtual bool CanLoad(const TId &id) override {
         return BlobById.find(id) != BlobById.end();
       }
 
-      /* TODO */
       virtual void RunLayerCleaner() override {}
 
-      /* TODO */
       virtual void CleanDisk(const TDeadline &now, TSem *sem) override {
         assert(sem);
         std::unordered_map<TId, std::pair<TDeadline, std::string>> temp;
@@ -59,7 +54,6 @@ namespace Orly {
         sem->Push();
       }
 
-      /* TODO */
       virtual void Delete(const TId &id, TSem *sem) override {
         assert(sem);
         auto erased_count = BlobById.erase(id);
@@ -67,14 +61,12 @@ namespace Orly {
         sem->Push();
       }
 
-      /* TODO */
       virtual void Save(const TId &id, const TDeadline &deadline, const TTtl &/*ttl*/, const std::string &blob, TSem *sem) override {
         assert(sem);
         BlobById[id] = std::make_pair(deadline, blob);
         sem->Push();
       }
 
-      /* TODO */
       virtual bool TryLoad(const TId &id, std::string &blob) override {
         auto iter = BlobById.find(id);
         bool success = (iter != BlobById.end());
@@ -86,7 +78,6 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       std::unordered_map<TId, std::pair<TDeadline, std::string>> BlobById;
 
     };  //TTestManager

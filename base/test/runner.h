@@ -26,57 +26,43 @@
 
 namespace Test {
 
-  /* TODO */
   class TFixture;
 
-  /* TODO */
   class TRunner : public TApp::TRunner {
     NO_COPY(TRunner);
     public:
 
-    /* TODO */
     class TExpect {
       NO_COPY(TExpect);
       public:
 
-      /* TODO */
       virtual ~TExpect();
 
-      /* TODO */
       virtual operator bool() const = 0;
 
       protected:
 
-      /* TODO */
       TExpect() {}
 
-      /* TODO */
       void PreDtor();
     };
 
-    /* TODO */
     TRunner(TApp *app, const TFixture *fixture);
 
-    /* TODO */
     virtual ~TRunner();
 
-    /* TODO */
     virtual operator bool() const;
 
-    /* TODO */
     void Run();
 
-    /* TODO */
     static TRunner *GetRunner() {
       return Base::AssertTrue(Runner);
     }
 
     private:
 
-    /* TODO */
     void OnExpectDtor(const TExpect *expect);
 
-    /* TODO */
     const TFixture *Fixture;
 
     /* The fixture's running pass/fail state. A multi-threaded fixture fires
@@ -88,7 +74,6 @@ namespace Test {
        idempotent relaxed store and de-noises every multi-threaded test. */
     std::atomic<bool> Pass;
 
-    /* TODO */
     static TRunner *Runner;
   };
 

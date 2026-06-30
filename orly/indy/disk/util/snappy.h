@@ -46,33 +46,25 @@ namespace Orly {
 
         namespace Snappy {
 
-          /* TODO */
           class TBlockSource
               : public snappy::Source {
             NO_COPY(TBlockSource);
             public:
 
-            /* TODO */
             TBlockSource(const std::unique_ptr<TBufBlock> &buf);
 
-            /* TODO */
             virtual ~TBlockSource();
 
-            /* TODO */
             virtual size_t Available() const override;
 
-            /* TODO */
             virtual const char* Peek(size_t *len) override;
 
-            /* TODO */
             virtual void Skip(size_t n) override;
 
             private:
 
-            /* TODO */
             const std::unique_ptr<TBufBlock> &Buf;
 
-            /* TODO */
             size_t BytesRead;
 
           };  // TBlockSource
@@ -85,27 +77,22 @@ namespace Orly {
 
             typedef TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, 0UL /*local cache */> TDataInStream;
 
-            /* TODO */
             TStreamSource(TDataInStream &in_stream, size_t avail_bytes)
               : InStream(in_stream), AvailBytes(avail_bytes) {
             }
 
-            /* TODO */
             virtual ~TStreamSource() {}
 
-            /* TODO */
             inline virtual size_t Available() const override {
               return AvailBytes;
             }
 
-            /* TODO */
             inline virtual const char* Peek(size_t *len) override {
               size_t offset_in_chunk = InStream.GetOffsetInChunk();
               *len = std::min(TDataInStream::DataChunkSize - offset_in_chunk, AvailBytes);
               return InStream.GetData();
             }
 
-            /* TODO */
             inline virtual void Skip(size_t n) override {
               assert(AvailBytes >= n);
               AvailBytes -= n;
@@ -114,68 +101,54 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             TDataInStream &InStream;
 
-            /* TODO */
             size_t AvailBytes;
 
           };  // TStreamSource
 
-          /* TODO */
           template <size_t PageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind>
           class TBlockSink
               : public snappy::Sink {
             NO_COPY(TBlockSink);
             public:
 
-            /* TODO */
             typedef TOutStream<PageSize, BlockSize, PhysicalBlockSize, BufKind> TDataOutStream;
 
-            /* TODO */
             TBlockSink(TDataOutStream &out_stream)
               : OutStream(out_stream) {}
 
-            /* TODO */
             virtual ~TBlockSink() {}
 
-            /* TODO */
             inline virtual void Append(const char *bytes, size_t n) override {
               OutStream.Write(bytes, n);
             }
 
             private:
 
-            /* TODO */
             TDataOutStream &OutStream;
 
           };  // TBlockSink
 
-          /* TODO */
           class TIoStreamSource
               : public snappy::Source {
             NO_COPY(TIoStreamSource);
             public:
 
-            /* TODO */
             TIoStreamSource(Io::TBinaryInputStream &stream, size_t avail_bytes)
               : InStream(stream), AvailBytes(avail_bytes) {}
 
-            /* TODO */
             virtual ~TIoStreamSource() {}
 
-            /* TODO */
             inline virtual size_t Available() const override {
               return AvailBytes;
             }
 
-            /* TODO */
             inline virtual const char* Peek(size_t *len) override {
               *len = std::min(InStream.GetPeekSize(), AvailBytes);
               return InStream.Peek();
             }
 
-            /* TODO */
             inline virtual void Skip(size_t n) override {
               assert(AvailBytes >= n);
               AvailBytes -= n;
@@ -184,53 +157,42 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             Io::TBinaryInputStream &InStream;
 
-            /* TODO */
             size_t AvailBytes;
 
           };  // TIoStreamSource
 
-          /* TODO */
           class TIoStreamSink
               : public snappy::Sink {
             NO_COPY(TIoStreamSink);
             public:
 
-            /* TODO */
             TIoStreamSink(Io::TBinaryOutputStream &stream)
               : OutStream(stream) {}
 
-            /* TODO */
             virtual ~TIoStreamSink() {}
 
-            /* TODO */
             inline virtual void Append(const char *bytes, size_t n) override {
               OutStream.WriteExactly(bytes, n);
             }
 
             private:
 
-            /* TODO */
             Io::TBinaryOutputStream &OutStream;
 
           };  // TIoStreamSink
 
-          /* TODO */
           class TRawSink
               : public snappy::Sink {
             NO_COPY(TRawSink);
             public:
 
-            /* TODO */
             TRawSink(char *buf, size_t max_size)
               : Buf(buf), BytesIn(0UL), MaxBytes(max_size) {}
 
-            /* TODO */
             virtual ~TRawSink() {}
 
-            /* TODO */
             inline virtual void Append(const char *bytes, size_t n) override {
               assert(BytesIn + n <= MaxBytes);
               memcpy(&Buf[BytesIn], bytes, n);
@@ -240,7 +202,6 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             char *Buf;
             size_t BytesIn;
             size_t MaxBytes;

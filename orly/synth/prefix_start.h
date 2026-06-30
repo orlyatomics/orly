@@ -30,37 +30,28 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
     class TStartableExpr;
 
-    /* TODO */
     class TPrefixStart
         : public TExpr {
       NO_COPY(TPrefixStart);
       public:
 
-      /* TODO */
       TPrefixStart(const TExprFactory *expr_factory, const Package::Syntax::TPrefixStart *prefix_start);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TPrefixStart *PrefixStart;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       const TStartableExpr *StartableExpr;
 
     };  // TPrefixStart

@@ -29,7 +29,6 @@ namespace Orly {
 
     namespace Program {
 
-      /* TODO */
       void ThrowSyntaxErrors(const Tools::Nycr::TContext &ctx);
 
     }  // Program

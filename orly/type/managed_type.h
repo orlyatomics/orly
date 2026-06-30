@@ -71,7 +71,6 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       template <typename... TCompatArgs>
       static TType Get(TCompatArgs &&... args) {
         assert(Mutex);  // If this fails, you likely don't have an instance of TTypeCzar.
@@ -95,7 +94,6 @@ namespace Orly {
         }
       }
 
-      /* TODO */
       static void DeleteImpl(TInternedType *impl) {
         assert(impl);
         if (Mutex) {

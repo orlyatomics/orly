@@ -33,46 +33,32 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Add(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &And(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Div(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Exp(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Intersection(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Mod(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Mult(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Or(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Sub(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &SymmetricDiff(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Union(const TVar &) final;
 
-      /* TODO */
       virtual TVar::TImpl &Xor(const TVar &) final;
 
-      /* TODO */
       const Var::TVar &GetVal() const {
         return Val;
       }
@@ -81,52 +67,38 @@ namespace Orly {
         return Addr;
       }
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
       private:
 
-      /* TODO */
       template <typename TAddr, typename TVal>
       TMutable(const Rt::TMutable<TAddr, TVal> &that)
             : Addr(that.GetOptAddr()), Val(that.GetVal()), Type(Type::TDt<Rt::TMutable<TAddr, TVal>>::GetType()) {
         SetHash();
       }
 
-      /* TODO */
       TMutable(const Var::TVar &addr, const Var::TVar &val);
 
-      /* TODO */
       virtual ~TMutable();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       void SetHash();
 
-      /* TODO */
       Var::TVar Addr, Val;
 
-      /* TODO */
       Type::TType Type;
 
-      /* TODO */
       size_t Hash;
 
-      /* TODO */
       friend class TVar;
 
     };  // TAddr
@@ -136,11 +108,9 @@ namespace Orly {
       return (new TMutable(that))->AsVar();
     }
 
-    /* TODO */
     template <typename TAddr, typename TVal>
     struct TVar::TDt<Rt::TMutable<TAddr, TVal>> {
 
-      /* TODO */
       Rt::TMutable<TAddr, TVal> static As(const TVar &that) {
         TMutable *ptr = dynamic_cast<TMutable *>(that.Impl.get());
         if (ptr) {

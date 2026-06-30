@@ -31,93 +31,67 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TReal &Add(const TVar &);
 
-      /* TODO */
       virtual TReal &And(const TVar &);
 
-      /* TODO */
       virtual TReal &Div(const TVar &);
 
-      /* TODO */
       virtual TReal &Exp(const TVar &);
 
-      /* TODO */
       virtual TReal &Intersection(const TVar &);
 
       /* The max / min merge-mutation operators (#213). */
       virtual TReal &Max(const TVar &);
       virtual TReal &Min(const TVar &);
 
-      /* TODO */
       virtual TReal &Mod(const TVar &);
 
-      /* TODO */
       virtual TReal &Mult(const TVar &);
 
-      /* TODO */
       virtual TReal &Or(const TVar &);
 
-      /* TODO */
       virtual TReal &Sub(const TVar &);
 
-      /* TODO */
       virtual TReal &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TReal &Union(const TVar &);
 
-      /* TODO */
       virtual TReal &Xor(const TVar &);
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       double GetVal() const {
         return Val;
       }
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       static TVar New(double that);
 
-      /* TODO */
       virtual void Write(std::ostream &stream) const;
 
       private:
 
-      /* TODO */
       TReal(double that);
 
-      /* TODO */
       virtual ~TReal();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       double Val;
 
     };  // TReal
 
-    /* TODO */
     template <>
     struct TVar::TDt<double> {
 
-      /* TODO */
       double static As(const TVar &that) {
         TReal *ptr = dynamic_cast<TReal *>(that.Impl.get());
         if (ptr) {

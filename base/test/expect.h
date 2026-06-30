@@ -116,18 +116,14 @@
 
 namespace Test {
 
-  /* TODO */
   class TExpect : public TRunner::TExpect {
     NO_COPY(TExpect);
     public:
 
-    /* TODO */
     enum TInfixOp { Lt, Le, Gt, Ge };
 
-    /* TODO */
     enum TEqOp {Eq, Ne};
 
-    /* TODO */
     template <typename TLhs, typename TRhs>
     TExpect(
         const Base::TCodeLocation &code_location,
@@ -154,10 +150,8 @@ namespace Test {
       WriteInfixOp(lhs_str, lhs, op_str, rhs_str, rhs);
     }
 
-    /* TODO */
     enum TPrefixOp { IsTrue, IsFalse };
 
-    /* TODO */
     template <typename TLhs, typename TRhs>
     TExpect(
         const Base::TCodeLocation &code_location,
@@ -194,7 +188,6 @@ namespace Test {
       WriteInfixOp(lhs_str, lhs, op_str, rhs_str, rhs);
     }
 
-    /* TODO */
     template <typename TArg>
     TExpect(
         const Base::TCodeLocation &code_location,
@@ -242,15 +235,12 @@ namespace Test {
     }
 
 
-    /* TODO */
     virtual ~TExpect();
 
-    /* TODO */
     operator bool() const {
       return Pass;
     }
 
-    /* TODO */
     template <typename TVal>
     const TExpect &Write(const TVal &val) const {
       Explanation << val;
@@ -295,22 +285,17 @@ namespace Test {
       Expression = strm.str();
     }
 
-    /* TODO */
     template <typename TArg>
     static void WriteType(std::ostream &strm) {
       strm << '(' << Base::Demangle<TArg>() << ')';
     }
 
-    /* TODO */
     Base::TCodeLocation CodeLocation;
 
-    /* TODO */
     bool Pass;
 
-    /* TODO */
     std::string Source, Expression;
 
-    /* TODO */
     mutable std::ostringstream Explanation;
   };
 

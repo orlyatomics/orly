@@ -34,30 +34,23 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TEmptyCtor
         : public TExpr {
       NO_COPY(TEmptyCtor);
       public:
 
-      /* TODO */
       TEmptyCtor(const Package::Syntax::TEmptyCtor *empty_ctor);
 
-      /* TODO */
       virtual ~TEmptyCtor();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TEmptyCtor *EmptyCtor;
 
-      /* TODO */
       TType *Type;
 
     };  // TEmptyCtor

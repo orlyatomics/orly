@@ -86,7 +86,6 @@ namespace Orly {
 
       };  // TResult
 
-      /* TODO */
       template <typename TVal>
       static void WaitForDiskSpin(TVal &trigger, TVal wait_for_this, std::condition_variable &cond, std::unique_lock<std::mutex> &lock, TDiskResult &result, const char *err_str) {
         while (trigger != wait_for_this) {
@@ -111,48 +110,35 @@ namespace Orly {
         }
       }
 
-      /* TODO */
       class TCompletionTrigger {
         NO_COPY(TCompletionTrigger);
         public:
 
-        /* TODO */
         inline TCompletionTrigger();
 
-        /* TODO */
         inline ~TCompletionTrigger();
 
-        /* TODO */
         inline void WaitForMore(size_t num);
 
-        /* TODO */
         inline void WaitForOneMore();
 
-        /* TODO */
         inline void Callback(TDiskResult disk_result, const char *err_str);
 
-        /* TODO */
         inline void Wait(bool come_back_right_away = false);
 
         private:
 
-        /* TODO */
         std::atomic<size_t> WaitFor;
 
-        /* TODO */
         std::atomic<size_t> NumFinished;
 
-        /* TODO */
         Fiber::TFrame *FrameWaiting;
         Fiber::TRunner *RunnerToReactivateOn;
 
-        /* TODO */
         Base::TSpinLock SpinLock;
 
-        /* TODO */
         TDiskResult Result;
 
-        /* TODO */
         const char *ErrStr;
 
       };  // TCompletionTrigger

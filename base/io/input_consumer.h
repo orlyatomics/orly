@@ -71,7 +71,6 @@ namespace Io {
       return InputProducer;
     }
 
-    /* TODO */
     bool HasBufferedData() const;
 
     /* True iff. we have reached the end of the input stream. */

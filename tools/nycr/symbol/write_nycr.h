@@ -29,10 +29,8 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       void WriteNycr(const char *root, const char *branch, const char *atom, const TLanguage *language);
 
-      /* TODO */
       void WriteNycrDecl(const TKind *kind, std::ostream &strm);
 
     }  // Symbol

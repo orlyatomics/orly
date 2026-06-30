@@ -25,7 +25,6 @@ using namespace Orly;
 using namespace Orly::Atom;
 using namespace Orly::Sabot;
 
-/* TODO */
 class TCompareTypesVisitor final
     : public TTypeDoubleVisitor {
   public:
@@ -797,13 +796,10 @@ class TCompareTypesVisitor final
 
   private:
 
-  /* TODO */
   Atom::TComparison &Comparison;
 
-  /* TODO */
   inline void OnUnary(const Type::TUnary &lhs, const Type::TUnary &rhs) const;
 
-  /* TODO */
   inline void OnBinary(const Type::TBinary &lhs, const Type::TBinary &rhs) const;
 
 };  // TCompareTypesVisitor

@@ -32,7 +32,6 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TUtilizationReporter {
         NO_COPY(TUtilizationReporter);
         public:
@@ -43,18 +42,14 @@ namespace Orly {
           Write
         };
 
-        /* TODO */
         virtual void Push(uint8_t source, TKind kind, size_t num_bytes, DiskPriority priority) = 0;
 
-        /* TODO */
         virtual void Report(std::stringstream &ss) = 0;
 
         protected:
 
-        /* TODO */
         TUtilizationReporter() {}
 
-        /* TODO */
         virtual ~TUtilizationReporter() {}
 
       };  // TUtilizationReporter

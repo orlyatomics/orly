@@ -33,21 +33,17 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TStartableExpr
         : virtual public TExpr {
       NO_COPY(TStartableExpr);
       public:
 
-      /* TODO */
       TStartableExpr() = default;
 
       virtual ~TStartableExpr() = default;
 
-      /* TODO */
       virtual Expr::TStartable::TPtr GetStartableSymbol() const = 0;
 
     };  // TStartableExpr

@@ -27,39 +27,32 @@
 
 namespace Base {
 
-  /* TODO */
   class TSpinLock {
     NO_COPY(TSpinLock);
     public:
 
-    /* TODO */
     class TLock {
       NO_COPY(TLock);
       public:
 
-      /* TODO */
       TLock(const TSpinLock &spin_lock) : SpinLock(spin_lock) {
         while (spin_lock.Lock.test_and_set(std::memory_order_acquire));
       }
 
-      /* TODO */
       ~TLock() {
         SpinLock.Lock.clear(std::memory_order_release);
       }
 
       private:
 
-      /* TODO */
       const TSpinLock &SpinLock;
 
     };
 
-    /* TODO */
     class TSoftLock {
       NO_COPY(TSoftLock);
       public:
 
-      /* TODO */
       TSoftLock(const TSpinLock &spin_lock) : SpinLock(spin_lock) {
         size_t tries = 0UL;
         while (spin_lock.Lock.test_and_set(std::memory_order_acquire)) {
@@ -73,27 +66,22 @@ namespace Base {
         }
       }
 
-      /* TODO */
       ~TSoftLock() {
         SpinLock.Lock.clear(std::memory_order_release);
       }
 
       private:
 
-      /* TODO */
       const TSpinLock &SpinLock;
 
-      /* TODO */
       static const size_t YieldCount = 20UL;
 
     };
 
-    /* TODO */
     TSpinLock() : Lock(ATOMIC_FLAG_INIT) {}
 
     private:
 
-    /* TODO */
     mutable std::atomic_flag Lock;
 
   };

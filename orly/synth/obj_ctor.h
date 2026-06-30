@@ -35,36 +35,27 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TObjCtor
         : public TExpr {
       NO_COPY(TObjCtor);
       public:
 
-      /* TODO */
       TObjCtor(const TExprFactory *expr_factory, const Package::Syntax::TObjCtor *obj_ctor);
 
-      /* TODO */
       virtual ~TObjCtor();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TObjCtor *ObjCtor;
 
-      /* TODO */
       std::map<TName, TExpr *> Members;
 
     };  // TObjCtor

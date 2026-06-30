@@ -37,30 +37,22 @@ namespace Orly {
 
     namespace Util {
 
-      /* TODO */
       class TPool {
         NO_COPY(TPool);
         public:
 
-        /* TODO */
         TPool(size_t block_size, const char *name, size_t block_count = 0UL);
 
-        /* TODO */
         ~TPool();
 
-        /* TODO */
         void Init(size_t block_count);
 
-        /* TODO */
         inline const char *GetName() const;
 
-        /* TODO */
         inline size_t GetNumBlocksUsed() const;
 
-        /* TODO */
         inline size_t GetMaxBlocks() const;
 
-        /* TODO */
         void *Alloc(size_t size) {
           void *ptr = TryAlloc(size);
           if (!ptr) {
@@ -79,43 +71,32 @@ namespace Orly {
           return ptr;
         }
 
-        /* TODO */
         void Free(void *ptr);
 
-        /* TODO */
         void *TryAlloc(size_t size);
 
         private:
 
-        /* TODO */
         class TBlock {
           NO_COPY(TBlock);
           public:
 
-          /* TODO */
           TBlock *NextBlock;
 
         };  // TBlock
 
-        /* TODO */
         const size_t BlockSize;
 
-        /* TODO */
         void *Blob;
 
-        /* TODO */
         TBlock *FirstBlock;
 
-        /* TODO */
         std::mutex Mutex;
 
-        /* TODO */
         const char *Name;
 
-        /* TODO */
         std::atomic<size_t> NumBlocksUsed;
 
-        /* TODO */
         size_t MaxBlocks;
 
       };  // TPool

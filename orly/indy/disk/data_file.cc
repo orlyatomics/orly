@@ -107,26 +107,20 @@ class TIndexFile
 
   };  // TOrderedNote
 
-  /* TODO */
   class THashObj {
     public:
 
-    /* TODO */
     THashObj(const Atom::TCore &core, size_t hash, size_t offset)
         : Core(core), Hash(hash), Offset(offset) {}
 
-    /* TODO */
     bool operator<(const THashObj &that) const {
       return Hash < that.Hash;
     }
 
-    /* TODO */
     Atom::TCore Core;
 
-    /* TODO */
     size_t Hash;
 
-    /* TODO */
     size_t Offset;
 
   };  // THashObj
@@ -335,7 +329,6 @@ class TIndexFile
 
   private:
 
-  /* TODO */
   virtual size_t GetFileLength() const override {
     return FileSize;
     /* we can't do this because we may not have written this far yet. this would cause problems with prefetch or checkbuf()
@@ -354,7 +347,6 @@ class TIndexFile
     throw std::logic_error("TIndexFile::ReadMeta not implemented: TIndexFile is write-only and never read back (the indy L0 reload-from-disk path was never ported, #173).");
   }
 
-  /* TODO */
   virtual size_t FindPageIdOfByte(size_t offset) const override {
     assert(offset <= GetFileLength());
     //return (((*BlockVec)[offset / Disk::Util::LogicalBlockSize]) * Disk::Util::PagesPerBlock) + ((offset % Disk::Util::LogicalBlockSize) / Disk::Util::LogicalPageSize);
@@ -363,7 +355,6 @@ class TIndexFile
 
 };  // TIndexFile
 
-/* TODO */
 size_t MakeArena(Disk::Util::TEngine *engine,
                  Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                  DiskPriority priority,

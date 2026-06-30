@@ -40,29 +40,22 @@ namespace Orly {
     class TRepo;
     class TManager;
 
-    /* TODO */
     class TMemoryLayer
         : public L0::TManager::TRepo::TDataLayer {
       NO_COPY(TMemoryLayer);
       public:
 
-      /* TODO */
       typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate, TSequenceNumber> TUpdateCollection;
       typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate::TEntry, TUpdate::TEntry::TEntryKey> TEntryCollection;
 
-      /* TODO */
       TMemoryLayer(L0::TManager *manager);
 
-      /* TODO */
       virtual ~TMemoryLayer();
 
-      /* TODO */
       void Insert(TUpdate *update) NO_THROW;
 
-      /* TODO */
       void ReverseInsert(TUpdate *update) NO_THROW;
 
-      /* TODO */
       inline TEntryCollection *GetEntryCollection() const;
 
       /* Link a freshly-inserted entry into the skip-list accelerator (#257).
@@ -85,43 +78,34 @@ namespace Orly {
          TMatchPresentWalker's exact-point guard). */
       TEntryCollection::TCursor SeekRun(const TIndexKey &key) const;
 
-      /* TODO */
       inline TUpdateCollection *GetUpdateCollection() const;
 
       inline bool IsEmpty() const;
 
-      /* TODO */
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
                                                                      const TIndexKey &to) const override;
 
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
-      /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
 
-      /* TODO */
       inline virtual size_t GetSize() const override;
 
-      /* TODO */
       inline virtual TSequenceNumber GetLowestSeq() const override;
 
-      /* TODO */
       inline virtual TSequenceNumber GetHighestSeq() const override;
 
       private:
 
-      /* TODO */
       class TMatchPresentWalker
           : public Indy::TPresentWalker {
         NO_COPY(TMatchPresentWalker);
         public:
 
-        /* TODO */
         TMatchPresentWalker(const TMemoryLayer *layer,
                        const TIndexKey &key,
                        bool exact_point);
 
-        /* TODO */
         virtual ~TMatchPresentWalker();
 
         /* True iff. we have an item. */
@@ -135,25 +119,18 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         void Refresh() const;
 
-        /* TODO */
         const TMemoryLayer *const Layer;
 
-        /* TODO */
         const TIndexKey &Key;
 
-        /* TODO */
         mutable TMemoryLayer::TEntryCollection::TCursor Csr;
 
-        /* TODO */
         mutable bool Valid;
 
-        /* TODO */
         mutable bool Cached;
 
-        /* TODO */
         mutable bool PassedMatch;
 
         /* When true, the search key is a fully-bound point read (from
@@ -161,23 +138,19 @@ namespace Orly {
            instead of scanning the ordered list from the head (#257). */
         const bool ExactPoint;
 
-        /* TODO */
         mutable TItem Item;
 
       };  // TMatchPresentWalker
 
-      /* TODO */
       class TRangePresentWalker
           : public Indy::TPresentWalker {
         NO_COPY(TRangePresentWalker);
         public:
 
-        /* TODO */
         TRangePresentWalker(const TMemoryLayer *layer,
                        const TIndexKey &from,
                        const TIndexKey &to);
 
-        /* TODO */
         virtual ~TRangePresentWalker();
 
         /* True iff. we have an item. */
@@ -191,45 +164,33 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         void Refresh() const;
 
-        /* TODO */
         const TMemoryLayer *const Layer;
 
-        /* TODO */
         const TIndexKey &From;
 
-        /* TODO */
         const TIndexKey &To;
 
-        /* TODO */
         mutable TMemoryLayer::TEntryCollection::TCursor Csr;
 
-        /* TODO */
         mutable bool Valid;
 
-        /* TODO */
         mutable bool Cached;
 
-        /* TODO */
         mutable bool PassedMatch;
 
-        /* TODO */
         mutable TItem Item;
 
       };  // TRangePresentWalker
 
-      /* TODO */
       class TUpdateWalker
           : public Indy::TUpdateWalker {
         NO_COPY(TUpdateWalker);
         public:
 
-        /* TODO */
         TUpdateWalker(const TMemoryLayer *layer, TSequenceNumber from);
 
-        /* TODO */
         virtual ~TUpdateWalker();
 
         /* True iff. we have an item. */
@@ -243,39 +204,28 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         void Refresh();
 
-        /* TODO */
         const TMemoryLayer *const Layer;
 
-        /* TODO */
         TSequenceNumber From;
 
-        /* TODO */
         TMemoryLayer::TUpdateCollection::TCursor Csr;
 
-        /* TODO */
         bool Valid;
 
-        /* TODO */
         mutable TItem Item;
 
       };  // TUpdateWalker
 
-      /* TODO */
       inline virtual TKind GetKind() const;
 
-      /* TODO */
       void ImporterAppendUpdate(TUpdate *update);
 
-      /* TODO */
       void ImporterAppendEntry(TUpdate::TEntry *entry);
 
-      /* TODO */
       mutable TUpdateCollection::TImpl UpdateCollection;
 
-      /* TODO */
       mutable TEntryCollection::TImpl EntryCollection;
 
       /* Per-level head pointers for the skip-list accelerator over
@@ -286,7 +236,6 @@ namespace Orly {
       std::atomic<TUpdate::TEntry *> SkipHead[TUpdate::TEntry::SkipMaxLevel];
       std::atomic<size_t> SkipListLevel;
 
-      /* TODO */
       size_t Size;
 
       friend class Orly::Server::TServer;
@@ -295,38 +244,31 @@ namespace Orly {
 
     };  // TMemoryLayer
 
-    /* TODO */
     inline TMemoryLayer::TEntryCollection *TMemoryLayer::GetEntryCollection() const {
       return &EntryCollection;
     }
 
-    /* TODO */
     inline TMemoryLayer::TUpdateCollection *TMemoryLayer::GetUpdateCollection() const {
       return &UpdateCollection;
     }
 
-    /* TODO */
     inline bool TMemoryLayer::IsEmpty() const {
       return UpdateCollection.TryGetFirstMember() == nullptr;
     }
 
-    /* TODO */
     inline L0::TManager::TRepo::TDataLayer::TKind TMemoryLayer::GetKind() const {
       return L0::TManager::TRepo::TDataLayer::Mem;
     }
 
-    /* TODO */
     inline size_t TMemoryLayer::GetSize() const {
       return Size;
     }
 
-    /* TODO */
     inline TSequenceNumber TMemoryLayer::GetLowestSeq() const {
       assert(Size);
       return UpdateCollection.TryGetFirstMember()->GetSequenceNumber();
     }
 
-    /* TODO */
     inline TSequenceNumber TMemoryLayer::GetHighestSeq() const {
       assert(Size);
       return UpdateCollection.TryGetLastMember()->GetSequenceNumber();

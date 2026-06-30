@@ -31,44 +31,34 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TPrecLevel {
         NO_COPY(TPrecLevel);
         public:
 
-        /* TODO */
         typedef std::vector<TPrecLevel *> TPrecLevels;
 
-        /* TODO */
         TPrecLevel(const TName &name, size_t idx);
 
-        /* TODO */
         virtual ~TPrecLevel();
 
-        /* TODO */
         size_t GetIdx() const {
           return Idx;
         }
 
-        /* TODO */
         const TName &GetName() const {
           return Name;
         }
 
-        /* TODO */
         static const TPrecLevels &GetPrecLevels() {
           return PrecLevels;
         }
 
         private:
 
-        /* TODO */
         TName Name;
 
-        /* TODO */
         size_t Idx;
 
-        /* TODO */
         static TPrecLevels PrecLevels;
 
       };  // TPrecLevel

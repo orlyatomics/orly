@@ -26,25 +26,19 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TPrecLevel;
 
-    /* TODO */
     class TOperator
         : public TAtom {
       NO_COPY(TOperator);
       public:
 
-      /* TODO */
       TOperator(const Syntax::TOper *decl);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       virtual Symbol::TAtom *GetSymbolAsAtom() const;
 
-      /* TODO */
       Symbol::TOperator *GetSymbolAsOperator() const {
         assert(Symbol);
         return Symbol;
@@ -52,21 +46,16 @@ namespace Tools {
 
       private:
 
-      /* TODO */
       virtual bool Build(int pass);
 
-      /* TODO */
       TRef<TPrecLevel> PrecLevel;
 
-      /* TODO */
       Symbol::TOperator::TAssoc Assoc;
 
-      /* TODO */
       Symbol::TOperator *Symbol;
 
     };  // TOperator
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TOperator> {
       static const char *Name;

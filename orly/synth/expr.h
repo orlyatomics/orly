@@ -32,26 +32,20 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExpr {
       NO_COPY(TExpr);
       public:
 
-      /* TODO */
       virtual ~TExpr() {}
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const = 0;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &) {}
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &) {}
 
       protected:
 
-      /* TODO */
       TExpr() {}
 
     };  // TExpr

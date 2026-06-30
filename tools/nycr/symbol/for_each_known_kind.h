@@ -29,7 +29,6 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       void ForEachKnownKind(
           const TKind *kind, const std::function<void (const TKind *)> &cb);
 

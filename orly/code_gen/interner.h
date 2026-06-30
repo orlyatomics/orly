@@ -167,7 +167,6 @@ namespace Orly {
         //TODO: The redundant storage of a scope pointer in each holder is less than ideal.
         TStorage() = default;
 
-        /* TODO */
         std::unordered_map<TKey, std::weak_ptr<const TObj>> ObjByKey;
       };
 

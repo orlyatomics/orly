@@ -41,11 +41,9 @@ namespace Base {
     /* convenience typedef for std::chrono::time_point */
     typedef std::chrono::time_point<TClock, TTimeDiff> TTimePnt;
 
-    /* TODO */
     class TTimeDiffInfo {
       public:
 
-      /* TODO */
       TTimeDiffInfo(
           bool is_forward,
           uint64_t day,
@@ -54,19 +52,14 @@ namespace Base {
           uint64_t second,
 	        uint64_t nanosecond);
 
-      /* TODO */
       TTimeDiffInfo(const std::string &str);
 
-      /* TODO */
       TTimeDiffInfo(const TTimeDiff &time_diff);
 
-      /* TODO */
       std::string AsString() const;
 
-      /* TODO */
       TTimeDiff AsTimeDiff() const;
 
-      /* TODO */
       void Write(std::ostream &strm) const;
 
       /* Accessors */
@@ -96,10 +89,8 @@ namespace Base {
 
       private:
 
-      /* TODO */
       bool IsForward;
 
-      /* TODO */
       int64_t Day, Hour, Minute, Second, Nanosecond;
 
     };  // TTimeDiffInfo
@@ -108,29 +99,22 @@ namespace Base {
     class TTimePntInfo {
       public:
 
-      /* TODO */
       TTimePntInfo(
           uint64_t year, uint64_t month, uint64_t day,
           uint64_t hour, uint64_t minute, uint64_t second,
           uint64_t nanosecond,
           int64_t utc_offset);
 
-      /* TODO */
       TTimePntInfo(const std::string &str);
 
-      /* TODO */
       TTimePntInfo(const TTimePnt &time_pnt);
 
-      /* TODO */
       std::string AsString() const;
 
-      /* TODO */
       TTimePnt AsTimePnt() const;
 
-      /* TODO */
       void Validate(const TCodeLocation &here) const;
 
-      /* TODO */
       void Write(std::ostream &strm) const;
 
       /* Accessors */
@@ -168,13 +152,10 @@ namespace Base {
 
       private:
 
-      /* TODO */
       std::tm &AsTmObj(std::tm &out) const;
 
-      /* TODO */
       uint64_t Year, Month, Day, Hour, Minute, Second, Nanosecond;
 
-      /* TODO */
       int64_t UtcOffset;
 
     };  // TTimePntInfo
@@ -184,7 +165,6 @@ namespace Base {
       return std::chrono::duration_cast<TTimeDiff>(time_diff);
     }
 
-    /* TODO */
     template <typename TVal>
     TTimePnt TimePntCast(const std::chrono::time_point<TVal> &time_pnt) {
       return std::chrono::time_point_cast<TTimeDiff, TClock>(time_pnt);
@@ -192,7 +172,6 @@ namespace Base {
 
     /* These are the built_in functions that are used in code gen */
 
-    /* TODO */
     TTimeDiff CreateTimeDiff(
         bool is_forward,
         uint64_t day,
@@ -209,7 +188,6 @@ namespace Base {
 	uint64_t nanosecond,
         int64_t utc_offset);
 
-    /* TODO */
     TTimePnt Now();
 
     inline std::ostream &operator<<(std::ostream &strm, const TTimeDiff &that) {

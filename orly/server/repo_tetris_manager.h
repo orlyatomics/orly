@@ -35,12 +35,10 @@ namespace Orly {
 
   namespace Server {
 
-    /* TODO */
     class TRepoTetrisManager final
         : public TTetrisManager {
       public:
 
-      /* TODO */
       TRepoTetrisManager(
           Base::TScheduler *scheduler,
           Indy::Fiber::TRunner::TRunnerCons &runner_cons,
@@ -53,10 +51,8 @@ namespace Orly {
           bool log_assertion_failures,
           bool commutative_fastlane = false);
 
-      /* TODO */
       virtual ~TRepoTetrisManager();
 
-      /* TODO */
       std::atomic<size_t> PushCount;
       std::atomic<size_t> PopCount;
       std::atomic<size_t> FailCount;
@@ -71,7 +67,6 @@ namespace Orly {
       /* If true, promote ALL ready assertion-free children per round (#234). */
       const bool CommutativeFastlane;
 
-      /* TODO */
       Base::TSigmaCalc TetrisSnapshotCPUTime;
       Base::TSigmaCalc TetrisSortCPUTime;
       Base::TSigmaCalc TetrisPlayCPUTime;
@@ -80,35 +75,27 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       class TPlayer final
           : public TTetrisManager::TPlayer {
         public:
 
-        /* TODO */
         TPlayer(TRepoTetrisManager *repo_tetris_manager, const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_master);
 
-        /* TODO */
         virtual ~TPlayer();
 
         private:
 
-        /* TODO */
         class TChild {
           NO_COPY(TChild);
           public:
 
-          /* TODO */
           TChild(TPlayer *player, const Base::TUuid &child_pov_id);
 
-          /* TODO */
           bool Play(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
-          /* TODO */
           bool Refresh(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction);
 
-          /* TODO */
           static bool SortsBefore(const TChild *lhs, const TChild *rhs);
 
           /* True iff this child carries no assertions -- every refreshed entry
@@ -133,10 +120,8 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           void Flush();
 
-          /* TODO */
           bool TestAssertions(Indy::TContext &context) const;
 
           /* The player which owns us.  Never null. */
@@ -151,13 +136,10 @@ namespace Orly {
           /* The repo which backs up this child pov. */
           Indy::L0::TManager::TPtr<Indy::TRepo> Repo;
 
-          /* TODO */
           std::shared_ptr<Indy::TUpdate> PeekedUpdate;
 
-          /* TODO */
           TMetaRecord MetaRecord;
 
-          /* TODO */
           std::unordered_map<Base::TUuid, Package::TFuncHolder::TPtr> FuncHolderByUpdateId;
 
         };  // TRepoTetrisManager::TPlayer::TChild
@@ -191,7 +173,6 @@ namespace Orly {
 
       };  // TRepoTetrisManager::TPlayer
 
-      /* TODO */
       virtual TTetrisManager::TPlayer *NewPlayer(const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_master) override;
 
       private:
@@ -205,7 +186,6 @@ namespace Orly {
       /* Our manager of durables.  Never null. */
       Durable::TManager *DurableManager;
 
-      /* TODO */
       bool LogAssertionFailures;
 
     };  // TRepoTetrisManager

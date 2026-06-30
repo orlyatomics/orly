@@ -42,7 +42,6 @@ namespace Orly {
 
   namespace Indy {
 
-    /* TODO */
     class TContext
         : public TContextBase {
       NO_COPY(TContext);
@@ -52,46 +51,35 @@ namespace Orly {
       class TKeyCursor;
       struct TKeyCursorCollector;
 
-      /* TODO */
       typedef InvCon::UnorderedList::TCollection<TKeyCursorCollector, TKeyCursor> TKeyCursorCollection;
 
       private:
 
-      /* TODO */
       typedef std::vector<std::pair<Indy::L0::TManager::TPtr<TRepo>, std::unique_ptr<TRepo::TView>>> TRepoTree;
 
-      /* TODO */
       class TPresentWalker {
         NO_COPY(TPresentWalker);
         public:
 
-        /* TODO */
         using TItem = Orly::Indy::TPresentWalker::TItem;
 
-        /* TODO */
         /* exact_point true => fully-bound point read (operator[]/Exists), so
            layers may seek instead of head-scanning (#257). The TKeyCursor path
            leaves it false because its pattern may be a prefix. */
         TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &key, bool exact_point = false);
 
-        /* TODO */
         TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &from, const TIndexKey &to);
 
-        /* TODO */
         ~TPresentWalker();
 
-        /* TODO */
         inline operator bool() const;
 
-        /* TODO */
         inline const TItem &operator*() const;
 
-        /* TODO */
         inline TPresentWalker &operator++();
 
         private:
 
-        /* TODO */
         void Refresh();
 
         /* Phase 3 of #49: fold consecutive same-mutator commutative
@@ -100,16 +88,12 @@ namespace Orly {
            pre-#49-phase-2 in-tree code ever produced). */
         void ApplyDeferredFold();
 
-        /* TODO */
         std::vector<std::shared_ptr<Indy::TPresentWalker>> WalkerVec;
 
-        /* TODO */
         Util::TMinHeap<Indy::TPresentWalker::TItem, size_t> MinHeap;
 
-        /* TODO */
         bool Valid;
 
-        /* TODO */
         mutable TItem Item;
 
         /* Arena that owns folded Op TCores. Borrowed from the enclosing
@@ -120,124 +104,91 @@ namespace Orly {
 
       public:
 
-      /* TODO */
       class TKeyCursor
           : public Orly::TKeyCursor {
         NO_COPY(TKeyCursor);
         public:
 
-        /* TODO */
         typedef InvCon::UnorderedList::TMembership<TKeyCursor, TKeyCursorCollector> TContextMembership;
 
-        /* TODO */
         TKeyCursor(TContext *context, const Indy::TIndexKey &pattern);
 
-        /* TODO */
         TKeyCursor(TContext *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to);
 
-        /* TODO */
         virtual ~TKeyCursor();
 
-        /* TODO */
         virtual operator bool() const override;
 
-        /* TODO */
         virtual const Indy::TKey &operator*() const override;
 
-        /* TODO */
         virtual const Indy::TKey *operator->() const override;
 
-        /* TODO */
         virtual TKeyCursor &operator++() override;
 
-        /* TODO */
         const TContext::TPresentWalker::TItem &GetVal() const;
 
         private:
 
-        /* TODO */
         void Refresh() const;
 
-        /* TODO */
         Indy::TIndexKey Key;
 
-        /* TODO */
         Indy::TIndexKey To;
 
-        /* TODO */
         mutable bool Valid;
 
-        /* TODO */
         mutable bool Cached;
 
-        /* TODO */
         mutable TPresentWalker Csr;
 
-        /* TODO */
         mutable Indy::TKey Item;
 
-        /* TODO */
         mutable TContextMembership::TImpl ContextMembership;
 
       };  // TKeyCursor
 
-      /* TODO */
       TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena);
 
-      /* TODO */
       virtual ~TContext();
 
-      /* TODO */
       virtual Indy::TKey operator[](const Indy::TIndexKey &key) override;
 
-      /* TODO */
       virtual bool Exists(const Indy::TIndexKey &key) override;
 
-      /* TODO */
       inline size_t GetWalkerCount() const {
         return WalkerCount;
       }
 
-      /* TODO */
       const Base::TTimer &GetPresentWalkConsTimer() const {
         return PresentWalkConsTimer;
       }
 
-      /* TODO */
       struct TKeyCursorCollector {
         NO_COPY(TKeyCursorCollector);
 
-        /* TODO */
         TKeyCursorCollector() : KeyCursorCollection(this) {}
 
-        /* TODO */
         TKeyCursorCollection::TImpl KeyCursorCollection;
 
       };  // TKeyCursorCollector
 
       private:
 
-      /* TODO */
       TRepoTree RepoTree;
 
-      /* TODO */
       size_t WalkerCount;
 
-      /* TODO */
       Base::TTimer PresentWalkConsTimer;
 
-      /* TODO */
       friend class TIndyContext;
 
     };  // TContext
 
-    /* TODO */
     class TIndyContext
           : public Orly::Package::TContext {
       NO_COPY(TIndyContext);
       public:
 
-      /* TODO */
       TIndyContext(
           const Rt::TOpt<Base::TUuid> &user_id,
           const Base::TUuid &session_id,
@@ -248,12 +199,10 @@ namespace Orly {
           Rt::TOpt<uint32_t> seed)
           : Orly::Package::TContext(user_id, session_id, arena, scheduler, now, seed), DataContext(context) {}
 
-      /* TODO */
       virtual Orly::TContextBase &GetFlux() override{
         return DataContext;
       }
 
-      /* TODO */
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const override {
         auto data_context = dynamic_cast<Indy::TContext *>(context);
 
@@ -266,7 +215,6 @@ namespace Orly {
         return new Indy::TContext::TKeyCursor(data_context, pattern);
       }
 
-      /* TODO */
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) const override {
         auto data_context = dynamic_cast<Indy::TContext *>(context);
 
@@ -281,7 +229,6 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       Indy::TContext &DataContext;
 
     };  // TIndyContext

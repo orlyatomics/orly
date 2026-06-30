@@ -88,7 +88,6 @@ namespace InvCon {
         return LastMembership;
       }
 
-      /* TODO */
       bool IsEmpty() const {
         return FirstMembership == 0;
       }

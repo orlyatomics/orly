@@ -27,14 +27,11 @@ namespace Orly {
 
   namespace Indy {
 
-    /* TODO */
     class TIndexMapReplica {
       public:
 
-      /* TODO */
       TIndexMapReplica() {}
 
-      /* TODO */
       void Push(const Base::TUuid &index_id, const std::string &pkg_key, const Indy::TKey &val) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
         CoreVecBuilder.Push(index_id);
@@ -42,18 +39,15 @@ namespace Orly {
         CoreVecBuilder.PushState(val.GetState(state_alloc));
       }
 
-      /* TODO */
       void Write(Io::TBinaryOutputStream &stream) const {
         CoreVecBuilder.Write(stream);
       }
 
-      /* TODO */
       void Read(Io::TBinaryInputStream &stream) {
         assert(!CoreVec);
         CoreVec = std::make_unique<Atom::TCoreVector>(stream);
       }
 
-      /* TODO */
       const Atom::TCoreVector &GetCoreVec() const {
         assert(CoreVec);
         return *CoreVec;
@@ -74,7 +68,6 @@ namespace Orly {
       UnPause
     };
 
-    /* TODO */
     class TReplicationQueue {
       NO_COPY(TReplicationQueue);
       public:
@@ -82,18 +75,14 @@ namespace Orly {
       /* Forward Declarations. */
       class TReplicationItem;
 
-      /* TODO */
       typedef InvCon::UnorderedList::TCollection<TReplicationQueue, TReplicationItem> TItemCollection;
 
-      /* TODO */
       class TReplicationItem {
         NO_COPY(TReplicationItem);
         public:
 
-        /* TODO */
         typedef InvCon::UnorderedList::TMembership<TReplicationItem, TReplicationQueue> TQueueMembership;
 
-        /* TODO */
         enum TKind {
           Repo,
           Durable,
@@ -101,295 +90,214 @@ namespace Orly {
           IndexId
         };
 
-        /* TODO */
         virtual ~TReplicationItem();
 
-        /* TODO */
         virtual TKind GetKind() const = 0;
 
         protected:
 
-        /* TODO */
         TReplicationItem();
 
         private:
 
-        /* TODO */
         TQueueMembership::TImpl QueueMembership;
 
-        /* TODO */
         friend class TReplicationQueue;
 
       };  // TReplicationItem
 
-      /* TODO */
       TReplicationQueue();
 
-      /* TODO */
       ~TReplicationQueue();
 
-      /* TODO */
       void Insert(TReplicationItem *item) NO_THROW;
 
-      /* TODO */
       void Swap(TReplicationQueue &that);
 
-      /* TODO */
       inline void Clear();
 
-      /* TODO */
       TItemCollection *GetItemCollection() const;
 
-      /* TODO */
       inline bool IsEmpty() const;
 
       private:
 
-      /* TODO */
       mutable TItemCollection::TImpl ItemCollection;
 
     };  // TReplicationQueue
 
-    /* TODO */
     class TRepoReplication
         : public TReplicationQueue::TReplicationItem {
       NO_COPY(TRepoReplication);
       public:
 
-      /* TODO */
       class TReplica {
         public:
 
-        /* TODO */
         inline TReplica(const Base::TUuid &id, bool is_safe, const TTtl &ttl, const std::optional<Base::TUuid> &parent_id);
 
-        /* TODO */
         inline TReplica(const TRepoReplication &replication_obj);
 
-        /* TODO */
         inline TReplica(const TReplica &that);
 
-        /* TODO */
         inline TReplica(TReplica &&that);
 
-        /* TODO */
         inline const TTtl &GetTtl() const;
 
-        /* TODO */
         inline const Base::TUuid &GetId() const;
 
-        /* TODO */
         inline bool GetIsSafe() const;
 
-        /* TODO */
         inline const std::optional<Base::TUuid> &GetOptParentId() const;
 
         private:
 
-        /* TODO */
         const TTtl Ttl;
 
-        /* TODO */
         const Base::TUuid Id;
 
-        /* TODO */
         const bool IsSafe;
 
-        /* TODO */
         const std::optional<Base::TUuid> OptParentId;
 
       };  // TReplica
 
-      /* TODO */
       TRepoReplication(const Base::TUuid &repo_id, bool is_safe, const TTtl &ttl, const std::optional<Base::TUuid> &opt_parent_repo_id);
 
-      /* TODO */
       virtual ~TRepoReplication();
 
-      /* TODO */
       inline virtual TKind GetKind() const;
 
-      /* TODO */
       inline const Base::TUuid &GetId() const;
 
-      /* TODO */
       inline const TTtl &GetTtl() const;
 
-      /* TODO */
       inline bool GetIsSafe() const;
 
-      /* TODO */
       inline const std::optional<Base::TUuid> &GetOptParentRepoId() const;
 
       private:
 
-      /* TODO */
       const TTtl Ttl;
 
-      /* TODO */
       const Base::TUuid RepoId;
 
-      /* TODO */
       const bool IsSafe;
 
-      /* TODO */
       const std::optional<Base::TUuid> OptParentRepoId;
 
     };  // TRepoReplication
 
-    /* TODO */
     class TDurableReplication
         : public TReplicationQueue::TReplicationItem {
       NO_COPY(TDurableReplication);
       public:
 
-      /* TODO */
       class TReplica {
         public:
 
-        /* TODO */
         inline TReplica(const Base::TUuid &id, const TTtl &ttl, const std::string &serialized_obj);
 
-        /* TODO */
         inline TReplica(const TDurableReplication &replication_obj);
 
-        /* TODO */
         inline TReplica(const TReplica &that);
 
-        /* TODO */
         inline TReplica(TReplica &&that);
 
-        /* TODO */
         inline const TTtl &GetTtl() const;
 
-        /* TODO */
         inline const Base::TUuid &GetId() const;
 
-        /* TODO */
         inline const std::string &GetSerializedObj() const;
 
         private:
 
-        /* TODO */
         const TTtl Ttl;
 
-        /* TODO */
         const Base::TUuid Id;
 
-        /* TODO */
         const std::string SerializedObj;
 
       };  // TReplica
 
-      /* TODO */
       TDurableReplication(const Base::TUuid &durable_id, const TTtl &ttl, const std::string &serialized_obj);
 
-      /* TODO */
       virtual ~TDurableReplication();
 
-      /* TODO */
       inline virtual TKind GetKind() const;
 
-      /* TODO */
       inline const Base::TUuid &GetId() const;
 
-      /* TODO */
       inline const TTtl &GetTtl() const;
 
-      /* TODO */
       inline const std::string &GetSerializedObj() const;
 
       private:
 
-      /* TODO */
       const TTtl DurableTtl;
 
-      /* TODO */
       const Base::TUuid DurableId;
 
-      /* TODO */
       const std::string SerializedObj;
 
     };  // TDurableReplication
 
-    /* TODO */
     class TIndexIdReplication
         : public TReplicationQueue::TReplicationItem {
       NO_COPY(TIndexIdReplication);
       public:
 
-      /* TODO */
       class TReplica {
         public:
 
-        /* TODO */
         inline TReplica(const Base::TUuid &id, const std::string &pkg_key, const Indy::TKey &val);
 
-        /* TODO */
         inline TReplica(const TIndexIdReplication &replication_obj);
 
-        /* TODO */
         inline TReplica(const TReplica &that);
 
-        /* TODO */
         inline TReplica(TReplica &&that);
 
-        /* TODO */
         inline const Base::TUuid &GetId() const;
 
-        /* TODO */
         inline const std::string &GetPkgKey() const;
 
-        /* TODO */
         inline const Indy::TKey &GetVal() const;
 
         private:
 
-        /* TODO */
         const Base::TUuid Id;
 
-        /* TODO */
         std::string PkgKey;
         Indy::TKey Val;
 
-        /* TODO */
         Atom::TSuprena Suprena;
 
       };  // TReplica
 
-      /* TODO */
       TIndexIdReplication(const Base::TUuid &id, const std::string &pkg_key, const Indy::TKey &val);
 
-      /* TODO */
       virtual ~TIndexIdReplication();
 
-      /* TODO */
       inline virtual TKind GetKind() const;
 
-      /* TODO */
       inline const Base::TUuid &GetId() const;
 
-      /* TODO */
       inline const std::string &GetPkgKey() const;
 
-      /* TODO */
       inline const Indy::TKey &GetVal() const;
 
       private:
 
-      /* TODO */
       const Base::TUuid Id;
 
-      /* TODO */
       Atom::TSuprena Suprena;
 
-      /* TODO */
       const std::string PkgKey;
       Indy::TKey Val;
 
     };  // TIndexIdReplication
 
-    /* TODO */
     class TTransactionReplication
           : public TReplicationQueue::TReplicationItem {
       NO_COPY(TTransactionReplication);
@@ -397,24 +305,18 @@ namespace Orly {
 
       TTransactionReplication();
 
-      /* TODO */
       TTransactionReplication(L1::TTransaction::TReplica &&replica);
 
-      /* TODO */
       virtual ~TTransactionReplication();
 
-      /* TODO */
       inline void SwapReplica(L1::TTransaction::TReplica &&replica);
 
-      /* TODO */
       inline virtual TKind GetKind() const;
 
-      /* TODO */
       inline const L1::TTransaction::TReplica &GetReplica() const;
 
       private:
 
-      /* TODO */
       L1::TTransaction::TReplica Replica;
 
     };  // TTransactionReplication
@@ -422,83 +324,62 @@ namespace Orly {
     class TReplicationStreamer {
       public:
 
-      /* TODO */
       TReplicationStreamer();
 
-      /* TODO */
       ~TReplicationStreamer();
 
-      /* TODO */
       void Write(Io::TBinaryOutputStream &stream) const;
 
-      /* TODO */
       void Read(Io::TBinaryInputStream &stream);
 
-      /* TODO */
       void PushIndexId(const TIndexIdReplication &index_replica);
 
-      /* TODO */
       void PushTransaction(const L1::TTransaction::TReplica &replica);
 
-      /* TODO */
       void PushDurable(const TDurableReplication &durable_replica);
 
-      /* TODO */
       void PushRepo(const TRepoReplication &repo_replica);
 
-      /* TODO */
       inline const Atom::TCoreVector &GetIndexIdVec() const {
         assert(IndexIdVector);
         return *IndexIdVector;
       }
 
-      /* TODO */
       inline const Atom::TCoreVector &GetRepoVec() const {
         assert(RepoVector);
         return *RepoVector;
       }
 
-      /* TODO */
       inline const Atom::TCoreVector &GetDurableVec() const {
         assert(DurableVector);
         return *DurableVector;
       }
 
-      /* TODO */
       inline const Atom::TCoreVector &GetTransactionVec() const {
         assert(TransactionVector);
         return *TransactionVector;
       }
 
-      /* TODO */
       inline bool IsEmpty() const {
         return IndexIdBuilder.GetCores().empty() && RepoBuilder.GetCores().empty() && DurableBuilder.GetCores().empty() && TransactionBuilder.GetCores().empty();
       }
 
       private:
 
-      /* TODO */
       Atom::TCoreVectorBuilder IndexIdBuilder;
 
-      /* TODO */
       Atom::TCoreVectorBuilder RepoBuilder;
 
-      /* TODO */
       Atom::TCoreVectorBuilder DurableBuilder;
 
-      /* TODO */
       Atom::TCoreVectorBuilder TransactionBuilder;
 
-      /* TODO */
       std::unique_ptr<Atom::TCoreVector> IndexIdVector;
 
-      /* TODO */
       std::unique_ptr<Atom::TCoreVector> RepoVector;
 
-      /* TODO */
       std::unique_ptr<Atom::TCoreVector> DurableVector;
 
-      /* TODO */
       std::unique_ptr<Atom::TCoreVector> TransactionVector;
 
     };  // TReplicationStreamer

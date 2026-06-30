@@ -34,7 +34,6 @@ namespace Orly {
 
   namespace Balancer {
 
-    /* TODO */
     class TBalancer {
       NO_COPY(TBalancer);
       public:
@@ -82,12 +81,10 @@ namespace Orly {
 
       };  // TCmd
 
-      /* TODO */
       virtual ~TBalancer();
 
       protected:
 
-      /* TODO */
       TBalancer(Base::TScheduler *scheduler, const TCmd &cmd);
 
       /* Accepts connections from clients on our main socket.  Launched as a thread by the constructor. */
@@ -96,10 +93,8 @@ namespace Orly {
       /* Serves a client on the given fd.  Launched as a thread by AcceptClientConnections() when a client connects. */
       void ServeClient(Base::TFd &fd, const Socket::TAddress &client_address);
 
-      /* TODO */
       virtual const Socket::TAddress &ChooseHost() = 0;
 
-      /* TODO */
       virtual void OnError(const std::exception &ex) = 0;
 
       private:

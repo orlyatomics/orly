@@ -31,7 +31,6 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TGivenCollector
         : public Package::Syntax::TExpr::TVisitor {
       public:

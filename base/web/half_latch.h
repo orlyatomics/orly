@@ -25,31 +25,24 @@
 
 namespace Server {
 
-  /* TODO */
   class THalfLatch {
     NO_COPY(THalfLatch);
     public:
 
-    /* TODO */
     THalfLatch();
 
-    /* TODO */
     int GetWaitHandle() const {
       return RecvFd;
     }
 
-    /* TODO */
     void Recv();
 
-    /* TODO */
     void Send();
 
     private:
 
-    /* TODO */
     bool IsSet;
 
-    /* TODO */
     Base::TFd RecvFd, SendFd;
 
   };  // THalfLatch

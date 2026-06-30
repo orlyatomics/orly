@@ -33,7 +33,6 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     template <typename TCompound>
     template <typename TVal>
     void TObj::Meta<TCompound>::TField<TVal>::GetVal(const TCompound &that, Var::TVar &out) const {
@@ -48,68 +47,48 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TObj &Add(const TVar &);
 
-      /* TODO */
       virtual TObj &And(const TVar &);
 
-      /* TODO */
       virtual TObj &Div(const TVar &);
 
-      /* TODO */
       virtual TObj &Exp(const TVar &);
 
-      /* TODO */
       virtual TObj &Intersection(const TVar &);
 
-      /* TODO */
       virtual TObj &Mod(const TVar &);
 
-      /* TODO */
       virtual TObj &Mult(const TVar &);
 
-      /* TODO */
       virtual TObj &Or(const TVar &);
 
-      /* TODO */
       virtual TObj &Sub(const TVar &);
 
-      /* TODO */
       virtual TObj &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TObj &Union(const TVar &);
 
-      /* TODO */
       virtual TObj &Xor(const TVar &);
 
-      /* TODO */
       template <typename TCompound, typename TVal>
       static void GetValFromField(const TCompound &compound, const typename Type::TObj::Meta<TCompound>::template TField<TVal> &field, TVar &out) {
         out = TVar(compound.*(field.Member));
       }
 
-      /* TODO */
       typedef std::unordered_map<std::string, TVar> TFieldsByName;
       typedef TFieldsByName TElems;
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
-      /* TODO */
       const TFieldsByName &GetVal() const {
         return FieldsByName;
       }
@@ -137,34 +116,24 @@ namespace Orly {
       }
       */
 
-      /* TODO */
       TObj(const TFieldsByName &that);
 
-      /* TODO */
       virtual ~TObj();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       void SetHash();
 
-      /* TODO */
       TFieldsByName FieldsByName;
 
-      /* TODO */
       size_t Hash;
 
-      /* TODO */
       std::map<std::string, Type::TType> TypeMap;
 
-      /* TODO */
       static const TVar DefaultVar;
 
-      /* TODO */
       friend class TVar;
 
     };  // TObj
@@ -175,7 +144,6 @@ namespace Orly {
       *this = that.AsVar();
     }
 
-    /* TODO */
     template <typename TVal>
     TVal Var::TVar::TDt<TVal>::As(const TVar &that) {
       TObj *ptr = dynamic_cast<TObj *>(that.Impl.get());

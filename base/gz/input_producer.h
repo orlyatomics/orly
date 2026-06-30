@@ -31,21 +31,17 @@
 
 namespace Gz {
 
-  /* TODO */
   class TInputProducer final
       : public Io::TInputProducer {
     NO_COPY(TInputProducer);
     public:
 
-    /* TODO */
     using TChunk = Io::TChunk;
     using TPool  = Io::TPool;
 
-    /* TODO */
     TInputProducer(const char *path, const char *mode, const TPool::TArgs &args = TPool::TArgs())
         : File(path, mode), Pool(std::make_shared<TPool>(args)) {}
 
-    /* TODO */
     TInputProducer(Base::TFd &&fd, const char *mode, const TPool::TArgs &args = TPool::TArgs())
         : File(std::move(fd), mode), Pool(std::make_shared<TPool>(args)) {}
 
@@ -54,10 +50,8 @@ namespace Gz {
 
     private:
 
-    /* TODO */
     TFile File;
 
-    /* TODO */
     std::shared_ptr<TPool> Pool;
 
   };  // TInputProducer

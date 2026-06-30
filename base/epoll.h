@@ -63,7 +63,6 @@ namespace Base {
       return Fd;
     }
 
-    /* TODO */
     size_t GetFdCount() const {
       return FdCount;
     }
@@ -94,16 +93,12 @@ namespace Base {
 
     private:
 
-    /* TODO */
     void Control(int fd, int flags, int op);
 
-    /* TODO */
     TFd Fd;
 
-    /* TODO */
     epoll_event *Events;
 
-    /* TODO */
     size_t MaxEventCount, EventCount, FdCount;
 
   };  // TEpoll

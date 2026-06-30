@@ -32,7 +32,6 @@ namespace Orly {
 
     class TType;
 
-    /* TODO */
     void CollectObjects(const TType &type, std::unordered_set<TType> &object_set);
 
   }  // Type

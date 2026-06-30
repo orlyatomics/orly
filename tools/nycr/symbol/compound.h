@@ -32,102 +32,78 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TOperator;
 
-      /* TODO */
       class TCompound
           : public TFinal {
         NO_COPY(TCompound);
         public:
 
-        /* TODO */
         class TMember {
           public:
 
-          /* TODO */
           virtual ~TMember();
 
-          /* TODO */
           TCompound *GetCompound() const {
             return Compound;
           }
 
-          /* TODO */
           virtual const TName &GetName() const = 0;
 
-          /* TODO */
           virtual const TKind *TryGetKind() const = 0;
 
-          /* TODO */
           virtual void WriteRhs(std::ostream &strm) const = 0;
 
-          /* TODO */
           virtual void WriteXml(std::ostream &strm) const = 0;
 
           protected:
 
-          /* TODO */
           TMember()
               : Compound(0) {}
 
-          /* TODO */
           void SetCompound(TCompound *compound);
 
           private:
 
-          /* TODO */
           TCompound *Compound;
 
         };  // TMember
 
-        /* TODO */
         typedef std::map<TName, TMember *> TMembersByName;
 
-        /* TODO */
         typedef std::vector<TMember *> TMembersInOrder;
 
-        /* TODO */
         const TMembersByName &GetMembersByName() const {
           return MembersByName;
         }
 
-        /* TODO */
         const TMembersInOrder &GetMembersInOrder() const {
           return MembersInOrder;
         }
 
-        /* TODO */
         void SetOperator(TOperator *oper) {
           Operator = oper;
         }
 
-        /* TODO */
         TOperator *TryGetOperator() const {
           return Operator;
         }
 
         protected:
 
-        /* TODO */
         TCompound(const TName &name, TAnyBase *base)
             : TFinal(name, base), Operator(0) {}
 
         private:
 
-        /* TODO */
         void OnJoin(TMember *member);
 
-        /* TODO */
         void OnPart(TMember *member);
 
-        /* TODO */
         TMembersByName MembersByName;
 
-        /* TODO */
         TMembersInOrder MembersInOrder;
 
-        /* TODO */
         TOperator *Operator;
 
       };  // TCompound

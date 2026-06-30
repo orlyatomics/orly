@@ -34,34 +34,27 @@ namespace Orly {
 
   namespace Server {
 
-    /* TODO */
     class TMetaRecord {
       public:
 
-      /* TODO */
       class TEntry {
         public:
 
-        /* TODO */
         using TPackageFqName = std::vector<std::string>;
 
-        /* TODO */
         using TArgByName = std::map<std::string, Var::TVar>;
 
         /* Why not vector of bool?  Because up yours, STL explicit specialization with weird return types on operator[], that's why. */
         using TExpectedPredicateResults = std::vector<uint8_t>;
 
-        /* TODO */
         TEntry() {}
 
-        /* TODO */
         TEntry(
             const Base::TUuid &session_id, const std::optional<Base::TUuid> &user_id, const TPackageFqName &package_fq_name, const std::string &method_name, TArgByName &&arg_by_name,
             TExpectedPredicateResults &&expected_predicate_results, Base::Chrono::TTimePnt now, uint32_t random_seed)
             : SessionId(session_id), UserId(user_id), PackageFqName(package_fq_name), MethodName(method_name), ArgByName(std::move(arg_by_name)),
               ExpectedPredicateResults(std::move(expected_predicate_results)), RunTimestamp(now), RandomSeed(random_seed) {}
 
-        /* TODO */
         const TArgByName &GetArgByName() const {
           return ArgByName;
         }
@@ -70,12 +63,10 @@ namespace Orly {
           return ExpectedPredicateResults;
         }
 
-        /* TODO */
         const std::string &GetMethodName() const {
           return MethodName;
         }
 
-        /* TODO */
         const TPackageFqName &GetPackageFqName() const {
           return PackageFqName;
         }
@@ -88,66 +79,50 @@ namespace Orly {
           return RunTimestamp;
         }
 
-        /* TODO */
         const Base::TUuid &GetSessionId() const {
           return SessionId;
         }
 
-        /* TODO */
         const std::optional<Base::TUuid> &GetUserId() const {
           return UserId;
         }
 
         private:
 
-        /* TODO */
         Base::TUuid SessionId;
 
-        /* TODO */
         std::optional<Base::TUuid> UserId;
 
-        /* TODO */
         TPackageFqName PackageFqName;
 
-        /* TODO */
         std::string MethodName;
 
-        /* TODO */
         TArgByName ArgByName;
 
-        /* TODO */
         TExpectedPredicateResults ExpectedPredicateResults;
 
-        /* TODO */
         Base::Chrono::TTimePnt RunTimestamp;
 
-        /* TODO */
         uint32_t RandomSeed;
 
       };  // TMetaRecord::TEntry
 
-      /* TODO */
       using TEntryByUpdateId = std::map<Base::TUuid, TEntry>;
 
-      /* TODO */
       TMetaRecord() {}
 
-      /* TODO */
       TMetaRecord(const Base::TUuid &update_id, TEntry &&entry) {
         EntryByUpdateId.insert(std::make_pair(update_id, std::forward<TEntry>(entry)));
       }
 
-      /* TODO */
       const TEntry &GetEntry(const Base::TUuid &id) const;
 
-      /* TODO */
       const TEntryByUpdateId &GetEntryByUpdateId() const {
         return EntryByUpdateId;
       }
 
       private:
 
-      /* TODO */
       TEntryByUpdateId EntryByUpdateId;
 
     };  // TMetaRecord

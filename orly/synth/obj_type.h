@@ -31,29 +31,23 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TObjType
         : public TType {
       NO_COPY(TObjType);
       public:
 
-      /* TODO */
       TObjType(const Package::Syntax::TObjType *obj_type);
 
-      /* TODO */
       virtual ~TObjType();
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
       void Cleanup();
 
-      /* TODO */
       virtual Type::TType ComputeSymbolicType() const;
 
-      /* TODO */
       std::unordered_map<std::string, TType *> Members;
 
     };  // TType

@@ -27,21 +27,17 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TNowExpr
         : public TExpr {
       NO_COPY(TNowExpr);
       public:
 
-      /* TODO */
       TNowExpr(const Package::Syntax::TNowExpr *now_expr);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TNowExpr *NowExpr;
 
     };  // TNowExpr

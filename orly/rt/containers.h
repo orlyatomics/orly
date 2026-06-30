@@ -49,7 +49,6 @@ namespace Orly {
     template <typename TVal>
     struct TMatch {
 
-      /* TODO */
       bool operator()(const TVal &lhs, const TVal &rhs) const { return Match(lhs, rhs); }
 
     };
@@ -58,17 +57,14 @@ namespace Orly {
     template <typename TVal>
     struct TMatchLess {
 
-      /* TODO */
       bool operator()(const TVal &lhs, const TVal &rhs) const { return MatchLess(lhs, rhs); }
 
     };
 
-    /* TODO */
     template <typename TKey, typename TVal>
     //using TDict = std::unordered_map<TKey, TVal, std::hash<TKey>, TMatch<TKey>>;
     using TDict = std::map<TKey, TVal, TMatchLess<TKey>>;
 
-    /* TODO */
     template <typename TVal>
     //using TSet = std::unordered_set<TVal, std::hash<TVal>, TMatch<TVal>>;
     using TSet = std::set<TVal, TMatchLess<TVal>>;

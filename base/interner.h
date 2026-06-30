@@ -33,7 +33,6 @@
 
 namespace Base {
 
-  /* TODO */
   template <typename TObj, typename... TArgs>
   class TInterner {
     NO_COPY(TInterner);
@@ -42,10 +41,8 @@ namespace Base {
     typedef std::shared_ptr<const TObj> TPtr;
     typedef std::weak_ptr<const TObj> TWeak;
 
-    /* TODO */
     TInterner() {}
 
-    /* TODO */
     template <typename... TCompatArgs>
     TPtr Get(TCompatArgs &&... args) {
 
@@ -60,10 +57,8 @@ namespace Base {
 
     private:
 
-    /* TODO */
     typedef std::tuple<TArgs...> TKey;
 
-    /* TODO */
     std::unordered_map<TKey, TWeak> ObjByKey;
 
   };  // TInterner<TObj, TArgs...>

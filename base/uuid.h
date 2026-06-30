@@ -244,7 +244,6 @@ namespace Base {
       return *reinterpret_cast<size_t *>(const_cast<unsigned char *>(Data));
     }
 
-    /* TODO */
     const uuid_t &GetRaw() const {
       return Data;
     }

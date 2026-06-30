@@ -117,10 +117,8 @@ class TCmd final
     Parse(argc, argv, TMeta());
   }
 
-  /* TODO  */
   Socket::TAddress Addr;
 
-  /* TODO */
   size_t NumThreads;
   size_t NumReadsPerWrite;
   size_t FlushIntervalMs;

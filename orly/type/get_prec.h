@@ -46,7 +46,6 @@ namespace Orly {
       Variant
     };  // TPrec
 
-    /* TODO */
     TPrec GetPrec(const TType &type);
 
   }  // Type

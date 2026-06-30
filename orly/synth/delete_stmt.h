@@ -30,29 +30,22 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExpr;
     class TExprFactory;
 
-    /* TODO */
     class TDeleteStmt
         : public TStmt {
       NO_COPY(TDeleteStmt);
       public:
 
-      /* TODO */
       TDeleteStmt(const TExprFactory *expr_factory, const Package::Syntax::TDeleteStmt *delete_stmt);
 
-      /* TODO */
       virtual ~TDeleteStmt();
 
-      /* TODO */
       virtual Symbol::Stmt::TStmt::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb) const;
 
       /* Do-little */
@@ -62,10 +55,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const Package::Syntax::TDeleteStmt *DeleteStmt;
 
-      /* TODO */
       TExpr *Expr;
 
       /* The type of the value that is being deleted. */

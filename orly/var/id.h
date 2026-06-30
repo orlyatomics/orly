@@ -30,89 +30,63 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TId &Add(const TVar &);
 
-      /* TODO */
       virtual TId &And(const TVar &);
 
-      /* TODO */
       virtual TId &Div(const TVar &);
 
-      /* TODO */
       virtual TId &Exp(const TVar &);
 
-      /* TODO */
       virtual TId &Intersection(const TVar &);
 
-      /* TODO */
       virtual TId &Mod(const TVar &);
 
-      /* TODO */
       virtual TId &Mult(const TVar &);
 
-      /* TODO */
       virtual TId &Or(const TVar &);
 
-      /* TODO */
       virtual TId &Sub(const TVar &);
 
-      /* TODO */
       virtual TId &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TId &Union(const TVar &);
 
-      /* TODO */
       virtual TId &Xor(const TVar &);
 
-      /* TODO */
       Base::TUuid GetVal() const {
         return Val;
       }
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
-      /* TODO */
       static TVar New(const Base::TUuid &that);
 
       private:
 
-      /* TODO */
       TId(const Base::TUuid &that);
 
-      /* TODO */
       virtual ~TId();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       Base::TUuid Val;
 
     };  // TId
 
-    /* TODO */
     template <>
     struct TVar::TDt<Base::TUuid> {
 
-      /* TODO */
       Base::TUuid static As(const TVar &that) {
         TId *ptr = dynamic_cast<TId *>(that.Impl.get());
         if (ptr) {

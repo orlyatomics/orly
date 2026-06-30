@@ -35,29 +35,22 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExpr;
     class TStmtBlock;
 
-    /* TODO */
     class TIfStmt
         : public TStmt {
       NO_COPY(TIfStmt);
       public:
 
-      /* TODO */
       TIfStmt(const TExprFactory *expr_factory, const Package::Syntax::TIfStmt *if_stmt);
 
-      /* TODO */
       virtual ~TIfStmt();
 
-      /* TODO */
       virtual Symbol::Stmt::TStmt::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb) const;
 
       private:
@@ -98,16 +91,12 @@ namespace Orly {
 
       typedef std::vector<TIfClause *> TIfClauseVec;
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TIfStmt *IfStmt;
 
-      /* TODO */
       TIfClauseVec IfClauses;
 
-      /* TODO */
       TStmtBlock *OptElseBlock;
 
     };  // TIfStmt

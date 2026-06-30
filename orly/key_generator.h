@@ -31,52 +31,40 @@
 
 namespace Orly {
 
-  /* TODO */
   class TKeyCursor {
     NO_COPY(TKeyCursor);
     public:
 
-    /* TODO */
     virtual ~TKeyCursor() {}
 
-    /* TODO */
     virtual operator bool() const = 0;
 
-    /* TODO */
     virtual const Indy::TKey &operator*() const = 0;
 
-    /* TODO */
     virtual const Indy::TKey *operator->() const = 0;
 
-    /* TODO */
     virtual TKeyCursor &operator++() = 0;
 
-    /* TODO */
     inline Atom::TCore::TArena *GetArena() {
       return Arena;
     }
 
     protected:
 
-    /* TODO */
     TKeyCursor(Atom::TCore::TExtensibleArena *arena) : Arena(arena) {}
 
-    /* TODO */
     Atom::TCore::TExtensibleArena *Arena;
 
   };  // TKeyCursor
 
   namespace L0 {
 
-    /* TODO */
     class TPackageContext {
       NO_COPY(TPackageContext);
       public:
 
-      /* TODO */
       virtual ~TPackageContext() {}
 
-      /* TODO */
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const = 0;
 
       protected:
@@ -87,7 +75,6 @@ namespace Orly {
 
   }  // L0
 
-  /* TODO */
   template <typename TRet>
   class TKeyGenerator
       : public Rt::TGenerator<TRet>,
@@ -95,7 +82,6 @@ namespace Orly {
     NO_COPY(TKeyGenerator);
     public:
 
-    /* TODO */
     typedef std::shared_ptr<const TKeyGenerator> TPtr;
 
     //TODO: CODY: This cursor needs a rewrite. For now it is roughly copied from what was generated, as that seemed to work.
@@ -103,27 +89,22 @@ namespace Orly {
         : public Base::TIter<const TRet> {
       public:
 
-      /* TODO */
       typedef const TRet TVal;
 
-      /* TODO */
       TCursor(TKeyGenerator::TPtr &ptr)
           : Cached(false), Valid(false), Item(0),
             /*Iter(&ptr->GetContext(), ptr->GetStart()),*/
             Iter(ptr->PackageContext->NewKeyCursor(&ptr->GetContext(), ptr->GetStart())),
             Ptr(ptr) {}
 
-      /* TODO */
       TCursor(const TKeyGenerator::TPtr &ptr)
           : Cached(false), Valid(false), Item(0),
             /* Iter(&ptr->GetContext(), ptr->GetStart()), */
             Iter(ptr->PackageContext->NewKeyCursor(&ptr->GetContext(), ptr->GetStart())),
             Ptr(ptr) {}
 
-      /* TODO */
       TCursor(const TCursor &that) = delete;
 
-      /* TODO */
       TCursor(TCursor &&that)
           : Cached(that.Cached),
             Valid(that.Valid),
@@ -133,19 +114,16 @@ namespace Orly {
         that.Item = 0;
       }
 
-      /* TODO */
       virtual ~TCursor() {
         delete Item;
       }
 
-      /* TODO */
       operator bool() const {
         Refresh();
         assert(Cached);
         return Valid;
       }
 
-      /* TODO */
       TVal &operator*() const {
         Refresh();
         assert(Cached);
@@ -153,7 +131,6 @@ namespace Orly {
         return *Item;
       }
 
-      /* TODO */
       Base::TIter<TVal> &operator++() {
         ++(*Iter);
         Cached = false;
@@ -162,7 +139,6 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       inline void Refresh() const {
         if (!Cached) {
           Cached = true;
@@ -180,47 +156,36 @@ namespace Orly {
         }
       }
 
-      /* TODO */
       mutable bool Cached;
 
-      /* TODO */
       mutable bool Valid;
 
-      /* TODO */
       mutable TRet *Item;
 
-      /* TODO */
       mutable std::unique_ptr<Orly::TKeyCursor> Iter;
 
-      /* TODO */
       const TKeyGenerator::TPtr Ptr;
 
     }; // TCursor<TKeyGenerator<TRet>>
 
-    /* TODO */
     virtual ~TKeyGenerator() {}
 
-    /* TODO */
     TContextBase &GetContext() {
       return Ctx;
     }
 
-    /* TODO */
     TContextBase &GetContext() const {
       return Ctx;
     }
 
-    /* TODO */
     const Indy::TIndexKey &GetStart() const {
       return Start;
     }
 
-    /* TODO */
     virtual Base::TIterHolder<const TRet> NewCursor() const {
       return MakeHolder(new TCursor(this->shared_from_this()));
     }
 
-    /* TODO */
     TKeyGenerator(L0::TPackageContext *package_context, TContextBase &ctx,  const Sabot::State::TAny *start, const Base::TUuid &index_id)
         : PackageContext(package_context),
           Ctx(ctx),
@@ -228,13 +193,10 @@ namespace Orly {
 
     private:
 
-    /* TODO */
     L0::TPackageContext *PackageContext;
 
-    /* TODO */
     TContextBase &Ctx;
 
-    /* TODO */
     const Indy::TIndexKey Start;
 
   };  // TKeyGenerator

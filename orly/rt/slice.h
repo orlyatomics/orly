@@ -31,7 +31,6 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO */
     template <typename TVal>
     static TVal SliceSingle(const std::vector<TVal> &container, const int64_t &idx) {
       if (idx < 0 || idx >= static_cast<int64_t>(container.size())) {
@@ -47,7 +46,6 @@ namespace Orly {
       return std::string(container.substr(idx, 1));
     }
 
-    /* TODO */
     template <typename TKey, typename TVal>
     static TVal SliceSingle(const TDict<TKey, TVal> &container, const TKey &idx) {
       auto pos = container.find(idx);
@@ -69,7 +67,6 @@ namespace Orly {
       return RewrapMutable(container, Var::TVar(idx), SliceSingle(container.GetVal(), idx));
     }
 
-    /* TODO */
     template <typename TVal>
     std::vector<TVal> SliceRange(const std::vector<TVal> &container, bool start_range, const int64_t &idx) {
       if (idx < 0 || idx > static_cast<int>(container.size())) {
@@ -79,7 +76,6 @@ namespace Orly {
                          : std::vector<TVal>(container.begin() + idx, container.end());
     }
 
-    /* TODO */
     inline std::string SliceRange(const std::string &container, bool start_range, const int64_t &idx) {
       if (idx < 0 || idx > static_cast<int>(container.size())) {
         throw TSystemError(HERE, "Slice index out of bounds.");
@@ -96,7 +92,6 @@ namespace Orly {
           SliceRange(container.GetVal(), start_range, idx));
     } */
 
-    /* TODO */
     template <typename TVal>
     std::vector<TVal> SliceRangeBoth(const std::vector<TVal> &container, const int64_t &lhs, const int64_t &rhs) {
       if (lhs < 0 || lhs > static_cast<int>(container.size()) ||

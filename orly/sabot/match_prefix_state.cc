@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly;
 using namespace Orly::Sabot;
 
-/* TODO */
 class TMatchPrefixStateVisitor final
     : public TStateDoubleVisitor {
   public:
@@ -791,31 +790,23 @@ class TMatchPrefixStateVisitor final
 
   private:
 
-  /* TODO */
   template <typename TVal>
   inline TMatchResult Check(const TVal &lhs, const TVal &rhs) const;
 
-  /* TODO */
   inline void DidNotMatch() const;
 
-  /* TODO */
   inline void DidNotUnify() const;
 
-  /* TODO */
   template <typename TVal>
   inline void OnScalar(const State::TScalar<TVal> &lhs, const State::TScalar<TVal> &rhs) const;
 
-  /* TODO */
   template <typename TVal>
   inline void OnArrayOfScalars(const State::TArrayOfScalars<TVal> &lhs, const State::TArrayOfScalars<TVal> &rhs) const;
 
-  /* TODO */
   inline void OnArrayOfSingleStates(const State::TArrayOfSingleStates &lhs, const State::TArrayOfSingleStates &rhs) const;
 
-  /* TODO */
   inline void OnArrayOfPairsOfStates(const State::TArrayOfPairsOfStates &lhs, const State::TArrayOfPairsOfStates &rhs) const;
 
-  /* TODO */
   TMatchResult &Result;
 
 };  // TMatchPrefixStateVisitor
@@ -874,12 +865,10 @@ inline TMatchResult TMatchPrefixStateVisitor::Check(const TVal &lhs, const TVal 
   return Result;
 }
 
-/* TODO */
 inline void TMatchPrefixStateVisitor::DidNotMatch() const {
   Result = TMatchResult::NoMatch;
 }
 
-/* TODO */
 inline void TMatchPrefixStateVisitor::DidNotUnify() const {
   switch (Result) {
     case TMatchResult::NoMatch: {
@@ -895,13 +884,11 @@ inline void TMatchPrefixStateVisitor::DidNotUnify() const {
   }
 }
 
-/* TODO */
 template <typename TVal>
 inline void TMatchPrefixStateVisitor::OnScalar(const State::TScalar<TVal> &lhs, const State::TScalar<TVal> &rhs) const {
   Check(lhs.Get(), rhs.Get());
 }
 
-/* TODO */
 template <typename TVal>
 inline void TMatchPrefixStateVisitor::OnArrayOfScalars(const State::TArrayOfScalars<TVal> &lhs, const State::TArrayOfScalars<TVal> &rhs) const {
   void *lhs_alloc = alloca(State::GetMaxStatePinSize() * 2);
@@ -915,7 +902,6 @@ inline void TMatchPrefixStateVisitor::OnArrayOfScalars(const State::TArrayOfScal
   Check(comp, 0);
 }
 
-/* TODO */
 inline void TMatchPrefixStateVisitor::OnArrayOfSingleStates(const State::TArrayOfSingleStates &lhs, const State::TArrayOfSingleStates &rhs) const {
   void *lhs_alloc = alloca(State::GetMaxStatePinSize() * 2);
   void *rhs_alloc = reinterpret_cast<uint8_t *>(lhs_alloc) + State::GetMaxStatePinSize();
@@ -937,7 +923,6 @@ inline void TMatchPrefixStateVisitor::OnArrayOfSingleStates(const State::TArrayO
   }
 }
 
-/* TODO */
 inline void TMatchPrefixStateVisitor::OnArrayOfPairsOfStates(const State::TArrayOfPairsOfStates &lhs, const State::TArrayOfPairsOfStates &rhs) const {
   void *lhs_alloc = alloca(State::GetMaxStatePinSize() * 2);
   void *rhs_alloc = reinterpret_cast<uint8_t *>(lhs_alloc) + State::GetMaxStatePinSize();

@@ -30,7 +30,6 @@ namespace Orly {
 
     class TType;
 
-    /* TODO */
     void EnsureEmptyObject(const Type::TType &type, const TPosRange &pos_range);
 
   }  // Type

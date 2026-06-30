@@ -80,12 +80,10 @@ namespace Orly {
           : public TBase {
         public:
 
-        /* TODO */
         class TPin : public TBase::TPin {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           TPin() {}
 
           /* Override to construct a new type sabot. */
@@ -95,12 +93,10 @@ namespace Orly {
 
         };  // TPin
 
-        /* TODO */
         virtual typename TBase::TPin *Pin(void *pin_alloc) const {
           return new (pin_alloc) TPin();
         }
 
-        /* TODO */
         virtual TAny *GetType(void *type_alloc) const = 0;
 
         protected:
@@ -133,12 +129,10 @@ namespace Orly {
           : public TBase {
         public:
 
-        /* TODO */
         class TPin : public TBase::TPin {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           TPin() {}
 
           /* See Sabot::Type::TBinary. */
@@ -153,12 +147,10 @@ namespace Orly {
 
         };  // TPin
 
-        /* TODO */
         virtual typename TBase::TPin *Pin(void *pin_alloc) const {
           return new (pin_alloc) TPin();
         }
 
-        /* TODO */
         virtual TAny *GetType(void *type_alloc) const = 0;
 
         protected:
@@ -185,12 +177,10 @@ namespace Orly {
           : public Sabot::Type::TRecord {
         public:
 
-        /* TODO */
         class TPin : public Sabot::Type::TRecord::TPin {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           TPin(const TRecord *record) : Sabot::Type::TRecord::TPin(record) {}
 
           /* See Sabot::Type::TRecord. */
@@ -215,12 +205,10 @@ namespace Orly {
           return Record<TVal>::GetElemCount();
         }
 
-        /* TODO */
         virtual Sabot::Type::TRecord::TPin *Pin(void *pin_alloc) const {
           return new (pin_alloc) TPin(this);
         }
 
-        /* TODO */
         virtual TAny *GetType(void *type_alloc) const {
           return new (type_alloc) TRecord();
         }
@@ -230,7 +218,6 @@ namespace Orly {
 
       };  // TRecord<TVal>
 
-      /* TODO */
       template <typename... TElems>
       class TupleUnroller;
 
@@ -240,12 +227,10 @@ namespace Orly {
           : public Sabot::Type::TTuple {
         public:
 
-        /* TODO */
         class TPin : public Sabot::Type::TTuple::TPin {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           TPin(const TTuple *tuple) : Sabot::Type::TTuple::TPin(tuple) {}
 
           /* See Sabot::Type::TTuple. */
@@ -260,12 +245,10 @@ namespace Orly {
           return std::tuple_size<std::tuple<TElems...>>::value;
         }
 
-        /* TODO */
         virtual Sabot::Type::TTuple::TPin *Pin(void *pin_alloc) const {
           return new (pin_alloc) TPin(this);
         }
 
-        /* TODO */
         virtual TAny *GetType(void *type_alloc) const {
           return new (type_alloc) TTuple();
         }
@@ -280,26 +263,22 @@ namespace Orly {
 
     };  // Type
 
-    /* TODO */
     template <typename TElem, typename... TElems>
     class Type::TupleUnroller<TElem, TElems...> {
       NO_CONSTRUCTION(TupleUnroller);
       public:
 
-      /* TODO */
       static Type::TAny *GetElem(size_t elem_idx, void *type_alloc) {
         return elem_idx ? TupleUnroller<TElems...>::GetElem(elem_idx - 1, type_alloc) : For<TElem>::GetType(type_alloc);
       }
 
     };  // Type::TupleUnroller
 
-    /* TODO */
     template <>
     class Type::TupleUnroller<> {
       NO_CONSTRUCTION(TupleUnroller);
       public:
 
-      /* TODO */
       static Type::TAny *GetElem(size_t /*elem_idx*/, void */*type_alloc*/) {
         throw Sabot::TIdxTooBig();
       }
@@ -319,7 +298,6 @@ namespace Orly {
         return new (type_alloc) TRecord<TVal>();
       }
 
-      /* TODO */
       static Type::TRecord<TVal> *GetRecordType(void *type_alloc) {
         return new (type_alloc) TRecord<TVal>();
       }
@@ -386,7 +364,6 @@ namespace Orly {
         return new (type_alloc) TDesc<TElem>();
       }
 
-      /* TODO */
       static Type::TDesc<TElem> *GetDescType(void *type_alloc) {
         return new (type_alloc) TDesc<TElem>();
       }
@@ -403,7 +380,6 @@ namespace Orly {
         return new (type_alloc) TFree<TElem>();
       }
 
-      /* TODO */
       static Type::TFree<TElem> *GetFreeType(void *type_alloc) {
         return new (type_alloc) TFree<TElem>();
       }
@@ -420,7 +396,6 @@ namespace Orly {
         return new (type_alloc) TOpt<TElem>();
       }
 
-      /* TODO */
       static Type::TOpt<TElem> *GetOptType(void *type_alloc) {
         return new (type_alloc) TOpt<TElem>();
       }
@@ -437,7 +412,6 @@ namespace Orly {
         return new (type_alloc) TSet<TElem>();
       }
 
-      /* TODO */
       static Type::TSet<TElem> *GetSetType(void *type_alloc) {
         return new (type_alloc) TSet<TElem>();
       }
@@ -454,7 +428,6 @@ namespace Orly {
         return new (type_alloc) TSet<TElem>();
       }
 
-      /* TODO */
       static Type::TSet<TElem> *GetSetType(void *type_alloc) {
         return new (type_alloc) TSet<TElem>();
       }
@@ -471,7 +444,6 @@ namespace Orly {
         return new (type_alloc) TVector<TElem>();
       }
 
-      /* TODO */
       static Type::TVector<TElem> *GetVectorType(void *type_alloc) {
         return new (type_alloc) TVector<TElem>();
       }
@@ -488,7 +460,6 @@ namespace Orly {
         return new (type_alloc) TMap<TLhs, TRhs>();
       }
 
-      /* TODO */
       static Type::TMap<TLhs, TRhs> *GetMapType(void *type_alloc) {
         return new (type_alloc) TMap<TLhs, TRhs>();
       }
@@ -505,7 +476,6 @@ namespace Orly {
         return new (type_alloc) TMap<TLhs, TRhs>();
       }
 
-      /* TODO */
       static Type::TMap<TLhs, TRhs> *GetMapType(void *type_alloc) {
         return new (type_alloc) TMap<TLhs, TRhs>();
       }
@@ -517,7 +487,6 @@ namespace Orly {
     class Type::For<std::tuple<TElems...>> final {
       public:
 
-      /* TODO */
       static Sabot::Type::TTuple *GetType(void *type_alloc) {
         return new (type_alloc) TTuple<TElems...>();
       }

@@ -51,7 +51,6 @@ namespace Orly {
       /* All the results of if statements inside the program. */
       typedef std::vector<bool> TPredicateResults;
 
-      /* TODO */
       virtual ~TContext() {}
 
       /* Add an effect toe the effect map. Will throw if the key has been changed in a way incompatible with the given
@@ -87,12 +86,10 @@ namespace Orly {
         return std::move(Effects);
       }
 
-      /* TODO */
       inline const TEffects &GetEffects() {
         return Effects;
       }
 
-      /* TODO */
       template <typename TRet, typename... TArgs>
       std::shared_ptr<const TKeyGenerator<TRet>> New(TContextBase &ctx, const Base::TUuid &index_id, const std::tuple<TArgs...> &start) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -102,10 +99,8 @@ namespace Orly {
       /* Get the FluxCapacitor::TContext. Used by things like KeyGenerators and reading values out of the database. */
       virtual Orly::TContextBase &GetFlux() = 0;
 
-      /* TODO */
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const = 0;
 
-      /* TODO */
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) const = 0;
 
       /* Get the current session id. */
@@ -168,15 +163,12 @@ namespace Orly {
         return OptNow;
       }
 
-      /* TODO */
       inline Atom::TCore::TExtensibleArena *GetArena();
 
-      /* TODO */
       inline Base::TScheduler *GetScheduler() const;
 
       protected:
 
-        /* TODO */
       TContext(const Rt::TOpt<Base::TUuid> &user_id,
         const Base::TUuid &session_id,
         Atom::TCore::TExtensibleArena *arena,
@@ -186,29 +178,22 @@ namespace Orly {
             : Arena(arena), UserId(user_id), SessionId(session_id), Scheduler(scheduler),
               OptNow(now), OptRandomSeed(random_seed) {}
 
-      /* TODO */
       mutable Atom::TCore::TExtensibleArena *Arena;
 
       private:
 
-      /* TODO */
       TEffects Effects;
 
-      /* TODO */
       TPredicateResults PredicateResults;
 
-      /* TODO */
       Rt::TOpt<Base::TUuid> UserId;
 
-      /* TODO */
       Base::TUuid SessionId;
 
-      /* TODO */
       Base::TScheduler *Scheduler;
 
       // Lazily generated members.
       // Ideally we would just get these details from the compiler.
-      /* TODO */
       mutable Rt::TOpt<Base::Chrono::TTimePnt> OptNow;
 
       mutable Rt::TOpt<uint32_t> OptRandomSeed;

@@ -80,7 +80,6 @@ namespace Orly {
       throw;
     }
 
-    /* TODO */
     TMatchResult MatchPrefixType(const Type::TAny &lhs_any, const Type::TAny &rhs_any);
 
   }  // Sabot

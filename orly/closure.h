@@ -36,11 +36,9 @@
 
 namespace Orly {
 
-  /* TODO */
   class TClosure {
     public:
 
-    /* TODO */
     DEFINE_ERROR(TUnknownArgName, std::invalid_argument, "the closure contains no argument by the given name");
 
     /* Convenience. */
@@ -190,27 +188,22 @@ namespace Orly {
 
     };  // TState
 
-    /* TODO */
     TClosure() {
       Reset();
     }
 
-    /* TODO */
     explicit TClosure(const std::string &method_name);
 
-    /* TODO */
     template <typename... TPairs>
     TClosure(const std::string &method_name, const TPairs &... pairs)
         : TClosure(method_name) {
       ArgsAdder<TPairs...>::AddArgs(this, pairs...);
     }
 
-    /* TODO */
     void AddArgBySabot(const std::string &name, const Sabot::State::TAny *state) {
       AddCore(name, Atom::TCore(Arena.get(), state));
     }
 
-    /* TODO */
     template <typename TVal>
     TVal &GetArg(const std::string &name, TVal &out) const {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -219,42 +212,33 @@ namespace Orly {
       return out;
     }
 
-    /* TODO */
     const std::shared_ptr<Atom::TSuprena> &GetArena() const {
       return Arena;
     }
 
-    /* TODO */
     size_t GetArgCount() const {
       return CoreByName.size();
     }
 
-    /* TODO */
     const TCoreByName &GetCoreByName() const {
       return CoreByName;
     }
 
-    /* TODO */
     const std::string &GetMethodName() const {
       return MethodName;
     }
 
-    /* TODO */
     void Read(Io::TBinaryInputStream &strm);
 
-    /* TODO */
     void Reset();
 
-    /* TODO */
     void Write(Io::TBinaryOutputStream &strm) const;
 
     private:
 
-    /* TODO */
     template <typename... TArgs>
     class ArgsAdder;
 
-    /* TODO */
     template <typename TVal>
     bool AddArg(const std::string &name, const TVal &val) {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -262,42 +246,32 @@ namespace Orly {
       return AddCore(name, Atom::TCore(Arena.get(), state));
     }
 
-    /* TODO */
     bool AddCore(const std::string &name, const Atom::TCore &core);
 
-    /* TODO */
     const Atom::TCore *GetCore(const std::string &name) const;
 
-    /* TODO */
     const Atom::TCore *TryGetCore(const std::string &name) const;
 
-    /* TODO */
     std::shared_ptr<Atom::TSuprena> Arena;
 
-    /* TODO */
     std::string MethodName;
 
-    /* TODO */
     TCoreByName CoreByName;
 
   };  // TClosure
 
-  /* TODO */
   template <>
   class TClosure::ArgsAdder<> {
     public:
 
-    /* TODO */
     static void AddArgs(TClosure *) {}
 
   };  // TClosure::ArgsAdder<>
 
-  /* TODO */
   template <typename TVal, typename... TMorePairs>
   class TClosure::ArgsAdder<std::string, TVal, TMorePairs...> {
     public:
 
-    /* TODO */
     static void AddArgs(TClosure *closure, const std::string &name, const TVal &val, const TMorePairs &... more_pairs) {
       closure->AddArg(name, val);
       ArgsAdder<TMorePairs...>::AddArgs(closure, more_pairs...);

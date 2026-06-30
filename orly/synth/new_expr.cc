@@ -82,7 +82,6 @@ using namespace Orly;
 using namespace Orly::Package;
 using namespace Orly::Synth;
 
-/* TODO */
 TExprFactory::TExprFactory(
     TScope *outer_scope,
     TFuncDef *enclosing_func,

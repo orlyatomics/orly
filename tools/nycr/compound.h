@@ -29,91 +29,69 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TOperator;
 
-    /* TODO */
     class TCompound
         : public TFinal {
       NO_COPY(TCompound);
       protected:
 
-      /* TODO */
       TCompound(const Syntax::TName *name, const Syntax::TOptSuper *opt_super, const Syntax::TOptRhs *opt_rhs);
 
-      /* TODO */
       virtual ~TCompound();
 
-      /* TODO */
       void BuildMembers();
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       virtual Symbol::TCompound *GetSymbolAsCompound() const = 0;
 
-      /* TODO */
       virtual Symbol::TKind *GetSymbolAsKind() const;
 
-      /* TODO */
       Symbol::TOperator *TryGetOperator() const {
         return Operator ? Operator->GetSymbolAsOperator() : 0;
       }
 
       private:
 
-      /* TODO */
       class TMember {
         NO_COPY(TMember);
         public:
 
-        /* TODO */
         virtual ~TMember() {}
 
-        /* TODO */
         virtual void Build(Symbol::TCompound *compound) = 0;
 
-        /* TODO */
         virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) = 0;
 
         protected:
 
-        /* TODO */
         TMember() {}
 
       };  // TMember
 
-      /* TODO */
       class TErrorMember
           : public TMember {
         NO_COPY(TErrorMember);
         public:
 
-        /* TODO */
         TErrorMember() {}
 
-        /* TODO */
         virtual void Build(Symbol::TCompound *compound);
 
-        /* TODO */
         virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       };  // TErrorMember
 
-      /* TODO */
       class TMemberWithKind
           : public TMember {
         NO_COPY(TMemberWithKind);
         public:
 
-        /* TODO */
         TMemberWithKind(const Syntax::TName *kind) : Kind(kind) {}
 
-        /* TODO */
         virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-        /* TODO */
         Symbol::TKind *GetKind() const {
           assert(Kind);
           return Kind->GetSymbolAsKind();
@@ -121,54 +99,43 @@ namespace Tools {
 
         private:
 
-        /* TODO */
         TRef<TKind> Kind;
 
       };  // TMemberWithKind
 
-      /* TODO */
       class TAnonymousMember : public TMemberWithKind {
         NO_COPY(TAnonymousMember);
         public:
 
-        /* TODO */
         TAnonymousMember(const Syntax::TAnonymousMember *member)
             : TMemberWithKind(member->GetName()) {}
 
-        /* TODO */
         virtual void Build(Symbol::TCompound *compound);
 
       };  // TAnonymousMember
 
-      /* TODO */
       class TNamedMember
           : public TMemberWithKind {
         NO_COPY(TNamedMember);
         public:
 
-        /* TODO */
         TNamedMember(const Syntax::TNamedMember *member)
             : TMemberWithKind(member->GetKind()), Name(member->GetName()) {}
 
-        /* TODO */
         virtual void Build(Symbol::TCompound *compound);
 
         private:
 
-        /* TODO */
         const Syntax::TName *Name;
 
       };  // TNamedMember
 
-      /* TODO */
       std::vector<TMember *> Members;
 
-      /* TODO */
       TRef<TOperator> Operator;
 
     };  // TCompound
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TCompound> {
       static const char *Name;

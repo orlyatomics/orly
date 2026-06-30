@@ -32,17 +32,14 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     class TInfixVisitor
         : public TType::TDoubleVisitor {
       NO_COPY(TInfixVisitor);
       protected:
 
-      /* TODO */
       TInfixVisitor(TType &type, const TPosRange &pos_range)
           : PosRange(pos_range), Type(type) {}
 
-      /* TODO */
       virtual void operator()(const TAddr     *, const TAddr     *) const = 0;
       virtual void operator()(const TAddr     *, const TBool     *) const = 0;
       virtual void operator()(const TAddr     *, const TDict     *) const = 0;
@@ -213,10 +210,8 @@ namespace Orly {
       virtual void operator()(const TTimePnt  *, const TTimeDiff *) const = 0;
       virtual void operator()(const TTimePnt  *, const TTimePnt  *) const = 0;
 
-      /* TODO */
       const TPosRange &PosRange;
 
-      /* TODO */
       TType &Type;
 
       private:

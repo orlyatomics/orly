@@ -35,7 +35,6 @@ namespace Orly {
       NO_COPY(TNoteInterner);
       public:
 
-      /* TODO */
       typedef std::unordered_set<const TCore::TNote *, TCore::TNote::THash, TCore::TNote::TIsEq> TNotes;
 
       /* Do-little. */
@@ -44,7 +43,6 @@ namespace Orly {
       /* Delete the notes when we go. */
       ~TNoteInterner();
 
-      /* TODO */
       inline const TNotes &GetNotes() const;
 
       /* The number of notes interned. */

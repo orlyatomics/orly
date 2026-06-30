@@ -29,17 +29,14 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TParamFuncDef;
     class TLhsRhsableExpr;
     class TStartableExpr;
     class TThatableExpr;
 
-    /* TODO */
     class TExprFactory {
       public:
 
-      /* TODO */
       TExprFactory(
           TScope *outer_scope,
           TFuncDef *enclosing_func = nullptr,
@@ -48,25 +45,18 @@ namespace Orly {
           TStartableExpr *startable_expr = nullptr,
           TThatableExpr *thatable_expr = nullptr);
 
-      /* TODO */
       TExpr *NewExpr(const Package::Syntax::TExpr *root) const;
 
-      /* TODO */
       TFuncDef *EnclosingFunc;
 
-      /* TODO */
       TScope *OuterScope;
 
-      /* TODO */
       TParamFuncDef *ParamFunc;
 
-      /* TODO */
       TLhsRhsableExpr *LhsRhsableExpr;
 
-      /* TODO */
       TStartableExpr *StartableExpr;
 
-      /* TODO */
       TThatableExpr *ThatableExpr;
 
     };  // TExprFactory

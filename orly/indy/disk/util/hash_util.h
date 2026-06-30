@@ -28,22 +28,16 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         extern const std::set<size_t> GenSizeSet;
 
-        /* TODO */
         constexpr size_t HighestPrecalculatedHashSize = 1111976UL;
 
-        /* TODO */
         extern const std::set<size_t> HashSizeSet;
 
-        /* TODO */
         constexpr double MaximumLoadFactor = 0.8;
 
-        /* TODO */
         size_t SuggestHashSize(size_t num_keys);
 
-        /* TODO */
         size_t SuggestGeneration(size_t num_keys);
 
       }  // Util

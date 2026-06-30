@@ -27,7 +27,6 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     size_t GetTupleSize(const Type::TAny &type);
 
   }  // Sabot

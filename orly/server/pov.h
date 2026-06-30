@@ -33,16 +33,13 @@ namespace Orly {
         : public Durable::TObj {
       public:
 
-      /* TODO */
       class TServer {
         public:
 
         virtual ~TServer() {}
 
-        /* TODO */
         virtual const Indy::L0::TManager::TPtr<Indy::TRepo> &GetGlobalRepo() const = 0;
 
-        /* TODO */
         virtual Orly::Indy::TManager *GetRepoManager() const = 0;
 
         protected:
@@ -84,7 +81,6 @@ namespace Orly {
         return Audience;
       }
 
-      /* TODO */
       virtual const char *GetKind() const noexcept override {
         return "Pov";
       }

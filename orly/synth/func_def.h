@@ -43,27 +43,21 @@ namespace Orly {
     class TParamFuncDef;
     class TPureFuncDef;
 
-    /* TODO */
     class TFuncDef
         : public TDef {
       NO_COPY(TFuncDef);
       public:
 
-      /* TODO */
       typedef std::unordered_set<TName> TParamNameSet;
 
-      /* TODO */
       virtual ~TFuncDef();
 
-      /* TODO */
       void AddParamName(const TName &name);
 
-      /* TODO */
       Symbol::TFunction::TPtr GetSymbol() const;
 
       protected:
 
-      /* TODO */
       TFuncDef(TScope *scope, const Package::Syntax::TFuncDef *func_def);
 
       /* Build a function def that has no backing CST node -- a synthetic
@@ -72,10 +66,8 @@ namespace Orly {
          See <orly/synth/when_expr.cc>. */
       TFuncDef(TScope *scope, const TName &name, const TPosRange &pos_range);
 
-      /* TODO */
       virtual void BuildSecondarySymbol();
 
-      /* TODO */
       void SetExpr(TExpr *expr);
 
       /* Install the lowered function symbol directly. Used by a subclass whose
@@ -95,39 +87,30 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       virtual TAction Build(int pass);
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       TParamNameSet ParamNames;
 
-      /* TODO */
       Symbol::TFunction::TPtr Symbol;
 
     };  // TFuncDef
 
-    /* TODO */
     template <>
     struct TDef::TInfo<TFuncDef> {
       static const char *Name;
     };
 
-    /* TODO */
     class TParamFuncDef
         : public TFuncDef {
       NO_COPY(TParamFuncDef);
       public:
 
-      /* TODO */
       TParamFuncDef(
           const TExprFactory *expr_factory,
           const Package::Syntax::TFuncDef *func_def,
@@ -135,46 +118,36 @@ namespace Orly {
 
       const Symbol::TParamDef::TPtr &GetParamDefSymbol() const;
 
-      /* TODO */
       TType *GetType() const;
 
       private:
 
-      /* TODO */
       void BuildSecondarySymbol();
 
-      /* TODO */
       TFuncDef *EnclosingFunc;
 
-      /* TODO */
       const Package::Syntax::TGivenExpr *GivenExpr;
 
-      /* TODO */
       Symbol::TParamDef::TPtr ParamDefSymbol;
 
-      /* TODO */
       TType *Type;
 
     };  // TParamFuncDef
 
-    /* TODO */
     template <>
     struct TDef::TInfo<TParamFuncDef> {
       static const char *Name;
     };
 
-    /* TODO */
     class TPureFuncDef
         : public TFuncDef {
       NO_COPY(TPureFuncDef);
       public:
 
-      /* TODO */
       TPureFuncDef(const TExprFactory *expr_factory, const Package::Syntax::TFuncDef *func_def);
 
     };  // TPureFuncDef
 
-    /* TODO */
     template <>
     struct TDef::TInfo<TPureFuncDef> {
       static const char *Name;

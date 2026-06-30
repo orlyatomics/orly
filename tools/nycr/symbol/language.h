@@ -32,18 +32,14 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TLanguage
           : public TCompound {
         public:
 
-        /* TODO */
         typedef std::unordered_set<TLanguage *> TLanguages;
 
-        /* TODO */
         typedef std::vector<TName> TNamespaces;
 
-        /* TODO */
         TLanguage(
             const TName &name, TAnyBase *base, const TNamespaces &namespaces,
             const std::optional<int> &expected_sr, const std::optional<int> &expected_rr)
@@ -51,41 +47,32 @@ namespace Tools {
           Languages.insert(this);
         }
 
-        /* TODO */
         virtual ~TLanguage();
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const;
 
-        /* TODO */
         const std::optional<int> &GetExpectedRr() const {
           return ExpectedRr;
         }
 
-        /* TODO */
         const std::optional<int> &GetExpectedSr() const {
           return ExpectedSr;
         }
 
-        /* TODO */
         const TNamespaces &GetNamespaces() const {
           return Namespaces;
         }
 
-        /* TODO */
         static const TLanguages &GetLanguages() {
           return Languages;
         }
 
         private:
 
-        /* TODO */
         TNamespaces Namespaces;
 
-        /* TODO */
         std::optional<int> ExpectedSr, ExpectedRr;
 
-        /* TODO */
         static TLanguages Languages;
 
       };  // TLanguage

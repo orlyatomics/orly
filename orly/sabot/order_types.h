@@ -32,10 +32,8 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     Atom::TComparison OrderStates(const State::TAny &lhs, const State::TAny &rhs);
 
-    /* TODO */
     Atom::TComparison OrderTypes(const Type::TAny &lhs, const Type::TAny &rhs);
 
   }  // Sabot

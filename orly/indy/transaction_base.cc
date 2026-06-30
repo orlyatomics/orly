@@ -350,7 +350,6 @@ TTransaction::TTransactionCompletion::~TTransactionCompletion() {
   }  // release TransactionCompletion lock
 }
 
-/* TODO */
 void TTransaction::TTransactionCompletion::SetWaitFor(size_t wait_for) {
   WaitFor = wait_for;
   if (WaitFor == 0) {

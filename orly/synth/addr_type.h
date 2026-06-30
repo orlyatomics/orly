@@ -31,29 +31,23 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TAddrType
         : public TType {
       NO_COPY(TAddrType);
       public:
 
-      /* TODO */
       TAddrType(const Package::Syntax::TAddrType *addr_type);
 
-      /* TODO */
       virtual ~TAddrType();
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
       void Cleanup();
 
-      /* TODO */
       virtual Type::TType ComputeSymbolicType() const;
 
-      /* TODO */
       std::vector<std::pair<TAddrDir, TType *>> Members;
 
     };  // TType

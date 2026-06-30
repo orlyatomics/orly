@@ -53,21 +53,16 @@ namespace Orly {
       /* Convenience. */
       using TNotification = Notification::TNotification;
 
-      /* TODO */
       class TServer
           : public TPov::TServer {
         public:
 
-        /* TODO */
         virtual ~TServer() {}
 
-        /* TODO */
         virtual const std::shared_ptr<Durable::TManager> &GetDurableManager() const = 0;
 
-        /* TODO */
         virtual const Package::TManager &GetPackageManager() const = 0;
 
-        /* TODO */
         virtual Base::TScheduler *GetScheduler() const = 0;
 
         /* Write-backpressure high-watermark (#234); 0 disables. The accept path
@@ -98,16 +93,13 @@ namespace Orly {
 
         protected:
 
-        /* TODO */
         TServer(size_t num_runners) : RunnerCons(num_runners), SlowAssignmentCounter(0UL), FastAssignmentCounter(0UL) {}
 
-        /* TODO */
         void InitalizeFramePoolManager(size_t num_frames, size_t frame_stack_size, Indy::Fiber::TRunner *runner) {
           FramePoolManager = std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>>(
             new Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>(num_frames, frame_stack_size, runner));
         }
 
-        /* TODO */
         Indy::Fiber::TRunner::TRunnerCons RunnerCons;
         std::vector<std::unique_ptr<Indy::Fiber::TRunner>> SlowRunnerVec;
         std::vector<std::unique_ptr<std::thread>> SlowRunnerThreadVec;
@@ -132,10 +124,8 @@ namespace Orly {
       /* Call back for each pending notification, in order of increasing sequence number. */
       bool ForEachNotification(const std::function<bool (uint32_t, const TNotification *)> &cb) const;
 
-      /* TODO */
       const TNotification *GetFirstNotification(uint32_t &seq_number);
 
-      /* TODO */
       virtual const char *GetKind() const noexcept override {
         return "Session";
       }
@@ -146,7 +136,6 @@ namespace Orly {
         return NotificationBySeqNumber.size();
       }
 
-      /* TODO */
       const Base::TEventSemaphore &GetNotificationSem() const {
         return NotificationSem;
       }
@@ -216,10 +205,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       TSession(Durable::TManager *manager, const Base::TUuid &id, const Durable::TTtl &ttl);
 
-      /* TODO */
       TSession(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm);
 
       /* Calls Cleanup(). */
@@ -261,10 +248,8 @@ namespace Orly {
       /* Stream out. */
       virtual void Write(Io::TBinaryOutputStream &strm) const override;
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       Base::TUuid NewPov(
           TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy,
           const std::chrono::seconds &time_to_live);

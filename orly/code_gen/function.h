@@ -153,7 +153,6 @@ namespace Orly {
       TCodeScope CodeScope;
       std::unordered_set<std::shared_ptr<TInlineFunc>> ChildFuncs;
 
-      /* TODO */
       const L0::TPackage *Package;
 
       private:

@@ -29,25 +29,20 @@
 
 namespace Base {
 
-  /* TODO */
   class TTimerFd {
     NO_COPY(TTimerFd);
     public:
 
-    /* TODO */
     TTimerFd(std::chrono::milliseconds milliseconds);
 
-    /* TODO */
     const TFd &GetFd() const {
       return Fd;
     }
 
-    /* TODO */
     uint64_t Pop();
 
     private:
 
-    /* TODO */
     TFd Fd;
 
   };  // TTimerFd

@@ -32,7 +32,6 @@ using namespace Orly::Indy::Disk;
 using namespace Orly::Indy::Disk::Util;
 using namespace Orly::Indy::Util;
 
-/* TODO */
 template <bool CanTail, bool CanTailTombstones>
 class TMergeDataFileImpl {
   NO_COPY(TMergeDataFileImpl);
@@ -43,7 +42,6 @@ class TMergeDataFileImpl {
 
   using TDataOutStream = TDataFile::TDataOutStream;
 
-  /* TODO */
   TMergeDataFileImpl(TEngine *engine,
                      Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                      const Base::TUuid &file_uuid,
@@ -836,63 +834,48 @@ class TMergeDataFileImpl {
     #endif
   }
 
-  /* TODO */
   class TUpdateObj {
     public:
 
-    /* TODO */
     TUpdateObj(TSequenceNumber seq_num, size_t offset, bool is_current, const Base::TUuid &index_id)
         : SequenceNumber(seq_num),
           Offset(offset),
           IsCurrent(is_current),
           IndexId(index_id) {}
 
-    /* TODO */
     bool operator<(const TUpdateObj &that) const {
       return SequenceNumber < that.SequenceNumber;
     }
 
-    /* TODO */
     TSequenceNumber SequenceNumber;
 
-    /* TODO */
     Atom::TCore Metadata;
 
-    /* TODO */
     Atom::TCore Id;
 
-    /* TODO */
     size_t Offset;
 
-    /* TODO */
     bool IsCurrent;
 
-    /* TODO */
     Base::TUuid IndexId;
 
   };  // TUpdateObj
 
-  /* TODO */
   typedef Disk::Util::TIndexManager<TUpdateObj, Disk::Util::SortBufSize, Disk::Util::SortBufMinParallelSize> TUpdateCollector;
   using TTypeBoundaryOffsetVec = TDataFile::TTypeBoundaryOffsetVec;
 
-  /* TODO */
   typedef Indy::Util::TBlockVec TBlockVec;
   typedef std::unordered_set<TRemapObj> TRemapIndex;
 
-  /* TODO */
   class TL0MergeNote {
     public:
 
-    /* TODO */
     TL0MergeNote()
         : Arena(nullptr), Offset(0UL), Note(nullptr) {}
 
-    /* TODO */
     TL0MergeNote(Atom::TCore::TArena *arena, Atom::TCore::TOffset offset, const Atom::TCore::TNote *note)
         : Arena(arena), Offset(offset), Note(note) {}
 
-    /* TODO */
     bool operator<(const TL0MergeNote &that) const {
       assert(Arena);
       assert(that.Arena);
@@ -913,7 +896,6 @@ class TMergeDataFileImpl {
       return Atom::IsLt(Sabot::CompareStates(*lhs, *rhs, lhs_type_alloc, rhs_type_alloc));
     }
 
-    /* TODO */
     bool operator==(const TL0MergeNote &that) const {
       assert(Arena);
       assert(that.Arena);
@@ -932,7 +914,6 @@ class TMergeDataFileImpl {
       return Atom::IsEq(Sabot::CompareStates(*lhs, *rhs, lhs_type_alloc, rhs_type_alloc));
     }
 
-    /* TODO */
     bool operator!=(const TL0MergeNote &that) const {
       assert(Arena);
       assert(that.Arena);
@@ -951,52 +932,41 @@ class TMergeDataFileImpl {
       return Atom::IsNe(Sabot::CompareStates(*lhs, *rhs, lhs_type_alloc, rhs_type_alloc));
     }
 
-    /* TODO */
     Atom::TCore::TArena *GetArena() const {
       return Arena;
     }
 
-    /* TODO */
     Atom::TCore::TOffset GetOffset() const {
       return Offset;
     }
 
-    /* TODO */
     const Atom::TCore::TNote *GetNote() const {
       return Note;
     }
 
     private:
 
-    /* TODO */
     Atom::TCore::TArena *Arena;
 
-    /* TODO */
     Atom::TCore::TOffset Offset;
 
-    /* TODO */
     const Atom::TCore::TNote *Note;
 
   };  // TL0MergeNote
 
-  /* TODO */
   class TMergeNote {
     public:
 
-    /* TODO */
     TMergeNote()
         : Arena(nullptr), Offset(0UL), Note(nullptr) {}
 
-    /* TODO */
     TMergeNote(Atom::TCore::TArena *arena, Atom::TCore::TOffset offset, const Atom::TCore::TNote *note)
         : Arena(arena), Offset(offset), Note(note) {}
 
-    /* TODO */
     bool operator<(const TMergeNote &/*that*/) const {
       throw std::logic_error("TMergeNote::operator < should not get used.");
     }
 
-    /* TODO */
     bool operator==(const TMergeNote &that) const {
       assert(Arena == that.Arena);
       assert(Note);
@@ -1006,7 +976,6 @@ class TMergeDataFileImpl {
       return lhs_note_size == rhs_note_size && memcmp(Note, that.Note, lhs_note_size) == 0;
     }
 
-    /* TODO */
     bool operator!=(const TMergeNote &that) const {
       assert(Arena == that.Arena);
       assert(Note);
@@ -1016,66 +985,53 @@ class TMergeDataFileImpl {
       return lhs_note_size != rhs_note_size || memcmp(Note, that.Note, lhs_note_size) != 0;
     }
 
-    /* TODO */
     Atom::TCore::TArena *GetArena() const {
       return Arena;
     }
 
-    /* TODO */
     Atom::TCore::TOffset GetOffset() const {
       return Offset;
     }
 
-    /* TODO */
     const Atom::TCore::TNote *GetNote() const {
       return Note;
     }
 
     private:
 
-    /* TODO */
     Atom::TCore::TArena *Arena;
 
-    /* TODO */
     Atom::TCore::TOffset Offset;
 
-    /* TODO */
     const Atom::TCore::TNote *Note;
 
   };  // TMergeNote
 
-  /* TODO */
   class TTypeNote {
     public:
 
-    /* TODO */
     TTypeNote(Atom::TCore::TArena *arena, Atom::TCore::TOffset offset)
         : Arena(arena),
           Offset(offset){}
 
-    /* TODO */
     inline bool operator<(const TTypeNote &that) const {
       return Atom::IsLt(Compare(that));
     }
 
-    /* TODO */
     inline bool operator!=(const TTypeNote &that) const {
       return Atom::IsNe(Compare(that));
     }
 
-    /* TODO */
     inline Atom::TCore::TArena *GetArena() const {
       return Arena;
     }
 
-    /* TODO */
     inline Atom::TCore::TOffset GetOffset() const {
       return Offset;
     }
 
     private:
 
-    /* TODO */
     inline Atom::TComparison Compare(const TTypeNote &that) const {
       void *lhs_pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin) * 2);
       void *rhs_pin_alloc = reinterpret_cast<uint8_t *>(lhs_pin_alloc) + sizeof(Atom::TCore::TArena::TFinalPin);
@@ -1100,10 +1056,8 @@ class TMergeDataFileImpl {
       return ret;
     }
 
-    /* TODO */
     Atom::TCore::TArena *Arena;
 
-    /* TODO */
     Atom::TCore::TOffset Offset;
 
   };  // TTypeNote
@@ -1162,101 +1116,77 @@ class TMergeDataFileImpl {
 
   };
 
-  /* TODO */
   class TNewRemapObj {
     public:
 
-    /* TODO */
     TNewRemapObj(Atom::TCore::TOffset old_key, Atom::TCore::TOffset new_key) : OldKey(old_key), NewKey(new_key) {}
 
-    /* TODO */
     bool operator<(const TNewRemapObj &that) const {
       return OldKey < that.OldKey;
     }
 
-    /* TODO */
     Atom::TCore::TOffset OldKey;
 
-    /* TODO */
     Atom::TCore::TOffset NewKey;
 
   };  // TNewRemapObj
 
-  /* TODO */
   typedef TIndexManager<TNewRemapObj, Disk::Util::NewRemapBufSize, Disk::Util::SortBufMinParallelSize> TRemapSorter;
 
-  /* TODO */
   template <typename TKey>
   class TAccessObj {
     public:
 
-    /* TODO */
     TAccessObj(size_t idx, TKey key) : Idx(idx), Key(key) {}
 
-    /* TODO */
     bool operator<(const TAccessObj &that) const {
       return Key < that.Key;
     }
 
-    /* TODO */
     size_t Idx;
 
-    /* TODO */
     TKey Key;
 
   };  // TAccessObj
 
-  /* TODO */
   template <typename TOldKey, typename TNewKey>
   class TResolvedObj {
     public:
 
-    /* TODO */
     TResolvedObj(size_t idx, TOldKey old_key, TNewKey new_key) : Idx(idx), OldKey(old_key), NewKey(new_key) {}
 
-    /* TODO */
     bool operator<(const TResolvedObj &that) const {
       return Idx < that.Idx;
     }
 
-    /* TODO */
     size_t Idx;
 
-    /* TODO */
     TOldKey OldKey;
 
-    /* TODO */
     TNewKey NewKey;
 
   };  // TResolvedObj
 
-  /* TODO */
   template <typename TKey>
   using TAccessSorter = TIndexManager<TAccessObj<TKey>, Disk::Util::AccessBufSize, Disk::Util::SortBufMinParallelSize>;
 
-  /* TODO */
   template <typename TOldKey, typename TNewKey>
   using TResolvedSorter = TIndexManager<TResolvedObj<TOldKey, TNewKey>, Disk::Util::AccessBufSize, Disk::Util::SortBufMinParallelSize>;
 
-  /* TODO */
   typedef TIndexManager<TSequenceNumber, Disk::Util::SeqKeeperBufSize, Disk::Util::SortBufMinParallelSize> TSeqKeeperSorter;
 
-  /* TODO */
   typedef TIndexManager<Atom::TCore::TOffset, Disk::Util::ArenaKeeperBufSize, Disk::Util::SortBufMinParallelSize> TArenaKeeperSorter;
 
-  /* TODO */
   typedef TAccessObj<Atom::TCore::TOffset> TRemapAccessObj;
   typedef TAccessSorter<Atom::TCore::TOffset> TRemapAccessSorter;
   typedef TResolvedObj<Atom::TCore::TOffset, Atom::TCore::TOffset> TRemapResolvedObj;
   typedef TResolvedSorter<Atom::TCore::TOffset, Atom::TCore::TOffset> TRemapResolvedSorter;
 
-  /* TODO */
   typedef TAccessObj<TSequenceNumber> TSeqAccessObj;
   typedef TAccessSorter<TSequenceNumber> TSeqAccessSorter;
   typedef TResolvedObj<TSequenceNumber, bool> TSeqResolvedObj;
   typedef TResolvedSorter<TSequenceNumber, bool> TSeqResolvedSorter;
 
-  /* TODO */
   static void ResolveRemap(size_t max_block_cache_read_slots_allowed,
                            TRemapAccessSorter &access_sorter,
                            TRemapSorter &remap_sorter,
@@ -1279,7 +1209,6 @@ class TMergeDataFileImpl {
     }
   }
 
-  /* TODO */
   static void ResolveSeqFilter(size_t max_block_cache_read_slots_allowed,
                            TSeqAccessSorter &access_sorter,
                            TSeqKeeperSorter &keep_filter_sorter,
@@ -1960,7 +1889,6 @@ class TMergeDataFileImpl {
     }
   }
 
-  /* TODO */
   inline size_t GetNumKeys() const {
     return NumKeys;
   }
@@ -1972,26 +1900,21 @@ class TMergeDataFileImpl {
     return NumNonAssignEntries;
   }
 
-  /* TODO */
   inline TSequenceNumber GetLowestSequence() const {
     return LowestSeq;
   }
 
-  /* TODO */
   inline TSequenceNumber GetHighestSequence() const {
     return HighestSeq;
   }
 
   private:
 
-  /* TODO */
   class TSortedKey {
     public:
 
-    /* TODO */
     TSortedKey() : Arena(nullptr), SeqNum(0UL) {}
 
-    /* TODO */
     inline bool operator<(const TSortedKey &that) const {
       Atom::TComparison comp;
       if (Arena && that.Arena && Core.TryQuickOrderComparison(Arena, that.Core, that.Arena, comp)) {
@@ -2004,14 +1927,12 @@ class TMergeDataFileImpl {
       return Atom::IsLt(comp) || (Atom::IsEq(comp) && SeqNum >= that.SeqNum);
     }
 
-    /* TODO */
     Atom::TCore Core;
     Atom::TCore::TArena *Arena;
     TSequenceNumber SeqNum;
 
   };  // TSortedKey
 
-  /* TODO */
   class TReader
       : public TReadFile<LogicalBlockSize, LogicalBlockSize, PhysicalBlockSize, PageCheckedBlock, true> {
     NO_COPY(TReader);
@@ -2021,21 +1942,17 @@ class TMergeDataFileImpl {
 
     using TArena = TDiskArena<LogicalBlockSize, LogicalBlockSize, PhysicalBlockSize, PageCheckedBlock, 128, true>;
 
-    /* TODO */
     TReader(const Base::TCodeLocation &code_location /* DEBUG */, uint8_t util_src, TEngine *engine, const Base::TUuid &file_id, size_t gen_id)
         : TReadFile(code_location, util_src, engine, file_id, Low, gen_id) {
       Arena = std::make_unique<TArena>(this, engine->GetCache<PhysicalCachePageSize>(), Low);
     }
 
-    /* TODO */
     virtual ~TReader() {
       Arena.reset();
     }
 
-    /* TODO */
     using TReadFile::TIndexFile;
 
-    /* TODO */
     using TReadFile::GetNumBytesOfArena;
     using TReadFile::GetNumUpdates;
     using TReadFile::GetNumArenaNotes;
@@ -2043,7 +1960,6 @@ class TMergeDataFileImpl {
     using TReadFile::GetTypeBoundaryOffsetVec;
     using TReadFile::ForEachIndex;
 
-    /* TODO */
     inline const std::unique_ptr<TArena> &GetArena() const {
       assert(Arena);
       return Arena;
@@ -2051,7 +1967,6 @@ class TMergeDataFileImpl {
 
     private:
 
-    /* TODO */
     std::unique_ptr<TArena> Arena;
 
   };  // TReader
@@ -2673,60 +2588,45 @@ class TMergeDataFileImpl {
 
   };
 
-  /* TODO */
   TEngine *Engine;
 
-  /* TODO */
   Disk::Util::TVolume::TDesc::TStorageSpeed StorageSpeed;
   Disk::Util::TVolume::TDesc::TStorageSpeed UpdateIndexStorageSpeed;
   Disk::Util::TVolume::TDesc::TStorageSpeed SorterStorageSpeed;
 
-  /* TODO */
   DiskPriority Priority;
 
-  /* TODO */
   size_t MaxBlockCacheReadSlotsAllowed;
 
-  /* TODO */
   TBlockVec BlockVec;
 
-  /* TODO */
   size_t MainArenaByteOffset;
   TRemapIndex MainArenaRemapIndex;
   TTypeBoundaryOffsetVec MainArenaTypeBoundaryOffsetVec;
 
-  /* TODO */
   size_t NumUpdates;
 
-  /* TODO */
   size_t NumKeys;
   size_t NumNonAssignEntries = 0UL;
   TSequenceNumber LowestSeq;
   TSequenceNumber HighestSeq;
 
-  /* TODO */
   size_t StartingBlockId;
 
-  /* TODO */
   size_t StartingBlockOffset;
 
-  /* TODO */
   size_t FileLength;
 
   size_t TempFileConsolThresh;
 
-  /* TODO */
   std::vector<std::unique_ptr<TReader>> ReadFileVec;
 
-  /* TODO */
   TUpdateCollector UpdateCollector;
 
-  /* TODO */
   #ifndef NDEBUG
   std::unordered_set<size_t> WrittenBlockSet;
   #endif
 
-  /* TODO */
   friend class TMergeIndexFile;
 
 };  // TMergeDataFileImpl

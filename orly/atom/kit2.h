@@ -87,12 +87,10 @@ namespace Orly {
 
         TOrderedArenaCompare(TArena *arena) : Arena(arena) {}
 
-        /* TODO */
         bool operator()(const TCore &lhs, const TCore &rhs) const;
 
         private:
 
-        /* TODO */
         TArena *const Arena;
 
       };  // TOrderedArenaCompare
@@ -135,10 +133,8 @@ namespace Orly {
       /* True if we're a free. */
       inline bool IsFree() const;
 
-      /* TODO */
       inline size_t ForceGetIndirectHash() const;
 
-      /* TODO */
       inline bool TryGetQuickHash(size_t &out_hash) const;
 
       /* Returns true if this core stored the hash value inside it's local storage. If so, out_hash is set to the stored value. */
@@ -151,16 +147,12 @@ namespace Orly {
          This will return false if the core is a direct core. */
       inline bool TrySetStoredHash(size_t hash_val);
 
-      /* TODO */
       inline bool TryQuickOrderComparison(TArena *this_arena, const TCore &that_core, TArena *that_arena, Atom::TComparison &comp) const;
 
-      /* TODO */
       inline bool MatchType(TArena *this_arena, const TCore &that_core, TArena *that_arena) const;
 
-      /* TODO */
       inline Orly::Sabot::TMatchResult PrefixMatch(TArena *this_arena, const TCore &that_core, TArena *that_arena) const;
 
-      /* TODO */
       inline const uint32_t *TryGetElemCount() const;
 
       /* Get a sabot around our type. */
@@ -460,10 +452,8 @@ namespace Orly {
              and should not use the offset for comparison. */
           bool UsesFullNote;
 
-          /* TODO */
           bool StoresHash;
 
-          /* TODO */
           size_t HashVal;
 
         } IndirectCoreArray;
@@ -545,62 +535,50 @@ namespace Orly {
 
       };  // TArena::TPin
 
-      /* TODO */
       class TFinalPin final
           : public TPin {
         public:
 
-        /* TODO */
         class TWrapper {
           public:
 
-          /* TODO */
           TWrapper(TFinalPin *pin) : FinalPin(pin) {}
 
-          /* TODO */
           ~TWrapper() {
             if (FinalPin) {
               FinalPin->~TFinalPin();
             }
           }
 
-          /* TODO */
           TFinalPin *operator->() const {
             return FinalPin;
           }
 
-          /* TODO */
           const TFinalPin &operator*() const {
             return *FinalPin;
           }
 
-          /* TODO */
           operator TFinalPin *() const {
             return FinalPin;
           }
 
-          /* TODO */
           TFinalPin *get() const {
             return FinalPin;
           }
 
           private:
 
-          /* TODO */
           TFinalPin *FinalPin;
 
         };  // TWrapper
 
-        /* TODO */
         virtual ~TFinalPin() {}
 
         private:
 
-        /* TODO */
         TFinalPin(TArena *arena, TOffset offset)
             : TPin(arena, offset) {}
 
-        /* TODO */
         TFinalPin(TArena *arena, TOffset offset, size_t known_size)
             : TPin(arena, offset, known_size) {}
 
@@ -618,7 +596,6 @@ namespace Orly {
       /* Pin the note with the given offset into memory.  If the note doesn't exist, throw. */
       TFinalPin *Pin(TOffset offset, size_t known_size, void *alloc);
 
-      /* TODO */
       bool IsOrdered() const {
         return IsOrderedFlag;
       }
@@ -643,7 +620,6 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const bool IsOrderedFlag;
 
     };  // TArena
@@ -677,17 +653,14 @@ namespace Orly {
       class TOrderedArenaCompare {
         public:
 
-        /* TODO */
         TOrderedArenaCompare(TArena *arena) : OrderedCoreCompare(arena) {
           assert(!arena || arena->IsOrdered());
         }
 
-        /* TODO */
         bool operator()(const TNote &lhs, const TNote &rhs) const;
 
         private:
 
-        /* TODO */
         const TCore::TOrderedArenaCompare OrderedCoreCompare;
 
       };  // TOrderedArenaCompare
@@ -786,7 +759,6 @@ namespace Orly {
       /* Construct a copy of another note. */
       static TNote *New(const TNote *that);
 
-      /* TODO */
       static void operator delete(void *ptr, size_t);
 
       private:
@@ -1736,7 +1708,6 @@ namespace Orly {
           : public TArena::TPin, public State::TBlob::TPin {
         public:
 
-        /* TODO */
         TPin(TArena *arena, TOffset offset, size_t min_size)
             : TArena::TPin(arena, offset, sizeof(Atom::TCore::TNote) + min_size), State::TBlob::TPin(GetNote()->GetStart<TVal>(), GetNote()->GetLimit<TVal>()) {
           size_t size = GetLimit() - GetStart();
@@ -1747,7 +1718,6 @@ namespace Orly {
           #endif
         }
 
-        /* TODO */
         TPin(const uint8_t *start, const uint8_t *limit)
             : TArena::TPin(), State::TBlob::TPin(start, limit) {}
 
@@ -1807,7 +1777,6 @@ namespace Orly {
           : public TArena::TPin, public State::TStr::TPin {
         public:
 
-        /* TODO */
         TPin(TArena *arena, TOffset offset, size_t min_size)
             : TArena::TPin(arena, offset, sizeof(Atom::TCore::TNote) + min_size + 1/* add 1 for null term*/), State::TStr::TPin(GetNote()->GetStart<TVal>(), GetNote()->GetLimit<TVal>() - 1) {
           #ifndef NDEBUG
@@ -1818,7 +1787,6 @@ namespace Orly {
           #endif
         }
 
-        /* TODO */
         TPin(const char *start, const char *limit)
             : TArena::TPin(), State::TStr::TPin(start, limit) {}
 
@@ -1851,7 +1819,6 @@ namespace Orly {
       TArrayOfTypes(TArena *arena, const TCore *core)
           : Arena(arena), Core(core) {}
 
-      /* TODO */
       void PostCtor() {
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
@@ -1881,7 +1848,6 @@ namespace Orly {
           : public TArena::TPin, public TBase::TPin {
         public:
 
-        /* TODO */
         TPin(const TArrayOfTypes *owner)
             : TArena::TPin(owner->Arena, owner->Core->IndirectCoreArray.Offset, owner->GetComputedSize()),
               TBase::TPin(), Owner(owner) {
@@ -1897,15 +1863,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual Type::TAny *NewElem(void *type_alloc) const override {
           return Cores[0].GetType(Owner->Arena, type_alloc);
         }
 
-        /* TODO */
         const TArrayOfTypes *Owner;
 
-        /* TODO */
         const TCore *Cores;
 
       };  // TCore::ST::TArrayOfTypes::TPin
@@ -1958,7 +1921,6 @@ namespace Orly {
       TArrayOfStates(TArena *arena, const TCore *core)
           : Arena(arena), Core(core) {}
 
-      /* TODO */
       void PostCtor() {
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
@@ -1988,7 +1950,6 @@ namespace Orly {
           : public TArena::TPin, public TBase::TPin {
         public:
 
-        /* TODO */
         TPin(const TArrayOfStates *owner)
             : TArena::TPin(owner->Arena, owner->Core->IndirectCoreArray.Offset, owner->GetComputedSize()),
               TBase::TPin(owner), Owner(owner) {
@@ -2004,15 +1965,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual State::TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override {
           return Cores[elem_idx].NewState(Owner->Arena, state_alloc);
         }
 
-        /* TODO */
         const TArrayOfStates *Owner;
 
-        /* TODO */
         const TCore *Cores;
 
       };  // TCore::SS::TArrayOfStates::TPin
@@ -2107,7 +2065,6 @@ namespace Orly {
       TArrayOfPairsOfTypes(TArena *arena, const TCore *core)
           : Arena(arena), Core(core) {}
 
-      /* TODO */
       void PostCtor() {
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
@@ -2137,7 +2094,6 @@ namespace Orly {
           : public TArena::TPin, public TBase::TPin {
         public:
 
-        /* TODO */
         TPin(const TArrayOfPairsOfTypes *owner)
             : TArena::TPin(owner->Arena, owner->Core->IndirectCoreArray.Offset, owner->GetComputedSize()),
               TBase::TPin(), Owner(owner) {
@@ -2153,20 +2109,16 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual Type::TAny *NewLhs(void *type_alloc) const override {
           return PairsOfCores[0].first.GetType(Owner->Arena, type_alloc);
         }
 
-        /* TODO */
         virtual Type::TAny *NewRhs(void *type_alloc) const override {
           return PairsOfCores[0].second.GetType(Owner->Arena, type_alloc);
         }
 
-        /* TODO */
         const TArrayOfPairsOfTypes *Owner;
 
-        /* TODO */
         const TNote::TPairOfCores *PairsOfCores;
 
       };  // TCore::ST::TArrayOfPairsOfTypes::TPin
@@ -2215,7 +2167,6 @@ namespace Orly {
       TArrayOfPairsOfStates(TArena *arena, const TCore *core)
           : Arena(arena), Core(core) {}
 
-      /* TODO */
       void PostCtor() {
         #ifndef NDEBUG
         if (Core->IndirectCoreArray.ElemCount < 1) {
@@ -2245,7 +2196,6 @@ namespace Orly {
           : public TArena::TPin, public TBase::TPin {
         public:
 
-        /* TODO */
         TPin(const TArrayOfPairsOfStates *owner)
             : TArena::TPin(owner->Arena, owner->Core->IndirectCoreArray.Offset, owner->GetComputedSize()),
               TBase::TPin(owner), Owner(owner) {
@@ -2261,20 +2211,16 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual State::TAny *NewLhsInRange(size_t elem_idx, void *state_alloc) const override {
           return PairsOfCores[elem_idx].first.NewState(Owner->Arena, state_alloc);
         }
 
-        /* TODO */
         virtual State::TAny *NewRhsInRange(size_t elem_idx, void *state_alloc) const override {
           return PairsOfCores[elem_idx].second.NewState(Owner->Arena, state_alloc);
         }
 
-        /* TODO */
         const TArrayOfPairsOfStates *Owner;
 
-        /* TODO */
         const TNote::TPairOfCores *PairsOfCores;
 
       };  // TCore::SS::TArrayOfPairsOfStates::TPin
@@ -2351,7 +2297,6 @@ namespace Orly {
             public Type::TRecord::TPin {
         public:
 
-        /* TODO */
         TPin(const TRecord *owner)
             : TArena::TPin(owner->Arena, owner->Core->IndirectCoreArray.Offset, owner->GetComputedSize()),
               Type::TRecord::TPin(owner),
@@ -2366,29 +2311,24 @@ namespace Orly {
           #endif
         }
 
-        /* TODO */
         virtual Type::TAny *NewElem(size_t elem_idx, std::string &field_name, void *type_alloc) const override {
           PairsOfCores[elem_idx].first.CopyOut(Owner->Arena, field_name);
           return PairsOfCores[elem_idx].second.GetType(Owner->Arena, type_alloc);
         }
 
-        /* TODO */
         virtual TAny *NewElem(size_t elem_idx, void *&out_field_name_state, void *field_name_state_alloc, void *type_alloc) const override {
           out_field_name_state = PairsOfCores[elem_idx].first.NewState(Owner->Arena, field_name_state_alloc);
           return PairsOfCores[elem_idx].second.GetType(Owner->Arena, type_alloc);
         }
 
-        /* TODO */
         virtual Type::TAny *NewElem(size_t elem_idx, void *type_alloc) const override {
           return PairsOfCores[elem_idx].second.GetType(Owner->Arena, type_alloc);
         }
 
         private:
 
-        /* TODO */
         const TRecord *Owner;
 
-        /* TODO */
         const TNote::TPairOfCores *PairsOfCores;
 
       };  // TCore::ST::TRecord::TPin
@@ -2437,7 +2377,6 @@ namespace Orly {
         return new (alloc) TPin(this);
       }
 
-      /* TODO */
       virtual size_t GetElemCount() const override {
         return Core->IndirectCoreArray.ElemCount;
       }
@@ -2455,7 +2394,6 @@ namespace Orly {
             public State::TRecord::TPin {
         public:
 
-        /* TODO */
         TPin(const TRecord *owner)
             : TArena::TPin(owner->Arena, owner->Core->IndirectCoreArray.Offset, owner->GetComputedSize()),
               State::TRecord::TPin(owner),
@@ -2472,15 +2410,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual State::TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override {
           return PairsOfCores[elem_idx].second.NewState(Owner->Arena, state_alloc);
         }
 
-        /* TODO */
         const TRecord *Owner;
 
-        /* TODO */
         const TNote::TPairOfCores *PairsOfCores;
 
       };  // TCore::SS::TRecord::TPin
@@ -2536,7 +2471,6 @@ namespace Orly {
             public Type::TTuple::TPin {
         public:
 
-        /* TODO */
         TPin(const TTuple *owner)
             : TArena::TPin(owner->Arena,
                            owner->Core->IndirectCoreArray.Offset,
@@ -2555,15 +2489,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual Type::TAny *NewElem(size_t elem_idx, void *type_alloc) const override {
           return Cores[elem_idx].GetType(Owner->Arena, type_alloc);
         }
 
-        /* TODO */
         const TTuple *Owner;
 
-        /* TODO */
         const TCore *Cores;
 
       };  // TCore::ST::TTuple::TPin
@@ -2611,7 +2542,6 @@ namespace Orly {
         return new (alloc) TPin(this);
       }
 
-      /* TODO */
       virtual size_t GetElemCount() const override {
         return Core->IndirectCoreArray.ElemCount;
       }
@@ -2624,7 +2554,6 @@ namespace Orly {
             public State::TTuple::TPin {
         public:
 
-        /* TODO */
         TPin(const TTuple *owner)
             : TArena::TPin(owner->Arena,
                            owner->Core->IndirectCoreArray.Offset,
@@ -2643,15 +2572,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         virtual State::TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override {
           return Cores[elem_idx].NewState(Owner->Arena, state_alloc);
         }
 
-        /* TODO */
         const TTuple *Owner;
 
-        /* TODO */
         const TCore *Cores;
 
       };  // TCore::SS::TTuple::TPin

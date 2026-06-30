@@ -76,7 +76,6 @@ namespace Orly {
 
         };  // TUnary<TBase>::TPin
 
-        /* TODO */
         TUnary(const TType &elem)
             : Elem(elem) {}
 
@@ -132,7 +131,6 @@ namespace Orly {
 
         };  // TBinary<TBase>::TPin
 
-        /* TODO */
         TBinary(const TType &lhs, const TType &rhs)
             : Lhs(lhs), Rhs(rhs) {}
 

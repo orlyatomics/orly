@@ -78,37 +78,30 @@ namespace Orly {
       class TRecord;
       class TTuple;
 
-      /* TODO */
       static constexpr size_t GetMaxStatePinSize() { return 88; }
       static constexpr size_t GetMaxStateSize() { return 48; }
 
-      /* TODO */
       template <typename TVal>
       class TPinWrapper {
         NO_COPY(TPinWrapper);
         public:
 
-        /* TODO */
         TPinWrapper(TVal *pin) : Pin(pin) {}
 
-        /* TODO */
         ~TPinWrapper() {
           Pin->~TVal();
         }
 
-        /* TODO */
         TVal *operator->() const {
           return Pin;
         }
 
-        /* TODO */
         TVal *get() const {
           return Pin;
         }
 
         private:
 
-        /* TODO */
         TVal *Pin;
 
       };  // TPinWrapper
@@ -122,42 +115,34 @@ namespace Orly {
         NO_COPY(TAny);
         public:
 
-        /* TODO */
         class TWrapper {
           NO_COPY(TWrapper);
           public:
 
-          /* TODO */
           TWrapper(TAny *any) : Any(any) {}
 
-          /* TODO */
           ~TWrapper() {
             Any->~TAny();
           }
 
-          /* TODO */
           TAny *operator->() const {
             return Any;
           }
 
-          /* TODO */
           const TAny &operator*() const {
             return *Any;
           }
 
-          /* TODO */
           operator TAny *() const {
             return Any;
           }
 
-          /* TODO */
           TAny *get() const {
             return Any;
           }
 
           private:
 
-          /* TODO */
           TAny *Any;
 
         };  // TWrapper
@@ -165,7 +150,6 @@ namespace Orly {
         /* Do-little. */
         virtual ~TAny() {}
 
-        /* TODO */
         virtual void Accept(const TStateVisitor &visitor) const = 0;
 
         /* Override to return the type object associated with this state. */
@@ -214,7 +198,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TPinWrapper<TPin>;
 
           /* Do-little. */
@@ -275,7 +258,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TPinWrapper<TPin>;
 
           /* Do-little. */
@@ -337,7 +319,6 @@ namespace Orly {
           NO_COPY(TPin);
           public:
 
-          /* TODO */
           using TWrapper = TPinWrapper<TPin>;
 
           /* Do-little. */
@@ -528,12 +509,10 @@ namespace Orly {
 
     };  // State
 
-    /* TODO */
     class TStateVisitor {
       NO_COPY(TStateVisitor);
       public:
 
-      /* TODO */
       virtual ~TStateVisitor() {}
 
       virtual void operator()(const State::TFree &rhs      ) const = 0;
@@ -566,17 +545,14 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TStateVisitor() {}
 
     };  // TStateVisitor
 
-    /* TODO */
     class TStateDoubleVisitor {
       NO_COPY(TStateDoubleVisitor);
       public:
 
-      /* TODO */
       virtual ~TStateDoubleVisitor() {}
 
       /* Overrides. */
@@ -1338,7 +1314,6 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TStateDoubleVisitor() {}
 
     };  // TStateDoubleVisitor

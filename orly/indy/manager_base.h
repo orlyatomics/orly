@@ -80,7 +80,6 @@ namespace Orly {
       DEFINE_ERROR(TDoesntExist, std::runtime_error, "durable object doesn't exist");
       DEFINE_ERROR(TWrongType, std::runtime_error, "durable object of wrong type");
 
-      /* TODO */
       class TManager
           : public Fiber::TRunnable {
         NO_COPY(TManager);
@@ -334,34 +333,26 @@ namespace Orly {
 
         };  // TObj
 
-        /* TODO */
         class TRepo
             : public TManager::TObj {
           NO_COPY(TRepo);
           public:
 
-          /* TODO */
           typedef std::optional<TManager::TPtr<L0::TManager::TRepo>> TParentRepo;
 
           /* Forward Declarations. */
           class TDataLayer;
 
-          /* TODO */
           typedef InvCon::OrderedList::TMembership<TRepo, TManager, std::chrono::steady_clock::time_point> TQueueMembership;
 
-          /* TODO */
           virtual ~TRepo();
 
-          /* TODO */
           const Base::TUuid &GetId() const;
 
-          /* TODO */
           inline TStatus GetStatus() const;
 
-          /* TODO */
           virtual bool IsSafeRepo() const = 0;
 
-          /* TODO */
           inline bool IsTailingAllowed() const;
 
           protected:
@@ -369,10 +360,8 @@ namespace Orly {
           /* Forward Declarations. */
           class TMapping;
 
-          /* TODO */
           typedef InvCon::UnorderedList::TCollection<TRepo, TMapping> TMappingCollection;
 
-          /* TODO */
           class TMapping {
             NO_COPY(TMapping);
             public:
@@ -380,108 +369,79 @@ namespace Orly {
             /* Forward Declarations. */
             class TEntry;
 
-            /* TODO */
             typedef InvCon::UnorderedList::TMembership<TMapping, TRepo> TRepoMembership;
 
-            /* TODO */
             typedef InvCon::OrderedList::TCollection<TMapping, TEntry, TSequenceNumber> TEntryCollection;
 
-            /* TODO */
             class TEntry {
               NO_COPY(TEntry);
               public:
 
-              /* TODO */
               typedef InvCon::OrderedList::TMembership<TEntry, TMapping, TSequenceNumber> TMappingMembership;
 
-              /* TODO */
               TEntry(TMapping *mapping, TDataLayer *layer);
 
-              /* TODO */
               ~TEntry();
 
-              /* TODO */
               TDataLayer *GetLayer() const;
 
-              /* TODO */
               TEntry *TryGetNextMember() const;
 
-              /* TODO */
               TEntry *TryGetPrevMember() const;
 
-              /* TODO */
               static void *operator new(size_t size) {
                 return Pool.Alloc(size);
               }
 
-              /* TODO */
               static void operator delete(void *ptr, size_t) {
                 Pool.Free(ptr);
               }
 
               private:
 
-              /* TODO */
               TMappingMembership::TImpl MappingMembership;
 
-              /* TODO */
               TDataLayer *Layer;
 
-              /* TODO */
               static Util::TPool Pool;
 
-              /* TODO */
               friend class TManager;
               friend class Server::TIndyReporter;
 
             };  // TEntry
 
-            /* TODO */
             TMapping(TRepo *repo);
 
-            /* TODO */
             ~TMapping();
 
-            /* TODO */
             inline void Incr();
 
-            /* TODO */
             inline void Decr();
 
-            /* TODO */
             inline size_t GetRefCount() const;
 
-            /* TODO */
             TEntryCollection *GetEntryCollection() const;
 
-            /* TODO */
             static void *operator new(size_t size) {
               return Pool.Alloc(size);
             }
 
-            /* TODO */
             static void operator delete(void *ptr, size_t) {
               Pool.Free(ptr);
             }
 
             private:
 
-            /* TODO */
             TRepoMembership::TImpl RepoMembership;
 
-            /* TODO */
             mutable TEntryCollection::TImpl EntryCollection;
 
-            /* TODO */
             size_t RefCount;
 
-            /* TODO */
             bool MarkedForDelete;
 
-            /* TODO */
             static Util::TPool Pool;
 
-            /* TODO */
             friend class TManager;
             friend class Server::TIndyReporter;
 
@@ -489,7 +449,6 @@ namespace Orly {
 
           public:
 
-          /* TODO */
           class TDataLayer {
             NO_COPY(TDataLayer);
             public:
@@ -499,22 +458,16 @@ namespace Orly {
               Disk
             };
 
-            /* TODO */
             typedef InvCon::UnorderedList::TMembership<TDataLayer, TManager> TRemovalMembership;
 
-            /* TODO */
             virtual ~TDataLayer();
 
-            /* TODO */
             inline void RemoveFromCollection();
 
-            /* TODO */
             void Incr();
 
-            /* TODO */
             void Decr();
 
-            /* TODO */
             virtual std::unique_ptr<TPresentWalker> NewPresentWalker(const TIndexKey &from,
                                                                      const TIndexKey &to) const = 0;
 
@@ -523,89 +476,65 @@ namespace Orly {
                Defaults false so prefix/cursor callers keep the scan. */
             virtual std::unique_ptr<TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const = 0;
 
-            /* TODO */
             virtual std::unique_ptr<TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const = 0;
 
-            /* TODO */
             virtual TKind GetKind() const = 0;
 
-            /* TODO */
             inline bool GetMarkedTaken() const;
 
-            /* TODO */
             inline void MarkTaken();
 
-            /* TODO */
             inline void UnmarkTaken();
 
-            /* TODO */
             inline bool GetMarkedForDelete() const;
 
-            /* TODO */
             inline void MarkForDelete();
 
-            /* TODO */
             virtual size_t GetSize() const = 0;
 
-            /* TODO */
             virtual TSequenceNumber GetLowestSeq() const = 0;
 
-            /* TODO */
             virtual TSequenceNumber GetHighestSeq() const = 0;
 
-            /* TODO */
             static void *operator new(size_t size) {
               return Pool.Alloc(size);
             }
 
-            /* TODO */
             static void operator delete(void *ptr, size_t) {
               Pool.Free(ptr);
             }
 
             protected:
 
-            /* TODO */
             TDataLayer(TManager *manager);
 
             private:
 
-            /* TODO */
             TManager *Manager;
 
-            /* TODO */
             TRemovalMembership::TImpl RemovalMembership;
 
-            /* TODO */
             size_t RefCount;
 
-            /* TODO */
             bool MarkedForDelete;
 
-            /* TODO */
             bool MarkedTaken;
 
-            /* TODO */
             static Util::TPool Pool;
 
-            /* TODO */
             friend class TManager;
             friend class Server::TIndyReporter;
 
           };  // TDataLayer
 
-          /* TODO */
           virtual const TParentRepo &GetParentRepo() const = 0;
 
           protected:
 
-          /* TODO */
           TRepo(TManager *manager, const Base::TUuid &repo_id, const TTtl &ttl, TStatus status);
 
-          /* TODO */
           void PreDtor();
 
-          /* TODO */
           virtual size_t MergeFiles(const std::vector<size_t> &gen_id_vec,
                                     Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                                     size_t max_block_cache_read_slots_allowed,
@@ -617,10 +546,8 @@ namespace Orly {
                                     bool can_tail,
                                     bool can_tail_tombstone);
 
-          /* TODO */
           virtual void RemoveFile(size_t gen_id);
 
-          /* TODO */
           virtual size_t WriteFile(TMemoryLayer *memory_layer,
                                    Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                                    TSequenceNumber &out_saved_low_seq,
@@ -628,74 +555,54 @@ namespace Orly {
                                    size_t &out_num_keys,
                                    TSequenceNumber release_up_to);
 
-          /* TODO */
           virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerFile(size_t gen_id,
                                                                              const TIndexKey &from,
                                                                              const TIndexKey &to) const;
 
-          /* TODO */
           virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerFile(size_t gen_id,
                                                                              const TIndexKey &key) const;
 
-          /* TODO */
           virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalkerFile(size_t gen_id, TSequenceNumber from) const;
 
-          /* TODO */
           inline void EnqueueMergeMem();
 
-          /* TODO */
           inline void EnqueueMergeDisk();
 
-          /* TODO */
           virtual void StepMergeMem() = 0;
 
-          /* TODO */
           virtual void StepMergeDisk(size_t block_slots_available) = 0;
 
-          /* TODO */
           virtual void StepTail(size_t block_slots_available) = 0;
 
-          /* TODO */
           void MakeDirty();
 
-          /* TODO */
           void RemoveFromDirty();
 
-          /* TODO */
           inline void RemoveFromClosedBuffer();
 
-          /* TODO */
           mutable TMappingCollection::TImpl MappingCollection;
 
-          /* TODO */
           std::mutex MappingLock;
 
-          /* TODO */
           TManager *Manager;
 
-          /* TODO */
           TStatus Status;
 
           private:
 
-          /* TODO */
           inline const std::chrono::steady_clock::time_point &GetTimeOfNextMergeMem() const;
           inline const std::chrono::steady_clock::time_point &GetTimeOfNextMergeDisk() const;
 
-          /* TODO */
           inline void SetTimeOfNextMergeMem(const std::chrono::steady_clock::time_point &time);
           inline void SetTimeOfNextMergeDisk(const std::chrono::steady_clock::time_point &time);
 
           TPtr<TRepo> DirtyPtr;
 
-          /* TODO */
           Base::TUuid Id;
 
-          /* TODO */
           TQueueMembership::TImpl MergeMemMembership;
           TQueueMembership::TImpl MergeDiskMembership;
 
-          /* TODO */
           friend class TManager;
           friend class Orly::Indy::TManager;
           friend class Orly::Indy::TMemoryLayer;
@@ -705,68 +612,50 @@ namespace Orly {
 
         };  // TRepo
 
-        /* TODO */
         typedef InvCon::UnorderedList::TCollection<TManager, TRepo::TDataLayer> TRemovalCollection;
 
-        /* TODO */
         inline Disk::Util::TEngine *GetEngine() const;
 
-        /* TODO */
         inline size_t GetTempFileConsolThresh() const;
 
-        /* TODO */
         void CompactOpemMap();
 
-        /* TODO */
         void RunLayerCleaner();
 
-        /* TODO */
         void RunMergeMem();
 
-        /* TODO */
         void RunMergeDisk();
 
-        /* TODO */
         void GetFileGenSet(const Base::TUuid &repo_id, std::vector<Disk::TFileObj> &file_vec);
 
-        /* TODO */
         Server::TTetrisManager *GetTetrisManager() const;
 
-        /* TODO */
         void SetTetrisManager(Server::TTetrisManager *tetris_manager);
 
-        /* TODO */
         void ReportMergeCPUTime(std::chrono::nanoseconds &out_merge_mem, std::chrono::nanoseconds &out_merge_disk);
 
-        /* TODO */
         virtual void ForEachScheduler(const std::function<bool (Fiber::TRunner *)> &cb) const = 0;
 
-        /* TODO */
         static void InitMappingPool(size_t num_obj) {
           TRepo::TMapping::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetMappingSize() {
           return sizeof(TRepo::TMapping);
         }
 
-        /* TODO */
         static void InitMappingEntryPool(size_t num_obj) {
           TRepo::TMapping::TEntry::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetMappingEntrySize() {
           return sizeof(TRepo::TMapping::TEntry);
         }
 
-        /* TODO */
         static void InitDataLayerPool(size_t num_obj) {
           TRepo::TDataLayer::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetDataLayerSize() {
           return sizeof(TRepo::TDataLayer);
         }
@@ -779,21 +668,17 @@ namespace Orly {
 
         protected:
 
-        /* TODO */
         template <typename... TArgs>
         TPtr<TRepo> New(const TId &id, const TTtl &ttl, TArgs &&... args);
 
-        /* TODO */
         template <typename TSomeObj>
         TPtr<TSomeObj> Open(const TId &id);
 
-        /* TODO */
         TManager::TPtr<TRepo> OpenOrCreate(const TId &id,
                                            const std::optional<TTtl> &ttl,
                                            const std::optional<TPtr<TRepo>> &parent_repo,
                                            bool is_safe);
 
-        /* TODO */
         std::mutex DurableMutex;
         std::condition_variable DurableCond;
 
@@ -847,10 +732,8 @@ namespace Orly {
 
         protected:
 
-        /* TODO */
         typedef InvCon::OrderedList::TCollection<TManager, TRepo, std::chrono::steady_clock::time_point> TRepoQueue;
 
-        /* TODO */
         TManager(Disk::Util::TEngine *engine,
                  std::chrono::milliseconds merge_mem_delay,
                  std::chrono::milliseconds merge_disk_delay,
@@ -865,106 +748,77 @@ namespace Orly {
                  const std::vector<size_t> &merge_disk_cores,
                  bool create_new);
 
-        /* TODO */
         virtual ~TManager();
 
-        /* TODO */
         void CloseAllUnreferencedObjects();
 
-        /* TODO */
         bool PreDtor();
 
-        /* TODO */
         inline TManager::TPtr<TRepo> ForceOpenRepo(const Base::TUuid &repo_id);
 
-        /* TODO */
         virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
                                      const std::optional<TTtl> &ttl,
                                      const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                      bool is_safe,
                                      bool create) = 0;
 
-        /* TODO */
         virtual TRepo *ReconstructRepo(const Base::TUuid &repo_id) = 0;
 
-        /* TODO */
         virtual void SaveRepo(TRepo *repo) = 0;
 
-        /* TODO */
         virtual void RunReplicationQueue() = 0;
 
-        /* TODO */
         virtual void RunReplicationWork() = 0;
 
-        /* TODO */
         virtual void RunReplicateTransaction() = 0;
 
-        /* TODO */
         Base::TScheduler *Scheduler;
 
         private:
 
-        /* TODO */
         void OnClose(TRepo *repo);
 
-        /* TODO */
         void EnqueueMergeMem(TRepo *repo);
 
-        /* TODO */
         void EnqueueMergeDisk(TRepo *repo);
 
-        /* TODO */
         void RemoveLayersFromQueue();
 
-        /* TODO */
         bool ShuttingDown;
 
-        /* TODO */
         bool AllowTailing;
 
-        /* TODO */
         mutable TRemovalCollection::TImpl RemovalCollection;
         std::mutex RemovalLock;
         Base::TTimerFd LayerCleanerTimer;
 
-        /* TODO */
         mutable TRepoQueue::TImpl MergeMemQueue;
         std::mutex MergeMemLock;
         std::mutex MergeMemEpollLock;
         Fiber::TSingleSem MergeMemSem;
 
-        /* TODO */
         mutable TRepoQueue::TImpl MergeDiskQueue;
         Fiber::TFiberLock MergeDiskLock;
         Fiber::TFiberLock MergeDiskEpollLock;
         Fiber::TSingleSem MergeDiskSem;
 
-        /* TODO */
         std::chrono::milliseconds MergeMemDelay;
         std::chrono::milliseconds MergeDiskDelay;
 
-        /* TODO */
         size_t BlockSlotsAvailablePerMerger;
 
-        /* TODO */
         size_t MaxCacheSize;
 
-        /* TODO */
         Disk::Util::TEngine *Engine;
 
-        /* TODO */
         size_t TempFileConsolThresh;
 
-        /* TODO */
         const std::vector<size_t> &MergeMemCores;
 
-        /* TODO */
         const std::vector<size_t> &MergeDiskCores;
 
-        /* TODO */
         Server::TTetrisManager *TetrisManager;
 
-        /* TODO */
         std::function<void (TRepo *)> OnCloseCb;
 
         /* Merge CPU Timer Information */
@@ -972,7 +826,6 @@ namespace Orly {
         std::unordered_map<pthread_t, Base::thread_clock::time_point> MergeDiskThreadCPUMap;
         std::mutex MergeThreadCPUMutex;
 
-        /* TODO */
         friend class Orly::Server::TServer;
 
       };  // TManager

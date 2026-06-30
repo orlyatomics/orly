@@ -29,7 +29,6 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     class TSeq : public TUnaryType<TSeq> {
       NO_COPY(TSeq);
 

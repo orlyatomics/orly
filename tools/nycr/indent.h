@@ -25,25 +25,20 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TIndent {
       public:
 
-      /* TODO */
       TIndent(size_t depth)
           : Depth(depth) {}
 
-      /* TODO  */
       void Write(std::ostream &strm) const;
 
       private:
 
-      /* TODO  */
       size_t Depth;
 
     };  // TIndent
 
-    /* TODO */
     inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::TIndent &that) {
       that.Write(strm);
       return strm;

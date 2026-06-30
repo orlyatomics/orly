@@ -39,19 +39,15 @@ namespace Orly {
     /* Dependency injection for package to expose enough context to build functions. */
     namespace L0 {
 
-      /* TODO */
       class TPackage {
         NO_COPY(TPackage);
         public:
 
-        /* TODO */
         typedef std::unordered_map<Base::TUuid, std::pair<Orly::Type::TType, Orly::Type::TType>> TAddrMap;
         typedef std::unordered_map<std::pair<Orly::Type::TType, Orly::Type::TType>, Base::TUuid> TRevAddrMap;
 
-        /* TODO */
         virtual ~TPackage() {}
 
-        /* TODO */
         inline const Base::TUuid &GetIndexIdFor(const Type::TType &addr, const Type::TType &val) const {
           auto pos = ReverseAddrMap.find(
               std::make_pair(Type::UnwrapSequence(addr),
@@ -60,17 +56,14 @@ namespace Orly {
           return pos->second;
         }
 
-        /* TODO */
         inline const TAddrMap &GetAddrMap() const {
           return AddrMap;
         }
 
-        /* TODO */
         inline const TRevAddrMap &GetReverseAddrMap() const {
           return ReverseAddrMap;
         }
 
-        /* TODO */
         inline const Package::TName &GetName() const {
           assert(Symbol);
           return Symbol->GetName();
@@ -78,16 +71,12 @@ namespace Orly {
 
         protected:
 
-        /* TODO */
         TPackage(const Symbol::TPackage::TPtr &package) : Symbol(package) {}
 
-        /* TODO */
         Symbol::TPackage::TPtr Symbol;
 
-        /* TODO */
         TAddrMap AddrMap;
 
-        /* TODO */
         TRevAddrMap ReverseAddrMap;
 
       };  // TPackage

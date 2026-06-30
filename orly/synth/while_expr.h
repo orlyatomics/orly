@@ -32,48 +32,35 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TWhileExpr
         : public TThatableExpr {
       NO_COPY(TWhileExpr);
       public:
 
-      /* TODO */
       TWhileExpr(const TExprFactory *expr_factory, const Package::Syntax::TInfixWhile *infix_while);
 
-      /* TODO */
       virtual ~TWhileExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TWhile::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TThatable::TPtr GetThatableSymbol() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TInfixWhile *InfixWhile;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
-      /* TODO */
       mutable Expr::TWhile::TPtr Symbol;
 
     };  // TWhileExpr

@@ -37,25 +37,19 @@ namespace Orly {
     class TWithClause;
     class TTestCaseBlock;
 
-    /* TODO */
     class TTestDef
         : public TDef {
       NO_COPY(TTestDef);
       public:
 
-      /* TODO */
       TTestDef(TScope *scope, const Package::Syntax::TTestDef *test_def);
 
-      /* TODO */
       virtual ~TTestDef();
 
-      /* TODO */
       virtual TAction Build(int pass);
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
@@ -64,13 +58,10 @@ namespace Orly {
 
       static TName GenName(const TPosRange &pos_range);
 
-      /* TODO */
       const Package::Syntax::TTestDef *TestDef;
 
-      /* TODO */
       TWithClause *OptWithClause;
 
-      /* TODO */
       TTestCaseBlock *TestCaseBlock;
 
     };  // TTestDef

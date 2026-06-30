@@ -25,23 +25,17 @@ namespace Orly {
 
   namespace Indy {
 
-    /* TODO */
     class TKey {
       public:
 
-      /* TODO */
       explicit inline TKey(Atom::TCore::TArena *arena = nullptr);
 
-      /* TODO */
       explicit inline TKey(const Atom::TCore &core, Atom::TCore::TArena *arena = nullptr);
 
-      /* TODO */
       inline TKey(const TKey &that);
 
-      /* TODO */
       inline TKey(TKey &&that);
 
-      /* TODO */
       template <typename TVal>
       inline TKey(const TVal &val, Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc);
 
@@ -54,113 +48,82 @@ namespace Orly {
       /* Concat tuples */
       inline TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *lhs, const Sabot::State::TAny *rhs);
 
-      /* TODO */
       inline TKey &operator=(TKey &&that);
 
-      /* TODO */
       inline TKey &operator=(const TKey &that);
 
-      /* TODO */
       inline bool operator==(const TKey &that) const;
 
-      /* TODO */
       inline bool operator!=(const TKey &that) const;
 
-      /* TODO */
       inline bool operator<(const TKey &that) const;
 
-      /* TODO */
       inline bool operator<=(const TKey &that) const;
 
-      /* TODO */
       inline bool operator>(const TKey &that) const;
 
-      /* TODO */
       inline bool operator>=(const TKey &that) const;
 
-      /* TODO */
       inline Atom::TComparison Compare(const TKey &that) const;
 
-      /* TODO */
       inline void Dump(std::ostream &strm) const;
 
-      /* TODO */
       inline Atom::TCore::TArena *GetArena() const;
 
-      /* TODO */
       inline const Atom::TCore &GetCore() const;
 
-      /* TODO */
       inline Atom::TCore &GetCore();
 
-      /* TODO */
       inline Sabot::State::TAny *GetState(void *state_alloc) const;
 
-      /* TODO */
       inline size_t GetHash() const;
 
-      /* TODO */
       static inline bool EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      /* TODO */
       static inline bool TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      /* TODO */
       static inline bool NeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      /* TODO */
       static inline bool TupleNeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      /* TODO */
       static inline Atom::TComparison Compare(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
       private:
 
-      /* TODO */
       Atom::TCore::TArena *Arena;
 
-      /* TODO */
       Atom::TCore Core;
 
-      /* TODO */
       mutable bool HashIsCached;
       mutable size_t CachedHash;
 
     };  // TKey
 
-    /* TODO */
     class TIndexKey {
       public:
 
-      /* TODO */
       TIndexKey() {}
 
-      /* TODO */
       TIndexKey(const Base::TUuid &index_id, const TKey &key)
           : IndexId(index_id),
             Key(key) {}
 
-      /* TODO */
       inline const Base::TUuid &GetIndexId() const {
         return IndexId;
       }
 
-      /* TODO */
       inline const TKey &GetKey() const {
         return Key;
       }
 
-      /* TODO */
       inline TKey &GetKey() {
         return Key;
       }
 
-      /* TODO */
       inline size_t GetHash() const {
         return IndexId.GetHash() ^ Key.GetHash();
       }
 
-      /* TODO */
       bool operator<(const TIndexKey &that) const {
         Atom::TComparison comp = Atom::CompareOrdered(IndexId, that.IndexId);
         switch (comp) {
@@ -180,22 +143,18 @@ namespace Orly {
         throw;
       }
 
-      /* TODO */
       bool operator==(const TIndexKey &that) const {
         return IndexId == that.IndexId && Key == that.Key;
       }
 
-      /* TODO */
       bool operator!=(const TIndexKey &that) const {
         return IndexId != that.IndexId || Key != that.Key;
       }
 
       private:
 
-      /* TODO */
       Base::TUuid IndexId;
 
-      /* TODO */
       TKey Key;
 
     };  // TIndexKey

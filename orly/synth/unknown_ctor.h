@@ -32,30 +32,23 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TUnknownCtor
         : public TExpr {
       NO_COPY(TUnknownCtor);
       public:
 
-      /* TODO */
       TUnknownCtor(const Package::Syntax::TUnknownCtor *unknown_ctor);
 
-      /* TODO */
       virtual ~TUnknownCtor();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TUnknownCtor *UnknownCtor;
 
-      /* TODO */
       TType *Type;
 
     };  // TUnknownCtor

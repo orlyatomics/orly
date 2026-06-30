@@ -26,22 +26,17 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TBase;
 
-    /* TODO */
     class TRule
         : public TCompound {
       NO_COPY(TRule);
       public:
 
-      /* TODO */
       TRule(const Syntax::TRule *decl);
 
-      /* TODO */
       virtual Symbol::TCompound *GetSymbolAsCompound() const;
 
-      /* TODO */
       Symbol::TRule *GetSymbolAsRule() const {
         assert(Symbol);
         return Symbol;
@@ -49,15 +44,12 @@ namespace Tools {
 
       private:
 
-      /* TODO */
       virtual bool Build(int pass);
 
-      /* TODO */
       Symbol::TRule *Symbol;
 
     };  // TRule
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TRule> {
       static const char *Name;

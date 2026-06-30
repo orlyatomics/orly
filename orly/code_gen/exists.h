@@ -27,21 +27,17 @@ namespace Orly {
 
   namespace CodeGen {
 
-    /* TODO */
     class TExists : public TInline {
       NO_COPY(TExists);
       public:
 
-      /* TODO */
       typedef std::shared_ptr<const TExists> TPtr;
 
-      /* TODO */
       TExists(const L0::TPackage *package,
               const Type::TType &ret_type,
               const Type::TType &val_type,
               const TInline::TPtr &expr);
 
-      /* TODO */
       void WriteExpr(TCppPrinter &out) const;
 
       /* Dependency graph */
@@ -52,10 +48,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       TInline::TPtr Expr;
 
-      /* TODO */
       Type::TType ValType;
 
     }; // TExists

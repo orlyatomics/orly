@@ -35,7 +35,6 @@ namespace Orly {
     /* Forward Declaration. */
     Atom::TComparison CompareStates(const State::TAny &lhs, const State::TAny &rhs, void *lhs_type_alloc, void *rhs_type_alloc);
 
-    /* TODO */
     Atom::TComparison CompareTypes(const Type::TAny &lhs, const Type::TAny &rhs);
 
   }  // Sabot

@@ -31,16 +31,13 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TObjMemberExpr
         : public TExpr {
       NO_COPY(TObjMemberExpr);
       public:
 
-      /* TODO */
       TObjMemberExpr(const TExprFactory *expr_factory, const Package::Syntax::TPostfixObjMember *postfix_obj_member);
 
       /* Build `<source>.<name>` from an already-synthesized source
@@ -49,16 +46,12 @@ namespace Orly {
          See <orly/synth/when_expr.cc>. */
       TObjMemberExpr(TExpr *source, const TName &name, const TPosRange &pos_range);
 
-      /* TODO */
       virtual ~TObjMemberExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
@@ -66,10 +59,8 @@ namespace Orly {
       /* The backing CST node, or null for the synthesized accessor. */
       const Package::Syntax::TPostfixObjMember *PostfixObjMember;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       TName Name;
 
       /* Source position -- from the CST node when there is one, else

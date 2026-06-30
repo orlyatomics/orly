@@ -42,35 +42,28 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         template <typename TOwner, typename TVal, size_t MemSize, class TComparator>
         class TIndexSortFile
             : public TInFile {
           NO_COPY(TIndexSortFile);
           public:
 
-          /* TODO */
           typedef Util::TIndexSortFile<TOwner, TVal, MemSize, TComparator> TMe;
 
-          /* TODO */
           typedef InvCon::OrderedList::TCollection<TOwner, TMe, size_t> TOwnerCollection;
 
-          /* TODO */
           typedef InvCon::OrderedList::TMembership<TIndexSortFile, TOwner, size_t> TOwnerMembership;
 
-          /* TODO */
           typedef Snappy::TBlockSink<Disk::Util::LogicalCheckedBlockSize, Disk::Util::LogicalCheckedBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedBlock> TMyBlockSink;
           typedef Snappy::TStreamSource<Disk::Util::LogicalCheckedBlockSize, Disk::Util::LogicalCheckedBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedBlock> TMyStreamSource;
 
           class TCursor;
 
-          /* TODO */
           class TCursor
               : public Orly::Indy::Util::TSorter<TVal, MemSize>::TCursor {
             NO_COPY(TCursor);
             public:
 
-            /* TODO */
             TCursor(TIndexSortFile *file, size_t read_ahead_amt = IndexCursorScanAhead)
                 : File(file),
                   MetaStream(HERE, File->UtilSrc, Low, File, File->BlockCache, 0UL),
@@ -87,22 +80,18 @@ namespace Orly {
               Refresh();
             }
 
-            /* TODO */
             ~TCursor() {
             }
 
-            /* TODO */
             inline virtual operator bool() const {
               return NumIntoPage != NumInCurPage || DataStream.GetOffset() < File->FileLength;
             }
 
-            /* TODO */
             inline virtual const TVal &operator*() const {
               assert(BufData);
               return *(reinterpret_cast<const TVal *>(BufData) + NumIntoPage);
             }
 
-            /* TODO */
             inline virtual TCursor &operator++() {
               assert(static_cast<bool>(*this));
               ++NumIntoPage;
@@ -115,7 +104,6 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             inline void Refresh() const {
               size_t compressed_size = 0UL;
               MetaStream.Read(NumInCurPage);
@@ -129,29 +117,22 @@ namespace Orly {
               assert(DataStream.GetOffset() - start_val == compressed_size);
             }
 
-            /* TODO */
             TIndexSortFile *File;
 
-            /* TODO */
             mutable TMyStreamSource::TDataInStream MetaStream;
             mutable TMyStreamSource::TDataInStream DataStream;
 
-            /* TODO */
             size_t NumIntoPage;
             mutable size_t NumInCurPage;
 
-            /* TODO */
             mutable std::unique_ptr<TBufBlock> BufBlock;
 
-            /* TODO */
             mutable const char *BufData;
 
-            /* TODO */
             static constexpr size_t IndexCursorScanAhead = 16;
 
           };  // TCursor
 
-          /* TODO */
           TIndexSortFile(const Base::TCodeLocation &code_location /* DEBUG */,
                          uint8_t util_src,
                          TVolume::TDesc::TStorageSpeed storage_speed,
@@ -255,7 +236,6 @@ namespace Orly {
             CompletionTrigger.Wait();
           }
 
-          /* TODO */
           TIndexSortFile(const Base::TCodeLocation &code_location /* DEBUG */,
                          uint8_t util_src,
                          TVolume::TDesc::TStorageSpeed storage_speed,
@@ -408,100 +388,78 @@ namespace Orly {
             OwnerMembership.Insert(&collection);
           }
 
-          /* TODO */
           ~TIndexSortFile() {
             for (const auto &iter : BlockVec.GetSeqBlockMap()) {
               Engine->FreeSeqBlocks(iter.second.first, iter.second.second);
             }
           }
 
-          /* TODO */
           virtual size_t GetFileLength() const override {
             return FileLength;
           }
 
-          /* TODO */
           virtual size_t GetStartingBlock() const override {
             assert(BlockVec.Size());
             return BlockVec.Front();
           }
 
-          /* TODO */
           virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
             throw std::logic_error("ReadMeta is not required");
           }
 
-          /* TODO */
           virtual size_t FindPageIdOfByte(size_t offset) const override {
             assert(offset <= GetFileLength());
             return BlockVec[offset / Disk::Util::LogicalCheckedBlockSize];
           }
 
 
-          /* TODO */
           virtual size_t GetLogicalBlockSize() const {
             return LogicalCheckedBlockSize;
           }
 
-          /* TODO */
           virtual size_t GetPhysicalBlockSize() const {
             return PhysicalBlockSize;
           }
 
-          /* TODO */
           inline TEngine *GetEngine() const {
             return Engine;
           }
 
-          /* TODO */
           inline TBlockCache *GetBlockCache() const {
             return BlockCache;
           }
 
-          /* TODO */
           inline size_t GetSize() const {
             return Size;
           }
 
           private:
 
-          /* TODO */
           TVolume::TDesc::TStorageSpeed StorageSpeed;
 
-          /* TODO */
           TEngine *Engine;
 
-          /* TODO */
           TVolumeManager *VolMan;
 
-          /* TODO */
           TBlockCache *BlockCache;
 
-          /* TODO */
           TCacheInstr CacheInstr;
 
-          /* TODO */
           typename TOwnerMembership::TImpl OwnerMembership;
 
-          /* TODO */
           Indy::Util::TBlockVec BlockVec;
 
-          /* TODO */
           size_t NumMetaBytes;
 
-          /* TODO */
           size_t FileLength;
 
-          /* TODO */
           size_t Size;
 
-          /* TODO */
           TCompletionTrigger CompletionTrigger;
 
           /* DEBUG */
           const Base::TCodeLocation CodeLocation;
 
-          /* TODO */
           uint8_t UtilSrc;
 
         };  // TIndexSortFile

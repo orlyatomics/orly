@@ -30,11 +30,9 @@ namespace Tools {
       enum { NoIndent, Indent };
       enum { NoEndl, Endl };
 
-      /* TODO */
       class TXmlTag {
       public:
 
-	/* TODO */
 	enum TXmlTagType {
 	  AnonymousMember,
 	  Association,
@@ -60,28 +58,22 @@ namespace Tools {
 	  Rule
 	};
 
-	/* TODO */
         static const char *TXmlTagStr[];
 
-	/* TODO */
       TXmlTag(TXmlTagType type, bool is_open, bool has_indent = Indent, bool has_endl = Endl)
 	: Type(type), IsOpen(is_open), HasIndent(has_indent), HasEndl(has_endl) {}
 
-	/* TODO */
 	void Write(std::ostream &strm) const;
 
       private:
 
-	/* TODO */
 	const TXmlTagType Type;
 	const bool IsOpen, HasIndent, HasEndl;
 
       }; // TXmlTag
 
-      /* TODO */
       void WriteXml(const char *root, const char *branch, const char *atom, const TLanguage *language);
 
-      /* TODO */
       inline std::ostream &operator<<(std::ostream &strm, const TXmlTag &that) {
         that.Write(strm);
         return strm;

@@ -32,48 +32,35 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TFilterExpr
         : public TThatableExpr {
       NO_COPY(TFilterExpr);
       public:
 
-      /* TODO */
       TFilterExpr(const TExprFactory *expr_factory, const Package::Syntax::TInfixFilter *infix_filter);
 
-      /* TODO */
       virtual ~TFilterExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TFilter::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TThatable::TPtr GetThatableSymbol() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TInfixFilter *InfixFilter;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
-      /* TODO */
       mutable Expr::TFilter::TPtr Symbol;
 
     };  // TFilterExpr

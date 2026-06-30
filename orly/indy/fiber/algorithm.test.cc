@@ -149,23 +149,18 @@ void TestSort(const std::vector<TVal> &input_data, const size_t num_workers) {
 class TSortedObj {
     public:
 
-    /* TODO */
     TSortedObj(size_t old_key, size_t new_key) : OldKey(old_key), NewKey(new_key) {}
 
-    /* TODO */
     bool operator<(const TSortedObj &that) const {
       return OldKey < that.OldKey;
     }
 
-    /* TODO */
     bool operator==(const TSortedObj &that) const {
       return OldKey == that.OldKey && NewKey == that.NewKey;
     }
 
-    /* TODO */
     size_t OldKey;
 
-    /* TODO */
     size_t NewKey;
 
   };  // TSortedObj

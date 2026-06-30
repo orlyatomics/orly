@@ -36,7 +36,6 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     class TAddr;
     class TAny;
     class TBool;
@@ -64,103 +63,82 @@ namespace Orly {
     class TType {
       public:
 
-      /* TODO */
       class TVisitor;
 
-      /* TODO */
       class TDoubleVisitor;
 
-      /* TODO */
       class TImpl : public std::enable_shared_from_this<TImpl> {
         NO_COPY(TImpl);
 
 
         public:
 
-        /* TODO */
         TType AsType() const {
           return TType(shared_from_this());
         }
 
         protected:
 
-        /* TODO */
         TImpl() {}
 
-        /* TODO */
         virtual ~TImpl() {}
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const = 0;
 
-        /* TODO */
         virtual void Write(std::ostream &) const = 0;
 
-        /* TODO */
         friend class TType;
 
       };  // TImpl
 
-      /* TODO */
       TType() {
         Init();
       }
 
-      /* TODO */
       TType(TType &&that) {
         Init();
         std::swap(Impl, that.Impl);
       }
 
-      /* TODO */
       TType(const TType &that) {
         Impl = that.Impl;
       }
 
-      /* TODO */
       ~TType() {}
 
-      /* TODO */
       TType &operator=(TType &&that) {
         std::swap(Impl, that.Impl);
         return *this;
       }
 
-      /* TODO */
       TType &operator=(const TType &that) {
         return *this = TType(that);
       }
 
-      /* TODO */
       bool operator==(const TType &that) const {
         assert(Impl);
         assert(that.Impl);
         return Impl.get() == that.Impl.get();
       }
 
-      /* TODO */
       bool operator!=(const TType &that) const {
         assert(Impl);
         assert(that.Impl);
         return Impl.get() != that.Impl.get();
       }
 
-      /* TODO */
       operator bool() const;
 
-      /* TODO */
       void Accept(const TVisitor &visitor) const {
         assert(Impl);
         Impl->Accept(visitor);
       }
 
-      /* TODO */
       static void Accept(const TType &lhs, const TType &rhs, const TDoubleVisitor &double_visitor);
 
       template <typename TTarget>
       const TTarget *As() const;
 
-      /* TODO */
       size_t GetHash() const {
         assert(Impl);
         return reinterpret_cast<size_t>(Impl.get());
@@ -200,35 +178,28 @@ namespace Orly {
       template <typename TTarget>
       const TTarget *TryAs() const;
 
-      /* TODO */
       void Write(std::ostream &stream) const {
         Impl->Write(stream);
       }
 
       private:
 
-      /* TODO */
       TType(const std::shared_ptr<const TImpl> &impl) : Impl(impl) {
         assert(impl);
       }
 
-      /* TODO */
       void Init();
 
-      /* TODO */
       std::shared_ptr<const TImpl> Impl;
 
     };  // TType
 
-    /* TODO */
     template <typename TVal>
     struct TDt;
 
-    /* TODO */
     class TType::TVisitor {
       public:
 
-      /* TODO */
       virtual ~TVisitor();
 
       virtual void operator()(const TAddr     *that) const = 0;
@@ -272,19 +243,15 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TVisitor();
 
     };  // TType::TVisitor;
 
-    /* TODO */
     class TType::TDoubleVisitor {
       public:
 
-      /* TODO */
       virtual ~TDoubleVisitor() {}
 
-      /* TODO */
       virtual void operator()(const TAddr *lhs, const TAddr *rhs) const = 0;
       virtual void operator()(const TAddr *lhs, const TAny *rhs) const = 0;
       virtual void operator()(const TAddr *lhs, const TBool *rhs) const = 0;
@@ -688,7 +655,6 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TDoubleVisitor() {}
 
     };  // TDoubleVisitor
@@ -699,7 +665,6 @@ namespace Orly {
 
 namespace std {
 
-  /* TODO */
   inline ostream &operator<<(ostream &stream, const Orly::Type::TType &that) {
     that.Write(stream);
     return stream;

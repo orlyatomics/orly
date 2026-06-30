@@ -225,10 +225,8 @@ namespace Orly {
       template <typename TSomeObj>
       TPtr<TSomeObj> Open(const TId &id);
 
-      /* TODO */
       void Clear();
 
-      /* TODO */
       virtual void RunLayerCleaner() = 0;
 
       protected:

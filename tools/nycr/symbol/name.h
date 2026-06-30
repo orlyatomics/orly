@@ -36,147 +36,115 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TName {
         public:
 
-        /* TODO */
         TName() {}
 
-        /* TODO */
         TName(TName &&that) {
           std::swap(Parts, that.Parts);
         }
 
-        /* TODO */
         TName(const TName &that)
             : Parts(that.Parts) {}
 
-        /* TODO */
         TName(const char *that) {
           Init(that, that + strlen(that));
         }
 
-        /* TODO */
         TName(const std::string &that) {
           Init(that.data(), that.data() + that.size());
         }
 
-        /* TODO */
         TName &operator=(TName &&that) {
           std::swap(Parts, that.Parts);
           return *this;
         }
 
-        /* TODO */
         TName &operator=(const TName &that) {
           return *this = TName(that);
         }
 
-        /* TODO */
         TName &operator=(const char *that) {
           return *this = TName(that);
         }
 
-        /* TODO */
         TName &operator=(const std::string &that) {
           return *this = TName(that);
         }
 
-        /* TODO */
         bool operator<(const TName &that) const;
 
-        /* TODO */
         void WriteLower(std::ostream &strm) const;
 
-        /* TODO */
         void WriteUpper(std::ostream &strm) const;
 
-	/* TODO */
 	void WriteXml(std::ostream &strm) const;
 
         private:
 
-        /* TODO */
         void Init(const char *start, const char *limit);
 
-        /* TODO */
         std::vector<std::string> Parts;
 
       };  // TName
 
-      /* TODO */
       class TLower {
         public:
 
-        /* TODO */
         TLower(const TName &name)
             : Name(name) {}
 
-        /* TODO */
         const TName &Name;
 
       };  // TLower
 
-      /* TODO */
       class TUpper {
         public:
 
-        /* TODO */
         TUpper(const TName &name)
             : Name(name) {}
 
-        /* TODO */
         const TName &Name;
 
       };  // TUpper
 
-      /* TODO */
       class TType {
         public:
 
-        /* TODO */
         TType(const TName &name)
             : Name(name) {}
 
-        /* TODO */
         const TName &Name;
 
       };  // TType
 
-      /* TODO */
       class TXml {
       public:
 
-	/* TODO */
       TXml(const TName &name)
 	: Name(name) {}
 
-	/* TODO */
 	const TName &Name;
 
       }; // TXml
 
-/* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TLower &that) {
   that.Name.WriteLower(strm);
   return strm;
 }
 
-/* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TUpper &that) {
   that.Name.WriteUpper(strm);
   return strm;
 }
 
-/* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TType &that) {
   strm << 'T';
   that.Name.WriteUpper(strm);
   return strm;
 }
 
-/* TODO */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TXml &that) {
   that.Name.WriteXml(strm);
   return strm;

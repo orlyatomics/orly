@@ -38,16 +38,13 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         typedef TCache<PhysicalPageSize> TPageCache;
         typedef TCache<PhysicalBlockSize> TBlockCache;
 
-        /* TODO */
         class TEngine {
           NO_COPY(TEngine);
           public:
 
-          /* TODO */
           TEngine(TVolumeManager *vol_man,
                   TPageCache *page_cache,
                   TBlockCache *block_cache,
@@ -59,15 +56,12 @@ namespace Orly {
                 FileService(file_service),
                 IsDiskBasedEngine(is_disk_engine) {}
 
-          /* TODO */
           ~TEngine() {}
 
-          /* TODO */
           bool FindFile(const Base::TUuid &file_uid, size_t gen_id, size_t &starting_block, size_t &starting_block_offset, size_t &file_length, size_t &num_keys) {
             return FileService->FindFile(file_uid, gen_id, starting_block, starting_block_offset, file_length, num_keys);
           }
 
-          /* TODO */
           void InsertFile(const Base::TUuid &file_uid,
                           TFileObj::TKind file_kind,
                           size_t gen_id,
@@ -81,22 +75,18 @@ namespace Orly {
             FileService->InsertFile(file_uid, file_kind, gen_id, starting_block_id, starting_block_offset, file_size, num_keys, lowest_seq, highest_seq, completion_trigger);
           }
 
-          /* TODO */
           void RemoveFile(const Base::TUuid &file_uid, size_t gen_id, TCompletionTrigger &completion_trigger) {
             FileService->RemoveFile(file_uid, gen_id, completion_trigger);
           }
 
-          /* TODO */
           void AppendFileGenSet(const Base::TUuid &file_uid, std::vector<TFileObj> &out_vec) {
             return FileService->AppendFileGenSet(file_uid, out_vec);
           }
 
-          /* TODO */
           bool ForEachFile(const std::function<bool (const Base::TUuid &file_uid, const TFileObj &)> &cb) {
             return FileService->ForEachFile(cb);
           }
 
-          /* TODO */
           size_t ReserveBlock(TVolume::TDesc::TStorageSpeed storage_speed) {
             TBlockRange range;
             VolMan->TryAllocateSequentialBlocks(storage_speed, 1UL, [&](const TBlockRange &block_range) {
@@ -106,7 +96,6 @@ namespace Orly {
             return range.first;
           }
 
-          /* TODO */
           /* TODO: can we get rid of this version? */
           void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, std::vector<size_t> &append_vec) {
             assert(num_blocks > 0);
@@ -128,7 +117,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, Indy::Util::TBlockVec &append_vec) {
             assert(num_blocks > 0);
             size_t left = num_blocks;
@@ -146,70 +134,56 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void FreeBlock(size_t block_id) {
             VolMan->FreeSequentialBlocks(TBlockRange(block_id, 1UL));
           }
 
-          /* TODO */
           void FreeSeqBlocks(size_t block_id, size_t num_blocks) {
             VolMan->FreeSequentialBlocks(TBlockRange(block_id, num_blocks));
           }
 
-          /* TODO */
           inline TVolumeManager *GetVolMan() const {
             return VolMan;
           }
 
-          /* TODO */
           template <size_t PhysicalCacheSize>
           inline Util::TCache<PhysicalCacheSize> *GetCache() const {
             return TCacheGetter<PhysicalCacheSize>::Get(this);
           }
 
-          /* TODO */
           inline TPageCache *GetPageCache() const {
             return PageCache;
           }
 
-          /* TODO */
           inline TBlockCache *GetBlockCache() const {
             return BlockCache;
           }
 
-          /* TODO */
           inline bool IsDiskBased() const {
             return IsDiskBasedEngine;
           }
 
           private:
 
-          /* TODO */
           template <size_t PhysicalCacheSize>
           class TCacheGetter {
             NO_CONSTRUCTION(TCacheGetter);
             public:
 
-            /* TODO */
             static Util::TCache<PhysicalCacheSize> *Get(TEngine *) {
               //static_assert(false, "TCacheGetter not specialized on the cache size you are trying to get");
             }
 
           };  // TCacheGetter
 
-          /* TODO */
           TVolumeManager *VolMan;
 
-          /* TODO */
           TPageCache *PageCache;
 
-          /* TODO */
           TBlockCache *BlockCache;
 
-          /* TODO */
           TFileServiceBase *FileService;
 
-          /* TODO */
           bool IsDiskBasedEngine;
 
         };  // TEngine

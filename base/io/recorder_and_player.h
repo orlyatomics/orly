@@ -93,7 +93,6 @@ namespace Io {
        If this is >= the size of the collection, then we have run out of chunks. */
     size_t Idx;
 
-    /* TODO */
     std::shared_ptr<std::function<std::shared_ptr<const TChunk> ()>> NextChunkCb;
 
   };  // TPlayer

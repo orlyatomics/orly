@@ -24,7 +24,6 @@ using namespace Orly;
 using namespace Orly::Atom;
 using namespace Orly::Sabot;
 
-/* TODO */
 class TOrderTypesVisitor final
     : public TTypeDoubleVisitor {
   public:
@@ -796,27 +795,20 @@ class TOrderTypesVisitor final
 
   private:
 
-  /* TODO */
   inline void OnUnary(const Type::TUnary &lhs, const Type::TUnary &rhs) const;
 
-  /* TODO */
   inline void OnBinary(const Type::TBinary &lhs, const Type::TBinary &rhs) const;
 
-  /* TODO */
   void OnWithFree(const Type::TAny &lhs, const Type::TFree &rhs) const;
 
-  /* TODO */
   void OnWithOpt(const Type::TAny &lhs, const Type::TOpt &rhs) const;
 
-  /* TODO */
   static void Reverse(Atom::TComparison &comp);
 
-  /* TODO */
   Atom::TComparison &Comparison;
 
 };  // TOrderTypesVisitor
 
-/* TODO */
 /* See the matching note in compare_types.cc: equal de Bruijn depth => equal
    recursive leaves; a leaf orders before any non-leaf, consistently. */
 void TOrderTypesVisitor::OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const {

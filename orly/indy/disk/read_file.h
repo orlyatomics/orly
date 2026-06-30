@@ -45,33 +45,25 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TFileKey {
         public:
 
-        /* TODO */
         TFileKey(const Base::TUuid &file_id, size_t gen_id) : FileId(file_id), GenId(gen_id) {}
 
-        /* TODO */
         TFileKey(Base::TUuid &&file_id, size_t gen_id) : FileId(std::move(file_id)), GenId(gen_id) {}
 
-        /* TODO */
         Base::TUuid FileId;
 
-        /* TODO */
         size_t GenId;
 
-        /* TODO */
         inline size_t GetHash() const {
           return GenId ^ FileId.GetHash();
         }
 
-        /* TODO */
         inline bool operator==(const TFileKey &that) const {
           return FileId == that.FileId && GenId == that.GenId;
         }
 
-        /* TODO */
         inline bool operator!=(const TFileKey &that) const {
           return FileId != that.FileId || GenId != that.GenId;
         }
@@ -104,35 +96,27 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TArenaInFile
           : public TInFile {
         NO_COPY(TArenaInFile);
         public:
 
-        /* TODO */
         virtual size_t GetByteOffsetOfArena() const = 0;
 
-        /* TODO */
         virtual size_t GetNumArenaNotes() const = 0;
 
-        /* TODO */
         virtual Atom::TCore::TOffset GetNumBytesOfArena() const = 0;
 
         protected:
 
-        /* TODO */
         TArenaInFile() {}
 
-        /* TODO */
         virtual ~TArenaInFile() {}
 
       };
 
-      /* TODO */
       static constexpr size_t DiskArenaMaxCacheSize = 128;
 
-      /* TODO */
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t StreamLocalCacheSize, bool ScanAheadAllowed>
       class TDiskArena
           : public Atom::TCore::TArena {
@@ -141,17 +125,14 @@ namespace Orly {
 
         public:
 
-        /* TODO */
         static constexpr size_t DataChunkSize = Util::GetLogicalDataChunkSize<BufKind>();
         static constexpr size_t PhysicalDataChunkSize = Util::GetPhysicalDataChunkSize<BufKind>();
         static constexpr size_t PhysicalCachePageSize = PhysicalBlockSize / (BlockSize / CachePageSize);
 
-        /* TODO */
         class TCursor {
           NO_COPY(TCursor);
           public:
 
-          /* TODO */
           TCursor(TDiskArena *context, Atom::TCore::TOffset start_offset, Atom::TCore::TOffset end_offset)
               : Arena(context),
                 Pin(nullptr),
@@ -175,7 +156,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           ~TCursor() {
             if (Pin) {
               Pin->TPin::~TPin();
@@ -183,44 +163,37 @@ namespace Orly {
             free(PinAlloc);
           }
 
-          /* TODO */
           operator bool() const {
             return Pin != nullptr;
           }
 
-          /* TODO */
           const Atom::TCore::TNote *operator*() const {
             assert(Pin);
             assert(Pin->GetNote());
             return Pin->GetNote();
           }
 
-          /* TODO */
           const Atom::TCore::TNote *operator->() const {
             assert(Pin);
             assert(Pin->GetNote());
             return Pin->GetNote();
           }
 
-          /* TODO */
           TCursor &operator++() {
             Refresh();
             return *this;
           }
 
-          /* TODO */
           Atom::TCore::TOffset GetOffset() const {
             return Offset;
           }
 
-          /* TODO */
           inline TDiskArena *GetArena() const {
             return Arena;
           }
 
           private:
 
-          /* TODO */
           void Refresh() {
             if (Pin) {
               Offset += sizeof(Atom::TCore::TNote) + Pin->GetNote()->GetRawSize();
@@ -233,24 +206,18 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           TDiskArena *Arena;
 
-          /* TODO */
           TDiskArena::TFinalPin *Pin;
 
-          /* TODO */
           TDiskArena::TFinalPin *PinAlloc;
 
-          /* TODO */
           Atom::TCore::TOffset Offset;
 
-          /* TODO */
           Atom::TCore::TOffset EndOffset;
 
         };  // TCursor
 
-        /* TODO */
         TDiskArena(TArenaInFile *file, Util::TCache<PhysicalCachePageSize> *cache, DiskPriority priority)
             : TArena(true),
               File(file),
@@ -262,76 +229,58 @@ namespace Orly {
           assert(file);
         }
 
-        /* TODO */
         virtual ~TDiskArena() {
         }
 
-        /* TODO */
         inline virtual void ReleaseNote(const Atom::TCore::TNote *note, Atom::TCore::TOffset offset, void *data1, void *data2, void *data3);
 
-        /* TODO */
         inline virtual const Atom::TCore::TNote *TryAcquireNote(Atom::TCore::TOffset offset, void *&data1, void *&data2, void *&data3);
 
-        /* TODO */
         inline virtual const Atom::TCore::TNote *TryAcquireNote(Atom::TCore::TOffset offset, size_t known_size, void *&data1, void *&data2, void *&data3);
 
-        /* TODO */
         Atom::TCore::TOffset GetNumBytesOfArena() const {
           return File->GetNumBytesOfArena();
         }
 
         private:
 
-        /* TODO */
         TArenaInFile *File;
 
-        /* TODO */
         DiskPriority Priority;
 
-        /* TODO */
         Util::TCache<PhysicalCachePageSize> *Cache;
 
-        /* TODO */
         TCompletionTrigger SyncTrigger;
 
-        /* TODO */
         size_t StartOffset;
 
-        /* TODO */
         TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, StreamLocalCacheSize, ScanAheadAllowed> Stream;
 
-        /* TODO */
         size_t NumNotes;
 
       };  // TDiskArena
 
-      /* TODO */
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, bool ScanAheadAllowed = true>
       class TReadFile
           : public TArenaInFile {
         NO_COPY(TReadFile);
         public:
 
-        /* TODO */
         static constexpr size_t PagesInBlock = BlockSize / CachePageSize;
         static constexpr size_t PhysicalCachePageSize = PhysicalBlockSize / (BlockSize / CachePageSize);
 
-        /* TODO */
         inline virtual size_t GetFileLength() const {
           return FileLength;
         }
 
-        /* TODO */
         inline virtual size_t GetStartingBlock() const {
           return StartingBlockId;
         }
 
-        /* TODO */
         virtual void ReadMeta(size_t , size_t &) const {
           throw std::logic_error("Deprecated");
         }
 
-        /* TODO */
         inline virtual size_t FindPageIdOfByte(size_t offset) const {
           assert(offset < FileLength);
           size_t num_blocks_into_file = offset / BlockSize;
@@ -345,12 +294,10 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         static __thread size_t HashHitCount;
 
         protected:
 
-        /* TODO */
         TReadFile(const Base::TCodeLocation &code_location,
                   uint8_t util_src,
                   Util::TCache<PhysicalCachePageSize> *cache,
@@ -371,7 +318,6 @@ namespace Orly {
           Init();
         }
 
-        /* TODO */
         TReadFile(const Base::TCodeLocation &code_location,
                   uint8_t util_src,
                   Util::TEngine *engine,
@@ -395,7 +341,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         void Init() {
           assert(StartingBlockOffset * BlockSize < FileLength);
           TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, MaxMetaCacheSize> in_stream(CodeLocation, UtilSrc, Priority, this, Cache, StartingBlockOffset * BlockSize);
@@ -459,72 +404,58 @@ namespace Orly {
 
         protected:
 
-        /* TODO */
         virtual ~TReadFile() {}
 
-        /* TODO */
         inline size_t GetNumBlocks() const {
           return NumBlocks;
         }
 
-        /* TODO */
         inline size_t GetStartingBlockOffset() const {
           return StartingBlockOffset;
         }
 
-        /* TODO */
         inline size_t GetNumMetaBlocks() const {
           return NumMetaBlocks;
         }
 
-        /* TODO */
         inline size_t GetNumSequentialBlockPairings() const {
           return NumSequentialBlockPairings;
         }
 
-        /* TODO */
         inline size_t GetByteOffsetOfArena() const {
           return ByteOffsetOfMainArena;
         }
 
-        /* TODO */
         inline size_t GetNumArenaNotes() const {
           return NumMainArenaNotes;
         }
 
-        /* TODO */
         inline size_t GetNumBytesOfArena() const {
           return NumMainArenaBytes;
         }
 
-        /* TODO */
         inline const std::vector<size_t> &GetTypeBoundaryOffsetVec() const {
           return MainArenaTypeBoundaryOffsetVec;
         }
 
-        /* TODO */
         inline size_t GetNumUpdates() const {
           return NumUpdates;
         }
 
-        /* TODO */
         inline size_t GetGenId() const {
           return GenId;
         }
 
-        /* TODO */
         inline size_t GetByteOffsetOfUpdateIndex() const {
           return ByteOffsetOfUpdateIndex;
         }
 
-        /* TODO */
         void ForEachIndex(const std::function<void (const Base::TUuid &, size_t)> &cb) const {
           for (const auto &idx : IndexOffsetById) {
             cb(idx.first, idx.second);
           }
         }
 
-        /* TODO */
         bool FindInHash(const Base::TUuid &index_id, const TKey &key, size_t &out_offset) const {
           auto ret = IndexById.find(index_id);
           if (ret != IndexById.end()) {
@@ -535,16 +466,13 @@ namespace Orly {
 
         public:
 
-        /* TODO */
         class TIndexFile
             : public TArenaInFile {
           NO_COPY(TIndexFile);
           public:
 
-          /* TODO */
           using TArena = TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, DiskArenaMaxCacheSize, ScanAheadAllowed>;
 
-          /* TODO */
           using TInStream = TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, 0UL /* local cache size */>;
 
           /* On-disk current-key entry. Read/written verbatim via
@@ -555,7 +483,6 @@ namespace Orly {
           class TKeyItem {
             public:
 
-            /* TODO */
             TSequenceNumber SeqNum;
             Atom::TCore Key;
             Atom::TCore Value;
@@ -572,7 +499,6 @@ namespace Orly {
           class THistoryKeyItem {
             public:
 
-            /* TODO */
             TSequenceNumber SeqNum;
             Atom::TCore Key;
             Atom::TCore Value;
@@ -581,12 +507,10 @@ namespace Orly {
 
           };  // THistoryKeyItem
 
-          /* TODO */
           class TKeyCursor {
             NO_COPY(TKeyCursor);
             public:
 
-            /* TODO */
             TKeyCursor(TIndexFile *idx_file, size_t start_num = 0UL)
                 : Cur(start_num),
                   Limit(idx_file->NumCurKeys),
@@ -620,27 +544,21 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             TKeyItem Item;
             static_assert(sizeof(TKeyItem) == TData::KeyEntrySize, "TKeyItem is not the same size as a current key entry in a data file");
 
-            /* TODO */
             size_t Cur;
 
-            /* TODO */
             size_t Limit;
 
-            /* TODO */
             TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, 0UL /* local cache size */> InStream;
 
           };  // TKeyCursor
 
-          /* TODO */
           class THistoryKeyCursor {
             NO_COPY(THistoryKeyCursor);
             public:
 
-            /* TODO */
             THistoryKeyCursor(TIndexFile *idx_file, size_t start_num = 0UL)
                 : Cur(start_num),
                   Limit(idx_file->NumHistKeys),
@@ -679,17 +597,13 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             THistoryKeyItem Item;
             static_assert(sizeof(THistoryKeyItem) == TData::KeyHistorySize, "THistoryKeyItem is not the same size as a history key entry in a data file");
 
-            /* TODO */
             size_t Cur;
 
-            /* TODO */
             size_t Limit;
 
-            /* TODO */
             TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, 0UL /* local cache size */> InStream;
 
           };  // THistoryKeyCursor
@@ -697,7 +611,6 @@ namespace Orly {
           TIndexFile(const TReadFile *file, const Base::TUuid &index_id, DiskPriority priority)
               : TIndexFile(file, index_id, file->IndexOffsetById.find(index_id)->second , priority) {}
 
-          /* TODO */
           TIndexFile(const TReadFile *file, const Base::TUuid &index_id, size_t index_meta_offset, DiskPriority /*priority*/)
               : File(file),
                 IndexId(index_id) {
@@ -725,7 +638,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           bool FindInHash(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
             assert(key.GetCore().IsTuple());
             const Atom::TCore &core = key.GetCore();
@@ -805,7 +717,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           bool BinaryLowerBoundOnKey(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
             assert(NumCurKeys > 0);
             size_t first = 0U;
@@ -831,7 +742,6 @@ namespace Orly {
             return first < NumCurKeys;
           }
 
-          /* TODO */
           Indy::TKey GetKey(size_t n, TInStream &in_stream, TArena *file_arena) const {
             assert(n < NumCurKeys);
             Atom::TCore core;
@@ -840,94 +750,76 @@ namespace Orly {
             return Indy::TKey(core, file_arena);
           }
 
-          /* TODO */
           inline const Base::TUuid &GetIndexId() const {
             return IndexId;
           }
 
-          /* TODO */
           inline virtual Atom::TCore::TOffset GetNumBytesOfArena() const override {
             return NumArenaBytes;
           }
 
-          /* TODO */
           inline const std::vector<size_t> &GetTypeBoundaryOffsetVec() const {
             return ArenaTypeBoundaryByOffset;
           }
 
-          /* TODO */
           inline size_t GetNumCurKeys() const {
             return NumCurKeys;
           }
 
-          /* TODO */
           inline size_t GetNumHistKeys() const {
             return NumHistKeys;
           }
 
-          /* TODO */
           inline size_t GetGenId() const {
             return File->GenId;
           }
 
-          /* TODO */
           inline size_t GetByteOffsetOfKeyIndex() const {
             return ByteOffsetOfKeyIndex;
           }
 
-          /* TODO */
           inline size_t GetByteOffsetOfHistoryIndex() const {
             return ByteOffsetOfKeyIndex + (NumCurKeys * TData::KeyEntrySize);
           }
 
-          /* TODO */
           inline const std::vector<std::pair<size_t, size_t>> &GetNumHashFieldsByOffset() const {
             return NumHashFieldsByOffset;
           }
 
           private:
 
-          /* TODO */
           inline virtual size_t GetByteOffsetOfArena() const override {
             return ArenaByteOffset;
           }
 
-          /* TODO */
           inline virtual size_t GetNumArenaNotes() const override {
             return NumArenaNotes;
           }
 
-          /* TODO */
           inline virtual size_t GetFileLength() const override {
             assert(File);
             return File->GetFileLength();
           }
 
-          /* TODO */
           inline virtual size_t GetStartingBlock() const override {
             assert(File);
             return File->GetStartingBlock();
           }
 
-          /* TODO */
           inline virtual void ReadMeta(size_t offset, size_t &out) const override {
             assert(File);
             return File->ReadMeta(offset, out);
           }
 
-          /* TODO */
           inline virtual size_t FindPageIdOfByte(size_t offset) const override {
             assert(File);
             return File->FindPageIdOfByte(offset);
           }
 
-          /* TODO */
           const TReadFile *File;
 
-          /* TODO */
           Base::TUuid IndexId;
 
-          /* TODO */
           size_t ArenaByteOffset;
           size_t NumArenaNotes;
           size_t NumArenaBytes;
@@ -937,35 +829,27 @@ namespace Orly {
           size_t ByteOffsetOfKeyIndex;
           size_t NumHashTables;
 
-          /* TODO */
           std::vector<std::pair<size_t, size_t>> NumHashFieldsByOffset;
 
-          /* TODO */
           std::vector<size_t> ArenaTypeBoundaryByOffset;
 
         };  // TIndexFile
 
-        /* TODO */
         inline const std::unordered_map<Base::TUuid, std::unique_ptr<TIndexFile>> &GetIndexByIdMap() {
           return IndexById;
         }
 
         protected:
 
-        /* TODO */
         //Util::TPageCache *PageCache;
         Util::TCache<PhysicalCachePageSize> *Cache;
 
-        /* TODO */
         size_t StartingBlockId;
 
-        /* TODO */
         size_t StartingBlockOffset;
 
-        /* TODO */
         size_t FileLength;
 
-        /* TODO */
         size_t NumBlocks;
         size_t NumMetaBlocks;
         size_t NumSequentialBlockPairings;
@@ -977,49 +861,37 @@ namespace Orly {
         size_t ByteOffsetOfMainArena;
         size_t ByteOffsetOfUpdateIndex;
 
-        /* TODO */
         static constexpr size_t MaxMetaCacheSize = 64;
 
-        /* TODO */
         std::map<size_t, size_t> OffsetBlockByBlockId;
 
-        /* TODO */
         std::unordered_map<Base::TUuid, size_t> IndexOffsetById;
 
-        /* TODO */
         std::unordered_map<Base::TUuid, std::unique_ptr<TIndexFile>> IndexById;
 
-        /* TODO */
         std::map<size_t, TIndexFile *> IndexByOffset;
 
-        /* TODO */
         std::vector<size_t> MainArenaTypeBoundaryOffsetVec;
 
-        /* TODO */
         DiskPriority Priority;
 
-        /* TODO */
         size_t GenId;
 
-        /* TODO */
         const Base::TCodeLocation CodeLocation;
         const uint8_t UtilSrc;
 
       };  // TReadFile
 
-      /* TODO */
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, bool ScanAheadAllowed = true>
       class TLocalReadFileCache {
         NO_COPY(TLocalReadFileCache);
         public:
 
-        /* TODO */
         class TLocalReadFile
             : public TReadFile<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, ScanAheadAllowed> {
           NO_COPY(TLocalReadFile);
           public:
 
-          /* TODO */
           TLocalReadFile(Util::TEngine *engine,
                          const Base::TUuid &file_id,
                          size_t gen_id)
@@ -1030,16 +902,13 @@ namespace Orly {
                                                                                                   RealTime,
                                                                                                   gen_id) {}
 
-          /* TODO */
           virtual ~TLocalReadFile() {}
 
 
         };  // TLocalReadFile
 
-        /* TODO */
         TLocalReadFileCache() : LoaderCollection(this) {}
 
-        /* TODO */
         TLocalReadFile *Get(Util::TEngine *engine,
                             const Base::TUuid &file_id,
                             size_t gen_id) {
@@ -1050,26 +919,21 @@ namespace Orly {
           return loader->GetFile();
         }
 
-        /* TODO */
         void Clear(const Base::TUuid &file_id, size_t gen_id) {
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TFileKey(file_id, gen_id));
           delete loader;
         }
 
-        /* TODO */
         static __thread TLocalReadFileCache *Cache;
 
         private:
 
-        /* TODO */
         class TLoaderObj {
           NO_COPY(TLoaderObj);
           public:
 
-          /* TODO */
           typedef InvCon::UnorderedMultimap::TMembership<TLoaderObj, TLocalReadFileCache, TFileKey> TCacheMembership;
 
-          /* TODO */
           TLoaderObj(TLocalReadFileCache *cache, Util::TEngine *engine, const Base::TUuid &file_id, size_t gen_id) : CacheMembership(this, TFileKey(file_id, gen_id), &cache->LoaderCollection) {
             File = std::make_unique<TLocalReadFile>(engine, file_id, gen_id);
             /* if frames have joined the waiting queue, schedule them */
@@ -1079,7 +943,6 @@ namespace Orly {
             FrameWaitingVec.clear();
           }
 
-          /* TODO */
           TLocalReadFile *GetFile() {
             if (!File) {
               FrameWaitingVec.emplace_back(Fiber::TFrame::LocalFrame);
@@ -1090,21 +953,16 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           std::unique_ptr<TLocalReadFile> File;
 
-          /* TODO */
           std::vector<Fiber::TFrame *> FrameWaitingVec;
 
-          /* TODO */
           typename TCacheMembership::TImpl CacheMembership;
 
         };  // TLoaderObj
 
-        /* TODO */
         typedef InvCon::UnorderedMultimap::TCollection<TLocalReadFileCache, TLoaderObj, TFileKey> TLoaderCollection;
 
-        /* TODO */
         mutable typename TLoaderCollection::TImpl LoaderCollection;
 
       };  // TLocalReadFileCache

@@ -28,40 +28,30 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExpr;
     class TExprFactory;
 
-    /* TODO */
     class TNewStmt
         : public TStmt {
       NO_COPY(TNewStmt);
       public:
 
-      /* TODO */
       TNewStmt(const TExprFactory *expr_factory, const Package::Syntax::TNewStmt *new_stmt);
 
-      /* TODO */
       virtual ~TNewStmt();
 
-      /* TODO */
       virtual Symbol::Stmt::TStmt::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb) const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TNewStmt *NewStmt;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
     };  // TNewStmt

@@ -31,7 +31,6 @@ bool TUuid::IsValidUuid(const char *s) {
 }
 
 TUuid::TUuid(TAlgo that) {
-  /* TODO */
   static std::mt19937_64 TwisterEngine(std::chrono::system_clock::now().time_since_epoch().count());
   static Base::TSpinLock TwisterLock;
 
