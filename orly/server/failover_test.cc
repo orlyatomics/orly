@@ -24,7 +24,7 @@
 #include <orly/balancer/failover_test_balancer.h>
 #include <orly/client/client.h>
 #include <orly/compiler.h>
-#include <orly/spa/honcho.h>
+#include <orly/type/type_czar.h>
 
 #include <base/test/kit.h>
 
@@ -125,7 +125,7 @@ static const char *sample_package = "package #1;"
                                     "};";
 
 FIXTURE(SmallTypical) {
-  Orly::Spa::THoncho Honcho;
+  Orly::Type::TTypeCzar TypeCzar;
   /* make the path to the server binary */
   stringstream out_path;
   out_path << SRC_ROOT;
@@ -309,7 +309,7 @@ FIXTURE(SmallTypical) {
 #if 0
 FIXTURE(MediumTypical) {
   const int64_t num_iter = 50000L;
-  Orly::Spa::THoncho Honcho;
+  Orly::Type::TTypeCzar TypeCzar;
   /* make the path to the server binary */
   stringstream out_path;
   out_path << SRC_ROOT;
@@ -514,7 +514,7 @@ FIXTURE(ResyncTypical) {
   const int64_t num_iter = 500L;
   const size_t max_outstanding = 5000UL;
   #endif
-  Orly::Spa::THoncho Honcho;
+  Orly::Type::TTypeCzar TypeCzar;
   /* make the path to the server binary */
   stringstream out_path;
   //#if 0

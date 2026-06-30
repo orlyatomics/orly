@@ -6,6 +6,9 @@ The project does not currently cut numbered releases. Entries reference the orig
 
 ## [Unreleased]
 
+### Removed
+- **The SPA flux_capacitor engine** (#262 P5, ~10K LOC). With `orlyc` running `test{}` blocks on indy (P4 above), nothing consumed the 2014-era SPA engine any longer, so it's deleted: the `orly/spa/` tree (`flux_capacitor/`, the `TService`/`TSpaContext`, honcho, checkpoints, the `spa` binary) and the SPA-only consumers (`orly/manual.cc`, `orly/exit.test.cc`, the SPA-coupled `*.test.broken.cc`). The `--test-engine` flag is gone (indy is the only engine). Three small core untanglings made the deletion clean: `session.cc` uses `Package::TArgMap` instead of `Spa::TArgs::TOrlyArg`; `context_base.h` drops a stale `flux_capacitor/kv.h` include (and pulls `var/sabot_to_var.h` directly); `package/rt.h` drops the unused `TSpaContext` + its `flux_capacitor/api.h` include. Orly now has **one** storage engine end to end — `orlyc` and `orlyi` share indy — and the flux_capacitor POV/Tetris concurrency model (and its footgun class, e.g. #259) is gone. Docs updated (`README.md`, `docs/architecture.md`).
+
 ### Changed
 - **`orlyc` runs `test{}` blocks on indy by default** (#262 P4). The `--test-engine` default flips from `spa` to `indy`, so a normal `orlyc` invocation now exercises the package's tests on the real server engine. `--test-engine=spa` stays as an escape hatch ahead of the SPA engine's removal (#262 P5). Justified by exact `lang_test` parity (156 passed / 2 xfail on both engines) and a negligible per-invocation cost (~0.15 s server bring-up vs the ~15 s gcc compile every build already pays).
 

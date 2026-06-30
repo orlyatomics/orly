@@ -23,7 +23,7 @@
 
 #include <orly/client/client.h>
 #include <orly/compiler.h>
-#include <orly/spa/honcho.h>
+#include <orly/type/type_czar.h>
 
 #include <base/test/kit.h>
 
@@ -119,7 +119,7 @@ static const char *sample_package = "package #1;"
 
 #if 0
 FIXTURE(SmallTypical) {
-  Orly::Spa::THoncho Honcho;
+  Orly::Type::TTypeCzar TypeCzar;
   /* make the path to the server binary */
   stringstream out_path;
   out_path << SRC_ROOT;
@@ -285,7 +285,7 @@ FIXTURE(SmallTypical) {
 FIXTURE(MediumTypical) {
   const int64_t num_iter = 5000L;
   const size_t max_outstanding = 500L;
-  Orly::Spa::THoncho Honcho;
+  Orly::Type::TTypeCzar TypeCzar;
   /* make the path to the server binary */
   stringstream out_path;
   out_path << SRC_ROOT;

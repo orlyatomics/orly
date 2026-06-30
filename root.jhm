@@ -2,7 +2,6 @@
   "targets": [
       "orly/orlyc",
       "orly/server/orlyi",
-      "orly/spa/spa",
       "orly/client/orly_client",
       "orly/indy/disk/util/orly_dm",
       "jhm/jhm",

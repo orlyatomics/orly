@@ -25,7 +25,6 @@
 #include <orly/indy/context.h>
 #include <orly/notification/all.h>
 #include <orly/server/meta_record.h>
-#include <orly/spa/orly_args.h>
 #include <orly/var/mutation.h>
 #include <base/util/time.h>
 
@@ -139,7 +138,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   TSuprena my_arena;
   try {
     // Convert the args to vars.
-    Spa::TArgs::TOrlyArg prog_args;
+    Package::TArgMap prog_args;
     void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize() * 2);
     void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
     auto arena = closure.GetArena().get();
@@ -349,7 +348,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     results.reserve(closures.size());
     call_timer.Start();
     for (const auto &closure: closures) {
-      Spa::TArgs::TOrlyArg prog_args;
+      Package::TArgMap prog_args;
       auto arena = closure.GetArena().get();
       for (const auto &item: closure.GetCoreByName()) {
         prog_args.insert(make_pair(item.first, Indy::TKey(item.second, arena)));

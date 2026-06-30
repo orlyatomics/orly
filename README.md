@@ -37,11 +37,11 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 ## Features
 
-> The concurrency model behind the first two features — POVs, the Tetris merge, the Flux Capacitor's causal ordering, and commutative field-call folding — is documented in depth in [`docs/architecture.md`](docs/architecture.md).
+> The concurrency model behind the first two features — POVs, the Tetris merge, sequence-number ordering, and commutative field-call folding — is documented in depth in [`docs/architecture.md`](docs/architecture.md).
 
 - **Points of View.** Optimistic concurrency without locking. Each client makes changes in its own private POV — a small sandbox — which eventually propagates into shared POVs and then into the global POV (the whole database). Field calls (`x += 1`) are preferred over field changes (`x = x + 1`) because they merge commutatively.
 
-- **Causal ordering (the _Flux Capacitor_).** Merge-conflict resolution defines its "time line" by causality rather than clock time. Internal mechanism; the original 2014 pitch implied a built-in user-facing "time travel" query operator which the engine never grew — but the *capability* falls out in user-space by encoding a version axis in the key and folding on read, with no engine changes. See the [bitcoin](examples/bitcoin-time-travel/), [GRC-20](examples/grc20-pov/), and [prediction-market](examples/prediction-market/) examples.
+- **Causal ordering.** Merge-conflict resolution defines its "time line" by update causality (per-repo sequence order) rather than clock time. (The 2014 pitch called this the _Flux Capacitor_; that standalone subsystem was retired in [#262](https://github.com/orlyatomics/orly/issues/262) and the ordering now lives in the indy engine.) Internal mechanism; the original pitch also implied a built-in user-facing "time travel" query operator which the engine never grew — but the *capability* falls out in user-space by encoding a version axis in the key and folding on read, with no engine changes. See the [bitcoin](examples/bitcoin-time-travel/), [GRC-20](examples/grc20-pov/), and [prediction-market](examples/prediction-market/) examples.
 
 - **Orlyscript.** A high-level, compiled, type-safe, functional query and programming language. Sources are compiled to `.so` packages that `orlyi` loads at runtime. Supports inline tests, native compilation, and most of the niceties of a real language rather than just a query DSL.
 
@@ -69,13 +69,12 @@ make test        # runs 188 test binaries
 make release     # LTO-built production binaries
 ```
 
-The four production binaries land in `../out_orly/debug/` (or `../out_orly/release/`):
+The three production binaries land in `../out_orly/debug/` (or `../out_orly/release/`):
 
 | Binary | Purpose |
 | --- | --- |
 | `orly/orlyc` | Orlyscript compiler |
 | `orly/server/orlyi` | Database server |
-| `orly/spa/spa` | Single-process app server |
 | `orly/client/orly_client` | Interactive client shell |
 
 Exercise the Orlyscript test suite against compiled `.orly` programs:

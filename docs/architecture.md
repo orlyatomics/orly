@@ -2,9 +2,23 @@
 
 This document describes how Orly achieves **lock-free, causally-ordered,
 commutative-merge** concurrency — the core of the project's pitch. It is the
-design map for the subsystems under `orly/spa/flux_capacitor/`,
-`orly/server/`, and `orly/indy/`. (It complements `docs/walkthrough.md`, which
-is the operational compile/load/invoke pipeline.)
+design map for the subsystems under `orly/server/` and `orly/indy/`. (It
+complements `docs/walkthrough.md`, which is the operational compile/load/invoke
+pipeline.)
+
+> **Update ([#262](https://github.com/orlyatomics/orly/issues/262)):** Orly used
+> to ship a second, standalone implementation of this model — the 2014-era SPA
+> *Flux Capacitor* (`orly/spa/flux_capacitor/`) — which survived only as the
+> engine `orlyc` used to run a package's compile-time `test{}` blocks. It has
+> been **removed**; `orlyc` now runs tests on the same **indy** engine `orlyi`
+> serves. The POV / Tetris / commutative-fold model below is real and lives in
+> indy (`orly/server/{pov,tetris_manager,repo_tetris_manager}.*`, `orly/indy/`).
+> The key implementation difference from the removed Flux Capacitor: indy orders
+> updates by **per-repo sequence number** (§4) rather than a separate in-memory
+> causal DAG. Passages below still phrased around the Flux Capacitor's
+> causal-graph types (`TLink`, `LocalCauseCount`, the in-memory POV graph)
+> describe that retired implementation and are pending a rewrite against indy's
+> sequence-number model; the code-map (§7) points at the live indy files.
 
 The concurrency model is implemented in code, not in this doc — file/type names
 are given so you can read the real thing. Line numbers are deliberately omitted
@@ -56,9 +70,8 @@ whole game:
 
 ## 2. Points of View
 
-**Code:** `orly/spa/flux_capacitor/flux_capacitor.h` (the in-memory POV graph),
-`orly/server/pov.{h,cc}` (the durable POV object), `orly/spa/flux_capacitor/api.h`
-(handles).
+**Code:** `orly/server/pov.{h,cc}` (the durable POV object); each POV owns an
+indy storage repo (`orly/indy/repo.*`).
 
 A POV is a node in a tree:
 
@@ -103,10 +116,9 @@ loses a merge conflict (see §3).
 
 ## 3. The Tetris merge
 
-**Code:** `orly/spa/flux_capacitor/tetris_piece.{h,cc}` (the algorithm),
-`orly/server/tetris_manager.*` and `orly/server/repo_tetris_manager.*` (the
-production player over real repos). States are exercised in
-`orly/spa/flux_capacitor/tetris_piece.test.cc`.
+**Code:** `orly/server/tetris_manager.*` and `orly/server/repo_tetris_manager.*`
+(the merge over real repos). States are exercised in
+`orly/server/tetris_manager.test.cc`.
 
 The metaphor: each promotable update is a **piece** trying to "land" in the
 parent POV. The merge is a repeated game (`TTetrisPiece::PlayTetris`), each
@@ -140,8 +152,10 @@ plus the snapshot-based assertion. This is the mechanism for **field changes**
 
 ## 4. Causal ordering (the Flux Capacitor)
 
-**Code:** `orly/spa/flux_capacitor/flux_capacitor.h` (`TUpdate`, `TEvent`,
-`TLink`), `orly/indy/sequence_number.h`, `orly/indy/repo.h`.
+**Code:** `orly/indy/sequence_number.h`, `orly/indy/repo.h`,
+`orly/indy/transaction_base.*`. (The retired Flux Capacitor implemented this as
+an in-memory causal DAG of `TUpdate`/`TEvent`/`TLink`; indy instead orders by
+per-repo sequence number — see the note below.)
 
 The Flux Capacitor is not one class — it is the causal-graph machinery that
 orders promotion by **causality, not wall-clock time**. The pieces:
@@ -252,12 +266,9 @@ retries/fails — the classic lost-update serialization that field calls avoid.
 
 | Concern | Where |
 |---|---|
-| POV graph (private/shared/global, promotion) | `orly/spa/flux_capacitor/flux_capacitor.{h,cc}` |
-| POV handles / API | `orly/spa/flux_capacitor/api.h` |
-| Durable POV object (audience, policy, parents) | `orly/server/pov.{h,cc}` |
-| Tetris algorithm | `orly/spa/flux_capacitor/tetris_piece.{h,cc}` |
-| Tetris production player (over repos) | `orly/server/{tetris_manager,repo_tetris_manager}.*` |
-| Causal events / links / sequence numbers | `orly/spa/flux_capacitor/flux_capacitor.h`, `orly/indy/sequence_number.h` |
+| POV graph (private/shared/global), durable POV object (audience, policy, parents) | `orly/server/pov.{h,cc}` |
+| Promotion + Tetris merge (over real repos) | `orly/server/{tetris_manager,repo_tetris_manager}.*` |
+| Per-repo sequence numbers (ordering) | `orly/indy/sequence_number.h`, `orly/indy/repo.h` |
 | Storage repos / memory layer / mapping | `orly/indy/repo.*`, `orly/indy/manager*.*` |
 | Updates & per-entry mutator | `orly/indy/update.{h,cc}` |
 | Commutative mutations (`Augment`) | `orly/var/mutation.{h,cc}`, `orly/rt/mutate.h` |
@@ -272,7 +283,7 @@ retries/fails — the classic lost-update serialization that field calls avoid.
 - Commutative compose — `orly/var/mutation.test.cc` (`Augment` over Add/Mult/…).
 - Cross-POV merge semantics — `orly/indy/context_xrepo.test.cc` (a `+=1` in a
   child POV and a `+=1` in global read back as `2`), `orly/indy/context_fold.test.cc`.
-- Tetris promotion/conflict states — `orly/spa/flux_capacitor/tetris_piece.test.cc`.
+- Tetris promotion/conflict states — `orly/server/tetris_manager.test.cc`.
 - Compaction fold — `orly/indy/disk/fold_data_file.test.cc`.
 - **Concurrent integration** — `examples/wikipedia-pageviews/` runs 8 concurrent
   WebSocket writers against hot keys and asserts zero lost updates; CI runs it as
@@ -282,21 +293,13 @@ retries/fails — the classic lost-update serialization that field calls avoid.
 - No memory-level data-race validation — CI runs **no ThreadSanitizer/ASan/UBSan**
   (issue #177). Functional merge correctness is tested; data-race freedom of the
   lock-free paths is not.
-- The merge/Tetris core has **quarantined tests** (`*.test.broken.cc` for
-  `orly/indy/context`, `orly/server/tetris_manager`, `orly/server/repo_tetris_manager`)
-  — issue #178.
 - Several persistence/load paths are unimplemented stubs (issue #173 — see the
   persistence boundary below); cross-package imports were never re-ported (issue #171).
 
 ### Persistence boundary (issue #173)
 
-Orly **does** persist and restart — two mechanisms exist:
+Orly **does** persist and restart, via `orlyi` on a real disk engine:
 
-- **`spa` checkpoints (logical replay).** The single-process app server saves the global
-  state as a set of key→change statements plus installed packages (`SaveCheckpoint`), and on
-  startup replays them into a fresh global POV (`LoadCheckpoint` → `NewUpdateAndWait(&GlobalPov, …)`,
-  `orly/spa/service.cc`), driven by the `--checkpoint` flag (`orly/spa/spa.cc`). This is a
-  working restart-from-disk path (modulo the non-atomic load called out in issue #175).
 - **`orlyi` on a real disk engine.** The indy server runs on `TDiskEngine` (`orly/server/server.cc`)
   with fsync, an append log, and named instances; memory layers flush to disk and the merge /
   compaction passes run, so a live repo's reads union its in-memory and on-disk layers.
@@ -312,5 +315,5 @@ repo reopen / raw-image reload. That path was never ported, and now fails with a
   and the `Delete`/`Save`/`TryLoad` overrides (`orly/indy/manager.h`), gated off because
   `TObj::OnDisk` is never set and the loader is `#if 0`'d.
 
-So: durability/restart at the **server** layer works via the spa checkpoint; what is missing is
+So: durability/restart at the **server** layer works via the indy disk engine; what is missing is
 the indy-layer raw repo/object reload-from-image. Wiring that up is a separate effort.
