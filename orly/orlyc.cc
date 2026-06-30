@@ -28,14 +28,12 @@
 #include <orly/error.h>
 #include <orly/server/server.h>
 #include <orly/server/session.h>
-#include <orly/spa/honcho.h>
-#include <orly/spa/service.h>
 #include <orly/type.h>
+#include <orly/type/type_czar.h>
 #include <base/util/path.h>
 
 using namespace std;
 using namespace Orly;
-using namespace Orly::Spa; // Sort of ug. Would be nice to remove. Not strictly necessary for running tests...
 
 class TCompilerConfig : public Base::TCmd {
   public:
@@ -46,7 +44,6 @@ class TCompilerConfig : public Base::TCmd {
         OutputDir(Util::GetCwd()),
         SemanticOnly(false),
         SkipTests(false),
-        TestEngine("indy"),
         VerboseTests(false) {
 
     Parse(argc, argv, TMeta());
@@ -62,8 +59,6 @@ class TCompilerConfig : public Base::TCmd {
       Param(&TCompilerConfig::OutputDir, "output_directory", Optional, "output\0o\0", "The directory to write output to.");
       Param(&TCompilerConfig::SemanticOnly, "semantic_only", Optional, "semantic-only\0", "Don't actually produce output, just syntactically and semantically validate the program.");
       Param(&TCompilerConfig::SkipTests, "skip_tests", Optional, "skip-tests\0", "Don't run tests after compiling.");
-      Param(&TCompilerConfig::TestEngine, "test_engine", Optional, "test-engine\0",
-          "Which storage engine runs the package's test{} blocks: 'indy' (default, the real server engine) or 'spa' (the legacy flux_capacitor engine, kept as an escape hatch ahead of its removal; see #262).");
       Param(&TCompilerConfig::VerboseTests, "verbose_tests", Optional, "v\0",
           "Run tests in 'verbose' mode, printing out the result of every test, rather than just failing tests.");
       Param(&TCompilerConfig::Source, "source", Required, "The Orly source file to compile.");
@@ -92,7 +87,6 @@ class TCompilerConfig : public Base::TCmd {
   bool SemanticOnly;
   std::string Source;
   bool SkipTests;
-  std::string TestEngine;
   bool VerboseTests;
 };
 
@@ -207,15 +201,13 @@ int CompileCode(const TCompilerConfig &cmd) {
   //TODO: Practically speaking for each src file given, esp. if we have more than one
   // We need to find the root of it's repository (__orly__) file. And use that
   int result = EXIT_FAILURE;
-  const bool indy_tests = (cmd.TestEngine == "indy");
   try {
     Package::TVersionedName output;
-    /* A TypeCzar (carried by THoncho, which also owns the SPA flux stores) must
-       be live while we compile, and -- for the SPA engine -- while it runs the
-       tests. The indy engine stands up its own TServer, which brings its own
-       TypeCzar; a process may hold only one, so for indy we let this honcho die
-       before the server is built. */ {
-      THoncho honcho;
+    /* A TypeCzar must be live while we compile (it owns the type singletons /
+       interners the compiler builds against). The indy test server stands up
+       its own TypeCzar, and a process may hold only one, so let this one die
+       before RunTestsOnIndy builds the server. */ {
+      Type::TTypeCzar type_czar;
       output = Compiler::Compile(
                    Base::TPath(src),
                    cmd.OutputDir,
@@ -228,32 +220,14 @@ int CompileCode(const TCompilerConfig &cmd) {
         }
         return EXIT_SUCCESS;
       }
-      if (!indy_tests) {
-        if (cmd.MachineForm) {
-          cout << "MM_NOTICE: Running tests" << endl;
-        }
-        TService service;
-
-        /* TODO: This is a little ugly */
-        service.SetPackageDir(cmd.OutputDir.size() > 0 ? cmd.OutputDir : "");
-        service.GetPackageManager().Install({output});
-        result = service.RunTestSuite(output.Name, cmd.VerboseTests) ? EXIT_SUCCESS : EXIT_FAILURE;
-        service.GetPackageManager().Uninstall({output});
-
-        if (cmd.MachineForm) {
-          cout << "MM_NOTICE: Tests done" << endl;
-        }
-      }
     }
-    if (indy_tests) {
-      /* #262: run the test{} blocks on the real server engine. */
-      if (cmd.MachineForm) {
-        cout << "MM_NOTICE: Running tests" << endl;
-      }
-      result = RunTestsOnIndy(output, cmd) ? EXIT_SUCCESS : EXIT_FAILURE;
-      if (cmd.MachineForm) {
-        cout << "MM_NOTICE: Tests done" << endl;
-      }
+    /* Run the package's test{} blocks on the real server engine (#262). */
+    if (cmd.MachineForm) {
+      cout << "MM_NOTICE: Running tests" << endl;
+    }
+    result = RunTestsOnIndy(output, cmd) ? EXIT_SUCCESS : EXIT_FAILURE;
+    if (cmd.MachineForm) {
+      cout << "MM_NOTICE: Tests done" << endl;
     }
   } catch (const Compiler::TCompileFailure &ex) {
     /* Do nothing, we already printed out the error message. */

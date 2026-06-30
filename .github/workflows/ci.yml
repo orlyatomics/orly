@@ -92,7 +92,6 @@ jobs:
         run: |
           ls -la ../out_orly/debug/orly/orlyc \
                  ../out_orly/debug/orly/server/orlyi \
-                 ../out_orly/debug/orly/spa/spa \
                  ../out_orly/debug/orly/client/orly_client
 
       - name: make test
@@ -164,7 +163,6 @@ jobs:
         run: |
           ../out_orly/release/orly/client/orly_client --help | head -1
           ../out_orly/release/orly/orlyc --help | head -1
-          ../out_orly/release/orly/spa/spa --help | head -1
           # orlyi's --help prints a huge memory-tuning header first;
           # asserting non-empty output is enough for a smoke check.
           ../out_orly/release/orly/server/orlyi --help > /tmp/orlyi-help.txt
@@ -532,11 +530,13 @@ jobs:
           orly/indy/fiber/fiber.test
           orly/indy/fiber/fiber_lock.test
           orly/indy/fiber/algorithm.test
-          orly/spa/flux_capacitor/sync.test
-          orly/spa/flux_capacitor/tetris_piece.test
           orly/indy/context_fold.test
           orly/indy/context_xrepo.test
           "
+          # NOTE: the SPA flux_capacitor sync/tetris_piece TSan tests were
+          # removed with the engine (#262 P5). Re-adding indy Tetris coverage
+          # (orly/server/tetris_manager.test) to this gate is a follow-up,
+          # pending a TSan-clean check of that test.
           PATH="$PWD/tools:$PATH" tools/jhm -c tsan $TESTS
 
           mkdir -p tsan-logs

@@ -24,7 +24,6 @@
 #pragma once
 
 //To get the flux TContext
-#include <orly/spa/flux_capacitor/api.h>
 #include <base/chrono.h>
 #include <base/scheduler.h>
 #include <orly/atom/kit2.h>
@@ -221,48 +220,6 @@ namespace Orly {
       mutable std::unordered_map<TGenIdx, std::unique_ptr<Rt::TLazyRandomList>> RandomGenerators;
 
     };  // TContext
-
-    /* TODO */
-    class TSpaContext
-          : public TContext {
-      NO_COPY(TSpaContext);
-      public:
-
-      /* TODO */
-      TSpaContext(
-        const Rt::TOpt<Base::TUuid> &user_id,
-        const Base::TUuid &session_id,
-        Spa::FluxCapacitor::TContext &context,
-        Atom::TCore::TExtensibleArena *arena,
-        Base::TScheduler *scheduler,
-        Rt::TOpt<Base::Chrono::TTimePnt> now,
-        Rt::TOpt<uint32_t> random_seed)
-          : TContext(user_id, session_id, arena, scheduler, now, random_seed), FluxContext(context) {}
-
-      /* TODO */
-      virtual Orly::TContextBase &GetFlux() override {
-        return FluxContext;
-      }
-
-      /* TODO */
-      virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const override {
-        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        auto flux_context = dynamic_cast<Spa::FluxCapacitor::TContext *>(context);
-        Var::TVar var_pattern = Var::ToVar(*Sabot::State::TAny::TWrapper(pattern.GetKey().GetState(state_alloc)));
-        return new Spa::FluxCapacitor::TContext::TKeyCursor(flux_context, Arena, var_pattern, pattern.GetIndexId());
-      }
-
-      /* TODO */
-      virtual TKeyCursor *NewKeyCursor(TContextBase * /*context*/, const Indy::TIndexKey &/*from*/, const Indy::TIndexKey &/*to*/) const override {
-        throw std::logic_error("TODO: Implement TSpaContext NewKeyCursor range");
-      }
-
-      private:
-
-      /* TODO */
-      Spa::FluxCapacitor::TContext &FluxContext;
-
-    };  // TSpaContext
 
     /*** Inline ***/
     inline Atom::TCore::TExtensibleArena *TContext::GetArena() {

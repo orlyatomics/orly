@@ -20,19 +20,3 @@
 
 using namespace Orly;
 using namespace Orly::Package;
-
-#if 0
-void TContext::AddEffect(const Var::TVar &addr, const Var::TPtr<Var::TChange> &change) {
-  assert(change);
-
-  Spa::FluxCapacitor::TKV kv(addr);
-
-  auto it = Effects.find(kv);
-
-  if (it == Effects.end()) {
-    Effects.insert(make_pair(kv, change));
-  } else {
-    it->second->Augment(change);
-  }
-}
-#endif

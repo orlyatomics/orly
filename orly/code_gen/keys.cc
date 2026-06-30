@@ -36,19 +36,6 @@ TKeys::TKeys(const L0::TPackage *package,
 
 void TKeys::WriteExpr(TCppPrinter &out) const {
 
-  #if 0
-  out << "ctx.New<" << Type::UnwrapSequence(GetReturnType()) << ">(ctx.GetFlux(), Var::TVar::Addr({";
-  #if 0
-  out << "Spa::FluxCapacitor::TKeyGenerator<" << Type::UnwrapSequence(GetReturnType()) << ">::New(ctx.GetFlux(), Var::TVar::Addr({";
-  #endif
-  Join(", ", AddrElems, [](TAddrElems::const_reference it, TCppPrinter &out) {
-    //NOTE: This sometimes will cause
-    out << '{';
-    WriteCppType(out.GetOstream(), it.first);
-    out << ", Var::TVar(" << it.second << ")}";
-  }, out);
-  out << "}))";
-  #endif
   out << "ctx.New<" << Type::UnwrapSequence(GetReturnType()) << ">(ctx.GetFlux(), ";
   /* this is where we put the index id */ {
     Type::TType addr_type = Type::UnwrapSequence(GetReturnType());
