@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 
 #include <base/class_traits.h>
@@ -64,6 +65,26 @@ namespace Orly {
       /* TODO */
       inline TEntryCollection *GetEntryCollection() const;
 
+      /* Link a freshly-inserted entry into the skip-list accelerator (#257).
+         Called from the three EntryCollection insert sites, after the level-0
+         (EntryCollection) link, so a concurrent reader that sees an upper-lane
+         pointer can always resolve the node on level 0. No allocation -- the
+         per-level forward pointers live inside TEntry -- so this is safe on the
+         NO_THROW commit path. Single-writer per layer (DataLock / the merge
+         thread), so writer-writer races are excluded; reader safety rests on
+         level 0 being the authoritative EntryCollection (upper lanes are a
+         best-effort accelerator). */
+      void SkipInsert(TUpdate::TEntry *entry) NO_THROW;
+
+      /* Return an EntryCollection cursor positioned at the first entry whose
+         index-key is >= key (the highest-SeqNum entry of key's run, or the
+         first entry of the next key, or an exhausted cursor). Uses the
+         skip-list accelerator to jump most of the way, then finishes on level 0
+         (EntryCollection). MUST be called only with a fully-bound concrete key
+         -- the ordering comparison throws on a free-vs-concrete state (see
+         TMatchPresentWalker's exact-point guard). */
+      TEntryCollection::TCursor SeekRun(const TIndexKey &key) const;
+
       /* TODO */
       inline TUpdateCollection *GetUpdateCollection() const;
 
@@ -73,7 +94,7 @@ namespace Orly {
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
                                                                      const TIndexKey &to) const override;
 
-      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key) const override;
+      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
       /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
@@ -97,7 +118,8 @@ namespace Orly {
 
         /* TODO */
         TMatchPresentWalker(const TMemoryLayer *layer,
-                       const TIndexKey &key);
+                       const TIndexKey &key,
+                       bool exact_point);
 
         /* TODO */
         virtual ~TMatchPresentWalker();
@@ -133,6 +155,11 @@ namespace Orly {
 
         /* TODO */
         mutable bool PassedMatch;
+
+        /* When true, the search key is a fully-bound point read (from
+           operator[]/Exists) and the ctor may seek via the secondary index
+           instead of scanning the ordered list from the head (#257). */
+        const bool ExactPoint;
 
         /* TODO */
         mutable TItem Item;
@@ -250,6 +277,14 @@ namespace Orly {
 
       /* TODO */
       mutable TEntryCollection::TImpl EntryCollection;
+
+      /* Per-level head pointers for the skip-list accelerator over
+         EntryCollection (#257). SkipHead[l] is the first entry present on
+         express lane l (l >= 1; level 0 is EntryCollection itself). Written
+         only by SkipInsert (single-writer per layer); read with acquire by
+         SeekRun. SkipListLevel is the current top occupied lane. */
+      std::atomic<TUpdate::TEntry *> SkipHead[TUpdate::TEntry::SkipMaxLevel];
+      std::atomic<size_t> SkipListLevel;
 
       /* TODO */
       size_t Size;

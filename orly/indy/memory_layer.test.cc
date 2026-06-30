@@ -208,6 +208,66 @@ FIXTURE(MutatorRoundTrip) {
   delete copy;
 }
 
+/* #257: exact-point reads seek via the skip-list accelerator instead of
+   head-scanning the EntryCollection. Verify the seeking walker
+   (exact_point=true) agrees with the authoritative ordered list for present
+   and absent keys across a range large enough to populate several express
+   lanes, discriminates index ids, and still surfaces a key's full SeqNum run
+   newest-first. */
+FIXTURE(ExactPointSeek) {
+  TMemoryLayer mem_layer(nullptr);
+  Base::TUuid idx_a(Base::TUuid::Twister);
+  Base::TUuid idx_b(Base::TUuid::Twister);
+  TSuprena arena;
+  TSequenceNumber seq_num = 0UL;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  const int64_t N = 200;
+  /* Even keys present under idx_a; key 4 also present under idx_b (same key
+     value, different index id). */ {
+    for (int64_t i = 0; i < N; i += 2) {
+      Insert(mem_layer, ++seq_num, idx_a, i * 100, i);
+    }
+    Insert(mem_layer, ++seq_num, idx_b, 999, 4L);
+  }
+  /* Present keys: the exact seek finds each one with the right value. */ {
+    for (int64_t i = 0; i < N; i += 2) {
+      auto wp = mem_layer.NewPresentWalker(TIndexKey(idx_a, TKey(make_tuple(i), &arena, state_alloc)), /* exact_point */ true);
+      auto &w = *wp;
+      if (EXPECT_TRUE(w)) {
+        EXPECT_EQ(TKey((*w).Key, (*w).KeyArena), TKey(make_tuple(i), &arena, state_alloc));
+        EXPECT_EQ(TKey((*w).Op, (*w).OpArena), TKey(i * 100, &arena, state_alloc));
+      }
+    }
+  }
+  /* Absent keys (odd, and past the end): the exact seek reports nothing and
+     must not fall through into a forward scan. */ {
+    for (int64_t i = 1; i < N; i += 2) {
+      auto wp = mem_layer.NewPresentWalker(TIndexKey(idx_a, TKey(make_tuple(i), &arena, state_alloc)), true);
+      EXPECT_FALSE(*wp);
+    }
+    auto past = mem_layer.NewPresentWalker(TIndexKey(idx_a, TKey(make_tuple(N + 10), &arena, state_alloc)), true);
+    EXPECT_FALSE(*past);
+  }
+  /* Index discrimination: idx_b's key 4 carries a distinct value. */ {
+    auto wp = mem_layer.NewPresentWalker(TIndexKey(idx_b, TKey(make_tuple(4L), &arena, state_alloc)), true);
+    auto &w = *wp;
+    if (EXPECT_TRUE(w)) {
+      EXPECT_EQ(TKey((*w).Op, (*w).OpArena), TKey(int64_t(999), &arena, state_alloc));
+    }
+  }
+  /* A key with multiple versions: the seek must land on the highest-SeqNum
+     entry of the run (the anchor the read-path fold starts from), exactly as
+     the head-scan walker does -- the older run members are surfaced by the
+     context-level fold, not the per-layer walker. */ {
+    Insert(mem_layer, ++seq_num, idx_a, 4444, 4L);  // newer version of key 4
+    auto wp = mem_layer.NewPresentWalker(TIndexKey(idx_a, TKey(make_tuple(4L), &arena, state_alloc)), /* exact_point */ true);
+    auto &w = *wp;
+    if (EXPECT_TRUE(w)) {
+      EXPECT_EQ(TKey((*w).Op, (*w).OpArena), TKey(int64_t(4444), &arena, state_alloc));
+    }
+  }
+}
+
 #if 0
 FIXTURE(Range) {
   TMemoryLayer layer(nullptr);

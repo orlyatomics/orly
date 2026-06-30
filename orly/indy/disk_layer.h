@@ -48,8 +48,9 @@ namespace Orly {
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
                                                                      const TIndexKey &to) const override;
 
-      /* TODO */
-      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key) const override;
+      /* exact_point is ignored: disk layers already seek via TIndexManager
+         (hashed), so there is no head-scan to avoid (#257). */
+      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
       /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;

@@ -66,7 +66,7 @@ unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &from,
   return Repo->NewPresentWalkerFile(GenId, from, to);
 }
 
-unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &key) const {
+unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &key, bool /*exact_point*/) const {
   return Repo->NewPresentWalkerFile(GenId, key);
 }
 

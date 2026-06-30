@@ -518,7 +518,10 @@ namespace Orly {
             virtual std::unique_ptr<TPresentWalker> NewPresentWalker(const TIndexKey &from,
                                                                      const TIndexKey &to) const = 0;
 
-            virtual std::unique_ptr<TPresentWalker> NewPresentWalker(const TIndexKey &key) const = 0;
+            /* exact_point: the key is a fully-bound point read, so a layer may
+               seek via a point-read accelerator instead of a head scan (#257).
+               Defaults false so prefix/cursor callers keep the scan. */
+            virtual std::unique_ptr<TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const = 0;
 
             /* TODO */
             virtual std::unique_ptr<TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const = 0;
