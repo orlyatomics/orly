@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <mutex>
 #include <unordered_map>
@@ -140,8 +141,9 @@ namespace Orly {
         TTetrisManager *TetrisManager;
 
         /* The number of children currently joined to us.  This starts at one, as we must be constructed with a single child.
-           Main() will run as long as this value is non-zero. */
-        size_t ChildCount;
+           Main() will run as long as this value is non-zero. Atomic because Join/Part mutate it under the manager's
+           FiberMutex while the player's own Main() fiber reads it unlocked each round (#262 follow-up: TSan data race). */
+        std::atomic<size_t> ChildCount;
 
         /* Usually this pointer is null; however, Stop() points us at a semaphore we are to push in our destructor.  That's
            how we unblock Stop(). */
