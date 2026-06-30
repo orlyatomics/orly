@@ -739,7 +739,6 @@ namespace Orly {
     }
 
     inline void TRepo::SetReleasedUpTo(TSequenceNumber released_up_to) {
-      std::cout << "SetReleasedUpTo(" << released_up_to << ")" << std::endl;
       ReleasedUpTo = released_up_to;
     }
 
