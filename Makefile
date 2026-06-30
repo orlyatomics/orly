@@ -42,6 +42,10 @@ clean:
 	rm -rf ../.jhm
 	rm -f tools/jhm
 	rm -f tools/make_dep_file
+	# jhm unions the per-job *.compdb.json into compile_commands.json at the
+	# repo root (not under ../out_orly/), so wipe it too or clangd keeps
+	# resolving against a stale, just-deleted build tree.
+	rm -f compile_commands.json
 
 install: release
 	install -d $(BINDIR) $(PACKAGE_DIR) $(DATA_DIR)
