@@ -71,6 +71,13 @@ namespace Orly {
         inline void *Create() { return __tsan_create_fiber(0); }
         inline void Destroy(void *fiber) { __tsan_destroy_fiber(fiber); }
         inline void SwitchTo(void *fiber) { __tsan_switch_to_fiber(fiber, 0); }
+        /* Establish a happens-before edge across a custom fiber wait/wake
+           handoff (e.g. TSafeSync). Release() publishes the calling fiber's
+           prior writes into the sync object identified by addr; a later
+           Acquire(addr) on the woken fiber observes them, so ThreadSanitizer
+           tracks the ordering the primitive really provides. */
+        inline void Acquire(void *addr) { __tsan_acquire(addr); }
+        inline void Release(void *addr) { __tsan_release(addr); }
       }  // TSanFiber
     }  // Fiber
   }  // Indy
@@ -85,6 +92,8 @@ namespace Orly {
         inline void *Create() { return nullptr; }
         inline void Destroy(void *) {}
         inline void SwitchTo(void *) {}
+        inline void Acquire(void *) {}
+        inline void Release(void *) {}
       }  // TSanFiber
     }  // Fiber
   }  // Indy
@@ -1314,10 +1323,20 @@ namespace Orly {
         assert(Finished.load() <= WaitingFor.load());
         //Base::TSpinLock::TLock lock(SpinLock);
         /* fall through */
+        /* Acquire the happens-before published by every Complete() (paired
+           release below) so ThreadSanitizer sees the completers' writes as
+           ordered-before this fiber's continuation across the wait/wake
+           handoff -- which the fiber switch alone does not convey (#269). */
+        TSanFiber::Acquire(this);
         assert(safety_runner == TRunner::LocalRunner);
       }
 
       inline void TSafeSync::Complete() {
+        /* Release this completer's prior writes into the sync object; the
+           waiter's Acquire() in Sync() (above) pairs with it. Released on
+           every Complete() so a multi-completer sync (WaitForMore > 1)
+           accumulates each contributor's happens-before (#269). */
+        TSanFiber::Release(this);
         size_t prev = std::atomic_fetch_add(&Finished, 1UL);
         if ((prev + 1UL) == WaitingFor.load()) {
           Base::TSpinLock::TLock lock(SpinLock);
