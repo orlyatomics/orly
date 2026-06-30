@@ -407,6 +407,15 @@ namespace Orly {
            Take the parent's graph root as our own. */
         TChildPov(TParentPov *parent_pov, const TOnFail& on_fail, bool paused=false);
 
+        /* Publish this child to its parent's Tetris game (#259). The base ctor
+           used to JoinTetris() directly, but that makes the child reachable by
+           the Tetris thread (via epoll in TParentPov::PlayTetris) BEFORE the
+           most-derived ctor has finished -- so PlayTetris could touch a
+           half-constructed POV (vtable / Leaf still being set). Each most-derived
+           child POV ctor must call this as its last step instead; it joins
+           Tetris only if not constructed paused. */
+        void FinishConstruction();
+
         /* Also detaches from our parent pov. */
         virtual ~TChildPov();
 
@@ -519,9 +528,11 @@ namespace Orly {
         NO_COPY(TSharedPov);
         public:
 
-        /* Do-nothing. */
+        /* Join Tetris only once fully constructed (#259). */
         TSharedPov(TParentPov *parent_pov, const TOnFail &on_fail, bool paused=false)
-            : TChildPov(parent_pov, on_fail, paused) {}
+            : TChildPov(parent_pov, on_fail, paused) {
+          FinishConstruction();
+        }
 
         /* Destructor for a shared pov. We have to call DeleteAllTrailingUpdate
            before the base class destructs. */
