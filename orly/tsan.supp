@@ -1,51 +1,16 @@
 # ThreadSanitizer suppressions for the Orly TSan CI job (#177).
 #
-# Format: one rule per line, "<type>:<match>".  "deadlock:" suppresses
-# lock-order-inversion (potential deadlock) reports whose stack contains the
-# named frame.  Keep this file minimal: every entry must be justified below as
-# a proven false positive, never used to paper over a real race or deadlock.
-
-# ---------------------------------------------------------------------------
-# orly/spa/flux_capacitor/sync.test -- lock-order-inversion in the TEST HARNESS
-# ---------------------------------------------------------------------------
-# WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock)
-#   Cycle in lock order graph: M0 => M1 => M0
-#   ... pthread_rwlock_wrlock
-#       Orly::Spa::FluxCapacitor::TSync::TLocal::IncrLockCount (sync.cc:69)
+# Format: one rule per line, "<type>:<match>".  E.g. "deadlock:<frame>"
+# suppresses a lock-order-inversion (potential deadlock) report whose stack
+# contains the named frame; "race:<frame>" suppresses a data race.
 #
-# This is NOT a defect in the TSync primitive, and it is NOT related to the
-# LocalsLock/Locals tracking added by the #174 leak fix.  The two mutexes in
-# the cycle are:
-#   M0 = the test harness's own `static std::mutex Mutex` (sync.test.cc:33)
-#   M1 = the `RwLock` (pthread_rwlock_t) inside the single shared `VecSync`
-#        target (sync.test.cc:31), locked via TSync::TLocal::IncrLockCount.
-# (Confirmed: the reported runtime addresses match the relative layout of the
-#  `Mutex` and `VecSync` statics, ~112 bytes apart; IncrLockCount is merely
-#  where pthread_rwlock_wrlock is *called* -- the other end of the cycle is the
-#  harness Mutex, nothing in sync.cc.)  The Locals/LocalsLock mutex is never
-#  held while RwLock is acquired (GetLocal releases LocalsLock before the lock
-#  ctor calls IncrLockCount; recursive locks return the existing TLocal without
-#  touching LocalsLock), so #174 plays no part in this report.
+# Keep this file minimal: every entry must be justified above it as a proven
+# false positive, never used to paper over a real race or deadlock.  The
+# curated TSan set is GATING (a non-zero warning count fails the job), so a
+# real but provably-benign report is documented and suppressed here rather
+# than ignored at the job level.
 #
-# The TSAppender/TGetter threads in the `Typical` fixture walk a hand-rolled
-# lock-step protocol (Step1..Step6 + condition variables).  That protocol
-# forces the harness Mutex and the TSync RwLock to nest in BOTH orders across
-# the test's phases:
-#   * Mutex -> RwLock   (e.g. hold Mutex, then take an exclusive/shared lock)
-#   * RwLock -> Mutex   (hold a shared lock across a Cond.wait that reacquires
-#                        Mutex -- the deliberate "two threads hold shared locks
-#                        simultaneously" check).
-# TSan's lock-order graph is purely topological: it records both edges and
-# reports the M0=>M1=>M0 cycle without modelling the Step* handshake that
-# serialises the two threads so the opposing orders never execute concurrently
-# in different threads.  No real deadlock is reachable.
-#
-# This interleaving is irreducible: flattening it was attempted and provably
-# DEADLOCKS the test.  The getter must hold Mutex and wait for Step4 *before*
-# taking its shared lock (taking it earlier blocks the appender's exclusive
-# push that gates Step4), yet it must also hold that shared lock across the
-# Step5/Step6 cond_waits -- an unavoidable Mutex->RwLock->Mutex nesting that is
-# the whole point of the simultaneous-shared-lock test.  Rewriting the harness
-# to a single global order would change the synchronisation semantics under
-# test, so the report is suppressed rather than "fixed".
-deadlock:Orly::Spa::FluxCapacitor::TSync::TLocal::IncrLockCount
+# There are currently no active suppressions.  (The sole prior entry,
+# deadlock:Orly::Spa::FluxCapacitor::TSync::TLocal::IncrLockCount, was a test
+# harness lock-order artifact in the SPA flux_capacitor engine; it became dead
+# when that engine was deleted in #266 and was removed here.)
