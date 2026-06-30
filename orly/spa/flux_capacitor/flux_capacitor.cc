@@ -121,10 +121,21 @@ TParentPov::TChildPovCursor &TParentPov::TChildPovCursor::operator++() {
 bool TParentPov::PlayTetris(int timeout) {
   vector<TSync::TExclusiveLock *> child_locks;
   unordered_set<TUpdate *> updates;
-  epoll_event events[ChildPovCount];
+  /* #259: ChildPovCount is mutated by the TChildPov ctor/dtor under
+     ChildListMutex; snapshot it under the same lock before sizing the epoll
+     array rather than reading it unsynchronized. We release the lock before
+     epoll_wait so this never blocks POV create/destroy -- epoll_ctl from
+     Join/PartTetris is thread-safe against a concurrent epoll_wait, and a child
+     added after the snapshot is simply picked up on the next round. */
+  int child_pov_count;
+  {
+    lock_guard<recursive_mutex> lock(ChildListMutex);
+    child_pov_count = ChildPovCount;
+  }
+  epoll_event events[child_pov_count];
   try {
     int ready_count;
-    Util::IfLt0(ready_count = epoll_wait(TetrisWaitHandle, events, ChildPovCount, timeout));
+    Util::IfLt0(ready_count = epoll_wait(TetrisWaitHandle, events, child_pov_count, timeout));
     for (int i = 0; i < ready_count; ++i) {
       TChildPov *child_pov = static_cast<TChildPov *>(events[i].data.ptr);
       assert(child_pov);
@@ -188,9 +199,10 @@ TChildPov::TChildPov(TParentPov *parent_pov, const TOnFail& on_fail, bool paused
     : FlowState(paused ? Paused : Running), IsJoinedToTetris(false), OnFail(on_fail), ParentPov(parent_pov) {
   assert(parent_pov);
   lock_guard<recursive_mutex> lock(parent_pov->ChildListMutex);
-  if (!paused) {
-    JoinTetris();
-  }
+  /* #259: do NOT JoinTetris here -- that would publish `this` to the parent's
+     epoll set (and thus the Tetris thread) before the most-derived ctor has
+     finished. The most-derived child POV ctor calls FinishConstruction() as its
+     last step instead. We still link into the child list under ChildListMutex. */
   Root = parent_pov->GetRoot();
   GlobalPov = parent_pov->GlobalPov;
   NextChildPov = 0;
@@ -198,6 +210,12 @@ TChildPov::TChildPov(TParentPov *parent_pov, const TOnFail& on_fail, bool paused
   (PrevChildPov ? PrevChildPov->NextChildPov : parent_pov->FirstChildPov) = this;
   parent_pov->LastChildPov = this;
   ++(parent_pov->ChildPovCount);
+}
+
+void TChildPov::FinishConstruction() {
+  if (FlowState == Running) {
+    JoinTetris();
+  }
 }
 
 TChildPov::~TChildPov() {
@@ -266,6 +284,7 @@ void TGlobalPov::Fail() {
 TPrivatePov::TPrivatePov(TParentPov *parent_pov, const TOnFail &on_fail, bool paused)
     : TChildPov(parent_pov, on_fail, paused) {
   Leaf = new TLeaf(this);
+  FinishConstruction();  // #259: join Tetris only once fully constructed
 }
 
 TPrivatePov::~TPrivatePov() {
@@ -469,7 +488,19 @@ TUpdate::TUpdate(
   for (auto iter = shared_lock_vec.rbegin(); iter != shared_lock_vec.rend(); ++iter) {
     delete *iter;
   }
-  SyncWithPov();
+  /* #259: link into Pov's trailing-update list under Pov's exclusive Sync. The
+     Tetris thread reads/unlinks this list under the same exclusive lock
+     (TParentPov::PlayTetris / TUpdate::Promote), so this main-thread write must
+     take it too. Safe here: the cause shared-locks above are already released
+     (no exclusive-after-shared on this target) and SyncWithPov -> LinkToPov /
+     UnlinkFromPov touch only Pov's own list -- no nested POV locks, no cascade
+     into OnLocalCause* -- so this adds no lock-order edge. TSync is per-thread
+     recursive, so the Tetris side (already holding this Sync via Promote) is
+     unaffected. */
+  {
+    TSync::TExclusiveLock lock(Pov->GetSync());
+    SyncWithPov();
+  }
 }
 
 bool TUpdate::Assert(TContext &ctxt) const {
