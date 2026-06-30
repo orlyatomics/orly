@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <condition_variable>
 #include <mutex>
@@ -89,9 +90,17 @@ namespace Base {
         #ifndef NDEBUG
         static_cast<TObj *>(obj)->AssertCanFree();
         #endif
+        /* Treiber-stack push onto the cross-thread free list. FreeQueue is a
+           std::atomic so this read-modify-write doesn't race the atomic
+           exchange-pop in TryAllocUncommon (the plain read here used to be a
+           data race vs that exchange, even though the CAS made it benign on
+           hardware -- TSan #269 follow-up). Release pairs with the acquire on
+           the pop so the popper sees this object's NextObj link. */
+        TObjBase *head = FreeQueue.load(std::memory_order_relaxed);
         do {
-          obj->NextObj = FreeQueue;
-        } while (!__sync_bool_compare_and_swap(&FreeQueue, obj->NextObj, obj));
+          obj->NextObj = head;
+        } while (!FreeQueue.compare_exchange_weak(
+            head, obj, std::memory_order_release, std::memory_order_relaxed));
       }
 
       /* TODO */
@@ -121,7 +130,7 @@ namespace Base {
       TObjBase *TryAllocUncommon() {
         TObjBase *alloc_obj = nullptr;
         /* let's swap in our free queue and try to allocate from that. */
-        TObjBase *cur_tail = __sync_lock_test_and_set(&FreeQueue, nullptr);
+        TObjBase *cur_tail = FreeQueue.exchange(nullptr, std::memory_order_acquire);
         if (cur_tail) {
           /* There were element(s) on the free queue. */
           assert(AvailableQueue == nullptr);
@@ -156,7 +165,7 @@ namespace Base {
                 }
               }
               if (&pool != this) {
-                cur_tail = __sync_lock_test_and_set(&pool.FreeQueue, nullptr);
+                cur_tail = pool.FreeQueue.exchange(nullptr, std::memory_order_acquire);
                 if (cur_tail) {
                   /* There were element(s) on the other pool's free queue. */
                   assert(AvailableQueue == nullptr);
@@ -197,8 +206,10 @@ namespace Base {
         #endif
       }
 
-      /* TODO */
-      mutable TObjBase *FreeQueue;
+      /* Cross-thread free list (Treiber stack). Atomic because Free() (push,
+         any thread) races TryAllocUncommon()'s exchange-pop (this or a
+         neighbor pool stealing work). */
+      mutable std::atomic<TObjBase *> FreeQueue;
 
       /* TODO */
       TObjBase *AvailableQueue;
