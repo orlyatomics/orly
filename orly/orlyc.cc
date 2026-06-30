@@ -46,7 +46,7 @@ class TCompilerConfig : public Base::TCmd {
         OutputDir(Util::GetCwd()),
         SemanticOnly(false),
         SkipTests(false),
-        TestEngine("spa"),
+        TestEngine("indy"),
         VerboseTests(false) {
 
     Parse(argc, argv, TMeta());
@@ -63,7 +63,7 @@ class TCompilerConfig : public Base::TCmd {
       Param(&TCompilerConfig::SemanticOnly, "semantic_only", Optional, "semantic-only\0", "Don't actually produce output, just syntactically and semantically validate the program.");
       Param(&TCompilerConfig::SkipTests, "skip_tests", Optional, "skip-tests\0", "Don't run tests after compiling.");
       Param(&TCompilerConfig::TestEngine, "test_engine", Optional, "test-engine\0",
-          "Which storage engine runs the package's test{} blocks: 'spa' (default, legacy flux_capacitor) or 'indy' (the real server engine; see #262).");
+          "Which storage engine runs the package's test{} blocks: 'indy' (default, the real server engine) or 'spa' (the legacy flux_capacitor engine, kept as an escape hatch ahead of its removal; see #262).");
       Param(&TCompilerConfig::VerboseTests, "verbose_tests", Optional, "v\0",
           "Run tests in 'verbose' mode, printing out the result of every test, rather than just failing tests.");
       Param(&TCompilerConfig::Source, "source", Required, "The Orly source file to compile.");
