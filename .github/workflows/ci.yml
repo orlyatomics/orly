@@ -532,11 +532,8 @@ jobs:
           orly/indy/fiber/algorithm.test
           orly/indy/context_fold.test
           orly/indy/context_xrepo.test
+          orly/server/tetris_manager.test
           "
-          # NOTE: the SPA flux_capacitor sync/tetris_piece TSan tests were
-          # removed with the engine (#262 P5). Re-adding indy Tetris coverage
-          # (orly/server/tetris_manager.test) to this gate is a follow-up,
-          # pending a TSan-clean check of that test.
           PATH="$PWD/tools:$PATH" tools/jhm -c tsan $TESTS
 
           mkdir -p tsan-logs
