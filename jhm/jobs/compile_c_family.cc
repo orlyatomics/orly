@@ -16,6 +16,7 @@
 
 #include <jhm/jobs/compile_c_family.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -147,6 +148,19 @@ vector<string> TCompileCFamily::GetCmd() {
     std::filesystem::create_directories(entry_path.parent_path(), ec);
     std::ofstream out(entry_path);
     out << TJson(std::move(entry));
+  }
+
+  // Optional compiler launcher (e.g. JHM_COMPILER_LAUNCHER=ccache): prepended
+  // to the invocation so the real compile runs as `<launcher> g++ ...`. This
+  // is the first-class equivalent of CMake's *_COMPILER_LAUNCHER -- it lets a
+  // caching/distributing wrapper sit in front of the compiler without the
+  // PATH-symlink masquerade jhm otherwise forces (jhm execs g++/gcc by bare
+  // name). Applied only to compiles, not links (ccache caches compiles), and
+  // added AFTER the compile-DB entry above so clangd still sees the compiler
+  // itself as argument[0]. A single token (the launcher executable); unset or
+  // empty leaves the command byte-for-byte unchanged.
+  if (const char *launcher = std::getenv("JHM_COMPILER_LAUNCHER"); launcher && *launcher) {
+    cmd.insert(cmd.begin(), launcher);
   }
 
   return cmd;
