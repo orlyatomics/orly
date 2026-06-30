@@ -1,24 +1,20 @@
 # Orly Architecture — Concurrency & Merge Model
 
-This document describes how Orly achieves **lock-free, causally-ordered,
+This document describes how Orly achieves **lock-free, optimistic,
 commutative-merge** concurrency — the core of the project's pitch. It is the
 design map for the subsystems under `orly/server/` and `orly/indy/`. (It
 complements `docs/walkthrough.md`, which is the operational compile/load/invoke
 pipeline.)
 
-> **Update ([#262](https://github.com/orlyatomics/orly/issues/262)):** Orly used
-> to ship a second, standalone implementation of this model — the 2014-era SPA
-> *Flux Capacitor* (`orly/spa/flux_capacitor/`) — which survived only as the
-> engine `orlyc` used to run a package's compile-time `test{}` blocks. It has
-> been **removed**; `orlyc` now runs tests on the same **indy** engine `orlyi`
-> serves. The POV / Tetris / commutative-fold model below is real and lives in
-> indy (`orly/server/{pov,tetris_manager,repo_tetris_manager}.*`, `orly/indy/`).
-> The key implementation difference from the removed Flux Capacitor: indy orders
-> updates by **per-repo sequence number** (§4) rather than a separate in-memory
-> causal DAG. Passages below still phrased around the Flux Capacitor's
-> causal-graph types (`TLink`, `LocalCauseCount`, the in-memory POV graph)
-> describe that retired implementation and are pending a rewrite against indy's
-> sequence-number model; the code-map (§7) points at the live indy files.
+> **History ([#262](https://github.com/orlyatomics/orly/issues/262)):** Orly once
+> shipped a second, standalone implementation of this model — the 2014-era SPA
+> *Flux Capacitor* (`orly/spa/flux_capacitor/`), which ordered promotion with an
+> in-memory causal DAG (`TUpdate`/`TEvent`/`TLink`, `LocalCauseCount`). It
+> survived only as the engine `orlyc` used to run compile-time `test{}` blocks
+> and was **removed** in #262; `orlyc` now runs tests on the same **indy** engine
+> `orlyi` serves. This document describes the live indy implementation, which
+> orders updates by **per-repo sequence number** (§4) — there is no separate
+> causal graph.
 
 The concurrency model is implemented in code, not in this doc — file/type names
 are given so you can read the real thing. Line numbers are deliberately omitted
@@ -29,13 +25,13 @@ are given so you can read the real thing. Line numbers are deliberately omitted
 ## 1. The model in one breath
 
 Every client works in its own private sandbox — a **Point of View (POV)**.
-Changes made in a POV are **updates**; an update is a node in a causal graph,
-not a clock-stamped record. Updates flow *upward* through a tree of POVs
+Changes made in a POV are **updates**; each update is stamped with a **per-repo
+sequence number**, not a wall clock. Updates flow *upward* through a tree of POVs
 (private → shared → global) by **promotion**, and the **Tetris** merge decides,
-without locks, which competing updates may promote into a shared parent. The
-**Flux Capacitor** is the machinery that keeps this promotion **causally
-ordered** — an update may only promote once it has no unresolved causes in its
-current POV. The global POV is the committed database.
+without locks, which competing updates may promote into a shared parent. Within a
+single POV updates promote in sequence order (oldest first); across competing
+POVs the merge picks a deterministic winner (§3). The global POV is the committed
+database.
 
 Two kinds of write get very different treatment, and the difference is the
 whole game:
@@ -51,19 +47,19 @@ whole game:
 
 ```
             ┌─────────────────────────┐
-            │       TGlobalPov         │   committed database (the sink)
+            │       global POV        │   committed database (the sink)
             └────────────▲────────────┘
                          │ promote
               ┌──────────┴──────────┐
-              │     TSharedPov      │      optional shared layers (0+)
+              │     shared POV      │      optional shared layers (0+)
               └──────────▲──────────┘
                          │ promote
         ┌────────────────┼────────────────┐
    ┌────┴─────┐    ┌─────┴────┐      ┌─────┴────┐
-   │TPrivate  │    │TPrivate  │ ...  │TPrivate  │   one private POV per session
-   │  Pov     │    │  Pov     │      │  Pov     │
+   │ private  │    │ private  │ ...  │ private  │   one private POV per session
+   │  POV     │    │  POV     │      │  POV     │
    └──────────┘    └──────────┘      └──────────┘
-   updates enter at the leaves and flow up
+   updates enter at the leaves and flow up (audience = Private / Shared)
 ```
 
 ---
@@ -73,44 +69,37 @@ whole game:
 **Code:** `orly/server/pov.{h,cc}` (the durable POV object); each POV owns an
 indy storage repo (`orly/indy/repo.*`).
 
-A POV is a node in a tree:
+A POV is a `TPov` durable object (`orly/server/pov.{h,cc}`). It records:
 
-- `TPov` — abstract base; holds a pointer to the shared causal-graph `Root` and
-  to the `TGlobalPov`, the per-key version index (`TKVIndex`), the list of
-  promotable ("trailing") updates, and a `TSync` (recursive read/write lock)
-  guarding its state.
-- `TGlobalPov` — the single root; the committed state of the whole database. It
-  has no parent.
-- `TSharedPov` — zero or more intermediate layers; lets several sessions share
-  a common base before they diverge.
-- `TPrivatePov` — a leaf; one per session/transaction. This is the optimistic
-  sandbox a client mutates.
-- `TParentPov` / `TChildPov` — mixins providing the parent↔child links
-  (`FirstChildPov`/`NextChildPov` sibling lists, a `ParentPov` back-pointer).
+- a `SessionId`;
+- an **audience** — `Private` (a leaf; one per session/transaction, the
+  optimistic sandbox a client mutates) or `Shared` (an intermediate layer that
+  lets several sessions share a common base before they diverge);
+- a **policy** — `Safe` (synchronous disk writes) or `Fast` (asynchronous);
+- the chain of **shared parents** up to the global POV (`TSession::GlobalPovId`),
+  which has no parent and holds the committed state of the whole database.
 
-The durable representation (`orly/server/pov.h`) records a POV's `SessionId`,
-its **audience** (`Private` / `Shared`), its **policy** (`Safe` = synchronous
-disk writes / `Fast` = asynchronous), and the chain of shared parents up to
-global.
+There is no separate POV class hierarchy or in-memory causal graph — the tree is
+just `TPov`s linked by their shared-parent chain, each backed by an indy repo.
 
 ### POVs ride on indy repos
 
 Each POV owns a storage **repo** in the indy layer (`TPov::GetRepo` in
 `orly/server/pov.cc` → `orly/indy` `TRepo`). The repo tree **mirrors** the POV
-tree: a private POV's repo has its parent POV's repo as its parent repo (or the
-global repo directly). A repo holds the in-memory layer, the key→version
-mapping, and per-repo **sequence numbers** (see §4). So "a POV" is really two
-parallel structures kept in lock-step: the in-memory causal graph
-(flux_capacitor) and the storage repo (indy).
+tree: a POV's repo has its parent POV's repo as its `ParentRepo` (or the global
+repo directly). A repo holds the in-memory layer, the key→version mapping, and a
+per-repo **sequence-number** counter (`NextUpdate`, see §4). A read builds a
+`TContext` (`orly/indy/context.cc`) over the repo **and all of its ancestor
+repos** and folds across them (§4), so a child POV transparently reads through to
+what its parents and the global POV hold.
 
 ### Failure is one-way
 
-A POV's flow state is `Running` → `Paused` → `Failed`. `Fail()` is
-**irreversible**: the POV stops participating in promotion (`PartTetris`), fires
-its `OnFail` callback, and the server sends the client a `TPovFailure`
-notification (`orly/notification/pov_failure.h`). Any of that POV's updates that
-had not yet promoted are lost. A POV fails when one of its updates ages out or
-loses a merge conflict (see §3).
+`Fail()`ing a POV's repo is **irreversible**: it stops participating in
+promotion, and the server sends the owning session a `TPovFailure` notification
+(`orly/notification/pov_failure.h`). Any of that POV's updates that had not yet
+promoted are lost. A POV fails when one of its updates loses a merge conflict
+enough times in a row (see §3).
 
 ---
 
@@ -120,28 +109,40 @@ loses a merge conflict (see §3).
 (the merge over real repos). States are exercised in
 `orly/server/tetris_manager.test.cc`.
 
-The metaphor: each promotable update is a **piece** trying to "land" in the
-parent POV. The merge is a repeated game (`TTetrisPiece::PlayTetris`), each
-round:
+Each shared/global POV has a `TPlayer`; each child POV that feeds it is a
+`TChild`. The player runs a round (`TRepoTetrisManager::TPlayer::Play`) whenever
+children have work:
 
-1. **Age & expire.** Every candidate piece increments its age; a piece older
-   than its `max_age` is `Fail()`ed (its write is discarded, its POV fails).
-2. **Order.** Surviving pieces are sorted **oldest-first**, then by **larger
-   key-count first** — a deterministic priority so the merge is reproducible.
-3. **Assert & promote.** In that order, each piece's **assertion** is checked
-   against a snapshot of the parent POV's current state (`TContext`). If it
-   holds, the piece **promotes** (its mutation applies to the parent) and its
-   state becomes `Promoted`. If not, it stays `Undecided` and is retried next
-   round — after the higher-priority pieces have mutated the parent.
-
-A piece is in exactly one of three states: `Undecided`, `Promoted`, `Failed`.
+1. **Snapshot.** Each ready child is `Refresh`ed: it `Peek`s its **next** update
+   — the one at its repo's lowest unpopped sequence number
+   (`GetSequenceNumberStart`) — and reads that update's `TMetaRecord` (recorded
+   args, timestamp, random seed, and the **expected predicate results** — the
+   assertions captured at write time). A child's `Age` increments each round.
+2. **Order.** Ready children are sorted **oldest-`Age` first** (`SortsBefore`) —
+   a deterministic priority, so a starved writer eventually wins.
+3. **Promote.** In that order, `TChild::Play` re-runs the update's method against
+   a snapshot `TContext` of the parent's current state (`TestAssertions`) and
+   compares the fresh predicate results to the recorded ones. If they match, the
+   update **promotes**: `transaction->Push(parent_repo, update)` +
+   `transaction->Pop(child_repo)` (so the parent assigns it a new sequence
+   number) and the session gets an `Accepted` notification. **At most one**
+   assertion-bearing update promotes per round (the others retry next round,
+   against the now-mutated parent). If an update's assertion fails **10 rounds in
+   a row** (`FailureCount >= 10`), its repo is `Fail()`ed.
 
 **Conflict resolution without locks** falls out of the assertion + ordering:
-when two pieces touch the same key, the first to promote mutates the parent, so
-the second's assertion no longer holds and it must wait (or eventually age out).
-There is no mutex on the key — serialization is the deterministic age ordering
-plus the snapshot-based assertion. This is the mechanism for **field changes**
-(read-modify-write).
+when two updates touch the same key, the first to promote mutates the parent, so
+the second's assertion no longer holds and it retries (or eventually fails).
+There is no mutex on the key — serialization is the deterministic `Age` ordering
+plus the snapshot-based assertion replay. This is the mechanism for **field
+changes** (read-modify-write); a **field call** carries no predicate results
+(`IsAssertionFree`), so it never conflicts (see §5).
+
+> **Commutative fast-lane (#234, `--tetris_commutative_fastlane`, default off).**
+> Because assertion-free (commutative) children provably cannot conflict, the
+> fast-lane promotes **all** ready ones each round — each in its own
+> transaction — instead of one piece per round; assertion-bearing children keep
+> the at-most-one-per-round discipline. See `docs/design/concurrent-merge-throughput.md`.
 
 > Note: folding of commutative mutations is **not** done inside Tetris
 > promotion — Tetris promotes the deferred mutations upward as-is; the folding
@@ -150,53 +151,40 @@ plus the snapshot-based assertion. This is the mechanism for **field changes**
 
 ---
 
-## 4. Causal ordering (the Flux Capacitor)
+## 4. Ordering by sequence number
 
 **Code:** `orly/indy/sequence_number.h`, `orly/indy/repo.h`,
-`orly/indy/transaction_base.*`. (The retired Flux Capacitor implemented this as
-an in-memory causal DAG of `TUpdate`/`TEvent`/`TLink`; indy instead orders by
-per-repo sequence number — see the note below.)
+`orly/indy/transaction_base.*`, `orly/indy/context.cc`, `orly/indy/present_walker.h`.
 
-The Flux Capacitor is not one class — it is the causal-graph machinery that
-orders promotion by **causality, not wall-clock time**. The pieces:
+There is no separate causal graph. `TSequenceNumber` (`uint64_t`) is a
+**per-repo** counter (`TRepo::NextUpdate`): every update pushed to a repo takes
+the next value. That single number does two jobs.
 
-- **Updates are events** in a "happened-before" DAG. A `TLink` is a directed
-  cause→effect edge between updates.
-- Each update tracks `LocalCauseCount` — how many of its causes are still in
-  the *same* POV. An update with `LocalCauseCount == 0` is a **trailing
-  update**: it has no unresolved local dependency and is therefore eligible to
-  promote (it sits on its POV's `FirstTrailingUpdate` list). As causes are
-  added/removed (`OnLocalCauseJoin` / `OnLocalCausePart`) the update unlinks
-  from / relinks to that list.
-- **Promotion** (`TUpdate::Promote`) moves a trailing update to the parent POV,
-  re-counts its causes in that new context, and re-links it if it still has
-  local causes. When an update promotes past the global POV it is deleted (its
-  effect has been folded into the committed state / flushed to disk).
+**Promotion / pop order (within a repo).** A repo's updates promote and pop in
+sequence order: the "popper" may only take the update at the oldest-unpopped
+boundary (`GetSequenceNumberStart()`, enforced by the sequence-number-start
+check in `orly/indy/transaction_base.cc`). Tetris (§3) Peeks exactly that update
+from each child and decides *which child* wins a contested key, by `Age`. On
+promotion the parent repo assigns the update **its own** next sequence number, so
+numbering stays monotonic in the repo an update lands in. The same boundary is
+the persistence/replication queue discipline (oldest unflushed first).
 
-So causality is never violated: an update can only move up once everything it
-depends on within its POV has already moved up. Tetris (§3) decides *which* of
-the currently-promotable updates wins a contested key; the Flux Capacitor
-decides *when* an update is allowed to be a candidate at all.
-
-### Sequence numbers are storage, not merge order
-
-`TSequenceNumber` (`uint64_t`, `orly/indy/sequence_number.h`) is a **per-repo**
-counter assigned as updates are pushed to storage. It does **not** determine
-merge order (the causal graph does). It identifies updates within a repo for
-persistence/replication and gives the "popper" a queue discipline:
-`GetSequenceNumberStart()` is the oldest unpopped update, and a pop/discard may
-only take the update at that boundary (this is the sequence-number-start check
-in `orly/indy/transaction_base.cc`).
+**Read resolution (across the repo chain).** A point read walks the `TContext`'s
+repo chain (the repo + all ancestors) and resolves a key that appears at several
+entries/levels by sequence number: for the same key the **highest sequence wins**
+(`present_walker.h` `TItem::operator<`), i.e. last-writer-wins for plain assigns.
+A run of same-mutator **commutative** entries is instead *folded* rather than
+shadowed (§5) — that is what lets a `+=` survive alongside the value it adds to.
 
 ### Time travel
 
 The original 2014 pitch implied user-facing "time-travel" queries. The **engine
-has no native time-travel mechanism** — the Flux Capacitor's causal ordering is
-purely an internal merge device. Historical queries are achievable in
-**user-space** by encoding the version axis into the key and folding over it on
-read (`reduce` + a monoid). See `examples/bitcoin-time-travel/` (balance at a
-block height; branched-history multiverse) and `examples/wikipedia-categories/`
-(set-union over years).
+has no native time-travel mechanism** — sequence ordering is purely an internal
+merge/storage device. Historical queries are achievable in **user-space** by
+encoding the version axis into the key and folding over it on read (`reduce` + a
+monoid). See `examples/bitcoin-time-travel/` (balance at a block height;
+branched-history multiverse) and `examples/wikipedia-categories/` (set-union over
+years).
 
 ---
 
@@ -245,11 +233,11 @@ writers each `+= 1` a hot key and every increment lands.
 Session A: *<['views', page]>::(int) += 1     Session B: ... += 1
 ```
 
-1. Each session has its own `TPrivatePov`. A's `+= 1` becomes a `{Add, 1}`
+1. Each session has its own private POV. A's `+= 1` becomes a `{Add, 1}`
    deferred mutation in A's POV/repo; B's likewise in B's POV/repo. Neither
    reads the current value, so neither carries an assertion.
-2. Both updates become trailing (`LocalCauseCount == 0`) and are offered to the
-   parent's Tetris game.
+2. Each update is the lowest-sequence entry in its repo, so both are offered to
+   the parent's Tetris game (`IsAssertionFree`, so neither can conflict).
 3. Both promote — there is no assertion to conflict, because `{Add,1}` and
    `{Add,1}` commute. They land in the parent (eventually global) as two
    `{Add,1}` entries on the key.
