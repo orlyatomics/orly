@@ -436,6 +436,13 @@ namespace Orly {
       virtual bool ForEachIndex(const std::function<
           bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const final;
 
+      /* Install the named package and run its compile-time test{} blocks on this
+         (indy) engine, returning true iff every test passed. Used by orlyc to
+         run tests on indy instead of the legacy SPA engine (#262). Installs,
+         opens a throwaway session, and runs the suite on a fiber (durable/
+         transaction work asserts it runs in a fiber context). */
+      bool RunPackageTests(const std::vector<std::string> &package_name, uint64_t version, bool verbose);
+
       private:
       /* A live connection to a client. */
       class TConnection final

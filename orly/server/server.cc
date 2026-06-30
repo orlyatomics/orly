@@ -18,6 +18,7 @@
 
 #include <orly/server/server.h>
 
+#include <cstring>
 #include <optional>
 #include <poll.h>
 #include <sys/syscall.h>
@@ -754,7 +755,12 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(core, &mask);
-    IfLt0(sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask));
+    /* Pinning is an optimization, not a requirement. Restricted environments
+       (containers/CI, e.g. orlyc's embedded test server, #262) may forbid
+       sched_setaffinity; log and run unpinned rather than failing startup. */
+    if (sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask) < 0) {
+      syslog(LOG_WARNING, "Slow Scheduler TID=[%ld] could not pin to core [%ld]: %s", syscall(SYS_gettid), core, strerror(errno));
+    }
     syslog(LOG_INFO, "Slow Scheduler TID=[%ld] on core [%ld]", syscall(SYS_gettid), core); /* TEMP */
     if (!Fiber::TFrame::LocalFramePool) {
       Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
@@ -782,7 +788,10 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(core, &mask);
-    IfLt0(sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask));
+    /* See note in launch_slow_fiber_sched: pinning is best-effort. */
+    if (sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask) < 0) {
+      syslog(LOG_WARNING, "Fast Scheduler TID=[%ld] could not pin to core [%ld]: %s", syscall(SYS_gettid), core, strerror(errno));
+    }
     syslog(LOG_INFO, "Fast Scheduler TID=[%ld] on core [%ld]", syscall(SYS_gettid), core); /* TEMP */
     //Base::TBooster booster; /* TODO : We can only boost when we are sure we are the only thread assigned to a core! */
     if (!Fiber::TFrame::LocalFramePool) {
@@ -2198,6 +2207,33 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
     strm << '[' << name << ']';
   }
   syslog(LOG_INFO, "installed package [%s], version [%ld]", strm.str().c_str(), version);
+}
+
+bool TServer::RunPackageTests(const vector<string> &package_name, uint64_t version, bool verbose) {
+  /* Install, open a throwaway session, and run the suite -- all on the ws runner,
+     because every step does durable/transaction work that asserts it runs inside
+     a fiber (TCompletionTrigger::Wait). orlyc calls this from the scheduler main
+     job, which is not itself a fiber. */
+  assert(!FastRunnerVec.empty());
+  bool result = false;
+  std::exception_ptr err;
+  /* A fast runner's thread sets up the per-thread LocalFramePool, read-file
+     cache, and walker cache that point reads need -- the ws runner does not, so
+     dispatch onto a fast runner (the same place Try() runs method calls). */
+  Indy::Fiber::TJumpRunnable jump_runnable([this, &package_name, version, verbose, &result, &err] {
+    try {
+      InstallPackage(package_name, version);
+      auto session = DurableManager->New<TSession>(Base::TUuid(Base::TUuid::Twister), seconds(600));
+      result = session->RunTestSuite(this, package_name, version, verbose);
+    } catch (...) {
+      err = std::current_exception();
+    }
+  });
+  jump_runnable(FramePoolManager.get(), FastRunnerVec[0].get());
+  if (err) {
+    std::rethrow_exception(err);
+  }
+  return result;
 }
 
 void TServer::ServeClient(TFd &fd, const TAddress &client_address) {

@@ -18,6 +18,7 @@
 
 #include <orly/server/session.h>
 #include <algorithm>
+#include <iostream>
 #include <optional>
 
 #include <orly/atom/suprena.h>
@@ -473,31 +474,44 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
   }
 }
 
-bool TSession::RunTestSuite(TServer * /*server*/,
-    const std::vector<std::string> & /*package_name*/,
-    uint64_t /*package_version*/, bool /*verbose*/) {
-#if 0
+void TSession::SeedTestPovSequence(TServer *server, const Base::TUuid &child_pov_id,
+    const std::optional<Base::TUuid> &parent_pov_id) {
   assert(server);
+  Indy::L0::TManager::TPtr<Indy::TRepo> parent_repo =
+      parent_pov_id ? server->GetDurableManager()->Open<TPov>(*parent_pov_id)->GetRepo(server)
+                    : server->GetGlobalRepo();
+  auto child = server->GetDurableManager()->Open<TPov>(child_pov_id);
+  child->GetRepo(server)->SetNextSequenceNumber(parent_repo->GetNextSequenceNumber());
+}
 
-  server->InstallPackage(package_name, package_version);
+bool TSession::RunTestSuite(TServer *server,
+    const std::vector<std::string> &package_name,
+    uint64_t /*package_version*/, bool verbose) {
+  assert(server);
+  /* The package is installed by the caller (mirrors orlyc's SPA flow:
+     Install then RunTestSuite). */
   bool succeeded = true;
-  server->GetPackageManager().Get(package_name)->ForEachTest(
-      [this, server, &package_name, verbose](const Package::TTest *test) {
+  server->GetPackageManager().Get(Package::TName{package_name})->ForEachTest(
+      [this, server, &package_name, &succeeded, verbose](const Package::TTest *test) -> bool {
         assert(test);
-        Base::TUuid spov = NewFastSharedPov(server, *std::optional<Base::TUuid>::Unknown, std::chrono::seconds(1000));
+        /* One paused shared POV per top-level test{} section. The with-block's
+           writes land here and are visible to every case via read fallthrough;
+           pausing keeps them from being promoted to the global POV. */
+        Base::TUuid spov = NewFastSharedPov(server, std::optional<Base::TUuid>(), std::chrono::seconds(1000));
         PausePov(server, spov);
+        SeedTestPovSequence(server, spov, std::optional<Base::TUuid>());
         if (test->WithBlock) {
-          RunInPrivateChildPov(server, package_name, test->withBlock, spov);
+          RunFuncCommit(server, package_name,
+              [test](Package::TContext &ctx) {
+                assert(test->WithBlock->Runner);
+                test->WithBlock->Runner(ctx, Package::TArgMap());
+              },
+              spov);
         }
-        succeeded = RunTestBlock(spov, test->SubCases, verbose) && succeeded;
+        succeeded = RunTestBlock(server, package_name, spov, test->SubCases, verbose) && succeeded;
         return true;
       });
   return succeeded;
-#endif
-
-  // TODO: finish implementation
-
-  return true;
 }
 
 TNotification *TSession::TryGetNotification(uint32_t seq_number) const {
@@ -564,85 +578,177 @@ TSession::~TSession() {
   Cleanup();
 }
 
-void TSession::RunInPrivateChildPov(TServer *server,
-    const std::vector<std::string> & /*package_name*/,
+void TSession::RunFuncCommit(TServer *server,
+    const std::vector<std::string> &package_name,
     const function<void(Package::TContext &ctx)> &func,
-    const Base::TUuid &parent_pov_id) {
+    const Base::TUuid &pov_id) {
   assert(server);
   assert(func);
 
-  Base::TUuid child_pov_id = NewFastPrivatePov(server, parent_pov_id, std::chrono::seconds(1000));
-  Durable::TPtr<TPov> child_pov = server->GetDurableManager()->Open<TPov>(child_pov_id);
-  if (!child_pov) {
-    DEFINE_ERROR(error_t, runtime_error, "unknown child_pov_id");
-    THROW_ERROR(error_t) << child_pov_id;
+  Durable::TPtr<TPov> pov = server->GetDurableManager()->Open<TPov>(pov_id);
+  if (!pov) {
+    DEFINE_ERROR(error_t, runtime_error, "unknown pov_id");
+    THROW_ERROR(error_t) << pov_id;
   }
-  AddPov(child_pov);
-  const Indy::L0::TManager::TPtr<Indy::TRepo> &repo = child_pov->GetRepo(server);
-  TSuprena child_arena;
-  Indy::TContext context(repo, &child_arena);
+  AddPov(pov);
+  const Indy::L0::TManager::TPtr<Indy::TRepo> &repo = pov->GetRepo(server);
+  TSuprena my_arena;
+  Indy::TContext context(repo, &my_arena);
   Rt::TOpt<Base::TUuid> user_id;
   if (UserId) {
     user_id = UserId->GetRaw();
   }
   Base::TUuid session_id = GetId().GetRaw();
-  Indy::TIndyContext indy_context(user_id, session_id, context, &child_arena, server->GetScheduler(),
-      Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0), 0);
+  Indy::TIndyContext indy_context(user_id, session_id, context, &my_arena, server->GetScheduler(),
+      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint32_t>());
   func(indy_context);
   Package::TContext::TEffects effects(indy_context.MoveEffects());
 
-  if (!effects.empty()) {
-    auto transaction = server->GetRepoManager()->NewTransaction();
-    Indy::TUpdate::TOpByKey op_by_key;
-    void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize() * 2);
-    void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
-    for (const auto &item: effects) {
-      Indy::TIndexKey key = item.first;
-      Var::TVar val;
-      if (item.second->IsDelete()) {
+  if (effects.empty()) {
+    return;
+  }
+
+  /* Commit the effects straight into this POV's repo, resolving every mutation
+     against the current value (read-modify-write), exactly as SPA's compile-time
+     test path does. We deliberately do NOT use the #49 deferred commutative path
+     here: that optimization defers each `+=`/`*=` as a standalone {mutator, rhs}
+     entry and relies on the read-time fold to combine them, but the fold cannot
+     mix mutators -- a `*=` deferred over a `+=`-built base across the test POV
+     chain folds to the wrong value. Compile-time tests are single-threaded, so
+     the concurrency benefit of deferral does not apply; resolving now matches
+     SPA byte-for-byte (#262). */
+  auto transaction = server->GetRepoManager()->NewTransaction();
+  Indy::TUpdate::TOpByKey op_by_key;
+  void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize() * 2);
+  void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
+  for (const auto &item: effects) {
+    Indy::TIndexKey key = item.first;
+    if (item.second->IsDelete()) {
+      op_by_key[key] =
+          Indy::TKey(Native::TTombstone::Tombstone, &my_arena, state_alloc_2);
+      continue;
+    }
+    Var::TVar val;
+    if (!item.second->IsFinal()) {
+      if (context.Exists(key)) {
+        /* Base present (possibly only as a commutative contribution in an
+           ancestor test POV, which the read folds): resolve the change against
+           it. This is what makes a `*=` over a `+=`-built value -- or any op
+           following a different op on the same key across the chain -- come out
+           right. */
+        val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
+      } else if (auto *mut = dynamic_cast<const Var::TMutation *>(item.second.get());
+                 mut && Var::IsDeferSafeCommutative(mut->GetMutator())) {
+        /* Absent key + a defer-safe commutative op (`+=`, `*=`, `|=`, min/max):
+           bare-commutative upsert from the monoid identity (#151). For these
+           monoids identity (+) rhs == rhs, so emit the rhs directly. Reading the
+           absent key instead would throw ("could not translate from sabot
+           state"); skipping the read matches SPA. */
         op_by_key[key] =
-            Indy::TKey(Native::TTombstone::Tombstone, &child_arena, state_alloc_2);
+            Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, mut->GetRhs())).get());
+        continue;
       } else {
-        if (!item.second->IsFinal()) {
-          val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
-        }
-        item.second->Apply(val);
-        op_by_key[key] =
-            Indy::TKey(&child_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, val)).get());
+        /* Absent key + a non-commutative op: surface the same error SPA does. */
+        val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
       }
     }
-    TUuid update_id(TUuid::Twister);
-    std::optional<TTracker> tracker = TTracker(update_id, std::chrono::seconds(0));
-#if 0
-    const Package::TContext::TPredicateResults &predicate_results = indy_context.GetPredicateResults();
-    TMetaRecord::TEntry::TArgByName meta_args_by_name;
-
-
-
-    // TODO: finish implementation
-
-
-
-    TMetaRecord meta_record(
-        update_id,
-        TMetaRecord::TEntry(
-            GetId(), GetUserId(), package_name, closure.GetMethodName(),
-            TMetaRecord::TEntry::TArgByName(meta_args_by_name.begin(), meta_args_by_name.end()),
-            TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end())
-        )
-    );
-    auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
-    transaction->Push(repo, update);
-    transaction->Prepare();
-    transaction->CommitAction();
-#endif
+    item.second->Apply(val);
+    op_by_key[key] =
+        Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, val)).get());
   }
+  TUuid update_id(TUuid::Twister);
+  /* Compile-time tests need no replication/notification metadata, so the meta
+     record carries empty args; the predicate results still ride along so the
+     update is well-formed. */
+  const auto &predicate_results = indy_context.GetPredicateResults();
+  uint32_t random_seed = 0;
+  if (indy_context.GetOptRandomSeed().IsKnown()) {
+    random_seed = indy_context.GetOptRandomSeed().GetVal();
+  }
+  Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
+  if (indy_context.GetOptNow().IsKnown()) {
+    run_time = indy_context.GetOptNow().GetVal();
+  }
+  TMetaRecord meta_record(
+      update_id,
+      TMetaRecord::TEntry(
+          GetId(), GetUserId(), package_name, std::string(),
+          TMetaRecord::TEntry::TArgByName(),
+          TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
+          run_time, random_seed));
+  auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
+  transaction->Push(repo, update);
+  transaction->Prepare();
+  transaction->CommitAction();
 }
 
-bool TSession::RunTestBlock(const Base::TUuid &/*parent_pov_id*/,
-    const Package::TTestBlock &/*test_block*/, bool /*verbose*/) {
-  // TODO: finish implementation
-  return true;
+bool TSession::RunTestBlock(TServer *server,
+    const std::vector<std::string> &package_name,
+    const Base::TUuid &parent_pov_id,
+    const Package::TTestBlock &test_block, bool verbose) {
+  assert(server);
+  bool result = true;
+  for (const auto *test: test_block) {
+    assert(test);
+    /* Each case gets its own paused shared child of parent_pov_id: it inherits
+       the parent's writes (with-block + enclosing case) by read fallthrough,
+       its own writes stay isolated from sibling cases (paused => not promoted
+       up), and its SubCases run against it so they read-your-writes. */
+    Base::TUuid case_pov = NewFastSharedPov(server, parent_pov_id, std::chrono::seconds(1000));
+    PausePov(server, case_pov);
+    SeedTestPovSequence(server, case_pov, parent_pov_id);
+
+    if (verbose) {
+      std::cout << test->Loc;
+      if (test->Name.size() > 0) {
+        std::cout << ' ' << test->Name;
+      }
+      std::cout << " executing...";
+    }
+
+    bool passed = false;
+    try {
+      RunFuncCommit(server, package_name,
+          [test, &passed](Package::TContext &ctx) {
+            assert(test->Func);
+            assert(test->Func->Runner);
+            Atom::TCore::TExtensibleArena *arena = ctx.GetArena();
+            Atom::TCore ret = test->Func->Runner(ctx, Package::TArgMap());
+            void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+            Sabot::ToNative(*Sabot::State::TAny::TWrapper(ret.NewState(arena, state_alloc)), passed);
+          },
+          case_pov);
+
+      if (passed) {
+        if (verbose) {
+          std::cout << " PASSED" << std::endl;
+        }
+        result = RunTestBlock(server, package_name, case_pov, test->SubCases, verbose) && result;
+        continue;
+      }
+      if (!verbose) {
+        std::cout << test->Loc;
+        if (test->Name.size()) {
+          std::cout << ' ' << test->Name;
+        }
+      }
+      std::cout << " FAILED";
+    } catch (const std::exception &ex) {
+      passed = false;
+      if (!verbose) {
+        std::cout << test->Loc;
+        if (test->Name.size()) {
+          std::cout << ' ' << test->Name;
+        }
+      }
+      std::cout << " FAILED: " << ex.what();
+    }
+
+    /* Reached only on failure (the pass path continues above). */
+    std::cout << " (child tests will not be executed)" << std::endl;
+    result = false;
+  }
+  return result;
 }
 
 void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
@@ -671,7 +777,6 @@ void TSession::Cleanup() {
 TUuid TSession::NewPov(
     TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live) {
   assert(server);
-  printf("TSession::NewPov()\n");
   auto durable_manager = server->GetDurableManager();
   TPov::TSharedParents shared_parents;
   if (parent_pov_id) {
@@ -683,7 +788,6 @@ TUuid TSession::NewPov(
   pov->GetRepo(server);
   Base::TUuid pov_id = pov->GetId();
   AddPov(std::move(pov));
-  printf("TSession::NewPov() FINISH\n");
   return pov_id;
 }
 

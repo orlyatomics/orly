@@ -225,16 +225,38 @@ namespace Orly {
       /* Calls Cleanup(). */
       virtual ~TSession();
 
-      /* Create a private POV that is a child of the POV represented by
-         'parent_pov_id'.  Execute 'func' in that POV and push any size effects
-         to the parent. */
-      void RunInPrivateChildPov(TServer *server,
+      /* Run a test func against the POV represented by 'pov_id' and commit any
+         effects it produces directly into that POV's repo. The compile-time
+         test runner relies on indy's parent-chain read fallthrough for
+         cross-level visibility (a child test POV reads its ancestors), so there
+         is no Tetris promotion step here -- unlike the SPA flux model, an indy
+         transaction can write straight into a (paused) shared POV. The commit
+         mirrors the normal write path (Try), including the #49 deferred
+         commutative-entry handling. */
+      void RunFuncCommit(TServer *server,
           const std::vector<std::string> &package_name,
           const std::function<void(Package::TContext &ctx)> &func,
-          const Base::TUuid &parent_pov_id);
+          const Base::TUuid &pov_id);
 
-      bool RunTestBlock(const Base::TUuid &parent_pov_id,
+      /* Run every test case in 'test_block' against a fresh paused shared child
+         of 'parent_pov_id' (one per case, for sibling isolation), recursing into
+         each passing case's SubCases. Returns the &&-accumulation of all case
+         results. Mirrors SPA's RunTest/RunTestBlock semantics and output. */
+      bool RunTestBlock(TServer *server,
+          const std::vector<std::string> &package_name,
+          const Base::TUuid &parent_pov_id,
           const Package::TTestBlock &test_block, bool verbose);
+
+      /* Seed a freshly-created test POV's sequence counter from 'parent_pov_id'
+         (or the global POV when unset) so sequence numbers increase
+         monotonically down the test POV chain. The point-read fold
+         (present_walker) resolves a key present at several chain levels by
+         sequence number; child repos otherwise start at 1, so a child's write
+         could not shadow an ancestor's older value and a subcase would read the
+         stale ancestor value. Compile-time tests are single-threaded, so no
+         lock is taken. */
+      void SeedTestPovSequence(TServer *server, const Base::TUuid &child_pov_id,
+          const std::optional<Base::TUuid> &parent_pov_id);
 
       /* Stream out. */
       virtual void Write(Io::TBinaryOutputStream &strm) const override;

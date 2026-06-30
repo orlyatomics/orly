@@ -45,10 +45,14 @@ class TPool(object):
         self.__workers = max(1, int(workers))
 
     def create_process(self, filepath):
+        # ORLYC overrides the compiler binary; ORLYC_EXTRA_ARGS appends flags
+        # (e.g. ORLYC_EXTRA_ARGS=--test-engine=indy to run tests on indy, #262).
+        orlyc = os.environ.get('ORLYC', '../out_orly/debug/orly/orlyc')
+        extra = os.environ.get('ORLYC_EXTRA_ARGS', '')
         return TProcess(
                  filepath,
                  subprocess.Popen(
-                     '../out_orly/debug/orly/orlyc -m -d ' + filepath + ' -o ' + self.__out_dir,
+                     orlyc + ' -m -d ' + filepath + ' -o ' + self.__out_dir + ' ' + extra,
                      shell=True,
                      stderr=subprocess.STDOUT,
                      stdout=subprocess.PIPE))
