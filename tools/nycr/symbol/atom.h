@@ -31,38 +31,31 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TAtom
           : public TFinal {
         public:
 
-        /* TODO */
         const std::string &GetPattern() const {
           return Pattern;
         }
 
-        /* TODO */
         const std::optional<int> &GetPri() const {
           return Pri;
         }
 
-        /* TODO */
         int GetPriAsInt() const {
           return Pri ? *Pri : 0;
         }
 
         protected:
 
-        /* TODO */
         TAtom(const TName &name, TAnyBase *base, const std::string &pattern, const std::optional<int> &pri)
             : TFinal(name, base), Pattern(pattern), Pri(pri) {}
 
         private:
 
-        /* TODO */
         std::string Pattern;
 
-        /* TODO */
         std::optional<int> Pri;
 
       };  // TAtom

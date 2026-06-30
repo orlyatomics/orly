@@ -101,7 +101,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         std::unique_ptr<TArena> Arena;
 
       };  // TReader

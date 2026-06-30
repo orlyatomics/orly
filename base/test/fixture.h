@@ -30,53 +30,41 @@
 
 namespace Test {
 
-  /* TODO */
   class TFixture {
     NO_COPY(TFixture);
     public:
 
-    /* TODO */
     typedef void (*TFunc)();
 
-    /* TODO */
     TFixture(
         const Base::TCodeLocation &code_location, const char *name, TFunc func);
 
-    /* TODO */
     TFunc GetFunc() const {
       return Func;
     }
 
-    /* TODO */
     const char *GetName() const {
       return Name;
     }
 
-    /* TODO */
     const TFixture *GetNextFixture() const {
       return NextFixture;
     }
 
-    /* TODO */
     static const TFixture *GetFirstFixture() {
       return FirstFixture;
     }
 
     private:
 
-    /* TODO */
     Base::TCodeLocation CodeLocation;
 
-    /* TODO */
     const char *Name;
 
-    /* TODO */
     TFunc Func;
 
-    /* TODO */
     mutable const TFixture *NextFixture;
 
-    /* TODO */
     static const TFixture *FirstFixture, *LastFixture;
   };
 

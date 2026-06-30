@@ -33,7 +33,6 @@ using namespace Base::Chrono;
 /* Convenience macro to wrap the Read function. */
 #define READ(part, delimiter) Read(converter, part, #part, delimiter)
 
-/* TODO */
 template <typename TVal>
 static void Read(TConverter &converter, TVal &part, const char *name, const char delimiter) {
   converter.Read(part);
@@ -47,19 +46,15 @@ static void Read(TConverter &converter, TVal &part, const char *name, const char
   }
 }
 
-/* TODO */
 namespace NumNanosecond {
 
   /* Was 1000 for milliseconds, changed to 1000000000 for Nano */
   constexpr uint64_t Second = 1000000000;
 
-  /* TODO */
   constexpr uint64_t Minute = Second * 60;
 
-  /* TODO */
   constexpr uint64_t Hour = Minute * 60;
 
-  /* TODO */
   constexpr uint64_t Day = Hour * 24;
 
 }  // NumSecond
@@ -104,7 +99,6 @@ TTimeDiffInfo::TTimeDiffInfo(
         Second(second),
 	Nanosecond(nanosecond) {}
 
-/* TODO */
 TTimeDiffInfo::TTimeDiffInfo(const std::string &str) {
   TConverter converter(AsPiece(str));
   std::optional<bool> sign = converter.TryReadSign();
@@ -121,7 +115,6 @@ TTimeDiffInfo::TTimeDiffInfo(const std::string &str) {
   }
 }
 
-/* TODO */
 TTimeDiffInfo::TTimeDiffInfo(const TTimeDiff &time_diff)
     : Nanosecond(time_diff.count()) {
   IsForward = (Nanosecond >= 0);
@@ -135,14 +128,12 @@ TTimeDiffInfo::TTimeDiffInfo(const TTimeDiff &time_diff)
   Nanosecond %= NumNanosecond::Second;
 }
 
-/* TODO */
 std::string TTimeDiffInfo::AsString() const {
   std::ostringstream strm;
   Write(strm);
   return strm.str();
 }
 
-/* TODO */
 TTimeDiff TTimeDiffInfo::AsTimeDiff() const {
   return TTimeDiff((Day * NumNanosecond::Day +
                     Hour * NumNanosecond::Hour +
@@ -151,7 +142,6 @@ TTimeDiff TTimeDiffInfo::AsTimeDiff() const {
 		    Nanosecond) * (IsForward ? 1 : -1));
 }
 
-/* TODO */
 void TTimeDiffInfo::Write(std::ostream &strm) const {
   strm
     << (IsForward ? '+' : '-')
@@ -177,7 +167,6 @@ TTimePntInfo::TTimePntInfo(
   Validate(HERE);
 }
 
-/* TODO */
 TTimePntInfo::TTimePntInfo(const std::string &str)
     : UtcOffset(0) {
   TConverter converter(AsPiece(str));
@@ -231,14 +220,12 @@ TTimePntInfo::TTimePntInfo(const TTimePnt &time_pnt)
   Validate(HERE);
 }
 
-/* TODO */
 std::string TTimePntInfo::AsString() const {
   std::ostringstream strm;
   Write(strm);
   return strm.str();
 }
 
-/* TODO */
 TTimePnt TTimePntInfo::AsTimePnt() const {
 
   std::tm tm_obj;
@@ -263,7 +250,6 @@ std::tm &TTimePntInfo::AsTmObj(std::tm &out) const {
   return out;
 }
 
-/* TODO */
 void TTimePntInfo::Validate(const TCodeLocation &here) const {
   if (Year < 1900) {
     throw TChronoError(here, "Year prior to 1900 is not supported");
@@ -291,7 +277,6 @@ void TTimePntInfo::Validate(const TCodeLocation &here) const {
   }
 }
 
-/* TODO */
 void TTimePntInfo::Write(std::ostream &strm) const {
   strm
     << Year << '-'
@@ -329,7 +314,6 @@ TTimeDiff Base::Chrono::CreateTimeDiff(
   return TTimeDiffInfo(is_forward, day, hour, minute, second, nanosecond).AsTimeDiff();
 }
 
-/* TODO */
 TTimePnt Base::Chrono::CreateTimePnt(
     uint64_t year, uint64_t month, uint64_t day,
     uint64_t hour, uint64_t minute, uint64_t second,
@@ -337,5 +321,4 @@ TTimePnt Base::Chrono::CreateTimePnt(
   return TTimePntInfo(year, month, day, hour, minute, second, nanosecond, utc_offset).AsTimePnt();
 }
 
-/* TODO */
 TTimePnt Base::Chrono::Now() { return TimePntCast(TClock::now()); }

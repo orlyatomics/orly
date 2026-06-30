@@ -49,30 +49,23 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       class TClient final
           : public Client::TClient {
         public:
 
-        /* TODO */
         TClient(const Socket::TAddress &server_address, const std::optional<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live)
             : Client::TClient(server_address, session_id, time_to_live) {}
 
         private:
 
-        /* TODO */
         virtual void OnPovFailed(const Base::TUuid &repo_id) override;
 
-        /* TODO */
         virtual void OnUpdateAccepted(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) override;
 
-        /* TODO */
         virtual void OnUpdateReplicated(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) override;
 
-        /* TODO */
         virtual void OnUpdateDurable(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) override;
 
-        /* TODO */
         virtual void OnUpdateSemiDurable(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) override;
 
       };  // TRepl::TClient

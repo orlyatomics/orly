@@ -43,7 +43,6 @@ namespace Orly {
 
   namespace Var {
 
-    /* TODO */
     class TAddr;
     class TBool;
     class TDict;
@@ -65,49 +64,36 @@ namespace Orly {
 
     // template <typename TVal> struct TRead;
 
-    /* TODO */
     class TVar {
       public:
 
-      /* TODO */
       template <typename TVal>
       struct TDt {
 
-        /* TODO */
         TVal static As(const TVar &);
 
       };
 
-      /* TODO */
       class TVisitor;
 
-      /* TODO */
       class TDoubleVisitor;
 
-      /* TODO */
       class TImpl {
         NO_COPY(TImpl);
         public:
 
-        /* TODO */
         virtual Var::TVar &Index(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Add(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &And(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Div(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Exp(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Intersection(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Mod(const TVar &) = 0;
 
         /* The min / max merge-mutation operators (#213). Unlike the
@@ -117,64 +103,46 @@ namespace Orly {
         virtual TImpl &Max(const TVar &);
         virtual TImpl &Min(const TVar &);
 
-        /* TODO */
         virtual TImpl &Mult(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Or(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Sub(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &SymmetricDiff(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Union(const TVar &) = 0;
 
-        /* TODO */
         virtual TImpl &Xor(const TVar &) = 0;
 
         protected:
 
-        /* TODO */
         typedef TVar::TVisitor TVisitor;
 
-        /* TODO */
         TImpl() {}
 
-        /* TODO */
         virtual ~TImpl();
 
-        /* TODO */
         TVar AsVar() {
           return TVar(this);
         }
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const = 0;
 
-        /* TODO */
         virtual TVar Copy() const = 0;
 
-        /* TODO */
         virtual size_t GetHash() const = 0;
 
-        /* TODO */
         virtual Type::TType GetType() const = 0;
 
-        /* TODO */
         virtual void Touch() = 0;
 
-        /* TODO */
         virtual void Write(std::ostream &) const = 0;
 
         private:
 
-        /* TODO */
         static void Delete(TImpl *impl);
 
-        /* TODO */
         friend class TVar;
 
       };  // TImpl
@@ -183,7 +151,6 @@ namespace Orly {
          See <orly/var/unknown.h>. */
       TVar();
 
-      /* TODO */
       ~TVar();
 
       /* Construct a new TVar from a bool.
@@ -215,13 +182,11 @@ namespace Orly {
          See <orly/var/time_pnt.h>. */
       TVar(const Base::Chrono::TTimePnt &that);
 
-      /* TODO */
       template <typename TVal>
       TVar(const Rt::TSet<TVal> &that) {
         *this = Set(that);
       }
 
-      /* TODO */
       template <typename TVal>
       TVar(const std::vector<TVal> &that) {
         *this = List(that);
@@ -234,7 +199,6 @@ namespace Orly {
         *this = Mutable(that);
       }
 
-      /* TODO */
       template <typename TKey, typename TVal>
       TVar(const Rt::TDict<TKey, TVal> &that) {
         *this = Dict(that);
@@ -246,7 +210,6 @@ namespace Orly {
         *this = Addr(that);
       } */
 
-      /* TODO */
       template <typename TVal>
       TVar(const Rt::TOpt<TVal> &that) {
         *this = Opt(that);
@@ -260,13 +223,10 @@ namespace Orly {
       template <typename TCompound>
       explicit TVar(const TCompound &that);
 
-      /* TODO */
       TVar(TVar &&that);
 
-      /* TODO */
       TVar(const TVar &that);
 
-      /* TODO */
       static TVar Addr(const std::vector<std::pair<TAddrDir, TVar>> &that);
 
       /* TODO
@@ -274,20 +234,15 @@ namespace Orly {
       static TVar Addr(const Rt::TAddr<TElements...> &that);
       */
 
-      /* TODO */
       static TVar Dict(const Rt::TDict<TVar, TVar> &that, const Type::TType &key_type, const Type::TType &val_type);
 
-      /* TODO */
       template <typename TKey, typename TVal>
       static TVar Dict(const Rt::TDict<TKey, TVal> &that);
 
-      /* TODO */
       static TVar Free(const Type::TType &type);
 
-      /* TODO */
       static TVar List(const std::vector<TVar> &that, const Type::TType &type);
 
-      /* TODO */
       template <typename TVal>
       static TVar List(const std::vector<TVal> &that);
 
@@ -296,20 +251,15 @@ namespace Orly {
       template <typename TAddr, typename TVal>
       static TVar Mutable(const Rt::TMutable<TAddr, TVal> &that);
 
-      /* TODO */
       static TVar Obj(const std::unordered_map<std::string, TVar> &map_);
 
-      /* TODO */
       static TVar Opt(const Rt::TOpt<TVar> &opt, const Type::TType &type);
 
-      /* TODO */
       template <typename TVal>
       static TVar Opt(const Rt::TOpt<TVal> &that);
 
-      /* TODO */
       static TVar Set(const Rt::TSet<TVar> &that, const Type::TType &type);
 
-      /* TODO */
       template <typename TVal>
       static TVar Set(const Rt::TSet<TVal> &that);
 
@@ -317,7 +267,6 @@ namespace Orly {
          tag, and its payload value.  See <orly/var/variant.h>. */
       static TVar Variant(const Type::TType &variant_type, const std::string &tag, const TVar &payload);
 
-      /* TODO */
       TVar Copy() const;
 
       template <typename TTarget>
@@ -329,193 +278,158 @@ namespace Orly {
       template <typename TTarget>
       const TTarget *TryAs() const;
 
-      /* TODO */
       TVar &operator=(TVar &&that);
 
-      /* TODO */
       TVar &operator=(const TVar &that);
 
-      /* TODO */
       bool operator==(const TVar &that) const;
 
-      /* TODO */
       bool operator!=(const TVar &that) const {
         return !(*this == that);
       }
 
-      /* TODO */
       bool operator<(const TVar &that) const;
 
-      /* TODO */
       bool operator<=(const TVar &that) const {
         return (*this < that) || (*this == that);
       }
 
-      /* TODO */
       bool operator>(const TVar &that) const;
 
-      /* TODO */
       bool operator>=(const TVar &that) const {
         return (*this > that) || (*this == that);
       }
 
-      /* TODO */
       explicit operator bool() const;
 
-      /* TODO */
       Var::TVar &Index(const TVar &key) {
         return Impl->Index(key);
       }
 
-      /* TODO */
       Var::TVar &Add(const TVar &rhs) {
         assert(*this);
         Impl->Add(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &And(const TVar &rhs) {
         assert(*this);
         Impl->And(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Div(const TVar &rhs) {
         assert(*this);
         Impl->Div(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Exp(const TVar &rhs) {
         assert(*this);
         Impl->Exp(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Intersection(const TVar &rhs) {
         assert(*this);
         Impl->Intersection(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Mod(const TVar &rhs) {
         assert(*this);
         Impl->Mod(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Max(const TVar &rhs) {
         assert(*this);
         Impl->Max(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Min(const TVar &rhs) {
         assert(*this);
         Impl->Min(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Mult(const TVar &rhs) {
         assert(*this);
         Impl->Mult(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Or(const TVar &rhs) {
         assert(*this);
         Impl->Or(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Sub(const TVar &rhs) {
         assert(*this);
         Impl->Sub(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &SymmetricDiff(const TVar &rhs) {
         assert(*this);
         Impl->SymmetricDiff(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Union(const TVar &rhs) {
         assert(*this);
         Impl->Union(rhs);
         return *this;
       }
 
-      /* TODO */
       Var::TVar &Xor(const TVar &rhs) {
         assert(*this);
         Impl->Xor(rhs);
         return *this;
       }
 
-      /* TODO */
       void Accept(const TVisitor &visitor) const {
         assert(Impl);
         Impl->Accept(visitor);
       }
 
-      /* TODO */
       int Compare(const TVar &that) const;
 
-      /* TODO */
       size_t GetHash() const {
         return Impl->GetHash();
       }
 
-      /* TODO */
       Type::TType GetType() const {
         return Impl->GetType();
       }
 
-      /* TODO */
       TVar &Reset() {
         return *this = TVar();
       }
 
-      /* TODO */
       void Touch() {
         Impl->Touch();
       }
 
-      /* TODO */
       static void Accept(
           const TVar &lhs, const TVar &rhs,
           const TDoubleVisitor &double_visitor);
 
-      /* TODO */
       void Write(std::ostream &stream) const {
         Impl->Write(stream);
       }
 
       private:
 
-      /* TODO */
       TVar(TImpl *impl)
           : Impl(impl, TImpl::Delete) {
         assert(impl);
       }
 
-      /* TODO */
       void Init();
 
-      /* TODO */
       std::shared_ptr<TImpl> Impl;
 
       template <typename TVal> friend TVal DynamicCast(const TVar &var);
@@ -524,25 +438,20 @@ namespace Orly {
 
     };  // TVar
 
-    /* TODO */
     template <>
     struct TVar::TDt<TVar> {
 
-      /* TODO */
       TVar static As(const TVar &rhs) {
         return rhs;
       }
 
     };
 
-    /* TODO */
     class TVar::TVisitor {
       public:
 
-      /* TODO */
       virtual ~TVisitor();
 
-      /* TODO */
       virtual void operator()(const Var::TAddr *that) const = 0;
       virtual void operator()(const Var::TBool *that) const = 0;
       virtual void operator()(const Var::TDict *that) const = 0;
@@ -570,19 +479,15 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TVisitor() {}
 
     };  // TVisitor
 
-    /* TODO */
     class TVar::TDoubleVisitor {
       public:
 
-      /* TODO */
       virtual ~TDoubleVisitor();
 
-      /* TODO */
       virtual void operator()(const Var::TAddr *lhs, const Var::TAddr *rhs) const = 0;
       virtual void operator()(const Var::TAddr *lhs, const Var::TBool *rhs) const = 0;
       virtual void operator()(const Var::TAddr *lhs, const Var::TDict *rhs) const = 0;
@@ -919,13 +824,11 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       TDoubleVisitor() {}
 
     };  // TDoubleVisitor
 
 
-  /* TODO */
   inline std::ostream &operator<<(std::ostream &stream, const TVar &var) {
     var.Write(stream);
     return stream;

@@ -40,17 +40,14 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TBufBlock {
         NO_COPY(TBufBlock);
         public:
 
-        /* TODO */
         class TPool {
           NO_COPY(TPool);
           public:
 
-          /* TODO */
           TPool(size_t block_size, size_t block_count = 0UL)
               : BlockSize(block_size), Blob(nullptr), FirstBlock(nullptr), NumBlocksUsed(0UL), MaxBlocks(0UL) {
             assert(block_size % getpagesize() == 0);
@@ -59,17 +56,14 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           size_t GetNumBlocksUsed() const {
             return NumBlocksUsed;
           }
 
-          /* TODO */
           size_t GetMaxBlocks() const {
             return MaxBlocks;
           }
 
-          /* TODO */
           void Init(size_t block_count) {
             assert(MaxBlocks == 0UL);
             MaxBlocks = block_count;
@@ -94,7 +88,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           void *Alloc() {
             //syslog(LOG_INFO, "BufBlock [%ld] / [%ld]", NumBlocksUsed, MaxBlocks);
             void *ptr = TryAlloc();
@@ -114,7 +107,6 @@ namespace Orly {
             return ptr;
           }
 
-          /* TODO */
           void Free(void *ptr) {
             assert(ptr);
             TBlock *block = static_cast<TBlock *>(ptr);
@@ -126,7 +118,6 @@ namespace Orly {
             Cond.notify_one();
           }
 
-          /* TODO */
           void *TryAlloc() {
             //Base::TSpinLock::TSoftLock lock(SpinLock);
             std::lock_guard<std::mutex> lock(Lock);
@@ -143,62 +134,47 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           struct TBlock {
-            /* TODO */
             TBlock *NextBlock;
 
           };  // TBlock
 
-          /* TODO */
           const size_t BlockSize;
 
-          /* TODO */
           std::unique_ptr<TBlock> Blob;
 
-          /* TODO */
           TBlock *FirstBlock;
 
-          /* TODO */
           //Base::TSpinLock SpinLock;
           std::mutex Lock;
           std::condition_variable Cond;
 
-          /* TODO */
           size_t NumBlocksUsed;
 
-          /* TODO */
           size_t MaxBlocks;
 
         };  // TPool
 
-        /* TODO */
         TBufBlock() {}
 
-        /* TODO */
         ~TBufBlock() {}
 
-        /* TODO */
         static void *operator new(size_t /*size*/) {
           return Pool.Alloc();
         }
 
-        /* TODO */
         static void operator delete(void *ptr) {
           Pool.Free(ptr);
         }
 
-        /* TODO */
         static TPool Pool;
 
-        /* TODO */
         char *GetData() const {
           return &Buf;
         }
 
         private:
 
-        /* TODO */
         mutable char Buf;
 
       };  // TBufBlock

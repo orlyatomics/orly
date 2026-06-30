@@ -378,7 +378,6 @@ class TIndexIdReader
 
   using TArena = Orly::Indy::Disk::TDiskArena<Indy::Disk::Util::LogicalPageSize, Indy::Disk::Util::LogicalBlockSize, Indy::Disk::Util::PhysicalBlockSize, Indy::Disk::Util::CheckedPage, 128, true>;
 
-  /* TODO */
   //typedef Indy::Disk::TStream<Indy::Disk::Util::LogicalPageSize, Indy::Disk::Util::LogicalBlockSize, Indy::Disk::Util::PhysicalBlockSize, Indy::Disk::Util::CheckedPage> TInStream;
   typedef Orly::Indy::Disk::TReadFile<Indy::Disk::Util::LogicalPageSize, Indy::Disk::Util::LogicalBlockSize, Indy::Disk::Util::PhysicalBlockSize, Indy::Disk::Util::CheckedPage> TMyReadFile;
 

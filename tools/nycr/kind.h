@@ -26,40 +26,31 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TBase;
 
-    /* TODO */
     class TKind
         : public TDecl {
       NO_COPY(TKind);
       public:
 
-      /* TODO */
       virtual Symbol::TKind *GetSymbolAsKind() const = 0;
 
-      /* TODO */
       Symbol::TBase *TryGetBaseSymbol() const;
 
       protected:
 
-      /* TODO */
       TKind(const Syntax::TName *name, const Syntax::TOptSuper *opt_super);
 
-      /* TODO */
       virtual void ForEachPred(int pass, const std::function<void (TDecl *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       TRef<TBase> Super;
 
     };  // TKind
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TKind> {
       static const char *Name;

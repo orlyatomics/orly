@@ -35,39 +35,30 @@ namespace Orly {
       /* Forward Delcarations. */
       class TManager;
 
-      /* TODO */
       class TTransaction {
         NO_COPY(TTransaction);
         public:
 
-        /* TODO */
         typedef InvCon::UnorderedList::TMembership<TTransaction, TManager> TManagerMembership;
 
-        /* TODO */
         bool Push(const L0::TManager::TPtr<TRepo> &repo,
                   const std::shared_ptr<TUpdate> &update,
                   const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>());
 
-        /* TODO */
         bool Pop(const L0::TManager::TPtr<TRepo> &repo,
                  const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>());
 
-        /* TODO */
         bool Fail(const L0::TManager::TPtr<TRepo> &repo,
                   const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
-        /* TODO */
         bool Pause(const L0::TManager::TPtr<TRepo> &repo,
                    const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
-        /* TODO */
         bool UnPause(const L0::TManager::TPtr<TRepo> &repo,
                      const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
-        /* TODO */
         const std::shared_ptr<TUpdate> &Peek(const L0::TManager::TPtr<TRepo> &repo);
 
-        /* TODO */
         void Prepare();
 
         /* Mark the prepared action to be committed.  The commitment will occur when this object destructs.
@@ -87,7 +78,6 @@ namespace Orly {
            on the commit path. See orly/indy/transaction_base.cc. */
         static std::function<void ()> OnCommitBetweenPushAndPopForTest;
 
-        /* TODO */
         class TTransactionCompletion {
           NO_COPY(TTransactionCompletion);
           public:
@@ -97,55 +87,41 @@ namespace Orly {
             Failed
           };
 
-          /* TODO */
           typedef InvCon::UnorderedList::TMembership<TTransactionCompletion, TManager> TManagerMembership;
 
-          /* TODO */
           TTransactionCompletion(TManager *manager);
 
-          /* TODO */
           ~TTransactionCompletion();
 
-          /* TODO */
           void RegisterCompletion();
 
-          /* TODO */
           void RegisterFailure();
 
-          /* TODO */
           void SetWaitFor(size_t wait_for);
 
-          /* TODO */
           inline void SetCb(const std::shared_ptr<std::function<void (TTransactionResult)>> &cb);
 
           private:
 
-          /* TODO */
           size_t WaitFor;
 
-          /* TODO */
           size_t NumCompleted;
           std::mutex Mutex;
 
-          /* TODO */
           std::shared_ptr<std::function<void (TTransactionResult)>> Cb;
 
-          /* TODO */
           TManagerMembership::TImpl ManagerMembership;
 
         };  // TTransactionCompletion
 
-        /* TODO */
         class TReplica {
           public:
 
           /* Forward Declarations. */
           class TMutation;
 
-          /* TODO */
           typedef std::list<TMutation> TMutationList;
 
-          /* TODO */
           class TMutation {
             public:
 
@@ -157,217 +133,154 @@ namespace Orly {
               UnPauser
             };
 
-            /* TODO */
             class TUpdate {
               public:
 
-              /* TODO */
               typedef std::vector<std::pair<TIndexKey, Atom::TCore>> TOpByKey;
 
-              /* TODO */
               TUpdate();
 
-              /* TODO */
               TUpdate(TUpdate &&update);
 
-              /* TODO */
               TUpdate(const TUpdate &update);
 
-              /* TODO */
               TUpdate(const Orly::Indy::TUpdate *update);
 
-              /* TODO */
               ~TUpdate();
 
-              /* TODO */
               TUpdate &operator=(TUpdate &&that);
 
-              /* TODO */
               TUpdate &operator=(const TUpdate &that);
 
-              /* TODO */
               inline const Atom::TCore &GetMetadata() const;
 
-              /* TODO */
               inline const Atom::TCore &GetId() const;
 
-              /* TODO */
               inline const TOpByKey &GetOpByKey() const;
 
-              /* TODO */
               inline const std::shared_ptr<Atom::TSuprena> &GetSuprena() const;
 
-              /* TODO */
               inline void SetArena(const std::shared_ptr<Atom::TSuprena> &suprena);
 
-              /* TODO */
               void Write(Io::TBinaryOutputStream &strm, const Atom::TCore::TRemap &remap) const;
 
-              /* TODO */
               void Read(Io::TBinaryInputStream &strm, const Atom::TCore::TRemap &remap);
 
               private:
 
-              /* TODO */
               std::shared_ptr<Atom::TSuprena> Suprena;
 
-              /* TODO */
               Atom::TCore Metadata;
 
-              /* TODO */
               Atom::TCore Id;
 
-              /* TODO */
               TOpByKey OpByKey;
 
-              /* TODO */
               friend class Orly::Indy::TReplicationStreamer;
 
             };  // TUpdate
 
-            /* TODO */
             TMutation(TMutation &&mutation);
 
-            /* TODO */
             TMutation(const TMutation &mutation);
 
-            /* TODO */
             TMutation(TKind kind, const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
-            /* TODO */
             TMutation(TKind kind, const Base::TUuid &repo_id, const Orly::Indy::TUpdate *update, const std::optional<TSequenceNumber> &seq_num);
 
-            /* TODO */
             TMutation(TKind kind, const Base::TUuid &repo_id, TUpdate &&update, const std::optional<TSequenceNumber> &seq_num);
 
-            /* TODO */
             virtual ~TMutation();
 
-            /* TODO */
             TMutation &operator=(TMutation &&that);
 
-            /* TODO */
             TMutation &operator=(const TMutation &that);
 
-            /* TODO */
             inline TKind GetKind() const;
 
-            /* TODO */
             inline const Base::TUuid &GetRepoId() const;
 
-            /* TODO */
             inline const std::optional<TSequenceNumber> &GetSequenceNumber() const;
 
-            /* TODO */
             inline const TUpdate &GetUpdate() const;
 
-            /* TODO */
             inline TUpdate &GetUpdate();
 
-            /* TODO */
             inline void SetSequenceNumber(std::optional<TSequenceNumber> seq_num) NO_THROW;
 
-            /* TODO */
             inline TSequenceNumber &GetNextUpdate() NO_THROW;
 
             private:
 
-            /* TODO */
             TKind Kind;
 
-            /* TODO */
             Base::TUuid RepoId;
 
-            /* TODO */
             TUpdate Update;
 
-            /* TODO */
             std::optional<TSequenceNumber> SequenceNumber;
 
-            /* TODO */
             TSequenceNumber NextUpdate;
 
           };  // TMutation
 
-          /* TODO */
           TReplica(TReplica &&replica);
 
-          /* TODO */
           TReplica(const TReplica &replica);
 
-          /* TODO */
           TReplica();
 
-          /* TODO */
           ~TReplica();
 
-          /* TODO */
           TReplica &operator=(TReplica &&that);
 
-          /* TODO */
           TReplica &operator=(const TReplica &that);
 
-          /* TODO */
           TMutation *Push(const Base::TUuid &repo_id, const TUpdate *update);
 
-          /* TODO */
           TMutation *Pop(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
-          /* TODO */
           TMutation *Fail(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
-          /* TODO */
           TMutation *Pause(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
-          /* TODO */
           TMutation *UnPause(const Base::TUuid &repo_id, const std::optional<TSequenceNumber> &seq_num);
 
-          /* TODO */
           void Reset();
 
-          /* TODO */
           inline TMutationList &GetMutationList() const;
 
-          /* TODO */
           inline size_t GetSize() const;
 
           private:
 
-          /* TODO */
           mutable TMutationList MutationList;
 
-          /* TODO */
           friend class TManager;
           friend class Orly::Indy::TReplicationStreamer;
 
         };  // TReplica
 
-        /* TODO */
         static void *operator new(size_t size) {
           return Pool.Alloc(size);
         }
 
-        /* TODO */
         static void operator delete(void *ptr, size_t) {
           Pool.Free(ptr);
         }
 
-        /* TODO */
         static void InitTransactionPool(size_t num_obj) {
           Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetTransactionSize() {
           return sizeof(TTransaction);
         }
 
-        /* TODO */
         static void InitTransactionMutationPool(size_t num_obj) {
           TMutation::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetTransactionMutationSize() {
           return sizeof(TMutation);
         }
@@ -377,16 +290,12 @@ namespace Orly {
         /* Forward Declarations. */
         class TMutation;
 
-        /* TODO */
         typedef InvCon::UnorderedMultimap::TCollection<TTransaction, TMutation, Base::TUuid> TMutationCollection;
 
-        /* TODO */
         TTransaction(TManager *manager, bool should_replicate);
 
-        /* TODO */
         ~TTransaction() NO_THROW;
 
-        /* TODO */
         class TMutation {
           NO_COPY(TMutation);
           public:
@@ -397,214 +306,159 @@ namespace Orly {
             StatusChanger
           };
 
-          /* TODO */
           typedef InvCon::UnorderedMultimap::TMembership<TMutation, TTransaction, Base::TUuid> TTransactionMembership;
 
-          /* TODO */
           virtual ~TMutation() NO_THROW;
 
-          /* TODO */
           virtual TKind GetKind() const = 0;
 
-          /* TODO */
           inline const Base::TUuid &GetRepoId() const;
 
-          /* TODO */
           TMutation *TryGetNextMember() const {
             return TransactionMembership.TryGetNextMember();
           }
 
-          /* TODO */
           static void *operator new(size_t size) {
             return Pool.Alloc(size);
           }
 
-          /* TODO */
           static void operator delete(void *ptr, size_t) {
             Pool.Free(ptr);
           }
 
           protected:
 
-          /* TODO */
           TMutation(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo);
 
-          /* TODO */
           TTransactionMembership::TImpl TransactionMembership;
 
-          /* TODO */
           L0::TManager::TPtr<TRepo> Repo;
 
-          /* TODO */
           mutable TReplica::TMutation *MyMutation;
 
-          /* TODO */
           static Util::TPool Pool;
 
-          /* TODO */
           friend class Server::TIndyReporter;
           friend class TTransaction;
 
         };  // TMutation
 
-        /* TODO */
         class TPusher
             : public TMutation {
           NO_COPY(TPusher);
           public:
 
-          /* TODO */
           TPusher(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, const std::shared_ptr<TUpdate> &update);
 
-          /* TODO */
           virtual ~TPusher() NO_THROW;
 
-          /* TODO */
           virtual TKind GetKind() const;
 
           private:
 
-          /* TODO */
           TUpdate *Update;
 
-          /* TODO */
           friend class TTransaction;
 
         };  // TPusher
 
-        /* TODO */
         class TPopper
             : public TMutation {
           NO_COPY(TPopper);
           public:
 
-          /* TODO */
           enum TState {
             Peek,
             Pop,
             Fail
           };
 
-          /* TODO */
           TPopper(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, TState state);
 
-          /* TODO */
           virtual ~TPopper() NO_THROW;
 
-          /* TODO */
           virtual TKind GetKind() const;
 
-          /* TODO */
           TState GetState() const;
 
-          /* TODO */
           void DoPeek() const;
 
-          /* TODO */
           void SetState(TState state);
 
-          /* TODO */
           inline const std::shared_ptr<TUpdate> &GetUpdate() const;
 
           private:
 
-          /* TODO */
           TState State;
 
-          /* TODO */
           mutable std::shared_ptr<TRepo::TView> View;
 
-          /* TODO */
           mutable std::shared_ptr<TUpdate> Update;
 
-          /* TODO */
           friend class TTransaction;
 
         };  // TPopper
 
-        /* TODO */
         class TStatusChanger
             : public TMutation {
           NO_COPY(TStatusChanger);
           public:
 
-          /* TODO */
           TStatusChanger(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, TStatus status);
 
-          /* TODO */
           virtual ~TStatusChanger() NO_THROW;
 
-          /* TODO */
           virtual TKind GetKind() const;
 
           private:
 
-          /* TODO */
           TStatus Status;
 
-          /* TODO */
           friend class TTransaction;
 
         };  // TStatusChanger
 
-        /* TODO */
         bool GetCommitFlag() const;
 
-        /* TODO */
         TManager *Manager;
 
-        /* TODO */
         TManagerMembership::TImpl ManagerMembership;
 
-        /* TODO */
         mutable TMutationCollection::TImpl MutationCollection;
 
-        /* TODO */
         bool CommitFlag;
 
-        /* TODO */
         bool ShouldReplicate;
 
-        /* TODO */
         bool Prepared;
 
-        /* TODO */
         bool EnsureOrDiscard;
 
-        /* TODO */
         TReplica Replica;
 
-        /* TODO */
         TTransactionReplication *TransactionReplication;
 
-        /* TODO */
         TTransactionCompletion *TransactionCompletion;
 
-        /* TODO */
         static Util::TPool Pool;
 
-        /* TODO */
         friend class TManager;
         friend class Server::TIndyReporter;
 
       };  // TTransaction
 
-      /* TODO */
       class TManager
           : public L0::TManager {
         NO_COPY(TManager);
         public:
 
-        /* TODO */
         typedef InvCon::UnorderedList::TCollection<TManager, TTransaction> TTransactionCollection;
         typedef InvCon::UnorderedList::TCollection<TManager, TTransaction::TTransactionCompletion> TTransactionCompletionCollection;
 
-        /* TODO */
         std::unique_ptr<TTransaction, std::function<void (TTransaction *)>> NewTransaction(bool should_replicate = true);
 
         protected:
 
-        /* TODO */
         TManager(Disk::Util::TEngine *engine,
                  std::chrono::milliseconds merge_mem_delay,
                  std::chrono::milliseconds merge_disk_delay,
@@ -619,35 +473,26 @@ namespace Orly {
                  const std::vector<size_t> &merge_disk_cores,
                  bool create_new);
 
-        /* TODO */
         virtual ~TManager();
 
-        /* TODO */
         virtual std::mutex &GetReplicationQueueLock() NO_THROW = 0;
 
-        /* TODO */
         virtual void Enqueue(TTransactionReplication *transaction_replication, TTransaction::TReplica &&replica) NO_THROW = 0;
 
-        /* TODO */
         virtual TTransactionReplication *NewTransactionReplication() = 0;
 
-        /* TODO */
         virtual void DeleteTransactionReplication(TTransactionReplication *transaction_replication) NO_THROW = 0;
 
         private:
 
-        /* TODO */
         void OnCloseTransaction(TTransaction *transaction);
 
-        /* TODO */
         mutable TTransactionCollection::TImpl TransactionCollection;
         std::mutex TransactionLock;
 
-        /* TODO */
         mutable TTransactionCompletionCollection::TImpl TransactionCompletionCollection;
         std::mutex TransactionCompletionLock;
 
-        /* TODO */
         std::function<void (TTransaction *)> OnCloseTransactionCb;
 
         /* access to Enqueue */
@@ -655,131 +500,106 @@ namespace Orly {
 
       };  // TManager
 
-      /* TODO */
       inline void TTransaction::CommitAction() NO_THROW {
         CommitFlag = true;
       }
 
-      /* TODO */
       inline void TTransaction::DiscardAction() NO_THROW {
         CommitFlag = false;
       }
 
-      /* TODO */
       inline const Atom::TCore &TTransaction::TReplica::TMutation::TUpdate::GetMetadata() const {
         return Metadata;
       }
 
-      /* TODO */
       inline const Atom::TCore &TTransaction::TReplica::TMutation::TUpdate::GetId() const {
         return Id;
       }
 
-      /* TODO */
       inline const TTransaction::TReplica::TMutation::TUpdate::TOpByKey &TTransaction::TReplica::TMutation::TUpdate::GetOpByKey() const {
         return OpByKey;
       }
 
-      /* TODO */
       inline const std::shared_ptr<Atom::TSuprena> &TTransaction::TReplica::TMutation::TUpdate::GetSuprena() const {
         return Suprena;
       }
 
-      /* TODO */
       inline void TTransaction::TReplica::TMutation::TUpdate::SetArena(const std::shared_ptr<Atom::TSuprena> &suprena) {
         Suprena = suprena;
       }
 
-      /* TODO */
       inline TTransaction::TReplica::TMutation::TKind TTransaction::TReplica::TMutation::GetKind() const {
         return Kind;
       }
 
-      /* TODO */
       inline const Base::TUuid &TTransaction::TReplica::TMutation::GetRepoId() const {
         return RepoId;
       }
 
-      /* TODO */
       inline const std::optional<TSequenceNumber> &TTransaction::TReplica::TMutation::GetSequenceNumber() const {
         return SequenceNumber;
       }
 
-      /* TODO */
       inline const TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::GetUpdate() const {
         assert(Kind == Pusher);
         return Update;
       }
 
-      /* TODO */
       inline TTransaction::TReplica::TMutation::TUpdate &TTransaction::TReplica::TMutation::GetUpdate() {
         assert(Kind == Pusher);
         return Update;
       }
 
-      /* TODO */
       inline void TTransaction::TReplica::TMutation::SetSequenceNumber(std::optional<TSequenceNumber> seq_num) NO_THROW {
         SequenceNumber = seq_num;
       }
 
-      /* TODO */
       inline TSequenceNumber &TTransaction::TReplica::TMutation::GetNextUpdate() NO_THROW {
         return NextUpdate;
       }
 
-      /* TODO */
       inline TTransaction::TReplica::TMutationList &TTransaction::TReplica::GetMutationList() const {
         return MutationList;
       }
 
-      /* TODO */
       inline size_t TTransaction::TReplica::GetSize() const {
         size_t count = 0U;
         for (auto iter = MutationList.begin(); iter != MutationList.end(); ++iter, ++count);
         return count;
       }
 
-      /* TODO */
       inline const Base::TUuid &TTransaction::TMutation::GetRepoId() const {
         return Repo->GetId();
       }
 
-      /* TODO */
       inline TTransaction::TMutation::TKind TTransaction::TPusher::GetKind() const {
         return TMutation::Pusher;
       }
 
-      /* TODO */
       inline TTransaction::TMutation::TKind TTransaction::TPopper::GetKind() const {
         return TMutation::Popper;
       }
 
-      /* TODO */
       inline TTransaction::TPopper::TState TTransaction::TPopper::GetState() const {
         return State;
       }
 
-      /* TODO */
       inline const std::shared_ptr<TUpdate> &TTransaction::TPopper::GetUpdate() const {
         return Update;
       }
 
-      /* TODO */
       inline void TTransaction::TPopper::SetState(TState state) {
         State = state;
       }
 
-      /* TODO */
       inline TTransaction::TMutation::TKind TTransaction::TStatusChanger::GetKind() const {
         return TMutation::StatusChanger;
       }
 
-      /* TODO */
       inline bool TTransaction::GetCommitFlag() const {
         return CommitFlag;
       }
 
-      /* TODO */
       inline void TTransaction::TTransactionCompletion::SetCb(const std::shared_ptr<std::function<void (TTransactionResult)>> &cb) {
         Cb = cb;
       }

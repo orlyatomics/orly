@@ -67,7 +67,6 @@ namespace Orly {
     }
 
     #if 0
-    /* TODO */
     operator const TVal &() const {
       return Val;
     }

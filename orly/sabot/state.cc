@@ -105,17 +105,14 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     template <typename TLhs>
     class TRhsStateVisitor
         : public TStateVisitor {
       public:
 
-      /* TODO */
       TRhsStateVisitor(const TLhs &lhs, const TStateDoubleVisitor &double_visitor)
           : Lhs(lhs), DoubleVisitor(double_visitor) {}
 
-      /* TODO */
       virtual void operator()(const State::TFree &rhs      ) const { DoubleVisitor(Lhs, rhs); }
       virtual void operator()(const State::TTombstone &rhs ) const { DoubleVisitor(Lhs, rhs); }
       virtual void operator()(const State::TVoid &rhs      ) const { DoubleVisitor(Lhs, rhs); }
@@ -146,26 +143,21 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const TLhs &Lhs;
 
-      /* TODO */
       const TStateDoubleVisitor &DoubleVisitor;
 
     };  // TRhsStateVisitor<TLhs>
 
-    /* TODO */
     class TLhsStateVisitor
         : public TStateVisitor {
       public:
 
-      /* TODO */
       TLhsStateVisitor(const State::TAny &rhs, const TStateDoubleVisitor &double_visitor)
           : Rhs(rhs), DoubleVisitor(double_visitor) {}
 
       virtual ~TLhsStateVisitor() {}
 
-      /* TODO */
       virtual void operator()(const State::TFree &lhs      ) const { Rhs.Accept(TRhsStateVisitor<State::TFree     >(lhs, DoubleVisitor)); }
       virtual void operator()(const State::TTombstone &lhs ) const { Rhs.Accept(TRhsStateVisitor<State::TTombstone>(lhs, DoubleVisitor)); }
       virtual void operator()(const State::TVoid &lhs      ) const { Rhs.Accept(TRhsStateVisitor<State::TVoid     >(lhs, DoubleVisitor)); }
@@ -196,10 +188,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const State::TAny &Rhs;
 
-      /* TODO */
       const TStateDoubleVisitor &DoubleVisitor;
 
     };  // TLhsStateVisitor

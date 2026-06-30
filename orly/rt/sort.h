@@ -31,11 +31,9 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO */
     template <typename TVal>
     TVal Sort(const TVal &) = delete;
 
-    /* TODO */
     template <typename TVal>
     std::vector<TVal> Sort(const std::vector<TVal> &val,
           const std::function<bool (const TVal &, const TVal &)> &comp) {
@@ -44,7 +42,6 @@ namespace Orly {
       return ret;
     }
 
-    /* TODO */
     template <typename TVal>
     TOpt<std::vector<TVal>> Sort(const TOpt<std::vector<TVal>> &val,
           const std::function<bool (const TVal &, const TVal &)> &comp) {

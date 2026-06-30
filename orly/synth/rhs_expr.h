@@ -28,28 +28,22 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
     class TLhsRhsableExpr;
 
-    /* TODO */
     class TRhsExpr
         : public TExpr {
       NO_COPY(TRhsExpr);
       public:
 
-      /* TODO */
       TRhsExpr(const TExprFactory *expr_factory, const Package::Syntax::TRhsExpr *rhs_expr);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TRhsExpr *RhsExpr;
 
-      /* TODO */
       const TLhsRhsableExpr *LhsRhsableExpr;
 
     };  // TRhsExpr

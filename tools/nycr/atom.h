@@ -29,42 +29,33 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TAtom
         : public TFinal {
       NO_COPY(TAtom);
       protected:
 
-      /* TODO */
       TAtom(const Syntax::TName *name, const Syntax::TOptSuper *opt_super, const Syntax::TPattern *pattern);
 
-      /* TODO */
       const std::string &GetPatternText() const {
         return PatternText;
       }
 
-      /* TODO */
       int GetPri() const {
         return Pri ? *Pri : 0;
       }
 
-      /* TODO */
       virtual Symbol::TAtom *GetSymbolAsAtom() const = 0;
 
-      /* TODO */
       virtual Symbol::TKind *GetSymbolAsKind() const;
 
       private:
 
-      /* TODO */
       std::string PatternText;
 
-      /* TODO */
       std::optional<int> Pri;
 
     };  // TAtom
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TAtom> {
       static const char *Name;

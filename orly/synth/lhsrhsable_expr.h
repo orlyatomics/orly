@@ -39,21 +39,17 @@ namespace Orly {
              The outer expr gets built before rhs expr so that when the special expr gets built,
              we have a outer expr symbol ready for it to point to. */
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TLhsRhsableExpr
         : virtual public TExpr {
       NO_COPY(TLhsRhsableExpr);
       public:
 
-      /* TODO */
       TLhsRhsableExpr() = default;
 
       virtual ~TLhsRhsableExpr() = default;
 
-      /* TODO */
       virtual Expr::TLhsRhsable::TPtr GetLhsRhsableSymbol() const = 0;
 
     };  // TLhsRhsableExpr

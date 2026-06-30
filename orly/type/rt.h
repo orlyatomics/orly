@@ -37,66 +37,54 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     template <>
     struct TDt<bool> {
 
-      /* TODO */
       TType static GetType() {
         return TBool::Get();
       }
 
     };
 
-    /* TODO */
     template <typename TKey, typename TVal>
     struct TDt<Rt::TDict<TKey, TVal>> {
 
-      /* TODO */
       TType static GetType() {
         return TDict::Get(TDt<TKey>::GetType(), TDt<TVal>::GetType());
       }
 
     };
 
-    /* TODO */
     template <>
     struct TDt<int64_t> {
 
-      /* TODO */
       TType static GetType() {
         return TInt::Get();
       }
 
     };
 
-    /* TODO */
     template <typename TVal>
     struct TDt<std::vector<TVal>> {
 
-      /* TODO */
       TType static GetType() {
         return TList::Get(TDt<TVal>::GetType());
       }
 
     };
 
-    /* TODO */
     template <typename TAddr, typename TVal>
     struct TDt<Rt::TMutable<TAddr, TVal>> {
 
-      /* TODO */
       TType static GetType() {
         return TMutable::Get(TDt<TAddr>::GetType(), TDt<TVal>::GetType());
       }
 
     };
 
-    /* TODO */
     template <typename TVal>
     struct TDt<Rt::TOpt<TVal>> {
 
-      /* TODO */
       TType static GetType() {
         return TOpt::Get(TDt<TVal>::GetType());
       }
@@ -122,11 +110,9 @@ namespace Orly {
     }; // TDt<TCompound>
     */
 
-    /* TODO */
     template <>
     struct TDt<double> {
 
-      /* TODO */
       TType static GetType() {
         return TReal::Get();
       }
@@ -142,7 +128,6 @@ namespace Orly {
 
     };
 
-    /* TODO */
     template <typename TVal>
     struct TDt<Rt::TSet<TVal>> {
 
@@ -152,55 +137,45 @@ namespace Orly {
 
     };
 
-    /* TODO */
     template <>
     struct TDt<std::string> {
 
-      /* TODO */
       TType static GetType() {
         return TStr::Get();
       }
 
     };
 
-    /* TODO */
     template <>
     struct TDt<Base::Chrono::TTimeDiff> {
 
-      /* TODO */
       TType static GetType() {
         return TTimeDiff::Get();
       }
 
     };
 
-    /* TODO */
     template <>
     struct TDt<Base::Chrono::TTimePnt> {
 
-      /* TODO */
       TType static GetType() {
         return TTimePnt::Get();
       }
 
     };
 
-    /* TODO */
     template <>
     struct TDt<Orly::Rt::TUnknown> {
 
-      /* TODO */
       TType static GetType() {
         return TUnknown::Get();
       }
 
     };
 
-    /* TODO */
     template <>
     struct TDt<Base::TUuid> {
 
-      /* TODO */
       TType static GetType() {
         return TId::Get();
       }

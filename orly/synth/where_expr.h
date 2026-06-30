@@ -37,28 +37,21 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TWhereExpr
         : public TExpr, public TScope {
       NO_COPY(TWhereExpr);
       public:
 
-      /* TODO */
       TWhereExpr(const TExprFactory *expr_factory, const Package::Syntax::TWhereExpr *where_expr);
 
-      /* TODO */
       ~TWhereExpr();
 
-      /* TODO */
       Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       void BuildSymbol();
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
       Symbol::TScope::TPtr GetScopeSymbol() const;
@@ -69,46 +62,35 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       class TLocalDefFactory
           : public TDefFactory {
         NO_COPY(TLocalDefFactory);
         public:
 
-        /* TODO */
         static void NewDefs(
               const TExprFactory *expr_factory,
               const Package::Syntax::TOptDefSeq *opt_def_seq);
 
         private:
 
-        /* TODO */
         TLocalDefFactory(const TExprFactory *expr_factory);
 
-        /* TODO */
         virtual void operator()(const Package::Syntax::TInstallerDef *that) const;
 
-        /* TODO */
         virtual void operator()(const Package::Syntax::TUpgraderDef *that) const;
 
-        /* TODO */
         virtual void operator()(const Package::Syntax::TUninstallerDef *that) const;
 
-        /* TODO */
         void OnTopLevel(const char *desc, const TPosRange &pos_range) const;
 
       };  // TLocalDefFactory
 
-      /* TODO */
       virtual void ForEachControlledRef(const std::function<void (TAnyRef &)> &cb) const;
 
-      /* TODO */
       const Package::Syntax::TWhereExpr *WhereExpr;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       Expr::TWhere::TPtr Symbol;
 
     };  // TWhereExpr

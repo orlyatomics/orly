@@ -32,72 +32,51 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       typedef Rt::TOpt<TVar> TOptType;
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TOpt &Add(const TVar &);
 
-      /* TODO */
       virtual TOpt &And(const TVar &);
 
-      /* TODO */
       virtual TOpt &Div(const TVar &);
 
-      /* TODO */
       virtual TOpt &Exp(const TVar &);
 
-      /* TODO */
       virtual TOpt &Intersection(const TVar &);
 
-      /* TODO */
       virtual TOpt &Mod(const TVar &);
 
-      /* TODO */
       virtual TOpt &Mult(const TVar &);
 
-      /* TODO */
       virtual TOpt &Or(const TVar &);
 
-      /* TODO */
       virtual TOpt &Sub(const TVar &);
 
-      /* TODO */
       virtual TOpt &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TOpt &Union(const TVar &);
 
-      /* TODO */
       virtual TOpt &Xor(const TVar &);
 
-      /* TODO */
       const TOptType &GetVal() const {
         return Val;
       }
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       Type::TType GetInnerType() const;
 
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
       private:
 
-      /* TODO */
       #if defined(ORLY_HOST)
       template <typename TVal>
       TOpt(const Rt::TOpt<TVal> &that) : Type(Type::TDt<TVal>::GetType()) {
@@ -108,31 +87,22 @@ namespace Orly {
       }
       #endif
 
-      /* TODO */
       TOpt(const Rt::TOpt<TVar> &that, const Type::TType &type);
 
-      /* TODO */
       virtual ~TOpt();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       void SetHash();
 
-      /* TODO */
       TOptType Val;
 
-      /* TODO */
       Type::TType Type;
 
-      /* TODO */
       size_t Hash;
 
-      /* TODO */
       friend class TVar;
 
     };  // TOpt
@@ -146,11 +116,9 @@ namespace Orly {
       return (new TOpt(val, Type::TDt<TVal>::GetType()))->AsVar();
     }
 
-    /* TODO */
     template <typename TVal>
     struct TVar::TDt<Rt::TOpt<TVal>> {
 
-      /* TODO */
       Rt::TOpt<TVal> static As(const TVar &that) {
         TOpt *ptr = dynamic_cast<TOpt *>(that.Impl.get());
         if (ptr) {

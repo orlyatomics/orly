@@ -61,7 +61,6 @@ namespace Orly {
       /* Cause a player that was previously paused to resume normal operations. */
       void UnpausePlayer(const Base::TUuid &parent_pov_id);
 
-      /* TODO */
       void BecomeMaster();
 
       protected:
@@ -89,10 +88,8 @@ namespace Orly {
         /* Resume normal operations. */
         void Unpause();
 
-        /* TODO */
         void OnClose();
 
-        /* TODO */
         void BecomeMaster();
 
         protected:
@@ -163,7 +160,6 @@ namespace Orly {
         bool Unpaused;
         Indy::Fiber::TSafeSync UnpausedSync;
 
-        /* TODO */
         Base::TEventSemaphore CanWork;
 
         /* The fiber frame used to run our logic. */
@@ -188,7 +184,6 @@ namespace Orly {
       /* Call this in the destructor of your derived tetris manager.  It will block until all tetris has stopped. */
       void StopAllPlayers();
 
-      /* TODO */
       Base::TScheduler *GetScheduler() const {
         return Scheduler;
       }
@@ -216,7 +211,6 @@ namespace Orly {
       /* The ids of the parent points of view which are currently paused. */
       std::unordered_set<Base::TUuid> PausedSet;
 
-      /* TODO */
       bool IsMaster;
       //std::mutex MasterLock;
       Indy::Fiber::TFiberLock MasterFiberMutex;

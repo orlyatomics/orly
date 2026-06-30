@@ -22,7 +22,6 @@ using namespace std;
 using namespace Orly;
 using namespace Orly::Sabot;
 
-/* TODO */
 class TMatchPrefixTypeVisitor final
     : public TTypeDoubleVisitor {
   public:
@@ -791,22 +790,16 @@ class TMatchPrefixTypeVisitor final
 
   private:
 
-  /* TODO */
   inline void OnUnary(const Type::TUnary &lhs, const Type::TUnary &rhs) const;
 
-  /* TODO */
   inline void OnBinary(const Type::TBinary &lhs, const Type::TBinary &rhs) const;
 
-  /* TODO */
   inline void DidNotMatch() const;
 
-  /* TODO */
   inline void DidNotUnify() const;
 
-  /* TODO */
   inline void OnFree(const Type::TFree &lhs, const Type::TAny &rhs) const;
 
-  /* TODO */
   TMatchResult &Result;
 
 };  // TMatchPrefixTypeVisitor
@@ -842,12 +835,10 @@ inline void TMatchPrefixTypeVisitor::OnBinary(const Type::TBinary &lhs, const Ty
   }
 }
 
-/* TODO */
 inline void TMatchPrefixTypeVisitor::DidNotMatch() const {
   Result = TMatchResult::NoMatch;
 }
 
-/* TODO */
 inline void TMatchPrefixTypeVisitor::DidNotUnify() const {
   switch (Result) {
     case TMatchResult::NoMatch: {
@@ -863,7 +854,6 @@ inline void TMatchPrefixTypeVisitor::DidNotUnify() const {
   }
 }
 
-/* TODO */
 inline void TMatchPrefixTypeVisitor::OnFree(const Type::TFree &lhs, const Type::TAny &rhs) const {
   TMatchResult cur = TMatchResult::Unifies;
   void *lhs_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());

@@ -48,13 +48,11 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         template <size_t PageSize>
         class TCache {
           NO_COPY(TCache);
           private:
 
-          /* TODO */
           class TLRU;
 
           public:
@@ -68,17 +66,14 @@ namespace Orly {
           static constexpr size_t SecondHighestBit = 1UL << 62;
           static constexpr size_t ThirdHighestBit = 1UL << 61;
 
-          /* TODO */
           static constexpr size_t LockedSlot = -1;
           static constexpr size_t EmptySlot = -2;
           static constexpr size_t DummyStartSlot = -3;
 
-          /* TODO */
           struct TSlot {
 
             typedef InvCon::AtomicUnorderedList::TMembership<TSlot, TLRU> TLRUMembership;
 
-            /* TODO */
             TSlot()
                 : PageId(EmptySlot), RefCount(0UL), BufAddr(0UL), LRUMembership(this), NextSlot(nullptr), MainSlot(nullptr) {}
 
@@ -91,7 +86,6 @@ namespace Orly {
               return cache->PageData.get() + (page_offset * PageSize);
             }
 
-            /* TODO */
             inline void AsyncGetData(const Base::TCodeLocation &code_location,
                                      DiskPriority priority,
                                      TCache *cache,
@@ -155,7 +149,6 @@ namespace Orly {
               }
             }
 
-            /* TODO */
             inline const char *SyncGetData(const Base::TCodeLocation &code_location,
                                            DiskPriority priority,
                                            TCache *cache,
@@ -214,7 +207,6 @@ namespace Orly {
 
             private:
 
-            /* TODO */
             mutable std::atomic<size_t> PageId;
             size_t RefCount;
             /* BufAddr represents the offset of the page from the start of the cache's in a multiple of the page size:
@@ -227,12 +219,10 @@ namespace Orly {
             TSlot *NextSlot;
             TSlot *MainSlot;
 
-            /* TODO */
             friend class TCache;
 
           };  // TSlot
 
-          /* TODO */
           TCache(TVolumeManager *volume_manager,
                  size_t max_cache_size,
                  size_t num_lru)
@@ -285,7 +275,6 @@ namespace Orly {
           }
           #endif
 
-          /* TODO */
           inline void PreGet(size_t page_id) {
             const size_t slot_num = page_id % NumSlots;
             TSlot *const my_slot = &SlotArray[slot_num];
@@ -512,7 +501,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline void Clear(size_t page_id) {
             const size_t slot_num = page_id % NumSlots;
             TSlot &slot = SlotArray[slot_num];
@@ -584,7 +572,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline void Replace(size_t page_id, void *buf) {
             TSlot *data_slot;
             TSlot *main_slot = Get(page_id, data_slot);
@@ -602,7 +589,6 @@ namespace Orly {
             Release(main_slot, page_id);
           }
 
-          /* TODO */
           inline bool AssertNoRefCount(size_t page_id) {
             TSlot *data_slot;
             TSlot *main_slot = Get(page_id, data_slot);
@@ -614,7 +600,6 @@ namespace Orly {
             return ret;
           }
 
-          /* TODO */
           inline void AsyncMultiGet(const Base::TCodeLocation &code_location,
                                     DiskPriority priority,
                                     TCache *cache,
@@ -753,21 +738,18 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           class alignas(64) TLRU {
             NO_COPY(TLRU);
             public:
 
             typedef InvCon::AtomicUnorderedList::TCollection<TLRU, TSlot> TSlotCollection;
 
-            /* TODO */
             TLRU() : SlotCollection(this)
             #ifdef PERF_STATS
             , NumBufInLRU(0UL)
             #endif
             {}
 
-            /* TODO */
             mutable typename TSlotCollection::TImpl SlotCollection;
 
             /* Stats */
@@ -777,7 +759,6 @@ namespace Orly {
 
           };  // TLRU
 
-          /* TODO */
           inline size_t NewPageBuf() {
             int lru_start = sched_getcpu() % NumLRU;
             size_t stop_lru = NumLRU;
@@ -819,7 +800,6 @@ namespace Orly {
             throw std::runtime_error("Ran out of cache pages");
           }
 
-          /* TODO */
           bool TryRemoveSlot(const TSlot &slot, TSlot *&slot_to_remove, size_t &out_reclaimed_page_buf, size_t &main_slot_page_id) {
             /* there are 2 cases:
                - this slot is in the main (pre-allocated) array ... common case
@@ -891,38 +871,28 @@ namespace Orly {
             return true;
           }
 
-          /* TODO */
           inline TSlot *NewSlot() {
             return new TSlot();
           }
 
-          /* TODO */
           inline void DeleteSlot(TSlot *slot) {
             delete slot;
           }
 
-          /* TODO */
           TVolumeManager *const VolumeManager;
 
-          /* TODO */
           const size_t MaxCacheSize;
 
-          /* TODO */
           const size_t NumSlots;
 
-          /* TODO */
           const size_t NumLRU;
 
-          /* TODO */
           std::unique_ptr<TSlot[]> SlotArray;
 
-          /* TODO */
           std::unique_ptr<TLRU[]> LRUArray;
 
-          /* TODO */
           std::unique_ptr<char> PageData;
 
-          /* TODO */
           std::function<bool (const TSlot &, TSlot *&, size_t &, size_t &)> TryRemoveSlotFunc;
 
         };  // TCache

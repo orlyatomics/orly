@@ -26,7 +26,6 @@ namespace Orly {
 
     class TVar;
 
-    /* TODO */
     void Orlyify(std::ostream &stream, const TVar &var);
 
   }  // Var

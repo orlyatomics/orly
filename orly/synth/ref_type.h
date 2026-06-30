@@ -29,24 +29,19 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TRefType
         : public TType {
       NO_COPY(TRefType);
       public:
 
-      /* TODO */
       TRefType(const Package::Syntax::TRefType *ref_type);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       virtual Type::TType ComputeSymbolicType() const;
 
-      /* TODO */
       TDef::TRef<TTypeDef> TypeDef;
 
     };  // TType

@@ -100,17 +100,14 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     template <typename TLhs>
     class TRhsTypeVisitor
         : public TTypeVisitor {
       public:
 
-      /* TODO */
       TRhsTypeVisitor(const TLhs &lhs, const TTypeDoubleVisitor &double_visitor)
           : Lhs(lhs), DoubleVisitor(double_visitor) {}
 
-      /* TODO */
       virtual void operator()(const Type::TInt8 &rhs     ) const { DoubleVisitor(Lhs, rhs); }
       virtual void operator()(const Type::TInt16 &rhs    ) const { DoubleVisitor(Lhs, rhs); }
       virtual void operator()(const Type::TInt32 &rhs    ) const { DoubleVisitor(Lhs, rhs); }
@@ -141,26 +138,21 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const TLhs &Lhs;
 
-      /* TODO */
       const TTypeDoubleVisitor &DoubleVisitor;
 
     };  // TRhsTypeVisitor<TLhs>
 
-    /* TODO */
     class TLhsVisitor
         : public TTypeVisitor {
       public:
 
-      /* TODO */
       TLhsVisitor(const Type::TAny &rhs, const TTypeDoubleVisitor &double_visitor)
           : Rhs(rhs), DoubleVisitor(double_visitor) {}
 
       virtual ~TLhsVisitor() {}
 
-      /* TODO */
       virtual void operator()(const Type::TInt8 &lhs     ) const { Rhs.Accept(TRhsTypeVisitor<Type::TInt8     >(lhs, DoubleVisitor)); }
       virtual void operator()(const Type::TInt16 &lhs    ) const { Rhs.Accept(TRhsTypeVisitor<Type::TInt16    >(lhs, DoubleVisitor)); }
       virtual void operator()(const Type::TInt32 &lhs    ) const { Rhs.Accept(TRhsTypeVisitor<Type::TInt32    >(lhs, DoubleVisitor)); }
@@ -191,10 +183,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const Type::TAny &Rhs;
 
-      /* TODO */
       const TTypeDoubleVisitor &DoubleVisitor;
 
     };  // TLhsVisitor

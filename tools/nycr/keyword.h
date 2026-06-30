@@ -26,19 +26,15 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TKeyword
         : public TAtom {
       NO_COPY(TKeyword);
       public:
 
-      /* TODO */
       TKeyword(const Syntax::TKeyword *decl);
 
-      /* TODO */
       virtual Symbol::TAtom *GetSymbolAsAtom() const;
 
-      /* TODO */
       Symbol::TKeyword *GetSymbolAsKeyword() const {
         assert(Symbol);
         return Symbol;
@@ -46,15 +42,12 @@ namespace Tools {
 
       private:
 
-      /* TODO */
       virtual bool Build(int pass);
 
-      /* TODO */
       Symbol::TKeyword *Symbol;
 
     };  // TKeyword
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TKeyword> {
       static const char *Name;

@@ -40,7 +40,6 @@ class TTetrisManager final
     : public Orly::Server::TTetrisManager {
   public:
 
-  /* TODO */
   class TPov {
     NO_COPY(TPov);
     public:

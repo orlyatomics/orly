@@ -58,43 +58,30 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TVariant &Add(const TVar &);
 
-      /* TODO */
       virtual TVariant &And(const TVar &);
 
-      /* TODO */
       virtual TVariant &Div(const TVar &);
 
-      /* TODO */
       virtual TVariant &Exp(const TVar &);
 
-      /* TODO */
       virtual TVariant &Intersection(const TVar &);
 
-      /* TODO */
       virtual TVariant &Mod(const TVar &);
 
-      /* TODO */
       virtual TVariant &Mult(const TVar &);
 
-      /* TODO */
       virtual TVariant &Or(const TVar &);
 
-      /* TODO */
       virtual TVariant &Sub(const TVar &);
 
-      /* TODO */
       virtual TVariant &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TVariant &Union(const TVar &);
 
-      /* TODO */
       virtual TVariant &Xor(const TVar &);
 
       /* The active tag. */
@@ -107,34 +94,26 @@ namespace Orly {
         return Payload;
       }
 
-      /* TODO */
       virtual size_t GetHash() const;
 
       /* The full declared variant type (every arm), so all values of one
          declared variant report the same type. */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
       private:
 
-      /* TODO */
       TVariant(const Type::TType &variant_type, const std::string &tag, const TVar &payload);
 
-      /* TODO */
       virtual ~TVariant();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       void SetHash();
 
       /* The full declared variant type (all arms). */
@@ -146,10 +125,8 @@ namespace Orly {
       /* The payload value carried by the active tag. */
       TVar Payload;
 
-      /* TODO */
       size_t Hash;
 
-      /* TODO */
       friend class TVar;
 
     };  // TVariant

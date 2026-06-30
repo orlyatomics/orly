@@ -27,7 +27,6 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     TType *NewType(const Package::Syntax::TType *root);
 
   }  // Synth

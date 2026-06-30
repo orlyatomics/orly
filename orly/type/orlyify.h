@@ -26,7 +26,6 @@ namespace Orly {
 
     class TType;
 
-    /* TODO */
     void Orlyify(std::ostream &stream, const TType &type);
 
   }  // Type

@@ -36,13 +36,11 @@ namespace Orly {
 
   namespace Data {
 
-    /* TODO */
     template <typename TKey, typename TVal>
     class TCoreVectorGenerator {
       NO_COPY(TCoreVectorGenerator);
       public:
 
-      /* TODO */
       explicit TCoreVectorGenerator(const std::string &file_name = "out", size_t max_kvs_per_file = 50000) : TCoreVectorGenerator(file_name, "", max_kvs_per_file) {}
 
       explicit TCoreVectorGenerator(const std::string &file_name, const std::string &prefix, size_t max_kvs_per_file = 50000)
@@ -56,7 +54,6 @@ namespace Orly {
         InitBuilder();
       }
 
-      /* TODO */
       ~TCoreVectorGenerator() {
         if (Count > 0) {
           Flush();
@@ -76,7 +73,6 @@ namespace Orly {
         return FileNum;
       }
 
-      /* TODO */
       void Push(const TKey &key, const TVal &val) {
         if (unlikely(Finalized)) {
           throw std::runtime_error("Can not Push() after Finalize() has been called");
@@ -95,7 +91,6 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       void Flush() {
         assert(Count > 0);
         std::stringstream ss;
@@ -114,7 +109,6 @@ namespace Orly {
         InitBuilder();
       }
 
-      /* TODO */
       void InitBuilder() {
         Count = 0UL;
         Builder = std::make_unique<Atom::TCoreVectorBuilder>();
@@ -125,21 +119,16 @@ namespace Orly {
 
       bool Finalized;
 
-      /* TODO */
       Base::TUuid IndexId;
 
-      /* TODO */
       int64_t Count;
 
-      /* TODO */
       const std::string Prefix;
       const std::string FileName;
       size_t FileNum;
 
-      /* TODO */
       const int64_t MaxKVPerFile;
 
-      /* TODO */
       std::unique_ptr<Atom::TCoreVectorBuilder> Builder;
 
     };  // TCoreVectorGenerator

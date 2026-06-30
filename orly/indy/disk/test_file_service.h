@@ -30,13 +30,11 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TTestFileService
           : public TFileServiceBase {
         NO_COPY(TTestFileService);
         public:
 
-        /* TODO */
         virtual bool FindFile(const Base::TUuid &file_uid,
                               size_t gen_id,
                               size_t &out_block_id,
@@ -44,7 +42,6 @@ namespace Orly {
                               size_t &out_file_size,
                               size_t &out_num_keys) const override;
 
-        /* TODO */
         virtual void InsertFile(const Base::TUuid &file_uid,
                                 TFileObj::TKind file_kind,
                                 size_t gen_id,
@@ -56,30 +53,23 @@ namespace Orly {
                                 TSequenceNumber highest_seq,
                                 TCompletionTrigger &completion_trigger) override;
 
-        /* TODO */
         virtual void RemoveFile(const Base::TUuid &file_uid,
                                 size_t gen_id,
                                 TCompletionTrigger &completion_trigger) override;
 
-        /* TODO */
         virtual void AppendFileGenSet(const Base::TUuid &file_uid,
                                       std::vector<TFileObj> &out_vec) override;
 
-        /* TODO */
         virtual bool ForEachFile(const std::function<bool (const Base::TUuid &file_uid, const TFileObj &)> &cb) override;
 
-        /* TODO */
         TTestFileService() {}
 
-        /* TODO */
         virtual ~TTestFileService() {}
 
         private:
 
-        /* TODO */
         typedef std::unordered_map<Base::TUuid, std::unordered_map<size_t, TFileObj>> TFileMap;
 
-        /* TODO */
         static void AddToMap(TFileMap &file_map,
                              const Base::TUuid &file_uid,
                              TFileObj::TKind file_kind,
@@ -91,15 +81,12 @@ namespace Orly {
                              TSequenceNumber lowest_seq,
                              TSequenceNumber highest_seq);
 
-        /* TODO */
         static void RemoveFromMap(TFileMap &file_map,
                                   const Base::TUuid &file_uid,
                                   size_t file_gen);
 
-        /* TODO */
         mutable std::mutex Mutex;
 
-        /* TODO */
         TFileMap FileMap;
 
       };  // TFileServiceBase

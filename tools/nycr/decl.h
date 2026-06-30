@@ -174,48 +174,34 @@ namespace Tools {
 
       };  // TRef<TObj>
 
-      /* TODO */
       TDecl(const Syntax::TName *name);
 
-      /* TODO */
       virtual ~TDecl();
 
-      /* TODO */
       virtual bool Build(int pass) = 0;
 
-      /* TODO */
       virtual void ForEachPred(int pass, const std::function<void (TDecl *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       enum TState { Unstarted, Started, Finished };
 
-      /* TODO */
       void Bind();
 
-      /* TODO */
       void BuildPredsAndSelf(int pass, bool &again);
 
-      /* TODO */
       static void ForEachUniqueDecl(const std::function<void (TDecl *)> &cb);
 
-      /* TODO */
       static TDecl *TryGetDecl(const Syntax::TName *name);
 
-      /* TODO */
       const Syntax::TName *Name;
 
-      /* TODO */
       int Readiness;
 
-      /* TODO */
       TState State;
 
-      /* TODO */
       static std::map<std::string, std::vector<TDecl *>> DeclsByName;
 
     };  // TDecl

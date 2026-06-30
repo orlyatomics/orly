@@ -297,21 +297,17 @@ namespace Orly {
       /* Convenience. */
       typedef std::shared_ptr<const TMatchGenerator> TPtr;
 
-      /* TODO */
       class TCursor final
         : public Base::TIter<TItem> {
         public:
 
-        /* TODO */
         TCursor(const TPtr &ptr)
             : Ptr(ptr), RegexMatcher(&(ptr->Regex), ptr->Text.c_str()) {}
 
-        /* TODO */
         virtual operator bool() const override {
           return RegexMatcher;
         }
 
-        /* TODO */
         virtual const std::string &operator*() const override {
           return *RegexMatcher;
         }
@@ -328,10 +324,8 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         TPtr Ptr;
 
-        /* TODO */
         TRegexMatcher RegexMatcher;
 
       };  // TMatchGenerator::TCursor
@@ -474,21 +468,17 @@ namespace Orly {
       /* Convenience. */
       typedef std::shared_ptr<const TSplitGenerator> TPtr;
 
-      /* TODO */
       class TCursor final
           : public Base::TIter<TItem> {
         public:
 
-        /* TODO */
         TCursor(const TPtr &ptr)
             : Ptr(ptr), RegexSplitter(&(ptr->Regex), ptr->Text.c_str()), HasData(true) {}
 
-        /* TODO */
         virtual operator bool() const override {
           return HasData;
         }
 
-        /* TODO */
         virtual const TRegexSplitter::TItem &operator*() const override {
           assert(HasData);
           return *RegexSplitter;
@@ -507,13 +497,10 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         TPtr Ptr;
 
-        /* TODO */
         TRegexSplitter RegexSplitter;
 
-        /* TODO */
         bool HasData;
 
       };  // TSplitGenerator::TCursor

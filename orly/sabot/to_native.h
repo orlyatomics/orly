@@ -34,17 +34,14 @@ namespace Orly {
 
     DEFINE_ERROR(TInvalidConversion, std::runtime_error, "Unable to convert sabot to given native type");
 
-    /* TODO */
     template <typename TVal>
     class TToNativeVisitor;
 
-    /* TODO */
     template <typename TVal>
     void ToNative(const Sabot::State::TAny &state, TVal &val) {
       state.Accept(TToNativeVisitor<TVal>(val));
     }
 
-    /* TODO */
     template <typename TVal>
     TVal AsNative(const Sabot::State::TAny &state) {
       TVal val;
@@ -57,7 +54,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(int8_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -96,7 +92,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(int16_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -135,7 +130,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(int32_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -174,7 +168,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(int64_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -213,7 +206,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(uint8_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -252,7 +244,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(uint16_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -291,7 +282,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(uint32_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -330,7 +320,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(uint64_t &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -369,7 +358,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(bool &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -408,7 +396,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(char &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -447,7 +434,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(float &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -487,7 +473,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(double &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -526,7 +511,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(Sabot::TStdDuration &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -565,7 +549,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(Sabot::TStdTimePoint &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -604,7 +587,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(Base::TUuid &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -643,7 +625,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::string &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -686,7 +667,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(Native::TBlob &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -730,7 +710,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::optional<TVal> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -780,7 +759,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(Rt::TOpt<TVal> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -830,7 +808,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(Orly::TDesc<TVal> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -875,7 +852,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::vector<TVal> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -925,7 +901,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::vector<bool> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -975,7 +950,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::set<TVal, TCompare> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }
@@ -1024,7 +998,6 @@ namespace Orly {
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::map<TLhs, TRhs, TCompare> &out) : Out(out) {
         out.clear();
       }
@@ -1071,38 +1044,31 @@ namespace Orly {
       std::map<TLhs, TRhs, TCompare> &Out;
     };  // TToNativeVisitor<std::map<TLhs, TRhs, TCompare>>
 
-    /* TODO */
     template <typename TMyTuple, size_t pos, typename... TElems>
     class TTupleExtractor;
 
-    /* TODO */
     template <typename TMyTuple, size_t pos, typename TElem, typename... TElems>
     class TTupleExtractor<TMyTuple, pos, TElem, TElems...> {
       NO_CONSTRUCTION(TTupleExtractor);
       public:
-      /* TODO */
       void static Extract(const State::TTuple::TPin *pin, TMyTuple &out, void *state_alloc) {
         ToNative(*Sabot::State::TAny::TWrapper(pin->NewElem(pos, state_alloc)), std::get<pos>(out));
         TTupleExtractor<TMyTuple, pos + 1, TElems...>::Extract(pin, out, state_alloc);
       }
     };  // TTupleExtractor<TMyTuple, pos, TElem, TElems...>
 
-    /* TODO */
     template <typename TMyTuple, size_t pos>
     class TTupleExtractor<TMyTuple, pos> {
       NO_CONSTRUCTION(TTupleExtractor);
       public:
-      /* TODO */
       void static Extract(const State::TTuple::TPin */*pin*/, TMyTuple &/*out*/, void */*state_alloc*/) {}
     };  // TTupleExtractor<TMyTuple, pos>
 
-    /* TODO */
     template <typename... TElems>
     class TToNativeVisitor<std::tuple<TElems...>> final
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
-      /* TODO */
       TToNativeVisitor(std::tuple<TElems...> &out) : Out(out) {}
       /* Overrides. */
       virtual void operator()(const State::TFree &/*state*/) const override       { THROW_ERROR(TInvalidConversion); }

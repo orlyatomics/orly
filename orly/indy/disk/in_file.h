@@ -53,16 +53,12 @@ namespace Orly {
            Kept in sync with THistoryKeyItem in read_file.h via static_assert there. */
         static const size_t KeyHistorySize = sizeof(TSequenceNumber) + sizeof(Atom::TCore) + sizeof(Atom::TCore) + sizeof(uint64_t);
 
-        /* TODO */
         static const size_t HashEntrySize = sizeof(Atom::TCore) + sizeof(size_t);
 
-        /* TODO */
         static const size_t UpdateEntrySize = sizeof(TSequenceNumber) + sizeof(Atom::TCore) + sizeof(Atom::TCore) + sizeof(size_t) + sizeof(size_t);
 
-        /* TODO */
         static const size_t UpdateKeyPtrSize = sizeof(size_t);
 
-        /* TODO */
         static const size_t NumMetaFields = 10U;
         /*
            1.  # of blocks
@@ -78,7 +74,6 @@ namespace Orly {
 
         */
 
-        /* TODO */
         static const size_t NumIndexMetaFields = 8U;
         /*
            Offset of Arena
@@ -93,13 +88,10 @@ namespace Orly {
            (n) (size_t) -> (size_t) hash index offset -> num hash fields pairings
         */
 
-        /* TODO */
         static const uint8_t NullCore[sizeof(Atom::TCore)];
 
-        /* TODO */
         static const Atom::TCore TombstoneCore;
 
-        /* TODO */
         static Atom::TCore GetTombstoneCore() {
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
           Atom::TSuprena suprena;
@@ -108,49 +100,38 @@ namespace Orly {
 
       };  // TData
 
-      /* TODO */
       class TInFile {
         NO_COPY(TInFile);
         public:
 
-        /* TODO */
         virtual size_t GetFileLength() const = 0;
 
-        /* TODO */
         virtual size_t GetStartingBlock() const = 0;
 
-        /* TODO */
         virtual void ReadMeta(size_t offset, size_t &out) const = 0;
 
-        /* TODO */
         virtual size_t FindPageIdOfByte(size_t offset) const = 0;
 
         protected:
 
-        /* TODO */
         TInFile() {}
 
-        /* TODO */
         virtual ~TInFile() {}
 
       };  // TInFile
 
-      /* TODO */
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t MaxLocalCacheSize, bool ScanAheadAllowed = true>
       class TStream {
         NO_COPY(TStream);
         public:
 
-        /* TODO */
         static constexpr size_t DataChunkSize = Util::GetLogicalDataChunkSize<BufKind>();
         static constexpr size_t PhysicalDataChunkSize = Util::GetPhysicalDataChunkSize<BufKind>();
         static constexpr size_t PhysicalCachePageSize = PhysicalBlockSize / (BlockSize / CachePageSize);
 
-        /* TODO */
         TStream(const Base::TCodeLocation &code_location /* DEBUG */, uint8_t util_src, DiskPriority priority, const TInFile *file, Util::TCache<PhysicalCachePageSize> *cache, size_t byte_offset/*, bool scan_ahead_allowed = true*/)
             : TStream(code_location, util_src, priority, file->GetFileLength(), file, cache, byte_offset/*, scan_ahead_allowed*/) {}
 
-        /* TODO */
         TStream(const Base::TCodeLocation &code_location /* DEBUG */, uint8_t util_src, DiskPriority priority, size_t end_of_stream, const TInFile *file, Util::TCache<PhysicalCachePageSize> *cache, size_t byte_offset/*, bool scan_ahead_allowed = true*/)
             : File(file),
               Cache(cache),
@@ -181,7 +162,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         virtual ~TStream() {
           AsyncTrigger.Wait();
           if (MaxLocalCacheSize > 0) {
@@ -191,7 +171,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(size_t &out) {
           assert(ByteOffset + sizeof(size_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(size_t))) {
@@ -208,7 +187,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(int64_t &out) {
           assert(ByteOffset + sizeof(int64_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(int64_t))) {
@@ -225,7 +203,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(uint8_t &out) {
           assert(ByteOffset + sizeof(uint8_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uint8_t))) {
@@ -242,7 +219,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(uint16_t &out) {
           assert(ByteOffset + sizeof(uint16_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uint16_t))) {
@@ -259,7 +235,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(uint32_t &out) {
           assert(ByteOffset + sizeof(uint32_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uint32_t))) {
@@ -276,7 +251,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(bool &out) {
           assert(ByteOffset + sizeof(bool) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(bool))) {
@@ -293,7 +267,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(Base::TUuid &out) {
           assert(ByteOffset + sizeof(uuid_t) <= EndOfStream);
           //if (OffsetInPage <= (CachePageSize - sizeof(uuid_t))) {
@@ -314,7 +287,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Read(void *buf, size_t len) {
           assert(ByteOffset + len <= EndOfStream);
           size_t left = len;
@@ -334,7 +306,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         inline void Skip(size_t num_bytes) {
           assert(ByteOffset + num_bytes <= EndOfStream);
           ByteOffset += num_bytes;
@@ -344,7 +315,6 @@ namespace Orly {
           OffsetInChunk = OffsetInPage % DataChunkSize;
         }
 
-        /* TODO */
         inline void GoTo(size_t offset) {
           assert(offset <= EndOfStream);
           assert(offset < EndOfStream);
@@ -355,28 +325,23 @@ namespace Orly {
           OffsetInChunk = OffsetInPage % DataChunkSize;
         }
 
-        /* TODO */
         inline operator bool() const {
           return ByteOffset < EndOfStream;
         }
 
-        /* TODO */
         inline size_t GetOffset() const {
           return ByteOffset;
         }
 
-        /* TODO */
         size_t GetLoadedPageId() const {
           return LoadedPageId;
         }
 
-        /* TODO */
         Util::TPageCache::TSlot *GetLoadedMainSlot() const {
           assert(MainSlot);
           return MainSlot;
         }
 
-        /* TODO */
         Util::TPageCache::TSlot *GetLoadedDataSlot() const {
           assert(DataSlot);
           return DataSlot;
@@ -389,23 +354,19 @@ namespace Orly {
           return ChunkInPage;
         }
 
-        /* TODO */
         size_t GetFetchCount() const {
           return FetchCount;
         }
 
-        /* TODO */
         inline size_t FindPageIdOfByte(size_t offset) const {
           return File->FindPageIdOfByte(offset);
         }
 
-        /* TODO */
         const char *GetData() const {
           //return (BufData + OffsetInPage);
           return (BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk);
         }
 
-        /* TODO */
         void ReleaseBuf() {
           ByteOffset = -1;
           if (MainSlot) {
@@ -417,7 +378,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         void PrefetchNextPage(size_t offset) {
           ++NumSequentialFetch;
           size_t num_keep_prefetched = 0UL;
@@ -468,7 +428,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         inline void FetchBuf(size_t page_id, size_t offset) {
           const size_t prev_loaded_page_id = LoadedPageId;
           LoadedPageId = page_id;
@@ -524,7 +483,6 @@ namespace Orly {
           LastFetched = offset / CachePageSize;
         }
 
-        /* TODO */
         inline void CheckBuf() {
           if ((ByteOffset >= LoadedByteEnd || ByteOffset < LoadedByteStart) && ByteOffset < EndOfStream) {
             size_t page_id_of_byte_index = FindPageIdOfByte(ByteOffset);
@@ -533,36 +491,27 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         const TInFile *File;
 
-        /* TODO */
         Util::TCache<PhysicalCachePageSize> *Cache;
 
-        /* TODO */
         const size_t EndOfStream;
 
-        /* TODO */
         size_t LoadedPageId;
 
-        /* TODO */
         size_t LoadedByteStart;
         size_t LoadedByteEnd;
 
-        /* TODO */
         size_t ByteOffset;
 
-        /* TODO */
         size_t OffsetInPage;
         size_t OffsetInChunk;
         size_t ChunkInPage;
 
-        /* TODO */
         typename Util::TCache<PhysicalCachePageSize>::TSlot *MainSlot;
         typename Util::TCache<PhysicalCachePageSize>::TSlot *DataSlot;
         const char *BufData;
 
-        /* TODO */
         struct TSlotStruct {
           TSlotStruct(size_t page_id,
                       Util::TCache<PhysicalCachePageSize> *cache,
@@ -582,30 +531,22 @@ namespace Orly {
         };
         Base::TMiniCache<MaxLocalCacheSize, size_t, TSlotStruct> LocalBufCache;
 
-        /* TODO */
         size_t FetchCount;
 
-        /* TODO */
         size_t NumSequentialFetch;
 
-        /* TODO */
         size_t PrefetchedTo;
 
-        /* TODO */
         size_t LastFetched;
 
-        /* TODO */
         TCompletionTrigger SyncTrigger;
         TCompletionTrigger AsyncTrigger;
 
-        /* TODO */
         DiskPriority Priority;
 
-        /* TODO */
         TDiskResult DiskResult;
         const char *DiskErrStr;
 
-        /* TODO */
         const Base::TCodeLocation CodeLocation;
         const uint8_t UtilSrc;
 

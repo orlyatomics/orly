@@ -40,17 +40,14 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     template <typename TLhs>
     class TRhsVisitor
         : public TType::TVisitor {
       public:
 
-      /* TODO */
       TRhsVisitor(const TLhs *lhs, const TType::TDoubleVisitor &double_visitor)
           : Lhs(lhs), DoubleVisitor(double_visitor) {}
 
-      /* TODO */
       virtual void operator()(const TAddr *rhs) const {
         DoubleVisitor(Lhs, rhs);
       }
@@ -114,26 +111,21 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const TLhs *Lhs;
 
-      /* TODO */
       const TType::TDoubleVisitor &DoubleVisitor;
 
     };  // TRhsVisitor<TLhs>
 
-    /* TODO */
     class TLhsVisitor
         : public TType::TVisitor {
       public:
 
-      /* TODO */
       TLhsVisitor(const TType &rhs, const TType::TDoubleVisitor &double_visitor)
           : Rhs(rhs), DoubleVisitor(double_visitor) {}
 
       virtual ~TLhsVisitor() {}
 
-      /* TODO */
       virtual void operator()(const TAddr *lhs) const {
         Rhs.Accept(TRhsVisitor<TAddr>(lhs, DoubleVisitor));
       }
@@ -197,10 +189,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const TType &Rhs;
 
-      /* TODO */
       const TType::TDoubleVisitor &DoubleVisitor;
 
     };  // TLhsVisitor
@@ -239,7 +229,6 @@ std::string TType::GetMangledName() const {
   class TTypeVisitor : public TType::TVisitor {
     public:
 
-    /* TODO */
     TTypeVisitor(std::string &name) : Name(name) {}
 
     virtual void operator()(const TAddr *that) const {

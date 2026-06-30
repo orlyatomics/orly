@@ -40,16 +40,13 @@
 
 namespace Base {
 
-  /* TODO */
   template <size_t MaxSize, typename TKey, typename TVal>
   class TMiniCache {
     NO_COPY(TMiniCache);
     public:
 
-    /* TODO */
     TMiniCache(size_t bucket_count = MaxSize) : ElemMap(this, bucket_count), LRUList(this), NumElem(0) {}
 
-    /* TODO */
     ~TMiniCache() {
       // destroy all the elements
       for (size_t i = 0; i < NumElem; ++i) {
@@ -93,11 +90,9 @@ namespace Base {
     /* Forward declarations. */
     class TElem;
 
-    /* TODO */
     using TElemMap = InvCon::UnorderedMultimap::TCollection<TMiniCache, TElem, TKey>;
     using TElemList = InvCon::UnorderedList::TCollection<TMiniCache, TElem>;
 
-    /* TODO */
     class TElem {
       NO_COPY(TElem);
       public:
@@ -108,7 +103,6 @@ namespace Base {
         return T(std::get<Is>(std::move(ts))...);
       }
 
-      /* TODO */
       using TMapMembership = InvCon::UnorderedMultimap::TMembership<TElem, TMiniCache, TKey>;
       using TListMembership = InvCon::UnorderedList::TMembership<TElem, TMiniCache>;
 
@@ -127,28 +121,23 @@ namespace Base {
 
       private:
 
-      /* TODO */
       typename TMapMembership::TImpl CacheMembership;
       typename TListMembership::TImpl LRUMembership;
 
-      /* TODO */
       TVal Val;
 
       friend class TMiniCache;
 
     };  // TElem
 
-    /* TODO */
     mutable typename TElemMap::TImpl ElemMap;
 
-    /* TODO */
     mutable typename TElemList::TImpl LRUList;
 
     union {
       TElem ElemSpace[MaxSize];
     };
 
-    /* TODO */
     size_t NumElem;
 
   };  // TMiniCache

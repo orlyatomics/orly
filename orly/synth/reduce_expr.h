@@ -35,52 +35,38 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TReduceExpr
         : public TStartableExpr,
           public TThatableExpr {
       NO_COPY(TReduceExpr);
       public:
 
-      /* TODO */
       TReduceExpr(const TExprFactory *expr_factory, const Package::Syntax::TInfixReduce *infix_reduce);
 
-      /* TODO */
       virtual ~TReduceExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TReduce::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TStartable::TPtr GetStartableSymbol() const;
 
-      /* TODO */
       virtual Expr::TThatable::TPtr GetThatableSymbol() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TInfixReduce *InfixReduce;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
-      /* TODO */
       mutable Expr::TReduce::TPtr Symbol;
 
     };  // TReduceExpr

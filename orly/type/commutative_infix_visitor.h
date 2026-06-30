@@ -33,11 +33,9 @@ namespace Orly {
       NO_COPY(TCommutativeInfixVisitor);
       protected:
 
-      /* TODO */
       TCommutativeInfixVisitor(TType &type, const TPosRange &pos_range)
           : TInfixVisitor(type, pos_range) {}
 
-      /* TODO */
       virtual void operator()(const TAddr     *, const TAddr     *) const = 0;
       virtual void operator()(const TAddr     *, const TBool     *) const = 0;
       virtual void operator()(const TAddr     *, const TDict     *) const = 0;

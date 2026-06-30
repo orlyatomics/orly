@@ -26,7 +26,6 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     class TSet : public TUnaryType<TSet> {
       NO_COPY(TSet);
 

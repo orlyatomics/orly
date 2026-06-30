@@ -29,21 +29,17 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TTimePntCtor
         : public TExpr {
       NO_COPY(TTimePntCtor);
       public:
 
-      /* TODO */
       TTimePntCtor(const Package::Syntax::TTimePntCtor *time_pnt_ctor);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TTimePntCtor *TimePntCtor;
 
     };  // TTimePntCtor

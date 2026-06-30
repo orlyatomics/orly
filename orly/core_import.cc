@@ -60,13 +60,10 @@ class TCmd final
 
   string ImportPkg;
 
-  /* TODO */
   int64_t NumLoadThreads = 0;
 
-  /* TODO */
   int64_t NumMergeThreads = 0;
 
-  /* TODO */
   int64_t NumSimMerge = 0;
 
   private:

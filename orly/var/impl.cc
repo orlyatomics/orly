@@ -31,17 +31,14 @@ namespace Orly {
 
   namespace Var {
 
-    /* TODO */
     template <typename TLhs>
     class TRhsVisitor
         : public TVar::TVisitor {
       public:
 
-      /* TODO */
       TRhsVisitor(const TLhs *lhs, const TVar::TDoubleVisitor &double_visitor)
           : Lhs(lhs), DoubleVisitor(double_visitor) {}
 
-      /* TODO */
       virtual void operator()(const Var::TAddr *rhs) const {
         DoubleVisitor(Lhs, rhs);
       }
@@ -100,24 +97,19 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const TLhs *Lhs;
 
-      /* TODO */
       const TVar::TDoubleVisitor &DoubleVisitor;
 
     };  // TRhsVisitor<TLhs>
 
-    /* TODO */
     class TLhsVisitor
         : public TVar::TVisitor {
       public:
 
-      /* TODO */
       TLhsVisitor(const TVar &rhs, const TVar::TDoubleVisitor &double_visitor)
           : Rhs(rhs), DoubleVisitor(double_visitor) {}
 
-      /* TODO */
       virtual void operator()(const Var::TAddr *lhs) const {
         Rhs.Accept(TRhsVisitor<Var::TAddr>(lhs, DoubleVisitor));
       }
@@ -175,10 +167,8 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       const TVar &Rhs;
 
-      /* TODO */
       const TVar::TDoubleVisitor &DoubleVisitor;
 
     };  // TLhsVisitor
@@ -960,21 +950,17 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       template <typename TVal>
       static int Compare(const TVal &lhs, const TVal &rhs) {
         return lhs < rhs ? -1 : lhs > rhs ? 1 : 0;
       }
 
-      /* TODO */
       static int CompareType(const Type::TType &lhs, const Type::TType &rhs) {
         return Compare(Type::GetPrec(lhs), Type::GetPrec(rhs));
       }
 
-      /* TODO */
       int &Comp;
 
-      /* TODO */
       bool IsEqeq;
 
     };  // TCompareDoubleVisitor

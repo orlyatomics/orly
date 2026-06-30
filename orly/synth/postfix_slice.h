@@ -29,48 +29,35 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TPostfixSlice
         : public TExpr {
       NO_COPY(TPostfixSlice);
       public:
 
-      /* TODO */
       TPostfixSlice(const TExprFactory *expr_factory, const Package::Syntax::TPostfixSlice *postfix_slice);
 
-      /* TODO */
       virtual ~TPostfixSlice();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TPostfixSlice *PostfixSlice;
 
-      /* TODO */
       bool Colon;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       TExpr *OptLhs;
 
-      /* TODO */
       TExpr *OptRhs;
 
     };  // TPostfixSlice

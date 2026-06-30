@@ -35,64 +35,45 @@ namespace Orly {
 
       typedef TAddrDir TDir;
 
-      /* TODO */
       typedef std::vector<std::pair<TDir, TVar>> TAddrType;
       typedef TAddrType TElems;
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TAddr &Add(const TVar &);
 
-      /* TODO */
       virtual TAddr &And(const TVar &);
 
-      /* TODO */
       virtual TAddr &Div(const TVar &);
 
-      /* TODO */
       virtual TAddr &Exp(const TVar &);
 
-      /* TODO */
       virtual TAddr &Intersection(const TVar &);
 
-      /* TODO */
       virtual TAddr &Mod(const TVar &);
 
-      /* TODO */
       virtual TAddr &Mult(const TVar &);
 
-      /* TODO */
       virtual TAddr &Or(const TVar &);
 
-      /* TODO */
       virtual TAddr &Sub(const TVar &);
 
-      /* TODO */
       virtual TAddr &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TAddr &Union(const TVar &);
 
-      /* TODO */
       virtual TAddr &Xor(const TVar &);
 
-      /* TODO */
       const TAddrType &GetVal() const {
         return Val;
       }
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &strm) const;
 
       private:
@@ -104,19 +85,14 @@ namespace Orly {
         SetHash();
       }*/
 
-      /* TODO */
       TAddr(const TAddrType &that);
 
-      /* TODO */
       virtual ~TAddr();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       void SetHash();
 
       /* TODO
@@ -144,16 +120,12 @@ namespace Orly {
       }
       */
 
-      /* TODO */
       TAddrType Val;
 
-      /* TODO */
       std::vector<std::pair<TDir, Type::TType>> TypeVec; //TODO: Can I get this from TType?
 
-      /* TODO */
       size_t Hash;
 
-      /* TODO */
       friend class TVar;
 
     };  // TAddr

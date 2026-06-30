@@ -29,31 +29,25 @@ namespace Base {
 
   DEFINE_ERROR(TPeekablePastEndError, std::runtime_error, "past end")
 
-  /* TODO */
   template <typename TVal>
   class TPeekable {
     NO_COPY(TPeekable);
     public:
 
-    /* TODO */
     typedef std::function<bool (TVal &)> TProducingFunc;
 
-    /* TODO */
     TPeekable(const TProducingFunc &producing_func)
         : ProducingFunc(producing_func), State(Unknown) {}
 
-    /* TODO */
     operator bool() const {
       return TryRefresh();
     }
 
-    /* TODO */
     TVal &operator*() const {
       Refresh();
       return Val;
     }
 
-    /* TODO */
     void operator++() {
       Refresh();
       State = Unknown;
@@ -61,17 +55,14 @@ namespace Base {
 
     private:
 
-    /* TODO */
     enum TState { Unknown, Ready, Done };
 
-    /* TODO */
     void Refresh() const {
       if (!TryRefresh()) {
         throw TPeekablePastEndError(HERE);
       }
     }
 
-    /* TODO */
     bool TryRefresh() const {
       bool is_ready;
       switch (State) {
@@ -93,13 +84,10 @@ namespace Base {
       return is_ready;
     }
 
-    /* TODO */
     TProducingFunc ProducingFunc;
 
-    /* TODO */
     mutable TState State;
 
-    /* TODO */
     mutable TVal Val;
 
   };  // TPeekable<TVal>

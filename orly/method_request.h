@@ -45,16 +45,12 @@ namespace Orly {
     /* We characterize time-to-live in milliseconds. */
     using TTimeToLive = std::chrono::milliseconds;
 
-    /* TODO */
     TMethodRequest() = default;
 
-    /* TODO */
     TMethodRequest(const TId &pov_id, const TPackage &package, const TClosure &closure);
 
-    /* TODO */
     TMethodRequest(const TId &pov_id, const TPackage &package, const TClosure &closure, const TTimeToLive &time_to_live);
 
-    /* TODO */
     TMethodRequest(const TId &pov_id, const TPackage &package, const TClosure &closure, const TId &tracking_id);
 
     /* A method name and set of arguments which the server is to execute. */

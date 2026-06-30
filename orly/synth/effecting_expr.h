@@ -31,48 +31,35 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TEffectingExpr
         : public TThatableExpr {
       NO_COPY(TEffectingExpr);
       public:
 
-      /* TODO */
       TEffectingExpr(const TExprFactory *expr_factory, const Package::Syntax::TEffectingExpr *effecting_expr);
 
-      /* TODO */
       virtual ~TEffectingExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TEffect::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TThatable::TPtr GetThatableSymbol() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TEffectingExpr *EffectingExpr;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       TStmtBlock *StmtBlock;
 
-      /* TODO */
       mutable Expr::TEffect::TPtr Symbol;
 
     };  // TEffectingExpr

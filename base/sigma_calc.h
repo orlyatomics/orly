@@ -50,19 +50,14 @@ namespace Base {
        number of pushes; otherwise, leave the out-params alone and return zero. */
     size_t Report(double &min, double &max, double &mean, double &sigma) const;
 
-    /* TODO */
     inline size_t GetCount() const;
 
-    /* TODO */
     inline double GetMin() const;
 
-    /* TODO */
     inline double GetMax() const;
 
-    /* TODO */
     inline double GetMean() const;
 
-    /* TODO */
     inline double GetSigma() const;
 
     /* Go back to being empty. */

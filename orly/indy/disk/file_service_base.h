@@ -32,17 +32,14 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TFileObj {
         public:
 
-        /* TODO */
         enum TKind {
           DataFile,
           DurableFile
         };
 
-        /* TODO */
         inline TFileObj(TKind kind,
                         size_t gen_id,
                         size_t starting_block,
@@ -54,35 +51,26 @@ namespace Orly {
 
         TKind Kind;
 
-        /* TODO */
         size_t GenId;
 
-        /* TODO */
         size_t StartingBlockId;
 
-        /* TODO */
         size_t StartingBlockOffset;
 
-        /* TODO */
         size_t FileSize;
 
-        /* TODO */
         size_t NumKeys;
 
-        /* TODO */
         TSequenceNumber LowestSeq;
 
-        /* TODO */
         TSequenceNumber HighestSeq;
 
       };  // TFileObj
 
-      /* TODO */
       class TFileServiceBase {
         NO_COPY(TFileServiceBase);
         public:
 
-        /* TODO */
         virtual bool FindFile(const Base::TUuid &file_uid,
                               size_t gen_id,
                               size_t &starting_block,
@@ -90,7 +78,6 @@ namespace Orly {
                               size_t &file_length,
                               size_t &num_keys) const = 0;
 
-        /* TODO */
         virtual void InsertFile(const Base::TUuid &file_uid,
                                 TFileObj::TKind kind,
                                 size_t gen_id,
@@ -102,24 +89,19 @@ namespace Orly {
                                 TSequenceNumber highest_seq,
                                 TCompletionTrigger &completion_trigger) = 0;
 
-        /* TODO */
         virtual void RemoveFile(const Base::TUuid &file_uid,
                                 size_t gen_id,
                                 TCompletionTrigger &completion_trigger) = 0;
 
-        /* TODO */
         virtual void AppendFileGenSet(const Base::TUuid &file_uid,
                                       std::vector<TFileObj> &out_vec) = 0;
 
-        /* TODO */
         virtual bool ForEachFile(const std::function<bool (const Base::TUuid &file_uid, const TFileObj &)> &cb) = 0;
 
-        /* TODO */
         virtual ~TFileServiceBase() {}
 
         protected:
 
-        /* TODO */
         TFileServiceBase() {}
 
       };  // TFileServiceBase

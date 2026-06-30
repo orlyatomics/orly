@@ -34,7 +34,6 @@ namespace Orly {
 
   namespace Var {
 
-    /* TODO */
     class TVar;
 
   }  // Var
@@ -45,14 +44,12 @@ namespace Orly {
              elements come out in a stable, asciibetical order. */
     typedef std::map<std::string, TType> TObjElems;
 
-    /* TODO */
     class TObj : public TInternedType<TObj, TObjElems> {
       NO_COPY(TObj);
       public:
 
       typedef TObjElems TElems;
 
-      /* TODO */
       template <typename TCompound_>
       class Meta {
         NO_CONSTRUCTION(Meta);
@@ -60,38 +57,30 @@ namespace Orly {
 
         typedef TCompound_ TCompound;
 
-        /* TODO */
         class TAnyField {
           NO_COPY(TAnyField);
           public:
 
-          /* TODO */
           virtual ~TAnyField() {}
 
-          /* TODO */
           const std::string &GetName() const {
             return Name;
           }
 
-          /* TODO */
           const TAnyField *GetNextField() const {
             return NextField;
           }
 
-          /* TODO */
           virtual Type::TType GetType() const = 0;
 
-          /* TODO */
           virtual void GetVal(const TCompound &that, Var::TVar &out) const = 0;
 
-          /* TODO */
           static const TAnyField *GetFirstField() {
             return FirstField;
           }
 
           protected:
 
-          /* TODO */
           TAnyField(const char *name)
               : Name(name), NextField(0) {
             assert(name);
@@ -101,80 +90,64 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           std::string Name;
 
-          /* TODO */
           TAnyField *NextField;
 
-          /* TODO */
           static TAnyField *FirstField, *LastField;
 
         };  // TAnyField
 
-        /* TODO */
         template <typename TVal>
         class TField
             : public TAnyField {
           NO_COPY(TField);
           public:
 
-          /* TODO */
           typedef TVal (TCompound::*TMember);
 
-          /* TODO */
           TField(const char *name, TMember member)
               : TAnyField(name), Member(member) {}
 
-          /* TODO */
           virtual Type::TType GetType() const {
             return Type::TDt<TVal>::GetType();
           }
 
-          /* TODO */
           virtual void GetVal(const TCompound &that, Var::TVar &out) const;
 
           private:
 
-          /* TODO */
           TMember Member;
 
         };  // TField<TVal>
 
-        /* TODO */
         class TClass {
           NO_COPY(TClass);
           public:
 
-          /* TODO */
           TClass(const char *name)
               : Name(name) {
             assert(!Class);
             Class = this;
           }
 
-          /* TODO */
           ~TClass() {
             assert(Class == this);
             Class = 0;
           }
 
-          /* TODO */
           const std::string &GetName() const {
             return Name;
           }
 
-          /* TODO */
           static const TClass *TryGetClass() {
             return Class;
           }
 
           private:
 
-          /* TODO */
           std::string Name;
 
-          /* TODO */
           static TClass *Class;
 
         };  // TClass
@@ -189,17 +162,14 @@ namespace Orly {
         return lhs->IsSubsetOf(rhs, is_optional) || rhs->IsSubsetOf(lhs, is_optional);
       }
 
-      /* TODO */
       const TObjElems &GetElems() const {
         return std::get<0>(GetKey());
       }
 
-      /* TODO */
       static TType Get(const TObjElems &elems) {
         return TInternedType::Get(elems);
       }
 
-      /* TODO */
       bool IsSubsetOf(const TObj *that, bool &is_optional) const {
         assert(that);
         for (auto iter : GetElems()) {
@@ -225,15 +195,12 @@ namespace Orly {
       friend class TInternedType;
     };  // TObj
 
-    /* TODO */
     template <typename TCompound>
     typename TObj::Meta<TCompound>::TAnyField *TObj::Meta<TCompound>::TAnyField::FirstField = 0;
 
-    /* TODO */
     template <typename TCompound>
     typename TObj::Meta<TCompound>::TAnyField *TObj::Meta<TCompound>::TAnyField::LastField = 0;
 
-    /* TODO */
     template <typename TCompound>
     typename TObj::Meta<TCompound>::TClass *TObj::Meta<TCompound>::TClass::Class = 0;
 

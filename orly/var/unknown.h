@@ -28,75 +28,52 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Add(const TVar &);
 
-      /* TODO */
       virtual TUnknown &And(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Div(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Exp(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Intersection(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Mod(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Mult(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Or(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Sub(const TVar &);
 
-      /* TODO */
       virtual TUnknown &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Union(const TVar &);
 
-      /* TODO */
       virtual TUnknown &Xor(const TVar &);
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
-      /* TODO */
       static TVar New();
 
       private:
 
-      /* TODO */
       TUnknown() {}
 
-      /* TODO */
       virtual ~TUnknown();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       friend class TVar;
 
     };  // TUnknown

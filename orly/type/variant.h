@@ -64,7 +64,6 @@ namespace Orly {
         return std::get<0>(GetKey());
       }
 
-      /* TODO */
       static TType Get(const TVariantElems &elems) {
         return TInternedType::Get(elems);
       }

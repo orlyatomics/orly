@@ -32,19 +32,14 @@ namespace Orly {
 
     namespace Program {
 
-      /* TODO */
       using TForXact = std::function<bool (const TXact *)>;
 
-      /* TODO */
       using TForKv = std::function<bool (const Sabot::State::TAny *lhs, const Sabot::State::TAny *rhs)>;
 
-      /* TODO */
       bool ParseImageFile(const char *path, const TForXact &cb);
 
-      /* TODO */
       bool ParseImageStr(const char *str, const TForXact &cb);
 
-      /* TODO */
       bool TranslateXact(const TXact *xact, const TForKv &cb);
 
     }  // Program

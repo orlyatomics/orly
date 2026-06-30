@@ -28,21 +28,17 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TUserIdExpr
         : public TExpr {
       NO_COPY(TUserIdExpr);
       public:
 
-      /* TODO */
       TUserIdExpr(const Package::Syntax::TUserIdExpr *user_id_expr);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TUserIdExpr *UserIdExpr;
 
     };  // TUserIdExpr

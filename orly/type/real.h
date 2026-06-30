@@ -27,7 +27,6 @@ namespace Orly {
 
   namespace Type {
 
-    /* TODO */
     class TReal : public TSingletonType<TReal> {
       NO_COPY(TReal);
       public:

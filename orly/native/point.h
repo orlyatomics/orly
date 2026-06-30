@@ -31,12 +31,10 @@ class TPoint {
   TPoint(double x, double y)
       : X(x), Y(y) {}
 
-  /* TODO */
   double GetX() const {
     return X;
   }
 
-  /* TODO */
   double GetY() const {
     return Y;
   }

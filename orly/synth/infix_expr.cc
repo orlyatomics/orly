@@ -26,26 +26,22 @@ using namespace Orly::Synth;
 TInfixExpr::TInfixExpr(TExpr *lhs, TExpr *rhs, TNew new_, const TPosRange &pos_range)
     : Lhs(Base::AssertTrue(lhs)), New(new_), Rhs(Base::AssertTrue(rhs)), PosRange(pos_range) {}
 
-/* TODO */
 TInfixExpr::~TInfixExpr() {
   delete Lhs;
   delete Rhs;
 }
 
-/* TODO */
 Expr::TExpr::TPtr TInfixExpr::Build() const {
   assert(Lhs);
   assert(Rhs);
   return New(Lhs->Build(), Rhs->Build(), PosRange);
 }
 
-/* TODO */
 void TInfixExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
   Lhs->ForEachInnerScope(cb);
   Rhs->ForEachInnerScope(cb);
 }
 
-/* TODO */
 void TInfixExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
   Lhs->ForEachRef(cb);
   Rhs->ForEachRef(cb);

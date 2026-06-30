@@ -31,48 +31,38 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TPrecLevel;
 
-      /* TODO */
       class TOperator
           : public TAtom {
         public:
 
-        /* TODO */
         enum TAssoc { Left, NonAssoc, Right };
 
-        /* TODO */
         TOperator(
             const TName &name, TAnyBase *base, const std::string &pattern, const std::optional<int> &pri, TPrecLevel *prec_level, TAssoc assoc)
             : TAtom(name, base, pattern, pri), PrecLevel(prec_level), Assoc(assoc) {
           assert(prec_level);
         }
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const;
 
-        /* TODO */
         TAssoc GetAssoc() const {
           return Assoc;
         }
 
-        /* TODO */
         size_t GetPrecLevelIdx() const {
           return PrecLevel->GetIdx();
         }
 
-        /* TODO */
         TPrecLevel *GetPrecLevel() const {
           return PrecLevel;
         }
 
         private:
 
-        /* TODO */
         TPrecLevel *PrecLevel;
 
-        /* TODO */
         TAssoc Assoc;
 
       };  // TOperator

@@ -233,7 +233,6 @@ namespace Orly {
       return IsKnown(lhs) && IsKnown(rhs) ? Xor(GetVal(lhs), GetVal(rhs)) : TOpt<bool>();
     }
 
-    /* TODO */
     template <typename TVal>
     auto IsKnownExpr(const TOpt<TVal> &opt_val, const TVal &val)
         -> decltype(And(IsKnown(opt_val), EqEq(GetVal(opt_val), val))) {
@@ -253,7 +252,6 @@ namespace Orly {
 
     namespace Dict {
 
-      /* TODO */
       template <typename TLhsKey, typename TLhsVal, typename TRhsKey, typename TRhsVal>
       auto Equal(const TDict<TLhsKey, TLhsVal> &lhs, const TDict<TRhsKey, TRhsVal> &rhs, const bool is_eqeq)
               -> decltype(And(EqEq(lhs.begin()->first , rhs.begin()->first),
@@ -301,7 +299,6 @@ namespace Orly {
 
     namespace List {
 
-      /* TODO */
       template <typename TLhs, typename TRhs>
       auto Equal(const std::vector<TLhs> &lhs, const std::vector<TRhs> &rhs, const bool is_eqeq)
             -> decltype(EqEq(*lhs.begin(), *rhs.begin())) {
@@ -323,7 +320,6 @@ namespace Orly {
         return unknown ? decltype(EqEq(*lhs.begin(), *rhs.begin()))() : is_eqeq;
       }
 
-      /* TODO */
       template <typename TLhs, typename TRhs, typename TElemComp, typename TSizeComp>
       auto Compare(
             const std::vector<TLhs> &lhs,
@@ -347,7 +343,6 @@ namespace Orly {
 
     namespace Set {
 
-      /* TODO */
       template <typename TLhs, typename TRhs>
       auto Equal(const TSet<TLhs> &lhs, const TSet<TRhs> &rhs, const bool is_eqeq)
             -> decltype(Contains(rhs, *lhs.begin())) {
@@ -1187,16 +1182,13 @@ namespace Orly {
 
     };  // GtEqStruct<int64_t, size_t>
 
-    /* TODO */
     template <typename TContainer, typename TVal>
     bool Contains(const TContainer &, const TVal &) = delete;
 
-    /* TODO */
     inline bool Contains(const std::string &container, const std::string &val) {
       return container.find(val) != std::string::npos;
     }
 
-    /* TODO */
     template <typename TLhs, typename TRhs>
     auto Contains(const std::vector<TLhs> &container, const TRhs &val)
           -> decltype(EqEq(*container.begin(), val)) {
@@ -1214,7 +1206,6 @@ namespace Orly {
       return unknown ? decltype(EqEq(*iter, val))() : false;
     }
 
-    /* TODO */
     template <typename TLhs, typename TRhs>
     TOpt<bool> Contains(const TSet<TOpt<TLhs>> &container, const TRhs &val) {
       if (container.empty()) {
@@ -1232,7 +1223,6 @@ namespace Orly {
       return TOpt<bool>(false);
     }
 
-    /* TODO */
     template <typename TLhs, typename TRhs>
     auto Contains(const TSet<TLhs> &container, const TRhs &val)
           -> decltype(EqEq(*container.begin(), val)) {
@@ -1245,7 +1235,6 @@ namespace Orly {
       return container.count(GetVal(val));
     }
 
-    /* TODO */
     template <typename TLhsKey, typename TLhsVal, typename TRhsKey>
     TOpt<bool> Contains(const TDict<TOpt<TLhsKey>, TLhsVal> &container, const TRhsKey &key) {
       if (container.empty()) {
@@ -1263,7 +1252,6 @@ namespace Orly {
       return TOpt<bool>(false);
     }
 
-    /* TODO */
     template <typename TLhsKey, typename TLhsVal, typename TRhsKey>
     auto Contains(const TDict<TLhsKey, TLhsVal> &container, const TRhsKey &key)
           -> decltype(EqEq(container.begin()->first, key)) {
@@ -1276,13 +1264,11 @@ namespace Orly {
       return container.count(GetVal(key));
     }
 
-    /* TODO */
     template <typename TContainer, typename TVal>
     TOpt<bool> Contains(const TOpt<TContainer> &container, const TVal &val) {
       return container.IsKnown() ? Contains(container.GetVal(), val) : TOpt<bool>();
     }
 
-    /* TODO */
     template <typename TKey, typename TVal>
     TOpt<bool> Contains(const TOpt<TDict<TKey, TVal>> &container, const TKey &val) {
       return container.IsKnown() ? Contains(container.GetVal(), val) : TOpt<bool>();

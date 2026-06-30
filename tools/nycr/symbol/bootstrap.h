@@ -26,7 +26,6 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       TLanguage *Bootstrap();
 
     }  // Symbol

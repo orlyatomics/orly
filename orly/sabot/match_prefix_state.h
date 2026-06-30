@@ -32,7 +32,6 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     TMatchResult MatchPrefixState(const State::TAny &lhs, const State::TAny &rhs);
 
   }  // Sabot

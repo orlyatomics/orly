@@ -35,33 +35,25 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExistsCtor
         : public TExpr {
       NO_COPY(TExistsCtor);
       public:
 
-      /* TODO */
       TExistsCtor(const TExprFactory *expr_factory, const Package::Syntax::TPrefixExists *exists_ctor);
 
-      /* TODO */
       virtual ~TExistsCtor();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TPrefixExists *ExistsCtor;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       TType *ValueType;
 
     };  // TExistsCtor

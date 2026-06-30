@@ -33,22 +33,17 @@ namespace Orly {
 
   namespace Indy {
 
-    /* TODO */
     class TUpdateWalker {
       NO_COPY(TUpdateWalker);
       public:
 
-      /* TODO */
       class TItem {
         public:
 
-        /* TODO */
         TSequenceNumber SequenceNumber;
 
-        /* TODO */
         Atom::TCore Metadata;
 
-        /* TODO */
         Atom::TCore Id;
 
         /* Per-entry mutator + payload. Mutator defaults to Assign for
@@ -67,7 +62,6 @@ namespace Orly {
         };
         std::vector<TEntry> EntryVec;
 
-        /* TODO */
         Atom::TCore::TArena *MainArena;
 
       };  // TItem
@@ -81,7 +75,6 @@ namespace Orly {
       /* Walk to the next item, if any. */
       virtual TUpdateWalker &operator++() = 0;
 
-      /* TODO */
       virtual ~TUpdateWalker() {}
 
       protected:

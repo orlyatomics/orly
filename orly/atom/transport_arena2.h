@@ -35,7 +35,6 @@ namespace Orly {
 
   namespace Atom {
 
-    /* TODO */
     class TTransportArena final
         : public TCore::TArena {
       NO_COPY(TTransportArena);

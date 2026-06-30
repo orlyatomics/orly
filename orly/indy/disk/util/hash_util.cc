@@ -45,7 +45,6 @@ const set<size_t> Orly::Indy::Disk::Util::GenSizeSet {64,
                                                      549755813888,
                                                      2199023255552};
 
-/* TODO */
 const set<size_t> Orly::Indy::Disk::Util::HashSizeSet {97UL,
                                                       193UL,
                                                       389UL,

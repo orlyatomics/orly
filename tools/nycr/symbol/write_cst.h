@@ -27,7 +27,6 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       void WriteCst(const char *root, const char *branch, const char *atom, const TLanguage *language);
 
     }  // Symbol

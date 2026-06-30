@@ -32,19 +32,14 @@ namespace Orly {
         : public TNotification {
       public:
 
-      /* TODO */
       enum TResponse {
 
-        /* TODO */
         Accepted,
 
-        /* TODO */
         Replicated,
 
-        /* TODO */
         SemiDurable,
 
-        /* TODO */
         Durable,
 
       };  // TResponse

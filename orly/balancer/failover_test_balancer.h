@@ -31,50 +31,38 @@ namespace Orly {
 
   namespace Balancer {
 
-    /* TODO */
     class TFailoverTestBalancer
         : public TBalancer {
       NO_COPY(TFailoverTestBalancer);
       public:
 
-      /* TODO */
       TFailoverTestBalancer(Base::TScheduler *scheduler,
                             const TBalancer::TCmd &cmd,
                             std::chrono::milliseconds interval);
 
-      /* TODO */
       virtual ~TFailoverTestBalancer();
 
-      /* TODO */
       virtual const Socket::TAddress &ChooseHost();
 
-      /* TODO */
       void RegisterHost(const Socket::TAddress &addr);
 
       private:
 
-      /* TODO */
       void CheckHosts();
 
-      /* TODO */
       bool CheckHost(const Socket::TAddress &addr) const;
 
-      /* TODO */
       virtual void OnError(const std::exception &ex);
 
-      /* TODO */
       std::unordered_set<Socket::TAddress> HostSet;
       std::optional<Socket::TAddress> MasterHost;
       std::mutex HostMutex;
       std::condition_variable HostCond;
 
-      /* TODO */
       std::chrono::milliseconds Interval;
 
-      /* TODO */
       bool Running;
 
-      /* TODO */
       Base::TEventSemaphore ErrorSem;
 
     };  // TFailoverTestBalancer

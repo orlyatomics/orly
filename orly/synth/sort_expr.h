@@ -33,51 +33,37 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TSortExpr
         : public TLhsRhsableExpr {
       NO_COPY(TSortExpr);
       public:
 
-      /* TODO */
       TSortExpr(const TExprFactory *expr_factory, const Package::Syntax::TInfixSort *infix_sort);
 
-      /* TODO */
       virtual ~TSortExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       const Expr::TSort::TPtr &GetSymbol() const;
 
-      /* TODO */
       virtual Expr::TLhsRhsable::TPtr GetLhsRhsableSymbol() const;
 
       private:
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TInfixSort *InfixSort;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
-      /* TODO */
       mutable Expr::TSort::TPtr Symbol;
 
     };  // TSortExpr

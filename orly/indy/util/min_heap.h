@@ -33,23 +33,18 @@ namespace Orly {
 
     namespace Util {
 
-      /* TODO */
       template <typename TVal, typename TRef, class TComparator = std::less<TVal>>
       class TMinHeap {
         NO_COPY(TMinHeap);
         public:
 
-        /* TODO */
         class TMinHeapElem {
           public:
 
-          /* TODO */
           TMinHeapElem(const TVal &val, TRef ref) : Val(&val), Ref(ref) {}
 
-          /* TODO */
           TMinHeapElem(const TMinHeapElem &&that) : Val(that.Val), Ref(that.Ref) {}
 
-          /* TODO */
           TMinHeapElem &operator=(TMinHeapElem &&that) {
             if (this != &that) {
               std::swap(Val, that.Val);
@@ -60,18 +55,14 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           const TVal *Val;
 
-          /* TODO */
           TRef Ref;
 
-          /* TODO */
           friend class TMinHeap;
 
         };  // TMinHeapElem
 
-        /* TODO */
         TMinHeap(size_t max_elem, const TComparator &comp = std::less<TVal>())
             : MaxElem(max_elem), NumElem(0UL), Data(nullptr), Comp(comp) {
           Data = reinterpret_cast<TMinHeapElem *>(malloc(MaxElem *sizeof(TMinHeapElem)));
@@ -80,7 +71,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         ~TMinHeap() {
           for (size_t i = 0; i < NumElem; ++i) {
             Data[i].~TMinHeapElem();
@@ -88,12 +78,10 @@ namespace Orly {
           free(Data);
         }
 
-        /* TODO */
         inline operator bool() const {
           return NumElem > 0;
         }
 
-        /* TODO */
         inline void Insert(const TVal &val, TRef ref) {
           assert(NumElem < MaxElem);
           size_t i = NumElem;
@@ -105,7 +93,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         inline const TVal &Peek(TRef &ref) const {
           assert(NumElem > 0);
           const TMinHeapElem &min_val = Data[0];
@@ -113,7 +100,6 @@ namespace Orly {
           return *(min_val.Val);
         }
 
-        /* TODO */
         inline const TVal &Pop(TRef &ref) {
           assert(NumElem > 0);
           const TMinHeapElem &min_val = Data[0];
@@ -144,7 +130,6 @@ namespace Orly {
           return 2 * (i + 1);
         }
 
-        /* TODO */
         void MinHeapify(size_t i) {
           const size_t left = Left(i);
           const size_t right = Right(i);
@@ -163,13 +148,10 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         const size_t MaxElem;
 
-        /* TODO */
         size_t NumElem;
 
-        /* TODO */
         TMinHeapElem *Data;
 
         /* Comparator */
@@ -177,24 +159,19 @@ namespace Orly {
 
       };  // TMinHeap
 
-      /* TODO */
       template <typename TVal, typename TRef, class TComparator = std::less<TVal>>
       class TCopyMinHeap {
         NO_COPY(TCopyMinHeap);
         public:
 
-        /* TODO */
         class TMinHeapElem {
           public:
 
-          /* TODO */
           template <typename... TArgs>
           TMinHeapElem(TRef ref, TArgs &&...args) : Val(args...), Ref(ref) {}
 
-          /* TODO */
           TMinHeapElem(const TMinHeapElem &&that) : Val(that.Val), Ref(that.Ref) {}
 
-          /* TODO */
           TMinHeapElem &operator=(TMinHeapElem &&that) {
             if (this != &that) {
               std::swap(Val, that.Val);
@@ -205,18 +182,14 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           TVal Val;
 
-          /* TODO */
           TRef Ref;
 
-          /* TODO */
           friend class TCopyMinHeap;
 
         };  // TMinHeapElem
 
-        /* TODO */
         TCopyMinHeap(size_t max_elem, const TComparator &comp = std::less<TVal>())
             : MaxElem(max_elem), NumElem(0UL), Data(nullptr), Comp(comp) {
           Data = reinterpret_cast<TMinHeapElem *>(malloc(MaxElem *sizeof(TMinHeapElem)));
@@ -225,7 +198,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         ~TCopyMinHeap() {
           for (size_t i = 0; i < NumElem; ++i) {
             Data[i].~TMinHeapElem();
@@ -233,12 +205,10 @@ namespace Orly {
           free(Data);
         }
 
-        /* TODO */
         inline operator bool() const {
           return NumElem > 0;
         }
 
-        /* TODO */
         template <typename... TArgs>
         inline void Emplace(TRef ref, TArgs &&...args) {
           assert(NumElem < MaxElem);
@@ -251,7 +221,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         inline const TVal &Peek(TRef &ref) const {
           assert(NumElem > 0);
           const TMinHeapElem &min_val = Data[0];
@@ -259,7 +228,6 @@ namespace Orly {
           return min_val.Val;
         }
 
-        /* TODO */
         inline TRef Pop(TVal &val) {
           assert(NumElem > 0);
           TMinHeapElem &min_val = Data[0];
@@ -290,7 +258,6 @@ namespace Orly {
           return 2 * (i + 1);
         }
 
-        /* TODO */
         void MinHeapify(size_t i) {
           const size_t left = Left(i);
           const size_t right = Right(i);
@@ -309,13 +276,10 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         const size_t MaxElem;
 
-        /* TODO */
         size_t NumElem;
 
-        /* TODO */
         TMinHeapElem *Data;
 
         /* Comparator */

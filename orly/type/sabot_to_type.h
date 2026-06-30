@@ -39,12 +39,10 @@ namespace Orly {
 
     };  // TSabotToTypeTranslationError
 
-    /* TODO */
     class TToTypeVisitor final
         : public Sabot::TTypeVisitor {
       public:
 
-      /* TODO */
       TToTypeVisitor(Type::TType &type)
           : Type(type) {
       }
@@ -81,15 +79,12 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       void OnUnary(const Sabot::Type::TUnary &type) const;
 
-      /* TODO */
       Type::TType &Type;
 
     };  // TToTypeVisitor
 
-    /* TODO */
     inline Type::TType ToType(const Sabot::Type::TAny &state) {
       Type::TType type;
       state.Accept(TToTypeVisitor(type));

@@ -30,44 +30,33 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TInfixExpr
         : public TExpr {
       NO_COPY(TInfixExpr);
       public:
 
-      /* TODO */
       typedef Expr::TExpr::TPtr (*TNew)(const Expr::TExpr::TPtr &lhs,
                                         const Expr::TExpr::TPtr &rhs,
                                         const TPosRange &pos_range);
 
-      /* TODO */
       TInfixExpr(TExpr *lhs, TExpr *rhs, TNew new_, const TPosRange &pos_range);
 
-      /* TODO */
       virtual ~TInfixExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TNew New;
 
-      /* TODO */
       TExpr *Rhs;
 
-      /* TODO */
       const TPosRange PosRange;
 
     };  // TInfixExpr

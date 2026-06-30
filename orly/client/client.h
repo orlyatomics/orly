@@ -46,134 +46,99 @@ namespace Orly {
       NO_COPY(TClient);
       public:
 
-      /* TODO */
       virtual ~TClient();
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<std::string>> Echo(const std::string &msg);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> InstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> UnInstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastPrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                    const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafePrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                    const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                   const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafeSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                   const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> PausePov(const Base::TUuid &pov_id);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> UnpausePov(const Base::TUuid &pov_id);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> SetUserId(const Base::TUuid &user_id);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> SetTimeToLive(const Base::TUuid &durable_id, const std::chrono::seconds &time_to_live);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<TMethodResult>> Try(const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> BeginImport();
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> EndImport();
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<void>> TailGlobalPov();
 
-      /* TODO */
       std::shared_ptr<Rpc::TFuture<std::string>> ImportCoreVector(const std::string &file_pattern, const std::string &pkg_name, int64_t num_load_threads, int64_t num_merge_threads, int64_t merge_simultaneous);
 
-      /* TODO */
       const std::optional<Base::TUuid> &GetSessionId() const {
         return SessionId;
       }
 
-      /* TODO */
       const std::chrono::seconds &GetTimeToLive() const {
         return TimeToLive;
       }
 
       protected:
 
-      /* TODO */
       TClient(const Socket::TAddress &server_address, const std::optional<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live);
 
-      /* TODO */
       virtual void OnPovFailed(const Base::TUuid &repo_id) = 0;
 
-      /* TODO */
       virtual void OnUpdateAccepted(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) = 0;
 
-      /* TODO */
       virtual void OnUpdateReplicated(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) = 0;
 
-      /* TODO */
       virtual void OnUpdateDurable(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) = 0;
 
-      /* TODO */
       virtual void OnUpdateSemiDurable(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) = 0;
 
       private:
 
-      /* TODO */
       class TProtocol
           : public Rpc::TProtocol {
         NO_COPY(TProtocol);
         public:
 
-        /* TODO */
         static const TProtocol Protocol;
 
         private:
 
-        /* TODO */
         TProtocol();
 
       };  // TClient::TProtocol
 
-      /* TODO */
       void DispatchMain();
 
       /* Handles background I/O with the server. */
       void IoMain();
 
-      /* TODO */
       Socket::TAddress ServerAddress;
 
-      /* TODO */
       std::optional<Base::TUuid> SessionId;
 
-      /* TODO */
       std::chrono::seconds TimeToLive;
 
-      /* TODO */
       std::shared_ptr<Io::TDevice> Device;
 
-      /* TODO */
       Base::TFd InternalSocket;
 
       /* Runs IoMain(). */
       std::thread DispatchThread, IoThread;
 
-      /* TODO */
       Base::TEventSemaphore Destructing;
 
     };  // TClient

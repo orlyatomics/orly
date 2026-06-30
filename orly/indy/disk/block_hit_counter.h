@@ -39,12 +39,10 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TBlockHitCounter {
         NO_COPY(TBlockHitCounter);
         public:
 
-        /* TODO */
         TBlockHitCounter(size_t block_size, size_t num_blocks)
             : BlockSize(block_size),
               NumBlocks(num_blocks),
@@ -54,7 +52,6 @@ namespace Orly {
           FlushBuf = Base::MemAlignedAllocZeroInitialized<uint8_t>(getpagesize(), GetNumBytes());
         }
 
-        /* TODO */
         inline void AddHits(size_t block_num, size_t num_hits) {
           std::lock_guard<std::mutex> lock(CountLock);
           uint8_t *val = WorksetBuf.get() + block_num;
@@ -62,13 +59,11 @@ namespace Orly {
           *val = std::min(std::numeric_limits<uint8_t>::max(), static_cast<uint8_t>(floor(cur)));
         }
 
-        /* TODO */
         inline uint8_t GetNumHits(size_t block_num) const {
           std::lock_guard<std::mutex> lock(CountLock);
           return *(WorksetBuf.get() + block_num);
         }
 
-        /* TODO */
         inline void Reset(size_t block_num) {
           std::lock_guard<std::mutex> lock(CountLock);
           *(WorksetBuf.get() + block_num) = 0;
@@ -76,24 +71,18 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         inline size_t GetNumBytes() const {
           return ceil(static_cast<double>(NumBlocks) / BlockSize) * BlockSize;
         }
 
-        /* TODO */
         const size_t BlockSize;
 
-        /* TODO */
         const size_t NumBlocks;
 
-        /* TODO */
         std::unique_ptr<uint8_t> WorksetBuf;
 
-        /* TODO */
         std::unique_ptr<uint8_t> FlushBuf;
 
-        /* TODO */
         mutable std::mutex CountLock;
 
       };  // TBlockHitCounter

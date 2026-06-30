@@ -37,7 +37,6 @@ namespace Orly {
 
         static constexpr size_t MaxInstanceNameSize = 24UL;
 
-        /* TODO */
         struct TVolumeId {
           size_t Id;
           char InstanceName[MaxInstanceNameSize];
@@ -82,7 +81,6 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         class TDeviceUtil {
           NO_CONSTRUCTION(TDeviceUtil);
           public:
@@ -123,16 +121,12 @@ namespace Orly {
             uint64_t MinDiscardBlocks;
           };
 
-          /* TODO */
           static bool ProbeDevice(const char *path, TOrlyDevice &out_device);
 
-          /* TODO */
           static void ModifyDevice(const char *path, TOrlyDevice &new_device_info);
 
-          /* TODO */
           static void ZeroSuperBlock(const char *path);
 
-          /* TODO */
           static bool ForEachDevice(const std::function<bool (const char *)> &cb);
 
           static bool IsHardDrive(const std::string &dev_path);

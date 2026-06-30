@@ -206,7 +206,6 @@ namespace Rpc {
     TContext(const TProtocol &protocol)
         : Protocol(protocol), NextRequestId(1), UnhandledRequestCount(0) {}
 
-    /* TODO */
     void FailAllFutures(const std::string &error_msg);
 
     /* See accessor. */

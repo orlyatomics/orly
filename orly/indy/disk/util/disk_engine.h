@@ -29,12 +29,10 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         class TDiskEngine {
           NO_COPY(TDiskEngine);
           public:
 
-          /* TODO */
           TDiskEngine(Base::TScheduler *scheduler,
                       Fiber::TRunner::TRunnerCons &runner_cons,
                       Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
@@ -281,44 +279,36 @@ namespace Orly {
                 std::make_unique<Util::TEngine>(VolMan, PageCache.get(), BlockCache.get(), FileService.get(), true);
           }
 
-          /* TODO */
           Util::TEngine *GetEngine() const {
             return Engine.get();
           }
 
-          /* TODO */
           Util::TPageCache *GetPageCache() const {
             return PageCache.get();
           }
 
-          /* TODO */
           Util::TBlockCache *GetBlockCache() const {
             return BlockCache.get();
           }
 
-          /* TODO */
           Util::TVolumeManager *GetVolMan() const {
             return VolMan;
           }
 
-          /* TODO */
           void Report(std::stringstream &ss, double elapsed_time) const {
             DiskController->Report(ss, elapsed_time);
           }
 
           private:
 
-          /* TODO */
           class TDataFileReader
               : public TReadFile<LogicalPageSize, LogicalBlockSize, PhysicalBlockSize, CheckedPage> {
             NO_COPY(TDataFileReader);
             public:
 
-            /* TODO */
             typedef TStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedPage, 0UL> TInStream;
             typedef Orly::Indy::Disk::TReadFile<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedPage> TMyReadFile;
 
-            /* TODO */
             TDataFileReader(Disk::Util::TPageCache *page_cache,
                             const Base::TUuid &file_id,
                             DiskPriority priority,
@@ -336,10 +326,8 @@ namespace Orly {
                               starting_block_offset,
                               file_length) {}
 
-            /* TODO */
             virtual ~TDataFileReader() {}
 
-            /* TODO */
             using TReadFile::GetStartingBlockOffset;
             using TReadFile::GetNumBlocks;
             using TReadFile::GetNumMetaBlocks;
@@ -350,34 +338,26 @@ namespace Orly {
 
           };  // TDataFileReader
 
-          /* TODO */
           Base::TScheduler *Scheduler;
 
-          /* TODO */
           std::unique_ptr<TDiskController> DiskController;
 
-          /* TODO */
           std::unique_ptr<TDiskUtil> DiskUtil;
 
-          /* TODO */
           size_t SystemBlockId;
 
-          /* TODO */
           std::unique_ptr<TFileService> FileService;
           size_t FileAppendLogBlocks;
           size_t Image1BlockId;
           size_t Image2BlockId;
           std::vector<size_t> AppendLogBlockVec;
 
-          /* TODO */
           Util::TVolumeManager *VolMan;
 
-          /* TODO */
           std::unique_ptr<Util::TPageCache> PageCache;
           std::unique_ptr<Util::TBlockCache> BlockCache;
           std::unique_ptr<Util::TEngine> Engine;
 
-          /* TODO */
           Util::TCacheCb CacheCb;
 
         };  // TDiskEngine

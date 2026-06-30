@@ -78,7 +78,6 @@ namespace InvCon {
         return result;
       }
 
-      /* TODO */
       static size_t GetBucketSize() {
         return sizeof(TBucket);
       }
@@ -144,7 +143,6 @@ namespace InvCon {
         return GetBucket(key)->TryGetLastMembership(key);
       }
 
-      /* TODO */
       bool IsEmpty() const {
         for (size_t i = 0; i < BucketCount; ++i) {
           if (!BucketArray[i].IsEmpty()) {
@@ -209,16 +207,13 @@ namespace InvCon {
 
       private:
 
-      /* TODO */
       class TBucket {
         NO_COPY(TBucket);
         public:
 
-        /* TODO */
         TBucket()
             : Collection(0), Idx(0), FirstMembership(0), LastMembership(0) {}
 
-        /* TODO */
         ~TBucket() {
           RemoveEachMember();
         }
@@ -241,7 +236,6 @@ namespace InvCon {
           }
         }
 
-        /* TODO */
         TBucket *GetPrevNonEmptyBucket() {
           TBucket *bucket = this;
           for (;;) {
@@ -257,7 +251,6 @@ namespace InvCon {
           return bucket;
         }
 
-        /* TODO */
         TBucket *GetNextNonEmptyBucket() {
           TBucket *bucket = this;
           for (;;) {
@@ -273,7 +266,6 @@ namespace InvCon {
           return bucket;
         }
 
-        /* TODO */
         void Init(TCollection *collection, size_t idx) {
           Collection = collection;
           Idx = idx;
@@ -320,7 +312,6 @@ namespace InvCon {
           return membership;
         }
 
-        /* TODO */
         static TBucket *GetFirstNonEmptyBucket(const TCollection *collection) {
           assert(collection);
           TBucket *bucket = collection->BucketArray;
@@ -330,7 +321,6 @@ namespace InvCon {
           return bucket;
         }
 
-        /* TODO */
         static TBucket *GetLastNonEmptyBucket(const TCollection *collection) {
           assert(collection);
           TBucket *bucket = collection->BucketArray + (collection->BucketCount - 1);
@@ -342,10 +332,8 @@ namespace InvCon {
 
         private:
 
-        /* TODO */
         TCollection *Collection;
 
-        /* TODO */
         size_t Idx;
 
         /* See accessors. */
@@ -356,7 +344,6 @@ namespace InvCon {
 
       };  // TBucket
 
-      /* TODO */
       TBucket *GetBucket(const TKey &key) const {
         return BucketArray + (Hash(key) % BucketCount);
       }
@@ -370,7 +357,6 @@ namespace InvCon {
       /* The number of buckets in BucketArray. */
       size_t BucketCount;
 
-      /* TODO */
       std::hash<TKey> Hash;
 
       /* For Collector, GetBucket(), and TBucket. */
@@ -550,7 +536,6 @@ namespace InvCon {
 
       private:
 
-      /* TODO */
       typedef typename TTypedCollection::TBucket TBucket;
 
       /* The fixup pointers before and after us in our collection.

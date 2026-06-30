@@ -35,140 +35,105 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TDbKeysExpr
         : public TExpr {
       NO_COPY(TDbKeysExpr);
       public:
 
-      /* TODO */
       TDbKeysExpr(const TExprFactory *expr_factory, const Package::Syntax::TDbKeysExpr *db_keys_expr);
 
-      /* TODO */
       virtual ~TDbKeysExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
-      /* TODO */
       TType* GetValueType() {
         return ValueType;
       }
 
       private:
 
-      /* TODO */
       class TMember {
         NO_COPY(TMember);
         public:
 
-        /* TODO */
         virtual ~TMember();
 
-        /* TODO */
         virtual Expr::TExpr::TPtr Build() const = 0;
 
-        /* TODO */
         virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb) = 0;
 
-        /* TODO */
         virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) = 0;
 
-        /* TODO */
         TAddrDir GetAddrDir() const {
           return AddrDir;
         }
 
         protected:
 
-        /* TODO */
         TMember(TAddrDir addr_dir);
 
         private:
 
-        /* TODO */
         TAddrDir AddrDir;
 
       };  // TMember
 
-      /* TODO */
       typedef std::vector<TMember *> TMemberVec;
 
-      /* TODO */
       class TFixedMember
           : public TMember {
         NO_COPY(TFixedMember);
         public:
 
-        /* TODO */
         TFixedMember(TAddrDir addr_dir, TExpr *expr);
 
-        /* TODO */
         virtual ~TFixedMember();
 
-        /* TODO */
         virtual Expr::TExpr::TPtr Build() const;
 
-        /* TODO */
         virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-        /* TODO */
         virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
         private:
 
-        /* TODO */
         TExpr *Expr;
 
       };  // TFixedMember
 
-      /* TODO */
       class TFreeMember
           : public TMember {
         NO_COPY(TFreeMember);
         public:
 
-        /* TODO */
         TFreeMember(TAddrDir addr_dir, TType *type, const TPosRange &pos_range);
 
-        /* TODO */
         virtual ~TFreeMember();
 
-        /* TODO */
         virtual Expr::TExpr::TPtr Build() const;
 
-        /* TODO */
         virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-        /* TODO */
         virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
         private:
 
-        /* TODO */
         TType *Type;
 
-        /* TODO */
         const TPosRange PosRange;
 
       };  // TFreeMember
 
-      /* TODO */
       void Cleanup();
 
-      /* TODO */
       const Package::Syntax::TDbKeysExpr *DbKeysExpr;
 
-      /* TODO */
       TType *ValueType;
 
-      /* TODO */
       TMemberVec Members;
 
     };  // TDbKeysExpr

@@ -31,10 +31,8 @@ namespace Orly {
   class TTracker {
     public:
 
-    /* TODO */
     TTracker() {}
 
-    /* TODO */
     TTracker(const Base::TUuid &id, std::chrono::seconds ttl) : Id(id), TimeToLive(ttl) {}
 
     /* The id used to track. */

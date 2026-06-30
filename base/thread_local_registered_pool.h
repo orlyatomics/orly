@@ -47,7 +47,6 @@
 
 namespace Base {
 
-  /* TODO */
   template <typename TObj, typename... TArgs>
   class TThreadLocalPoolManager {
     NO_COPY(TThreadLocalPoolManager);
@@ -56,38 +55,31 @@ namespace Base {
     /* Forward Declaration. */
     class TThreadLocalRegisteredPool;
 
-    /* TODO */
     class TObjBase {
       NO_COPY(TObjBase);
       public:
 
       protected:
 
-      /* TODO */
       TObjBase()
           : NextObj(nullptr) {}
 
       private:
 
-      /* TODO */
       TObjBase *NextObj;
 
       friend class TThreadLocalRegisteredPool;
 
     };  // TObjBase
 
-    /* TODO */
     class TThreadLocalRegisteredPool {
       NO_COPY(TThreadLocalRegisteredPool);
       public:
 
-      /* TODO */
       static_assert(std::is_base_of<TObjBase, TObj>::value, "TThreadLocalRegisteredPool requires TObj to be derived from TObjBase");
 
-      /* TODO */
       typedef InvCon::AtomicUnorderedList::TMembership<TThreadLocalRegisteredPool, TThreadLocalPoolManager> TManagerMembership;
 
-      /* TODO */
       TThreadLocalRegisteredPool(TThreadLocalPoolManager *manager, size_t num_elems, const TArgs &... args)
           : FreeQueue(nullptr), AvailableQueue(nullptr), Manager(manager), MyAlloc(nullptr), ManagerMembership(this, &manager->PoolCollection) {
         assert(num_elems > 0);
@@ -103,10 +95,8 @@ namespace Base {
         AvailableQueue = prev_base;
       }
 
-      /* TODO */
       virtual ~TThreadLocalRegisteredPool() {}
 
-      /* TODO */
       inline void Free(TObjBase *obj) {
         #ifndef NDEBUG
         static_cast<TObj *>(obj)->AssertCanFree();
@@ -116,7 +106,6 @@ namespace Base {
         } while (!__sync_bool_compare_and_swap(&FreeQueue, obj->NextObj, obj));
       }
 
-      /* TODO */
       inline TObj *Alloc() {
         TObjBase *alloc_obj = AvailableQueue;
         if (alloc_obj) {
@@ -132,14 +121,12 @@ namespace Base {
         return static_cast<TObj *>(alloc_obj);
       }
 
-      /* TODO */
       inline TThreadLocalPoolManager *GetPoolManager() const {
         return Manager;
       }
 
       private:
 
-      /* TODO */
       TObjBase *TryAllocUncommon() {
         TObjBase *alloc_obj = nullptr;
         /* let's swap in our free queue and try to allocate from that. */
@@ -198,7 +185,6 @@ namespace Base {
         return alloc_obj;
       }
 
-      /* TODO */
       inline void MakeStackAvailable(TObjBase *cur_tail) {
         /* fast pop */
         AvailableQueue = cur_tail;
@@ -215,28 +201,21 @@ namespace Base {
         #endif
       }
 
-      /* TODO */
       mutable TObjBase *FreeQueue;
 
-      /* TODO */
       TObjBase * AvailableQueue;
 
-      /* TODO */
       TThreadLocalPoolManager *Manager;
 
-      /* TODO */
       TObj *MyAlloc;
 
-      /* TODO */
       typename TManagerMembership::TImpl ManagerMembership;
 
     };  // TThreadLocalRegisteredPool
 
-    /* TODO */
     TThreadLocalPoolManager()
         : PoolCollection(this) {}
 
-    /* TODO */
     ~TThreadLocalPoolManager() {
       size_t counter = 0UL;
       PoolCollection.ForEach([&counter](const TThreadLocalRegisteredPool &){++counter; return true;});
@@ -254,10 +233,8 @@ namespace Base {
 
     private:
 
-    /* TODO */
     typedef InvCon::AtomicUnorderedList::TCollection<TThreadLocalPoolManager, TThreadLocalRegisteredPool> TPoolCollection;
 
-    /* TODO */
     TObj *AllocateSpace(size_t num_elems) {
       TObj *alloc = reinterpret_cast<TObj *>(malloc(sizeof(TObj) * num_elems));
       if (unlikely(!alloc)) {
@@ -268,13 +245,10 @@ namespace Base {
       return alloc;
     }
 
-    /* TODO */
     std::mutex AllocateMutex;
 
-    /* TODO */
     std::vector<std::pair<TObj *, size_t>> AllocVec;
 
-    /* TODO */
     mutable typename TPoolCollection::TImpl PoolCollection;
 
   };  // ThreadLocalPoolManager

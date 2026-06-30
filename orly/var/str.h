@@ -31,89 +31,63 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TStr &Add(const TVar &);
 
-      /* TODO */
       virtual TStr &And(const TVar &);
 
-      /* TODO */
       virtual TStr &Div(const TVar &);
 
-      /* TODO */
       virtual TStr &Exp(const TVar &);
 
-      /* TODO */
       virtual TStr &Intersection(const TVar &);
 
-      /* TODO */
       virtual TStr &Mod(const TVar &);
 
-      /* TODO */
       virtual TStr &Mult(const TVar &);
 
-      /* TODO */
       virtual TStr &Or(const TVar &);
 
-      /* TODO */
       virtual TStr &Sub(const TVar &);
 
-      /* TODO */
       virtual TStr &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TStr &Union(const TVar &);
 
-      /* TODO */
       virtual TStr &Xor(const TVar &);
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       const std::string &GetVal() const {
         return Val;
       }
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       static TVar New(const std::string &that);
 
-      /* TODO */
       virtual void Write(std::ostream &strm) const;
 
       private:
 
-      /* TODO */
       TStr(const std::string &that);
 
-      /* TODO */
       virtual ~TStr();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       std::string Val;
 
     };  // TStr
 
-    /* TODO */
     template <>
     struct TVar::TDt<std::string> {
 
-      /* TODO */
       std::string static As(const TVar &that) {
         TStr *ptr = dynamic_cast<TStr *>(that.Impl.get());
         if (ptr) {

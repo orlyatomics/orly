@@ -78,7 +78,6 @@ namespace Orly {
       /* Write the vector to the given stream. */
       void Write(Io::TBinaryOutputStream &strm) const;
 
-      /* TODO */
       inline size_t GetNumArenaBytes() const {
         assert(Arena);
         return Arena->GetNumBytes();
@@ -103,7 +102,6 @@ namespace Orly {
         /* See base class. */
         virtual TOffset Propose(TNote *proposed_note) override;
 
-        /* TODO */
         inline size_t GetNumBytes() {
           return NumBytes;
         }

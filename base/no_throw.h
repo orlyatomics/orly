@@ -16,5 +16,4 @@
 
 #pragma once
 
-/* TODO */
 #define NO_THROW throw()

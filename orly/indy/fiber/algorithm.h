@@ -29,7 +29,6 @@ namespace Orly {
 
     namespace Fiber {
 
-      /* TODO */
       template <
           typename TRandomAccessIterator,
           typename TVal = typename Util::ForIter<TRandomAccessIterator>::TVal,
@@ -39,7 +38,6 @@ namespace Orly {
         NO_COPY(TSubSortRunnable);
         public:
 
-        /* TODO */
         TSubSortRunnable(TRunnerPool &work_pool,
                          const TRandomAccessIterator &begin,
                          const TRandomAccessIterator &end,
@@ -51,12 +49,10 @@ namespace Orly {
           work_pool.Schedule(Frame, this, static_cast<TRunnable::TFunc>(&TSubSortRunnable::DoSort));
         }
 
-        /* TODO */
         ~TSubSortRunnable() {
           TFrame::LocalFramePool->Free(Frame);
         }
 
-        /* TODO */
         void DoSort() {
           std::sort(Begin, End, Comp);
           SafeSync.Complete();
@@ -66,7 +62,6 @@ namespace Orly {
 
         TFrame *Frame;
 
-        /* TODO */
         const TRandomAccessIterator Begin;
         const TRandomAccessIterator End;
         TSafeSync &SafeSync;
@@ -74,7 +69,6 @@ namespace Orly {
 
       };  // TSubSortRunnable
 
-      /* TODO */
       template <
           typename TRandomAccessIterator,
           typename TVal = typename Util::ForIter<TRandomAccessIterator>::TVal,
@@ -84,7 +78,6 @@ namespace Orly {
         NO_COPY(TInplaceMergeRunnable);
         public:
 
-        /* TODO */
         TInplaceMergeRunnable(TRunnerPool &work_pool,
                          const TRandomAccessIterator &begin,
                          const TRandomAccessIterator &middle,
@@ -98,12 +91,10 @@ namespace Orly {
           work_pool.Schedule(Frame, this, static_cast<TRunnable::TFunc>(&TInplaceMergeRunnable::DoMerge));
         }
 
-        /* TODO */
         ~TInplaceMergeRunnable() {
           TFrame::LocalFramePool->Free(Frame);
         }
 
-        /* TODO */
         void DoMerge() {
           WaitOnSafeSync.Sync();
           std::inplace_merge(Begin, Middle, End, Comp);
@@ -114,7 +105,6 @@ namespace Orly {
 
         TFrame *Frame;
 
-        /* TODO */
         const TRandomAccessIterator Begin;
         const TRandomAccessIterator Middle;
         const TRandomAccessIterator End;
@@ -124,7 +114,6 @@ namespace Orly {
 
       };  // TInplaceMergeRunnable
 
-      /* TODO */
       template <
           size_t ParallelThreshold,
           typename TRandomAccessIterator,

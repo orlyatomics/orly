@@ -27,27 +27,21 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TAtomicType
         : public TType {
       NO_COPY(TAtomicType);
       public:
 
-      /* TODO */
       typedef Type::TType (*TGet)();
 
-      /* TODO */
       TAtomicType(TGet get);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       virtual Type::TType ComputeSymbolicType() const;
 
-      /* TODO */
       TGet Get;
 
     };  // TType

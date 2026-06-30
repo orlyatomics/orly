@@ -37,46 +37,37 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     template <size_t... Sizes>
     class Maxer;
 
-    /* TODO */
     template <size_t Size>
     class Maxer<Size> {
       NO_CONSTRUCTION(Maxer);
       public:
 
-      /* TODO */
       static constexpr size_t Max = Size;
 
     };  // Maxer<Size>
 
-    /* TODO */
     template <size_t Size>
     constexpr size_t Maxer<Size>::Max;
 
-    /* TODO */
     template <size_t Size, size_t... MoreSizes>
     class Maxer<Size, MoreSizes...> {
       NO_CONSTRUCTION(Maxer);
       public:
 
-      /* TODO */
       static constexpr size_t Max = (Size >= Maxer<MoreSizes...>::Max) ? Size : Maxer<MoreSizes...>::Max;
 
     };  // Maxer<Size, MoreSizes...>
 
-    /* TODO */
     template <size_t Size, size_t... MoreSizes>
     constexpr size_t Maxer<Size, MoreSizes...>::Max;
 
-    /* TODO */
     class TSizeChecker {
       NO_CONSTRUCTION(TSizeChecker);
       public:
 
-      /* TODO */
       static constexpr size_t GetMaxTypePinSize() {
         return Maxer<
           sizeof(Native::Type::TDesc<int8_t>::TPin),
@@ -119,7 +110,6 @@ namespace Orly {
         >::Max;
       }
 
-      /* TODO */
       static constexpr size_t GetMaxStatePinSize() {
         return Maxer<
           sizeof(Native::State::TArrayOfScalars<Sabot::State::TBlob>::TPin),

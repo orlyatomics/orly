@@ -50,7 +50,6 @@ namespace Orly {
       /* Builds the symbol */
       void BuildSymbol();
 
-      /* TODO */
       const Package::TName &GetName() const;
 
       const Package::TName &GetIndexName() const;
@@ -75,7 +74,6 @@ namespace Orly {
         NO_COPY(TTopLevelDefFactory);
         public:
 
-        /* TODO */
         static void NewDefs(
             const TExprFactory *expr_factory,
             const Package::Syntax::TInstallerDef *&installer_def,
@@ -83,14 +81,12 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         TTopLevelDefFactory(const TExprFactory *expr_factory, const Package::Syntax::TInstallerDef *&installer_def);
 
         virtual void operator()(const Package::Syntax::TInstallerDef *that) const;
         virtual void operator()(const Package::Syntax::TUpgraderDef *that) const;
         virtual void operator()(const Package::Syntax::TUninstallerDef *that) const;
 
-        /* TODO */
         const Package::Syntax::TInstallerDef *&InstallerDef;
 
       };  // TTopLevelDefFactory

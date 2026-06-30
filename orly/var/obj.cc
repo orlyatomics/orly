@@ -27,12 +27,10 @@ using namespace Orly;
 using namespace Orly::Var;
 using namespace Util;
 
-/* TODO */
 size_t TObj::GetHash() const {
   return Hash;
 }
 
-/* TODO */
 Type::TType TObj::GetType() const {
   return Type::TObj::Get(TypeMap);
 }

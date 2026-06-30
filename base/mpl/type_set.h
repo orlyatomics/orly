@@ -40,7 +40,6 @@ namespace Mpl {
 
   };  // TTypeSetImpl<TTypeList<TElems...>>
 
-  /* TODO */
   template <typename... TElems>
   struct TTypeSet : public TTypeSetImpl<TGetUnique<TTypeList<TElems...>>> {};
 

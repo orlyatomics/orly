@@ -43,58 +43,48 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static TTo Do(const TFrom &val) = delete;
 
     };  // CastAs
 
-    /* TODO */
     template <typename TVal>
     struct CastAs<TVal, TVal> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static const TVal &Do(const TVal &val) {
         return val;
       }
 
     };  // CastAs<TVal, TVal>
 
-    /* TODO */
     template <>
     struct CastAs<double, int64_t> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static double Do(const int64_t &val) {
         return static_cast<double>(val);
       }
 
     };  // CastAs<double, int64_t>
 
-    /* TODO */
     template <>
     struct CastAs<int64_t, double> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static int64_t Do(const double &val) {
         return static_cast<int64_t>(val);
       }
 
     };  // CastAs<int64_t, double>
 
-    /* TODO */
     template <>
     struct CastAs<std::string, int64_t> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static std::string Do(const int64_t &val) {
         std::ostringstream oss;
         oss << val;
@@ -106,12 +96,10 @@ namespace Orly {
 
     };  // CastAs<std::string, int64_t>
 
-    /* TODO */
     template <>
     struct CastAs<int64_t, std::string> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static int64_t Do(const std::string &val) {
         char *endptr = 0;
         int64_t n = strtol(val.c_str(), &endptr, 10);
@@ -126,12 +114,10 @@ namespace Orly {
 
     };  // CastAs<int64_t, std::string>
 
-    /* TODO */
     template <>
     struct CastAs<std::string, double> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static std::string Do(const double &val) {
         std::stringstream oss;
         oss << std::showpoint << val;
@@ -143,12 +129,10 @@ namespace Orly {
 
     };  // CastAs<std::string, double>
 
-    /* TODO */
     template <>
     struct CastAs<double, std::string> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static double Do(const std::string &val) {
         char *endptr = 0;
         double d = strtod(val.c_str(), &endptr);
@@ -167,12 +151,10 @@ namespace Orly {
 
     };  // CastAs<double, std::string>
 
-    /* TODO */
     template <>
     struct CastAs<Base::TUuid, std::string> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static Base::TUuid Do(const std::string &val) {
         return Base::TUuid(val.c_str());
       }
@@ -180,7 +162,6 @@ namespace Orly {
     };  // CastAs<double, int64_t>
 
 
-    /* TODO */
     template <>
     struct CastAs<std::string, Base::TUuid> {
       NO_CONSTRUCTION(CastAs);
@@ -207,12 +188,10 @@ namespace Orly {
       }
     }; // CastAs<RT::TOpt<TVal>, Rt::TOpt<TVal>
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs<Rt::TOpt<TTo>, TFrom> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static Rt::TOpt<TTo> Do(const TFrom &val) {
         return Rt::TOpt<TTo>(CastAs<TTo, TFrom>::Do(val));
       }
@@ -220,36 +199,30 @@ namespace Orly {
     };  // CastAs<Rt::TOpt<TTo>, TFrom>
 
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs<std::vector<TTo>, TFrom> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static std::vector<TTo> Do(const TFrom &val) {
         return {CastAs<TTo, TFrom>::Do(val)};
       }
 
     };  // CastAs<std::vector<TTo>, TFrom>
 
-    /* TODO */
     template <typename TVal>
     struct CastAs<std::vector<TVal>, std::vector<TVal>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static const std::vector<TVal> &Do(const std::vector<TVal> &val) {
         return val;
       }
 
     };  // CastAs<std::vector<TVal>, std::vector<TVal>>
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs<std::vector<TTo>, std::vector<TFrom>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static std::vector<TTo> Do(const std::vector<TFrom> &from) {
         std::vector<TTo> to;
         for (auto elem : from) {
@@ -260,12 +233,10 @@ namespace Orly {
 
     };  // CastAs<std::vector<TTo>, std::vector<TFrom>>
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs<std::vector<TTo>, std::shared_ptr<const Rt::TGenerator<TFrom>>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static std::vector<TTo> Do(const typename Rt::TGenerator<TFrom>::TPtr &val) {
         std::vector<TTo> to;
         for(auto cursor = val->NewCursor(); cursor; ++cursor) {
@@ -276,24 +247,20 @@ namespace Orly {
 
     };  // CastAs<std::vector<TVal>, Rt::TGenerator<TFrom>
 
-    /* TODO */
     template <typename TVal>
     struct CastAs<TSet<TVal>, TSet<TVal>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static const TSet<TVal> &Do(const TSet<TVal> &val) {
         return val;
       }
 
     };  // CastAs<TSet<TVal>, TSet<TVal>>
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs<TSet<TTo>, TSet<TFrom>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static TSet<TTo> Do(const TSet<TFrom> &from) {
         TSet<TTo> to;
         for (auto elem : from) {
@@ -304,12 +271,10 @@ namespace Orly {
 
     };  // CastAs<TSet<TTo>, TSet<TFrom>>
 
-    /* TODO */
     template <typename TTo, typename TFrom>
     struct CastAs<TSet<TTo>, std::shared_ptr<const Rt::TGenerator<TFrom>>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static TSet<TTo> Do(const typename Rt::TGenerator<TFrom>::TPtr &val) {
         TSet<TTo> to;
         for(auto cursor = val->NewCursor(); cursor; ++cursor) {
@@ -320,24 +285,20 @@ namespace Orly {
 
     };  // CastAs<TSet<TVal>, Rt::TGenerator<TFrom>
 
-    /* TODO */
     template <typename TKey, typename TVal>
     struct CastAs<TDict<TKey, TVal>, TDict<TKey, TVal>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static const TDict<TKey, TVal> &Do(const TDict<TKey, TVal> &val) {
         return val;
       }
 
     };  // CastAs<TDict<TKey, TVal>, TDict<TKey, TVal>>
 
-    /* TODO */
     template <typename TToKey, typename TToVal, typename TFromKey, typename TFromVal>
     struct CastAs<TDict<TToKey, TToVal>, TDict<TFromKey, TFromVal>> {
       NO_CONSTRUCTION(CastAs);
 
-      /* TODO */
       static TDict<TToKey, TToVal> Do(const TDict<TFromKey, TFromVal> &from) {
         TDict<TToKey, TToVal> to;
         for (auto elem : from) {
@@ -349,14 +310,12 @@ namespace Orly {
 
     };  // CastAs<TDict<TToKey, TToVal>, TDict<TFromKey, TFromVal>>
 
-    /* TODO */
     template <typename TToKey, typename TToVal, typename TFromKey, typename TFromVal>
     struct CastAs<TDict<TToKey, TToVal>, std::tuple<TFromKey, TFromVal>> {
       NO_CONSTRUCTION(CastAs);
 
       typedef std::tuple<TFromKey, TFromVal> TFinalTuple;
 
-      /* TODO */
       static TDict<TToKey, TToVal> Do(const TFinalTuple &from) {
         return TDict<TToKey, TToVal>{{CastAs<TToKey, TFromKey>::Do(/*from.template Get<0>()*/std::get<0>(from)),
             CastAs<TToVal, TFromVal>::Do(/*from.template Get<1>()*/std::get<1>(from))}};
@@ -364,7 +323,6 @@ namespace Orly {
 
     };  // CastAs<TDict<TToKey, TToVal>, TDict<TFromKey, TFromVal>>
 
-    /* TODO */
     template <typename TToKey, typename TToVal, typename TFromKey, typename TFromVal>
     struct CastAs<TDict<TToKey, TToVal>,
           std::shared_ptr<const Rt::TGenerator<std::tuple<TFromKey, TFromVal>>>> {
@@ -373,7 +331,6 @@ namespace Orly {
       typedef std::tuple<TFromKey, TFromVal> TFinalTuple;
       typedef std::shared_ptr<const Rt::TGenerator<TFinalTuple>> TTupleGen;
 
-      /* TODO */
       static TDict<TToKey, TToVal> Do(const TTupleGen &from) {
         TDict<TToKey, TToVal> to;
         for(auto it = from->NewCursor(); it; ++it) {

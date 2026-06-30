@@ -35,44 +35,34 @@ namespace Orly {
 
     namespace Util {
 
-      /* TODO */
       class TBlockVec {
         public:
 
-        /* TODO */
         typedef std::map<size_t, std::pair<size_t, size_t>> TBlockMap;
 
-        /* TODO */
         class TRandomIterator
               : public std::iterator<std::random_access_iterator_tag, size_t> {
           protected:
 
-          /* TODO */
           const TBlockMap *BlockMap;
 
-          /* TODO */
           TBlockMap::const_iterator Iterator;
 
-          /* TODO */
           size_t ElementIndex;
 
           public:
 
-          /* TODO */
           typedef std::random_access_iterator_tag iterator_category;
           typedef typename std::iterator<std::random_access_iterator_tag, size_t>::value_type value_type;
           typedef typename std::iterator<std::random_access_iterator_tag, size_t>::difference_type difference_type;
           typedef typename std::iterator<std::random_access_iterator_tag, size_t>::reference reference;
           typedef typename std::iterator<std::random_access_iterator_tag, size_t>::pointer pointer;
 
-          /* TODO */
           TRandomIterator() : BlockMap(nullptr), ElementIndex(0UL) {}
 
-          /* TODO */
           inline TRandomIterator(const TRandomIterator &r)
               : BlockMap(r.BlockMap), Iterator(r.Iterator), ElementIndex(r.ElementIndex) {}
 
-          /* TODO */
           inline TRandomIterator(const TBlockMap *block_map, const TBlockMap::const_iterator &it, size_t elem_idx)
               : BlockMap(block_map), Iterator(it), ElementIndex(elem_idx) {
             if (Iterator != BlockMap->end()) {
@@ -82,7 +72,6 @@ namespace Orly {
             } /* otherwise it's an empty block vec */
           }
 
-          /* TODO */
           inline TRandomIterator &operator=(const TRandomIterator &r) {
             BlockMap = r.BlockMap;
             Iterator = r.Iterator;
@@ -91,55 +80,46 @@ namespace Orly {
             return *this;
           }
 
-          /* TODO */
           inline TRandomIterator& operator++() {
             ++ElementIndex;
             Refresh();
             return *this;
           }
 
-          /* TODO */
           inline TRandomIterator& operator--() {
             --ElementIndex;
             Refresh();
             return *this;
           }
 
-          /* TODO */
           inline TRandomIterator operator++(int) {
             return TRandomIterator(BlockMap, Iterator, ElementIndex++);
           }
 
-          /* TODO */
           inline TRandomIterator operator--(int) {
             return TRandomIterator(BlockMap, Iterator, ElementIndex--);
           }
 
-          /* TODO */
           inline TRandomIterator operator+(const difference_type& n) const {
             return TRandomIterator(BlockMap, Iterator, ElementIndex + n);
           }
 
-          /* TODO */
           inline TRandomIterator& operator+=(const difference_type& n) {
             ElementIndex += n;
             Refresh();
             return *this;
           }
 
-          /* TODO */
           inline TRandomIterator operator-(const difference_type& n) const {
             return TRandomIterator(BlockMap, Iterator, ElementIndex - n);
           }
 
-          /* TODO */
           inline TRandomIterator& operator-=(const difference_type& n) {
             ElementIndex -= n;
             Refresh();
             return *this;
           }
 
-          /* TODO */
           inline size_t operator*() const {
             assert(BlockMap);
             assert(Iterator != BlockMap->end());
@@ -152,38 +132,28 @@ namespace Orly {
             return Iterator->second.first + pos_from_start_idx;
           }
 
-          /* TODO */
           inline size_t operator->() const {
             return **this;
           }
 
-          /* TODO */
           friend inline bool operator==(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend inline bool operator!=(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend inline bool operator<(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend inline bool operator>(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend inline bool operator<=(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend inline bool operator>=(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend typename TRandomIterator::difference_type operator+(const TRandomIterator &r1, const TRandomIterator &r2);
 
-          /* TODO */
           friend typename TRandomIterator::difference_type operator-(const TRandomIterator &r1, const TRandomIterator &r2);
 
           private:
 
-          /* TODO */
           inline void Refresh() {
             assert(BlockMap);
             assert(Iterator != BlockMap->end());
@@ -205,13 +175,10 @@ namespace Orly {
 
         };  // TRandomIterator
 
-        /* TODO */
         TBlockVec() : VecSize(0UL) {}
 
-        /* TODO */
         ~TBlockVec() {}
 
-        /* TODO */
         inline size_t operator[](size_t pos) const {
           assert(pos < VecSize);
           auto ub = BlockMap.upper_bound(pos);
@@ -223,23 +190,19 @@ namespace Orly {
           return ub->second.first + expected_block_offset;
         }
 
-        /* TODO */
         inline size_t Front() const {
           assert(VecSize > 0UL);
           return BlockMap.begin()->second.first;
         }
 
-        /* TODO */
         inline size_t Size() const {
           return VecSize;
         }
 
-        /* TODO */
         TRandomIterator begin() const {
           return TRandomIterator(&BlockMap, BlockMap.begin(), 0UL);
         }
 
-        /* TODO */
         TRandomIterator end() const {
           return TRandomIterator(&BlockMap, BlockMap.end(), VecSize);
         }
@@ -299,7 +262,6 @@ namespace Orly {
           VecSize -= n;
         }
 
-        /* TODO */
         const TBlockMap &GetSeqBlockMap() const {
           return BlockMap;
         }
@@ -341,37 +303,30 @@ namespace Orly {
         /* A mapping from the starting index in the vector (of a sequential range) to the pair of (block_id -> num sequential blocks)*/
         TBlockMap BlockMap;
 
-        /* TODO */
         size_t VecSize;
 
       };  // TBlockVec
 
-      /* TODO */
       inline bool operator==(const TBlockVec::TRandomIterator &r1, const TBlockVec::TRandomIterator &r2) {
         return r1.ElementIndex == r2.ElementIndex;
       }
 
-      /* TODO */
       inline bool operator!=(const TBlockVec::TRandomIterator &r1, const TBlockVec::TRandomIterator &r2) {
         return r1.ElementIndex != r2.ElementIndex;
       }
 
-      /* TODO */
       inline bool operator<(const TBlockVec::TRandomIterator &r1, const TBlockVec::TRandomIterator &r2) {
         return r1.ElementIndex < r2.ElementIndex;
       }
 
-      /* TODO */
       inline bool operator>(const TBlockVec::TRandomIterator &r1, const TBlockVec::TRandomIterator &r2) {
         return r1.ElementIndex > r2.ElementIndex;
       }
 
-      /* TODO */
       inline bool operator<=(const TBlockVec::TRandomIterator &r1, const TBlockVec::TRandomIterator &r2) {
         return r1.ElementIndex <= r2.ElementIndex;
       }
 
-      /* TODO */
       inline bool operator>=(const TBlockVec::TRandomIterator &r1, const TBlockVec::TRandomIterator &r2) {
         return r1.ElementIndex >= r2.ElementIndex;
       }

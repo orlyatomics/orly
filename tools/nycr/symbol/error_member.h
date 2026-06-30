@@ -29,36 +29,28 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TErrorMember
           : public TCompound::TMember {
         NO_COPY(TErrorMember);
         public:
 
-        /* TODO */
         TErrorMember(TCompound *compound) {
           assert(compound);
           SetCompound(compound);
         }
 
-        /* TODO */
         virtual ~TErrorMember();
 
-        /* TODO */
         virtual const TName &GetName() const;
 
-        /* TODO */
         virtual const TKind *TryGetKind() const;
 
-        /* TODO */
         virtual void WriteRhs(std::ostream &strm) const;
 
-        /* TODO */
         virtual void WriteXml(std::ostream &strm) const;
 
         private:
 
-        /* TODO */
         static const TName Name;
 
       };  // TErrorMember

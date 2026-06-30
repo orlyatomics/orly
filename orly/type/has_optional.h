@@ -28,7 +28,6 @@ namespace Orly {
 
     class TType;
 
-    /* TODO */
     bool HasOptional(const TType &type);
 
   }  // Type

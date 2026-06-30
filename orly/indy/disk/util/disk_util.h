@@ -30,12 +30,10 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         class TDiskUtil {
           NO_COPY(TDiskUtil);
           public:
 
-          /* TODO */
           TDiskUtil(Base::TScheduler *scheduler,
                     TDiskController *controller,
                     const std::optional<std::string> &instance_filter,
@@ -43,10 +41,8 @@ namespace Orly {
                     const TCacheCb &cache_cb,
                     bool do_corruption_check = true);
 
-          /* TODO */
           void List(std::stringstream &ss) const;
 
-          /* TODO */
           void CreateVolume(const std::string &instance_name,
                             size_t num_devices,
                             const std::set<std::string> &device_set,
@@ -56,36 +52,27 @@ namespace Orly {
                             const TVolume::TDesc::TStorageSpeed storage_speed,
                             bool do_fsync);
 
-          /* TODO */
           TVolumeManager *GetVolumeManager(const std::string &instance_name) const;
 
-          /* TODO */
           inline const std::unordered_set<std::unique_ptr<TDevice>> &GetPersistentDeviceSet() const {
             return PersistentDeviceSet;
           }
 
           private:
 
-          /* TODO */
           Base::TScheduler *Scheduler;
 
-          /* TODO */
           TDiskController *Controller;
 
-          /* TODO */
           std::unordered_map<std::string, std::unique_ptr<TVolumeManager>> VolumeManagerByInstance;
 
-          /* TODO */
           std::unordered_map<TVolumeId, std::unique_ptr<TVolume>> VolumeById;
           std::unordered_set<std::unique_ptr<TDevice>> PersistentDeviceSet;
 
-          /* TODO */
           std::unordered_set<std::string> AllDeviceSet;
 
-          /* TODO */
           std::unordered_map<std::string, TDeviceUtil::TOrlyDevice> OrlyDeviceMap;
 
-          /* TODO */
           const TCacheCb &CacheCb;
 
         };  // TDiskUtil

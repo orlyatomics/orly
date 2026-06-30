@@ -31,37 +31,28 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TTestKvEntry {
       NO_COPY(TTestKvEntry);
       public:
 
-      /* TODO */
       TTestKvEntry(
           const TExprFactory *expr_factory,
           const Package::Syntax::TTestKvEntry *test_kv_entry);
 
-      /* TODO */
       ~TTestKvEntry();
 
-      /* TODO */
       Symbol::Stmt::TNew::TPtr Build() const;
 
-      /* TODO */
       void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TTestKvEntry *TestKvEntry;
 
-      /* TODO */
       TExpr *Key;
 
-      /* TODO */
       TExpr *Val;
 
     };  // TTestKvEntry

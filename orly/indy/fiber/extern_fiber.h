@@ -43,34 +43,26 @@ namespace Orly {
         NO_COPY(TSync);
         public:
 
-        /* TODO */
         TSync(size_t waiting_for = 0UL);
 
-        /* TODO */
         ~TSync();
 
-        /* TODO */
         void Sync(bool come_back_right_away = true);
 
-        /* TODO */
         void Complete();
 
-        /* TODO */
         void WaitForMore(size_t num);
 
         private:
 
-        /* TODO */
         inline Fiber::TSync *GetImpl() {
           return reinterpret_cast<Fiber::TSync *>(&SyncSpace[0]);
         }
 
-        /* TODO */
         char SyncSpace[SyncImplSize];
 
       };  // TSync
 
-      /* TODO */
       void SchedTaskLocally(const std::function<void ()> &func);
 
     }  // Fiber

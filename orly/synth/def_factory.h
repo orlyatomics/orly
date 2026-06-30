@@ -34,20 +34,16 @@ namespace Orly {
     /* Forward declaration. */
     class TExprFactory;
 
-    /* TODO */
     class TDefFactory
         : public Package::Syntax::TDef::TVisitor {
       public:
 
-      /* TODO */
       virtual ~TDefFactory();
 
       protected:
 
-      /* TODO */
       TDefFactory(const TExprFactory *expr_factory);
 
-      /* TODO */
       void NewDefs(const Package::Syntax::TOptDefSeq *opt_def_seq) const;
 
       virtual void operator()(const Package::Syntax::TInstallerDef *that) const = 0;
@@ -64,7 +60,6 @@ namespace Orly {
       virtual void operator()(const Package::Syntax::TPackageDef *that) const;
       virtual void operator()(const Package::Syntax::TTestDef *that) const;
 
-      /* TODO */
       const TExprFactory *ExprFactory;
 
     };  // TDefFactory

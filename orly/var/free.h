@@ -28,78 +28,54 @@ namespace Orly {
         : public TVar::TImpl {
       public:
 
-      /* TODO */
       virtual Var::TVar &Index(const TVar &);
 
-      /* TODO */
       virtual TFree &Add(const TVar &);
 
-      /* TODO */
       virtual TFree &And(const TVar &);
 
-      /* TODO */
       virtual TFree &Div(const TVar &);
 
-      /* TODO */
       virtual TFree &Exp(const TVar &);
 
-      /* TODO */
       virtual TFree &Intersection(const TVar &);
 
-      /* TODO */
       virtual TFree &Mod(const TVar &);
 
-      /* TODO */
       virtual TFree &Mult(const TVar &);
 
-      /* TODO */
       virtual TFree &Or(const TVar &);
 
-      /* TODO */
       virtual TFree &Sub(const TVar &);
 
-      /* TODO */
       virtual TFree &SymmetricDiff(const TVar &);
 
-      /* TODO */
       virtual TFree &Union(const TVar &);
 
-      /* TODO */
       virtual TFree &Xor(const TVar &);
 
-      /* TODO */
       virtual size_t GetHash() const;
 
-      /* TODO */
       virtual Type::TType GetType() const;
 
-      /* TODO */
       virtual void Touch();
 
-      /* TODO */
       virtual void Write(std::ostream &) const;
 
-      /* TODO */
       static TVar New(const Type::TType &type);
 
       private:
 
-      /* TODO */
       TFree(const Type::TType &type) : Type(type) {}
 
-      /* TODO */
       virtual ~TFree();
 
-      /* TODO */
       virtual void Accept(const TVisitor &visitor) const;
 
-      /* TODO */
       virtual TVar Copy() const;
 
-      /* TODO */
       Type::TType Type;
 
-      /* TODO */
       friend class TVar;
 
     };  // TFree

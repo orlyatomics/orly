@@ -31,15 +31,12 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     size_t GetHash(const State::TAny &state);
 
-    /* TODO */
     class THashVisitor final
         : public TStateVisitor {
       public:
 
-      /* TODO */
       THashVisitor(size_t &val)
           : Hash(val) {
       }
@@ -75,13 +72,10 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       void OnArrayOfSingle(const State::TArrayOfSingleStates &single) const;
 
-      /* TODO */
       void OnArrayOfPairs(const State::TArrayOfPairsOfStates &that) const;
 
-      /* TODO */
       size_t &Hash;
 
     };  // THashVisitor

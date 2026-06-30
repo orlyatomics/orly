@@ -29,13 +29,11 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TFinal
           : public TKind {
         NO_COPY(TFinal);
         protected:
 
-        /* TODO */
         TFinal(const TName &name, TAnyBase *base)
             : TKind(name, base) {}
 

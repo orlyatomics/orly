@@ -34,21 +34,17 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TTimeDiffCtor
         : public TExpr {
       NO_COPY(TTimeDiffCtor);
       public:
 
-      /* TODO */
       TTimeDiffCtor(const Package::Syntax::TTimeDiffCtor *time_diff_ctor);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TTimeDiffCtor *TimeDiffCtor;
 
     };  // TTimeDiffCtor

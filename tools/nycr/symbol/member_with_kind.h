@@ -29,23 +29,19 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TMemberWithKind
           : public TCompound::TMember {
         NO_COPY(TMemberWithKind);
         public:
 
-        /* TODO */
         TKind *GetKind() const {
           return Kind;
         }
 
-        /* TODO */
         virtual const TKind *TryGetKind() const;
 
         protected:
 
-        /* TODO */
         TMemberWithKind(TKind *kind)
             : Kind(kind) {
           assert(kind);
@@ -53,7 +49,6 @@ namespace Tools {
 
         private:
 
-        /* TODO */
         TKind *Kind;
 
       };  // TMemberWithKind

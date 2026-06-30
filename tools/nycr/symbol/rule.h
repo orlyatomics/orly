@@ -29,16 +29,13 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TRule
           : public TCompound {
         public:
 
-        /* TODO */
         TRule(const TName &name, TAnyBase *base = 0)
             : TCompound(name, base) {}
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const;
 
       };  // TRule

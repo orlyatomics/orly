@@ -40,13 +40,11 @@ namespace Orly {
     /* The index id of the system repo space used to store index namespace mappings */
     const Base::TUuid SystemIDNSIndexId("9154D7AE-FA10-42D5-9A10-AC68664B0092");
 
-    /* TODO */
     class TManager
         : public L1::TManager, public DurableManager::TManager {
       NO_COPY(TManager);
       public:
 
-      /* TODO */
       enum TState {
         Solo,
         Master,
@@ -58,7 +56,6 @@ namespace Orly {
           void(const Base::TUuid &idx_id, const std::string &pkg_key, const Indy::TKey &val)>;
       using TForEachIndexIdCb = std::function<void(const TIndexCb &)>;
 
-      /* TODO */
       TManager(Disk::Util::TEngine *engine,
                size_t replication_sync_slave_buf_size_mb,
                std::chrono::milliseconds merge_mem_delay,
@@ -85,65 +82,50 @@ namespace Orly {
                const std::vector<size_t> &merge_disk_cores,
                bool create_new);
 
-      /* TODO */
       virtual ~TManager();
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewSafeRepo(const Base::TUuid &repo_id,
                                                      const std::optional<TTtl> &ttl);
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewSafeRepo(const Base::TUuid &repo_id,
                                                       const std::optional<TTtl> &ttl,
                                                       const TManager::TPtr<Indy::TRepo> &parent_repo);
 
-      /* TODO */
       TManager::TPtr<Indy::TRepo> NewSafeRepo(const Base::TUuid &repo_id,
                                               const std::optional<TTtl> &ttl,
                                               const std::optional<TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewFastRepo(const Base::TUuid &repo_id,
                                                      const std::optional<TTtl> &ttl);
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> NewFastRepo(const Base::TUuid &repo_id,
                                                      const std::optional<TTtl> &ttl,
                                                      const TManager::TPtr<Indy::TRepo> &parent_repo);
 
-      /* TODO */
       TManager::TPtr<Indy::TRepo> NewFastRepo(const Base::TUuid &repo_id,
                                               const std::optional<TTtl> &ttl,
                                               const std::optional<TManager::TPtr<L0::TManager::TRepo>> &parent_repo);
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> GetRepo(const Base::TUuid &repo_id,
                                                  const std::optional<TTtl> &deadline,
                                                  const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                                  bool is_safe,
                                                  bool create = true);
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> ForceGetRepo(const Base::TUuid &repo_id);
 
-      /* TODO */
       inline TManager::TPtr<Indy::TRepo> GetSystemRepo() const;
 
-      /* TODO */
       virtual void RunReplicationQueue() override;
 
-      /* TODO */
       virtual void RunReplicationWork() override;
 
-      /* TODO */
       virtual void RunReplicateTransaction() override;
 
-      /* TODO */
       inline void SetDurableManager(const std::shared_ptr<Durable::TManager> &durable_manager) {
         DurableManager = durable_manager;
       }
 
-      /* TODO */
       static const Base::TUuid MinId;
       static const Base::TUuid MaxId;
       static const Base::TUuid SystemRepoId;
@@ -159,27 +141,21 @@ namespace Orly {
       /* Prepended to sync repo entries. */
       typedef std::tuple<int, Base::TUuid, Base::TUuid, TSequenceNumber, int> TSyncPrepend;
 
-      /* TODO */
       typedef std::tuple<int, Base::TUuid> TSavedRepoKey;
       static const int SavedRepoMagicNumber;
 
-      /* TODO */
       class TSavedRepoObj {
         public:
 
-        /* TODO */
         typedef std::vector<Base::TUuid> TRootPath;
         typedef std::optional<TSequenceNumber> TOptSeq;
 
-        /* TODO */
         static const int Normal = 0;
         static const int Paused = 1;
         static const int Failed = 2;
 
-        /* TODO */
         TSavedRepoObj() {}
 
-        /* TODO */
         TSavedRepoObj(bool is_safe,
                       const TRootPath &root_path,
                       const TOptSeq &lowest_seq,
@@ -197,7 +173,6 @@ namespace Orly {
           assert(State == Normal || State == Paused || State == Failed);
         }
 
-        /* TODO */
         bool operator==(const TSavedRepoObj &that) const {
           return IsSafe == that.IsSafe &&
             RootPath == that.RootPath &&
@@ -208,88 +183,64 @@ namespace Orly {
             State == that.State;
         }
 
-        /* TODO */
         bool IsSafe;
 
-        /* TODO */
         TRootPath RootPath;
 
-        /* TODO */
         TOptSeq LowestSequenceNumber;
 
-        /* TODO */
         TOptSeq HighestSequenceNumber;
 
-        /* TODO */
         TSequenceNumber NextUpdate;
 
-        /* TODO */
         TSequenceNumber ReleasedUpTo;
 
-        /* TODO */
         int State;
 
       };
 
-      /* TODO */
       class TMaster
           : public TMasterContext {
         NO_COPY(TMaster);
         public:
 
-        /* TODO */
         TMaster(TManager *manager, const Base::TFd &fd);
 
-        /* TODO */
         virtual ~TMaster();
 
-        /* TODO */
         virtual bool Queue();
 
-        /* TODO */
         virtual bool Work();
 
-        /* TODO */
         virtual Util::TContextInputStreamer FetchUpdates(const Base::TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest);
 
-        /* TODO */
         virtual void NotifyFinishSyncInventory();
 
-        /* TODO */
         virtual TViewDef GetView(const Base::TUuid &repo_id);
 
-        /* TODO */
         virtual TFileSync SyncFile(const Base::TUuid &file_id, size_t gen_id, size_t context);
 
-        /* TODO */
         virtual void Ping();
 
         private:
 
-        /* TODO */
         TManager *Manager;
 
       };  // TMaster
 
-      /* TODO */
       class TSlave
           : public TSlaveContext, Indy::Fiber::TRunnable {
         NO_COPY(TSlave);
         public:
 
-        /* TODO */
         TSlave(TManager *manager, const Base::TFd &fd);
 
-        /* TODO */
         virtual ~TSlave();
 
-        /* TODO */
         virtual bool Queue() override;
 
-        /* TODO */
         virtual bool Work() override;
 
-        /* TODO */
         virtual void Inventory(const Base::TUuid &repo_id,
                                size_t ttl,
                                const std::optional<Base::TUuid> &parent_repo_id,
@@ -298,33 +249,24 @@ namespace Orly {
                                const std::optional<TSequenceNumber> &highest,
                                TSequenceNumber next_id) override;
 
-        /* TODO */
         virtual void Index(const TIndexMapReplica &index_map_replica) override;
 
-        /* TODO */
         virtual void PushNotifications(const TReplicationStreamer &replication_streamer) override;
 
-        /* TODO */
         size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena);
 
-        /* TODO */
         virtual void TransitionToSlave() override;
 
-        /* TODO */
         virtual void Ping();
 
-        /* TODO */
         virtual void ScheduleSyncInventory() override;
 
         private:
 
-        /* TODO */
         void SyncInventory();
 
-        /* TODO */
         void PullUpdateRange(const Base::TUuid &repo_id, TManager::TPtr<Indy::TRepo> &repo, TSequenceNumber from, TSequenceNumber to);
 
-        /* TODO */
         class TFlusher
             : public Io::TOutputConsumer,
               public Io::TInputProducer,
@@ -332,11 +274,9 @@ namespace Orly {
           NO_COPY(TFlusher);
           public:
 
-          /* TODO */
           typedef Disk::TStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::CheckedPage, 0UL /*local cache size */> TDataInStream;
           typedef Disk::TOutStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::PageCheckedBlock> TDataOutStream;
 
-          /* TODO */
           TFlusher(Disk::Util::TEngine *engine)
               : Engine(engine),
                 OutStream(new TDataOutStream(HERE,
@@ -354,7 +294,6 @@ namespace Orly {
                                              std::bind(&TFlusher::NewBlockCb, this, std::placeholders::_1))),
                 Pool(std::make_shared<Io::TPool>(Io::TPool::TArgs())) {}
 
-          /* TODO */
           virtual ~TFlusher() {
             InStream.reset();
             for (const auto &iter : BlockVec.GetSeqBlockMap()) {
@@ -362,87 +301,67 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           virtual void ConsumeOutput(const std::shared_ptr<const Io::TChunk> &chunk) override;
 
-          /* TODO */
           virtual std::shared_ptr<const Io::TChunk> TryProduceInput() override;
 
-          /* TODO */
           const std::vector<size_t> &GetOffsetVec() const {
             return OffsetVec;
           }
 
-          /* TODO */
           void SetStoredOffset() {
             OffsetVec.push_back(OutStream->GetOffset());
           }
 
-          /* TODO */
           void Flush();
 
           private:
 
-          /* TODO */
           virtual size_t GetFileLength() const override {
             return BlockVec.Size() * Disk::Util::LogicalBlockSize;
           }
 
-          /* TODO */
           virtual size_t GetStartingBlock() const override {
             assert(BlockVec.Size() > 0);
             return BlockVec.Front();
           }
 
-          /* TODO */
           virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
             throw std::logic_error("Manager::Flusher::ReadMeta should not be used.");
           }
 
-          /* TODO */
           virtual size_t FindPageIdOfByte(size_t offset) const override {
             assert(offset <= GetFileLength());
             return ((BlockVec[offset / Disk::Util::LogicalBlockSize]) * Disk::Util::PagesPerBlock) + ((offset % Disk::Util::LogicalBlockSize) / Disk::Util::LogicalPageSize);
           }
 
-          /* TODO */
           size_t NewBlockCb(Disk::Util::TVolumeManager */*vol_man*/);
 
-          /* TODO */
           Disk::Util::TEngine *Engine;
 
-          /* TODO */
           Util::TBlockVec BlockVec;
 
-          /* TODO */
           std::unordered_map<size_t, std::shared_ptr<const Disk::TBufBlock>> CollisionMap;
 
-          /* TODO */
           Disk::TCompletionTrigger Trigger;
 
           #ifndef NDEBUG
           std::unordered_set<size_t> WrittenBlockSet;
           #endif
 
-          /* TODO */
           std::unique_ptr<TDataOutStream> OutStream;
 
-          /* TODO */
           std::vector<size_t> OffsetVec;
 
-          /* TODO */
           std::shared_ptr<Io::TPool> Pool;
 
-          /* TODO */
           std::unique_ptr<TDataInStream> InStream;
 
         };  // TFlusher
 
-        /* TODO */
         class TToSync {
           public:
 
-          /* TODO */
           TToSync(const Base::TUuid &repo_id,
                   size_t ttl,
                   const std::optional<Base::TUuid> &parent_repo_id,
@@ -460,7 +379,6 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           Base::TUuid RepoId;
           size_t Ttl;
           std::optional<Base::TUuid> ParentRepoId;
@@ -473,7 +391,6 @@ namespace Orly {
 
         };  // TToSync
 
-        /* TODO */
         TManager *Manager;
 
         /* queue of repos to synchronize */
@@ -482,22 +399,18 @@ namespace Orly {
         /* A core-vec slush buffer representing the updates we've accumulated */
         std::unique_ptr<Orly::Atom::TCoreVectorBuilder> SlushCoreVec;
 
-        /* TODO */
         std::shared_ptr<TFlusher> Flusher;
 
       };  // TSlave
 
-      /* TODO */
       virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
                                    const std::optional<TTtl> &ttl,
                                    const std::optional<TManager::TPtr<TRepo>> &parent_repo,
                                    bool is_safe,
                                    bool create) override;
 
-      /* TODO */
       TRepo *ReconstructRepo(const Base::TUuid &repo_id) override;
 
-      /* TODO */
       virtual bool CanLoad(const L0::TId &id) override;
 
       /* The L0 manager's load/save/delete of durable objects by id. Not wired up: the call sites
@@ -518,71 +431,51 @@ namespace Orly {
         throw std::logic_error("TManager::TryLoad not implemented: durable on-disk object load was never ported (#173).");
       }
 
-      /* TODO */
       virtual void SaveRepo(TRepo *base_repo) override;
 
-      /* TODO */
       void SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std::string &namespace_name);
 
-      /* TODO */
       std::unordered_map<Base::TUuid, std::string> GetIndexNamespaceMapping();
 
-      /* TODO */
       void OnSlaveJoin(const Base::TFd &fd);
 
-      /* TODO */
       inline virtual std::mutex &GetReplicationQueueLock() NO_THROW {
         return ReplicationLock;
       }
 
-      /* TODO */
       virtual void Enqueue(TTransactionReplication *transaction_replication, L1::TTransaction::TReplica &&replica) NO_THROW;
 
-      /* TODO */
       virtual void Enqueue(TRepoReplication *repo_replication) NO_THROW;
 
-      /* TODO */
       void Enqueue(TIndexIdReplication *index_replication) NO_THROW;
 
-      /* TODO */
       virtual TTransactionReplication *NewTransactionReplication();
 
-      /* TODO */
       virtual void DeleteTransactionReplication(TTransactionReplication *transaction_replication) NO_THROW override;
 
-      /* TODO */
       virtual void EnqueueDurable(TDurableReplication *durable_replication) NO_THROW override;
 
       /* TOOD */
       virtual TDurableReplication *NewDurableReplication(const Base::TUuid &id, const TTtl &ttl, const std::string &serialized_form) const override;
 
-      /* TODO */
       virtual void DeleteDurableReplication(TDurableReplication *durable_replication) NO_THROW override;
 
-      /* TODO */
       void Demote();
 
-      /* TODO */
       void PromoteSolo(const Base::TFd &fd);
 
-      /* TODO */
       void PromoteSlave();
 
-      /* TODO */
       void AugmentViewMapWithDiskLayers(TMaster::TViewDef &view_def, const std::unique_ptr<Indy::TRepo::TView> &view) const;
 
-      /* TODO */
       virtual void ForEachScheduler(const std::function<bool (Fiber::TRunner *)> &cb) const {
         ForEachSchedulerCb(cb);
       }
 
-      /* TODO */
       TManager::TPtr<Indy::TRepo> SystemRepo;
 
-      /* TODO */
       TState State;
 
-      /* TODO */
       std::shared_ptr<TCommonContext> Context;
       std::mutex ContextLock;
 
@@ -590,63 +483,48 @@ namespace Orly {
       std::mutex SlaveNotifyLock;
       std::condition_variable SlaveNotifyCond;
 
-      /* TODO */
       std::function<void (const std::shared_ptr<std::function<void (const Base::TFd &)>> &)> WaitForSlave;
 
-      /* TODO */
       std::function<void (TState)> StateChangeCb;
 
-      /* TODO */
       bool ReplicationRead, ReplicationWork;
 
-      /* TODO */
       TReplicationQueue ReplicationQueue;
       std::mutex ReplicationLock;
 
-      /* TODO */
       Base::TFd ReplicationQueueEpollFd;
       std::mutex ReplicationQueueEpollLock;
       epoll_event ReplicationQueueEvent;
       Base::TEventSemaphore ReplicationQueueSem;
 
-      /* TODO */
       Base::TFd ReplicationWorkEpollFd;
       std::mutex ReplicationWorkEpollLock;
       epoll_event ReplicationWorkEvent;
       Base::TEventSemaphore ReplicationWorkSem;
 
-      /* TODO */
       Base::TFd ReplicationEpollFd;
       std::mutex ReplicationEpollLock;
       epoll_event ReplicationEvent;
       Base::TEventSemaphore ReplicationSem;
       std::chrono::steady_clock::time_point ReplicationNextTime;
 
-      /* TODO */
       std::chrono::milliseconds ReplicationDelay;
 
-      /* TODO */
       std::function<void (const Base::TUuid &, const Base::TUuid &, const Base::TUuid &)> UpdateReplicationNotificationCb;
 
       TIndexCb OnReplicateIndexIdCb;
       TForEachIndexIdCb ForEachIndexIdCb;
 
-      /* TODO */
       std::function<void (const std::function<bool (Fiber::TRunner *)> &)> ForEachSchedulerCb;
 
-      /* TODO */
       std::shared_ptr<Durable::TManager> DurableManager;
 
-      /* TODO */
       Indy::Fiber::TRunner *BGFastRunner;
 
-      /* TODO */
       size_t ReplicationSyncSlaveBufSizeBytes;
 
-      /* TODO */
       bool AllowFileSync;
 
-      /* TODO */
       std::unordered_map<Base::TUuid, std::unique_ptr<Indy::TRepo::TView>> SlaveSyncViewMap;
 
       friend class Orly::Server::TServer;
@@ -655,7 +533,6 @@ namespace Orly {
 
     namespace L0 {
 
-      /* TODO */
       template<>
       template<>
       inline TManager::TPtr<Indy::TRepo>::TPtr(const TPtr<L0::TManager::TRepo> &that) {

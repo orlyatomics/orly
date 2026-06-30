@@ -30,11 +30,9 @@ class TSkipTypeVisitor
     : public Type::TType::TDoubleVisitor {
   public:
 
-  /* TODO */
   TSkipTypeVisitor(Type::TType &type, const TPosRange &pos_range)
       : PosRange(pos_range), Type(type) {}
 
-  /* TODO */
   virtual void operator()(const Type::TAddr *, const Type::TAddr *) const { throw TExprError(HERE, PosRange); }
   virtual void operator()(const Type::TAddr *, const Type::TAny *) const { throw TExprError(HERE, PosRange); }
   virtual void operator()(const Type::TAddr *, const Type::TBool *) const { throw TExprError(HERE, PosRange); }
@@ -364,10 +362,8 @@ class TSkipTypeVisitor
 
   private:
 
-  /* TODO */
   const TPosRange &PosRange;
 
-  /* TODO */
   Type::TType &Type;
 
 };  // TSkipTypeVisitor

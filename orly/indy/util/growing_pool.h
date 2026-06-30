@@ -37,27 +37,20 @@ namespace Orly {
 
     namespace Util {
 
-      /* TODO */
       class TGrowingPool {
         NO_COPY(TGrowingPool);
         public:
 
-        /* TODO */
         TGrowingPool(size_t block_size, const char *name);
 
-        /* TODO */
         ~TGrowingPool();
 
-        /* TODO */
         inline const char *GetName() const;
 
-        /* TODO */
         inline size_t GetNumBlocksUsed() const;
 
-        /* TODO */
         inline size_t GetMaxBlocks() const;
 
-        /* TODO */
         void *Alloc(size_t size) {
           void *ptr = TryAlloc(size);
           if (!ptr) {
@@ -67,43 +60,32 @@ namespace Orly {
           return ptr;
         }
 
-        /* TODO */
         void Free(void *ptr);
 
-        /* TODO */
         void *TryAlloc(size_t size);
 
         private:
 
-        /* TODO */
         class TBlock {
           NO_COPY(TBlock);
           public:
 
-          /* TODO */
           TBlock *NextBlock;
 
         };  // TBlock
 
-        /* TODO */
         const size_t BlockSize;
 
-        /* TODO */
         void *Blob;
 
-        /* TODO */
         TBlock *FirstBlock;
 
-        /* TODO */
         std::mutex Mutex;
 
-        /* TODO */
         const char *Name;
 
-        /* TODO */
         size_t NumBlocksUsed;
 
-        /* TODO */
         size_t MaxBlocks;
 
       };  // TGrowingPool

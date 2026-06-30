@@ -45,7 +45,6 @@ namespace Orly {
         /* Do-little. */
         TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr), Mutator(TMutator::Assign), UpdateId() {}
 
-        /* TODO */
         bool operator<(const TItem &that) const {
           Atom::TComparison comp;
           if (KeyArena && that.KeyArena && Key.TryQuickOrderComparison(KeyArena, that.Key, that.KeyArena, comp)) {
@@ -104,7 +103,6 @@ namespace Orly {
       /* Walk to the next item, if any. */
       virtual TPresentWalker &operator++() = 0;
 
-      /* TODO */
       virtual ~TPresentWalker() {}
 
       protected:
@@ -117,7 +115,6 @@ namespace Orly {
       /* Prepare to walk. */
       TPresentWalker(TSearchKind search_kind) : SearchKind(search_kind) {}
 
-      /* TODO */
       TSearchKind SearchKind;
 
     };  // TPresentWalker

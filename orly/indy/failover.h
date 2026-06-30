@@ -44,7 +44,6 @@ namespace Orly {
 
     };
 
-    /* TODO */
     class TConnectionFailed
         : public std::runtime_error {
       public:
@@ -54,91 +53,69 @@ namespace Orly {
 
     };  // TConnectionFailed
 
-    /* TODO */
     class TCommonContext
         : public Rpc::TContext {
       NO_COPY(TCommonContext);
       public:
 
-      /* TODO */
       static const Rpc::TEntryId PingId = 3001;
 
-      /* TODO */
       virtual ~TCommonContext();
 
-      /* TODO */
       void Shutdown();
 
-      /* TODO */
       virtual bool Queue();
 
-      /* TODO */
       virtual bool Work();
 
-      /* TODO */
       virtual void Join();
 
       protected:
 
-      /* TODO */
       class TProtocol
           : public Rpc::TProtocol {
         NO_COPY(TProtocol);
         protected:
 
-        /* TODO */
         TProtocol() {
           Register<TCommonContext, void>(PingId, &TCommonContext::Ping);
         }
 
       };  // TProtocol
 
-      /* TODO */
       TCommonContext(const Rpc::TProtocol &protocol, const Base::TFd &fd);
 
-      /* TODO */
       std::mutex Mutex;
 
-      /* TODO */
       Base::TEventSemaphore Sem;
 
-      /* TODO */
       std::queue<std::shared_ptr<const Rpc::TAnyRequest>> RequestQueue;
 
       private:
 
-      /* TODO */
       enum TReaderState {Connected, NotConnected};
 
-      /* TODO */
       enum TWorkerState {Running, Exited, ExitedOnWriteFailure};
 
-      /* TODO */
       virtual void Ping() = 0;
 
-      /* TODO */
       Base::TFd Fd;
 
-      /* TODO */
       std::shared_ptr<Io::TDevice> Device;
 
-      /* TODO */
       TReaderState ReaderState;
 
-      /* TODO */
       TWorkerState WorkerState;
       std::mutex WorkerMutex;
       Base::TEventSemaphore WorkerStateChanged;
 
     };  // TCommonContext
 
-    /* TODO */
     class TMasterContext
         : public TCommonContext {
       NO_COPY(TMasterContext);
       public:
 
-      /* TODO */
       static const Rpc::TEntryId FetchUpdatesId = 3500;
       static const Rpc::TEntryId NotifyFinishSyncInventoryId = 3501;
       static const Rpc::TEntryId GetViewId = 3502;
@@ -150,18 +127,15 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       class TProtocol
           : public TCommonContext::TProtocol {
         NO_COPY(TProtocol);
         public:
 
-        /* TODO */
         static const TProtocol Protocol;
 
         private:
 
-        /* TODO */
         TProtocol() {
           Register<TMasterContext, Util::TContextInputStreamer, Base::TUuid, TSequenceNumber, TSequenceNumber>(FetchUpdatesId, &TMasterContext::FetchUpdates);
           Register<TMasterContext, void>(NotifyFinishSyncInventoryId, &TMasterContext::NotifyFinishSyncInventory);
@@ -171,33 +145,25 @@ namespace Orly {
 
       };  // TProtocol
 
-      /* TODO */
       TMasterContext(const Base::TFd &fd);
 
-      /* TODO */
       virtual ~TMasterContext();
 
-      /* TODO */
       virtual Util::TContextInputStreamer FetchUpdates(const Base::TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest) = 0;
 
-      /* TODO */
       virtual void NotifyFinishSyncInventory() = 0;
 
-      /* TODO */
       virtual TViewDef GetView(const Base::TUuid &repo_id) = 0;
 
-      /* TODO */
       virtual TFileSync SyncFile(const Base::TUuid &file_id, size_t gen_id, size_t context) = 0;
 
     };  // TMasterContext
 
-    /* TODO */
     class TSlaveContext
         : public TCommonContext {
       NO_COPY(TSlaveContext);
       public:
 
-      /* TODO */
       static const Rpc::TEntryId InventoryId = 3100;
       static const Rpc::TEntryId PushNotificationsId = 3101;
       static const Rpc::TEntryId TransitionToSlaveId = 3102;
@@ -206,18 +172,15 @@ namespace Orly {
 
       protected:
 
-      /* TODO */
       class TProtocol
           : public TCommonContext::TProtocol {
         NO_COPY(TProtocol);
         public:
 
-        /* TODO */
         static const TProtocol Protocol;
 
         private:
 
-        /* TODO */
         TProtocol() {
           Register<TSlaveContext, void,
             Base::TUuid,
@@ -235,13 +198,10 @@ namespace Orly {
 
       };  // TProtocol
 
-      /* TODO */
       TSlaveContext(const Base::TFd &fd);
 
-      /* TODO */
       virtual ~TSlaveContext();
 
-      /* TODO */
       virtual void Inventory(const Base::TUuid &repo_id,
                              size_t ttl,
                              const std::optional<Base::TUuid> &parent_repo_id,
@@ -250,16 +210,12 @@ namespace Orly {
                              const std::optional<TSequenceNumber> &highest,
                              TSequenceNumber) = 0;
 
-      /* TODO */
       virtual void Index(const TIndexMapReplica &index_map_replica) = 0;
 
-      /* TODO */
       virtual void PushNotifications(const TReplicationStreamer &replication_streamer) = 0;
 
-      /* TODO */
       virtual void TransitionToSlave() = 0;
 
-      /* TODO */
       virtual void ScheduleSyncInventory() = 0;
 
     };  // TSlaveContext

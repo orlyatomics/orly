@@ -44,7 +44,6 @@ namespace Orly {
       /* The number of notes we contain. */
       inline size_t GetSize() const;
 
-      /* TODO */
       inline const TNoteInterner::TNotes &GetNotes() const;
 
       /* See base class. */

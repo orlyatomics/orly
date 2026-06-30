@@ -29,28 +29,22 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
     class TThatableExpr;
 
-    /* TODO */
     class TThatExpr
         : public TExpr {
       NO_COPY(TThatExpr);
       public:
 
-      /* TODO */
       TThatExpr(const TExprFactory *expr_factory, const Package::Syntax::TThatExpr *that_expr);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TThatExpr *ThatExpr;
 
-      /* TODO */
       const TThatableExpr *ThatableExpr;
 
     };  // TThatExpr

@@ -52,12 +52,10 @@ namespace Orly {
           /* this is where we can report any controller or device specific metrics */
         }
 
-        /* TODO */
         class TGroupRequest {
           NO_COPY(TGroupRequest);
           public:
 
-          /* TODO */
           TGroupRequest(size_t total_num_request,
                         const TIOCallback &cb)
               : NumFinished(0UL),
@@ -66,7 +64,6 @@ namespace Orly {
                 Result(Success),
                 ErrStr(nullptr) {}
 
-          /* TODO */
           inline void Callback(TDiskResult disk_result, const char *err_str) {
             size_t prev = std::atomic_fetch_add(&NumFinished, 1UL);
             switch (Result) {
@@ -104,19 +101,14 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           std::atomic<size_t> NumFinished;
 
-          /* TODO */
           size_t NumRequest;
 
-          /* TODO */
           const TIOCallback Cb;
 
-          /* TODO */
           TDiskResult Result;
 
-          /* TODO */
           const char *ErrStr;
 
         };  // TGroupRequest
@@ -766,23 +758,19 @@ namespace Orly {
 
       namespace Util {
 
-        /* TODO */
         class TVolume::TStrategy {
           NO_COPY(TStrategy);
           public:
 
-          /* TODO */
           typedef size_t TLogicalExtentStart;
 
           /* An object that gets filled in to represent all the sequential IO to be performed to a device. The kind of IO (R/W) must be the same. */
           class TDeviceRequest {
             public:
 
-            /* TODO */
             TDeviceRequest()
                 : NumReq(0UL), PhysicalOffsetStart(0UL), TotalBytes(0UL) {}
 
-            /* TODO */
             void AddRequest(void *buf, size_t physical_offset_on_device, size_t num_bytes, size_t max_segments_per_io, size_t max_sector_kb_per_io) {
               const size_t op_pos = std::max(NumReq / max_segments_per_io, TotalBytes / (max_sector_kb_per_io * 1024));
               if (NumReq > 0) {
@@ -803,41 +791,33 @@ namespace Orly {
 
             }
 
-            /* TODO */
             inline size_t GetNumRequest() const {
               return NumReq;
             }
 
-            /* TODO */
             inline size_t GetTotalNumBytes() const {
               return TotalBytes;
             }
 
-            /* TODO */
             inline size_t GetNumIops() const {
               return VecPerOp.size();
             }
 
             private:
 
-            /* TODO */
             size_t NumReq;
 
-            /* TODO */
             size_t PhysicalOffsetStart;
 
-            /* TODO */
             size_t TotalBytes;
 
             /* TODO : more efficient */
             std::vector<std::vector<void *>> VecPerOp;
 
-            /* TODO */
             friend class TStrategy;
 
           };  // TDeviceRequest
 
-          /* TODO */
           virtual ~TStrategy() {
             /* acquire discard lock */ {
               std::lock_guard<std::mutex> lock(DiscardMapLock);
@@ -849,22 +829,17 @@ namespace Orly {
             }  // release block lock
           }
 
-          /* TODO */
           virtual void DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger) = 0;
           virtual void DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger, const TIOCallback &cb) = 0;
 
-          /* TODO */
           virtual void DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger) = 0;
           virtual void DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger, const TIOCallback &cb) = 0;
 
-          /* TODO */
           virtual void DelegateReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array, size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger) = 0;
           virtual void DelegateReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array, size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger, const TIOCallback &cb) = 0;
 
-          /* TODO */
           virtual void DelegateAppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const = 0;
 
-          /* TODO */
           void DiscardAll() {
             for (const auto &device_set : DeviceVec) {
               for (TDevice *device : device_set) {
@@ -873,29 +848,22 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           std::pair<size_t, size_t> AppendUsage(std::stringstream &ss) const;
 
-          /* TODO */
           inline void TryAllocateSequentialBlocks(size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb);
 
-          /* TODO */
           void FreeSequentialBlocks(const TBlockRange &block_range);
 
-          /* TODO */
           void MarkBlockRangeUsed(const TBlockRange &block_range);
 
-          /* TODO */
           bool Init(const TExtentSet &extent_set);
 
-          /* TODO */
           inline const std::vector<TLogicalExtent> &GetLogicalExtentVec() const {
             return ExtentVec;
           }
 
           protected:
 
-          /* TODO */
           TStrategy(TVolume *volume, Base::TScheduler *scheduler)
               : Volume(volume),
                 Scheduler(scheduler),
@@ -932,58 +900,45 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           template <typename... TArgs>
           TGroupRequest *NewGroupRequest(size_t total_num_request, TArgs &...args);
 
-          /* TODO */
           template <typename... TArgs>
           void Write(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, size_t device_num,
                      const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, const TOffset logical_start_offset,
                      TArgs &...args);
 
-          /* TODO */
           template <typename... TArgs>
           void Read(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, size_t device_num,
                     const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args);
 
-          /* TODO */
           template <typename... TArgs>
           void SubmitRequest(size_t device_num, const TDeviceRequest &device_request, TGroupRequest *group_request,
                              const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src,
                              DiskPriority priority, bool abort_on_error, TArgs &...args);
 
-          /* TODO */
           void AppendTouchedDevicesToSet(TDeviceSet &device_set, size_t device_num) const;
 
           /* Used for debugging. Verify that we have this block reserved. */
           inline bool CheckBufBlock(size_t block_id) const;
           inline bool CheckDiscardBuf(size_t block_id) const;
 
-          /* TODO */
           TVolume *Volume;
 
-          /* TODO */
           std::vector<TLogicalExtent> ExtentVec;
 
-          /* TODO */
           std::vector<TDeviceSet> DeviceVec;
 
           //private:
 
-          /* TODO */
           inline size_t GetBlock();
 
-          /* TODO */
           size_t TryGetSeqBlocks(const size_t num, size_t &start_out);
 
-          /* TODO */
           inline void PutBack(size_t block_id);
 
-          /* TODO */
           inline size_t ReserveBlock(std::unique_lock<std::mutex> &lock);
 
-          /* TODO */
           inline size_t TryReserveSeqBlocks(std::unique_lock<std::mutex> &lock, const size_t num_blocks, size_t &out_start);
 
           /* Set an individual bit to (on / off) */
@@ -995,26 +950,20 @@ namespace Orly {
           /* Set a range of bits to (on / off) */
           inline void SetBlockBufRange(size_t block_id, const size_t num_blocks, const bool on);
 
-          /* TODO */
           inline void SetDiscardRange(const size_t block_id, const size_t num_blocks, const bool on);
 
-          /* TODO */
           inline void SetDiscardBuf(size_t block_id, bool on);
 
-          /* TODO */
           virtual size_t GetBlockMapBytesPerDiscardRange() const = 0;
 
-          /* TODO */
           virtual void DoDiscard(const TBlockRange &block_range) const = 0;
 
-          /* TODO */
           inline void CheckRange(const TOffset start_offset, long long nbytes, const TDevice *device) {
             if (unlikely(start_offset + SuperBytes + nbytes > device->Desc.Capacity)) {
               throw std::logic_error("Accessing range on device past capacity");
             }
           }
 
-          /* TODO */
           void DiscardRunner();
 
           /* Signal the background DiscardRunner job to exit and block until it
@@ -1026,20 +975,17 @@ namespace Orly {
 
           Base::TScheduler *Scheduler;
 
-          /* TODO */
           std::unique_ptr<size_t> BlockMapBuf;
           std::mutex BlockMapLock;
           size_t CachedStart;
           std::unique_ptr<size_t> DiscardMapBuf;
           std::mutex DiscardMapLock;
 
-          /* TODO */
           size_t BlocksUsed;
 
           /* The number of blocks waiting to be discarded */
           size_t DiscardBlockWaiting;
 
-          /* TODO */
           Base::TFd DiscardEpollFd;
           Base::TEventSemaphore DiscardSem;
           epoll_event DiscardEvent;
@@ -1062,10 +1008,8 @@ namespace Orly {
           bool DiscardRunnerExited;
           std::condition_variable DiscardRunnerDoneCond;
 
-          /* TODO */
           const size_t SuperBytes;
 
-          /* TODO */
           const size_t NumBlocks;
           const size_t NumBlocksPerExtent;
           const size_t BlockMapByteSize;
@@ -1073,20 +1017,17 @@ namespace Orly {
 
         };
 
-        /* TODO */
         template <typename... TArgs>
         TGroupRequest *TVolume::TStrategy::NewGroupRequest(size_t /*total_num_request*/, TArgs &.../*args*/) {
           throw std::logic_error("Should not be reached");
         }
 
-        /* TODO */
         template <>
         TGroupRequest *TVolume::TStrategy::NewGroupRequest<Orly::Indy::Disk::TCompletionTrigger>(size_t /*total_num_request*/,
                                                                                                  TCompletionTrigger &/*trigger*/) {
           return nullptr;
         }
 
-        /* TODO */
         template <>
         TGroupRequest *TVolume::TStrategy::NewGroupRequest<Orly::Indy::Disk::TCompletionTrigger, const TIOCallback>(size_t total_num_request,
                                                                                                                     TCompletionTrigger &trigger,
@@ -1570,13 +1511,11 @@ inline bool TVolume::TStrategy::CheckDiscardBuf(size_t block_id) const {
   return (*offset & mask) == mask;
 }
 
-/* TODO */
 class TVolume::TStripedStrategy
     : public TVolume::TStrategy {
   NO_COPY(TStripedStrategy);
   public:
 
-  /* TODO */
   TStripedStrategy(TVolume *volume, Base::TScheduler *scheduler)
       : TStrategy(volume, scheduler) {
     PostCtor();
@@ -1588,7 +1527,6 @@ class TVolume::TStripedStrategy
     StopDiscardRunner();
   }
 
-  /* TODO */
   virtual void DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                              TCompletionTrigger &trigger) override;
@@ -1596,7 +1534,6 @@ class TVolume::TStripedStrategy
                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger,
                              const TIOCallback &cb) override;
 
-  /* TODO */
   virtual void DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                             const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                             TCompletionTrigger &trigger) override;
@@ -1604,7 +1541,6 @@ class TVolume::TStripedStrategy
                             const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger,
                             const TIOCallback &cb) override;
 
-  /* TODO */
   virtual void DelegateReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array,
                              size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                              TCompletionTrigger &trigger) override;
@@ -1612,39 +1548,31 @@ class TVolume::TStripedStrategy
                              size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                              TCompletionTrigger &trigger, const TIOCallback &cb) override;
 
-  /* TODO */
   virtual void DelegateAppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const override;
 
-  /* TODO */
   virtual size_t GetBlockMapBytesPerDiscardRange() const override;
 
-  /* TODO */
   virtual void DoDiscard(const TBlockRange &block_range) const override;
 
   private:
 
-  /* TODO */
   enum TOp {R, W};
 
-  /* TODO */
   template <typename... TArgs>
   void DoStripe(TOp op, const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                 const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args);
 
-  /* TODO */
   template <typename... TArgs>
   void DoStripeV(TOp op, const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array, size_t num_buf,
                  const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args);
 
 };  // TStripedStrategy
 
-/* TODO */
 class TVolume::TChainedStrategy
     : public TVolume::TStrategy {
   NO_COPY(TChainedStrategy);
   public:
 
-  /* TODO */
   TChainedStrategy(TVolume *volume, Base::TScheduler *scheduler)
       : TStrategy(volume, scheduler) {
     PostCtor();
@@ -1656,7 +1584,6 @@ class TVolume::TChainedStrategy
     StopDiscardRunner();
   }
 
-  /* TODO */
   virtual void DelegateWrite(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                              TCompletionTrigger &trigger) override;
@@ -1664,7 +1591,6 @@ class TVolume::TChainedStrategy
                              const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger,
                              const TIOCallback &cb) override;
 
-  /* TODO */
   virtual void DelegateRead(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                             const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                             TCompletionTrigger &trigger) override;
@@ -1672,7 +1598,6 @@ class TVolume::TChainedStrategy
                             const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TCompletionTrigger &trigger,
                             const TIOCallback &cb) override;
 
-  /* TODO */
   virtual void DelegateReadV(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void **buf_array,
                              size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                              TCompletionTrigger &trigger) override;
@@ -1680,21 +1605,16 @@ class TVolume::TChainedStrategy
                              size_t num_buf, const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error,
                              TCompletionTrigger &trigger, const TIOCallback &cb) override;
 
-  /* TODO */
   virtual void DelegateAppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const override;
 
-  /* TODO */
   virtual size_t GetBlockMapBytesPerDiscardRange() const override;
 
-  /* TODO */
   virtual void DoDiscard(const TBlockRange &block_range) const override;
 
   private:
 
-  /* TODO */
   enum TOp {R, W};
 
-  /* TODO */
   template <typename... TArgs>
   void DoChain(TOp op, const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args);

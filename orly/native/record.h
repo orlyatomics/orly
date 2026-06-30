@@ -114,13 +114,11 @@ namespace Orly {
         /* Override to get the name of the element. */
         virtual const char *GetName() const = 0;
 
-        /* TODO */
         virtual Type::TAny *ConsType(void *type_alloc) const = 0;
 
         /* Override to construct a new state sabot for this emement in the given record. */
         virtual TAnyState *NewStateSabot(const TRec &rec, void *state_alloc) const = 0;
 
-        /* TODO */
         virtual void SetVal(TRec &rec, const TAnyState &state) const = 0;
 
         /* Collect all the elements of the record type into a sorted array.
@@ -170,7 +168,6 @@ namespace Orly {
 
       };  // Record<TRec>::TAnyElem
 
-      /* TODO */
       static const TAnyElem *TryGetElem(const char *name) {
         TAnyElem::CollectElems();
         for (size_t elem_idx = 0; elem_idx < ElemCount; ++elem_idx) {
@@ -288,14 +285,12 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     template <typename TVal>
     class TToNativeVisitor final
         : public TStateVisitor {
       NO_COPY(TToNativeVisitor);
       public:
 
-      /* TODO */
       TToNativeVisitor(TVal &record)
           : Out(record) {}
 

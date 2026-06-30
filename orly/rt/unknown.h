@@ -29,23 +29,18 @@ namespace Orly {
     class TUnknown {
       public:
 
-      /* TODO */
       virtual size_t GetHash() const {
         return 0;
       }
 
-      /* TODO */
       TUnknown() {}
 
-      /* TODO */
       ~TUnknown() {}
 
-      /* TODO */
       bool operator==(const TUnknown &) const {
         return true;
       }
 
-      /* TODO */
       bool operator!=(const TUnknown &) const {
         return false;
       }

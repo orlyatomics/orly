@@ -30,7 +30,6 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       void ForEachFinal(
           const TBase *base, const std::function<void (const TFinal *)> &cb);
 

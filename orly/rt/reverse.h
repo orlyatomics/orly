@@ -34,24 +34,20 @@ namespace Orly {
     template <typename TVal>
     TVal Reverse(const TVal &) = delete;
 
-    /* TODO */
     template <typename TVal>
     std::vector<TVal> Reverse(const std::vector<TVal> &val) {
       return std::vector<TVal>(val.rbegin(), val.rend());
     }
 
-    /* TODO */
     template <typename TVal>
     TOpt<std::vector<TVal>> Reverse(const TOpt<std::vector<TVal>> &val) {
       return val.IsKnown() ? TOpt<std::vector<TVal>>(Reverse(val.GetVal())) : TOpt<std::vector<TVal>>();
     }
 
-    /* TODO */
     inline std::string Reverse(const std::string &val) {
       return std::string(val.rbegin(), val.rend());
     }
 
-    /* TODO */
     inline TOpt<std::string> Reverse(const TOpt<std::string> &val) {
       return val.IsKnown() ? TOpt<std::string>(Reverse(val.GetVal())) : TOpt<std::string>();
     }

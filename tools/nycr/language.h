@@ -30,22 +30,17 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TBase;
 
-    /* TODO */
     class TLanguage
         : public TCompound {
       NO_COPY(TLanguage);
       public:
 
-      /* TODO */
       TLanguage(const Syntax::TLanguage *decl);
 
-      /* TODO */
       virtual Symbol::TCompound *GetSymbolAsCompound() const;
 
-      /* TODO */
       Symbol::TLanguage *GetSymbolAsLanguage() const {
         assert(Symbol);
         return Symbol;
@@ -53,21 +48,16 @@ namespace Tools {
 
       private:
 
-      /* TODO */
       virtual bool Build(int pass);
 
-      /* TODO */
       std::vector<Symbol::TName> Namespaces;
 
-      /* TODO */
       std::optional<int> Sr, Rr;
 
-      /* TODO */
       Symbol::TLanguage *Symbol;
 
     };  // TLanguage
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TLanguage> {
       static const char *Name;

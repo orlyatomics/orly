@@ -32,16 +32,13 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TMetaRewriter {
         NO_CONSTRUCTION(TMetaRewriter);
         public:
 
-        /* TODO */
         typedef TStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, 0UL> TInStream;
         typedef TOutStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage> TDataOutStream;
 
-        /* TODO */
         static std::pair<size_t, size_t> RewriteMetaData(Util::TEngine *engine, const Indy::Util::TBlockVec &block_vec, size_t starting_block_offset);
 
       };  // TMetaRewriter

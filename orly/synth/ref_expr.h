@@ -31,27 +31,21 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TRefExpr
         : public TExpr {
       NO_COPY(TRefExpr);
       public:
 
-      /* TODO */
       TRefExpr(const Package::Syntax::TRefExpr *ref_expr);
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TRefExpr *RefExpr;
 
-      /* TODO */
       TDef::TRef<TFuncDef> FuncDef;
 
     };  // TRefExpr

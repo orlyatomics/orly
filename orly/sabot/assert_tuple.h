@@ -27,7 +27,6 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     const Type::TAny &AssertTuple(const Type::TAny &type);
 
   }  // Sabot

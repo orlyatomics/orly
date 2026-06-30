@@ -27,13 +27,11 @@ namespace Orly {
 
   namespace Indy {
 
-    /* TODO */
     class TDiskLayer
         : public L0::TManager::TRepo::TDataLayer {
       NO_COPY(TDiskLayer);
       public:
 
-      /* TODO */
       TDiskLayer(L0::TManager *manager,
                  L0::TManager::TRepo *repo,
                  size_t gen_id,
@@ -41,10 +39,8 @@ namespace Orly {
                  TSequenceNumber lowest_seq,
                  TSequenceNumber highest_seq);
 
-      /* TODO */
       virtual ~TDiskLayer();
 
-      /* TODO */
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
                                                                      const TIndexKey &to) const override;
 
@@ -52,69 +48,52 @@ namespace Orly {
          (hashed), so there is no head-scan to avoid (#257). */
       virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
-      /* TODO */
       virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
 
-      /* TODO */
       inline virtual TKind GetKind() const override;
 
-      /* TODO */
       inline size_t GetGenId() const;
 
-      /* TODO */
       inline size_t GetNumKeys() const;
 
-      /* TODO */
       inline virtual size_t GetSize() const override;
 
-      /* TODO */
       inline virtual TSequenceNumber GetLowestSeq() const override;
 
-      /* TODO */
       inline virtual TSequenceNumber GetHighestSeq() const override;
 
       private:
 
-      /* TODO */
       L0::TManager::TRepo *Repo;
 
-      /* TODO */
       size_t GenId;
 
-      /* TODO */
       size_t NumKeys;
 
-      /* TODO */
       TSequenceNumber LowestSeq, HighestSeq;
 
     };  // TDiskLayer
 
-    /* TODO */
     inline L0::TManager::TRepo::TDataLayer::TKind TDiskLayer::GetKind() const {
       return L0::TManager::TRepo::TDataLayer::Disk;
     }
 
-    /* TODO */
     inline size_t TDiskLayer::GetGenId() const {
       return GenId;
     }
 
-    /* TODO */
     inline size_t TDiskLayer::GetNumKeys() const {
       return NumKeys;
     }
 
-    /* TODO */
     inline size_t TDiskLayer::GetSize() const {
       return NumKeys;
     }
 
-    /* TODO */
     inline TSequenceNumber TDiskLayer::GetLowestSeq() const {
       return LowestSeq;
     }
 
-    /* TODO */
     inline TSequenceNumber TDiskLayer::GetHighestSeq() const {
       return HighestSeq;
     }

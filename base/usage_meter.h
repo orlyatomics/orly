@@ -25,7 +25,6 @@
 
 namespace Base {
 
-  /* TODO */
   class TUsageMeter {
     NO_COPY(TUsageMeter);
     public:
@@ -35,27 +34,22 @@ namespace Base {
       getrusage(Who, &StartU);
     }
 
-    /* TODO */
     void Start() {
       getrusage(Who, &StartU);
     }
 
-    /* TODO */
     void Stop() {
       getrusage(Who, &StopU);
     }
 
-    /* TODO */
     double GetTotalUserCPU() const {
       return (((StopU.ru_utime.tv_sec - StartU.ru_utime.tv_sec) * 1000000L) + (StopU.ru_utime.tv_usec - StartU.ru_utime.tv_usec)) / 1000000.0;
     }
 
-    /* TODO */
     double GetTotalSystemCPU() const {
       return (((StopU.ru_stime.tv_sec - StartU.ru_stime.tv_sec) * 1000000L) + (StopU.ru_stime.tv_usec - StartU.ru_stime.tv_usec)) / 1000000.0;
     }
 
-    /* TODO */
     size_t GetVoluntary() const {
       return StopU.ru_nvcsw - StartU.ru_nvcsw;
     }
@@ -66,13 +60,10 @@ namespace Base {
 
     private:
 
-    /* TODO */
     int Who;
 
-    /* TODO */
     struct rusage StartU;
 
-    /* TODO */
     struct rusage StopU;
 
   };  // TUsageMeter

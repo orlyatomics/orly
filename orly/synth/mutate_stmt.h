@@ -31,40 +31,30 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExpr;
     class TExprFactory;
 
-    /* TODO */
     class TMutateStmt
         : public TStmt {
       NO_COPY(TMutateStmt);
       public:
 
-      /* TODO */
       TMutateStmt(const TExprFactory *expr_factory, const Package::Syntax::TMutateStmt *mutate_stmt);
 
-      /* TODO */
       virtual ~TMutateStmt();
 
-      /* TODO */
       virtual Symbol::Stmt::TStmt::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb) const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb) const;
 
       private:
 
-      /* TODO */
       const Package::Syntax::TMutateStmt *MutateStmt;
 
-      /* TODO */
       TExpr *Lhs;
 
-      /* TODO */
       TExpr *Rhs;
 
     };  // TMutateStmt

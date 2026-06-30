@@ -32,7 +32,6 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     class TOrderStatesVisitor final
         : public TStateDoubleVisitor {
       public:
@@ -801,41 +800,33 @@ namespace Orly {
 
       private:
 
-      /* TODO */
       template <typename TVal>
       inline void OnScalar(const State::TScalar<TVal> &lhs, const State::TScalar<TVal> &rhs) const;
 
-      /* TODO */
       template <typename TVal>
       inline void OnArrayOfScalars(const State::TArrayOfScalars<TVal> &lhs, const State::TArrayOfScalars<TVal> &rhs) const;
 
-      /* TODO */
       inline void OnArrayOfSingleStates(const State::TArrayOfSingleStates &lhs, const State::TArrayOfSingleStates &rhs) const;
 
-      /* TODO */
       inline void OnArrayOfPairsOfStates(const State::TArrayOfPairsOfStates &lhs, const State::TArrayOfPairsOfStates &rhs) const;
 
       template <typename TVal>
       static inline Atom::TComparison Compare(const TVal &lhs, const TVal &rhs);
 
-      /* TODO */
       Atom::TComparison &Comparison;
 
     };  // TOrderStatesVisitor
 
-    /* TODO */
     template <typename TVal>
     inline Atom::TComparison TOrderStatesVisitor::Compare(const TVal &lhs, const TVal &rhs) {
       return lhs == rhs ? Atom::TComparison::Eq : (lhs < rhs ? Atom::TComparison::Lt : Atom::TComparison::Gt);
     }
 
-    /* TODO */
     template <typename TVal>
     inline void TOrderStatesVisitor::OnScalar(const State::TScalar<TVal> &lhs, const State::TScalar<TVal> &rhs) const {
       Comparison = Compare(lhs.Get(), rhs.Get());
     }
 
-    /* TODO */
     template <typename TVal>
     inline void TOrderStatesVisitor::OnArrayOfScalars(const State::TArrayOfScalars<TVal> &lhs, const State::TArrayOfScalars<TVal> &rhs) const {
       void *lhs_alloc = alloca(State::GetMaxStatePinSize());
@@ -853,7 +844,6 @@ namespace Orly {
       }
     }
 
-    /* TODO */
     inline void TOrderStatesVisitor::OnArrayOfSingleStates(const State::TArrayOfSingleStates &lhs, const State::TArrayOfSingleStates &rhs) const {
       void *lhs_alloc = alloca(State::GetMaxStatePinSize());
       void *rhs_alloc = alloca(State::GetMaxStatePinSize());
@@ -875,7 +865,6 @@ namespace Orly {
       }
     }
 
-    /* TODO */
     inline void TOrderStatesVisitor::OnArrayOfPairsOfStates(const State::TArrayOfPairsOfStates &lhs, const State::TArrayOfPairsOfStates &rhs) const {
       void *lhs_alloc = alloca(State::GetMaxStatePinSize());
       void *rhs_alloc = alloca(State::GetMaxStatePinSize());
@@ -906,7 +895,6 @@ namespace Orly {
       }
     }
 
-    /* TODO */
     inline Atom::TComparison OrderStates(const State::TAny &lhs, const State::TAny &rhs) {
       void *lhs_type_alloc = alloca(State::GetMaxStatePinSize());
       void *rhs_type_alloc = alloca(State::GetMaxStatePinSize());

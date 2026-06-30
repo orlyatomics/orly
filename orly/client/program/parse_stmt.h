@@ -29,13 +29,10 @@ namespace Orly {
 
     namespace Program {
 
-      /* TODO */
       using TForStmt = std::function<void (const TStmt *)>;
 
-      /* TODO */
       void ParseStmtFile(const char *path, const TForStmt &cb);
 
-      /* TODO */
       void ParseStmtStr(const char *str, const TForStmt &cb);
 
     }  // Program

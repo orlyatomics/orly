@@ -33,7 +33,6 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO */
     template <typename TKeyType, typename TSearchType, size_t SrcPos, size_t TargetPos>
     std::vector<std::vector<TKeyType>> BidirShortestPath(Orly::Package::TContext &ctx,
                                                          const size_t num_parallel,

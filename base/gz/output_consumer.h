@@ -29,16 +29,13 @@
 
 namespace Gz {
 
-  /* TODO */
   class TOutputConsumer final
       : public Io::TOutputConsumer {
     NO_COPY(TOutputConsumer);
     public:
 
-    /* TODO */
     using TChunk = Io::TChunk;
 
-    /* TODO */
     TOutputConsumer(const char *path, const char *mode)
         : File(path, mode) {}
 
@@ -47,7 +44,6 @@ namespace Gz {
 
     private:
 
-    /* TODO */
     TFile File;
 
   };  // TOutputConsumer

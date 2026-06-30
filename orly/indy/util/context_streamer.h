@@ -39,18 +39,14 @@ namespace Orly {
       /* Forward Declarations. */
       class TContextInputStreamer;
 
-      /* TODO */
       class TContextOutputStreamer {
         NO_COPY(TContextOutputStreamer);
         public:
 
-        /* TODO */
         typedef std::unordered_map<Atom::TCore::TOffset, Atom::TCore::TOffset> TTranslationMap;
 
-        /* TODO */
         TContextOutputStreamer() {}
 
-        /* TODO */
         void AppendUpdate(const Base::TUuid &repo_id, const TUpdateWalker::TItem &item) {
           UpdateVec.push_back(std::move(TUpdate(repo_id, item, Suprena)));
         }
@@ -104,7 +100,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         class TUpdate {
           public:
 
@@ -122,10 +117,8 @@ namespace Orly {
             TEntry(const TIndexKey &k, const Atom::TCore &op, TMutator m) : IndexKey(k), Op(op), Mutator(m) {}
           };
 
-          /* TODO */
           TUpdate() {}
 
-          /* TODO */
           TUpdate(const Base::TUuid &repo_id, const TUpdateWalker::TItem &item, Atom::TSuprena &new_arena)
               : RepoId(repo_id),
                 SequenceNumber(item.SequenceNumber) {
@@ -141,47 +134,35 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           Base::TUuid RepoId;
 
-          /* TODO */
           TSequenceNumber SequenceNumber;
 
-          /* TODO */
           Atom::TCore Metadata;
 
-          /* TODO */
           Atom::TCore Id;
 
-          /* TODO */
           std::vector<TEntry> EntryVec;
 
         };  // TUpdate
 
-        /* TODO */
         mutable Atom::TSuprena Suprena;
 
-        /* TODO */
         std::vector<TUpdate> UpdateVec;
 
-        /* TODO */
         friend class TContextInputStreamer;
 
       };  // TContextOutputStreamer
 
-      /* TODO */
       class TContextInputStreamer {
         public:
 
-        /* TODO */
         typedef TContextOutputStreamer::TTranslationMap TTranslationMap;
         typedef TContextOutputStreamer::TUpdate TUpdate;
 
-        /* TODO */
         TContextInputStreamer()
             : Suprena(std::make_shared<Atom::TSuprena>()) {}
 
-        /* TODO */
         void Read(Io::TBinaryInputStream &strm) {
           assert(Suprena);
           TTranslationMap translation_map;
@@ -244,7 +225,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void Write(Io::TBinaryOutputStream &strm) const {
           TTranslationMap translation_map;
           /* Writing out the Intern context first */
@@ -291,15 +271,12 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         void AppendUpdate(const Base::TUuid &repo_id, const TUpdateWalker::TItem &item) {
           UpdateVec.push_back(std::move(TUpdate(repo_id, item, *Suprena)));
         }
 
-        /* TODO */
         std::shared_ptr<Atom::TSuprena> Suprena;
 
-        /* TODO */
         std::vector<TUpdate> UpdateVec;
 
       };  // TContextInputStreamer

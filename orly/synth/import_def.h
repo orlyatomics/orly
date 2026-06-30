@@ -40,16 +40,13 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TImportDef
         : public TFuncDef {
       NO_COPY(TImportDef);
       public:
 
-      /* TODO */
       TImportDef(TScope *scope, const Package::Syntax::TImportDef *import_def);
 
-      /* TODO */
       virtual ~TImportDef();
 
       private:
@@ -72,7 +69,6 @@ namespace Orly {
 
     };  // TImportDef
 
-    /* TODO */
     template <>
     struct TDef::TInfo<TImportDef> {
       static const char *Name;

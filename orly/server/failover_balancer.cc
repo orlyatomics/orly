@@ -36,7 +36,6 @@ class TCmd final
     Parse(argc, argv, TMeta());
   }
 
-  /* TODO  */
   Socket::TAddress Server1Addr;
   Socket::TAddress Server2Addr;
 

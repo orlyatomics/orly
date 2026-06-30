@@ -26,44 +26,35 @@ namespace Orly {
 
   namespace Indy {
 
-    /* TODO */
     class TFileSync {
       public:
 
       /* This constructor is used on the read end. We default construct before we call read. */
       TFileSync() : Type(Destination), Engine(nullptr), StartingBlockId(0UL), StartingBlockOffset(0UL), Context(0UL) {}
 
-      /* TODO */
       TFileSync(Disk::Util::TEngine *engine, const Base::TUuid &file_id, size_t gen_id, size_t context)
           : Type(Source), Engine(engine), FileId(file_id), GenId(gen_id), StartingBlockId(0UL), StartingBlockOffset(0UL), Context(context) {}
 
-      /* TODO */
       ~TFileSync() {}
 
-      /* TODO */
       void Write(Io::TBinaryOutputStream &stream) const;
 
-      /* TODO */
       void Read(Io::TBinaryInputStream &stream);
 
-      /* TODO */
       inline size_t GetStartingBlockId() const {
         return StartingBlockId;
       }
 
-      /* TODO */
       inline size_t GetStartingBlockOffset() const {
         return StartingBlockOffset;
       }
 
-      /* TODO */
       inline size_t GetFileLength() const {
         return BlockVec.Size() * Disk::Util::LogicalBlockSize;
       }
 
       private:
 
-      /* TODO */
       enum TType {
         Source,
         Destination
@@ -72,26 +63,19 @@ namespace Orly {
       /* This represents whether we are a Source (We will be written, should not be read), or a Destination (We will be read, should not be written) */
       TType Type;
 
-      /* TODO */
       Disk::Util::TEngine *Engine;
 
-      /* TODO */
       Base::TUuid FileId;
 
-      /* TODO */
       size_t GenId;
 
-      /* TODO */
       size_t StartingBlockId;
       size_t StartingBlockOffset;
 
-      /* TODO */
       Indy::Util::TBlockVec BlockVec;
 
-      /* TODO */
       size_t Context;
 
-      /* TODO */
       static const size_t CopyBufSize;
 
     };  // TFileSync

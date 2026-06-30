@@ -55,60 +55,48 @@ namespace Orly {
 
     namespace SS {
 
-      /* TODO */
       class TDescMod final
           : public Sabot::Type::TDesc {
         public:
 
-        /* TODO */
         using TFactory = std::function<Sabot::Type::TAny *(void *)>;
 
-        /* TODO */
         using TPinBase = Sabot::Type::TDesc::TPin;
 
-        /* TODO */
         class TPin final
             : public TPinBase {
           public:
 
-          /* TODO */
           TPin(const TDescMod *desc_mod)
               : DescMod(desc_mod) {}
 
-          /* TODO */
           virtual TAny *NewElem(void *type_alloc) const override {
             return DescMod->Factory(type_alloc);
           }
 
           private:
 
-          /* TODO */
           const TDescMod *DescMod;
 
         };  // TDescNullary<TFoo>::TPin
 
-        /* TODO */
         TDescMod(TFactory &&factory)
             : Factory(std::move(factory)) {}
 
-        /* TODO */
         virtual TPinBase *Pin(void *alloc) const override {
           return new (alloc) TPin(this);
         }
 
         private:
 
-        /* TODO */
         TFactory Factory;
 
       };  // TDescMod
 
-      /* TODO */
       class TFreeDesc final
           : public Sabot::Type::TFree {
         public:
 
-        /* TODO */
         class TPin final
             : public Sabot::Type::TFree::TPin {
           public:
@@ -129,7 +117,6 @@ namespace Orly {
 
         };  // TFreeDesc::TPin
 
-        /* TODO */
         TFreeDesc(const Type::TType &elem)
             : Elem(elem) {}
 
@@ -167,7 +154,6 @@ namespace Orly {
         /* The type on which we are free. */
         Type::TType Type;
 
-        /* TODO */
         TAddrDir AddrDir;
 
       };  // TFree
@@ -224,57 +210,46 @@ namespace Orly {
 
       };  // TId
 
-      /* TODO */
       class TDesc final
           : public Sabot::State::TDesc {
         public:
 
-        /* TODO */
         using TPinBase = Sabot::State::TDesc::TPin;
 
-        /* TODO */
         class TPin final
             : public TPinBase {
           public:
 
-          /* TODO */
           TPin(const TDesc *desc)
               : TPinBase(desc), Desc(desc) {}
 
           private:
 
-          /* TODO */
           virtual Sabot::State::TAny *NewElemInRange(size_t, void *state_alloc) const override {
             return NewSabot(state_alloc, Desc->Var);
           }
 
-          /* TODO */
           const TDesc *Desc;
 
         };  // TDesc::TPin
 
-        /* TODO */
         TDesc(const Var::TVar &var)
             : Var(var) {}
 
-        /* TODO */
         virtual Sabot::Type::TDesc *GetDescType(void *buf) const override {
           return new (buf) Type::ST::TDesc(Var.GetType());
         }
 
-        /* TODO */
         virtual size_t GetElemCount() const override {
           return 1;
         }
 
-        /* TODO */
         virtual TPinBase *Pin(void *alloc) const override {
           return new (alloc) TPin(this);
         }
 
         private:
 
-        /* TODO */
         Var::TVar Var;
 
       };  // TDesc

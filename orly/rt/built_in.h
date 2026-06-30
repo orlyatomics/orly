@@ -52,7 +52,6 @@ namespace Orly {
       return out;
     }  // DictCtor
 
-    /* TODO */
     DEFINE_ERROR(TAssertionError, TRuntimeError, "Assertion Error");
 
     inline void Assert(const char *msg, bool result) {

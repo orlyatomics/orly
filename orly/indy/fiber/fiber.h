@@ -168,14 +168,12 @@ namespace Orly {
          mask save/restore). ucontext is used only once, to bootstrap each
          fiber's jmp_buf. This is the only path compiled in normal builds. */
 
-      /* TODO */
       struct fiber_t {
         ucontext_t fib;
         jmp_buf jmp;
         uint8_t *start_of_stack;
       };
 
-      /* TODO */
       struct fiber_ctx_t {
         void (*fnc)(void *);
         void *ctx;
@@ -183,7 +181,6 @@ namespace Orly {
         ucontext_t *prv;
       };
 
-      /* TODO */
       static void fiber_start_fnc(void *p) {
         fiber_ctx_t *ctx = reinterpret_cast<fiber_ctx_t *>(p);
         void (*ufnc)(void *) = ctx->fnc;
@@ -195,7 +192,6 @@ namespace Orly {
         ufnc(uctx);
       }
 
-      /* TODO */
       inline void create_fiber(fiber_t &fib, void(*ufnc)(void *), void *uctx, size_t stack_size) {
         getcontext(&fib.fib);
         fib.start_of_stack = reinterpret_cast<uint8_t *>(malloc(stack_size));
@@ -223,18 +219,15 @@ namespace Orly {
         swapcontext(&tmp, &fib.fib);
       }
 
-      /* TODO */
       inline size_t get_stack_size(fiber_t &fib) {
         return fib.fib.uc_stack.ss_size;
       }
 
-      /* TODO */
       inline void free_fiber(fiber_t &fib) {
         assert(fib.start_of_stack);
         free(fib.start_of_stack);
       }
 
-      /* TODO */
       inline void switch_to_fiber(fiber_t &fib, fiber_t &prv) {
         if (_setjmp(prv.jmp) == 0) {
           _longjmp(fib.jmp, 1);
@@ -262,7 +255,6 @@ namespace Orly {
          This path is ONLY compiled under -fsanitize=thread; it never affects
          production builds, which use the setjmp/longjmp path above. */
 
-      /* TODO */
       struct fiber_t {
         ucontext_t fib;
         jmp_buf jmp;  // unused under TSan; kept so layout/_mm_prefetch sites compile.
@@ -277,13 +269,11 @@ namespace Orly {
         void *entry_ctx = nullptr;
       };
 
-      /* TODO */
       static void fiber_start_fnc(void *p) {
         fiber_t *fib = reinterpret_cast<fiber_t *>(p);
         fib->entry_fnc(fib->entry_ctx);
       }
 
-      /* TODO */
       inline void create_fiber(fiber_t &fib, void(*ufnc)(void *), void *uctx, size_t stack_size) {
         getcontext(&fib.fib);
         fib.start_of_stack = reinterpret_cast<uint8_t *>(malloc(stack_size));
@@ -308,12 +298,10 @@ namespace Orly {
         makecontext(&fib.fib, reinterpret_cast<void(*)()>(fiber_start_fnc), 1, &fib);
       }
 
-      /* TODO */
       inline size_t get_stack_size(fiber_t &fib) {
         return fib.fib.uc_stack.ss_size;
       }
 
-      /* TODO */
       inline void free_fiber(fiber_t &fib) {
         assert(fib.start_of_stack);
         if (fib.tsan_fiber) {
@@ -323,7 +311,6 @@ namespace Orly {
         free(fib.start_of_stack);
       }
 
-      /* TODO */
       inline void switch_to_fiber(fiber_t &fib, fiber_t &prv) {
         /* Announce the switch to TSan, then swapcontext (which saves our
            resume point into prv.fib and resumes fib.fib). */
@@ -335,10 +322,8 @@ namespace Orly {
 
       #else
 
-      /* TODO */
       typedef ucontext_t fiber_t;
 
-      /* TODO */
       inline void create_fiber(fiber_t &fib, void(*ufnc)(void *), void *uctx, size_t stack_size) {
         static_assert(false, "swapcontext based fibers need fiber local support");
         getcontext(&fib);
@@ -348,18 +333,15 @@ namespace Orly {
         makecontext(&fib, reinterpret_cast<void (*)()>(ufnc), 1, uctx);
       }
 
-      /* TODO */
       inline size_t get_stack_size(fiber_t &fib) {
         return fib.uc_stack.ss_size;
       }
 
-      /* TODO */
       inline void free_fiber(fiber_t &fib) {
         assert(fib.uc_stack.ss_sp);
         free(fib.uc_stack.ss_sp);
       }
 
-      /* TODO */
       inline void switch_to_fiber(fiber_t &fib, fiber_t &prev) {
         swapcontext(&prev, &fib);
       }
@@ -368,20 +350,16 @@ namespace Orly {
       /* Forward Declaration */
       class TFrame;
 
-      /* TODO */
       class alignas(64) TRunner {
         NO_COPY(TRunner);
         public:
 
-        /* TODO */
         //typedef InvCon::UnorderedList::TCollection<TRunner, TFrame> TFrameQueue;
 
-        /* TODO */
         class TRunnerCons {
           NO_COPY(TRunnerCons);
           public:
 
-          /* TODO */
           TRunnerCons(size_t num_runners)
               : NumRunners(num_runners), NextId(0UL) {
             syslog(LOG_INFO, "TRunnerCons [%ld]", num_runners);
@@ -393,14 +371,12 @@ namespace Orly {
             syslog(LOG_INFO, "TRunnerCons [%ld] B", num_runners);
           }
 
-          /* TODO */
           ~TRunnerCons() {
             delete[] RunnerArray;
           }
 
           private:
 
-          /* TODO */
           size_t GetNewId() {
             syslog(LOG_INFO, "TRunnerCons [%ld] GetNewId()", NextId);
             size_t ret = NextId;
@@ -412,10 +388,8 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           const size_t NumRunners;
 
-          /* TODO */
           size_t NextId;
 
           /* Per-runner publication slots. A TRunner publishes itself into its
@@ -435,7 +409,6 @@ namespace Orly {
           runner_cons.RunnerArray[RunnerId].store(this, std::memory_order_release);
         }
 
-        /* TODO */
         TRunner(size_t total_num_runners, size_t runner_id, std::atomic<TRunner *> *runner_array)
             : FreeFrame(nullptr),
               FreeFramePool(nullptr),
@@ -461,42 +434,33 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         ~TRunner() {
           RunnerArray[RunnerId].store(nullptr, std::memory_order_release);
           delete[] QueueArray;
         }
 
-        /* TODO */
         void Run();
 
-        /* TODO */
         void ShutDown() {
           KeepRunning.store(false);
         }
 
-        /* TODO */
         static inline void Yield(fiber_t &fiber) {
           assert(LocalRunner);
           switch_to_fiber(LocalRunner->MainFiber, fiber);
         }
 
-        /* TODO */
         static inline void Schedule(TFrame *frame) {
           assert(LocalRunner);
           LocalRunner->ScheduleFrame(frame);
         }
 
-        /* TODO */
         inline void ScheduleFrame(TFrame *frame);
 
-        /* TODO */
         fiber_t MainFiber;
 
-        /* TODO */
         static __thread TRunner *LocalRunner;
 
-        /* TODO */
         TFrame *FreeFrame;
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FreeFramePool;
 
@@ -512,12 +476,10 @@ namespace Orly {
         /* Push 'frame' onto a Treiber-stack queue head (see definition). */
         static inline void PushFrameOntoQueue(std::atomic<TFrame *> &head, TFrame *frame);
 
-        /* TODO */
         //mutable TFrameQueue::TImpl MyFrameQueue;
         TFrame *ReadyToRunQueue;
         TFrame *NewReadyToRunQueue;
 
-        /* TODO */
         std::atomic<bool> KeepRunning;
 
         /* Treiber-stack head for frames scheduled onto this runner from a
@@ -532,11 +494,9 @@ namespace Orly {
         };
         TOutboundQueue *QueueArray;
 
-        /* TODO */
         TRunner *ForeignRunnerToMoveFrameTo;
         TFrame *FrameToMoveToForeignRunner;
 
-        /* TODO */
         size_t TotalNumRunners alignas(64);
         size_t RunnerId alignas(64);
         size_t blank_buf[7];
@@ -549,27 +509,22 @@ namespace Orly {
 
       };  // TRunner
 
-      /* TODO */
       class TRunnable {
         NO_COPY(TRunnable);
         public:
 
-        /* TODO */
         typedef void (TRunnable::*TFunc)();
 
         protected:
 
-        /* TODO */
         TRunnable() {}
 
       };  // TRunnable
 
-      /* TODO */
       class alignas(64) TRunnerPool {
         NO_COPY(TRunnerPool);
         public:
 
-        /* TODO */
         TRunnerPool(TRunner::TRunnerCons &runner_cons,
                     size_t num_worker)
             : WorkerCount(num_worker), AssignPos(0UL) {
@@ -581,7 +536,6 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         ~TRunnerPool() {
           for (auto &runner : RunnerVec) {
             runner->ShutDown();
@@ -591,17 +545,14 @@ namespace Orly {
           }
         }
 
-        /* TODO */
         inline size_t GetWorkerCount() const {
           return WorkerCount;
         }
 
-        /* TODO */
         inline void Schedule(TFrame *frame, TRunnable *runnable, const TRunnable::TFunc &func);
 
         private:
 
-        /* TODO */
         const size_t WorkerCount;
 
         /* TODO: use better data structure */
@@ -615,13 +566,11 @@ namespace Orly {
 
       static void StartFrame(void *void_frame);
 
-      /* TODO */
       class TFrame
           : public Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TObjBase {
         NO_COPY(TFrame);
         public:
 
-        /* TODO */
         TFrame(size_t stack_size, TRunner */*runner*/)
             :
               #ifndef NDEBUG
@@ -652,7 +601,6 @@ namespace Orly {
           free_fiber(MyFiber);
         }
 
-        /* TODO */
         inline void Latch(TRunner *runner, TRunnable *runnable, TRunnable::TFunc runnable_func) {
           //printf("TFrame [%p] Latch runnable [%p]\n", this, runnable);
           CheckFrameUnwound();
@@ -663,7 +611,6 @@ namespace Orly {
           runner->ScheduleFrame(this);
         }
 
-        /* TODO */
         inline void Latch(TRunnable *runnable, TRunnable::TFunc runnable_func) {
           //printf("TFrame [%p] Latch runnable [%p]\n", this, runnable);
           CheckFrameUnwound();
@@ -674,34 +621,29 @@ namespace Orly {
           TRunner::Schedule(this);
         }
 
-        /* TODO */
         inline void Yield() {
           ComeBackRightAway = false;
           TRunner::Schedule(this);
           TRunner::Yield(MyFiber);
         }
 
-        /* TODO */
         inline void YieldSlow() {
           ComeBackRightAway = false;
           TRunner::LocalRunner->ScheduleFrameSlow(this);
           TRunner::Yield(MyFiber);
         }
 
-        /* TODO */
         inline void Wait(bool come_back_right_away) {
           ComeBackRightAway = come_back_right_away;
           TRunner::Yield(MyFiber);
         }
 
-        /* TODO */
         inline void SwitchTo(TRunner *runner) {
           ComeBackRightAway = false;
           runner->ScheduleFrame(this);
           TRunner::Yield(MyFiber);
         }
 
-        /* TODO */
         void Run() {
           //printf("TFrame [%p] Run()\n", this);
           /* wait to get scheduled (after a Latch). */
@@ -751,19 +693,16 @@ namespace Orly {
         }
         #endif
 
-        /* TODO */
         inline fiber_t &GetFiber() {
           return MyFiber;
         }
 
-        /* TODO */
         static __thread TFrame *LocalFrame;
 
         static __thread Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool *LocalFramePool;
 
         private:
 
-        /* TODO */
         inline void CheckFrameUnwound() {
           /* this is where we make sure that our frame's stack unwound properly... */
           #ifndef NDEBUG
@@ -779,22 +718,16 @@ namespace Orly {
         std::atomic<bool> DebugIsRunning;
         #endif
 
-        /* TODO */
         fiber_t MyFiber;
 
-        /* TODO */
         TRunnable::TFunc RunnableFunc;
 
-        /* TODO */
         TRunnable *Runnable;
 
-        /* TODO */
         //TQueueMembership::TImpl QueueMembership;
 
-        /* TODO */
         TFrame *InboundQueueNextFrame;
 
-        /* TODO */
         bool ComeBackRightAway;
 
         /* MyFiber */
@@ -806,7 +739,6 @@ namespace Orly {
 
       };  // TFrame
 
-      /* TODO */
       static void StartFrame(void *void_frame) {
         TFrame *frame = reinterpret_cast<TFrame*>(void_frame);
         assert(frame);
@@ -814,7 +746,6 @@ namespace Orly {
         TRunner::Yield(frame->GetFiber());
       }
 
-      /* TODO */
       template <typename TVal, typename TArgs>
       class TFiberLocal : public FiberLocal::TFiberLocal {
         NO_COPY(TFiberLocal);
@@ -892,21 +823,16 @@ namespace Orly {
           #endif
         }
 
-        /* TODO */
         inline void Sync(bool come_back_right_away = true);
 
-        /* TODO */
         inline void Complete();
 
-        /* TODO */
         inline void WaitForMore(size_t num);
 
         private:
 
-        /* TODO */
         TFrame *Frame;
 
-        /* TODO */
         size_t WaitingFor;
         size_t Finished;
 
@@ -929,50 +855,38 @@ namespace Orly {
               FrameWaiting(nullptr),
               RunnerToReactivateOn(nullptr) {}
 
-        /* TODO */
         inline void Sync(bool come_back_right_away = true);
 
-        /* TODO */
         inline void Complete();
 
-        /* TODO */
         inline void WaitForMore(size_t num);
 
         private:
 
-        /* TODO */
         std::atomic<size_t> WaitingFor;
         std::atomic<size_t> Finished;
 
-        /* TODO */
         Fiber::TFrame *FrameWaiting;
         Fiber::TRunner *RunnerToReactivateOn;
 
-        /* TODO */
         Base::TSpinLock SpinLock;
 
       };  // TSafeSync
 
-      /* TODO */
       class TSingleSem {
         NO_COPY(TSingleSem);
         public:
 
-        /* TODO */
         TSingleSem() : FlagOn(false), FrameWaiting(nullptr), RunnerToReactivateOn(nullptr) {}
 
-        /* TODO */
         ~TSingleSem() {}
 
-        /* TODO */
         inline void Push();
 
-        /* TODO */
         inline void Pop();
 
         private:
 
-        /* TODO */
         Base::TSpinLock SpinLock;
         bool FlagOn;
 
@@ -981,26 +895,20 @@ namespace Orly {
 
       };  // TSingleSem
 
-      /* TODO */
       class TSem {
         NO_COPY(TSem);
         public:
 
-        /* TODO */
         TSem() : Count(0UL), FrameWaiting(nullptr), RunnerToReactivateOn(nullptr) {}
 
-        /* TODO */
         ~TSem() {}
 
-        /* TODO */
         inline void Push();
 
-        /* TODO */
         inline void Pop();
 
         private:
 
-        /* TODO */
         Base::TSpinLock SpinLock;
         size_t Count;
 
@@ -1017,16 +925,13 @@ namespace Orly {
         NO_COPY(TFiberLock);
         public:
 
-        /* TODO */
         inline TFiberLock()
             : Taken(false), RootLock(nullptr) {}
 
-        /* TODO */
         class alignas(64) TLock {
           NO_COPY(TLock);
           public:
 
-          /* TODO */
           inline TLock(TFiberLock &lock)
               : Lock(lock) {
             #ifndef NDEBUG
@@ -1051,7 +956,6 @@ namespace Orly {
             assert(lock.Taken);
           }
 
-          /* TODO */
           inline ~TLock() {
             /* Grab the spin lock to release control, and enqueue anyone who is waiting. */ {
               Base::TSpinLock::TLock lock(Lock.SpinLock);
@@ -1070,13 +974,10 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           TFiberLock &Lock;
 
-          /* TODO */
           TLock *NextLock;
 
-          /* TODO */
           TRunner *Runner;
           TFrame *Frame;
 
@@ -1088,13 +989,10 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         Base::TSpinLock SpinLock;
 
-        /* TODO */
         bool Taken;
 
-        /* TODO */
         TLock *RootLock;
 
       };  // TFiberLock
@@ -1109,16 +1007,13 @@ namespace Orly {
         NO_COPY(TLockedQueue);
         public:
 
-        /* TODO */
         inline TLockedQueue(TRunner *runner)
             : Runner(runner) {}
 
-        /* TODO */
         class alignas(64) TLock {
           NO_COPY(TLock);
           public:
 
-          /* TODO */
           inline TLock(TLockedQueue &lock)
               : Lock(lock) {
             assert(TRunner::LocalRunner);
@@ -1129,7 +1024,6 @@ namespace Orly {
             }
           }
 
-          /* TODO */
           inline ~TLock() {
             if (Runner != Lock.Runner) {
               TFrame::LocalFrame->SwitchTo(Runner);
@@ -1138,17 +1032,14 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           TLockedQueue &Lock;
 
-          /* TODO */
           TRunner *Runner;
 
         };  // TLock
 
         private:
 
-        /* TODO */
         TRunner *Runner;
 
       };  // TLockedQueue
@@ -1191,19 +1082,16 @@ namespace Orly {
         TRunner::LocalRunner->FreeFramePool = pool;
       }
 
-      /* TODO */
       class TSwitchToRunner {
         NO_COPY(TSwitchToRunner);
         public:
 
-        /* TODO */
         TSwitchToRunner(TRunner *runner_to_switch_to)
             : ComeFromRunner(Base::AssertTrue(TRunner::LocalRunner)) {
           assert(runner_to_switch_to);
           SwitchTo(runner_to_switch_to);
         }
 
-        /* TODO */
         ~TSwitchToRunner() {
           assert(ComeFromRunner);
           SwitchTo(ComeFromRunner);
@@ -1211,7 +1099,6 @@ namespace Orly {
 
         private:
 
-        /* TODO */
         TRunner *ComeFromRunner;
 
       };  // TSwitchToRunner

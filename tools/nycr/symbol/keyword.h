@@ -30,16 +30,13 @@ namespace Tools {
 
     namespace Symbol {
 
-      /* TODO */
       class TKeyword
           : public TAtom {
         public:
 
-        /* TODO */
         TKeyword(const TName &name, TAnyBase *base, const std::string &pattern, const std::optional<int> &pri)
             : TAtom(name, base, pattern, pri) {}
 
-        /* TODO */
         virtual void Accept(const TVisitor &visitor) const;
 
       };  // TKeyword

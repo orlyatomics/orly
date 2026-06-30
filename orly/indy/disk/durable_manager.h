@@ -67,30 +67,23 @@ namespace Orly {
     }
 
 
-    /* TODO */
     namespace DurableManager {
 
-      /* TODO */
       class TManager
           : public Fiber::TRunnable {
         NO_COPY(TManager);
         public:
 
-        /* TODO */
         virtual TDurableReplication *NewDurableReplication(const Durable::TId &id, const Durable::TTtl &ttl, const std::string &serialized_form) const = 0;
 
-        /* TODO */
         virtual void DeleteDurableReplication(TDurableReplication *durable_replication) NO_THROW = 0;
 
-        /* TODO */
         virtual void EnqueueDurable(TDurableReplication *durable_replication) NO_THROW = 0;
 
         protected:
 
-        /* TODO */
         TManager() {}
 
-        /* TODO */
         virtual ~TManager() {}
 
       };  // TManager
@@ -115,7 +108,6 @@ namespace Orly {
         std::chrono::steady_clock::time_point Next;
       };
 
-      /* TODO */
       class TDurableManager
           : public Durable::TManager {
         NO_COPY(TDurableManager);
@@ -124,26 +116,20 @@ namespace Orly {
         /* Forward Declarations. */
         class TDurableLayer;
 
-        /* TODO */
         typedef InvCon::UnorderedList::TCollection<TDurableManager, TDurableLayer> TRemovalCollection;
 
         public:
 
-        /* TODO */
         typedef uint64_t TSequenceNumber;
         typedef uint32_t TSerializedSize;
 
-        /* TODO */
         typedef TStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, 64UL> TInStream;
         typedef TOutStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::PageCheckedBlock> TDataOutStream;
 
-        /* TODO */
         enum TOutcome { Survived, Expired, WasSuperceded };
 
-        /* TODO */
         using TNotify = std::function<void (TSequenceNumber, Base::TUuid, TOutcome)>;
 
-        /* TODO */
         TDurableManager(Base::TScheduler *scheduler,
                         Fiber::TRunner::TRunnerCons &runner_cons,
                         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
@@ -157,74 +143,56 @@ namespace Orly {
                         bool create,
                         const TNotify *notify = nullptr);
 
-        /* TODO */
         virtual ~TDurableManager();
 
-        /* TODO */
         virtual bool CanLoad(const Durable::TId &id) override;
 
-        /* TODO */
         virtual void CleanDisk(const Durable::TDeadline &now, Durable::TSem *sem) override;
 
-        /* TODO */
         virtual void Delete(const Durable::TId &id, Durable::TSem *sem) override;
 
-        /* TODO */
         virtual void RunLayerCleaner() override;
 
-        /* TODO */
         virtual void Save(const Durable::TId &id, const Durable::TDeadline &deadline, const TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem) override;
 
-        /* TODO */
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
 
-        /* TODO */
         void RunWriter();
 
-        /* TODO */
         void RunMerger();
 
-        /* TODO */
         void static InitMappingPool(size_t num_obj) {
           TMapping::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetMappingSize() {
           return sizeof(TMapping);
         }
 
-        /* TODO */
         void static InitMappingEntryPool(size_t num_obj) {
           TMapping::TEntry::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetMappingEntrySize() {
           return sizeof(TMapping::TEntry);
         }
 
-        /* TODO */
         void static InitDurableLayerPool(size_t num_obj) {
           TDurableLayer::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetDurableLayerSize() {
           return sizeof(TDurableLayer);
         }
 
-        /* TODO */
         void static InitMemEntryPool(size_t num_obj) {
           TMemSlushLayer::TDurableEntry::Pool.Init(num_obj);
         }
 
-        /* TODO */
         static constexpr size_t GetMemEntrySize() {
           return sizeof(TMemSlushLayer::TDurableEntry);
         }
 
-        /* TODO */
         static const Base::TUuid DurableByIdFileId;
 
         private:
@@ -233,12 +201,10 @@ namespace Orly {
         class TMemSlushLayer;
         class TMergeSortedByIdFile;
 
-        /* TODO */
         class TSortedByIdFile {
           NO_COPY(TSortedByIdFile);
           public:
 
-          /* TODO */
           TSortedByIdFile(TMemSlushLayer *mem_layer,
                           Util::TEngine *engine,
                           Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
@@ -247,7 +213,6 @@ namespace Orly {
                           size_t temp_file_consol_thresh,
                           DiskPriority priority);
 
-          /* TODO */
           inline size_t GetNumDurable() const;
 
           /*
@@ -272,33 +237,26 @@ namespace Orly {
 
           private:
 
-          /* TODO */
           class THashObj {
             public:
 
-            /* TODO */
             THashObj(const uuid_t &id, size_t hash, size_t offset)
                 : Hash(hash), Offset(offset) {
               uuid_copy(Id, id);
             }
 
-            /* TODO */
             bool operator<(const THashObj &that) const {
               return Hash < that.Hash;
             }
 
-            /* TODO */
             uuid_t Id;
 
-            /* TODO */
             size_t Hash;
 
-            /* TODO */
             size_t Offset;
 
           };  // THashObj
 
-          /* TODO */
           typedef Util::TIndexManager<THashObj, Disk::Util::SortBufSize, Disk::Util::SortBufMinParallelSize> THashSorter;
 
           template <typename TOwner>
@@ -307,68 +265,53 @@ namespace Orly {
             NO_COPY(TMyFileTemp);
             public:
 
-            /* TODO */
             TMyFileTemp(TOwner *file) : File(file) {}
 
-            /* TODO */
             virtual ~TMyFileTemp() {}
 
             private:
 
-            /* TODO */
             virtual size_t GetFileLength() const override {
               return File->FileSize;
             }
 
-            /* TODO */
             virtual size_t GetStartingBlock() const override {
               assert(File->BlockVec.Size() > 0);
               return File->BlockVec.Front();
             }
 
-            /* TODO */
             virtual void ReadMeta(size_t , size_t &) const override {
               throw;
             }
 
-            /* TODO */
             virtual size_t FindPageIdOfByte(size_t offset) const override {
               assert(offset <= GetFileLength());
               return ((File->BlockVec[offset / Disk::Util::LogicalBlockSize]) * Disk::Util::PagesPerBlock) + ((offset % Disk::Util::LogicalBlockSize) / Disk::Util::LogicalPageSize);
             }
 
-            /* TODO */
             TOwner *File;
 
           };  // TMyFileTemp
 
-          /* TODO */
           typedef TMyFileTemp<TSortedByIdFile> TMyFile;
 
-          /* TODO */
           Util::TEngine *const Engine;
 
-          /* TODO */
           const Disk::Util::TVolume::TDesc::TStorageSpeed StorageSpeed;
 
-          /* TODO */
           Indy::Util::TBlockVec BlockVec;
           size_t FileSize;
 
-          /* TODO */
           size_t NumDurable;
 
-          /* TODO */
           friend class TMergeSortedByIdFile;
 
         };  // TSortedByIdFile
 
-        /* TODO */
         class TMergeSortedByIdFile {
           NO_COPY(TMergeSortedByIdFile);
           public:
 
-          /* TODO */
           TMergeSortedByIdFile(const std::vector<size_t> &gen_vec,
                                Util::TEngine *engine,
                                Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
@@ -379,48 +322,36 @@ namespace Orly {
                                const TNotify *notify);
 
 
-          /* TODO */
           inline size_t GetNumDurable() const;
 
           private:
 
-          /* TODO */
           typedef TSortedByIdFile::THashObj THashObj;
 
-          /* TODO */
           typedef TSortedByIdFile::THashSorter THashSorter;
 
-          /* TODO */
           typedef TSortedByIdFile::TMyFileTemp<TMergeSortedByIdFile> TMyFile;
 
-          /* TODO */
           Util::TEngine *Engine;
 
-          /* TODO */
           Disk::Util::TVolume::TDesc::TStorageSpeed StorageSpeed;
 
-          /* TODO */
           size_t NumDurable;
 
-          /* TODO */
           Indy::Util::TBlockVec BlockVec;
           size_t FileSize;
 
-          /* TODO */
           static const size_t LocalCacheSize = 64;
 
-          /* TODO */
           friend TMyFile;
 
         };  // TMergeSortedByIdFile
 
-        /* TODO */
         class TSortedInFile
             : public TInFile {
           NO_COPY(TSortedInFile);
           public:
 
-          /* TODO */
           TSortedInFile(Util::TPageCache *page_cache,
                         DiskPriority priority,
                         size_t gen_id,
@@ -428,74 +359,52 @@ namespace Orly {
                         size_t starting_block_offset,
                         size_t file_length);
 
-          /* TODO */
           TSortedInFile(Util::TEngine *engine, DiskPriority priority, size_t gen_id);
 
-          /* TODO */
           virtual ~TSortedInFile();
 
-          /* TODO */
           virtual size_t GetFileLength() const override;
 
-          /* TODO */
           virtual size_t GetStartingBlock() const override;
 
-          /* TODO */
           virtual void ReadMeta(size_t offset, size_t &out) const override;
 
-          /* TODO */
           virtual size_t FindPageIdOfByte(size_t offset) const override;
 
-          /* TODO */
           inline size_t GetNumEntries() const;
 
-          /* TODO */
           inline size_t GetNumBlocks() const;
 
-          /* TODO */
           inline size_t GetStartOfDurableByIdIndex() const;
 
-          /* TODO */
           inline size_t GetStartOfHashIndex() const;
 
-          /* TODO */
           void FindInHash(TSequenceNumber &cur_max_seq_num, const Durable::TId &id, std::string &serialized_form_out) const;
 
           private:
 
-          /* TODO */
           Util::TPageCache *PageCache;
 
-          /* TODO */
           size_t FileLength;
 
-          /* TODO */
           size_t StartingBlockId;
 
-          /* TODO */
           size_t StartingBlockOffset;
 
-          /* TODO */
           size_t NumEntries;
 
-          /* TODO */
           size_t NumBlocks;
 
-          /* TODO */
           size_t HashIndexOffset;
 
-          /* TODO */
           size_t HashFieldSize;
 
-          /* TODO */
           std::unique_ptr<TInStream> InStream;
 
-          /* TODO */
           static const size_t LocalCacheSize = 64;
 
         };  // TSortedInFile
 
-        /* TODO */
         class TMapping {
           NO_COPY(TMapping);
           public:
@@ -503,62 +412,47 @@ namespace Orly {
           /* Forward Declarations. */
           class TEntry;
 
-          /* TODO */
           typedef InvCon::UnorderedList::TMembership<TMapping, TDurableManager> TManagerMembership;
 
-          /* TODO */
           typedef InvCon::UnorderedList::TCollection<TMapping, TEntry> TEntryCollection;
 
-          /* TODO */
           class TEntry {
             NO_COPY(TEntry);
             public:
 
-            /* TODO */
             typedef InvCon::UnorderedList::TMembership<TEntry, TMapping> TMappingMembership;
 
-            /* TODO */
             inline TEntry(TMapping *mapping, TDurableLayer *layer);
 
-            /* TODO */
             inline ~TEntry();
 
-            /* TODO */
             inline TDurableLayer *GetLayer() const;
 
-            /* TODO */
             static void *operator new(size_t size) {
               return Pool.Alloc(size);
             }
 
-            /* TODO */
             static void operator delete(void *ptr, size_t) {
               Pool.Free(ptr);
             }
 
             private:
 
-            /* TODO */
             TMappingMembership::TImpl MappingMembership;
 
-            /* TODO */
             TDurableLayer *Layer;
 
-            /* TODO */
             static Indy::Util::TLocklessPool Pool;
 
-            /* TODO */
             friend class TDurableManager;
             friend class Server::TIndyReporter;
 
           };  // TEntry
 
-          /* TODO */
           class TView {
             NO_COPY(TView);
             public:
 
-            /* TODO */
             TView(TDurableManager *manager)
                 : Manager(manager) {
               std::lock_guard<std::mutex> data_lock(Manager->DataLock);
@@ -570,347 +464,254 @@ namespace Orly {
               Mapping->Incr();
             }
 
-            /* TODO */
             ~TView() {
               CurMemLayer->Decr();
               std::lock_guard<std::mutex> mapping_lock(Manager->MappingLock);
               Mapping->Decr();
             }
 
-            /* TODO */
             inline TMapping *GetMapping() const;
 
-            /* TODO */
             inline TMemSlushLayer *GetCurLayer() const;
 
             private:
 
-            /* TODO */
             TDurableManager *Manager;
 
-            /* TODO */
             TMapping *Mapping;
 
-            /* TODO */
             TMemSlushLayer *CurMemLayer;
 
           };  // TView
 
-          /* TODO */
           inline TMapping(TDurableManager *manager);
 
-          /* TODO */
           ~TMapping();
 
-          /* TODO */
           inline void Incr();
 
-          /* TODO */
           inline void Decr();
 
-          /* TODO */
           inline size_t GetRefCount() const;
 
-          /* TODO */
           TEntryCollection *GetEntryCollection() const;
 
-          /* TODO */
           static void *operator new(size_t size) {
             return Pool.Alloc(size);
           }
 
-          /* TODO */
           static void operator delete(void *ptr, size_t) {
             Pool.Free(ptr);
           }
 
           private:
 
-          /* TODO */
           TManagerMembership::TImpl ManagerMembership;
 
-          /* TODO */
           mutable TEntryCollection::TImpl EntryCollection;
 
-          /* TODO */
           size_t RefCount;
 
-          /* TODO */
           bool MarkedForDelete;
 
-          /* TODO */
           static Indy::Util::TLocklessPool Pool;
 
-          /* TODO */
           friend class TDurableManager;
           friend class Server::TIndyReporter;
 
         };  // TMapping
 
-        /* TODO */
         typedef InvCon::UnorderedList::TCollection<TDurableManager, TMapping> TMappingCollection;
 
-        /* TODO */
         class TDurableLayer {
           NO_COPY(TDurableLayer);
           public:
 
-          /* TODO */
           typedef InvCon::UnorderedList::TMembership<TDurableLayer, TDurableManager> TRemovalMembership;
 
-          /* TODO */
           enum TKind {MemSlush, DiskOrdered};
 
-          /* TODO */
           inline virtual ~TDurableLayer();
 
-          /* TODO */
           inline void Incr();
 
-          /* TODO */
           inline void Decr();
 
-          /* TODO */
           inline void RemoveFromCollection();
 
-          /* TODO */
           virtual TKind GetKind() const = 0;
 
-          /* TODO */
           inline bool GetMarkedTaken() const;
 
-          /* TODO */
           inline void MarkTaken();
 
-          /* TODO */
           inline bool GetMarkedForDelete() const;
 
-          /* TODO */
           inline void MarkForDelete();
 
-          /* TODO */
           virtual void FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const = 0;
 
-          /* TODO */
           static void *operator new(size_t size) {
             return Pool.Alloc(size);
           }
 
-          /* TODO */
           static void operator delete(void *ptr, size_t) {
             Pool.Free(ptr);
           }
 
           protected:
 
-          /* TODO */
           inline TDurableLayer(TDurableManager *manager);
 
           private:
 
-          /* TODO */
           TDurableManager *Manager;
 
-          /* TODO */
           TRemovalMembership::TImpl RemovalMembership;
 
-          /* TODO */
           size_t RefCount;
 
-          /* TODO */
           bool MarkedForDelete;
 
-          /* TODO */
           bool MarkedTaken;
 
-          /* TODO */
           static Indy::Util::TPool Pool;
 
-          /* TODO */
           friend class TDurableManager;
           friend class Server::TIndyReporter;
 
         };  // TDurableLayer
 
-        /* TODO */
         void AddMapping(TDurableLayer *layer);
 
-        /* TODO */
         class TMemSlushLayer
             : public TDurableLayer {
           NO_COPY(TMemSlushLayer);
           public:
 
-          /* TODO */
           class TDurableEntry {
             NO_COPY(TDurableEntry);
             public:
 
-            /* TODO */
             class TKey {
               public:
 
-              /* TODO */
               inline TKey(const uuid_t &id, TSequenceNumber seq_num);
 
-              /* TODO */
               inline bool operator==(const TKey &that) const;
 
-              /* TODO */
               inline bool operator!=(const TKey &that) const;
 
-              /* TODO */
               inline bool operator<=(const TKey &that) const;
 
               private:
 
-              /* TODO */
               uuid_t Id;
 
-              /* TODO */
               const TSequenceNumber SeqNum;
 
-              /* TODO */
               friend class TDurableEntry;
 
             };  // TKey
 
-            /* TODO */
             typedef InvCon::OrderedList::TMembership<TDurableEntry, TMemSlushLayer, TDurableEntry::TKey> TSlushMembership;
 
-            /* TODO */
             inline TDurableEntry(TMemSlushLayer *mem_layer, const Base::TUuid &id, const Durable::TDeadline &deadline, std::string &&serialized_form, TSequenceNumber seq_num);
 
-            /* TODO */
             inline const uuid_t &GetId() const;
 
-            /* TODO */
             inline TSequenceNumber GetSeqNum() const;
 
-            /* TODO */
             inline size_t GetDeadlineCount() const;
 
-            /* TODO */
             inline TSerializedSize GetSerializedSize() const;
 
-            /* TODO */
             inline const std::string &GetSerializedForm() const;
 
-            /* TODO */
             static void *operator new(size_t size) {
               return Pool.Alloc(size);
             }
 
-            /* TODO */
             static void operator delete(void *ptr, size_t) {
               Pool.Free(ptr);
             }
 
             private:
 
-            /* TODO */
             TSlushMembership::TImpl SlushMembership;
 
-            /* TODO */
             const size_t DeadlineCount;
 
-            /* TODO */
             std::string SerializedForm;
 
-            /* TODO */
             static Indy::Util::TPool Pool;
 
-            /* TODO */
             friend class TDurableManager;
             friend class Server::TIndyReporter;
 
           };  // TDurableEntry
 
-          /* TODO */
           typedef InvCon::OrderedList::TCollection<TMemSlushLayer, TDurableEntry, TDurableEntry::TKey> TEntryCollection;
 
-          /* TODO */
           virtual TKind GetKind() const {
             return TDurableLayer::MemSlush;
           }
 
-          /* TODO */
           inline TMemSlushLayer(TDurableManager *manager);
 
-          /* TODO */
           virtual ~TMemSlushLayer();
 
-          /* TODO */
           inline size_t GetNumEntries() const;
 
-          /* TODO */
           inline size_t GetTotalSerializedSize() const;
 
-          /* TODO */
           inline TEntryCollection *GetEntryCollection() const;
 
-          /* TODO */
           virtual void FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const;
 
           private:
 
-          /* TODO */
           mutable TEntryCollection::TImpl EntryCollection;
 
-          /* TODO */
           size_t NumEntries;
 
-          /* TODO */
           size_t TotalSerializedSize;
 
-          /* TODO */
           friend class TDurableManager;
 
         };  // TMemSlushLayer
 
-        /* TODO */
         class TDiskOrderedLayer
             : public TDurableLayer {
           NO_COPY(TDiskOrderedLayer);
           public:
 
-          /* TODO */
           virtual TKind GetKind() const {
             return TDurableLayer::DiskOrdered;
           }
 
-          /* TODO */
           TDiskOrderedLayer(TDurableManager *manager, Util::TEngine *engine, size_t gen_id, size_t num_durable);
 
-          /* TODO */
           virtual ~TDiskOrderedLayer();
 
-          /* TODO */
           inline size_t GetGenId() const;
 
-          /* TODO */
           inline size_t GetNumDurable() const;
 
-          /* TODO */
           virtual void FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const;
 
           private:
 
-          /* TODO */
           Util::TEngine *const Engine;
 
-          /* TODO */
           size_t GenId;
 
-          /* TODO */
           size_t NumDurable;
 
         };  // TDiskOrderedLayer
 
-        /* TODO */
         DurableManager::TManager *const Manager;
 
-        /* TODO */
         Fiber::TRunner MergerScheduler;
         Fiber::TRunner WriterScheduler;
         Fiber::TFrame *MergerFrame;
@@ -918,50 +719,37 @@ namespace Orly {
         Fiber::TSingleSem MergerFinishedSem;
         Fiber::TSingleSem WriterFinishedSem;
 
-        /* TODO */
         Util::TEngine *const Engine;
 
-        /* TODO */
         std::mutex DataLock;
         TMemSlushLayer *CurMemoryLayer;
 
-        /* TODO */
         TSequenceNumber SeqNum;
 
-        /* TODO */
         size_t NextSlushGenId;
 
-        /* TODO */
         size_t NextDurableByIdGenId;
 
-        /* TODO */
         size_t TempFileConsolThresh;
 
-        /* TODO */
         std::chrono::milliseconds DurableWriteDelay;
         std::chrono::milliseconds DurableMergeDelay;
 
-        /* TODO */
         bool ShutDown;
         Fiber::TSingleSem SlushSem;
         Fiber::TSingleSem MergeSem;
 
-        /* TODO */
         mutable TMappingCollection::TImpl MappingCollection;
 
-        /* TODO */
         mutable TRemovalCollection::TImpl RemovalCollection;
         Base::TTimerFd LayerCleanerTimer;
 
         std::mutex RemovalLock;
 
-        /* TODO */
         std::mutex MappingLock;
 
-        /* TODO */
         const TNotify *Notify;
 
-        /* TODO */
         friend class Server::TIndyReporter;
         friend class Util::TDiskEngine;
 

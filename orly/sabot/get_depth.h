@@ -28,7 +28,6 @@ namespace Orly {
 
   namespace Sabot {
 
-    /* TODO */
     size_t GetDepth(const Type::TAny &type);
 
   }  // Sabot

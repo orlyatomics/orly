@@ -27,7 +27,6 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       enum DiskPriority {
         RealTime,
         Medium,

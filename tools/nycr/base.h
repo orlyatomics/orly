@@ -27,38 +27,30 @@ namespace Tools {
 
   namespace Nycr {
 
-    /* TODO */
     class TBase;
 
-    /* TODO */
     class TBase
         : public TKind {
       NO_COPY(TBase);
       public:
 
-      /* TODO */
       TBase(const Syntax::TBase *decl);
 
-      /* TODO */
       Symbol::TBase *GetSymbolAsBase() const {
         assert(Symbol);
         return Symbol;
       }
 
-      /* TODO */
       virtual Symbol::TKind *GetSymbolAsKind() const;
 
       private:
 
-      /* TODO */
       virtual bool Build(int pass);
 
-      /* TODO */
       Symbol::TBase *Symbol;
 
     };  // TKind
 
-    /* TODO */
     template <>
     struct TDecl::TInfo<TBase> {
       static const char *Name;

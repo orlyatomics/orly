@@ -60,7 +60,6 @@ namespace InvCon {
         return Collector;
       }
 
-      /* TODO */
       void ForEach(const std::function<bool (const TMember &)> &cb) {
         bool keep_going = true;
         TTypedMembership *prev_membership = 0;
@@ -132,7 +131,6 @@ namespace InvCon {
       /* See accessors. */
       TTypedMembership *FirstMembership, *LastMembership;
 
-      /* TODO */
       std::atomic_flag FirstLock, LastLock;
 
       /* For Collector, FirstMembership, and LastMembership. */
@@ -316,7 +314,6 @@ namespace InvCon {
       /* See accessors. */
       TMembership *PrevMembership, *NextMembership;
 
-      /* TODO */
       std::atomic_flag PrevLock, NextLock;
 
       /* For ~TMembership(), Insert(), Remove(), and Member. */

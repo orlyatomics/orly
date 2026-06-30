@@ -36,7 +36,6 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       enum Source : uint8_t {
         BlockService,
         DataFileArena,
@@ -84,35 +83,26 @@ namespace Orly {
         UpdateWalk,
       };
 
-      /* TODO */
       class TIndyUtilReporter : public TUtilizationReporter {
         NO_COPY(TIndyUtilReporter);
         public:
 
-        /* TODO */
         TIndyUtilReporter() = default;
 
-        /* TODO */
         virtual ~TIndyUtilReporter() {}
 
-        /* TODO */
         virtual void Push(uint8_t /*source*/, TUtilizationReporter::TKind /*kind*/, size_t /*num_bytes*/, DiskPriority /*priority*/);
 
-        /* TODO */
         virtual void Report(std::stringstream &ss);
 
         private:
 
-        /* TODO */
         const char *GetName(uint8_t) const;
 
-        /* TODO */
         Base::TTimer ReportTimer;
 
-        /* TODO */
         static const size_t NumFields = UpdateWalk + 1;
 
-        /* TODO */
         std::atomic<size_t> SyncReadNumByte[NumFields];
         std::atomic<size_t> AsyncReadNumByte[NumFields];
         std::atomic<size_t> WriteNumByte[NumFields];

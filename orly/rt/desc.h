@@ -27,13 +27,11 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO */
     template <typename TVal>
     TVal UnwrapDesc(const TVal &val) {
       return val;
     }
 
-    /* TODO */
     template <typename TVal>
     TVal UnwrapDesc(const Orly::TDesc<TVal> &val) {
       return *val;

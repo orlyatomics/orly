@@ -30,39 +30,29 @@ namespace Orly {
 
   namespace Synth {
 
-    /* TODO */
     class TExprFactory;
 
-    /* TODO */
     class TReadExpr
         : public TExpr {
       NO_COPY(TReadExpr);
       public:
 
-      /* TODO */
       TReadExpr(const TExprFactory *expr_factory, const Package::Syntax::TReadExpr *read_expr);
 
-      /* TODO */
       virtual ~TReadExpr();
 
-      /* TODO */
       virtual Expr::TExpr::TPtr Build() const;
 
-      /* TODO */
       virtual void ForEachInnerScope(const std::function<void (TScope *)> &cb);
 
-      /* TODO */
       virtual void ForEachRef(const std::function<void (TAnyRef &)> &cb);
 
       private:
 
-      /* TODO */
       const Package::Syntax::TReadExpr *ReadExpr;
 
-      /* TODO */
       TExpr *Expr;
 
-      /* TODO */
       TType *Type;
 
     };  // TReadExpr

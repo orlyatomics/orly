@@ -34,38 +34,30 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
         class TRemapObj {
         public:
 
-        /* TODO */
         TRemapObj(Atom::TCore::TArena *arena, Atom::TCore::TOffset old_key, Atom::TCore::TOffset new_key)
             : Arena(arena),
               OldKey(old_key),
               NewKey(new_key) {}
 
-        /* TODO */
         bool operator==(const TRemapObj &that) const {
           return Arena == that.Arena && OldKey == that.OldKey;
         }
 
-        /* TODO */
         bool operator!=(const TRemapObj &that) const {
           return Arena != that.Arena || OldKey != that.OldKey;
         }
 
-        /* TODO */
         size_t GetHash() const {
           return reinterpret_cast<size_t>(Arena) ^ OldKey;
         }
 
-        /* TODO */
         Atom::TCore::TArena *Arena;
 
-        /* TODO */
         Atom::TCore::TOffset OldKey;
 
-        /* TODO */
         Atom::TCore::TOffset NewKey;
 
       };  // TRemapObj
@@ -98,7 +90,6 @@ namespace Orly {
 
     namespace Disk {
 
-      /* TODO */
       class TDataFile {
         NO_COPY(TDataFile);
         public:
@@ -107,11 +98,9 @@ namespace Orly {
         using TDataInStream = TStream<Disk::Util::LogicalBlockSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::PageCheckedBlock, LocalCacheSize>;
         typedef TOutStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize, Disk::Util::PhysicalBlockSize, Disk::Util::PageCheckedBlock> TDataOutStream;
 
-        /* TODO */
         class TUpdateObj {
           public:
 
-          /* TODO */
           TUpdateObj(TSequenceNumber seq_num, const Atom::TCore &metadata, const Atom::TCore &id, size_t offset, bool is_current, const Base::TUuid &index_id)
               : SequenceNumber(seq_num),
                 Metadata(metadata),
@@ -120,32 +109,24 @@ namespace Orly {
                 IsCurrent(is_current),
                 IndexId(index_id) {}
 
-          /* TODO */
           bool operator<(const TUpdateObj &that) const {
             return SequenceNumber < that.SequenceNumber;
           }
 
-          /* TODO */
           TSequenceNumber SequenceNumber;
 
-          /* TODO */
           Atom::TCore Metadata;
 
-          /* TODO */
           Atom::TCore Id;
 
-          /* TODO */
           size_t Offset;
 
-          /* TODO */
           bool IsCurrent;
 
-          /* TODO */
           Base::TUuid IndexId;
 
         };  // TUpdateObj
 
-        /* TODO */
         typedef Disk::Util::TIndexManager<TUpdateObj, Util::SortBufSize, Util::SortBufMinParallelSize> TUpdateCollector;
         typedef std::unordered_set<TRemapObj> TRemapIndex;
         typedef Indy::Util::TBlockVec TBlockVec;
@@ -178,7 +159,6 @@ namespace Orly {
         */
         //static const size_t NumMetaFields = 10UL;
 
-        /* TODO */
         TDataFile(Util::TEngine *engine,
                   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                   TMemoryLayer *memory_layer,
@@ -188,64 +168,48 @@ namespace Orly {
                   TSequenceNumber release_up_to,
                   DiskPriority priority);
 
-        /* TODO */
         inline size_t GetNumKeys() const {
           return NumKeys;
         }
 
-        /* TODO */
         inline TSequenceNumber GetLowestSequence() const {
           return LowestSeq;
         }
 
-        /* TODO */
         inline TSequenceNumber GetHighestSequence() const {
           return HighestSeq;
         }
 
         private:
 
-        /* TODO */
         Util::TEngine *Engine;
 
-        /* TODO */
         Disk::Util::TVolume::TDesc::TStorageSpeed StorageSpeed;
 
-        /* TODO */
         DiskPriority Priority;
 
-        /* TODO */
         size_t NumUpdates;
 
-        /* TODO */
         size_t MainArenaByteOffset;
         TRemapIndex MainArenaRemapIndex;
         TTypeBoundaryOffsetVec MainArenaTypeBoundaryOffsetVec;
 
-        /* TODO */
         size_t NumKeys;
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
 
-        /* TODO */
         size_t TempFileConsolThresh;
 
-        /* TODO */
         size_t StartingBlockId;
 
-        /* TODO */
         size_t StartingBlockOffset;
 
-        /* TODO */
         size_t FileLength;
 
-        /* TODO */
         TBlockVec BlockVec;
 
-        /* TODO */
         TUpdateCollector UpdateCollector;
 
-        /* TODO */
         #ifndef NDEBUG
         std::unordered_set<size_t> WrittenBlockSet;
         #endif
