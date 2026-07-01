@@ -2138,11 +2138,12 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
   }
 
   // Callback for just before we make the packages installed / available for use.
-  auto pre_install_cb = [this](Package::TLoaded::TPtr pkg_ptr, bool is_new_version) -> void {
-    //TODO: This is broken badly if we install two independently-generated same-version packages.
-    if (!is_new_version) {
-      return;
-    }
+  auto pre_install_cb = [this](Package::TLoaded::TPtr pkg_ptr, bool /*is_new_version*/) -> void {
+    /* The package manager only invokes this for a genuinely new or upgraded
+       version: a same-version reinstall is a no-op short-circuited in
+       TManager::Load before this callback runs, so is_new_version is always
+       true here. (It once guarded against re-registering indexes for a repeated
+       version; that case can no longer reach this code.) */
     std::lock_guard<std::mutex> lock(IndexMapMutex);
     const auto &type_by_index_map = pkg_ptr->GetIndexByIndexId();
     for (const auto &addr_pair : type_by_index_map) {
