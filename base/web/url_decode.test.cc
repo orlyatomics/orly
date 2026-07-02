@@ -54,4 +54,29 @@ FIXTURE(Empty) {
   EXPECT_EQ(result_buf, "{\"likes\":[],\"userref\":\"test2\",\"content\":\"aaa\",\"cid\":1}");
 }
 
-//TODO(#334): Test for error cases
+FIXTURE(PlusIsSpace) {
+  string result_buf;
+  UrlDecode(AsPiece("a+b+c"), result_buf);
+  EXPECT_EQ(result_buf, "a b c");
+}
+
+FIXTURE(ErrorCases) {
+  /* A '%' escape truncated by end of input. */
+  EXPECT_THROW(TUrlDecodeError, []() {
+    string result_buf;
+    UrlDecode(AsPiece("foo%"), result_buf);
+  });
+  EXPECT_THROW(TUrlDecodeError, []() {
+    string result_buf;
+    UrlDecode(AsPiece("foo%2"), result_buf);
+  });
+  /* A non-hex character in either escape position. */
+  EXPECT_THROW(TUrlDecodeError, []() {
+    string result_buf;
+    UrlDecode(AsPiece("foo%G2bar"), result_buf);
+  });
+  EXPECT_THROW(TUrlDecodeError, []() {
+    string result_buf;
+    UrlDecode(AsPiece("foo%2Gbar"), result_buf);
+  });
+}

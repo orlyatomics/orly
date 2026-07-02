@@ -182,18 +182,6 @@ namespace Base {
       return *this;
     }
 
-    /* Parse bool  (see jhm.py fod valid methods of expression) */
-    bool TryReadBool(bool &output);
-    void ReadBool(bool &output);
-
-    /* Parse float */
-    bool TryReadFloat(float &output, bool sign_required=false);
-    void ReadFloat(float &output, bool sign_required=false);
-
-    /* Parse double */
-    bool TryReadDouble(double &output, bool sign_required=false);
-    void ReadDouble(double &output, bool sign_required=false);
-
     operator bool() const {
       return Working;
     }
