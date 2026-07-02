@@ -193,18 +193,27 @@ class TJhm : public TCmd {
     // Break the cyclic dependency by registering these back.
     env.SetFuncs(bind(&TWorkFinder::IsBuildable, &work_finder, _1), bind(&TWorkFinder::IsFileDone, &work_finder, _1));
 
-    // TODO(#333): Gather exceptions here, rather than letting first one fly.
+    /* Resolve every target before failing, so one bad target name doesn't
+       hide the rest. */
     TSet<TFile *> target_files;
+    vector<string> target_errors;
+    auto add_target = [&](const string &name) {
+      try {
+        InsertOrFail(target_files, FindFile(cwd, env, work_finder, name));
+      } catch (const exception &ex) {
+        target_errors.emplace_back(ex.what());
+      }
+    };
 
     // Either build the explicitly specified targets, or the default targets
     if (!Targets.empty()) {
       for(const auto &target: Targets) {
-        InsertOrFail(target_files, FindFile(cwd, env, work_finder, target));
+        add_target(target);
       }
     } else {
       // Add the default targets
       for(const auto &target: env.GetConfig().Read<vector<string>>({"targets"})) {
-        InsertOrFail(target_files, FindFile(cwd, env, work_finder, '/' + target));
+        add_target('/' + target);
       }
 
       // Add the tests if we're supposed to by default
@@ -243,6 +252,11 @@ class TJhm : public TCmd {
           target_files.insert(tests.begin(), tests.end());
         }
       }
+    }
+
+    if (!target_errors.empty()) {
+      THROW_ERROR(runtime_error) << "failed to resolve " << target_errors.size()
+                                 << " target(s): " << Join(target_errors, "; ");
     }
 
     // Add all target files as needed
