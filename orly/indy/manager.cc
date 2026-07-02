@@ -869,8 +869,11 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), durable_ttl);
               ++durable_iter;
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), serialized_obj);
-              Durable::TSem sem;
-              Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, &sem);
+              /* Fire-and-forget (null sem): the replication stream must not block per object on
+                 the durable flush cadence.  The old stack sem here was never popped, which only
+                 worked while Save() signalled synchronously before returning; with the sem now
+                 pushed after the disk write (#277) it would be a use-after-free. */
+              Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, nullptr);
             }
           }
           /* Store the transaction changes next */ {
@@ -951,8 +954,11 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), durable_ttl);
               ++durable_iter;
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), serialized_obj);
-              Durable::TSem sem;
-              Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, &sem);
+              /* Fire-and-forget (null sem): the replication stream must not block per object on
+                 the durable flush cadence.  The old stack sem here was never popped, which only
+                 worked while Save() signalled synchronously before returning; with the sem now
+                 pushed after the disk write (#277) it would be a use-after-free. */
+              Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, nullptr);
             }
           }
           /* Apply the transactions next */
