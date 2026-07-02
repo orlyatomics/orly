@@ -17,15 +17,16 @@
 set -e
 
 CC=g++
-# Bootstrap stays on -std=c++17. Only two binaries are built here --
-# tools/jhm and tools/make_dep_file -- and neither uses any post-C++17
-# language feature. The main build (root.jhm) runs -std=c++23. Keeping
-# bootstrap on the older standard means a contributor can build the
-# bootstrap binaries even on a host with an older gcc that doesn't fully
-# support C++23, which lowers the barrier to running jhm at all.
+# Bootstrap stays one standard behind the main build (root.jhm runs
+# -std=c++23) so a contributor with an older gcc can still build the two
+# bootstrap binaries -- tools/jhm and tools/make_dep_file -- and run jhm
+# at all. C++20 is the current floor (std::string::ends_with in
+# make_dep_file); any gcc >= 10 suffices. If you use a newer language
+# feature in these sources, bump this flag -- a mismatch only surfaces in
+# from-scratch builds like CI's, not in incremental ones.
 common_flags=(
   -O3 -DNDEBUG -flto=auto
-  -std=c++17
+  -std=c++20
   -Wall -Werror -Wextra -Wold-style-cast
   -Wno-unused -Wno-unused-parameter -Wno-unused-result
   -Wno-deprecated-declarations -Wno-deprecated -Wno-deprecated-copy
