@@ -29,6 +29,7 @@
 #include <memory>
 #include <unordered_map>
 
+#include <base/hash.h>
 #include <orly/code_gen/cpp_printer.h>
 #include <orly/code_gen/package_base.h>
 #include <orly/error.h>
@@ -64,8 +65,11 @@ namespace std {
     typedef Orly::CodeGen::TMutablePart argument_type;
 
     result_type operator()(const argument_type &that) const {
-      //TODO(#295): Use a better hash
-      return std::hash<Orly::CodeGen::TPtrC<Orly::CodeGen::TInline>>()(that.Mutable) ^ that.Index;
+      /* Boost-style mix instead of the old xor-with-small-int, which barely
+         perturbed the pointer hash's low bits (#295). */
+      return Base::CombineHashes(
+          std::hash<Orly::CodeGen::TPtrC<Orly::CodeGen::TInline>>()(that.Mutable),
+          std::hash<uint32_t>()(that.Index));
     }
   }; //hash<Orly::CodeGen::TMutablePart>
 }

@@ -101,6 +101,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
       << Eol
       << "#include <cassert>" << Eol
       << Eol
+      << "#include <base/hash.h>" << Eol  // CombineHashes in the generated GetHash (#295)
       << "#include <orly/rt/tuple.h>" << Eol // NOTE: This is only needed when the object contains an addr.
       << "#include <orly/rt/containers.h>" << Eol
       << "#include <orly/rt/obj.h>" << Eol
@@ -206,18 +207,13 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
         /* helper functions (hash, equality, getters, etc.) */
             << "size_t GetHash() const {" << Eol
             << "  assert(this);" << Eol
-            << "  return  ";
-        /* TODO(#295): Better hash function. */
-        if(obj_core_type->GetElems().empty()) {
-          out << "0";
+            << "  size_t hash = 0;" << Eol;
+        /* Fold the member hashes through CombineHashes: the old `^` join
+           meant two equal members cancelled to zero (#295). */
+        for (const auto &it : obj_core_type->GetElems()) {
+          out << "  hash = Base::CombineHashes(hash, std::hash<" << it.second << ">()(V" << it.first << "));" << Eol;
         }
-        out << Base::Join(obj_core_type->GetElems(),
-                          " ^ ",
-                          [](TCppPrinter &out,
-                             const TObj::TElems::value_type &it) {
-                            out << "std::hash<" << it.second << ">()(V" << it.first << ')';
-                          })
-            << ';' << Eol
+        out << "  return hash;" << Eol
             << '}' << Eol
             << Eol
             << (Type::HasOptional(obj_type) ? "TOpt<bool>" : "bool") << " EqEq(const " << obj_class_name
