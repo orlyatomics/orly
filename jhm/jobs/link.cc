@@ -49,10 +49,7 @@ TJobProducer TLink::GetProducer() {
     "link",
     {{""}},
     GetInputName,
-    //TODO(#344): Should be able to eliminate the lambda wrapper here...
-    [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
-      return unique_ptr<TJob>(new TLink(env, in_file));
-    }
+    TLink::New
   };
 }
 

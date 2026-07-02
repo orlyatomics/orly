@@ -39,6 +39,12 @@ namespace Jhm {
       private:
       TNycrLang(TEnv &env, TFile *input);
 
+      /* The TJobProducer::MakeJob callback (GetProducer passes it; no
+         per-producer lambda needed). */
+      static std::unique_ptr<TJob> New(TEnv &env, TFile *in_file) {
+        return std::unique_ptr<TJob>(new TNycrLang(env, in_file));
+      }
+
       TEnv &Env;
     };
 
@@ -55,6 +61,12 @@ namespace Jhm {
 
       private:
       TNycr(TEnv &env, TFile *input);
+
+      /* The TJobProducer::MakeJob callback (GetProducer passes it; no
+         per-producer lambda needed). */
+      static std::unique_ptr<TJob> New(TEnv &env, TFile *in_file) {
+        return std::unique_ptr<TJob>(new TNycr(env, in_file));
+      }
 
       TEnv &Env;
       TFile *Need;

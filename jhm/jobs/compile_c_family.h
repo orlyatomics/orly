@@ -43,6 +43,13 @@ namespace Jhm {
       private:
       TCompileCFamily(TEnv &env, TFile *input, bool is_cpp);
 
+      /* The TJobProducer::MakeJob callback, one instantiation per
+         producer (GetCProducer / GetCppProducer). */
+      template <bool IsCpp>
+      static std::unique_ptr<TJob> New(TEnv &env, TFile *in_file) {
+        return std::unique_ptr<TJob>(new TCompileCFamily(env, in_file, IsCpp));
+      }
+
       TEnv &Env;
       // NOTE: We could make IsCpp be constant / CompileCFamily be templated on it
       // But that results in more ug than the tiny perf benefit is worth.

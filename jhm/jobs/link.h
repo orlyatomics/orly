@@ -39,6 +39,12 @@ namespace Jhm {
       private:
       TLink(TEnv &env, TFile *input);
 
+      /* The TJobProducer::MakeJob callback (GetProducer passes it; no
+         per-producer lambda needed). */
+      static std::unique_ptr<TJob> New(TEnv &env, TFile *in_file) {
+        return std::unique_ptr<TJob>(new TLink(env, in_file));
+      }
+
       TEnv &Env;
       std::unordered_map<TFile*, TFile*> NeededDepToObj;
       TSet<TFile*> AntiNeeds;
