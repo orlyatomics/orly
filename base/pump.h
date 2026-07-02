@@ -78,10 +78,7 @@
 
 namespace Base {
 
-  //TODO: this should be pulled out into a generic "pool of buffers" implementation
-  //TODO: Can we use <strm/> for this (Basically it is an uncapped I/O buffer inside a stream)
   //NOTE: We never reclaim any blocks currently.
-  //TODO: Should really be an invasive containment type thing between pools and blocks so blocks can't get lost.
   template<uint64_t BlockSize>
   class TGrowingPool {
     NO_COPY(TGrowingPool);
@@ -142,7 +139,6 @@ namespace Base {
       }
     }
 
-    //TODO: Figure out some cleaner way to make all of the ways you can wait on a condition_variable accessible.
     /* Wait for the pump to become idle, then return true.
        If the timeout is reached first, return false. */
     template <typename TRep, typename TPeriod>

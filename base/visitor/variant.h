@@ -107,7 +107,6 @@
 
 namespace Visitor {
 
-  //TODO: This belongs somewhere in <mpl/*>
   template <bool B, typename T>
   using Require = typename std::enable_if<B, T>::type;
 

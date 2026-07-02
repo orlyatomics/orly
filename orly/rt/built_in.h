@@ -56,7 +56,6 @@ namespace Orly {
 
     inline void Assert(const char *msg, bool result) {
       if (!result) {
-        //TODO: probably want an option for logging asserts.
         throw TAssertionError(HERE, msg);
       }
     }

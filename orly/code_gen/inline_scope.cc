@@ -36,7 +36,6 @@ void TInlineScope::WriteExpr(TCppPrinter &out) const {
   /* Indent */ {
     TIndent indent(out);
 
-    //TODO: The whole "WriteStart followed by writing out the body" should probably live in a CodeScope.
     Scope->WriteStart(out);
     out << "return " << Body << ';' << Eol;
   }

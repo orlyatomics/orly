@@ -99,7 +99,6 @@ int main(int argc, char *argv[]) {
     #else
     const vector<string> jhm_cmd = {"jhm","-crelease","driver"};
     #endif
-    //TODO: A better joining of the strings
     std::cout << "running [" << Base::Join(jhm_cmd, ' ') << "]" << std::endl;
     auto subprocess = Base::TSubprocess::New(pump, jhm_cmd);
     auto status = subprocess->Wait();

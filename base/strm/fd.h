@@ -94,7 +94,6 @@ namespace Strm {
       }
 
       if (start) {
-        //TODO: We don't check here that the client has given us back the workspace before we give it to the client again
         assert(limit);
         *start = OutBuffer;
         *limit = OutBuffer + MaxOutSize;
@@ -102,15 +101,13 @@ namespace Strm {
     }
 
     Base::TFd Fd;
-    /* Buffer of data read from Fd
-       TODO: Switch to a buffer class which manages start/end. */
+    /* Buffer of data read from Fd */
     uint8_t InBuffer[MaxInSize];
 
     /* End position inside the buffer */
     uint8_t *InLimit = nullptr;
 
-    /* Workspace to write to Fd
-       TODO: Switch to a buffer class which manages start/end. */
+    /* Workspace to write to Fd */
     uint8_t OutBuffer[MaxOutSize];
 
     uint8_t *OutLimit = nullptr;

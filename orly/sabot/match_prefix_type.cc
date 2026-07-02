@@ -26,7 +26,6 @@ class TMatchPrefixTypeVisitor final
     : public TTypeDoubleVisitor {
   public:
 
-  /* TODO. */
   TMatchPrefixTypeVisitor(TMatchResult &out)
       : Result(out) {
   }

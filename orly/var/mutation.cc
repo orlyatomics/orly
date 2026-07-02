@@ -31,7 +31,6 @@ TPtr<TObjChange> TObjChange::New(string key, const TPtr<TChange> &change) {
   return TPtr<TObjChange>(new TObjChange({{key, change}}));
 }
 
-/* TODO: The Apply function should be able to be moved into TPartialChange. */
 void TObjChange::Apply(TVar &var) const {
    /*
    std::cout << "TObjChange From [";

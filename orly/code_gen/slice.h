@@ -27,7 +27,6 @@ namespace Orly {
 
   namespace CodeGen {
 
-    //TODO: Seems to be moderately similar to range.
     class TSlice : public TInline {
       NO_COPY(TSlice);
 

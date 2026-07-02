@@ -136,7 +136,6 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
       /* Class body */ {
         TIndent indent(out);
         out << "public:" << Eol;
-        /* TODO: It would be nice not to have a default ctor, but dictionary and set mandate it. */
         if(!obj_core_type->GetElems().empty()) {
           out << obj_class_name << "() {}" << Eol
               << Eol;
@@ -162,7 +161,6 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
                             // Two lower case v's, because there are some C++
                             // keywords that start with one lower case 'v', and
                             // those should still be valid object member names.
-                            // TODO: This manual prefixing ugly.
                             out << "const " << it.second <<" &vv" << it.first;
                           })
             << ")";
@@ -177,7 +175,6 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
                         })
           << " {}" << Eol
 
-        /* TODO: Move Ctor? */
             << obj_class_name << "(const " << obj_class_name << " &that)";
         if(!obj_core_type->GetElems().empty()) {
           out << " : ";
@@ -207,7 +204,6 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
             << Eol
         /* TODO: Should really write a generic object member function printer */
         /* helper functions (hash, equality, getters, etc.) */
-        //TODO: Meta
             << "size_t GetHash() const {" << Eol
             << "  assert(this);" << Eol
             << "  return  ";
@@ -490,7 +486,7 @@ void Orly::CodeGen::GenObjInclude(const Type::TType &obj_type, TCppPrinter &out)
     }
   }
 
-  //TODO: Assert that obj_type is indeed an object type
+  assert(obj_type.Is<Type::TObj>());
   out << "#include <orly/rt/objects/" << obj_type.GetMangledName() << ".h>" << Eol;
 
 }

@@ -33,7 +33,6 @@ void TTopFunc::WriteDecl(TCppPrinter &out) const {
   out << GetReturnType() << ' ';
   WriteCcName(out);
   out << "(Orly::Package::TContext &ctx";
-  //TODO: The HasArgs here feels sort of hacky...
   if (HasArgs()) {
     out << ", ";
   }

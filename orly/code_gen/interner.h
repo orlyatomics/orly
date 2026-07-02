@@ -55,7 +55,6 @@ namespace Orly {
 
       //Note: TInterner is constructed by and exclusively owned by TCodeScope.
 
-      //TODO: It would be nice to remove these trivial wrappers.
       template <typename... TArgs>
       TBasicCtor<TAddrContainer>::TPtr GetAddrCtor(TArgs &&... args) {
         return Get(AddrInterner, std::forward<TArgs>(args)...);
@@ -153,7 +152,6 @@ namespace Orly {
       }
 
       private:
-      /* TODO: This isn't as simple and clean as I would like it to be, but should be usable. */
       template <typename TObj_, typename... TArgs>
       class TStorage {
         NO_COPY(TStorage);
@@ -164,7 +162,6 @@ namespace Orly {
         typedef std::shared_ptr<const TObj> TPtr;
         typedef std::weak_ptr<const TObj> TWeak;
 
-        //TODO: The redundant storage of a scope pointer in each holder is less than ideal.
         TStorage() = default;
 
         std::unordered_map<TKey, std::weak_ptr<const TObj>> ObjByKey;
@@ -201,8 +198,6 @@ namespace Orly {
 
       TCodeScope *Scope;
 
-      //TODO: This is not exactly efficient. Oh well.
-      //TODO: The return type should not be part of the interner. It is defined by the two parameters.
       TStorage<TBasicCtor<TAddrContainer>, const L0::TPackage *, Type::TType, TAddrContainer> AddrInterner;
       TStorage<TAddrMember, const L0::TPackage *, Type::TType, TInline::TPtr, size_t> AddrMemberInterner;
       TStorage<TBinary, const L0::TPackage *, Type::TType, TBinary::TOp, TInline::TPtr, TInline::TPtr> BinaryInterner;

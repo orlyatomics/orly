@@ -113,8 +113,6 @@ vector<string> TCompileCFamily::GetCmd() {
   vector<string> cmd{IsCpp ? "g++" : "gcc", "-o" + GetSoleOutput()->GetPath(), GetInput()->GetPath(), "-c"};
 
   /* Add standard arguments */ {
-    //TODO: Really need an insertion move here...
-    //TODO: Trivial vector append (Can we add an operator+ for rvalue rhs?)
     auto std_args = GetStandardArgs(GetInput(), IsCpp, Env);
     for(auto &arg: std_args) {
       cmd.push_back(move(arg));
@@ -177,13 +175,9 @@ TTimestamp TCompileCFamily::GetCmdTimestamp() const {
 bool TCompileCFamily::IsComplete() {
 
   // Calculate the files which need to be linked against to make a binary with this file.
-  // TODO: capture the negative (Does not exist / unproducable) .o information which is inherent in the final list as
-  //       when those files come into existence, we need to recompute the list.
 
-  // TODO: We needlessly jump to strings here. Really should be able to stash away TFile * within a TFile's config.
   TJson::TArray filtered_includes;
   for (const string &include : Need->GetConfig().Read<vector<string>>({"c++","include"})) {
-    // TODO: We really only need the TRelPaths here, not jumping all the way to the file objects.
     TFile *include_file = Env.TryGetFileFromPath(include);
     if (include_file) {
       filtered_includes.push_back(AsStr(include_file->GetPath()));

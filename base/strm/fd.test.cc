@@ -34,7 +34,6 @@ using namespace Strm;
 const char *filename = "/tmp/orly_strm_fd.test_tmp_file";
 
 FIXTURE(Unidirectional) {
-  //TODO: Use one of the temp file things from <base/tmp*>
   constexpr auto filename_len = 32;
   assert(filename_len == strlen(filename) + 1);
 

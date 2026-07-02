@@ -67,7 +67,6 @@ TScheduler::TScheduler(const TPolicy &policy)
     : TScheduler(policy, std::nullopt) {}
 
 TScheduler::~TScheduler() {
-  //TODO: This shutdown should be seperate from a global shutdown.
   ShutDown();
   Shutdown(milliseconds(0));
 }

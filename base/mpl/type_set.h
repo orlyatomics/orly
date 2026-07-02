@@ -31,7 +31,6 @@ namespace Mpl {
   template <typename TList>
   struct TTypeSetImpl;
 
-  /* TODO. */
   template <typename... TElems>
   struct TTypeSetImpl<TTypeList<TElems...>> {
 

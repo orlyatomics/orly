@@ -2,7 +2,6 @@
 
    Maintains a line of text which states the status
 
-   TODO: Switch to a library someone else has already written for this (linenoise?)
 
    Copyright 2010-2026 Atomic Kismet Company
 

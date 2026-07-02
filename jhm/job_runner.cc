@@ -107,8 +107,6 @@ void TJobRunner::ProcessQueue() {
             if (PrintCmd) {
               // NOTE: We use '+' to make a new string (effectively as a back buffer), then a single operation to write it out
               // This makes it so that the line never gets broken / split / etc. because of threading.
-              //TODO: Join in a way that makes the difference between ' ' and passing the arguments
-              // as an array more obvious.
               cout << AsStr(Join(cmd, ' ')) + '\n';
             }
 

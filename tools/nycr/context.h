@@ -31,7 +31,6 @@
 namespace Tools {
   namespace Nycr {
 
-    // TODO: Stable insertion sort the errors so users don't have to manually call SortErrors?
     /* A context which aggregates errors which occur during translation / construction. */
     class TContext {
       public:

@@ -378,7 +378,6 @@ void TManager::RunMergeDisk() {
       Fiber::TFiberLock::TLock lock(MergeDiskEpollLock);
       if (should_sleep) {
         SleepUntil(deadline);
-        /* TODO: we need a fiber way to sleep instead of doing nanosleep. doesn't matter so much in this case since it's a dedicated runner. */
       }
       MergeDiskSem.Pop();
     }

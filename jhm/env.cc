@@ -158,7 +158,6 @@ TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, con
     THROW_ERROR(runtime_error) << "No config file found for config " << quoted(config)
                                << ". At least one config looked for must exist";
   }
-  //TODO: Assert the config stack contains at least one config
   /*
   // Load the configuation
   // TODO: Gracefully degrade on removal of a config.

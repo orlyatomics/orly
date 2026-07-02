@@ -48,14 +48,14 @@ namespace Orly {
       class TVisitor {
         public:
 
-        virtual ~TVisitor() {} // TODO: = default;
+        virtual ~TVisitor() = default;
 
         virtual void operator()(const TGivenParamDef *that) const = 0;
         virtual void operator()(const TResultDef *that) const = 0;
 
         protected:
 
-        TVisitor() {} // TODO: = default;
+        TVisitor() = default;
 
       };  // TVisitor
 

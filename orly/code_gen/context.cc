@@ -22,7 +22,6 @@
 #include <orly/code_gen/function.h>
 #include <orly/code_gen/scope.h>
 
-//TODO: Dependency inject scope and function?
 
 using namespace Orly::CodeGen;
 

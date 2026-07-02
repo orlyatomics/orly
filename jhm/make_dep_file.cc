@@ -37,7 +37,6 @@ ostream &operator<<(ostream &strm, const vector<string> &that) {
   return strm << Base::Join(that, ' ');
 }
 
-// TODO: mpark could probably do this cleaner.
 vector<string> ToVecStr(int argc, const char *argv[], int skip) {
   assert(argc >= skip);
   vector<string> ret(argc - skip);
@@ -60,7 +59,6 @@ vector<string> GetCDeps(const string &filename, bool is_cpp, const vector<string
   if (ret != 0) {
     EchoOutput(subproc->TakeStdOutFromChild());
     EchoOutput(subproc->TakeStdErrFromChild());
-    //TODO: Join the arguments some less-mistrewn way than ' '
     THROW_ERROR(runtime_error) << "Non-zero (" << ret << ") exit from command " << quoted(AsStr(Join(cmd,' ')));
   }
 

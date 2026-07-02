@@ -75,7 +75,6 @@ namespace Orly {
       }
 
       size_t GetHash() const {
-        //TODO: Write a better hash function.
         return std::hash<TVal>()(Val) ^ std::hash<Rt::TOpt<TAddr>>()(Addr);
       }
 

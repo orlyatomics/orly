@@ -105,7 +105,6 @@ class TPump::TPipe {
             // Do-nothing. We just didn't write data.
           } else {
             // We are definitely done if we can't write any more (Writing returned an unknown error).
-              //TODO: This should purely close out the output pipe. Input pipe should be left unmolested.
               // So that we avoid generating SIGPIPE
             StopReading();
             StopWriting();
@@ -196,9 +195,6 @@ void TPump::NewPipe(TFd &read, TFd &write) {
   TPipe *pipe = new TPipe(this, read, write);
   Pipes.insert(pipe);
 
-  // TODO: This API should really be
-  //   pump->Epoll.AddRead(pipe.get(), pipe->ReadFd, &TPipe::Service);
-  //   Where the first item is the pipe, and the second is the identifier, and the last is the service func.
   JoinEpoll(pipe->ReadFd, EPOLLIN, pipe);
 }
 
@@ -215,13 +211,11 @@ TPump::~TPump() {
 
 bool TPump::IsIdle() const {
 
-  //TODO: Make a better guaranteed atomic check for whether or not we are idle
   return Pipes.empty();
 }
 
 void TPump::BackgroundMain() {
 
-  // TODO: Block all signals
 
   epoll_event events[MaxEventCount];
 

@@ -55,7 +55,6 @@ bool TWorkFinder::AddNeededFile(TFile *file, TJob *job) {
   // Queue the producer job as necessary to finish.
   bool res = Queue(producer);
   if (res && job) {
-    //TODO: Lots of copies (Although they're tiny)
     ToFinish.emplace(producer, job);
   }
   return res;
@@ -83,11 +82,9 @@ void TWorkFinder::ProcessReady() {
       }
     }
     if (needed) {
-      // TODO: Lots of copies (Although they're tiny)
       InsertOrFail(Waiting, make_pair(job, needed));
     } else {
       // If we're about to run the job, ensure the output directories for it exist
-      // TODO: Move this to a more logical place.
       for (TFile *out : job->GetOutput()) {
         EnsureDirExists(AsStr(out->GetPath()).c_str(), true);
       }
@@ -295,7 +292,6 @@ bool TWorkFinder::IsDone(TJob *job) {
   return Contains(Finished, job);
 }
 
-//TODO: Lots of generic helper functions (Esp. dealing with nanosecond timestamps), should be factored into library.
 template<typename TVal>
 auto GrabOne(const std::unordered_set<TVal> &container) {
   assert(container.size() > 0);
@@ -434,8 +430,6 @@ void TWorkFinder::CacheCheck(TJob *job) {
     // Make sure every output is older than the input
     // Also ensure it's basic build info matches.
     for (const string &output_filename : output_filename_list) {
-      // TODO: If all the job's outputs are known, iterate over that set rather than trying to infer the filenames from
-      // the string representations (Saves us a lot of hassle on execz`utables)
       TFile *output = TryGetOutputFileFromPath(output_filename);
       if (!output) {
         return;
@@ -449,7 +443,6 @@ void TWorkFinder::CacheCheck(TJob *job) {
 
       // NOTE: Technically all build info should match exactly. But this should be good enough (and faster).
       // Check the ideal out matches the job
-      // TODO: Cache the AsStr.
       TConfig output_cache;
       output_cache.LoadComputed(GetCacheFilename(output));
       if (output_cache.Read<string>({"build_info","job","name"}) != job->GetName() ||
@@ -484,7 +477,6 @@ void TWorkFinder::CacheCheck(TJob *job) {
   // Mark job as finished.
   InsertOrFail(Finished, job);
   // Ensure sure job is part of 'All' (all jobs in Finished must be in All).
-  // TODO: Cache finished jobs shouldn't need to be in all (This means that all != finished + ready + waiting);
   All.insert(job);
 }
 

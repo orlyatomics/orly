@@ -51,7 +51,6 @@ namespace Orly {
 
     class TTypeCzar;
 
-    //TODO: This is a candidate for invasive containment...
     template <typename TFinal, typename... TArgs>
     class TInternedType : public TType::TImpl {
       private:
@@ -62,7 +61,6 @@ namespace Orly {
       typedef std::tuple<TArgs...> TKey;
 
       public:
-      /* TODO: Sort of ug that people can see this */
       typedef std::unordered_map<TKey, TWeak> TTypeByKey;
 
       void Accept(const TType::TVisitor &visitor) const {
@@ -110,8 +108,6 @@ namespace Orly {
 
       bool CanDeleteImpl() const {
 
-        //TODO: Would be nice to use the weak pointer we get from TType::TImpl's shared_from_this here.
-
         /* quick fix to get indy running :s */
         auto res = TypeByKey->find(Key);
         return res != TypeByKey->end() ? res->second.expired() : true;
@@ -150,7 +146,6 @@ namespace Orly {
 
       static TTypeByKey *TypeByKey;
 
-      // TODO: That we store the key both here and in the map is less than ideal.
       TKey Key;
 
       friend class ::Orly::Type::TTypeCzar;
@@ -211,7 +206,6 @@ namespace Orly {
 
       protected:
 
-      //TODO: Perfect forwarding variant.
       TUnaryType(const Type::TType &elem) : TInternedType<TFinal, Type::TType>(elem) {}
 
     };  // TUnaryType<TFinal>

@@ -144,7 +144,6 @@ namespace Orly {
         return reinterpret_cast<size_t>(Impl.get());
       }
 
-      /* TODO: Write a demangler */
       /* Mangling rules
          NOTES:
            - All compound types have a capital letter.

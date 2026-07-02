@@ -2465,7 +2465,6 @@ class TMergeDataFileImpl {
     TKey ExampleKey;
 
     Atom::TCore::TOffset RemapKey(Atom::TCore::TOffset offset) {
-      /* TODO: should we keep the old offset to make sure we've got the right one? */
       const TRemapResolvedObj &obj = **ResolvedKeySorterCursorVec[MyPos];
       assert(offset == obj.OldKey);
       Atom::TCore::TOffset ret = obj.NewKey;
@@ -2475,7 +2474,6 @@ class TMergeDataFileImpl {
     }
 
     Atom::TCore::TOffset RemapVal(Atom::TCore::TOffset offset) {
-      /* TODO: should we keep the old offset to make sure we've got the right one? */
       const TRemapResolvedObj &obj = **ResolvedValSorterCursorVec[MyPos];
       assert(offset == obj.OldKey);
       Atom::TCore::TOffset ret = obj.NewKey;

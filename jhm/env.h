@@ -73,7 +73,6 @@ namespace Jhm {
 
     struct TJobDescHash {
       size_t operator()(const TJobDesc &that) const noexcept {
-        // TODO: Write a better hash...
         return size_t(that.f) + size_t(that.job_name);
       }
 
@@ -89,14 +88,12 @@ namespace Jhm {
     std::unordered_set<TJob *> GetPotentialJobs(TEnv &env, TFile *out_file);
 
     private:
-    //TODO: Make a better hash function.
     TInterner<TJobDesc, TJob, TJobDescHash> Jobs;
 
     // NOTE: This is used purely for caching the reverse-lookups used by  GetPotentialJobs.
     // Entry in this map simply means a job exists, not that it's possible to get it's input.
     std::unordered_multimap<TFile *, TJob *> JobsByOutput;
 
-    // TODO: We iterate over this a lot. In practice we go over a lot more than needed
     // Perf test using more concise data structures where we don't scan so much needlessly vs. this "one simple list" we
     // always iterate over all of.
     std::vector<TJobProducer> JobProducers;

@@ -101,10 +101,8 @@ TJson ApplyDelta(const TJson &base, TJson &&delta) {
 
 }
 
-//TODO: Switch to vector<string> for name always, rather than splitting apart?
 bool TConfig::TryGetEntry(const initializer_list<string> &name, TJson &out) const {
   // For each config, starting at the top of the stack. If the config contains the entry, use it.
-  // TODO: Add delta support
   TJson ret;
   bool has_delta = false;
   for(auto &config: Config) {
@@ -119,7 +117,6 @@ bool TConfig::TryGetEntry(const initializer_list<string> &name, TJson &out) cons
         }
         // Apply the delta to the given object
         ret = ApplyDelta(*val, move(ret));
-        // TODO: Cope with the delta
       } else {
         // Raw assign. End of stack / return.
         out = *val;

@@ -53,7 +53,6 @@ namespace Orly {
       void WriteWrapperFunction(TCppPrinter &out) const;
 
       //Individual tests (Which may optionally have names, always have pos ranges).
-      /* TODO: Pos, Name should actually be a one or the other type speicifcation. */
       TId<TIdKind::Test> Id;
       std::string Name;
       TPosRange Pos;
@@ -97,7 +96,6 @@ namespace Orly {
       NO_COPY(TTest);
       public:
 
-      /* TODO: Move to a codegen specific with. */
       TTest(const L0::TPackage *package, const Symbol::Test::TTest::TPtr &symbol, TId<TIdKind::Test>::TGen &id_gen);
 
       const TId<TIdKind::Test> &GetId() const;

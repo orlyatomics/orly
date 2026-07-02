@@ -95,7 +95,6 @@ FIXTURE(Mutable) {
   EXPECT_TRUE(Gt  (2, mutable_1));
   EXPECT_TRUE(GtEq(2, mutable_1));
 
-  //TODO: With optionals!
   EXPECT_TRUE(IsKnownTrue(EqEq(mutable_1o, mutable_1)));
   EXPECT_TRUE(IsKnownTrue(Lt  (mutable_1o, mutable_2)));
   EXPECT_TRUE(IsKnownTrue(LtEq(mutable_1o, mutable_2)));

@@ -15,8 +15,6 @@
    Rules:
       - Allocation of an object must always come from the same thread as the thread local.
 
-   NOTE: TODO
-
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");

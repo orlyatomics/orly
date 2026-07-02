@@ -26,7 +26,6 @@ class TGetTupleSizeVisitor final
     : public TTypeVisitor {
   public:
 
-  /* TODO. */
   TGetTupleSizeVisitor(size_t &size)
       : Size(size) {
   }

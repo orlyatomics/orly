@@ -130,7 +130,6 @@ namespace Base {
   };  // TSubprocess
 
 
-  /* TODO: Move this to a better place */
   void EchoOutput(Base::TFd &&fd);
 
 }  // Base

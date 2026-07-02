@@ -37,7 +37,6 @@ namespace Jhm {
 
   struct TJobProducer {
     const char *Name;
-    // TODO: Should really be a set...
     std::vector<std::vector<std::string>> OutExtensions;
     std::function<std::optional<TRelPath> (const TRelPath &name)> TryGetInput;
     std::function<std::unique_ptr<TJob> (TEnv &env, TFile *in_file)> MakeJob;
@@ -45,11 +44,7 @@ namespace Jhm {
 
   /* Generic job. Jobs are strongly typed using classical inheritance to expose common attributes.
 
-     Jobs provide some common bits like Config
-
-
-     TODO: May make a proxy like File is, where the actual job in question then doesn't have to implement the generic
-     behavoirs of the job class. */
+     Jobs provide some common bits like Config */
   class TJob {
     public:
     template<typename TVal>

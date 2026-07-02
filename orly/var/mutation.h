@@ -134,7 +134,6 @@ namespace Orly {
       }
 
       //NOTE: There is a class hierarchy in <orly/code_gen/mutation.h> which is almost identical to this one
-      //TODO: The shared pointers in / around TChange are fugly.
       /* A database change */
       class TChange {
         public:
@@ -173,7 +172,6 @@ namespace Orly {
             throw Rt::TSystemError(HERE, "Conflicting partial updates to the same key. Same key updated as different tyeps.");
           }
 
-          /* TODO: Would be nice to use the std::insert which takes iterators. */
           for(const auto &it: that->Changes) {
             if(Changes.count(it.first)) {
               //TODO: Better diagnostic information so people can tell why this happened from their code.

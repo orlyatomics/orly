@@ -130,7 +130,6 @@ TFile *FindFile(const string &cwd, TEnv &env, TWorkFinder &work_finder, const st
   }
 
   if (!file) {
-    // TODO: Do we want to report the relative path to the file here rather than the provided name?
     THROW_ERROR(runtime_error) << "Error finding target" << quoted(name);
   }
 
@@ -192,7 +191,6 @@ class TJhm : public TCmd {
                             bind(&TEnv::TryGetFileFromPath, &env, _1));
 
     // Break the cyclic dependency by registering these back.
-    // TODO: Find a cleaner way to do this (Or remove it altogether)
     env.SetFuncs(bind(&TWorkFinder::IsBuildable, &work_finder, _1), bind(&TWorkFinder::IsFileDone, &work_finder, _1));
 
     // TODO: Gather exceptions here, rather than letting first one fly.
@@ -218,7 +216,6 @@ class TJhm : public TCmd {
         // If the file is not buildable, skip the test. This prevents us from trying to test things that are
         // untestable.
         // NOTE: If this excludes something that should be tested, we should be able to catch that in test reports.
-        //TODO: This should be a std::remove_if...
         /* filter */ {
           TSet<TFile *> filtered_tests;
           for (TFile *test : tests) {
@@ -253,7 +250,6 @@ class TJhm : public TCmd {
       work_finder.AddNeededFile(f);
     }
 
-    // TODO: Add a single-line status message
     if (!work_finder.FinishAll()) {
       return 1;
     }

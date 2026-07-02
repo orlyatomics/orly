@@ -28,7 +28,6 @@ namespace Base {
                std::runtime_error,
                "Repl already in use. May not be run multiple times simultaneously (linenoise library isn't re-entrant)")
 
-  //TODO: string_view
   /* Command info for autocompletion. */
   struct TInfo {
 

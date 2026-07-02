@@ -120,7 +120,6 @@ void TFunction::WriteArgs(TCppPrinter &out) const {
   out << Join(Args,
               ", ",
               [](TCppPrinter &out, TArgs::const_reference arg) {
-                //TODO: The double GetId is fugly.
                 out << "const " << arg.second->GetType() << " &"
                     << arg.second->GetId() << "/* " << arg.first << " */";
               });

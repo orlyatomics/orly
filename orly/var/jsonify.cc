@@ -133,7 +133,6 @@ void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
       Strm << ']';
     }
     virtual void operator()(const TStr *that) const {
-      //TODO: Escape the string!?!
       Base::TJson::WriteString(Strm, that->GetVal());
     }
     virtual void operator()(const TTimeDiff *that) const {

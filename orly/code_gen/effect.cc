@@ -78,7 +78,6 @@ Type::TType TMutation::GetValType() const {
   Type::TType ret_type = Mutable->GetReturnType();
   const Type::TMutable *m_type = ret_type.As<Type::TMutable>();
   return m_type->GetSrcAtAddr();
-  throw std::logic_error("TODO: TMutation::GetValType()");
 }
 
 TPtrC<TDelete> TDelete::New(const Type::TType &val_type) {
@@ -164,7 +163,6 @@ void TMutate::Write(TCppPrinter &out) const {
 
       private:
 
-      /* TODO: Would be nice to be able to use a template for these first two... */
       void Write(const char *name, int arg) const {
         Out << "Var::T" << name << "::New(" << arg << ", ";
       }

@@ -30,16 +30,13 @@ namespace Strm {
 namespace Orly {
   namespace Mynde {
 
-    // TODO: This is the most logical place for this I have atm... Not a great place for it though...
     // The magic UUID namespace for the package which prefixes all keys in Indy
     static const Base::TUuid MemcachedIndexUuid(uuid_t{'m', 'e', 'm', 'c', 'a', 'c', 'h', 'e',
                                                        'm', 'e', 'm', 'c', 'a', 'c', 'h', 'e'});
 
-    // TODO: This is the most logical place for this I have atm... Not a great place for it though...
     // The magic package name for Indy
     static const std::vector<std::string> PackageName = {"memcachememcache"};
 
-    // TODO: This needs a better name.
     class TBuffer {
       public:
       TBuffer();

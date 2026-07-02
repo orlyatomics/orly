@@ -18,8 +18,6 @@
 
 #include <orly/csv_to_bin/field.h>
 
-#include <iostream>  // TODO
-
 #include <base/test/kit.h>
 
 using namespace std;

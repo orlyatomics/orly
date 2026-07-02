@@ -74,7 +74,6 @@ void Orly::Type::Orlyify(ostream &strm, const TType &type) {
       Strm << "]";
     }
     virtual void operator()(const TMutable *that) const {
-      //TODO: We could print out the actual address
       Strm << "mutable @";
       that->GetAddr().Accept(*this);
       Strm << ' ';

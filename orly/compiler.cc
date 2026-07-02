@@ -47,7 +47,6 @@ class TPackageBuilder {
   NO_COPY(TPackageBuilder);
   public:
 
-  //TODO: Version report?
   TPackageBuilder(const TRelPath &rel_path) : RelPath(rel_path) {}
   TPackageBuilder(TPackageBuilder &&that)
       : RelPath(move(that.RelPath)), Cst(move(that.Cst)), Synth(move(that.Synth)) {}
@@ -69,7 +68,6 @@ class TPackageBuilder {
     Synth::GetContext().PrintErrors(out);
   }
 
-  //TODO: be able to use temp filenames again?
   /* Generates the '.h' interfaces, as well as the '.cc' implementations. */
   void GenerateIntermediateCode(const TTree &out_root) {
     //Generate the CodeGen representation
@@ -193,14 +191,19 @@ Package::TVersionedName Orly::Compiler::Compile(
       }
 
       auto &builder = packages[cur];
+      /* Report the current package's errors and flag the build as failed
+         (the caller then breaks out of the build loop). */
+      auto note_errors = [&] {
+        out_strm << "Errors in: " << cur << endl;
+        builder->PrintErrors(out_strm);
+        failed = true;
+      };
       if (machine_mode) {
         out_strm << "MM_NOTICE: Synth + Symbols" << endl;
       }
       builder->BuildSymbols(src_tree);
       if (builder->HasErrors()) {
-        out_strm << "Errors in: " << cur << endl;
-        builder->PrintErrors(out_strm);
-        failed = true;
+        note_errors();
         break;
       }
       if (machine_mode) {
@@ -209,9 +212,7 @@ Package::TVersionedName Orly::Compiler::Compile(
       }
       builder->TypeCheck();
       if (builder->HasErrors()) {
-        out_strm << "Errors in: " << cur << endl;
-        builder->PrintErrors(out_strm);
-        failed = true;
+        note_errors();
         break;
       }
       /* Imports (#171): enqueue each imported package as a dependency to build.
@@ -238,10 +239,7 @@ Package::TVersionedName Orly::Compiler::Compile(
       //      to always gen to a temp file, then move it into place to be atomic in case someone uses Ctrl-C.
       builder->GenerateIntermediateCode(out_tree);
       if (packages[cur]->HasErrors()) {
-        //TODO: It would be nice not to have this duplication.
-        out_strm << "Errors in: " << cur << endl;
-        builder->PrintErrors(out_strm);
-        failed = true;
+        note_errors();
         break;
       }
     } while (!todo.empty());
@@ -315,7 +313,6 @@ Package::TVersionedName Orly::Compiler::Compile(
     if (debug_cc) {
       gcc_cmd.push_back("-g");
     } else {
-      // TODO: Better optimization flags.
       gcc_cmd.push_back("-O2");
       gcc_cmd.push_back("-DNDEBUG");
     }
@@ -334,12 +331,6 @@ Package::TVersionedName Orly::Compiler::Compile(
       throw TCompileFailure(HERE, "Compiling C++ and linking");
     }
   }
-
-  /* TODO
-  if(!save_cc) {
-    unlink(filenames.GetCcPath().c_str());
-  }
-  */
 
   return versioned_name;
 }

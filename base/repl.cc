@@ -25,8 +25,6 @@
 
 using namespace std;
 
-// TODO: Eliminate the need for this by making the linenoise library reentrant / refactoring it to be good C++ (Or
-// rewriting it altogether)
 static const vector<Base::TInfo> *CompletionSingleton(bool set, const vector<Base::TInfo> *completions) {
   static const vector<Base::TInfo> *Completions = nullptr;
   if (set) {
@@ -36,7 +34,6 @@ static const vector<Base::TInfo> *CompletionSingleton(bool set, const vector<Bas
 }
 
 static void ReplCompletionCallback(const char *buf, linenoiseCompletions *lc) {
-  // TODO: Use a more efficient data structure for prefix match
   auto buf_len = strlen(buf);
   for (const auto &completion : *CompletionSingleton(false, nullptr)) {
     if (completion.Name.compare(0, min(completion.Name.length(), buf_len), buf) == 0) {

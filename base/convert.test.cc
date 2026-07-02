@@ -20,8 +20,7 @@
 
 #include <base/test/kit.h>
 
-#include <climits> //TODO
-#include <iostream> //TODO
+#include <climits>
 
 using namespace Base;
 

@@ -96,7 +96,6 @@ namespace Orly {
             return range.first;
           }
 
-          /* TODO: can we get rid of this version? */
           void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, std::vector<size_t> &append_vec) {
             assert(num_blocks > 0);
             size_t left = num_blocks;

@@ -26,7 +26,6 @@ class TMatchPrefixStateVisitor final
     : public TStateDoubleVisitor {
   public:
 
-  /* TODO. */
   TMatchPrefixStateVisitor(TMatchResult &out)
       : Result(out) {
   }

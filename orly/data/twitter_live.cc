@@ -64,7 +64,6 @@ struct TUserObj :
   bool default_profile;
   bool default_profile_image;
   std::optional<std::string> description;
-  // TEntities entities; TODO
   int64_t favourites_count;
   bool follow_request_sent;
   int64_t followers_count;
@@ -81,7 +80,6 @@ struct TUserObj :
   std::string profile_background_image_url;
   std::string profile_background_image_url_https;
   bool profile_background_tile;
-  //std::string profile_banner_url; TODO another "sometimes present field"
   std::string profile_image_url;
   std::string profile_image_url_https;
   std::string profile_link_color;
@@ -91,15 +89,11 @@ struct TUserObj :
   bool profile_use_background_image;
   bool _protected;
   std::string screen_name;
-  // bool show_all_inline_media; TODO: a "not present field"?
-  //TStatus status; // TODO: sometimes ommited, empty, null?
   int64_t statuses_count;
   std::optional<std::string> time_zone;
   std::optional<std::string> url;
   std::optional<int64_t> utc_offset;
   bool verified;
-  //std::string withheld_in_countries;  // TODO: another "when present" field
-  //std::string withheld_scope;  // TODO: another "when present" field
   virtual const TAnyFields &GetFields() const override {
     static const TFields<TUserObj> fields {
       NEW_FIELD(TUserObj, contributors_enabled),
@@ -208,7 +202,6 @@ struct TStatusObj :
     }
   };
 
-  //std::optional<std::vector<TContributorObj>> contributors;  // TODO: issue parsing contributors for now
   std::optional<TCoordinateObj> coordinates;
   Base::Chrono::TTimePnt created_at;
   TEntitiesObj entities;
@@ -220,12 +213,10 @@ struct TStatusObj :
   std::optional<int64_t> in_reply_to_status_id;
   std::optional<int64_t> in_reply_to_user_id;
   std::optional<std::string> lang;
-  // std::optional<TPlaceObj> place;  // TODO: place
   //std::optional<bool> possibly_sensitive;  // This field is not always present
-  // TScopesObj scopes;  // TODO: scopes
   int64_t retweet_count;
   bool retweeted;
-  std::unique_ptr<TStatusObj> retweeted_status;  // TODO: retweeted tweets
+  std::unique_ptr<TStatusObj> retweeted_status;
   std::string source;
   std::string text;
   bool truncated;

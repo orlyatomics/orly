@@ -27,7 +27,6 @@ using namespace std;
 using namespace Orly;
 using namespace Orly::Type;
 
-//TODO: Move to new families of visitors.
 void Orly::Type::CollectObjects(const TType &type, unordered_set<TType> &object_set) {
   class TObjectCollectorVisitor : public TType::TVisitor {
     NO_COPY(TObjectCollectorVisitor);

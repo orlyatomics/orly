@@ -33,7 +33,6 @@ TLinkInfo *GetLinkInfo() {
 
 /* Package file */
 
-//TODO
 void WithBlock1(TContext &ctx);
 
 static TTestCase TestCase1 {

@@ -91,7 +91,6 @@ namespace Orly {
         TRef::TPtr Ref;
       }; // TArg
 
-      //TODO: This feels much more "ugh" than necessary.
       //A map so that we absolutely order the arguments.
       typedef std::map<std::string, TArg::TPtr> TArgs;
 
@@ -142,14 +141,12 @@ namespace Orly {
       protected:
       TFunction(const L0::TPackage *package, const TIdScope::TPtr &id_scope);
 
-      //TODO: I think the PostCtor could go away...
       void PostCtor(const TNamedArgs &args, const Expr::TExpr::TPtr &expr, bool keep_mutable, bool implicit=false);
 
       /* Install a body directly, bypassing the expr-walking Build(). Used by a
          subclass that synthesizes its body (e.g. an import's cross-package call). */
       void SetBody(const TInline::TPtr &body);
 
-      //TODO: These should really be private
       TCodeScope CodeScope;
       std::unordered_set<std::shared_ptr<TInlineFunc>> ChildFuncs;
 

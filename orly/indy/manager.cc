@@ -1193,7 +1193,7 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
          on-disk repo reload does not work (it was never ported, see issue #173). The construction
          sketch below is kept, unreached, as a starting point for whoever implements reload. */
       throw std::runtime_error("TManager::ConstructRepo: reconstructing a repo from a saved on-disk image is not implemented (the indy L0 reload-from-disk path was never ported, #173).");
-      assert(ttl); /* TODO fill in */
+      assert(ttl);
       return saved_repo.IsSafe ?
           static_cast<TRepo *>(new TSafeRepo(this, repo_id, *ttl /* todo fill in with correct val */, parent_repo, saved_repo.LowestSequenceNumber, saved_repo.HighestSequenceNumber, saved_repo.NextUpdate, status)) :
           static_cast<TRepo *>(new TFastRepo(this, repo_id, *ttl /* todo fill in with correct val */, parent_repo, saved_repo.LowestSequenceNumber, saved_repo.HighestSequenceNumber, saved_repo.NextUpdate, status));
@@ -1356,7 +1356,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           if (sync_view->GetLower()) { std::cout << *sync_view->GetLower(); }
           std::cout << " -> ";
           if (sync_view->GetUpper()) { std::cout << *sync_view->GetUpper(); }
-          std::cout << "]" << std::endl;  /* TODO : this should alse include the status */
+          std::cout << "]" << std::endl;
           std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::InventoryId, repo_id, ttl, parent_repo_id, is_safe, sync_view->GetLower(), sync_view->GetUpper(), sync_view->GetNextId());
 
           assert(future);
