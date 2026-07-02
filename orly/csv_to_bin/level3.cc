@@ -19,6 +19,7 @@
 #include <orly/csv_to_bin/level3.h>
 
 #include <limits>
+#include <stdexcept>
 
 using namespace std;
 using namespace Orly::CsvToBin;
@@ -105,12 +106,72 @@ TLevel3 &TLevel3::operator>>(int64_t &that) {
 }
 
 TLevel3 &TLevel3::operator>>(double &that) {
-  /* TODO(#313): Yeah, this is cheating.  We really shouldn't be consuming all the
-     bytes in the field and then translating just the prefix into a number.
-     We should scan property to conserve the rest of the field. */
+  /* Scan just the bytes that spell the number, leaving anything after it
+     in the field.  We collect the accepted bytes and let stod() do the
+     actual translation so we keep its precision. */
   string temp;
-  *this >> temp;
-  that = stod(temp);
+  uint8_t c = Peek();
+  if (c == '+' || c == '-') {
+    temp += static_cast<char>(Pop());
+  }
+  c = CanPeek() ? tolower(Peek()) : 0;
+  if (c == 'i' || c == 'n') {
+    const char *kwd = (c == 'i') ? "inf" : "nan";
+    MatchKeyword(kwd);
+    if (c == 'i' && CanPeek() && tolower(Peek()) == 'i') {
+      MatchKeyword("inity");
+    }
+    temp += kwd;
+  } else {
+    bool has_digits = false;
+    while (CanPeek() && isdigit(Peek())) {
+      temp += static_cast<char>(Pop());
+      has_digits = true;
+    }
+    if (CanPeek() && Peek() == '.') {
+      temp += static_cast<char>(Pop());
+      while (CanPeek() && isdigit(Peek())) {
+        temp += static_cast<char>(Pop());
+        has_digits = true;
+      }
+    }
+    if (!has_digits) {
+      if (CanPeek()) {
+        THROW_ERROR(TSyntaxError)
+            << "expected floating-point number, found '"
+            << static_cast<char>(Peek()) << '\'';
+      }
+      THROW_ERROR(TSyntaxError)
+          << "expected floating-point number, found end of field";
+    }
+    if (CanPeek() && tolower(Peek()) == 'e') {
+      temp += static_cast<char>(Pop());
+      if (CanPeek() && (Peek() == '+' || Peek() == '-')) {
+        temp += static_cast<char>(Pop());
+      }
+      bool has_exp_digits = false;
+      while (CanPeek() && isdigit(Peek())) {
+        temp += static_cast<char>(Pop());
+        has_exp_digits = true;
+      }
+      if (!has_exp_digits) {
+        if (CanPeek()) {
+          THROW_ERROR(TSyntaxError)
+              << "expected exponent of floating-point number, found '"
+              << static_cast<char>(Peek()) << '\'';
+        }
+        THROW_ERROR(TSyntaxError)
+            << "expected exponent of floating-point number, "
+               "found end of field";
+      }
+    }
+  }
+  try {
+    that = stod(temp);
+  } catch (const out_of_range &) {
+    THROW_ERROR(TNumberOutOfRange)
+        << "floating-point number is out of range";
+  }
   return *this;
 }
 

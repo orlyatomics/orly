@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/csv_to_bin/level3.h>
+#include <cmath>
 #include <optional>
 
 #include <base/strm/mem/static_in.h>
@@ -68,6 +69,86 @@ FIXTURE(OneLiner) {
   EXPECT_FALSE(h.has_value());
   EXPECT_TRUE(i.has_value());
   EXPECT_EQ(*i, 101);
+}
+
+FIXTURE(Doubles) {
+  Strm::Mem::TStaticIn mem(
+      "98.6,-1.5e3,+.5,720.,1E-2,inf,-Infinity,NAN");
+  TLevel1 level1(&mem, Simple);
+  TLevel2 level2(level1);
+  TLevel3 level3(level2);
+  double a, b, c, d, e, f, g, h;
+  level3
+      >> StartOfFile >> StartOfRecord
+      >> StartOfField >> a >> EndOfField
+      >> StartOfField >> b >> EndOfField
+      >> StartOfField >> c >> EndOfField
+      >> StartOfField >> d >> EndOfField
+      >> StartOfField >> e >> EndOfField
+      >> StartOfField >> f >> EndOfField
+      >> StartOfField >> g >> EndOfField
+      >> StartOfField >> h >> EndOfField
+      >> EndOfRecord >> EndOfFile;
+  EXPECT_EQ(a, 98.6);
+  EXPECT_EQ(b, -1500.0);
+  EXPECT_EQ(c, 0.5);
+  EXPECT_EQ(d, 720.0);
+  EXPECT_EQ(e, 0.01);
+  EXPECT_TRUE(std::isinf(f) && f > 0);
+  EXPECT_TRUE(std::isinf(g) && g < 0);
+  EXPECT_TRUE(std::isnan(h));
+}
+
+FIXTURE(DoubleConservesRestOfField) {
+  /* Reading a double must consume only the bytes that spell the number,
+     leaving the rest of the field for further extraction. */
+  Strm::Mem::TStaticIn mem("98.6F 12e3rpm");
+  TLevel1 level1(&mem, Simple);
+  TLevel2 level2(level1);
+  TLevel3 level3(level2);
+  double a, b;
+  string rest;
+  level3
+      >> StartOfFile >> StartOfRecord >> StartOfField
+      >> a >> rest >> EndOfField
+      >> EndOfRecord >> EndOfFile;
+  EXPECT_EQ(a, 98.6);
+  EXPECT_EQ(rest, "F 12e3rpm");
+  Strm::Mem::TStaticIn mem2("12e3rpm");
+  TLevel1 level1b(&mem2, Simple);
+  TLevel2 level2b(level1b);
+  TLevel3 level3b(level2b);
+  level3b
+      >> StartOfFile >> StartOfRecord >> StartOfField
+      >> b >> rest >> EndOfField
+      >> EndOfRecord >> EndOfFile;
+  EXPECT_EQ(b, 12000.0);
+  EXPECT_EQ(rest, "rpm");
+}
+
+FIXTURE(BadDoubles) {
+  auto parse = [](const char *text) {
+    Strm::Mem::TStaticIn mem(text);
+    TLevel1 level1(&mem, Simple);
+    TLevel2 level2(level1);
+    TLevel3 level3(level2);
+    double dummy;
+    level3 >> StartOfFile >> StartOfRecord >> StartOfField >> dummy;
+  };
+  auto no_number = [&parse] { parse("abc"); };
+  EXPECT_THROW_FUNC(TLevel3::TSyntaxError, no_number);
+  auto lone_sign = [&parse] { parse("+"); };
+  EXPECT_THROW_FUNC(TLevel3::TSyntaxError, lone_sign);
+  auto lone_point = [&parse] { parse("."); };
+  EXPECT_THROW_FUNC(TLevel3::TSyntaxError, lone_point);
+  auto empty_exp = [&parse] { parse("12e"); };
+  EXPECT_THROW_FUNC(TLevel3::TSyntaxError, empty_exp);
+  auto bad_exp = [&parse] { parse("12e+x"); };
+  EXPECT_THROW_FUNC(TLevel3::TSyntaxError, bad_exp);
+  auto bad_kwd = [&parse] { parse("-nap"); };
+  EXPECT_THROW_FUNC(TLevel3::TSyntaxError, bad_kwd);
+  auto too_big = [&parse] { parse("1e999"); };
+  EXPECT_THROW_FUNC(TLevel3::TNumberOutOfRange, too_big);
 }
 
 FIXTURE(Scanner) {
