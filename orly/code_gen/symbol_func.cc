@@ -37,12 +37,13 @@ void TSymbolFunc::Build() {
   TFunction::Build();
 }
 
-TFunction::TPtr TSymbolFunc::Find(const Symbol::TFunction *symbol) {
-  auto res = Functions.find(symbol);
-  assert(res != Functions.end()); // We build all functions before we ever call find, so it should never fail.
+TFunction::TPtr TSymbolFunc::Find(const L0::TPackage *package, const Symbol::TFunction *symbol) {
+  assert(package);
+  TSymbolFunc *raw = package->TryFindSymbolFunc(symbol);
+  assert(raw); // We build all functions before we ever call find, so it should never fail.
 
   //NOTE: The function should never not exist
-  std::shared_ptr<TFunction> ptr = res->second->shared_from_this();
+  std::shared_ptr<TFunction> ptr = raw->shared_from_this();
   assert(ptr);
   return ptr;
 }
@@ -62,8 +63,5 @@ Type::TType TSymbolFunc::GetType() const {
 TSymbolFunc::TSymbolFunc(const L0::TPackage *package, const Symbol::TFunction::TPtr &symbol, const TIdScope::TPtr &id_scope)
       : TFunction(package, id_scope), Symbol(symbol) {
   PostCtor(symbol->GetParams(), symbol->GetExpr(), true);
-  Functions.insert(make_pair(symbol.get(), this));
-
+  package->RegisterSymbolFunc(symbol.get(), this);
 }
-
-std::unordered_map<const Symbol::TFunction*, TSymbolFunc*> TSymbolFunc::Functions;
