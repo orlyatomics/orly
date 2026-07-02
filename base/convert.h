@@ -109,17 +109,24 @@ namespace Base {
         //Check for overflow/underflow
         if(!err_msg) {
           if(positive) {
-            if((cur_val > std::numeric_limits<TVal>::max() / 10) || (std::numeric_limits<TVal>::max() - cur_val * 10) < digit_val) {
+            if((cur_val > std::numeric_limits<TVal>::max() / 10) || digit_val > std::numeric_limits<TVal>::max() - cur_val * 10) {
               err_msg = "Int overflowed type bounds.";
             }
           } else {
-            //Digit is negative, since number is negative.
-            if((cur_val < std::numeric_limits<TVal>::min() / 10) || (std::numeric_limits<TVal>::min() - cur_val * 10) > digit_val) {
+            /* Digits subtract, since the number is negative: underflow iff
+               cur*10 - digit < min, i.e. cur*10 < min + digit (min + a small
+               positive digit can't overflow; cur*10 is safe under the first
+               disjunct's guard). The old check compared min - cur*10 > digit,
+               which is never true -- it let e.g. LONG_MIN-1 wrap silently. */
+            if((cur_val < std::numeric_limits<TVal>::min() / 10) || cur_val * 10 < std::numeric_limits<TVal>::min() + digit_val) {
               err_msg = "Int underflowed type bounds.";
             }
           }
+        }
 
-          //Add to value
+        //Add to value -- only while in bounds; folding in the digit that
+        //tripped the check would itself be signed overflow (UB).
+        if(!err_msg) {
           cur_val *= 10;
           if(positive) {
             cur_val += digit_val;
@@ -145,23 +152,83 @@ namespace Base {
       return *this;
     }
 
+    /* Reads an unsigned integer written with a radix prefix -- 0x/0X (hex)
+       or 0o/0O (octal, python-style; a bare leading 0 stays decimal) -- with
+       the same bounds checking and consume-then-throw discipline as
+       TryReadUnsignedInt (#285). Returns false, consuming nothing, when the
+       stream is not at a prefix. */
+    template<typename TVal> bool TryReadPrefixedInt(TVal &output, bool positive=true) {
+      assert(std::numeric_limits<TVal>::is_integer);
+      assert(std::numeric_limits<TVal>::is_exact);
+      assert(positive || std::numeric_limits<TVal>::is_signed);
+
+      /* Peek two chars + one digit without consuming. */
+      const char *csr = Working.GetStart(), *limit = Working.GetLimit();
+      while (csr < limit && isspace(*csr)) { ++csr; }
+      if (limit - csr < 3 || csr[0] != '0') {
+        return false;
+      }
+      TVal base;
+      if (csr[1] == 'x' || csr[1] == 'X') {
+        base = 16;
+        if (!isxdigit(csr[2])) { return false; }
+      } else if (csr[1] == 'o' || csr[1] == 'O') {
+        base = 8;
+        if (csr[2] < '0' || csr[2] > '7') { return false; }
+      } else {
+        return false;
+      }
+      /* Commit: consume through the prefix, then fold digits. */
+      while (**this != '0') { ++(*this); }
+      ++(*this); ++(*this);
+      TVal cur_val = 0;
+      const char *err_msg = 0;
+      auto digit_of = [base](char c) -> int {
+        if (c >= '0' && c <= (base == 8 ? '7' : '9')) { return c - '0'; }
+        if (base == 16 && c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+        if (base == 16 && c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+        return -1;
+      };
+      int digit;
+      while ((*this) && (digit = digit_of(**this)) >= 0) {
+        ++(*this);
+        if (!err_msg) {
+          const TVal digit_val = static_cast<TVal>(digit);
+          if (positive) {
+            if (cur_val > std::numeric_limits<TVal>::max() / base || digit_val > std::numeric_limits<TVal>::max() - cur_val * base) {
+              err_msg = "Int overflowed type bounds.";
+            }
+          } else {
+            if (cur_val < std::numeric_limits<TVal>::min() / base || cur_val * base < std::numeric_limits<TVal>::min() + digit_val) {
+              err_msg = "Int underflowed type bounds.";
+            }
+          }
+        }
+        if (!err_msg) {
+          cur_val *= base;
+          if (positive) { cur_val += digit; } else { cur_val -= digit; }
+        }
+      }
+      if (err_msg) {
+        throw TSyntaxError(HERE, err_msg);
+      }
+      output = cur_val;
+      return true;
+    }
+
     /* Parses both signed and unsigned integers from a readable stream performing bounds checking. If it succeeds, it returns true. If it fails without changing
        the input state it returns false. If try_read is false, it throws an error on invalid with a message about the first thign to go wrong. No matter what
        it finishes reading all digits that belong to the integer before returning false or throwing an error. Note that you should not call TryReadInt
-       with the try_read flag set manually, rather call ReadInt if you mean try_read=false. At the moment this only supports decimal representations, but
-       in the future will be expanded to support hexadecimal and octal. */
+       with the try_read flag set manually, rather call ReadInt if you mean try_read=false. Accepts decimal by default plus 0x hex and 0o octal prefixes. */
     template<typename TVal> bool TryReadInt(TVal &output,bool sign_required=false) {
       assert(std::numeric_limits<TVal>::is_integer);
       assert(std::numeric_limits<TVal>::is_exact);
       assert(sign_required? std::numeric_limits<TVal>::is_signed : true);
 
-      /* TODO(#285): Hex, octal, etc. support. */
-      /* TODO(#285): Format strings support. */
-
       //if signed, first character may be +/- sign
       std::optional<bool> positive_opt = TryReadSign();
       if(positive_opt) {
-        if(!TryReadUnsignedInt(output, *positive_opt)) {
+        if(!TryReadPrefixedInt(output, *positive_opt) && !TryReadUnsignedInt(output, *positive_opt)) {
           throw TSyntaxError(HERE, "Consumed a sign, but didn't find any digits after it.");
         } else {
           return true;
@@ -171,7 +238,7 @@ namespace Base {
       }
 
       //No sign was specified, so we must be positive. Read the digits if we can. If we can't, we were only trying.
-      return TryReadUnsignedInt(output, true);
+      return TryReadPrefixedInt(output, true) || TryReadUnsignedInt(output, true);
     }
 
     /* Wrapper for TryReadSignedInt which asserts that if no integer was found at the current stream head, then an exception should be thrown. */
@@ -181,18 +248,6 @@ namespace Base {
       }
       return *this;
     }
-
-    /* Parse bool  (see jhm.py fod valid methods of expression) */
-    bool TryReadBool(bool &output);
-    void ReadBool(bool &output);
-
-    /* Parse float */
-    bool TryReadFloat(float &output, bool sign_required=false);
-    void ReadFloat(float &output, bool sign_required=false);
-
-    /* Parse double */
-    bool TryReadDouble(double &output, bool sign_required=false);
-    void ReadDouble(double &output, bool sign_required=false);
 
     operator bool() const {
       return Working;
