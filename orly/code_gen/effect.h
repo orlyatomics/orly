@@ -31,6 +31,7 @@
 
 #include <orly/code_gen/cpp_printer.h>
 #include <orly/code_gen/package_base.h>
+#include <orly/code_gen/ptr.h>
 #include <orly/error.h>
 #include <orly/shared_enum.h>
 #include <orly/type/part.h>
@@ -38,13 +39,6 @@
 namespace Orly {
 
   namespace CodeGen {
-
-    //TODO(#309): Promote this to some common place, make use of it everywhere.
-    template <typename TTarget>
-    using TPtrC = std::shared_ptr<const TTarget>;
-
-    template <typename TTarget>
-    using TPtr = std::shared_ptr<TTarget>;
 
     class TInline;
 
