@@ -62,12 +62,9 @@ namespace Orly {
       }
 
       virtual void Save(const TId &id, const TDeadline &deadline, const TTtl &/*ttl*/, const std::string &blob, TSem *sem) override {
+        assert(sem);
         BlobById[id] = std::make_pair(deadline, blob);
-        /* The in-memory map IS this manager's disk, so the save is "durable" the moment it's
-           inserted; a null sem is a fire-and-forget save (see Save()'s contract in kit.h). */
-        if (sem) {
-          sem->Push();
-        }
+        sem->Push();
       }
 
       virtual bool TryLoad(const TId &id, std::string &blob) override {
