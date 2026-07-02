@@ -121,8 +121,11 @@ namespace Jhm {
     std::function<TFile *(const std::string &)> TryGetFileFromPath;
 
     // Runs the work queuPops things off work queue
-    // TODO(#346): runs itself in a seperate process group (setpgid) so it can easily wait for all child processes
-    // TODO(#346): Forcefully deletes all bad output
+    /* A failed job's partial outputs are deleted in ProcessResult (#346).
+       Running jobs in their own process group (the other half of that old
+       note) is deliberately NOT done: it would detach children from the
+       terminal's group, so Ctrl-C on jhm would orphan running compiles;
+       the runner already tracks its children explicitly. */
     // Launch the IO pump, wait/manage all the subprocesses, and notify the work finder / env when things are completed.
     // Calls a standardized callback on completion of each command.
     TJobRunner Runner;
