@@ -33,4 +33,11 @@ namespace Jhm {
                                            TEnv &env,
                                            const TRelPath &input);
   TFile *GetOutputWithExtension(std::unordered_set<TFile *> output_set, const std::vector<std::string> &ext);
+
+  /* The TJobProducer::TryGetInput shape shared by single-source producers
+     (bison, flex): if `output` ends with one of `out_exts`, the input is
+     `output` with that extension swapped for `src_ext`; otherwise nothing. */
+  std::optional<TRelPath> TryGetInputName(const TRelPath &output,
+                                          const std::vector<std::vector<std::string>> &out_exts,
+                                          const std::vector<std::string> &src_ext);
 }
