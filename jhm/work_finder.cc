@@ -189,7 +189,7 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
         Ready.push(job);
       }
     }
-    // TODO(#345): Assert this succeeds (It should be guaranteed to)
+    // Erasing a valid, non-empty range (guarded above) cannot fail.
     ToFinish.erase(range.first, range.second);
   }
 
