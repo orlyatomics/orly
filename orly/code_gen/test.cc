@@ -188,25 +188,10 @@ void TTestBlock::WriteMeta(TCppPrinter &out) const {
 
 void TWith::Write(TCppPrinter &out) const {
 
-  //TODO(#311): This is copied from TFunction
-  //Write out inner functions (forward decl followed by definitions).
-  for(auto &func: ChildFuncs) {
-    func->WriteDecl(out);
-    out << ';' << Eol;
-  }
-
-  if(!ChildFuncs.empty()) {
-    out << Eol;
-  }
-
-  for(auto &func: ChildFuncs) {
-    func->WriteDef(out);
-    out << ';' << Eol;
-  }
-
-  if(!ChildFuncs.empty()) {
-    out << Eol;
-  }
+  /* Shared with TFunction::WriteBody (#311); also fixes the drift where
+     this copy emitted definitions unordered, so a child function that used
+     a sibling could be emitted before it. */
+  TFunction::WriteOrderedChildFuncs(ChildFuncs, out);
 
   CodeScope->WriteStart(out);
   for(auto &it: News) {
@@ -224,18 +209,9 @@ void TWith::Write(TCppPrinter &out) const {
 TWith::TWith(const L0::TPackage *package, const Symbol::Test::TWithClause::TPtr &symbol) :  CodeScope(new TCodeScope(TIdScope::New())), Package(package) {
   TScopeCtx ctx(CodeScope.get());
 
-  //Gather child functions
+  //Gather child functions (shared with the TFunction ctor, #311).
   auto gather_child_functions = [this, package](const Expr::TExpr::TPtr &expr) {
-    //TODO(#311): This is copied from function.cc TFunction ctor.
-    Expr::ForEachExpr(expr, [this, package](const Expr::TExpr::TPtr &expr) {
-      const Expr::TWhere *where = expr->TryAs<Expr::TWhere>();
-      if(where) {
-        for(auto &func: where->GetFunctions()) {
-          ChildFuncs.insert(TInnerFunc::New(package, func, CodeScope->GetIdScope()));
-        }
-      }
-      return false;
-    });
+    TFunction::GatherChildFuncs(package, expr, CodeScope->GetIdScope(), ChildFuncs);
   };
 
   for(auto &it: symbol->GetNewStmts()) {
@@ -243,7 +219,6 @@ TWith::TWith(const L0::TPackage *package, const Symbol::Test::TWithClause::TPtr 
     gather_child_functions(it->GetRhs()->GetExpr());
   }
 
-  //TODO(#311): This is copied from TFunction
   for(auto &it: ChildFuncs) {
     it->Build();
   }

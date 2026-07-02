@@ -43,6 +43,24 @@ namespace Orly {
     /* Base class for code gen functions. See leaf classes TTopFunc, TInnerFunc, TImplicitFunc for instantiable
        instanecs. */
     class TFunction : public std::enable_shared_from_this<TFunction> {
+      public:
+
+      /* Emits the given child functions -- forward decls, then definitions --
+         with the definitions ordered so a function that uses a sibling is
+         emitted after that sibling. Shared by WriteBody and TWith::Write
+         (#311; the TWith copy had drifted and lacked the dependency
+         ordering). A static member (not a free function) so it can reach
+         TFunction::Body. */
+      static void WriteOrderedChildFuncs(const std::unordered_set<std::shared_ptr<TInlineFunc>> &child_funcs,
+                                         TCppPrinter &out);
+
+      /* Collects a TInnerFunc for every where-clause function under `expr`
+         into `child_funcs`. Shared by the TFunction ctor and TWith (#311). */
+      static void GatherChildFuncs(const L0::TPackage *package,
+                                   const Expr::TExpr::TPtr &expr,
+                                   const TIdScope::TPtr &id_scope,
+                                   std::unordered_set<std::shared_ptr<TInlineFunc>> &child_funcs);
+
       NO_COPY(TFunction);
       public:
 
