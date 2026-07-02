@@ -76,6 +76,21 @@ namespace Util {
     assert(res);
   }
 
+  /* InsertOrFail's value-returning sibling (a separate name, since the two
+     would differ only by return type): emplace, fail an assertion on a
+     duplicate, and hand back a reference to the inserted element for call
+     sites that need it. */
+  template <typename TContainer, typename... TArgs>
+  typename TContainer::value_type &EmplaceOrFail(TContainer &container, TArgs &&...args) {
+    auto [iter, res] = container.emplace(std::forward<TArgs>(args)...);
+    if (!res) {
+      syslog(LOG_ERR, "[EmplaceOrFail]");
+      Server::BacktraceToLog();
+    }
+    assert(res);
+    return *iter;
+  }
+
   /* Inserts the pointer-type value into the associative container under the given key.  If the container already contains a value for the key,
      the old value is deleted and replaced with the new one. */
   template <typename TContainer>
