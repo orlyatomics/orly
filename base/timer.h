@@ -73,9 +73,9 @@ namespace Base {
     duration Total;
   };
 
-  //TODO(#281):  this should actually be a monotonic clock. For now keeping the old behavior / semantics.
-  /* Easy-access generic timer. */
-  using TTimer = TGenericTimer<std::chrono::system_clock>;
+  /* Easy-access generic timer. Monotonic, so measured intervals are immune
+     to wall-clock steps (NTP adjustments, manual clock changes). */
+  using TTimer = TGenericTimer<std::chrono::steady_clock>;
 
   /* Easy-access timer which gives the cpu time for the given thread. */
   using TCPUTimer = TGenericTimer<Base::cpu_clock>;
