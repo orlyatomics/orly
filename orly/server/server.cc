@@ -1109,6 +1109,29 @@ void TServer::Init() {
       });
     }
 
+    /* Reinstall the packages recorded as installed when this image was last
+       running (#435).  The .so files must still be in the package directory;
+       a missing or broken package is logged and skipped rather than keeping
+       the whole server down.  Runs on the BG runner because the walker needs
+       the read-file cache and the installs run repo transactions. */
+    if (!Cmd.Create) {
+      Indy::Fiber::TJumpRunnable reinstall_jumper([this] {
+        for (const auto &pkg : RepoManager->GetInstalledPackages()) {
+          try {
+            InstallPackage(pkg.first, pkg.second);
+          } catch (const std::exception &ex) {
+            ostringstream names;
+            for (const auto &name : pkg.first) {
+              names << '[' << name << ']';
+            }
+            syslog(LOG_ERR, "could not reinstall package [%s] version [%ld] from the previous run: %s",
+                   names.str().c_str(), pkg.second, ex.what());
+          }
+        }
+      });
+      reinstall_jumper(FramePoolManager.get(), &BGFastRunner);
+    }
+
     /* TODO(#366) : durable manager does not support create=false */
     DurableManager = make_shared<Orly::Indy::Disk::TDurableManager>(Scheduler,
                                                                     RunnerCons,
@@ -2225,6 +2248,8 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
     }
   };
   PackageManager.Install({{{package_name}, version}}, pre_install_cb);
+  /* Remember the install across restarts (#435). */
+  RepoManager->SaveInstalledPackage(package_name, version, true);
   ostringstream strm;
   for (const auto &name: package_name) {
     strm << '[' << name << ']';
@@ -2759,6 +2784,8 @@ void TServer::StateChangeCb(Orly::Indy::TManager::TState state) {
 
 void TServer::UninstallPackage(const vector<string> &package_name, uint64_t version) {
   PackageManager.Uninstall(unordered_set<Package::TVersionedName>{Package::TVersionedName{{package_name}, version}});
+  /* Clear the persistent record (#435). */
+  RepoManager->SaveInstalledPackage(package_name, version, false);
 }
 
 void TServer::WaitForSlave() {
