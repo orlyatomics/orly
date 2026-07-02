@@ -311,6 +311,11 @@ namespace Orly {
           NO_COPY(TDiskController);
           public:
 
+            /* Ask QueueRunner() to exit its polling loop (#440). */
+            void ShutDown() {
+              KeepRunning.store(false, std::memory_order_relaxed);
+            }
+
           typedef InvCon::UnorderedList::TCollection<TDiskController, TPersistentDevice> TDeviceCollection;
 
           class TEvent
@@ -484,7 +489,10 @@ namespace Orly {
             return &DeviceCollection;
           }
 
-          void QueueRunner(std::vector<TPersistentDevice *> device_vec, bool no_realtime, size_t core);
+          /* Cleared by ShutDown(); QueueRunner()'s loop condition. */
+            std::atomic<bool> KeepRunning{true};
+
+            void QueueRunner(std::vector<TPersistentDevice *> device_vec, bool no_realtime, size_t core);
 
           void Report(std::stringstream &ss, double elapsed_time) const;
 

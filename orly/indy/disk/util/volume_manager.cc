@@ -163,7 +163,7 @@ void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, b
     memset(io_ev, 0, max_aio_num * sizeof(struct io_event));
     size_t num_laps_without_work = 0UL;
     const size_t laps_before_sleep = 5UL;
-    for (;;) {
+    while (likely(KeepRunning.load(std::memory_order_relaxed))) {
       ++num_laps_without_work;
       if (num_laps_without_work > laps_before_sleep) {
         this_thread::sleep_for(10000ns);

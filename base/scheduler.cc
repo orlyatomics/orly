@@ -44,6 +44,10 @@ TScheduler::TPolicy::TPolicy(size_t min_worker_count, size_t max_worker_count, c
 }
 
 void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job) const {
+  RunUntilCtrlC(std::move(main_job), std::function<void ()>());
+}
+
+void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job, const std::function<void ()> &on_signal) const {
   try {
     TMasker masker(*TSet(TSet::Full));
     THandlerInstaller handler(
@@ -54,6 +58,9 @@ void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job) const {
     );
     TScheduler scheduler(*this, pthread_self(), &main_job);
     sigsuspend(&*TSet(TSet::Exclude, { SIGINT }));
+    if (on_signal) {
+      on_signal();
+    }
   } catch (const exception &ex) {
     syslog(LOG_ERR, "run_until_c; standard exception; %s", ex.what());
   } catch (...) {
@@ -106,11 +113,21 @@ bool TScheduler::Shutdown(const milliseconds &timeout) {
   unique_lock<mutex> lock(Mutex);
   if (WorkerCount) {
     Policy = TPolicy::Shutdown;
+    /* Interrupting is best-effort: a worker wedged in an uninterruptible
+       state (e.g. blocked on a lock whose holder died un-unwound, see #440)
+       would otherwise spin this loop forever.  Bound it; the stragglers are
+       detached threads and die with the process. */
+    size_t interrupt_rounds = 0;
+    static const size_t max_interrupt_rounds = 100;
     do {
       PolicyChangedOrJobPushed.notify_all();
-      if (WorkerListChanged.wait_for(lock, timeout) == cv_status::timeout) {
+      if (WorkerListChanged.wait_for(lock, std::max(timeout, milliseconds(100))) == cv_status::timeout) {
         TWorker::Interrupt(this);
         is_clean = false;
+        if (++interrupt_rounds >= max_interrupt_rounds) {
+          syslog(LOG_WARNING, "scheduler %p; giving up on %ld wedged worker(s) after %ld interrupts", static_cast<void *>(this), WorkerCount, interrupt_rounds);
+          break;
+        }
       }
     } while (WorkerCount);
   }

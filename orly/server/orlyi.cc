@@ -108,6 +108,15 @@ int main(int argc, char *argv[]) {
     }
   }
   std::shared_ptr<TServer> server = nullptr;
-  TScheduler::TPolicy(cmd.MinWorkerCount, cmd.MaxWorkerCount, milliseconds(cmd.IdleWorkerTimeout), false).RunUntilCtrlC(bind(LaunchServer, _1, cref(cmd), ref(server)));
+  TScheduler::TPolicy(cmd.MinWorkerCount, cmd.MaxWorkerCount, milliseconds(cmd.IdleWorkerTimeout), false).RunUntilCtrlC(
+      bind(LaunchServer, _1, cref(cmd), ref(server)),
+      /* Orderly shutdown on ctrl-c (#440): stop serving, tear down the
+         fiber-entangled managers on a fiber, stop and join the server's
+         threads.  Destruction stays deferred (docs/teardown-design.md). */
+      [&server] {
+        if (server) {
+          server->Shutdown();
+        }
+      });
   return EXIT_SUCCESS;
 }

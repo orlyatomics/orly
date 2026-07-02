@@ -1319,7 +1319,75 @@ void TServer::Init() {
   InitCond.notify_all();
 }
 
+void TServer::Shutdown() {
+  if (ShutdownCalled) {
+    return;
+  }
+  ShutdownCalled = true;
+  assert(!Fiber::TRunner::LocalRunner);
+  syslog(LOG_INFO, "TServer::Shutdown() begin");
+  /* Stop the websockets server first: no new work arrives. */
+  Ws.reset();
+  /* Tear down the fiber-entangled managers on a fiber, while every runner
+     is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
+     its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
+     takes fiber locks. */
+  Indy::Fiber::TJumpRunnable teardown_jumper([this] {
+    delete TetrisManager;
+    TetrisManager = nullptr;
+    DurableManager->Clear();
+    DurableManager.reset();
+    /* GlobalRepo/RepoManager stay alive (leaked, as they always were):
+       cached durable sessions still pin their POV repos, so ~L0::TManager's
+       PreDtor asserts PtrCount == 0.  Draining those pins is the next
+       teardown slice (docs/teardown-design.md, PR C). */
+  });
+  teardown_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
+  /* Stop the engine-level services that would otherwise wedge the
+     scheduler's teardown: the background runners this server hosts on
+     scheduler jobs (replication, layer cleaners, mergers, slave wait) and
+     the disk controller's polling loop. */
+  WaitForSlaveRunner.ShutDown();
+  RunReplicationQueueRunner.ShutDown();
+  RunReplicationWorkRunner.ShutDown();
+  RunReplicateTransactionRunner.ShutDown();
+  RepoLayerCleanerRunner.ShutDown();
+  for (auto &runner : MergeMemRunnerVec) {
+    runner->ShutDown();
+  }
+  for (auto &runner : MergeDiskRunnerVec) {
+    runner->ShutDown();
+  }
+  if (DiskEngine) {
+    DiskEngine->GetController()->ShutDown();
+  }
+  /* Now nothing needs the runners; stop and join them. */
+  WsRunner.ShutDown();
+  WsThread.join();
+  DurableLayerCleanerRunner.ShutDown();
+  BGFastRunner.ShutDown();
+  for (auto &runner : FastRunnerVec) {
+    runner->ShutDown();
+  }
+  for (auto &t : FastRunnerThreadVec) {
+    t->join();
+  }
+  for (auto &runner : SlowRunnerVec) {
+    runner->ShutDown();
+  }
+  for (auto &t : SlowRunnerThreadVec) {
+    t->join();
+  }
+  syslog(LOG_INFO, "TServer::Shutdown() complete");
+}
+
 TServer::~TServer() {
+  if (ShutdownCalled) {
+    /* Shutdown() already stopped the threads and destroyed the managers;
+       only the init frame is left. */
+    Fiber::TFrame::LocalFramePool->Free(Frame);
+    return;
+  }
   WsRunner.ShutDown();
   WsThread.join();
   delete TetrisManager;
