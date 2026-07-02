@@ -620,6 +620,12 @@ namespace Orly {
 
         void RunLayerCleaner();
 
+        /* Kick the mem merger and wait (bounded) until every dirty repo's
+           memory layer has been merged out to a disk file -- the flush half
+           of an orderly shutdown (#440).  Call from a fiber before the merge
+           runners are stopped. */
+        void FlushMemMerges();
+
         void RunMergeMem();
 
         void RunMergeDisk();

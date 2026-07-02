@@ -273,6 +273,29 @@ void TManager::RunLayerCleaner() {
   }
 }
 
+void TManager::FlushMemMerges() {
+  /* Repos become due at most MergeMemInterval (~tens of ms) after their
+     last write, so draining is quick; the cap keeps a wedged merger from
+     hanging shutdown forever. */
+  const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  for (;;) {
+    bool drained;
+    /* acquire MergeMem lock */ {
+      std::lock_guard<std::mutex> lock(MergeMemLock);
+      drained = (MergeMemQueue.TryGetFirstMember() == nullptr);
+    }
+    if (drained) {
+      break;
+    }
+    if (std::chrono::steady_clock::now() > give_up) {
+      syslog(LOG_WARNING, "FlushMemMerges: gave up waiting for the mem-merge queue to drain");
+      break;
+    }
+    MergeMemSem.Push();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+}
+
 void TManager::RunMergeMem() {
   cpu_set_t mask;
   CPU_ZERO(&mask);

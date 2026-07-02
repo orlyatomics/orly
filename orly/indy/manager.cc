@@ -1312,11 +1312,11 @@ std::vector<std::pair<std::vector<std::string>, uint64_t>> TManager::GetInstalle
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TSuprena arena;
   std::vector<std::pair<std::vector<std::string>, uint64_t>> ret;
-  /* The walker yields an entry per update layer for the same key, newest
-     first; only the first (current) one counts -- the same reason
-     GetIndexNamespaceMapping()'s emplace is first-wins.  Without the dedupe
-     an uninstall would be shadowed by its older install record. */
-  std::set<std::tuple<std::vector<std::string>, int64_t>> seen;
+  /* The walker can yield several entries for the same key (one per update
+     layer), and their relative order differs between and within generation
+     files -- so pick the winner by sequence number explicitly rather than
+     assuming any walk order. */
+  std::map<std::tuple<std::vector<std::string>, int64_t>, std::pair<TSequenceNumber, bool>> current;
   auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
   auto walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemPackageIndexId, TKey(make_tuple(Native::TFree<std::vector<std::string>>(), Native::TFree<int64_t>()), &arena, state_alloc)), true);
   for (auto &walker = *walker_ptr; walker; ++walker) {
@@ -1324,11 +1324,14 @@ std::vector<std::pair<std::vector<std::string>, uint64_t>> TManager::GetInstalle
     bool installed = false;
     Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, state_alloc)), name_and_version);
     Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Op.NewState((*walker).OpArena, state_alloc)), installed);
-    if (!seen.insert(name_and_version).second) {
-      continue;
+    auto &cur = current[name_and_version];
+    if ((*walker).SequenceNumber >= cur.first) {
+      cur = std::make_pair((*walker).SequenceNumber, installed);
     }
-    if (installed) {
-      ret.emplace_back(std::get<0>(name_and_version), static_cast<uint64_t>(std::get<1>(name_and_version)));
+  }
+  for (const auto &entry : current) {
+    if (entry.second.second) {
+      ret.emplace_back(std::get<0>(entry.first), static_cast<uint64_t>(std::get<1>(entry.first)));
     }
   }
   return ret;
@@ -1338,6 +1341,10 @@ std::unordered_map<Base::TUuid, std::string> TManager::GetIndexNamespaceMapping(
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TSuprena arena;
   std::unordered_map<Base::TUuid, std::string> ret;
+  /* Several entries can appear for the same key (one per update layer) and
+     the walk order is not authoritative; pick the winner by sequence number
+     (same contract as GetInstalledPackages()). */
+  std::unordered_map<Base::TUuid, TSequenceNumber> seq_of;
   auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
   auto walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemIDNSIndexId, TKey(make_tuple(Native::TFree<Base::TUuid>()), &arena, state_alloc)), true);
   for (auto &walker = *walker_ptr; walker; ++walker) {
@@ -1345,7 +1352,12 @@ std::unordered_map<Base::TUuid, std::string> TManager::GetIndexNamespaceMapping(
     std::string pkg_key;
     Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, state_alloc)), index_id_tuple);
     Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Op.NewState((*walker).OpArena, state_alloc)), pkg_key);
-    ret.emplace(std::get<0>(index_id_tuple), pkg_key);
+    const auto &index_id = std::get<0>(index_id_tuple);
+    auto &seq = seq_of[index_id];
+    if ((*walker).SequenceNumber >= seq) {
+      seq = (*walker).SequenceNumber;
+      ret[index_id] = pkg_key;
+    }
   }
   return ret;
 }
