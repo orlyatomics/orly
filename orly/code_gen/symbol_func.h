@@ -33,7 +33,7 @@ namespace Orly {
       NO_COPY(TSymbolFunc);
       public:
 
-      static TFunction::TPtr Find(const Symbol::TFunction *symbol);
+      static TFunction::TPtr Find(const L0::TPackage *package, const Symbol::TFunction *symbol);
 
       std::string GetName() const;
       Type::TType GetReturnType() const;
@@ -47,9 +47,6 @@ namespace Orly {
       TSymbolFunc(const L0::TPackage *package, const Symbol::TFunction::TPtr &symbol, const TIdScope::TPtr &id_scope);
 
       private:
-
-      //TODO(#307): Kill the static. We can really handle this using proper scoping and a tree of function maps.
-      static std::unordered_map<const Symbol::TFunction*, TSymbolFunc*> Functions;
 
       //Note we would use an InlineScope here, but we need to attach the function arguments to the CodeScope.
       TInline::TPtr Body;

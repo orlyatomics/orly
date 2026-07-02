@@ -36,6 +36,8 @@ namespace Orly {
 
   namespace CodeGen {
 
+    class TSymbolFunc;
+
     /* Dependency injection for package to expose enough context to build functions. */
     namespace L0 {
 
@@ -69,6 +71,20 @@ namespace Orly {
           return Symbol->GetName();
         }
 
+        /* Symbol -> code-gen function registry for THIS package build.
+           Replaces TSymbolFunc's process-global static map (#307): the
+           registry's natural lifetime is one package compilation.
+           Registration happens from TSymbolFunc's constructor, which only
+           holds a const package pointer -- hence mutable. */
+        void RegisterSymbolFunc(const Symbol::TFunction *symbol, TSymbolFunc *func) const {
+          SymbolFuncs.insert(std::make_pair(symbol, func));
+        }
+
+        TSymbolFunc *TryFindSymbolFunc(const Symbol::TFunction *symbol) const {
+          auto res = SymbolFuncs.find(symbol);
+          return res != SymbolFuncs.end() ? res->second : nullptr;
+        }
+
         protected:
 
         TPackage(const Symbol::TPackage::TPtr &package) : Symbol(package) {}
@@ -78,6 +94,9 @@ namespace Orly {
         TAddrMap AddrMap;
 
         TRevAddrMap ReverseAddrMap;
+
+        /* See RegisterSymbolFunc / TryFindSymbolFunc. */
+        mutable std::unordered_map<const Symbol::TFunction *, TSymbolFunc *> SymbolFuncs;
 
       };  // TPackage
 

@@ -354,7 +354,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       if (const auto &widen_fn = that->GetRecursiveWidenFn()) {
         TCall::TArgs args;
         args.push_back(Build(Package, that->GetExpr(), false));
-        Res = Interner.GetCall(Package, TSymbolFunc::Find(widen_fn.get()), args);
+        Res = Interner.GetCall(Package, TSymbolFunc::Find(Package, widen_fn.get()), args);
         return;
       }
       /* A variant -> wider-variant widening (#104) is a value rebuild, not a
@@ -521,7 +521,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         TVisitor(TInterner &interner, TInline::TPtr &res, const Expr::TFunctionApp::TFunctionAppArgMap &function_app_args, const L0::TPackage *package)
             : Interner(interner), Res(res), FunctionAppArgs(function_app_args), Package(package) {}
         virtual void operator()(const Symbol::TFunction *that) const {
-          auto func = TSymbolFunc::Find(that);
+          auto func = TSymbolFunc::Find(Package, that);
           TCall::TArgs args;
           for (auto &arg: FunctionAppArgs) {
             // TODO(#300): We need to check if the arg has a greater sequence arity than the parameter, and if so, it is an implicit
@@ -664,7 +664,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         public:
         TVisitor(TInterner &interner, TInline::TPtr &res, const L0::TPackage *package) : Interner(interner), Res(res), Package(package) {}
         virtual void operator()(const Symbol::TGivenParamDef *that) const {
-          Res = TSymbolFunc::Find(that->GetFunction().get())->GetArg(that->GetName());
+          Res = TSymbolFunc::Find(Package, that->GetFunction().get())->GetArg(that->GetName());
         }
         virtual void operator()(const Symbol::TResultDef *that) const {
           class TVisitor
@@ -674,7 +674,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
             TVisitor(TInterner &interner, TInline::TPtr &res, const L0::TPackage *package)
                 : Interner(interner), Res(res), Package(package) {}
             virtual void operator()(const Symbol::TFunction *that) const {
-              Res = Interner.GetCall(Package, TSymbolFunc::Find(that), TCall::TArgs {});
+              Res = Interner.GetCall(Package, TSymbolFunc::Find(Package, that), TCall::TArgs {});
             }
             virtual void operator()(const Symbol::TBuiltInFunction *) const {
               // NOTE: if we introduce a zero parameter built in function, this needs to change
