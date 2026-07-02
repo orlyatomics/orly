@@ -39,8 +39,9 @@ time_t TCounter::Reset() {
 void TCounter::Sample() {
   SampleTime = time(0);
   for (TCounter *counter = FirstCounter; counter; counter = counter->NextCounter) {
-    counter->SampledCount += counter->UnsampledCount;
-    counter->UnsampledCount = 0;
+    /* Atomically drain the live count: the old read-then-zero pair lost any
+       increment that landed between the two statements. */
+    counter->SampledCount += counter->UnsampledCount.exchange(0, std::memory_order_relaxed);
   }
 }
 

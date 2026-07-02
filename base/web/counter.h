@@ -2,8 +2,12 @@
 
    A counter useful for providing health reports.
 
-   TODO(#292): The group of counters don't provide a consistent snapshot when sampled. Each is sampled independently. Locking
-   everything to sample the counters is incredibly painful / massive jitter which we want to avoid.
+   NOTE on consistency (#292): each counter is sampled independently, so a
+   snapshot is not atomic ACROSS counters -- an increment can land between
+   sampling counter A and counter B, skewing cross-counter invariants by a
+   hair. That is by design: making the group atomic would require locking
+   every Increment(), whose jitter on hot paths is worse than the skew.
+   Each individual counter's sample IS lossless (atomic exchange).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -21,6 +25,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <ctime>
@@ -117,7 +122,7 @@ namespace Server {
     /* Increment the counter.  This will not change the current frozen value,
        but will be reflected in the next frozen value. */
     void Increment(uint32_t delta = 1) {
-      __sync_add_and_fetch(&UnsampledCount, delta);
+      UnsampledCount.fetch_add(delta, std::memory_order_relaxed);
     }
 
     /* The time of the most recent reset of the counters.
@@ -158,9 +163,10 @@ namespace Server {
     const char *Name;
 
     /* The currently incrementing count.  There is no direct access to this
-       variable; instead, the Sample() function adds this variable to SampledCount,
-       then sets this variable back to zero. */
-    uint32_t UnsampledCount;
+       variable; instead, the Sample() function atomically drains it
+       (exchange with zero) into SampledCount, so no concurrent increment is
+       ever lost. */
+    std::atomic<uint32_t> UnsampledCount;
 
     /* See accessor. */
     uint32_t SampledCount;
