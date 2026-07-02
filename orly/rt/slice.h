@@ -84,13 +84,17 @@ namespace Orly {
                          : std::string(container.substr(idx));
     }
 
-    /* TODO(#361): SliceRange for a mutable
+    /* Slicing a mutable container narrows the VALUE while keeping the
+       mutable's identity (address + parts) -- same convention as
+       RewrapMutable, without a new part: a slice is not an addressable
+       sub-part, so the result still refers to the whole stored container
+       (#361). */
     template <typename TAddr, typename TVal, typename TIdx>
     TMutable<TAddr, std::vector<TVal>> SliceRange(
           const TMutable<TAddr, std::vector<TVal>> &container, bool start_range, const TIdx &idx) {
-      return TMutable<TAddr, std::vector<TVal>>(container.GetOptAddr(),
+      return TMutable<TAddr, std::vector<TVal>>(container.GetOptAddr(), container.GetParts(),
           SliceRange(container.GetVal(), start_range, idx));
-    } */
+    }
 
     template <typename TVal>
     std::vector<TVal> SliceRangeBoth(const std::vector<TVal> &container, const int64_t &lhs, const int64_t &rhs) {
@@ -116,14 +120,14 @@ namespace Orly {
       return std::string(container.substr(lhs, rhs - lhs));
     }
 
-    /* TODO(#361)
+    /* See the SliceRange mutable overload above for the identity/parts
+       convention. */
     template <typename TAddr, typename TVal, typename TIdx>
     TMutable<TAddr, std::vector<TVal>> SliceRangeBoth(
           const TMutable<TAddr, std::vector<TVal>> &container, const TIdx &lhs, const TIdx &rhs) {
-      return TMutable<TAddr, std::vector<TVal>>(container.GetOptAddr(),
+      return TMutable<TAddr, std::vector<TVal>>(container.GetOptAddr(), container.GetParts(),
           SliceRangeBoth(container.GetVal(), lhs, rhs));
     }
-    */
 
   }  // Rt
 
