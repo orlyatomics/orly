@@ -185,6 +185,53 @@ jobs:
           ../out_orly/release/orly/server/orlyi --help > /tmp/orlyi-help.txt
           test -s /tmp/orlyi-help.txt
 
+  restart-test:
+    name: restart durability (tests/restart_test.sh)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          version: 1.2
+
+      - name: Set up ccache
+        run: |
+          for c in gcc g++ cc c++; do
+            sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"
+          done
+          {
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_COMPRESS=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Cache ccache
+        if: github.event_name != 'schedule'
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-${{ github.job }}-
+            orly-ccache-${{ runner.os }}-
+
+      - name: Install python websocket-client
+        run: pip3 install --break-system-packages websocket-client
+
+      - name: make debug
+        run: make debug
+
+      # Write -> stop -> restart -> read on a real (loopback) disk volume,
+      # including installed-package-registry survival (#435).  This is the
+      # only job that exercises --create=false, so restart durability can
+      # never silently rot again.
+      - name: tests/restart_test.sh
+        run: ./tests/restart_test.sh
+
   lang-tests:
     name: lang_test.py
     runs-on: ubuntu-24.04
