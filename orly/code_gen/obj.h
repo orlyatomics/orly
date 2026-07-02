@@ -54,7 +54,6 @@ namespace Orly {
     }; // TObjCtor
 
 
-    void GenObjComparison(const Type::TType &obj1, const Type::TType &obj2, TCppPrinter &strm);
     void GenObjHeader(const std::string &out_dir, const Type::TType &obj_type);
     void GenObjInclude(const Type::TType &obj, TCppPrinter &strm);
 

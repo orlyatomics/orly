@@ -288,10 +288,6 @@ void TPackage::WriteCc(TCppPrinter &out, const TRelPath &rel_path) const {
       << "using namespace Orly::Rt;" << Eol
       << Eol;
 
-  for(auto &it: NeededObjectComparisons) {
-    GenObjComparison(it.first, it.second, out);
-  }
-
   //Define all the unit test functions and their meta information
   for(auto &it: Tests) {
     it->Write(out);
