@@ -136,6 +136,19 @@ class TCmd final
 int main(int argc, char *argv[]) {
   ::TCmd cmd(argc, argv);
   Base::TLog log(cmd);
+  /* Devices are named as in /proc/partitions ("loop0"); tolerate the
+     natural "/dev/loop0" spelling instead of crashing on a doubled path
+     ("/sys/block//dev/loop0/...", #435). */
+  {
+    std::set<std::string> normalized;
+    for (const auto &device : cmd.DeviceSet) {
+      static const std::string dev_prefix = "/dev/";
+      normalized.insert(
+          device.compare(0, dev_prefix.size(), dev_prefix) == 0
+              ? device.substr(dev_prefix.size()) : device);
+    }
+    cmd.DeviceSet = std::move(normalized);
+  }
   Base::TScheduler scheduler(Base::TScheduler::TPolicy(1, 64, milliseconds(10)));
   if(cmd.ZeroSuperBlock) {
     const auto &device_set = cmd.DeviceSet;

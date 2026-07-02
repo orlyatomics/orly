@@ -127,7 +127,9 @@ class Client:
         return self.session_id
 
     def resume_session(self, session_id):
-        self.session_id = self.send(f"resume session {lit(session_id)};")
+        # The console grammar takes the session id as a braced IdExpr
+        # (``resume session {uuid};``), not a quoted string.
+        self.session_id = self.send(f"resume session {{{session_id}}};")
         return self.session_id
 
     def install(self, package, version):

@@ -770,6 +770,11 @@ namespace Orly {
       std::condition_variable InitCond;
       std::mutex InitMutex;
 
+      /* Set by Init() if it fails; the constructor rethrows it after the
+         InitFinished handshake so a server that could not initialize does
+         not limp along half-built (#435). */
+      std::exception_ptr InitError;
+
       /* The websockets server object */
       std::unique_ptr<TWs> Ws;
 
