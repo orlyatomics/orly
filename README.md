@@ -199,7 +199,7 @@ Build flags live in [`root.jhm`](root.jhm); per-target overrides in `debug.jhm` 
 
 ## Contributing
 
-The build system (`jhm`) lives in [`jhm/`](jhm/); the bootstrap path is documented in [`bootstrap.sh`](bootstrap.sh). There's no formal style guide; match the surrounding code.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the conventions CI enforces — build/test commands and the `TODO(#nnn)` comment rule. The build system (`jhm`) lives in [`jhm/`](jhm/); the bootstrap path is documented in [`bootstrap.sh`](bootstrap.sh). There's no formal style guide beyond that; match the surrounding code.
 
 ### IDE / clangd
 
