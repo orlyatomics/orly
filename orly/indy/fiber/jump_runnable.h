@@ -129,6 +129,16 @@ namespace Orly {
              we have copied the pool pointer out. */
           auto *pool = FramePool;
           Fiber::FreeMyFrame(pool);
+          /* Set the flag and notify with the mutex held.  Both halves matter.
+             Setting the flag outside the mutex can lose the wakeup: the waiter
+             checks the flag under the mutex, we set it and notify in the
+             instant before it blocks on the condition variable, and it then
+             sleeps forever (#386's hang).  And notifying after the flag is
+             observable touches members of *this after the waiter may have
+             returned from operator() and destroyed us (#386's abort).  With
+             the mutex held for both, the waiter cannot observe the flag until
+             we are completely done with *this. */
+          std::lock_guard<std::mutex> lock(Mutex);
           Flag = true;
           FlagSet.notify_one();
         }
