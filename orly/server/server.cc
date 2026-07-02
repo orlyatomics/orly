@@ -783,6 +783,13 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   /* Run the WsRunner's thread. */
   WsThread = thread([this] { WsRunner.Run(); });
 
+  /* From here on we own live runner threads.  If the rest of construction
+     throws, unwinding would destroy joinable std::threads -- an instant
+     std::terminate that masks the real error ("terminate called without an
+     active exception", #435).  Catch, stop and join everything we started,
+     then let the exception out. */
+  try {
+
   auto launch_fast_fiber_sched = [this](size_t core, Fiber::TRunner *runner) {
     cpu_set_t mask;
     CPU_ZERO(&mask);
@@ -842,13 +849,34 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     Fiber::TFrame::LocalFramePool->Free(Frame);
     throw;
   }
-  std::unique_lock<std::mutex> lock(InitMutex);
-  while (!InitFinished) {
-    InitCond.wait(lock);
+  /* handshake scope */ {
+    std::unique_lock<std::mutex> lock(InitMutex);
+    while (!InitFinished) {
+      InitCond.wait(lock);
+    }
+  }
+  if (InitError) {
+    std::rethrow_exception(InitError);
   }
 
   /* Launch the websockets server. */
   Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber));
+
+  } catch (const std::exception &ex) {
+    /* We cannot unwind: several members' destructors (the durable manager,
+       the repo manager) require the fiber context this thread does not
+       have -- the same contradiction that keeps orlyi and orlyc from ever
+       destroying a TServer.  Until teardown is a first-class operation,
+       report the real error and exit; the alternative is std::terminate
+       from a joinable-thread destructor with the message lost (#435). */
+    syslog(LOG_ERR, "TServer failed to initialize: %s", ex.what());
+    std::cerr << "TServer failed to initialize: " << ex.what() << std::endl;
+    _exit(EXIT_FAILURE);
+  } catch (...) {
+    syslog(LOG_ERR, "TServer failed to initialize: unknown error");
+    std::cerr << "TServer failed to initialize: unknown error" << std::endl;
+    _exit(EXIT_FAILURE);
+  }
 }
 
 void TServer::Init() {
@@ -1259,6 +1287,9 @@ void TServer::Init() {
     DEBUG_LOG("TServer::Init end");
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "TServer::Init() caught exception [%s]", ex.what());
+    /* Hand the failure to the constructor; swallowing it here would leave a
+       half-built server accepting connections it cannot serve (#435). */
+    InitError = std::current_exception();
   }
   std::lock_guard<std::mutex> lock(InitMutex);
   InitFinished = true;
