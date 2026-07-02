@@ -107,3 +107,36 @@ FIXTURE(ProxyRejectsTrailingJunk) {
     (void)val;
   });
 }
+FIXTURE(HexAndOctal) {
+  int i;
+  TConverter(AsPiece("0x2A")).ReadInt(i);
+  EXPECT_EQ(i, 42);
+  TConverter(AsPiece("0Xff")).ReadInt(i);
+  EXPECT_EQ(i, 255);
+  TConverter(AsPiece("-0x10")).ReadInt(i);
+  EXPECT_EQ(i, -16);
+  TConverter(AsPiece("0o52")).ReadInt(i);
+  EXPECT_EQ(i, 42);
+  TConverter(AsPiece("  0x2A")).ReadInt(i);  // leading whitespace
+  EXPECT_EQ(i, 42);
+  /* A bare leading zero stays decimal; a lone 0 is just zero. */
+  TConverter(AsPiece("052")).ReadInt(i);
+  EXPECT_EQ(i, 52);
+  TConverter(AsPiece("0")).ReadInt(i);
+  EXPECT_EQ(i, 0);
+  /* 0x with no hex digit after it parses as decimal 0 (stream left at 'x'),
+     matching the decimal parser's take-what-matches behavior. */
+  TConverter csr(AsPiece("0xzz"));
+  csr.ReadInt(i);
+  EXPECT_EQ(i, 0);
+  /* Hex bounds: one past LONG_MAX overflows. */
+  EXPECT_THROW(TSyntaxError, []() {
+    long val;
+    TConverter(AsPiece("0x8000000000000000")).ReadInt(val);
+  });
+  long l;
+  TConverter(AsPiece("0x7fffFFFFffffFFFF")).ReadInt(l);
+  EXPECT_EQ(l, 9223372036854775807L);
+  TConverter(AsPiece("-0x8000000000000000")).ReadInt(l);
+  EXPECT_EQ(l, -9223372036854775807L - 1);
+}
