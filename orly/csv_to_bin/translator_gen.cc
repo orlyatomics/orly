@@ -79,10 +79,8 @@ int main(int argc, char *argv[]) {
   string cc_outfile = Base::GetSrcRoot() + "orly/csv_to_bin/translate.cc";
   string orly_outfile = cmd.StarterScript + ".orly";
   try {
-    ifstream instrm;
-    Util::OpenFile(instrm, cmd.Schema);
-    ofstream cc_outstrm;
-    Util::OpenFile<ofstream>(cc_outstrm, cc_outfile);
+    auto instrm = Util::OpenFile<ifstream>(cmd.Schema);
+    auto cc_outstrm = Util::OpenFile<ofstream>(cc_outfile);
     TCppPrinter orly_printer(orly_outfile, "Orly script");
     string sql(istreambuf_iterator<char>{instrm}, istreambuf_iterator<char>{});
     auto table = NewTable(cerr, sql.data());

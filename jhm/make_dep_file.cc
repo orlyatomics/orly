@@ -115,15 +115,6 @@ vector<string> GetCDeps(const string &filename, bool is_cpp, const vector<string
   return deps;
 }
 
-// TODO(#289): this should go in a helper somewhere...
-bool EndsWith(const string &target, const string &ending) {
-  if (ending.length() > target.length()) {
-    return false;
-  }
-
-  return target.compare(target.size() - ending.length(), ending.length(), ending) == 0;
-}
-
 TJson ToJson(vector<string> &&that) {
   vector<TJson> json_elems(that.size());
   for(uint64_t i=0; i < that.size(); ++i) {
@@ -136,10 +127,10 @@ TJson ToJson(vector<string> &&that) {
 void MakeDepFile(const string &filename, const string &out_name, const vector<string> &extra_args) {
   TJson deps;
   // Check for extension to determine how we need to scan for dependencies
-  if (EndsWith(filename, ".c")) {
+  if (filename.ends_with(".c")) {
     deps = ToJson(GetCDeps(filename, false, extra_args));
 
-  } else if (EndsWith(filename, ".cc")) {
+  } else if (filename.ends_with(".cc")) {
     deps = ToJson(GetCDeps(filename, true, extra_args));
   } else {
     THROW_ERROR(runtime_error) << "Unknown file extension: " << quoted(filename);

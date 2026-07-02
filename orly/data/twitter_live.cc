@@ -504,8 +504,7 @@ int main(int argc, char *argv[]) {
       [&](const char *name) -> bool {
         std::string username(name, strchr(name, '.'));
         try {
-          ifstream in;
-          Util::OpenFile(in, name);
+          auto in = Util::OpenFile<ifstream>(name);
           TJsonIter json_iter(in);
           if (dataset == "users") {
             TranslateUser(json_iter, username);

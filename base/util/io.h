@@ -30,9 +30,8 @@ namespace Util {
   DEFINE_ERROR(TOpenFileError, std::runtime_error, "could not open file")
 
   template <typename TStrm>
-  void OpenFile(TStrm &strm, const std::string &path) {
-    //TODO(#286): This should move out the stream, but we can't because libstdc++ 4.9 hasn't implemented move for at least ifstream
-
+  [[nodiscard]] TStrm OpenFile(const std::string &path) {
+    TStrm strm;
     strm.exceptions(std::ios_base::failbit);
     try {
       strm.open(path);
@@ -42,6 +41,7 @@ namespace Util {
       Util::Strerror(errno, temp, sizeof(temp));
       THROW_ERROR(TOpenFileError) << std::quoted(path) << Base::EndOfPart << temp;
     }
+    return strm;
   }
 
   /* Returns true iff the fd is valid. */

@@ -76,8 +76,7 @@ FIXTURE(WriteAtMost) {
   try {
     WriteAtMost(writeable, ExpectedData, ExpectedSize);
   } catch (const system_error &error) {
-    /* TODO(#290): change this to error.code() == errc::broken_pipe */
-    caught_broken_pipe = (error.code().value() == EPIPE);
+    caught_broken_pipe = (error.code() == std::errc::broken_pipe);
   }
   EXPECT_TRUE(caught_broken_pipe);
   writeable.Reset();
