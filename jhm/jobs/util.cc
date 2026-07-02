@@ -44,3 +44,14 @@ TFile *Jhm::GetOutputWithExtension(unordered_set<TFile *> output_set, const vect
   assert(false);
   __builtin_unreachable();
 }
+
+optional<TRelPath> Jhm::TryGetInputName(const TRelPath &output,
+                                        const vector<vector<string>> &out_exts,
+                                        const vector<string> &src_ext) {
+  for (const auto &ext : out_exts) {
+    if (output.Path.EndsWith(ext)) {
+      return TRelPath(AddExtension(DropExtension(Base::TPath(output.Path), ext.size()), src_ext));
+    }
+  }
+  return nullopt;
+}
