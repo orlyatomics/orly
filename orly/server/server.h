@@ -159,12 +159,6 @@ namespace Orly {
         /* The port on which the server listens for websocket clients. */
         in_port_t WsPortNumber;
 
-        /* Enables the memcache interface */
-        bool EnableMemcache;
-
-        /* The port on which TServer::MemcacheSocket listens for clients. */
-        in_port_t MemcachePortNumber;
-
         /* The port on which TServer::WaitForSlave listens for a slave. */
         in_port_t SlavePortNumber;
 
@@ -614,11 +608,10 @@ namespace Orly {
         NO_COPY(TServeClientRunnable);
         public:
 
-        TServeClientRunnable(TServer *server, Indy::Fiber::TRunner *runner, Base::TFd &&fd, const Socket::TAddress &client_address, bool is_memcache)
+        TServeClientRunnable(TServer *server, Indy::Fiber::TRunner *runner, Base::TFd &&fd, const Socket::TAddress &client_address)
             : Server(server),
               Fd(fd),
-              ClientAddress(client_address),
-              IsMemcache(is_memcache) {
+              ClientAddress(client_address) {
           FramePool = Indy::Fiber::TFrame::LocalFramePool;
           Frame = FramePool->Alloc();
           try {
@@ -633,11 +626,7 @@ namespace Orly {
         }
 
         void Serve() {
-          if(IsMemcache) {
-            Server->ServeMemcacheClient(std::move(Fd), ClientAddress);
-          } else {
-            Server->ServeClient(Fd, ClientAddress);
-          }
+          Server->ServeClient(Fd, ClientAddress);
           Indy::Fiber::FreeMyFrame(FramePool);
           delete this;
         }
@@ -654,12 +643,10 @@ namespace Orly {
 
         const Socket::TAddress ClientAddress;
 
-        bool IsMemcache;
-
       };  // TServeClientRunnable
 
       /* Accepts connections from clients on our main socket.  Launched as a thread by the constructor. */
-      void AcceptClientConnections(bool is_memcache);
+      void AcceptClientConnections();
 
       /* See <orly/protocol.h>. */
       void BeginImport();
@@ -692,9 +679,6 @@ namespace Orly {
 
       /* Serves a client on the given fd.  Launched as a thread by AcceptClientConnections() when a client connects. */
       void ServeClient(Base::TFd &fd, const Socket::TAddress &client_address);
-
-      /* Serves a client which speaks the memcached protocol. */
-      void ServeMemcacheClient(Base::TFd &&fd, const Socket::TAddress &client_address);
 
       void StateChangeCb(Orly::Indy::TManager::TState state);
 
@@ -758,9 +742,6 @@ namespace Orly {
 
       /* The socket on which AcceptClientConnections() listens. */
       Base::TFd MainSocket;
-
-      /* The socket on which we listen for memcached clients. */
-      Base::TFd MemcacheSocket;
 
       /* Covers ConnectionBySessionId. */
       std::mutex ConnectionMutex;

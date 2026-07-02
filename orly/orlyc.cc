@@ -139,7 +139,6 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
              concurrent lang_test compilers never collide on a port. */
           server_cmd.PortNumber = 0;
           server_cmd.WsPortNumber = 0;
-          server_cmd.MemcachePortNumber = 0;
           server_cmd.SlavePortNumber = 0;
           server_cmd.ReportingPortNumber = 0;
           /* Keep this compiler-embedded server tiny and host-RAM-independent:

@@ -33,9 +33,6 @@
 #include <base/io/device.h>
 #include <orly/atom/core_vector.h>
 #include <orly/indy/disk/durable_manager.h>
-#include <orly/mynde/binary_protocol.h>
-#include <orly/mynde/protocol.h>
-#include <orly/mynde/value.h>
 #include <orly/protocol.h>
 #include <orly/sabot/to_native.h>
 #include <base/strm/fd.h>
@@ -108,14 +105,6 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   Param(
       &TCmd::WsPortNumber, "ws_port_number", Optional, "ws_port_number\0wspn\0",
       "The port on which the server listens for websocket clients."
-  );
-  Param(
-    &TCmd::EnableMemcache, "enable_memcache", Optional, "enable_memcache\0",
-      "The port on which the server listens for Memcache protocol clients."
-  );
-  Param(
-    &TCmd::MemcachePortNumber, "memcache_port_number", Optional, "memcache_port_number\0",
-      "The port on which the server listens for Memcache protocol clients."
   );
   Param(
       &TCmd::SlavePortNumber, "slave_port_number", Optional, "slave_port_number\0spn\0",
@@ -394,8 +383,6 @@ class TIndexIdReader
 TServer::TCmd::TCmd()
     : PortNumber(DefaultPortNumber),
       WsPortNumber(8082),
-      EnableMemcache(false),
-      MemcachePortNumber(11211), // Memcache default port number
       SlavePortNumber(DefaultSlavePortNumber),
       ConnectionBacklog(5000),
       DurableCacheSize(10000),
@@ -1255,33 +1242,9 @@ void TServer::Init() {
 
     }
 
-    if(Cmd.EnableMemcache) {
-      /* Setup mynde indexes */ {
-        std::lock_guard<std::mutex> lock(IndexMapMutex);
-        void *key_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
-        void *val_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
-        Sabot::Type::TAny::TWrapper key_type_wrapper(Orly::Native::Type::For<Mynde::TKey>::GetType(key_type_alloc));
-        Sabot::Type::TAny::TWrapper val_type_wrapper(Orly::Native::Type::For<Mynde::TValue>::GetType(val_type_alloc));
-        string pkg_key = "memcache " + AsStrFunc(Sabot::DumpType, *key_type_wrapper);
-        Atom::TCore val_core(&IndexMapArena, *val_type_wrapper);
-        auto ret = IndexByIndexId.emplace(TIndexType(string(pkg_key), TKey(val_core, &IndexMapArena)),
-                                          Mynde::MemcachedIndexUuid);
-        if (ret.second) {
-          /* TODO(#367): clean up the index_id_replication obj... refactor this logic into a function */
-          assert(RepoManager);
-          RepoManager->SaveIndexNamespaceMapping(Mynde::MemcachedIndexUuid, pkg_key);
-          RepoManager->Enqueue(
-              new TIndexIdReplication(Mynde::MemcachedIndexUuid, pkg_key, TKey(val_core, &IndexMapArena)));
-          IndexIdSet.insert(Mynde::MemcachedIndexUuid);
-        }
-      }
-    }
-
-    /* Open a listening socket on `port`. A bind failure is always logged;
-       it aborts startup only when `bind_is_fatal` (the main socket kills the
-       server, the memcache socket limps on -- preserving the historical
-       behavior of the two previously-duplicated blocks). */
-    auto open_listening_socket = [this](TFd &sock, in_port_t port, const char *who, bool bind_is_fatal) {
+    /* Open the listening socket for clients. A bind failure is logged and
+       aborts startup. */
+    auto open_listening_socket = [this](TFd &sock, in_port_t port, const char *who) {
       TAddress address(TAddress::IPv4Any, port);
       sock = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
       int flag = true;
@@ -1290,20 +1253,13 @@ void TServer::Init() {
         Bind(sock, address);
       } catch (const std::exception &ex) {
         syslog(LOG_ERR, "Server startup caught exception [%s], cannot bind %s socket to port [%d]", ex.what(), who, port);
-        if (bind_is_fatal) {
-          throw;
-        }
+        throw;
       }
       IfLt0(listen(sock, Cmd.ConnectionBacklog));
     };
 
-    open_listening_socket(MainSocket, Cmd.PortNumber, "main", true);
-    Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this, false));
-
-    if (Cmd.EnableMemcache) {
-      open_listening_socket(MemcacheSocket, Cmd.MemcachePortNumber, "memcache", false);
-      Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this, true));
-    }
+    open_listening_socket(MainSocket, Cmd.PortNumber, "main");
+    Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this));
 
     Scheduler->Schedule(bind(&TServer::CleanHouse, this));
     Reporter = make_unique<TIndyReporter>(this, Scheduler, Cmd.ReportingPortNumber);
@@ -1704,7 +1660,7 @@ void TServer::TConnection::OnRelease(TConnection *connection) {
   delete connection;
 }
 
-void TServer::AcceptClientConnections(bool is_memcache) {
+void TServer::AcceptClientConnections() {
   if (!Fiber::TFrame::LocalFramePool) {
     Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
   }
@@ -1712,9 +1668,9 @@ void TServer::AcceptClientConnections(bool is_memcache) {
     try {
       //DEBUG_LOG("acceptor: waiting");
       TAddress client_address;
-      TFd client_socket(Accept((is_memcache ? MemcacheSocket : MainSocket), client_address));
+      TFd client_socket(Accept(MainSocket, client_address));
       size_t prev_assignment_count = std::atomic_fetch_add(&SlowAssignmentCounter, 1UL);
-      new TServeClientRunnable(this, SlowRunnerVec[prev_assignment_count % SlowRunnerVec.size()].get(), move(client_socket), client_address, is_memcache);
+      new TServeClientRunnable(this, SlowRunnerVec[prev_assignment_count % SlowRunnerVec.size()].get(), move(client_socket), client_address);
       //Scheduler->Schedule(bind(&TServer::ServeClient, this, move(client_socket), client_address));
     } catch (const std::system_error &err) {
       if (WasInterrupted(err)) {
@@ -2247,10 +2203,6 @@ string TServer::ImportCoreVector(const string &file_pattern,
 
 void TServer::InstallPackage(const vector<string> &package_name, uint64_t version) {
 
-  if (package_name == Mynde::PackageName) {
-    throw std::runtime_error("memcachememcache is a reserved package name.");
-  }
-
   // Callback for just before we make the packages installed / available for use.
   auto pre_install_cb = [this](Package::TLoaded::TPtr pkg_ptr, bool /*is_new_version*/) -> void {
     /* The package manager only invokes this for a genuinely new or upgraded
@@ -2455,338 +2407,6 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
   }
 }
 
-template<uint64_t Length>
-constexpr uint64_t GetArrayLen(const char(&)[Length]) { return Length; }
-
-void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
-
-  // NOTE: fd_original has it's ownership stolen at this point. Use of it will cause badness.
-  Strm::TFd<> strm(std::move(fd_original));
-
-  //TODO(#371): This really should be a zero ttl
-  const auto non_zero_ttl = std::chrono::seconds(15);
-
-  // TODO(#371): Convert sessions to be a pooled resource
-  auto session = DurableManager->New<TSession>(Base::TUuid::Twister, non_zero_ttl);
-
-  // Note: We don't call session->NewFastPrivatePov() because we need the POV handle to keep the POV from vanishing.
-  // TODO(#371): Only make this when needed. Should live with the session as a pooled resource. Recycle only when failed.
-
-  // TODO(#371): Switch to this / the wrapped variant?
-  // auto pov = session->NewFastPrivatePov(this, std::nullopt, zero_ttl);
-  // The problem is then we jump through a lot of uuid objects for no good reason...
-  // TODO(#371): Same as above but not all wrapped up
-  auto pov = DurableManager->New<TPov>(TUuid::Twister,
-                                       non_zero_ttl,
-                                       session->GetId(),
-                                       TPov::TAudience::Private,
-                                       TPov::TPolicy::Fast,
-                                       TPov::TSharedParents{});
-  // TODO(#371): PrivatePovs shoudl auto-connect to their session via invasive containment...
-  session->AddPov(pov);
-
-  auto repo = pov->GetRepo(this);
-
-  // NOTE: Should live the same time as context
-  Atom::TSuprena context_arena;
-
-  // Context for the current series of requests which we need to be consistent.
-  std::unique_ptr<Indy::TContext> context;
-
-  // TODO(#374): Detect protocol here (binary or text). Currently we only support binary.
-  // Our input and output streams
-  // TODO(#374): We want TRequest to genericize the binary and text streams to one thing.
-  // NOTE: We there should be no virtual calls in doing so.
-  Strm::Bin::TIn in(&strm);
-  Strm::Bin::TOut out(&strm);
-
-  try {
-    // TODO(#374): Detect and handle eof without an exception?
-
-    if (in.Peek() != Mynde::BinaryMagicRequest) {
-      const char err_msg[] = "SERVER_ERROR text protocol is not supported.\r\n";
-      out.Write(err_msg, GetArrayLen(err_msg));
-      return;
-    }
-
-    bool Quit = false;
-
-    // Loop processing requets until we hit eof or explicitly get an exit command.
-    // TODO(#374): Detect and handle eof without an exception?
-    while(!Quit) {
-      // NOTE: We make this on the heap so that we can pass it to the response generation thread
-      // We do the two threads because the protocol states that pending unread responses shouldn't block requests from
-      // being read / handled
-      Mynde::TRequest req(in);
-
-      size_t prev_assignment_count = std::atomic_fetch_add(&SlowAssignmentCounter, 1UL);
-      auto switch_to_runner =
-          make_unique<Indy::Fiber::TSwitchToRunner>(FastRunnerVec[prev_assignment_count % FastRunnerVec.size()].get());
-      // TODO(#370): Build up the response in this. Call 'fire' when the whole response is built.
-      // TResponseBuilder resp(req);
-
-      if (req.GetFlags().Key && req.GetOpcode() != Mynde::TRequest::TOpcode::Get) {
-        // TODO(#368): This needs to be a binary error message....
-        const char err_msg[] = "SERVER_ERROR Only Get is allowed to return the key (GetK, GetKQ).\r\n";
-        out.Write(err_msg, GetArrayLen(err_msg));
-        return;  // Closes the RAII connection
-      }
-
-      Mynde::TResponseHeader hdr;
-      Zero(hdr);
-      hdr.Magic = Mynde::BinaryMagicResponse;
-      hdr.Opcode = req.GetBinaryOpcode();
-      hdr.Opaque = req.GetOpaque();
-
-
-      // TODO(#369): Genericize memcache key -> indy key conversion (Make it a function)
-      switch (req.GetOpcode()) {
-        case Mynde::TRequest::TOpcode::Get: {
-          if (!context) {
-            context = make_unique<Indy::TContext>(repo, &context_arena);
-          }
-
-          // TODO(#369): Change keys and values to be start, limit based rather than doing this std::string marshalling
-          Mynde::TKey key{{req.GetKey().GetData(), req.GetKey().GetSize()}};
-
-          // Perform the Get
-          // TODO(#369): We don't have any reason to go from atom -> Sabot
-          // TODO(#369): The IndexKey has more stuff in it than we need / care about.
-          void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-          Indy::TIndexKey indy_index_key(
-              Mynde::MemcachedIndexUuid,
-              Indy::TKey(&context_arena, Sabot::State::TAny::TWrapper(Native::State::New(key, state_alloc))));
-          if (req.GetFlags().Key) {
-            hdr.KeyLength = req.GetKey().GetSize();
-          }
-          if (!context->Exists(indy_index_key)) {
-            syslog(LOG_INFO, "Get of unset key %s", std::get<0>(key).c_str());
-            hdr.Status = Mynde::TResponseStatus::KeyNotFound;
-            switch_to_runner.reset();
-            hdr.TotalBodyLength = hdr.KeyLength + 9;
-            if (!req.GetFlags().Quiet) {
-              out << hdr;
-              if (req.GetFlags().Key) {
-                out << req.GetKey();
-              }
-              const char err_msg[] = "Not found";
-              static_assert(GetArrayLen(err_msg) == 10, "Value is longer than expected...");
-              out.Write(err_msg, GetArrayLen(err_msg)-1);
-            }
-          } else {
-            Indy::TKey response_value = (*context)[indy_index_key];
-            syslog(LOG_INFO, "Get of set key %s", std::get<0>(key).c_str());
-            Mynde::TValue value;
-            ToNative(*Sabot::State::TAny::TWrapper(response_value.GetState(state_alloc)), value);
-            static_assert(sizeof(value.Flags) == 4, "Sanity check the flags are indeed 4 bytes.");
-            hdr.ExtrasLength = 4;
-            hdr.TotalBodyLength = value.Value.size() + 4 + hdr.KeyLength;
-
-            switch_to_runner.reset();
-            out << hdr;
-            out.WriteShallow(value.Flags);
-            if (req.GetFlags().Key) {
-              out << req.GetKey();
-            }
-            out.Write(value.Value.c_str(), value.Value.size());
-          }
-          break;
-        }
-        case Mynde::TRequest::TOpcode::Set: {
-
-          // First 4 bytes are flags
-          uint32_t Flags = *(req.GetExtras().GetData());
-
-          // Second 4 bytes are expiration
-          uint32_t Expiration = *(req.GetExtras().GetData() + 4);
-
-          // We currently only allow keys which have no timeout / are persistent
-          if (Expiration != 0) {
-            // TODO(#368): Return a proper binary error
-            // TODO(#368): Throw an exception to close out the server ina  well logged way
-            const char err_msg[] = "SERVER_ERROR Only keys without an expiration are allowed (Expiration = 0)";
-            out.Write(err_msg, GetArrayLen(err_msg));
-            return;
-          }
-
-          Mynde::TKey key{{req.GetKey().GetData(), req.GetKey().GetSize()}};
-          Mynde::TValue value{{req.GetValue().GetData(), req.GetValue().GetSize()}, Flags};
-
-          syslog(LOG_INFO, "Set %s: %d %s", std::get<0>(key).c_str(), Flags, value.Value.c_str());
-
-          auto transaction = RepoManager->NewTransaction();
-          TUuid update_id(TUuid::Twister);
-
-          // TODO(#369): That we have to feed a package name and method name here seems like it might cause trouble later.
-          TMetaRecord meta_record(update_id,
-                                  TMetaRecord::TEntry(session->GetId(),
-                                                      session->GetUserId(),
-                                                      Orly::Mynde::PackageName,
-                                                      "set",
-                                                      {},
-                                                      {},
-                                                      Base::Chrono::CreateTimePnt(2014, 3, 23, 0, 0, 0, 0, 0),
-                                                      0));
-
-          void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-          void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize());
-          void *state_alloc_2 = alloca(Sabot::State::GetMaxStateSize());
-          void *state_alloc_3 = alloca(Sabot::State::GetMaxStateSize());
-          auto update = Indy::TUpdate::NewUpdate(
-              TUpdate::TOpByKey{
-                  {Indy::TIndexKey(
-                       Mynde::MemcachedIndexUuid,
-                       Indy::TKey(&context_arena, Sabot::State::TAny::TWrapper(Native::State::New(key, state_alloc)))),
-                   Indy::TKey(&context_arena,
-                              Sabot::State::TAny::TWrapper(Native::State::New(value, state_alloc_1))), }},
-              Indy::TKey(meta_record, &context_arena, state_alloc_2),
-              Indy::TKey(update_id, &context_arena, state_alloc_3));
-          transaction->Push(repo, update);
-          transaction->Prepare();
-          transaction->CommitAction();
-
-          switch_to_runner.reset();
-
-          //NOTE: We don't support cas, but we set the flag to 1 so that we pass some tests.
-          hdr.Cas = 1;
-
-          if (!req.GetFlags().Quiet) {
-            out << hdr;
-          }
-          context.reset();
-          break;
-        }
-        case Mynde::TRequest::TOpcode::Delete: {
-          /* memcache DELETE: remove a key from this connection's POV. The
-             memcached binary spec says DELETE on a missing key returns
-             0x01 (KeyNotFound), and on success returns 0x00 with an empty
-             body. The Quiet variant suppresses the success response only;
-             error responses are still sent. Indy doesn't have a hard
-             "delete" primitive -- it's an MVCC store -- so we model the
-             delete as a write of Native::TTombstone at the same indy
-             index key. The Get handler above already treats missing /
-             unset keys via context->Exists(); a tombstone-written key
-             likewise returns "not found" on subsequent Get. */
-          if (!context) {
-            context = make_unique<Indy::TContext>(repo, &context_arena);
-          }
-          Mynde::TKey key{{req.GetKey().GetData(), req.GetKey().GetSize()}};
-          void *state_alloc_key = alloca(Sabot::State::GetMaxStateSize());
-          Indy::TIndexKey indy_index_key(
-              Mynde::MemcachedIndexUuid,
-              Indy::TKey(&context_arena,
-                         Sabot::State::TAny::TWrapper(Native::State::New(key, state_alloc_key))));
-          if (!context->Exists(indy_index_key)) {
-            syslog(LOG_INFO, "Delete of unset key %s", std::get<0>(key).c_str());
-            hdr.Status = Mynde::TResponseStatus::KeyNotFound;
-            switch_to_runner.reset();
-            const char err_msg[] = "Not found";
-            hdr.TotalBodyLength = sizeof(err_msg) - 1;
-            if (!req.GetFlags().Quiet) {
-              out << hdr;
-              out.Write(err_msg, sizeof(err_msg) - 1);
-            }
-            context.reset();
-            break;
-          }
-          syslog(LOG_INFO, "Delete %s", std::get<0>(key).c_str());
-          auto transaction = RepoManager->NewTransaction();
-          TUuid update_id(TUuid::Twister);
-          TMetaRecord meta_record(update_id,
-                                  TMetaRecord::TEntry(session->GetId(),
-                                                      session->GetUserId(),
-                                                      Orly::Mynde::PackageName,
-                                                      "delete",
-                                                      {},
-                                                      {},
-                                                      Base::Chrono::CreateTimePnt(2014, 3, 23, 0, 0, 0, 0, 0),
-                                                      0));
-          void *state_alloc_key2 = alloca(Sabot::State::GetMaxStateSize());
-          void *state_alloc_val = alloca(Sabot::State::GetMaxStateSize());
-          void *state_alloc_meta = alloca(Sabot::State::GetMaxStateSize());
-          void *state_alloc_id = alloca(Sabot::State::GetMaxStateSize());
-          auto update = Indy::TUpdate::NewUpdate(
-              TUpdate::TOpByKey{
-                  {Indy::TIndexKey(
-                       Mynde::MemcachedIndexUuid,
-                       Indy::TKey(&context_arena, Sabot::State::TAny::TWrapper(Native::State::New(key, state_alloc_key2)))),
-                   Indy::TKey(&context_arena,
-                              Sabot::State::TAny::TWrapper(Native::State::New(Native::TTombstone::Tombstone, state_alloc_val)))}},
-              Indy::TKey(meta_record, &context_arena, state_alloc_meta),
-              Indy::TKey(update_id, &context_arena, state_alloc_id));
-          transaction->Push(repo, update);
-          transaction->Prepare();
-          transaction->CommitAction();
-          switch_to_runner.reset();
-          if (!req.GetFlags().Quiet) {
-            out << hdr;
-          }
-          context.reset();
-          break;
-        }
-        case Mynde::TRequest::TOpcode::NoOp: {
-          syslog(LOG_INFO, "Noop, %02X", hdr.Opcode);
-          context.reset();
-          out << hdr;
-          break;
-        }
-        case Mynde::TRequest::TOpcode::Quit: {
-          Quit = true;
-
-          if(!req.GetFlags().Quiet) {
-            out << hdr;
-          }
-          break;
-        }
-        case Mynde::TRequest::TOpcode::Version: {
-          /* The memcache binary spec puts the version string in the response
-             body. Clients (libmemcached, mc-cli, etc) typically send Version
-             right after connecting as a liveness/capability probe; they're
-             happy with any non-empty string. We deliberately don't claim to
-             be a specific memcached release so clients don't infer feature
-             support that isn't there -- the supported opcode set is still
-             much smaller than upstream memcached's (see UnknownCommand path
-             below, and docs/memcached.md for the broader picture). */
-          context.reset();
-          static const char version[] = "orly-0.5";
-          hdr.TotalBodyLength = sizeof(version) - 1;
-          out << hdr;
-          out.Write(version, sizeof(version) - 1);
-          break;
-        }
-        default: {
-          /* Many opcodes (Delete, Increment, Version, Add, Replace, Append,
-             Prepend, Flush, State, and all the quiet variants) are still
-             stubbed -- see orly/mynde/binary_protocol.cc for the full parser
-             but only Get/Set/NoOp/Quit handled above. Previously this path
-             called NOT_IMPLEMENTED() which throws std::logic_error and the
-             outer catch closes the connection. That meant a routine client
-             probing for Version (a common no-op for memcache clients) would
-             see a socket reset and treat the server as broken.
-             Per the memcached binary spec, status 0x81 (UnknownCommand) is
-             the correct reply for opcodes we don't service; the body
-             carries a human-readable explanation. Returning that keeps the
-             connection alive for whatever the client wants to do next. */
-          syslog(LOG_INFO, "Memcache not implemented opcode: %02X", req.GetBinaryOpcode());
-          hdr.Status = Mynde::TResponseStatus::UnknownCommand;
-          const char err_msg[] = "Not implemented";
-          hdr.TotalBodyLength = sizeof(err_msg) - 1;
-          out << hdr;
-          out.Write(err_msg, sizeof(err_msg) - 1);
-          break;
-        }
-      }
-
-      //Flush output / force everything to be written.
-      out.Flush();
-    }
-  } catch (const Strm::TPastEnd &ex) {
-    // eof. Just exit / close sockets / destruct all our RAII things.
-    syslog(LOG_INFO, "closing memcache connection: End of stream");
-  } catch (const std::exception &ex) {
-    syslog(LOG_INFO, "closing memcache connection: EXCEPTION: %s", ex.what());
-  }
-}
 
 void TServer::StateChangeCb(Orly::Indy::TManager::TState state) {
   string from;

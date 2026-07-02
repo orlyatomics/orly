@@ -199,13 +199,11 @@ namespace Orly {
       /* The id of the global point of view. */
       static const Base::TUuid GlobalPovId;
 
-      /* Add the given pov to the collection of povs we'll keep open.
-         Public only because the memcache connection path constructs its
-         private pov outside the session (server.cc); when #371 moves that
-         to pooled, session-owned povs, this can go private. */
-      void AddPov(const Durable::TPtr<TPov> &pov);
-
       private:
+
+      /* Add the given pov to the collection of povs we'll keep open.  (Private again since the
+         memcache frontend -- the one outside caller -- was removed.) */
+      void AddPov(const Durable::TPtr<TPov> &pov);
 
       TSession(Durable::TManager *manager, const Base::TUuid &id, const Durable::TTtl &ttl);
 
