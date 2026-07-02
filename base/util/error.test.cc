@@ -52,14 +52,22 @@ FIXTURE(UtilsGenerated) {
   EXPECT_TRUE(caught);
 }
 
-// Disable the interruption test as it is non-deterministic in running / sometimes never exits.
-// TODO(#282): Re-enable / FIXME
-#if 0
+/* Re-enabled for #282. The old version used pause(), which loses the race
+   where the signal lands between the worker's ready-notification and the
+   pause() call -- the no-op handler consumed it and pause() then blocked
+   forever ("sometimes never exits"). SIGUSR1 is now blocked before the
+   worker exists, so an early signal stays pending, and sigsuspend()
+   atomically unblocks + waits: the wakeup is deterministic no matter when
+   the signal arrives. */
 FIXTURE(Interruption) {
   struct sigaction action;
   Zero(action);
   action.sa_handler = [](int) {};
   sigaction(SIGUSR1, &action, 0);
+  sigset_t block_set, old_set;
+  sigemptyset(&block_set);
+  sigaddset(&block_set, SIGUSR1);
+  IfNe0(pthread_sigmask(SIG_BLOCK, &block_set, &old_set));
   mutex mx;
   condition_variable cv;
   bool running = false, was_interrupted = false;
@@ -70,7 +78,9 @@ FIXTURE(Interruption) {
       cv.notify_one();
     }
     try {
-      IfLt0(pause());
+      sigset_t suspend_set;
+      sigemptyset(&suspend_set);
+      IfLt0(sigsuspend(&suspend_set));
     } catch (system_error &error) {
       was_interrupted = WasInterrupted(error);
     } catch (...) {}
@@ -83,6 +93,6 @@ FIXTURE(Interruption) {
   }
   IfNe0(pthread_kill(t.native_handle(), SIGUSR1));
   t.join();
+  IfNe0(pthread_sigmask(SIG_SETMASK, &old_set, 0));
   EXPECT_TRUE(was_interrupted);
 }
-#endif
