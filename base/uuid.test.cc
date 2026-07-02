@@ -99,3 +99,26 @@ FIXTURE(BinaryStrm) {
   }
   EXPECT_EQ(actual, expected);
 }
+
+FIXTURE(IsValidUuid) {
+  EXPECT_TRUE(TUuid::IsValidUuid(Lower));
+  EXPECT_TRUE(TUuid::IsValidUuid(Upper));
+  EXPECT_FALSE(TUuid::IsValidUuid(""));
+  EXPECT_FALSE(TUuid::IsValidUuid("1b4e28ba-2fa1-11d2-883f"));  // too short
+  /* 36 characters, but not a uuid -- the old length-only check passed this. */
+  EXPECT_FALSE(TUuid::IsValidUuid("this-is-36-characters-of-not-a-uuid!"));
+  /* Right shape, non-hex digit. */
+  EXPECT_FALSE(TUuid::IsValidUuid("1b4e28ba-2fa1-11d2-883f-b9a761bdeZfb"));
+}
+
+FIXTURE(TimeAndMACSafe) {
+  /* The safe generator either produces a uuid or throws TUnsafeError when
+     the system can't guarantee uniqueness (e.g. no uuidd on a CI box);
+     both are valid outcomes, anything else is a bug. */
+  try {
+    TUuid id(TUuid::TimeAndMACSafe);
+    EXPECT_TRUE(static_cast<bool>(id));
+  } catch (const TUuid::TUnsafeError &) {
+    // Acceptable: this host can't make the guarantee.
+  }
+}
