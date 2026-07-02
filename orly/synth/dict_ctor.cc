@@ -19,9 +19,12 @@
 #include <orly/synth/dict_ctor.h>
 
 #include <cassert>
+#include <set>
 
+#include <base/as_str.h>
 #include <orly/error.h>
 #include <orly/expr/dict.h>
+#include <orly/expr/literal.h>
 #include <orly/synth/cst_utils.h>
 #include <orly/synth/get_pos_range.h>
 
@@ -54,9 +57,19 @@ TDictCtor::~TDictCtor() {
 
 Expr::TExpr::TPtr TDictCtor::Build() const {
   Expr::TDict::TMemberMap members;
+  /* Non-constant keys can only collide at runtime, but two equal literal
+     keys are a compile-time mistake -- catch them here. */
+  std::set<Var::TVar> literal_keys;
   for (auto member : Members) {
-    /* TODO(#378): Detect duplicate constant keys and throw */
-    auto result = members.emplace(std::make_pair((member.first)->Build(), (member.second)->Build()));
+    auto key = (member.first)->Build();
+    if (auto literal = std::dynamic_pointer_cast<Expr::TLiteral>(key)) {
+      if (!literal_keys.insert(literal->GetVal()).second) {
+        throw TCompileError(HERE, GetPosRange(DictCtor),
+            Base::AsStr("duplicate key ", literal->GetVal(),
+                        " in dictionary constructor").c_str());
+      }
+    }
+    auto result = members.emplace(std::make_pair(std::move(key), (member.second)->Build()));
     assert(result.second);
   }
   return Expr::TDict::New(members, GetPosRange(DictCtor));
