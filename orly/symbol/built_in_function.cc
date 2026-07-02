@@ -42,7 +42,7 @@ const TBuiltInFunction::TPtr &TBuiltInFunction::GetTimeDiff() {
                                             {"second", Type::TInt::Get()},
                                             {"nanosecond", Type::TInt::Get()}},
                                            Type::TTimeDiff::Get());
-  static auto result_def = TResultDef::New(func, "time_diff", TPosRange());  // TODO(#293): Get rid of pos range;
+  static auto result_def = TResultDef::New(func, "time_diff", TPosRange());
 
   return func;
 }
@@ -60,7 +60,7 @@ const TBuiltInFunction::TPtr &TBuiltInFunction::GetTimePnt() {
                              {"nanosecond", Type::TInt::Get()},
                              {"utc_offset", Type::TInt::Get()}},
                             Type::TTimePnt::Get());
-  static auto result_def = TResultDef::New(func, "time_pnt", TPosRange());  // TODO(#293): Get rid of pos range
+  static auto result_def = TResultDef::New(func, "time_pnt", TPosRange());
   return func;
 }
 
@@ -72,7 +72,7 @@ const TBuiltInFunction::TPtr &TBuiltInFunction::GetRandomInt() {
                                             {"max", Type::TInt::Get()},
                                             {"idx", Type::TInt::Get()}},
                                            Type::TInt::Get());
-  static auto result_def = TResultDef::New(func, "random_int", TPosRange());  // TODO(#293): Get rid of pos range
+  static auto result_def = TResultDef::New(func, "random_int", TPosRange());
   return func;
 }
 
@@ -82,7 +82,7 @@ const TBuiltInFunction::TPtr &TBuiltInFunction::GetReplace() {
       {"oldstr", "regex", "newstr"},
       {{"oldstr", Type::TStr::Get()}, {"regex", Type::TStr::Get()}, {"newstr", Type::TStr::Get()}},
       Type::TStr::Get());
-  static auto result_def = TResultDef::New(func, "str_replace", TPosRange());  // TODO(#293): Get rid of pos range
+  static auto result_def = TResultDef::New(func, "str_replace", TPosRange());
   return func;
 }
 
