@@ -33,6 +33,11 @@ namespace Orly {
           NO_COPY(TDiskEngine);
           public:
 
+          /* The controller, so the server can stop its polling loop (#440). */
+          TDiskController *GetController() const {
+            return DiskController.get();
+          }
+
           TDiskEngine(Base::TScheduler *scheduler,
                       Fiber::TRunner::TRunnerCons &runner_cons,
                       Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,

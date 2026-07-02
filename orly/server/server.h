@@ -389,6 +389,14 @@ namespace Orly {
          run tests on indy instead of the legacy SPA engine (#262). Installs,
          opens a throwaway session, and runs the suite on a fiber (durable/
          transaction work asserts it runs in a fiber context). */
+      /* Orderly stop (#440): stops serving, tears down the fiber-entangled
+         managers ON a fiber (their destructors block on fiber semaphores and
+         must run while the runners are still alive), then stops and joins
+         every thread this server owns.  After this the server must not be
+         used; destruction itself remains deferred (docs/teardown-design.md).
+         Idempotent.  Must be called from a non-fiber thread. */
+      void Shutdown();
+
       bool RunPackageTests(const std::vector<std::string> &package_name, uint64_t version, bool verbose);
 
       private:
@@ -765,6 +773,10 @@ namespace Orly {
       std::shared_ptr<Orly::Indy::Disk::TIndyUtilReporter> UtilReporter;
 
       std::shared_ptr<std::function<void (const Base::TFd &)>> WaitForSlaveActionCb;
+
+      /* Set once Shutdown() has run; makes it idempotent and tells the
+         destructor the managers are already gone. */
+      bool ShutdownCalled = false;
 
       bool InitFinished;
       std::condition_variable InitCond;

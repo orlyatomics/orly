@@ -107,6 +107,12 @@ namespace Base {
          and return.  It's common to call this function from main(). */
       void RunUntilCtrlC(TMainJob &&main_job) const;
 
+      /* As above, but runs 'on_signal' after ctrl-c lands and before the
+         scheduler is torn down -- the hook for orderly server shutdown
+         (#440).  The callback runs on the thread that called us, which is
+         not a fiber. */
+      void RunUntilCtrlC(TMainJob &&main_job, const std::function<void ()> &on_signal) const;
+
       /* The policy of no workers. */
       static const TPolicy Shutdown;
 
