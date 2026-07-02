@@ -19,7 +19,9 @@
 #pragma once
 
 #include <cassert>
+#include <exception>
 #include <fstream>
+#include <string>
 
 #include <tools/nycr/symbol/language.h>
 
@@ -118,8 +120,44 @@ namespace Tools {
 
     enum TCommentStyle { CStyle, XmlStyle };
 
+    /* An output stream that writes to a '.tmp'-suffixed sibling of the target
+       file and atomically rename()s it into place on Commit().  A reader
+       racing the generator (such as a jhm dep scan, #406) can therefore never
+       observe a partially written file: the target path either does not exist
+       yet, still holds its old content, or holds the complete new content.
+       Destruction without Commit() -- say, because an exception unwound the
+       writer -- discards the temporary and leaves the target untouched. */
+    class TOutputFile final : public std::ofstream {
+      public:
+
+      TOutputFile() = default;
+
+      TOutputFile(const TOutputFile &) = delete;
+      TOutputFile &operator=(const TOutputFile &) = delete;
+
+      /* Discards the temporary if Commit() was never reached.  (The base
+         destructor is noexcept, so we cannot throw here; a writer that
+         forgets to commit loses its output, which jhm's output-existence
+         check reports loudly.) */
+      ~TOutputFile();
+
+      /* Opens the '.tmp' sibling of 'path' for writing. */
+      void Open(std::string &&path);
+
+      /* Closes the stream and renames the temporary to the target path.
+         Throws if the stream went bad or the rename fails. */
+      void Commit();
+
+      private:
+
+      /* The path we ultimately produce and the temporary we write to.
+         TmpPath is cleared once the temporary is renamed away. */
+      std::string FinalPath, TmpPath;
+
+    };  // TOutputFile
+
     /* Creates an output file and writes its header comment. Returns an open stream to the file. */
-    void CreateOutputFile(const char *root, const char *branch, const char *atom, const TLanguage *language, const char *ext, std::ofstream &strm, TCommentStyle comment_style = CStyle);
+    void CreateOutputFile(const char *root, const char *branch, const char *atom, const TLanguage *language, const char *ext, TOutputFile &strm, TCommentStyle comment_style = CStyle);
 
 /* Standard inserter for Tools::Nycr::Symbol::TPath. */
 inline std::ostream &operator<<(std::ostream &strm, const Tools::Nycr::Symbol::TPath &that) {

@@ -15,6 +15,7 @@
    limitations under the License. */
 
 #include <jhm/jobs/bison.h>
+#include <filesystem>
 #include <optional>
 
 #include <jhm/env.h>
@@ -31,6 +32,15 @@ const static vector<vector<string>> OutExtensions = {
   {"bison","cc"},
   {"bison", "hh"}
 };
+
+/* Bison writes its outputs (the .cc, the .hh, and the -rall report)
+   incrementally in place, so a dep scan racing this job could read a
+   truncated header (#406).  Generate into this temp directory next to the
+   target instead; IsComplete() renames everything into place, so a reader
+   only ever sees a missing file or a complete one. */
+static string GetTmpDir(const string &cc_path) {
+  return cc_path + ".tmp.d";
+}
 
 TJobProducer TBison::GetProducer() {
 
@@ -55,7 +65,21 @@ const unordered_set<TFile*> TBison::GetNeeds() {
 
 vector<string> TBison::GetCmd() {
   TFile *primary_output = GetOutputWithExtension(GetOutput(), {"cc"});
-  return vector<string>{"bison","-rall","-o" + primary_output->GetPath(), GetInput()->GetPath()};
+  const string &cc_path = primary_output->GetPath();
+  const string tmp_dir = GetTmpDir(cc_path);
+  const size_t slash = cc_path.rfind('/');
+  assert(slash != string::npos);
+  /* Clear any leftovers from an earlier failed run. */
+  filesystem::remove_all(tmp_dir);
+  filesystem::create_directory(tmp_dir);
+  /* --file-prefix-map keeps the #line directives and the header's include
+     guard pointing at the final paths, so the output is byte-identical to an
+     in-place run.  The '#include "<name>.bison.hh"' bison emits into the .cc
+     uses the basename only, which the temp directory preserves. */
+  return vector<string>{"bison", "-rall",
+                        "--file-prefix-map=" + tmp_dir + "/=" + cc_path.substr(0, slash + 1),
+                        "-o" + tmp_dir + cc_path.substr(slash),
+                        GetInput()->GetPath()};
 }
 
 
@@ -66,6 +90,14 @@ TTimestamp TBison::GetCmdTimestamp() const {
 
 bool TBison::IsComplete() {
   TFile *cc = GetOutputWithExtension(GetOutput(), {"cc"});
+  /* Atomically move everything bison generated into place (see GetTmpDir);
+     rename within a directory can't leave a partially written file visible. */
+  const filesystem::path tmp_dir = GetTmpDir(cc->GetPath());
+  const filesystem::path out_dir = tmp_dir.parent_path();
+  for (const auto &entry : filesystem::directory_iterator(tmp_dir)) {
+    filesystem::rename(entry.path(), out_dir / entry.path().filename());
+  }
+  filesystem::remove(tmp_dir);
   cc->PushComputedConfig(
       TJson::TObject{{"cmd", TJson::TObject{{"g++", Env.GetConfig().GetEntry({"cmd", "bison", "g++"})}}}});
   return true;

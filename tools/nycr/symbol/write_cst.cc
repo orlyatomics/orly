@@ -55,7 +55,7 @@ void Tools::Nycr::Symbol::WriteCst(const char *root, const char *branch, const c
 
 static void WriteCstH(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".cst.h", strm);
   strm
       << "#pragma once" << endl << endl
@@ -90,11 +90,12 @@ static void WriteCstH(const char *root, const char *branch, const char *atom, co
       strm << "}  // " << TUpper(*iter) << endl;
     }
   }
+  strm.Commit();
 }
 
 static void WriteCstCc(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".cst.cc", strm);
   strm
       << "#include <" << TPath(branch, atom, language) << ".cst.h>" << endl << endl
@@ -143,6 +144,7 @@ static void WriteCstCc(const char *root, const char *branch, const char *atom, c
       << "  return ctx;" << endl
       << '}' << endl;
   ForEachKnownKind(language, bind(WriteDef, _1, ref(strm)));
+  strm.Commit();
 }
 
 static void WriteDecl(const TKind *kind, const string &namespace_prefix, ostream &strm) {

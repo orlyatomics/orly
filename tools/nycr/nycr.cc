@@ -30,6 +30,7 @@
 #include <tools/nycr/cst_redirect.h>
 #include <tools/nycr/symbol/bootstrap.h>
 #include <tools/nycr/symbol/language.h>
+#include <tools/nycr/symbol/output_file.h>
 #include <tools/nycr/symbol/write_bison.h>
 #include <tools/nycr/symbol/write_cst.h>
 #include <tools/nycr/symbol/write_dump.h>
@@ -87,10 +88,10 @@ class TNycr : public Base::TCmd {
       if (!GetContext().HasErrors()) {
         const Symbol::TLanguage::TLanguages &languages = Symbol::TLanguage::GetLanguages();
         if (LanguageReport && !LanguageReportFile.empty()) {
-          ofstream out(LanguageReportFile);
-          if (!out.is_open()) {
-            THROW << "Unable to open language report output file " << LanguageReportFile;
-          }
+          /* Written via a temp file + atomic rename, like every generated
+             output, so a racing reader never sees a partial report (#406). */
+          Symbol::TOutputFile out;
+          out.Open(string(LanguageReportFile));
 
           // NOTE: We're hand-converting the list into json, because that's wayyyy easier for now
           out
@@ -101,6 +102,7 @@ class TNycr : public Base::TCmd {
                             strm << '"' << Symbol::TLower(language->GetName()) << '"';
                           })
             << ']';
+          out.Commit();
         }
         while (!languages.empty()) {
           Symbol::TLanguage *language = *languages.begin();

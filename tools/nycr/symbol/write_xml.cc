@@ -86,11 +86,12 @@ void TXmlTag::Write(ostream &strm) const {
 
 void Tools::Nycr::Symbol::WriteXml(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".xml", strm, XmlStyle);
   strm << TXmlTag(TXmlTag::Document, Open);
   ForEachKnownKind(language, bind(WriteElem, _1, ref(strm)));
   strm << TXmlTag(TXmlTag::Document, Close);
+  strm.Commit();
 }
 
 static void WriteElem(const TKind *kind, ostream &strm) {
