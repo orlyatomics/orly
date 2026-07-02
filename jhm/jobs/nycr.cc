@@ -174,7 +174,9 @@ vector<string> TNycr::GetCmd() {
   }
   MarkAllOutputsKnown();
 
-  //TODO(#345): use nycr in path?
+  /* Deliberately the explicit bootstrap path, not `nycr` from PATH: the
+     build must always run the nycr it just bootstrapped, not whatever a
+     caller's environment happens to resolve. */
   return vector<string> {
     GetNycrPath(Env),
     "-a",
