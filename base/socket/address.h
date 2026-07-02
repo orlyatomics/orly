@@ -48,6 +48,12 @@ namespace Socket {
     DEFINE_ERROR(TPathTooLong, std::runtime_error,
                  "UNIX domain socket path too long");
 
+    DEFINE_ERROR(TAddressTooLong, std::runtime_error,
+                 "socket address too long");
+
+    DEFINE_ERROR(TBadAddressSyntax, std::runtime_error,
+                 "malformed socket address");
+
     /* The amount of storage space available in an address. */
     static const socklen_t MaxLen = sizeof(sockaddr_storage);
 

@@ -102,12 +102,14 @@ TAddress::TAddress(istream &&strm) {
         }
         if (isxdigit(c) || c == '.' || c == ':') {
           if (csr >= end) {
-            throw 0; // TODO(#275)
+            THROW_ERROR(TAddressTooLong);
           }
           *csr++ = c;
           strm.ignore();
         } else {
-          throw 0; // TODO(#275)
+          THROW_ERROR(TBadAddressSyntax)
+              << "unexpected character '" << static_cast<char>(c)
+              << "' in IPv6 address";
         }
       }
     } else {
@@ -116,7 +118,7 @@ TAddress::TAddress(istream &&strm) {
         int c = strm.peek();
         if (isxdigit(c) || c == '.') {
           if (csr >= end) {
-            throw 0; // TODO(#275)
+            THROW_ERROR(TAddressTooLong);
           }
           *csr++ = c;
           strm.ignore();
