@@ -1,11 +1,10 @@
-/* <orly/type/gen_code.h>
+/* <orly/code_gen/type.h>
 
    `GenCode(stream, type)`: writes the C++ source representation of
    an orly `TType` (e.g. `Orly::Rt::TDict<int64_t, std::string>` for
    a `dict<int64_t, str>`). Called by orlyc when emitting code-gen
-   output. The in-file `TODO(#381): move to <orly/code_gen/type.h>` comment
-   is honest -- this helper has more in common with the code-gen
-   layer than the type layer.
+   output. Lived in orly/type/ as gen_code.h until #381; it emits
+   code, so it belongs to the code-gen layer.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -29,11 +28,10 @@
 
 namespace Orly {
 
-  namespace Type {
+  namespace CodeGen {
 
-    //TODO(#381): move to <orly/code_gen/type.h>
-    void GenCode(std::ostream &strm, const TType &type);
+    void GenCode(std::ostream &strm, const Type::TType &type);
 
-  }  // Type
+  }  // CodeGen
 
 }  // Orly

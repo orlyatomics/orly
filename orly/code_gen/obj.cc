@@ -28,7 +28,7 @@
 #include <base/split.h>
 #include <base/time_maps.h>
 #include <orly/type.h>
-#include <orly/type/gen_code.h>
+#include <orly/code_gen/type.h>
 #include <orly/type/object_collector.h>
 
 using namespace std;
@@ -333,7 +333,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
                       ", ",
                       [](TCppPrinter &out, const TObj::TElems::value_type &it) {
                         out << "{\"" << it.first << "\", ";
-                        Type::GenCode(out.GetOstream(), it.second);
+                        CodeGen::GenCode(out.GetOstream(), it.second);
                         out << '}';
                       })
         << "});" << Eol

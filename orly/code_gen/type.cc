@@ -1,6 +1,6 @@
-/* <orly/type/gen_code.cc>
+/* <orly/code_gen/type.cc>
 
-   Implements <orly/type/gen_code.h>.
+   Implements <orly/code_gen/type.h>.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -16,7 +16,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-#include <orly/type/gen_code.h>
+#include <orly/code_gen/type.h>
 
 #include <base/not_implemented.h>
 #include <base/split.h>
@@ -213,6 +213,6 @@ class TCodeGenVisitor : public TType::TVisitor {
   bool EquationMode;
 };
 
-void Orly::Type::GenCode(ostream &strm, const TType &type) {
+void Orly::CodeGen::GenCode(ostream &strm, const TType &type) {
   type.Accept(TCodeGenVisitor(strm));
 }
