@@ -516,8 +516,13 @@ TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TTestCaseBlock *that) 
 
 template <>
 TPosRange Orly::Synth::GetPosRange(const Package::Syntax::TTestDef *that) {
-  // TODO(#380): account for the optional with clause
-  return Orly::Synth::GetPosRange(that->GetTestKwd(), that->GetSemi());
+  /* The optional with clause precedes the test keyword; when present, the
+     definition's range starts at `with`. */
+  auto with_clause = TryGetNode<Package::Syntax::TWithClause,
+                                Package::Syntax::TNoWithClause>(that->GetOptWithClause());
+  return with_clause
+      ? Orly::Synth::GetPosRange(with_clause->GetWithKwd(), that->GetSemi())
+      : Orly::Synth::GetPosRange(that->GetTestKwd(), that->GetSemi());
 }
 
 template <>
