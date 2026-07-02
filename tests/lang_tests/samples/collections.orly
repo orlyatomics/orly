@@ -54,8 +54,9 @@ obj_access_2 = <{.a: 1, .b: true}>.a;
 
 /* Dics */
 dic_1 = (sidious) where { sidious = {1: true, 2: false, 3: true}; };
+/* Duplicate literal keys in a dict constructor are a compile error (#378). */
 dic_2 = (maul) where {
-  maul = {true: 3.14, true: 2.71, false: 0.0, false: 0.0};
+  maul = {true: 3.14, false: 0.0};
 };
 dic_3 = (tyranus) where {
   tyranus = {
