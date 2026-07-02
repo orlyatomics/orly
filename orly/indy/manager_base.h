@@ -618,8 +618,6 @@ namespace Orly {
 
         inline size_t GetTempFileConsolThresh() const;
 
-        void CompactOpemMap();
-
         void RunLayerCleaner();
 
         void RunMergeMem();

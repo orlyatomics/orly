@@ -1626,8 +1626,6 @@ void TServer::CleanHouse() {
     //DEBUG_LOG("housecleaner: cleaning");
     DurableManager->Clean();
     //DEBUG_LOG("housecleaner: done cleaning");
-    RepoManager->CompactOpemMap();
-    //DEBUG_LOG("housecleaner: done compacting");
   }
 }
 

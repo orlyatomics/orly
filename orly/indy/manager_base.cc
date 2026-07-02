@@ -261,10 +261,6 @@ void TManager::SetTetrisManager(Orly::Server::TTetrisManager *tetris_manager) {
   TetrisManager = tetris_manager;
 }
 
-void TManager::CompactOpemMap() {
-  //throw std::logic_error("TODO(#278): Implement CompactOpenMap()");
-}
-
 void TManager::RunLayerCleaner() {
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
