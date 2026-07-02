@@ -26,8 +26,10 @@ using namespace Base;
 const TUuid TUuid::Null;
 
 bool TUuid::IsValidUuid(const char *s) {
-  //TODO(#291): Make more sophisticated.
-  return strlen(s) == 36;
+  /* Let libuuid do the real parse instead of the old length-36 check,
+     which accepted any 36 characters. */
+  uuid_t scratch;
+  return uuid_parse(s, scratch) == 0;
 }
 
 TUuid::TUuid(TAlgo that) {
@@ -48,9 +50,13 @@ TUuid::TUuid(TAlgo that) {
       break;
     }
     case TimeAndMACSafe: {
-      /* TODO(#291): We cannot currently support this mode because uuid_generate_time_safe() isn't in our OS build.
-         When it becomes available, call it here and only throw TUnsafeError if the function returns an error. */
-      throw TUnsafeError();
+      /* Available since util-linux 2.20; the 2014 OS build lacked it. A
+         non-zero return means the system could not guarantee uniqueness
+         (no uuidd and no synchronized clock counter). */
+      if (uuid_generate_time_safe(Data) != 0) {
+        throw TUnsafeError();
+      }
+      break;
     }
     case Twister: {
       /* acquire Twister lock */ {
