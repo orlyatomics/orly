@@ -156,13 +156,14 @@ FIXTURE(GeneratorOfGenerator) { //generators of generators
   int outer_count = 0, inner_count = 0;
   for (auto it1 = MakeCursor(vec_gen_gen); it1; ++it1) {
     ++outer_count;
-    for (auto it2 = MakeCursor(*it1); it2; ++it2) {
+    int j = 0;
+    for (auto it2 = MakeCursor(*it1); it2; ++it2, ++j) {
+      EXPECT_EQ(*it2, vec[j]);  // inner sequences yield their own elements
       ++inner_count;
     }
   }
   EXPECT_EQ(outer_count, 3);
   EXPECT_EQ(inner_count, 27);
-  //TODO(#363): Generator of generator (aka seq of seq)
 }
 
 FIXTURE(GenericGenerators) {

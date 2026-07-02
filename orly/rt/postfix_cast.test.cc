@@ -59,6 +59,14 @@ Base::TUuid uuid;
 const TIntGen ig = MakeGenerator(il);
 const TStrGen sg = MakeGenerator(sl);
 
+/* A minimal object-like aggregate for the TObj identity-cast case. */
+struct TTestObj {
+  int64_t X;
+  bool operator==(const TTestObj &that) const {
+    return X == that.X;
+  }
+};
+
 FIXTURE(ValToVal) {
   /* TBool to TBool */
   EXPECT_EQ((CastAs<bool, bool>::Do(true)), true);
@@ -70,22 +78,24 @@ FIXTURE(ValToVal) {
   EXPECT_EQ((CastAs<int64_t, int64_t>::Do(1)), 1);
   /* TList<TVal> to TList<TVal> */
   EXPECT_TRUE(EqEq(CastAs<TIntList, TIntList>::Do(il), il));
-  /* TObj to TObj */
-  // TODO(#363): Add a test case for object
+  /* TObj to TObj (identity cast over an object-like aggregate) */
+  EXPECT_TRUE((CastAs<TTestObj, TTestObj>::Do(TTestObj{7}) == TTestObj{7}));
   /* TOpt to TOpt */
   EXPECT_TRUE(IsKnownTrue(EqEq(CastAs<TOpt<int64_t>, TOpt<int64_t>>::Do(TOpt<int64_t>(1)), TOpt<int64_t>(1))));
   /* TReal to TReal */
   EXPECT_EQ((CastAs<double, double>::Do(1.0)), 1.0);
-  /* TSeq to TSeq */
-  // TODO(#363): Add a test case for sequence
+  /* TSeq to TSeq -- the identity cast hands back the same generator. */
+  EXPECT_TRUE((&(CastAs<TIntGen, TIntGen>::Do(ig)) == &ig));
   /* TSet to TSet */
   EXPECT_TRUE(EqEq(CastAs<TIntSet, TIntSet>::Do(is), is));
   /* TStr to TStr */
   EXPECT_EQ((CastAs<string, string>::Do("hello")), "hello");
   /* TTimeDiff to TTimeDiff */
-  // TODO(#363): Add a test case for time diff
+  const Base::Chrono::TTimeDiff td = std::chrono::seconds(5);
+  EXPECT_TRUE((CastAs<Base::Chrono::TTimeDiff, Base::Chrono::TTimeDiff>::Do(td) == td));
   /* TTimePnt to TTimePnt */
-  // TODO(#363): Add a test case for time pnt
+  const Base::Chrono::TTimePnt tp(td);
+  EXPECT_TRUE((CastAs<Base::Chrono::TTimePnt, Base::Chrono::TTimePnt>::Do(tp) == tp));
 }
 
 FIXTURE(IntToReal) {
