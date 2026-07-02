@@ -22,6 +22,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <base/event_semaphore.h>
 #include <base/scheduler.h>
@@ -66,7 +67,8 @@ class TTetrisManager final
     void Push(int value) {
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
-      if (Values.empty()) {
+      if (!Announced) {
+        Announced = true;
         IsEmpty.WaitForMore(1UL);
         if (ParentPov) {
           TetrisManager->Join(ParentPov->Id, Id);
@@ -75,16 +77,18 @@ class TTetrisManager final
       Values.push(value);
     }
 
-    /* Sum all the values in this pov's queue, emptying the queue in the process. */
+    /* Sum all the values in this pov's queue, emptying the queue in the process.
+       The values go straight to the caller, so unlike TryPop() we can announce the drain here. */
     int Sum() {
       int result = 0;
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
-      if (!Values.empty()) {
-        do {
-          result += Values.front();
-          Values.pop();
-        } while (!Values.empty());
+      while (!Values.empty()) {
+        result += Values.front();
+        Values.pop();
+      }
+      if (Announced) {
+        Announced = false;
         IsEmpty.Complete();
         if (ParentPov) {
           TetrisManager->Part(ParentPov->Id, Id);
@@ -101,22 +105,37 @@ class TTetrisManager final
 
     /* Try to pop a value off this pov's queue.
        If the queue is non-empty, pop the next value off it, return the value via out-param, and return true.
-       If the queue is empty, leave the out-param alone and return false. */
-    bool TryPop(int &value) {
+       If the queue is empty, leave the out-param alone and return false.
+       If the pop empties the queue, 'drained' is set, but we do NOT announce the drain here: the
+       popped value is still in flight in the player's hands until it lands in the parent pov, and
+       announcing early lets WaitUntilEmpty() ripple to the root ahead of the data, so the fixture's
+       final Sum() misses whatever is still in a player's stack (#280).  The player must call
+       ConfirmDrained() after pushing to its parent. */
+    bool TryPop(int &value, bool &drained) {
       //lock_guard<mutex> Lock(Mutex);
       TFiberLock::TLock lock(FiberMutex);
       bool success = !Values.empty();
       if (success) {
         value = Values.front();
         Values.pop();
-        if (Values.empty()) {
-          IsEmpty.Complete();
-          if (ParentPov) {
-            TetrisManager->Part(ParentPov->Id, Id);
-          }
-        }
+        drained = Values.empty();
       }
       return success;
+    }
+
+    /* Called by the player after the value(s) it popped from us have been pushed onward to our
+       parent.  Only now is it safe to tell waiters we're empty and part from the player.  If a
+       fresh Push() landed in the meantime, the occupancy episode simply continues and the player
+       will pop us again. */
+    void ConfirmDrained() {
+      TFiberLock::TLock lock(FiberMutex);
+      if (Values.empty() && Announced) {
+        Announced = false;
+        IsEmpty.Complete();
+        if (ParentPov) {
+          TetrisManager->Part(ParentPov->Id, Id);
+        }
+      }
     }
 
     /* Blocks as long as there are values in this pov's queue. */
@@ -158,6 +177,11 @@ class TTetrisManager final
 
     /* Readable only when the queue has no values in it. */
     mutable TSafeSync IsEmpty;
+
+    /* True while we have an open occupancy episode: we've done IsEmpty.WaitForMore() and (if we
+       have a parent) joined tetris, and the matching Complete()/Part() hasn't happened yet.
+       Covered by 'FiberMutex'. */
+    bool Announced = false;
 
     /* Convers 'Values', below. */
     //mutex Mutex;
@@ -249,19 +273,28 @@ class TTetrisManager final
         TFiberLock::TLock lock(FiberMutex);
         child_povs = ChildPovs;
       }
-      /* Sum all the values we can pop from the children. */
+      /* Sum all the values we can pop from the children, remembering which children we popped dry. */
       int sum = 0;
       bool popped = false;
+      std::vector<TPov *> drained_povs;
       for (auto *pov: child_povs) {
         int value;
-        if (pov->TryPop(value)) {
+        bool drained = false;
+        if (pov->TryPop(value, drained)) {
           sum += value;
           popped = true;
+          if (drained) {
+            drained_povs.push_back(pov);
+          }
         }
       }
-      /* If we popped at least one value, push the sum to the parent. */
+      /* If we popped at least one value, push the sum to the parent.  This must happen BEFORE we
+         confirm any drains: the drain announcement must not outrun the data (#280). */
       if (popped) {
         ParentPov->Push(sum);
+      }
+      for (auto *pov: drained_povs) {
+        pov->ConfirmDrained();
       }
     }
 
