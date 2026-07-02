@@ -162,7 +162,7 @@ FIXTURE(GeneratorOfGenerator) { //generators of generators
   }
   EXPECT_EQ(outer_count, 3);
   EXPECT_EQ(inner_count, 27);
-  //TODO: Generator of generator (aka seq of seq)
+  //TODO(#363): Generator of generator (aka seq of seq)
 }
 
 FIXTURE(GenericGenerators) {

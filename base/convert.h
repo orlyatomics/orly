@@ -155,8 +155,8 @@ namespace Base {
       assert(std::numeric_limits<TVal>::is_exact);
       assert(sign_required? std::numeric_limits<TVal>::is_signed : true);
 
-      /* TODO: Hex, octal, etc. support. */
-      /* TODO: Format strings support. */
+      /* TODO(#285): Hex, octal, etc. support. */
+      /* TODO(#285): Format strings support. */
 
       //if signed, first character may be +/- sign
       std::optional<bool> positive_opt = TryReadSign();

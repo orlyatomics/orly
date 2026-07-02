@@ -38,7 +38,7 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       /* Dependency graph */
-      /* TODO: revisit dependencies */
+      /* TODO(#298): revisit dependencies */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
         dependency_set.insert(SplitThisText);
         SplitThisText->AppendDependsOn(dependency_set);

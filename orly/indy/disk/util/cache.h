@@ -30,7 +30,7 @@
 
 #include <atomic>
 #include <stdexcept>
-#include <iostream> /* TODO: GET RID OF */
+#include <iostream> /* TODO(#317): GET RID OF */
 
 #include <base/class_traits.h>
 #include <base/likely.h>
@@ -172,7 +172,7 @@ namespace Orly {
                   if ((val & SecondHighestBit) == SecondHighestBit) {
                     /* second highest bit is set, someone is loading the data, we just have to wait. */
                     //std::this_thread::sleep_for(std::chrono::nanoseconds(25000));
-                    /* TODO: we should try to join some form of queue of frames that will get re-activated when the frame performing the read on our
+                    /* TODO(#316): we should try to join some form of queue of frames that will get re-activated when the frame performing the read on our
                        behalf is finished. */
                     Fiber::YieldSlow();
                     continue;

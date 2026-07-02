@@ -138,7 +138,7 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
     }
   }
 
-  //TODO: Collect all the object comparisons.
+  //TODO(#303): Collect all the object comparisons.
 
   assert(package);
   //Build all the function declarations
@@ -231,14 +231,14 @@ void TPackage::WriteStartingComment(TCppPrinter &out, const TRelPath &path) cons
 }
 
 void TPackage::WriteHeader(TCppPrinter &out, const TRelPath &path) const {
-  //TODO: Reduce number of needed includes.
+  //TODO(#306): Reduce number of needed includes.
   WriteStartingComment(out, path);
   out << "#pragma once" << Eol
       << "#include <orly/package/api.h>" << Eol
       << "#include <orly/package/rt.h>" << Eol
       << "#include <orly/rt.h>" << Eol;
 
-  //TODO: Reduce to only objects needed by the export set.
+  //TODO(#306): Reduce to only objects needed by the export set.
   for(const auto &object: Objects) {
     GenObjInclude(object, out);
   }
@@ -271,7 +271,7 @@ void TPackage::WriteCc(TCppPrinter &out, const TRelPath &rel_path) const {
   //Include for all the package interfaces we need
   WriteImportIncludes(out);
 
-  //TODO: Reduce to no objects used by exported or imported functions.
+  //TODO(#306): Reduce to no objects used by exported or imported functions.
   //Include for all the objects we need
   for(const auto &object: Objects) {
     GenObjInclude(object, out);

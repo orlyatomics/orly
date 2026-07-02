@@ -16,7 +16,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-//TODO: We assume dlclose never fails.
+//TODO(#356): We assume dlclose never fails.
 #include <orly/package/manager.h>
 
 #include <cassert>
@@ -62,7 +62,7 @@ void TManager::Load(const TVersionedNames &packages, const std::function<void(TL
 
   list<std::tuple<TLoaded::TPtr, bool>> about_to_install;
 
-  /* TODO: collect up errors, rather than throw on first. */
+  /* TODO(#354): collect up errors, rather than throw on first. */
   //Ensure all package upgrades are actually upgrades, all files exist, build up map to swap in.
   for(const TVersionedName &package: packages) {
     auto installed_it = installed.find(package.Name);

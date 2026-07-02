@@ -138,7 +138,7 @@ void TMutate::TypeCheck() const {
       Type::TType::Accept(
           GetLhs()->GetExpr()->GetType(),
           GetRhs()->GetExpr()->GetType(),
-          /* TODO: Using TEqCompVisitor here is the correct behaviour.
+          /* TODO(#314): Using TEqCompVisitor here is the correct behaviour.
                    But make it so that it can provide a more meaningful and relevant error message. */
           TMutateTypeVisitor<Type::TEqCompVisitor>(dummy, GetPosRange()));
       break;

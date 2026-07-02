@@ -40,7 +40,7 @@ FIXTURE(Typical) {
   Symbol::TResultDef::TPtr foo_result = Symbol::TResultDef::New(foo, "bar", TPosRange());
   foo->SetExpr(Expr::TAdd::New(Expr::TLiteral::New(Var::TVar(10), TPosRange()), Expr::TLiteral::New(Var::TVar(10), TPosRange()), TPosRange()));
 
-  //TODO: Add functions to the package to exercise all the code gen machinery.
+  //TODO(#308): Add functions to the package to exercise all the code gen machinery.
   TPackage p(p_sym);
 
   p.Emit(Jhm::TTree(test_dir));

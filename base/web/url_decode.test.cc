@@ -54,4 +54,4 @@ FIXTURE(Empty) {
   EXPECT_EQ(result_buf, "{\"likes\":[],\"userref\":\"test2\",\"content\":\"aaa\",\"cid\":1}");
 }
 
-//TODO: Test for error cases
+//TODO(#334): Test for error cases

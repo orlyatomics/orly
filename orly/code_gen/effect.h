@@ -39,7 +39,7 @@ namespace Orly {
 
   namespace CodeGen {
 
-    //TODO: Promote this to some common place, make use of it everywhere.
+    //TODO(#309): Promote this to some common place, make use of it everywhere.
     template <typename TTarget>
     using TPtrC = std::shared_ptr<const TTarget>;
 
@@ -64,7 +64,7 @@ namespace std {
     typedef Orly::CodeGen::TMutablePart argument_type;
 
     result_type operator()(const argument_type &that) const {
-      //TODO: Use a better hash
+      //TODO(#295): Use a better hash
       return std::hash<Orly::CodeGen::TPtrC<Orly::CodeGen::TInline>>()(that.Mutable) ^ that.Index;
     }
   }; //hash<Orly::CodeGen::TMutablePart>

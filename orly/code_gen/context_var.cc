@@ -50,7 +50,7 @@ void TContextVar::WriteExpr(TCppPrinter &out) const {
   switch(Op) {
     case SessionId: out << "GetSessionId";
       break;
-    case UserId: out << "GetAccountId"; //TODO: UserId
+    case UserId: out << "GetAccountId"; //TODO(#310): UserId
       break;
     case Now: out << "Now";
       break;

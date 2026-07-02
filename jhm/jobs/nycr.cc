@@ -133,7 +133,7 @@ TJobProducer TNycr::GetProducer() {
     "nycr",
     LangSuffixes,
     GetInputName,
-    //TODO: Should be able to eliminate the lambda wrapper here...
+    //TODO(#344): Should be able to eliminate the lambda wrapper here...
     [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
       return unique_ptr<TJob>(new TNycr(env, in_file));
     }
@@ -174,7 +174,7 @@ vector<string> TNycr::GetCmd() {
   }
   MarkAllOutputsKnown();
 
-  //TODO: use nycr in path?
+  //TODO(#345): use nycr in path?
   return vector<string> {
     GetNycrPath(Env),
     "-a",

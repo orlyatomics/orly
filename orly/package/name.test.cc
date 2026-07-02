@@ -33,7 +33,7 @@ using namespace Orly::Package;
    "A"
 */
 
-//TODO: Nowhere near all of package_name.cc is tested here.
+//TODO(#375): Nowhere near all of package_name.cc is tested here.
 FIXTURE(VersionedNameWithScope) {
   const TVersionedName package = TVersionedName::Parse(AsPiece("scope/sample.1"));
   EXPECT_EQ(package.Name, (TName{{"scope", "sample"}}));

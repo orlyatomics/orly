@@ -84,7 +84,7 @@ namespace Orly {
 
     typedef std::shared_ptr<const TKeyGenerator> TPtr;
 
-    //TODO: CODY: This cursor needs a rewrite. For now it is roughly copied from what was generated, as that seemed to work.
+    //TODO(#351): CODY: This cursor needs a rewrite. For now it is roughly copied from what was generated, as that seemed to work.
     class TCursor
         : public Base::TIter<const TRet> {
       public:

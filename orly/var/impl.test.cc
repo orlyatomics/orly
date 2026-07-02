@@ -48,7 +48,7 @@ const Type::TObj::Meta<TSomeObj>::TField<bool>    Bool("Bool", &TSomeObj::Bool);
 
 Type::TTypeCzar TypeCzar;
 
-//TODO: Test mutables.
+//TODO(#329): Test mutables.
 FIXTURE(Typical) {
   TVar bool_(true);
   EXPECT_TRUE(bool_.GetType() == Type::TBool::Get());
@@ -86,7 +86,7 @@ FIXTURE(Typical) {
   EXPECT_TRUE(dict_int_real.GetType() == Type::TDict::Get(Type::TInt::Get(), Type::TReal::Get()));
   TVar dict_int_dict_int_real(Rt::TDict<int64_t, Rt::TDict<int64_t, double>>{{5, m}});
   EXPECT_TRUE(dict_int_real.GetType() == Type::TDict::Get(Type::TInt::Get(), Type::TReal::Get()));
-  /* TODO
+  /* TODO(#384)
   Rt::TAddr<Rt::TAddrElem<TAddrDir::Asc, int64_t>, Rt::TAddrElem<TAddrDir::Asc, string>, Rt::TAddrElem<TAddrDir::Asc, bool>, Rt::TAddrElem<TAddrDir::Asc, double>> a(5, string("Hello World"), true, 2.2);
   TVar addr_int_str_bool_double(a);
   EXPECT_TRUE(addr_int_str_bool_double.GetType() == Type::TAddr::Get(vector<pair<TAddrDir, Type::TType>>{{TAddrDir::Asc, Type::TInt::Get()}, {TAddrDir::Asc, Type::TStr::Get()}, {TAddrDir::Asc, Type::TBool::Get()}, {TAddrDir::Asc, Type::TReal::Get()}}));
@@ -141,7 +141,7 @@ FIXTURE(Typical) {
   EXPECT_TRUE(opt_int.GetType() == Type::TOpt::Get(Type::TInt::Get()));
 }
 
-#if 0 // TODO: TAddr
+#if 0 // TODO(#384): TAddr
 FIXTURE(Memory) {
   TVar *bool_ = new TVar(true);
   delete bool_;
@@ -173,7 +173,7 @@ FIXTURE(Casts) {
   typedef Rt::TDict<int64_t, double> TMap;
   TMap map_{{5, 5.5}, {6, 6.6}};
   EXPECT_TRUE(TVar::TDt<TMap>::As(TVar(map_)) == map_);
-#if 0 // TODO: TAddr
+#if 0 // TODO(#384): TAddr
   typedef Rt::TAddr<Rt::TAddrElem<Asc, int64_t>, Rt::TAddrElem<Desc, int64_t>, Rt::TAddrElem<Asc, double>> TAddr_;
   TAddr_ addr_(5, 1, 5.5);
   EXPECT_TRUE(TVar::TDt<TAddr_>::As(TVar(addr_)) == addr_);

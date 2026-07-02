@@ -18,7 +18,7 @@
 
 #include <orly/indy/disk/util/volume_manager.h>
 
-#include <iostream> /* TODO GET RID OF */
+#include <iostream> /* TODO(#317) GET RID OF */
 
 #include <linux/fs.h>
 #include <math.h>
@@ -811,7 +811,7 @@ namespace Orly {
 
             size_t TotalBytes;
 
-            /* TODO : more efficient */
+            /* TODO(#328) : more efficient */
             std::vector<std::vector<void *>> VecPerOp;
 
             friend class TStrategy;
@@ -1093,7 +1093,7 @@ namespace Orly {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForOneMore();
-          auto device = *dev_set.begin(); /* TODO: we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(start_offset, nbytes, device);
           assert(start_offset + SuperBytes + nbytes <= device->Desc.Capacity);
           device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, trigger);
@@ -1109,7 +1109,7 @@ namespace Orly {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForOneMore();
-          auto device = *dev_set.begin(); /* TODO: we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(start_offset, nbytes, device);
           assert(start_offset + SuperBytes + nbytes <= device->Desc.Capacity);
           device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, cb);
@@ -1130,7 +1130,7 @@ namespace Orly {
                                                                                      bool abort_on_error, TCompletionTrigger &trigger) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          auto device = *dev_set.begin(); /* TODO: we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(device_request.PhysicalOffsetStart, device_request.TotalBytes, device);
           assert(device_request.PhysicalOffsetStart + SuperBytes + device_request.TotalBytes <= device->Desc.Capacity);
           size_t bytes_in = 0UL;
@@ -1155,7 +1155,7 @@ namespace Orly {
                                                                                                         const TIOCallback &/*cb*/) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          auto device = *dev_set.begin(); /* TODO: we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(device_request.PhysicalOffsetStart, device_request.TotalBytes, device);
           assert(device_request.PhysicalOffsetStart + SuperBytes + device_request.TotalBytes <= device->Desc.Capacity);
           size_t bytes_in = 0UL;
@@ -2055,7 +2055,7 @@ void TVolume::TStripedStrategy::DoStripeV(TOp op, const Base::TCodeLocation &cod
             break;
           }
           case W: {
-            throw std::logic_error("TODO: implement DoStripeV for writes");
+            throw std::logic_error("TODO(#330): implement DoStripeV for writes");
             break;
           }
         }
@@ -2109,14 +2109,14 @@ void TVolume::TChainedStrategy::DelegateRead(const Base::TCodeLocation &code_loc
 void TVolume::TChainedStrategy::DelegateReadV(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
                                               void **/*buf_array*/, size_t /*num_buf*/, const TOffset /*start_offset*/, long long /*nbytes*/,
                                               DiskPriority /*priority*/, bool /*abort_on_error*/, TCompletionTrigger &/*trigger*/) {
-  throw std::logic_error("TODO: implement TChainedStrategy::DelegateReadV");
+  throw std::logic_error("TODO(#330): implement TChainedStrategy::DelegateReadV");
 }
 
 void TVolume::TChainedStrategy::DelegateReadV(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
                                               void **/*buf_array*/, size_t /*num_buf*/, const TOffset /*start_offset*/, long long /*nbytes*/,
                                               DiskPriority /*priority*/, bool /*abort_on_error*/, TCompletionTrigger &/*trigger*/,
                                               const TIOCallback &/*cb*/) {
-  throw std::logic_error("TODO: implement TChainedStrategy::DelegateReadV");
+  throw std::logic_error("TODO(#330): implement TChainedStrategy::DelegateReadV");
 }
 
 void TVolume::TChainedStrategy::DelegateAppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const {
@@ -2834,7 +2834,7 @@ void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed s
     }
   }
   /* this means there are no blocks left of the storage kind we requested. We're going to start allocating from other volumes...
-     TODO: We can be specific about the policy we use to satisfy this request. */
+     TODO(#330): We can be specific about the policy we use to satisfy this request. */
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
     try {
       return csr->TryAllocateSequentialBlocks(num_blocks, cb);
@@ -2859,7 +2859,7 @@ void TVolumeManager::MarkBlockRangeUsed(const TBlockRange &block_range) {
   if (start_vol == end_vol) {
     start_vol->MarkBlockRangeUsed(block_range);
   } else {
-    throw std::logic_error("TODO: implement support for cross-volume MarkBlockRangeUsed");
+    throw std::logic_error("TODO(#330): implement support for cross-volume MarkBlockRangeUsed");
   }
 }
 
@@ -2876,7 +2876,7 @@ void TVolumeManager::FreeSequentialBlocks(const TBlockRange &block_range) {
   if (start_vol == end_vol) {
     start_vol->FreeSequentialBlocks(block_range);
   } else {
-    throw std::logic_error("TODO: implement support for cross-volume block release");
+    throw std::logic_error("TODO(#330): implement support for cross-volume block release");
   }
 }
 
@@ -2896,7 +2896,7 @@ void TVolumeManager::SyncToDisk(const std::vector<TBlockRange> &block_range_vec)
     if (start_vol == end_vol) {
       start_vol->AppendTouchedDevicesToSet(device_set, block_range);
     } else {
-      throw std::logic_error("TODO: implement support for cross-volume block range input to SyncToDisk");
+      throw std::logic_error("TODO(#330): implement support for cross-volume block range input to SyncToDisk");
     }
   }
   assert(!device_set.empty());
@@ -2977,7 +2977,7 @@ void TVolumeManager::AllocateLogicalExtents(TExtentSet &logical_extent_set, size
       }
     }
     if (!found) {
-      /* TODO: unwind any extents we just allocated. */
+      /* TODO(#331): unwind any extents we just allocated. */
       throw std::runtime_error("Cannot allocate enough consecutive extent space.");
     }
   }

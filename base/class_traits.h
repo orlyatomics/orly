@@ -12,7 +12,7 @@
    the code to tell what the overarching behavior of a class is
   (NO_CONSTRUCTION, NO_COPY, etc.)
 
-  TODO: Generic blurb about how to insert/use these in classes (Just after the '{')
+  TODO(#315): Generic blurb about how to insert/use these in classes (Just after the '{')
 
    Copyright 2010-2026 Atomic Kismet Company
 

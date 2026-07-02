@@ -727,7 +727,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
                         1UL /* WsRunner */ +
                         1UL /* Durable Layer Cleaner */ +
                         2UL /* Durable Manager */ +
-                        1UL /* Tetris Manager */ /* TODO: we want to support multiple tetris schedulers */),
+                        1UL /* Tetris Manager */ /* TODO(#372): we want to support multiple tetris schedulers */),
                         //#endif
       Frame(nullptr),
       DurableLayerCleanerRunner(RunnerCons),
@@ -1081,7 +1081,7 @@ void TServer::Init() {
       });
     }
 
-    /* TODO : durable manager does not support create=false */
+    /* TODO(#366) : durable manager does not support create=false */
     DurableManager = make_shared<Orly::Indy::Disk::TDurableManager>(Scheduler,
                                                                     RunnerCons,
                                                                     FramePoolManager.get(),
@@ -1216,7 +1216,7 @@ void TServer::Init() {
         auto ret = IndexByIndexId.emplace(TIndexType(string(pkg_key), TKey(val_core, &IndexMapArena)),
                                           Mynde::MemcachedIndexUuid);
         if (ret.second) {
-          /* TODO: clean up the index_id_replication obj... refactor this logic into a function */
+          /* TODO(#367): clean up the index_id_replication obj... refactor this logic into a function */
           assert(RepoManager);
           RepoManager->SaveIndexNamespaceMapping(Mynde::MemcachedIndexUuid, pkg_key);
           RepoManager->Enqueue(
@@ -1241,7 +1241,7 @@ void TServer::Init() {
     }
     Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this, false));
 
-    //TODO: Dedup this code (Exactly the same as just above with one bool different)
+    //TODO(#365): Dedup this code (Exactly the same as just above with one bool different)
     if (Cmd.EnableMemcache) {
 
       /* open the mynde socket */ {
@@ -1864,7 +1864,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
                       index_id_remapper.emplace(index_id, new_ret.first->second);
                       index_id = new_ret.first->second;
                     } else {
-                      /* TODO: replicate index id */
+                      /* TODO(#367): replicate index id */
                       assert(Server->RepoManager);
                       Server->RepoManager->SaveIndexNamespaceMapping(index_id, pkg_key);
                       index_id_remapper.emplace(index_id, index_id);
@@ -1972,7 +1972,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
       cond.wait(lock);
     }
   }
-  /* TODO : make sure merge files get inserted into the end vec in order. */
+  /* TODO(#373) : make sure merge files get inserted into the end vec in order. */
   auto global_repo = GetGlobalRepo();
   std::vector<size_t> end_vec;
   size_t finished = 0UL;
@@ -2192,7 +2192,7 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
         #endif
 
       } else {
-        /* TODO: clean up the index_id_replication obj... refactor this logic into a function */
+        /* TODO(#367): clean up the index_id_replication obj... refactor this logic into a function */
         assert(RepoManager);
         RepoManager->SaveIndexNamespaceMapping(addr_pair.first, pkg_key);
         RepoManager->Enqueue(new TIndexIdReplication(addr_pair.first, pkg_key, TKey(val_core, &IndexMapArena)));
@@ -2346,26 +2346,26 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
   // NOTE: fd_original has it's ownership stolen at this point. Use of it will cause badness.
   Strm::TFd<> strm(std::move(fd_original));
 
-  //TODO: This really should be a zero ttl
+  //TODO(#371): This really should be a zero ttl
   const auto non_zero_ttl = std::chrono::seconds(15);
 
-  // TODO: Convert sessions to be a pooled resource
+  // TODO(#371): Convert sessions to be a pooled resource
   auto session = DurableManager->New<TSession>(Base::TUuid::Twister, non_zero_ttl);
 
   // Note: We don't call session->NewFastPrivatePov() because we need the POV handle to keep the POV from vanishing.
-  // TODO: Only make this when needed. Should live with the session as a pooled resource. Recycle only when failed.
+  // TODO(#371): Only make this when needed. Should live with the session as a pooled resource. Recycle only when failed.
 
-  // TODO: Switch to this / the wrapped variant?
+  // TODO(#371): Switch to this / the wrapped variant?
   // auto pov = session->NewFastPrivatePov(this, std::nullopt, zero_ttl);
   // The problem is then we jump through a lot of uuid objects for no good reason...
-  // TODO: Same as above but not all wrapped up
+  // TODO(#371): Same as above but not all wrapped up
   auto pov = DurableManager->New<TPov>(TUuid::Twister,
                                        non_zero_ttl,
                                        session->GetId(),
                                        TPov::TAudience::Private,
                                        TPov::TPolicy::Fast,
                                        TPov::TSharedParents{});
-  // TODO: PrivatePovs shoudl auto-connect to their session via invasive containment...
+  // TODO(#371): PrivatePovs shoudl auto-connect to their session via invasive containment...
   session->AddPov(pov);
 
   auto repo = pov->GetRepo(this);
@@ -2376,15 +2376,15 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
   // Context for the current series of requests which we need to be consistent.
   std::unique_ptr<Indy::TContext> context;
 
-  // TODO: Detect protocol here (binary or text). Currently we only support binary.
+  // TODO(#374): Detect protocol here (binary or text). Currently we only support binary.
   // Our input and output streams
-  // TODO: We want TRequest to genericize the binary and text streams to one thing.
+  // TODO(#374): We want TRequest to genericize the binary and text streams to one thing.
   // NOTE: We there should be no virtual calls in doing so.
   Strm::Bin::TIn in(&strm);
   Strm::Bin::TOut out(&strm);
 
   try {
-    // TODO: Detect and handle eof without an exception?
+    // TODO(#374): Detect and handle eof without an exception?
 
     if (in.Peek() != Mynde::BinaryMagicRequest) {
       const char err_msg[] = "SERVER_ERROR text protocol is not supported.\r\n";
@@ -2395,7 +2395,7 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
     bool Quit = false;
 
     // Loop processing requets until we hit eof or explicitly get an exit command.
-    // TODO: Detect and handle eof without an exception?
+    // TODO(#374): Detect and handle eof without an exception?
     while(!Quit) {
       // NOTE: We make this on the heap so that we can pass it to the response generation thread
       // We do the two threads because the protocol states that pending unread responses shouldn't block requests from
@@ -2405,11 +2405,11 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
       size_t prev_assignment_count = std::atomic_fetch_add(&SlowAssignmentCounter, 1UL);
       auto switch_to_runner =
           make_unique<Indy::Fiber::TSwitchToRunner>(FastRunnerVec[prev_assignment_count % FastRunnerVec.size()].get());
-      // TODO: Build up the response in this. Call 'fire' when the whole response is built.
+      // TODO(#370): Build up the response in this. Call 'fire' when the whole response is built.
       // TResponseBuilder resp(req);
 
       if (req.GetFlags().Key && req.GetOpcode() != Mynde::TRequest::TOpcode::Get) {
-        // TODO: This needs to be a binary error message....
+        // TODO(#368): This needs to be a binary error message....
         const char err_msg[] = "SERVER_ERROR Only Get is allowed to return the key (GetK, GetKQ).\r\n";
         out.Write(err_msg, GetArrayLen(err_msg));
         return;  // Closes the RAII connection
@@ -2422,19 +2422,19 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
       hdr.Opaque = req.GetOpaque();
 
 
-      // TODO: Genericize memcache key -> indy key conversion (Make it a function)
+      // TODO(#369): Genericize memcache key -> indy key conversion (Make it a function)
       switch (req.GetOpcode()) {
         case Mynde::TRequest::TOpcode::Get: {
           if (!context) {
             context = make_unique<Indy::TContext>(repo, &context_arena);
           }
 
-          // TODO: Change keys and values to be start, limit based rather than doing this std::string marshalling
+          // TODO(#369): Change keys and values to be start, limit based rather than doing this std::string marshalling
           Mynde::TKey key{{req.GetKey().GetData(), req.GetKey().GetSize()}};
 
           // Perform the Get
-          // TODO: We don't have any reason to go from atom -> Sabot
-          // TODO: The IndexKey has more stuff in it than we need / care about.
+          // TODO(#369): We don't have any reason to go from atom -> Sabot
+          // TODO(#369): The IndexKey has more stuff in it than we need / care about.
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
           Indy::TIndexKey indy_index_key(
               Mynde::MemcachedIndexUuid,
@@ -2485,8 +2485,8 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
 
           // We currently only allow keys which have no timeout / are persistent
           if (Expiration != 0) {
-            // TODO: Return a proper binary error
-            // TODO: Throw an exception to close out the server ina  well logged way
+            // TODO(#368): Return a proper binary error
+            // TODO(#368): Throw an exception to close out the server ina  well logged way
             const char err_msg[] = "SERVER_ERROR Only keys without an expiration are allowed (Expiration = 0)";
             out.Write(err_msg, GetArrayLen(err_msg));
             return;
@@ -2500,7 +2500,7 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
           auto transaction = RepoManager->NewTransaction();
           TUuid update_id(TUuid::Twister);
 
-          // TODO: That we have to feed a package name and method name here seems like it might cause trouble later.
+          // TODO(#369): That we have to feed a package name and method name here seems like it might cause trouble later.
           TMetaRecord meta_record(update_id,
                                   TMetaRecord::TEntry(session->GetId(),
                                                       session->GetUserId(),

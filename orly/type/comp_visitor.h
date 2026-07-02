@@ -59,7 +59,7 @@ namespace Orly {
             is_optional = true;
           }
         }
-        // TODO. Remove this throw once we support comparison between addresses with optionals
+        // TODO(#283). Remove this throw once we support comparison between addresses with optionals
         if (is_optional) {
           throw TExprError(HERE, PosRange, "Equality test or mutation assignment for addresses with optionals is not supported");
         }
@@ -147,7 +147,7 @@ namespace Orly {
             is_optional = true;
           }
         }
-        // TODO. Remove this throw once we support comparison between addresses with optionals
+        // TODO(#283). Remove this throw once we support comparison between addresses with optionals
         if (is_optional) {
           throw TExprError(HERE, PosRange, "Comparison between addresses with optionals is not supported");
         }

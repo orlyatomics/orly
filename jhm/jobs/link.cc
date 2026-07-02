@@ -35,7 +35,7 @@ static TRelPath GetOutputName(const TRelPath &input) {
 }
 
 static std::optional<TRelPath> GetInputName(const TRelPath &output) {
-  //TODO: Allow non-trivial prefixes before the empty extension.
+  //TODO(#342): Allow non-trivial prefixes before the empty extension.
   const auto &ext = output.Path.Extension;
   if (ext.size() > 0 && ext.at(ext.size()-1) == "") {
     return TRelPath(SwapExtension(TPath(output.Path), {"o"}));
@@ -49,7 +49,7 @@ TJobProducer TLink::GetProducer() {
     "link",
     {{""}},
     GetInputName,
-    //TODO: Should be able to eliminate the lambda wrapper here...
+    //TODO(#344): Should be able to eliminate the lambda wrapper here...
     [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
       return unique_ptr<TJob>(new TLink(env, in_file));
     }
@@ -118,7 +118,7 @@ unordered_set<TFile*> TLink::GetAntiNeeds() {
 
 vector<string> TLink::GetCmd() {
 
-  //TODO: If there are no C++ files, use 'gcc' to link instead of g++
+  //TODO(#342): If there are no C++ files, use 'gcc' to link instead of g++
   vector<string> cmd{"g++","-o" + GetSoleOutput()->GetPath()};
   for (auto &flag: Env.GetConfig().Read<vector<string>>({"cmd","ld","flags"})) {
     cmd.push_back(move(flag));
@@ -129,7 +129,7 @@ vector<string> TLink::GetCmd() {
     cmd.push_back(f->GetPath());
   }
 
-  // TODO: Be more intelligent / selective about link flags
+  // TODO(#342): Be more intelligent / selective about link flags
   for (auto &lib: Env.GetConfig().Read<vector<string>>({"cmd","ld","libs"})) {
     cmd.push_back(move(lib));
   }

@@ -257,7 +257,7 @@ namespace Orly {
                   size_t block_id;
                   for (size_t i = 0; i < num_blocks; ++i) {
                     in_stream.Read(block_id);
-                    /* TODO: we could mark these in ranges. */
+                    /* TODO(#328): we could mark these in ranges. */
                     VolMan->MarkBlockRangeUsed(TBlockRange(block_id, 1UL));
                   }
                   break;

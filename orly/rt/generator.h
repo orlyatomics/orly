@@ -45,7 +45,7 @@ namespace Orly {
 
       typedef const TItem_ TItem;
 
-      //TODO: This one func causes a lot of inefficiency / ugh.
+      //TODO(#360): This one func causes a lot of inefficiency / ugh.
       virtual Base::TIterHolder<TItem> NewCursor() const = 0;
 
       protected:
@@ -278,7 +278,7 @@ namespace Orly {
       TFunc Func;
     };
 
-    //TODO: Zip, Product, Chain, Mix?
+    //TODO(#360): Zip, Product, Chain, Mix?
 
 
   /* A generator wrapping TRegexMatcher. */

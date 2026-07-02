@@ -1,5 +1,9 @@
 # Build & test orly on Ubuntu 24.04 / gcc 13.
 #
+# A fast, build-free `todo-lint` job runs first on every push and pull_request:
+# it enforces the TODO convention (no bare /* TODO */ stubs; every TODO
+# references a tracked issue as TODO(#nnn) -- see CONTRIBUTING.md).
+#
 # Four jobs run on every push to master and every pull_request:
 #   1. debug-and-test     -- make debug + make test (188 binaries)
 #   2. release-build      -- jhm -c release direct + --help smoke on each binary
@@ -41,6 +45,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  todo-lint:
+    name: TODO convention lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      # Cheap, build-free gate: no bare /* TODO */ stubs, and every TODO
+      # references a tracked issue as TODO(#nnn). See CONTRIBUTING.md and
+      # tools/maint/lint_todos.py.
+      - name: Lint TODO convention
+        run: python3 tools/maint/lint_todos.py
+
   debug-and-test:
     name: make debug + make test
     runs-on: ubuntu-24.04

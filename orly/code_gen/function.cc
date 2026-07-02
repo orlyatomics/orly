@@ -82,7 +82,7 @@ void TFunction::Build() {
     it->Build();
   }
 
-  //TODO: Common sub expression elimination for inline scopes, cross-function subexpression elimination.
+  //TODO(#297): Common sub expression elimination for inline scopes, cross-function subexpression elimination.
   if(Implicit) {
     Body = CodeGen::Build(Package, Expr, KeepMutable);
   } else {

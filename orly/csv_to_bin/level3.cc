@@ -105,7 +105,7 @@ TLevel3 &TLevel3::operator>>(int64_t &that) {
 }
 
 TLevel3 &TLevel3::operator>>(double &that) {
-  /* TODO: Yeah, this is cheating.  We really shouldn't be consuming all the
+  /* TODO(#313): Yeah, this is cheating.  We really shouldn't be consuming all the
      bytes in the field and then translating just the prefix into a number.
      We should scan property to conserve the rest of the field. */
   string temp;

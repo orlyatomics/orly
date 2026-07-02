@@ -33,7 +33,7 @@ class TPump::TPipe {
   public:
   TPipe(TPump *pump, TFd &read, TFd &write) : Pump(pump) {
 
-    // TODO: The kernel already can do most of this with temporary memory backed files... It just doesn't let us
+    // TODO(#288): The kernel already can do most of this with temporary memory backed files... It just doesn't let us
     //      make a never-blocking stream :(
     // Pipe input from where the user will write to where we will read.
     TFd::Pipe(ReadFd, write);

@@ -83,7 +83,7 @@ namespace Orly {
 
     }; // TLoaded
 
-    // TODO: A function to make a call to the actual orly function. Note in Spa we build a closure object around this.
+    // TODO(#355): A function to make a call to the actual orly function. Note in Spa we build a closure object around this.
     class TFuncHolder {
       NO_COPY(TFuncHolder);
       public:

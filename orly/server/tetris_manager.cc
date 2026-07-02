@@ -125,7 +125,7 @@ void TTetrisManager::TPlayer::Stop() {
      We must therefore not dereference 'this' from here down. */
   ChildCount = 0;
   /* Wait for the player thread to stop. */
-  /* TODO FIX: clearly StoppedSync is referencing this... */
+  /* TODO(#280) FIX: clearly StoppedSync is referencing this... */
   StoppedSync.Sync();
 }
 
@@ -175,7 +175,7 @@ void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
       throw;
     }
     PausedSync.Sync();
-    /* TODO: we should try to join some form of queue of frames that will get re-activated when the sem is pushed. */
+    /* TODO(#376): we should try to join some form of queue of frames that will get re-activated when the sem is pushed. */
     //Fiber::YieldSlow();
     //sem.Pop();
   } else {

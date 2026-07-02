@@ -26,7 +26,7 @@
 #include <orly/server/meta_record.h>
 #include <base/util/time.h>
 
-#include <iostream> /* TODO GET RID OF */
+#include <iostream> /* TODO(#317) GET RID OF */
 
 using namespace std;
 using namespace std::literals;
@@ -428,7 +428,7 @@ void TManager::RunReplicateTransaction() {
                           } else {
                             Server::TMetaRecord meta_record;
                             Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetMetadata().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), meta_record);
-                            /* TODO : when we start merging updates we need to notify all update tracker ids. */
+                            /* TODO(#327) : when we start merging updates we need to notify all update tracker ids. */
                             Base::TUuid tracker_id;
                             Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetId().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), tracker_id);
                             for (const auto &item: meta_record.GetEntryByUpdateId()) {
@@ -1128,11 +1128,11 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
             transaction->Push(SystemRepo, TUpdate::NewUpdate(TUpdate::TOpByKey{
               { TIndexKey(SystemRepoIndexId, TKey(TSavedRepoKey(SavedRepoMagicNumber, repo_id), &arena, state_alloc)),
                 TKey(TSavedRepoObj(is_safe,
-                                   TSavedRepoObj::TRootPath(/* TODO: fill in */),
+                                   TSavedRepoObj::TRootPath(/* TODO(#173): fill in */),
                                    TSavedRepoObj::TOptSeq(),
                                    TSavedRepoObj::TOptSeq(),
                                    TSequenceNumber(1UL),
-                                   TSequenceNumber(0UL), /* TODO : verify? */
+                                   TSequenceNumber(0UL), /* TODO(#173) : verify? */
                                    TSavedRepoObj::Normal), &arena, state_alloc)
                 }}, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc)));
             transaction->Prepare();
@@ -1214,7 +1214,7 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
 
 L0::TManager::TRepo *TManager::ReconstructRepo(const TUuid &repo_id) {
   if (repo_id != SystemRepoId) { /* construct a regular repo */
-    auto deadline = TDeadline::max(); /* TODO: we should figure out the right deadline here */
+    auto deadline = TDeadline::max(); /* TODO(#324): we should figure out the right deadline here */
     return TSafeRepo::ReConstructFromDisk(this, repo_id, deadline);
   }
   assert(!SystemRepo);
@@ -1261,7 +1261,7 @@ void TManager::SaveRepo(TRepo *base_repo) {
       auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ {
         TIndexKey(SystemRepoIndexId, TKey(TSavedRepoKey(SavedRepoMagicNumber, repo->GetId()), &arena, state_alloc)),
         TKey(TSavedRepoObj(repo->IsSafeRepo(),
-                           TSavedRepoObj::TRootPath(/* TODO: fill in */),
+                           TSavedRepoObj::TRootPath(/* TODO(#173): fill in */),
                            repo->GetSequenceNumberStart(),
                            repo->GetSequenceNumberLimit(),
                            repo->GetNextSequenceNumber(),

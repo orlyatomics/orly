@@ -199,7 +199,7 @@ namespace Orly {
       /* The id of the global point of view. */
       static const Base::TUuid GlobalPovId;
 
-      //TODO: This should be private...
+      //TODO(#315): This should be private...
       /* Add the given pov to the collection of povs we'll keep open. */
       void AddPov(const Durable::TPtr<TPov> &pov);
 

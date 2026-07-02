@@ -123,7 +123,7 @@ void TJobRunner::ProcessQueue() {
 
     }
     // If there's nothing running, that means we're out of work. Wait for work to come our way
-    // TODO: Could the Queue notify_all ever miss waking this up?
+    // TODO(#337): Could the Queue notify_all ever miss waking this up?
     if(Running.size() == 0) {
       assert(!MoreResultsOnceTaken);
       unique_lock<mutex> lock(HasWorkMutex);

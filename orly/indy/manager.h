@@ -418,7 +418,7 @@ namespace Orly {
          unreachable today. This is distinct from the server's working persistence (the spa
          checkpoint replays statements; orlyi runs on a real disk engine) -- it is specifically the
          in-process reload-from-on-disk-image path that was never ported. Fail clearly rather than
-         with a bare TODO if a path ever reaches them. See issue #173. */
+         with a bare placeholder if a path ever reaches them. See issue #173. */
       virtual void Delete(const L0::TId &/*id*/, L0::TSem */*sem*/) override {
         throw std::logic_error("TManager::Delete not implemented: durable on-disk object deletion was never ported (#173).");
       }

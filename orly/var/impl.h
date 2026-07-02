@@ -204,7 +204,7 @@ namespace Orly {
         *this = Dict(that);
       }
 
-      /* TODO
+      /* TODO(#384)
       template <typename... TElements>
       TVar(const Rt::TAddr<TElements...> &that) {
         *this = Addr(that);
@@ -229,7 +229,7 @@ namespace Orly {
 
       static TVar Addr(const std::vector<std::pair<TAddrDir, TVar>> &that);
 
-      /* TODO
+      /* TODO(#384)
       template <typename... TElements>
       static TVar Addr(const Rt::TAddr<TElements...> &that);
       */

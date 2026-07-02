@@ -39,7 +39,7 @@ namespace Jhm {
 
     public:
     TValue *Add(TKey &&key, std::unique_ptr<TValue> &&item) {
-      //TODO: Add a new InsertOrFail which can handle this
+      //TODO(#341): Add a new InsertOrFail which can handle this
       auto result = ManagedThings.emplace(std::move(key), std::move(item));
       assert(result.second);
 

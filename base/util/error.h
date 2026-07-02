@@ -71,7 +71,7 @@ namespace Util {
 
   /* Return true iff. the error was caused by a signal. */
   inline bool WasInterrupted(const std::system_error &error) {
-    /* TODO: change this to:
+    /* TODO(#290): change this to:
           return error.code() == errc::interrupted;
        As soon as gcc fixes the bug in cerr. */
     return error.code().value() == EINTR;

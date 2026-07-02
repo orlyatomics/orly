@@ -84,7 +84,7 @@ namespace Orly {
                          : std::string(container.substr(idx));
     }
 
-    /* TODO: SliceRange for a mutable
+    /* TODO(#361): SliceRange for a mutable
     template <typename TAddr, typename TVal, typename TIdx>
     TMutable<TAddr, std::vector<TVal>> SliceRange(
           const TMutable<TAddr, std::vector<TVal>> &container, bool start_range, const TIdx &idx) {
@@ -116,7 +116,7 @@ namespace Orly {
       return std::string(container.substr(lhs, rhs - lhs));
     }
 
-    /* TODO
+    /* TODO(#361)
     template <typename TAddr, typename TVal, typename TIdx>
     TMutable<TAddr, std::vector<TVal>> SliceRangeBoth(
           const TMutable<TAddr, std::vector<TVal>> &container, const TIdx &lhs, const TIdx &rhs) {

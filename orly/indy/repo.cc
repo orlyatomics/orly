@@ -758,7 +758,7 @@ void TRepo::StepMergeMem() {
               cur_mapping->Decr();
               throw;
             }
-            /* TODO: only enqueue if we are likely to be able to merge files of the same generation. */
+            /* TODO(#325): only enqueue if we are likely to be able to merge files of the same generation. */
             if (total_disk_layers >= 3) {
               EnqueueMergeDisk();
             }
@@ -1201,7 +1201,7 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
                 cur_mapping->Decr();
                 throw;
               }
-              /* TODO: only enqueue if we are likely to be able to merge files of the same generation. */
+              /* TODO(#325): only enqueue if we are likely to be able to merge files of the same generation. */
               if (total_disk_layers >= 3) {
                 EnqueueMergeDisk();
               }
@@ -1327,7 +1327,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
                 cur_mapping->Decr();
                 throw;
               }
-              /* TODO: only enqueue if we are likely to be able to merge files of the same generation. */
+              /* TODO(#325): only enqueue if we are likely to be able to merge files of the same generation. */
               if (total_disk_layers >= 3) {
                 EnqueueMergeDisk();
               }

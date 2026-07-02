@@ -66,7 +66,7 @@ class TCompilerConfig : public Base::TCmd {
 
     private:
     virtual void WriteAfterDesc(std::ostream &strm) const {
-      strm << "Build: Unknown" << endl // TODO: Version from SCM.
+      strm << "Build: Unknown" << endl // TODO(#353): Version from SCM.
            << endl
            << "Copyright Atomic Kismet Company" << endl
            << "Licensed under the Apache License, Version 2.0" << endl;

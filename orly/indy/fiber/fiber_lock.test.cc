@@ -150,7 +150,7 @@ FIXTURE(Typical) {
     can_start = true;
     cond.notify_all();
   }
-  /* TODO: temp get rid of numthreads -- */
+  /* TODO(#329): temp get rid of numthreads -- */
   /* wait for finished */ {
     std::unique_lock<std::mutex> lock(mut);
     while (num_finished != num_threads * num_runnable_per_thread) {

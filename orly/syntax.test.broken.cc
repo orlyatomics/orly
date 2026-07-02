@@ -2030,7 +2030,7 @@ FIXTURE(BitwiseXorBitwiseAnd) {
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
-// TODO: Currently there are no shift_and_rotate operators
+// TODO(#282): Currently there are no shift_and_rotate operators
 FIXTURE(InequalityShiftAndRotate) {}
 FIXTURE(ShiftAndRotateAddAndSub) {}
 

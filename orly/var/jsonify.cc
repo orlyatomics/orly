@@ -27,7 +27,7 @@ using namespace std;
 using namespace Orly;
 using namespace Orly::Var;
 
-//TODO: This doesn't always output legal JSON.
+//TODO(#276): This doesn't always output legal JSON.
 void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
   class TJsonifyVisitor : public TVar::TVisitor {
     NO_COPY(TJsonifyVisitor);

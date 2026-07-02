@@ -235,7 +235,7 @@ void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &dea
     }  // release data lock
     SlushSem.Push();
     //SlushCounter.Push();
-    /* TODO : we should only call the sem once we've actually written to disk! */
+    /* TODO(#277) : we should only call the sem once we've actually written to disk! */
     sem->Push();
   } catch (...) {
     delete durable_replication;

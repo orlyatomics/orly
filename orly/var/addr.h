@@ -78,7 +78,7 @@ namespace Orly {
 
       private:
 
-      /* TODO
+      /* TODO(#384)
       template <typename... TElements>
       TAddr(const Rt::TAddr<TElements...> &that) {
         Unroll(that.GetSuper());
@@ -95,7 +95,7 @@ namespace Orly {
 
       void SetHash();
 
-      /* TODO
+      /* TODO(#384)
       template <size_t Pos, typename... TElements>
       void Unroll(const Rt::TAddrImpl<Pos, TElements...> &that);
 
@@ -122,7 +122,7 @@ namespace Orly {
 
       TAddrType Val;
 
-      std::vector<std::pair<TDir, Type::TType>> TypeVec; //TODO: Can I get this from TType?
+      std::vector<std::pair<TDir, Type::TType>> TypeVec; //TODO(#384): Can I get this from TType?
 
       size_t Hash;
 
@@ -130,7 +130,7 @@ namespace Orly {
 
     };  // TAddr
 
-    /* TODO
+    /* TODO(#384)
     template <typename... TElements>
     TVar TVar::Addr(const Rt::TAddr<TElements...> &that) {
       TAddr::TAddrType val;
@@ -142,7 +142,7 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO
+    /* TODO(#384)
     template <size_t Pos, typename THead_, typename... TTail>
     TAddrImpl<Pos, THead_, TTail...>::TAddrImpl(const Var::TAddr::TAddrType &vec)
         : TSuper(vec), Head(Var::TVar::TDt<typename THead_::TElem>::As(vec[Pos].second)) {}
@@ -155,7 +155,7 @@ namespace Orly {
 
   namespace Var {
 
-    /* TODO
+    /* TODO(#384)
     template<typename... TElements>
     struct TVar::TDt<Rt::TAddr<TElements...>> {
 

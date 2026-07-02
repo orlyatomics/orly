@@ -188,7 +188,7 @@ void TTestBlock::WriteMeta(TCppPrinter &out) const {
 
 void TWith::Write(TCppPrinter &out) const {
 
-  //TODO: This is copied from TFunction
+  //TODO(#311): This is copied from TFunction
   //Write out inner functions (forward decl followed by definitions).
   for(auto &func: ChildFuncs) {
     func->WriteDecl(out);
@@ -226,7 +226,7 @@ TWith::TWith(const L0::TPackage *package, const Symbol::Test::TWithClause::TPtr 
 
   //Gather child functions
   auto gather_child_functions = [this, package](const Expr::TExpr::TPtr &expr) {
-    //TODO: This is copied from function.cc TFunction ctor.
+    //TODO(#311): This is copied from function.cc TFunction ctor.
     Expr::ForEachExpr(expr, [this, package](const Expr::TExpr::TPtr &expr) {
       const Expr::TWhere *where = expr->TryAs<Expr::TWhere>();
       if(where) {
@@ -243,7 +243,7 @@ TWith::TWith(const L0::TPackage *package, const Symbol::Test::TWithClause::TPtr 
     gather_child_functions(it->GetRhs()->GetExpr());
   }
 
-  //TODO: This is copied from TFunction
+  //TODO(#311): This is copied from TFunction
   for(auto &it: ChildFuncs) {
     it->Build();
   }

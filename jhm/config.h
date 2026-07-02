@@ -44,7 +44,7 @@ namespace Jhm {
      NOTE: Config cannot be machine generated __EVER__. Attached/used from producer and the like yes. But never a
      generated file.
 
-     TODO: parent/include statements? */
+     TODO(#338): parent/include statements? */
   template<typename TVal>
   struct TJsonReader;
 

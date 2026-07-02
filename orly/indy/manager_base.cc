@@ -262,7 +262,7 @@ void TManager::SetTetrisManager(Orly::Server::TTetrisManager *tetris_manager) {
 }
 
 void TManager::CompactOpemMap() {
-  //throw std::logic_error("TODO: Implement CompactOpenMap()");
+  //throw std::logic_error("TODO(#278): Implement CompactOpenMap()");
 }
 
 void TManager::RunLayerCleaner() {

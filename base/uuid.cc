@@ -26,7 +26,7 @@ using namespace Base;
 const TUuid TUuid::Null;
 
 bool TUuid::IsValidUuid(const char *s) {
-  //TODO: Make more sophisticated.
+  //TODO(#291): Make more sophisticated.
   return strlen(s) == 36;
 }
 
@@ -48,7 +48,7 @@ TUuid::TUuid(TAlgo that) {
       break;
     }
     case TimeAndMACSafe: {
-      /* TODO: We cannot currently support this mode because uuid_generate_time_safe() isn't in our OS build.
+      /* TODO(#291): We cannot currently support this mode because uuid_generate_time_safe() isn't in our OS build.
          When it becomes available, call it here and only throw TUnsafeError if the function returns an error. */
       throw TUnsafeError();
     }

@@ -56,6 +56,6 @@ FIXTURE(Typical) {
   //NOTE: Locals have been disabled ATM, so the number of locals is 0.
   EXPECT_EQ(s.GetLocals().size(), 0u);
 
-  //TODO: Test printing out the locals.
+  //TODO(#308): Test printing out the locals.
 
 }

@@ -96,7 +96,7 @@ class TApp : public TCmd {
 
     TRunner(const TPerf *perf) : Perf(perf) {}
 
-    //TODO: Fork! Run the test in the forked thread, collecting up all it says. Kill the fork if it takes too long.
+    //TODO(#287): Fork! Run the test in the forked thread, collecting up all it says. Kill the fork if it takes too long.
     /* Spawns a second thread where the perf test is run. Kills the second thread if max_time elapses without it returning. */
     void Run() {
       auto start = chrono::steady_clock::now();
@@ -154,7 +154,7 @@ class TApp : public TCmd {
         out << "    \"max_time\": " << test->GetMaxRuntime().count() << endl;
         return true;
       } : [](const TPerf *test, std::ostream &) {
-        //TODO: JSONIFY
+        //TODO(#287): JSONIFY
         TRunner(test).Run();
         return true;
       };

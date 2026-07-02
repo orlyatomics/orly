@@ -2,7 +2,7 @@
 
    A counter useful for providing health reports.
 
-   TODO: The group of counters don't provide a consistent snapshot when sampled. Each is sampled independently. Locking
+   TODO(#292): The group of counters don't provide a consistent snapshot when sampled. Each is sampled independently. Locking
    everything to sample the counters is incredibly painful / massive jitter which we want to avoid.
 
    Copyright 2010-2026 Atomic Kismet Company
