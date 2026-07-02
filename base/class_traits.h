@@ -12,7 +12,16 @@
    the code to tell what the overarching behavior of a class is
   (NO_CONSTRUCTION, NO_COPY, etc.)
 
-  TODO(#315): Generic blurb about how to insert/use these in classes (Just after the '{')
+   Usage: place the macro on its own line immediately after the class's
+   opening brace, before any access specifier or member -- the macro leaves
+   the class at an access level of its own, so what follows should restate
+   the level it wants:
+
+      class TFoo {
+        NO_COPY(TFoo);
+        public:
+        ...
+      };
 
    Copyright 2010-2026 Atomic Kismet Company
 
