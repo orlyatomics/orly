@@ -50,7 +50,10 @@ void TContextVar::WriteExpr(TCppPrinter &out) const {
   switch(Op) {
     case SessionId: out << "GetSessionId";
       break;
-    case UserId: out << "GetAccountId"; //TODO(#310): UserId
+    /* The runtime context API is GetUserId (package/rt.h); the old
+       GetAccountId emission named a method that exists nowhere, so any
+       package using the user_id context var failed to compile (#310). */
+    case UserId: out << "GetUserId";
       break;
     case Now: out << "Now";
       break;

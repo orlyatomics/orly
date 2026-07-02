@@ -1,0 +1,15 @@
+/* The three context variables. Before #310 the user_id emission called a
+   runtime method that didn't exist (GetAccountId), so any package using it
+   failed to compile the generated C++. */
+package #1;
+
+uid = user_id;
+sid = session_id;
+right_now = now;
+
+test {
+  /* orlyc's test session carries no user, so user_id is unknown. */
+  tuid: user_id is unknown;
+  /* session_id is a stable id within one evaluation. */
+  tsid: session_id == session_id;
+};
