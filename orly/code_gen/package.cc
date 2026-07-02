@@ -31,7 +31,7 @@
 #include <orly/expr/walker.h>
 #include <orly/expr/where.h>
 #include <orly/package/api_version.h>
-#include <orly/type/gen_code.h>
+#include <orly/code_gen/type.h>
 #include <orly/type/impl.h>
 #include <orly/type/object_collector.h>
 #include <orly/type/orlyify.h>
@@ -349,12 +349,12 @@ void TPackage::WriteCc(TCppPrinter &out, const TRelPath &rel_path) const {
                 ", ",
                 [](TCppPrinter &out, TFunction::TArgs::const_reference arg) {
                   out << "{\"" << arg.first << "\", ";
-                  Type::GenCode(out.GetOstream(), arg.second->GetType());
+                  CodeGen::GenCode(out.GetOstream(), arg.second->GetType());
                   out << '}';
                 })
         << "}," << Eol
         << "/* ret */ "; //NOTE: GetOstream at the start of a line will cause indent to not be printed.
-      Type::GenCode(out.GetOstream(), it->GetReturnType());
+      CodeGen::GenCode(out.GetOstream(), it->GetReturnType());
       out << ',' << Eol
           << "RF_" << it->GetName() << Eol;
     }

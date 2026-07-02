@@ -28,7 +28,7 @@
 #include <orly/rt/runtime_error.h>
 #include <orly/code_gen/obj.h>
 #include <orly/type.h>
-#include <orly/type/gen_code.h>
+#include <orly/code_gen/type.h>
 #include <orly/type/obj.h>
 #include <orly/type/group_ref.h>
 #include <orly/type/object_collector.h>
@@ -929,7 +929,7 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
             { size_t i = 0;
               for (const auto &ne : nv_elems) {
                 out << "    case " << i << ": return Var::TVar::Variant(";
-                Type::GenCode(out.GetOstream(), elem.second);
+                CodeGen::GenCode(out.GetOstream(), elem.second);
                 out << ", \"" << ne.first << "\", Var::TVar(";
                 if (ne.second.Is<Type::TSelfRef>()) {
                   out << "Rt::DeepUnbox<" << class_name << ">(V" << ne.first << ')';
@@ -1049,7 +1049,7 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                       ", ",
                       [](TCppPrinter &out, const TVariant::TElems::value_type &it) {
                         out << "{\"" << it.first << "\", ";
-                        Type::GenCode(out.GetOstream(), it.second);
+                        CodeGen::GenCode(out.GetOstream(), it.second);
                         out << '}';
                       })
         << "});" << Eol
@@ -1868,7 +1868,7 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
           << "struct TDt<Rt::Variants::" << class_of(m) << "> {" << Eol
           << "  static TType GetType() {" << Eol
           << "    return ";
-      Type::GenCode(out.GetOstream(), m);
+      CodeGen::GenCode(out.GetOstream(), m);
       out << ";" << Eol
           << "  }" << Eol
           << "};" << Eol;

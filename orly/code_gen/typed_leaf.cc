@@ -18,7 +18,7 @@
 
 #include <orly/code_gen/typed_leaf.h>
 
-#include <orly/type/gen_code.h>
+#include <orly/code_gen/type.h>
 #include <orly/type/unwrap.h>
 
 using namespace Orly::CodeGen;
@@ -36,7 +36,7 @@ void TTypedLeaf::WriteExpr(TCppPrinter &out) const {
     case Free:
       #if 0
       out << "Var::TVar::Free(";
-      Type::GenCode(out.GetOstream(), Type::UnwrapSequence(GetReturnType()));
+      CodeGen::GenCode(out.GetOstream(), Type::UnwrapSequence(GetReturnType()));
       out << ')';
       break;
       #endif
