@@ -252,9 +252,7 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
       //Build all the if and else_if clauses
       for(auto &it: that->GetIfClauses()) {
         if(it->GetExpr()->GetType().Is<Type::TSeq>()) {
-          //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
-          //NOT_IMPLEMENTED_S(that->GetPosRange(), "Sequences in effecting blocks")
-          NOT_IMPLEMENTED_S("Sequences in effecting blocks")
+          throw TNotImplementedError(HERE, it->GetExpr()->GetPosRange(), "Sequences in effecting blocks");
         }
         TPtr<TPredicatedBlock> pred_block(new TPredicatedBlock(BuildInline(Package, it->GetExpr(), false)));
         TStmtCtx stmt_ctx(&pred_block->GetStmts());
@@ -273,16 +271,14 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
     }
     virtual void operator()(const Symbol::Stmt::TMutate *that) const {
       if(that->GetLhs()->GetExpr()->GetType().Is<Type::TSeq>() || that->GetRhs()->GetExpr()->GetType().Is<Type::TSeq>()) {
-        //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
-        NOT_IMPLEMENTED_S("Sequences in effecting blocks");
+        throw TNotImplementedError(HERE, that->GetLhs()->GetExpr()->GetPosRange(), "Sequences in effecting blocks");
       }
       Context::GetStmtBlock()->Add(Package, BuildMutateLhs(Package, that->GetLhs()->GetExpr(), that->GetMutator()), that->GetMutator(),
           Build(Package, that->GetRhs()->GetExpr(), false));
     }
     virtual void operator()(const Symbol::Stmt::TNew *that) const {
       if(that->GetLhs()->GetExpr()->GetType().Is<Type::TSeq>() || that->GetRhs()->GetExpr()->GetType().Is<Type::TSeq>()) {
-        //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
-        NOT_IMPLEMENTED_S("Sequences in effecting blocks");
+        throw TNotImplementedError(HERE, that->GetLhs()->GetExpr()->GetPosRange(), "Sequences in effecting blocks");
       }
       Context::GetStmtBlock()->AddNew(Package, BuildInline(Package, that->GetLhs()->GetExpr(), true), Build(Package, that->GetRhs()->GetExpr(), false));
     }
@@ -718,8 +714,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TSlice       *that) const {
       //TODO(#296): Slice should maintain mutability of container elements.
       if(that->GetType().Is<Type::TMutable>() && (that->HasColon() || that->GetOptRhs())) {
-        //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
-        NOT_IMPLEMENTED_S("Maintaining mutability through a range slice");
+        throw TNotImplementedError(HERE, that->GetPosRange(), "Maintaining mutability through a range slice");
       }
       Res = Interner.GetSlice(Package, ReturnType, Build(Package, that->GetContainer(), true),
           BuildOptInline(Package, that->GetOptLhs()), BuildOptInline(Package, that->GetOptRhs()), that->HasColon());
@@ -900,19 +895,19 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
   //Every sequence __must__ be a ref to a result def which arises from the same zero-parameter function OR there must be
   //one and only one core seq.
   if(!((core_seqs.size() == 1) ^ (!core_def_seqs.empty()))) {
-    /* TODO(#305): It would be nice to include the individual sequence's pos ranges in the message. */
-    cout << "Sequence Locations: " << endl;
-    cout << "CORE" << endl;
+    /* Name every participating sequence's location in the error itself (the
+       old code dumped them to stdout, where a compiler's caller never looks). */
+    std::ostringstream msg;
+    msg << "Uncorrelated sequences in a map containing multiple sequences. "
+           "To use multiple sequences in a map, they must all come from the same zero-parameter function."
+           " Sequences at:";
     for(auto &it: core_seqs) {
-      cout << it->GetPosRange() << ", ";
+      msg << ' ' << it->GetPosRange();
     }
-    cout << endl << "CORE DEF";
     for(auto &it: core_def_seqs) {
-      cout << it.first->GetPosRange() << ", ";
+      msg << ' ' << it.first->GetPosRange();
     }
-    /**/
-    throw TCompileError(HERE, expr->GetPosRange(), "Uncorrelated sequences in a map containing multiple sequences. "
-        "To use multiple sequences in a map, they must all come from the same zero-parameter function.");
+    throw TCompileError(HERE, expr->GetPosRange(), msg.str().c_str());
   }
   TFunction::TNamedArgs args;
   if (!core_seqs.empty()) {
@@ -926,17 +921,18 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
         NO_COPY(TVisitor);
         public:
 
-        TVisitor(TFunction::TNamedArgs &args, Symbol::TAnyFunction::TPtr &func) : Args(args), Func(func) {}
+        TVisitor(TFunction::TNamedArgs &args, Symbol::TAnyFunction::TPtr &func, const TPosRange &expr_pos)
+            : Args(args), Func(func), ExprPos(expr_pos) {}
 
-        virtual void operator()(const Symbol::TGivenParamDef *) const {
-          //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
-          NOT_IMPLEMENTED_S("We don't currently support correlated parameter sequences");
+        virtual void operator()(const Symbol::TGivenParamDef *that) const {
+          throw TNotImplementedError(HERE, that->GetPosRange(), "We don't currently support correlated parameter sequences");
         }
         virtual void operator()(const Symbol::TResultDef *that) const {
           if (Func) {
             if(that->GetFunction() != Func) {
-              //TODO(#305): Would be nice to include the overall expr pos_range, as well as the conflicting sequences pos ranges.
-              throw TCompileError(HERE, that->GetPosRange(), "Uncorrelated sequence in map containing multiple sequences.");
+              throw TCompileError(HERE, that->GetPosRange(),
+                  Base::AsStr("Uncorrelated sequence in map containing multiple sequences"
+                              " (map expression at ", ExprPos, ").").c_str());
             }
           } else {
             Func = that->GetFunction();
@@ -949,9 +945,10 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
         private:
         TFunction::TNamedArgs &Args;
         Symbol::TAnyFunction::TPtr &Func;
+        const TPosRange &ExprPos;
       };
 
-      it.first->Accept(TVisitor(args, func));
+      it.first->Accept(TVisitor(args, func, expr->GetPosRange()));
     }
   }
 
