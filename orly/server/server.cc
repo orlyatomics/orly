@@ -1226,36 +1226,31 @@ void TServer::Init() {
       }
     }
 
-    /* open the main socket */ {
-      TAddress address(TAddress::IPv4Any, Cmd.PortNumber);
-      MainSocket = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
+    /* Open a listening socket on `port`. A bind failure is always logged;
+       it aborts startup only when `bind_is_fatal` (the main socket kills the
+       server, the memcache socket limps on -- preserving the historical
+       behavior of the two previously-duplicated blocks). */
+    auto open_listening_socket = [this](TFd &sock, in_port_t port, const char *who, bool bind_is_fatal) {
+      TAddress address(TAddress::IPv4Any, port);
+      sock = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
       int flag = true;
-      IfLt0(setsockopt(MainSocket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
+      IfLt0(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
       try {
-        Bind(MainSocket, address);
+        Bind(sock, address);
       } catch (const std::exception &ex) {
-        syslog(LOG_ERR, "Server startup caught exception [%s], cannot bind main socket to port [%d]", ex.what(), Cmd.PortNumber);
-        throw;
+        syslog(LOG_ERR, "Server startup caught exception [%s], cannot bind %s socket to port [%d]", ex.what(), who, port);
+        if (bind_is_fatal) {
+          throw;
+        }
       }
-      IfLt0(listen(MainSocket, Cmd.ConnectionBacklog));
-    }
+      IfLt0(listen(sock, Cmd.ConnectionBacklog));
+    };
+
+    open_listening_socket(MainSocket, Cmd.PortNumber, "main", true);
     Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this, false));
 
-    //TODO(#365): Dedup this code (Exactly the same as just above with one bool different)
     if (Cmd.EnableMemcache) {
-
-      /* open the mynde socket */ {
-        TAddress address(TAddress::IPv4Any, Cmd.MemcachePortNumber);
-        MemcacheSocket = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
-        int flag = true;
-        IfLt0(setsockopt(MemcacheSocket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
-        try {
-          Bind(MemcacheSocket, address);
-        } catch (const std::exception &ex) {
-          syslog(LOG_ERR, "Server startup caught exception [%s], Can't listen for memcache clients on port [%d]", ex.what(), Cmd.MemcachePortNumber);
-        }
-        IfLt0(listen(MemcacheSocket, Cmd.ConnectionBacklog));
-      }
+      open_listening_socket(MemcacheSocket, Cmd.MemcachePortNumber, "memcache", false);
       Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this, true));
     }
 
