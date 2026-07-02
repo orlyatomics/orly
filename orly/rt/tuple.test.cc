@@ -95,6 +95,35 @@ FIXTURE(Hash) {
       });
 }
 
+/* Direct (qualified) Match/MatchLess calls -- the code-generated
+   object/variant comparison path, issue #362. */
+FIXTURE(MatchTuple) {
+  EXPECT_TRUE (Orly::Rt::Match(empty_addr, empty_addr));
+  EXPECT_TRUE (Orly::Rt::Match(addr_1, addr_1));
+  EXPECT_FALSE(Orly::Rt::Match(addr_1, addr_2));
+  /* Nested tuple elements match structurally. */
+  EXPECT_TRUE (Orly::Rt::Match(addr_9, addr_9));
+  EXPECT_FALSE(Orly::Rt::Match(addr_10, std::tuple<int64_t, std::tuple<int64_t>>(1, std::tuple<int64_t>(3))));
+}
+
+FIXTURE(MatchLessTuple) {
+  EXPECT_FALSE(Orly::Rt::MatchLess(empty_addr, empty_addr));
+  /* Lexicographic: first differing element decides. */
+  EXPECT_TRUE (Orly::Rt::MatchLess(addr_1, addr_2));   // (5,2,1) < (6,2,1)
+  EXPECT_FALSE(Orly::Rt::MatchLess(addr_2, addr_1));
+  EXPECT_FALSE(Orly::Rt::MatchLess(addr_1, addr_1));   // equal -> not less
+  EXPECT_TRUE (Orly::Rt::MatchLess(addr_3, addr_4));   // (5,2.0,1) < (5,2.1,1)
+  EXPECT_FALSE(Orly::Rt::MatchLess(addr_4, addr_3));
+  /* A trailing element only decides when the earlier ones Match. */
+  std::tuple<int64_t, int64_t> lo(5, 1), hi(5, 2);
+  EXPECT_TRUE (Orly::Rt::MatchLess(lo, hi));
+  EXPECT_FALSE(Orly::Rt::MatchLess(hi, lo));
+  /* TDesc elements order through their own (reversed) comparison. */
+  std::tuple<Orly::TDesc<int64_t>, int64_t> da(5, 1), db(6, 1);
+  EXPECT_TRUE (Orly::Rt::MatchLess(db, da));
+  EXPECT_FALSE(Orly::Rt::MatchLess(da, db));
+}
+
 struct TPnt {
   public:
   TPnt(int x, int y) : X(x), Y(y) {}
