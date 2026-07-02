@@ -51,9 +51,23 @@ namespace Jhm {
       return CmdPath;
     }
 
-    /* Computes (and doesn't cache!) the timestamp for the given file. Newest of either it's config or file in the tree) */
+    /* The timestamp for the given file: newest of the file itself and its
+       config. Cached after the first read -- a widely-included header would
+       otherwise be stat()'ed once per dependent job's cache check (#350).
+       The work finder invalidates the cache when a job (re)writes this
+       file, so a produced output is re-stat()'ed before any downstream
+       cache check reads it. */
     Util::TOptTimestamp GetTimestamp() const {
-      return Util::Newest(Util::TryGetTimestamp(Base::AsStr(Path)), Config.GetTimestamp());
+      if (!TimestampCached) {
+        CachedTimestamp = Util::Newest(Util::TryGetTimestamp(Base::AsStr(Path)), Config.GetTimestamp());
+        TimestampCached = true;
+      }
+      return CachedTimestamp;
+    }
+
+    /* Drop the cached timestamp; call after (re)writing the file. */
+    void InvalidateTimestamp() {
+      TimestampCached = false;
     }
 
     void PushComputedConfig(Base::TJson &&config) {
@@ -86,6 +100,10 @@ namespace Jhm {
     bool IsSrc_;
     TRelPath Path;
     std::string CmdPath;
+
+    /* See GetTimestamp / InvalidateTimestamp. */
+    mutable Util::TOptTimestamp CachedTimestamp;
+    mutable bool TimestampCached = false;
 
     // Config: Stack of file-based config for the file (file.jhm), as well as producer-added config.
     // NOTE: JHM cannont and will not allow generated config. That isn't how you should pass in that info.

@@ -146,6 +146,10 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
                                << " which it was supposed to yet returned successfully...";
     }
 
+    // The job just (re)wrote this file; drop any timestamp cached from
+    // before it ran (e.g. a pre-run cache check that saw it absent).
+    out_file->InvalidateTimestamp();
+
     // Attach to each output file it's build info
     out_file->PushComputedConfig(TJson(job_info));
 
