@@ -18,6 +18,8 @@
 
 #include <orly/server/tetris_manager.h>
 
+#include <thread>
+
 #include <base/debug_log.h>
 #include <orly/indy/disk/util/volume_manager.h>
 
@@ -36,6 +38,11 @@ void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id)
   /* Lock the map and locate (or create) the slot where this parent pov's player would be. */
   //lock_guard<mutex> lock(Mutex);
   Fiber::TFiberLock::TLock lock(FiberMutex);
+  if (Stopping) {
+    /* We're tearing down: no new players.  The piece stays unpromoted, exactly as if it had
+       arrived just after the player it would have joined was stopped. */
+    return;
+  }
   auto iter = PlayerByParentPovId.insert(pair<TUuid, TPlayer *>(parent_pov_id, nullptr)).first;
   TPlayer *&player = iter->second;
   if (player) {
@@ -116,17 +123,26 @@ void TTetrisManager::TPlayer::Pause() {
 }
 
 void TTetrisManager::TPlayer::Stop() {
-  assert(!Stopped);
-  /* Make a semaphore so we can know when the player has actually stopped. */
-  CanWork.Push();
-  Stopped = true;
-  StoppedSync.WaitForMore(1);
-  /* NOTE: After we set ChildCount to zero, the other thread could destroy this object at any time.
-     We must therefore not dereference 'this' from here down. */
+  assert(!StopFlag.load());
+  /* Park a flag from our own stack where Main() can find it, then zero the child count so
+     Main() falls out of its loop and self-destructs.  Main() flips the flag through a stack
+     copy of the pointer after 'delete this' completes, so we never dereference 'this' once
+     the count hits zero and the player never touches our stack after the flip. */
+  std::atomic<bool> stopped(false);
+  StopFlag.store(&stopped);
   ChildCount = 0;
-  /* Wait for the player thread to stop. */
-  /* TODO(#280) FIX: clearly StoppedSync is referencing this... */
-  StoppedSync.Sync();
+  /* Wake the player in case it is still waiting for permission to work. */
+  CanWork.Push();
+  /* Wait for the player fiber to finish self-destructing.  It runs on the manager's fiber
+     scheduler, a different thread, so yielding here cannot starve it.  Server shutdown tears
+     us down from a plain thread, so only fiber-yield when we actually are a fiber. */
+  while (!stopped.load()) {
+    if (Fiber::TFrame::LocalFrame) {
+      Fiber::YieldSlow();
+    } else {
+      std::this_thread::yield();
+    }
+  }
 }
 
 void TTetrisManager::TPlayer::Unpause() {
@@ -143,17 +159,17 @@ void TTetrisManager::TPlayer::OnClose() {
 }
 
 TTetrisManager::TPlayer::~TPlayer() {
-  if (Stopped) {
-    StoppedSync.Complete();
-    Stopped = false;
-  }
   Fiber::FreeMyFrame(FramePool);
+  /* Last: once this count drops, StopAllPlayers() may return and the manager's owner may start
+     destroying povs, so nothing after this line may touch shared state. */
+  --(TetrisManager->LivePlayerCount);
 }
 
 TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
-    : TetrisManager(tetris_manager), ChildCount(1), Stopped(nullptr), /*Paused(nullptr), */ Paused(false), /*Unpaused(nullptr)*/ Unpaused(false) {
+    : TetrisManager(tetris_manager), ChildCount(1), StopFlag(nullptr), /*Paused(nullptr), */ Paused(false), /*Unpaused(nullptr)*/ Unpaused(false) {
   assert(tetris_manager);
   assert(Fiber::TFrame::LocalFramePool);
+  ++(tetris_manager->LivePlayerCount);
   FramePool = Fiber::TFrame::LocalFramePool;
   TetrisFrame = FramePool->Alloc();
 }
@@ -224,7 +240,13 @@ void TTetrisManager::TPlayer::Main() {
       }
     }
     //DEBUG_LOG("tetris player %p: self-destructing", this);
+    /* If a Stop() is waiting on us, its stack flag must flip only after we are completely
+       dead.  Copy the pointer to our stack first; 'this' is invalid after the delete. */
+    std::atomic<bool> *stop_flag = StopFlag.load();
     delete this;
+    if (stop_flag) {
+      stop_flag->store(true);
+    }
     //DEBUG_LOG("tetris player %p: exiting Main()", this);
   } catch (const std::exception &ex) {
     syslog(LOG_EMERG, "TetrisManager::Player exception: %s", ex.what());
@@ -241,7 +263,7 @@ TTetrisManager::TTetrisManager(Base::TScheduler *scheduler,
                                Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
                                const std::function<void (Indy::Fiber::TRunner *)> &runner_setup_cb,
                                bool is_master)
-    : Scheduler(scheduler), FiberScheduler(runner_cons), IsMaster(is_master) {
+    : Scheduler(scheduler), FiberScheduler(runner_cons), Stopping(false), LivePlayerCount(0UL), IsMaster(is_master) {
   assert(scheduler);
   Base::TEventSemaphore setup_is_complete;
   auto launch_sched = [this, runner_setup_cb, &setup_is_complete](Fiber::TRunner *runner,
@@ -268,12 +290,31 @@ TTetrisManager::~TTetrisManager() {
 }
 
 void TTetrisManager::StopAllPlayers() {
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
-  for (const auto &item: PlayerByParentPovId) {
+  /* Snatch the whole player map under the lock, but do the actual stopping after releasing it:
+     a player that is mid-Play() may be re-entering the manager right now (promotion calls back
+     into Join()/Part(), e.g. from indy/repo.cc AppendUpdate), and Stop() waits for that player
+     to die -- waiting while holding FiberMutex deadlocks the pair (#280).  Once 'Stopping' is
+     set, Join() stops spawning players, so the map stays empty for our caller's destructor. */
+  std::unordered_map<TUuid, TPlayer *> players;
+  /* extra */ {
+    Fiber::TFiberLock::TLock lock(FiberMutex);
+    Stopping = true;
+    players.swap(PlayerByParentPovId);
+  }
+  for (const auto &item: players) {
     item.second->Stop();
   }
-  PlayerByParentPovId.clear();
+  /* Also wait out the players that already left the map on their own: a player whose last child
+     parted is erased immediately but its fiber can still be finishing the round, touching povs our
+     caller is about to destroy.  Their destructors drop this count as their final shared-state
+     touch, so once it reads zero no player can interfere with the teardown. */
+  while (LivePlayerCount.load()) {
+    if (Fiber::TFrame::LocalFrame) {
+      Fiber::YieldSlow();
+    } else {
+      std::this_thread::yield();
+    }
+  }
 }
 
 void TTetrisManager::BecomeMaster() {

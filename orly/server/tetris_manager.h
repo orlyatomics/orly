@@ -100,7 +100,7 @@ namespace Orly {
 
         /* A players always dies by self-destruction, either because the last of its children parts from it
            or because the manager calls Stop().  If the player is self-destructing as a result of Stop(),
-           this destructor will unblock the stopper. */
+           Main() unblocks the stopper after the delete completes. */
         virtual ~TPlayer();
 
         /* Overide to respond to a child pov joining to us.
@@ -142,11 +142,12 @@ namespace Orly {
            FiberMutex while the player's own Main() fiber reads it unlocked each round (#262 follow-up: TSan data race). */
         std::atomic<size_t> ChildCount;
 
-        /* Usually this pointer is null; however, Stop() points us at a semaphore we are to push in our destructor.  That's
-           how we unblock Stop(). */
-        //Base::TEventSemaphore *Stopped;
-        bool Stopped;
-        Indy::Fiber::TSafeSync StoppedSync;
+        /* Usually null; Stop() points this at a flag on its own stack.  Main() copies the pointer
+           to its stack before 'delete this' and flips the flag as its very last act, so neither side
+           touches this object (or the stopper's stack) after the other is done with it.  The old
+           handshake had Stop() wait on a member TSafeSync that the destructor completed, letting the
+           stopper's wakeup race the delete (#280). */
+        std::atomic<std::atomic<bool> *> StopFlag;
 
         /* Usually this pointer is null; however, Pause() points us at a semaphore we are to push when we are paused.  That's
            how we unblock Pause(). */
@@ -210,6 +211,17 @@ namespace Orly {
 
       /* The ids of the parent points of view which are currently paused. */
       std::unordered_set<Base::TUuid> PausedSet;
+
+      /* Set (under FiberMutex) by StopAllPlayers() before it stops the players it snatched from the
+         map.  Join() checks it so a piece that lands mid-teardown doesn't spawn a fresh player that
+         nobody would ever stop. */
+      bool Stopping;
+
+      /* The number of players constructed but not yet destroyed.  A player whose last child parted
+         leaves the map immediately but keeps running until its Main() finishes the round and
+         self-destructs; StopAllPlayers() spins this count down to zero so no player fiber can still
+         be touching povs (or us) when our caller's destructor starts tearing them down (#280). */
+      std::atomic<size_t> LivePlayerCount;
 
       bool IsMaster;
       //std::mutex MasterLock;
