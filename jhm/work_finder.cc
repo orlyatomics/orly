@@ -222,15 +222,21 @@ TJob *TWorkFinder::TryGetProducer(TFile *file) {
 
     if (IsBuildable(input_file)) {
       bool found_self = false;
-      //TODO(#333): Collect / hold errors at this loop, re throw after last iteration.
+      /* Register every output before throwing, so one conflict doesn't hide
+         the rest of the job's conflicting outputs. */
+      vector<string> conflicts;
       for (TFile *f : job->GetOutput()) {
         if (!Producers.emplace(f, job).second) {
           if (Producers.at(f) != job) {
-            THROW_ERROR(runtime_error) << "Multiple producers for file "
-                                       << f <<  ". Producers: " << Producers.at(f) << ", " << job;
+            conflicts.push_back(
+                AsStr(f, " (producers: ", Producers.at(f), ", ", job, ')'));
           }
         }
         found_self |= f == file;
+      }
+      if (!conflicts.empty()) {
+        THROW_ERROR(runtime_error) << "Multiple producers for file(s): "
+                                   << Join(conflicts, "; ");
       }
       assert(found_self && "Make sure we found ourselves");
 
