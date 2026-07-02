@@ -183,7 +183,7 @@ TAction TDef::BuildHelper(int pass) {
         const TName &name = GetName();
         GetContext().AddError(name.GetPosRange(), Base::AsStr(std::quoted(name.GetText()), " has a cycle in its build dependencies"));
         action = Fail;
-        /* TODO: Provide a mechanism to customize this error message so that we can describe the pass in which the cycle was found. */
+        /* TODO(#314): Provide a mechanism to customize this error message so that we can describe the pass in which the cycle was found. */
         break;
       }
       case Shiny: {

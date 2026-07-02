@@ -78,7 +78,7 @@ class TSubprocServer final {
 
   /* Shutdown the server and wait for the child proc to exit. */
   ~TSubprocServer() {
-    /* TODO: We should be sending SIGINT, not SIGKILL, but the server is
+    /* TODO(#279): We should be sending SIGINT, not SIGKILL, but the server is
        currently hanging during shutdown.  Once the server gets back to
        exiting gracefully, change this call to trigger it to do so. */
     kill(Subprocess->GetChildId(), SIGKILL);

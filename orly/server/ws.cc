@@ -175,7 +175,7 @@ class TWsImpl final
       virtual void operator()(const TEchoStmt *stmt) const override {
         assert(stmt);
         void *alloc = alloca(SabotStateSize);
-        //TODO: Push TJson down into Var::Jsonify
+        //TODO(#377): Push TJson down into Var::Jsonify
         Result = TJson::Parse(AsStrFunc(&Var::Jsonify, Var::ToVar(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc)))));
       }
 
@@ -368,7 +368,7 @@ class TWsImpl final
               /* params */ {
                 TJson::TObject parameters;
                 for (const auto &param: func->GetParameters()) {
-                  // TODO: Change to jsonify
+                  // TODO(#377): Change to jsonify
                   ostringstream oss;
                   Orly::Type::Orlyify(oss, param.second);
                   parameters[param.first] = oss.str();

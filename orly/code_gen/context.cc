@@ -83,7 +83,7 @@ TStmtBlock *Context::GetStmtBlock() {
 TInline::TPtr Context::GetThat() {
   assert(!That.empty());
 
-  //TODO: Increment the reference count on the Inline ptr so that it common subexpression eliminates if used more than once.
+  //TODO(#297): Increment the reference count on the Inline ptr so that it common subexpression eliminates if used more than once.
   return That.top();
 }
 

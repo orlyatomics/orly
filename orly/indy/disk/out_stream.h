@@ -278,7 +278,7 @@ namespace Orly {
 
           void Flush() {
             TCompletionTrigger *completion_trigger = &CompletionTrigger;
-            /* TODO: implement write groups with new volume manager. */
+            /* TODO(#326): implement write groups with new volume manager. */
             for (TWriteCollection::TCursor csr(&WriteCollection); csr; ++csr) {
               #ifndef NDEBUG
               WrittenToSet.insert(csr->GetBlockId());

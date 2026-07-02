@@ -76,7 +76,7 @@ class TPackageBuilder {
     cg.Emit(out_root);
 
     //Spit out the language object files as necessary (Everything in the header to simplify linking.)
-    //TODO: Don't re-emit already emitted object headers.
+    //TODO(#312): Don't re-emit already emitted object headers.
     cg.EmitObjectHeaders(GetSrcRoot() + "orly/rt/objects");
   }
 
@@ -130,7 +130,7 @@ class TPackageBuilder {
 
 
 //Note: This should probably be promted to a compile management class.
-//TODO: Reintroduce machine mode, not saving cc. Also reintroduce syntax check only and semantic check only compilation.
+//TODO(#312): Reintroduce machine mode, not saving cc. Also reintroduce syntax check only and semantic check only compilation.
 /* Returns the versioned package name of the final build target. */
 Package::TVersionedName Orly::Compiler::Compile(
       TPath core_file,
@@ -207,7 +207,7 @@ Package::TVersionedName Orly::Compiler::Compile(
         break;
       }
       if (machine_mode) {
-        // TODO: UNCOMMENT
+        // TODO(#312): UNCOMMENT
         // out_strm << "MM_NOTICE: TypeCheck" << endl;
       }
       builder->TypeCheck();
@@ -235,7 +235,7 @@ Package::TVersionedName Orly::Compiler::Compile(
       if (machine_mode) {
         out_strm << "MM_NOTICE: Code Gen" << endl;
       }
-      //TODO: We only need to generate the C++ if we don't already have up to date C++. Note that doing this means we need
+      //TODO(#312): We only need to generate the C++ if we don't already have up to date C++. Note that doing this means we need
       //      to always gen to a temp file, then move it into place to be atomic in case someone uses Ctrl-C.
       builder->GenerateIntermediateCode(out_tree);
       if (packages[cur]->HasErrors()) {

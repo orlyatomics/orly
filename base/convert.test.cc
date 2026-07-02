@@ -24,7 +24,7 @@
 
 using namespace Base;
 
-//TODO: Get to full coverage. Currently just a compile test.
+//TODO(#334): Get to full coverage. Currently just a compile test.
 FIXTURE(Int) {
   int i;
   TConverter(AsPiece("42")).ReadInt(i);

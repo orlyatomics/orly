@@ -53,7 +53,7 @@ FIXTURE(UtilsGenerated) {
 }
 
 // Disable the interruption test as it is non-deterministic in running / sometimes never exits.
-// TODO: Re-enable / FIXME
+// TODO(#282): Re-enable / FIXME
 #if 0
 FIXTURE(Interruption) {
   struct sigaction action;

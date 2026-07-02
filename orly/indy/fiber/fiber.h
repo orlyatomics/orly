@@ -555,11 +555,11 @@ namespace Orly {
 
         const size_t WorkerCount;
 
-        /* TODO: use better data structure */
+        /* TODO(#320): use better data structure */
         std::vector<std::unique_ptr<TRunner>> RunnerVec;
         std::vector<std::unique_ptr<std::thread>> ThreadVec;
 
-        /* TODO: we can do runner assignment more effectively than iterating through the vector */
+        /* TODO(#320): we can do runner assignment more effectively than iterating through the vector */
         std::atomic<size_t> AssignPos;
 
       };  // TRunnerPool

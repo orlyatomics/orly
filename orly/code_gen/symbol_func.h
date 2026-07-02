@@ -48,7 +48,7 @@ namespace Orly {
 
       private:
 
-      //TODO: Kill the static. We can really handle this using proper scoping and a tree of function maps.
+      //TODO(#307): Kill the static. We can really handle this using proper scoping and a tree of function maps.
       static std::unordered_map<const Symbol::TFunction*, TSymbolFunc*> Functions;
 
       //Note we would use an InlineScope here, but we need to attach the function arguments to the CodeScope.

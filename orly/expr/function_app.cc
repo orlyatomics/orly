@@ -120,7 +120,7 @@ Type::TType TFunctionApp::GetTypeImpl() const {
   for (auto param : params) {
     auto arg = function_app_args.find(param.first /* name */);
     if (arg == function_app_args.end()) { // expected argument not found
-      // TODO: Tell them exactly which parameters are missing
+      // TODO(#314): Tell them exactly which parameters are missing
       throw TExprError(HERE, GetPosRange(), "Function call with missing expected argument");
     }
     // Found

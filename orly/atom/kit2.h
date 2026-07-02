@@ -408,7 +408,7 @@ namespace Orly {
       bool TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &lhs_state,
                                     const State::TArrayOfSingleStates &rhs_state);
 
-      /* TODO Splitting a tuple... */
+      /* TODO(#284) Splitting a tuple... */
       bool TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &state, size_t start, size_t limit);
 
       /* Our storage area is the sum of several types.  Which one we use is determined by our tycon. */

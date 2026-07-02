@@ -77,7 +77,7 @@ namespace Jhm {
     /* Queues the given job to run. If the job is already done, returns false. */
     bool Queue(TJob *job);
 
-    // TODO: Move the whole cache checking thing to some other module that takes a work finder and env.
+    // TODO(#336): Move the whole cache checking thing to some other module that takes a work finder and env.
     // It crosses the boundaries wayy to much to live in work finder alone.
     /* Checks to see if we actually need to run the job or if the output that already exists is good enough*/
     void CacheCheck(TJob *job);
@@ -92,13 +92,13 @@ namespace Jhm {
     TJob *TryGetProducer(TFile *file);
 
     // List of jobs which are ready to go.
-    // TODO: Should really be a hyper-efficient work queue for n workers to pull out of in parallel.
+    // TODO(#347): Should really be a hyper-efficient work queue for n workers to pull out of in parallel.
     std::queue<TJob *> Ready;
 
     // Map from producer to consumer job. When the last instance of a consumer job is removed from the multimap, it's
     // time to
     // check for more dependencies.
-    // TODO: This should really be some sort of min-heap tree thing.
+    // TODO(#347): This should really be some sort of min-heap tree thing.
     std::unordered_multimap<TJob *, TJob *> ToFinish;
 
     // Keeps track of the full set of jobs which have ever been queued to run.
@@ -121,8 +121,8 @@ namespace Jhm {
     std::function<TFile *(const std::string &)> TryGetFileFromPath;
 
     // Runs the work queuPops things off work queue
-    // TODO: runs itself in a seperate process group (setpgid) so it can easily wait for all child processes
-    // TODO: Forcefully deletes all bad output
+    // TODO(#346): runs itself in a seperate process group (setpgid) so it can easily wait for all child processes
+    // TODO(#346): Forcefully deletes all bad output
     // Launch the IO pump, wait/manage all the subprocesses, and notify the work finder / env when things are completed.
     // Calls a standardized callback on completion of each command.
     TJobRunner Runner;

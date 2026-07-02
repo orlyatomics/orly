@@ -240,7 +240,7 @@ TRequest::TRequest(TIn &in) : Flags({false,false}), Opaque(0), Cas(0) {
   // Only some operations allow a value
   if (Opcode == TOpcode::Set || Opcode == TOpcode::Add || Opcode == TOpcode::Replace || Opcode == TOpcode::Append ||
       Opcode == TOpcode::Prepend) {
-    // TODO: append and prepend the max value length depends on how much is already in the value of what we're inserting to.
+    // TODO(#352): append and prepend the max value length depends on how much is already in the value of what we're inserting to.
 
   } else {
     if (value_len != 0) {
@@ -251,7 +251,7 @@ TRequest::TRequest(TIn &in) : Flags({false,false}), Opaque(0), Cas(0) {
   // We don't look at or touch this field
   Opaque = header.Opaque;
 
-  //TODO: This field can only get verified at db transaction time.
+  //TODO(#352): This field can only get verified at db transaction time.
   Cas = header.Cas;
 
   // Read extras, key, and value. We've already proofed which are needed (and made sure they were provided).

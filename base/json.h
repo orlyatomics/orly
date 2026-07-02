@@ -77,7 +77,7 @@ namespace Base {
     /* The kinds of states we can be in. */
     enum TKind { Null, Bool, Number, Array, Object, String };
 
-    //TODO: We don't currently escape unicode sequences / wide characters
+    //TODO(#276): We don't currently escape unicode sequences / wide characters
     static void WriteString(std::ostream &strm, const std::string &text) {
       strm << '"';
       const auto end = text.end();

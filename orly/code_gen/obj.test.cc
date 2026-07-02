@@ -30,7 +30,7 @@ using namespace Orly::Type;
 FIXTURE(GenObjHeader) {
   TTypeCzar type_czar;
 
-  //TODO: Should really make sure the genned code is valid here, but oh well.
+  //TODO(#308): Should really make sure the genned code is valid here, but oh well.
   //A basic object
   auto obj1 = TObj::Get({{"a", TInt::Get()}, {"b", TBool::Get()}});
   GenObjHeader("/tmp/", obj1);

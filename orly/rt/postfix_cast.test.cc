@@ -71,21 +71,21 @@ FIXTURE(ValToVal) {
   /* TList<TVal> to TList<TVal> */
   EXPECT_TRUE(EqEq(CastAs<TIntList, TIntList>::Do(il), il));
   /* TObj to TObj */
-  // TODO: Add a test case for object
+  // TODO(#363): Add a test case for object
   /* TOpt to TOpt */
   EXPECT_TRUE(IsKnownTrue(EqEq(CastAs<TOpt<int64_t>, TOpt<int64_t>>::Do(TOpt<int64_t>(1)), TOpt<int64_t>(1))));
   /* TReal to TReal */
   EXPECT_EQ((CastAs<double, double>::Do(1.0)), 1.0);
   /* TSeq to TSeq */
-  // TODO: Add a test case for sequence
+  // TODO(#363): Add a test case for sequence
   /* TSet to TSet */
   EXPECT_TRUE(EqEq(CastAs<TIntSet, TIntSet>::Do(is), is));
   /* TStr to TStr */
   EXPECT_EQ((CastAs<string, string>::Do("hello")), "hello");
   /* TTimeDiff to TTimeDiff */
-  // TODO: Add a test case for time diff
+  // TODO(#363): Add a test case for time diff
   /* TTimePnt to TTimePnt */
-  // TODO: Add a test case for time pnt
+  // TODO(#363): Add a test case for time pnt
 }
 
 FIXTURE(IntToReal) {

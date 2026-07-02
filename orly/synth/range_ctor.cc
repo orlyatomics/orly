@@ -66,7 +66,7 @@ TRangeCtor::TRangeCtor(const TExprFactory *expr_factory, const Package::Syntax::
     const Package::Syntax::TExpr *end = nullptr;
     RangeCtor->GetRangeEnd()->Accept(TRangeEndVisitor(end, EndIncluded));
     OptEnd = end ? expr_factory->NewExpr(end) : nullptr;
-    if (!OptEnd) { // TODO: Remove this throw when infinite series is supported
+    if (!OptEnd) { // TODO(#379): Remove this throw when infinite series is supported
       throw TNotImplementedError(HERE, GetPosRange(RangeCtor),
             "We currently we not support Infinite range constructors");
     }

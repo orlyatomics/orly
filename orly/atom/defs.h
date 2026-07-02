@@ -86,7 +86,7 @@ namespace Orly {
     template <typename... TArgs>
     using TTuple = std::tuple<TArgs...>;
 
-    /* TODO: obj */
+    /* TODO(#284): obj */
 
   }  // Atom
 

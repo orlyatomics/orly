@@ -106,7 +106,7 @@ static string ToString(const TVal &val) {
 FIXTURE(Empties) {
   EXPECT_EQ(ToString(Native::TFree<bool>::Free), "free(bool)");
   EXPECT_EQ(ToString(Native::TTombstone::Tombstone), "tombstone");
-  // TODO: Test void.
+  // TODO(#329): Test void.
 }
 
 FIXTURE(Int8) {

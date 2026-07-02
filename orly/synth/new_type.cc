@@ -50,7 +50,7 @@ TType *Orly::Synth::NewType(const Package::Syntax::TType *root) {
     virtual void operator()(const Package::Syntax::TSetType *that) const   { OnUnary(that->GetType(), Type::TSet::Get); }
     virtual void operator()(const Package::Syntax::TFuncType *that) const  { OnBinary(that->GetParams(), that->GetResult(), Type::TFunc::Get);}
     virtual void operator()(const Package::Syntax::TMutableType *that) const  {
-      // TODO: Make a clean end-user error message when there is a mutable in a mutable. Currently we assertion fail in the mutable type.
+      // TODO(#314): Make a clean end-user error message when there is a mutable in a mutable. Currently we assertion fail in the mutable type.
       class TOptMutableAtVisitor
           : public Package::Syntax::TOptMutableTypeAt::TVisitor {
         public:

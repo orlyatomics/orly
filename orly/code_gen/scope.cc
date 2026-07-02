@@ -60,7 +60,7 @@ void TCodeScope::AddLocal(const TInline::TPtr &inline_) {
   if(inline_->HasId()) {
     return;
   }
-  //TODO: Re-enable after sorting out dependency ordering issues.
+  //TODO(#297): Re-enable after sorting out dependency ordering issues.
   /*
   inline_->SetCommonSubexpressionId(IdScope->NewVar());
   Locals.push_back(inline_);

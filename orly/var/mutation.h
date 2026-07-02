@@ -168,13 +168,13 @@ namespace Orly {
         void Augment(const TPtr<const TChange> &change) final {
           const TFinal *that = dynamic_cast<const TFinal*>(change.get());
           if(!that) {
-            //TODO: Better diagnostic information so people can tell why this happened from their code.
+            //TODO(#383): Better diagnostic information so people can tell why this happened from their code.
             throw Rt::TSystemError(HERE, "Conflicting partial updates to the same key. Same key updated as different tyeps.");
           }
 
           for(const auto &it: that->Changes) {
             if(Changes.count(it.first)) {
-              //TODO: Better diagnostic information so people can tell why this happened from their code.
+              //TODO(#383): Better diagnostic information so people can tell why this happened from their code.
               throw Orly::Rt::TSystemError(HERE, "Tried to change the same portion of a value twice in one update.");
             }
 

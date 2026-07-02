@@ -45,7 +45,7 @@ TJobProducer TDep::GetProducer() {
     "dep",
     {{"dep"}},
     GetInputName,
-    //TODO: Should be able to eliminate the lambda wrapper here...
+    //TODO(#344): Should be able to eliminate the lambda wrapper here...
     [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
       return unique_ptr<TDep>(new TDep(env, in_file));
     }

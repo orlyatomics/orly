@@ -56,11 +56,11 @@ TVersionedName TVersionedName::Parse(const TPiece<const char> &name) {
 
   auto dot_pos = find('.', name.GetLimit() - 1, name.GetStart() - 1);
   if (!dot_pos) {
-    //TODO: Excess copy here.
+    //TODO(#357): Excess copy here.
     string tmp;
     return {TName::Parse(Assign(tmp, name)), 0};
   }
-  //TODO: Excess copy here
+  //TODO(#357): Excess copy here
   string tmp;
   return {TName::Parse(Assign(tmp, TPiece<const char>(name.GetStart(), dot_pos))),
                         TConvertProxy(TPiece<const char>(dot_pos + 1, name.GetLimit()))};

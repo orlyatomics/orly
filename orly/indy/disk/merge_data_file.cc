@@ -653,7 +653,7 @@ class TMergeDataFileImpl {
               seq_stream << bucket_ptr;  // Byte offset of bucket
               seq_stream << num_accum;  // number of key ptrs in bucket
               cur_seq_num = obj.SequenceNumber;
-              /* TODO: merge in cur_meta and cur_id */
+              /* TODO(#323): merge in cur_meta and cur_id */
               #if 0
               cur_meta = obj.Metadata;
               cur_id = obj.Id;
@@ -1083,11 +1083,11 @@ class TMergeDataFileImpl {
     }
 
     virtual size_t GetStartingBlock() const override {
-      throw std::logic_error("TODO: implement TAbc::GetStartingBlock");
+      throw std::logic_error("TODO(#323): implement TAbc::GetStartingBlock");
     }
 
     virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
-      throw std::logic_error("TODO: implement TAbc::ReadMeta");
+      throw std::logic_error("TODO(#323): implement TAbc::ReadMeta");
     }
 
     virtual size_t FindPageIdOfByte(size_t offset) const override {
@@ -2551,11 +2551,11 @@ class TMergeDataFileImpl {
     }
 
     virtual size_t GetStartingBlock() const override {
-      throw std::logic_error("TODO: implement TMergeIndexFile::GetStartingBlock");
+      throw std::logic_error("TODO(#323): implement TMergeIndexFile::GetStartingBlock");
     }
 
     virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
-      throw std::logic_error("TODO: implement TMergeIndexFile::ReadMeta");
+      throw std::logic_error("TODO(#323): implement TMergeIndexFile::ReadMeta");
     }
 
     virtual size_t FindPageIdOfByte(size_t offset) const override {

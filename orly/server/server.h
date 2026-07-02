@@ -641,7 +641,7 @@ namespace Orly {
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
         Indy::Fiber::TFrame *Frame;
 
-        /* TODO: Push <strm/fd.h> up to here, that should own our Fd and be our common Io library */
+        /* TODO(#364): Push <strm/fd.h> up to here, that should own our Fd and be our common Io library */
         Base::TFd Fd;
 
         const Socket::TAddress ClientAddress;

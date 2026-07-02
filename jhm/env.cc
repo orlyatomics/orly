@@ -41,7 +41,7 @@ unordered_set<TJob *> TJobFactory::GetPotentialJobs(TEnv &env, TFile *out_file) 
     for_each(range.first, range.second, [&ret](const pair<TFile*, TJob *> &pair) {
       // NOTE: job can be a nullptr, which is valid in the cache to indicate "no jobs exist".
       if (pair.second) {
-        // TODO: InsertOrFail.
+        // TODO(#341): InsertOrFail.
         ret.insert(pair.second);
       }
     });
@@ -77,7 +77,7 @@ unordered_set<TJob *> TJobFactory::GetPotentialJobs(TEnv &env, TFile *out_file) 
       assert(Contains(job->GetOutput(), out_file));
 
       // Add ourself to the cache map, as well as the set of jobs being returned.
-      // TODO: InsertOrFail.
+      // TODO(#341): InsertOrFail.
       ret.insert(job);
       JobsByOutput.emplace(out_file, job);
     }
@@ -141,7 +141,7 @@ vector<string> CopyAppendVector(const vector<string> &src, string &&val) {
   return ret;
 }
 
-//TODO:
+//TODO(#315):
 TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, const string &config_mixin)
     : Root(root),
       Src(CopyAppendVector(Root.Root, string(proj_name))),
@@ -160,7 +160,7 @@ TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, con
   }
   /*
   // Load the configuation
-  // TODO: Gracefully degrade on removal of a config.
+  // TODO(#339): Gracefully degrade on removal of a config.
   */
 
   Jobs.Register(Job::TDep::GetProducer());

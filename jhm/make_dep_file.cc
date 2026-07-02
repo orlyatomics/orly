@@ -115,7 +115,7 @@ vector<string> GetCDeps(const string &filename, bool is_cpp, const vector<string
   return deps;
 }
 
-// TODO: this should go in a helper somewhere...
+// TODO(#289): this should go in a helper somewhere...
 bool EndsWith(const string &target, const string &ending) {
   if (ending.length() > target.length()) {
     return false;
@@ -161,7 +161,7 @@ int main(int argc, const char *argv[]) {
   std::signal(SIGPIPE, SIG_IGN);
 
   if (argc < 3) {
-    //TODO: add '-o' to specify output filename.
+    //TODO(#343): add '-o' to specify output filename.
     cout << "USAGE: " << argv[0] << "input_name output_name [misc_flags]\n"
          << " Produces a JSON dependency file (.dep) containing the headers/dependencies of a given source file";
     return -1;

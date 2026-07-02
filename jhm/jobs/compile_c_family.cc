@@ -37,7 +37,7 @@ vector<string> TCompileCFamily::GetStandardArgs(TFile *input, bool is_cpp, const
 
   // Add options from configuration. Per-file config overrides global config
   vector<string> options;
-  // TODO: Make file configuration automatically attach environment to the tail of it's list for lookups / fallback?
+  // TODO(#340): Make file configuration automatically attach environment to the tail of it's list for lookups / fallback?
   if (!input->GetConfig().TryRead({"cmd", is_cpp ? "g++" : "gcc"}, options)) {
     env.GetConfig().TryRead({"cmd", is_cpp ? "g++" : "gcc"}, options);
   }
@@ -71,7 +71,7 @@ TJobProducer TCompileCFamily::GetCProducer() {
     "compile_c",
     {{"o"}},
     bind(GetInputName, _1, false),
-    //TODO: Should be able to eliminate the lambda wrapper here...
+    //TODO(#344): Should be able to eliminate the lambda wrapper here...
     [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
       return unique_ptr<TJob>(new TCompileCFamily(env, in_file, false));
     }
@@ -83,7 +83,7 @@ TJobProducer TCompileCFamily::GetCppProducer() {
     "compile_cpp",
     {{"o"}},
     bind(GetInputName, _1, true),
-    //TODO: Should be able to eliminate the lambda wrapper here...
+    //TODO(#344): Should be able to eliminate the lambda wrapper here...
     [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
       return unique_ptr<TJob>(new TCompileCFamily(env, in_file, true));
     }

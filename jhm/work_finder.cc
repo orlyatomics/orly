@@ -109,7 +109,7 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
   EraseOrFail(Running, result.Job);
 
   if (result.ExitCode != 0) {
-    // TODO: Test if stdout, stderr have text before pritning label and text for each.
+    // TODO(#347): Test if stdout, stderr have text before pritning label and text for each.
     cout << "ERROR: " << result.Job << " returned " << result.ExitCode << '\n' << "STDOUT: \n";
     Base::EchoOutput(move(result.Stdout));
     cout << "STDERR: \n";
@@ -176,7 +176,7 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
         Ready.push(job);
       }
     }
-    // TODO: Assert this succeeds (It should be guaranteed to)
+    // TODO(#345): Assert this succeeds (It should be guaranteed to)
     ToFinish.erase(range.first, range.second);
   }
 
@@ -218,7 +218,7 @@ TJob *TWorkFinder::TryGetProducer(TFile *file) {
 
     if (IsBuildable(input_file)) {
       bool found_self = false;
-      //TODO: Collect / hold errors at this loop, re throw after last iteration.
+      //TODO(#333): Collect / hold errors at this loop, re throw after last iteration.
       for (TFile *f : job->GetOutput()) {
         if (!Producers.emplace(f, job).second) {
           if (Producers.at(f) != job) {
@@ -342,8 +342,8 @@ void TWorkFinder::CacheCheck(TJob *job) {
   // We've now checked this job for cache. Mark it so.
   InsertOrFail(Cache, job);
 
-  // TODO: We don't handle removal of a configuration file. Only addition.
-  // TODO: There will be a lot of redundant stat() calls on input files... Make TFile hold a timestamp which is set
+  // TODO(#339): We don't handle removal of a configuration file. Only addition.
+  // TODO(#350): There will be a lot of redundant stat() calls on input files... Make TFile hold a timestamp which is set
   // by the cache checking process.
 
   // Input must be finished.

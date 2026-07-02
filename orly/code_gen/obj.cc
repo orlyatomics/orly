@@ -140,7 +140,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
           out << obj_class_name << "() {}" << Eol
               << Eol;
         }
-        /* TODO: Should really write a generic object ctor printer */
+        /* TODO(#304): Should really write a generic object ctor printer */
         out << obj_class_name << "(const TDynamicMembers &m)";
         if(!obj_core_type->GetElems().empty()) {
           out << " : ";
@@ -202,12 +202,12 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
             << "});" << Eol
             << "}" << Eol
             << Eol
-        /* TODO: Should really write a generic object member function printer */
+        /* TODO(#304): Should really write a generic object member function printer */
         /* helper functions (hash, equality, getters, etc.) */
             << "size_t GetHash() const {" << Eol
             << "  assert(this);" << Eol
             << "  return  ";
-        /* TODO: Better hash function. */
+        /* TODO(#295): Better hash function. */
         if(obj_core_type->GetElems().empty()) {
           out << "0";
         }
@@ -379,7 +379,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
         out << ": public TStateVisitor {" << Eol
             << "NO_COPY(TToNativeVisitor);" << Eol
             << "public:" << Eol
-            << "/* TODO */" << Eol
+            << "/* TODO(#315) */" << Eol
             << "TToNativeVisitor(Orly::Rt::Objects::" << obj_class_name << " &out) : Out(out) {}" << Eol
             << "/* Overrides. */" << Eol
             << "virtual void operator()(const State::TFree &/*state*/) const override       { throw; }" << Eol

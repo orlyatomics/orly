@@ -252,7 +252,7 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
       //Build all the if and else_if clauses
       for(auto &it: that->GetIfClauses()) {
         if(it->GetExpr()->GetType().Is<Type::TSeq>()) {
-          //TODO: Embed a PosRange in a NOT_IMPLEMENTED
+          //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
           //NOT_IMPLEMENTED_S(that->GetPosRange(), "Sequences in effecting blocks")
           NOT_IMPLEMENTED_S("Sequences in effecting blocks")
         }
@@ -273,7 +273,7 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
     }
     virtual void operator()(const Symbol::Stmt::TMutate *that) const {
       if(that->GetLhs()->GetExpr()->GetType().Is<Type::TSeq>() || that->GetRhs()->GetExpr()->GetType().Is<Type::TSeq>()) {
-        //TODO: Embed a PosRange in a NOT_IMPLEMENTED
+        //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
         NOT_IMPLEMENTED_S("Sequences in effecting blocks");
       }
       Context::GetStmtBlock()->Add(Package, BuildMutateLhs(Package, that->GetLhs()->GetExpr(), that->GetMutator()), that->GetMutator(),
@@ -281,7 +281,7 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
     }
     virtual void operator()(const Symbol::Stmt::TNew *that) const {
       if(that->GetLhs()->GetExpr()->GetType().Is<Type::TSeq>() || that->GetRhs()->GetExpr()->GetType().Is<Type::TSeq>()) {
-        //TODO: Embed a PosRange in a NOT_IMPLEMENTED
+        //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
         NOT_IMPLEMENTED_S("Sequences in effecting blocks");
       }
       Context::GetStmtBlock()->AddNew(Package, BuildInline(Package, that->GetLhs()->GetExpr(), true), Build(Package, that->GetRhs()->GetExpr(), false));
@@ -304,8 +304,8 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &st
   }
 }
 
-//TODO: Unit test specific inlines passing through the builder.
-//TODO: Containers containing only mutables should keep the mutables mutability.
+//TODO(#308): Unit test specific inlines passing through the builder.
+//TODO(#296): Containers containing only mutables should keep the mutables mutability.
 /* Build builds an inline from any expression. This is what is used inside of things like implicit maps so that we can
    build the map function. This function should be used anywhere where it is not valid to introduce a sequence. If
    it is valid to introduce a sequence, such as in filter's sequence argument, then the function BuildInline should be
@@ -347,7 +347,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TAndThen *that) const {
       Res = TBinaryScopedRhs::New(Package, ReturnType, TBinaryScopedRhs::AndThen, Build(Package, that->GetLhs(), false), that->GetRhs());
     }
-    //TODO: Cast should be able to maintain mutability of list elements, as well as when doing the no-op cast.
+    //TODO(#296): Cast should be able to maintain mutability of list elements, as well as when doing the no-op cast.
     virtual void operator()(const Expr::TAs *that) const {
       /* A RECURSIVE-variant widening (#104) cannot be a value rebuild here --
          the self-edges are boxed, so the synth pass replaced it with a call
@@ -396,8 +396,8 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TAsin *that) const { Unary(Package, TUnary::Asin, that); }
     virtual void operator()(const Expr::TAssert *that) const {
-      //TODO: Assertion predicates?
-      //TODO: Report file name with assertion failures.
+      //TODO(#294): Assertion predicates?
+      //TODO(#294): Report file name with assertion failures.
       //Pass the expression through, setting it as the "that" context, and making it a local (Since context that doesn't common subexpression eliminate automatically ATM).
       Res = Build(Package, that->GetExpr(), true);
       Context::GetScope()->AddLocal(Res);
@@ -502,7 +502,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       // boundary, exactly as the bare-deref case already does.
       auto seq = BuildInline(Package, that->GetLhs(), true);
 
-      //TODO: Common sub expression elimination for the filter func.
+      //TODO(#297): Common sub expression elimination for the filter func.
       TImplicitFunc::TPtr filter_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Filter,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
       /* Function Context */ {
@@ -528,7 +528,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
           auto func = TSymbolFunc::Find(that);
           TCall::TArgs args;
           for (auto &arg: FunctionAppArgs) {
-            // TODO: We need to check if the arg has a greater sequence arity than the parameter, and if so, it is an implicit
+            // TODO(#300): We need to check if the arg has a greater sequence arity than the parameter, and if so, it is an implicit
             //       map on the arg.
             TInline::TPtr arg_inline;
             auto param_type = func->GetArg(arg.first)->GetReturnType();
@@ -560,7 +560,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TGt *that) const { Binary(Package, TBinary::Gt, that); }
     virtual void operator()(const Expr::TGtEq *that) const { Binary(Package, TBinary::GtEq, that); }
     virtual void operator()(const Expr::TIfElse *that) const {
-      //TODO: Intern if_else.
+      //TODO(#301): Intern if_else.
       Res = TIfElse::New(Package, ReturnType, that->GetTrue(), Build(Package, that->GetPredicate(), false) , that->GetFalse());
     }
     virtual void operator()(const Expr::TIn *that) const { Binary(Package, TBinary::In, that); }
@@ -607,7 +607,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         args.insert(make_pair(it.first, Build(Package, it.second, false)));
       }
 
-      //TODO: Intern this, has the same problem TDict does.
+      //TODO(#301): Intern this, has the same problem TDict does.
       Res = TObjCtor::TPtr(new TObjCtor(Package, ReturnType, move(args)));
     }
     virtual void operator()(const Expr::TObjMember *that) const {
@@ -647,7 +647,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         func->Build();
       }
 
-      //TODO: Intern this (Functions aren't interned, so doing it now doesn't make sense.
+      //TODO(#301): Intern this (Functions aren't interned, so doing it now doesn't make sense.
       Res = TReduce::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false),
           Build(Package, that->GetStart()->GetExpr(), false), func);
     }
@@ -707,7 +707,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
 
       Res = TBasicCtor<TSetContainer>::TPtr(new TBasicCtor<TSetContainer>(Package, ReturnType, move(elems)));
 
-      //TODO: Requires comparison of sets: Res = Interner.GetSetCtor(ReturnType, move(elems));
+      //TODO(#301): Requires comparison of sets: Res = Interner.GetSetCtor(ReturnType, move(elems));
     }
     virtual void operator()(const Expr::TSessionId *) const { Res = Interner.GetContextVar(Package, TContextVar::SessionId); }
     virtual void operator()(const Expr::TSequenceOf *that) const { Unary(Package, TUnary::SequenceOf, that); }
@@ -716,9 +716,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       Res = TSkip::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false), Build(Package, that->GetRhs(), false));
     }
     virtual void operator()(const Expr::TSlice       *that) const {
-      //TODO: Slice should maintain mutability of container elements.
+      //TODO(#296): Slice should maintain mutability of container elements.
       if(that->GetType().Is<Type::TMutable>() && (that->HasColon() || that->GetOptRhs())) {
-        //TODO: Embed a PosRange in a NOT_IMPLEMENTED
+        //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
         NOT_IMPLEMENTED_S("Maintaining mutability through a range slice");
       }
       Res = Interner.GetSlice(Package, ReturnType, Build(Package, that->GetContainer(), true),
@@ -734,7 +734,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         func->Build();
       }
 
-      //TODO: Intern
+      //TODO(#301): Intern
       Res = TSort::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false), func);
 
     }
@@ -811,7 +811,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TWhile *that) const {
       auto seq = BuildInline(Package, that->GetLhs(), false);
 
-      //TODO: Common sub expression elimination for the filter func.
+      //TODO(#297): Common sub expression elimination for the filter func.
       TImplicitFunc::TPtr while_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::While,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
       /* Function Context */ {
@@ -900,7 +900,7 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
   //Every sequence __must__ be a ref to a result def which arises from the same zero-parameter function OR there must be
   //one and only one core seq.
   if(!((core_seqs.size() == 1) ^ (!core_def_seqs.empty()))) {
-    /* TODO: It would be nice to include the individual sequence's pos ranges in the message. */
+    /* TODO(#305): It would be nice to include the individual sequence's pos ranges in the message. */
     cout << "Sequence Locations: " << endl;
     cout << "CORE" << endl;
     for(auto &it: core_seqs) {
@@ -929,13 +929,13 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
         TVisitor(TFunction::TNamedArgs &args, Symbol::TAnyFunction::TPtr &func) : Args(args), Func(func) {}
 
         virtual void operator()(const Symbol::TGivenParamDef *) const {
-          //TODO: Embed a PosRange in a NOT_IMPLEMENTED
+          //TODO(#305): Embed a PosRange in a NOT_IMPLEMENTED
           NOT_IMPLEMENTED_S("We don't currently support correlated parameter sequences");
         }
         virtual void operator()(const Symbol::TResultDef *that) const {
           if (Func) {
             if(that->GetFunction() != Func) {
-              //TODO: Would be nice to include the overall expr pos_range, as well as the conflicting sequences pos ranges.
+              //TODO(#305): Would be nice to include the overall expr pos_range, as well as the conflicting sequences pos ranges.
               throw TCompileError(HERE, that->GetPosRange(), "Uncorrelated sequence in map containing multiple sequences.");
             }
           } else {
@@ -983,7 +983,7 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
   }
 
   //Return the implicit map.
-  //TODO: Intern implicit maps.
+  //TODO(#301): Intern implicit maps.
   return TMap::New(package, expr->GetType(), seq_inlines, func);
 }
 

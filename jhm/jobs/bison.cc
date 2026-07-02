@@ -32,7 +32,7 @@ const static vector<vector<string>> OutExtensions = {
   {"bison", "hh"}
 };
 
-//TODO: this is duplicated / copied in both bison.cc and flex.cc
+//TODO(#335): this is duplicated / copied in both bison.cc and flex.cc
 static std::optional<TRelPath> GetInputName(const TRelPath &output) {
   for (const auto &ext : OutExtensions) {
     if (output.Path.EndsWith(ext)) {
@@ -49,7 +49,7 @@ TJobProducer TBison::GetProducer() {
     "bison",
     OutExtensions,
     GetInputName,
-    //TODO: Should be able to eliminate the lambda wrapper here...
+    //TODO(#344): Should be able to eliminate the lambda wrapper here...
     [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
       return unique_ptr<TJob>(new TBison(env, in_file));
     }

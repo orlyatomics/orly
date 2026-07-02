@@ -29,13 +29,13 @@ namespace Orly {
     /* Match two tuples. */
     template <typename... TArgs>
     bool Match(const std::tuple<TArgs...> &/*lhs*/, const std::tuple<TArgs...> &/*rhs*/) {
-      throw std::runtime_error("TODO: Match for tuple");
+      throw std::runtime_error("TODO(#362): Match for tuple");
     }
 
     /* MatchLess two tuples. */
     template <typename... TArgs>
     bool MatchLess(const std::tuple<TArgs...> &/*lhs*/, const std::tuple<TArgs...> &/*rhs*/) {
-      throw std::runtime_error("TODO: MatchLess for tuple");
+      throw std::runtime_error("TODO(#362): MatchLess for tuple");
     }
 
     template <typename TVal>

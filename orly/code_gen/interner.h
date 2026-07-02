@@ -84,7 +84,7 @@ namespace Orly {
         return ContextVarInterner.Get(package, op);
       }
 
-      /* TODO: Requres dictionary comparison...
+      /* TODO(#301): Requres dictionary comparison...
       template <typename... TArgs>
       TBasicCtor<TDictContainer>::TPtr GetDictCtor(const Type::TType &type, TDictContainer &&elems) {
         return DictInterner.Get(type, elems);
@@ -105,7 +105,7 @@ namespace Orly {
         return Get(LiteralInterner, std::forward<TArgs>(args)...);
       }
 
-      /* TODO: Requires set comparison...
+      /* TODO(#301): Requires set comparison...
       template <typename... TArgs>
       TMap::TPtr GetMap(TArgs &&...args) {
         return Get(MapInterner, std:::forward<TArgs>(args)...);
@@ -121,7 +121,7 @@ namespace Orly {
         return Get(RangeInterner, std::forward<TArgs>(args)...);
       }
 
-      /* TODO: Requires set comparison...
+      /* TODO(#301): Requires set comparison...
       TBasicCtor<TSetContainer>::TPtr GetSetCtor(const Type::TType &type, TSetContainer &&elems) {
         return SetInterner.Get(type, std::move(elems));
       } */
@@ -204,14 +204,14 @@ namespace Orly {
       TStorage<TBuiltInCall, const L0::TPackage *, TBuiltInCall::TFunctionPtr, TBuiltInCall::TArguments> BuiltInCallInterner;
       TStorage<TCall, const L0::TPackage *, TFunction::TPtr, TCall::TArgs> CallInterner;
       Base::TInterner<TContextVar, const L0::TPackage *, TContextVar::TOp> ContextVarInterner;
-      //TODO (See Getter): TStorage<TBasicCtor<TDictContainer>, Type::TType, TDictContainer> DictInterner;
+      //TODO(#301) (See Getter): TStorage<TBasicCtor<TDictContainer>, Type::TType, TDictContainer> DictInterner;
       TStorage<TBasicCtor<TListContainer>, const L0::TPackage *, Type::TType, TListContainer> ListInterner;
       TStorage<TKeys, const L0::TPackage *, Type::TType, Type::TType, TKeys::TAddrElems> KeysInterner;
       TStorage<TLiteral, const L0::TPackage *, Var::TVar> LiteralInterner;
-      //TODO (See Getter): TStorage<TMap, Type::TType, TMap::TSeqs, TImplicitFunc::TPtr> MapInterner;
+      //TODO(#301) (See Getter): TStorage<TMap, Type::TType, TMap::TSeqs, TImplicitFunc::TPtr> MapInterner;
       TStorage<TObjMember, const L0::TPackage *, Type::TType, TInline::TPtr, std::string> ObjMemberInterner;
       TStorage<TRange, const L0::TPackage *, TInline::TPtr, TInline::TPtr, TInline::TPtr, bool> RangeInterner;
-      //TODO (See Getter): TStorage<TBasicCtor<TSetContainer>, Type::TType, TSetContainer> SetInterner;
+      //TODO(#301) (See Getter): TStorage<TBasicCtor<TSetContainer>, Type::TType, TSetContainer> SetInterner;
       TStorage<TSlice, const L0::TPackage *, Type::TType, TInline::TPtr, TInline::TPtr, TInline::TPtr, bool> SliceInterner;
       TStorage<TSort, const L0::TPackage *, Type::TType, TInline::TPtr, TImplicitFunc::TPtr> SortInterner;
       TStorage<TTypedLeaf, const L0::TPackage *, TTypedLeaf::TKind, Type::TType, TAddrDir> TypedLeafInterner;

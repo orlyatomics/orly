@@ -2,7 +2,7 @@
 
    JHM build system.
 
-   TODO:
+   TODO(#315):
     - Make it so that we minimize the amount of stuff which builds up in the foreground thread / we keep the worker
       queue busier all the time
     - Remove Stdout/Stderr printing from work_finder.h, so it's more portable
@@ -193,7 +193,7 @@ class TJhm : public TCmd {
     // Break the cyclic dependency by registering these back.
     env.SetFuncs(bind(&TWorkFinder::IsBuildable, &work_finder, _1), bind(&TWorkFinder::IsFileDone, &work_finder, _1));
 
-    // TODO: Gather exceptions here, rather than letting first one fly.
+    // TODO(#333): Gather exceptions here, rather than letting first one fly.
     TSet<TFile *> target_files;
 
     // Either build the explicitly specified targets, or the default targets
@@ -264,7 +264,7 @@ class TJhm : public TCmd {
     }
 
     // Run every test which should have been built
-    //TODO: We really should make it a job to produce a test report, and let the job runner run them in parallel. But
+    //TODO(#349): We really should make it a job to produce a test report, and let the job runner run them in parallel. But
     //      that requires teaching the job runner about resource needs of various kinds of jobs (Ex. Run only one, 512MB
     //      of ram, etc).
     TPump pump;

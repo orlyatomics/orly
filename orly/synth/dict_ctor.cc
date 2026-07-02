@@ -55,7 +55,7 @@ TDictCtor::~TDictCtor() {
 Expr::TExpr::TPtr TDictCtor::Build() const {
   Expr::TDict::TMemberMap members;
   for (auto member : Members) {
-    /* TODO: Detect duplicate constant keys and throw */
+    /* TODO(#378): Detect duplicate constant keys and throw */
     auto result = members.emplace(std::make_pair((member.first)->Build(), (member.second)->Build()));
     assert(result.second);
   }

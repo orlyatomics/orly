@@ -156,7 +156,7 @@ namespace Orly {
               std::sort(MemSorter.begin(), MemSorter.end(), Comp);
               new TSortFile(CodeLocation, UtilSrc, StorageSpeed, Engine, VolMan, BlockCache, 0UL, MemSorter, SortFileCollection, CacheInstr);
               MemSorter.Clear();
-              /* TODO: we can keep a memory-safe data-structure to track our generation sizes */
+              /* TODO(#321): we can keep a memory-safe data-structure to track our generation sizes */
               size_t gen = -1;
               size_t count = 0UL;
               bool done = false;

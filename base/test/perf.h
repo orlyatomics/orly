@@ -116,7 +116,7 @@ namespace Test {
           std::cout << '-';
           break;
       }
-      //TODO: Val needs to be guaranteed to be jsonified.
+      //TODO(#287): Val needs to be guaranteed to be jsonified.
       std::cout << "\"," << std::endl
           << "      \"val\": " << val << std::endl
           << "    }" << std::endl;
@@ -165,7 +165,7 @@ namespace Test {
     }
 
     private:
-    //TODO: Add introspection functions
+    //TODO(#287): Add introspection functions
     std::atomic<TVal> Val;
   };
 
@@ -237,10 +237,10 @@ namespace Test {
 
     TPerf(const char *name, TFunc func, std::chrono::seconds max_runtime);
 
-    //TODO: Should probably do proper cleanup of the TPerf linked list here...
+    //TODO(#287): Should probably do proper cleanup of the TPerf linked list here...
     //~TPerf();
 
-    //TODO: Describe should enumerate all metrics
+    //TODO(#287): Describe should enumerate all metrics
     //void Describe(std::ostream &out) const;
 
     TFunc GetFunc() const;

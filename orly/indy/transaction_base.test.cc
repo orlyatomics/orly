@@ -439,7 +439,8 @@ FIXTURE(Issue143PromotionWindow) {
 /* Issue #172: a Pop/Fail that lands on an already-attached popper with a stale
    ensure_or_discard -- the repo's sequence start has advanced past the requested
    point -- must be *discarded* (return false, leave the popper's state untouched),
-   not crash with runtime_error("TODO: check behavior"). We attach a popper in each
+   not crash with the old placeholder runtime_error ("check behavior"). We attach a popper
+   in each
    reachable state (Pop / Fail / Peek) and then issue the mismatching call. The repo
    holds one committed update (sequence start 1), so passing ensure/follow = 0 never
    matches and exercises the discard branch with the start-aware assert satisfied

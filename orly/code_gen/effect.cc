@@ -117,7 +117,7 @@ void TMutate::Write(TCppPrinter &out) const {
   }
 
   if(Type::UnwrapSequence(Mutable->GetReturnType()).Is<Type::TMutable>()) {
-    //TODO: Check that the address is known and throw if not before calling GetVal on the optional.
+    //TODO(#302): Check that the address is known and throw if not before calling GetVal on the optional.
     out << ".GetAddr()"; //NOTE: This keeps us from putting mutables in as databse keys.
   }
 
@@ -219,7 +219,7 @@ void TStmtBlock::Add(const L0::TPackage *package, const TPtrC<TInline> &key, TMu
   assert(key);
   assert(rhs);
 
-  /* TODO: We should really find the source read inline here and make a map from those to the partial changes, then
+  /* TODO(#302): We should really find the source read inline here and make a map from those to the partial changes, then
      code gen large mutation blocks as giant initializer lists with conflict detection. However, that takes a lot more
      work, and for now we're going for the stupid simple route. */
 

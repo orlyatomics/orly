@@ -779,7 +779,7 @@ TUuid TSession::NewPov(
   auto durable_manager = server->GetDurableManager();
   TPov::TSharedParents shared_parents;
   if (parent_pov_id) {
-    // TODO: add the ability to open a durable w/o changing ttl
+    // TODO(#366): add the ability to open a durable w/o changing ttl
     shared_parents = durable_manager->Open<TPov>(*parent_pov_id)->GetSharedParents();
     shared_parents.push_back(*parent_pov_id);
   }

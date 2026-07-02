@@ -36,7 +36,7 @@ namespace std {
   }
 }
 
-// TODO: Update for the simplification that happened moving to <base/path.h>
+// TODO(#282): Update for the simplification that happened moving to <base/path.h>
 
 FIXTURE(EndsWith) {
   EXPECT_TRUE(EndsWith({"a", "b", "c"}, {"c"}));

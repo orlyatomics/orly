@@ -35,7 +35,7 @@ namespace Jhm {
 
      Config relating to a file can be retrieved from the file.
 
-     TODO: make the config for file point to the config of the environment as fallback. */
+     TODO(#340): make the config for file point to the config of the environment as fallback. */
   class TFile {
     public:
     TFile(TRelPath &&path, const TTree *tree, bool is_src, const std::string &config_filename)
@@ -80,7 +80,7 @@ namespace Jhm {
       return IsSrc_;
     }
 
-    //TODO: GetGitHash for uniquely iding src files. Out files are id'd by job kind + input kind.
+    //TODO(#348): GetGitHash for uniquely iding src files. Out files are id'd by job kind + input kind.
 
     private:
     bool IsSrc_;

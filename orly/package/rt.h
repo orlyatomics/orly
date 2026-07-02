@@ -113,7 +113,7 @@ namespace Orly {
         assert(max >= min);
         assert(idx >= 0);
 
-        //TODO: Make seed bigger so we have more possible random sequences.
+        //TODO(#358): Make seed bigger so we have more possible random sequences.
         if(OptRandomSeed.IsUnknown()) {
           OptRandomSeed = std::random_device()();
         }
@@ -151,7 +151,7 @@ namespace Orly {
       /* Get the current time. Note that this function will always return the __same__ time. This is because within a
          single program execution in Orly the time is assumed to be constant.
 
-         TODO: If the time is used, it should really be rolled into the CheckAsserts function capture... */
+         TODO(#358): If the time is used, it should really be rolled into the CheckAsserts function capture... */
       inline Base::Chrono::TTimePnt Now() const {
         if (OptNow.IsUnknown()) {
           OptNow = Base::Chrono::Now();

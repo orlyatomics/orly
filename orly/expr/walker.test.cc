@@ -94,7 +94,7 @@ FIXTURE(EmbeddedObjs) {
   EXPECT_EQ(objects.size(), 3U);
 }
 
-//TODO: Update the test case to be valid orlyscript.
+//TODO(#282): Update the test case to be valid orlyscript.
 #if 0
 FIXTURE(PeopledirHistogram) {
   string histogram =
