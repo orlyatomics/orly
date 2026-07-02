@@ -18,6 +18,10 @@
 
 #pragma once
 
+#include <cstddef>
+#include <tuple>
+#include <utility>
+
 #include <base/class_traits.h>
 #include <orly/desc.h>
 #include <orly/rt/operator.h>
@@ -26,16 +30,29 @@ namespace Orly {
 
   namespace Rt {
 
-    /* Match two tuples. */
+    /* Match two tuples: structural, elementwise Match (so element types with
+       their own Match semantics -- nested tuples, optionals, containers --
+       compare through it, not through raw operator==). */
     template <typename... TArgs>
-    bool Match(const std::tuple<TArgs...> &/*lhs*/, const std::tuple<TArgs...> &/*rhs*/) {
-      throw std::runtime_error("TODO(#362): Match for tuple");
+    bool Match(const std::tuple<TArgs...> &lhs, const std::tuple<TArgs...> &rhs) {
+      return [&]<std::size_t... Idx>(std::index_sequence<Idx...>) {
+        return (Match(std::get<Idx>(lhs), std::get<Idx>(rhs)) && ...);
+      }(std::index_sequence_for<TArgs...>{});
     }
 
-    /* MatchLess two tuples. */
+    /* MatchLess two tuples: lexicographic -- MatchLess of the first
+       elementwise non-Match; false when every element Matches. */
     template <typename... TArgs>
-    bool MatchLess(const std::tuple<TArgs...> &/*lhs*/, const std::tuple<TArgs...> &/*rhs*/) {
-      throw std::runtime_error("TODO(#362): MatchLess for tuple");
+    bool MatchLess(const std::tuple<TArgs...> &lhs, const std::tuple<TArgs...> &rhs) {
+      bool less = false;
+      [&]<std::size_t... Idx>(std::index_sequence<Idx...>) {
+        /* The fold short-circuits at the first non-Match element, whose
+           MatchLess decides the order. */
+        ((Match(std::get<Idx>(lhs), std::get<Idx>(rhs))
+              ? true
+              : (less = MatchLess(std::get<Idx>(lhs), std::get<Idx>(rhs)), false)) && ...);
+      }(std::index_sequence_for<TArgs...>{});
+      return less;
     }
 
     template <typename TVal>
