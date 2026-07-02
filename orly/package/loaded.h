@@ -83,7 +83,9 @@ namespace Orly {
 
     }; // TLoaded
 
-    // TODO(#355): A function to make a call to the actual orly function. Note in Spa we build a closure object around this.
+    /* Holds one exported function of a loaded package (and pins the package
+       alive); Call() invokes it against a context -- the invoke path the
+       2014 note here asked for, built during the indy unification. */
     class TFuncHolder {
       NO_COPY(TFuncHolder);
       public:
