@@ -20,11 +20,9 @@ broadly-shared types) and many subdirectories grouped by concern.
 | `orlyc.cc` | `orly/orlyc` | Orlyscript compiler -- takes a `.orly` source, emits a `.so` package |
 | `core_import.cc` | `orly/core_import` | Bulk data importer (`.bin` files into a package) |
 | `compile_import.cc` | -- | Helper used by `core_import` |
-| `manual.cc` | -- | Manual / interactive driver for experimentation |
 
-The other two production binaries live in subdirectories:
-[`server/orlyi`](server/) (the database daemon) and
-[`spa/spa`](spa/) (single-process app server).
+The other production binary lives in a subdirectory:
+[`server/orlyi`](server/) (the database daemon).
 
 ### Broadly-shared headers at the top level
 
@@ -40,7 +38,7 @@ The other two production binaries live in subdirectories:
 | `method_request.{h,cc}` | `TMethodRequest`: pov + package + method + args, what the client sends |
 | `method_result.{h,cc}` | `TMethodResult`: the value returned + the arena that owns it |
 | `pos_range.h` | Source-position range type used in error reporting |
-| `protocol.{h,cc}` | Native (non-WS, non-memcached) wire protocol types |
+| `protocol.{h,cc}` | Native (non-WS) wire protocol types |
 | `rt.h` | Umbrella include for the Orlyscript runtime (`rt/`) |
 | `orly.nycr` | Top-level Orlyscript grammar definition, fed to `tools/nycr` |
 | `orly.package.cst.h` | Generated CST header for the grammar above |
@@ -76,9 +74,7 @@ The other two production binaries live in subdirectories:
 
 | Dir | What it does |
 |---|---|
-| [`server/`](server/) | The `orlyi` daemon: session manager, native protocol, WebSocket frontend (`ws.cc`), memcached frontend (`server.cc`) |
-| [`spa/`](spa/) | "Single-process app" -- alternative deployment with everything in one process, used for tests and small setups |
-| [`mynde/`](mynde/) | Memcached wire protocols (binary + text). Named for the protocol owner (a person), not "Mynde" the concept |
+| [`server/`](server/) | The `orlyi` daemon: session manager, native protocol, WebSocket frontend (`ws.cc`) |
 | [`balancer/`](balancer/) | TCP-level load balancer that fronts an `orlyi` cluster |
 | [`client/`](client/) | The `orly_client` interactive shell + its statement grammar (`program/`) |
 | [`notification/`](notification/) | Pub/sub channel between server components |

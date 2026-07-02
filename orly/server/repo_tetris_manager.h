@@ -41,8 +41,7 @@ namespace Orly {
         : public TTetrisManager {
       public:
 
-      /* Thrown when an update carries an assertion Tetris cannot test --
-         today, any memcache update other than a bare `set`. */
+      /* Thrown when an update carries an assertion Tetris cannot test. */
       DEFINE_ERROR(TUnsupportedAssertion, std::runtime_error,
                    "update assertion not supported by tetris");
 
@@ -107,10 +106,10 @@ namespace Orly {
 
           /* True iff this child carries no assertions -- every refreshed entry
              is a pure commutative field call (`+=` / `|=`, empty
-             GetExpectedPredicateResults) and none is a Mynde entry. Such a
-             child provably cannot conflict (architecture.md §5), so the
-             fast-lane may promote it in the same round as any other
-             assertion-free child. Requires a prior Refresh(). */
+             GetExpectedPredicateResults). Such a child provably cannot
+             conflict (architecture.md §5), so the fast-lane may promote it in
+             the same round as any other assertion-free child. Requires a
+             prior Refresh(). */
           bool IsAssertionFree() const;
 
           /* Fast-lane promotion (#234): drop any prior snapshot Peek, re-Peek
