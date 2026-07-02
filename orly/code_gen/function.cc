@@ -125,6 +125,69 @@ void TFunction::WriteArgs(TCppPrinter &out) const {
               });
 }
 
+void TFunction::WriteOrderedChildFuncs(const unordered_set<shared_ptr<TInlineFunc>> &child_funcs,
+                                            TCppPrinter &out) {
+  vector<shared_ptr<TInlineFunc>> ordered_funcs;
+  unordered_set<shared_ptr<const TInline>> finished;
+  unordered_set<shared_ptr<TInlineFunc>> working_set(child_funcs.begin(), child_funcs.end());
+  unordered_set<shared_ptr<const TInline>> cur_set;
+  for (const auto &func : working_set) {
+    cur_set.insert(func->Body);
+  }
+  while (working_set.size() > 0) {
+    for (auto &func : working_set) {
+      bool can_write = true;
+      unordered_set<shared_ptr<const TInline>> depends_on;
+      func->Body->AppendDependsOn(depends_on);
+      for (const auto &dependency : depends_on) {
+        if (dependency && finished.find(dependency) == finished.end() && cur_set.find(dependency) != cur_set.end()) {
+          can_write = false;
+        }
+      }
+      if (can_write || working_set.size() == 1) {
+        ordered_funcs.push_back(func);
+        finished.insert(func->Body);
+        working_set.erase(func);
+        break;
+      }
+    }
+  }
+
+  //Write out inner functions (forward decl followed by definitions).
+  for(auto &func: ordered_funcs) {
+    func->WriteDecl(out);
+    out << ';' << Eol;
+  }
+
+  if(!ordered_funcs.empty()) {
+    out << Eol;
+  }
+
+  for(auto &func: ordered_funcs) {
+    func->WriteDef(out);
+    out << ';' << Eol;
+  }
+
+  if(!ordered_funcs.empty()) {
+    out << Eol;
+  }
+}
+
+void TFunction::GatherChildFuncs(const L0::TPackage *package,
+                                     const Expr::TExpr::TPtr &expr,
+                                     const TIdScope::TPtr &id_scope,
+                                     unordered_set<shared_ptr<TInlineFunc>> &child_funcs) {
+  Expr::ForEachExpr(expr, [&](const Expr::TExpr::TPtr &sub_expr) {
+    const Expr::TWhere *where = sub_expr->TryAs<Expr::TWhere>();
+    if(where) {
+      for(auto &func: where->GetFunctions()) {
+        child_funcs.insert(TInnerFunc::New(package, func, id_scope));
+      }
+    }
+    return false;
+  });
+}
+
 void TFunction::WriteBody(TCppPrinter &out) const {
 
   assert(Body); // NOTE: If this assertion fails, it means that Build() function probably wasn't called.
@@ -134,50 +197,7 @@ void TFunction::WriteBody(TCppPrinter &out) const {
   /* Indented output */ {
     TIndent indent(out);
 
-    vector<shared_ptr<TInlineFunc>> ordered_funcs;
-    unordered_set<shared_ptr<const TInline>> finished;
-    unordered_set<shared_ptr<TInlineFunc>> working_set(ChildFuncs.begin(), ChildFuncs.end());
-    unordered_set<shared_ptr<const TInline>> cur_set;
-    for (const auto &func : working_set) {
-      cur_set.insert(func->Body);
-    }
-    while (working_set.size() > 0) {
-      for (auto &func : working_set) {
-        bool can_write = true;
-        unordered_set<shared_ptr<const TInline>> depends_on;
-        func->Body->AppendDependsOn(depends_on);
-        for (const auto &dependency : depends_on) {
-          if (dependency && finished.find(dependency) == finished.end() && cur_set.find(dependency) != cur_set.end()) {
-            can_write = false;
-          }
-        }
-        if (can_write || working_set.size() == 1) {
-          ordered_funcs.push_back(func);
-          finished.insert(func->Body);
-          working_set.erase(func);
-          break;
-        }
-      }
-    }
-
-    //Write out inner functions (forward decl followed by definitions).
-    for(auto &func: ordered_funcs) {
-      func->WriteDecl(out);
-      out << ';' << Eol;
-    }
-
-    if(!ordered_funcs.empty()) {
-      out << Eol;
-    }
-
-    for(auto &func: ordered_funcs) {
-      func->WriteDef(out);
-      out << ';' << Eol;
-    }
-
-    if(!ordered_funcs.empty()) {
-      out << Eol;
-    }
+    WriteOrderedChildFuncs(ChildFuncs, out);
 
     CodeScope.WriteStart(out);
     out << "return ";
@@ -204,15 +224,6 @@ void TFunction::PostCtor(const TNamedArgs &args, const Expr::TExpr::TPtr &expr, 
     //NOTE: It is critical we don't copy, move, etc. the arg or the Ref in it will point to the wrong thing.
     Args.insert(make_pair(arg.first, TArg::New(Package, CodeScope.NewArg(), arg.second)));
   }
-  //NOTE: This is copied in test.cc TWith ctor as the local function gather_child_funcs
   //Gather child functions
-  Expr::ForEachExpr(Expr, [this](const Expr::TExpr::TPtr &expr) {
-    const Expr::TWhere *where = expr->TryAs<Expr::TWhere>();
-    if(where) {
-      for(auto &func: where->GetFunctions()) {
-        ChildFuncs.insert(TInnerFunc::New(Package, func, CodeScope.GetIdScope()));
-      }
-    }
-    return false;
-  });
+  GatherChildFuncs(Package, Expr, CodeScope.GetIdScope(), ChildFuncs);
 }
