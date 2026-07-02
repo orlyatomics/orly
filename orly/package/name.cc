@@ -42,10 +42,18 @@ static inline const char *find(char sep, const char *start, const char *limit) {
   return 0;
 }
 
-TName TName::Parse(const std::string &name) {
+TName TName::Parse(std::string_view name) {
   TName res;
-  Split("/", name, res.Name);
-
+  if (!name.empty()) {  /* matches Split()'s no-pieces-for-empty behavior */
+    for (size_t pos = 0;;) {
+      const auto slash = name.find('/', pos);
+      res.Name.emplace_back(name.substr(pos, slash - pos));
+      if (slash == std::string_view::npos) {
+        break;
+      }
+      pos = slash + 1;
+    }
+  }
   if (!IsValidNamespace(res.Name)) {
     THROW_ERROR(std::runtime_error) << "Invalid package name " << std::quoted(name);
   }
@@ -56,13 +64,9 @@ TVersionedName TVersionedName::Parse(const TPiece<const char> &name) {
 
   auto dot_pos = find('.', name.GetLimit() - 1, name.GetStart() - 1);
   if (!dot_pos) {
-    //TODO(#357): Excess copy here.
-    string tmp;
-    return {TName::Parse(Assign(tmp, name)), 0};
+    return {TName::Parse(std::string_view(name.GetStart(), name.GetSize())), 0};
   }
-  //TODO(#357): Excess copy here
-  string tmp;
-  return {TName::Parse(Assign(tmp, TPiece<const char>(name.GetStart(), dot_pos))),
+  return {TName::Parse(std::string_view(name.GetStart(), dot_pos - name.GetStart())),
                         TConvertProxy(TPiece<const char>(dot_pos + 1, name.GetLimit()))};
 }
 

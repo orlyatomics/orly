@@ -25,6 +25,7 @@
 #include <cassert>
 #include <ostream>
 #include <string>
+#include <string_view>
 
 #include <base/hash.h>
 #include <base/piece.h>
@@ -35,7 +36,9 @@ namespace Orly {
   namespace Package {
 
     struct TName {
-      static TName Parse(const std::string &name);
+      /* Parses in place -- callers hand any string-ish source (std::string,
+         literal, or a slice of a larger buffer) without a temporary copy. */
+      static TName Parse(std::string_view name);
 
       bool operator==(const TName &that) const {
         return Name == that.Name;
