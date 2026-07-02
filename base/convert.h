@@ -109,17 +109,24 @@ namespace Base {
         //Check for overflow/underflow
         if(!err_msg) {
           if(positive) {
-            if((cur_val > std::numeric_limits<TVal>::max() / 10) || (std::numeric_limits<TVal>::max() - cur_val * 10) < digit_val) {
+            if((cur_val > std::numeric_limits<TVal>::max() / 10) || digit_val > std::numeric_limits<TVal>::max() - cur_val * 10) {
               err_msg = "Int overflowed type bounds.";
             }
           } else {
-            //Digit is negative, since number is negative.
-            if((cur_val < std::numeric_limits<TVal>::min() / 10) || (std::numeric_limits<TVal>::min() - cur_val * 10) > digit_val) {
+            /* Digits subtract, since the number is negative: underflow iff
+               cur*10 - digit < min, i.e. cur*10 < min + digit (min + a small
+               positive digit can't overflow; cur*10 is safe under the first
+               disjunct's guard). The old check compared min - cur*10 > digit,
+               which is never true -- it let e.g. LONG_MIN-1 wrap silently. */
+            if((cur_val < std::numeric_limits<TVal>::min() / 10) || cur_val * 10 < std::numeric_limits<TVal>::min() + digit_val) {
               err_msg = "Int underflowed type bounds.";
             }
           }
+        }
 
-          //Add to value
+        //Add to value -- only while in bounds; folding in the digit that
+        //tripped the check would itself be signed overflow (UB).
+        if(!err_msg) {
           cur_val *= 10;
           if(positive) {
             cur_val += digit_val;
