@@ -24,8 +24,10 @@
 #pragma once
 
 #include <string>
+#include <typeinfo>
 #include <utility>
 
+#include <base/demangle.h>
 #include <orly/rt/runtime_error.h>
 #include <orly/var/impl.h>
 #include <orly/shared_enum.h>
@@ -168,14 +170,21 @@ namespace Orly {
         void Augment(const TPtr<const TChange> &change) final {
           const TFinal *that = dynamic_cast<const TFinal*>(change.get());
           if(!that) {
-            //TODO(#383): Better diagnostic information so people can tell why this happened from their code.
-            throw Rt::TSystemError(HERE, "Conflicting partial updates to the same key. Same key updated as different tyeps.");
+            THROW_ERROR(Rt::TSystemError)
+                << "Conflicting partial updates to the same key: one statement in this "
+                   "update mutates the value as "
+                << Base::Demangle(typeid(TFinal)).get() << ", another as "
+                << Base::Demangle(typeid(*change)).get()
+                << ". Mutate a key as only one shape within a single update.";
           }
 
           for(const auto &it: that->Changes) {
             if(Changes.count(it.first)) {
-              //TODO(#383): Better diagnostic information so people can tell why this happened from their code.
-              throw Orly::Rt::TSystemError(HERE, "Tried to change the same portion of a value twice in one update.");
+              THROW_ERROR(Rt::TSystemError)
+                  << "Two statements in one update mutate the same portion (at "
+                  << it.first
+                  << ") of the same key's value. Combine them into one mutation "
+                     "or split them across updates.";
             }
 
             Changes.insert(it);
