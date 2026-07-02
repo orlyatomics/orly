@@ -2,12 +2,10 @@
 
    JHM build system.
 
-   TODO(#315):
-    - Make it so that we minimize the amount of stuff which builds up in the foreground thread / we keep the worker
-      queue busier all the time
-    - Remove Stdout/Stderr printing from work_finder.h, so it's more portable
-    - Make jobs and files const more of the time.
-    - Eliminate the Ready queue. It just slows us down a little / makes unnecessary extra looping happen...
+   The scheduling/throughput improvement backlog that used to sit here as a
+   wish list lives in the tracker: #347 covers keeping the workers busier,
+   replacing the ready queue, and gating per-job stdout/stderr printing;
+   #349 covers parallelizing test-report production.
 
    Copyright 2010-2026 Atomic Kismet Company
 

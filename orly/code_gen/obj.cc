@@ -379,7 +379,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
         out << ": public TStateVisitor {" << Eol
             << "NO_COPY(TToNativeVisitor);" << Eol
             << "public:" << Eol
-            << "/* TODO(#315) */" << Eol
+            << "/* Captures the object to fill in during the visit. */" << Eol
             << "TToNativeVisitor(Orly::Rt::Objects::" << obj_class_name << " &out) : Out(out) {}" << Eol
             << "/* Overrides. */" << Eol
             << "virtual void operator()(const State::TFree &/*state*/) const override       { throw; }" << Eol

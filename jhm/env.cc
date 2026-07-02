@@ -141,7 +141,11 @@ vector<string> CopyAppendVector(const vector<string> &src, string &&val) {
   return ret;
 }
 
-//TODO(#315):
+/* Pins the tree layout for a build: the source tree (root/<proj_name>), the
+   output tree (root/out[_<proj>]/<config>), and the layered config search
+   list (project config over root config, mixins over both), then registers
+   the built-in job producers. Throws on the reserved config name 'root' and
+   when no config file in the search list exists. */
 TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, const string &config_mixin)
     : Root(root),
       Src(CopyAppendVector(Root.Root, string(proj_name))),
