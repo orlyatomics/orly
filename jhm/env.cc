@@ -41,8 +41,7 @@ unordered_set<TJob *> TJobFactory::GetPotentialJobs(TEnv &env, TFile *out_file) 
     for_each(range.first, range.second, [&ret](const pair<TFile*, TJob *> &pair) {
       // NOTE: job can be a nullptr, which is valid in the cache to indicate "no jobs exist".
       if (pair.second) {
-        // TODO(#341): InsertOrFail.
-        ret.insert(pair.second);
+        InsertOrFail(ret, pair.second);
       }
     });
   } else {
@@ -77,8 +76,7 @@ unordered_set<TJob *> TJobFactory::GetPotentialJobs(TEnv &env, TFile *out_file) 
       assert(Contains(job->GetOutput(), out_file));
 
       // Add ourself to the cache map, as well as the set of jobs being returned.
-      // TODO(#341): InsertOrFail.
-      ret.insert(job);
+      InsertOrFail(ret, job);
       JobsByOutput.emplace(out_file, job);
     }
 

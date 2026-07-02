@@ -24,6 +24,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <base/util/stl.h>
 #include <jhm/config.h>
 #include <jhm/file.h>
 #include <jhm/job.h>
@@ -39,11 +40,7 @@ namespace Jhm {
 
     public:
     TValue *Add(TKey &&key, std::unique_ptr<TValue> &&item) {
-      //TODO(#341): Add a new InsertOrFail which can handle this
-      auto result = ManagedThings.emplace(std::move(key), std::move(item));
-      assert(result.second);
-
-      return result.first->second.get();
+      return Util::EmplaceOrFail(ManagedThings, std::move(key), std::move(item)).second.get();
     }
 
     TValue *TryGet(const TKey &key) {
