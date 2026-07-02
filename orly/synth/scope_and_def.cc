@@ -181,9 +181,11 @@ TAction TDef::BuildHelper(int pass) {
       case InProgress: {
         // We have encountered ourself during a predecessor walk.  This means we have a cycle.
         const TName &name = GetName();
-        GetContext().AddError(name.GetPosRange(), Base::AsStr(std::quoted(name.GetText()), " has a cycle in its build dependencies"));
+        GetContext().AddError(name.GetPosRange(),
+            Base::AsStr(std::quoted(name.GetText()),
+                        " has a cycle in its build dependencies (detected in "
+                        "definition-build pass ", pass, ')'));
         action = Fail;
-        /* TODO(#314): Provide a mechanism to customize this error message so that we can describe the pass in which the cycle was found. */
         break;
       }
       case Shiny: {

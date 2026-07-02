@@ -19,8 +19,11 @@
 #include <orly/expr/function_app.h>
 
 #include <iomanip>
+#include <string>
+#include <vector>
 
 #include <base/as_str.h>
+#include <base/split.h>
 #include <orly/error.h>
 #include <orly/expr/ref.h>
 #include <orly/expr/util.h>
@@ -117,11 +120,12 @@ Type::TType TFunctionApp::GetTypeImpl() const {
   auto params = function->GetParams();
   bool is_sequence = false;
   // Iterate through the parameters we need and check if it was given in the arguments
+  std::vector<std::string> missing_params;
   for (auto param : params) {
     auto arg = function_app_args.find(param.first /* name */);
     if (arg == function_app_args.end()) { // expected argument not found
-      // TODO(#314): Tell them exactly which parameters are missing
-      throw TExprError(HERE, GetPosRange(), "Function call with missing expected argument");
+      missing_params.push_back(param.first);
+      continue;
     }
     // Found
     auto arg_type = (arg->second)->GetExpr()->GetType();
@@ -135,9 +139,17 @@ Type::TType TFunctionApp::GetTypeImpl() const {
        in this position (#128 Option A). */
     if (!unwrapped_arg_type.Is<Type::TAny>()
         && unwrapped_arg_type != param_type && Type::TOpt::Get(unwrapped_arg_type) != param_type) {
-      throw TExprError(HERE, GetPosRange(), "Function call with parameter type mismatch");
+      throw TExprError(HERE, GetPosRange(),
+          Base::AsStr("argument ", std::quoted(param.first), " has type ", arg_type,
+                      ", but the parameter expects ", param_type).c_str());
     }
     function_app_args.erase(arg);
+  }
+  if (!missing_params.empty()) {
+    throw TExprError(HERE, GetPosRange(),
+        Base::AsStr("function call is missing argument",
+                    missing_params.size() > 1 ? "s: " : ": ",
+                    Base::Join(missing_params, ", ")).c_str());
   }
   if (!function_app_args.empty()) {
     for (auto function_app_arg : function_app_args) {
