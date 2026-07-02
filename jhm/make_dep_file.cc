@@ -161,7 +161,6 @@ int main(int argc, const char *argv[]) {
   std::signal(SIGPIPE, SIG_IGN);
 
   if (argc < 3) {
-    //TODO(#343): add '-o' to specify output filename.
     cout << "USAGE: " << argv[0] << "input_name output_name [misc_flags]\n"
          << " Produces a JSON dependency file (.dep) containing the headers/dependencies of a given source file";
     return -1;
