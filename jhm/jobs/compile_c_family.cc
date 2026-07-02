@@ -71,10 +71,7 @@ TJobProducer TCompileCFamily::GetCProducer() {
     "compile_c",
     {{"o"}},
     bind(GetInputName, _1, false),
-    //TODO(#344): Should be able to eliminate the lambda wrapper here...
-    [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
-      return unique_ptr<TJob>(new TCompileCFamily(env, in_file, false));
-    }
+    TCompileCFamily::New<false>
   };
 }
 
@@ -83,10 +80,7 @@ TJobProducer TCompileCFamily::GetCppProducer() {
     "compile_cpp",
     {{"o"}},
     bind(GetInputName, _1, true),
-    //TODO(#344): Should be able to eliminate the lambda wrapper here...
-    [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
-      return unique_ptr<TJob>(new TCompileCFamily(env, in_file, true));
-    }
+    TCompileCFamily::New<true>
   };
 }
 

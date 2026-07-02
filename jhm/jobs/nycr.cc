@@ -53,9 +53,7 @@ TJobProducer TNycrLang::GetProducer() {
     "nycr_lang",
     {{"nycr","lang"}},
     GetNycrLangInputName,
-    [](TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
-      return unique_ptr<TJob>(new TNycrLang(env, in_file));
-    }
+    TNycrLang::New
   };
 }
 
@@ -133,10 +131,7 @@ TJobProducer TNycr::GetProducer() {
     "nycr",
     LangSuffixes,
     GetInputName,
-    //TODO(#344): Should be able to eliminate the lambda wrapper here...
-    [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
-      return unique_ptr<TJob>(new TNycr(env, in_file));
-    }
+    TNycr::New
   };
 }
 

@@ -38,10 +38,7 @@ TJobProducer TBison::GetProducer() {
     "bison",
     OutExtensions,
     [](const TRelPath &output) { return TryGetInputName(output, OutExtensions, {"y"}); },
-    //TODO(#344): Should be able to eliminate the lambda wrapper here...
-    [] (TEnv &env, TFile *in_file) -> unique_ptr<TJob> {
-      return unique_ptr<TJob>(new TBison(env, in_file));
-    }
+    TBison::New
   };
 }
 
