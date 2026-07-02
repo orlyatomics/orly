@@ -334,8 +334,10 @@ namespace Orly {
       static TDict<TToKey, TToVal> Do(const TTupleGen &from) {
         TDict<TToKey, TToVal> to;
         for(auto it = from->NewCursor(); it; ++it) {
-          //TODO(#359): A += would make this SOOO much more efficient.
-          to = to + CastAs<TDict<TToKey, TToVal>, TFinalTuple>::Do(*it);
+          /* insert_or_assign keeps dict-`+` semantics: a later duplicate key
+             overrides an earlier one. */
+          to.insert_or_assign(CastAs<TToKey, TFromKey>::Do(std::get<0>(*it)),
+                              CastAs<TToVal, TFromVal>::Do(std::get<1>(*it)));
         }
         return to;
       }
