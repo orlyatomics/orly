@@ -257,7 +257,6 @@ TTest::TTest(const L0::TPackage *package, const Symbol::Test::TTest::TPtr &symbo
     : Id(id_gen.New()), Tests(package, symbol->GetTestCaseBlock(), id_gen) {
 
   if(symbol->GetOptWithClause()) {
-    //TODO: http://www.open-std.org/jtc1/sc22/wg21/docs/lwg-active.html#2070
     OptWith = std::unique_ptr<TWith>(new TWith(package, symbol->GetOptWithClause()));
   }
 }

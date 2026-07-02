@@ -52,7 +52,6 @@ namespace Test {
         }
       };
 
-      //TODO: These should be private with accessor functions, but this is faster to implement.
       public:
       bool PrintTiming;
       bool VerboseMember;
@@ -135,7 +134,6 @@ namespace Test {
     private:
 
 
-    //TODO: This should be one variable, not two, but adding that support to <base/cmd.h> is a bigger task than I have time for right now.
     static bool Verbose;
     const TCmd &Cmd;
 

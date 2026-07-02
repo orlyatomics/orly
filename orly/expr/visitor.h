@@ -218,7 +218,7 @@ namespace Orly {
 
       protected:
 
-      TVisitor() {} // TODO: = default;
+      TVisitor() = default;
 
     };  // TExpr::TVisitor
 

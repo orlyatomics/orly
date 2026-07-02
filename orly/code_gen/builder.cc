@@ -410,8 +410,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
           name += " " + it->GetName();
         }
 
-        //TODO: We could really move the name here...
-        Context::GetScope()->AddAssertion(name, Build(Package, it->GetExpr(), false));
+        Context::GetScope()->AddAssertion(std::move(name), Build(Package, it->GetExpr(), false));
       }
     }
     virtual void operator()(const Expr::TAtan *that) const { Unary(Package, TUnary::Atan, that); }
@@ -503,7 +502,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       // boundary, exactly as the bare-deref case already does.
       auto seq = BuildInline(Package, that->GetLhs(), true);
 
-      //TODO: Filling in the "that" arg then using GetArg to get it back is more than sort of fugly.
       //TODO: Common sub expression elimination for the filter func.
       TImplicitFunc::TPtr filter_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Filter,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
@@ -530,8 +528,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
           auto func = TSymbolFunc::Find(that);
           TCall::TArgs args;
           for (auto &arg: FunctionAppArgs) {
-            // TODO: The whole using string to look up source arg in the code gen argument map is more than slightly fugly.
-            //       Should really have a way to jump straight from func app arg to param def that caused it and thus type.
             // TODO: We need to check if the arg has a greater sequence arity than the parameter, and if so, it is an implicit
             //       map on the arg.
             TInline::TPtr arg_inline;
@@ -637,7 +633,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TPositive *that) const { Res = Build(Package, that->GetExpr(), true); }
     virtual void operator()(const Expr::TRange *that) const {
-      //TODO: Naming dissonance of members / parameters
       Res = Interner.GetRange(Package, Build(Package, that->GetStart(), false),
           BuildOptInline(Package, that->GetOptEnd()), BuildOptInline(Package, that->GetOptStride()),
           that->HasEndIncluded());
@@ -735,7 +730,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       TImplicitFunc::TPtr func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Sort,
           Type::TBool::Get(), {{"lhs", that->GetLhsRhsType()}, {"rhs", that->GetLhsRhsType()}}, that->GetRhs(), false);
       /* Context */ {
-        //TODO: The re-discovery by string look up of function arguments is sort of ug.
         TSortCtx ctx(func->GetArg("lhs"), func->GetArg("rhs"));
         func->Build();
       }
@@ -817,7 +811,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TWhile *that) const {
       auto seq = BuildInline(Package, that->GetLhs(), false);
 
-      //TODO: Filling in the "that" arg then using GetArg to get it back is more than sort of fugly.
       //TODO: Common sub expression elimination for the filter func.
       TImplicitFunc::TPtr while_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::While,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
@@ -969,7 +962,6 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
   /* Map Context */ {
     Context::TAliases overrides;
     //NOTE: We already validated that all the sequences are correlated / point to the same source.
-    //TODO: The reacquisition of argument by string is sort of ugly.
     if(!core_seqs.empty()) {
       overrides.insert(make_pair((*core_seqs.begin()), func->GetArg("seq")));
     }

@@ -27,7 +27,6 @@
 #include <ostream>
 #include <fstream>
 
-//TODO: Needed for the namspace printer. Should really move the namespace printer to a seperate file
 #include <base/split.h>
 #include <base/path.h>
 #include <orly/code_gen/error.h>
@@ -57,7 +56,6 @@ namespace Orly {
         Out.close();
       }
 
-      //TODO: It would be nice to kill this function off.
       std::ostream &GetOstream() {
 
         return Out;
@@ -66,7 +64,6 @@ namespace Orly {
       template <typename TVal>
       void Write(const TVal &val) {
         if(StartOfLine) {
-          //TODO: Might be better to cache the string here rather than recaluclate it.
           for(auto i = 0u; i < Indent; ++i) {
             Out << "  ";
           }
@@ -85,11 +82,9 @@ namespace Orly {
       friend class TOrlyNamespacePrinter;
     }; // TCppPrinter
 
-    //TODO: Move all the func defs to cc_printer.cc
     class TIndent {
       NO_COPY(TIndent);
       public:
-      //TODO: Should have move semantics
       TIndent(TCppPrinter &out) : Out(out) {
         ++Out.Indent;
       }
@@ -121,7 +116,6 @@ namespace Orly {
       return printer;
     }
 
-    //TODO: Move implementation details to CC
     class TNamespacePrinter {
       public:
       TNamespacePrinter(const Base::TNamespace &ns_, TCppPrinter &out) : Namespace(ns_), Out(out) {
@@ -151,7 +145,6 @@ namespace Orly {
       TCppPrinter &Out;
     }; // TNamespacePrinter
 
-    //TODO: Move implementation details to CC
     class TOrlyNamespacePrinter {
       public:
       TOrlyNamespacePrinter(const Package::TName &name_, TCppPrinter &out) : Name(name_), Out(out) {

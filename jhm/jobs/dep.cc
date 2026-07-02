@@ -70,7 +70,6 @@ vector<string> TDep::GetCmd() {
   if (extensions.size() >= 1) {
     const string &ext = extensions.at(extensions.size()-1);
     if (ext == "cc" || ext == "c") {
-      //TODO: move array append
       for(auto &arg: TCompileCFamily::GetStandardArgs(GetInput(), ext == "cc", Env)) {
         cmd.push_back(move(arg));
       }
@@ -90,7 +89,6 @@ bool TDep::IsComplete() {
   bool needs_work = false;
 
   // Load the json file and see if there are any new things in it which aren't yet done (We have work to do)
-  // TODO: This should be a call to Parse()... But that constructs an istringstream...
   TJson deps = TJson::Read(AsStr(GetSoleOutput()->GetPath()).c_str());
   deps.ForEachElem([this,&needs_work](const TJson &elem)->bool {
     TFile *file = Env.TryGetFileFromPath(elem.GetString());
@@ -102,7 +100,6 @@ bool TDep::IsComplete() {
   });
 
   // If we found everything, stash the info on the input file as computed config
-  // TODO: In pushing this as strings, we effectively discard all the file lookups we've already done
   if (!needs_work) {
     GetSoleOutput()->PushComputedConfig(TJson::TObject{{"c++", TJson::TObject{{"include", move(deps)}}}});
   }

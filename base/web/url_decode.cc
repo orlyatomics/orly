@@ -21,13 +21,11 @@
 #include <cstring>
 #include <cctype>
 
-#include <iostream> //TODO
 using namespace std;
 
 using namespace Base;
 using namespace Server;
 
-//TODO: This to hex conversion I feel could be heavily optimized.
 static inline unsigned char HexToNum(const char *c_in, const char *start) {
   unsigned char c = tolower(*c_in);
   if(!isxdigit(c)) {
@@ -39,7 +37,6 @@ static inline unsigned char HexToNum(const char *c_in, const char *start) {
   } else if (c >= 'a' && c <= 'f') {
     res = c - 'a' + 10;
   } else {
-    //TODO: Change to a runtime assertion for executing web server.
     assert(false); //Should (in theory) be unreachable.
   }
   assert(res < 16);

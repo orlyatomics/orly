@@ -37,7 +37,6 @@ namespace Orly {
 
       typedef std::shared_ptr<const TUnary> TPtr;
 
-      //TODO: effect
       enum TOp {Acos, AddressOf, Asin, Atan, Cast, Ceiling, Cos, Floor, IsEmpty, IsKnown, IsUnknown, Known, LengthOf, Log,
                 Log2, Log10, Negative, Not, Read, ReadOrIdentity, ReverseOf, SequenceOf, Sin, Tan, TimeDiffObj, TimePntObj, ToLower, ToUpper, UnwrapMutable };
 

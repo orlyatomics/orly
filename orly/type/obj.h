@@ -178,7 +178,6 @@ namespace Orly {
             return false;
           }
 
-          //TODO: Rename HasOptional to ContainsOptional
           if (iter.second.Is<TOpt>() || Type::HasOptional(iter.second)) {
             is_optional = true;
           }

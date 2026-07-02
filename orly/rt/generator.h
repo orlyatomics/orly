@@ -52,9 +52,6 @@ namespace Orly {
       TGenerator() {}
     };
 
-    /* TODO
-       NOTE: The dependence on the value generator's type here is not strictly necessary, but it allows us to keep away
-       from the buisiness of managing weak_ptr to self for now. It is likely this is the sign of impending doom. */
     template <typename TRes>
     class TFilterGenerator
         : public TGenerator<TRes>, public std::enable_shared_from_this<TFilterGenerator<TRes>> {
@@ -65,7 +62,6 @@ namespace Orly {
       typedef typename TGenerator<TRes>::TPtr TValGenPtr;
       typedef const TRes TItem;
 
-      //TODO: Capture meta_ctx, ctx, predicate_binding_map, effect_binding_map
       typedef std::function<bool (const TRes&)> TFilterFunc;
 
       static TFilterGenerator::TPtr New(const TFilterFunc &filter, const TValGenPtr &ptr) {
@@ -256,8 +252,6 @@ namespace Orly {
           }
         }
 
-        /* TODO: The use of an optional here to cache the result is less than ideal but necessary in order to handle
-           that TRes may not have a default constructor. */
         mutable TOpt<TRes> Item;
         mutable Base::TIterHolder<const TSrc> Iter;
         TPtr Ptr;
@@ -376,7 +370,6 @@ namespace Orly {
         return TPtr(new TRangeGenerator(start, 1));
       }
 
-      //TODO: It would probably be better just to coppy in stride/limt....
       class TCursor : public Base::TIter<const int64_t> {
         public:
         TCursor(const TPtr &ptr) : Cur(ptr->GetStart()), Ptr(ptr) {}
@@ -971,7 +964,6 @@ namespace Orly {
       typedef const TRes TItem;
 
       // drubin: putting this in from filter because I need a function for my while
-      //TODO: Capture meta_ctx, ctx, predicate_binding_map, effect_binding_map
       typedef std::function<bool (const TRes&)> TWhileFunc;
 
       static TWhileGenerator::TPtr New(const TWhileFunc &while_func, const TValGenPtr &ptr) {

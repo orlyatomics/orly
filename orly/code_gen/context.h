@@ -43,7 +43,6 @@ namespace Orly {
     class TScopeCtx;
     class TStmtBlock;
 
-    //TODO: Make hold the active CodeScope as well as core sequences for implicit maps.
     /* NOTE: We call this Context even though it is a class because it is more or less a namespace. All it has are
              statics.*/
     class Context {
@@ -73,7 +72,6 @@ namespace Orly {
          implicit map and we need to change the sequence printing to be an argument reference.*/
       static TAliases Overrides;
 
-      //TODO: Implicit map args... There are a set of those...
       friend class TFilterCtx;
       friend class TFunctionCtx;
       friend class TMapCtx;

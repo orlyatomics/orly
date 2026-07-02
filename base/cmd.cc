@@ -157,7 +157,6 @@ bool TCmd::TMeta::TParam::TArg::Parse(TCmd *cmd, const char *arg_text, const TMe
   return true;
 }
 
-//TODO: Factor out commonalities with text version
 bool TCmd::TMeta::TParam::TArg::Parse(TCmd *cmd, const TJson &json, const TMessageConsumer &cb) const {
   if (!json.IsNull()) {
     try {
@@ -320,7 +319,6 @@ bool TCmd::TMeta::TParam::ForEachHelpPiece(ostream &strm, const TCmd *cmd, const
 void TCmd::TMeta::AppendParam(TParam *param_raw) {
   assert(param_raw);
 
-  //TODO: Push further out
   std::unique_ptr<TParam> param(param_raw);
 
   if (param->GetIsByName()) {
@@ -486,7 +484,6 @@ bool TCmd::TMeta::TParser::TRun::operator()(const TParser *parser, TCmd *cmd, in
   }
   for (const string &args_file: cmd->ArgsFiles) {
     TJson args = TJson::Read(args_file.c_str());
-    //TODO: Call cb() here rather than throwing (Throwing matches the old behavior)?
     if (args.GetKind() != TJson::Object) {
       THROW_ERROR(std::invalid_argument) << "Invalid argument file " << quoted(args_file) << ". Must be a JSON object.";
     }

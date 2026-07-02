@@ -6,7 +6,6 @@
 
    NOTE: We use STL naming conventions here because we want it to look like the STL provided ones.
 
-   TODO: This is something we'd like in the standard library (Or at least a system lib of some sort)
 
    Copyright 2010-2026 Atomic Kismet Company
 

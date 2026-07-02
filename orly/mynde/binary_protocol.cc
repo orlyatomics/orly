@@ -43,10 +43,6 @@ TIn &Orly::Mynde::operator>>(TIn &in, TRequestHeader &that) {
 }
 
 TOut &Orly::Mynde::operator<<(TOut &out, const TRequestHeader &that) {
-  //TODO: Should we SwapEnds on ourselves then pass through?
-  // The only problem if anyone happens to read our values during that time they'll get the incorrect results
-
-  //TODO: This is a hack. But it works!
   TRequestHeader tmp(that);
   tmp.KeyLength = SwapEnds(tmp.KeyLength);
   tmp.Reserved = SwapEnds(tmp.Reserved);
@@ -71,8 +67,6 @@ TIn &Orly::Mynde::operator>>(TIn &in, TResponseHeader &that) {
 }
 
 TOut &Orly::Mynde::operator<<(TOut &out, const TResponseHeader &that) {
-
-  //TODO: This is a hack. But it works!
   TResponseHeader tmp(that);
   tmp.KeyLength = SwapEnds(tmp.KeyLength);
   tmp.Status = SwapEnds(tmp.Status);

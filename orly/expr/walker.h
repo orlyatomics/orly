@@ -28,8 +28,6 @@ namespace Orly {
 
   namespace Expr {
 
-    //TODO: ForEachBinary...
-
     /* Walks the expr tree starting at the root calling the callback with every expr in the tree. If the callback
        returns true, it does not terminate the tree walker, but rather causes it not to recurse further. */
     void ForEachExpr(

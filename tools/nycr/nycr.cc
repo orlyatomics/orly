@@ -52,7 +52,6 @@ class TNycr : public Base::TCmd {
   int Run() {
     int result;
     try {
-      //TODO: This should go in the arg verification logic...
       if (!LanguageReport) {
         if (!Atom.size()) {
           THROW << "atom (-a) not specified";
@@ -110,7 +109,6 @@ class TNycr : public Base::TCmd {
               cout << Symbol::TLower(language->GetName()) << endl;
             }
           } else {
-            //TODO: Should probably change this to constant ref in the std::string.
             WriteCst(Root.c_str(), Branch.c_str(), Atom.c_str(), language);
             WriteDump(Root.c_str(), Branch.c_str(), Atom.c_str(), language);
             WriteBison(Root.c_str(), Branch.c_str(), Atom.c_str(), language);
@@ -154,7 +152,7 @@ class TNycr : public Base::TCmd {
 
     private:
     virtual void WriteAfterDesc(std::ostream &strm) const {
-      strm << "Build: Unknown" << endl //TODO: Use Version from SCM.
+      strm << "Build: Unknown" << endl
            << endl
            << "Copyright Atomic Kismet Company" << endl
            << "Licensed under the Apache License, Version 2.0" << endl;

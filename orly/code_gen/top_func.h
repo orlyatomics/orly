@@ -31,7 +31,6 @@ namespace Orly {
     class TTopFunc : public virtual TFunction {
       public:
 
-      //TODO: GetName, WriteName, and WriteCcName seem like they should be merged somehow...
       virtual void WriteCcName(TCppPrinter &out) const = 0;
       bool IsTopLevel() const;
       void WriteDecl(TCppPrinter &out) const;

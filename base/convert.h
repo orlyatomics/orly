@@ -22,7 +22,6 @@
 #include <base/piece.h>
 #include <base/syntax_error.h>
 
-//TODO: Move stuff to CC.
 namespace Base {
 
   class TConverter {
@@ -244,7 +243,6 @@ namespace Base {
       TVal val;
       Converter.Read(val);
       if(Converter) {
-        //TODO: Stringify TVal.
         throw TSyntaxError(HERE, "Extra junk after value.");
       }
       return val;

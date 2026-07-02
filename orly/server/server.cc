@@ -792,7 +792,6 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       syslog(LOG_WARNING, "Fast Scheduler TID=[%ld] could not pin to core [%ld]: %s", syscall(SYS_gettid), core, strerror(errno));
     }
     syslog(LOG_INFO, "Fast Scheduler TID=[%ld] on core [%ld]", syscall(SYS_gettid), core); /* TEMP */
-    //Base::TBooster booster; /* TODO : We can only boost when we are sure we are the only thread assigned to a core! */
     if (!Fiber::TFrame::LocalFramePool) {
       Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
     }
@@ -2375,7 +2374,6 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
   Atom::TSuprena context_arena;
 
   // Context for the current series of requests which we need to be consistent.
-  // TODO: Switch to a tri state that lives on the stack
   std::unique_ptr<Indy::TContext> context;
 
   // TODO: Detect protocol here (binary or text). Currently we only support binary.
@@ -2399,7 +2397,6 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
     // Loop processing requets until we hit eof or explicitly get an exit command.
     // TODO: Detect and handle eof without an exception?
     while(!Quit) {
-      // TODO: We should probably wait for notifications from indy somewhere...
       // NOTE: We make this on the heap so that we can pass it to the response generation thread
       // We do the two threads because the protocol states that pending unread responses shouldn't block requests from
       // being read / handled
@@ -2503,7 +2500,6 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
           auto transaction = RepoManager->NewTransaction();
           TUuid update_id(TUuid::Twister);
 
-          // TODO: The package_fq_name should be a constant somewhere.
           // TODO: That we have to feed a package name and method name here seems like it might cause trouble later.
           TMetaRecord meta_record(update_id,
                                   TMetaRecord::TEntry(session->GetId(),
@@ -2537,7 +2533,6 @@ void TServer::ServeMemcacheClient(TFd &&fd_original, const TAddress &) {
           //NOTE: We don't support cas, but we set the flag to 1 so that we pass some tests.
           hdr.Cas = 1;
 
-          // TODO: This is a horrible place for this to live / refactor massively...
           if (!req.GetFlags().Quiet) {
             out << hdr;
           }

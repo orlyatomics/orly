@@ -60,7 +60,6 @@ std::string TImplicitFunc::GetName() const {
 
 Type::TType TImplicitFunc::GetReturnType() const {
 
-  /* TODO: A little ug */
   return Type.As<Type::TFunc>()->GetReturnType();
 }
 

@@ -26,7 +26,6 @@ class TAssertTupleVisitor final
     : public TTypeVisitor {
   public:
 
-  /* TODO. */
   TAssertTupleVisitor() {}
 
   /* Overrides. */

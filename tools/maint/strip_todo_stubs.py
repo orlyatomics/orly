@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Strip lines that are EXACTLY a bare `/* TODO */` doc-stub placeholder.
 
-Only whole-line bare stubs are removed (leading/trailing whitespace allowed).
+Only whole-line bare stubs are removed (leading/trailing whitespace allowed);
+a lone trailing period (`/* TODO. */`) is treated as the same boilerplate.
 Anything with text -- `/* TODO: ... */`, `// TODO foo`, a trailing `/* TODO */`
 after code -- is left untouched. Removing a whole-line comment can never change
 compilation, so this is a safe, mechanical noise cleanup.
@@ -10,10 +11,10 @@ import re
 import subprocess
 import sys
 
-# Exact bare block-comment stub on its own line: optional indent, /* TODO */,
-# optional trailing space. The `\s*\*/` right after TODO means a `: text` body
-# can't match.
-BARE = re.compile(r'^[ \t]*/\*\s*TODO\s*\*/[ \t]*$')
+# Exact bare block-comment stub on its own line: optional indent, /* TODO */
+# (or /* TODO. */), optional trailing space. The `\.?\s*\*/` right after TODO
+# means a `: text` body can't match.
+BARE = re.compile(r'^[ \t]*/\*\s*TODO\.?\s*\*/[ \t]*$')
 
 EXCLUDE = {
     'orly/indy/repo.h',  # handled by the doc-comment pilot (disjoint change)

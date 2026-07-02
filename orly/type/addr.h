@@ -68,7 +68,6 @@ namespace std {
     size_t operator()(const Orly::Type::TAddrElems &that) const {
       size_t result = 0;
       for (const auto &elem: that) {
-        //TODO: Find a better hash
         result ^= Util::RotatedLeft(elem.second.GetHash(), 5 + (elem.first == Orly::TAddrDir::Asc ? 1 : 0));
       }
       return result;

@@ -27,7 +27,6 @@ class TDepthVisitor final
     : public TTypeVisitor {
   public:
 
-  /* TODO. */
   TDepthVisitor(size_t &out_depth)
       : Depth(out_depth) {
   }

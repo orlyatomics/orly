@@ -26,6 +26,5 @@ TInnerFunc::TPtr TInnerFunc::New(const L0::TPackage *package, const Symbol::TFun
   return TInnerFunc::TPtr(new TInnerFunc(package, symbol, id_scope));
 }
 
-/* TODO: The somewhat excessive passing of id_scope here is somewhat excessive/ugly */
 TInnerFunc::TInnerFunc(const L0::TPackage *package, const Symbol::TFunction::TPtr &symbol, const TIdScope::TPtr &id_scope)
     : TFunction(package, id_scope), TInlineFunc(package, id_scope), TSymbolFunc(package, symbol, id_scope) {}

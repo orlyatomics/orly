@@ -57,7 +57,6 @@ namespace Jhm {
     std::vector<std::string> Root;
   };
 
-  //TODO: Cope with prefixes (lib) specially?
   // Relative paths
   class TRelPath {
     public:

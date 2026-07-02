@@ -192,14 +192,11 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
 
 int CompileCode(const TCompilerConfig &cmd) {
 
-  //TODO: This 'make absolute' is something we do fairly commonly. (At least here and <jhm/jhm>). Should canonicalize.
   string src = cmd.Source;
   if(src.front() != '/') {
     src = Util::GetCwd() + '/' + src;
   }
 
-  //TODO: Practically speaking for each src file given, esp. if we have more than one
-  // We need to find the root of it's repository (__orly__) file. And use that
   int result = EXIT_FAILURE;
   try {
     Package::TVersionedName output;
@@ -234,9 +231,7 @@ int CompileCode(const TCompilerConfig &cmd) {
     if (cmd.DebugOutput) {
       cerr << "compile failure: " << ex.what() << endl;
     }
-    //TODO: The do nothing is not the prettiest.
   } catch (const TSourceError &src_error) {
-    //TODO: It would be nice to put the orly code location at the end, and only in debug mode.
     cerr << src_error.GetPosRange() << ' ' << src_error.what() << endl;
   } catch (const exception &ex) {
     cerr << "error: " << ex.what() << endl;
@@ -245,7 +240,6 @@ int CompileCode(const TCompilerConfig &cmd) {
   return result;
 }
 
-/* TODO: Main should be injected */
 int main(int argc, char **argv) {
   TCompilerConfig config(argc, argv);
 

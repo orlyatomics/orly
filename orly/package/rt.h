@@ -220,7 +220,6 @@ namespace Orly {
 
   namespace Rt {
 
-    //TODO: This is a horrible place for this
     template <typename TRet, typename TFuncTrue, typename TFuncFalse>
     TRet Predicate(Package::TContext &ctx, bool predicate, const TFuncTrue &true_func,
       const TFuncFalse &false_func) {

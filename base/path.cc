@@ -23,7 +23,6 @@
 using namespace std;
 using namespace Base;
 
-//TODO: Write an optimal variant for this and the length version. We don't need to construct strings.
 TPath::TPath(const char *path) : TPath(string(path)) {}
 TPath::TPath(const char *path, uint32_t len) : TPath(string(path, len)) {}
 TPath::TPath(const TStr &name) : Namespace(SplitNamespace(name)) {
@@ -72,7 +71,6 @@ TPath::TPath(const TStr &dir, TStr name, TStrList extension)
     : Namespace(SplitNamespace(dir)), Name(move(name)), Extension(move(extension)) {
 
   if (!*this) {
-    // TODO: Print extension lists here in such a way that doesn't possibly hide errors in individaul extensions.
     THROW_ERROR(TPath::TInvalid) << "dir: " << dir << " name: " << Name;
   }
 }

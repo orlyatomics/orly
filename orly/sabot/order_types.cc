@@ -28,7 +28,6 @@ class TOrderTypesVisitor final
     : public TTypeDoubleVisitor {
   public:
 
-  /* TODO. */
   TOrderTypesVisitor(Atom::TComparison &out)
       : Comparison(out) {
   }

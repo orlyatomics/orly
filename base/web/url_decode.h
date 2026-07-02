@@ -24,7 +24,6 @@
 
 namespace Server {
 
-  //TODO: use Base::TError
   class TUrlDecodeError
       : public std::runtime_error {
     public:

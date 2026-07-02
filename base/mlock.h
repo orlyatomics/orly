@@ -39,7 +39,6 @@
 
 namespace Base {
 
-  //TODO: Unify these into just 'Mlock' which auto-selects the right behavior.
 
   /* Pass-through wrapper to mlock() which makes the call's mandated success conditional to being in a unit test. */
   void MlockRaw(const void *val, uint64_t size);

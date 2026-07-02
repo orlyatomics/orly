@@ -29,7 +29,6 @@ class TCompareTypesVisitor final
     : public TTypeDoubleVisitor {
   public:
 
-  /* TODO. */
   TCompareTypesVisitor(Atom::TComparison &out)
       : Comparison(out) {
   }

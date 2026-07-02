@@ -29,7 +29,6 @@ namespace Orly {
 
   namespace CodeGen {
 
-    //TODO: Probably shouldn't common subexpression eliminate literals.
     class TLiteral : public TInline {
       NO_COPY(TLiteral);
 

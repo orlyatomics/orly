@@ -37,7 +37,6 @@ void TSymbolFunc::Build() {
   TFunction::Build();
 }
 
-//TODO: Should really return a TSymbolFuncPtr...
 TFunction::TPtr TSymbolFunc::Find(const Symbol::TFunction *symbol) {
   auto res = Functions.find(symbol);
   assert(res != Functions.end()); // We build all functions before we ever call find, so it should never fail.
@@ -63,7 +62,6 @@ Type::TType TSymbolFunc::GetType() const {
 TSymbolFunc::TSymbolFunc(const L0::TPackage *package, const Symbol::TFunction::TPtr &symbol, const TIdScope::TPtr &id_scope)
       : TFunction(package, id_scope), Symbol(symbol) {
   PostCtor(symbol->GetParams(), symbol->GetExpr(), true);
-  //TODO: This is sooo fugly, we eat all the shared pointers, then magically make this back into one...
   Functions.insert(make_pair(symbol.get(), this));
 
 }

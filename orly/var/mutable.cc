@@ -41,7 +41,6 @@ void TMutable::Accept(const TVisitor &visitor) const {
 }
 
 void TMutable::SetHash() {
-  //TODO: Make better hash
   Hash = Val.GetHash() ^ Addr.GetHash();
 }
 

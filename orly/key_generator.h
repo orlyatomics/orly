@@ -231,8 +231,6 @@ namespace Orly {
           /* we have a void */
           return std::make_pair(false, Rt::TOpt<TVal>());
         }
-        //syslog(LOG_ERR, "TODO: support reading optional");
-        //throw std::runtime_error("TODO: support reading optional");
       }
 
     };  // TRead<TOpt<TVal>>
@@ -240,11 +238,9 @@ namespace Orly {
 
   namespace Rt {
 
-    /* TODO: This is an odd place for this. Oh well. */
     template <typename TRet, typename TAddr>
     TMutable<TAddr, TRet> Read(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {
 
-      /* TODO: Copy copy copy copy copy! */
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       const Indy::TKey key(Atom::TCore(ctx.GetArena(), Sabot::State::TAny::TWrapper(Native::State::New(addr, state_alloc))), ctx.GetArena());
       auto ret = Var::TRead<TRet>::Do(ctx[Indy::TIndexKey(index_id, key)], key);
@@ -315,7 +311,6 @@ namespace Orly {
       return TMutable<TAddr, TRet>(TOpt<TAddr>(addr), TRet());
     }
 
-    /* TODO: This is an odd place for this. Oh well. */
     template <typename TAddr>
     bool Exists(TContextBase &ctx, const TAddr &addr, const Base::TUuid &index_id) {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());

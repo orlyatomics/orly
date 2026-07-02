@@ -75,7 +75,6 @@ namespace Jhm {
       } catch (const TInvalidValue &ex) {
         THROW_ERROR(TInvalidValue) << "Invalid for \"" << Base::Join(name, '.') << "\". " << ex.what();
       }
-      // TODO: GCC BUG
       __builtin_unreachable();
     }
 

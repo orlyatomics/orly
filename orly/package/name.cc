@@ -28,7 +28,6 @@ using namespace Base;
 using namespace Orly::Package;
 using namespace std;
 
-//TODO: This should really live on piece somehow, or as some base algorithm.
 static inline const char *find(char sep, const char *start, const char *limit) {
   assert(start);
   assert(limit);

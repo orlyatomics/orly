@@ -37,7 +37,6 @@ namespace Orly {
         : public TStateDoubleVisitor {
       public:
 
-      /* TODO. */
       TCompareStatesVisitor(Atom::TComparison &out)
           : Comparison(out) {
       }

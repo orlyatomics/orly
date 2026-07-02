@@ -51,7 +51,6 @@ void TAddr::Accept(const TVisitor &visitor) const {
 void TAddr::SetHash() {
   Hash = 0;
   size_t rotate = 0;
-  //TODO: Really need to normalize the TAddr hash functions...
   for (auto iter = Val.begin(); iter != Val.end(); ++iter, rotate += 5) {
     Hash ^= Util::RotatedLeft(iter->second.GetHash(), rotate + ToInt(iter->first));
   }
