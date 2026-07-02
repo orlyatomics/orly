@@ -21,9 +21,11 @@
 #include <cassert>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 
 #include <base/class_traits.h>
+#include <base/thrower.h>
 #include <orly/indy/context.h>
 #include <orly/indy/manager.h>
 #include <orly/package/manager.h>
@@ -38,6 +40,11 @@ namespace Orly {
     class TRepoTetrisManager final
         : public TTetrisManager {
       public:
+
+      /* Thrown when an update carries an assertion Tetris cannot test --
+         today, any memcache update other than a bare `set`. */
+      DEFINE_ERROR(TUnsupportedAssertion, std::runtime_error,
+                   "update assertion not supported by tetris");
 
       TRepoTetrisManager(
           Base::TScheduler *scheduler,

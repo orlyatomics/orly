@@ -214,8 +214,9 @@ bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context
     const auto &entry = MetaRecord.GetEntry(item.first);
     if(entry.GetPackageFqName() == Mynde::PackageName) {
       if(entry.GetMethodName() != "set") {
-        //TODO(#376): Should probably be a custom exception that inherits from std::runtime_error...
-        throw std::runtime_error("Only memcache set is supported for update assertions at the moment. And that has none.");
+        THROW_ERROR(TUnsupportedAssertion)
+            << "only memcache 'set' (which carries no assertion) is supported; got method '"
+            << entry.GetMethodName() << "'";
       }
       return true;
     }
