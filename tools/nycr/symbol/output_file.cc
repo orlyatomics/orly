@@ -18,6 +18,8 @@
 
 #include <tools/nycr/symbol/output_file.h>
 
+#include <cstdio>
+
 #include <base/no_default_case.h>
 #include <base/thrower.h>
 
@@ -64,7 +66,41 @@ void TUnderscore::Write(ostream &strm) const {
   }
 }
 
-void Tools::Nycr::Symbol::CreateOutputFile(const char *root, const char *branch, const char *atom, const TLanguage *language, const char *ext, ofstream &strm, TCommentStyle comment_style) {
+void TOutputFile::Open(string &&path) {
+  assert(!is_open());
+  FinalPath = std::move(path);
+  TmpPath = FinalPath + ".tmp";
+  open(TmpPath);
+  if (!is_open()) {
+    THROW << "could not open \"" << TmpPath << '"';
+  }
+}
+
+void TOutputFile::Commit() {
+  assert(!TmpPath.empty());
+  flush();
+  bool ok = good();
+  close();
+  if (!ok) {
+    THROW << "error writing \"" << TmpPath << '"';
+  }
+  if (rename(TmpPath.c_str(), FinalPath.c_str()) != 0) {
+    THROW << "could not rename \"" << TmpPath << "\" to \"" << FinalPath << '"';
+  }
+  TmpPath.clear();
+}
+
+TOutputFile::~TOutputFile() {
+  if (TmpPath.empty()) {
+    return;
+  }
+  if (is_open()) {
+    close();
+  }
+  remove(TmpPath.c_str());
+}
+
+void Tools::Nycr::Symbol::CreateOutputFile(const char *root, const char *branch, const char *atom, const TLanguage *language, const char *ext, TOutputFile &strm, TCommentStyle comment_style) {
   assert(root);
   assert(language);
   assert(ext);
@@ -72,11 +108,7 @@ void Tools::Nycr::Symbol::CreateOutputFile(const char *root, const char *branch,
 
   temp << root << '/' << atom << '.' << TLower(language->GetName()) << ext;
 
-  string name = temp.str();
-  strm.open(name);
-  if (!strm.is_open()) {
-    THROW << "could not open \"" << name << '"';
-  }
+  strm.Open(temp.str());
 
   const char *comment_open;
   const char *comment_close;

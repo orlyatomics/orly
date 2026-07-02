@@ -39,9 +39,10 @@ using namespace Tools::Nycr::Symbol;
 void Tools::Nycr::Symbol::WriteNycr(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(root);
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".nycr", strm);
   ForEachKnownKind(language, bind(WriteNycrDecl, _1, ref(strm)));
+  strm.Commit();
 }
 
 void Tools::Nycr::Symbol::WriteNycrDecl(const TKind *kind, ostream &strm) {

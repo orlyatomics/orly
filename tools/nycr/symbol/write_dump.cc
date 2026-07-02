@@ -29,7 +29,7 @@ using namespace Tools::Nycr::Symbol;
 void Tools::Nycr::Symbol::WriteDump(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(root);
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".dump.cc", strm);
   strm
       << "#include <cstdio>" << endl
@@ -72,4 +72,5 @@ void Tools::Nycr::Symbol::WriteDump(const char *root, const char *branch, const 
       << "  }" << endl
       << "  return result;" << endl
       << "}" << endl;
+  strm.Commit();
 }

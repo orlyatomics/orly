@@ -83,7 +83,7 @@ static bool CompareAtoms(const TAtom *lhs, const TAtom *rhs) {
 static void WriteFlexCc(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(root);
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".l", strm);
   strm
       << "%option noyywrap nodefault bison-bridge bison-locations reentrant" << endl
@@ -163,11 +163,13 @@ static void WriteFlexCc(const char *root, const char *branch, const char *atom, 
       << ". {" << endl
       << "  " << TUnderscore(language) << "error(yylloc, nullptr, *yyextra.ctx, \"illegal char\");" << endl
       << '}' << endl;
+  strm.Commit();
 }
 
 static void WriteFlexH(const char *root, const char *branch, const char *atom, const TLanguage *language) {
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".flex.h", strm);
   strm
       << "#pragma once" << endl;
+  strm.Commit();
 }

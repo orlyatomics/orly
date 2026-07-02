@@ -84,7 +84,7 @@ static void CollectOperators(const TKind *kind, vector<const TOperator *> &ops) 
 static void WriteBisonCc(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   assert(root);
   assert(language);
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".y", strm);
   strm
       << "%{" << endl
@@ -159,13 +159,15 @@ static void WriteBisonCc(const char *root, const char *branch, const char *atom,
       << "void " << TUnderscore(language) << "error(const YYLTYPE *loc, void*, Tools::Nycr::TContext &ctx, char const *msg) {" << endl
       << "  ctx.AddError(Tools::Nycr::TPosRange(Tools::Nycr::TPos(loc->first_line, loc->first_column), Tools::Nycr::TPos(loc->last_line, loc->last_column)), msg);" << endl
       << '}' << endl;
+  strm.Commit();
 }
 
 static void WriteBisonH(const char *root, const char *branch, const char *atom, const TLanguage *language) {
-  ofstream strm;
+  TOutputFile strm;
   CreateOutputFile(root, branch, atom, language, ".bison.h", strm);
   strm
       << "#pragma once" << endl;
+  strm.Commit();
 }
 
 static void WriteRule(const TKind *kind, ostream &strm) {
