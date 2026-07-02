@@ -114,6 +114,15 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
     Base::EchoOutput(move(result.Stdout));
     cout << "STDERR: \n";
     Base::EchoOutput(move(result.Stderr));
+    /* Forcefully delete whatever partial output the failed job left behind
+       (and its cache file): a half-written output with a fresh timestamp
+       would satisfy the next run's cache check and poison incremental
+       builds (#346). ENOENT is fine -- the job may have died before
+       creating anything. */
+    for (TFile *out_file : result.Job->GetOutput()) {
+      unlink(AsStr(out_file->GetPath()).c_str());
+      unlink(GetCacheFilename(out_file).c_str());
+    }
     return true;
   }
   // Check if the job is actually complete or not
