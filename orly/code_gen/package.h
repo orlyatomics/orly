@@ -67,7 +67,6 @@ namespace Orly {
       TTests Tests;
       TExports Exports;
       TTypes Objects;
-      std::unordered_set<std::pair<Type::TType, Type::TType>> NeededObjectComparisons;
       std::unordered_set<Package::TName> NeededPackages;
     }; // TPackage
 

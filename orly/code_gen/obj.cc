@@ -52,9 +52,6 @@ void TObjCtor::WriteExpr(TCppPrinter &out) const {
 }
 
 
-void Orly::CodeGen::GenObjComparison(const Type::TType &, const Type::TType &, TCppPrinter &) {
-  NOT_IMPLEMENTED();
-}
 
 /* a < that.a || (a == that.a && (b < that.b || (b == that.b && c < that.c)) ) */
 void WriteLessExpr(TCppPrinter &out, Type::TObjElems::const_iterator iter, const Type::TObjElems::const_iterator &iter_end) {
