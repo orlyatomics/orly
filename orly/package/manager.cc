@@ -23,6 +23,10 @@
 #include <cstring>
 #include <memory>
 #include <sstream>
+#include <string>
+#include <vector>
+
+#include <base/split.h>
 
 #include <base/assert_true.h>
 #include <base/thrower.h>
@@ -62,32 +66,42 @@ void TManager::Load(const TVersionedNames &packages, const std::function<void(TL
 
   list<std::tuple<TLoaded::TPtr, bool>> about_to_install;
 
-  /* TODO(#354): collect up errors, rather than throw on first. */
   //Ensure all package upgrades are actually upgrades, all files exist, build up map to swap in.
+  //Errors are collected across the whole batch so a caller sees every failing
+  //package, not just the first; nothing is installed unless every package loads.
+  std::vector<std::string> errors;
   for(const TVersionedName &package: packages) {
-    auto installed_it = installed.find(package.Name);
-    if(installed_it != installed.end()) {
-      if(installed_it->second->GetName().Version > package.Version) {
-        THROW_ERROR(TManager::TError) << "Cannot downgrade already installed package '" << package <<'\'';
+    try {
+      auto installed_it = installed.find(package.Name);
+      if(installed_it != installed.end()) {
+        if(installed_it->second->GetName().Version > package.Version) {
+          THROW_ERROR(TManager::TError) << "Cannot downgrade already installed package '" << package <<'\'';
+        }
+        if(installed_it->second->GetName().Version == package.Version) {
+          // If package has been previously installed at the same version, do nothing / noop.
+          std::ostringstream oss;
+          oss << package;
+          syslog(LOG_INFO, "Package already installed at requested version [%s]. No-op.", oss.str().c_str());
+          continue;
+        }
+        installed_it->second = TLoaded::Load(PackageDir, package);
+        about_to_install.push_back(
+            make_tuple(installed_it->second, true /* is_new_version */));
+      } else {
+        auto ret = installed.insert(
+            make_pair(package.Name, TLoaded::Load(PackageDir, package)));
+        about_to_install.push_back(
+            make_tuple(ret.first->second, true /* is_new_version */));
       }
-      if(installed_it->second->GetName().Version == package.Version) {
-        // If package has been previously installed at the same version, do nothing / noop.
-        std::ostringstream oss;
-        oss << package;
-        syslog(LOG_INFO, "Package already installed at requested version [%s]. No-op.", oss.str().c_str());
-        continue;
-      }
-      installed_it->second = TLoaded::Load(PackageDir, package);
-      //auto ret = installed.insert(make_pair(package.Name, TLoaded::Load(PackageDir, package)));
-      about_to_install.push_back(
-          make_tuple(installed_it->second, true /* is_new_version */));
-    } else {
-      auto ret = installed.insert(
-          make_pair(package.Name, TLoaded::Load(PackageDir, package)));
-      about_to_install.push_back(
-          make_tuple(ret.first->second, true /* is_new_version */));
+    } catch (const std::exception &ex) {
+      errors.emplace_back(ex.what());
     }
-}
+  }
+  if (!errors.empty()) {
+    THROW_ERROR(TManager::TError)
+        << "failed to load " << errors.size() << " package(s): "
+        << Join(errors, "; ");
+  }
 
   // Call back with each installed package so outside systems can do what they need to
   // NOTE: This doesn't get rolled back if the callback throws partway through the list...
