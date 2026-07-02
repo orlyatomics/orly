@@ -39,6 +39,8 @@ namespace Orly {
     const Base::TUuid SystemRepoIndexId("9D3DAB7C-2D75-452C-8200-30180FF584F1");
     /* The index id of the system repo space used to store index namespace mappings */
     const Base::TUuid SystemIDNSIndexId("9154D7AE-FA10-42D5-9A10-AC68664B0092");
+    /* The index id of the system repo space used to remember installed packages across restarts (#435) */
+    const Base::TUuid SystemPackageIndexId("552C39C6-8D48-4760-9AF0-E3A08EBFA9AC");
 
     class TManager
         : public L1::TManager, public DurableManager::TManager {
@@ -436,6 +438,13 @@ namespace Orly {
       void SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std::string &namespace_name);
 
       std::unordered_map<Base::TUuid, std::string> GetIndexNamespaceMapping();
+
+      /* Record in the system repo that the given package version is (or is
+         no longer) installed, so a restarted server can reinstall it (#435). */
+      void SaveInstalledPackage(const std::vector<std::string> &package_name, uint64_t version, bool installed);
+
+      /* The (package name, version) pairs currently recorded as installed. */
+      std::vector<std::pair<std::vector<std::string>, uint64_t>> GetInstalledPackages();
 
       void OnSlaveJoin(const Base::TFd &fd);
 

@@ -1288,6 +1288,46 @@ void TManager::SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std:
   }
 }
 
+void TManager::SaveInstalledPackage(const std::vector<std::string> &package_name, uint64_t version, bool installed) {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  /* Perform transaction on System repo to save this record */ {
+    TSuprena arena;
+    auto transaction = NewTransaction();
+    auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ {
+      TIndexKey(SystemPackageIndexId, TKey(make_tuple(package_name, static_cast<int64_t>(version)), &arena, state_alloc)),
+      TKey(installed, &arena, state_alloc)} }, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
+    transaction->Push(SystemRepo, update);
+    transaction->Prepare();
+    transaction->CommitAction();
+  }
+}
+
+std::vector<std::pair<std::vector<std::string>, uint64_t>> TManager::GetInstalledPackages() {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  TSuprena arena;
+  std::vector<std::pair<std::vector<std::string>, uint64_t>> ret;
+  /* The walker yields an entry per update layer for the same key, newest
+     first; only the first (current) one counts -- the same reason
+     GetIndexNamespaceMapping()'s emplace is first-wins.  Without the dedupe
+     an uninstall would be shadowed by its older install record. */
+  std::set<std::tuple<std::vector<std::string>, int64_t>> seen;
+  auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
+  auto walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemPackageIndexId, TKey(make_tuple(Native::TFree<std::vector<std::string>>(), Native::TFree<int64_t>()), &arena, state_alloc)), true);
+  for (auto &walker = *walker_ptr; walker; ++walker) {
+    std::tuple<std::vector<std::string>, int64_t> name_and_version;
+    bool installed = false;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, state_alloc)), name_and_version);
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Op.NewState((*walker).OpArena, state_alloc)), installed);
+    if (!seen.insert(name_and_version).second) {
+      continue;
+    }
+    if (installed) {
+      ret.emplace_back(std::get<0>(name_and_version), static_cast<uint64_t>(std::get<1>(name_and_version)));
+    }
+  }
+  return ret;
+}
+
 std::unordered_map<Base::TUuid, std::string> TManager::GetIndexNamespaceMapping() {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TSuprena arena;
