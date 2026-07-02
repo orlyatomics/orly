@@ -71,10 +71,7 @@ namespace Util {
 
   /* Return true iff. the error was caused by a signal. */
   inline bool WasInterrupted(const std::system_error &error) {
-    /* TODO(#290): change this to:
-          return error.code() == errc::interrupted;
-       As soon as gcc fixes the bug in cerr. */
-    return error.code().value() == EINTR;
+    return error.code() == std::errc::interrupted;
   }
 
   /* This is a thread safe wrapper that hides ugly platform-specific issues
