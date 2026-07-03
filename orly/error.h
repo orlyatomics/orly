@@ -80,10 +80,15 @@ namespace Orly {
   class TExprError : public TSourceError {
     public:
 
+    /* The message used when a thrower has nothing more specific to say.
+       Named so callers can recognize (and upgrade) the generic diagnostic;
+       see Symbol::Stmt::TMutate::TypeCheck (issue #314). */
+    static constexpr const char *DefaultMessage = "This expression is invalid.";
+
     TExprError(
         const Base::TCodeLocation &code_location,
         const TPosRange &pos_range,
-        const char *message = "This expression is invalid.")
+        const char *message = DefaultMessage)
           : TSourceError(pos_range, Base::AsStr(code_location, message).c_str()) {}
 
   };  // TExprError

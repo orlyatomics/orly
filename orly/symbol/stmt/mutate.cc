@@ -18,6 +18,10 @@
 
 #include <orly/symbol/stmt/mutate.h>
 
+#include <string_view>
+
+#include <base/as_str.h>
+#include <orly/error.h>
 #include <orly/type/add_visitor.h>
 #include <orly/type/comp_visitor.h>
 #include <orly/type/div_visitor.h>
@@ -30,6 +34,7 @@
 #include <orly/type/mult_visitor.h>
 #include <orly/type/set_ops_visitor.h>
 #include <orly/type/sub_visitor.h>
+#include <orly/type/unwrap.h>
 
 using namespace Orly;
 using namespace Orly::Symbol;
@@ -135,12 +140,24 @@ void TMutate::TypeCheck() const {
       break;
     }
     case TMutator::Assign: {
-      Type::TType::Accept(
-          GetLhs()->GetExpr()->GetType(),
-          GetRhs()->GetExpr()->GetType(),
-          /* TODO(#314): Using TEqCompVisitor here is the correct behaviour.
-                   But make it so that it can provide a more meaningful and relevant error message. */
-          TMutateTypeVisitor<Type::TEqCompVisitor>(dummy, GetPosRange()));
+      const Type::TType lhs_type = GetLhs()->GetExpr()->GetType();
+      const Type::TType rhs_type = GetRhs()->GetExpr()->GetType();
+      try {
+        /* TEqCompVisitor is the correct check: assignment requires the new
+           value's type to equal the stored value's type. */
+        Type::TType::Accept(lhs_type, rhs_type,
+            TMutateTypeVisitor<Type::TEqCompVisitor>(dummy, GetPosRange()));
+      } catch (const TExprError &ex) {
+        /* The visitor's specific diagnostics (optionals in addresses,
+           sequences, object subsets, ...) pass through untouched; only the
+           generic mismatch is upgraded to name both types (issue #314). */
+        if (!std::string_view(ex.what()).ends_with(TExprError::DefaultMessage)) {
+          throw;
+        }
+        throw TExprError(HERE, GetPosRange(), Base::AsStr(
+            "cannot assign a value of type ", Type::UnwrapMutable(rhs_type),
+            " to a mutable holding ", Type::UnwrapMutable(lhs_type)).c_str());
+      }
       break;
     }
     case TMutator::Div: {

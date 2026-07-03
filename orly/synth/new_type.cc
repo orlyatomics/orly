@@ -20,9 +20,12 @@
 
 #include <cassert>
 #include <orly/type.h>
+#include <orly/type/unwrap.h>
 #include <orly/synth/addr_type.h>
 #include <orly/synth/atomic_type.h>
 #include <orly/synth/binary_type.h>
+#include <orly/synth/context.h>
+#include <orly/synth/get_pos_range.h>
 #include <orly/synth/obj_type.h>
 #include <orly/synth/ref_type.h>
 #include <orly/synth/unary_type.h>
@@ -50,7 +53,6 @@ TType *Orly::Synth::NewType(const Package::Syntax::TType *root) {
     virtual void operator()(const Package::Syntax::TSetType *that) const   { OnUnary(that->GetType(), Type::TSet::Get); }
     virtual void operator()(const Package::Syntax::TFuncType *that) const  { OnBinary(that->GetParams(), that->GetResult(), Type::TFunc::Get);}
     virtual void operator()(const Package::Syntax::TMutableType *that) const  {
-      // TODO(#314): Make a clean end-user error message when there is a mutable in a mutable. Currently we assertion fail in the mutable type.
       class TOptMutableAtVisitor
           : public Package::Syntax::TOptMutableTypeAt::TVisitor {
         public:
@@ -63,15 +65,27 @@ TType *Orly::Synth::NewType(const Package::Syntax::TType *root) {
       };  // TOptMutableAtVisitor
       const Package::Syntax::TType *addr_type;
       that->GetOptMutableTypeAt()->Accept(TOptMutableAtVisitor(addr_type));
+      /* The callback runs later, at symbolic-type computation, so capture the
+         `mutable` keyword's pos-range now. Type::TMutable::Get() asserts its
+         preconditions; check them here instead so a bad source type produces
+         a clean end-user error, not an assertion failure (issue #314). */
+      const TPosRange pos_range = GetPosRange(that->GetMutableKwd());
+      auto get = [pos_range](const Type::TType &addr, const Type::TType &val) {
+        if (val.Is<Type::TMutable>()) {
+          GetContext().AddError(pos_range, "a mutable type cannot contain another mutable type");
+          return Type::TAny::Get();
+        }
+        if (!Type::UnwrapOptional(addr).Is<Type::TAddr>()) {
+          GetContext().AddError(pos_range, "the '@' type of a mutable must be an address type");
+          return Type::TAny::Get();
+        }
+        return Type::TMutable::Get(addr, val);
+      };
       if (addr_type) {
-        /* TMutable::Get is an overload set, so name the two-argument one
-           explicitly for the std::function-typed callback. */
-        OnBinary(addr_type, that->GetType(), [](const Type::TType &addr, const Type::TType &val) {
-          return Type::TMutable::Get(addr, val);
-        });
+        OnBinary(addr_type, that->GetType(), get);
       } else {
-        OnUnary(that->GetType(), [](const Type::TType &that) {
-          return Type::TMutable::Get(Type::TAddr::Get({}), that);
+        OnUnary(that->GetType(), [get](const Type::TType &val) {
+          return get(Type::TAddr::Get({}), val);
         });
       }
     }
