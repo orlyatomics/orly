@@ -84,6 +84,12 @@ TDurableManager::TDiskOrderedLayer::~TDiskOrderedLayer() {
       }
     } catch (const Disk::TDiskServiceShutdown &/*ex*/) {
       /*ignore, we're shutting down by force! */
+    } catch (const std::exception &ex) {
+      /* This destructor is noexcept (as all destructors are); anything escaping it is
+         instant std::terminate, which is how the #386 lang_test abort presented.  A
+         failure to reclaim one dead layer's blocks costs leaked disk space, not
+         integrity -- log it loudly and keep the server alive. */
+      syslog(LOG_ERR, "~TDiskOrderedLayer: failed to reclaim gen [%ld] file: %s; leaking its blocks", GenId, ex.what());
     }
   }
 }

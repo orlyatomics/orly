@@ -959,7 +959,15 @@ namespace Orly {
           virtual void DoDiscard(const TBlockRange &block_range) const = 0;
 
           inline void CheckRange(const TOffset start_offset, long long nbytes, const TDevice *device) {
-            if (unlikely(start_offset + SuperBytes + nbytes > device->Desc.Capacity)) {
+            /* Desc.Capacity counts only the payload the allocator can hand out; the device
+               provides SuperBytes of superblock *in addition to* it (TMemoryDevice allocates
+               SuperBytes + Capacity, and MakeVolume takes one physical block off the exposed
+               count).  Charging SuperBytes against Capacity here -- as this check did from
+               2014 until #386 -- made the final physical block of every volume allocatable
+               and writable (writes don't range-check) but unreadable: the first read threw,
+               and when that read was the layer cleaner's (a noexcept destructor) it aborted
+               the whole process. */
+            if (unlikely(start_offset + nbytes > static_cast<long long>(device->Desc.Capacity))) {
               throw std::logic_error("Accessing range on device past capacity");
             }
           }
@@ -1095,7 +1103,7 @@ namespace Orly {
           trigger.WaitForOneMore();
           auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(start_offset, nbytes, device);
-          assert(start_offset + SuperBytes + nbytes <= device->Desc.Capacity);
+          assert(start_offset + nbytes <= static_cast<long long>(device->Desc.Capacity));
           device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, trigger);
         }
 
@@ -1111,7 +1119,7 @@ namespace Orly {
           trigger.WaitForOneMore();
           auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(start_offset, nbytes, device);
-          assert(start_offset + SuperBytes + nbytes <= device->Desc.Capacity);
+          assert(start_offset + nbytes <= static_cast<long long>(device->Desc.Capacity));
           device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, cb);
         }
 
@@ -1132,7 +1140,7 @@ namespace Orly {
           const TDeviceSet &dev_set = DeviceVec[device_num];
           auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(device_request.PhysicalOffsetStart, device_request.TotalBytes, device);
-          assert(device_request.PhysicalOffsetStart + SuperBytes + device_request.TotalBytes <= device->Desc.Capacity);
+          assert(device_request.PhysicalOffsetStart + device_request.TotalBytes <= device->Desc.Capacity);
           size_t bytes_in = 0UL;
           const size_t bytes_per_segment = device_request.TotalBytes / device_request.NumReq;
           for (const auto &buf_vec : device_request.VecPerOp) {
@@ -1157,7 +1165,7 @@ namespace Orly {
           const TDeviceSet &dev_set = DeviceVec[device_num];
           auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
           CheckRange(device_request.PhysicalOffsetStart, device_request.TotalBytes, device);
-          assert(device_request.PhysicalOffsetStart + SuperBytes + device_request.TotalBytes <= device->Desc.Capacity);
+          assert(device_request.PhysicalOffsetStart + device_request.TotalBytes <= device->Desc.Capacity);
           size_t bytes_in = 0UL;
           const size_t bytes_per_segment = device_request.TotalBytes / device_request.NumReq;
           for (const auto &buf_vec : device_request.VecPerOp) {
@@ -2419,7 +2427,11 @@ void TMemoryDevice::ReadV(const Base::TCodeLocation &code_location /* DEBUG */,
 
 bool TMemoryDevice::ReadImpl(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind buf_kind, uint8_t /*util_src*/, void *buf,
                              const TOffset offset, long long nbytes, DiskPriority /*priority*/, bool abort_on_error) {
-  assert(offset + nbytes <= Desc.Capacity);
+  /* 'offset' is physical (the superblock shift is already applied), and Data holds
+     PhysicalBlockSize + Desc.Capacity bytes -- same convention as the write side's
+     ApplyCorruptionCheck assert.  Checking against bare Capacity forbade reading the
+     final physical block of the payload (#386). */
+  assert(offset - Util::PhysicalBlockSize /* super block */ + nbytes <= Desc.Capacity);
   memcpy(buf, Data.get() + offset, nbytes);
   bool ret = CheckCorruptCheck(buf_kind, buf, offset, nbytes);
   if (unlikely(!ret) && abort_on_error) {
