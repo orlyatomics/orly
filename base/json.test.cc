@@ -187,6 +187,14 @@ FIXTURE(Parse) {
 FIXTURE(EscapeSequences) {
   EXPECT_EQ(TJson::Parse(R"foo("\"\\\/\b\f\n\r\t")foo").GetString(), "\"\\/\b\f\n\r\t");
   EXPECT_EQ(AsStr(TJson("\"\\/\b\f\n\r\t7")), R"foo("\"\\/\b\f\n\r\t7")foo");
+  /* Control characters without a short escape must come out as \u00XX --
+     raw, they make the output invalid JSON (#276). */
+  EXPECT_EQ(AsStr(TJson(string("a\x01" "b\x1f\v"))), R"foo("a\u0001b\u001f\u000b")foo");
+  /* ...and round-trip through our own reader. */
+  EXPECT_EQ(TJson::Parse(AsStr(TJson(string("a\x01" "b\x1f\v")))).GetString(), string("a\x01" "b\x1f\v"));
+  /* Raw multi-byte UTF-8 passes through untouched (legal JSON). */
+  EXPECT_EQ(AsStr(TJson(string("caf\xc3\xa9"))), "\"caf\xc3\xa9\"");
+  EXPECT_EQ(TJson::Parse(AsStr(TJson(string("caf\xc3\xa9")))).GetString(), "caf\xc3\xa9");
 }
 
 FIXTURE(KindToStr) {

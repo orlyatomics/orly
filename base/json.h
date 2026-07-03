@@ -77,7 +77,9 @@ namespace Base {
     /* The kinds of states we can be in. */
     enum TKind { Null, Bool, Number, Array, Object, String };
 
-    //TODO(#276): We don't currently escape unicode sequences / wide characters
+    /* Writes 'text' as a JSON string: quoted, with the short escapes for the
+       usual suspects, \u00XX for the remaining control characters, and raw
+       (legal) pass-through for everything else including multi-byte UTF-8. */
     static void WriteString(std::ostream &strm, const std::string &text) {
       strm << '"';
       const auto end = text.end();
@@ -113,7 +115,16 @@ namespace Base {
             break;
           }
           default: {
-            strm << c;
+            /* JSON forbids raw control characters in strings; emit the ones
+               without a short escape as \u00XX.  Anything else -- including
+               raw multi-byte UTF-8 -- passes through, which is legal JSON
+               (#276).  ReadQuotedString's \u handler round-trips these. */
+            if (static_cast<unsigned char>(c) < 0x20) {
+              constexpr const char *hex = "0123456789abcdef";
+              strm << R"(\u00)" << hex[(c >> 4) & 0xF] << hex[c & 0xF];
+            } else {
+              strm << c;
+            }
           }
         }
       }
