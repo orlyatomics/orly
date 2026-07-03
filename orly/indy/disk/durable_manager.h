@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -734,7 +735,11 @@ namespace Orly {
 
         size_t NextSlushGenId;
 
-        size_t NextDurableByIdGenId;
+        /* Atomic because the writer fiber (WriteNextSlush) and the merger fiber
+           (RunMerger) each mint gen ids from it, and they run on different runner
+           threads -- a torn increment would hand two files the same gen id and
+           corrupt the (uid, gen)-keyed file registry. */
+        std::atomic<size_t> NextDurableByIdGenId;
 
         size_t TempFileConsolThresh;
 
