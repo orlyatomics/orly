@@ -19,14 +19,17 @@ slices are in (A: `de4a38c8` / PR #442, B: `250294ba` / PR #447, C: PR #459).
   flushed, tetris deleted, DurableManager cleared and reset,
   GlobalRepo/RepoManager reset. After it, `~TServer` touches only
   non-fiber state.
-- An `asan.jhm` config exists for AddressSanitizer builds, intended for a
-  CI smoke of the teardown paths (use-after-free, not leak accounting —
-  see "deliberate leaks" below).  The smoke itself is blocked on the fiber
-  engine: Ubuntu's default `_FORTIFY_SOURCE` (active at the sanitizer
-  build's `-O1`) aborts on the fibers' cross-stack longjmps
-  (`-U_FORTIFY_SOURCE` in the config sidesteps that), and a truly clean
-  run needs `__sanitizer_start_switch_fiber`/`finish_switch_fiber`
-  annotations in orly/indy/fiber.
+- CI: the `asan-smoke` job builds orlyc with `asan.jhm` and runs lang
+  tests through it, policing the teardown paths at the memory level
+  (use-after-free, not leak accounting — see "deliberate leaks" below).
+  `-U_FORTIFY_SOURCE` in the config is load-bearing: Ubuntu's default
+  fortify (active at the sanitizer build's `-O1`) aborts on the fibers'
+  cross-stack longjmps.  Unlike TSan (#194), no fiber-switch annotations
+  proved necessary for a clean run.  The smoke's very first run caught
+  two real teardown bugs: a `TCmd` use-after-scope in orlyc's
+  Shutdown-on-every-path flow, and `Base::MemAlignedAlloc`'s
+  posix_memalign/operator-delete alloc-dealloc mismatch on every aligned
+  disk buffer.
 
 ## Constraints (empirical — the reasons the code looks the way it does)
 

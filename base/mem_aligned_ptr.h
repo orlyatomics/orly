@@ -17,6 +17,7 @@
    limitations under the License. */
 #pragma once
 
+#include <cstdlib>
 #include <cstring>
 
 #include <memory>
@@ -25,18 +26,33 @@
 #include <base/util/error.h>
 
 namespace Base {
+
+  /* posix_memalign memory must be released with free(); a plain
+     std::unique_ptr's default deleter (operator delete) is an
+     alloc/dealloc mismatch.  Latent for years because these buffers were
+     process-lifetime -- #440's real teardown gave them destructors and
+     AddressSanitizer flagged every one. */
+  struct TFreeDeleter {
+    void operator()(void *ptr) const noexcept {
+      std::free(ptr);
+    }
+  };  // TFreeDeleter
+
   template <typename T>
-  std::unique_ptr<T> MemAlignedAlloc(std::size_t align_to, std::size_t size) {
+  using TMemAlignedPtr = std::unique_ptr<T, TFreeDeleter>;
+
+  template <typename T>
+  TMemAlignedPtr<T> MemAlignedAlloc(std::size_t align_to, std::size_t size) {
     static_assert(std::is_trivial<T>::value, "T must be a trivial type");
-    typename std::unique_ptr<T>::pointer mem;
+    T *mem;
     Util::IfNe0( posix_memalign(
           reinterpret_cast<void**>(&mem), align_to, size) );
 
-    return std::unique_ptr<T>{mem};
+    return TMemAlignedPtr<T>{mem};
   } // MemAlignedAlloc
 
   template <typename T>
-  std::unique_ptr<T> MemAlignedAllocZeroInitialized(std::size_t align_to, std::size_t size) {
+  TMemAlignedPtr<T> MemAlignedAllocZeroInitialized(std::size_t align_to, std::size_t size) {
     auto ptr = MemAlignedAlloc<T>(align_to, size);
     memset(ptr.get(), 0, size);
 

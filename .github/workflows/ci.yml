@@ -15,6 +15,14 @@
 #                            Playwright test driving two tabs trading on one
 #                            market (run-e2e.sh)
 #
+# A seventh job, `asan-smoke`, builds orlyc under AddressSanitizer and runs a
+# handful of lang tests through it. Every orlyc run constructs, runs, and
+# fully destroys the server (#440 teardown), so this smokes the teardown
+# paths -- join-before-destroy, flush, manager destruction -- for
+# use-after-free at the memory level. Leak detection is OFF by design:
+# teardown deliberately leaks a few pool slabs (docs/teardown-design.md,
+# "Deliberate leaks"). Like `tsan`, it skips pull_request events.
+#
 # A sixth job, `tsan`, builds the concurrency tests under ThreadSanitizer to
 # validate the lock-free / commutative-merge claim at the memory level (data-
 # race freedom). It is GATING (issue #184): the curated set is clean, so the
@@ -644,3 +652,71 @@ jobs:
           name: tsan-logs
           path: tsan-logs/
           if-no-files-found: warn
+
+  asan-smoke:
+    name: AddressSanitizer smoke
+    # Smokes the #440 teardown paths: every orlyc run constructs, runs, and
+    # fully destroys the server, so a handful of lang tests under ASan police
+    # Shutdown()/~TServer for use-after-free and heap corruption. Sanitizer
+    # builds are slow, so (like `tsan`) this skips pull_request events and
+    # runs on push-to-master, the nightly schedule, and manual dispatch.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          version: 1.2
+
+      - name: Set up ccache
+        # Same masquerade as the other jobs: jhm/orlyc invoke g++/gcc by bare
+        # name via execvp, so symlink them ahead of /usr/bin to route compiles
+        # through ccache.
+        run: |
+          for c in gcc g++ cc c++; do
+            sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"
+          done
+          {
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=3G"
+            echo "CCACHE_COMPRESS=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Cache ccache
+        # Cache on every trigger (like `tsan`): this job's value is the ASan
+        # report, not cache-correctness, and a cold sanitizer build is
+        # expensive.
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-${{ github.job }}-
+            orly-ccache-${{ runner.os }}-
+
+      - name: Bootstrap jhm
+        run: make bootstrap
+
+      - name: Build orlyc under ASan
+        run: PATH="$PWD/tools:$PATH" tools/jhm -c asan orly/orlyc
+
+      - name: Run teardown smoke under ASan
+        # Three lang tests through the ASan orlyc: two with with-block writes
+        # (they exercise the dirty-self-pin release and the full manager
+        # destruction) and one pure. An ASan error makes orlyc exit non-zero,
+        # lang_test reports it as an unexpected failure, and its exit code
+        # fails the job. detect_leaks=0 is deliberate: teardown intentionally
+        # leaks a few pool slabs (docs/teardown-design.md, "Deliberate
+        # leaks"); this smoke gates on use-after-free, not leak accounting.
+        run: |
+          ASAN_OPTIONS=detect_leaks=0 \
+          ORLYC="$PWD/../out_orly/asan/orly/orlyc" \
+          PATH="$PWD/tools:$PATH" \
+          python3 tools/lang_test.py \
+            tests/lang_tests/general/assertions.orly \
+            tests/lang_tests/general/exists.orly \
+            tests/lang_tests/general/arithmetic.orly

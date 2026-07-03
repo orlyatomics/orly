@@ -676,7 +676,7 @@ namespace Orly {
           bool ReadImpl(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, const TOffset offset,
                         long long nbytes, DiskPriority priority, bool abort_on_error);
 
-          std::unique_ptr<char> Data;
+          Base::TMemAlignedPtr<char> Data;
 
         };  // TMemoryDevice
 
