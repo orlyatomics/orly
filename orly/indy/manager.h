@@ -135,8 +135,8 @@ namespace Orly {
          returned: a stop is only a flag plus a wake, and this manager must
          not be destroyed while a loop is still inside its body (#440).
          NOTE: a master-mode loop wedged in a remote Sync() holds this join
-         until the RPC resolves; interrupting in-flight RPCs is future
-         teardown work. */
+         until the RPC resolves; interrupting in-flight RPCs is
+         TODO(#461). */
       void JoinReplicationServices();
 
       inline void SetDurableManager(const std::shared_ptr<Durable::TManager> &durable_manager) {

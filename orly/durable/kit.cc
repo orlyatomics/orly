@@ -65,8 +65,9 @@ void TManager::Clear() {
   for (const auto &item: OpenableObjs) {
     /* An object still open here is a teardown-ordering bug: the caller must
        drain everything holding durable ptrs (live sessions, connections)
-       before clearing.  Name the leaker, then (in release builds) leak it
-       rather than free an object a live ptr still references. */
+       before clearing -- connection draining is TODO(#460).  Name the
+       leaker, then (in release builds) leak it rather than free an object a
+       live ptr still references. */
     if (item.second->PtrCount != 0) {
       char buf[TId::MinBufSize];
       item.first.Format(buf);

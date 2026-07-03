@@ -1,48 +1,100 @@
 # TServer teardown design note (#440, roadmap keystone)
 
-## Why nothing destroys a TServer today
+Originally a pre-implementation design note; now the record of what landed,
+the constraints that shaped it, and what deliberately remains. All three
+slices are in (A: `de4a38c8` / PR #442, B: `250294ba` / PR #447, C: PR #459).
 
-- orlyi: `RunUntilCtrlC` blocks in `sigsuspend`; SIGINT stops the scheduler
-  and the process exits with fiber runners dying mid-syscall ("FATAL ERROR:
-  Fiber Runner caught exception ... Interrupted system call"). `~TServer`
-  never runs.
-- orlyc: documented leak-and-`_exit` policy in `RunTestsOnIndy`.
-- `~TServer` exists (WsRunner stop, TetrisManager delete, DurableManager
-  Clear/reset, GlobalRepo/RepoManager reset, frame free) but is dead code.
+## Where teardown stands
 
-## Proven blockers (empirical, from #436 work)
+- orlyi: SIGINT → `TServer::Shutdown()` → destroy → clean exit (slice A).
+  A graceful stop makes all data durable with no flush-window sleep
+  (slice B; `tests/restart_test.sh` gates this — its remaining `sleep`s are
+  startup/exit polling, not flush windows).
+- orlyc: constructs, runs, and fully destroys the server on every test run
+  (slice C) — the old leak-and-`_exit` policy is gone, so every orlyc
+  invocation doubles as a construct/run/destroy smoke of the whole server.
+  `_exit` survives only as the fallback when teardown itself throws
+  (a deterministic non-zero exit beats a hang).
+- `Shutdown()` destroys everything: service loops joined, dirty mem layers
+  flushed, tetris deleted, DurableManager cleared and reset,
+  GlobalRepo/RepoManager reset. After it, `~TServer` touches only
+  non-fiber state.
+- An `asan.jhm` config exists for AddressSanitizer builds, intended for a
+  CI smoke of the teardown paths (use-after-free, not leak accounting —
+  see "deliberate leaks" below).  The smoke itself is blocked on the fiber
+  engine: Ubuntu's default `_FORTIFY_SOURCE` (active at the sanitizer
+  build's `-O1`) aborts on the fibers' cross-stack longjmps
+  (`-U_FORTIFY_SOURCE` in the config sidesteps that), and a truly clean
+  run needs `__sanitizer_start_switch_fiber`/`finish_switch_fiber`
+  annotations in orly/indy/fiber.
+
+## Constraints (empirical — the reasons the code looks the way it does)
+
+The original three, from the #436 work:
 
 1. `~TDurableManager` runs `TSingleSem::Pop()` which asserts
-   `TRunner::LocalRunner` — requires fiber context; member destructors run
-   on whatever thread drops the last reference (non-fiber).
-2. The orlyc comment: `~TServer` must run on a non-fiber thread to free the
-   fiber frame it allocated (`Frame` via `LocalFramePool`), yet teardown
-   paths take fiber locks (`StopAllPlayers`) asserting fiber context.
-3. Un-flushed state: stopping without flushing loses whatever the mergers
-   had not written (durability window = merge cadence, #440).
+   `TRunner::LocalRunner` — fiber-entangled teardown must run ON a fiber.
+   Hence the `TJumpRunnable teardown_jumper` in `Shutdown()`.
+2. `~TServer` must run on a non-fiber thread to free the fiber frame it
+   allocated, yet teardown paths take fiber locks (`StopAllPlayers`).
+   Hence: fiber-needing work happens in `Shutdown()`'s jumper, and the
+   post-Shutdown destructor is non-fiber-safe by construction.
+3. Stopping without flushing loses whatever the mergers had not written
+   (durability window = merge cadence). Hence flush-on-shutdown (slice B),
+   done inline by `FlushMemMerges` so it cannot depend on merge scheduling.
 
-## Plan
+Discovered during slice C (each cost a real bug):
 
-1. **Inventory** every fiber-context-requiring teardown path:
-   `TSingleSem`, `TCompletionTrigger`, `StopAllPlayers`, tetris player
-   teardown, durable manager clear, repo manager reset. Also inventory all
-   threads TServer owns (WsThread, Slow/Fast runner vecs, BGFastRunner via
-   scheduler, WS server threads, durable/merge threads).
-2. **`TServer::Shutdown()`** — explicit, called before destruction:
-   - stop accepting (close listeners, Ws.reset())
-   - quiesce writers, flush mem layers + durable layers (closes #440)
-   - run fiber-needing teardown ON a fiber (TJumpRunnable onto a fast
-     runner), incl. tetris stop + durable manager clear
-   - shut down + join all runner threads (order: ws, fast, slow, bg)
-   - after Shutdown(), ~TServer only touches non-fiber state
-3. **Wire orlyi**: SIGINT → Shutdown → destroy → clean exit. Replace
-   orlyc's leak-and-_exit with the same (keeps _exit as fallback).
-4. **Test**: extend tests/restart_test.sh — graceful stop must make data
-   durable with NO flush-window sleep; add ASan smoke of construct+destroy.
+4. **A stop is only a flag plus a wake.** Signaling a service loop proves
+   nothing about when it exits; destroying a manager while a loop is
+   mid-body is a use-after-free. Every loop therefore counts itself in on
+   entry and pushes an exited-latch on the way out (exception-safe,
+   `Base::TPushOnExit`), and `Shutdown()` joins them all before the
+   teardown jumper runs. Order matters twice over: the settle window must
+   come BEFORE the stops (a stopped release loop can no longer drain its
+   queue), and the merge runners must be stopped and joined BEFORE
+   `FlushMemMerges` (so the flush is the queue's only drainer and a
+   mid-step re-enqueue cannot be lost).
+5. **Dirty repos pin themselves open.** A written repo holds a
+   `MakeDirty()` self-ptr until its updates are released (tetris
+   promotion) or its mem layer merges out. Paused-and-written repos —
+   every compile-time test pov — are never promoted, so the pin never
+   drops; `~TManager` now calls `ReleaseDirtySelfPins()` first, and the
+   close cascade force-releases parent-repo ptrs. Never seen before
+   slice C because `PreDtor` was dead code until teardown became real.
+6. **The scheduler silently starves jobs past the worker cap.**
+   `TScheduler::Schedule` queues but never launches another worker once
+   the cap is reached, and long-lived service jobs never return their
+   worker. An under-provisioned cap therefore silently never runs the
+   last N jobs (orlyc's old 8-worker policy never ran ~6 of them).
+   `TScheduler::Shutdown` now logs any jobs that were scheduled but never
+   ran; orlyc provisions 32.
 
-## Sequencing (PR-sized)
+## Deliberate leaks (why the ASan smoke disables leak detection)
 
-- PR A: inventory + Shutdown() skeleton stopping/joining threads only
-  (no flush), orlyi wiring, restart test keeps sleep.
-- PR B: flush-on-shutdown (drop the sleeps in restart_test.sh) → #440.
-- PR C: make ~TServer safe after Shutdown; orlyc drops _exit; ASan smoke.
+Teardown frees every real resource but intentionally leaks a few pool
+slabs: thread-local frame/event pools created on scheduler-worker threads
+cannot be reclaimed without thread-exit hooks, so their MANAGERS are
+released, not destroyed (`FramePoolManager.release()`,
+`DiskEventPoolManager.release()`). Similarly, `Clear()`/`PreDtor` log and
+LEAK an object that still has live ptrs rather than free it out from under
+them (release builds; debug asserts). The ASan smoke exists to catch
+use-after-free and heap corruption in the teardown paths, so it runs with
+`detect_leaks=0`; turning LSan on would require suppressions for exactly
+these documented leaks and would gate on noise, not signal.
+
+## Known follow-ons (tracked; also noted at the code sites)
+
+- **#460 — drain live client connections before `Clear()`**: orlyi under
+  load can reach `Clear()` while a connection still holds its session ptr;
+  today that is a logged leak (and a debug assert), not a drain. The real
+  fix is closing established connections and joining their serving fibers
+  before the teardown jumper.
+- **#461 — master-mode replication**: a replicate loop wedged in a remote
+  `future->Sync()` holds `JoinReplicationServices()` until the RPC
+  resolves; interrupting in-flight RPCs is future work.
+- **#462 — never-scheduled fibers**: a fiber that was latched but never
+  granted a worker cannot be joined (the started/exited handshake skips
+  it) and would touch freed state if it ever ran mid-teardown. The
+  scheduler's starved-jobs log makes this visible; a real fix needs job
+  cancellation.

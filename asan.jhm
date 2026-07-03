@@ -1,0 +1,46 @@
+{
+  "test": {
+    "build_with_default_targets": true,
+    "excluded": [
+      "third_party",
+      ".git"
+    ]
+  },
+  "cmd": {
+    "+g++": [
+      "-DDEBUG",
+      "-g",
+      "-O1",
+      "-fsanitize=address",
+      "-fno-omit-frame-pointer",
+      "-U_FORTIFY_SOURCE"
+    ],
+    "+gcc": [
+      "-DDEBUG",
+      "-g",
+      "-O1",
+      "-fsanitize=address",
+      "-fno-omit-frame-pointer",
+      "-U_FORTIFY_SOURCE"
+    ],
+    "flex": {
+      "+g++": [
+        "-g",
+        "-DDEBUG",
+        "-fsanitize=address"
+      ]
+    },
+    "bison": {
+      "+g++": [
+        "-g",
+        "-DDEBUG",
+        "-fsanitize=address"
+      ]
+    },
+    "ld": {
+      "+flags": [
+        "-fsanitize=address"
+      ]
+    }
+  }
+}
