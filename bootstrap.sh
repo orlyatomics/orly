@@ -44,7 +44,7 @@ $CC -o tools/jhm                                                                
   base/io/output_producer.cc base/io/chunk_and_pool.cc base/pos.cc base/code_location.cc base/util/string.cc base/cmd.cc                      \
   base/demangle.cc base/piece.cc jhm/job_runner.cc base/subprocess.cc base/util/path.cc base/strm/bin/var_int.cc                              \
   jhm/env.cc jhm/jobs/compile_c_family.cc base/util/error.cc jhm/status_line.cc base/io/input_producer.cc                                     \
-  jhm/work_finder.cc base/fd.cc base/pump.cc base/util/io.cc base/split.cc jhm/config.cc jhm/jobs/link.cc                                     \
+  jhm/work_finder.cc jhm/cache_check.cc base/fd.cc base/pump.cc base/util/io.cc base/split.cc jhm/config.cc jhm/jobs/link.cc                  \
   jhm/jobs/bison.cc base/strm/syntax_error.cc jhm/jobs/nycr.cc base/dir_walker.cc jhm/jobs/dep.cc base/util/time.cc                           \
   base/strm/out.cc base/event_semaphore.cc base/strm/in.cc base/strm/past_end.cc base/unreachable.cc base/path.cc base/backtrace.cc           \
   -I./ -DSRC_ROOT=\"`pwd`\"                                                                                                                   \

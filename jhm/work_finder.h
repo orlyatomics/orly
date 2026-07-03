@@ -18,19 +18,19 @@
 
 #pragma once
 
-#include <functional>
+#include <queue>
 #include <string>
-#include <time.h>
 #include <unordered_map>
 #include <unordered_set>
 
-#include <base/as_str.h>
+#include <jhm/cache_check.h>
 #include <jhm/job_runner.h>
 #include <jhm/naming.h>
 #include <base/util/time.h>
 
 namespace Jhm {
 
+  class TEnv;
   class TJob;
   class TFile;
 
@@ -43,14 +43,9 @@ namespace Jhm {
     TWorkFinder(uint32_t worker_count,
                 bool print_cmd,
                 Util::TTimestamp config_timestamp,
-                std::function<std::unordered_set<TJob *>(TFile *)> &&get_jobs_producing_file,
-                std::function<TFile *(TRelPath name)> &&get_file,
-                std::function<TFile *(const std::string &)> &&try_get_file_from_path)
-        : ConfigTimestamp(config_timestamp),
-          ConfigTimestampStr(Util::ToStr(config_timestamp)),
-          GetJobsProducingFile(std::move(get_jobs_producing_file)),
-          GetFile(move(get_file)),
-          TryGetFileFromPath(move(try_get_file_from_path)),
+                TEnv &env)
+        : Env(env),
+          CacheChecker(*this, env, config_timestamp),
           Runner(worker_count, print_cmd) {}
 
     /* Adds the jobs needed to produce the file. Returns true if there is work to be done for the file to exist.
@@ -77,12 +72,6 @@ namespace Jhm {
     /* Queues the given job to run. If the job is already done, returns false. */
     bool Queue(TJob *job);
 
-    // TODO(#336): Move the whole cache checking thing to some other module that takes a work finder and env.
-    // It crosses the boundaries wayy to much to live in work finder alone.
-    /* Checks to see if we actually need to run the job or if the output that already exists is good enough*/
-    void CacheCheck(TJob *job);
-    TFile *TryGetOutputFileFromPath(const std::string &filename);
-
     /* Returns the producer for a file.
         if file.IsSrc() -> nullptr
         if file is unproducable -> nullptr
@@ -104,9 +93,6 @@ namespace Jhm {
     // Keeps track of the full set of jobs which have ever been queued to run.
     std::unordered_set<TJob *> All, Running, Finished;
 
-    // Keeps track of files we've tried cache completing.
-    std::unordered_set<TJob *> Cache;
-
     // A map of jobs to the number of other jobs they need to complete before they should be attempted again.
     std::unordered_map<TJob *, uint64_t> Waiting;
 
@@ -114,11 +100,11 @@ namespace Jhm {
     // input file.
     std::unordered_map<TFile *, TJob *> Producers;
 
-    const Util::TTimestamp ConfigTimestamp;
-    const std::string ConfigTimestampStr;
-    std::function<std::unordered_set<TJob*> (TFile *)> GetJobsProducingFile;
-    std::function<TFile *(TRelPath name)> GetFile;
-    std::function<TFile *(const std::string &)> TryGetFileFromPath;
+    // Where inputs come from / outputs go / file lookup.
+    TEnv &Env;
+
+    // Decides whether jobs can cache-complete instead of run (#336).
+    TCacheChecker CacheChecker;
 
     // Runs the work queuPops things off work queue
     /* A failed job's partial outputs are deleted in ProcessResult (#346).
