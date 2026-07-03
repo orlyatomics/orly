@@ -32,14 +32,21 @@ using namespace Orly::Balancer;
 TFailoverTestBalancer::TFailoverTestBalancer(TScheduler *scheduler,
                                              const TBalancer::TCmd &cmd,
                                              chrono::milliseconds interval)
-    : TBalancer(scheduler, cmd), Interval(interval), Running(true) {
+    : TBalancer(scheduler, cmd), Interval(interval), Running(true), CheckHostsDone(false) {
   scheduler->Schedule(bind(&TFailoverTestBalancer::CheckHosts, this));
 }
 
 TFailoverTestBalancer::~TFailoverTestBalancer() {
+  /* Stop the accept/serve jobs first, while the state (and vtable slots) they reach
+     through ChooseHost()/OnError() are still fully alive. */
+  StopServing();
+  /* Now stop the host-checking job and wait until it has fully exited.  We wait on a
+     predicate so this is correct whether CheckHosts() exited gracefully, by exception,
+     or had already finished before this destructor ran. */
   Running = false;
+  ErrorSem.Push();
   std::unique_lock<std::mutex> lock(HostMutex);
-  HostCond.wait(lock);
+  HostCond.wait(lock, [this] { return CheckHostsDone; });
 }
 
 const Socket::TAddress &TFailoverTestBalancer::ChooseHost() {
@@ -59,33 +66,42 @@ void TFailoverTestBalancer::RegisterHost(const Socket::TAddress &address) {
 }
 
 void TFailoverTestBalancer::CheckHosts() {
-  Base::TTimerFd check_hosts(Interval);
-  TEpoll poll;
-  poll.Add(check_hosts.GetFd());
-  poll.Add(ErrorSem.GetFd());
-  for (;Running;) {
-    int ready_fd = poll.WaitForOne();
-    if (ready_fd == ErrorSem.GetFd()) {
-      ErrorSem.Pop();
-    } else {
-      check_hosts.Pop();
-    }
-    std::lock_guard<std::mutex> lock(HostMutex);
-    MasterHost.reset();
-    for (const auto &addr : HostSet) {
-      bool is_master = CheckHost(addr);
-      if (MasterHost && is_master) {
-        MasterHost.reset();
-        throw std::runtime_error("There is more than 1 master");
-      } else if (is_master) {
-        MasterHost = addr;
+  try {
+    Base::TTimerFd check_hosts(Interval);
+    TEpoll poll;
+    poll.Add(check_hosts.GetFd());
+    poll.Add(ErrorSem.GetFd());
+    while (Running) {
+      int ready_fd = poll.WaitForOne();
+      if (ready_fd == ErrorSem.GetFd()) {
+        ErrorSem.Pop();
+      } else {
+        check_hosts.Pop();
+      }
+      if (!Running) {
+        break;
+      }
+      std::lock_guard<std::mutex> lock(HostMutex);
+      MasterHost.reset();
+      for (const auto &addr : HostSet) {
+        bool is_master = CheckHost(addr);
+        if (MasterHost && is_master) {
+          MasterHost.reset();
+          throw std::runtime_error("There is more than 1 master");
+        } else if (is_master) {
+          MasterHost = addr;
+        }
+      }
+      if (MasterHost) {
+        HostCond.notify_all();
       }
     }
-    if (MasterHost) {
-      HostCond.notify_all();
-    }
+  } catch (...) {
+    /* Fall through to signal completion below.  However we unwind, the destructor
+       must be told the job is finished so it doesn't block forever. */
   }
   std::lock_guard<std::mutex> lock(HostMutex);
+  CheckHostsDone = true;
   HostCond.notify_all();
 }
 

@@ -28,7 +28,7 @@ using namespace Orly::Balancer;
 using namespace Util;
 
 TBalancer::TBalancer(TScheduler *scheduler, const TCmd &cmd)
-    : Scheduler(scheduler) {
+    : Scheduler(scheduler), Handshake(make_shared<THandshake>()) {
   /* open the main socket */ {
     TAddress address(TAddress::IPv4Any, cmd.PortNumber);
     MainSocket = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
@@ -37,16 +37,33 @@ TBalancer::TBalancer(TScheduler *scheduler, const TCmd &cmd)
     Bind(MainSocket, address);
     IfLt0(listen(MainSocket, cmd.ConnectionBacklog));
   }
-  scheduler->Schedule(bind(&TBalancer::AcceptClientConnections, this));
+  ScheduleJob([this] { AcceptClientConnections(); });
 }
 
-TBalancer::~TBalancer() {}
+TBalancer::~TBalancer() {
+  StopServing();
+}
+
+void TBalancer::StopServing() {
+  unique_lock<mutex> lock(Handshake->Mutex);
+  if (Handshake->Serving) {
+    Handshake->Serving = false;
+    Handshake->TermFd.Push();
+  }
+  Handshake->AllDone.wait(lock, [this] { return Handshake->InFlightCount == 0; });
+}
 
 void TBalancer::AcceptClientConnections() {
+  TEpoll poll;
+  poll.Add(MainSocket);
+  poll.Add(Handshake->TermFd.GetFd());
   for (;;) {
+    if (poll.WaitForOne() != MainSocket) {
+      break;  /* the term fd fired: we're shutting down */
+    }
     TAddress client_address;
     TFd client_socket(Accept(MainSocket, client_address));
-    Scheduler->Schedule(bind(&TBalancer::ServeClient, this, move(client_socket), client_address));
+    ScheduleJob([this, client_socket, client_address]() mutable { ServeClient(client_socket, client_address); });
   }
 }
 
@@ -61,8 +78,13 @@ void TBalancer::ServeClient(TFd &fd, const TAddress &) {
     TEpoll poll;
     poll.Add(fd);
     poll.Add(new_server_socket);
+    const int term_fd = Handshake->TermFd.GetFd();
+    poll.Add(term_fd);
     for (;;) {
       int ready_fd = poll.WaitForOne();
+      if (ready_fd == term_fd) {
+        return;  /* we're shutting down: drop the connection */
+      }
       size_t amt_read = ReadAtMost(ready_fd, &buf, buf_size);
       if (amt_read) {
         WriteExactly(ready_fd == fd ? new_server_socket : fd, &buf, amt_read);
@@ -73,4 +95,19 @@ void TBalancer::ServeClient(TFd &fd, const TAddress &) {
   } catch (const std::exception &ex) {
     OnError(ex);
   }
+}
+
+void TBalancer::ScheduleJob(function<void ()> &&job) {
+  Scheduler->Schedule([handshake = Handshake, job = move(job)] {
+    if (!handshake->Enter()) {
+      return;
+    }
+    try {
+      job();
+    } catch (...) {
+      handshake->Exit();
+      throw;
+    }
+    handshake->Exit();
+  });
 }

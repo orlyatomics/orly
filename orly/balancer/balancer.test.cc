@@ -46,8 +46,11 @@ class TRouter : public TBalancer {
   }
 
   virtual ~TRouter() {
-    /* Stop the host-checking job and wait until it has fully exited before we
-       destroy ourselves.  We wait on a predicate (rather than a bare wait) so
+    /* Stop the accept/serve jobs first, while the state (and vtable slots) they
+       reach through ChooseHost()/OnError() are still fully alive. */
+    StopServing();
+    /* Now stop the host-checking job and wait until it has fully exited before
+       we destroy ourselves.  We wait on a predicate (rather than a bare wait) so
        this is correct regardless of whether CheckHosts() exited gracefully or
        was interrupted by a scheduler shutdown. */
     std::unique_lock<std::mutex> lock(HostMutex);
@@ -351,6 +354,16 @@ class TTestClient {
     for (;Running;) {
       try {
         TFd new_server_socket(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        /* Bound every read and write on this socket.  We hold ExpectedHostLock
+           across the RPC below, and the fixture's switch-hosts block takes the
+           same lock; if a reply is ever lost (say, the balancer dropped the
+           proxied connection mid-flight), an unbounded read here would freeze
+           the whole test.  With the timeout, a lost reply throws, we drop the
+           lock, and the loop simply retries. */ {
+          timeval timeout{.tv_sec = 1, .tv_usec = 0};
+          IfLt0(setsockopt(new_server_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)));
+          IfLt0(setsockopt(new_server_socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)));
+        }
         Connect(new_server_socket, ServerAddr);
         std::shared_ptr<TConnection> connection = make_shared<TConnection>(std::move(new_server_socket));
         /* get port number */ {
@@ -435,34 +448,41 @@ const TTestServer::TConnection::TProtocol TTestServer::TConnection::TProtocol::P
 const TTestClient::TConnection::TProtocol TTestClient::TConnection::TProtocol::Protocol;
 
 FIXTURE(Typical) {
+  /* Dedicated test ports, deliberately away from DefaultPortNumber (19380) and
+     DefaultSlavePortNumber (19381).  On the default service ports, any stray Orly
+     activity on the machine (an interactive orlyi, a retrying failover slave, a
+     client) lands foreign connections on the balancer's listener mid-test.
+     tests/restart_test.sh dodges the same trap with its own dedicated range. */
+  const in_port_t router_port = 19480, server_1_port = 19481, server_2_port = 19482;
   const auto check_interval = 500ms;
   TBalancer::TCmd cmd;
+  cmd.PortNumber = router_port;
   const TScheduler::TPolicy scheduler_policy(4, 1000, milliseconds(1000));
   TScheduler scheduler;
   scheduler.SetPolicy(scheduler_policy);
-  TAddress router_address(TAddress::IPv4Loopback, 19380);
-  TAddress server_1_address(TAddress::IPv4Loopback, 19381);
-  TAddress server_2_address(TAddress::IPv4Loopback, 19382);
+  TAddress router_address(TAddress::IPv4Loopback, router_port);
+  TAddress server_1_address(TAddress::IPv4Loopback, server_1_port);
+  TAddress server_2_address(TAddress::IPv4Loopback, server_2_port);
   TRouter router(&scheduler, cmd, check_interval);
-  auto test_server_1 = make_unique<TTestServer>(&scheduler, 19381, 'M');
+  auto test_server_1 = make_unique<TTestServer>(&scheduler, server_1_port, 'M');
   router.AddHost(server_1_address);
-  auto test_server_2 = make_unique<TTestServer>(&scheduler, 19382, 'S');
+  auto test_server_2 = make_unique<TTestServer>(&scheduler, server_2_port, 'S');
   router.AddHost(server_2_address);
   router.Wait();
   /* set master */ {
     std::lock_guard<std::mutex> lock(ExpectedHostLock);
-    ExpectedHost = 19381;
+    ExpectedHost = server_1_port;
   }
   /* The client runs inside its own scope so that its runner job is fully
      stopped (its destructor blocks until the runner has exited) before we
      start tearing the scheduler and the remaining objects down. */ {
     TTestClient client_1(&scheduler, router_address);
     sleep(3);
-    router.RemoveHost(TAddress(TAddress::IPv4Loopback, 19381));
+    router.RemoveHost(server_1_address);
     /* switch hosts */ {
       std::lock_guard<std::mutex> lock(ExpectedHostLock);
       test_server_1->ChangeStatus('S');
-      ExpectedHost = 19382;
+      ExpectedHost = server_2_port;
       test_server_2->ChangeStatus('M');
       test_server_1.reset();
     }

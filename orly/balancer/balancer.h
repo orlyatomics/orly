@@ -22,9 +22,14 @@
 #pragma once
 
 #include <cassert>
+#include <condition_variable>
+#include <functional>
+#include <memory>
+#include <mutex>
 
 #include <base/class_traits.h>
 #include <base/cmd.h>
+#include <base/event_counter.h>
 #include <base/fd.h>
 #include <base/log.h>
 #include <base/scheduler.h>
@@ -87,10 +92,17 @@ namespace Orly {
 
       TBalancer(Base::TScheduler *scheduler, const TCmd &cmd);
 
-      /* Accepts connections from clients on our main socket.  Launched as a thread by the constructor. */
+      /* Stops accepting and serving: refuses jobs that haven't started yet, pokes the term fd so
+         every job parked in an epoll unwinds, and blocks until all started jobs have exited.
+         Idempotent.  A concrete subclass must call this at the top of its destructor -- before the
+         state (and vtable slots) that ServeClient() reaches through ChooseHost()/OnError() start
+         going away; ~TBalancer() calls it again harmlessly. */
+      void StopServing();
+
+      /* Accepts connections from clients on our main socket.  Scheduled as a job by the constructor. */
       void AcceptClientConnections();
 
-      /* Serves a client on the given fd.  Launched as a thread by AcceptClientConnections() when a client connects. */
+      /* Serves a client on the given fd.  Scheduled as a job by AcceptClientConnections() when a client connects. */
       void ServeClient(Base::TFd &fd, const Socket::TAddress &client_address);
 
       virtual const Socket::TAddress &ChooseHost() = 0;
@@ -99,8 +111,55 @@ namespace Orly {
 
       private:
 
+      /* The teardown handshake shared with every job we schedule.  It lives behind a shared_ptr so
+         a job the scheduler runs late -- or drops unrun -- touches only this block, never a balancer
+         that may already be destroyed. */
+      class THandshake {
+        public:
+
+        /* Called by a job before it touches the balancer.  False means StopServing() has begun and
+           the job must return immediately without touching anything else. */
+        bool Enter() {
+          std::lock_guard<std::mutex> lock(Mutex);
+          if (!Serving) {
+            return false;
+          }
+          ++InFlightCount;
+          return true;
+        }
+
+        /* Called by a job as it unwinds, however it unwinds. */
+        void Exit() {
+          std::lock_guard<std::mutex> lock(Mutex);
+          --InFlightCount;
+          AllDone.notify_all();
+        }
+
+        /* Covers Serving and InFlightCount. */
+        std::mutex Mutex;
+
+        /* Notified each time InFlightCount drops. */
+        std::condition_variable AllDone;
+
+        /* Set false by StopServing(). */
+        bool Serving = true;
+
+        /* The number of jobs currently inside the balancer. */
+        size_t InFlightCount = 0;
+
+        /* In every job's epoll set; pushed by StopServing() to wake them all. */
+        Base::TEventCounter TermFd;
+
+      };  // TBalancer::THandshake
+
+      /* Schedule a job that participates in the shutdown handshake. */
+      void ScheduleJob(std::function<void ()> &&job);
+
       /* The scheduler we use to launch jobs.  Set by the constructor and never changed. */
       Base::TScheduler *const Scheduler;
+
+      /* Our teardown handshake.  Set by the constructor and never changed. */
+      const std::shared_ptr<THandshake> Handshake;
 
       /* The socket on which AcceptClientConnections() listens. */
       Base::TFd MainSocket;
