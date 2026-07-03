@@ -157,6 +157,12 @@ namespace Orly {
 
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
 
+        /* Kick the writer and wait (bounded) until the current in-memory
+           slush layer has been handed to a disk file -- the durable half of
+           flush-on-shutdown (#440).  The destructor's semaphore handshake
+           then guarantees the in-flight write completes. */
+        virtual void Flush() override;
+
         void RunWriter();
 
         void RunMerger();

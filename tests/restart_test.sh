@@ -63,10 +63,13 @@ start_server() {  # $1 = create true|false, $2 = log tag
 }
 
 stop_server() {
-  # SIGINT, grace period for the mergers to have flushed (we slept before
-  # calling), then make sure it is gone.
+  # SIGINT triggers TServer::Shutdown() (flush + orderly stop, #440);
+  # wait for the graceful exit, with kill -9 only as a last resort.
   sudo kill -INT "$SRV_PID" 2>/dev/null || true
-  sleep 10
+  for _ in $(seq 1 30); do
+    sudo kill -0 "$SRV_PID" 2>/dev/null || break
+    sleep 2
+  done
   sudo kill -9 "$SRV_PID" 2>/dev/null || true
   SRV_PID=""
   sleep 2
@@ -85,8 +88,7 @@ for n in range(1, 11):
 assert c.call(pov, 'kv', 'read_val', {'n': 5}) == 500
 c.close()"
 
-echo "[4/8] flush window, stop"
-sleep 75
+echo "[4/8] stop (flush-on-shutdown makes the old 75s flush window unnecessary, #440)"
 stop_server
 
 echo "[5/8] restart (create=false): data + package must survive"
@@ -101,8 +103,7 @@ print('   data + auto-reinstalled package OK:', vals)
 c.uninstall('kv', 1)
 c.close()"
 
-echo "[6/8] flush window, stop"
-sleep 75
+echo "[6/8] stop"
 stop_server
 
 echo "[7/8] restart: uninstall must have survived"

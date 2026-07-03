@@ -198,6 +198,11 @@ namespace Orly {
          This will affect the cache as well as the disk. */
       void Clean();
 
+      /* Write any in-memory durable state to disk and wait (bounded) for it
+         to be handed off -- flush-on-shutdown (#440).  Memory-only managers
+         have nothing to do. */
+      virtual void Flush() {}
+
       /* Create a new durable with the given id and ttl and return a shared pointer to it.
          If there is already a durable with the given id, throw.
          This function will block until the durable is created.

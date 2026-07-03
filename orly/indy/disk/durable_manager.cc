@@ -273,6 +273,25 @@ void TDurableManager::AddMapping(TDurableLayer *layer) {
   }  // release Mapping lock
 }
 
+void TDurableManager::Flush() {
+  const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  for (;;) {
+    /* acquire DataLayer lock */ {
+      std::lock_guard<std::mutex> data_lock(DataLock);
+      assert(CurMemoryLayer);
+      if (!CurMemoryLayer->GetNumEntries()) {
+        return;
+      }
+    }  // release DataLayer lock
+    if (std::chrono::steady_clock::now() > give_up) {
+      syslog(LOG_WARNING, "TDurableManager::Flush: gave up waiting for the slush layer to drain");
+      return;
+    }
+    SlushSem.Push();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+}
+
 void TDurableManager::RunWriter() {
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */

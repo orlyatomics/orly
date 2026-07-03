@@ -1284,11 +1284,26 @@ void TServer::Shutdown() {
   syslog(LOG_INFO, "TServer::Shutdown() begin");
   /* Stop the websockets server first: no new work arrives. */
   Ws.reset();
+  /* Let the in-flight update pipeline settle: a write that arrived just
+     before the signal is not mergeable until the release machinery (which
+     runs on the replication cadence even in SOLO) has settled it.  Bounded
+     and cadence-derived, not a magic number: three periods of the slowest
+     relevant interval. */
+  std::this_thread::sleep_for(std::chrono::milliseconds(
+      3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100})));
   /* Tear down the fiber-entangled managers on a fiber, while every runner
      is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
      its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
      takes fiber locks. */
   Indy::Fiber::TJumpRunnable teardown_jumper([this] {
+    /* Flush-on-shutdown (#440): merge every dirty repo memory layer out to
+       disk and write the durable slush layer, so a graceful stop loses
+       nothing -- durability no longer depends on the merge cadence having
+       happened to run.  Tetris is still alive here: the newest updates only
+       become mergeable once promotion has settled them, so the flush must
+       precede StopAllPlayers. */
+    RepoManager->FlushMemMerges();
+    DurableManager->Flush();
     delete TetrisManager;
     TetrisManager = nullptr;
     DurableManager->Clear();
