@@ -140,8 +140,12 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
       [&](Base::TScheduler *scheduler) {
         int exit_code = EXIT_FAILURE;
         Orly::Server::TServer *server = nullptr;
+        /* Declared OUTSIDE the try: TServer keeps a REFERENCE to its TCmd,
+           and Shutdown()/delete below (correctly outside the try, #440) read
+           it -- a try-scoped cmd would be a stack-use-after-scope there.
+           Found by the ASan teardown smoke on its first run. */
+        TIndyTestServerCmd server_cmd;
         try {
-          TIndyTestServerCmd server_cmd;
           server_cmd.MemorySim = true;
           server_cmd.Create = true;
           server_cmd.StartingState = "SOLO";

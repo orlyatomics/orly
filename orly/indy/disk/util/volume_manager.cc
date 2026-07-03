@@ -27,6 +27,7 @@
 #include <sys/syscall.h>
 
 #include <base/booster.h>
+#include <base/mem_aligned_ptr.h>
 #include <base/sigma_calc.h>
 #include <base/zero.h>
 #include <orly/indy/disk/util/corruption_detector.h>
@@ -983,10 +984,10 @@ namespace Orly {
 
           Base::TScheduler *Scheduler;
 
-          std::unique_ptr<size_t> BlockMapBuf;
+          Base::TMemAlignedPtr<size_t> BlockMapBuf;
           std::mutex BlockMapLock;
           size_t CachedStart;
-          std::unique_ptr<size_t> DiscardMapBuf;
+          Base::TMemAlignedPtr<size_t> DiscardMapBuf;
           std::mutex DiscardMapLock;
 
           size_t BlocksUsed;

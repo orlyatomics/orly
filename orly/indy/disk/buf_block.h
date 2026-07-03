@@ -141,7 +141,7 @@ namespace Orly {
 
           const size_t BlockSize;
 
-          std::unique_ptr<TBlock> Blob;
+          Base::TMemAlignedPtr<TBlock> Blob;
 
           TBlock *FirstBlock;
 

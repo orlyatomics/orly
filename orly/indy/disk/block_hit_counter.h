@@ -79,9 +79,9 @@ namespace Orly {
 
         const size_t NumBlocks;
 
-        std::unique_ptr<uint8_t> WorksetBuf;
+        Base::TMemAlignedPtr<uint8_t> WorksetBuf;
 
-        std::unique_ptr<uint8_t> FlushBuf;
+        Base::TMemAlignedPtr<uint8_t> FlushBuf;
 
         mutable std::mutex CountLock;
 

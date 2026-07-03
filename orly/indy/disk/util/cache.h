@@ -891,7 +891,7 @@ namespace Orly {
 
           std::unique_ptr<TLRU[]> LRUArray;
 
-          std::unique_ptr<char> PageData;
+          Base::TMemAlignedPtr<char> PageData;
 
           std::function<bool (const TSlot &, TSlot *&, size_t &, size_t &)> TryRemoveSlotFunc;
 
