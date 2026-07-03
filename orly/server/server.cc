@@ -21,6 +21,7 @@
 #include <cstring>
 #include <optional>
 #include <poll.h>
+#include <sys/timerfd.h>
 #include <sys/syscall.h>
 
 #include <base/as_str.h>
@@ -1284,6 +1285,15 @@ void TServer::Shutdown() {
   syslog(LOG_INFO, "TServer::Shutdown() begin");
   /* Stop the websockets server first: no new work arrives. */
   Ws.reset();
+  /* Wake and stop the standalone service loops so the scheduler can drain
+     (#440): the client accept loop (blocked in accept), the reporter's
+     accept loop, and the housekeeper (blocked on its timer). */
+  shutdown(MainSocket, SHUT_RDWR);
+  if (Reporter) {
+    Reporter->Stop();
+  }
+  itimerspec fire_now{{0, 0}, {0, 1}};
+  timerfd_settime(HousecleaningTimer.GetFd(), 0, &fire_now, nullptr);
   /* Let the in-flight update pipeline settle: a write that arrived just
      before the signal is not mergeable until the release machinery (which
      runs on the replication cadence even in SOLO) has settled it.  Bounded
@@ -1308,10 +1318,8 @@ void TServer::Shutdown() {
     TetrisManager = nullptr;
     DurableManager->Clear();
     DurableManager.reset();
-    /* GlobalRepo/RepoManager stay alive (leaked, as they always were):
-       cached durable sessions still pin their POV repos, so ~L0::TManager's
-       PreDtor asserts PtrCount == 0.  Draining those pins is the next
-       teardown slice (docs/teardown-design.md, PR C). */
+    GlobalRepo.Reset();
+    RepoManager.reset();
   });
   teardown_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
   /* Stop the engine-level services that would otherwise wedge the
@@ -1355,8 +1363,15 @@ void TServer::Shutdown() {
 TServer::~TServer() {
   if (ShutdownCalled) {
     /* Shutdown() already stopped the threads and destroyed the managers;
-       only the init frame is left. */
+       free the init frame, then intentionally release (not destroy) the
+       frame-pool manager: pools created on scheduler-worker threads (accept
+       loops, ws jumps) cannot be reclaimed without thread-exit hooks, and
+       the manager's destructor correctly refuses to die while they exist.
+       A few slabs leak; every real resource is gone (#440). */
     Fiber::TFrame::LocalFramePool->Free(Frame);
+    delete Fiber::TFrame::LocalFramePool;
+    Fiber::TFrame::LocalFramePool = nullptr;
+    FramePoolManager.release();
     return;
   }
   WsRunner.ShutDown();
@@ -1688,6 +1703,10 @@ void TServer::AcceptClientConnections() {
       new TServeClientRunnable(this, SlowRunnerVec[prev_assignment_count % SlowRunnerVec.size()].get(), move(client_socket), client_address);
       //Scheduler->Schedule(bind(&TServer::ServeClient, this, move(client_socket), client_address));
     } catch (const std::system_error &err) {
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::AcceptClientConnections shutting down (#440)");
+        return;
+      }
       if (WasInterrupted(err)) {
         syslog(LOG_INFO, "TServer::AcceptClientConnections shutting down on system_error [%s]", err.what());
         throw;
@@ -1695,6 +1714,10 @@ void TServer::AcceptClientConnections() {
         syslog(LOG_ERR, "TServer::AcceptClientConnections caught exception [%s], continue accept loop", err.what());
       }
     } catch (const std::exception &ex) {
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::AcceptClientConnections shutting down (#440)");
+        return;
+      }
       syslog(LOG_ERR, "TServer::AcceptClientConnections caught exception [%s], continue accept loop", ex.what());
     }
   }
@@ -1711,6 +1734,10 @@ void TServer::CleanHouse() {
   for (;;) {
     //DEBUG_LOG("housecleaner: waiting");
     HousecleaningTimer.Pop();
+    if (ShutdownCalled) {
+      syslog(LOG_INFO, "TServer::CleanHouse shutting down (#440)");
+      return;
+    }
     //DEBUG_LOG("housecleaner: cleaning");
     DurableManager->Clean();
     //DEBUG_LOG("housecleaner: done cleaning");
@@ -2536,8 +2563,21 @@ TIndyReporter::TIndyReporter(const TServer *server, TScheduler *scheduler, int p
 
 void TIndyReporter::AcceptClientConnections() {
   for (;;) {
-    Scheduler->Schedule(bind(&TIndyReporter::ServeClient, this, TFd(accept(Socket, nullptr, nullptr))));
+    int fd = accept(Socket, nullptr, nullptr);
+    if (fd < 0) {
+      if (Stopping) {
+        syslog(LOG_INFO, "TIndyReporter::AcceptClientConnections shutting down");
+        return;
+      }
+      ::Util::ThrowSystemError(errno);
+    }
+    Scheduler->Schedule(bind(&TIndyReporter::ServeClient, this, TFd(fd)));
   }
+}
+
+void TIndyReporter::Stop() {
+  Stopping = true;
+  shutdown(Socket, SHUT_RDWR);
 }
 
 void TIndyReporter::ServeClient(TFd &fd) {

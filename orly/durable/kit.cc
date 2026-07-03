@@ -56,6 +56,17 @@ TManager::~TManager() {
 }
 
 void TManager::Clear() {
+  /* Cached-but-closed objects (sessions, povs) still hold live pointers --
+     a pov keeps its repo ptr, for one -- until TTL expiry or cache pressure
+     evicts them.  Destroy them first so the openable sweep below sees only
+     genuinely open objects, and so the repo manager can verify every repo
+     ptr is gone at its own teardown (#440). */
+  while (!ClosedObjs.empty()) {
+    auto iter = ClosedObjs.begin();
+    TObj *cached_obj = iter->second;
+    ClosedObjs.erase(iter);
+    DestroyObj(cached_obj);
+  }
   for (const auto &item: OpenableObjs) {
     /* If this assertion fails, it means there is at least one ptr still alive someplace. */
     assert(item.second->PtrCount == 0);

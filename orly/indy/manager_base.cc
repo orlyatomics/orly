@@ -245,7 +245,14 @@ bool TManager::PreDtor() {
   MergeDiskQueue.RemoveEachMember();
   MergeMemQueue.RemoveEachMember();
   for (const auto &item: OpenableObjs) {
-    /* If this assertion fails, it means there is at least one ptr still alive someplace. */
+    /* A nonzero count here means at least one TPtr is still alive someplace;
+       name the leaker before the assert so teardown bugs are diagnosable
+       from the log (#440). */
+    if (item.second->PtrCount != 0) {
+      std::ostringstream strm;
+      strm << item.first;
+      syslog(LOG_ERR, "TManager::PreDtor: repo [%s] still has [%d] live ptr(s)", strm.str().c_str(), int(item.second->PtrCount));
+    }
     assert(item.second->PtrCount == 0);
     delete item.second;
   }

@@ -112,6 +112,10 @@ namespace Orly {
       NO_COPY(TIndyReporter);
       public:
 
+      /* Stops the accept loop (#440): flags it and wakes the blocked
+         accept() with a socket shutdown. */
+      void Stop();
+
       TIndyReporter(const TServer *server, Base::TScheduler *scheduler, int port_number);
 
       private:
@@ -123,6 +127,9 @@ namespace Orly {
       void AddReport(std::stringstream &ss) const;
 
       const TServer *Server;
+
+      /* Set by Stop(); checked by AcceptClientConnections(). */
+      std::atomic<bool> Stopping{false};
 
       Base::TFd Socket;
 

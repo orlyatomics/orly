@@ -113,18 +113,20 @@ class TIndyTestServerCmd final : public Orly::Server::TServer::TCmd {
 };
 
 static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompilerConfig &cmd) {
+  int result_code = EXIT_FAILURE;
   /* The server's fiber machinery (transactions, the engine) must run inside a
      scheduler/fiber context -- the same context RunUntilCtrlC gives its main
-     job (orlyi constructs its TServer there too). We do the work in that job
-     and then _exit with the result.
+     job (orlyi constructs its TServer there too). We do the work in that job.
 
-     We deliberately do NOT destroy the server. ~TServer would have to run on
-     this (non-fiber) thread to free the fiber frame it allocated here, yet it
-     also takes a fiber lock (StopAllPlayers) that asserts a fiber context --
-     a contradiction. orlyi sidesteps this the same way: it never destroys its
-     server; RunUntilCtrlC blocks until a signal and the process just exits.
-     This is a short-lived compiler invocation, so leaking and _exit()ing is
-     the clean, deterministic path (it also skips the crash-prone teardown). */
+     Teardown is now a first-class operation (#440): Shutdown() flushes and
+     stops everything in order, the destructor is safe afterward, and the job
+     returning quiesces the scheduler (which synthesizes the ctrl-c that
+     RunUntilCtrlC waits for).  Every orlyc test run therefore doubles as a
+     construct/run/destroy smoke of the whole server.  The two thread-local
+     pool MANAGERS are intentionally released, not destroyed: pools created
+     on scheduler-worker threads cannot be reclaimed without thread-exit
+     hooks, and the managers' destructors (correctly) refuse to die while
+     pools exist. */
   Base::TScheduler::TPolicy(2, 8, std::chrono::milliseconds(1000)).RunUntilCtrlC(
       [&](Base::TScheduler *scheduler) {
         int exit_code = EXIT_FAILURE;
@@ -171,7 +173,6 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
              fast/slow core vectors. */
           server_cmd.ResolveCoreVecDefaults();
 
-          /* Intentionally leaked (see above). */
           auto *server = new Orly::Server::TServer(scheduler, server_cmd);
           /* Installing the package, opening a session, and running the tests all
              create durable objects / transactions, which must execute inside a
@@ -179,6 +180,8 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
              does all of that on a fast runner and hands back the result. */
           bool ok = server->RunPackageTests(output.Name.Name, output.Version, cmd.VerboseTests);
           exit_code = ok ? EXIT_SUCCESS : EXIT_FAILURE;
+          server->Shutdown();
+          delete server;
         } catch (const std::exception &ex) {
           std::cerr << "error: running tests on indy: " << ex.what() << std::endl;
           exit_code = EXIT_FAILURE;
@@ -191,11 +194,13 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
         }
         std::cout.flush();
         std::cerr.flush();
-        _exit(exit_code);
+        /* See the pool-manager note above. */
+        Orly::Indy::Disk::Util::TDiskController::TEvent::DiskEventPoolManager.release();
+        result_code = exit_code;
+        /* Returning quiesces the scheduler; RunUntilCtrlC then returns. */
       });
 
-  /* Unreachable: the job _exit()s. Present so the function has a return path. */
-  return false;
+  return result_code == EXIT_SUCCESS;
 }
 
 int CompileCode(const TCompilerConfig &cmd) {
