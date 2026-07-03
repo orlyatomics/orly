@@ -18,6 +18,9 @@
 
 #include <orly/var/jsonify.h>
 
+#include <cmath>
+#include <sstream>
+
 #include <base/json.h>
 #include <base/not_implemented.h>
 #include <orly/type/orlyify.h>
@@ -27,7 +30,6 @@ using namespace std;
 using namespace Orly;
 using namespace Orly::Var;
 
-//TODO(#276): This doesn't always output legal JSON.
 void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
   class TJsonifyVisitor : public TVar::TVisitor {
     NO_COPY(TJsonifyVisitor);
@@ -58,12 +60,14 @@ void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
         }
 
         // We're actually encoding a JSON Object here, since there is no support
-        // for dictionaries.  So, if the key is not a string we need to wrap it in ""s
-        // or the JSON decode will fail.
+        // for dictionaries.  So, if the key is not a string we render its JSON
+        // form and emit that as a (properly escaped) string -- bare quotes
+        // around a composite key that itself contains strings would produce
+        // nested unescaped quotes, i.e. invalid JSON (#276).
         if(iter.first.GetType() != Type::TStr::Get()) {
-          Strm << '"';
-          iter.first.Accept(*this);
-          Strm << '"';
+          ostringstream key_strm;
+          iter.first.Accept(TJsonifyVisitor(key_strm));
+          Base::TJson::WriteString(Strm, key_strm.str());
         }
         else {
           iter.first.Accept(*this);
@@ -118,7 +122,13 @@ void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
       }
     }
     virtual void operator()(const TReal *that) const {
-      Strm << showpoint << that->GetVal();
+      /* JSON has no NaN / Infinity literals; the conventional lenient
+         mapping is null (#276). */
+      if (isfinite(that->GetVal())) {
+        Strm << showpoint << that->GetVal();
+      } else {
+        Strm << "null";
+      }
     }
     virtual void operator()(const TSet *that) const {
       Strm << '[';
