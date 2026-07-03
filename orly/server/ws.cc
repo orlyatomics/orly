@@ -73,6 +73,19 @@ using tcp = net::ip::tcp;
    Each connection runs on its own asio strand, so per-connection handlers
    serialize across the io_context's thread pool. The Conns set is guarded
    by Mutex; the strands cover everything else. */
+/* The compile scratch dir must be unique per server instance: a fixed
+   machine-global path breaks concurrent runs (two checkouts, or make test
+   racing a live orlyi) and cross-user runs (a root-invoked orlyi leaves a
+   root-owned dir that aborts every later non-root ws.test at teardown),
+   #444. */
+static std::string MakeCompileTmpDir() {
+  std::string path = Util::MakePath({ P_tmpdir }, { "orly_ws_compile.XXXXXX" });
+  if (!mkdtemp(path.data())) {
+    throw std::system_error(errno, std::generic_category(), "mkdtemp for ws compile dir");
+  }
+  return path;
+}
+
 class TWsImpl final
     : public TWs {
   public:
@@ -82,7 +95,7 @@ class TWsImpl final
       TSessionManager *session_mngr, size_t thread_count,
       in_port_t port_number)
       : SessionManager(session_mngr),
-        TmpDirMaker(MakePath({ P_tmpdir, "orly_ws_compile" }, {})),
+        TmpDirMaker(MakeCompileTmpDir()),
         IoCtx(thread_count ? static_cast<int>(thread_count) : 1),
         Acceptor(IoCtx) {
     assert(session_mngr);
