@@ -21,6 +21,7 @@
 
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/util/time.h>
@@ -34,6 +35,11 @@ namespace Jhm {
 
   /* Name of the cache file which stores the build info for the given output file. */
   std::string GetCacheFilename(const TFile *file);
+
+  /* Sorted, deduped list of every config file which existed and was loaded for the env and for the
+     job's input, needs, and outputs. Recorded in the job's cache and recomputed on cache check, so
+     removing a config file (not just adding one) invalidates the cache (#339). */
+  std::vector<std::string> BuildConfigFileList(const TEnv &env, TJob *job);
 
   /* Decides whether a job actually needs to run or whether the output that
      already exists is good enough (a "cache completion"). Pulled out of the

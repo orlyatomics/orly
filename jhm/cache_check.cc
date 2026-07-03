@@ -18,6 +18,7 @@
 
 #include <jhm/cache_check.h>
 
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -36,6 +37,26 @@ using namespace Util;
 
 string Jhm::GetCacheFilename(const TFile *file) {
   return AsStr(file->GetPath()) + ".jhm-cache";
+}
+
+/* Adds the config files which were actually loaded for the file to the set. */
+static void AppendSrcConfigFiles(set<string> &out, const TFile *file) {
+  const auto &files = file->GetConfig().GetSrcConfigFiles();
+  out.insert(files.begin(), files.end());
+}
+
+vector<string> Jhm::BuildConfigFileList(const TEnv &env, TJob *job) {
+  set<string> files;
+  const auto &env_files = env.GetConfig().GetSrcConfigFiles();
+  files.insert(env_files.begin(), env_files.end());
+  AppendSrcConfigFiles(files, job->GetInput());
+  for (TFile *need : job->GetNeeds()) {
+    AppendSrcConfigFiles(files, need);
+  }
+  for (TFile *out_file : job->GetOutput()) {
+    AppendSrcConfigFiles(files, out_file);
+  }
+  return {files.begin(), files.end()};
 }
 
 template<typename TVal>
@@ -92,7 +113,6 @@ bool TCacheChecker::Check(TJob *job) {
   // We've now checked this job for cache. Mark it so.
   InsertOrFail(Checked, job);
 
-  // TODO(#339): We don't handle removal of a configuration file. Only addition.
   // TODO(#350): There will be a lot of redundant stat() calls on input files... Make TFile hold a timestamp which is set
   // by the cache checking process.
 
@@ -101,6 +121,16 @@ bool TCacheChecker::Check(TJob *job) {
   TFile *in = job->GetInput();
   if (!WorkFinder.IsFileDone(in)) {
     return false;
+  }
+
+  /* The config files which exist right now for the env and the job's files. Collected along the
+     walk below and compared against the list the cache recorded, so a config file disappearing
+     (or appearing with an old mtime, which the timestamp checks can't see) forces a rebuild (#339). */
+  set<string> current_config_files;
+  /* env + input */ {
+    const auto &env_files = Env.GetConfig().GetSrcConfigFiles();
+    current_config_files.insert(env_files.begin(), env_files.end());
+    AppendSrcConfigFiles(current_config_files, in);
   }
 
   // If config is newer than the source, exit fast.
@@ -156,6 +186,7 @@ bool TCacheChecker::Check(TJob *job) {
         return false;
       }
       in_timestamp = Newest(in_timestamp, GetTimestampInput(need));
+      AppendSrcConfigFiles(current_config_files, need);
     }
 
     // Any files which weren't buildable that need to stay not buildable should stay not buildable.
@@ -201,6 +232,16 @@ bool TCacheChecker::Check(TJob *job) {
       }
 
       InsertOrFail(conf_cache, output, output_cache.GetComputed());
+      AppendSrcConfigFiles(current_config_files, output);
+    }
+
+    // The exact set of config files which fed the cached build must still be the exact set which
+    // exists now: a recorded file that's gone (removal) or a present file the cache never saw
+    // whose mtime predates the outputs (addition the timestamps can't catch) both invalidate.
+    // NOTE: Caches written before this key existed fail the Read below (TNotFound) and rebuild.
+    if (ideal_out.Read<vector<string>>({"build_info","config_files"})
+        != vector<string>(current_config_files.begin(), current_config_files.end())) {
+      return false;
     }
   } catch (const TConfig::TNotFound &ex) {
     // If any of the config files don't contain the requested key(s), then exit / the config must be out of date.

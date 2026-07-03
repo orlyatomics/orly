@@ -133,6 +133,13 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
     job_output.push_back(AsStr(f->GetPath()));
   }
 
+  // The config files which fed this build (env + input + needs + outputs). The cache check
+  // recomputes the list and rebuilds on any mismatch, so config removal invalidates (#339).
+  TJson::TArray config_files;
+  for (string &filename : BuildConfigFileList(Env, result.Job)) {
+    config_files.emplace_back(move(filename));
+  }
+
   TJson job_info(TJson::TObject{
       {"build_info", TJson::TObject{
         {"job", TJson::TObject{
@@ -142,7 +149,8 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
           {"needs",  BuildJsonArray(result.Job->GetNeeds()) },
           {"anti_needs", BuildJsonArray(result.Job->GetAntiNeeds()) }
         }},
-        {"config_timestamp", CacheChecker.GetConfigTimestampStr()}
+        {"config_timestamp", CacheChecker.GetConfigTimestampStr()},
+        {"config_files", config_files}
       }}});
 
   for (TFile *out_file : result.Job->GetOutput()) {
