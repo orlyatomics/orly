@@ -55,4 +55,23 @@ namespace Base {
 
   };  // TEventSemaphore
 
+  /* RAII: pushes the semaphore once on scope exit, including exceptional
+     exit.  Lets a service loop signal 'I have returned' to a joiner no
+     matter how the loop unwinds (#440). */
+  class TPushOnExit {
+    NO_COPY(TPushOnExit);
+    public:
+
+    explicit TPushOnExit(TEventSemaphore &sem) : Sem(sem) {}
+
+    ~TPushOnExit() {
+      Sem.Push();
+    }
+
+    private:
+
+    TEventSemaphore &Sem;
+
+  };  // TPushOnExit
+
 }  // Base

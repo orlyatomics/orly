@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/disk/durable_manager.h>
+
 #include <optional>
 
 #include <base/booster.h>
@@ -125,6 +126,8 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
       MappingCollection(this),
       RemovalCollection(this),
       LayerCleanerTimer(layer_cleaning_interval),
+      LayerCleanerStopping(false),
+      LayerCleanerStarted(false),
       Notify(notify) {
   /* acquire Mapping lock */ {
     std::lock_guard<std::mutex> mapping_lock(MappingLock);
@@ -194,6 +197,8 @@ void TDurableManager::CleanDisk(const Durable::TDeadline &/*now*/, Durable::TSem
 }
 
 void TDurableManager::RunLayerCleaner() {
+  LayerCleanerStarted = true;
+  Base::TPushOnExit exit_latch(LayerCleanerExited);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -202,6 +207,10 @@ void TDurableManager::RunLayerCleaner() {
   TDurableLayer *durable_layer = nullptr;
   for (;;) {
     LayerCleanerTimer.Pop();
+    if (LayerCleanerStopping) {
+      syslog(LOG_INFO, "TDurableManager::RunLayerCleaner shutting down (#440)");
+      return;
+    }
     for (;;) {
       /* Acquire Removal lock */ {
         std::lock_guard<std::mutex> removal_lock(RemovalLock);
@@ -217,6 +226,19 @@ void TDurableManager::RunLayerCleaner() {
         break;
       }
     }
+  }
+}
+
+void TDurableManager::StopLayerCleaner() {
+  LayerCleanerStopping = true;
+  LayerCleanerTimer.FireNow();
+}
+
+void TDurableManager::JoinLayerCleaner() {
+  /* A cleaner whose fiber never got to run can't be waited for (and never
+     touches us); one that did run pushes Exited on its way out. */
+  if (LayerCleanerStarted) {
+    LayerCleanerExited.Pop();
   }
 }
 

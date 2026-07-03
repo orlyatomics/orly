@@ -113,21 +113,33 @@ class TIndyTestServerCmd final : public Orly::Server::TServer::TCmd {
 };
 
 static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompilerConfig &cmd) {
+  int result_code = EXIT_FAILURE;
   /* The server's fiber machinery (transactions, the engine) must run inside a
      scheduler/fiber context -- the same context RunUntilCtrlC gives its main
-     job (orlyi constructs its TServer there too). We do the work in that job
-     and then _exit with the result.
+     job (orlyi constructs its TServer there too). We do the work in that job.
 
-     We deliberately do NOT destroy the server. ~TServer would have to run on
-     this (non-fiber) thread to free the fiber frame it allocated here, yet it
-     also takes a fiber lock (StopAllPlayers) that asserts a fiber context --
-     a contradiction. orlyi sidesteps this the same way: it never destroys its
-     server; RunUntilCtrlC blocks until a signal and the process just exits.
-     This is a short-lived compiler invocation, so leaking and _exit()ing is
-     the clean, deterministic path (it also skips the crash-prone teardown). */
-  Base::TScheduler::TPolicy(2, 8, std::chrono::milliseconds(1000)).RunUntilCtrlC(
+     Teardown is now a first-class operation (#440): Shutdown() flushes and
+     stops everything in order, the destructor is safe afterward, and the job
+     returning quiesces the scheduler (which synthesizes the ctrl-c that
+     RunUntilCtrlC waits for).  Every orlyc test run therefore doubles as a
+     construct/run/destroy smoke of the whole server.  The two thread-local
+     pool MANAGERS are intentionally released, not destroyed: pools created
+     on scheduler-worker threads cannot be reclaimed without thread-exit
+     hooks, and the managers' destructors (correctly) refuse to die while
+     pools exist. */
+  /* The worker cap must cover every long-lived job the server schedules
+     (runner hosts for replication/mergers/cleaners, discard runners, tetris,
+     accept loops, ...): TScheduler::Schedule queues past the cap but never
+     launches another worker, so an 8-worker scheduler silently never ran the
+     last ~6 jobs -- and a loop that never runs can neither do its part of
+     the update pipeline nor confirm its exit to Shutdown()'s joins (#440).
+     32 covers the ~16 jobs with headroom; the scheduler now logs any jobs
+     still queued at teardown, so an under-provisioned cap is visible
+     instead of a silent hang. */
+  Base::TScheduler::TPolicy(2, 32, std::chrono::milliseconds(1000)).RunUntilCtrlC(
       [&](Base::TScheduler *scheduler) {
         int exit_code = EXIT_FAILURE;
+        Orly::Server::TServer *server = nullptr;
         try {
           TIndyTestServerCmd server_cmd;
           server_cmd.MemorySim = true;
@@ -171,8 +183,7 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
              fast/slow core vectors. */
           server_cmd.ResolveCoreVecDefaults();
 
-          /* Intentionally leaked (see above). */
-          auto *server = new Orly::Server::TServer(scheduler, server_cmd);
+          server = new Orly::Server::TServer(scheduler, server_cmd);
           /* Installing the package, opening a session, and running the tests all
              create durable objects / transactions, which must execute inside a
              fiber (TCompletionTrigger::Wait asserts on LocalFrame). RunPackageTests
@@ -186,16 +197,38 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
           std::cerr << "error: running tests on indy: unknown error" << std::endl;
           exit_code = EXIT_FAILURE;
         }
-        if (cmd.MachineForm) {
-          std::cout << "MM_NOTICE: Tests done" << std::endl;
+        /* Shutdown on every path, success or throw: the server's service
+           loops park scheduler workers in blocking syscalls, and the
+           scheduler only quiesces (synthesizing the ctrl-c RunUntilCtrlC
+           waits for) once every worker is idle.  Skipping Shutdown() after
+           an exception would therefore hang the process instead of exiting
+           FAILURE (#440). */
+        if (server) {
+          try {
+            server->Shutdown();
+            delete server;
+          } catch (const std::exception &ex) {
+            std::cerr << "error: tearing down test server: " << ex.what() << std::endl;
+            std::cout.flush();
+            std::cerr.flush();
+            /* Teardown is wedged or broken; a deterministic non-zero exit
+               beats a hang. */
+            _exit(EXIT_FAILURE);
+          }
         }
+        /* No "MM_NOTICE: Tests done" here: CompileCode() prints it after we
+           return (it was only printed here back when this job _exit()'d and
+           CompileCode's copy was unreachable); a second copy would add a
+           section to the machine-form output lang_test baselines compare. */
         std::cout.flush();
         std::cerr.flush();
-        _exit(exit_code);
+        /* See the pool-manager note above. */
+        Orly::Indy::Disk::Util::TDiskController::TEvent::DiskEventPoolManager.release();
+        result_code = exit_code;
+        /* Returning quiesces the scheduler; RunUntilCtrlC then returns. */
       });
 
-  /* Unreachable: the job _exit()s. Present so the function has a return path. */
-  return false;
+  return result_code == EXIT_SUCCESS;
 }
 
 int CompileCode(const TCompilerConfig &cmd) {

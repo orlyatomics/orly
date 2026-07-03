@@ -111,6 +111,14 @@ bool TScheduler::Shutdown(const milliseconds &timeout) {
   ShutDown();
   bool is_clean = true;
   unique_lock<mutex> lock(Mutex);
+  if (!JobQueue.empty()) {
+    /* Schedule() queues past the worker cap but never launches another
+       worker, so a long-lived job scheduled after the cap saturates is
+       silently starved forever.  Make that visible at teardown instead of
+       leaving the next caller to rediscover it (#440); actually cancelling
+       queued-but-never-started jobs is TODO(#462). */
+    syslog(LOG_WARNING, "scheduler %p; %ld job(s) were scheduled but never ran (worker cap too low?)", static_cast<void *>(this), JobQueue.size());
+  }
   if (WorkerCount) {
     Policy = TPolicy::Shutdown;
     /* Interrupting is best-effort: a worker wedged in an uninterruptible

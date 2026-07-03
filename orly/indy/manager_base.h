@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <optional>
@@ -620,10 +621,27 @@ namespace Orly {
 
         void RunLayerCleaner();
 
-        /* Kick the mem merger and wait (bounded) until every dirty repo's
-           memory layer has been merged out to a disk file -- the flush half
-           of an orderly shutdown (#440).  Call from a fiber before the merge
-           runners are stopped. */
+        /* Make RunLayerCleaner return: raise the stop flag and fire its
+           timer so the blocking Pop() wakes.  Without this the cleaner
+           fiber sits in a read on the timer fd forever, pinning its runner
+           thread and (at shutdown) racing the fd's destruction (#440). */
+        void StopLayerCleaner();
+
+        /* Block until a stopped cleaner has actually returned (if it ever
+           started): a stop is only a flag plus a wake, and the manager must
+           not be destroyed while the cleaner is still inside its loop
+           (#440). */
+        void JoinLayerCleaner();
+
+        /* Stop the RunMergeMem/RunMergeDisk loops and wait for every one
+           that started to actually return (#440).  Must run on a fiber:
+           the wake sems are fiber primitives.  Call before FlushMemMerges
+           so the flush is the only drainer of the merge queues. */
+        void StopMergeRunners();
+
+        /* Merge every dirty repo's memory layer out to a disk file -- the
+           flush half of an orderly shutdown (#440).  Call from a fiber,
+           after StopMergeRunners(). */
         void FlushMemMerges();
 
         void RunMergeMem();
@@ -754,6 +772,17 @@ namespace Orly {
 
         virtual ~TManager();
 
+        /* Teardown step (#440): drop every repo's MakeDirty() self-pin.  A
+           dirty repo pins itself open until its updates are released or its
+           mem layer merges out, but a paused-and-written repo (compile-time
+           test povs, paused players) is never promoted, so its pin would
+           never drop and PreDtor would see a live ptr on every one.  By the
+           time this runs everything durable has been flushed
+           (FlushMemMerges) and a fast repo's data is volatile by design, so
+           releasing the pins loses nothing.  Call before
+           CloseAllUnreferencedObjects(). */
+        void ReleaseDirtySelfPins();
+
         void CloseAllUnreferencedObjects();
 
         bool PreDtor();
@@ -788,23 +817,34 @@ namespace Orly {
 
         void RemoveLayersFromQueue();
 
-        bool ShuttingDown;
+        std::atomic<bool> ShuttingDown;
 
         bool AllowTailing;
 
         mutable TRemovalCollection::TImpl RemovalCollection;
         std::mutex RemovalLock;
         Base::TTimerFd LayerCleanerTimer;
+        std::atomic<bool> LayerCleanerStopping;
+        /* RunLayerCleaner() marks Started on entry and pushes Exited when it
+           returns; JoinLayerCleaner() waits on that handshake (#440). */
+        std::atomic<bool> LayerCleanerStarted;
+        Base::TEventSemaphore LayerCleanerExited;
 
         mutable TRepoQueue::TImpl MergeMemQueue;
         std::mutex MergeMemLock;
         std::mutex MergeMemEpollLock;
         Fiber::TSingleSem MergeMemSem;
+        /* Each merge loop counts itself in on entry and pushes Exited on the
+           way out; StopMergeRunners() reaps exactly that many exits (#440). */
+        std::atomic<size_t> MergeMemLoopsStarted;
+        Base::TEventSemaphore MergeMemExited;
 
         mutable TRepoQueue::TImpl MergeDiskQueue;
         Fiber::TFiberLock MergeDiskLock;
         Fiber::TFiberLock MergeDiskEpollLock;
         Fiber::TSingleSem MergeDiskSem;
+        std::atomic<size_t> MergeDiskLoopsStarted;
+        Base::TEventSemaphore MergeDiskExited;
 
         std::chrono::milliseconds MergeMemDelay;
         std::chrono::milliseconds MergeDiskDelay;

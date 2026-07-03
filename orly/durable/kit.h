@@ -234,6 +234,18 @@ namespace Orly {
 
       virtual void RunLayerCleaner() = 0;
 
+      /* Make RunLayerCleaner return: without this the cleaner fiber sits in
+         a blocking read on its timer fd forever, pinning its runner thread
+         and (at shutdown) racing the fd's destruction (#440).  The default
+         covers managers whose cleaner doesn't block. */
+      virtual void StopLayerCleaner() {}
+
+      /* Block until a stopped cleaner has actually returned: a stop is only
+         a flag plus a wake, and the manager must not be destroyed while the
+         cleaner fiber is still inside RunLayerCleaner (#440).  The default
+         covers managers whose cleaner never runs. */
+      virtual void JoinLayerCleaner() {}
+
       protected:
 
       /* The cache size is the maximum number of closed objects we will keep in memory. */
@@ -277,6 +289,11 @@ namespace Orly {
          NOTE 1: The object pointer passed to this function WILL BE BAD by the time this function returns.
          NOTE 2: This function assumes that the mutex has already been obtained. */
       void DestroyObj(TObj *obj) noexcept;
+
+      /* Pop the closed object with the soonest deadline out of the cache
+         and destroy it.  The cache must be non-empty.  Assumes the mutex
+         (where the caller requires it) has already been obtained. */
+      void EvictOldestClosed();
 
       /* If we're caching, insert the given object into the set of closed objects.
          Discard enough old objects to make room.

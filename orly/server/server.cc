@@ -575,7 +575,14 @@ TServer::TCmd::TCmd()
       << "[" << (100 * static_cast<double>(br_slow_memory_sim) / bytes_alloted) << "%] br_slow_memory_sim = [" << br_slow_memory_sim << "]" << endl
       << "[" << (100 * static_cast<double>(br_fiber_frame_stacks) / bytes_alloted) << "%] br_fiber_frame_stacks = [" << br_fiber_frame_stacks << "]" << endl
       << "[" << (100 * static_cast<double>(br_disk_events) / bytes_alloted) << "%] br_disk_events = [" << br_disk_events << "]" << endl;
-    std::cout << ss.str();
+    /* Syslog, not stdout: orlyc embeds this server, and orlyc's stdout is
+       the machine-form compiler protocol that lang_test baselines compare
+       against -- this dump names the host's RAM, so it must never land
+       there (#440). */
+    std::string line;
+    while (std::getline(ss, line)) {
+      syslog(LOG_INFO, "%s", line.c_str());
+    }
   }
 }
 
@@ -684,19 +691,21 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
   if (!user_ctl.empty()) {DiskControllerCoreVec = user_ctl;}
 
   /* Log the resolved core assignment (issue #240): makes the effective config
-     visible and distinguishes user overrides from hardware defaults. */
+     visible and distinguishes user overrides from hardware defaults.  Syslog,
+     not stdout -- orlyc's stdout is the compiler protocol (#440). */
   auto join_cores = [](const std::vector<size_t> &v) {
     std::stringstream s;
     for (size_t i = 0; i < v.size(); ++i) { s << (i ? "," : "") << v[i]; }
     return s.str();
   };
-  std::cout << "resolved core assignment:"
-            << " fast=[" << join_cores(FastCoreVec) << "]"
-            << " slow=[" << join_cores(SlowCoreVec) << "]"
-            << " mem_merge=[" << join_cores(MemMergeCoreVec) << "]"
-            << " disk_merge=[" << join_cores(DiskMergeCoreVec) << "]"
-            << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]"
-            << std::endl;
+  std::stringstream resolved;
+  resolved << "resolved core assignment:"
+           << " fast=[" << join_cores(FastCoreVec) << "]"
+           << " slow=[" << join_cores(SlowCoreVec) << "]"
+           << " mem_merge=[" << join_cores(MemMergeCoreVec) << "]"
+           << " disk_merge=[" << join_cores(DiskMergeCoreVec) << "]"
+           << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]";
+  syslog(LOG_INFO, "%s", resolved.str().c_str());
 }
 
 TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
@@ -976,7 +985,7 @@ void TServer::Init() {
     }
     assert(engine_ptr);
 
-    std::cout << "Cmd.DiscardOnCreate = " << (Cmd.DiscardOnCreate ? "true" : "false") << std::endl;
+    syslog(LOG_INFO, "Cmd.DiscardOnCreate = %s", Cmd.DiscardOnCreate ? "true" : "false");
     size_t block_slots_available_per_merger = (((Cmd.BlockCacheSizeMB * 1024) / Disk::Util::PhysicalBlockSize) * 0.8) / Cmd.NumDiskMergeThreads;
     auto for_each_scheduler_cb = [this](const std::function<bool (Fiber::TRunner *)> &cb) {
       for (auto &runner_ptr : FastRunnerVec) {
@@ -1284,18 +1293,59 @@ void TServer::Shutdown() {
   syslog(LOG_INFO, "TServer::Shutdown() begin");
   /* Stop the websockets server first: no new work arrives. */
   Ws.reset();
-  /* Let the in-flight update pipeline settle: a write that arrived just
-     before the signal is not mergeable until the release machinery (which
-     runs on the replication cadence even in SOLO) has settled it.  Bounded
-     and cadence-derived, not a magic number: three periods of the slowest
+  /* Cut off the work sources next: wake the accept loops (blocked in
+     accept) so no new clients, slaves, or report requests arrive while we
+     drain (#440). */
+  shutdown(MainSocket, SHUT_RDWR);
+  /* under SlaveSocketLock: WaitForSlave() publishes SlaveSocket under the
+     same lock, so we either shut down the fd it is (or is about to be)
+     accepting on, or it sees ShutdownCalled before blocking (#440). */ {
+    std::lock_guard<std::mutex> lock(SlaveSocketLock);
+    shutdown(SlaveSocket, SHUT_RDWR);
+  }
+  if (Reporter) {
+    Reporter->Stop();
+  }
+  /* Let the in-flight update pipeline settle while ALL of the cadence
+     machinery (replication release, mergers, tetris) is still running: a
+     write that arrived just before the signal is not mergeable until the
+     release machinery (which runs on the replication cadence even in SOLO)
+     has settled it.  This must precede the stop calls below -- a stopped
+     replication loop can no longer drain its queue.  Bounded and
+     cadence-derived, not a magic number: three periods of the slowest
      relevant interval. */
   std::this_thread::sleep_for(std::chrono::milliseconds(
       3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100})));
+  /* Now stop the standalone service loops -- the housekeeper (blocked on
+     its timer), the two layer cleaners (ditto), and the three replication
+     loops (blocked in epoll_wait) -- and WAIT for each to actually return:
+     a stop is only a flag plus a wake, and the manager teardown below
+     would otherwise free the very fds/collections a still-parked loop
+     references (#440).  The joins reap only loops that actually entered;
+     a fiber that was scheduled but never granted a worker is not waited
+     for and remains the one residual hazard here (see the worker-cap note
+     in orlyc.cc; job cancellation is TODO(#462)). */
+  HousecleaningTimer.FireNow();
+  RepoManager->StopReplicationServices();
+  RepoManager->StopLayerCleaner();
+  DurableManager->StopLayerCleaner();
+  RepoManager->JoinReplicationServices();
+  RepoManager->JoinLayerCleaner();
+  DurableManager->JoinLayerCleaner();
+  if (HousekeeperStarted) {
+    HousekeeperExited.Pop();
+  }
   /* Tear down the fiber-entangled managers on a fiber, while every runner
      is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
      its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
      takes fiber locks. */
   Indy::Fiber::TJumpRunnable teardown_jumper([this] {
+    /* Stop the merge loops first (their wake sems are fiber primitives, so
+       this must run on a fiber): the flush below must be the only drainer
+       of the merge queue, or a live merger mid-step could re-enqueue a
+       still-dirty repo after the flush saw an empty queue and returned,
+       and that repo would never reach disk (#440). */
+    RepoManager->StopMergeRunners();
     /* Flush-on-shutdown (#440): merge every dirty repo memory layer out to
        disk and write the durable slush layer, so a graceful stop loses
        nothing -- durability no longer depends on the merge cadence having
@@ -1308,10 +1358,8 @@ void TServer::Shutdown() {
     TetrisManager = nullptr;
     DurableManager->Clear();
     DurableManager.reset();
-    /* GlobalRepo/RepoManager stay alive (leaked, as they always were):
-       cached durable sessions still pin their POV repos, so ~L0::TManager's
-       PreDtor asserts PtrCount == 0.  Draining those pins is the next
-       teardown slice (docs/teardown-design.md, PR C). */
+    GlobalRepo.Reset();
+    RepoManager.reset();
   });
   teardown_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
   /* Stop the engine-level services that would otherwise wedge the
@@ -1355,8 +1403,15 @@ void TServer::Shutdown() {
 TServer::~TServer() {
   if (ShutdownCalled) {
     /* Shutdown() already stopped the threads and destroyed the managers;
-       only the init frame is left. */
+       free the init frame, then intentionally release (not destroy) the
+       frame-pool manager: pools created on scheduler-worker threads (accept
+       loops, ws jumps) cannot be reclaimed without thread-exit hooks, and
+       the manager's destructor correctly refuses to die while they exist.
+       A few slabs leak; every real resource is gone (#440). */
     Fiber::TFrame::LocalFramePool->Free(Frame);
+    delete Fiber::TFrame::LocalFramePool;
+    Fiber::TFrame::LocalFramePool = nullptr;
+    FramePoolManager.release();
     return;
   }
   WsRunner.ShutDown();
@@ -1688,6 +1743,10 @@ void TServer::AcceptClientConnections() {
       new TServeClientRunnable(this, SlowRunnerVec[prev_assignment_count % SlowRunnerVec.size()].get(), move(client_socket), client_address);
       //Scheduler->Schedule(bind(&TServer::ServeClient, this, move(client_socket), client_address));
     } catch (const std::system_error &err) {
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::AcceptClientConnections shutting down (#440)");
+        return;
+      }
       if (WasInterrupted(err)) {
         syslog(LOG_INFO, "TServer::AcceptClientConnections shutting down on system_error [%s]", err.what());
         throw;
@@ -1695,6 +1754,10 @@ void TServer::AcceptClientConnections() {
         syslog(LOG_ERR, "TServer::AcceptClientConnections caught exception [%s], continue accept loop", err.what());
       }
     } catch (const std::exception &ex) {
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::AcceptClientConnections shutting down (#440)");
+        return;
+      }
       syslog(LOG_ERR, "TServer::AcceptClientConnections caught exception [%s], continue accept loop", ex.what());
     }
   }
@@ -1707,10 +1770,16 @@ void TServer::BeginImport() {
 }
 
 void TServer::CleanHouse() {
-  cout << "TServer::CleanHouse()" << endl;
+  syslog(LOG_INFO, "TServer::CleanHouse() begin");
+  HousekeeperStarted = true;
+  Base::TPushOnExit exit_latch(HousekeeperExited);
   for (;;) {
     //DEBUG_LOG("housecleaner: waiting");
     HousecleaningTimer.Pop();
+    if (ShutdownCalled) {
+      syslog(LOG_INFO, "TServer::CleanHouse shutting down (#440)");
+      return;
+    }
     //DEBUG_LOG("housecleaner: cleaning");
     DurableManager->Clean();
     //DEBUG_LOG("housecleaner: done cleaning");
@@ -2505,16 +2574,30 @@ void TServer::WaitForSlave() {
   }
   DEBUG_LOG("TServer::WaitForSlave() entering");
   try {
-    TFd fd(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+    TFd listener(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
     int flag = true;
-    IfLt0(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
-    Bind(fd, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
-    IfLt0(listen(fd, 4));
+    IfLt0(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
+    Bind(listener, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
+    IfLt0(listen(listener, 4));
+    /* Publish the listener under the lock Shutdown() takes before its
+       shutdown(2): either Shutdown() sees the fd we are about to accept
+       on, or we see ShutdownCalled and bail before blocking (#440). */ {
+      std::lock_guard<std::mutex> lock(SlaveSocketLock);
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        return;
+      }
+      SlaveSocket = std::move(listener);
+    }
     syslog(LOG_INFO, "waiting for slave to connect");
-    TFd slave_fd(accept(fd, nullptr, nullptr));
+    TFd slave_fd(accept(SlaveSocket, nullptr, nullptr));
     syslog(LOG_INFO, "slave has connected");
     (*WaitForSlaveActionCb)(slave_fd);
   } catch (const exception &ex) {
+    if (ShutdownCalled) {
+      syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+      return;
+    }
     syslog(LOG_ERR, "failed to wait for slave: %s", ex.what());
     throw;
   }
@@ -2537,8 +2620,21 @@ TIndyReporter::TIndyReporter(const TServer *server, TScheduler *scheduler, int p
 
 void TIndyReporter::AcceptClientConnections() {
   for (;;) {
-    Scheduler->Schedule(bind(&TIndyReporter::ServeClient, this, TFd(accept(Socket, nullptr, nullptr))));
+    int fd = accept(Socket, nullptr, nullptr);
+    if (fd < 0) {
+      if (Stopping) {
+        syslog(LOG_INFO, "TIndyReporter::AcceptClientConnections shutting down");
+        return;
+      }
+      ::Util::ThrowSystemError(errno);
+    }
+    Scheduler->Schedule(bind(&TIndyReporter::ServeClient, this, TFd(fd)));
   }
+}
+
+void TIndyReporter::Stop() {
+  Stopping = true;
+  shutdown(Socket, SHUT_RDWR);
 }
 
 void TIndyReporter::ServeClient(TFd &fd) {

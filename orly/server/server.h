@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <memory>
 #include <mutex>
@@ -26,6 +27,7 @@
 
 #include <base/class_traits.h>
 #include <base/debug_log.h>
+#include <base/event_semaphore.h>
 #include <base/fd.h>
 #include <base/log.h>
 #include <base/scheduler.h>
@@ -112,6 +114,10 @@ namespace Orly {
       NO_COPY(TIndyReporter);
       public:
 
+      /* Stops the accept loop (#440): flags it and wakes the blocked
+         accept() with a socket shutdown. */
+      void Stop();
+
       TIndyReporter(const TServer *server, Base::TScheduler *scheduler, int port_number);
 
       private:
@@ -123,6 +129,9 @@ namespace Orly {
       void AddReport(std::stringstream &ss) const;
 
       const TServer *Server;
+
+      /* Set by Stop(); checked by AcceptClientConnections(). */
+      std::atomic<bool> Stopping{false};
 
       Base::TFd Socket;
 
@@ -740,8 +749,26 @@ namespace Orly {
       /* The timer waited for by CleanHouse(). */
       Base::TTimerFd HousecleaningTimer;
 
+      /* CleanHouse() marks Started on entry and pushes Exited when it
+         returns, so Shutdown() can wait for the housekeeper to actually be
+         out of DurableManager->Clean() before tearing the manager down
+         (#440). */
+      std::atomic<bool> HousekeeperStarted{false};
+      Base::TEventSemaphore HousekeeperExited;
+
       /* The socket on which AcceptClientConnections() listens. */
       Base::TFd MainSocket;
+
+      /* The socket on which WaitForSlave() listens.  A member (rather than
+         a local of WaitForSlave) so Shutdown() can shut it down to wake the
+         blocked accept (#440). */
+      Base::TFd SlaveSocket;
+
+      /* Serializes WaitForSlave()'s publication of SlaveSocket against
+         Shutdown()'s wake-up shutdown(2) of it: TFd is not atomic, and
+         without the handshake Shutdown() could shut down a stale fd (or
+         -1) and leave the accept parked forever (#440). */
+      std::mutex SlaveSocketLock;
 
       /* Covers ConnectionBySessionId. */
       std::mutex ConnectionMutex;
@@ -756,8 +783,10 @@ namespace Orly {
       std::shared_ptr<std::function<void (const Base::TFd &)>> WaitForSlaveActionCb;
 
       /* Set once Shutdown() has run; makes it idempotent and tells the
-         destructor the managers are already gone. */
-      bool ShutdownCalled = false;
+         destructor the managers are already gone.  Atomic: the service
+         loops (accept, housekeeper, slave wait) read it from their own
+         threads. */
+      std::atomic<bool> ShutdownCalled{false};
 
       bool InitFinished;
       std::condition_variable InitCond;

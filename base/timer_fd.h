@@ -41,6 +41,12 @@ namespace Base {
 
     uint64_t Pop();
 
+    /* Force the next Pop() to return immediately by re-arming the timer as
+       a one-shot that fires at once.  This replaces the periodic schedule --
+       the timer will not tick again -- so it is only for waking a loop that
+       is about to exit (#440). */
+    void FireNow();
+
     private:
 
     TFd Fd;

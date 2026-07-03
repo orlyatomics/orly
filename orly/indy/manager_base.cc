@@ -206,8 +206,12 @@ TManager::TManager(Disk::Util::TEngine *engine,
       AllowTailing(allow_tailing),
       RemovalCollection(this),
       LayerCleanerTimer(layer_cleaning_interval),
+      LayerCleanerStopping(false),
+      LayerCleanerStarted(false),
       MergeMemQueue(this),
+      MergeMemLoopsStarted(0),
       MergeDiskQueue(this),
+      MergeDiskLoopsStarted(0),
       MergeMemDelay(merge_mem_delay),
       MergeDiskDelay(merge_disk_delay),
       BlockSlotsAvailablePerMerger(block_slots_available_per_merger),
@@ -222,6 +226,28 @@ TManager::TManager(Disk::Util::TEngine *engine,
 TManager::~TManager() {
   RemoveLayersFromQueue(); /* get rid of any layers pushed by the removal of the system repo (predtor) */
   ShuttingDown = true;
+}
+
+void TManager::ReleaseDirtySelfPins() {
+  /* Releasing a pin can cascade: a repo whose count hits zero closes,
+     force-releases its parent ptr (possibly closing the parent too), and
+     caching it can evict other closed repos -- all of which mutate
+     OpenableObjs/ClosedObjs.  So rescan from the top after every release
+     instead of iterating; repo counts at teardown are small. */
+  for (;;) {
+    TRepo *dirty_repo = nullptr;
+    for (const auto &item: OpenableObjs) {
+      TRepo *repo = dynamic_cast<TRepo *>(item.second);
+      if (repo && repo->DirtyPtr) {
+        dirty_repo = repo;
+        break;
+      }
+    }
+    if (!dirty_repo) {
+      break;
+    }
+    dirty_repo->RemoveFromDirty();
+  }
 }
 
 void TManager::CloseAllUnreferencedObjects() {
@@ -245,8 +271,18 @@ bool TManager::PreDtor() {
   MergeDiskQueue.RemoveEachMember();
   MergeMemQueue.RemoveEachMember();
   for (const auto &item: OpenableObjs) {
-    /* If this assertion fails, it means there is at least one ptr still alive someplace. */
-    assert(item.second->PtrCount == 0);
+    /* A nonzero count here means at least one TPtr is still alive someplace;
+       name the leaker before the assert so teardown bugs are diagnosable
+       from the log (#440). */
+    if (item.second->PtrCount != 0) {
+      std::ostringstream strm;
+      strm << item.first;
+      syslog(LOG_ERR, "TManager::PreDtor: repo [%s] still has [%d] live ptr(s); leaking it", strm.str().c_str(), int(item.second->PtrCount));
+      assert(item.second->PtrCount == 0);
+      /* NDEBUG: leak the repo rather than free it out from under the live
+         ptr. */
+      continue;
+    }
     delete item.second;
   }
   return false;
@@ -262,6 +298,8 @@ void TManager::SetTetrisManager(Orly::Server::TTetrisManager *tetris_manager) {
 }
 
 void TManager::RunLayerCleaner() {
+  LayerCleanerStarted = true;
+  Base::TPushOnExit exit_latch(LayerCleanerExited);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -269,30 +307,74 @@ void TManager::RunLayerCleaner() {
   }
   for (;;) {
     LayerCleanerTimer.Pop();
+    if (LayerCleanerStopping) {
+      syslog(LOG_INFO, "TManager::RunLayerCleaner shutting down (#440)");
+      return;
+    }
     RemoveLayersFromQueue();
   }
 }
 
+void TManager::StopLayerCleaner() {
+  LayerCleanerStopping = true;
+  LayerCleanerTimer.FireNow();
+}
+
+void TManager::JoinLayerCleaner() {
+  /* A cleaner whose fiber never got to run can't be waited for (and never
+     touches us); one that did run pushes Exited on its way out. */
+  if (LayerCleanerStarted) {
+    LayerCleanerExited.Pop();
+  }
+}
+
+void TManager::StopMergeRunners() {
+  ShuttingDown = true;
+  /* Wake and reap the merge loops one at a time: the sems are binary
+     (TSingleSem), so a blind Push(n) would collapse into one wake.  A loop
+     that is mid-Step sees the flag on its next while-check and exits
+     without consuming the push; the leftover flag then wakes the next
+     waiter, so each iteration always reaps exactly one exit.  Loops whose
+     fiber never started never counted themselves and are not waited for. */
+  for (size_t n = MergeMemLoopsStarted; n > 0; --n) {
+    MergeMemSem.Push();
+    MergeMemExited.Pop();
+  }
+  for (size_t n = MergeDiskLoopsStarted; n > 0; --n) {
+    MergeDiskSem.Push();
+    MergeDiskExited.Pop();
+  }
+}
+
 void TManager::FlushMemMerges() {
-  /* Repos become due at most MergeMemInterval (~tens of ms) after their
-     last write, so draining is quick; the cap keeps a wedged merger from
-     hanging shutdown forever. */
-  const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  /* Drain the queue inline, on this fiber, instead of waking the merge-mem
+     runner and polling: the merge runners have already been stopped and
+     joined (StopMergeRunners), so we are the only drainer -- a live runner
+     mid-merge could otherwise re-enqueue a still-dirty repo after we saw
+     the queue empty and returned (#440).  Ignore merge deadlines --
+     everything dirty flushes now.  A repo whose merge leaves it dirty
+     re-enqueues itself (CheckRemoveDirty), so keep going until the queue
+     is empty; writes have stopped by the time this runs, so it converges.
+     Bounded all the same: if something upstream is still dirtying repos, a
+     logged partial flush beats spinning shutdown forever. */
+  const auto give_up = steady_clock::now() + std::chrono::seconds(30);
   for (;;) {
-    bool drained;
+    if (steady_clock::now() > give_up) {
+      syslog(LOG_WARNING, "TManager::FlushMemMerges: mem-merge queue still non-empty after 30s; giving up with unflushed repos");
+      break;
+    }
+    TRepo *repo = nullptr;
     /* acquire MergeMem lock */ {
       std::lock_guard<std::mutex> lock(MergeMemLock);
-      drained = (MergeMemQueue.TryGetFirstMember() == nullptr);
-    }
-    if (drained) {
+      repo = MergeMemQueue.TryGetFirstMember();
+      if (repo) {
+        repo->MergeMemMembership.Remove();
+      }
+    }  // release MergeMem lock
+    if (!repo) {
       break;
     }
-    if (std::chrono::steady_clock::now() > give_up) {
-      syslog(LOG_WARNING, "FlushMemMerges: gave up waiting for the mem-merge queue to drain");
-      break;
-    }
-    MergeMemSem.Push();
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    repo->StepMergeMem();
   }
 }
 
@@ -304,6 +386,8 @@ void TManager::RunMergeMem() {
     CPU_SET(core, &mask);
   }
   IfLt0(sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask));
+  ++MergeMemLoopsStarted;
+  Base::TPushOnExit exit_latch(MergeMemExited);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
@@ -379,6 +463,8 @@ void TManager::RunMergeDisk() {
     CPU_SET(core, &mask);
   }
   IfLt0(sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask));
+  ++MergeDiskLoopsStarted;
+  Base::TPushOnExit exit_latch(MergeDiskExited);
   if (Engine->IsDiskBased()) {
     /* if this is a disk based engine, allocate event pools */
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);

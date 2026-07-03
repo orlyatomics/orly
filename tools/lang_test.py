@@ -145,12 +145,18 @@ def LoadXFail(directory):
   with f:
     for raw_line in f:
       line = raw_line.strip()
-      if not line or line.startswith('# '):
+      # Any line starting with '#' is a comment (a bare '#' spacer line used
+      # to parse as a phantom entry); real entries are paths, which never
+      # start with '#'.
+      if not line or line.startswith('#'):
         continue
       parts = line.split()
       rel_path = parts[0]
       issues = [p for p in parts[1:] if p.startswith('#')]
-      key = os.path.normpath(os.path.join(directory, rel_path))
+      # Absolute keys: in file mode the .xfail walk-up runs on abspaths while
+      # the harness's collected filepaths stay as given, so relative keys
+      # would never match and every xfail would report as unexpected.
+      key = os.path.abspath(os.path.join(directory, rel_path))
       entries[key] = issues
   return entries
 
@@ -216,10 +222,10 @@ def Main():
   xfail_map = BuildXFailMap(args.filepaths, args.directories)
 
   def IsXFail(filepath):
-    return os.path.normpath(filepath) in xfail_map
+    return os.path.abspath(filepath) in xfail_map
 
   def XFailIssues(filepath):
-    return xfail_map.get(os.path.normpath(filepath), [])
+    return xfail_map.get(os.path.abspath(filepath), [])
 
   changed_files = []
   passed_files = []
