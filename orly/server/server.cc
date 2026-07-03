@@ -575,7 +575,14 @@ TServer::TCmd::TCmd()
       << "[" << (100 * static_cast<double>(br_slow_memory_sim) / bytes_alloted) << "%] br_slow_memory_sim = [" << br_slow_memory_sim << "]" << endl
       << "[" << (100 * static_cast<double>(br_fiber_frame_stacks) / bytes_alloted) << "%] br_fiber_frame_stacks = [" << br_fiber_frame_stacks << "]" << endl
       << "[" << (100 * static_cast<double>(br_disk_events) / bytes_alloted) << "%] br_disk_events = [" << br_disk_events << "]" << endl;
-    std::cout << ss.str();
+    /* Syslog, not stdout: orlyc embeds this server, and orlyc's stdout is
+       the machine-form compiler protocol that lang_test baselines compare
+       against -- this dump names the host's RAM, so it must never land
+       there (#440). */
+    std::string line;
+    while (std::getline(ss, line)) {
+      syslog(LOG_INFO, "%s", line.c_str());
+    }
   }
 }
 
@@ -684,19 +691,21 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
   if (!user_ctl.empty()) {DiskControllerCoreVec = user_ctl;}
 
   /* Log the resolved core assignment (issue #240): makes the effective config
-     visible and distinguishes user overrides from hardware defaults. */
+     visible and distinguishes user overrides from hardware defaults.  Syslog,
+     not stdout -- orlyc's stdout is the compiler protocol (#440). */
   auto join_cores = [](const std::vector<size_t> &v) {
     std::stringstream s;
     for (size_t i = 0; i < v.size(); ++i) { s << (i ? "," : "") << v[i]; }
     return s.str();
   };
-  std::cout << "resolved core assignment:"
-            << " fast=[" << join_cores(FastCoreVec) << "]"
-            << " slow=[" << join_cores(SlowCoreVec) << "]"
-            << " mem_merge=[" << join_cores(MemMergeCoreVec) << "]"
-            << " disk_merge=[" << join_cores(DiskMergeCoreVec) << "]"
-            << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]"
-            << std::endl;
+  std::stringstream resolved;
+  resolved << "resolved core assignment:"
+           << " fast=[" << join_cores(FastCoreVec) << "]"
+           << " slow=[" << join_cores(SlowCoreVec) << "]"
+           << " mem_merge=[" << join_cores(MemMergeCoreVec) << "]"
+           << " disk_merge=[" << join_cores(DiskMergeCoreVec) << "]"
+           << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]";
+  syslog(LOG_INFO, "%s", resolved.str().c_str());
 }
 
 TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
@@ -976,7 +985,7 @@ void TServer::Init() {
     }
     assert(engine_ptr);
 
-    std::cout << "Cmd.DiscardOnCreate = " << (Cmd.DiscardOnCreate ? "true" : "false") << std::endl;
+    syslog(LOG_INFO, "Cmd.DiscardOnCreate = %s", Cmd.DiscardOnCreate ? "true" : "false");
     size_t block_slots_available_per_merger = (((Cmd.BlockCacheSizeMB * 1024) / Disk::Util::PhysicalBlockSize) * 0.8) / Cmd.NumDiskMergeThreads;
     auto for_each_scheduler_cb = [this](const std::function<bool (Fiber::TRunner *)> &cb) {
       for (auto &runner_ptr : FastRunnerVec) {
@@ -1315,7 +1324,7 @@ void TServer::Shutdown() {
      references (#440).  The joins reap only loops that actually entered;
      a fiber that was scheduled but never granted a worker is not waited
      for and remains the one residual hazard here (see the worker-cap note
-     in orlyc.cc). */
+     in orlyc.cc; job cancellation is TODO(#462)). */
   HousecleaningTimer.FireNow();
   RepoManager->StopReplicationServices();
   RepoManager->StopLayerCleaner();
@@ -1761,7 +1770,7 @@ void TServer::BeginImport() {
 }
 
 void TServer::CleanHouse() {
-  cout << "TServer::CleanHouse()" << endl;
+  syslog(LOG_INFO, "TServer::CleanHouse() begin");
   HousekeeperStarted = true;
   Base::TPushOnExit exit_latch(HousekeeperExited);
   for (;;) {

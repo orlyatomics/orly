@@ -216,9 +216,10 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
             _exit(EXIT_FAILURE);
           }
         }
-        if (cmd.MachineForm) {
-          std::cout << "MM_NOTICE: Tests done" << std::endl;
-        }
+        /* No "MM_NOTICE: Tests done" here: CompileCode() prints it after we
+           return (it was only printed here back when this job _exit()'d and
+           CompileCode's copy was unreachable); a second copy would add a
+           section to the machine-form output lang_test baselines compare. */
         std::cout.flush();
         std::cerr.flush();
         /* See the pool-manager note above. */
