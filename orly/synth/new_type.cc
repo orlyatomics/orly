@@ -64,7 +64,11 @@ TType *Orly::Synth::NewType(const Package::Syntax::TType *root) {
       const Package::Syntax::TType *addr_type;
       that->GetOptMutableTypeAt()->Accept(TOptMutableAtVisitor(addr_type));
       if (addr_type) {
-        OnBinary(addr_type, that->GetType(), Type::TMutable::Get);
+        /* TMutable::Get is an overload set, so name the two-argument one
+           explicitly for the std::function-typed callback. */
+        OnBinary(addr_type, that->GetType(), [](const Type::TType &addr, const Type::TType &val) {
+          return Type::TMutable::Get(addr, val);
+        });
       } else {
         OnUnary(that->GetType(), [](const Type::TType &that) {
           return Type::TMutable::Get(Type::TAddr::Get({}), that);

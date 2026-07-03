@@ -24,7 +24,9 @@ using namespace Orly;
 using namespace Orly::Synth;
 
 TBinaryType::TBinaryType(TType *lhs, TType *rhs, TGet get)
-    : Get(get), Lhs(Base::AssertTrue(lhs)), Rhs(Base::AssertTrue(rhs)) {}
+    : Get(std::move(get)), Lhs(Base::AssertTrue(lhs)), Rhs(Base::AssertTrue(rhs)) {
+  assert(Get);
+}
 
 TBinaryType::~TBinaryType() {
   delete Lhs;
