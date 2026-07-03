@@ -208,6 +208,18 @@ namespace Orly {
         class TMemSlushLayer;
         class TMergeSortedByIdFile;
 
+        /* Swap out the current memory slush layer (if non-empty), write it to disk, release the
+           savers whose entries it holds (their durability sems, #277), and swap the new disk
+           layer into the mapping.  Returns true iff there was anything to flush.  When
+           'retire_writer' is set (the writer's shutdown drain), also marks the writer retired
+           under DataLock so later saves signal their own sems instead of waiting forever. */
+        bool FlushCurLayer(bool retire_writer);
+
+        /* Push (and clear) the durability sem of every entry in the given layer.  Called by
+           FlushCurLayer() once the layer is confirmed on disk -- or if the write failed, so a
+           dying disk service cannot strand savers. */
+        static void ReleaseSavers(TMemSlushLayer *mem_layer);
+
         class TSortedByIdFile {
           NO_COPY(TSortedByIdFile);
           public:
@@ -623,7 +635,7 @@ namespace Orly {
 
             typedef InvCon::OrderedList::TMembership<TDurableEntry, TMemSlushLayer, TDurableEntry::TKey> TSlushMembership;
 
-            inline TDurableEntry(TMemSlushLayer *mem_layer, const Base::TUuid &id, const Durable::TDeadline &deadline, std::string &&serialized_form, TSequenceNumber seq_num);
+            inline TDurableEntry(TMemSlushLayer *mem_layer, const Base::TUuid &id, const Durable::TDeadline &deadline, std::string &&serialized_form, TSequenceNumber seq_num, Durable::TSem *sem);
 
             inline const uuid_t &GetId() const;
 
@@ -650,6 +662,12 @@ namespace Orly {
             const size_t DeadlineCount;
 
             std::string SerializedForm;
+
+            /* The saver's durability semaphore, if it wants one (may be null).  Save() parks it
+               here instead of pushing it, and the writer fiber pushes it once the layer holding
+               this entry has been confirmed written to disk (#277).  If the manager shuts down
+               before the flush, the final drain pushes it so no saver is left blocked. */
+            Durable::TSem *Sem;
 
             static Indy::Util::TPool Pool;
 
@@ -746,7 +764,19 @@ namespace Orly {
         std::chrono::milliseconds DurableWriteDelay;
         std::chrono::milliseconds DurableMergeDelay;
 
-        bool ShutDown;
+        /* Written by the destructor's thread, read each round by the writer and merger fibers. */
+        std::atomic<bool> ShutDown;
+
+        /* Covered by DataLock.  Set by the writer's shutdown drain (FlushCurLayer(true)); once
+           set, Save() signals the caller's sem itself since no writer will ever flush again. */
+        bool WriterRetired;
+
+        /* Pushed once by each of the two scheduler jobs hosting WriterScheduler and
+           MergerScheduler as their very last act.  The destructor pops it twice before member
+           destruction so the runner loops can never scan a sibling TRunner we've already torn
+           down (they run as scheduler jobs, so there is no thread to join). */
+        Base::TEventSemaphore SchedulerExitedSem;
+
         Fiber::TSingleSem SlushSem;
         Fiber::TSingleSem MergeSem;
 
@@ -916,9 +946,11 @@ namespace Orly {
                                                                            const Base::TUuid &id,
                                                                            const Durable::TDeadline &deadline,
                                                                            std::string &&serialized_form,
-                                                                           TSequenceNumber seq_num)
+                                                                           TSequenceNumber seq_num,
+                                                                           Durable::TSem *sem)
           : SlushMembership(this, TKey(id.GetRaw(), seq_num)),
-            DeadlineCount(deadline.time_since_epoch().count()) {
+            DeadlineCount(deadline.time_since_epoch().count()),
+            Sem(sem) {
         std::swap(SerializedForm, serialized_form);
         ++(mem_layer->NumEntries);
         mem_layer->TotalSerializedSize += SerializedForm.size();

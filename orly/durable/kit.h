@@ -260,7 +260,10 @@ namespace Orly {
 
       /* Override to save the given object to disk.
          Assume that the mutex has already been obtained.
-         When the task is complete, push the semaphore.  Do not delete the semaphore. */
+         The semaphore may be null (a fire-and-forget save).  If it is not null, push it when --
+         and only when -- the object is durably on disk (#277); the caller may block on it and
+         may keep it on its own stack, so it must be pushed exactly once and never deleted.
+         Callers passing a non-null sem must wait on it before destroying it. */
       virtual void Save(const TId &id, const TDeadline &deadline, const TTtl &ttl, const std::string &blob, TSem *sem) = 0;
 
       /* Override to search the disk for an object with the given id.
@@ -575,8 +578,13 @@ namespace Orly {
               strm.Flush();
               recorder->CopyOut(blob);
             }
-            TSem sem;
-            Save(id, deadline, ttl, blob, &sem);
+            /* Fire-and-forget (null sem): this save exists so the new object replicates; the
+               durability barrier is the save-on-close in OnPtrRelease().  We used to pass a
+               stack sem and never wait on it, which only worked while Save() signalled before
+               returning -- with the sem now pushed after the disk write (#277), waiting here
+               would serialize every session creation on the flush cadence while holding the
+               manager mutex, and not waiting would be a use-after-free. */
+            Save(id, deadline, ttl, blob, nullptr);
           }
         }
 

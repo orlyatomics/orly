@@ -121,6 +121,7 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
       DurableWriteDelay(write_delay),
       DurableMergeDelay(merge_delay),
       ShutDown(false),
+      WriterRetired(false),
       MappingCollection(this),
       RemovalCollection(this),
       LayerCleanerTimer(layer_cleaning_interval),
@@ -143,7 +144,10 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
     }
     NextDurableByIdGenId = max_gen_id + 1UL;
   }
-  scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &WriterScheduler, frame_pool_manager));
+  scheduler->Schedule([this, frame_pool_manager] {
+    Fiber::LaunchSlowFiberSched(&WriterScheduler, frame_pool_manager);
+    SchedulerExitedSem.Push();
+  });
   WriterFrame = Fiber::TFrame::LocalFramePool->Alloc();
   try {
     WriterFrame->Latch(&WriterScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TDurableManager::RunWriter));
@@ -151,7 +155,10 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
     Fiber::TFrame::LocalFramePool->Free(WriterFrame);
     throw;
   }
-  scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &MergerScheduler, frame_pool_manager));
+  scheduler->Schedule([this, frame_pool_manager] {
+    Fiber::LaunchSlowFiberSched(&MergerScheduler, frame_pool_manager);
+    SchedulerExitedSem.Push();
+  });
   MergerFrame = Fiber::TFrame::LocalFramePool->Alloc();
   try {
     MergerFrame->Latch(&MergerScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TDurableManager::RunMerger));
@@ -162,10 +169,10 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
 }
 
 TDurableManager::~TDurableManager() {
-  /* we're going to lose the ones in memory because the shutdown routine we currently employ will interrupt any more disk writes
-  assert(!CurMemoryLayer->GetNumEntries());
-  */
-  delete CurMemoryLayer;
+  /* Stop the writer first and only then delete the memory layer: the writer's exit path runs a
+     final drain (#277) that flushes whatever is still in CurMemoryLayer (and wakes any savers
+     still waiting on their durability sems), so deleting it before the writer is done would be
+     a use-after-free -- and would silently drop the saves, which is what the old order did. */
   ShutDown = true;
   SlushSem.Push();
   MergeSem.Push();
@@ -173,8 +180,13 @@ TDurableManager::~TDurableManager() {
   MergerFinishedSem.Pop();
   WriterScheduler.ShutDown();
   MergerScheduler.ShutDown();
+  /* The runner loops live on scheduler jobs, not threads we can join; wait for both to actually
+     exit before member destruction so a still-scanning runner can never touch its dying sibling. */
+  SchedulerExitedSem.Pop();
+  SchedulerExitedSem.Pop();
   Fiber::TFrame::LocalFramePool->Free(MergerFrame);
   Fiber::TFrame::LocalFramePool->Free(WriterFrame);
+  delete CurMemoryLayer;
 }
 
 void TDurableManager::CleanDisk(const Durable::TDeadline &/*now*/, Durable::TSem *sem) {
@@ -232,17 +244,25 @@ void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &dea
   TDurableReplication *durable_replication = Manager->NewDurableReplication(id, ttl, serialized_form);
   try {
     std::string temp = serialized_form;
+    bool signal_now = false;
     /* acquire data lock */ {
       std::lock_guard<std::mutex> data_lock(DataLock);
       TSequenceNumber new_seq_num = ++SeqNum;
       assert(CurMemoryLayer);
-      new TMemSlushLayer::TDurableEntry(CurMemoryLayer, id, deadline, std::move(temp), new_seq_num);
+      /* The saver's sem rides on the entry and is pushed by the writer fiber once the layer
+         holding it has actually been written to disk (#277).  If the writer has already
+         retired (we're shutting down and the final drain has run), nobody would ever push
+         it, so fall back to signalling immediately -- the pre-#277 behavior, and the save
+         is at-risk exactly as it always was at shutdown. */
+      signal_now = WriterRetired;
+      new TMemSlushLayer::TDurableEntry(CurMemoryLayer, id, deadline, std::move(temp), new_seq_num, signal_now ? nullptr : sem);
       Manager->EnqueueDurable(durable_replication);
     }  // release data lock
     SlushSem.Push();
     //SlushCounter.Push();
-    /* TODO(#277) : we should only call the sem once we've actually written to disk! */
-    sem->Push();
+    if (signal_now && sem) {
+      sem->Push();
+    }
   } catch (...) {
     delete durable_replication;
     throw;
@@ -304,60 +324,101 @@ void TDurableManager::RunWriter() {
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
     Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
   }
-  Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
   TFlush next_flush(DurableWriteDelay);
   SlushSem.Pop();
   for (;!ShutDown; SlushSem.Pop()) {
     next_flush.WaitFor();
-
-    TMemSlushLayer *old_mem_layer = nullptr;
-    /* acquire DataLayer lock */ {
-      std::lock_guard<std::mutex> data_lock(DataLock);
-      assert(CurMemoryLayer);
-      if (CurMemoryLayer->GetNumEntries()) {
-        old_mem_layer = CurMemoryLayer;
-        AddMapping(CurMemoryLayer);
-        CurMemoryLayer = new TMemSlushLayer(this);
-      }
-    }  // release DataLayer lock
-
-    if (old_mem_layer) {
-      auto now = Durable::TDeadline::clock::now();
-      size_t gen_id = ++NextDurableByIdGenId;
-      TSortedByIdFile sorted_by_id_file(old_mem_layer,
-                                        Engine,
-                                        storage_speed,
-                                        gen_id,
-                                        now.time_since_epoch().count(),
-                                        TempFileConsolThresh,
-                                        Medium);
-      MergeSem.Push();
-
-      /* acquire Mapping lock */ {
-        std::lock_guard<std::mutex> mapping_lock(MappingLock);
-        TMapping *cur_mapping = MappingCollection.TryGetLastMember();
-        cur_mapping->Incr();
-        try {
-          TMapping *new_mapping = new TMapping(this);
-          for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
-            /* if it's not old_mem_layer, keep it */
-            if (cur_csr->GetLayer() != old_mem_layer) {
-              new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
-            } else {
-              cur_csr->GetLayer()->MarkForDelete();
-            }
-          }
-          /* add our new sorted file */
-          new TMapping::TEntry(new_mapping, new TDiskOrderedLayer(this, Engine, gen_id, sorted_by_id_file.GetNumDurable()));
-          cur_mapping->Decr();
-        } catch (...) {
-          cur_mapping->Decr();
-          throw;
-        }
-      }  // release Mapping lock
-    }
+    FlushCurLayer(false);
+  }
+  /* Final drain (#277): flush whatever is still sitting in the memory layer so shutting down
+     doesn't silently drop saves, and mark the writer retired (under DataLock) so any save that
+     lands after this signals its sem itself rather than waiting for a writer that is gone.  If
+     the disk service is already being torn down by force, the flush can throw -- release the
+     stranded savers anyway (FlushCurLayer's catch does) and let the destructor proceed. */
+  try {
+    FlushCurLayer(true);
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "TDurableManager::RunWriter final drain failed; unflushed saves lost [%s]", ex.what());
   }
   WriterFinishedSem.Push();
+}
+
+void TDurableManager::ReleaseSavers(TMemSlushLayer *mem_layer) {
+  assert(mem_layer);
+  for (TMemSlushLayer::TEntryCollection::TCursor csr(mem_layer->GetEntryCollection()); csr; ++csr) {
+    if (Durable::TSem *sem = csr->Sem) {
+      csr->Sem = nullptr;
+      sem->Push();
+    }
+  }
+}
+
+bool TDurableManager::FlushCurLayer(bool retire_writer) {
+  Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
+  TMemSlushLayer *old_mem_layer = nullptr;
+  /* acquire DataLayer lock */ {
+    std::lock_guard<std::mutex> data_lock(DataLock);
+    assert(CurMemoryLayer);
+    if (retire_writer) {
+      WriterRetired = true;
+    }
+    if (CurMemoryLayer->GetNumEntries()) {
+      old_mem_layer = CurMemoryLayer;
+      AddMapping(CurMemoryLayer);
+      CurMemoryLayer = new TMemSlushLayer(this);
+    }
+  }  // release DataLayer lock
+
+  if (!old_mem_layer) {
+    return false;
+  }
+  try {
+    auto now = Durable::TDeadline::clock::now();
+    size_t gen_id = ++NextDurableByIdGenId;
+    TSortedByIdFile sorted_by_id_file(old_mem_layer,
+                                      Engine,
+                                      storage_speed,
+                                      gen_id,
+                                      now.time_since_epoch().count(),
+                                      TempFileConsolThresh,
+                                      Medium);
+    /* The sorted-by-id file's constructor waits on its completion triggers, so by here every
+       block of the new file is confirmed written: the saves in this layer are durable and we
+       can finally release their savers (#277). */
+    ReleaseSavers(old_mem_layer);
+    MergeSem.Push();
+
+    /* acquire Mapping lock */ {
+      std::lock_guard<std::mutex> mapping_lock(MappingLock);
+      TMapping *cur_mapping = MappingCollection.TryGetLastMember();
+      cur_mapping->Incr();
+      try {
+        TMapping *new_mapping = new TMapping(this);
+        for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
+          /* if it's not old_mem_layer, keep it */
+          if (cur_csr->GetLayer() != old_mem_layer) {
+            new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
+          } else {
+            cur_csr->GetLayer()->MarkForDelete();
+          }
+        }
+        /* add our new sorted file */
+        new TMapping::TEntry(new_mapping, new TDiskOrderedLayer(this, Engine, gen_id, sorted_by_id_file.GetNumDurable()));
+        cur_mapping->Decr();
+      } catch (...) {
+        cur_mapping->Decr();
+        throw;
+      }
+    }  // release Mapping lock
+  } catch (...) {
+    /* The write failed (in practice: the disk service is being shut down by force).  The data
+       is not durable, but stranding the savers forever would deadlock the very shutdown that
+       caused this -- wake them and let the failure surface through the engine.  This matches
+       the pre-#277 contract, where the sem never meant durability at all. */
+    ReleaseSavers(old_mem_layer);
+    throw;
+  }
+  return true;
 }
 
 
