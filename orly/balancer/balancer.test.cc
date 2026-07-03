@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/balancer/balancer.h>
+#include <atomic>
 #include <optional>
 
 #include <base/epoll.h>
@@ -165,7 +166,7 @@ class TRouter : public TBalancer {
 
   std::optional<Socket::TAddress> MasterHost;
 
-  bool Running;
+  std::atomic<bool> Running;
 
   /* Set true by CheckHosts() once it has exited (gracefully or via interrupt). */
   bool CheckHostsDone;
@@ -195,17 +196,21 @@ class TTestServer {
   }
 
   ~TTestServer() {
-    /* Stop the accept job and wait until it (and therefore the ServeClient
-       jobs it would spawn) has finished before we destroy ourselves.  We wait
-       on a predicate so this is correct whether AcceptClientConnections()
-       exited on its own or had already been drained by a scheduler shutdown
+    /* Stop the accept job and wait until it -- and every ServeClient job it
+       spawned -- has finished before we destroy ourselves.  The accept job
+       alone is not enough: it schedules ServeClient jobs and moves on, so one
+       of them can still be answering an RPC (through Server->...) as we're
+       deleted.  We wait on predicates so this is correct whether the jobs
+       exited on their own or had already been drained by a scheduler shutdown
        before this destructor ran. */
     Running = false;
     TermFd.Push();
-    std::unique_lock<std::mutex> lock(StatusLock);
-    while (!Done) {
-      Finish.wait(lock);
+    /* accept first (it's what spawns new serve jobs)... */ {
+      std::unique_lock<std::mutex> lock(StatusLock);
+      Finish.wait(lock, [this] { return Done; });
     }
+    /* ...then the serve jobs. */
+    Handshake->Stop();
   }
 
   void ChangeStatus(char status) {
@@ -278,7 +283,28 @@ class TTestServer {
         int ready_fd = poll.WaitForOne();
         if (ready_fd == MainSocket) {
           TFd client_socket(Accept(MainSocket, client_address));
-          Scheduler->Schedule(bind(&TTestServer::ServeClient, this, move(client_socket), client_address));
+          /* Bound the connection's reads and writes so a ServeClient job can
+             never out-wait the destructor on a peer that has gone quiet. */ {
+            timeval timeout{.tv_sec = 1, .tv_usec = 0};
+            IfLt0(setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)));
+            IfLt0(setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)));
+          }
+          /* The job counts itself in when it actually starts (and refuses to
+             start once the destructor has begun) rather than being counted in
+             here: a job the scheduler drops unrun at shutdown would otherwise
+             leave the destructor waiting on a count that can never drain. */
+          Scheduler->Schedule([this, handshake = Handshake, client_socket, client_address]() mutable {
+            if (!handshake->Enter()) {
+              return;
+            }
+            try {
+              ServeClient(client_socket, client_address);
+            } catch (...) {
+              handshake->Exit();
+              throw;
+            }
+            handshake->Exit();
+          });
         } else {
           /* we're exiting now */
         }
@@ -304,10 +330,54 @@ class TTestServer {
     }
   }
 
-  bool Running;
+  /* The teardown handshake shared with every ServeClient job.  It lives behind
+     a shared_ptr so a job the scheduler runs late -- or drops unrun -- touches
+     only this block, never a server that may already be destroyed.  Same
+     pattern as TBalancer::THandshake. */
+  class THandshake {
+    public:
+
+    /* Called by a job before it touches the server.  False means the
+       destructor has begun and the job must return without touching it. */
+    bool Enter() {
+      std::lock_guard<std::mutex> lock(Mutex);
+      if (!Serving) {
+        return false;
+      }
+      ++InFlightCount;
+      return true;
+    }
+
+    /* Called by a job as it unwinds, however it unwinds. */
+    void Exit() {
+      std::lock_guard<std::mutex> lock(Mutex);
+      --InFlightCount;
+      AllDone.notify_all();
+    }
+
+    /* Refuse jobs that haven't started and wait for the ones that have. */
+    void Stop() {
+      std::unique_lock<std::mutex> lock(Mutex);
+      Serving = false;
+      AllDone.wait(lock, [this] { return InFlightCount == 0; });
+    }
+
+    private:
+
+    std::mutex Mutex;
+    std::condition_variable AllDone;
+    bool Serving = true;
+    size_t InFlightCount = 0;
+
+  };  // TTestServer::THandshake
+
+  std::atomic<bool> Running;
 
   /* Set true by AcceptClientConnections() once it has exited. */
   bool Done;
+
+  /* Our teardown handshake. */
+  const std::shared_ptr<THandshake> Handshake = std::make_shared<THandshake>();
 
   std::mutex StatusLock;
   std::condition_variable Finish;
@@ -418,7 +488,7 @@ class TTestClient {
 
   const TAddress ServerAddr;
 
-  bool Running;
+  std::atomic<bool> Running;
 
   /* Covers Done. */
   std::mutex DoneMutex;
@@ -484,8 +554,14 @@ FIXTURE(Typical) {
       test_server_1->ChangeStatus('S');
       ExpectedHost = server_2_port;
       test_server_2->ChangeStatus('M');
-      test_server_1.reset();
     }
+    /* Destroy server 1 only after dropping ExpectedHostLock.  Its destructor
+       now waits for its in-flight ServeClient jobs, and one of those can be
+       blocked reading a request from the client's runner -- which may itself
+       be parked on ExpectedHostLock.  Resetting inside the lock closes that
+       loop into a deadlock: main waits for the serve job, the serve job waits
+       for the client, the client waits for main. */
+    test_server_1.reset();
     sleep(3);
   }  // client_1's runner is now stopped.
   /* Ordered teardown.  Drain every worker job out of the scheduler while the
