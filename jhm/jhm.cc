@@ -184,9 +184,7 @@ class TJhm : public TCmd {
                             PrintCmd,
                             //NOTE: Env is guaranteed to always have a timestamp, so derefrencing it here is safe.
                             *env.GetConfig().GetTimestamp(),
-                            bind(&TEnv::GetJobsProducingFile, &env, _1),
-                            bind(&TEnv::GetFile, &env, _1),
-                            bind(&TEnv::TryGetFileFromPath, &env, _1));
+                            env);
 
     // Break the cyclic dependency by registering these back.
     env.SetFuncs(bind(&TWorkFinder::IsBuildable, &work_finder, _1), bind(&TWorkFinder::IsFileDone, &work_finder, _1));
