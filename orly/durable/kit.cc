@@ -30,14 +30,8 @@ void TManager::Clean() {
   /* extra */ {
     lock_guard<mutex> lock(Mutex);
     auto now = TDeadline::clock::now();
-    while (!ClosedObjs.empty()) {
-      auto iter = ClosedObjs.begin();
-      if (iter->first.first > now) {
-        break;
-      }
-      TObj *cached_obj = iter->second;
-      ClosedObjs.erase(iter);
-      DestroyObj(cached_obj);
+    while (!ClosedObjs.empty() && ClosedObjs.begin()->first.first <= now) {
+      EvictOldestClosed();
     }
     CleanDisk(now, &sem);
   }
@@ -56,23 +50,41 @@ TManager::~TManager() {
 }
 
 void TManager::Clear() {
+  /* No lock: the caller must have stopped and joined every concurrent user
+     of these maps first -- in particular the housekeeper, whose Clean()
+     mutates them under the Mutex (TServer::Shutdown waits for CleanHouse to
+     return before running us, #440). */
   /* Cached-but-closed objects (sessions, povs) still hold live pointers --
      a pov keeps its repo ptr, for one -- until TTL expiry or cache pressure
      evicts them.  Destroy them first so the openable sweep below sees only
      genuinely open objects, and so the repo manager can verify every repo
      ptr is gone at its own teardown (#440). */
   while (!ClosedObjs.empty()) {
-    auto iter = ClosedObjs.begin();
-    TObj *cached_obj = iter->second;
-    ClosedObjs.erase(iter);
-    DestroyObj(cached_obj);
+    EvictOldestClosed();
   }
   for (const auto &item: OpenableObjs) {
-    /* If this assertion fails, it means there is at least one ptr still alive someplace. */
-    assert(item.second->PtrCount == 0);
+    /* An object still open here is a teardown-ordering bug: the caller must
+       drain everything holding durable ptrs (live sessions, connections)
+       before clearing.  Name the leaker, then (in release builds) leak it
+       rather than free an object a live ptr still references. */
+    if (item.second->PtrCount != 0) {
+      char buf[TId::MinBufSize];
+      item.first.Format(buf);
+      syslog(LOG_ERR, "TManager::Clear: durable {%s} still has [%d] live ptr(s); leaking it", buf, int(item.second->PtrCount));
+      assert(item.second->PtrCount == 0);
+      continue;
+    }
     delete item.second;
   }
   OpenableObjs.clear();
+}
+
+void TManager::EvictOldestClosed() {
+  auto iter = ClosedObjs.begin();
+  assert(iter != ClosedObjs.end());
+  TObj *cached_obj = iter->second;
+  ClosedObjs.erase(iter);
+  DestroyObj(cached_obj);
 }
 
 void TManager::DestroyObj(TObj *obj) noexcept {
@@ -93,10 +105,7 @@ bool TManager::TryCacheObj(TObj *obj) noexcept {
       /* Discard objects from the cache until there's room for the new object.
          Start with the object with the soonest deadline and work forward. */
       while (ClosedObjs.size() >= MaxCacheSize) {
-        auto iter = ClosedObjs.begin();
-        TObj *cached_obj = iter->second;
-        ClosedObjs.erase(iter);
-        DestroyObj(cached_obj);
+        EvictOldestClosed();
       }
       /* Insert this object into the cache in order of its deadline. */
       ClosedObjs.insert(make_pair(make_pair(*(obj->GetDeadline()), obj->GetId()), obj));

@@ -127,9 +127,19 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
      on scheduler-worker threads cannot be reclaimed without thread-exit
      hooks, and the managers' destructors (correctly) refuse to die while
      pools exist. */
-  Base::TScheduler::TPolicy(2, 8, std::chrono::milliseconds(1000)).RunUntilCtrlC(
+  /* The worker cap must cover every long-lived job the server schedules
+     (runner hosts for replication/mergers/cleaners, discard runners, tetris,
+     accept loops, ...): TScheduler::Schedule queues past the cap but never
+     launches another worker, so an 8-worker scheduler silently never ran the
+     last ~6 jobs -- and a loop that never runs can neither do its part of
+     the update pipeline nor confirm its exit to Shutdown()'s joins (#440).
+     32 covers the ~16 jobs with headroom; the scheduler now logs any jobs
+     still queued at teardown, so an under-provisioned cap is visible
+     instead of a silent hang. */
+  Base::TScheduler::TPolicy(2, 32, std::chrono::milliseconds(1000)).RunUntilCtrlC(
       [&](Base::TScheduler *scheduler) {
         int exit_code = EXIT_FAILURE;
+        Orly::Server::TServer *server = nullptr;
         try {
           TIndyTestServerCmd server_cmd;
           server_cmd.MemorySim = true;
@@ -173,21 +183,38 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
              fast/slow core vectors. */
           server_cmd.ResolveCoreVecDefaults();
 
-          auto *server = new Orly::Server::TServer(scheduler, server_cmd);
+          server = new Orly::Server::TServer(scheduler, server_cmd);
           /* Installing the package, opening a session, and running the tests all
              create durable objects / transactions, which must execute inside a
              fiber (TCompletionTrigger::Wait asserts on LocalFrame). RunPackageTests
              does all of that on a fast runner and hands back the result. */
           bool ok = server->RunPackageTests(output.Name.Name, output.Version, cmd.VerboseTests);
           exit_code = ok ? EXIT_SUCCESS : EXIT_FAILURE;
-          server->Shutdown();
-          delete server;
         } catch (const std::exception &ex) {
           std::cerr << "error: running tests on indy: " << ex.what() << std::endl;
           exit_code = EXIT_FAILURE;
         } catch (...) {
           std::cerr << "error: running tests on indy: unknown error" << std::endl;
           exit_code = EXIT_FAILURE;
+        }
+        /* Shutdown on every path, success or throw: the server's service
+           loops park scheduler workers in blocking syscalls, and the
+           scheduler only quiesces (synthesizing the ctrl-c RunUntilCtrlC
+           waits for) once every worker is idle.  Skipping Shutdown() after
+           an exception would therefore hang the process instead of exiting
+           FAILURE (#440). */
+        if (server) {
+          try {
+            server->Shutdown();
+            delete server;
+          } catch (const std::exception &ex) {
+            std::cerr << "error: tearing down test server: " << ex.what() << std::endl;
+            std::cout.flush();
+            std::cerr.flush();
+            /* Teardown is wedged or broken; a deterministic non-zero exit
+               beats a hang. */
+            _exit(EXIT_FAILURE);
+          }
         }
         if (cmd.MachineForm) {
           std::cout << "MM_NOTICE: Tests done" << std::endl;

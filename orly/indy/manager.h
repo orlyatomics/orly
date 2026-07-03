@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -123,6 +124,20 @@ namespace Orly {
       virtual void RunReplicationWork() override;
 
       virtual void RunReplicateTransaction() override;
+
+      /* Make the three replication service loops return: raise the stop
+         flag, then push each loop's semaphore so its epoll_wait wakes.
+         Without this the loops block their runner threads forever and any
+         later manager teardown races their epoll fds (#440). */
+      void StopReplicationServices();
+
+      /* Block until every replication loop that actually started has
+         returned: a stop is only a flag plus a wake, and this manager must
+         not be destroyed while a loop is still inside its body (#440).
+         NOTE: a master-mode loop wedged in a remote Sync() holds this join
+         until the RPC resolves; interrupting in-flight RPCs is future
+         teardown work. */
+      void JoinReplicationServices();
 
       inline void SetDurableManager(const std::shared_ptr<Durable::TManager> &durable_manager) {
         DurableManager = durable_manager;
@@ -515,6 +530,12 @@ namespace Orly {
       std::mutex ReplicationEpollLock;
       epoll_event ReplicationEvent;
       Base::TEventSemaphore ReplicationSem;
+      std::atomic<bool> ReplicationServicesStopping;
+      /* Each replication loop counts itself in on entry and pushes Exited
+         on the way out (however it unwinds); JoinReplicationServices()
+         reaps exactly that many exits (#440). */
+      std::atomic<size_t> ReplicationServicesStarted;
+      Base::TEventSemaphore ReplicationServicesExited;
       std::chrono::steady_clock::time_point ReplicationNextTime;
 
       std::chrono::milliseconds ReplicationDelay;

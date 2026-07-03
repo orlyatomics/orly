@@ -21,7 +21,6 @@
 #include <cstring>
 #include <optional>
 #include <poll.h>
-#include <sys/timerfd.h>
 #include <sys/syscall.h>
 
 #include <base/as_str.h>
@@ -1285,27 +1284,59 @@ void TServer::Shutdown() {
   syslog(LOG_INFO, "TServer::Shutdown() begin");
   /* Stop the websockets server first: no new work arrives. */
   Ws.reset();
-  /* Wake and stop the standalone service loops so the scheduler can drain
-     (#440): the client accept loop (blocked in accept), the reporter's
-     accept loop, and the housekeeper (blocked on its timer). */
+  /* Cut off the work sources next: wake the accept loops (blocked in
+     accept) so no new clients, slaves, or report requests arrive while we
+     drain (#440). */
   shutdown(MainSocket, SHUT_RDWR);
+  /* under SlaveSocketLock: WaitForSlave() publishes SlaveSocket under the
+     same lock, so we either shut down the fd it is (or is about to be)
+     accepting on, or it sees ShutdownCalled before blocking (#440). */ {
+    std::lock_guard<std::mutex> lock(SlaveSocketLock);
+    shutdown(SlaveSocket, SHUT_RDWR);
+  }
   if (Reporter) {
     Reporter->Stop();
   }
-  itimerspec fire_now{{0, 0}, {0, 1}};
-  timerfd_settime(HousecleaningTimer.GetFd(), 0, &fire_now, nullptr);
-  /* Let the in-flight update pipeline settle: a write that arrived just
-     before the signal is not mergeable until the release machinery (which
-     runs on the replication cadence even in SOLO) has settled it.  Bounded
-     and cadence-derived, not a magic number: three periods of the slowest
+  /* Let the in-flight update pipeline settle while ALL of the cadence
+     machinery (replication release, mergers, tetris) is still running: a
+     write that arrived just before the signal is not mergeable until the
+     release machinery (which runs on the replication cadence even in SOLO)
+     has settled it.  This must precede the stop calls below -- a stopped
+     replication loop can no longer drain its queue.  Bounded and
+     cadence-derived, not a magic number: three periods of the slowest
      relevant interval. */
   std::this_thread::sleep_for(std::chrono::milliseconds(
       3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100})));
+  /* Now stop the standalone service loops -- the housekeeper (blocked on
+     its timer), the two layer cleaners (ditto), and the three replication
+     loops (blocked in epoll_wait) -- and WAIT for each to actually return:
+     a stop is only a flag plus a wake, and the manager teardown below
+     would otherwise free the very fds/collections a still-parked loop
+     references (#440).  The joins reap only loops that actually entered;
+     a fiber that was scheduled but never granted a worker is not waited
+     for and remains the one residual hazard here (see the worker-cap note
+     in orlyc.cc). */
+  HousecleaningTimer.FireNow();
+  RepoManager->StopReplicationServices();
+  RepoManager->StopLayerCleaner();
+  DurableManager->StopLayerCleaner();
+  RepoManager->JoinReplicationServices();
+  RepoManager->JoinLayerCleaner();
+  DurableManager->JoinLayerCleaner();
+  if (HousekeeperStarted) {
+    HousekeeperExited.Pop();
+  }
   /* Tear down the fiber-entangled managers on a fiber, while every runner
      is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
      its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
      takes fiber locks. */
   Indy::Fiber::TJumpRunnable teardown_jumper([this] {
+    /* Stop the merge loops first (their wake sems are fiber primitives, so
+       this must run on a fiber): the flush below must be the only drainer
+       of the merge queue, or a live merger mid-step could re-enqueue a
+       still-dirty repo after the flush saw an empty queue and returned,
+       and that repo would never reach disk (#440). */
+    RepoManager->StopMergeRunners();
     /* Flush-on-shutdown (#440): merge every dirty repo memory layer out to
        disk and write the durable slush layer, so a graceful stop loses
        nothing -- durability no longer depends on the merge cadence having
@@ -1731,6 +1762,8 @@ void TServer::BeginImport() {
 
 void TServer::CleanHouse() {
   cout << "TServer::CleanHouse()" << endl;
+  HousekeeperStarted = true;
+  Base::TPushOnExit exit_latch(HousekeeperExited);
   for (;;) {
     //DEBUG_LOG("housecleaner: waiting");
     HousecleaningTimer.Pop();
@@ -2531,16 +2564,30 @@ void TServer::WaitForSlave() {
   }
   DEBUG_LOG("TServer::WaitForSlave() entering");
   try {
-    TFd fd(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+    TFd listener(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
     int flag = true;
-    IfLt0(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
-    Bind(fd, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
-    IfLt0(listen(fd, 4));
+    IfLt0(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
+    Bind(listener, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
+    IfLt0(listen(listener, 4));
+    /* Publish the listener under the lock Shutdown() takes before its
+       shutdown(2): either Shutdown() sees the fd we are about to accept
+       on, or we see ShutdownCalled and bail before blocking (#440). */ {
+      std::lock_guard<std::mutex> lock(SlaveSocketLock);
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        return;
+      }
+      SlaveSocket = std::move(listener);
+    }
     syslog(LOG_INFO, "waiting for slave to connect");
-    TFd slave_fd(accept(fd, nullptr, nullptr));
+    TFd slave_fd(accept(SlaveSocket, nullptr, nullptr));
     syslog(LOG_INFO, "slave has connected");
     (*WaitForSlaveActionCb)(slave_fd);
   } catch (const exception &ex) {
+    if (ShutdownCalled) {
+      syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+      return;
+    }
     syslog(LOG_ERR, "failed to wait for slave: %s", ex.what());
     throw;
   }

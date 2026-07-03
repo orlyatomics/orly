@@ -154,6 +154,14 @@ namespace Orly {
 
         virtual void RunLayerCleaner() override;
 
+        /* See Durable::TManager: raise the stop flag and fire the cleaner's
+           timer so its blocking Pop() wakes and the loop returns (#440). */
+        virtual void StopLayerCleaner() override;
+
+        /* See Durable::TManager: block until the cleaner loop has actually
+           returned (if it ever started). */
+        virtual void JoinLayerCleaner() override;
+
         virtual void Save(const Durable::TId &id, const Durable::TDeadline &deadline, const TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem) override;
 
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
@@ -784,6 +792,11 @@ namespace Orly {
 
         mutable TRemovalCollection::TImpl RemovalCollection;
         Base::TTimerFd LayerCleanerTimer;
+        std::atomic<bool> LayerCleanerStopping;
+        /* RunLayerCleaner() marks Started on entry and pushes Exited when it
+           returns; JoinLayerCleaner() waits on that handshake (#440). */
+        std::atomic<bool> LayerCleanerStarted;
+        Base::TEventSemaphore LayerCleanerExited;
 
         std::mutex RemovalLock;
 

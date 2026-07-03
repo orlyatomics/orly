@@ -40,3 +40,8 @@ uint64_t TTimerFd::Pop() {
   IfLt0(read(Fd, &count, sizeof(count)));
   return count;
 }
+
+void TTimerFd::FireNow() {
+  itimerspec fire_now{{0, 0}, {0, 1}};
+  IfLt0(timerfd_settime(Fd, 0, &fire_now, nullptr));
+}

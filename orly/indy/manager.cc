@@ -94,6 +94,8 @@ TManager::TManager(Disk::Util::TEngine *engine,
       StateChangeCb(state_change_cb),
       ReplicationRead(false),
       ReplicationWork(false),
+      ReplicationServicesStopping(false),
+      ReplicationServicesStarted(0),
       ReplicationNextTime(chrono::steady_clock::now()),
       ReplicationDelay(replication_delay),
       UpdateReplicationNotificationCb(update_replication_notification_cb),
@@ -178,6 +180,8 @@ L0::TManager::TPtr<TRepo> TManager::NewFastRepo(const TUuid &repo_id,
 }
 
 void TManager::RunReplicationQueue() {
+  ++ReplicationServicesStarted;
+  Base::TPushOnExit exit_latch(ReplicationServicesExited);
   try {
     epoll_event event;
     int timeout = -1;
@@ -195,6 +199,10 @@ void TManager::RunReplicationQueue() {
           IfLt0(ret);
           break;
         }
+      }
+      if (ReplicationServicesStopping) {
+        syslog(LOG_INFO, "TManager::RunReplicationQueue shutting down (#440)");
+        return;
       }
       ReplicationQueueSem.Pop();
       for (;;) {
@@ -238,6 +246,8 @@ void TManager::RunReplicationQueue() {
 }
 
 void TManager::RunReplicationWork() {
+  ++ReplicationServicesStarted;
+  Base::TPushOnExit exit_latch(ReplicationServicesExited);
   try {
     epoll_event event;
     int timeout = -1;
@@ -255,6 +265,10 @@ void TManager::RunReplicationWork() {
           IfLt0(ret);
           break;
         }
+      }
+      if (ReplicationServicesStopping) {
+        syslog(LOG_INFO, "TManager::RunReplicationWork shutting down (#440)");
+        return;
       }
       ReplicationWorkSem.Pop();
       for (;;) {
@@ -285,6 +299,8 @@ void TManager::RunReplicationWork() {
 }
 
 void TManager::RunReplicateTransaction() {
+  ++ReplicationServicesStarted;
+  Base::TPushOnExit exit_latch(ReplicationServicesExited);
   epoll_event event;
   int timeout = -1;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -303,6 +319,10 @@ void TManager::RunReplicateTransaction() {
           IfLt0(ret);
           break;
         }
+      }
+      if (ReplicationServicesStopping) {
+        syslog(LOG_INFO, "TManager::RunReplicateTransaction shutting down (#440)");
+        return;
       }
       SleepUntil(ReplicationNextTime);
       ReplicationNextTime = chrono::steady_clock::now() + ReplicationDelay;
@@ -487,6 +507,25 @@ void TManager::RunReplicateTransaction() {
     }
   }
   DEBUG_LOG("RunReplicateTransaction() Exiting");
+}
+
+void TManager::StopReplicationServices() {
+  ReplicationServicesStopping = true;
+  /* Each push makes the loop's epoll_wait return; the loop then sees the
+     flag (before consuming the semaphore) and returns. */
+  ReplicationQueueSem.Push();
+  ReplicationWorkSem.Push();
+  ReplicationSem.Push();
+}
+
+void TManager::JoinReplicationServices() {
+  /* Reap exactly as many exits as loops that actually entered; a loop
+     whose fiber never got to run can't be waited for (and never touches
+     us).  Every entered loop pushes Exited on its way out, including the
+     exception paths. */
+  for (size_t n = ReplicationServicesStarted; n > 0; --n) {
+    ReplicationServicesExited.Pop();
+  }
 }
 
 TManager::TMaster::TMaster(TManager *manager, const TFd &fd)
