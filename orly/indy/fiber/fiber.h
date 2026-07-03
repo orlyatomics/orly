@@ -1205,11 +1205,16 @@ namespace Orly {
         }
         if (should_wait) {
           Fiber::Wait(come_back_right_away);
+          /* The completer that made us runnable did so from inside its
+             SpinLock scope, so it may still be releasing the lock while we
+             run. Take and release the lock once so that its unlock is its
+             last touch of this object and we are the last one out -- our
+             caller is free to destroy this object the moment we return
+             (#386). */
+          Base::TSpinLock::TLock lock(SpinLock);
         }
         /* fall through means we are ready... */
         assert(Finished.load() <= WaitingFor.load());
-        //Base::TSpinLock::TLock lock(SpinLock);
-        /* fall through */
         /* Acquire the happens-before published by every Complete() (paired
            release below) so ThreadSanitizer sees the completers' writes as
            ordered-before this fiber's continuation across the wait/wake
@@ -1224,18 +1229,21 @@ namespace Orly {
            every Complete() so a multi-completer sync (WaitForMore > 1)
            accumulates each contributor's happens-before (#269). */
         TSanFiber::Release(this);
+        /* The increment must happen under the lock: if it were outside, a
+           waiter in Sync()'s no-wait fast path could observe the full count
+           and destroy this object while we are still on our way into the
+           (then freed) lock. Under the lock, a waiter can only see the full
+           count once our unlock -- our last touch -- has completed (#386). */
+        Base::TSpinLock::TLock lock(SpinLock);
         size_t prev = std::atomic_fetch_add(&Finished, 1UL);
-        if ((prev + 1UL) == WaitingFor.load()) {
-          Base::TSpinLock::TLock lock(SpinLock);
-          if (FrameWaiting) {
-            /* there's a frame waiting for us... let's activate him. */
-            assert(RunnerToReactivateOn);
-            Fiber::TFrame *frame = FrameWaiting;
-            Fiber::TRunner *runner = RunnerToReactivateOn;
-            FrameWaiting = nullptr;
-            RunnerToReactivateOn = nullptr;
-            runner->ScheduleFrame(frame);
-          }
+        if ((prev + 1UL) == WaitingFor.load() && FrameWaiting) {
+          /* there's a frame waiting for us... let's activate him. */
+          assert(RunnerToReactivateOn);
+          Fiber::TFrame *frame = FrameWaiting;
+          Fiber::TRunner *runner = RunnerToReactivateOn;
+          FrameWaiting = nullptr;
+          RunnerToReactivateOn = nullptr;
+          runner->ScheduleFrame(frame);
         }
       }
 
@@ -1275,6 +1283,12 @@ namespace Orly {
         } // end spinlock scope
         if (do_wait) {
           Fiber::Wait();
+          /* The pusher that made us runnable did so from inside its SpinLock
+             scope, so it may still be releasing the lock while we run. Take
+             and release the lock once so that its unlock is its last touch of
+             this object and we are the last one out -- our caller is free to
+             destroy this object the moment we return (#386). */
+          Base::TSpinLock::TLock lock(SpinLock);
         }
       }
 
@@ -1310,6 +1324,8 @@ namespace Orly {
         } // end spinlock scope
         if (do_wait) {
           Fiber::Wait();
+          /* Same last-one-out handshake as TSingleSem::Pop (#386). */
+          Base::TSpinLock::TLock lock(SpinLock);
         }
       }
 

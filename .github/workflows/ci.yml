@@ -594,6 +594,8 @@ jobs:
           orly/indy/fiber/fiber.test
           orly/indy/fiber/fiber_lock.test
           orly/indy/fiber/algorithm.test
+          orly/indy/fiber/jump_runnable.test
+          orly/indy/fiber/sem.test
           orly/indy/context_fold.test
           orly/indy/context_xrepo.test
           orly/server/tetris_manager.test
