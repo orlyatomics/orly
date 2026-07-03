@@ -2058,7 +2058,8 @@ string TServer::ImportCoreVector(const string &file_pattern,
       cond.wait(lock);
     }
   }
-  /* TODO(#373) : make sure merge files get inserted into the end vec in order. */
+  /* End_vec fills in job-completion order, not source order; that only affects which files group together
+     per merge round -- disjoint seq-number blocks + the k-way merge make the final file order-independent (#373). */
   auto global_repo = GetGlobalRepo();
   std::vector<size_t> end_vec;
   size_t finished = 0UL;

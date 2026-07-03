@@ -32,7 +32,8 @@ TIfElse::TPtr TIfElse::New(
 
 void TIfElse::WriteExpr(TCppPrinter &out) const {
 
-  //TODO(#299): Building into the sum type if true case and false case return different types.
+  /* Both branches always have the same type here: variant joins are unified by the implicit-widening
+     synth pass (#164) and anything else is rejected at type-check, so one Ret covers both (#299). */
   out << "Predicate<" << GetReturnType() << ">(ctx, " << Predicate << ", " << True;
 
   out << ", /* else */" << False;
