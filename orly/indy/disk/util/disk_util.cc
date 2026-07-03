@@ -53,8 +53,32 @@ TDiskUtil::TDiskUtil(Base::TScheduler *scheduler,
       auto ret = VolumeById.find(device_info.VolumeId);
       if (ret != VolumeById.end()) {
         auto &volume = ret->second;
-        /* this is where we check that all the devices in a volume have the same description of said volume */
-        /* TODO(#319): above */
+        /* Every device in a volume carries the volume's description in its superblock; a
+           joining device whose copy disagrees with the volume we built from the first
+           device means a corrupt superblock or a mis-assembled device set -- refuse it
+           rather than run a volume whose geometry depends on probe order (#319).
+           (TVolume::AddDevice already rejects a mismatched *device* desc; this covers
+           the volume-level fields: strategy, speed, replication, extents, striping.) */
+        const TVolume::TDesc joining_desc{
+          device_info.VolumeStrategy == 1UL ? TVolume::TDesc::Striped : TVolume::TDesc::Chained,
+          TDevice::TDesc{ TDevice::TDesc::TKind::SSD,                                       /* TODO(#318) */
+                          device_info.LogicalBlockSize,
+                          device_info.PhysicalBlockSize,
+                          device_info.NumLogicalBlockExposed,
+                          device_info.LogicalBlockSize * device_info.NumLogicalBlockExposed
+          },
+          device_info.VolumeSpeed == 1UL ? TVolume::TDesc::TStorageSpeed::Fast :
+                                           TVolume::TDesc::TStorageSpeed::Slow,
+          device_info.ReplicationFactor,
+          device_info.NumDevicesInVolume / device_info.ReplicationFactor,
+          (device_info.StripeSizeKB * 1024) / device_info.LogicalBlockSize,
+          device_info.MinDiscardBlocks,
+          0.85 /* HighUtilizationThreshold: constant, matches the creation branch below */
+        };
+        if (joining_desc != volume->GetDesc()) {
+          syslog(LOG_ERR, "Device [%s] describes its volume differently than the volume's other device(s); corrupt superblock or mis-assembled device set", path_to_device.c_str());
+          throw std::runtime_error("Device describes its volume differently than the volume's other device(s)");
+        }
         std::unique_ptr<TDevice> new_device(new TPersistentDevice(Controller,
                                                                   path_to_device.c_str(),
                                                                   path,

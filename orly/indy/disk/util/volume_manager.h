@@ -843,6 +843,16 @@ namespace Orly {
             const size_t NumLogicalBlockPerStripe;
             const size_t MinDiscardAllocBlocks;
             const double HighUtilizationThreshold;
+            bool operator !=(const TDesc &that) const {
+              return Kind != that.Kind
+                || DeviceDesc != that.DeviceDesc
+                || StorageSpeed != that.StorageSpeed
+                || ReplicationFactor != that.ReplicationFactor
+                || NumLogicalExtent != that.NumLogicalExtent
+                || NumLogicalBlockPerStripe != that.NumLogicalBlockPerStripe
+                || MinDiscardAllocBlocks != that.MinDiscardAllocBlocks
+                || HighUtilizationThreshold != that.HighUtilizationThreshold;
+            }
           };
 
           typedef InvCon::OrderedList::TCollection<TVolume, TDevice, size_t> TDeviceCollection;
