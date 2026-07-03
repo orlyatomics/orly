@@ -19,8 +19,6 @@
 #include <orly/indy/transaction_base.h>
 #include <optional>
 
-#include <iostream> /* TODO(#317) GET RID OF */
-
 #include <base/debug_log.h>
 
 using namespace std;
@@ -48,7 +46,7 @@ bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<
     syslog(LOG_ERR, "MAJOR ERROR: missing data! ensure_or_discard =[%ld] vs. GetNextSequenceNumber =[%ld]", *ensure_or_discard, repo->GetNextSequenceNumber());
     throw std::logic_error("Let's check what we're doing here in transaction::push()");
   } else if (ensure_or_discard) {
-    std::cout << "Discarding Push [" << *ensure_or_discard << "]" << std::endl;
+    syslog(LOG_INFO, "TTransaction::Push: discarding [%ld]", *ensure_or_discard);
   }
   return false;
 }
@@ -63,7 +61,7 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optiona
       new TPopper(this, repo, TPopper::Pop);
       return true;
     } else if (ensure_or_discard) {
-      std::cout << "Discarding POP [" << *ensure_or_discard << "]" << std::endl;
+      syslog(LOG_INFO, "TTransaction::Pop: discarding [%ld]", *ensure_or_discard);
     }
   } else {
     switch (mutation->GetKind()) {

@@ -30,7 +30,7 @@
 
 #include <atomic>
 #include <stdexcept>
-#include <iostream> /* TODO(#317): GET RID OF */
+#include <syslog.h>
 
 #include <base/class_traits.h>
 #include <base/likely.h>
@@ -164,7 +164,7 @@ namespace Orly {
                     const size_t page_offset = val & All1But3HighestBits;
                     return cache->PageData.get() + (page_offset * PageSize);
                   } else {
-                    std::cerr << "Disk page loaded with error [" << val << "]" << std::endl;
+                    syslog(LOG_ERR, "TCache: disk page loaded with error [%ld]", val);
                     throw std::logic_error("Disk page was loaded with error.");
                   }
                 } else {
@@ -492,7 +492,7 @@ namespace Orly {
                       return;
                     }
                   }
-                  std::cerr << "Cannot release slot - page_id combination that does not exist in cache. [" << page_id << "]" << std::endl;
+                  syslog(LOG_ERR, "TCache: cannot release slot - page_id combination that does not exist in cache [%ld]", page_id);
                   throw std::logic_error("Cannot release slot - page_id combination that does not exist in cache.");
                 }
 
