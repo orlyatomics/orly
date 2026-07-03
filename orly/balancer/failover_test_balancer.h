@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <optional>
 
 #include <base/event_semaphore.h>
@@ -61,7 +62,10 @@ namespace Orly {
 
       std::chrono::milliseconds Interval;
 
-      bool Running;
+      std::atomic<bool> Running;
+
+      /* Covered by HostMutex; set true by CheckHosts() once it has exited (gracefully or by exception). */
+      bool CheckHostsDone;
 
       Base::TEventSemaphore ErrorSem;
 
