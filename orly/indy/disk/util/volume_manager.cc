@@ -18,7 +18,7 @@
 
 #include <orly/indy/disk/util/volume_manager.h>
 
-#include <iostream> /* TODO(#317) GET RID OF */
+#include <sstream>
 
 #include <linux/fs.h>
 #include <math.h>
@@ -486,34 +486,18 @@ void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, b
                 }
               }
             } catch (const std::exception &ex) {
-              std::cerr << "Caught error while completing io : [" << compl_event->CodeLocation << "] Kind [";
+              const char *kind_str = "?";
               switch(compl_event->Kind) {
-                case TEvent::TriggeredRead: {
-                  std::cerr << "TriggeredRead";
-                  break;
-                }
-                case TEvent::TriggeredReadV: {
-                  std::cerr << "TriggeredReadV";
-                  break;
-                }
-                case TEvent::TriggeredWrite: {
-                  std::cerr << "TriggeredWrite";
-                  break;
-                }
-                case TEvent::CallbackRead: {
-                  std::cerr << "CallbackRead";
-                  break;
-                }
-                case TEvent::CallbackReadV: {
-                  std::cerr << "CallbackReadV";
-                  break;
-                }
-                case TEvent::CallbackWrite: {
-                  std::cerr << "CallbackWrite";
-                  break;
-                }
+                case TEvent::TriggeredRead: { kind_str = "TriggeredRead"; break; }
+                case TEvent::TriggeredReadV: { kind_str = "TriggeredReadV"; break; }
+                case TEvent::TriggeredWrite: { kind_str = "TriggeredWrite"; break; }
+                case TEvent::CallbackRead: { kind_str = "CallbackRead"; break; }
+                case TEvent::CallbackReadV: { kind_str = "CallbackReadV"; break; }
+                case TEvent::CallbackWrite: { kind_str = "CallbackWrite"; break; }
               }
-              std::cerr << "]" << std::endl;
+              std::ostringstream loc;
+              loc << compl_event->CodeLocation;
+              syslog(LOG_ERR, "Caught error while completing io : [%s] Kind [%s]: %s", loc.str().c_str(), kind_str, ex.what());
               throw;
             }
           }

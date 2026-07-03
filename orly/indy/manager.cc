@@ -26,7 +26,7 @@
 #include <orly/server/meta_record.h>
 #include <base/util/time.h>
 
-#include <iostream> /* TODO(#317) GET RID OF */
+#include <sstream>
 
 using namespace std;
 using namespace std::literals;
@@ -201,7 +201,7 @@ void TManager::RunReplicationQueue() {
         if (ReplicationRead) {
           assert(Context);
           if (!(ReplicationRead = Context->Queue())) {
-            std::cout << "Joining context" << std::endl;
+            syslog(LOG_INFO, "TManager: joining context");
             Context->Join();
             std::lock_guard<std::mutex> lock(ContextLock);
             switch (State) {
@@ -458,7 +458,7 @@ void TManager::RunReplicateTransaction() {
                 }
               }
             } catch (const Rpc::TAnyFuture::TRemoteError &error) {
-              std::cout << "our future failed and we caught it : " << error.what() << std::endl;
+              syslog(LOG_ERR, "TManager: replication future failed: %s", error.what());
             }
           }
           break;
@@ -509,7 +509,11 @@ void TManager::TMaster::NotifyFinishSyncInventory() {
 }
 
 TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest) {
-  std::cout << "TMaster::FetchUpdates(" << repo_id << ") [" << lowest << " -> " << highest << "]" << std::endl;
+  /* log scope */ {
+    std::ostringstream ss;
+    ss << repo_id;
+    syslog(LOG_INFO, "TMaster::FetchUpdates(%s) [%lu -> %lu]", ss.str().c_str(), lowest, highest);
+  }
   Base::TTimer timer;
   auto repo = Manager->ForceGetRepo(repo_id);
   assert(Manager->SlaveSyncViewMap.find(repo_id) != Manager->SlaveSyncViewMap.end());
@@ -520,8 +524,11 @@ TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSeq
     context.AppendUpdate(repo_id, *walker);
   }
   timer.Stop();
-  std::cout << "TMaster::FetchUpdates(" << repo_id << ") [" << lowest << " -> " << highest << "] took ["
-            << ToSecondsDouble(timer.GetTotal()) << "s]" << std::endl;
+  /* log scope */ {
+    std::ostringstream ss;
+    ss << repo_id;
+    syslog(LOG_INFO, "TMaster::FetchUpdates(%s) [%lu -> %lu] took [%fs]", ss.str().c_str(), lowest, highest, ToSecondsDouble(timer.GetTotal()));
+  }
   return context;
 }
 
@@ -567,7 +574,7 @@ bool TManager::TSlave::Work() {
 }
 
 void TManager::TSlave::ScheduleSyncInventory() {
-  std::cout << "Scheduling SyncInventory()" << std::endl;
+  syslog(LOG_INFO, "TSlave: scheduling SyncInventory()");
   Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
   try {
     frame->Latch(Manager->BGFastRunner, this, static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::TManager::TSlave::SyncInventory));
@@ -579,7 +586,7 @@ void TManager::TSlave::ScheduleSyncInventory() {
 }
 
 void TManager::TSlave::SyncInventory() {
-  std::cout << "Calling SyncInventory()" << std::endl;
+  syslog(LOG_INFO, "TSlave: calling SyncInventory()");
   for (const auto &to_sync : ToSyncQueue) {
     const TUuid &repo_id = to_sync.RepoId;
     size_t ttl = to_sync.Ttl;
@@ -588,18 +595,38 @@ void TManager::TSlave::SyncInventory() {
     const std::optional<TSequenceNumber> &lowest = to_sync.Lowest;
     const std::optional<TSequenceNumber> &highest = to_sync.Highest;
     TSequenceNumber next_id = to_sync.NextId;
-    std::cout << "TSlave::Inventory(" << repo_id << ")" << std::endl;
+    /* log scope */ {
+      std::ostringstream ss;
+      ss << repo_id;
+      syslog(LOG_INFO, "TSlave::Inventory(%s)", ss.str().c_str());
+    }
     std::optional<L0::TManager::TPtr<TRepo>> parent_repo;
     if (parent_repo_id) {
-      std::cout << "TSlave::Inventory::ForgeGetRepo(" << *parent_repo_id << ")" << std::endl;
+      /* log scope */ {
+        std::ostringstream ss;
+        ss << *parent_repo_id;
+        syslog(LOG_INFO, "TSlave::Inventory::ForgeGetRepo(%s)", ss.str().c_str());
+      }
       parent_repo = Manager->ForceGetRepo(*parent_repo_id);
     }
-    std::cout << "TSlave::Inventory::GetRepo(" << repo_id << ")" << std::endl;
+    /* log scope */ {
+      std::ostringstream ss;
+      ss << repo_id;
+      syslog(LOG_INFO, "TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
+    }
     auto repo = Manager->GetRepo(repo_id, chrono::seconds(ttl), parent_repo, is_safe, false);
-    std::cout << "done TSlave::Inventory::GetRepo(" << repo_id << ")" << std::endl;
+    /* log scope */ {
+      std::ostringstream ss;
+      ss << repo_id;
+      syslog(LOG_INFO, "done TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
+    }
     //repo->SetNextSequenceNumber(next_id);
     repo->SetReleasedUpTo(next_id > 0UL ? next_id - 1UL : 0UL);
-    std::cout << "TSlave::Inventory (" << repo_id << ")\tSetReleasedUpTo(" << (next_id > 0UL ? next_id - 1UL : 0UL) << ")" << std::endl;
+    /* log scope */ {
+      std::ostringstream ss;
+      ss << repo_id;
+      syslog(LOG_INFO, "TSlave::Inventory (%s) SetReleasedUpTo(%lu)", ss.str().c_str(), next_id > 0UL ? next_id - 1UL : 0UL);
+    }
 
 
     std::optional<TSequenceNumber> snap_lowest;
@@ -672,7 +699,7 @@ void TManager::TSlave::SyncInventory() {
 }
 
 void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPtr<Indy::TRepo> &repo, TSequenceNumber from, TSequenceNumber to) {
-  std::cout << "PullUpdateRange from [" << from << " -> " << to << "]" << std::endl;
+  syslog(LOG_INFO, "TSlave: PullUpdateRange from [%lu -> %lu]", from, to);
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
   const size_t max_update_pull = 50000;
   void *lhs_state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -744,8 +771,11 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
         repo->AddImportLayer(mem_layer, sem, storage_speed);
       }
       timer.Stop();
-      std::cout << "received " << context.UpdateVec.size() << " updates from repo " << repo_id << "\tcommit took ["
-                << ToSecondsDouble(timer.GetTotal()) << "s]" << std::endl;
+      /* log scope */ {
+        std::ostringstream ss;
+        ss << repo_id;
+        syslog(LOG_INFO, "TSlave: received %zu updates from repo %s, commit took [%fs]", context.UpdateVec.size(), ss.str().c_str(), ToSecondsDouble(timer.GetTotal()));
+      }
     }
   } catch (...) {
     std::ostringstream ss;
@@ -1059,7 +1089,7 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
 
 void TManager::TSlave::TransitionToSlave() {
   try {
-    std::cout << "TSlave::TransitionToSlave()..." << std::endl;
+    syslog(LOG_INFO, "TSlave::TransitionToSlave()...");
     /* acquire Context lock */ {
       std::lock_guard<std::mutex> lock(Manager->ContextLock);
       switch (Manager->State) {
@@ -1072,7 +1102,7 @@ void TManager::TSlave::TransitionToSlave() {
           break;
         }
         case SyncSlave : {
-          std::cout << "TSlave::TransitionToSlave() walking over SlushCoreVec()" << std::endl;
+          syslog(LOG_INFO, "TSlave::TransitionToSlave() walking over SlushCoreVec()");
           Flusher->Flush();
           /* we have to rebuild all the core_vectors which we flushed to disk */ {
             Io::TBinaryInputOnlyStream in_stream(Flusher);
@@ -1081,12 +1111,12 @@ void TManager::TSlave::TransitionToSlave() {
               TCoreVector core_vec(in_stream);
               ApplyCoreVectorTransactions(core_vec.GetCores(), core_vec.GetArena());
             }
-            std::cout << "Core vector mem slush" << std::endl;
+            syslog(LOG_INFO, "TSlave::TransitionToSlave(): core vector mem slush");
             ApplyCoreVectorTransactions(SlushCoreVec->GetCores(), SlushCoreVec->GetArena());
           }
           Flusher.reset();
 
-          std::cout << "TSlave::TransitionToSlave() changing state" << std::endl;
+          syslog(LOG_INFO, "TSlave::TransitionToSlave() changing state");
           Manager->State = Slave;
           Manager->StateChangeCb(Slave);
           break;
@@ -1173,9 +1203,11 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
       TSavedRepoObj saved_repo;
 
       Sabot::State::TAny::TWrapper obj_state((*walker).Op.NewState((*walker).OpArena, state_alloc));
-      std::cout << "Reconstruct from : ";
-      obj_state->Accept(Sabot::TStateDumper(std::cout));
-      std::cout << std::endl;
+      /* log scope */ {
+        std::ostringstream ss;
+        obj_state->Accept(Sabot::TStateDumper(ss));
+        syslog(LOG_INFO, "TSlave: reconstruct from : %s", ss.str().c_str());
+      }
       Sabot::ToNative(*obj_state, saved_repo);
 
       TStatus status;
@@ -1370,7 +1402,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
   switch (State) {
     case Solo : {
       try {
-        std::cout <<  "Slave joined" << std::endl;
+        syslog(LOG_NOTICE, "TMaster: slave joined");
         TSuprena arena;
         std::unique_ptr<Indy::TRepo::TView> view;
         std::shared_ptr<TPresentWalker> walker_ptr;
@@ -1378,7 +1410,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           lock_guard<mutex> lock(ContextLock);
           PromoteSolo(fd);
           view = make_unique<Indy::TRepo::TView>(SystemRepo);
-          std::cout << "Walking tuple(SavedRepoMagicNumber, free<uuid>)" << std::endl;
+          syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>)");
           walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), true);
         }  // release Context lock
         /* sync all the index ids */ {
@@ -1396,9 +1428,17 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, state_alloc)), repo_id_tuple);
 
           Base::TUuid repo_id = std::get<1>(repo_id_tuple);
-          std::cout << "Walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [" << repo_id << "]" << std::endl;
+          /* log scope */ {
+            std::ostringstream ss;
+            ss << repo_id;
+            syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [%s]", ss.str().c_str());
+          }
           auto repo = ForceGetRepo(repo_id);
-          std::cout << "got forced repo [" << repo_id << "]" << std::endl;
+          /* log scope */ {
+            std::ostringstream ss;
+            ss << repo_id;
+            syslog(LOG_INFO, "TMaster: got forced repo [%s]", ss.str().c_str());
+          }
           bool is_safe = repo->IsSafeRepo();
 
           assert(SlaveSyncViewMap.find(repo_id) == SlaveSyncViewMap.end());
@@ -1410,11 +1450,15 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           }
           size_t ttl = repo->GetTtl().count();
           Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
-          std::cout << "Calling Inventory on Slave (" << repo_id << ") [";
-          if (sync_view->GetLower()) { std::cout << *sync_view->GetLower(); }
-          std::cout << " -> ";
-          if (sync_view->GetUpper()) { std::cout << *sync_view->GetUpper(); }
-          std::cout << "]" << std::endl;
+          /* log scope */ {
+            std::ostringstream ss;
+            ss << "Calling Inventory on Slave (" << repo_id << ") [";
+            if (sync_view->GetLower()) { ss << *sync_view->GetLower(); }
+            ss << " -> ";
+            if (sync_view->GetUpper()) { ss << *sync_view->GetUpper(); }
+            ss << "]";
+            syslog(LOG_INFO, "TMaster: %s", ss.str().c_str());
+          }
           std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::InventoryId, repo_id, ttl, parent_repo_id, is_safe, sync_view->GetLower(), sync_view->GetUpper(), sync_view->GetNextId());
 
           assert(future);
@@ -1428,7 +1472,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             std::lock_guard<std::mutex> slave_notify_lock(SlaveNotifyLock);
             SlaveNotifiedFinish = false;
           }
-          std::cout << "Calling SyncInventoryId on slave" << std::endl;
+          syslog(LOG_INFO, "TMaster: calling SyncInventoryId on slave");
           Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
           auto sync_future = Context->Write<void>(TSlave::SyncInventoryId);
           assert(sync_future);
@@ -1437,7 +1481,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             throw std::runtime_error("Future did not complete.");
           }
           std::unique_lock<std::mutex> slave_notify_lock(SlaveNotifyLock);
-          std::cout << "Waiting for Slave to say he's finished." << std::endl;
+          syslog(LOG_INFO, "TMaster: waiting for slave to say he's finished");
           while (!SlaveNotifiedFinish) {
             /* make sure the slave is still there */ {
               auto sync_future = Context->Write<void>(TSlave::PingId);
@@ -1449,7 +1493,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             }
             SlaveNotifyCond.wait_for(slave_notify_lock, 2000ms);
           }
-          std::cout << "Slave says he's finished." << std::endl;
+          syslog(LOG_INFO, "TMaster: slave says he's finished");
         }
 
         Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
@@ -1460,7 +1504,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           throw std::runtime_error("Future did not complete.");
         }
         SlaveSyncViewMap.clear();
-        std::cout << "Finished OnSlaveJoin::Sync()" << std::endl;
+        syslog(LOG_INFO, "TMaster: finished OnSlaveJoin::Sync()");
         break;
       } catch (const std::exception &ex) {
         syslog(LOG_ERR, "TManager::OnSlaveJoin caught exception [%s]", ex.what());
@@ -1538,7 +1582,7 @@ void TManager::Demote() {
   Context.reset();
   State = Solo;
   StateChangeCb(Solo);
-  std::cout << "Demoted back to Solo" << std::endl;
+  syslog(LOG_NOTICE, "TManager: demoted back to solo");
   auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
   WaitForSlave(cb);
 }
@@ -1553,7 +1597,7 @@ void TManager::PromoteSolo(const Base::TFd &fd) {
   ReplicationWorkSem.Push();
   State = Master;
   StateChangeCb(Master);
-  std::cout << "Solo Promoted to Master" << std::endl;
+  syslog(LOG_NOTICE, "TManager: solo promoted to master");
 }
 
 void TManager::PromoteSlave() {
@@ -1563,5 +1607,5 @@ void TManager::PromoteSlave() {
   StateChangeCb(Solo);
   auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
   WaitForSlave(cb);
-  std::cout << "Slave Promoted to Solo" << std::endl;
+  syslog(LOG_NOTICE, "TManager: slave promoted to solo");
 }
