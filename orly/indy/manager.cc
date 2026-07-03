@@ -162,6 +162,10 @@ TManager::TManager(Disk::Util::TEngine *engine,
 }
 
 TManager::~TManager() {
+  /* Paused-and-written repos (test povs) hold MakeDirty() self-pins that
+     nothing will ever release; drop them so the sweeps below see only
+     genuinely referenced repos (#440). */
+  ReleaseDirtySelfPins();
   CloseAllUnreferencedObjects();
   SystemRepo.Reset();
   PreDtor();

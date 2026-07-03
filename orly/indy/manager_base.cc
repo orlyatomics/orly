@@ -228,6 +228,28 @@ TManager::~TManager() {
   ShuttingDown = true;
 }
 
+void TManager::ReleaseDirtySelfPins() {
+  /* Releasing a pin can cascade: a repo whose count hits zero closes,
+     force-releases its parent ptr (possibly closing the parent too), and
+     caching it can evict other closed repos -- all of which mutate
+     OpenableObjs/ClosedObjs.  So rescan from the top after every release
+     instead of iterating; repo counts at teardown are small. */
+  for (;;) {
+    TRepo *dirty_repo = nullptr;
+    for (const auto &item: OpenableObjs) {
+      TRepo *repo = dynamic_cast<TRepo *>(item.second);
+      if (repo && repo->DirtyPtr) {
+        dirty_repo = repo;
+        break;
+      }
+    }
+    if (!dirty_repo) {
+      break;
+    }
+    dirty_repo->RemoveFromDirty();
+  }
+}
+
 void TManager::CloseAllUnreferencedObjects() {
   MergeDiskQueue.RemoveEachMember();
   MergeMemQueue.RemoveEachMember();

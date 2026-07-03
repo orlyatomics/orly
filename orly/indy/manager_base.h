@@ -772,6 +772,17 @@ namespace Orly {
 
         virtual ~TManager();
 
+        /* Teardown step (#440): drop every repo's MakeDirty() self-pin.  A
+           dirty repo pins itself open until its updates are released or its
+           mem layer merges out, but a paused-and-written repo (compile-time
+           test povs, paused players) is never promoted, so its pin would
+           never drop and PreDtor would see a live ptr on every one.  By the
+           time this runs everything durable has been flushed
+           (FlushMemMerges) and a fast repo's data is volatile by design, so
+           releasing the pins loses nothing.  Call before
+           CloseAllUnreferencedObjects(). */
+        void ReleaseDirtySelfPins();
+
         void CloseAllUnreferencedObjects();
 
         bool PreDtor();
