@@ -392,7 +392,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TAsin *that) const { Unary(Package, TUnary::Asin, that); }
     virtual void operator()(const Expr::TAssert *that) const {
-      //TODO(#294): Assertion predicates?
       //TODO(#294): Report file name with assertion failures.
       //Pass the expression through, setting it as the "that" context, and making it a local (Since context that doesn't common subexpression eliminate automatically ATM).
       Res = Build(Package, that->GetExpr(), true);

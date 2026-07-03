@@ -1103,7 +1103,7 @@ namespace Orly {
             assert(start_vol);
             start_vol->Write(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, cache_instr, args...);
           } else {
-            throw std::logic_error("TODO(#330): implement support for cross-volume writes");
+            throw std::logic_error("cross-volume writes are not supported: multi-volume operation was never shipped (#330)");
           }
         }
 
@@ -1118,7 +1118,7 @@ namespace Orly {
             assert(start_vol);
             start_vol->Read(code_location, buf_kind, util_src, buf, start_offset, nbytes, priority, abort_on_error, args...);
           } else {
-            throw std::logic_error("TODO(#330): implement support for cross-volume reads");
+            throw std::logic_error("cross-volume reads are not supported: multi-volume operation was never shipped (#330)");
           }
         }
 
@@ -1134,7 +1134,7 @@ namespace Orly {
             assert(start_vol);
             start_vol->ReadV(code_location, buf_kind, util_src, buf_array, num_buf, start_offset, nbytes, priority, abort_on_error, args...);
           } else {
-            throw std::logic_error("TODO(#330): implement support for cross-volume reads");
+            throw std::logic_error("cross-volume reads are not supported: multi-volume operation was never shipped (#330)");
           }
         }
 

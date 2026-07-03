@@ -101,7 +101,6 @@
     ::Test::TExpect(HERE, #exception, \
                     [](bool &pass) { try { func(); pass = false; } catch (const exception&) { pass = true; } })
 
-//TODO(#287): This name is sort of ugh.
 /* Like EXPECT_THROW, but captures the callable function. */
 #define EXPECT_THROW_FUNC(exception, func) \
     ::Test::TExpect(HERE, #exception, \

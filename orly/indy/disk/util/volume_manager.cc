@@ -2047,7 +2047,7 @@ void TVolume::TStripedStrategy::DoStripeV(TOp op, const Base::TCodeLocation &cod
             break;
           }
           case W: {
-            throw std::logic_error("TODO(#330): implement DoStripeV for writes");
+            throw std::logic_error("vectored striped writes are not supported: no WriteV caller exists (#330)");
             break;
           }
         }
@@ -2101,14 +2101,14 @@ void TVolume::TChainedStrategy::DelegateRead(const Base::TCodeLocation &code_loc
 void TVolume::TChainedStrategy::DelegateReadV(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
                                               void **/*buf_array*/, size_t /*num_buf*/, const TOffset /*start_offset*/, long long /*nbytes*/,
                                               DiskPriority /*priority*/, bool /*abort_on_error*/, TCompletionTrigger &/*trigger*/) {
-  throw std::logic_error("TODO(#330): implement TChainedStrategy::DelegateReadV");
+  throw std::logic_error("chained-strategy vectored reads are not supported: the Chained strategy was never shipped (#330)");
 }
 
 void TVolume::TChainedStrategy::DelegateReadV(const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
                                               void **/*buf_array*/, size_t /*num_buf*/, const TOffset /*start_offset*/, long long /*nbytes*/,
                                               DiskPriority /*priority*/, bool /*abort_on_error*/, TCompletionTrigger &/*trigger*/,
                                               const TIOCallback &/*cb*/) {
-  throw std::logic_error("TODO(#330): implement TChainedStrategy::DelegateReadV");
+  throw std::logic_error("chained-strategy vectored reads are not supported: the Chained strategy was never shipped (#330)");
 }
 
 void TVolume::TChainedStrategy::DelegateAppendTouchedDevicesToSet(TDeviceSet &device_set, const TBlockRange &block_range) const {
@@ -2829,8 +2829,8 @@ void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed s
       }
     }
   }
-  /* this means there are no blocks left of the storage kind we requested. We're going to start allocating from other volumes...
-     TODO(#330): We can be specific about the policy we use to satisfy this request. */
+  /* this means there are no blocks left of the storage kind we requested. We're going to start allocating from other volumes,
+     in plain collection order; a smarter placement policy only matters if multi-volume operation ever ships (#330). */
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
     try {
       return csr->TryAllocateSequentialBlocks(num_blocks, cb);
@@ -2855,7 +2855,7 @@ void TVolumeManager::MarkBlockRangeUsed(const TBlockRange &block_range) {
   if (start_vol == end_vol) {
     start_vol->MarkBlockRangeUsed(block_range);
   } else {
-    throw std::logic_error("TODO(#330): implement support for cross-volume MarkBlockRangeUsed");
+    throw std::logic_error("cross-volume MarkBlockRangeUsed is not supported: multi-volume operation was never shipped (#330)");
   }
 }
 
@@ -2872,7 +2872,7 @@ void TVolumeManager::FreeSequentialBlocks(const TBlockRange &block_range) {
   if (start_vol == end_vol) {
     start_vol->FreeSequentialBlocks(block_range);
   } else {
-    throw std::logic_error("TODO(#330): implement support for cross-volume block release");
+    throw std::logic_error("cross-volume block release is not supported: multi-volume operation was never shipped (#330)");
   }
 }
 
@@ -2892,7 +2892,7 @@ void TVolumeManager::SyncToDisk(const std::vector<TBlockRange> &block_range_vec)
     if (start_vol == end_vol) {
       start_vol->AppendTouchedDevicesToSet(device_set, block_range);
     } else {
-      throw std::logic_error("TODO(#330): implement support for cross-volume block range input to SyncToDisk");
+      throw std::logic_error("cross-volume SyncToDisk is not supported: multi-volume operation was never shipped (#330)");
     }
   }
   assert(!device_set.empty());

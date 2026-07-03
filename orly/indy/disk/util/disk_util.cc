@@ -61,7 +61,7 @@ TDiskUtil::TDiskUtil(Base::TScheduler *scheduler,
            the volume-level fields: strategy, speed, replication, extents, striping.) */
         const TVolume::TDesc joining_desc{
           device_info.VolumeStrategy == 1UL ? TVolume::TDesc::Striped : TVolume::TDesc::Chained,
-          TDevice::TDesc{ TDevice::TDesc::TKind::SSD,                                       /* TODO(#318) */
+          TDevice::TDesc{ TDevice::TDesc::TKind::SSD,  /* kind is informational; nothing branches on it (#318) */
                           device_info.LogicalBlockSize,
                           device_info.PhysicalBlockSize,
                           device_info.NumLogicalBlockExposed,
@@ -105,7 +105,7 @@ TDiskUtil::TDiskUtil(Base::TScheduler *scheduler,
         auto volume = std::make_unique<TVolume>(
             TVolume::TDesc{
               device_info.VolumeStrategy == 1UL ? TVolume::TDesc::Striped : TVolume::TDesc::Chained,
-              TDevice::TDesc{ TDevice::TDesc::TKind::SSD,                                       /* TODO(#318) */
+              TDevice::TDesc{ TDevice::TDesc::TKind::SSD,  /* kind is informational; nothing branches on it (#318) */
                               device_info.LogicalBlockSize,                                     /* LogicalBlockSize */
                               device_info.PhysicalBlockSize,                                    /* PhysicalBlockSize*/
                               device_info.NumLogicalBlockExposed,                               /* NumLogicalBlock */
@@ -182,8 +182,8 @@ void TDiskUtil::CreateVolume(const std::string &instance_name,
                              const size_t stripe_size_in_kb,
                              const TVolume::TDesc::TStorageSpeed storage_speed,
                              bool do_fsync) {
-  const size_t logical_block_size = 512; /* TODO(#318) */
-  const size_t physical_block_size = 512; /* TODO(#318) */
+  const size_t logical_block_size = 512;  /* provisioning assumes 512e; engine geometry is compile-time (#318) */
+  const size_t physical_block_size = 512;
 
   size_t discard_support_count = 0UL;
   size_t discard_gran = 0UL;
@@ -235,7 +235,6 @@ void TDiskUtil::CreateVolume(const std::string &instance_name,
      block. */
   size_t min_logical_blocks = -1;
   for (const auto &dev_path : device_set) {
-    /* TODO(#318): some devices won't use this path, figure out how to handle all devices. */
     string path_to_device_info = TDeviceUtil::GetPathToPartitionInfo(dev_path) + "size";
     Base::TFd size_fd;
     try {
@@ -272,7 +271,7 @@ void TDiskUtil::CreateVolume(const std::string &instance_name,
   auto volume = std::make_unique<TVolume>(TVolume::TDesc{
     kind,
     TDevice::TDesc {
-      TDevice::TDesc::TKind::SSD, /* TODO(#318) */
+      TDevice::TDesc::TKind::SSD,  /* kind is informational; nothing branches on it (#318) */
       logical_block_size,
       512, /* PhysicalBlockSize*/
       min_logical_blocks, /* NumLogicalBlock */
