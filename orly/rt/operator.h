@@ -24,9 +24,11 @@
 #pragma once
 
 #include <cassert>
+#include <tuple>
 #include <vector>
 
 #include <base/class_traits.h>
+#include <orly/desc.h>
 #include <orly/rt/containers.h>
 #include <orly/rt/mutable.h>
 #include <orly/rt/opt.h>
@@ -1044,6 +1046,208 @@ namespace Orly {
 
       static TOpt<bool> Do(const TOpt<TLhs> &lhs, const TOpt<TRhs> &rhs) {
         return Opt::Compare(lhs, rhs, GtEqStruct<TLhs, TRhs>::Do);
+      }
+
+    };
+
+    /* Desc comparators (#283): route through the Struct machinery with the
+       ordering flipped instead of TDesc's own raw operators, so a
+       TDesc<TOpt<...>> element picks up the Opt comparators above. For
+       non-optional values the result is identical to TDesc's operators. */
+
+    /* EqEq : desc == desc (descending doesn't change equality) */
+    template <typename TLhs, typename TRhs>
+    struct EqEqStruct<TDesc<TLhs>, TDesc<TRhs>> {
+      NO_CONSTRUCTION(EqEqStruct);
+
+      static auto Do(const TDesc<TLhs> &lhs, const TDesc<TRhs> &rhs) {
+        return EqEqStruct<TLhs, TRhs>::Do(*lhs, *rhs);
+      }
+
+    };
+
+    /* Neq : desc != desc */
+    template <typename TLhs, typename TRhs>
+    struct NeqStruct<TDesc<TLhs>, TDesc<TRhs>> {
+      NO_CONSTRUCTION(NeqStruct);
+
+      static auto Do(const TDesc<TLhs> &lhs, const TDesc<TRhs> &rhs) {
+        return NeqStruct<TLhs, TRhs>::Do(*lhs, *rhs);
+      }
+
+    };
+
+    /* Lt : desc < desc is the underlying > */
+    template <typename TLhs, typename TRhs>
+    struct LtStruct<TDesc<TLhs>, TDesc<TRhs>> {
+      NO_CONSTRUCTION(LtStruct);
+
+      static auto Do(const TDesc<TLhs> &lhs, const TDesc<TRhs> &rhs) {
+        return GtStruct<TLhs, TRhs>::Do(*lhs, *rhs);
+      }
+
+    };
+
+    /* LtEq : desc <= desc is the underlying >= */
+    template <typename TLhs, typename TRhs>
+    struct LtEqStruct<TDesc<TLhs>, TDesc<TRhs>> {
+      NO_CONSTRUCTION(LtEqStruct);
+
+      static auto Do(const TDesc<TLhs> &lhs, const TDesc<TRhs> &rhs) {
+        return GtEqStruct<TLhs, TRhs>::Do(*lhs, *rhs);
+      }
+
+    };
+
+    /* Gt : desc > desc is the underlying < */
+    template <typename TLhs, typename TRhs>
+    struct GtStruct<TDesc<TLhs>, TDesc<TRhs>> {
+      NO_CONSTRUCTION(GtStruct);
+
+      static auto Do(const TDesc<TLhs> &lhs, const TDesc<TRhs> &rhs) {
+        return LtStruct<TLhs, TRhs>::Do(*lhs, *rhs);
+      }
+
+    };
+
+    /* GtEq : desc >= desc is the underlying <= */
+    template <typename TLhs, typename TRhs>
+    struct GtEqStruct<TDesc<TLhs>, TDesc<TRhs>> {
+      NO_CONSTRUCTION(GtEqStruct);
+
+      static auto Do(const TDesc<TLhs> &lhs, const TDesc<TRhs> &rhs) {
+        return LtEqStruct<TLhs, TRhs>::Do(*lhs, *rhs);
+      }
+
+    };
+
+    /* Tuple (address) comparators (#283). std::tuple's own operators can't
+       handle TOpt elements -- TOpt deliberately has no ordering operators,
+       and exact-match equality is not the Kleene equality comparison wants --
+       so fold element-wise through the Struct machinery: optional elements
+       pick up the Opt comparators above and the fold's result becomes
+       TOpt<bool>, unknown when an element the decision needs is unknown,
+       exactly as the generated object comparators behave. An all-known
+       tuple folds to plain bool with the same lexicographic result as
+       std::tuple's operators, so plain addresses behave as before. */
+    namespace Tuple {
+
+      /* Conjunction of element equalities. */
+      template <size_t I, typename TLhsTuple, typename TRhsTuple>
+      auto FoldEqEq(const TLhsTuple &lhs, const TRhsTuple &rhs) {
+        if constexpr (I == std::tuple_size_v<TLhsTuple>) {
+          return true;
+        } else {
+          return And(EqEq(std::get<I>(lhs), std::get<I>(rhs)), FoldEqEq<I + 1>(lhs, rhs));
+        }
+      }
+
+      /* Disjunction of element inequalities. */
+      template <size_t I, typename TLhsTuple, typename TRhsTuple>
+      auto FoldNeq(const TLhsTuple &lhs, const TRhsTuple &rhs) {
+        if constexpr (I == std::tuple_size_v<TLhsTuple>) {
+          return false;
+        } else {
+          return Or(Neq(std::get<I>(lhs), std::get<I>(rhs)), FoldNeq<I + 1>(lhs, rhs));
+        }
+      }
+
+      /* Lexicographic: the first element decides with strict <, a tie
+         recurses. Strict picks < vs <= via the base case -- two exhausted
+         (equal) tuples order as <= but not <. */
+      template <bool Strict, size_t I, typename TLhsTuple, typename TRhsTuple>
+      auto FoldLess(const TLhsTuple &lhs, const TRhsTuple &rhs) {
+        if constexpr (I == std::tuple_size_v<TLhsTuple>) {
+          return !Strict;
+        } else {
+          return Or(Lt(std::get<I>(lhs), std::get<I>(rhs)),
+                    And(EqEq(std::get<I>(lhs), std::get<I>(rhs)),
+                        FoldLess<Strict, I + 1>(lhs, rhs)));
+        }
+      }
+
+      /* Mirror of FoldLess for > / >=. */
+      template <bool Strict, size_t I, typename TLhsTuple, typename TRhsTuple>
+      auto FoldGreater(const TLhsTuple &lhs, const TRhsTuple &rhs) {
+        if constexpr (I == std::tuple_size_v<TLhsTuple>) {
+          return !Strict;
+        } else {
+          return Or(Gt(std::get<I>(lhs), std::get<I>(rhs)),
+                    And(EqEq(std::get<I>(lhs), std::get<I>(rhs)),
+                        FoldGreater<Strict, I + 1>(lhs, rhs)));
+        }
+      }
+
+    }  // Tuple
+
+    /* EqEq : tuple == tuple */
+    template <typename... TLhs, typename... TRhs>
+    struct EqEqStruct<std::tuple<TLhs...>, std::tuple<TRhs...>> {
+      NO_CONSTRUCTION(EqEqStruct);
+
+      static auto Do(const std::tuple<TLhs...> &lhs, const std::tuple<TRhs...> &rhs) {
+        static_assert(sizeof...(TLhs) == sizeof...(TRhs), "addresses of different lengths are not comparable");
+        return Tuple::FoldEqEq<0>(lhs, rhs);
+      }
+
+    };
+
+    /* Neq : tuple != tuple */
+    template <typename... TLhs, typename... TRhs>
+    struct NeqStruct<std::tuple<TLhs...>, std::tuple<TRhs...>> {
+      NO_CONSTRUCTION(NeqStruct);
+
+      static auto Do(const std::tuple<TLhs...> &lhs, const std::tuple<TRhs...> &rhs) {
+        static_assert(sizeof...(TLhs) == sizeof...(TRhs), "addresses of different lengths are not comparable");
+        return Tuple::FoldNeq<0>(lhs, rhs);
+      }
+
+    };
+
+    /* Lt : tuple < tuple */
+    template <typename... TLhs, typename... TRhs>
+    struct LtStruct<std::tuple<TLhs...>, std::tuple<TRhs...>> {
+      NO_CONSTRUCTION(LtStruct);
+
+      static auto Do(const std::tuple<TLhs...> &lhs, const std::tuple<TRhs...> &rhs) {
+        static_assert(sizeof...(TLhs) == sizeof...(TRhs), "addresses of different lengths are not comparable");
+        return Tuple::FoldLess<true, 0>(lhs, rhs);
+      }
+
+    };
+
+    /* LtEq : tuple <= tuple */
+    template <typename... TLhs, typename... TRhs>
+    struct LtEqStruct<std::tuple<TLhs...>, std::tuple<TRhs...>> {
+      NO_CONSTRUCTION(LtEqStruct);
+
+      static auto Do(const std::tuple<TLhs...> &lhs, const std::tuple<TRhs...> &rhs) {
+        static_assert(sizeof...(TLhs) == sizeof...(TRhs), "addresses of different lengths are not comparable");
+        return Tuple::FoldLess<false, 0>(lhs, rhs);
+      }
+
+    };
+
+    /* Gt : tuple > tuple */
+    template <typename... TLhs, typename... TRhs>
+    struct GtStruct<std::tuple<TLhs...>, std::tuple<TRhs...>> {
+      NO_CONSTRUCTION(GtStruct);
+
+      static auto Do(const std::tuple<TLhs...> &lhs, const std::tuple<TRhs...> &rhs) {
+        static_assert(sizeof...(TLhs) == sizeof...(TRhs), "addresses of different lengths are not comparable");
+        return Tuple::FoldGreater<true, 0>(lhs, rhs);
+      }
+
+    };
+
+    /* GtEq : tuple >= tuple */
+    template <typename... TLhs, typename... TRhs>
+    struct GtEqStruct<std::tuple<TLhs...>, std::tuple<TRhs...>> {
+      NO_CONSTRUCTION(GtEqStruct);
+
+      static auto Do(const std::tuple<TLhs...> &lhs, const std::tuple<TRhs...> &rhs) {
+        static_assert(sizeof...(TLhs) == sizeof...(TRhs), "addresses of different lengths are not comparable");
+        return Tuple::FoldGreater<false, 0>(lhs, rhs);
       }
 
     };

@@ -59,10 +59,9 @@ namespace Orly {
             is_optional = true;
           }
         }
-        // TODO(#283). Remove this throw once we support comparison between addresses with optionals
-        if (is_optional) {
-          throw TExprError(HERE, PosRange, "Equality test or mutation assignment for addresses with optionals is not supported");
-        }
+        /* An optional element makes the whole comparison optional -- unknown if
+           either side's element is unknown -- exactly as TDict below already
+           types its key/val comparison (#283). */
         Type = is_optional ? TOpt::Get(TBool::Get()) : TBool::Get();
       }
       virtual void operator()(const TBool *, const TBool *) const {
@@ -147,10 +146,8 @@ namespace Orly {
             is_optional = true;
           }
         }
-        // TODO(#283). Remove this throw once we support comparison between addresses with optionals
-        if (is_optional) {
-          throw TExprError(HERE, PosRange, "Comparison between addresses with optionals is not supported");
-        }
+        /* An optional element makes the ordering optional (#283), matching
+           the equality visitor above. */
         Type = is_optional ? TOpt::Get(TBool::Get()) : TBool::Get();
       }
       virtual void operator()(const TBool *, const TBool *) const {
