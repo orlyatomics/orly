@@ -1801,6 +1801,17 @@ void TServer::AcceptClientConnections() {
 }
 
 void TServer::BeginImport() {
+  /* The importer writes data files and consumes sequence-number ranges
+     outside the replication stream, which a live slave cannot survive
+     (#498): only a solo server may import.  WaitForSlave() holds any join
+     that arrives while an import is running. */ {
+    std::lock_guard<std::mutex> lock(ImportGateMutex);
+    if (RepoState != Orly::Indy::TManager::Solo || SlaveHandshakeActive) {
+      throw std::runtime_error(
+          "cannot import: this server is part of a replication pair; imports require a solo server (#498)");
+    }
+    ImportInProgress = true;
+  }
   DEBUG_LOG("server; pausing tetris for global pov");
   TetrisManager->PausePlayer(TSession::GlobalPovId);
   DEBUG_LOG("server; tetris for global pov is paused");
@@ -1834,6 +1845,10 @@ void TServer::EndImport() {
   DEBUG_LOG("server; unpausing tetris for global pov");
   TetrisManager->UnpausePlayer(TSession::GlobalPovId);
   DEBUG_LOG("server; tetris for global pov is unpaused");
+  /* Reopen the slave-join gate (#498). */ {
+    std::lock_guard<std::mutex> lock(ImportGateMutex);
+    ImportInProgress = false;
+  }
 }
 
 void TServer::TailGlobalPov() {
@@ -2069,11 +2084,8 @@ string TServer::ImportCoreVector(const string &file_pattern,
                       index_id_remapper.emplace(index_id, new_ret.first->second);
                       index_id = new_ret.first->second;
                     } else {
-                      /* TODO(#367): replicate index id */
-                      assert(Server->RepoManager);
-                      Server->RepoManager->SaveIndexNamespaceMapping(index_id, pkg_key);
+                      Server->RegisterAndReplicateIndexId(index_id, pkg_key, TKey(val_core, &temp_arena));
                       index_id_remapper.emplace(index_id, index_id);
-                      Server->IndexIdSet.insert(index_id);
 
                       stringstream ss;
                       ss << "Importer adding Index [" << index_id << "]\t" << pkg_key << " <- ";
@@ -2341,10 +2353,22 @@ string TServer::ImportCoreVector(const string &file_pattern,
   /* add the file to the repo */
   if (gen_id_vec.size() == 1) {
     global_repo->AddFileToRepo(gen_id_vec.front(), final_saved_low, final_saved_high, final_num_keys);
+    /* Give back the unused tail of the load jobs' per-file reservations: a
+       joining slave's SyncInventory requires the highest advertised sequence
+       number to be the highest materialized one, and nothing after the
+       import ever fills the reserved gap (#498). */
+    global_repo->ReleaseUnusedSequenceNumbers(final_saved_high + 1);
   } else {
     throw std::runtime_error("Need to finish import with single file");
   }
   return result;
+}
+
+void TServer::RegisterAndReplicateIndexId(const Base::TUuid &idx_id, const std::string &pkg_key, const Indy::TKey &val) {
+  assert(RepoManager);
+  RepoManager->SaveIndexNamespaceMapping(idx_id, pkg_key);
+  RepoManager->Enqueue(new TIndexIdReplication(idx_id, pkg_key, val));
+  IndexIdSet.insert(idx_id);
 }
 
 void TServer::InstallPackage(const vector<string> &package_name, uint64_t version) {
@@ -2405,11 +2429,7 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
         #endif
 
       } else {
-        /* TODO(#367): clean up the index_id_replication obj... refactor this logic into a function */
-        assert(RepoManager);
-        RepoManager->SaveIndexNamespaceMapping(addr_pair.first, pkg_key);
-        RepoManager->Enqueue(new TIndexIdReplication(addr_pair.first, pkg_key, TKey(val_core, &IndexMapArena)));
-        IndexIdSet.insert(addr_pair.first);
+        RegisterAndReplicateIndexId(addr_pair.first, pkg_key, TKey(val_core, &IndexMapArena));
       }
     }
   };
@@ -2638,7 +2658,20 @@ void TServer::WaitForSlave() {
     TFd listener(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
     int flag = true;
     IfLt0(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
-    Bind(listener, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
+    /* A previous slave session's listener can still be draining right after
+       a demote; retry rather than killing the server (#500). */
+    for (;;) {
+      try {
+        Bind(listener, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
+        break;
+      } catch (const std::system_error &err) {
+        if (err.code().value() != EADDRINUSE || ShutdownCalled) {
+          throw;
+        }
+        syslog(LOG_INFO, "slave port [%d] still in use; retrying", static_cast<int>(Cmd.SlavePortNumber));
+        sleep(1);
+      }
+    }
     IfLt0(listen(listener, 4));
     /* Publish the listener under the lock Shutdown() takes before its
        shutdown(2): either Shutdown() sees the fd we are about to accept
@@ -2653,7 +2686,41 @@ void TServer::WaitForSlave() {
     syslog(LOG_INFO, "waiting for slave to connect");
     TFd slave_fd(accept(SlaveSocket, nullptr, nullptr));
     syslog(LOG_INFO, "slave has connected");
-    (*WaitForSlaveActionCb)(slave_fd);
+    /* This listener's one accept is consumed: release the port now, so the
+       WaitForSlave() that is re-armed when this slave disconnects and we
+       demote back to solo can bind it again (#500). */ {
+      std::lock_guard<std::mutex> lock(SlaveSocketLock);
+      SlaveSocket.Reset();
+    }
+    /* Hold the join while an import is running, and keep imports from
+       starting while the handshake runs (#498): the importer's data files
+       and sequence-number reservations do not ride the replication stream,
+       so a slave may only sync against a server that is not importing. */
+    for (;;) {
+      /* under the gate */ {
+        std::lock_guard<std::mutex> gate_lock(ImportGateMutex);
+        if (!ImportInProgress) {
+          SlaveHandshakeActive = true;
+          break;
+        }
+      }
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        return;
+      }
+      sleep(1);
+    }
+    try {
+      (*WaitForSlaveActionCb)(slave_fd);
+    } catch (...) {
+      std::lock_guard<std::mutex> gate_lock(ImportGateMutex);
+      SlaveHandshakeActive = false;
+      throw;
+    }
+    /* under the gate */ {
+      std::lock_guard<std::mutex> gate_lock(ImportGateMutex);
+      SlaveHandshakeActive = false;
+    }
   } catch (const exception &ex) {
     if (ShutdownCalled) {
       syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");

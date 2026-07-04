@@ -174,6 +174,13 @@ namespace Orly {
          first; the bulk counterpart of AppendUpdate's per-update bookkeeping. */
       inline TSequenceNumber UseSequenceNumbers(size_t num);
 
+      /* Return the unused tail of a bulk reservation: roll the counters back
+         so the repo advertises `next_id - 1` as its highest sequence number.
+         The bulk importer over-reserves per file and nothing ever
+         materializes the reserved gap, which a joining slave's
+         SyncInventory rejects (#498). */
+      inline void ReleaseUnusedSequenceNumbers(TSequenceNumber next_id);
+
       /* The high-water mark set by SetReleasedUpTo / ReleaseUpdate. */
       inline TSequenceNumber GetReleasedUpTo() const;
 
@@ -752,6 +759,14 @@ namespace Orly {
 
     inline void TRepo::SetReleasedUpTo(TSequenceNumber released_up_to) {
       ReleasedUpTo = released_up_to;
+    }
+
+    inline void TRepo::ReleaseUnusedSequenceNumbers(TSequenceNumber next_id) {
+      std::lock_guard<std::mutex> lock(DataLock);
+      assert(next_id > 0);
+      assert(next_id <= NextUpdate);
+      NextUpdate = next_id;
+      HighestSeqNum = next_id - 1;
     }
 
     inline TSequenceNumber TRepo::UseSequenceNumbers(size_t num) {
