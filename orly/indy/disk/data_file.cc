@@ -262,6 +262,8 @@ class TIndexFile
   Atom::TCore::TOffset RemapVal(Atom::TCore::TOffset offset);
   std::function<Atom::TCore::TOffset(Atom::TCore::TOffset)> ValRemapper;
 
+  Atom::TCore RemapMainCore(const Atom::TCore &core, Atom::TCore::TArena *arena) const;
+
   Base::TUuid IndexId;
 
   size_t GenId;
@@ -433,6 +435,18 @@ Atom::TCore::TOffset TIndexFile::RemapVal(Atom::TCore::TOffset offset) {
   return pos->NewKey;
 }
 
+Atom::TCore TIndexFile::RemapMainCore(const Atom::TCore &core, Atom::TCore::TArena *arena) const {
+  /* The update-index writer copies these cores to disk verbatim, where the
+     reader (TUpdateWalkFile) interprets their offsets against the file's main
+     arena -- an in-memory suprena offset is a raw note pointer, so it must be
+     remapped here or the on-disk core dangles. */
+  return Atom::TCore(core, [this, arena](Atom::TCore::TOffset offset) {
+    auto pos = MainArenaRemapIndex.find(TRemapObj(arena, offset, 0UL /* not used */));
+    assert(pos != MainArenaRemapIndex.end());
+    return pos->NewKey;
+  });
+}
+
 void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec) {
   ArenaByteOffset = MakeArena(Engine,
                               StorageSpeed,
@@ -536,12 +550,18 @@ void TIndexFile::PushKey(TUpdate::TEntry *entry) {
       }
 
     } while (prefix_core.TryTruncateTuple());
-    UpdateCollector->Emplace(seq_num, entry->GetMetadata(), entry->GetId(), CurKeyOffset, true, IndexId);
+    UpdateCollector->Emplace(seq_num,
+                             RemapMainCore(entry->GetMetadata(), &entry->GetSuprena()),
+                             RemapMainCore(entry->GetId(), &entry->GetSuprena()),
+                             CurKeyOffset, true, IndexId);
 
   } else {  // History Key
     ++NumHistKeys;
     HistKeys.push_back(entry);
-    UpdateCollector->Emplace(entry->GetSequenceNumber(), entry->GetMetadata(), entry->GetId(), ByteOffsetOfHistory + NumHistoryElem * TDataFile::KeyHistorySize, false, IndexId);
+    UpdateCollector->Emplace(entry->GetSequenceNumber(),
+                             RemapMainCore(entry->GetMetadata(), &entry->GetSuprena()),
+                             RemapMainCore(entry->GetId(), &entry->GetSuprena()),
+                             ByteOffsetOfHistory + NumHistoryElem * TDataFile::KeyHistorySize, false, IndexId);
     ++NumHistoryElem;
   }
 }
@@ -1005,7 +1025,11 @@ TDataFile::TDataFile(Util::TEngine *engine,
         TUpdateCollector::TCursor update_csr(&UpdateCollector, 32UL);
         assert(update_csr);
         TSequenceNumber cur_seq_num = (*update_csr).SequenceNumber;
-        TCore cur_meta, cur_id;
+        /* Seed meta/id from the first entry: the loop below only reloads them
+           on a sequence-number change, so a default init here would persist
+           zeroed cores for the whole first update. */
+        TCore cur_meta = (*update_csr).Metadata;
+        TCore cur_id = (*update_csr).Id;
         size_t bucket_ptr = byte_offset_of_bucket_entries;
         size_t num_accum = 0U;
         LowestSeq = (*update_csr).SequenceNumber;

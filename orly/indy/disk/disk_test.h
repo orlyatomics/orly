@@ -52,15 +52,16 @@ namespace Orly {
         NO_COPY(TMockUpdate);
         public:
 
-        static TMockUpdate *NewMockUpdate(const TOpByKey &op_by_key, const TKey &id, const TKey &metadata, TSequenceNumber seq_num) {
+        /* NOTE: the argument order matches TUpdate's ctor: metadata, then id. */
+        static TMockUpdate *NewMockUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, TSequenceNumber seq_num) {
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-          return new TMockUpdate(op_by_key, id, metadata, seq_num, state_alloc);
+          return new TMockUpdate(op_by_key, metadata, id, seq_num, state_alloc);
         }
 
         private:
 
-        TMockUpdate(const TOpByKey &op_by_key, const TKey &id, const TKey &metadata, TSequenceNumber seq_num, void *state_alloc)
-            : TUpdate(op_by_key, id, metadata, state_alloc) {
+        TMockUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, TSequenceNumber seq_num, void *state_alloc)
+            : TUpdate(op_by_key, metadata, id, state_alloc) {
           SetSequenceNumber(seq_num);
         }
 

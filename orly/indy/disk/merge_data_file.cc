@@ -217,6 +217,37 @@ class TMergeDataFileImpl {
             ++source_idx;
           }
         }
+        /* now for each source file's update index, if the entry's sequence
+           number is a keeper, also keep its metadata / id notes in the main
+           arena; otherwise a tail merge would drop them and the merged
+           update index could not reference them (#323). */
+        for (size_t i = 0; i < ReadFileVec.size(); ++i) {
+          const auto &reader = ReadFileVec[i];
+          const size_t num_updates = reader->GetNumUpdates();
+          if (!num_updates) {
+            continue;
+          }
+          TArenaKeeperSorter &main_arena_keeper = *main_arena_keeper_vec[i];
+          typename TSeqKeeperSorter::TCursor filter_csr(seq_keeper.get(), MaxBlockCacheReadSlotsAllowed);
+          TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileTailIndex, Priority, reader.get(), Engine->GetCache<TDataInStream<0UL>::PhysicalCachePageSize>(), reader->GetByteOffsetOfUpdateIndex());
+          for (size_t u = 0; u < num_updates; ++u) {
+            TSequenceNumber seq_num;
+            Atom::TCore meta_core, id_core;
+            in_stream.Read(seq_num);
+            in_stream.Read(&meta_core, sizeof(meta_core));
+            in_stream.Read(&id_core, sizeof(id_core));
+            in_stream.Skip(sizeof(size_t) * 2UL);
+            for (; filter_csr && *filter_csr < seq_num; ++filter_csr) {}
+            if (filter_csr && *filter_csr == seq_num) {
+              if (const Atom::TCore::TOffset *offset = meta_core.TryGetOffset()) {
+                main_arena_keeper.Emplace(*offset);
+              }
+              if (const Atom::TCore::TOffset *offset = id_core.TryGetOffset()) {
+                main_arena_keeper.Emplace(*offset);
+              }
+            }
+          }
+        }
       }
       /* now merge each arena */ {
         for (auto &idx_pair : index_map) {
@@ -272,6 +303,90 @@ class TMergeDataFileImpl {
       } catch (...) {
         std::cerr << "Main Arena error" << std::endl;
         throw;
+      }
+      /* collect each surviving sequence number's metadata / id cores from the
+         source files' update indexes, remapped into the merged main arena, so
+         the update-index writer below can consume them in sequence order
+         alongside the update collector (#323). */
+      TMetaCollector meta_collector(HERE, Source::MergeDataFileUpdateIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true);
+      for (size_t i = 0; i < ReadFileVec.size(); ++i) {
+        const auto &reader = ReadFileVec[i];
+        const size_t num_updates = reader->GetNumUpdates();
+        if (!num_updates) {
+          continue;
+        }
+        auto make_update_index_stream = [&]() {
+          return std::make_unique<TDataInStream<0UL>>(HERE, Source::MergeDataFileUpdateIndex, Priority, reader.get(), Engine->GetCache<TDataInStream<0UL>::PhysicalCachePageSize>(), reader->GetByteOffsetOfUpdateIndex());
+        };
+        auto make_seq_filter_csr = [&]() -> std::unique_ptr<typename TSeqKeeperSorter::TCursor> {
+          return CanTail ? std::make_unique<typename TSeqKeeperSorter::TCursor>(seq_keeper.get(), MaxBlockCacheReadSlotsAllowed) : nullptr;
+        };
+        /* access pattern over the kept entries' indirect meta / id core
+           offsets: idx 2u addresses entry u's metadata, 2u + 1 its id. */
+        TRemapAccessSorter access_sorter(HERE, Source::MergeDataFileRemapIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true);
+        TRemapResolvedSorter resolved_sorter(HERE, Source::MergeDataFileRemapIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true);
+        /* first walk: build the access pattern */ {
+          auto in_stream = make_update_index_stream();
+          auto filter_csr = make_seq_filter_csr();
+          for (size_t u = 0; u < num_updates; ++u) {
+            TSequenceNumber seq_num;
+            Atom::TCore meta_core, id_core;
+            in_stream->Read(seq_num);
+            in_stream->Read(&meta_core, sizeof(meta_core));
+            in_stream->Read(&id_core, sizeof(id_core));
+            in_stream->Skip(sizeof(size_t) * 2UL);
+            if (filter_csr) {
+              for (; *filter_csr && **filter_csr < seq_num; ++*filter_csr) {}
+              if (!*filter_csr || **filter_csr != seq_num) {
+                continue;
+              }
+            }
+            if (const Atom::TCore::TOffset *offset = meta_core.TryGetOffset()) {
+              access_sorter.Emplace(u * 2UL, *offset);
+            }
+            if (const Atom::TCore::TOffset *offset = id_core.TryGetOffset()) {
+              access_sorter.Emplace(u * 2UL + 1UL, *offset);
+            }
+          }
+        }
+        const size_t num_missed = ResolveRemapTolerant(MaxBlockCacheReadSlotsAllowed, access_sorter, *main_remap_sorter_vec[i], resolved_sorter);
+        if (num_missed) {
+          syslog(LOG_WARNING, "MergeDataFile gen [%ld] dropped [%ld] unmappable metadata / id cores from source gen [%ld]; file predates the seq-index remap fix (#323)", gen_id, num_missed, reader->GetGenId());
+        }
+        /* second walk: emit the remapped cores per kept sequence number */ {
+          auto in_stream = make_update_index_stream();
+          auto filter_csr = make_seq_filter_csr();
+          typename TRemapResolvedSorter::TCursor resolved_csr(&resolved_sorter, MaxBlockCacheReadSlotsAllowed);
+          auto remap_core = [&resolved_csr](Atom::TCore &core, size_t idx) {
+            if (!core.TryGetOffset()) {
+              return;  /* direct cores carry their value inline */
+            }
+            for (; resolved_csr && resolved_csr->Idx < idx; ++resolved_csr) {}
+            if (resolved_csr && resolved_csr->Idx == idx) {
+              const Atom::TCore::TOffset new_offset = resolved_csr->NewKey;
+              core.Remap([new_offset](Atom::TCore::TOffset) { return new_offset; });
+            } else {
+              core = Atom::TCore();  /* unmappable: pre-fix source file */
+            }
+          };
+          for (size_t u = 0; u < num_updates; ++u) {
+            TSequenceNumber seq_num;
+            Atom::TCore meta_core, id_core;
+            in_stream->Read(seq_num);
+            in_stream->Read(&meta_core, sizeof(meta_core));
+            in_stream->Read(&id_core, sizeof(id_core));
+            in_stream->Skip(sizeof(size_t) * 2UL);
+            if (filter_csr) {
+              for (; *filter_csr && **filter_csr < seq_num; ++*filter_csr) {}
+              if (!*filter_csr || **filter_csr != seq_num) {
+                continue;
+              }
+            }
+            remap_core(meta_core, u * 2UL);
+            remap_core(id_core, u * 2UL + 1UL);
+            meta_collector.Emplace(seq_num, meta_core, id_core);
+          }
+        }
       }
       /* for each index, merge the keys, write out the hashes */ {
         for (const auto &idx : index_map) {
@@ -639,8 +754,23 @@ class TMergeDataFileImpl {
                                                     );
           typename TUpdateCollector::TCursor update_csr(&UpdateCollector, MaxBlockCacheReadSlotsAllowed);
           assert(update_csr);
-          TSequenceNumber cur_seq_num = (*update_csr).SequenceNumber;
+          typename TMetaCollector::TCursor meta_csr(&meta_collector, MaxBlockCacheReadSlotsAllowed);
           Atom::TCore cur_meta, cur_id;
+          /* Load the metadata / id cores collected for this sequence number.
+             A miss can only mean the source file predates the seq-index remap
+             fix; fall back to the empty cores such files carried anyway. */
+          auto load_meta = [&meta_csr, &cur_meta, &cur_id](TSequenceNumber seq_num) {
+            for (; meta_csr && meta_csr->SequenceNumber < seq_num; ++meta_csr) {}
+            if (meta_csr && meta_csr->SequenceNumber == seq_num) {
+              cur_meta = meta_csr->Metadata;
+              cur_id = meta_csr->Id;
+            } else {
+              cur_meta = Atom::TCore();
+              cur_id = Atom::TCore();
+            }
+          };
+          TSequenceNumber cur_seq_num = (*update_csr).SequenceNumber;
+          load_meta(cur_seq_num);
           size_t bucket_ptr = byte_offset_of_bucket_entries;
           size_t num_accum = 0U;
           LowestSeq = (*update_csr).SequenceNumber;
@@ -653,11 +783,7 @@ class TMergeDataFileImpl {
               seq_stream << bucket_ptr;  // Byte offset of bucket
               seq_stream << num_accum;  // number of key ptrs in bucket
               cur_seq_num = obj.SequenceNumber;
-              /* TODO(#323): merge in cur_meta and cur_id */
-              #if 0
-              cur_meta = obj.Metadata;
-              cur_id = obj.Id;
-              #endif
+              load_meta(cur_seq_num);
               bucket_ptr += num_accum * TData::UpdateKeyPtrSize;
               num_accum = 0U;
             }
@@ -849,10 +975,6 @@ class TMergeDataFileImpl {
 
     TSequenceNumber SequenceNumber;
 
-    Atom::TCore Metadata;
-
-    Atom::TCore Id;
-
     size_t Offset;
 
     bool IsCurrent;
@@ -862,6 +984,31 @@ class TMergeDataFileImpl {
   };  // TUpdateObj
 
   typedef Disk::Util::TIndexManager<TUpdateObj, Disk::Util::SortBufSize, Disk::Util::SortBufMinParallelSize> TUpdateCollector;
+
+  /* One surviving sequence number's metadata / id cores, remapped into the
+     merged main arena. Collected from the source files' update indexes and
+     consumed, in sequence order, by the update-index writer (#323). */
+  class TSeqMetaObj {
+    public:
+
+    TSeqMetaObj(TSequenceNumber seq_num, const Atom::TCore &metadata, const Atom::TCore &id)
+        : SequenceNumber(seq_num),
+          Metadata(metadata),
+          Id(id) {}
+
+    bool operator<(const TSeqMetaObj &that) const {
+      return SequenceNumber < that.SequenceNumber;
+    }
+
+    TSequenceNumber SequenceNumber;
+
+    Atom::TCore Metadata;
+
+    Atom::TCore Id;
+
+  };  // TSeqMetaObj
+
+  typedef Disk::Util::TIndexManager<TSeqMetaObj, Disk::Util::SortBufSize, Disk::Util::SortBufMinParallelSize> TMetaCollector;
   using TTypeBoundaryOffsetVec = TDataFile::TTypeBoundaryOffsetVec;
 
   typedef Indy::Util::TBlockVec TBlockVec;
@@ -1083,11 +1230,11 @@ class TMergeDataFileImpl {
     }
 
     virtual size_t GetStartingBlock() const override {
-      throw std::logic_error("TODO(#323): implement TAbc::GetStartingBlock");
+      throw std::logic_error("TMyMergeArena::GetStartingBlock should not be used: it wraps the in-progress merge output, whose streams locate blocks via FindPageIdOfByte, and the file has no meta blocks yet.");
     }
 
     virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
-      throw std::logic_error("TODO(#323): implement TAbc::ReadMeta");
+      throw std::logic_error("TMyMergeArena::ReadMeta should not be used: it wraps the in-progress merge output, whose streams locate blocks via FindPageIdOfByte, and the file has no meta blocks yet.");
     }
 
     virtual size_t FindPageIdOfByte(size_t offset) const override {
@@ -1207,6 +1354,28 @@ class TMergeDataFileImpl {
       assert(remap_csr);
       resolved_sorter.Emplace(access_csr->Idx, remap_csr->OldKey, remap_csr->NewKey);
     }
+  }
+
+  /* Like ResolveRemap, but an access offset with no remap entry is dropped
+     (counted, not resolved) instead of being fatal. Needed for the seq-index
+     metadata / id cores: files written before the data-file seq-index remap
+     fix carry dangling in-memory offsets there, which have no corresponding
+     note in the source arena. */
+  static size_t ResolveRemapTolerant(size_t max_block_cache_read_slots_allowed,
+                                     TRemapAccessSorter &access_sorter,
+                                     TRemapSorter &remap_sorter,
+                                     TRemapResolvedSorter &resolved_sorter) {
+    size_t num_missed = 0UL;
+    typename TRemapSorter::TCursor remap_csr(&remap_sorter, max_block_cache_read_slots_allowed / 2);
+    for (typename TRemapAccessSorter::TCursor access_csr(&access_sorter, max_block_cache_read_slots_allowed / 2); access_csr; ++access_csr) {
+      for (; remap_csr && remap_csr->OldKey < access_csr->Key; ++remap_csr) {}
+      if (remap_csr && remap_csr->OldKey == access_csr->Key) {
+        resolved_sorter.Emplace(access_csr->Idx, remap_csr->OldKey, remap_csr->NewKey);
+      } else {
+        ++num_missed;
+      }
+    }
+    return num_missed;
   }
 
   static void ResolveSeqFilter(size_t max_block_cache_read_slots_allowed,
@@ -1955,6 +2124,7 @@ class TMergeDataFileImpl {
 
     using TReadFile::GetNumBytesOfArena;
     using TReadFile::GetNumUpdates;
+    using TReadFile::GetByteOffsetOfUpdateIndex;
     using TReadFile::GetNumArenaNotes;
     using TReadFile::GetGenId;
     using TReadFile::GetTypeBoundaryOffsetVec;
@@ -2551,11 +2721,11 @@ class TMergeDataFileImpl {
     }
 
     virtual size_t GetStartingBlock() const override {
-      throw std::logic_error("TODO(#323): implement TMergeIndexFile::GetStartingBlock");
+      throw std::logic_error("TMergeIndexFile::GetStartingBlock should not be used: it wraps the in-progress merged index, whose streams locate blocks via FindPageIdOfByte, and the file has no meta blocks yet.");
     }
 
     virtual void ReadMeta(size_t /*offset*/, size_t &/*out*/) const override {
-      throw std::logic_error("TODO(#323): implement TMergeIndexFile::ReadMeta");
+      throw std::logic_error("TMergeIndexFile::ReadMeta should not be used: it wraps the in-progress merged index, whose streams locate blocks via FindPageIdOfByte, and the file has no meta blocks yet.");
     }
 
     virtual size_t FindPageIdOfByte(size_t offset) const override {
