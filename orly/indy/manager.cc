@@ -451,7 +451,17 @@ void TManager::RunReplicateTransaction() {
                             UpdateReplicationNotificationCb(session_id, mutation.GetRepoId(), tracker_id);
                           } else {
                             Server::TMetaRecord meta_record;
-                            Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetMetadata().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), meta_record);
+                            /* Not every replicated update carries a TMetaRecord: system-repo
+                               commits (SaveIndexNamespaceMapping, SaveInstalledPackage) have void
+                               metadata, and decoding that throws.  Skip the notification -- nobody
+                               is waiting on a system commit -- instead of letting the exception
+                               unwind past the rest of the batch's notifications (#499).  The
+                               global-pov branch above guards its decode the same way. */
+                            try {
+                              Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetMetadata().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), meta_record);
+                            } catch (const exception &/*ex*/) {
+                              continue;
+                            }
                             /* Notify every original update's own tracker id (the map key), not one
                                shared id for the whole mutation (#327) -- when updates are merged, a
                                single mutation's meta record can carry several originally-distinct

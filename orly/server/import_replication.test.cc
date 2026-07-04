@@ -8,6 +8,9 @@
      #498 — imports are a solo-server operation: a master with a live slave
             must refuse BeginImport instead of desynchronizing sequence
             numbers and killing the slave on the next replicated write.
+     #499 — the system-repo commits an install replicates must not abort
+            the master's replication notification pass (their void metadata
+            used to unwind it, eating the batch's remaining client acks).
      #500 — a slave disconnect must demote the master back to solo and leave
             it able to accept a new slave (the demote path used to die
             re-binding the slave port).
@@ -23,15 +26,19 @@
      3. attach slave 1: the join-time sync must deliver the imported files
         AND the index-id mapping (the slave logs "Replicating index [...]"
         as it applies the mapping — the #367 assertion);
-     4. with the slave attached, BeginImport on the master must fail with a
+     4. install a second package on the paired master: its index id must
+        reach the slave on the live replication stream (#367's enqueue), the
+        master's log must stay free of notification-pass errors, and a
+        write's replication ack must still arrive (#499);
+     5. with the slave attached, BeginImport on the master must fail with a
         clean error, and the master must remain healthy (#498);
-     5. write a row through the package and wait for the slave to
+     6. write a row through the package and wait for the slave to
         acknowledge the replication;
-     6. kill slave 1: the master must demote to solo, stay alive, and accept
+     7. kill slave 1: the master must demote to solo, stay alive, and accept
         slave 2 (#500), which again receives files and mapping;
-     7. write another row (live replication to slave 2), then kill the
+     8. write another row (live replication to slave 2), then kill the
         master: slave 2 promotes itself to solo;
-     8. read every row on the promoted slave 2: the imported rows and the
+     9. read every row on the promoted slave 2: the imported rows and the
         pre-join write arrived as synced data files (#501 pinned them
         unreadable), the last write arrived on the live stream, and all of
         them are reachable only because the package bound to the imported
@@ -106,6 +113,16 @@ const char *SamplePackage =
     "package #1;\n"
     "read_val = (*<['values', n]>::(int?)) where { n = given::(int); };\n"
     "write_val = ((true) effecting { new <['values', n]> <- x; } ) where {\n"
+    "  n = given::(int);\n"
+    "  x = given::(int);\n"
+    "};\n";
+
+/* A second package, installed while the master is paired: its index id is
+   minted at install time and must travel the LIVE replication stream. */
+const char *Sample2Package =
+    "package #1;\n"
+    "read_val2 = (*<['values', n]>::(int?)) where { n = given::(int); };\n"
+    "write_val2 = ((true) effecting { new <['values', n]> <- x; } ) where {\n"
     "  n = given::(int);\n"
     "  x = given::(int);\n"
     "};\n";
@@ -428,6 +445,11 @@ FIXTURE(ImportReplication) {
     src << SamplePackage;
   }
   Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
+  {
+    ofstream src(scratch + "/sample2.orly");
+    src << Sample2Package;
+  }
+  Compiler::Compile(TPath(scratch + "/sample2.orly"), Jhm::TTree(pkg_dir), {});
 
   /* The import files whose rows will mint a fresh index id on the master. */
   WriteImportFile(scratch + "/import.0.bin", 42L, 4242L);
@@ -503,6 +525,22 @@ FIXTURE(ImportReplication) {
   }
   EXPECT_TRUE(WaitForLog(slave_1_log, "Replicating index [", seconds(60)));
   EXPECT_TRUE(LogContains(slave_1_log, "sample tuple(str, int64)"));
+
+  /* Install a second package on the PAIRED master: its index id is minted
+     now, so it must reach the slave on the live replication stream (the
+     enqueue side of #367 -- the first package's mapping traveled with the
+     join instead), and the system-repo commits the install replicates must
+     not disrupt the notification pass (#499). */ {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    client->InstallPackage({ "sample2" }, 1)->Sync();
+    EXPECT_TRUE(WaitForLog(slave_1_log, "sample2 tuple(str, int64)", seconds(60)));
+    EXPECT_TRUE(!LogContains(master_log, "RunReplicateTransaction error"));
+    /* A write's replication ack must survive sharing the stream with the
+       install's system-repo commits (#499 ate the rest of the batch's
+       notifications). */
+    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    EXPECT_TRUE(WriteValReplicated(client, **pov_id, 9L, 909L));
+  }
 
   /* With a slave attached, an import must be refused up front (#498), and
      the refusal must leave the master healthy. */ {
@@ -586,7 +624,7 @@ FIXTURE(ImportReplication) {
      the pre-join write prove the synced data files are readable (#501, #367),
      and the last write proves the live stream to a post-demote slave (#500).
      The first read absorbs whatever promotion work remains. */
-  const int64_t expected_by_key[][2] = {{42L, 4242L}, {43L, 4343L}, {44L, 4444L}, {7L, 707L}, {8L, 808L}};
+  const int64_t expected_by_key[][2] = {{42L, 4242L}, {43L, 4343L}, {44L, 4444L}, {9L, 909L}, {7L, 707L}, {8L, 808L}};
   seconds deadline = seconds(120);
   for (const auto &pair : expected_by_key) {
     Rt::TOpt<int64_t> row = ReadWithRetry(TAddress(TAddress::IPv4Loopback, slave_2_port), pair[0], deadline);
