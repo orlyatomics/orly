@@ -80,14 +80,17 @@ namespace Jhm {
         NOTE: A job which we never try to get the producer explicitly for can have multiple producers just fine. */
     TJob *TryGetProducer(TFile *file);
 
-    // List of jobs which are ready to go.
-    // TODO(#347): Should really be a hyper-efficient work queue for n workers to pull out of in parallel.
+    // List of jobs which are ready to go. Only ever touched from FinishAll()'s single thread --
+    // the actual n-way parallelism lives in TJobRunner's subprocess pool below, not here -- so a
+    // concurrent work-stealing structure (the 2014-era ask, #347) would gain nothing; verified and
+    // declined.
     std::queue<TJob *> Ready;
 
     // Map from producer to consumer job. When the last instance of a consumer job is removed from the multimap, it's
     // time to
-    // check for more dependencies.
-    // TODO(#347): This should really be some sort of min-heap tree thing.
+    // check for more dependencies. A min-heap (the 2014-era ask, #347) would only pay off if jobs
+    // needed priority ordering; nothing here does (every ready job is equally eligible to run
+    // immediately), so it's declined -- verified alongside the entry above.
     std::unordered_multimap<TJob *, TJob *> ToFinish;
 
     // Keeps track of the full set of jobs which have ever been queued to run.

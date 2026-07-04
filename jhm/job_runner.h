@@ -89,8 +89,14 @@ namespace Jhm {
     std::promise<bool> ResultsReady;
     std::atomic<bool> ResultsReadySet;
 
-    // Fires anytime the client should re-check it's main loop for work to do (ExitWorkers = true, or new work queued)
-    std::mutex HasWorkMutex;
+    // Fires anytime the client should re-check its main loop for work to do (ExitWorker = true, or
+    // new work queued). Paired with ToRunMutex above, not a separate mutex (#337): the predicate
+    // being waited on (ToRun non-empty, or ExitWorker) is protected by ToRunMutex, and both Queue()
+    // and ~TJobRunner() modify it under that lock before notifying. A condition_variable only
+    // reliably wakes a waiter if the state change it's signaling was made under the same mutex the
+    // waiter (re-)checks that predicate under; the previous separate HasWorkMutex guarded nothing,
+    // so a notify_all() racing ahead of the waiter's first wait() call was silently dropped -- a
+    // lost wakeup that could hang the queue runner (and ~TJobRunner's join()) indefinitely.
     std::condition_variable HasWork;
 
     // Sits in the background and pumps io from subprocesses into this process.
