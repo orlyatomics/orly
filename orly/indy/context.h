@@ -196,7 +196,7 @@ namespace Orly {
           Atom::TCore::TExtensibleArena *arena,
           Base::TScheduler *scheduler,
           Rt::TOpt<Base::Chrono::TTimePnt> now,
-          Rt::TOpt<uint32_t> seed)
+          Rt::TOpt<uint64_t> seed)
           : Orly::Package::TContext(user_id, session_id, arena, scheduler, now, seed), DataContext(context) {}
 
       virtual Orly::TContextBase &GetFlux() override{
