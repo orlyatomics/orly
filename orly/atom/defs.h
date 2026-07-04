@@ -86,7 +86,10 @@ namespace Orly {
     template <typename... TArgs>
     using TTuple = std::tuple<TArgs...>;
 
-    /* TODO(#284): obj */
+    /* No `obj` alias by decision (#284): an atom-layer record representation
+       is foundational cross-layer work with no consumer -- nothing constructs
+       or stores an obj core today. Revisit when record-heavy storage work
+       actually needs it. */
 
   }  // Atom
 

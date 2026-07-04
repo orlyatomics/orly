@@ -408,7 +408,10 @@ namespace Orly {
       bool TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &lhs_state,
                                     const State::TArrayOfSingleStates &rhs_state);
 
-      /* TODO(#284) Splitting a tuple... */
+      /* Slices [start, limit) of a state array into a new core note. Fully
+         implemented but caller-less: it was built for the tuple-splitting /
+         atom-`obj` feature that was declined as consumer-less (#284). Kept
+         as plumbing a future record feature would want on day one. */
       bool TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, const State::TArrayOfSingleStates &state, size_t start, size_t limit);
 
       /* Our storage area is the sum of several types.  Which one we use is determined by our tycon. */
