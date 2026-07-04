@@ -13,3 +13,8 @@
 
 general/unsorted/multiple_sequences.orly #74
 general/unsorted/sequence_in_effecting.orly #75
+
+# Diagnostics pins (not limitations): these tests fail compilation BY
+# DESIGN -- their .state baselines pin the exact compiler error messages.
+general/diag_mutable_type.orly #314
+general/diag_assign_type_mismatch.orly #314

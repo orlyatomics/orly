@@ -1,0 +1,14 @@
+[
+  1,
+  [
+    [],
+    [
+      "Synth + Symbols",
+      "Errors in: diag_mutable_type.orly",
+      "34:15-34:22 the '@' type of a mutable must be an address type",
+      "29:15-29:22 a mutable type cannot contain another mutable type",
+      "24:15-24:22 a mutable type cannot contain another mutable type",
+      "compile failure: compile failure[orly/compiler.cc]; Compiling Orly language"
+    ]
+  ]
+]
