@@ -68,7 +68,7 @@ namespace Orly {
          target is a user error deserving a targeted message, not the generic
          "dereferenced an unknown" that GetAddr()'s opt deref would raise. */
       const TAddr &GetAddrChecked() const {
-        if (!Addr) {
+        if (Addr.IsUnknown()) {
           throw TSystemError(HERE, "mutation target has no database address (the mutable value was not read from a key)");
         }
         return Addr.GetVal();
@@ -91,7 +91,7 @@ namespace Orly {
       }
 
       bool HasAddr() const {
-        return Addr;
+        return Addr.IsKnown();
       }
 
       operator TVal() const {
