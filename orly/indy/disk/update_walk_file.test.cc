@@ -18,6 +18,8 @@
 
 #include <orly/indy/disk/update_walk_file.h>
 
+#include <set>
+
 #include <base/scheduler.h>
 #include <orly/indy/disk/data_file.h>
 #include <orly/indy/disk/disk_test.h>
@@ -266,6 +268,90 @@ FIXTURE(MutatorRoundTrip) {
       EXPECT_EQ(total_assign, 4U);
       EXPECT_EQ(total_add, 1U);
     }
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Regression test for issue #323: the per-sequence-number Metadata / Id
+   cores of the on-disk update index must survive the disk round-trip.
+   Before the fix, TDataFile wrote indirect cores with un-remapped in-memory
+   offsets (and zeroed cores for the first sequence number), and
+   TMergeDataFile wrote zeroed cores for every sequence number. Metadata is
+   a string long enough to force an arena-backed (indirect) core, so this
+   exercises the remap; Id is a direct uuid core. */
+FIXTURE(MetaIdRoundTrip) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRAIITest required_thread_locals;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler(TScheduler::TPolicy(10, 10, milliseconds(10)));
+
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+
+    Base::TUuid file_id(TUuid::TimeAndMAC);
+    TSuprena arena;
+    Base::TUuid idx(Base::TUuid::Twister);
+    TSequenceNumber seq_num = 0U;
+    std::vector<Base::TUuid> id_by_seq{Base::TUuid(TUuid::Best)}; /* 1-based; [0] is a pad */
+    auto make_meta = [](TSequenceNumber seq) {
+      return std::string("metadata-payload-well-past-direct-core-size-") + std::to_string(seq);
+    };
+    auto push_update = [&](TMockMem &mem_layer, int64_t key) {
+      const TSequenceNumber seq = ++seq_num;
+      Base::TUuid update_id(TUuid::Best);
+      id_by_seq.push_back(update_id);
+      mem_layer.Insert(TMockUpdate::NewMockUpdate(
+          TUpdate::TOpByKey{ { TIndexKey(idx, TKey(make_tuple(key), &arena, state_alloc)), TKey(key * 10, &arena, state_alloc) } },
+          TKey(make_meta(seq), &arena, state_alloc),
+          TKey(update_id, &arena, state_alloc),
+          seq));
+    };
+    /* data file 1: keys 0..3 (seqs 1-4), then key 0 again (seq 5), leaving
+       seq 1 as a history-only sequence number inside the file. */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 4; ++i) {
+        push_update(mem_layer, i);
+      }
+      push_update(mem_layer, 0L);
+      TDataFile data_file(mem_engine.GetEngine(), Disk::Util::TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, RealTime);
+    }
+    /* data file 2: keys 100..103 (seqs 6-9) */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 4; ++i) {
+        push_update(mem_layer, 100L + i);
+      }
+      TDataFile data_file(mem_engine.GetEngine(), Disk::Util::TVolume::TDesc::Fast, &mem_layer, file_id, 2UL, 20UL, 0U, RealTime);
+    }
+    auto expect_meta_ids = [&](size_t gen_id, size_t expected_count) {
+      TUpdateWalkFile walker(mem_engine.GetEngine(), file_id, gen_id, 0U);
+      std::set<TSequenceNumber> seen;
+      for (; walker; ++walker) {
+        const TUpdateWalker::TItem &item = *walker;
+        const TSequenceNumber seq = item.SequenceNumber;
+        if (EXPECT_TRUE(seq < id_by_seq.size())) {
+          EXPECT_EQ(TKey(item.Metadata, item.MainArena), TKey(make_meta(seq), &arena, state_alloc));
+          EXPECT_EQ(TKey(item.Id, item.MainArena), TKey(id_by_seq[seq], &arena, state_alloc));
+        }
+        seen.insert(seq);
+      }
+      EXPECT_EQ(seen.size(), expected_count);
+      return seen;
+    };
+    /* straight data files (seq 1 exercises the first-entry seeding) */
+    expect_meta_ids(1UL, 5UL);
+    expect_meta_ids(2UL, 4UL);
+    /* plain merge: every sequence number survives */ {
+      TMergeDataFile merge_file(mem_engine.GetEngine(), Disk::Util::TVolume::TDesc::Fast, file_id, std::vector<size_t>{1UL, 2UL}, file_id, 3UL, 0U, Low, 100UL, 20UL, false, false);
+    }
+    expect_meta_ids(3UL, 9UL);
+    /* tail merge: seq 1 (history-only) is dropped; the survivors must keep
+       their metadata / id notes through the keeper-filtered arena merge. */ {
+      TMergeDataFile merge_file(mem_engine.GetEngine(), Disk::Util::TVolume::TDesc::Fast, file_id, std::vector<size_t>{1UL, 2UL}, file_id, 4UL, 0U, Low, 100UL, 20UL, true, false);
+    }
+    const auto tail_seen = expect_meta_ids(4UL, 8UL);
+    EXPECT_TRUE(tail_seen.find(1U) == tail_seen.end());
 
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
