@@ -224,7 +224,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       if(indy_context.GetOptRandomSeed().IsKnown()) {
         random_seed = indy_context.GetOptRandomSeed().GetVal();
       }
-      Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
+      Base::Chrono::TTimePnt run_time = Base::Chrono::Now();
       if(indy_context.GetOptNow().IsKnown()) {
         run_time = indy_context.GetOptNow().GetVal();
       }
@@ -414,7 +414,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
       if(indy_context.GetOptRandomSeed().IsKnown()) {
         random_seed = indy_context.GetOptRandomSeed().GetVal();
       }
-      Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
+      Base::Chrono::TTimePnt run_time = Base::Chrono::Now();
       if(indy_context.GetOptNow().IsKnown()) {
         run_time = indy_context.GetOptNow().GetVal();
       }
@@ -664,7 +664,7 @@ void TSession::RunFuncCommit(TServer *server,
   if (indy_context.GetOptRandomSeed().IsKnown()) {
     random_seed = indy_context.GetOptRandomSeed().GetVal();
   }
-  Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
+  Base::Chrono::TTimePnt run_time = Base::Chrono::Now();
   if (indy_context.GetOptNow().IsKnown()) {
     run_time = indy_context.GetOptNow().GetVal();
   }
