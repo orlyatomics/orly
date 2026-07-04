@@ -113,9 +113,12 @@ namespace Orly {
         assert(max >= min);
         assert(idx >= 0);
 
-        //TODO(#358): Make seed bigger so we have more possible random sequences.
+        /* A full 64-bit seed (#358): the PRNG is mt19937_64, so a 32-bit seed
+           capped the space of reproducible sequences at 2^32. random_device
+           yields 32 bits per draw; take two. */
         if(OptRandomSeed.IsUnknown()) {
-          OptRandomSeed = std::random_device()();
+          std::random_device rd;
+          OptRandomSeed = (static_cast<uint64_t>(rd()) << 32) | rd();
         }
         if(!GenSeeds) {
           GenSeeds = std::make_unique<Rt::TLazyRandomList>(OptRandomSeed.GetVal());
@@ -133,7 +136,7 @@ namespace Orly {
         return gen_ptr->Get(idx);
       }
 
-      inline const Rt::TOpt<uint32_t> &GetOptRandomSeed() const {
+      inline const Rt::TOpt<uint64_t> &GetOptRandomSeed() const {
 
         return OptRandomSeed;
       }
@@ -151,7 +154,11 @@ namespace Orly {
       /* Get the current time. Note that this function will always return the __same__ time. This is because within a
          single program execution in Orly the time is assumed to be constant.
 
-         TODO(#358): If the time is used, it should really be rolled into the CheckAsserts function capture... */
+         This captured time IS part of the assertion-replay capture (#358): the
+         commit path stores GetOptNow() (with the random seed) in the update's
+         TMetaRecord::TEntry, and the Tetris assertion replay reconstructs the
+         context from GetRunTimestamp()/GetRandomSeed(), so a replayed
+         predicate sees the original execution's time. */
       inline Base::Chrono::TTimePnt Now() const {
         if (OptNow.IsUnknown()) {
           OptNow = Base::Chrono::Now();
@@ -174,7 +181,7 @@ namespace Orly {
         Atom::TCore::TExtensibleArena *arena,
         Base::TScheduler *scheduler,
         Rt::TOpt<Base::Chrono::TTimePnt> now,
-        Rt::TOpt<uint32_t> random_seed)
+        Rt::TOpt<uint64_t> random_seed)
             : Arena(arena), UserId(user_id), SessionId(session_id), Scheduler(scheduler),
               OptNow(now), OptRandomSeed(random_seed) {}
 
@@ -196,7 +203,7 @@ namespace Orly {
       // Ideally we would just get these details from the compiler.
       mutable Rt::TOpt<Base::Chrono::TTimePnt> OptNow;
 
-      mutable Rt::TOpt<uint32_t> OptRandomSeed;
+      mutable Rt::TOpt<uint64_t> OptRandomSeed;
 
       // Generators are aliased by id, min, and max.
       using TGenIdx = std::tuple<int64_t, int64_t, int64_t>;

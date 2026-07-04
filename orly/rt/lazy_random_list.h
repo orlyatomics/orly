@@ -27,9 +27,11 @@ namespace Orly {
       NO_COPY(TLazyRandomList);
       public:
 
-      TLazyRandomList(int64_t seed) : Prng(seed) {}
+      /* uint64_t seeds (#358): mt19937_64's native seed width, so the full
+         64-bit context seed reaches the PRNG unnarrowed. */
+      TLazyRandomList(uint64_t seed) : Prng(seed) {}
 
-      TLazyRandomList(int64_t seed, int64_t min, int64_t max) : Prng(seed), UniformIntDistribution(min, max) {
+      TLazyRandomList(uint64_t seed, int64_t min, int64_t max) : Prng(seed), UniformIntDistribution(min, max) {
         assert(min < max);
       }
 

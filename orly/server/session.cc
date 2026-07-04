@@ -160,7 +160,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     }
     Base::TUuid session_id = GetId().GetRaw();
     Indy::TIndyContext indy_context(user_id, session_id, context, &my_arena, server->GetScheduler(),
-      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint32_t>());
+      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint64_t>());
     // Func it.
     auto func = server->GetPackageManager().Get(Package::TName{fq_name})->GetFunctionInfo(AsPiece(closure.GetMethodName()));
     Package::TContext::TEffects effects;
@@ -220,7 +220,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       }
 
       //NOTE: Could do these inline, but this is less fugly to write out because they are so long.
-      uint32_t random_seed = 0;
+      uint64_t random_seed = 0;
       if(indy_context.GetOptRandomSeed().IsKnown()) {
         random_seed = indy_context.GetOptRandomSeed().GetVal();
       }
@@ -338,7 +338,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     }
     Base::TUuid session_id = GetId().GetRaw();
     Indy::TIndyContext indy_context(user_id, session_id, context, &my_arena, server->GetScheduler(),
-      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint32_t>());
+      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint64_t>());
     // Resolve the function ONCE (same method for every call in the batch).
     auto func = server->GetPackageManager().Get(Package::TName{fq_name})->GetFunctionInfo(AsPiece(closures.front().GetMethodName()));
     // Run each call against the same context. Each call reads the SAME pre-batch
@@ -410,7 +410,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
         }
       }
 
-      uint32_t random_seed = 0;
+      uint64_t random_seed = 0;
       if(indy_context.GetOptRandomSeed().IsKnown()) {
         random_seed = indy_context.GetOptRandomSeed().GetVal();
       }
@@ -599,7 +599,7 @@ void TSession::RunFuncCommit(TServer *server,
   }
   Base::TUuid session_id = GetId().GetRaw();
   Indy::TIndyContext indy_context(user_id, session_id, context, &my_arena, server->GetScheduler(),
-      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint32_t>());
+      Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint64_t>());
   func(indy_context);
   Package::TContext::TEffects effects(indy_context.MoveEffects());
 
@@ -660,7 +660,7 @@ void TSession::RunFuncCommit(TServer *server,
      record carries empty args; the predicate results still ride along so the
      update is well-formed. */
   const auto &predicate_results = indy_context.GetPredicateResults();
-  uint32_t random_seed = 0;
+  uint64_t random_seed = 0;
   if (indy_context.GetOptRandomSeed().IsKnown()) {
     random_seed = indy_context.GetOptRandomSeed().GetVal();
   }

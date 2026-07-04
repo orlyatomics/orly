@@ -31,7 +31,7 @@ RECORD_ELEM(TMetaRecord::TEntry, string, MethodName);
 RECORD_ELEM(TMetaRecord::TEntry, TMetaRecord::TEntry::TArgByName, ArgByName);
 RECORD_ELEM(TMetaRecord::TEntry, TMetaRecord::TEntry::TExpectedPredicateResults, ExpectedPredicateResults);
 RECORD_ELEM(TMetaRecord::TEntry, Base::Chrono::TTimePnt, RunTimestamp);
-RECORD_ELEM(TMetaRecord::TEntry, uint32_t, RandomSeed);
+RECORD_ELEM(TMetaRecord::TEntry, uint64_t, RandomSeed);
 
 /* Metadata for TMetaRecord. */
 RECORD_ELEM(TMetaRecord, TMetaRecord::TEntryByUpdateId, EntryByUpdateId);

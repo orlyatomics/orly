@@ -51,7 +51,7 @@ namespace Orly {
 
         TEntry(
             const Base::TUuid &session_id, const std::optional<Base::TUuid> &user_id, const TPackageFqName &package_fq_name, const std::string &method_name, TArgByName &&arg_by_name,
-            TExpectedPredicateResults &&expected_predicate_results, Base::Chrono::TTimePnt now, uint32_t random_seed)
+            TExpectedPredicateResults &&expected_predicate_results, Base::Chrono::TTimePnt now, uint64_t random_seed)
             : SessionId(session_id), UserId(user_id), PackageFqName(package_fq_name), MethodName(method_name), ArgByName(std::move(arg_by_name)),
               ExpectedPredicateResults(std::move(expected_predicate_results)), RunTimestamp(now), RandomSeed(random_seed) {}
 
@@ -71,7 +71,7 @@ namespace Orly {
           return PackageFqName;
         }
 
-        uint32_t GetRandomSeed() const {
+        uint64_t GetRandomSeed() const {
           return RandomSeed;
         }
 
@@ -103,7 +103,11 @@ namespace Orly {
 
         Base::Chrono::TTimePnt RunTimestamp;
 
-        uint32_t RandomSeed;
+        /* 64 bits (#358): the full mt19937_64 seed. Widening changes this
+           record's serialized shape; meta records in databases written by
+           older builds would not read back as this type (no cross-build
+           on-disk compatibility is promised anywhere in this tree). */
+        uint64_t RandomSeed;
 
       };  // TMetaRecord::TEntry
 
