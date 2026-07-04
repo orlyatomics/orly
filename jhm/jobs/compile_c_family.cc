@@ -35,12 +35,11 @@ using namespace Util;
 
 vector<string> TCompileCFamily::GetStandardArgs(TFile *input, bool is_cpp, const TEnv &env) {
 
-  // Add options from configuration. Per-file config overrides global config
+  // Add options from configuration. Per-file config overrides global config: the file's config
+  // falls back to the env config (#340), so one read covers both (and file-level '+' deltas
+  // apply on top of the env's flags instead of replacing them).
   vector<string> options;
-  // TODO(#340): Make file configuration automatically attach environment to the tail of it's list for lookups / fallback?
-  if (!input->GetConfig().TryRead({"cmd", is_cpp ? "g++" : "gcc"}, options)) {
-    env.GetConfig().TryRead({"cmd", is_cpp ? "g++" : "gcc"}, options);
-  }
+  input->GetConfig().TryRead({"cmd", is_cpp ? "g++" : "gcc"}, options);
 
   const auto src_str = AsStr(*env.GetSrc());
 

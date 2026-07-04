@@ -108,6 +108,15 @@ namespace Jhm {
       return SrcConfigFiles;
     }
 
+    /* Chain entry lookups to the given config when this config's own stack has no entry (#340):
+       the env config becomes the tail of every file config's lookup list. The fallback is
+       consulted for reads only; timestamps, computed-config bookkeeping, and the loaded-file
+       list (#339) stay per-config. */
+    void SetFallback(const TConfig *fallback) {
+      assert(!Fallback);
+      Fallback = fallback;
+    }
+
     /* Write out the computed configuration instructions */
     void WriteComputed(std::ostream &out) const;
 
@@ -123,6 +132,7 @@ namespace Jhm {
 
     Util::TOptTimestamp Timestamp;
     std::vector<std::string> SrcConfigFiles;
+    const TConfig *Fallback = nullptr;
     std::optional<uint32_t> ComputedStart;
     mutable bool ComputedLocked = false; // This is purely an internal safety check / correctness check
     std::deque<Base::TJson> Config;
