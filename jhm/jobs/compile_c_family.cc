@@ -177,8 +177,14 @@ bool TCompileCFamily::IsComplete() {
     }
   }
 
+  // is_cpp lets the link job pick g++ vs gcc for the final link (#342): gcc can't resolve
+  // C++-only symbols (exception handling, the C++ runtime, name-mangled calls), so linking with it
+  // is only safe when nothing in the link set was actually compiled as C++.
   GetSoleOutput()->PushComputedConfig(
-      TJson::TObject{{"c++", TJson::TObject{{"filtered_includes", move(filtered_includes)}}}});
+      TJson::TObject{{"c++", TJson::TObject{
+        {"filtered_includes", move(filtered_includes)},
+        {"is_cpp", TJson(IsCpp)}
+      }}});
 
   return true;
 }

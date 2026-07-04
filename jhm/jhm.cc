@@ -2,11 +2,6 @@
 
    JHM build system.
 
-   The scheduling/throughput improvement backlog that used to sit here as a
-   wish list lives in the tracker: #347 covers keeping the workers busier,
-   replacing the ready queue, and gating per-job stdout/stderr printing;
-   #349 covers parallelizing test-report production.
-
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +20,10 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <base/backtrace.h>
 #include <base/cmd.h>
@@ -273,45 +270,72 @@ class TJhm : public TCmd {
       return 0;
     }
 
-    // Run every test which should have been built
-    //TODO(#349): We really should make it a job to produce a test report, and let the job runner run them in parallel. But
-    //      that requires teaching the job runner about resource needs of various kinds of jobs (Ex. Run only one, 512MB
-    //      of ram, etc).
+    // Run every test which should have been built, up to WorkerCount at a time (#349). Tests have
+    // no dependencies on each other (unlike compile jobs), so this doesn't need the job runner's
+    // full job-graph machinery -- just its same "keep up to WorkerCount subprocesses in flight,
+    // refill as each finishes" shape, directly against TSubprocess.
+    vector<TFile *> tests;
+    for (TFile *f : target_files) {
+      if (f->GetRelPath().Path.EndsWith({"test", ""})) {
+        tests.push_back(f);
+      }
+    }
+
     TPump pump;
-    auto RunTest = [this,&pump](TFile *test) {
+    unordered_map<int, TFile *> pid_to_test;
+    unordered_map<TFile *, unique_ptr<TSubprocess>> running;
+    bool any_failed = false;
+    size_t next_test = 0;
+
+    auto start_test = [&](TFile *test) {
       vector<string> cmd{test->GetPath()};
-      //NOTE: This is a seperate line because otherwise it breaks in release builds
       if (VerboseTests) {
         cmd.push_back("-v");
-        cout << "TEST: " << test;
-      } else {
-        TStatusLine() << "TEST: " << test;
       }
       auto subprocess = TSubprocess::New(pump, cmd);
+      pid_to_test[subprocess->GetChildId()] = test;
+      running.emplace(test, move(subprocess));
+    };
+
+    auto report_status = [&]{
+      if (VerboseTests) {
+        cout << "TESTS: " << running.size() << " running, " << (tests.size() - next_test) << " queued\n";
+      } else {
+        TStatusLine() << "TESTS: " << running.size() << " running, " << (tests.size() - next_test) << " queued";
+      }
+    };
+
+    while (next_test < tests.size() && running.size() < WorkerCount) {
+      start_test(tests[next_test++]);
+    }
+    report_status();
+
+    while (!running.empty()) {
+      auto pid = TSubprocess::WaitAll();
+      TFile *test = pid_to_test.at(pid);
+      EraseOrFail(pid_to_test, pid);
+      auto &subprocess = running.at(test);
       auto status = subprocess->Wait();
 
       if (VerboseTests || status) {
-        TStatusLine::Cleanup(); // Make sure the TEST: line stays at the top.
+        TStatusLine::Cleanup(); // Make sure the TEST:/TESTS: line stays at the top.
+        cout << "TEST: " << test << '\n';
         EchoOutput(subprocess->TakeStdOutFromChild());
         EchoOutput(subprocess->TakeStdErrFromChild());
       }
-
       if (status) {
         cout << "EXITCODE: " << status << '\n';
-        return false;
+        any_failed = true;
       }
-      return true;
-    };
+      EraseOrFail(running, test);
 
-    for (TFile *f: target_files) {
-      if (f->GetRelPath().Path.EndsWith({"test",""})) {
-        if(!RunTest(f)) {
-          return 2;
-        }
+      if (next_test < tests.size()) {
+        start_test(tests[next_test++]);
       }
+      report_status();
     }
     TStatusLine::Cleanup();
-    return 0;
+    return any_failed ? 2 : 0;
   }
 
   private:
