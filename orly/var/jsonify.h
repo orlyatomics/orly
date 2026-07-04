@@ -20,6 +20,8 @@
 
 #include <ostream>
 
+#include <base/json.h>
+
 namespace Orly {
 
   namespace Var {
@@ -27,6 +29,13 @@ namespace Orly {
     class TVar;
 
     void Jsonify(std::ostream &stream, const TVar &var);
+
+    /* Build the JSON tree for the var directly -- no render-to-text /
+       re-parse round trip (#377).  Value mapping is identical to Jsonify
+       followed by Base::TJson::Parse, with one deliberate improvement:
+       reals keep full double precision instead of being clipped to the
+       ostream's six significant digits by the text hop. */
+    Base::TJson ToJson(const TVar &var);
 
   }  // Var
 

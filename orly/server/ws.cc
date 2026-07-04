@@ -188,8 +188,7 @@ class TWsImpl final
       virtual void operator()(const TEchoStmt *stmt) const override {
         assert(stmt);
         void *alloc = alloca(SabotStateSize);
-        //TODO(#377): Push TJson down into Var::Jsonify
-        Result = TJson::Parse(AsStrFunc(&Var::Jsonify, Var::ToVar(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc)))));
+        Result = Var::ToJson(Var::ToVar(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc))));
       }
 
       virtual void operator()(const TExitStmt *) const override {
@@ -271,9 +270,8 @@ class TWsImpl final
         }
         TMethodResult result = GetSession()->Try(TMethodRequest(pov_id, fq_name, closure));
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        Result = TJson::Parse(AsStrFunc(
-            &Var::Jsonify,
-            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)))));
+        Result = Var::ToJson(
+            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
       }
 
       virtual void operator()(const TTryBatchStmt *stmt) const override {
@@ -304,9 +302,8 @@ class TWsImpl final
         }
         TMethodResult result = GetSession()->TryBatch(pov_id, fq_name, closures);
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        Result = TJson::Parse(AsStrFunc(
-            &Var::Jsonify,
-            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)))));
+        Result = Var::ToJson(
+            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
       }
 
       virtual void operator()(const TPovStatusStmt *stmt) const override {
@@ -379,7 +376,11 @@ class TWsImpl final
               /* params */ {
                 TJson::TObject parameters;
                 for (const auto &param: func->GetParameters()) {
-                  // TODO(#377): Change to jsonify
+                  /* The orly-syntax type name IS the JSON representation of
+                     a type (a plain string); rendering it once is not a
+                     round-trip, and a structured type encoding would change
+                     the wire contract for no consumer that wants it (#377's
+                     round-trip half is fixed in Var::ToJson). */
                   ostringstream oss;
                   Orly::Type::Orlyify(oss, param.second);
                   parameters[param.first] = oss.str();
