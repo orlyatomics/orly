@@ -1,0 +1,8 @@
+# CHANGELOG.md takes concurrent same-anchor insertions from every in-flight PR (each prepends
+# its entry under "### Fixed" / "### Added"), which makes textual conflicts the common case.
+# The built-in union merge driver resolves those by keeping both sides' lines -- correct for an
+# append-only bullet list, where the only "conflict" is two independent insertions at the same
+# line.  Note GitHub's PR mergeability check does not honor this attribute, so a stale PR may
+# still show as conflicted there -- but a plain local `git merge` now resolves it hands-free
+# (no manual marker surgery), and the push clears the PR.
+CHANGELOG.md merge=union
