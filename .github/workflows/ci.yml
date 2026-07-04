@@ -604,6 +604,7 @@ jobs:
           orly/indy/fiber/algorithm.test
           orly/indy/fiber/jump_runnable.test
           orly/indy/fiber/sem.test
+          orly/indy/disk/result.test
           orly/indy/disk/util/volume_manager.test
           orly/indy/disk/durable_manager.test
           orly/indy/context_fold.test
