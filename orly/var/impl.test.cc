@@ -48,7 +48,6 @@ const Type::TObj::Meta<TSomeObj>::TField<bool>    Bool("Bool", &TSomeObj::Bool);
 
 Type::TTypeCzar TypeCzar;
 
-//TODO(#329): Test mutables.
 FIXTURE(Typical) {
   TVar bool_(true);
   EXPECT_TRUE(bool_.GetType() == Type::TBool::Get());
@@ -86,6 +85,10 @@ FIXTURE(Typical) {
   EXPECT_TRUE(dict_int_real.GetType() == Type::TDict::Get(Type::TInt::Get(), Type::TReal::Get()));
   TVar dict_int_dict_int_real(Rt::TDict<int64_t, Rt::TDict<int64_t, double>>{{5, m}});
   EXPECT_TRUE(dict_int_real.GetType() == Type::TDict::Get(Type::TInt::Get(), Type::TReal::Get()));
+  /* TODO(#384): also covers the missing mutables coverage from #329 -- a mutable's addr TYPE
+     must be a real address type (Type::TMutable::Get asserts Is<TAddr>(); an unknown Rt::TOpt
+     addr VALUE doesn't relax that), so no valid Var::TMutable can be constructed until TVar's
+     Rt::TAddr support below works. */
   /* TODO(#384)
   Rt::TAddr<Rt::TAddrElem<TAddrDir::Asc, int64_t>, Rt::TAddrElem<TAddrDir::Asc, string>, Rt::TAddrElem<TAddrDir::Asc, bool>, Rt::TAddrElem<TAddrDir::Asc, double>> a(5, string("Hello World"), true, 2.2);
   TVar addr_int_str_bool_double(a);

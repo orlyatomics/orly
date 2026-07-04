@@ -18,7 +18,9 @@
 
 #include <orly/indy/fiber/fiber.h>
 
+#include <cerrno>
 #include <condition_variable>
+#include <cstring>
 #include <thread>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
@@ -98,7 +100,7 @@ FIXTURE(Typical) {
   //const size_t num_iter = 100000UL;
   const size_t num_iter = 1000000UL;
   const size_t num_runnable_per_thread = 256UL;
-  size_t num_threads = 1UL;
+  size_t num_threads = 4UL;
   std::vector<TRunner *> runner_vec;
   std::atomic<TRunner *> runner_array[num_threads];
   for (size_t i = 0; i < num_threads; ++i) {
@@ -123,7 +125,11 @@ FIXTURE(Typical) {
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(i, &mask);
-    IfLt0(sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask));
+    /* Pinning is an optimization, not a requirement; restricted environments (containers/CI)
+       may forbid or limit sched_setaffinity, so don't fail the test over it (#262 precedent). */
+    if (sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &mask) < 0) {
+      printf("could not pin thread %ld to core %ld: %s\n", i, i, strerror(errno));
+    }
     assert(runner);
     /* wait for start */ {
       std::unique_lock<std::mutex> lock(mut);
@@ -150,7 +156,6 @@ FIXTURE(Typical) {
     can_start = true;
     cond.notify_all();
   }
-  /* TODO(#329): temp get rid of numthreads -- */
   /* wait for finished */ {
     std::unique_lock<std::mutex> lock(mut);
     while (num_finished != num_threads * num_runnable_per_thread) {

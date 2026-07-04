@@ -156,8 +156,12 @@ namespace Orly {
                 UtilSrc(util_src) {
             const size_t max_per_block = LogicalCheckedBlockSize / sizeof(TVal);
             const size_t num_compressed_blocks = ceil(static_cast<double>(sorter.GetSize()) / max_per_block);
-            /* max blocks = max raw data + [num elem + compressed size] per block
-               TODO(#322): use smaller integers for this meta data */
+            /* max blocks = max raw data + [num elem + compressed size] per block.
+               #322 investigated and declined: both meta_stream values are already bounded well
+               within a uint32_t (a block-count and a compressed size, each capped by the block
+               size), so narrowing them would shrink an already-negligible per-block overhead --
+               and meta_stream's width is the on-disk sort-file format, so narrowing it means an
+               incompatible format change for that marginal a win, with no demonstrated pain. */
             NumMetaBytes = num_compressed_blocks * 2UL * sizeof(size_t);
             const size_t max_disk_blocks_required = num_compressed_blocks + ((NumMetaBytes / Disk::Util::LogicalCheckedBlockSize));
             auto buf_block = std::make_unique<TBufBlock>();
@@ -275,8 +279,10 @@ namespace Orly {
               }
               assert(csr_vec.size() == num_csr_required);
               const size_t num_compressed_blocks = ceil(static_cast<double>(Size) / max_per_block);
-              /* max blocks = max raw data + [num elem + compressed size] per block
-                 TODO(#322): use smaller integers for this meta data */
+              /* max blocks = max raw data + [num elem + compressed size] per block.
+                 #322 investigated and declined: see the identical rationale on the other
+                 constructor above -- both meta_stream values are already comfortably bounded,
+                 and narrowing them is an on-disk format change for a negligible win. */
               NumMetaBytes = num_compressed_blocks * 2UL * sizeof(size_t);
               const size_t max_disk_blocks_required = num_compressed_blocks + ((NumMetaBytes / Disk::Util::LogicalCheckedBlockSize));
               auto buf_block = std::make_unique<TBufBlock>();

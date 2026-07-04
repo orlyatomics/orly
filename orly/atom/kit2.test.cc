@@ -106,7 +106,12 @@ static string ToString(const TVal &val) {
 FIXTURE(Empties) {
   EXPECT_EQ(ToString(Native::TFree<bool>::Free), "free(bool)");
   EXPECT_EQ(ToString(Native::TTombstone::Tombstone), "tombstone");
-  // TODO(#329): Test void.
+  /* TODO(#329): Test void -- Native::State::TVoid is private to Native::State (only
+     Native::Record<T> is a friend) and, unlike TFree/TTombstone, has no Factory<TVal>
+     specialization or any other production caller that ever constructs one (verified: zero
+     "TVoid()" call sites in the tree outside its own declaration). Covering it here would mean
+     adding new, currently-unused production wiring just to make the test possible, which is out
+     of scope for a test-coverage fill-in. */
 }
 
 FIXTURE(Int8) {
