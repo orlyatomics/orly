@@ -86,9 +86,22 @@ jobs:
           sudo chmod 1777 /tmp/cores
           sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
 
+      # The #463 class has a hang presentation too (dispatch 1, shot 3: five
+      # clean passes, then one orlyc never exited and the job died at its
+      # timeout with no evidence). SIGABRT after a generous per-process
+      # ceiling turns any hang into a core the symbolize step can read.
+      - name: Wrap orlyc in a hang-to-core timeout (#463)
+        run: |
+          sudo tee /usr/local/bin/orlyc-hang-to-core >/dev/null <<EOF
+          #!/bin/sh
+          exec timeout --signal=ABRT --kill-after=30 900 "$GITHUB_WORKSPACE/../out_orly/debug/orly/orlyc" "\$@"
+          EOF
+          sudo chmod +x /usr/local/bin/orlyc-hang-to-core
+
       - name: Hunt (repeated full lang_test passes)
         run: |
           ulimit -c unlimited
+          export ORLYC=/usr/local/bin/orlyc-hang-to-core
           passes='${{ inputs.passes }}'
           workers='${{ inputs.workers }}'
           for i in $(seq 1 "$passes"); do
