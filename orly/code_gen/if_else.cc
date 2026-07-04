@@ -47,4 +47,4 @@ TIfElse::TIfElse(const L0::TPackage *package,
                  const TInline::TPtr &predicate,
                  const Expr::TExpr::TPtr &false_case)
   : TInline(package, ret_type), Predicate(predicate), True(TInlineScope::New(package, true_case)),
-    False(TInlineScope::New(package, false_case)), InDependsOn(false) {}
+    False(TInlineScope::New(package, false_case)) {}

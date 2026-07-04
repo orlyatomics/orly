@@ -45,6 +45,11 @@ namespace Orly {
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &/*dependency_set*/) const override {
       }
 
+      /* A leaf's emission is already a name; a CSE local for it is noise (#297). */
+      virtual bool IsCseWorthy() const override {
+        return false;
+      }
+
       virtual bool IsFree() const {
         return Kind == Free;
       }

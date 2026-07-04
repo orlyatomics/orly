@@ -42,6 +42,11 @@ namespace Orly {
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &/*dependency_set*/) const override {
       }
 
+      /* A context var's emission is already a name; a CSE local for it is noise (#297). */
+      virtual bool IsCseWorthy() const override {
+        return false;
+      }
+
       private:
       TOp Op;
     }; // TContextVar

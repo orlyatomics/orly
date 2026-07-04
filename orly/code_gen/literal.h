@@ -44,6 +44,11 @@ namespace Orly {
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &/*dependency_set*/) const override {
       }
 
+      /* A literal's emission is already a constant; a CSE local for it is noise (#297). */
+      virtual bool IsCseWorthy() const override {
+        return false;
+      }
+
       private:
       Var::TVar Var;
 

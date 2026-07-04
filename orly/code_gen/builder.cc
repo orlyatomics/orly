@@ -30,6 +30,7 @@
 #include <orly/code_gen/interner.h>
 #include <orly/code_gen/implicit_func.h>
 #include <orly/code_gen/if_else.h>
+#include <orly/code_gen/inline_scope.h>
 #include <orly/code_gen/map.h>
 #include <orly/code_gen/match.h>
 #include <orly/code_gen/obj.h>
@@ -393,7 +394,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TAsin *that) const { Unary(Package, TUnary::Asin, that); }
     virtual void operator()(const Expr::TAssert *that) const {
       //TODO(#294): Report file name with assertion failures.
-      //Pass the expression through, setting it as the "that" context, and making it a local (Since context that doesn't common subexpression eliminate automatically ATM).
+      //Pass the expression through, setting it as the "that" context, and making it a local up front (the assert subject is always worth materializing).
       Res = Build(Package, that->GetExpr(), true);
       Context::GetScope()->AddLocal(Res);
       TThatableCtx ctx(Res);
@@ -497,7 +498,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       // boundary, exactly as the bare-deref case already does.
       auto seq = BuildInline(Package, that->GetLhs(), true);
 
-      //TODO(#297): Common sub expression elimination for the filter func.
+      /* The func body's own TCodeScope dedups internally now that per-scope CSE is live
+         (#297); sharing subexpressions BETWEEN this func and the enclosing scope is the
+         declined cross-function case (see TFunction::Build). */
       TImplicitFunc::TPtr filter_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Filter,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
       /* Function Context */ {
@@ -775,12 +778,18 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TWhen *that) const {
       TInline::TPtr operand = Build(Package, that->GetOperand(), false);
+      /* Every arm body builds in its own TInlineScope, exactly as TIfElse's branches do: the
+         arm emits as a lambda invoked only when its guard selects it, so a CSE'd subexpression
+         inside an arm -- above all the payload accessor, whose runtime getter asserts the
+         active arm -- becomes a local of the arm's own scope and can never be hoisted into the
+         enclosing scope's unconditional locals (#297; flat-built arms aborted on exactly that,
+         'Assertion Which == N failed' across the variant lang tests). */
       /* An optional operand is the built-in sum `<| Known(T) | Unknown |>`
          (#105): select on the presence flag rather than a `GetWhich()`. */
       if (Type::Unwrap(that->GetOperand()->GetType()).Is<Type::TOpt>()) {
         TInline::TPtr known_body, unknown_body;
         for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
-          TInline::TPtr body = Build(Package, that->GetArmBody(arm_idx), false);
+          TInline::TPtr body = TInlineScope::New(Package, that->GetArmBody(arm_idx), false);
           if (that->GetArmTag(arm_idx) == "Known") {
             known_body = body;
           } else {
@@ -797,7 +806,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       TVariantWhen::TArmVec arms;
       for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
         arms.emplace_back(that->GetArmWhich(arm_idx),
-            Build(Package, that->GetArmBody(arm_idx), false));
+            TInlineScope::New(Package, that->GetArmBody(arm_idx), false));
       }
       Res = TInline::TPtr(new TVariantWhen(Package, ReturnType, operand, arms));
     }
@@ -805,7 +814,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TWhile *that) const {
       auto seq = BuildInline(Package, that->GetLhs(), false);
 
-      //TODO(#297): Common sub expression elimination for the filter func.
+      /* The func body's own TCodeScope dedups internally now that per-scope CSE is live
+         (#297); sharing subexpressions BETWEEN this func and the enclosing scope is the
+         declined cross-function case (see TFunction::Build). */
       TImplicitFunc::TPtr while_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::While,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
       /* Function Context */ {

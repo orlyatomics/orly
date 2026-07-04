@@ -18,9 +18,14 @@
 
 #include <orly/code_gen/scope.h>
 
+#include <map>
+#include <set>
+#include <stdexcept>
+#include <unordered_map>
+#include <vector>
+
 #include <orly/code_gen/effect.h>
 #include <orly/code_gen/interner.h>
-#include <orly/code_gen/effect.h>
 
 using namespace Orly::CodeGen;
 
@@ -60,11 +65,15 @@ void TCodeScope::AddLocal(const TInline::TPtr &inline_) {
   if(inline_->HasId()) {
     return;
   }
-  //TODO(#297): Re-enable after sorting out dependency ordering issues.
-  /*
+  //Leaves whose emission is already a name or constant gain nothing from a local.
+  if(!inline_->IsCseWorthy()) {
+    return;
+  }
+  /* Re-enabled (#297): Locals arrive in interner-hit order, which can invert dependency order
+     (a larger expression can be CSE'd before one of its own subexpressions is), so WriteStart
+     emits them in dependency order rather than in this arrival order. */
   inline_->SetCommonSubexpressionId(IdScope->NewVar());
   Locals.push_back(inline_);
-  */
 }
 
 TIdScope::TPtr TCodeScope::GetIdScope() const {
@@ -96,9 +105,59 @@ TId<TIdKind::Arg> TCodeScope::NewArg() {
   return IdScope->NewArg();
 }
 
+/* Locals in dependency order: stable Kahn over the AppendDependsOn edges restricted to this
+   scope's own locals, insertion order as the tiebreak (#297).  Arrival order alone is not
+   emittable: when a larger expression is CSE'd before one of its own subexpressions, the
+   subexpression's definition would land after the local that references it.  A cycle among
+   same-scope locals is structurally impossible (the inline graph is an immutable expression
+   DAG; call-body edges lead out of the scope), so a detected cycle is a hard error. */
+TCodeScope::TLocals TCodeScope::OrderedLocals() const {
+  const size_t num_locals = Locals.size();
+  std::unordered_map<TInline::TPtr, size_t> index_of;
+  for (size_t i = 0; i < num_locals; ++i) {
+    index_of.emplace(Locals[i], i);
+  }
+  /* edges[i] = indices of locals that depend on local i; in_degree[i] = i's own dep count. */
+  std::vector<std::vector<size_t>> dependents(num_locals);
+  std::vector<size_t> in_degree(num_locals, 0UL);
+  for (size_t i = 0; i < num_locals; ++i) {
+    std::unordered_set<TInline::TPtr> deps;
+    Locals[i]->AppendDependsOn(deps);
+    for (const auto &dep : deps) {
+      auto iter = index_of.find(dep);
+      if (iter != index_of.end() && iter->second != i) {
+        dependents[iter->second].push_back(i);
+        ++in_degree[i];
+      }
+    }
+  }
+  std::set<size_t> ready;  // ordered, so ties resolve to insertion order deterministically
+  for (size_t i = 0; i < num_locals; ++i) {
+    if (in_degree[i] == 0UL) {
+      ready.insert(i);
+    }
+  }
+  TLocals ordered;
+  ordered.reserve(num_locals);
+  while (!ready.empty()) {
+    const size_t cur = *ready.begin();
+    ready.erase(ready.begin());
+    ordered.push_back(Locals[cur]);
+    for (size_t dependent : dependents[cur]) {
+      if (--in_degree[dependent] == 0UL) {
+        ready.insert(dependent);
+      }
+    }
+  }
+  if (ordered.size() != num_locals) {
+    throw std::logic_error("TCodeScope::OrderedLocals: dependency cycle among CSE locals");
+  }
+  return ordered;
+}
+
 void TCodeScope::WriteStart(TCppPrinter &out) const {
 
-  for(auto &it: Locals) {
+  for(auto &it: OrderedLocals()) {
     out << "auto " << it->GetId() << " = ";
     it->WriteExpr(out);
     out << ';' << Eol;

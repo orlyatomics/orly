@@ -53,9 +53,44 @@ FIXTURE(Typical) {
   EXPECT_NE(bin2, bin3);
   EXPECT_NE(bin2, bin4);
   EXPECT_NE(bin3, bin4);
-  //NOTE: Locals have been disabled ATM, so the number of locals is 0.
-  EXPECT_EQ(s.GetLocals().size(), 0u);
+  /* CSE is live again (#297): the duplicate fetch of bin1 made it a local, while the duplicate
+     literal fetch did not (leaves whose emission is already a constant are excluded). */
+  EXPECT_EQ(s.GetLocals().size(), 1u);
+  EXPECT_TRUE(bin1->HasId());
+  EXPECT_FALSE(lit4->HasId());
 
   //TODO(#308): Test printing out the locals.
 
+}
+
+/* The inversion that kept CSE disabled (#297): when a larger expression is CSE'd before one of
+   its own subexpressions is, arrival order would emit the outer local before the inner one it
+   references.  OrderedLocals must put the inner definition first. */
+FIXTURE(CseLocalsEmitInDependencyOrder) {
+  Type::TTypeCzar type_czar;
+  TIdScope::TPtr id_s = TIdScope::New();
+  TCodeScope s(id_s);
+
+  auto &Interner = *(s.GetInterner());
+
+  auto lit1 = Interner.GetLiteral(nullptr, Var::TVar(1));
+  auto lit2 = Interner.GetLiteral(nullptr, Var::TVar(2));
+  auto lit3 = Interner.GetLiteral(nullptr, Var::TVar(3));
+
+  auto inner = Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Add, lit1, lit2);
+  auto outer = Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Mult, inner, lit3);
+
+  /* Duplicate the OUTER expression first, then the INNER one: arrival order is now the
+     reverse of dependency order. */
+  auto outer_dup = Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Mult, inner, lit3);
+  auto inner_dup = Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Add, lit1, lit2);
+
+  EXPECT_EQ(outer, outer_dup);
+  EXPECT_EQ(inner, inner_dup);
+  EXPECT_EQ(s.GetLocals().size(), 2u);
+  EXPECT_TRUE(s.GetLocals()[0] == outer);  // arrival order: outer first...
+  auto ordered = s.OrderedLocals();
+  EXPECT_EQ(ordered.size(), 2u);
+  EXPECT_TRUE(ordered[0] == inner);        // ...but emission order defines inner first.
+  EXPECT_TRUE(ordered[1] == outer);
 }

@@ -43,8 +43,6 @@ TSort::TSort(const L0::TPackage *package,
     : TInline(package, ret_type), Container(container), Func(func) {}
 
 void TSort::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
-  dependency_set.insert(Container);
-  Container->AppendDependsOn(dependency_set);
-  dependency_set.insert(Func->GetBody());
-  Func->GetBody()->AppendDependsOn(dependency_set);
+  AppendDependency(Container, dependency_set);
+  AppendDependency(Func->GetBody(), dependency_set);
 }

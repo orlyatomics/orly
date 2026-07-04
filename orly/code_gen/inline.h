@@ -62,6 +62,23 @@ namespace Orly {
       /* Dependency graph */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const = 0;
 
+      /* The one way implementations of AppendDependsOn should record a child: insert it and,
+         only if it was newly inserted, recurse into it.  The insert-check keeps the walk linear
+         in edges over shared DAGs (and sharing is exactly what CSE creates), and it breaks any
+         cycle through a recursive call's body globally (#297/#298). */
+      static void AppendDependency(const TPtr &child, std::unordered_set<TPtr> &dependency_set) {
+        assert(child);
+        if (dependency_set.insert(child).second) {
+          child->AppendDependsOn(dependency_set);
+        }
+      }
+
+      /* False for leaves whose emission is already a name or constant (literals, typed leaves,
+         context vars, arg refs): materializing those as CSE locals is pure noise (#297). */
+      virtual bool IsCseWorthy() const {
+        return true;
+      }
+
       /* We need to know if this expression is free */
       virtual bool IsFree() const {
         return false;

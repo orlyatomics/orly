@@ -94,6 +94,9 @@ namespace Orly {
 
       void WriteStart(TCppPrinter &out) const;
 
+      /* Locals in emittable (dependency) order; see the definition for the contract (#297). */
+      TLocals OrderedLocals() const;
+
       private:
 
       /* All the assertions in the area conveniently gathered. */

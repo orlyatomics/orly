@@ -82,7 +82,11 @@ void TFunction::Build() {
     it->Build();
   }
 
-  //TODO(#297): Common sub expression elimination for inline scopes, cross-function subexpression elimination.
+  /* Per-scope CSE is live (#297): each function's TCodeScope (and every TInlineScope) dedups
+     through its interner and emits topo-ordered locals.  The cross-function half of the old
+     wish is declined: the generated C++ is compiled by gcc with optimization, which already
+     dedups pure expressions across functions, and an Orly-level version would need hoisting
+     into a shared scope plus argument threading -- new architecture for no demonstrated win. */
   if(Implicit) {
     Body = CodeGen::Build(Package, Expr, KeepMutable);
   } else {

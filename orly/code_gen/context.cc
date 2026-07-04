@@ -25,7 +25,8 @@
 
 using namespace Orly::CodeGen;
 
-std::stack<TInline::TPtr> Context::Lhs, Context::Rhs, Context::Start, Context::That;
+std::stack<TInline::TPtr> Context::Lhs, Context::Rhs, Context::Start;
+std::stack<Context::TThatInfo> Context::That;
 std::stack<TFunction*> Context::NearestFunc;
 Context::TAliases Context::Overrides;
 std::stack<TCodeScope*> Context::Scope;
@@ -82,14 +83,18 @@ TStmtBlock *Context::GetStmtBlock() {
 
 TInline::TPtr Context::GetThat() {
   assert(!That.empty());
-
-  //TODO(#297): Increment the reference count on the Inline ptr so that it common subexpression eliminates if used more than once.
-  return That.top();
+  auto &top = That.top();
+  /* Second use: the subexpression is genuinely shared, so materialize it once as a local of
+     the scope that owns it (#297).  AddLocal no-ops on already-locals and bare leaves. */
+  if (++top.Uses == 2) {
+    top.OwnerScope->AddLocal(top.That);
+  }
+  return top.That;
 }
 
 
 TThatableCtx::TThatableCtx(const TInline::TPtr &that) {
-  Context::That.push(that);
+  Context::That.push(Context::TThatInfo{that, Context::GetScope(), 0UL});
 }
 
 TThatableCtx::~TThatableCtx() {
@@ -127,7 +132,7 @@ TMapCtx::~TMapCtx() {
 
 TReduceCtx::TReduceCtx(const TInline::TPtr &carry, const TInline::TPtr &elem) {
   Context::Start.push(carry);
-  Context::That.push(elem);
+  Context::That.push(Context::TThatInfo{elem, Context::GetScope(), 0UL});
 }
 
 TReduceCtx::~TReduceCtx() {
