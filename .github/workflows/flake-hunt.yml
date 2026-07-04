@@ -1,0 +1,119 @@
+# Dedicated reproduction rig for the #463 flake class: a single lang test
+# crashing (SIGSEGV) or exiting non-zero once, deep in a loaded parallel
+# lang_test run, never reproducing on rerun. Three occurrences so far
+# (variants_mutual, context_vars, in), each a one-off anecdote.
+#
+# Passive fishing -- one lang_test pass per master push -- catches this at
+# roughly one occurrence per ~30 suite runs. This workflow turns one manual
+# dispatch into `shots x passes` suite runs (default 12 x 6 = 72) under the
+# exact conditions the flake has been seen in: the stock 4-vCPU runner, the
+# default 8-way worker pool, the full suite. Core dumps are enabled and any
+# core is symbolized in-job against the debug orlyc (same instrumentation as
+# the lang-tests job, from PR #481), so a caught crash yields a full
+# backtrace in the failed shot's log instead of another anecdote.
+#
+# Manual dispatch only: this is a hunting tool, not a gate. Each shot stops
+# at its first failing pass so the cores on disk belong to exactly one
+# failing suite run.
+name: flake-hunt
+
+on:
+  workflow_dispatch:
+    inputs:
+      passes:
+        description: 'Full-suite passes per shot (each ~8 min)'
+        required: false
+        default: '6'
+      workers:
+        description: 'lang_test.py worker count (default matches the CI lang-tests job)'
+        required: false
+        default: '8'
+
+jobs:
+  hunt:
+    name: shot ${{ matrix.shot }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      # Every shot is an independent sample; one catching the flake must not
+      # cancel the others (they might catch a second, different crash).
+      fail-fast: false
+      matrix:
+        shot: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache gdb
+          version: 1.3
+
+      - name: Set up ccache
+        # Same masquerade-symlink trick as the other jobs: jhm and orlyc both
+        # invoke g++/gcc by bare name via execvp, so symlink them ahead of
+        # /usr/bin to route every compile through ccache.
+        run: |
+          for c in gcc g++ cc c++; do
+            sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"
+          done
+          {
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_COMPRESS=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Restore ccache
+        # Restore-only: twelve parallel shots saving the same key would race,
+        # and the hunt adds nothing to the cache that the lang-tests job
+        # doesn't already save. Piggyback on that job's store.
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-lang-tests-${{ github.sha }}
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-lang-tests-
+            orly-ccache-${{ runner.os }}-
+
+      - name: make debug
+        run: make debug
+
+      - name: Enable core dumps (#463)
+        # The runner's default core_pattern pipes to apport, which discards
+        # cores; point it at a real directory first.
+        run: |
+          sudo mkdir -p /tmp/cores
+          sudo chmod 1777 /tmp/cores
+          sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
+
+      - name: Hunt (repeated full lang_test passes)
+        run: |
+          ulimit -c unlimited
+          passes='${{ inputs.passes }}'
+          workers='${{ inputs.workers }}'
+          for i in $(seq 1 "$passes"); do
+            echo "=============== shot ${{ matrix.shot }}, pass $i/$passes ==============="
+            if ! python3 tools/lang_test.py -w "$workers" -d orly/data tests/lang_tests; then
+              echo "::error::FLAKE CAUGHT: shot ${{ matrix.shot }}, pass $i -- see the symbolized backtrace below"
+              exit 1
+            fi
+          done
+
+      - name: Symbolize any core dumps (#463)
+        # In-job rather than uploading multi-hundred-MB cores: the debug orlyc
+        # has full symbols, so the backtrace lands right in this run's log.
+        if: failure()
+        run: |
+          shopt -s nullglob
+          cores=(/tmp/cores/core.*)
+          if [ ${#cores[@]} -eq 0 ]; then
+            echo "no cores captured (failure was not a crash)"
+            sudo dmesg | tail -50 || true
+            exit 0
+          fi
+          for core in "${cores[@]}"; do
+            echo "================ $core ================"
+            file "$core" || true
+            gdb -batch -ex 'info threads' -ex 'thread apply all bt' \
+                "$GITHUB_WORKSPACE/../out_orly/debug/orly/orlyc" "$core" || true
+          done
