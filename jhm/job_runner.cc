@@ -37,7 +37,12 @@ TJobRunner::TJobRunner(uint32_t worker_count, bool print_cmd)
       QueueRunner(bind(&TJobRunner::ProcessQueue, this)) {}
 
 TJobRunner::~TJobRunner() {
-  ExitWorker = true;
+  /* ExitWorker is atomic, but the flip must still happen under ToRunMutex (#337): that's the lock
+     the queue-runner thread holds while (re-)checking HasWork's predicate, and a state change made
+     outside it can race ahead of the runner's first wait() call and be missed entirely. */ {
+    lock_guard<mutex> lock(ToRunMutex);
+    ExitWorker = true;
+  }
   HasWork.notify_all();
   QueueRunner.join();
 }
@@ -122,12 +127,14 @@ void TJobRunner::ProcessQueue() {
       }
 
     }
-    // If there's nothing running, that means we're out of work. Wait for work to come our way
-    // TODO(#337): Could the Queue notify_all ever miss waking this up?
+    // If there's nothing running, that means we're out of work. Wait for work to come our way.
+    // wait(lock, pred) re-checks pred() immediately upon (re-)acquiring the lock rather than
+    // blindly parking, so a notify_all() that already landed (Queue() pushed work, or the
+    // destructor set ExitWorker) before we get here is never missed (#337).
     if(Running.size() == 0) {
       assert(!MoreResultsOnceTaken);
-      unique_lock<mutex> lock(HasWorkMutex);
-      HasWork.wait(lock);
+      unique_lock<mutex> lock(ToRunMutex);
+      HasWork.wait(lock, [this]{ return ExitWorker.load() || !ToRun.empty(); });
     } else {
       // Wait for results from the queued jobs.
       auto pid = TSubprocess::WaitAll();

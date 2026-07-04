@@ -18,12 +18,32 @@
 
 #include <jhm/config.h>
 
+#include <algorithm>
+#include <iomanip>
+
 #include <base/util/path.h>
 
 using namespace Base;
 using namespace Jhm;
 using namespace std;
 using namespace Util;
+
+/* The directory portion of 'path' (everything before the last '/'), or "." if there is none.
+   Used to resolve a config file's "parent"/"include" references relative to the file that
+   declares them. */
+static string Dirname(const string &path) {
+  auto pos = path.find_last_of('/');
+  return pos == string::npos ? string(".") : path.substr(0, pos);
+}
+
+/* Resolves a "parent"/"include" reference named in 'declaring_file' to an actual path: absolute
+   references are used as-is, relative ones are relative to 'declaring_file''s own directory. */
+static string ResolveConfigRef(const string &declaring_file, const string &ref) {
+  if (!ref.empty() && ref[0] == '/') {
+    return ref;
+  }
+  return Dirname(declaring_file) + '/' + ref;
+}
 
 TConfig::TConfig() {}
 
@@ -218,10 +238,53 @@ void TConfig::AddConfig(TJson &&config, bool top) {
 }
 
 void TConfig::AddFile(const string &filename) {
+  vector<string> loading;
+  AddFile(filename, false, loading);
+}
+
+void TConfig::AddFile(const string &filename, bool required, vector<string> &loading) {
   auto timestamp = TryGetTimestamp(filename);
-  if (timestamp) {
-    Timestamp = Newest(Timestamp, timestamp);
-    SrcConfigFiles.push_back(filename);
-    AddConfig(TJson::Read(filename.c_str()));
+  if (!timestamp) {
+    if (required) {
+      THROW_ERROR(runtime_error) << "config " << quoted(loading.back())
+          << " refers to " << quoted(filename) << ", which does not exist";
+    }
+    return;
   }
+  if (find(loading.begin(), loading.end(), filename) != loading.end()) {
+    THROW_ERROR(runtime_error) << "config parent/include cycle: " << quoted(filename)
+        << " is already being loaded";
+  }
+
+  Timestamp = Newest(Timestamp, timestamp);
+  SrcConfigFiles.push_back(filename);
+
+  TJson config = TJson::Read(filename.c_str());
+  assert(config.GetKind() == TJson::Object);
+
+  // Pull the directives out before recursing so a THROW_ERROR above can name the file that
+  // declared a bad reference (loading.back(), pushed just below).
+  optional<string> parent;
+  if (config.Contains("parent")) {
+    ThrowIfWrongKind(TJson::String, config["parent"]);
+    parent = config["parent"].GetString();
+  }
+  vector<string> includes;
+  if (config.Contains("include")) {
+    includes = TJsonReader<vector<string>>::Read(config["include"]);
+  }
+
+  loading.push_back(filename);
+  // Lowest priority first, so each subsequent AddConfig(..., top=true) (emplace_front) leaves the
+  // most recently added entry frontmost: parent < include[0] < ... < include[last] < this file's
+  // own entries (last-wins across includes matches the env config-file search list's convention).
+  if (parent) {
+    AddFile(ResolveConfigRef(filename, *parent), true, loading);
+  }
+  for (const string &inc : includes) {
+    AddFile(ResolveConfigRef(filename, inc), true, loading);
+  }
+  loading.pop_back();
+
+  AddConfig(move(config));
 }
