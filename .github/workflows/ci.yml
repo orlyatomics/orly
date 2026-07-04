@@ -303,9 +303,23 @@ jobs:
           sudo chmod 1777 /tmp/cores
           sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
 
+      # The #463 class has a hang presentation too (an orlyc that never exits;
+      # lang_test waits on it until the job timeout, yielding no evidence).
+      # Run every orlyc under `timeout --signal=ABRT`: the whole suite takes
+      # ~8 minutes, so any single orlyc alive at 15 is hung, and SIGABRT dumps
+      # a core the symbolize step below turns into a backtrace of the deadlock.
+      - name: Wrap orlyc in a hang-to-core timeout (#463)
+        run: |
+          sudo tee /usr/local/bin/orlyc-hang-to-core >/dev/null <<EOF
+          #!/bin/sh
+          exec timeout --signal=ABRT --kill-after=30 900 "$GITHUB_WORKSPACE/../out_orly/debug/orly/orlyc" "\$@"
+          EOF
+          sudo chmod +x /usr/local/bin/orlyc-hang-to-core
+
       - name: python3 tools/lang_test.py
         run: |
           ulimit -c unlimited
+          ORLYC=/usr/local/bin/orlyc-hang-to-core \
           python3 tools/lang_test.py -d orly/data tests/lang_tests
 
       # Symbolize in-job rather than uploading multi-hundred-MB cores: the debug orlyc has
