@@ -1868,6 +1868,16 @@ string TServer::ImportCoreVector(const string &file_pattern,
 
   int64_t running = 0;
   std::vector<size_t> gen_id_vec;
+  /* Per written file: the sequence range and key count WriteFile reported.
+     The merge phase recomputes these, but a one-file import skips every
+     merge round and must hand the load-phase values to AddFileToRepo
+     (#497). */
+  struct TFileSeqRange {
+    TSequenceNumber Low;
+    TSequenceNumber High;
+    size_t NumKeys;
+  };
+  std::map<size_t, TFileSeqRange> seq_range_by_gen_id;
   std::map<TSequenceNumber, std::unique_ptr<Base::TEventSemaphore>> waiting_map;
   std::mutex mut;
   std::condition_variable cond;
@@ -1890,6 +1900,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
                std::map<TSequenceNumber, std::unique_ptr<Base::TEventSemaphore>> &waiting_map,
                size_t &completion_count,
                std::vector<size_t> &gen_id_vec,
+               std::map<size_t, TFileSeqRange> &seq_range_by_gen_id,
                int64_t &running,
                const std::vector<string> &file_vec)
         : Server(server),
@@ -1903,6 +1914,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
           WaitingMap(waiting_map),
           CompletionCount(completion_count),
           GenIdVec(gen_id_vec),
+          SeqRangeByGenId(seq_range_by_gen_id),
           Running(running),
           FileVec(file_vec) {
       Indy::Fiber::TJumpRunnable::EnsureLocalFramePool(server->FramePoolManager.get());
@@ -1924,6 +1936,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
       void *val_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
       std::unordered_map<Base::TUuid, Base::TUuid> index_id_remapper;
       std::vector<size_t> local_gen_id_vec;
+      std::map<size_t, TFileSeqRange> local_seq_range_by_gen_id;
       const size_t orig_seq_num = SeqNum;
       size_t last_dot = File.find_last_of('.');
       if (last_dot == std::string::npos) {
@@ -1971,6 +1984,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
                 mem_layer = std::make_unique<TMemoryLayer>(Server->RepoManager.get());
                 num_entry_inserted = 0UL;
                 local_gen_id_vec.push_back(gen_id);
+                local_seq_range_by_gen_id.emplace(gen_id, TFileSeqRange{saved_low_seq, saved_high_seq, num_keys});
               }
             }
           };
@@ -2088,6 +2102,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
           Sem.Pop();
           std::lock_guard<std::mutex> lock(Mut);
           GenIdVec.insert(GenIdVec.end(), local_gen_id_vec.begin(), local_gen_id_vec.end());
+          SeqRangeByGenId.insert(local_seq_range_by_gen_id.begin(), local_seq_range_by_gen_id.end());
         } catch (const exception &ex) {
           syslog(LOG_ERR, "Error while trying to import file %s : %s", File.c_str(), ex.what());
           return;
@@ -2121,6 +2136,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
     std::map<TSequenceNumber, std::unique_ptr<Base::TEventSemaphore>> &WaitingMap;
     size_t &CompletionCount;
     std::vector<size_t> &GenIdVec;
+    std::map<size_t, TFileSeqRange> &SeqRangeByGenId;
     int64_t &Running;
     const std::vector<string> &FileVec;
 
@@ -2149,6 +2165,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
                      waiting_map,
                      completion_count,
                      gen_id_vec,
+                     seq_range_by_gen_id,
                      running,
                      file_vec);
       if (waiting_map.empty()) {
@@ -2168,8 +2185,16 @@ string TServer::ImportCoreVector(const string &file_pattern,
   auto global_repo = GetGlobalRepo();
   std::vector<size_t> end_vec;
   size_t finished = 0UL;
-  TSequenceNumber final_saved_low, final_saved_high;
-  size_t final_num_keys;
+  /* A single written file skips every merge round below, so nothing would
+     assign the final range: seed it from the load phase (#497). */
+  TSequenceNumber final_saved_low = 0UL, final_saved_high = 0UL;
+  size_t final_num_keys = 0UL;
+  if (gen_id_vec.size() == 1) {
+    const TFileSeqRange &range = seq_range_by_gen_id.at(gen_id_vec.front());
+    final_saved_low = range.Low;
+    final_saved_high = range.High;
+    final_num_keys = range.NumKeys;
+  }
   /* now iterate over the gen_id_vec till we have just the 1 file */ {
     class TMergeRunner : Fiber::TRunnable {
       NO_COPY(TMergeRunner);
