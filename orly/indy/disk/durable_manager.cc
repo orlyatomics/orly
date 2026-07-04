@@ -123,6 +123,7 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
       DurableMergeDelay(merge_delay),
       ShutDown(false),
       WriterRetired(false),
+      Scheduler(scheduler),
       MappingCollection(this),
       RemovalCollection(this),
       LayerCleanerTimer(layer_cleaning_interval),
@@ -147,7 +148,7 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
     }
     NextDurableByIdGenId = max_gen_id + 1UL;
   }
-  scheduler->Schedule([this, frame_pool_manager] {
+  WriterHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
     Fiber::LaunchSlowFiberSched(&WriterScheduler, frame_pool_manager);
     SchedulerExitedSem.Push();
   });
@@ -158,7 +159,7 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
     Fiber::TFrame::LocalFramePool->Free(WriterFrame);
     throw;
   }
-  scheduler->Schedule([this, frame_pool_manager] {
+  MergerHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
     Fiber::LaunchSlowFiberSched(&MergerScheduler, frame_pool_manager);
     SchedulerExitedSem.Push();
   });
@@ -177,16 +178,34 @@ TDurableManager::~TDurableManager() {
      still waiting on their durability sems), so deleting it before the writer is done would be
      a use-after-free -- and would silently drop the saves, which is what the old order did. */
   ShutDown = true;
+  /* Cancel-or-join the two host jobs first (#462): a host that never got a scheduler worker
+     never ran its runner loop, so the fiber latched onto it never ran either -- its finished
+     sem below would never push (deadlock) and the loop could otherwise still start late,
+     against the members we are about to destroy.  A failed cancel means the job has run or
+     is running: the fiber handshakes below are then live and the exit sem will push.  (A
+     cancelled host leaves its fiber latched-but-never-run; the frame is returned to the pool
+     regardless -- it never ran, so it holds no resources beyond its slab storage.) */
+  const bool writer_hosted = WriterHostHandle && !Scheduler->Cancel(WriterHostHandle);
+  const bool merger_hosted = MergerHostHandle && !Scheduler->Cancel(MergerHostHandle);
   SlushSem.Push();
   MergeSem.Push();
-  WriterFinishedSem.Pop();
-  MergerFinishedSem.Pop();
+  if (writer_hosted) {
+    WriterFinishedSem.Pop();
+  }
+  if (merger_hosted) {
+    MergerFinishedSem.Pop();
+  }
   WriterScheduler.ShutDown();
   MergerScheduler.ShutDown();
-  /* The runner loops live on scheduler jobs, not threads we can join; wait for both to actually
-     exit before member destruction so a still-scanning runner can never touch its dying sibling. */
-  SchedulerExitedSem.Pop();
-  SchedulerExitedSem.Pop();
+  /* The runner loops live on scheduler jobs, not threads we can join; wait for each one that
+     actually ran to exit before member destruction so a still-scanning runner can never touch
+     its dying sibling. */
+  if (writer_hosted) {
+    SchedulerExitedSem.Pop();
+  }
+  if (merger_hosted) {
+    SchedulerExitedSem.Pop();
+  }
   Fiber::TFrame::LocalFramePool->Free(MergerFrame);
   Fiber::TFrame::LocalFramePool->Free(WriterFrame);
   delete CurMemoryLayer;

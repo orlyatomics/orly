@@ -780,10 +780,18 @@ namespace Orly {
         bool WriterRetired;
 
         /* Pushed once by each of the two scheduler jobs hosting WriterScheduler and
-           MergerScheduler as their very last act.  The destructor pops it twice before member
-           destruction so the runner loops can never scan a sibling TRunner we've already torn
-           down (they run as scheduler jobs, so there is no thread to join). */
+           MergerScheduler as their very last act.  The destructor pops it once per host
+           job it could not cancel, before member destruction, so the runner loops can
+           never scan a sibling TRunner we've already torn down (they run as scheduler
+           jobs, so there is no thread to join). */
         Base::TEventSemaphore SchedulerExitedSem;
+
+        /* The scheduler the two host jobs were queued on, and their cancellation
+           handles: the destructor cancels a host that never got a worker instead of
+           deadlocking on sems its fiber will never push (#462). */
+        Base::TScheduler *Scheduler;
+        Base::TScheduler::TJobHandle WriterHostHandle;
+        Base::TScheduler::TJobHandle MergerHostHandle;
 
         Fiber::TSingleSem SlushSem;
         Fiber::TSingleSem MergeSem;

@@ -96,11 +96,17 @@ these documented leaks and would gate on noise, not signal.
 - **#461 — master-mode replication**: a replicate loop wedged in a remote
   `future->Sync()` holds `JoinReplicationServices()` until the RPC
   resolves; interrupting in-flight RPCs is future work.
-- **#462 — never-scheduled fibers**: a fiber that was latched but never
-  granted a worker cannot be joined (the started/exited handshake skips
-  it) and would touch freed state if it ever ran mid-teardown. The
-  scheduler's starved-jobs log makes this visible; a real fix needs job
-  cancellation.
+- **#462 — never-scheduled fibers (FIXED)**: a fiber that was latched but
+  never granted a worker could not be joined (the started/exited handshake
+  skips it) and would touch freed state if it ever ran mid-teardown. Fixed
+  by scheduler job cancellation: `TScheduler::ScheduleCancelable`/`Cancel`
+  give every long-lived host job's owner an exact cancel-or-join at
+  teardown (`if (!Cancel(handle)) exited_latch.Pop()`), so a never-started
+  host can neither start late nor be waited for — and a fiber latched onto
+  a cancelled host can never run at all, which is what makes the
+  fiber-level started/exited skips sound. `TScheduler::Shutdown` also
+  drains the queue, and its starved-jobs warning now flags only live,
+  never-cancelled leftovers (an owner contract violation).
 
 ## The #463 teardown race (fixed)
 

@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <vector>
 
 #include <sched.h>
 
@@ -91,10 +92,15 @@ void TScheduler::SetPolicy(const TPolicy &policy) {
 }
 
 bool TScheduler::Schedule(TJob &&job, int priority) {
+  return ScheduleCancelable(move(job), priority) != nullptr;
+}
+
+TScheduler::TJobHandle TScheduler::ScheduleCancelable(TJob &&job, int priority) {
   unique_lock<mutex> lock(Mutex);
-  bool success = (Policy.GetMaxWorkerCount() > 0);
-  if (success) {
-    JobQueue.emplace(move(job), priority);
+  TJobHandle handle;
+  if (Policy.GetMaxWorkerCount() > 0) {
+    handle = make_shared<TJob>(move(job));
+    JobQueue.emplace(TJobHandle(handle), priority);
     if (IdleCount > WakingCount) {
       PolicyChangedOrJobPushed.notify_one();
       ++WakingCount;
@@ -104,20 +110,49 @@ bool TScheduler::Schedule(TJob &&job, int priority) {
       TWorker::Launch(this, lock, WorkerCount + 1);
     }
   }
-  return success;
+  return handle;
+}
+
+bool TScheduler::Cancel(const TJobHandle &handle) {
+  if (!handle) {
+    return false;
+  }
+  lock_guard<mutex> lock(Mutex);
+  /* The pointee is emptied either here or by the worker taking the job in
+     TryPopJob(), both under the lock, so exactly one side wins.  The dead
+     entry stays in the queue and is dropped when it reaches the top. */
+  if (*handle) {
+    *handle = nullptr;
+    return true;
+  }
+  return false;
 }
 
 bool TScheduler::Shutdown(const milliseconds &timeout) {
   ShutDown();
   bool is_clean = true;
+  /* Declared before the lock so the drained closures are destroyed after
+     it is released -- a closure dtor is arbitrary code and must not run
+     under our mutex. */
+  std::vector<TJobHandle> drained;
   unique_lock<mutex> lock(Mutex);
-  if (!JobQueue.empty()) {
-    /* Schedule() queues past the worker cap but never launches another
-       worker, so a long-lived job scheduled after the cap saturates is
-       silently starved forever.  Make that visible at teardown instead of
-       leaving the next caller to rediscover it (#440); actually cancelling
-       queued-but-never-started jobs is TODO(#462). */
-    syslog(LOG_WARNING, "scheduler %p; %ld job(s) were scheduled but never ran (worker cap too low?)", static_cast<void *>(this), JobQueue.size());
+  /* Drain the queue: nothing may start once shutdown begins.  Schedule()
+     queues past the worker cap but never launches another worker, so a
+     long-lived job scheduled after the cap saturates is silently starved
+     forever; count the live (un-Cancelled) leftovers and make them visible
+     at teardown instead of leaving the next caller to rediscover it (#440).
+     A leftover here means its owner neither joined nor Cancel()ed it --
+     cancellation is the teardown contract for long-lived jobs (#462). */
+  size_t starved_count = 0;
+  while (!JobQueue.empty()) {
+    if (*JobQueue.top().Job) {
+      ++starved_count;
+    }
+    drained.push_back(JobQueue.top().Job);
+    JobQueue.pop();
+  }
+  if (starved_count) {
+    syslog(LOG_WARNING, "scheduler %p; %ld job(s) were scheduled but never ran and were never cancelled (worker cap too low?)", static_cast<void *>(this), starved_count);
   }
   if (WorkerCount) {
     Policy = TPolicy::Shutdown;
@@ -233,7 +268,7 @@ TScheduler::TScheduler(const TPolicy &policy, const std::optional<pthread_t> &ct
     : Policy(policy), FirstWorker(nullptr), LastWorker(nullptr), WorkerCount(0), IdleCount(0), WakingCount(0),
       CtrlCThread(ctrl_c_thread), PermanantlyQuiescent(false) {
   if (main_job) {
-    JobQueue.emplace(bind(move(*main_job), this), 0);
+    JobQueue.emplace(make_shared<TJob>(bind(move(*main_job), this)), 0);
   }
   size_t min_worker_count = max(policy.GetMinWorkerCount(), static_cast<size_t>(main_job ? 1 : 0));
   if (min_worker_count) {
@@ -245,6 +280,12 @@ TScheduler::TScheduler(const TPolicy &policy, const std::optional<pthread_t> &ct
 bool TScheduler::TryPopJob(unique_lock<mutex> &lock, TJob &job) {
   bool success;
   do {
+    /* Cancelled entries are dead weight; drop them before testing
+       emptiness so a cancelled job can neither be taken nor keep a worker
+       (or the quiescence check below) believing there is work (#462). */
+    while (!JobQueue.empty() && !*JobQueue.top().Job) {
+      JobQueue.pop();
+    }
     /* If there are too many workers, leave without a job.
        But if there aren't too many workers, and there's a job to do, take the job. */
     success = (WorkerCount <= Policy.GetMaxWorkerCount());
@@ -280,9 +321,11 @@ bool TScheduler::TryPopJob(unique_lock<mutex> &lock, TJob &job) {
       }
     }
   } while (success);
-  /* If we're taking a job, pop it off the queue. */
+  /* If we're taking a job, pop it off the queue.  The swap empties the
+     handle's pointee under the lock, so a Cancel() racing us reports the
+     job as taken (#462). */
   if (success) {
-    swap(job, JobQueue.top().Job);
+    swap(job, *JobQueue.top().Job);
     JobQueue.pop();
   }
   return success;

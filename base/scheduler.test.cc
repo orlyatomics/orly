@@ -117,3 +117,55 @@ FIXTURE(PermanentQuiescence) {
   EXPECT_EQ(count.load(), expected);
   EXPECT_TRUE(IsShuttingDown());
 }
+
+/* Job cancellation (#462): a queued-but-never-taken job can be removed so
+   it neither runs late against dying state nor goes silently missing; a
+   job a worker already took reports as such, telling the owner to join
+   its exited-latch instead. */
+FIXTURE(CancelQueuedJob) {
+  const TScheduler::TPolicy policy(1, 1, milliseconds(10));
+  TScheduler scheduler(policy);
+  TEventSemaphore entered, release, cancelled_job_ran;
+  /* Occupy the single worker so the next job must queue. */
+  EXPECT_TRUE(scheduler.Schedule([&entered, &release] {
+    entered.Push();
+    release.Pop();
+  }));
+  entered.Pop();
+  /* Queue and cancel: the job must report cancelled exactly once and must
+     never run. */
+  auto handle = scheduler.ScheduleCancelable([&cancelled_job_ran] {
+    cancelled_job_ran.Push();
+  });
+  EXPECT_TRUE(handle != nullptr);
+  EXPECT_TRUE(scheduler.Cancel(handle));
+  EXPECT_FALSE(scheduler.Cancel(handle));
+  release.Push();
+  EXPECT_TRUE(scheduler.Shutdown(milliseconds(2000)));
+  EXPECT_FALSE(cancelled_job_ran.GetFd().IsReadable());
+}
+
+FIXTURE(CancelTakenJobFails) {
+  const TScheduler::TPolicy policy(1, 1, milliseconds(10));
+  TScheduler scheduler(policy);
+  TEventSemaphore entered, release;
+  auto handle = scheduler.ScheduleCancelable([&entered, &release] {
+    entered.Push();
+    release.Pop();
+  });
+  EXPECT_TRUE(handle != nullptr);
+  entered.Pop();
+  /* The worker took the job; too late to cancel -- the owner must join. */
+  EXPECT_FALSE(scheduler.Cancel(handle));
+  release.Push();
+  EXPECT_TRUE(scheduler.Shutdown(milliseconds(2000)));
+}
+
+FIXTURE(CancelRefusedAndNullHandles) {
+  /* A scheduler with no workers refuses the job: null handle, and
+     cancelling a null handle is a no-op that reports not-cancelled. */
+  TScheduler scheduler;
+  auto handle = scheduler.ScheduleCancelable([] {});
+  EXPECT_TRUE(handle == nullptr);
+  EXPECT_FALSE(scheduler.Cancel(handle));
+}
