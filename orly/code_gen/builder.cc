@@ -302,7 +302,11 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &st
 }
 
 //TODO(#308): Unit test specific inlines passing through the builder.
-//TODO(#296): Containers containing only mutables should keep the mutables mutability.
+/* Mutability through container CTORS was considered and declined (#296): a container of
+   mutables is a type-system question first -- the language types `[m]` as a plain `[int]`
+   (ctor elements build with keep_mutable=false below), so preserving element mutability
+   means new surface typing rules in synth, not a codegen change.  The slice leg, where the
+   type system already produces the mutable result type, is implemented (see TSlice). */
 /* Build builds an inline from any expression. This is what is used inside of things like implicit maps so that we can
    build the map function. This function should be used anywhere where it is not valid to introduce a sequence. If
    it is valid to introduce a sequence, such as in filter's sequence argument, then the function BuildInline should be
@@ -344,7 +348,10 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TAndThen *that) const {
       Res = TBinaryScopedRhs::New(Package, ReturnType, TBinaryScopedRhs::AndThen, Build(Package, that->GetLhs(), false), that->GetRhs());
     }
-    //TODO(#296): Cast should be able to maintain mutability of list elements, as well as when doing the no-op cast.
+    /* Mutability through casts was considered and declined with the container-ctor leg of
+       #296 (see the note above Build): the result type of `as` is the type the user wrote,
+       which has no mutable in it -- preserving mutability through a cast (even the no-op
+       one) is a surface-typing decision for synth, not a codegen gap. */
     virtual void operator()(const Expr::TAs *that) const {
       /* A RECURSIVE-variant widening (#104) cannot be a value rebuild here --
          the self-edges are boxed, so the synth pass replaced it with a call
@@ -393,7 +400,6 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TAsin *that) const { Unary(Package, TUnary::Asin, that); }
     virtual void operator()(const Expr::TAssert *that) const {
-      //TODO(#294): Report file name with assertion failures.
       //Pass the expression through, setting it as the "that" context, and making it a local up front (the assert subject is always worth materializing).
       Res = Build(Package, that->GetExpr(), true);
       Context::GetScope()->AddLocal(Res);
@@ -401,7 +407,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
 
       //Build the individual asserts
       for(auto &it: that->GetAssertCases()) {
-        string name = Base::AsStr(it->GetExpr()->GetPosRange());
+        /* The label leads with the package (= source file) name so a failure names its file,
+           not just a position (#294). */
+        string name = Base::AsStr(Package->GetName(), ".orly ", it->GetExpr()->GetPosRange());
         if(it->HasName()) {
           name += " " + it->GetName();
         }
@@ -714,10 +722,11 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       Res = TSkip::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false), Build(Package, that->GetRhs(), false));
     }
     virtual void operator()(const Expr::TSlice       *that) const {
-      //TODO(#296): Slice should maintain mutability of container elements.
-      if(that->GetType().Is<Type::TMutable>() && (that->HasColon() || that->GetOptRhs())) {
-        throw TNotImplementedError(HERE, that->GetPosRange(), "Maintaining mutability through a range slice");
-      }
+      /* Mutable range slices emit like any other slice (#296): the runtime's SliceRange /
+         SliceRangeBoth mutable overloads (PR #414) narrow the value while keeping the
+         mutable's identity, so the old not-implemented gate here is gone -- C++ overload
+         resolution picks the mutable form whenever the container inline kept its
+         mutability. */
       Res = Interner.GetSlice(Package, ReturnType, Build(Package, that->GetContainer(), true),
           BuildOptInline(Package, that->GetOptLhs()), BuildOptInline(Package, that->GetOptRhs()), that->HasColon());
     }
