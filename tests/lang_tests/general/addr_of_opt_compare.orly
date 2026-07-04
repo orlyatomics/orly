@@ -1,0 +1,64 @@
+/* <orly/lang_tests/general/addr_of_opt_compare.orly>
+
+   Comparison between addresses with optional elements (#283): an optional
+   element makes the whole comparison optional -- Kleene semantics, exactly
+   as objects of optionals already behave (objects_of_opt_eqeq_neq.orly).
+   A known differing element decides the result even when another element
+   is unknown; an unknown element in an otherwise-equal (or order-deciding)
+   position makes the result unknown.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+a1 = <[1 as int?, "x"]>;
+a2 = <[1 as int?, "x"]>;
+a3 = <[2 as int?, "x"]>;
+a4 = <[unknown int, "x"]>;
+a5 = <[unknown int, "y"]>;
+a6 = <[1 as int?, "y"]>;
+
+test {
+  /* equality */
+  teq1: (a1 == a1) is known true;
+  teq2: (a1 == a2) is known true;
+  teq3: (a1 == a3) is known false;
+  teq4: (a1 == a4) is unknown;
+  teq5: (a3 == a4) is unknown;
+  /* the known second elements differ, which decides the comparison even
+     though the first elements are unknown */
+  teq6: (a4 == a5) is known false;
+  teq7: (a4 == a4) is unknown;
+
+  /* inequality */
+  tneq1: (a1 != a3) is known true;
+  tneq2: (a1 != a2) is known false;
+  tneq3: (a1 != a4) is unknown;
+
+  /* ordering: lexicographic over the elements */
+  tlt1: (a1 < a3) is known true;
+  tlt2: (a3 < a1) is known false;
+  tlt3: (a1 < a6) is known true;
+  tlt4: (a4 < a1) is unknown;
+  tlte1: (a1 <= a2) is known true;
+  tgt1: (a3 > a1) is known true;
+  tgte1: (a2 >= a1) is known true;
+
+  /* desc elements invert the ordering and keep Kleene semantics */
+  tdesc1: (<[desc (1 as int?)]> < <[desc (2 as int?)]>) is known false;
+  tdesc2: (<[desc (2 as int?)]> < <[desc (1 as int?)]>) is known true;
+  tdesc3: (<[desc (1 as int?)]> == <[desc (1 as int?)]>) is known true;
+  tdesc4: (<[desc unknown int]> < <[desc (1 as int?)]>) is unknown;
+};
