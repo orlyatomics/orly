@@ -285,6 +285,14 @@ jobs:
       - name: make debug
         run: make debug
 
+      # Incremental-compilation gate (#312): a second compile of an unchanged
+      # package must be a byte-for-byte no-op (no codegen, no gcc), an edit
+      # must invalidate the staleness key, and the check-only modes
+      # (--syntax-only / --semantic-only / --transient-cc) must emit nothing
+      # they promise not to. Needs the stamped orlyc `make debug` just built.
+      - name: tests/incremental_test.sh (#312)
+        run: ./tests/incremental_test.sh
+
       # The #463 flake class -- a single test crashing once, deep in a loaded parallel run,
       # never reproducing on rerun -- has only ever yielded anecdotes. Capture cores so the
       # next occurrence yields a stack trace: the runner's default core_pattern pipes to

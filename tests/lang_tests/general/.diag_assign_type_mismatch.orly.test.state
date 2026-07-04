@@ -3,7 +3,10 @@
   [
     [],
     [
-      "Synth + Symbols",
+      "Synth + Symbols"
+    ],
+    [
+      "TypeCheck",
       "23:40-23:52 [orly/symbol/stmt/mutate.cc]cannot assign a value of type std::string to a mutable holding int64_t"
     ]
   ]

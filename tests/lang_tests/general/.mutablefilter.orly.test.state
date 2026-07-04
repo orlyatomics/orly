@@ -6,6 +6,9 @@
       "Synth + Symbols"
     ],
     [
+      "TypeCheck"
+    ],
+    [
       "Code Gen",
       "WARNING: Top level function [get_me_ints] returning sequence cannot currently be called via the Spa server. Cast your sequence to a list in your orlyscript if you want to call the function"
     ],
