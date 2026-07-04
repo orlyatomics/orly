@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <orly/synth/type.h>
 
 namespace Orly {
@@ -31,7 +33,7 @@ namespace Orly {
       NO_COPY(TBinaryType);
       public:
 
-      typedef Type::TType (*TGet)(const Type::TType &, const Type::TType &);
+      using TGet = std::function<Type::TType (const Type::TType &, const Type::TType &)>;
 
       TBinaryType(TType *lhs, TType *rhs, TGet get);
 

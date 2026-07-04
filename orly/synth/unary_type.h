@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <orly/synth/type.h>
 
 namespace Orly {
@@ -32,7 +34,7 @@ namespace Orly {
       NO_COPY(TUnaryType);
       public:
 
-      typedef Type::TType (*TGet)(const Type::TType &);
+      using TGet = std::function<Type::TType (const Type::TType &)>;
 
       TUnaryType(TType *type, TGet get);
 

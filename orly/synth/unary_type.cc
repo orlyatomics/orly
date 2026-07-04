@@ -26,7 +26,9 @@ using namespace Orly;
 using namespace Orly::Synth;
 
 TUnaryType::TUnaryType(TType *type, TGet get)
-    : Type(Base::AssertTrue(type)), Get(get) {}
+    : Type(Base::AssertTrue(type)), Get(std::move(get)) {
+  assert(Get);
+}
 
 TUnaryType::~TUnaryType() {
   delete Type;
