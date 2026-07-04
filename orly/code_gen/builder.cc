@@ -468,7 +468,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         //Things in dicts can't be mutable.
         elems.insert(make_pair(Build(Package, it.first, false), Build(Package, it.second, false)));
       }
-      Res = TBasicCtor<TDictContainer>::TPtr(new TBasicCtor<TDictContainer>(Package, ReturnType, move(elems)));
+      Res = Interner.GetDictCtor(Package, ReturnType, move(elems));
     }
     virtual void operator()(const Expr::TDiv *that) const { Binary(Package, TBinary::Div, that); }
     virtual void operator()(const Expr::TEffect *that) const {
@@ -558,8 +558,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TGt *that) const { Binary(Package, TBinary::Gt, that); }
     virtual void operator()(const Expr::TGtEq *that) const { Binary(Package, TBinary::GtEq, that); }
     virtual void operator()(const Expr::TIfElse *that) const {
-      //TODO(#301): Intern if_else.
-      Res = TIfElse::New(Package, ReturnType, that->GetTrue(), Build(Package, that->GetPredicate(), false) , that->GetFalse());
+      /* Keyed on the arm expr pointers + the built predicate (#301): the same source if/else
+         built twice dedups; arms stay TInlineScopes, so its CSE local is dispatch-safe. */
+      Res = Interner.GetIfElse(Package, ReturnType, that->GetTrue(), Build(Package, that->GetPredicate(), false), that->GetFalse());
     }
     virtual void operator()(const Expr::TIn *that) const { Binary(Package, TBinary::In, that); }
     virtual void operator()(const Expr::TIntersection *that) const { Binary(Package, TBinary::Intersection, that); }
@@ -605,8 +606,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         args.insert(make_pair(it.first, Build(Package, it.second, false)));
       }
 
-      //TODO(#301): Intern this, has the same problem TDict does.
-      Res = TObjCtor::TPtr(new TObjCtor(Package, ReturnType, move(args)));
+      Res = Interner.GetObjCtor(Package, ReturnType, move(args));
     }
     virtual void operator()(const Expr::TObjMember *that) const {
       /* `e.<Tag>` overloads on operand type (matching Expr::TObjMember::
@@ -645,7 +645,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         func->Build();
       }
 
-      //TODO(#301): Intern this (Functions aren't interned, so doing it now doesn't make sense.
+      /* Not interned (#301, declined): every construction mints a fresh TImplicitFunc, so a
+         key carrying it can never repeat -- interning function-bearing nodes is gated on
+         function identity, which nothing needs today. Same for sort and the implicit map. */
       Res = TReduce::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false),
           Build(Package, that->GetStart()->GetExpr(), false), func);
     }
@@ -703,9 +705,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         elems.insert(Build(Package, it, false));
       }
 
-      Res = TBasicCtor<TSetContainer>::TPtr(new TBasicCtor<TSetContainer>(Package, ReturnType, move(elems)));
-
-      //TODO(#301): Requires comparison of sets: Res = Interner.GetSetCtor(ReturnType, move(elems));
+      Res = Interner.GetSetCtor(Package, ReturnType, move(elems));
     }
     virtual void operator()(const Expr::TSessionId *) const { Res = Interner.GetContextVar(Package, TContextVar::SessionId); }
     virtual void operator()(const Expr::TSequenceOf *that) const { Unary(Package, TUnary::SequenceOf, that); }
@@ -731,7 +731,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         func->Build();
       }
 
-      //TODO(#301): Intern
+      /* Not interned (#301, declined): fresh TImplicitFunc per construction; see TReduce. */
       Res = TSort::New(Package, ReturnType, BuildInline(Package, that->GetLhs(), false), func);
 
     }
@@ -990,7 +990,7 @@ TInline::TPtr BuildMap(const L0::TPackage *package, const Expr::TExpr::TPtr &exp
   }
 
   //Return the implicit map.
-  //TODO(#301): Intern implicit maps.
+  /* Not interned (#301, declined): fresh TImplicitFunc per construction; see TReduce. */
   return TMap::New(package, expr->GetType(), seq_inlines, func);
 }
 
