@@ -197,14 +197,10 @@ void TPackage::Emit(const Jhm::TTree &out_dir) const {;
      - Function signature of every exported function
   */
 
-  bool first = true;
-
   auto emit_code = [&](const std::function<void (TCppPrinter &, const TRelPath &)> &func, const vector<string> &ext) -> void {
     TRelPath rel_path(TPath(Symbol->GetName().Name, ext));
     string out_path(AsStr(out_dir.GetAbsPath(rel_path)));
-    if (first) {
-      EnsureDirExists(out_path.c_str(), true);
-    }
+    EnsureDirExists(out_path.c_str(), true);
 
     TCppPrinter out(out_path);
     func(out, rel_path);
@@ -216,9 +212,14 @@ void TPackage::Emit(const Jhm::TTree &out_dir) const {;
   emit_code(bind(&TPackage::WriteSignatures, this, _1, _2), {"orly", "sig"});
 }
 
-void TPackage::EmitObjectHeaders(const std::string &out_dir) const {
+void TPackage::EmitObjectHeaders(const std::string &out_dir, std::unordered_set<Type::TType> &emitted) const {
+  /* `emitted` spans the whole multi-package compile walk (#312): packages in
+     one import graph share object types, and each header's content depends
+     only on its type, so the first emission covers every later package. */
   for(auto &it: Objects) {
-    GenObjHeader(out_dir, it);
+    if (emitted.insert(it).second) {
+      GenObjHeader(out_dir, it);
+    }
   }
 }
 

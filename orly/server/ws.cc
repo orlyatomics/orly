@@ -354,9 +354,7 @@ class TWsImpl final
               "tmp_pkg_", ".orly");
           auto pkg = Compiler::Compile(TPath(tmp_file.GetPath()),
                                        Conn->Ws->SessionManager->GetPackageManager().GetPackageDir(),
-                                       true,
-                                       false,
-                                       false,
+                                       {.DebugCc = true},
                                        out_strm);
           Result["name"] = AsStr(pkg.Name);
           Result["version"] = pkg.Version;

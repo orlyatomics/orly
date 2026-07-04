@@ -150,7 +150,7 @@ FIXTURE(SmallTypical) {
   package_file.open("/tmp/sample.orly");
   package_file << sample_package;
   package_file.close();
-  Orly::Compiler::Compile(Jhm::TAbsPath(Jhm::TAbsBase("/tmp/"), Jhm::TRelPath("sample.orly")), string("/tmp/"), false, false, false);
+  Orly::Compiler::Compile(Jhm::TAbsPath(Jhm::TAbsBase("/tmp/"), Jhm::TRelPath("sample.orly")), string("/tmp/"), {});
   //#endif
 
   TAddress server_1_addr(TAddress::IPv4Any, 19281);
@@ -334,7 +334,7 @@ FIXTURE(MediumTypical) {
   package_file.open("/tmp/sample.orly");
   package_file << sample_package;
   package_file.close();
-  Orly::Compiler::Compile(Jhm::TAbsPath(Jhm::TAbsBase("/tmp/"), Jhm::TRelPath("sample.orly")), string("/tmp/"), false, false, false);
+  Orly::Compiler::Compile(Jhm::TAbsPath(Jhm::TAbsBase("/tmp/"), Jhm::TRelPath("sample.orly")), string("/tmp/"), {});
   //#endif
 
   TAddress server_1_addr(TAddress::IPv4Any, 19281);
@@ -542,7 +542,7 @@ FIXTURE(ResyncTypical) {
   package_file.open("/tmp/sample.orly");
   package_file << sample_package;
   package_file.close();
-  Orly::Compiler::Compile(Jhm::TAbsPath(Jhm::TAbsBase("/tmp/"), Jhm::TRelPath("sample.orly")), string("/tmp/"), false, false, false);
+  Orly::Compiler::Compile(Jhm::TAbsPath(Jhm::TAbsBase("/tmp/"), Jhm::TRelPath("sample.orly")), string("/tmp/"), {});
   #endif
 
   TAddress server_1_addr(TAddress::IPv4Any, 19281);

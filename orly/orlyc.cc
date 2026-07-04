@@ -53,6 +53,8 @@ class TCompilerConfig : public Base::TCmd {
         OutputDir(Util::GetCwd()),
         SemanticOnly(false),
         SkipTests(false),
+        SyntaxOnly(false),
+        TransientCc(false),
         VerboseTests(false) {
 
     Parse(argc, argv, TMeta());
@@ -66,8 +68,10 @@ class TCompilerConfig : public Base::TCmd {
       Param(&TCompilerConfig::DebugOutput, "debug_output", Optional, "debug\0d\0", "Compile the orly package in debug mode.");
       Param(&TCompilerConfig::MachineForm, "machine_form", Optional, "machine-form\0m\0", "Print out machine readable progress.");
       Param(&TCompilerConfig::OutputDir, "output_directory", Optional, "output\0o\0", "The directory to write output to.");
-      Param(&TCompilerConfig::SemanticOnly, "semantic_only", Optional, "semantic-only\0", "Don't actually produce output, just syntactically and semantically validate the program.");
+      Param(&TCompilerConfig::SemanticOnly, "semantic_only", Optional, "semantic-only\0", "Don't produce output, just syntactically and semantically validate the program.");
       Param(&TCompilerConfig::SkipTests, "skip_tests", Optional, "skip-tests\0", "Don't run tests after compiling.");
+      Param(&TCompilerConfig::SyntaxOnly, "syntax_only", Optional, "syntax-only\0", "Don't produce output or type-check, just syntactically validate the program.");
+      Param(&TCompilerConfig::TransientCc, "transient_cc", Optional, "transient-cc\0", "Remove the generated C++ intermediates after a successful compile, leaving only the linked package.");
       Param(&TCompilerConfig::VerboseTests, "verbose_tests", Optional, "v\0",
           "Run tests in 'verbose' mode, printing out the result of every test, rather than just failing tests.");
       Param(&TCompilerConfig::Source, "source", Required, "The Orly source file to compile.");
@@ -96,6 +100,8 @@ class TCompilerConfig : public Base::TCmd {
   bool SemanticOnly;
   std::string Source;
   bool SkipTests;
+  bool SyntaxOnly;
+  bool TransientCc;
   bool VerboseTests;
 };
 
@@ -253,10 +259,12 @@ int CompileCode(const TCompilerConfig &cmd) {
       output = Compiler::Compile(
                    Base::TPath(src),
                    cmd.OutputDir,
-                   cmd.DebugOutput,
-                   cmd.MachineForm,
-                   cmd.SemanticOnly);
-      if (cmd.SkipTests || cmd.SemanticOnly) {
+                   {.DebugCc = cmd.DebugOutput,
+                    .MachineMode = cmd.MachineForm,
+                    .SemanticOnly = cmd.SemanticOnly,
+                    .SyntaxOnly = cmd.SyntaxOnly,
+                    .TransientCc = cmd.TransientCc});
+      if (cmd.SkipTests || cmd.SemanticOnly || cmd.SyntaxOnly) {
         if (cmd.MachineForm) {
           cout << "MM_NOTICE: Skipped tests" << endl;
         }
