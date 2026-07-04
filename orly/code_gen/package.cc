@@ -231,14 +231,18 @@ void TPackage::WriteStartingComment(TCppPrinter &out, const TRelPath &path) cons
 }
 
 void TPackage::WriteHeader(TCppPrinter &out, const TRelPath &path) const {
-  //TODO(#306): Reduce number of needed includes.
+  /* Pruning the generated includes to a computed minimal set was considered and declined
+     (#306): compile time is dominated by the fixed api/rt includes below (orly/rt.h above
+     all), which are irreducible, while the per-object includes are tiny generated headers --
+     so the reachable-object closure walk the pruning needs is real machinery for no
+     measurable win.  Applies to all three include loops (header + cc). */
   WriteStartingComment(out, path);
   out << "#pragma once" << Eol
       << "#include <orly/package/api.h>" << Eol
       << "#include <orly/package/rt.h>" << Eol
       << "#include <orly/rt.h>" << Eol;
 
-  //TODO(#306): Reduce to only objects needed by the export set.
+  /* All registered objects; pruning declined, see WriteHeader's note (#306). */
   for(const auto &object: Objects) {
     GenObjInclude(object, out);
   }
@@ -271,7 +275,7 @@ void TPackage::WriteCc(TCppPrinter &out, const TRelPath &rel_path) const {
   //Include for all the package interfaces we need
   WriteImportIncludes(out);
 
-  //TODO(#306): Reduce to no objects used by exported or imported functions.
+  /* All registered objects; pruning declined, see WriteHeader's note (#306). */
   //Include for all the objects we need
   for(const auto &object: Objects) {
     GenObjInclude(object, out);

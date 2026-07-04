@@ -30,7 +30,9 @@ using namespace Orly::Type;
 FIXTURE(GenObjHeader) {
   TTypeCzar type_czar;
 
-  //TODO(#308): Should really make sure the genned code is valid here, but oh well.
+  /* Validity of the generated code is gated end-to-end by the lang_test suite, where
+     every test compiles a full generated package with gcc (#308) -- re-proving it here
+     would mean shelling out to the compiler from a unit test. */
   //A basic object
   auto obj1 = TObj::Get({{"a", TInt::Get()}, {"b", TBool::Get()}});
   GenObjHeader("/tmp/", obj1);

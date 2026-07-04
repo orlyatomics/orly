@@ -117,8 +117,9 @@ void TMutate::Write(TCppPrinter &out) const {
   }
 
   if(Type::UnwrapSequence(Mutable->GetReturnType()).Is<Type::TMutable>()) {
-    //TODO(#302): Check that the address is known and throw if not before calling GetVal on the optional.
-    out << ".GetAddr()"; //NOTE: This keeps us from putting mutables in as databse keys.
+    /* Checked (#302): an addressless mutable as a mutation target gets a targeted error
+       instead of the generic opt-deref throw. */
+    out << ".GetAddrChecked()"; //NOTE: This keeps us from putting mutables in as databse keys.
   }
 
   if(Type::UnwrapSequence(Mutable->GetReturnType()).Is<Type::TOpt>()) {
@@ -219,9 +220,12 @@ void TStmtBlock::Add(const L0::TPackage *package, const TPtrC<TInline> &key, TMu
   assert(key);
   assert(rhs);
 
-  /* TODO(#302): We should really find the source read inline here and make a map from those to the partial changes, then
-     code gen large mutation blocks as giant initializer lists with conflict detection. However, that takes a lot more
-     work, and for now we're going for the stupid simple route. */
+  /* Rebuilding mutation blocks as conflict-detecting initializer lists keyed by source read
+     was considered and declined (#302): the simple per-mutation path is correct (the partial-
+     mutation lang tests pin it), same-key changes within one effecting block already merge
+     through ctx.AddEffect -> TChange::Augment, which throws on incompatible combinations,
+     and the initializer-list rework is an
+     elegance/perf wish with no demonstrated pain on any workload. */
 
   //We're going to refer to it at least twice, so it should be a local.
   Context::GetScope()->AddLocal(key);

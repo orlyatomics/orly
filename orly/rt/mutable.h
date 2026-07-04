@@ -23,6 +23,7 @@
 #include <utility>
 
 #include <orly/rt/opt.h>
+#include <orly/rt/runtime_error.h>
 
 namespace Orly {
 
@@ -59,6 +60,17 @@ namespace Orly {
           : Addr(addr), Parts(parts), Val(val) {}
 
       const TAddr &GetAddr() const {
+        return Addr.GetVal();
+      }
+
+      /* The addressed form of this mutable, for use as a mutation target (#302): a mutable
+         that never came from a database read has no address, and using it as a mutation
+         target is a user error deserving a targeted message, not the generic
+         "dereferenced an unknown" that GetAddr()'s opt deref would raise. */
+      const TAddr &GetAddrChecked() const {
+        if (!Addr) {
+          throw TSystemError(HERE, "mutation target has no database address (the mutable value was not read from a key)");
+        }
         return Addr.GetVal();
       }
 

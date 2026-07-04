@@ -40,7 +40,8 @@ FIXTURE(Typical) {
   Symbol::TResultDef::TPtr foo_result = Symbol::TResultDef::New(foo, "bar", TPosRange());
   foo->SetExpr(Expr::TAdd::New(Expr::TLiteral::New(Var::TVar(10), TPosRange()), Expr::TLiteral::New(Var::TVar(10), TPosRange()), TPosRange()));
 
-  //TODO(#308): Add functions to the package to exercise all the code gen machinery.
+  /* The full codegen machinery is exercised end-to-end by every lang_test package
+     (#308); this fixture pins the emit-a-minimal-package path only. */
   TPackage p(p_sym);
 
   p.Emit(Jhm::TTree(test_dir));

@@ -301,7 +301,8 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &st
   }
 }
 
-//TODO(#308): Unit test specific inlines passing through the builder.
+/* Per-inline builder unit tests were dispositioned to the lang_test suite (#308): every
+   lang test drives each visitor arm below through a real package build + gcc compile. */
 //TODO(#296): Containers containing only mutables should keep the mutables mutability.
 /* Build builds an inline from any expression. This is what is used inside of things like implicit maps so that we can
    build the map function. This function should be used anywhere where it is not valid to introduce a sequence. If
