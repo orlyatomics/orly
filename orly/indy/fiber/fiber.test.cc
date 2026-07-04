@@ -672,3 +672,84 @@ FIXTURE(Sem) {
   EXPECT_EQ(pos_counter, 5UL);
   EXPECT_EQ(accuracy_counter, 127UL);
 }
+
+/* A cross-runner handoff must survive the destruction of the runner that
+   pushed it (#463): the handoff slots are owned by the TRunnerCons, not by
+   either runner.  Staged deterministically: runner A dispatches a fiber
+   whose SwitchTo(B) publishes the deferred move into the (B, A) handoff
+   slot while B's thread has not started yet; A is then shut down, joined,
+   and destroyed before B ever polls.  Before the fix the handoff lived in
+   A's own queue array and died with A -- B would find nothing (the lost
+   fiber is the hang presentation of the teardown race) or, in the live
+   server, read A's freed memory (the SIGSEGV presentation). */
+FIXTURE(HandoffOutlivesPushingRunner) {
+  class TMover
+      : public TRunnable {
+    NO_COPY(TMover);
+    public:
+
+    TMover(TRunner *start_runner, TRunner *move_to_runner, std::atomic<bool> &done)
+        : MoveToRunner(move_to_runner), Done(done) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(start_runner, this, static_cast<TRunnable::TFunc>(&TMover::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~TMover() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    void Run() {
+      SwitchTo(MoveToRunner);
+      Done.store(true);
+    }
+
+    private:
+
+    TFrame *Frame;
+
+    TRunner *MoveToRunner;
+
+    std::atomic<bool> &Done;
+
+  };
+  const size_t num_frames = 1UL;
+  const size_t stack_size = 1 * 1024 * 1024;
+  TRunner::TRunnerCons runner_cons(2);
+  auto runner_a = std::make_unique<TRunner>(runner_cons);
+  TRunner runner_b(runner_cons);
+  TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(num_frames, stack_size, &runner_b);
+  TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  try {
+    std::atomic<bool> done(false);
+    TMover mover(runner_a.get(), &runner_b, done);
+    /* Run A alone: it dispatches the fiber, which parks toward B; A's loop
+       publishes the deferred move into the cons-owned slot before it can
+       observe the shutdown flag. */
+    thread thread_a([&]() { runner_a->Run(); });
+    sleep(1);
+    runner_a->ShutDown();
+    thread_a.join();
+    /* The pusher dies before the target ever polls. */
+    runner_a.reset();
+    EXPECT_FALSE(done.load());
+    /* B must drain the handoff from the cons-owned slot and finish the
+       fiber, even though the runner that pushed it is gone. */
+    thread thread_b([&]() { runner_b.Run(); });
+    while (!done.load()) {
+      std::this_thread::yield();
+    }
+    runner_b.ShutDown();
+    thread_b.join();
+  } catch (...) {
+    delete TFrame::LocalFramePool;
+    TFrame::LocalFramePool = nullptr;
+    throw;
+  }
+  delete TFrame::LocalFramePool;
+  TFrame::LocalFramePool = nullptr;
+}

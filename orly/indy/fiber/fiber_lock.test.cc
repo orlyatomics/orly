@@ -102,14 +102,9 @@ FIXTURE(Typical) {
   const size_t num_runnable_per_thread = 256UL;
   size_t num_threads = 4UL;
   std::vector<TRunner *> runner_vec;
-  std::atomic<TRunner *> runner_array[num_threads];
+  TRunner::TRunnerCons runner_cons(num_threads);
   for (size_t i = 0; i < num_threads; ++i) {
-    runner_array[i] = nullptr;
-  }
-  for (size_t i = 0; i < num_threads; ++i) {
-    TRunner *runner = new TRunner(num_threads, i, runner_array);
-    runner_array[i] = runner;
-    runner_vec.emplace_back(runner);
+    runner_vec.emplace_back(new TRunner(runner_cons));
   }
   Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(num_threads * num_runnable_per_thread, 64 * 1024, runner_vec[0]);
   //TFiberLock lock;

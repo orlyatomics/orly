@@ -101,3 +101,22 @@ these documented leaks and would gate on noise, not signal.
   it) and would touch freed state if it ever ran mid-teardown. The
   scheduler's starved-jobs log makes this visible; a real fix needs job
   cancellation.
+
+## The #463 teardown race (fixed)
+
+The flake class this arc's instrumentation finally caught (four one-shot
+SIGSEGVs and two hangs, all post-test, never on rerun) was not in the
+teardown *ordering* at all but in the fiber runtime's cross-runner
+channel: every `TRunner::Run` lap dereferenced every peer `TRunner`
+(`RunnerArray[i]->QueueArray[me]`), yet runners die at different times —
+`~TDurableManager` destroys its writer/merger schedulers and
+`delete TetrisManager` its fiber scheduler while a dozen service runners
+still poll. A peer that loaded the pointer just before the destruction
+read freed heap being actively churned by the same teardown's pool
+traffic; a garbage read longjmps a phantom frame (the crash form), a
+zero read silently drops a queued handoff (the hang form). The handoff
+slots now live in a `TRunnerCons`-owned all-pairs matrix that outlives
+every runner, so polling touches no peer object; two adjacent
+unjoined-loop windows (the `LaunchSlowFiberSched` scheduler jobs hosting
+TServer's service runners, and `TFileService`'s `BGScheduler` host) got
+the standard entered/exited-latch join.

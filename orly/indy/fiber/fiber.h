@@ -356,6 +356,18 @@ namespace Orly {
 
         //typedef InvCon::UnorderedList::TCollection<TRunner, TFrame> TFrameQueue;
 
+        /* One cross-runner handoff slot: a Treiber-stack head of frames one
+           runner (the pusher) wants to hand to another (the target). The
+           slots live in a TRunnerCons-owned matrix, NOT on the runners:
+           runners die at different times during teardown (a manager's member
+           runner is destroyed while its peers still poll), and a slot owned
+           by a dying runner is a use-after-free for every peer that already
+           loaded a pointer to it (#463). The cons outlives every runner it
+           minted an id for, so the channel is always safe to touch. */
+        struct alignas(64) THandoffQueue {
+          std::atomic<TFrame *> Ptr;
+        };
+
         class TRunnerCons {
           NO_COPY(TRunnerCons);
           public:
@@ -363,16 +375,17 @@ namespace Orly {
           TRunnerCons(size_t num_runners)
               : NumRunners(num_runners), NextId(0UL) {
             syslog(LOG_INFO, "TRunnerCons [%ld]", num_runners);
-            RunnerArray = new std::atomic<TRunner *>[num_runners];
-            syslog(LOG_INFO, "TRunnerCons [%ld] A", num_runners);
-            for (size_t i = 0; i < num_runners; ++i) {
-              RunnerArray[i].store(nullptr, std::memory_order_relaxed);
+            /* The all-pairs handoff matrix; slot [target * NumRunners +
+               pusher], so a draining runner walks a contiguous row. */
+            HandoffMatrix = new THandoffQueue[num_runners * num_runners];
+            for (size_t i = 0; i < num_runners * num_runners; ++i) {
+              HandoffMatrix[i].Ptr.store(nullptr, std::memory_order_relaxed);
             }
-            syslog(LOG_INFO, "TRunnerCons [%ld] B", num_runners);
+            syslog(LOG_INFO, "TRunnerCons [%ld] ready", num_runners);
           }
 
           ~TRunnerCons() {
-            delete[] RunnerArray;
+            delete[] HandoffMatrix;
           }
 
           private:
@@ -392,52 +405,16 @@ namespace Orly {
 
           size_t NextId;
 
-          /* Per-runner publication slots. A TRunner publishes itself into its
-             own slot in its ctor (store/release) and other runner threads read
-             the slots in TRunner::Run (load/acquire), so the element type must
-             be atomic. */
-          std::atomic<TRunner *> *RunnerArray;
+          /* See THandoffQueue. */
+          THandoffQueue *HandoffMatrix;
 
           friend class TRunner;
 
         };  // TRunnerCons
 
-        TRunner(TRunnerCons &runner_cons) : TRunner(runner_cons.NumRunners, runner_cons.GetNewId(), runner_cons.RunnerArray) {
-          /* Publish ourselves into the shared runner array. Release so that a
-             peer runner that reads this slot (acquire) in TRunner::Run sees a
-             fully constructed TRunner -- in particular our QueueArray. */
-          runner_cons.RunnerArray[RunnerId].store(this, std::memory_order_release);
-        }
+        TRunner(TRunnerCons &runner_cons) : TRunner(runner_cons.NumRunners, runner_cons.GetNewId(), runner_cons.HandoffMatrix) {}
 
-        TRunner(size_t total_num_runners, size_t runner_id, std::atomic<TRunner *> *runner_array)
-            : FreeFrame(nullptr),
-              FreeFramePool(nullptr),
-              //MyFrameQueue(this),
-              ReadyToRunQueue(nullptr),
-              NewReadyToRunQueue(nullptr),
-              KeepRunning(true),
-              InboundFrameQueue{nullptr},
-              ForeignRunnerToMoveFrameTo(nullptr),
-              FrameToMoveToForeignRunner(nullptr),
-              TotalNumRunners(total_num_runners),
-              RunnerId(runner_id),
-              RunnerArray(runner_array) {
-          assert(runner_id < total_num_runners);
-          #ifdef FAST_SWITCH
-          Base::Zero(MainFiber.fib);
-          #else
-          Base::Zero(MainFiber);
-          #endif
-          QueueArray = new TOutboundQueue[total_num_runners];
-          for (size_t i = 0; i < total_num_runners; ++i) {
-            QueueArray[i].Ptr.store(nullptr, std::memory_order_relaxed);
-          }
-        }
-
-        ~TRunner() {
-          RunnerArray[RunnerId].store(nullptr, std::memory_order_release);
-          delete[] QueueArray;
-        }
+        ~TRunner() {}
 
         void Run();
 
@@ -466,6 +443,35 @@ namespace Orly {
 
         private:
 
+        TRunner(size_t total_num_runners, size_t runner_id, THandoffQueue *handoff_matrix)
+            : FreeFrame(nullptr),
+              FreeFramePool(nullptr),
+              //MyFrameQueue(this),
+              ReadyToRunQueue(nullptr),
+              NewReadyToRunQueue(nullptr),
+              KeepRunning(true),
+              InboundFrameQueue{nullptr},
+              ForeignRunnerToMoveFrameTo(nullptr),
+              FrameToMoveToForeignRunner(nullptr),
+              TotalNumRunners(total_num_runners),
+              RunnerId(runner_id),
+              HandoffMatrix(handoff_matrix) {
+          assert(runner_id < total_num_runners);
+          #ifdef FAST_SWITCH
+          Base::Zero(MainFiber.fib);
+          #else
+          Base::Zero(MainFiber);
+          #endif
+        }
+
+        /* The handoff slot for frames pushed by 'pusher_id' for 'target_id'
+           (see THandoffQueue). */
+        inline THandoffQueue &HandoffSlot(size_t target_id, size_t pusher_id) const {
+          assert(target_id < TotalNumRunners);
+          assert(pusher_id < TotalNumRunners);
+          return HandoffMatrix[target_id * TotalNumRunners + pusher_id];
+        }
+
         /* Schedule this frame using the CAS queue, so that we can exit the runner loop for the local queue. An example of somewhere to use this is
            when you are waiting on an event in a spin loop, and the event can only be triggered by also being scheduled on this runner using the CAS
            queue. */
@@ -486,13 +492,6 @@ namespace Orly {
            thread that has no LocalRunner. Pushers CAS (release) onto it; the
            owning runner drains it with exchange (acquire) in TRunner::Run. */
         std::atomic<TFrame *> InboundFrameQueue;
-        struct alignas(64) TOutboundQueue {
-          /* Treiber-stack head: frames this runner wants to hand to runner i
-             live in this->QueueArray[i]. Pusher CAS (release); the consuming
-             runner drains with exchange (acquire). */
-          std::atomic<TFrame *> Ptr;
-        };
-        TOutboundQueue *QueueArray;
 
         TRunner *ForeignRunnerToMoveFrameTo;
         TFrame *FrameToMoveToForeignRunner;
@@ -501,7 +500,9 @@ namespace Orly {
         size_t RunnerId alignas(64);
         size_t blank_buf[7];
 
-        std::atomic<TRunner *> *RunnerArray;
+        /* The cons-owned handoff matrix we and our peers communicate through
+           (see THandoffQueue); borrowed, never owned. */
+        THandoffQueue *HandoffMatrix;
 
         /* Access to ComeBackSoon */
         friend class TFrame;
@@ -1120,7 +1121,10 @@ namespace Orly {
       inline void TRunner::ScheduleFrameSlow(TFrame *frame) {
         assert(frame);
         if (LocalRunner) {
-          PushFrameOntoQueue(LocalRunner->QueueArray[RunnerId].Ptr, frame);
+          /* Runners can only hand frames to each other within one
+             TRunnerCons universe. */
+          assert(LocalRunner->HandoffMatrix == HandoffMatrix);
+          PushFrameOntoQueue(HandoffSlot(RunnerId, LocalRunner->RunnerId).Ptr, frame);
         } else {
           PushFrameOntoQueue(InboundFrameQueue, frame);
         }
@@ -1130,7 +1134,8 @@ namespace Orly {
         assert(LocalRunner);
         assert(other_runner);
         assert(frame);
-        PushFrameOntoQueue(QueueArray[other_runner->RunnerId].Ptr, frame);
+        assert(other_runner->HandoffMatrix == HandoffMatrix);
+        PushFrameOntoQueue(HandoffSlot(other_runner->RunnerId, RunnerId).Ptr, frame);
       }
 
       inline void TRunner::ScheduleFrame(TFrame *frame) {
