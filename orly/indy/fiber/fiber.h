@@ -555,11 +555,12 @@ namespace Orly {
 
         const size_t WorkerCount;
 
-        /* TODO(#320): use better data structure */
+        /* #320 investigated and closed: runner assignment (see Schedule() below) is already an
+           O(1) indexed round-robin (RunnerVec[AssignPos++ % WorkerCount]), not a vector scan, so
+           there is nothing here for a different data structure to improve on. */
         std::vector<std::unique_ptr<TRunner>> RunnerVec;
         std::vector<std::unique_ptr<std::thread>> ThreadVec;
 
-        /* TODO(#320): we can do runner assignment more effectively than iterating through the vector */
         std::atomic<size_t> AssignPos;
 
       };  // TRunnerPool

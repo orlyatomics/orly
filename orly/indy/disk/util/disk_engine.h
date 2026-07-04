@@ -262,7 +262,10 @@ namespace Orly {
                   size_t block_id;
                   for (size_t i = 0; i < num_blocks; ++i) {
                     in_stream.Read(block_id);
-                    /* TODO(#328): we could mark these in ranges. */
+                    /* #328 investigated and declined: batching these into ranges would need the
+                       durable-file on-disk format to also store contiguous run lengths (like the
+                       DataFile case above does via GetNumSequentialBlockPairings()), a format
+                       change for a one-time startup scan cost with no demonstrated pain. */
                     VolMan->MarkBlockRangeUsed(TBlockRange(block_id, 1UL));
                   }
                   break;

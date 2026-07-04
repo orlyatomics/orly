@@ -452,13 +452,16 @@ void TManager::RunReplicateTransaction() {
                           } else {
                             Server::TMetaRecord meta_record;
                             Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetMetadata().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), meta_record);
-                            /* TODO(#327) : when we start merging updates we need to notify all update tracker ids. */
-                            Base::TUuid tracker_id;
-                            Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetId().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), tracker_id);
+                            /* Notify every original update's own tracker id (the map key), not one
+                               shared id for the whole mutation (#327) -- when updates are merged, a
+                               single mutation's meta record can carry several originally-distinct
+                               updates (see the identical per-entry pattern in
+                               TRepoTetrisManager::TPlayer::TChild::Refresh), and each waiter is only
+                               listening for its own update's id. */
                             for (const auto &item: meta_record.GetEntryByUpdateId()) {
                               const auto &entry = item.second;
                               //std::cout << "Calling UpdateReplicationNotificationCb() for private" << std::endl;
-                              UpdateReplicationNotificationCb(entry.GetSessionId(), mutation.GetRepoId(), tracker_id);
+                              UpdateReplicationNotificationCb(entry.GetSessionId(), mutation.GetRepoId(), item.first);
                             }
                           }
                           break;
