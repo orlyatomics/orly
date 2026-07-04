@@ -1414,7 +1414,11 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
     manager->GetEngine()->RemoveFile(repo_id, gen_id, trigger);
   }
   trigger.Wait();
-  TSafeRepo *safe_repo = new TSafeRepo(manager, repo_id, TTtl(deadline.time_since_epoch().count()), parent_repo, lowest, highest, next_update, TStatus::Normal);
+  /* 'deadline' is an absolute time point; convert it to the relative ttl TSafeRepo expects
+     rather than reinterpreting its raw epoch tick count as a ttl (which produced an
+     effectively-infinite ttl for any real deadline). */
+  TTtl repo_ttl = std::chrono::duration_cast<TTtl>(deadline - TDeadline::clock::now());
+  TSafeRepo *safe_repo = new TSafeRepo(manager, repo_id, repo_ttl, parent_repo, lowest, highest, next_update, TStatus::Normal);
   return safe_repo;
 }
 

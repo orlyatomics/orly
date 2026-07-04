@@ -1295,7 +1295,10 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
 
 L0::TManager::TRepo *TManager::ReconstructRepo(const TUuid &repo_id) {
   if (repo_id != SystemRepoId) { /* construct a regular repo */
-    auto deadline = TDeadline::max(); /* TODO(#324): we should figure out the right deadline here */
+    /* The repo's original ttl isn't persisted across on-disk reload (#173), so give it the
+       same bounded default lifetime used elsewhere for shared povs (session.cc) rather than
+       TDeadline::max(), which pinned every reloaded repo in memory forever. */
+    auto deadline = TDeadline::clock::now() + std::chrono::seconds(1000);
     return TSafeRepo::ReConstructFromDisk(this, repo_id, deadline);
   }
   assert(!SystemRepo);

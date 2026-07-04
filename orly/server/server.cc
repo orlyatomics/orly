@@ -1128,7 +1128,6 @@ void TServer::Init() {
       reinstall_jumper(FramePoolManager.get(), &BGFastRunner);
     }
 
-    /* TODO(#366) : durable manager does not support create=false */
     DurableManager = make_shared<Orly::Indy::Disk::TDurableManager>(Scheduler,
                                                                     RunnerCons,
                                                                     FramePoolManager.get(),

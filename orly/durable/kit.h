@@ -230,6 +230,17 @@ namespace Orly {
       template <typename TSomeObj>
       TPtr<TSomeObj> Open(const TId &id);
 
+      /* Read the durable with the given id via 'visit' without disturbing its ttl countdown
+         (#366).  Open() always resets a resident-but-closed durable's pending deadline (and,
+         once released, re-arms a fresh one), which is exactly right for a caller that means to
+         keep using the durable -- but wrong for a caller that only wants to peek at it, e.g.
+         resolving a parent pov's shared-parents list while creating a child pov.  If the
+         durable is already resident (open or closed-and-cached), 'visit' runs directly against
+         it under the manager lock, leaving any pending deadline untouched.  Otherwise there is
+         no pending lease to disturb, so this falls back to a normal Open(). */
+      template <typename TSomeObj, typename TVisitor>
+      auto OpenAndVisit(const TId &id, const TVisitor &visit) -> decltype(visit(std::declval<const TSomeObj &>()));
+
       void Clear();
 
       virtual void RunLayerCleaner() = 0;
@@ -649,6 +660,26 @@ namespace Orly {
         OpenableObjs.erase(iter);
         throw;
       }
+    }
+
+    template <typename TSomeObj, typename TVisitor>
+    auto TManager::OpenAndVisit(const TId &id, const TVisitor &visit) -> decltype(visit(std::declval<const TSomeObj &>())) {
+      /* extra */ {
+        std::lock_guard<std::mutex> lock(Mutex);
+        auto iter = OpenableObjs.find(id);
+        if (iter != OpenableObjs.end() && iter->second) {
+          /* Already resident (open or closed-and-cached): visit it in place under the lock,
+             without touching PtrCount/Deadline, so a mere read never disturbs its lease. */
+          auto *some_obj = dynamic_cast<TSomeObj *>(iter->second);
+          if (!some_obj) {
+            THROW_ERROR(TWrongType) << "expected \"" << typeid(TSomeObj).name() << "\", got \"" << typeid(*iter->second).name() << '"';
+          }
+          return visit(*some_obj);
+        }
+      }  // release lock
+      /* Not resident, so there is no pending lease to preserve; a normal (lease-affecting)
+         load-from-disk is exactly right here. */
+      return visit(*Open<TSomeObj>(id));
     }
 
   }  // Durable
