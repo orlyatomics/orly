@@ -44,7 +44,16 @@ namespace Jhm {
      NOTE: Config cannot be machine generated __EVER__. Attached/used from producer and the like yes. But never a
      generated file.
 
-     TODO(#338): parent/include statements? */
+     A config file may itself declare two directives (#338), both resolved relative to the
+     declaring file's own directory (absolute paths used as-is):
+       "parent":  a single file this config extends. Lowest priority of everything this file
+                  pulls in -- like a base class.
+       "include": a list of files to merge in. Later entries in the list win over earlier ones
+                  (same last-wins convention as the env's project/mixin config-file search list),
+                  but all of them lose to this file's own entries.
+     Both are loaded recursively (a parent/include file may have its own parent/include), and a
+     missing or cyclic reference is a hard error -- unlike the top-level env config search list,
+     these are explicit references naming a specific file. */
   template<typename TVal>
   struct TJsonReader;
 
@@ -129,6 +138,13 @@ namespace Jhm {
     private:
     void AddConfig(Base::TJson &&config, bool top=true);
     void AddFile(const std::string &filename);
+
+    /* Loads 'filename' as a parent/include reference (#338). 'required' means a missing file is a
+       hard error (true for every parent/include reference; the top-level entry point uses
+       required=false to preserve the env config-file search list's soft-miss behavior). 'loading'
+       is the chain of files currently being loaded, used to detect and reject a parent/include
+       cycle. */
+    void AddFile(const std::string &filename, bool required, std::vector<std::string> &loading);
 
     Util::TOptTimestamp Timestamp;
     std::vector<std::string> SrcConfigFiles;
