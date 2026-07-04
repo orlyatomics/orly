@@ -77,6 +77,14 @@ The three production binaries land in `../out_orly/debug/` (or `../out_orly/rele
 | `orly/server/orlyi` | Database server |
 | `orly/client/orly_client` | Interactive client shell |
 
+`orlyc` compiles incrementally (#312): recompiling an unchanged package into
+the same output directory skips codegen and the gcc/link step outright (keyed
+on a source-content hash plus the compiler's build stamp; `--debug` bypasses
+the cache). Check-only modes: `--syntax-only` stops after parsing,
+`--semantic-only` after type-checking — neither writes output — and
+`--transient-cc` keeps only the linked `.so`, removing the generated C++
+intermediates.
+
 Exercise the Orlyscript test suite against compiled `.orly` programs:
 
 ```sh

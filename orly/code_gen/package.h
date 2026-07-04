@@ -50,7 +50,10 @@ namespace Orly {
       virtual ~TPackage();
 
       void Emit(const Jhm::TTree &out_dir) const;
-      void EmitObjectHeaders(const std::string &out_dir) const;
+      /* `emitted` is the compile walk's already-emitted set (#312): object
+         types present in it are skipped, and every type this call emits is
+         added to it. Pass one set across all packages of a compile. */
+      void EmitObjectHeaders(const std::string &out_dir, std::unordered_set<Type::TType> &emitted) const;
 
       private:
       void WriteStartingComment(TCppPrinter &out, const Jhm::TRelPath &path) const;

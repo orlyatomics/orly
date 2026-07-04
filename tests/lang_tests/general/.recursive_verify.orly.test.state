@@ -6,6 +6,9 @@
       "Synth + Symbols"
     ],
     [
+      "TypeCheck"
+    ],
+    [
       "Code Gen"
     ],
     [
