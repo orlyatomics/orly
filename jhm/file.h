@@ -33,16 +33,22 @@ namespace Jhm {
      to track unique paths inside the system, as well as if we believe a path can be built. Getting/storing data in a
      file is entirely seperate.
 
-     Config relating to a file can be retrieved from the file.
-
-     TODO(#340): make the config for file point to the config of the environment as fallback. */
+     Config relating to a file can be retrieved from the file. Lookups which the file's own config
+     stack can't answer fall back to the env config (#340), so per-file config only ever has to
+     state its deltas / overrides. */
   class TFile {
     public:
-    TFile(TRelPath &&path, const TTree *tree, bool is_src, const std::string &config_filename)
+    TFile(TRelPath &&path,
+          const TTree *tree,
+          bool is_src,
+          const std::string &config_filename,
+          const TConfig *env_config)
         : IsSrc_(is_src),
           Path(std::move(path)),
           CmdPath(is_src ? Base::AsStr(Path) : Base::AsStr(tree->GetAbsPath(Path))),
-          Config(config_filename) {}
+          Config(config_filename) {
+      Config.SetFallback(env_config);
+    }
 
     const TRelPath &GetRelPath() const {
       return Path;

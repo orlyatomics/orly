@@ -103,24 +103,29 @@ TJson ApplyDelta(const TJson &base, TJson &&delta) {
 
 bool TConfig::TryGetEntry(const initializer_list<string> &name, TJson &out) const {
   // For each config, starting at the top of the stack. If the config contains the entry, use it.
+  // After this config's own stack, chain to the fallback config's (#340): the env config acts as
+  // the tail of every file config's lookup list. Deltas accumulated in a nearer config apply onto
+  // values found further down, including across the fallback boundary.
   TJson ret;
   bool has_delta = false;
-  for(auto &config: Config) {
-    bool is_delta = false;
-    const TJson *val = ResolveName(&config, name, is_delta);
-    if (val) {
-      if (has_delta || is_delta) {
-        if (!has_delta) {
-          ret = *val;
-          has_delta = true;
-          continue;
+  for (const TConfig *conf = this; conf; conf = conf->Fallback) {
+    for(auto &config: conf->Config) {
+      bool is_delta = false;
+      const TJson *val = ResolveName(&config, name, is_delta);
+      if (val) {
+        if (has_delta || is_delta) {
+          if (!has_delta) {
+            ret = *val;
+            has_delta = true;
+            continue;
+          }
+          // Apply the delta to the given object
+          ret = ApplyDelta(*val, move(ret));
+        } else {
+          // Raw assign. End of stack / return.
+          out = *val;
+          return true;
         }
-        // Apply the delta to the given object
-        ret = ApplyDelta(*val, move(ret));
-      } else {
-        // Raw assign. End of stack / return.
-        out = *val;
-        return true;
       }
     }
   }

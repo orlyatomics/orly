@@ -191,11 +191,11 @@ TFile *TEnv::GetFile(TRelPath name) {
   string conf_path = src_path_str + ".jhm";
 
   if (ExistsPath(src_path_str.c_str())) {
-    auto file = make_unique<TFile>(TRelPath(name), &Src, true, conf_path);
+    auto file = make_unique<TFile>(TRelPath(name), &Src, true, conf_path, &Config);
     return Files.Add(move(name), move(file));
   } else {
     TPath out_path = Out.GetAbsPath(name);
-    auto file = make_unique<TFile>(TRelPath(name), &Out, false, conf_path);
+    auto file = make_unique<TFile>(TRelPath(name), &Out, false, conf_path, &Config);
     return Files.Add(move(name), move(file));
   }
 }
