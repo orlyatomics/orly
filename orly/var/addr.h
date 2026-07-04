@@ -19,7 +19,10 @@
 #pragma once
 
 #include <iostream>
+#include <tuple>
+#include <utility>
 
+#include <orly/desc.h>
 #include <orly/rt/runtime_error.h>
 #include <orly/shared_enum.h>
 #include <orly/type/rt.h>
@@ -78,13 +81,6 @@ namespace Orly {
 
       private:
 
-      /* TODO(#384)
-      template <typename... TElements>
-      TAddr(const Rt::TAddr<TElements...> &that) {
-        Unroll(that.GetSuper());
-        SetHash();
-      }*/
-
       TAddr(const TAddrType &that);
 
       virtual ~TAddr();
@@ -95,34 +91,7 @@ namespace Orly {
 
       void SetHash();
 
-      /* TODO(#384)
-      template <size_t Pos, typename... TElements>
-      void Unroll(const Rt::TAddrImpl<Pos, TElements...> &that);
-
-      template <size_t Pos>
-      void Unroll(const Rt::TAddrImpl<Pos> &) {
-      }
-
-      template <size_t Pos, typename THead, typename... TTail>
-      void Unroll(const Rt::TAddrImpl<Pos, THead, TTail...> &that) {
-        Val.push_back(std::make_pair(that.GetDir(), TVar(that.GetHead())));
-        TypeVec.push_back(Type::TDt<THead>::GetType());
-        Unroll(that.GetTail());
-      }
-
-      template <size_t Pos>
-      static void Unroll(TAddrType &, const Rt::TAddrImpl<Pos> &) {}
-
-      template <size_t Pos, typename THead, typename... TTail>
-      static void Unroll(TAddrType &val, const Rt::TAddrImpl<Pos, THead, TTail...> &that) {
-        val.push_back(std::make_pair(that.GetDir(), TVar(that.GetHead())));
-        Unroll(val, that.GetTail());
-      }
-      */
-
       TAddrType Val;
-
-      std::vector<std::pair<TDir, Type::TType>> TypeVec; //TODO(#384): Can I get this from TType?
 
       size_t Hash;
 
@@ -130,46 +99,73 @@ namespace Orly {
 
     };  // TAddr
 
-    /* TODO(#384)
-    template <typename... TElements>
-    TVar TVar::Addr(const Rt::TAddr<TElements...> &that) {
+    /* One tuple element -> one (dir, var) pair: a TDesc<T>-wrapped element marks the
+       descending direction and contributes its unwrapped value (#384). */
+    template <typename TElem>
+    inline std::pair<TAddrDir, TVar> MakeAddrElem(const TElem &elem) {
+      return std::make_pair(TAddrDir::Asc, TVar(elem));
+    }
+
+    template <typename TVal>
+    inline std::pair<TAddrDir, TVar> MakeAddrElem(const TDesc<TVal> &elem) {
+      return std::make_pair(TAddrDir::Desc, TVar(*elem));
+    }
+
+    /* The runtime address type is a plain std::tuple (orly/rt/tuple.h), with TDesc<T>
+       wrapping descending elements -- the old variadic Rt::TAddr this file's disabled
+       machinery targeted no longer exists (#384). */
+    template <typename... TElems>
+    TVar TVar::Addr(const std::tuple<TElems...> &that) {
       TAddr::TAddrType val;
-      TAddr::Unroll(val, that.GetSuper());
-      return (new TAddr(val))->AsVar();
-    } */
+      val.reserve(sizeof...(TElems));
+      std::apply(
+          [&val](const auto &... elem) {
+            (val.push_back(MakeAddrElem(elem)), ...);
+          },
+          that);
+      return Addr(val);
+    }
 
-  }  // Var
+    template <typename... TElems>
+    TVar::TVar(const std::tuple<TElems...> &that) {
+      *this = Addr(that);
+    }
 
-  namespace Rt {
+    /* Element extraction for the reverse cast: a TDesc<T> element rewraps after converting
+       the underlying value. */
+    template <typename TElem>
+    struct TAddrElemDt {
+      static TElem As(const std::pair<TAddrDir, TVar> &elem) {
+        return TVar::TDt<TElem>::As(elem.second);
+      }
+    };
 
-    /* TODO(#384)
-    template <size_t Pos, typename THead_, typename... TTail>
-    TAddrImpl<Pos, THead_, TTail...>::TAddrImpl(const Var::TAddr::TAddrType &vec)
-        : TSuper(vec), Head(Var::TVar::TDt<typename THead_::TElem>::As(vec[Pos].second)) {}
+    template <typename TVal>
+    struct TAddrElemDt<TDesc<TVal>> {
+      static TDesc<TVal> As(const std::pair<TAddrDir, TVar> &elem) {
+        return TDesc<TVal>(TVar::TDt<TVal>::As(elem.second));
+      }
+    };
 
-    template <typename THead, typename... TTail>
-    TAddr<THead, TTail...>::TAddr(const Var::TAddr::TAddrType &vec) : TSuper(vec) {}
-    */
+    template <typename... TElems>
+    struct TVar::TDt<std::tuple<TElems...>> {
 
-  }  // Rt
-
-  namespace Var {
-
-    /* TODO(#384)
-    template<typename... TElements>
-    struct TVar::TDt<Rt::TAddr<TElements...>> {
-
-      static Rt::TAddr<TElements...> As(const TVar &that) {
+      static std::tuple<TElems...> As(const TVar &that) {
         TAddr *ptr = dynamic_cast<TAddr *>(that.Impl.get());
         if (ptr) {
-          return Rt::TAddr<TElements...>(ptr->GetVal());
+          const TAddr::TAddrType &val = ptr->GetVal();
+          if (val.size() != sizeof...(TElems)) {
+            throw Rt::TSystemError(HERE, "Trying to cast dynamic Var to an addr of a different arity.");
+          }
+          return [&val]<std::size_t... Idx>(std::index_sequence<Idx...>) {
+            return std::tuple<TElems...>(TAddrElemDt<TElems>::As(val[Idx])...);
+          }(std::index_sequence_for<TElems...>{});
         }
         std::cerr << "Var is a " << that.GetType() << std::endl;
         throw Rt::TSystemError(HERE, "Trying to cast dynamic Var to addr. Var is not an addr.");
       }
 
-    };  // TDt<std::vector<TVal>>
-    */
+    };  // TDt<std::tuple<TElems...>>
 
   }  // Var
 

@@ -27,6 +27,9 @@
 
 #include <base/chrono.h>
 #include <base/uuid.h>
+#include <tuple>
+
+#include <orly/desc.h>
 #include <orly/rt/containers.h>
 #include <orly/rt/generator.h>
 #include <orly/rt/opt.h>
@@ -51,6 +54,31 @@ namespace Orly {
 
       TType static GetType() {
         return TDict::Get(TDt<TKey>::GetType(), TDt<TVal>::GetType());
+      }
+
+    };
+
+    /* One address element's (dir, type): a TDesc<T>-wrapped element is descending (#384). */
+    template <typename TElem>
+    struct TAddrElemDt {
+      static std::pair<TAddrDir, TType> Get() {
+        return std::make_pair(TAddrDir::Asc, TDt<TElem>::GetType());
+      }
+    };
+
+    template <typename TVal>
+    struct TAddrElemDt<TDesc<TVal>> {
+      static std::pair<TAddrDir, TType> Get() {
+        return std::make_pair(TAddrDir::Desc, TDt<TVal>::GetType());
+      }
+    };
+
+    /* The runtime address type: a plain std::tuple, TDesc-wrapped where descending (#384). */
+    template <typename... TElems>
+    struct TDt<std::tuple<TElems...>> {
+
+      TType static GetType() {
+        return TAddr::Get(std::vector<std::pair<TAddrDir, TType>>{TAddrElemDt<TElems>::Get()...});
       }
 
     };

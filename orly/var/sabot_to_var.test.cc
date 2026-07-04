@@ -51,14 +51,12 @@ FIXTURE(Int) {
   Check(101L);
 }
 
-#if 0 // Addr
 FIXTURE(Addr) {
-  Rt::TAddr<Rt::TAddrElem<TAddrDir::Asc, bool>, Rt::TAddrElem<TAddrDir::Asc, int64_t>, Rt::TAddrElem<TAddrDir::Asc, double>> non_empty_addr(true, 101, 98.6);
-  Rt::TAddr<Rt::TAddrElem<TAddrDir::Asc, bool>, Rt::TAddrElem<TAddrDir::Asc, int64_t>, Rt::TAddrElem<TAddrDir::Desc, double>> desc_addr(true, 101, 98.6);
-  Check(std::tuple<bool, int64_t, double>(true, 101, 98.6), Var::TVar(non_empty_addr));
-  Check(std::tuple<bool, int64_t, TDesc<double>>(true, 101, TDesc<double>(98.6)), Var::TVar(desc_addr));
+  /* Round-trip: the sabot of a tuple converts to the same var the tuple ctor builds (#384);
+     a TDesc-wrapped element carries the descending direction through both paths. */
+  Check(std::tuple<bool, int64_t, double>(true, 101, 98.6));
+  Check(std::tuple<bool, int64_t, TDesc<double>>(true, 101, TDesc<double>(98.6)));
 }
-#endif
 
 FIXTURE(Bool) {
   Check(true);
