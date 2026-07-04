@@ -473,6 +473,22 @@ class TUpdateSortComparator {
 
 };  // TUpdateSortComparator
 
+bool TRepo::HasDiskMergeCandidate(TMapping *mapping) const {
+  assert(mapping);
+  TDataLayer *prev = nullptr;
+  for (TMapping::TEntryCollection::TCursor csr(mapping->GetEntryCollection()); csr; ++csr) {
+    TDataLayer *layer = csr->GetLayer();
+    if (prev
+        && prev->GetKind() == TDataLayer::TKind::Disk
+        && layer->GetKind() == TDataLayer::TKind::Disk
+        && Disk::Util::SuggestGeneration(prev->GetSize()) <= Disk::Util::SuggestGeneration(layer->GetSize())) {
+      return true;
+    }
+    prev = layer;
+  }
+  return false;
+}
+
 void TRepo::StepMergeMem() {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
@@ -709,6 +725,7 @@ void TRepo::StepMergeMem() {
             TMapping *cur_mapping = MappingCollection.TryGetLastMember();
             cur_mapping->Incr();
             size_t total_disk_layers = 0U;
+            bool has_merge_candidate = false;
             try {
               TMapping *new_mapping = new TMapping(this);
               assert(cur_mapping);
@@ -753,13 +770,15 @@ void TRepo::StepMergeMem() {
                 /* we've cleaned away everything */
               }
               total_disk_layers += new_disk ? 1UL : 0UL;
+              has_merge_candidate = HasDiskMergeCandidate(new_mapping);
               cur_mapping->Decr();
             } catch (...) {
               cur_mapping->Decr();
               throw;
             }
-            /* TODO(#325): only enqueue if we are likely to be able to merge files of the same generation. */
-            if (total_disk_layers >= 3) {
+            /* #325: skip the pass when its scan would provably find nothing mergeable;
+               see HasDiskMergeCandidate. */
+            if (total_disk_layers >= 3 && has_merge_candidate) {
               EnqueueMergeDisk();
             }
           }
@@ -1170,6 +1189,7 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
             /* acquire Mapping lock */ {
               std::lock_guard<std::mutex> lock(MappingLock);
               size_t total_disk_layers = 0U;
+              bool has_merge_candidate = false;
               TMapping *cur_mapping = MappingCollection.TryGetLastMember();
               cur_mapping->Incr();
               try {
@@ -1191,6 +1211,7 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
                 }
                 new TMapping::TEntry(new_mapping, new_merge_disk);
                 ++total_disk_layers;
+                has_merge_candidate = HasDiskMergeCandidate(new_mapping);
                 cur_mapping->Decr();
               } catch (const std::exception &ex) {
                 syslog(LOG_EMERG, "StepTail [1161] caught error [%s]", ex.what());
@@ -1201,8 +1222,9 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
                 cur_mapping->Decr();
                 throw;
               }
-              /* TODO(#325): only enqueue if we are likely to be able to merge files of the same generation. */
-              if (total_disk_layers >= 3) {
+              /* #325: skip the pass when its scan would provably find nothing mergeable;
+                 see HasDiskMergeCandidate. */
+              if (total_disk_layers >= 3 && has_merge_candidate) {
                 EnqueueMergeDisk();
               }
             }
@@ -1293,6 +1315,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
             /* acquire Mapping lock */ {
               std::lock_guard<std::mutex> lock(MappingLock);
               size_t total_disk_layers = 0U;
+              bool has_merge_candidate = false;
               TMapping *cur_mapping = MappingCollection.TryGetLastMember();
               cur_mapping->Incr();
               try {
@@ -1317,6 +1340,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
                 }
                 new TMapping::TEntry(new_mapping, new_merge_disk);
                 ++total_disk_layers;
+                has_merge_candidate = HasDiskMergeCandidate(new_mapping);
                 cur_mapping->Decr();
               } catch (const std::exception &ex) {
                 syslog(LOG_EMERG, "StepMergeDisk [1161] caught error [%s]", ex.what());
@@ -1327,8 +1351,9 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
                 cur_mapping->Decr();
                 throw;
               }
-              /* TODO(#325): only enqueue if we are likely to be able to merge files of the same generation. */
-              if (total_disk_layers >= 3) {
+              /* #325: skip the pass when its scan would provably find nothing mergeable;
+                 see HasDiskMergeCandidate. */
+              if (total_disk_layers >= 3 && has_merge_candidate) {
                 EnqueueMergeDisk();
               }
             }

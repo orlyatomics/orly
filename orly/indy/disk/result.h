@@ -166,80 +166,42 @@ namespace Orly {
       }
 
       inline void TCompletionTrigger::Callback(TDiskResult disk_result, const char *err_str) {
-        const size_t prev = std::atomic_fetch_add(&NumFinished, 1UL);
-        switch (Result) {
-          case Success : {
-            switch (disk_result) {
-              case Success : {
-                if ((prev + 1UL) == WaitFor.load()) {
-                  Base::TSpinLock::TLock lock(SpinLock);
-                  Result = disk_result;
-                  if (FrameWaiting) {
-                    /* there's a frame waiting for us... let's activate him. */
-                    assert(RunnerToReactivateOn);
-                    Fiber::TFrame *frame = FrameWaiting;
-                    Fiber::TRunner *runner = RunnerToReactivateOn;
-                    FrameWaiting = nullptr;
-                    RunnerToReactivateOn = nullptr;
-                    runner->ScheduleFrame(frame);
-                  }
-                  //EventFd.Push();
-                }
-                break;
-              }
-              case Error : {
-                Base::TSpinLock::TLock lock(SpinLock);
-                Result = disk_result;
-                ErrStr = err_str;
-                if (FrameWaiting) {
-                  /* there's a frame waiting for us... let's activate him. */
-                  assert(RunnerToReactivateOn);
-                  Fiber::TFrame *frame = FrameWaiting;
-                  Fiber::TRunner *runner = RunnerToReactivateOn;
-                  FrameWaiting = nullptr;
-                  RunnerToReactivateOn = nullptr;
-                  runner->ScheduleFrame(frame);
-                }
-                //EventFd.Push();
-                break;
-              }
-              case DiskFailure : {
-                Base::TSpinLock::TLock lock(SpinLock);
-                Result = disk_result;
-                if (FrameWaiting) {
-                  /* there's a frame waiting for us... let's activate him. */
-                  assert(RunnerToReactivateOn);
-                  Fiber::TFrame *frame = FrameWaiting;
-                  Fiber::TRunner *runner = RunnerToReactivateOn;
-                  FrameWaiting = nullptr;
-                  RunnerToReactivateOn = nullptr;
-                  runner->ScheduleFrame(frame);
-                }
-                //EventFd.Push();
-                break;
-              }
-              case ServerShutdown : {
-                Base::TSpinLock::TLock lock(SpinLock);
-                Result = disk_result;
-                if (FrameWaiting) {
-                  /* there's a frame waiting for us... let's activate him. */
-                  assert(RunnerToReactivateOn);
-                  Fiber::TFrame *frame = FrameWaiting;
-                  Fiber::TRunner *runner = RunnerToReactivateOn;
-                  FrameWaiting = nullptr;
-                  RunnerToReactivateOn = nullptr;
-                  runner->ScheduleFrame(frame);
-                }
-                //EventFd.Push();
-                break;
-              }
-            }
-            break;
+        /* Contract (#452): the completion COUNT alone decides the wake -- the waiter runs only
+           after every outstanding completion has arrived, even when one of them reported an
+           error (Result is the sticky first non-Success, thrown by Wait() after the barrier).
+           Everything -- the count, the sticky error, and the wake decision -- happens under the
+           spinlock, and the wake itself is issued from stack copies after the unlock, so this
+           object is never touched after a waiter could observe completion and destroy it (the
+           trigger is typically stack-owned and freed the moment Wait() returns; same
+           free-on-wake contract the fiber sync primitives pin in sem.test.cc).
+           The old shape had three holes here: the count was bumped and Result read outside the
+           lock (a fast-path waiter could see the full count, return, and free the trigger while
+           the last completer was still walking into the spinlock); an error scheduled the waiter
+           immediately without the count check (the woken waiter threw and freed the trigger
+           under the feet of the still-inflight stragglers); and once an error was recorded, the
+           remaining completions were ignored entirely -- so an error that landed before the
+           waiter parked left the final completions unable to wake it: a hang. */
+        Fiber::TFrame *frame = nullptr;
+        Fiber::TRunner *runner = nullptr;
+        /* lock scope -- the unlock at the end is this function's last touch of the object */ {
+          Base::TSpinLock::TLock lock(SpinLock);
+          const size_t num_finished = std::atomic_fetch_add(&NumFinished, 1UL) + 1UL;
+          if (Result == Success && disk_result != Success) {
+            /* Keep the first failure; later results (of either kind) don't overwrite it. */
+            Result = disk_result;
+            ErrStr = err_str;
           }
-          default : {
-            /* if we're already in an error state, stay in it. */
-            break;
+          if (num_finished == WaitFor.load() && FrameWaiting) {
+            /* Final completion and a frame is parked: claim it for the post-unlock wake. */
+            assert(RunnerToReactivateOn);
+            frame = FrameWaiting;
+            runner = RunnerToReactivateOn;
+            FrameWaiting = nullptr;
+            RunnerToReactivateOn = nullptr;
           }
+        }
+        if (frame) {
+          runner->ScheduleFrame(frame);
         }
       }
 
@@ -259,7 +221,8 @@ namespace Orly {
         if (should_wait) {
           Fiber::Wait(come_back_right_away);
         }
-        /* fall through means we are ready... */
+        /* fall through means we are ready... take the lock so the read of Result below
+           synchronizes with the completer's locked write of it (#452). */
         assert(NumFinished.load() <= WaitFor.load());
         Base::TSpinLock::TLock lock(SpinLock);
         switch (Result) {

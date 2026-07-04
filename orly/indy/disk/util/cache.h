@@ -170,10 +170,18 @@ namespace Orly {
                 } else {
                   /* if the highest bit is not set, then we use the second highest bit to see if someone is already loading this data. */
                   if ((val & SecondHighestBit) == SecondHighestBit) {
-                    /* second highest bit is set, someone is loading the data, we just have to wait. */
-                    //std::this_thread::sleep_for(std::chrono::nanoseconds(25000));
-                    /* TODO(#316): we should try to join some form of queue of frames that will get re-activated when the frame performing the read on our
-                       behalf is finished. */
+                    /* Someone else is loading this page; yield and re-check.  #316 (park these
+                       frames on a wait-queue drained by the in-flight read's completion) was
+                       investigated and declined: this poll is correct by construction (a
+                       runnable frame re-checking can't miss a wake), self-throttling (YieldSlow
+                       requeues behind every other runnable frame, so the re-check cadence slows
+                       exactly when the system is busy), bounded by the read's flight time, and
+                       only entered when two frames race for the SAME uncached page.  A real
+                       queue would have to stay coherent with every BufAddr transition -- Get's
+                       slot-reuse paths, Clear's invalidation, Replace, AsyncMultiGet's group
+                       loads, and reclaim -- each a fresh lost-wakeup/use-after-free surface on
+                       the hottest read structure in the engine (#452's free-on-wake class), for
+                       a cost that never surfaced in the #257 read-path profiling arc. */
                     Fiber::YieldSlow();
                     continue;
                   } else {
