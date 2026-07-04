@@ -204,11 +204,10 @@ namespace Orly {
         *this = Dict(that);
       }
 
-      /* TODO(#384)
-      template <typename... TElements>
-      TVar(const Rt::TAddr<TElements...> &that) {
-        *this = Addr(that);
-      } */
+      /* The runtime address type: a plain std::tuple, TDesc-wrapped where descending (#384).
+         Defined in var/addr.h, which TAddr's machinery requires anyway. */
+      template <typename... TElems>
+      TVar(const std::tuple<TElems...> &that);
 
       template <typename TVal>
       TVar(const Rt::TOpt<TVal> &that) {
@@ -229,10 +228,9 @@ namespace Orly {
 
       static TVar Addr(const std::vector<std::pair<TAddrDir, TVar>> &that);
 
-      /* TODO(#384)
-      template <typename... TElements>
-      static TVar Addr(const Rt::TAddr<TElements...> &that);
-      */
+      /* See var/addr.h (#384). */
+      template <typename... TElems>
+      static TVar Addr(const std::tuple<TElems...> &that);
 
       static TVar Dict(const Rt::TDict<TVar, TVar> &that, const Type::TType &key_type, const Type::TType &val_type);
 

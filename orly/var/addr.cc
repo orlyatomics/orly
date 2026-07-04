@@ -30,7 +30,14 @@ size_t TAddr::GetHash() const {
 }
 
 Type::TType TAddr::GetType() const {
-  return Type::TAddr::Get(TypeVec);
+  /* Derived from the element vars on demand -- the old parallel TypeVec member was pure
+     redundancy (#384). */
+  std::vector<std::pair<TDir, Type::TType>> type_vec;
+  type_vec.reserve(Val.size());
+  for (const auto &elem : Val) {
+    type_vec.push_back(std::make_pair(elem.first, elem.second.GetType()));
+  }
+  return Type::TAddr::Get(type_vec);
 }
 
 void TAddr::Write(std::ostream &strm) const {
@@ -116,11 +123,8 @@ TAddr &TAddr::Xor(const TVar &) {
   throw Rt::TSystemError(HERE, "Xor not supported on Addr.");
 }
 
-TAddr::TAddr(const TAddrType &that) {
-  for (auto iter = that.begin(); iter != that.end(); ++iter) {
-    Val.push_back(*iter);
-    TypeVec.push_back(std::make_pair(iter->first, iter->second.GetType()));
-  }
+TAddr::TAddr(const TAddrType &that)
+    : Val(that) {
   SetHash();
 }
 

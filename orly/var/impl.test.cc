@@ -85,19 +85,18 @@ FIXTURE(Typical) {
   EXPECT_TRUE(dict_int_real.GetType() == Type::TDict::Get(Type::TInt::Get(), Type::TReal::Get()));
   TVar dict_int_dict_int_real(Rt::TDict<int64_t, Rt::TDict<int64_t, double>>{{5, m}});
   EXPECT_TRUE(dict_int_real.GetType() == Type::TDict::Get(Type::TInt::Get(), Type::TReal::Get()));
-  /* TODO(#384): also covers the missing mutables coverage from #329 -- a mutable's addr TYPE
-     must be a real address type (Type::TMutable::Get asserts Is<TAddr>(); an unknown Rt::TOpt
-     addr VALUE doesn't relax that), so no valid Var::TMutable can be constructed until TVar's
-     Rt::TAddr support below works. */
-  /* TODO(#384)
-  Rt::TAddr<Rt::TAddrElem<TAddrDir::Asc, int64_t>, Rt::TAddrElem<TAddrDir::Asc, string>, Rt::TAddrElem<TAddrDir::Asc, bool>, Rt::TAddrElem<TAddrDir::Asc, double>> a(5, string("Hello World"), true, 2.2);
-  TVar addr_int_str_bool_double(a);
-  EXPECT_TRUE(addr_int_str_bool_double.GetType() == Type::TAddr::Get(vector<pair<TAddrDir, Type::TType>>{{TAddrDir::Asc, Type::TInt::Get()}, {TAddrDir::Asc, Type::TStr::Get()}, {TAddrDir::Asc, Type::TBool::Get()}, {TAddrDir::Asc, Type::TReal::Get()}}));
+  const auto addr_type = Type::TAddr::Get(vector<pair<TAddrDir, Type::TType>>{{TAddrDir::Asc, Type::TInt::Get()}, {TAddrDir::Asc, Type::TStr::Get()}, {TAddrDir::Asc, Type::TBool::Get()}, {TAddrDir::Asc, Type::TReal::Get()}});
+  TVar addr_int_str_bool_double(std::tuple<int64_t, string, bool, double>(5, string("Hello World"), true, 2.2));
+  EXPECT_TRUE(addr_int_str_bool_double.GetType() == addr_type);
   vector<pair<TAddrDir, TVar>> a2{{TAddrDir::Asc, TVar(5)}, {TAddrDir::Asc, TVar(string("Hello World"))}, {TAddrDir::Asc, TVar(true)}, {TAddrDir::Asc, TVar(2.2)}};
   TVar addr_int_str_bool_double_2;
   addr_int_str_bool_double_2 = TVar::Addr(a2);
-  EXPECT_TRUE(addr_int_str_bool_double_2.GetType() == Type::TAddr::Get(vector<pair<TAddrDir, Type::TType>>{{TAddrDir::Asc, Type::TInt::Get()}, {TAddrDir::Asc, Type::TStr::Get()}, {TAddrDir::Asc, Type::TBool::Get()}, {TAddrDir::Asc, Type::TReal::Get()}}));
-  */
+  EXPECT_TRUE(addr_int_str_bool_double_2.GetType() == addr_type);
+  EXPECT_TRUE(addr_int_str_bool_double == addr_int_str_bool_double_2);
+  /* The mutables coverage deferred from #329: a mutable's addr TYPE must be a real address
+     type, which the tuple support above finally makes constructible (#384). */
+  TVar mutable_int_(Rt::TMutable<std::tuple<int64_t>, int64_t>(Rt::TOpt<std::tuple<int64_t>>(std::make_tuple(int64_t(7))), 5));
+  EXPECT_TRUE(mutable_int_.GetType() == Type::TMutable::Get(Type::TDt<std::tuple<int64_t>>::GetType(), Type::TInt::Get()));
   TSomeObj some_obj(5, 2.2, true);
   TSomeObj some_other_obj(7, 2.9, false);
   /* TVar obj(some_obj);
@@ -144,17 +143,15 @@ FIXTURE(Typical) {
   EXPECT_TRUE(opt_int.GetType() == Type::TOpt::Get(Type::TInt::Get()));
 }
 
-#if 0 // TODO(#384): TAddr
 FIXTURE(Memory) {
   TVar *bool_ = new TVar(true);
   delete bool_;
-  typedef Rt::TAddr<Rt::TAddrElem<Asc, int64_t>, Rt::TAddrElem<Asc, string>> TAddr1;
+  typedef std::tuple<int64_t, string> TAddr1;
   TAddr1 a(5, string("Hello World"));
-  typedef Rt::TAddr<Rt::TAddrElem<Asc, TAddr1>, Rt::TAddrElem<Asc, int64_t>> TAddr2;
+  typedef std::tuple<TAddr1, int64_t> TAddr2;
   TVar *addr_int_str = new TVar(TAddr2(a, 5));
   delete addr_int_str;
 }
-#endif
 
 FIXTURE(Assign) {
   TVar int_;
@@ -176,11 +173,9 @@ FIXTURE(Casts) {
   typedef Rt::TDict<int64_t, double> TMap;
   TMap map_{{5, 5.5}, {6, 6.6}};
   EXPECT_TRUE(TVar::TDt<TMap>::As(TVar(map_)) == map_);
-#if 0 // TODO(#384): TAddr
-  typedef Rt::TAddr<Rt::TAddrElem<Asc, int64_t>, Rt::TAddrElem<Desc, int64_t>, Rt::TAddrElem<Asc, double>> TAddr_;
-  TAddr_ addr_(5, 1, 5.5);
+  typedef std::tuple<int64_t, TDesc<int64_t>, double> TAddr_;
+  TAddr_ addr_(5, TDesc<int64_t>(1), 5.5);
   EXPECT_TRUE(TVar::TDt<TAddr_>::As(TVar(addr_)) == addr_);
-#endif
 }
 
 FIXTURE(Copy) {

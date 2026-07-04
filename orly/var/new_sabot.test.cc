@@ -92,14 +92,12 @@ FIXTURE(Dict) {
   EXPECT_EQ(ToString(Var::TVar(Rt::TDict<int64_t, string>({ { 102, "doctor" }, { 103, "name" }, { 101, "hello" } }))), "map(101: \"hello\", 102: \"doctor\", 103: \"name\")");
 }
 
-#if 0 // TODO(#384)
 FIXTURE(Addr) {
   std::tuple<> empty_addr;
   std::tuple<bool, int64_t, double> non_empty_addr(true, 101, 98.6);
   EXPECT_EQ(ToString(Var::TVar(empty_addr)), "tuple()");
   EXPECT_EQ(ToString(Var::TVar(non_empty_addr)), "tuple(true, 101, 98.6)");
 }
-#endif
 
 FIXTURE(Obj) {
   auto foo = Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{ { "x", Var::TVar(1.5)}, { "y", Var::TVar(2.5) } });
@@ -114,7 +112,6 @@ FIXTURE(FreeDesc) {
   EXPECT_EQ(ToString(Var::TVar(Var::TVar::Addr({{Orly::TAddrDir::Desc, Var::TVar(Var::TVar::Free(Orly::Type::TInt::Get()))}}))), "tuple(free(desc(int64)))");
 }
 
-#if 0 // TODO(#384)
 FIXTURE(AddrWithDesc) {
   std::tuple<TDesc<bool>, int64_t, double> addr1(true, 101, 98.6);
   EXPECT_EQ(ToString(Var::TVar(addr1)), "tuple(desc(true), 101, 98.6)");
@@ -123,5 +120,3 @@ FIXTURE(AddrWithDesc) {
   std::tuple<bool, int64_t, TDesc<double>> addr3(true, 101, 98.6);
   EXPECT_EQ(ToString(Var::TVar(addr3)), "tuple(true, 101, desc(98.6))");
 }
-
-#endif
