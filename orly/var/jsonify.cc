@@ -163,3 +163,111 @@ void Orly::Var::Jsonify(ostream &strm, const TVar &var) {
   };
   var.Accept(TJsonifyVisitor(strm));
 }
+
+Base::TJson Orly::Var::ToJson(const TVar &var) {
+  using TJson = Base::TJson;
+  class TToJsonVisitor : public TVar::TVisitor {
+    NO_COPY(TToJsonVisitor);
+    public:
+    TToJsonVisitor(TJson &out) : Out(out) {}
+    private:
+    virtual void operator()(const TAddr *that) const {
+      TJson::TArray arr;
+      for (auto iter : that->GetVal()) {
+        arr.emplace_back(ToJson(iter.second));
+      }
+      Out = TJson(move(arr));
+    }
+    virtual void operator()(const TBool *that) const {
+      Out = TJson(that->GetVal());
+    }
+    virtual void operator()(const TDict *that) const {
+      TJson::TObject obj;
+      for (auto iter : that->GetVal()) {
+        /* Same key convention as Jsonify (which the wire format inherited
+           through the old parse round-trip): a string key is used verbatim;
+           any other key type appears as the compact JSON text of the key
+           (#276, #377). */
+        if (iter.first.GetType() != Type::TStr::Get()) {
+          ostringstream key_strm;
+          Jsonify(key_strm, iter.first);
+          obj[key_strm.str()] = ToJson(iter.second);
+        } else {
+          obj[ToJson(iter.first).GetString()] = ToJson(iter.second);
+        }
+      }
+      Out = TJson(move(obj));
+    }
+    virtual void operator()(const TErr *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const TFree *) const {NOT_IMPLEMENTED();}
+    virtual void operator()(const TId *that) const {
+      ostringstream strm;
+      strm << that->GetVal();
+      Out = TJson(strm.str());
+    }
+    virtual void operator()(const TInt *that) const {
+      Out = TJson(that->GetVal());
+    }
+    virtual void operator()(const TList *that) const {
+      TJson::TArray arr;
+      for (auto iter : that->GetVal()) {
+        arr.emplace_back(ToJson(iter));
+      }
+      Out = TJson(move(arr));
+    }
+    virtual void operator()(const TMutable *that) const {
+      Out = ToJson(that->GetVal());
+    }
+    virtual void operator()(const TObj *that) const {
+      TJson::TObject obj;
+      for (auto iter : that->GetVal()) {
+        obj[iter.first] = ToJson(iter.second);
+      }
+      Out = TJson(move(obj));
+    }
+    virtual void operator()(const TOpt *that) const {
+      if (that->GetVal().IsKnown()) {
+        Out = ToJson(that->GetVal().GetVal());
+      } else {
+        Out = TJson();
+      }
+    }
+    virtual void operator()(const TReal *that) const {
+      /* JSON has no NaN / Infinity literals; the conventional lenient
+         mapping is null (#276). */
+      if (isfinite(that->GetVal())) {
+        Out = TJson(that->GetVal());
+      } else {
+        Out = TJson();
+      }
+    }
+    virtual void operator()(const TSet *that) const {
+      TJson::TArray arr;
+      for (auto iter : that->GetVal()) {
+        arr.emplace_back(ToJson(iter));
+      }
+      Out = TJson(move(arr));
+    }
+    virtual void operator()(const TStr *that) const {
+      Out = TJson(that->GetVal());
+    }
+    virtual void operator()(const TTimeDiff *that) const {
+      Out = TJson(that->GetVal().count());
+    }
+    virtual void operator()(const TTimePnt *that) const {
+      Out = TJson(Base::Chrono::TimeDiffCast(that->GetVal().time_since_epoch()).count());
+    }
+    virtual void operator()(const TVariant *that) const {
+      /* A variant value serializes as the single-key object
+         {"<tag>": <payload>}, byte-consistent with the single-key-record
+         storage reuse described in issue #95. */
+      TJson::TObject obj;
+      obj[that->GetTag()] = ToJson(that->GetVal());
+      Out = TJson(move(obj));
+    }
+    TJson &Out;
+  };
+  TJson result;
+  var.Accept(TToJsonVisitor(result));
+  return result;
+}
