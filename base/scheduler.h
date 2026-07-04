@@ -62,6 +62,12 @@ namespace Base {
     /* A function to be scheduled. */
     using TJob = std::function<void ()>;
 
+    /* A cancellation handle for a scheduled job (see ScheduleCancelable).
+       The pointee is the queued closure itself: Cancel() empties it under
+       the scheduler lock, and a worker taking the job also empties it, so
+       the two race deterministically -- exactly one of them wins (#462). */
+    using TJobHandle = std::shared_ptr<TJob>;
+
     /* A function to be scheduled by RunUntilCtrlC(). */
     using TMainJob = std::function<void (TScheduler *)>;
 
@@ -151,6 +157,25 @@ namespace Base {
        This function is thread-safe. */
     bool Schedule(TJob &&job, int priority = 0);
 
+    /* As Schedule(), but returns a handle the caller can later pass to
+       Cancel().  Returns a null handle if the job was refused.  Use this
+       for long-lived jobs whose target objects have a teardown: without
+       cancellation, a job that never got a worker can neither be joined
+       (its started/exited handshake never ran) nor safely ignored (a
+       worker freeing up mid-teardown would start it against dying state)
+       (#462). */
+    TJobHandle ScheduleCancelable(TJob &&job, int priority = 0);
+
+    /* Remove a queued-but-never-started job.  Returns true if the job was
+       still queued (it will now never run); false if a worker already took
+       it (it has run or is running -- join its exited-latch) or the handle
+       is null.  The teardown idiom is:
+
+         if (!scheduler->Cancel(handle)) { exited_latch.Pop(); }
+
+       This function is thread-safe. */
+    bool Cancel(const TJobHandle &handle);
+
     /* Changes the minimum and maximum number of threads and the idle timeout to zero, causing all workers to shut down
        when they are done with their current jobs.  If this can be completed before the given timeout expires then the shutdown
        has been clean and this funtion returns true.  If one or more workers are still busy after the timeout expires, however,
@@ -176,17 +201,18 @@ namespace Base {
       public:
 
       /* Cache the job and its priority. */
-      template <typename TArg>
-      TQueueItem(TArg &&job, int priority)
-          : Job(std::forward<TArg>(job)), Priority(priority) {}
+      TQueueItem(TJobHandle &&job, int priority)
+          : Job(std::move(job)), Priority(priority) {}
 
       /* Higher priority jobs go first. */
       bool operator<(const TQueueItem &that) const {
         return Priority > that.Priority;
       }
 
-      /* The job to be done. */
-      mutable TJob Job;
+      /* The job to be done.  Held through the shared handle so Cancel()
+         can empty it in place; an emptied entry is skipped (and dropped)
+         by TryPopJob() (#462). */
+      TJobHandle Job;
 
       /* The priority at which it sorts. */
       int Priority;

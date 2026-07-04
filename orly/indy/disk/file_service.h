@@ -179,6 +179,12 @@ namespace Orly {
         Fiber::TFrame *Frame;
         Fiber::TRunner BGScheduler;
 
+        /* The scheduler the BGScheduler host job was queued on, and its
+           cancellation handle: the destructor cancels a host that never got
+           a worker instead of waiting on a latch it will never push (#462). */
+        Base::TScheduler *Scheduler;
+        Base::TScheduler::TJobHandle SchedulerHostHandle;
+
         Util::TVolumeManager *VolMan;
 
         mutable std::mutex Mutex;

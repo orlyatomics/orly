@@ -820,10 +820,6 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   /* Launch the fast */
   auto launch_bg_fiber_sched = [this](Fiber::TRunner *runner) {
     syslog(LOG_INFO, "Bg Scheduler TID=[%ld]", syscall(SYS_gettid)); /* TEMP */
-    /* Same entered/exited accounting as ScheduleRunnerHost: Shutdown() must
-       not return while this loop can still touch the runner (#463). */
-    ++RunnerHostsEntered;
-    Base::TPushOnExit exit_latch(RunnerHostExited);
     if (!Fiber::TFrame::LocalFramePool) {
       Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
     }
@@ -838,7 +834,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
     runner->Run();
   };
-  Scheduler->Schedule(std::bind(launch_bg_fiber_sched, &BGFastRunner));
+  ScheduleHostJob(std::bind(launch_bg_fiber_sched, &BGFastRunner));
 
   Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
   Frame = Fiber::TFrame::LocalFramePool->Alloc();
@@ -1271,9 +1267,12 @@ void TServer::Init() {
     };
 
     open_listening_socket(MainSocket, Cmd.PortNumber, "main");
-    Scheduler->Schedule(bind(&TServer::AcceptClientConnections, this));
+    /* Tracked for cancel-or-join at Shutdown() like the runner hosts: the
+       loop exits promptly once Shutdown() shuts the socket down, but only
+       the join proves it is out of TServer members (#462, #463). */
+    ScheduleHostJob(bind(&TServer::AcceptClientConnections, this));
 
-    Scheduler->Schedule(bind(&TServer::CleanHouse, this));
+    HousekeeperHandle = Scheduler->ScheduleCancelable(bind(&TServer::CleanHouse, this));
     Reporter = make_unique<TIndyReporter>(this, Scheduler, Cmd.ReportingPortNumber);
     DEBUG_LOG("TServer::Init end");
   } catch (const std::exception &ex) {
@@ -1289,11 +1288,21 @@ void TServer::Init() {
 
 void TServer::ScheduleRunnerHost(Fiber::TRunner *runner) {
   assert(runner);
-  Scheduler->Schedule([this, runner] {
-    ++RunnerHostsEntered;
-    Base::TPushOnExit exit_latch(RunnerHostExited);
+  ScheduleHostJob([this, runner] {
     Fiber::LaunchSlowFiberSched(runner, FramePoolManager.get());
   });
+}
+
+void TServer::ScheduleHostJob(Base::TScheduler::TJob &&host) {
+  auto handle = Scheduler->ScheduleCancelable([this, host = std::move(host)] {
+    Base::TPushOnExit exit_latch(RunnerHostExited);
+    host();
+  });
+  /* A refused job (scheduler already shut down) never runs and never
+     pushes the latch; keeping its null handle would deadlock the reap. */
+  if (handle) {
+    RunnerHostHandles.push_back(std::move(handle));
+  }
 }
 
 void TServer::Shutdown() {
@@ -1333,10 +1342,11 @@ void TServer::Shutdown() {
      loops (blocked in epoll_wait) -- and WAIT for each to actually return:
      a stop is only a flag plus a wake, and the manager teardown below
      would otherwise free the very fds/collections a still-parked loop
-     references (#440).  The joins reap only loops that actually entered;
-     a fiber that was scheduled but never granted a worker is not waited
-     for and remains the one residual hazard here (see the worker-cap note
-     in orlyc.cc; job cancellation is TODO(#462)). */
+     references (#440).  The fiber-level joins reap only loops that
+     actually entered; that skip is sound because every runner HOST job is
+     cancel-or-joined (here for the housekeeper, at the end of Shutdown()
+     for the rest) -- a fiber latched onto a runner whose host was
+     cancelled can never run at all (#462). */
   HousecleaningTimer.FireNow();
   RepoManager->StopReplicationServices();
   RepoManager->StopLayerCleaner();
@@ -1344,7 +1354,9 @@ void TServer::Shutdown() {
   RepoManager->JoinReplicationServices();
   RepoManager->JoinLayerCleaner();
   DurableManager->JoinLayerCleaner();
-  if (HousekeeperStarted) {
+  /* A null handle means the job was never accepted (or Init never got that
+     far) -- there is nothing to join. */
+  if (HousekeeperHandle && !Scheduler->Cancel(HousekeeperHandle)) {
     HousekeeperExited.Pop();
   }
   /* Tear down the fiber-entangled managers on a fiber, while every runner
@@ -1409,16 +1421,19 @@ void TServer::Shutdown() {
   for (auto &t : SlowRunnerThreadVec) {
     t->join();
   }
-  /* Reap the scheduler-hosted runner loops flagged above (ScheduleRunnerHost
-     and the BG fast runner): a ShutDown() is only a flag, and a loop still
-     between its last KeepRunning check and its return would race the runner
-     objects' destruction in ~TServer (#463).  Only loops that actually
-     entered are reaped; one whose job never got a scheduler worker never
-     counted itself in and never touches us (#462, same policy as the
-     service-loop joins above). */
-  for (size_t n = RunnerHostsEntered.load(); n > 0; --n) {
-    RunnerHostExited.Pop();
+  /* Cancel-or-join every host job (the runner-loop hosts, the BG fast
+     runner, the accept loop): a ShutDown() is only a flag, and a loop
+     still between its last KeepRunning check and its return would race
+     the objects' destruction in ~TServer (#463).  A job whose worker
+     already took it has run or is running and pushes the exited latch; a
+     job that never got a worker is cancelled, so it can neither be waited
+     for nor start late against dying state (#462). */
+  for (const auto &handle : RunnerHostHandles) {
+    if (!Scheduler->Cancel(handle)) {
+      RunnerHostExited.Pop();
+    }
   }
+  RunnerHostHandles.clear();
   syslog(LOG_INFO, "TServer::Shutdown() complete");
 }
 
@@ -1793,7 +1808,6 @@ void TServer::BeginImport() {
 
 void TServer::CleanHouse() {
   syslog(LOG_INFO, "TServer::CleanHouse() begin");
-  HousekeeperStarted = true;
   Base::TPushOnExit exit_latch(HousekeeperExited);
   for (;;) {
     //DEBUG_LOG("housecleaner: waiting");

@@ -36,6 +36,7 @@ TFileService::TFileService(Base::TScheduler *scheduler,
                            bool abort_on_append_log_scan)
     : Frame(nullptr),
       BGScheduler(runner_cons),
+      Scheduler(scheduler),
       VolMan(vol_man),
       NumFiles(0UL),
       NumRunnerCopyFiles(0UL),
@@ -256,7 +257,7 @@ TFileService::TFileService(Base::TScheduler *scheduler,
       }
     }
   }
-  scheduler->Schedule([this, frame_pool_manager] {
+  SchedulerHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
     Fiber::LaunchSlowFiberSched(&BGScheduler, frame_pool_manager);
     SchedulerExitedSem.Push();
   });
@@ -274,10 +275,14 @@ TFileService::~TFileService() {
   ShuttingDown = true;
   RunSem.Push();
   BGScheduler.ShutDown();
-  /* Wait for the scheduler job hosting BGScheduler's loop to actually
-     return: the ShutDown() above is only a flag, and member destruction
-     below would otherwise race a loop still on its way out (#463). */
-  SchedulerExitedSem.Pop();
+  /* Cancel-or-join the job hosting BGScheduler's loop: the ShutDown()
+     above is only a flag, and member destruction below would otherwise
+     race a loop still on its way out (#463) -- while a host that never
+     got a worker can neither be waited for nor be allowed to start late
+     against the dying members (#462). */
+  if (SchedulerHostHandle && !Scheduler->Cancel(SchedulerHostHandle)) {
+    SchedulerExitedSem.Pop();
+  }
 }
 
 void TFileService::InsertFile(const Base::TUuid &file_uid,

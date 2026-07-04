@@ -697,9 +697,14 @@ namespace Orly {
       void WaitForSlave();
 
       /* Schedule a job that hosts the given runner's scheduler loop
-         (Fiber::LaunchSlowFiberSched), bracketed by the entered/exited
-         accounting Shutdown() joins on (see RunnerHostsEntered). */
+         (Fiber::LaunchSlowFiberSched) through ScheduleHostJob, below. */
       void ScheduleRunnerHost(Indy::Fiber::TRunner *runner);
+
+      /* Schedule a long-lived job that touches this server, tracked for
+         cancel-or-join at Shutdown(): the job pushes RunnerHostExited on
+         its way out, and its cancellation handle is kept in
+         RunnerHostHandles (#462, #463). */
+      void ScheduleHostJob(Base::TScheduler::TJob &&host);
 
       Indy::Fiber::TFrame *Frame;
 
@@ -754,22 +759,25 @@ namespace Orly {
       /* The timer waited for by CleanHouse(). */
       Base::TTimerFd HousecleaningTimer;
 
-      /* CleanHouse() marks Started on entry and pushes Exited when it
-         returns, so Shutdown() can wait for the housekeeper to actually be
-         out of DurableManager->Clean() before tearing the manager down
-         (#440). */
-      std::atomic<bool> HousekeeperStarted{false};
+      /* CleanHouse() pushes Exited when it returns, so Shutdown() can wait
+         for the housekeeper to actually be out of DurableManager->Clean()
+         before tearing the manager down (#440).  The handle makes the join
+         exact: Shutdown() cancels the job if it never got a worker and
+         waits for the latch otherwise (#462). */
+      Base::TScheduler::TJobHandle HousekeeperHandle;
       Base::TEventSemaphore HousekeeperExited;
 
-      /* Every scheduler-hosted runner loop (ScheduleRunnerHost) counts
-         itself in on entry and pushes Exited on the way out, so Shutdown()
-         can wait for the loops to actually return before the runner objects
-         (all TServer members) are destroyed -- a ShutDown() is only a flag,
-         and a loop between its last KeepRunning check and its exit would
-         otherwise race member destruction (#463).  As with the service-loop
-         joins, a loop whose job never got a scheduler worker never counted
-         itself and is not waited for (#462). */
-      std::atomic<size_t> RunnerHostsEntered{0};
+      /* Every job scheduled through ScheduleHostJob (the runner-loop hosts,
+         the BG fast runner, the accept loop) pushes Exited on the way out
+         and leaves its cancellation handle here, so Shutdown() can
+         cancel-or-join each one before the objects they touch (all TServer
+         members) are destroyed -- a ShutDown() is only a flag, and a loop
+         between its last KeepRunning check and its exit would otherwise
+         race member destruction (#463); a job that never got a worker is
+         cancelled so it can no longer start late against dying state
+         (#462).  Only touched during construction/Init and in Shutdown(),
+         which cannot overlap, so it needs no lock. */
+      std::vector<Base::TScheduler::TJobHandle> RunnerHostHandles;
       Base::TEventSemaphore RunnerHostExited;
 
       /* The socket on which AcceptClientConnections() listens. */
