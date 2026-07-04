@@ -53,7 +53,11 @@ Var::TVar &TMutable::Index(const TVar &that) {
   return Val.Index(that);
 }
 
-//TODO(#382): We really should actually support all of these... but that requires a large refactor fo all of them...
+/* Deferred by decision (#382): supporting these needs a large refactor of the
+   mutable operator surface, and no orlyscript path can reach them today --
+   the lang tests all dereference before operating, so the throws below are a
+   clean fence, not a live defect. Revisit alongside the optional-address
+   mutation work (#283) if a real workload ever hits one. */
 TVar::TImpl &TMutable::Add(const TVar &) {
   throw Rt::TSystemError(HERE, "Add not currently implemented on Mutable.");
 }

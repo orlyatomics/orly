@@ -535,8 +535,13 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
           auto func = TSymbolFunc::Find(Package, that);
           TCall::TArgs args;
           for (auto &arg: FunctionAppArgs) {
-            // TODO(#300): We need to check if the arg has a greater sequence arity than the parameter, and if so, it is an implicit
-            //       map on the arg.
+            /* An arg with greater sequence arity than its parameter is an implicit map
+               over the arg, and that already works without special detection here: the
+               type layer lifts the call's result type to a sequence and the generic
+               sequence machinery maps the call at the boundary
+               (tests/lang_tests/general/implicit_seq_map.orly locks the behavior in).
+               Deeper arity gaps would need real detection, but nothing in the language
+               can express a nested sequence to create one (#300, verified 2026-07-04). */
             TInline::TPtr arg_inline;
             auto param_type = func->GetArg(arg.first)->GetReturnType();
             if (param_type.Is<Type::TSeq>()) {
