@@ -35,6 +35,8 @@
 #include <orly/code_gen/exists.h>
 #include <orly/code_gen/scope.h>
 #include <orly/code_gen/context_var.h>
+#include <orly/code_gen/if_else.h>
+#include <orly/code_gen/obj.h>
 #include <orly/code_gen/implicit_func.h>
 #include <orly/code_gen/keys.h>
 #include <orly/code_gen/literal.h>
@@ -84,11 +86,19 @@ namespace Orly {
         return ContextVarInterner.Get(package, op);
       }
 
-      /* TODO(#301): Requres dictionary comparison...
+      /* The 2014 "requires dictionary comparison" blocker is long gone: base/hash.h grew
+         order-independent std::hash for the unordered containers and the standard library
+         supplies their operator== -- so dict/set/obj ctors intern like everything else
+         (#301). */
       template <typename... TArgs>
-      TBasicCtor<TDictContainer>::TPtr GetDictCtor(const Type::TType &type, TDictContainer &&elems) {
-        return DictInterner.Get(type, elems);
-      } */
+      TBasicCtor<TDictContainer>::TPtr GetDictCtor(TArgs &&... args) {
+        return Get(DictInterner, std::forward<TArgs>(args)...);
+      }
+
+      template <typename... TArgs>
+      TIfElse::TPtr GetIfElse(TArgs &&... args) {
+        return Get(IfElseInterner, std::forward<TArgs>(args)...);
+      }
 
       template <typename...TArgs>
       TKeys::TPtr GetKeys(TArgs &&... args) {
@@ -105,11 +115,10 @@ namespace Orly {
         return Get(LiteralInterner, std::forward<TArgs>(args)...);
       }
 
-      /* TODO(#301): Requires set comparison...
       template <typename... TArgs>
-      TMap::TPtr GetMap(TArgs &&...args) {
-        return Get(MapInterner, std:::forward<TArgs>(args)...);
-      } */
+      TObjCtor::TPtr GetObjCtor(TArgs &&... args) {
+        return Get(ObjCtorInterner, std::forward<TArgs>(args)...);
+      }
 
       template <typename... TArgs>
       TLiteral::TPtr GetObjMember(TArgs &&... args) {
@@ -121,10 +130,10 @@ namespace Orly {
         return Get(RangeInterner, std::forward<TArgs>(args)...);
       }
 
-      /* TODO(#301): Requires set comparison...
-      TBasicCtor<TSetContainer>::TPtr GetSetCtor(const Type::TType &type, TSetContainer &&elems) {
-        return SetInterner.Get(type, std::move(elems));
-      } */
+      template <typename... TArgs>
+      TBasicCtor<TSetContainer>::TPtr GetSetCtor(TArgs &&... args) {
+        return Get(SetInterner, std::forward<TArgs>(args)...);
+      }
 
       template <typename... TArgs>
       TSlice::TPtr GetSlice(TArgs &&... args) {
@@ -204,14 +213,18 @@ namespace Orly {
       TStorage<TBuiltInCall, const L0::TPackage *, TBuiltInCall::TFunctionPtr, TBuiltInCall::TArguments> BuiltInCallInterner;
       TStorage<TCall, const L0::TPackage *, TFunction::TPtr, TCall::TArgs> CallInterner;
       Base::TInterner<TContextVar, const L0::TPackage *, TContextVar::TOp> ContextVarInterner;
-      //TODO(#301) (See Getter): TStorage<TBasicCtor<TDictContainer>, Type::TType, TDictContainer> DictInterner;
+      TStorage<TBasicCtor<TDictContainer>, const L0::TPackage *, Type::TType, TDictContainer> DictInterner;
+      /* Keyed on the arm EXPR pointers (the same syntactic arms reached twice) plus the built
+         predicate inline: dedup happens when the same source if/else is built more than once,
+         which is exactly the CSE case (#301). */
+      TStorage<TIfElse, const L0::TPackage *, Type::TType, Expr::TExpr::TPtr, TInline::TPtr, Expr::TExpr::TPtr> IfElseInterner;
       TStorage<TBasicCtor<TListContainer>, const L0::TPackage *, Type::TType, TListContainer> ListInterner;
       TStorage<TKeys, const L0::TPackage *, Type::TType, Type::TType, TKeys::TAddrElems> KeysInterner;
       TStorage<TLiteral, const L0::TPackage *, Var::TVar> LiteralInterner;
-      //TODO(#301) (See Getter): TStorage<TMap, Type::TType, TMap::TSeqs, TImplicitFunc::TPtr> MapInterner;
+      TStorage<TObjCtor, const L0::TPackage *, Type::TType, TObjCtor::TArgs> ObjCtorInterner;
       TStorage<TObjMember, const L0::TPackage *, Type::TType, TInline::TPtr, std::string> ObjMemberInterner;
       TStorage<TRange, const L0::TPackage *, TInline::TPtr, TInline::TPtr, TInline::TPtr, bool> RangeInterner;
-      //TODO(#301) (See Getter): TStorage<TBasicCtor<TSetContainer>, Type::TType, TSetContainer> SetInterner;
+      TStorage<TBasicCtor<TSetContainer>, const L0::TPackage *, Type::TType, TSetContainer> SetInterner;
       TStorage<TSlice, const L0::TPackage *, Type::TType, TInline::TPtr, TInline::TPtr, TInline::TPtr, bool> SliceInterner;
       TStorage<TSort, const L0::TPackage *, Type::TType, TInline::TPtr, TImplicitFunc::TPtr> SortInterner;
       TStorage<TTypedLeaf, const L0::TPackage *, TTypedLeaf::TKind, Type::TType, TAddrDir> TypedLeafInterner;
