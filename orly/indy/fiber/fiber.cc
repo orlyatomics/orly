@@ -138,42 +138,44 @@ void TRunner::Run() {
           }
           rt_queue = nullptr;
         } else {
+          /* Drain the handoff slots our peers push for us. The slots live in
+             the TRunnerCons-owned matrix, deliberately NOT on the peer
+             runners: a peer can be destroyed while we are mid-poll (a
+             manager's member runner dying during teardown), so we must never
+             dereference a peer TRunner here (#463). */
           for (size_t i = 0; i < TotalNumRunners; ++i) {
-            TRunner *cur_runner = RunnerArray[i].load(std::memory_order_acquire);
-            if (cur_runner) {
-              std::atomic<TFrame *> &cur_inbound_queue = cur_runner->QueueArray[RunnerId].Ptr;
-              if (cur_inbound_queue.load(std::memory_order_acquire)) {
-                assert(rt_queue == nullptr);
-                /* Drain the whole Treiber stack; acquire pairs with the
-                   pushers' release CAS (see InboundFrameQueue above). */
-                TFrame *cur_tail = cur_inbound_queue.exchange(nullptr, std::memory_order_acquire);
-                for (TFrame *frame = cur_tail; frame; frame = next_frame) {
-                  assert(frame->InboundQueueNextFrame != frame);
-                  next_frame = frame->InboundQueueNextFrame;
-                  if (!frame->ComeBackRightAway) {
-                    frame->InboundQueueNextFrame = ReadyToRunQueue;
-                    ReadyToRunQueue = frame;
-                    //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-                    //_mm_prefetch(frame->MyFiber.jmp, _MM_HINT_T1);
-                  } else {
-                    frame->InboundQueueNextFrame = rt_queue;
-                    rt_queue = frame;
-                  }
-                  //printf("TRunner [%p] push frame [%p]\n", this, frame);
-                }
-                /* here we have to choose between putting the most recent or least recent "high priority" (come_back_soon) fiber first. We currently
-                   implement the more recent one (as opposed to fair one) because it's most likely to still have data in the cache... */
-                for (TFrame *frame = rt_queue; frame; frame = next_frame) {
-                  next_frame = frame->InboundQueueNextFrame;
+            std::atomic<TFrame *> &cur_inbound_queue = HandoffSlot(RunnerId, i).Ptr;
+            if (cur_inbound_queue.load(std::memory_order_acquire)) {
+              assert(rt_queue == nullptr);
+              /* Drain the whole Treiber stack; acquire pairs with the
+                 pushers' release CAS (see InboundFrameQueue above). */
+              TFrame *cur_tail = cur_inbound_queue.exchange(nullptr, std::memory_order_acquire);
+              for (TFrame *frame = cur_tail; frame; frame = next_frame) {
+                assert(frame->InboundQueueNextFrame != frame);
+                next_frame = frame->InboundQueueNextFrame;
+                if (!frame->ComeBackRightAway) {
                   frame->InboundQueueNextFrame = ReadyToRunQueue;
                   ReadyToRunQueue = frame;
                   //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-                  #ifdef FAST_SWITCH
-                  _mm_prefetch(frame->MyFiber.jmp, _MM_HINT_T1);
-                  #endif
+                  //_mm_prefetch(frame->MyFiber.jmp, _MM_HINT_T1);
+                } else {
+                  frame->InboundQueueNextFrame = rt_queue;
+                  rt_queue = frame;
                 }
-                rt_queue = nullptr;
+                //printf("TRunner [%p] push frame [%p]\n", this, frame);
               }
+              /* here we have to choose between putting the most recent or least recent "high priority" (come_back_soon) fiber first. We currently
+                 implement the more recent one (as opposed to fair one) because it's most likely to still have data in the cache... */
+              for (TFrame *frame = rt_queue; frame; frame = next_frame) {
+                next_frame = frame->InboundQueueNextFrame;
+                frame->InboundQueueNextFrame = ReadyToRunQueue;
+                ReadyToRunQueue = frame;
+                //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
+                #ifdef FAST_SWITCH
+                _mm_prefetch(frame->MyFiber.jmp, _MM_HINT_T1);
+                #endif
+              }
+              rt_queue = nullptr;
             }
           }
         }

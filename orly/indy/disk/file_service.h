@@ -204,6 +204,12 @@ namespace Orly {
         Base::TEventSemaphore RunSem;
         bool ShuttingDown;
 
+        /* Pushed by the scheduler job hosting BGScheduler's loop when the
+           loop returns; the destructor pops it so BGScheduler (a member) is
+           never destroyed while its loop can still touch it (#463; same
+           handshake as TDurableManager's SchedulerExitedSem). */
+        Base::TEventSemaphore SchedulerExitedSem;
+
         /* A flag used to test abort on append log corruption */
         bool AbortOnAppendLogScan;
 

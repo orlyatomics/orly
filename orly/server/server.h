@@ -696,6 +696,11 @@ namespace Orly {
 
       void WaitForSlave();
 
+      /* Schedule a job that hosts the given runner's scheduler loop
+         (Fiber::LaunchSlowFiberSched), bracketed by the entered/exited
+         accounting Shutdown() joins on (see RunnerHostsEntered). */
+      void ScheduleRunnerHost(Indy::Fiber::TRunner *runner);
+
       Indy::Fiber::TFrame *Frame;
 
       std::vector<Indy::Fiber::TFrame *> MergeMemFrameVec;
@@ -755,6 +760,17 @@ namespace Orly {
          (#440). */
       std::atomic<bool> HousekeeperStarted{false};
       Base::TEventSemaphore HousekeeperExited;
+
+      /* Every scheduler-hosted runner loop (ScheduleRunnerHost) counts
+         itself in on entry and pushes Exited on the way out, so Shutdown()
+         can wait for the loops to actually return before the runner objects
+         (all TServer members) are destroyed -- a ShutDown() is only a flag,
+         and a loop between its last KeepRunning check and its exit would
+         otherwise race member destruction (#463).  As with the service-loop
+         joins, a loop whose job never got a scheduler worker never counted
+         itself and is not waited for (#462). */
+      std::atomic<size_t> RunnerHostsEntered{0};
+      Base::TEventSemaphore RunnerHostExited;
 
       /* The socket on which AcceptClientConnections() listens. */
       Base::TFd MainSocket;

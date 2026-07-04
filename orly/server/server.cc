@@ -820,6 +820,10 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   /* Launch the fast */
   auto launch_bg_fiber_sched = [this](Fiber::TRunner *runner) {
     syslog(LOG_INFO, "Bg Scheduler TID=[%ld]", syscall(SYS_gettid)); /* TEMP */
+    /* Same entered/exited accounting as ScheduleRunnerHost: Shutdown() must
+       not return while this loop can still touch the runner (#463). */
+    ++RunnerHostsEntered;
+    Base::TPushOnExit exit_latch(RunnerHostExited);
     if (!Fiber::TFrame::LocalFramePool) {
       Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
     }
@@ -910,7 +914,7 @@ void TServer::Init() {
     } else {
       throw runtime_error("Server must start as SOLO or SLAVE");
     }
-    Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &WaitForSlaveRunner, FramePoolManager.get()));
+    ScheduleRunnerHost(&WaitForSlaveRunner);
     auto slave_bind_cb = [this](const shared_ptr<function<void (const TFd &)>> &cb) {
       WaitForSlaveActionCb = cb;
       Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
@@ -1141,7 +1145,7 @@ void TServer::Init() {
                                                                     Cmd.Create);
     RepoManager->SetDurableManager(DurableManager);
     /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
-      Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &DurableLayerCleanerRunner, FramePoolManager.get()));
+      ScheduleRunnerHost(&DurableLayerCleanerRunner);
       Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
       try {
         frame->Latch(&DurableLayerCleanerRunner, DurableManager.get(), static_cast<Fiber::TRunnable::TFunc>(&Durable::TManager::RunLayerCleaner));
@@ -1174,7 +1178,7 @@ void TServer::Init() {
     RepoManager->SetTetrisManager(TetrisManager);
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
-        Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &RunReplicationQueueRunner, FramePoolManager.get()));
+        ScheduleRunnerHost(&RunReplicationQueueRunner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RunReplicationQueueRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunReplicationQueue));
@@ -1185,7 +1189,7 @@ void TServer::Init() {
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicationQueue, RepoManager.get()));
       }
       /* Execute Job from master / slave */ {
-        Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &RunReplicationWorkRunner, FramePoolManager.get()));
+        ScheduleRunnerHost(&RunReplicationWorkRunner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RunReplicationWorkRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunReplicationWork));
@@ -1196,7 +1200,7 @@ void TServer::Init() {
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicationWork, RepoManager.get()));
       }
       /* Dequeue from replication queue and transmit to slave if necessary */ {
-        Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &RunReplicateTransactionRunner, FramePoolManager.get()));
+        ScheduleRunnerHost(&RunReplicateTransactionRunner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RunReplicateTransactionRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunReplicateTransaction));
@@ -1207,7 +1211,7 @@ void TServer::Init() {
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicateTransaction, RepoManager.get()));
       }
       /* Remove Repo TDataLayer(s) that are no longer relevant */ {
-        Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &RepoLayerCleanerRunner, FramePoolManager.get()));
+        ScheduleRunnerHost(&RepoLayerCleanerRunner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RepoLayerCleanerRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunLayerCleaner));
@@ -1221,7 +1225,7 @@ void TServer::Init() {
       for (size_t i = 0; i < Cmd.NumMemMergeThreads; ++i) {
         MergeMemRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
         Fiber::TRunner *cur_runner = MergeMemRunnerVec.back().get();
-        Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, cur_runner, FramePoolManager.get()));
+        ScheduleRunnerHost(cur_runner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(cur_runner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunMergeMem));
@@ -1236,7 +1240,7 @@ void TServer::Init() {
       for (size_t i = 0; i < Cmd.NumDiskMergeThreads; ++i) {
         MergeDiskRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
         Fiber::TRunner *cur_runner = MergeDiskRunnerVec.back().get();
-        Scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, cur_runner, FramePoolManager.get()));
+        ScheduleRunnerHost(cur_runner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(cur_runner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunMergeDisk));
@@ -1281,6 +1285,15 @@ void TServer::Init() {
   std::lock_guard<std::mutex> lock(InitMutex);
   InitFinished = true;
   InitCond.notify_all();
+}
+
+void TServer::ScheduleRunnerHost(Fiber::TRunner *runner) {
+  assert(runner);
+  Scheduler->Schedule([this, runner] {
+    ++RunnerHostsEntered;
+    Base::TPushOnExit exit_latch(RunnerHostExited);
+    Fiber::LaunchSlowFiberSched(runner, FramePoolManager.get());
+  });
 }
 
 void TServer::Shutdown() {
@@ -1395,6 +1408,16 @@ void TServer::Shutdown() {
   }
   for (auto &t : SlowRunnerThreadVec) {
     t->join();
+  }
+  /* Reap the scheduler-hosted runner loops flagged above (ScheduleRunnerHost
+     and the BG fast runner): a ShutDown() is only a flag, and a loop still
+     between its last KeepRunning check and its return would race the runner
+     objects' destruction in ~TServer (#463).  Only loops that actually
+     entered are reaped; one whose job never got a scheduler worker never
+     counted itself in and never touches us (#462, same policy as the
+     service-loop joins above). */
+  for (size_t n = RunnerHostsEntered.load(); n > 0; --n) {
+    RunnerHostExited.Pop();
   }
   syslog(LOG_INFO, "TServer::Shutdown() complete");
 }

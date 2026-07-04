@@ -256,7 +256,10 @@ TFileService::TFileService(Base::TScheduler *scheduler,
       }
     }
   }
-  scheduler->Schedule(std::bind(Fiber::LaunchSlowFiberSched, &BGScheduler, frame_pool_manager));
+  scheduler->Schedule([this, frame_pool_manager] {
+    Fiber::LaunchSlowFiberSched(&BGScheduler, frame_pool_manager);
+    SchedulerExitedSem.Push();
+  });
   Frame = Fiber::TFrame::LocalFramePool->Alloc();
   try {
     Frame->Latch(&BGScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TFileService::Runner));
@@ -271,6 +274,10 @@ TFileService::~TFileService() {
   ShuttingDown = true;
   RunSem.Push();
   BGScheduler.ShutDown();
+  /* Wait for the scheduler job hosting BGScheduler's loop to actually
+     return: the ShutDown() above is only a flag, and member destruction
+     below would otherwise race a loop still on its way out (#463). */
+  SchedulerExitedSem.Pop();
 }
 
 void TFileService::InsertFile(const Base::TUuid &file_uid,
