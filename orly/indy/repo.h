@@ -288,6 +288,18 @@ namespace Orly {
          TSafeRepo has disk files; TFastRepo asserts it is never called. */
       virtual void StepMergeDisk(size_t block_slots_available) = 0;
 
+      /* True iff 'mapping' holds an adjacent pair of disk layers the disk-merge step's scan
+         (TSafeRepo::StepMergeDisk) could select -- same adjacency and generation condition,
+         minus the MarkedTaken check (#325).  Taken-ness is written under MergeLock, which the
+         enqueue-time callers don't hold; skipping it means this reads only immutable layer
+         fields (kind, size), and can only over-approximate -- an occasional pass that finds
+         nothing, which is exactly what every enqueue risked before this gate.  Exactness the
+         other way is what matters: a false here means the step's scan would provably find
+         nothing (taken-ness only removes candidates), and every state change that could make a
+         pair mergeable again is a mapping install whose site re-runs this gate, so skipping the
+         enqueue can never strand a mergeable mapping. */
+      bool HasDiskMergeCandidate(TMapping *mapping) const;
+
       /* Copy-on-write a new data layer into the mapping; returns the layer count. */
       size_t AddMapping(TDataLayer *layer);
 
