@@ -105,32 +105,25 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        /* Reentrancy guard, as in TIfElse: a `when` arm may (via a map over a
-           recursive call -- a recursive-variant widening fold, #104/#159)
-           reach back into this same `when`, which would otherwise walk the
-           dependency graph forever. Stop the second entry. */
-        if (!InDependsOn) {
-          InDependsOn = true;
-          AppendDependency(Operand, dependency_set);
-          for (const auto &arm : Arms) {
-            AppendDependency(arm.second, dependency_set);
-          }
-          InDependsOn = false;
+        /* Reentrant recursion through an arm (a recursive-variant widening fold, #104/#159, can
+           reach back into this same `when`) is broken by AppendDependency's insert-check, which
+           retired the old per-node InDependsOn guards (#297/#298). */
+        AppendDependency(Operand, dependency_set);
+        for (const auto &arm : Arms) {
+          AppendDependency(arm.second, dependency_set);
         }
       }
 
       private:
         TInline::TPtr Operand;
         TArmVec Arms;
-
-        /* True while inside AppendDependsOn, to detect reentrant recursion. */
-        mutable bool InDependsOn = false;
     }; // TVariantWhen
 
     /* `(e) when { Known(v): ...; Unknown: ...; }` over an OPTIONAL operand
        (#105) -- the built-in sum `<| Known(T) | Unknown |>`. Lowers to a
        ternary on the optional's presence flag rather than a `GetWhich()`:
-         ((op).IsKnown() ? (known_body) : (unknown_body))
+         ((op).IsKnown() ? (known_body)() : (unknown_body)())
+       (each body a TInlineScope lambda invoked at its guard site, #297).
        The `Known(v)` payload binder reaches the value via `(op).GetVal()`
        (an `optional.Known` accessor lowered to TUnary::Known), so this node
        just selects the branch. */
@@ -147,14 +140,10 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        /* Reentrancy guard mirroring TVariantWhen: an arm may map over a
-           recursive call that reaches back into this same `when`. */
-        if (!InDependsOn) {
-          InDependsOn = true;
-          for (const auto &dep : {Operand, KnownBody, UnknownBody}) {
-            AppendDependency(dep, dependency_set);
-          }
-          InDependsOn = false;
+        /* Reentrant recursion through an arm is broken by AppendDependency's insert-check,
+           as in TVariantWhen. */
+        for (const auto &dep : {Operand, KnownBody, UnknownBody}) {
+          AppendDependency(dep, dependency_set);
         }
       }
 
@@ -162,9 +151,6 @@ namespace Orly {
         TInline::TPtr Operand;
         TInline::TPtr KnownBody;
         TInline::TPtr UnknownBody;
-
-        /* True while inside AppendDependsOn, to detect reentrant recursion. */
-        mutable bool InDependsOn = false;
     }; // TOptWhen
 
     /* `narrow_val as wide_t` -- widening a narrow variant to a superset

@@ -30,6 +30,7 @@
 #include <orly/code_gen/interner.h>
 #include <orly/code_gen/implicit_func.h>
 #include <orly/code_gen/if_else.h>
+#include <orly/code_gen/inline_scope.h>
 #include <orly/code_gen/map.h>
 #include <orly/code_gen/match.h>
 #include <orly/code_gen/obj.h>
@@ -777,12 +778,18 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TWhen *that) const {
       TInline::TPtr operand = Build(Package, that->GetOperand(), false);
+      /* Every arm body builds in its own TInlineScope, exactly as TIfElse's branches do: the
+         arm emits as a lambda invoked only when its guard selects it, so a CSE'd subexpression
+         inside an arm -- above all the payload accessor, whose runtime getter asserts the
+         active arm -- becomes a local of the arm's own scope and can never be hoisted into the
+         enclosing scope's unconditional locals (#297; flat-built arms aborted on exactly that,
+         'Assertion Which == N failed' across the variant lang tests). */
       /* An optional operand is the built-in sum `<| Known(T) | Unknown |>`
          (#105): select on the presence flag rather than a `GetWhich()`. */
       if (Type::Unwrap(that->GetOperand()->GetType()).Is<Type::TOpt>()) {
         TInline::TPtr known_body, unknown_body;
         for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
-          TInline::TPtr body = Build(Package, that->GetArmBody(arm_idx), false);
+          TInline::TPtr body = TInlineScope::New(Package, that->GetArmBody(arm_idx), false);
           if (that->GetArmTag(arm_idx) == "Known") {
             known_body = body;
           } else {
@@ -799,7 +806,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       TVariantWhen::TArmVec arms;
       for (size_t arm_idx = 0; arm_idx < that->GetArmCount(); ++arm_idx) {
         arms.emplace_back(that->GetArmWhich(arm_idx),
-            Build(Package, that->GetArmBody(arm_idx), false));
+            TInlineScope::New(Package, that->GetArmBody(arm_idx), false));
       }
       Res = TInline::TPtr(new TVariantWhen(Package, ReturnType, operand, arms));
     }

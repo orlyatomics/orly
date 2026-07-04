@@ -73,13 +73,16 @@ TVariantWhen::TVariantWhen(const L0::TPackage *package,
 
 void TVariantWhen::WriteExpr(TCppPrinter &out) const {
   /* Nested ternary on the operand's active arm. All arms but the last are
-     guarded; the last is the exhaustive fall-through. */
+     guarded; the last is the exhaustive fall-through. Each arm is a
+     TInlineScope (see the builder's TWhen visitor, #297) -- a lambda invoked
+     only when its guard selects it, so arm-local CSE definitions (payload
+     accessors above all) stay behind the dispatch. */
   out << '(';
   for (size_t arm_idx = 0; arm_idx + 1 < Arms.size(); ++arm_idx) {
     out << "((" << Operand << ").GetWhich() == " << Arms[arm_idx].first
-        << ") ? (" << Arms[arm_idx].second << ") : ";
+        << ") ? (" << Arms[arm_idx].second << ")() : ";
   }
-  out << '(' << Arms.back().second << "))";
+  out << '(' << Arms.back().second << ")())";
 }
 
 TOptWhen::TOptWhen(const L0::TPackage *package,
@@ -91,8 +94,10 @@ TOptWhen::TOptWhen(const L0::TPackage *package,
 
 void TOptWhen::WriteExpr(TCppPrinter &out) const {
   /* Presence selects the arm; the `Known(v)` binder reads `(op).GetVal()`
-     inside the known body (an `optional.Known` accessor). */
-  out << "((" << Operand << ").IsKnown() ? (" << KnownBody << ") : (" << UnknownBody << "))";
+     inside the known body (an `optional.Known` accessor). Both bodies are
+     TInlineScope lambdas invoked at their guard site (#297), keeping any
+     CSE'd payload access behind the presence check. */
+  out << "((" << Operand << ").IsKnown() ? (" << KnownBody << ")() : (" << UnknownBody << ")())";
 }
 
 TVariantWiden::TVariantWiden(const L0::TPackage *package,
