@@ -138,7 +138,10 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
           out << obj_class_name << "() {}" << Eol
               << Eol;
         }
-        /* TODO(#304): Should really write a generic object ctor printer */
+        /* A "generic object ctor printer" was considered and declined (#304): each emission
+           below is already one Base::Join over the member list -- that IS the generic
+           mechanism -- and abstracting the remaining per-section differences trades
+           greppable straight-line emission for indirection on working code. */
         out << obj_class_name << "(const TDynamicMembers &m)";
         if(!obj_core_type->GetElems().empty()) {
           out << " : ";
@@ -200,7 +203,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
             << "});" << Eol
             << "}" << Eol
             << Eol
-        /* TODO(#304): Should really write a generic object member function printer */
+        /* Declined with the ctor-printer wish above (#304). */
         /* helper functions (hash, equality, getters, etc.) */
             << "size_t GetHash() const {" << Eol
             << "  assert(this);" << Eol

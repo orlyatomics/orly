@@ -301,7 +301,8 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmtBlock::TPtr &st
   }
 }
 
-//TODO(#308): Unit test specific inlines passing through the builder.
+/* Per-inline builder unit tests were dispositioned to the lang_test suite (#308): every
+   lang test drives each visitor arm below through a real package build + gcc compile. */
 /* Mutability through container CTORS was considered and declined (#296): a container of
    mutables is a type-system question first -- the language types `[m]` as a plain `[int]`
    (ctor elements build with keep_mutable=false below), so preserving element mutability

@@ -18,7 +18,12 @@
 
 #include <orly/code_gen/interner.h>
 
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+
 #include <orly/code_gen/binary.h>
+#include <orly/code_gen/cpp_printer.h>
 #include <orly/code_gen/literal.h>
 #include <orly/type.h>
 #include <orly/type/type_czar.h>
@@ -59,8 +64,51 @@ FIXTURE(Typical) {
   EXPECT_TRUE(bin1->HasId());
   EXPECT_FALSE(lit4->HasId());
 
-  //TODO(#308): Test printing out the locals.
+}
 
+/* Print the locals through WriteStart and pin the emitted shape (#308): one `auto <id> = ...;`
+   definition per local, inner definition first (dependency order), and the outer local's
+   expression referring to the inner one by its id rather than re-expanding it. */
+FIXTURE(WriteStartPrintsLocalsInDependencyOrder) {
+  Type::TTypeCzar type_czar;
+  TIdScope::TPtr id_s = TIdScope::New();
+  TCodeScope s(id_s);
+  auto &Interner = *(s.GetInterner());
+
+  auto lit1 = Interner.GetLiteral(nullptr, Var::TVar(1));
+  auto lit2 = Interner.GetLiteral(nullptr, Var::TVar(2));
+  auto lit3 = Interner.GetLiteral(nullptr, Var::TVar(3));
+  auto inner = Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Add, lit1, lit2);
+  auto outer = Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Mult, inner, lit3);
+  /* Duplicate outer first, then inner: arrival order inverts dependency order. */
+  Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Mult, inner, lit3);
+  Interner.GetBinary(nullptr, Type::TInt::Get(), TBinary::Add, lit1, lit2);
+
+  const std::string path = std::string(TEST_OUTPUT_DIR) + "interner_write_start.cc";
+  /* printer scope so the file flushes */ {
+    TCppPrinter out(path);
+    s.WriteStart(out);
+  }
+  std::ostringstream buf;
+  buf << std::ifstream(path).rdbuf();
+  std::remove(path.c_str());
+  const std::string text = buf.str();
+
+  /* Two definitions, in dependency order: the first must be the inner one (its expression
+     holds the literals 1 and 2, not 3), and the second must reference the first's variable
+     by name instead of re-expanding the shared subexpression. */
+  const auto first_at = text.find("auto ");
+  EXPECT_TRUE(first_at != std::string::npos);
+  const auto second_at = text.find("auto ", first_at + 1);
+  EXPECT_TRUE(second_at != std::string::npos);
+  const std::string first_line = text.substr(first_at, text.find('\n', first_at) - first_at);
+  const std::string second_line = text.substr(second_at, text.find('\n', second_at) - second_at);
+  EXPECT_TRUE(first_line.find('1') != std::string::npos);
+  EXPECT_TRUE(first_line.find('2') != std::string::npos);
+  EXPECT_TRUE(first_line.find('3') == std::string::npos);
+  const std::string first_var = first_line.substr(5, first_line.find(" = ") - 5);
+  EXPECT_TRUE(!first_var.empty());
+  EXPECT_TRUE(second_line.find(first_var) != std::string::npos);
 }
 
 /* The inversion that kept CSE disabled (#297): when a larger expression is CSE'd before one of
