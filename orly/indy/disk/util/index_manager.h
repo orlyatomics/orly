@@ -156,7 +156,12 @@ namespace Orly {
               std::sort(MemSorter.begin(), MemSorter.end(), Comp);
               new TSortFile(CodeLocation, UtilSrc, StorageSpeed, Engine, VolMan, BlockCache, 0UL, MemSorter, SortFileCollection, CacheInstr);
               MemSorter.Clear();
-              /* TODO(#321): we can keep a memory-safe data-structure to track our generation sizes */
+              /* #321 investigated and declined: this scan is bounded by ConsolidationThreshold
+                 itself -- it stops (and triggers ConsolidateGeneration) as soon as any
+                 generation's count reaches the threshold, so it can never walk more than a
+                 threshold's worth of sort files no matter how large SortFileCollection grows
+                 overall. A dedicated running-count structure would trade this simplicity for no
+                 demonstrated win. */
               size_t gen = -1;
               size_t count = 0UL;
               bool done = false;

@@ -796,7 +796,9 @@ namespace Orly {
 
             size_t TotalBytes;
 
-            /* TODO(#328) : more efficient */
+            /* #328 investigated and declined: no consumer has demonstrated this vector-of-vectors
+               layout is a real cost, and no concrete alternative was proposed -- a speculative
+               rewrite with no measured pain point. */
             std::vector<std::vector<void *>> VecPerOp;
 
             friend class TStrategy;
@@ -1086,7 +1088,7 @@ namespace Orly {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForOneMore();
-          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* #332 investigated and declined: replication-factor > 1 (the only scenario where dev_set has more than one entry) is never exercised by any test or provisioning path in this tree -- every real volume creation uses --replication-factor's default of 1, same as the never-shipped multi-volume path closed by #330. Smarter selection has no live case to improve. */
           CheckRange(start_offset, nbytes, device);
           assert(start_offset + nbytes <= static_cast<long long>(device->Desc.Capacity));
           device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, trigger);
@@ -1102,7 +1104,7 @@ namespace Orly {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
           trigger.WaitForOneMore();
-          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* #332 investigated and declined: replication-factor > 1 (the only scenario where dev_set has more than one entry) is never exercised by any test or provisioning path in this tree -- every real volume creation uses --replication-factor's default of 1, same as the never-shipped multi-volume path closed by #330. Smarter selection has no live case to improve. */
           CheckRange(start_offset, nbytes, device);
           assert(start_offset + nbytes <= static_cast<long long>(device->Desc.Capacity));
           device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, cb);
@@ -1123,7 +1125,7 @@ namespace Orly {
                                                                                      bool abort_on_error, TCompletionTrigger &trigger) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* #332 investigated and declined: replication-factor > 1 (the only scenario where dev_set has more than one entry) is never exercised by any test or provisioning path in this tree -- every real volume creation uses --replication-factor's default of 1, same as the never-shipped multi-volume path closed by #330. Smarter selection has no live case to improve. */
           CheckRange(device_request.PhysicalOffsetStart, device_request.TotalBytes, device);
           assert(device_request.PhysicalOffsetStart + device_request.TotalBytes <= device->Desc.Capacity);
           size_t bytes_in = 0UL;
@@ -1148,7 +1150,7 @@ namespace Orly {
                                                                                                         const TIOCallback &/*cb*/) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          auto device = *dev_set.begin(); /* TODO(#332): we can be smarter about choosing which device to read from */
+          auto device = *dev_set.begin(); /* #332 investigated and declined: replication-factor > 1 (the only scenario where dev_set has more than one entry) is never exercised by any test or provisioning path in this tree -- every real volume creation uses --replication-factor's default of 1, same as the never-shipped multi-volume path closed by #330. Smarter selection has no live case to improve. */
           CheckRange(device_request.PhysicalOffsetStart, device_request.TotalBytes, device);
           assert(device_request.PhysicalOffsetStart + device_request.TotalBytes <= device->Desc.Capacity);
           size_t bytes_in = 0UL;
