@@ -102,6 +102,12 @@ namespace Jhm {
       return Timestamp;
     }
 
+    /* The config files which actually existed and were loaded, in load order. Job caches record
+       these so that removing a config file (not just adding one) invalidates the cache (#339). */
+    const std::vector<std::string> &GetSrcConfigFiles() const {
+      return SrcConfigFiles;
+    }
+
     /* Write out the computed configuration instructions */
     void WriteComputed(std::ostream &out) const;
 
@@ -116,6 +122,7 @@ namespace Jhm {
     void AddFile(const std::string &filename);
 
     Util::TOptTimestamp Timestamp;
+    std::vector<std::string> SrcConfigFiles;
     std::optional<uint32_t> ComputedStart;
     mutable bool ComputedLocked = false; // This is purely an internal safety check / correctness check
     std::deque<Base::TJson> Config;

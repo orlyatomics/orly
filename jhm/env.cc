@@ -156,14 +156,12 @@ TEnv::TEnv(const TTree &root, const string &proj_name, const string &config, con
   }
 
   // NOTE: Technically not a hard error. But usually indicates something went wrong.
+  // A removed config file otherwise degrades gracefully: the remaining files in the search
+  // list still load, and the job caches notice the removal and rebuild (#339).
   if (!Config.HasConfig()) {
     THROW_ERROR(runtime_error) << "No config file found for config " << quoted(config)
                                << ". At least one config looked for must exist";
   }
-  /*
-  // Load the configuation
-  // TODO(#339): Gracefully degrade on removal of a config.
-  */
 
   Jobs.Register(Job::TDep::GetProducer());
   Jobs.Register(Job::TCompileCFamily::GetCProducer());
