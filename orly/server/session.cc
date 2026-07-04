@@ -37,6 +37,17 @@ using namespace Orly::Notification;
 using namespace Orly::Server;
 using namespace Util;
 
+/* The run_time recorded in an update's TMetaRecord. Rt::TContext::Now()
+   memoizes wall time into OptNow on first use, so this is Known whenever the
+   client supplied `now` or the executed method (or a predicate) evaluated it;
+   the fallback fires only when nothing touched time at all. Fall back to the
+   commit-time wall clock: replay can't observe the difference (a replayed
+   predicate that reads `now` implies the original did, forcing the Known
+   path), and the durable record shouldn't claim a sentinel date (#494). */
+static Base::Chrono::TTimePnt GetRunTime(const Rt::TOpt<Base::Chrono::TTimePnt> &opt_now) {
+  return opt_now.IsKnown() ? opt_now.GetVal() : Base::Chrono::Now();
+}
+
 TMethodResult TSession::DoInPast(
     TServer */*server*/, const TUuid &/*pov_id*/, const vector<string> &/*fq_name*/, const TClosure &/*closure*/, const TUuid &/*tracking_id*/) {
   THROW_ERROR(TStubbed) << "DoInPast";
@@ -224,10 +235,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       if(indy_context.GetOptRandomSeed().IsKnown()) {
         random_seed = indy_context.GetOptRandomSeed().GetVal();
       }
-      Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
-      if(indy_context.GetOptNow().IsKnown()) {
-        run_time = indy_context.GetOptNow().GetVal();
-      }
+      const Base::Chrono::TTimePnt run_time = GetRunTime(indy_context.GetOptNow());
 
       TMetaRecord meta_record(
           update_id,
@@ -414,10 +422,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
       if(indy_context.GetOptRandomSeed().IsKnown()) {
         random_seed = indy_context.GetOptRandomSeed().GetVal();
       }
-      Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
-      if(indy_context.GetOptNow().IsKnown()) {
-        run_time = indy_context.GetOptNow().GetVal();
-      }
+      const Base::Chrono::TTimePnt run_time = GetRunTime(indy_context.GetOptNow());
 
       TMetaRecord meta_record(
           update_id,
@@ -664,10 +669,7 @@ void TSession::RunFuncCommit(TServer *server,
   if (indy_context.GetOptRandomSeed().IsKnown()) {
     random_seed = indy_context.GetOptRandomSeed().GetVal();
   }
-  Base::Chrono::TTimePnt run_time = Base::Chrono::CreateTimePnt(2013, 10, 23, 17, 47, 14, 0, 0);
-  if (indy_context.GetOptNow().IsKnown()) {
-    run_time = indy_context.GetOptNow().GetVal();
-  }
+  const Base::Chrono::TTimePnt run_time = GetRunTime(indy_context.GetOptNow());
   TMetaRecord meta_record(
       update_id,
       TMetaRecord::TEntry(
