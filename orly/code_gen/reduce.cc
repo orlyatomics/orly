@@ -49,10 +49,7 @@ TReduce::TReduce(const L0::TPackage *package,
     Start(start) {}
 
 void TReduce::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
-  dependency_set.insert(Seq);
-  Seq->AppendDependsOn(dependency_set);
-  dependency_set.insert(Start);
-  Start->AppendDependsOn(dependency_set);
-  dependency_set.insert(Func->GetBody());
-  Func->GetBody()->AppendDependsOn(dependency_set);
+  AppendDependency(Seq, dependency_set);
+  AppendDependency(Start, dependency_set);
+  AppendDependency(Func->GetBody(), dependency_set);
 }

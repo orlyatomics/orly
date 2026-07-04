@@ -70,34 +70,29 @@ namespace Orly {
     /* Dependency graph */
     inline void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set, const TAddrContainer &container) {
       for (auto iter : container) {
-        dependency_set.insert(iter.second);
-        iter.second->AppendDependsOn(dependency_set);
+        TInline::AppendDependency(iter.second, dependency_set);
       }
     }
 
     /* Dependency graph */
     inline void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set, const TDictContainer &container) {
       for (auto iter : container) {
-        dependency_set.insert(iter.first);
-        iter.first->AppendDependsOn(dependency_set);
-        dependency_set.insert(iter.second);
-        iter.second->AppendDependsOn(dependency_set);
+        TInline::AppendDependency(iter.first, dependency_set);
+        TInline::AppendDependency(iter.second, dependency_set);
       }
     }
 
     /* Dependency graph */
     inline void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set, const TSetContainer &container) {
       for (auto iter : container) {
-        dependency_set.insert(iter);
-        iter->AppendDependsOn(dependency_set);
+        TInline::AppendDependency(iter, dependency_set);
       }
     }
 
     /* Dependency graph */
     inline void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set, const TListContainer &container) {
       for (auto iter : container) {
-        dependency_set.insert(iter);
-        iter->AppendDependsOn(dependency_set);
+        TInline::AppendDependency(iter, dependency_set);
       }
     }
 

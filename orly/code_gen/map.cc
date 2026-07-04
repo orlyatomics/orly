@@ -53,9 +53,7 @@ void TMap::WriteExpr(TCppPrinter &out) const {
 
 void TMap::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
   for (const auto &iter : Seqs) {
-    dependency_set.insert(iter);
-    iter->AppendDependsOn(dependency_set);
+    AppendDependency(iter, dependency_set);
   }
-  dependency_set.insert(Func->GetBody());
-  Func->GetBody()->AppendDependsOn(dependency_set);
+  AppendDependency(Func->GetBody(), dependency_set);
 }

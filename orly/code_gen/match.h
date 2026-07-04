@@ -37,12 +37,12 @@ namespace Orly {
 
       void WriteExpr(TCppPrinter &out) const;
 
-      /* Dependency graph */
-      /* TODO(#298): revisit dependencies */
+      /* Dependency graph.  #298 audit: Regex was inserted without recursing into its own
+         dependencies -- the only two implementations that broke the insert-then-recurse
+         convention; AppendDependency gives it the standard treatment. */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        dependency_set.insert(MatchFromText);
-        MatchFromText->AppendDependsOn(dependency_set);
-        dependency_set.insert(Regex);
+        AppendDependency(MatchFromText, dependency_set);
+        AppendDependency(Regex, dependency_set);
       }
 
       private:

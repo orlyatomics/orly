@@ -44,8 +44,7 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        dependency_set.insert(Payload);
-        Payload->AppendDependsOn(dependency_set);
+        AppendDependency(Payload, dependency_set);
       }
 
       private:

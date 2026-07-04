@@ -393,7 +393,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TAsin *that) const { Unary(Package, TUnary::Asin, that); }
     virtual void operator()(const Expr::TAssert *that) const {
       //TODO(#294): Report file name with assertion failures.
-      //Pass the expression through, setting it as the "that" context, and making it a local (Since context that doesn't common subexpression eliminate automatically ATM).
+      //Pass the expression through, setting it as the "that" context, and making it a local up front (the assert subject is always worth materializing).
       Res = Build(Package, that->GetExpr(), true);
       Context::GetScope()->AddLocal(Res);
       TThatableCtx ctx(Res);
@@ -497,7 +497,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       // boundary, exactly as the bare-deref case already does.
       auto seq = BuildInline(Package, that->GetLhs(), true);
 
-      //TODO(#297): Common sub expression elimination for the filter func.
+      /* The func body's own TCodeScope dedups internally now that per-scope CSE is live
+         (#297); sharing subexpressions BETWEEN this func and the enclosing scope is the
+         declined cross-function case (see TFunction::Build). */
       TImplicitFunc::TPtr filter_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Filter,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
       /* Function Context */ {
@@ -805,7 +807,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     virtual void operator()(const Expr::TWhile *that) const {
       auto seq = BuildInline(Package, that->GetLhs(), false);
 
-      //TODO(#297): Common sub expression elimination for the filter func.
+      /* The func body's own TCodeScope dedups internally now that per-scope CSE is live
+         (#297); sharing subexpressions BETWEEN this func and the enclosing scope is the
+         declined cross-function case (see TFunction::Build). */
       TImplicitFunc::TPtr while_func = TImplicitFunc::New(Package, TImplicitFunc::TCause::While,
         Type::TBool::Get(), {{"that", Type::UnwrapSequence(that->GetLhs()->GetType())}}, that->GetRhs(), false);
       /* Function Context */ {

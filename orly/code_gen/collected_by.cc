@@ -53,8 +53,6 @@ TCollectedBy::TCollectedBy(
       : TInline(package, ret_type), Seq(seq), CollectFunc(collect_func) {}
 
 void TCollectedBy::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
-  dependency_set.insert(Seq);
-  Seq->AppendDependsOn(dependency_set);
-  dependency_set.insert(CollectFunc->GetBody());
-  CollectFunc->GetBody()->AppendDependsOn(dependency_set);
+  AppendDependency(Seq, dependency_set);
+  AppendDependency(CollectFunc->GetBody(), dependency_set);
 }

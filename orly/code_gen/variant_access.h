@@ -57,8 +57,7 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        dependency_set.insert(Operand);
-        Operand->AppendDependsOn(dependency_set);
+        AppendDependency(Operand, dependency_set);
       }
 
       private:
@@ -79,8 +78,7 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        dependency_set.insert(Operand);
-        Operand->AppendDependsOn(dependency_set);
+        AppendDependency(Operand, dependency_set);
       }
 
       private:
@@ -113,11 +111,9 @@ namespace Orly {
            dependency graph forever. Stop the second entry. */
         if (!InDependsOn) {
           InDependsOn = true;
-          dependency_set.insert(Operand);
-          Operand->AppendDependsOn(dependency_set);
+          AppendDependency(Operand, dependency_set);
           for (const auto &arm : Arms) {
-            dependency_set.insert(arm.second);
-            arm.second->AppendDependsOn(dependency_set);
+            AppendDependency(arm.second, dependency_set);
           }
           InDependsOn = false;
         }
@@ -156,8 +152,7 @@ namespace Orly {
         if (!InDependsOn) {
           InDependsOn = true;
           for (const auto &dep : {Operand, KnownBody, UnknownBody}) {
-            dependency_set.insert(dep);
-            dep->AppendDependsOn(dependency_set);
+            AppendDependency(dep, dependency_set);
           }
           InDependsOn = false;
         }
@@ -201,8 +196,7 @@ namespace Orly {
       void WriteExpr(TCppPrinter &out) const;
 
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        dependency_set.insert(Operand);
-        Operand->AppendDependsOn(dependency_set);
+        AppendDependency(Operand, dependency_set);
       }
 
       private:

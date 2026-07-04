@@ -63,7 +63,18 @@ namespace Orly {
       static TInline::TPtr GetThat();
 
       private:
-      static std::stack<TInline::TPtr> Lhs, Rhs, Start, That;
+      /* One pushed thatable: the inline plus the scope it was built in and a use count.  The
+         second GetThat() materializes the inline as a local OF THE OWNING SCOPE (#297): an
+         inline may only become a local of the scope it was built in, or an inner lambda would
+         define a variable that an outer scope references. */
+      struct TThatInfo {
+        TInline::TPtr That;
+        TCodeScope *OwnerScope;
+        size_t Uses;
+      };
+
+      static std::stack<TInline::TPtr> Lhs, Rhs, Start;
+      static std::stack<TThatInfo> That;
       static std::stack<TFunction*> NearestFunc;
       static std::stack<TCodeScope*> Scope;
       static std::stack<TStmtBlock*> StmtBlock;

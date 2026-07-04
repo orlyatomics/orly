@@ -3,8 +3,9 @@
    `TIfElse` emits a ternary `if pred then true_case else false_case`
    expression. `True` and `False` are `TInlineScope`s (not flat
    `TInline`s) because the branches can introduce local definitions.
-   `InDependsOn` is a recursion guard so the dependency walker
-   doesn't infinitely recurse when one branch references the other.
+   (The old `InDependsOn` recursion guard is gone: AppendDependency's
+   insert-check breaks dependency-walk cycles for every node type,
+   #297/#298.)
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -47,16 +48,9 @@ namespace Orly {
 
       /* Dependency graph */
       virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override {
-        if (!InDependsOn) {
-          InDependsOn = true;
-          dependency_set.insert(Predicate);
-          Predicate->AppendDependsOn(dependency_set);
-          dependency_set.insert(True);
-          True->AppendDependsOn(dependency_set);
-          dependency_set.insert(False);
-          False->AppendDependsOn(dependency_set);
-          InDependsOn = false;
-        }
+        AppendDependency(Predicate, dependency_set);
+        AppendDependency(True, dependency_set);
+        AppendDependency(False, dependency_set);
       }
 
       private:
@@ -68,9 +62,6 @@ namespace Orly {
 
       TInline::TPtr Predicate;
       TInlineScope::TPtr True, False;
-
-      /* we turn this on when we're in the AppendDependsOn function so that we can tell when we recurse. */
-      mutable bool InDependsOn;
     };
 
   } // CodeGen
