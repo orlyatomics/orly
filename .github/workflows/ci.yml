@@ -250,8 +250,8 @@ jobs:
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
-          version: 1.2
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache gdb
+          version: 1.3
 
       - name: Set up ccache
         # jhm and orlyc both invoke `g++`/`gcc` by bare name via execvp. The
@@ -285,8 +285,37 @@ jobs:
       - name: make debug
         run: make debug
 
+      # The #463 flake class -- a single test crashing once, deep in a loaded parallel run,
+      # never reproducing on rerun -- has only ever yielded anecdotes. Capture cores so the
+      # next occurrence yields a stack trace: the runner's default core_pattern pipes to
+      # apport, which discards them, so point it at a real directory first.
+      - name: Enable core dumps (#463)
+        run: |
+          sudo mkdir -p /tmp/cores
+          sudo chmod 1777 /tmp/cores
+          sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
+
       - name: python3 tools/lang_test.py
-        run: python3 tools/lang_test.py -d orly/data tests/lang_tests
+        run: |
+          ulimit -c unlimited
+          python3 tools/lang_test.py -d orly/data tests/lang_tests
+
+      # Symbolize in-job rather than uploading multi-hundred-MB cores: the debug orlyc has
+      # full symbols, so the backtrace lands right in the log of the failed run.
+      - name: Symbolize any core dumps (#463)
+        if: failure()
+        run: |
+          shopt -s nullglob
+          cores=(/tmp/cores/core.*)
+          if [ ${#cores[@]} -eq 0 ]; then
+            echo "no cores captured (failure was not a crash, or the crash predated core setup)"
+            exit 0
+          fi
+          for core in "${cores[@]}"; do
+            echo "================ $core ================"
+            gdb -batch -ex 'info threads' -ex 'thread apply all bt' \
+                "$GITHUB_WORKSPACE/../out_orly/debug/orly/orlyc" "$core" || true
+          done
 
   examples:
     name: examples/* end-to-end
