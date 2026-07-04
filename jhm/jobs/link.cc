@@ -35,13 +35,13 @@ static TRelPath GetOutputName(const TRelPath &input) {
 }
 
 static std::optional<TRelPath> GetInputName(const TRelPath &output) {
-  //TODO(#342): Allow non-trivial prefixes before the empty extension.
-  const auto &ext = output.Path.Extension;
-  if (ext.size() > 0 && ext.at(ext.size()-1) == "") {
-    return TRelPath(SwapExtension(TPath(output.Path), {"o"}));
+  // An executable's extension list ends in a bare "" (see base/path.h's design notes), but may
+  // have real components before it (e.g. a config-qualified name). Drop only the trailing "" and
+  // append "o", preserving any such prefix instead of discarding the whole extension list (#342).
+  if (!output.Path.EndsWith({""})) {
+    return std::optional<TRelPath>();
   }
-
-  return std::optional<TRelPath>();
+  return TRelPath(AddExtension(DropExtension(TPath(output.Path), 1), {"o"}));
 }
 
 TJobProducer TLink::GetProducer() {
@@ -115,8 +115,20 @@ unordered_set<TFile*> TLink::GetAntiNeeds() {
 
 vector<string> TLink::GetCmd() {
 
-  //TODO(#342): If there are no C++ files, use 'gcc' to link instead of g++
-  vector<string> cmd{"g++","-o" + GetSoleOutput()->GetPath()};
+  // Use gcc unless something in the link set was actually compiled as C++ (#342): gcc can't
+  // resolve C++-only symbols, so this is only safe because "any object is C++" is a strictly
+  // weaker requirement than "gcc would fail" -- a false positive (calling g++ for an all-C link)
+  // is harmless, it's only the reverse that would break.
+  bool any_cpp = false;
+  for (TFile *f : ObjFiles) {
+    bool is_cpp = false;
+    if (f->GetConfig().TryRead({"c++", "is_cpp"}, is_cpp) && is_cpp) {
+      any_cpp = true;
+      break;
+    }
+  }
+
+  vector<string> cmd{any_cpp ? "g++" : "gcc", "-o" + GetSoleOutput()->GetPath()};
   for (auto &flag: Env.GetConfig().Read<vector<string>>({"cmd","ld","flags"})) {
     cmd.push_back(move(flag));
   }
@@ -126,7 +138,10 @@ vector<string> TLink::GetCmd() {
     cmd.push_back(f->GetPath());
   }
 
-  // TODO(#342): Be more intelligent / selective about link flags
+  // NOTE: every binary links every configured lib regardless of whether its object files actually
+  // reference one (#342, declined as an open-ended feature: see the issue rationale). "-Wl,--no-
+  // as-needed" in root.jhm's ld flags already keeps the linker from dropping the "unused" ones on
+  // its own, so this is the existing, deliberate behavior, not an oversight.
   for (auto &lib: Env.GetConfig().Read<vector<string>>({"cmd","ld","libs"})) {
     cmd.push_back(move(lib));
   }

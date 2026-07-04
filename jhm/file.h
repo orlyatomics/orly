@@ -100,7 +100,12 @@ namespace Jhm {
       return IsSrc_;
     }
 
-    //TODO(#348): GetGitHash for uniquely iding src files. Out files are id'd by job kind + input kind.
+    // A content-hash identity for src files (#348, a 2014-era ask) was considered and declined:
+    // today's mtime-based cache decisions already err safe (a reset mtime after a fresh checkout
+    // triggers a rebuild, never a false cache hit), and CI's ccache layer already absorbs the exact
+    // cost this would save (see ci.yml's ccache setup comments) -- so it would trade a real,
+    // working mitigation for a materially larger change to the cache-identity scheme, for a
+    // rebuild-avoidance win with no demonstrated pain point today.
 
     private:
     bool IsSrc_;
