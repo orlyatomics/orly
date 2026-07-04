@@ -2954,6 +2954,7 @@ void TVolumeManager::AllocateLogicalExtents(TExtentSet &logical_extent_set, size
   assert(logical_extent_set.empty());
   const size_t required_consecutive_extent = ceil(static_cast<double>(extent_size) / ExtentAllocationBlockSize);
   size_t consective_found = 0UL;
+  std::vector<size_t> blocks_allocated_this_call;
   for (size_t num_find = 0UL; num_find < num_extent; ++num_find) {
     bool found = false;
     for (size_t i = 0UL; i < AllocatedExtentBlocks.size(); ++i) {
@@ -2964,6 +2965,7 @@ void TVolumeManager::AllocateLogicalExtents(TExtentSet &logical_extent_set, size
           for (size_t j = (i - required_consecutive_extent + 1UL); j <= i; ++j) {
             AllocatedExtentBlocks[j] = true;
             LogicalExtentStartToVolumeMap.emplace(j * ExtentAllocationBlockSize, volume);
+            blocks_allocated_this_call.push_back(j);
           }
           logical_extent_set.insert(TLogicalExtent{extent_start, extent_size});
           found = true;
@@ -2974,7 +2976,13 @@ void TVolumeManager::AllocateLogicalExtents(TExtentSet &logical_extent_set, size
       }
     }
     if (!found) {
-      /* TODO(#331): unwind any extents we just allocated. */
+      /* Unwind every block this call allocated before failing, so a mid-request failure
+         doesn't leak logical extent space (#331). */
+      for (size_t j : blocks_allocated_this_call) {
+        AllocatedExtentBlocks[j] = false;
+        LogicalExtentStartToVolumeMap.erase(j * ExtentAllocationBlockSize);
+      }
+      logical_extent_set.clear();
       throw std::runtime_error("Cannot allocate enough consecutive extent space.");
     }
   }
