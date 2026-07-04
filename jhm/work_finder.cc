@@ -23,6 +23,8 @@
 #include <stdexcept>
 
 #include <base/split.h>
+#include <base/strm/bin/in.h>
+#include <base/strm/fd.h>
 #include <base/thrower.h>
 #include <jhm/env.h>
 #include <jhm/file.h>
@@ -36,6 +38,20 @@ using namespace Base;
 using namespace Jhm;
 using namespace std;
 using namespace Util;
+
+/* Reads 'fd' fully into a string. A failed job's output is a handful of compiler-diagnostic
+   lines, so slurping (rather than streaming, like Base::EchoOutput) is fine, and lets the caller
+   decide whether there's anything worth a label (#347). */
+static string SlurpFd(TFd &&fd) {
+  Strm::TFdDefault in_prod(move(fd));
+  Strm::Bin::TIn in_cons(&in_prod);
+  string ret;
+  uint8_t buf[4096];
+  while (size_t read = in_cons.TryRead(buf, 4096)) {
+    ret.append(reinterpret_cast<char *>(buf), read);
+  }
+  return ret;
+}
 
 bool TWorkFinder::AddNeededFile(TFile *file, TJob *job) {
   // If the file both doesn't exist and isn't buildable, error.
@@ -106,11 +122,15 @@ bool TWorkFinder::ProcessResult(TJobRunner::TResult &result) {
   EraseOrFail(Running, result.Job);
 
   if (result.ExitCode != 0) {
-    // TODO(#347): Test if stdout, stderr have text before pritning label and text for each.
-    cout << "ERROR: " << result.Job << " returned " << result.ExitCode << '\n' << "STDOUT: \n";
-    Base::EchoOutput(move(result.Stdout));
-    cout << "STDERR: \n";
-    Base::EchoOutput(move(result.Stderr));
+    cout << "ERROR: " << result.Job << " returned " << result.ExitCode << '\n';
+    string out_text = SlurpFd(move(result.Stdout));
+    string err_text = SlurpFd(move(result.Stderr));
+    if (!out_text.empty()) {
+      cout << "STDOUT: \n" << out_text;
+    }
+    if (!err_text.empty()) {
+      cout << "STDERR: \n" << err_text;
+    }
     /* Forcefully delete whatever partial output the failed job left behind
        (and its cache file): a half-written output with a fresh timestamp
        would satisfy the next run's cache check and poison incremental
