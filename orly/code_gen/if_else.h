@@ -53,13 +53,15 @@ namespace Orly {
         AppendDependency(False, dependency_set);
       }
 
-      private:
+      /* Public (matching TBinary and the other interned kinds) so TInterner's storage can
+         make_shared it; prefer Interner.GetIfElse over direct construction (#301). */
       TIfElse(const L0::TPackage *package,
               const Type::TType &ret_type,
               const Expr::TExpr::TPtr &true_case,
               const TInline::TPtr &predicate,
               const Expr::TExpr::TPtr &false_case);
 
+      private:
       TInline::TPtr Predicate;
       TInlineScope::TPtr True, False;
     };
