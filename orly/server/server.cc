@@ -723,7 +723,11 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
                         1UL /* WsRunner */ +
                         1UL /* Durable Layer Cleaner */ +
                         2UL /* Durable Manager */ +
-                        1UL /* Tetris Manager */ /* TODO(#372): we want to support multiple tetris schedulers */),
+                        1UL /* Tetris Manager -- one scheduler runner, by decision (#372): players are
+                               already independent fibers on it, the measured tetris bottleneck was the
+                               global pov's sequential fold (addressed by the #49 commutative fastlane,
+                               which sharded runners cannot help), and N runners would multiply the
+                               teardown join topology for a non-default path nothing would exercise. */),
                         //#endif
       Frame(nullptr),
       DurableLayerCleanerRunner(RunnerCons),
