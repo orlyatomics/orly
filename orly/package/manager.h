@@ -18,8 +18,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -77,21 +78,6 @@ namespace Orly {
          the moment. */
       void Uninstall(const TVersionedNames &packages);
 
-      /* An opaque snapshot of the installed package set, taken by SnapshotInstalled() and given back to
-         RestoreInstalled() to exactly undo any intervening Install/Uninstall. Used to compensate (roll back) a
-         package install when a later step in a multi-step operation fails -- see TService::LoadCheckpoint. */
-      typedef TInstalled TInstalledSnapshot;
-
-      /* Capture the current installed package set so it can later be restored exactly. The map holds shared_ptrs,
-         so this is a cheap refcount-bumping copy, and it pins the loaded packages alive until the snapshot is
-         dropped (so a rollback can put back a package that the failed step would otherwise have unloaded). */
-      TInstalledSnapshot SnapshotInstalled() const;
-
-      /* Restore the installed package set to a previously captured snapshot, exactly undoing any Install/Uninstall
-         done since. No-throw swap, so it is safe to call from a rollback/compensation path. This restores upgraded
-         packages back to their prior version (which a plain Uninstall of the newly-installed set could not do). */
-      void RestoreInstalled(TInstalledSnapshot snapshot);
-
       /* Yield each installed package */
       void YieldInstalled(std::function<bool (const TVersionedName &name)> cb) const;
 
@@ -100,11 +86,16 @@ namespace Orly {
       private:
       Jhm::TTree PackageDir;
 
-      //TODO(#356): Engineer the lock out of existence as much as possible.
-      mutable std::shared_timed_mutex InstallLock;
+      /* Serializes the writers (Install/Load/Uninstall).  Readers never take
+         it: they atomically load Installed and walk their own immutable
+         snapshot, so the hot per-query Get() is lock-free (#356). */
+      std::mutex WriteLock;
 
-      /* Map of all the installed packages. We work aside to build/change the package map, then swap it out. */
-      TInstalled Installed;
+      /* The installed package set as an immutable snapshot: writers build a
+         new map aside and publish it with an atomic store; readers pin the
+         snapshot they loaded (and, through the TLoaded::TPtrs inside it,
+         every package they might return) for as long as they hold it. */
+      std::atomic<std::shared_ptr<const TInstalled>> Installed;
 
       friend class TPackageHandle;
     }; // TManager
