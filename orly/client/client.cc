@@ -55,6 +55,7 @@ TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &ses
 }
 
 TClient::~TClient() {
+  DestructionUnderway = true;
   Destructing.Push();
   IoThread.join();
   DispatchThread.join();
@@ -159,6 +160,14 @@ void TClient::DispatchMain() {
     BinaryIoStream.reset();
     Device.reset();
   } catch (const exception &ex) {
+    /* A server push can race ~TClient: Rpc::TContext::Read's
+       shared_from_this() throws bad_weak_ptr once the shared count is gone
+       (#503).  During destruction that is expected -- the thread is about
+       to be joined -- so only a live client's exception is fatal. */
+    if (DestructionUnderway) {
+      syslog(LOG_INFO, "orly client; dispatch thread; exiting during destruction; %s", ex.what());
+      return;
+    }
     syslog(LOG_EMERG, "orly client; dispatch thread; top-level exception; %s; aborting process", ex.what());
     abort();
   }
@@ -301,6 +310,11 @@ void TClient::IoMain() {
       }
     }  // for (;;)
   } catch (const exception &ex) {
+    /* See the dispatch thread's catch: expected during destruction (#503). */
+    if (DestructionUnderway) {
+      syslog(LOG_INFO, "orly client; i/o thread; exiting during destruction; %s", ex.what());
+      return;
+    }
     syslog(LOG_EMERG, "orly client; i/o thread; top-level exception; %s; aborting process", ex.what());
     abort();
   }

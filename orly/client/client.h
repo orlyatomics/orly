@@ -22,6 +22,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -138,6 +139,10 @@ namespace Orly {
 
       /* Runs IoMain(). */
       std::thread DispatchThread, IoThread;
+
+      /* Set (before Destructing is pushed) so the service threads can tell
+         an expected teardown-window exception from a real one (#503). */
+      std::atomic<bool> DestructionUnderway = false;
 
       Base::TEventSemaphore Destructing;
 
