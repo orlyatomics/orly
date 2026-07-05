@@ -44,7 +44,13 @@
     EXPECT_EQ(data[3], 'a');
 
 
-  TODO(#288): Migrate to http://dvdhrm.wordpress.com/2014/06/10/memfd_create2/ once that is around.
+  The 2014 wish to migrate this onto memfd_create (#288) is declined: that
+  syscall arrived (kernel 3.17) and makes anonymous FILES -- an fd at EOF
+  returns EOF instead of blocking for more data, so it cannot give a consumer
+  stream semantics.  What the pump exists to provide -- an UNBOUNDED,
+  never-blocking, poll-readable stream -- is a primitive the kernel still
+  does not have; the pipe pair with a user-space block buffer and a service
+  thread in between IS the mechanism, not a workaround for a missing one.
 
    Copyright 2010-2026 Atomic Kismet Company
 
