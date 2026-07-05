@@ -149,15 +149,14 @@ namespace Orly {
            stopper's wakeup race the delete (#280). */
         std::atomic<std::atomic<bool> *> StopFlag;
 
-        /* Usually this pointer is null; however, Pause() points us at a semaphore we are to push when we are paused.  That's
-           how we unblock Pause(). */
-        //Base::TEventSemaphore *Paused;
+        /* Set by Pause(); Main() sees it, completes PausedSync (parking the
+           pauser's fiber until then), and parks itself on UnpausedSync. */
         bool Paused;
         Indy::Fiber::TSafeSync PausedSync;
 
-        /* Usually this pointer is null; however, while paused, the player points this at a semaphore that Unpause() can push
-           to unpause the player. */
-        //Base::TEventSemaphore *Unpaused;
+        /* Set by Main() once paused; Unpause() completes UnpausedSync to
+           re-activate the player's parked frame (#376: the fiber-native
+           park/re-activate the 2014 stub wished for). */
         bool Unpaused;
         Indy::Fiber::TSafeSync UnpausedSync;
 

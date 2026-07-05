@@ -93,7 +93,7 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
         /* we're storing just a single session id. */
         PeekedUpdate->SetMetadata(Indy::TKey(MetaRecord.GetEntry(FuncHolderByUpdateId.begin()->first).GetSessionId(), &PeekedUpdate->GetSuprena(), state_alloc));
       } else {
-        throw std::runtime_error("We don't currently support collapsed updates.");
+        throw TCollapsedUpdateError(HERE);
       }
     }
     transaction->Push(Player->Repo, PeekedUpdate);
