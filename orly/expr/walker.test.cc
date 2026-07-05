@@ -94,22 +94,22 @@ FIXTURE(EmbeddedObjs) {
   EXPECT_EQ(objects.size(), 3U);
 }
 
-//TODO(#282): Update the test case to be valid orlyscript.
-#if 0
+/* Re-enabled for #282: rewritten from the 2014 draft into valid orlyscript
+   (keys needs the value type and an @ before the address pattern, sequences
+   come from reduce or the ** unroll, and the histogram maps a function over
+   the unrolled name set). */
 FIXTURE(PeopledirHistogram) {
   string histogram =
-    "find_by_first_name = ( ( keys <[fname, free::(str)]>).1 as [str] ) where {"
+    "namepair is <{.fname: str, .count: int}>;"
+    "find_by_first_name = (((keys (int) @ <[fname, free::(str)]>) reduce start (empty [str]) + [that.1])) where {"
     "  fname = given::(str);"
     "};"
-    "histogram = (first_names_with_counts(.fname:first_names) as [namepair] sorted_by lhs.count > rhs.count) where {"
-    "  namepair is <{.fname: str, .count: int}>;"
-    "  first_names = **(keys <[free::(str), free::(str)]>.1 as {str});"
-    "  first_names_with_counts = (<{.fname: fname, .count: length_of ( find_by_first_name (.fname: fname ))}>) where {"
-    "      fname = given::(str);"
-    "  };"
-    "};";
+    "first_names = ((keys (int) @ <[free::(str), free::(str)]>) reduce start (empty {str}) | {that.0});"
+    "name_with_count = (<{.fname: fname, .count: length_of find_by_first_name(.fname: fname)}>) where {"
+    "  fname = given::(str);"
+    "};"
+    "histogram = (name_with_count(.fname: **first_names) as [namepair] sorted_by lhs.count > rhs.count);";
   unordered_set<Orly::Type::TType> objects;
   CollectObjects(histogram, objects);
   EXPECT_EQ(objects.size(), 1U);
 }
-#endif
