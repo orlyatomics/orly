@@ -113,13 +113,11 @@ bool TTetrisManager::TPlayer::Part(const Base::TUuid &child_pov_id) {
 }
 
 void TTetrisManager::TPlayer::Pause() {
-  /* Create a semaphore and wait for the player thread to push it. */
+  /* Flag the player and park this fiber until Main() acknowledges: TSafeSync
+     holds the waiting frame and re-activates it on Complete() (#376). */
   Paused = true;
   PausedSync.WaitForMore(1);
   PausedSync.Sync();
-  //TEventSemaphore sem;
-  //Paused = &sem;
-  //sem.Pop();
 }
 
 void TTetrisManager::TPlayer::Stop() {
@@ -166,7 +164,7 @@ TTetrisManager::TPlayer::~TPlayer() {
 }
 
 TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
-    : TetrisManager(tetris_manager), ChildCount(1), StopFlag(nullptr), /*Paused(nullptr), */ Paused(false), /*Unpaused(nullptr)*/ Unpaused(false) {
+    : TetrisManager(tetris_manager), ChildCount(1), StopFlag(nullptr), Paused(false), Unpaused(false) {
   assert(tetris_manager);
   assert(Fiber::TFrame::LocalFramePool);
   ++(tetris_manager->LivePlayerCount);
@@ -190,10 +188,10 @@ void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
       TetrisFrame = nullptr;
       throw;
     }
+    /* Park until the newly latched Main() acknowledges the pause -- the
+       frame-parking re-activation queue the 2014 stub wished for is what
+       TSafeSync is (#376). */
     PausedSync.Sync();
-    /* TODO(#376): we should try to join some form of queue of frames that will get re-activated when the sem is pushed. */
-    //Fiber::YieldSlow();
-    //sem.Pop();
   } else {
     try {
       TetrisFrame->Latch(&TetrisManager->FiberScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TTetrisManager::TPlayer::Main));
@@ -213,18 +211,13 @@ void TTetrisManager::TPlayer::Main() {
     for (;;) {
       if (Paused) {
         PausedSync.Complete();
-        //Paused->Push();
-        //Paused = nullptr;
         Paused = false;
         DEBUG_LOG("tetris player %p: pausing", this);
         OnPause();
         Unpaused = true;
         UnpausedSync.WaitForMore(1);
-        //TEventSemaphore sem;
-        //Unpaused = &sem;
         DEBUG_LOG("tetris player %p: paused", this);
         UnpausedSync.Sync();
-        //sem.Pop();
         DEBUG_LOG("tetris player %p: unpausing", this);
         OnUnpause();
         DEBUG_LOG("tetris player %p: unpaused", this);

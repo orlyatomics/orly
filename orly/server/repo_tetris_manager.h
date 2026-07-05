@@ -45,6 +45,12 @@ namespace Orly {
       DEFINE_ERROR(TUnsupportedAssertion, std::runtime_error,
                    "update assertion not supported by tetris");
 
+      /* Thrown when a global-pov update carries more than one original
+         update's metadata: promoting it would need a collapsed meta record,
+         which the promotion path does not build (#376). */
+      DEFINE_ERROR(TCollapsedUpdateError, std::runtime_error,
+                   "collapsed updates not supported by tetris promotion");
+
       TRepoTetrisManager(
           Base::TScheduler *scheduler,
           Indy::Fiber::TRunner::TRunnerCons &runner_cons,
