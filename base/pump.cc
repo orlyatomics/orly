@@ -33,8 +33,9 @@ class TPump::TPipe {
   public:
   TPipe(TPump *pump, TFd &read, TFd &write) : Pump(pump) {
 
-    // TODO(#288): The kernel already can do most of this with temporary memory backed files... It just doesn't let us
-    //      make a never-blocking stream :(
+    /* Memory-backed files (memfd_create) cannot replace this: a file fd
+       returns EOF where a stream consumer needs to block/poll for more data
+       (#288, declined -- see the header). */
     // Pipe input from where the user will write to where we will read.
     TFd::Pipe(ReadFd, write);
     SetNonBlocking(ReadFd);
