@@ -1,5 +1,13 @@
 /* <orly/syntax.test.cc>
 
+   CST-shape pins for the orly grammar, revived from twelve years of bit-rot
+   (#504): every expected tree is regenerated from the live parser (so these
+   pin the CURRENT grammar against regression), kv-entry inputs carry the id
+   literal the modern kv_entry production requires, and four fixtures whose
+   2014 constructs no longer exist were rewritten onto their nearest live
+   equivalents (free/given moved to the ::(type) spelling, `read ... from`
+   became the prefix-star read, given-with-default became given-of-optional).
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,19 +41,19 @@ FIXTURE(InstalledPackage) {
     "    CheckpointStmt -> InstalledPackage {\n"
     "      ImportsKwd -> ImportsKwd;\n"
     "      PackageName -> PackageName {\n"
-    "        Lt -> Lt;"
+    "        Lt -> Lt;\n"
     "        PackageNameMemberList -> PackageNameMemberList {\n"
     "          Name -> Name;\n"
     "          OptPackageNameMemberListTail -> PackageNameMemberListTail {\n"
     "            Slash -> Slash;\n"
     "            PackageNameMemberList -> PackageNameMemberList {\n"
     "              Name -> Name;\n"
-    "              OptPackageNameMemberListTail -> NoPackageNameMemberListTail;\n"
+    "              OptPackageNameMemberListTail -> NoPackageNameMemberListTail {}\n"
     "            }\n"
     "          }\n"
     "        }\n"
-    "        Gt -> Gt;"
-    "        OptPackageVersion -> PackageVersion {\n"
+    "        Gt -> Gt;\n"
+    "        PackageVersion -> PackageVersion {\n"
     "          HashSign -> HashSign;\n"
     "          IntLiteral -> IntLiteral;\n"
     "        }\n"
@@ -60,12 +68,13 @@ FIXTURE(InstalledPackage) {
 // literal
 
 FIXTURE(IdLiteral) {
-  auto cst = TCheckpoint::ParseStr("x <- {00000000-0000-0000-0000-000000000000};");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- {00000000-0000-0000-0000-000000000000};");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -81,12 +90,13 @@ FIXTURE(IdLiteral) {
 }
 
 FIXTURE(IntLiteral) {
-  auto cst = TCheckpoint::ParseStr("x <- 3;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 3;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -102,12 +112,13 @@ FIXTURE(IntLiteral) {
 }
 
 FIXTURE(RealLiteral) {
-  auto cst = TCheckpoint::ParseStr("x <- 10.5;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 10.5;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -123,12 +134,13 @@ FIXTURE(RealLiteral) {
 }
 
 FIXTURE(StrLiteral) {
-  auto cst = TCheckpoint::ParseStr("x <- '10';");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- '10';");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -144,12 +156,13 @@ FIXTURE(StrLiteral) {
 }
 
 FIXTURE(BoolLiteral) {
-  auto cst = TCheckpoint::ParseStr("x <- true;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -167,12 +180,13 @@ FIXTURE(BoolLiteral) {
 // type
 
 FIXTURE(ParenType) {
-  auto cst = TCheckpoint::ParseStr("x <- unknown (id);");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- unknown (id);");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -184,7 +198,7 @@ FIXTURE(ParenType) {
     "          Type -> IdType {\n"
     "            IdKwd -> IdKwd;\n"
     "          }\n"
-    "          CloseParen -> CloseParen;"
+    "          CloseParen -> CloseParen;\n"
     "        }\n"
     "      }\n"
     "      Semi -> Semi;\n"
@@ -194,24 +208,41 @@ FIXTURE(ParenType) {
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
-FIXTURE(RefType) {
-  auto cst = TCheckpoint::ParseStr("x <- free (new_type);");
+FIXTURE(KeysFreeMember) {
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- keys (int) @ <[free::(int)]>;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
-    "      Value -> FreeExpr {\n"
-    "        FreeKwd -> FreeKwd;\n"
+    "      Value -> DbKeysExpr {\n"
+    "        KeysKwd -> KeysKwd;\n"
     "        OpenParen -> OpenParen;\n"
-    "        Type -> RefType {\n"
-    "          Name -> Name;\n"
+    "        Type -> IntType {\n"
+    "          IntKwd -> IntKwd;\n"
     "        }\n"
     "        CloseParen -> CloseParen;\n"
+    "        AtSign -> AtSign;\n"
+    "        OpenAddr -> OpenAddr;\n"
+    "        OptDbKeysMemberList -> DbKeysMemberList {\n"
+    "          DbKeysMember -> FreeDbKeysMember {\n"
+    "            OptOrdering -> NoOrdering {}\n"
+    "            FreeKwd -> FreeKwd;\n"
+    "            Colons -> Colons;\n"
+    "            OpenParen -> OpenParen;\n"
+    "            Type -> IntType {\n"
+    "              IntKwd -> IntKwd;\n"
+    "            }\n"
+    "            CloseParen -> CloseParen;\n"
+    "          }\n"
+    "          OptDbKeysMemberListTail -> NoDbKeysMemberListTail {}\n"
+    "        }\n"
+    "        CloseAddr -> CloseAddr;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
@@ -221,12 +252,13 @@ FIXTURE(RefType) {
 }
 
 FIXTURE(SeqType) {
-  auto cst = TCheckpoint::ParseStr("x <- [1, 2, 3] as int*;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [1, 2, 3] as int*;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -266,7 +298,7 @@ FIXTURE(SeqType) {
     "          Star -> Star;\n"
     "        }\n"
     "      }\n"
-    "      Semi -> Semi;"
+    "      Semi -> Semi;\n"
     "    }\n"
     "  }\n"
     "}\n";
@@ -276,12 +308,13 @@ FIXTURE(SeqType) {
 // expr
 
 FIXTURE(ParenExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- (1 + 2) * 3;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (1 + 2) * 3;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -293,7 +326,7 @@ FIXTURE(ParenExpr) {
     "            Lhs -> LiteralExpr {\n"
     "              Literal -> IntLiteral;\n"
     "            }\n"
-    "            Plus -> Plus;"
+    "            Plus -> Plus;\n"
     "            Rhs -> LiteralExpr {\n"
     "              Literal -> IntLiteral;\n"
     "            }\n"
@@ -313,12 +346,13 @@ FIXTURE(ParenExpr) {
 }
 
 FIXTURE(RefExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- y;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -334,12 +368,13 @@ FIXTURE(RefExpr) {
 }
 
 FIXTURE(ThatExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- that;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- that;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -357,19 +392,20 @@ FIXTURE(ThatExpr) {
 // list constructor
 
 FIXTURE(EmptyList) {
-  auto cst = TCheckpoint::ParseStr("x <- empty [time_diff];");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- empty [time_diff];");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
     "      Value -> EmptyCtor {\n"
     "        EmptyKwd -> EmptyKwd;\n"
-    "        MixfixType -> ListType {\n"
+    "        Type -> ListType {\n"
     "          OpenBracket -> OpenBracket;\n"
     "          Type -> TimeDiffType {\n"
     "            TimeDiffKwd -> TimeDiffKwd;\n"
@@ -385,12 +421,13 @@ FIXTURE(EmptyList) {
 }
 
 FIXTURE(NonEmptyList) {
-  auto cst = TCheckpoint::ParseStr("x <- [1, 2, 3];");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [1, 2, 3];");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -413,7 +450,7 @@ FIXTURE(NonEmptyList) {
     "                  Expr -> LiteralExpr {\n"
     "                    Literal -> IntLiteral;\n"
     "                  }\n"
-    "                  OptExprListTail -> NoExprListTail;\n"
+    "                  OptExprListTail -> NoExprListTail {}\n"
     "                }\n"
     "              }\n"
     "            }\n"
@@ -431,19 +468,20 @@ FIXTURE(NonEmptyList) {
 // set constructor
 
 FIXTURE(EmptySet) {
-  auto cst = TCheckpoint::ParseStr("x <- empty {str};");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- empty {str};");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
     "      Value -> EmptyCtor {\n"
     "        EmptyKwd -> EmptyKwd;\n"
-    "        MixfixType -> SetType {\n"
+    "        Type -> SetType {\n"
     "          OpenBrace -> OpenBrace;\n"
     "          Type -> StrType {\n"
     "            StrKwd -> StrKwd;\n"
@@ -459,12 +497,13 @@ FIXTURE(EmptySet) {
 }
 
 FIXTURE(NonEmptySet) {
-  auto cst = TCheckpoint::ParseStr("x <- {1, 2, 3};");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- {1, 2, 3};");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -487,7 +526,7 @@ FIXTURE(NonEmptySet) {
     "                  Expr -> LiteralExpr {\n"
     "                    Literal -> IntLiteral;\n"
     "                  }\n"
-    "                  OptExprListTail -> NoExprListTail;\n"
+    "                  OptExprListTail -> NoExprListTail {}\n"
     "                }\n"
     "              }\n"
     "            }\n"
@@ -505,19 +544,20 @@ FIXTURE(NonEmptySet) {
 // dictionary constructor
 
 FIXTURE(EmptyDict) {
-  auto cst = TCheckpoint::ParseStr("x <- empty {int:bool};");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- empty {int:bool};");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
     "      Value -> EmptyCtor {\n"
     "        EmptyKwd -> EmptyKwd;\n"
-    "        MixfixType -> DictType {\n"
+    "        Type -> DictType {\n"
     "          OpenBrace -> OpenBrace;\n"
     "          Key -> IntType {\n"
     "            IntKwd -> IntKwd;\n"
@@ -537,12 +577,13 @@ FIXTURE(EmptyDict) {
 }
 
 FIXTURE(NonEmptyDict) {
-  auto cst = TCheckpoint::ParseStr("x <- { 1: true, 2: true, 3: false };");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- { 1: true, 2: true, 3: false };");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -583,7 +624,7 @@ FIXTURE(NonEmptyDict) {
     "                      Literal -> FalseKwd;\n"
     "                    }\n"
     "                  }\n"
-    "                  OptDictMemberListTail -> NoDictMemberListTail;\n"
+    "                  OptDictMemberListTail -> NoDictMemberListTail {}\n"
     "                }\n"
     "              }\n"
     "            }\n"
@@ -595,19 +636,19 @@ FIXTURE(NonEmptyDict) {
     "    }\n"
     "  }\n"
     "}\n";
-    auto tt = ParseNode(ts);
-    EXPECT_TRUE(cst.Get()->Test(tt.get(), 0));
+  EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 // empty addr
 
 FIXTURE(EmptyAddr) {
-  auto cst = TCheckpoint::ParseStr("x <- <[]>;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <[]>;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq;\n"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -625,12 +666,13 @@ FIXTURE(EmptyAddr) {
 }
 
 FIXTURE(NonEmptyAddr) {
-  auto cst = TCheckpoint::ParseStr("x <- <[1, asc 1.1]>;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <[1, asc 1.1]>;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq;\n"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -639,7 +681,7 @@ FIXTURE(NonEmptyAddr) {
     "        OpenAddr -> OpenAddr;\n"
     "        OptAddrMemberList -> AddrMemberList {\n"
     "          AddrMember -> AddrMember {\n"
-    "            OptOrdering -> NoOrdering;\n"
+    "            OptOrdering -> NoOrdering {}\n"
     "            Expr -> LiteralExpr {\n"
     "              Literal -> IntLiteral;\n"
     "            }\n"
@@ -655,7 +697,7 @@ FIXTURE(NonEmptyAddr) {
     "                  Literal -> RealLiteral;\n"
     "                }\n"
     "              }\n"
-    "              OptAddrMemberListTail -> NoAddrMemberListTail;\n"
+    "              OptAddrMemberListTail -> NoAddrMemberListTail {}\n"
     "            }\n"
     "          }\n"
     "        }\n"
@@ -671,12 +713,13 @@ FIXTURE(NonEmptyAddr) {
 // object constructor
 
 FIXTURE(EmptyObj) {
-  auto cst = TCheckpoint::ParseStr("x <- <{}>;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <{}>;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq;\n"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -694,12 +737,13 @@ FIXTURE(EmptyObj) {
 }
 
 FIXTURE(NonEmptyObj) {
-  auto cst = TCheckpoint::ParseStr("x <- <{ .foo: 10, .bar: 2.5 }>;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <{ .foo: 10, .bar: 2.5 }>;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq;\n"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -726,7 +770,7 @@ FIXTURE(NonEmptyObj) {
     "                  Literal -> RealLiteral;\n"
     "                }\n"
     "              }\n"
-    "              OptObjMemberListTail -> NoObjMemberListTail;\n"
+    "              OptObjMemberListTail -> NoObjMemberListTail {}\n"
     "            }\n"
     "          }\n"
     "        }\n"
@@ -742,12 +786,13 @@ FIXTURE(NonEmptyObj) {
 // range constructor
 
 FIXTURE(Range) {
-  auto cst = TCheckpoint::ParseStr("x <- [0..10);");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [0..10);");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq;\n"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -757,7 +802,7 @@ FIXTURE(Range) {
     "        Expr -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
     "        }\n"
-    "        OptRangeStride -> NoRangeStride;\n"
+    "        OptRangeStride -> NoRangeStride {}\n"
     "        Dots -> Dots;\n"
     "        RangeEnd -> OpenRangeEnd {\n"
     "          Expr -> LiteralExpr {\n"
@@ -774,12 +819,13 @@ FIXTURE(Range) {
 }
 
 FIXTURE(RangeWithStrideAndUndefinedEnd) {
-  auto cst = TCheckpoint::ParseStr("x <- [2, 4 .. );");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [2, 4 .. );");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq;\n"
+    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -808,12 +854,13 @@ FIXTURE(RangeWithStrideAndUndefinedEnd) {
 }
 
 FIXTURE(PrefixMinus) {
-  auto cst = TCheckpoint::ParseStr("x <- -y;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- -y;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -832,12 +879,13 @@ FIXTURE(PrefixMinus) {
 }
 
 FIXTURE(PrefixPlus) {
-  auto cst = TCheckpoint::ParseStr("x <- +y;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- +y;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -856,12 +904,13 @@ FIXTURE(PrefixPlus) {
 }
 
 FIXTURE(PrefixLogicalNot) {
-  auto cst = TCheckpoint::ParseStr("x <- not y;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- not y;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -880,12 +929,13 @@ FIXTURE(PrefixLogicalNot) {
 }
 
 FIXTURE(InfixDiv) {
-  auto cst = TCheckpoint::ParseStr("x <- y / z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y / z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -907,12 +957,13 @@ FIXTURE(InfixDiv) {
 }
 
 FIXTURE(InfixExp) {
-  auto cst = TCheckpoint::ParseStr("x <- y ** z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y ** z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -934,12 +985,13 @@ FIXTURE(InfixExp) {
 }
 
 FIXTURE(InfixMinus) {
-  auto cst = TCheckpoint::ParseStr("x <- y - z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y - z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -960,12 +1012,13 @@ FIXTURE(InfixMinus) {
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 FIXTURE(InfixMod) {
-  auto cst = TCheckpoint::ParseStr("x <- y % z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y % z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -987,12 +1040,13 @@ FIXTURE(InfixMod) {
 }
 
 FIXTURE(InfixMul) {
-  auto cst = TCheckpoint::ParseStr("x <- y * z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y * z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1014,12 +1068,13 @@ FIXTURE(InfixMul) {
 }
 
 FIXTURE(InfixPlus) {
-  auto cst = TCheckpoint::ParseStr("x <- y + z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y + z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1041,12 +1096,13 @@ FIXTURE(InfixPlus) {
 }
 
 FIXTURE(InfixEq) {
-  auto cst = TCheckpoint::ParseStr("x <- y == z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y == z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1068,12 +1124,13 @@ FIXTURE(InfixEq) {
 }
 
 FIXTURE(InfixNeq) {
-  auto cst = TCheckpoint::ParseStr("x <- y != z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y != z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1095,12 +1152,13 @@ FIXTURE(InfixNeq) {
 }
 
 FIXTURE(InfixLt) {
-  auto cst = TCheckpoint::ParseStr("x <- y < z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y < z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1122,12 +1180,13 @@ FIXTURE(InfixLt) {
 }
 
 FIXTURE(InfixLtEq) {
-  auto cst = TCheckpoint::ParseStr("x <- y <= z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y <= z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1149,12 +1208,13 @@ FIXTURE(InfixLtEq) {
 }
 
 FIXTURE(InfixGt) {
-  auto cst = TCheckpoint::ParseStr("x <- y > z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y > z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1176,12 +1236,13 @@ FIXTURE(InfixGt) {
 }
 
 FIXTURE(InfixGtEq) {
-  auto cst = TCheckpoint::ParseStr("x <- y >= z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y >= z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1203,12 +1264,13 @@ FIXTURE(InfixGtEq) {
 }
 
 FIXTURE(InfixLogicalAnd) {
-  auto cst = TCheckpoint::ParseStr("x <- y and z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y and z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1230,12 +1292,13 @@ FIXTURE(InfixLogicalAnd) {
 }
 
 FIXTURE(InfixLogicalOr) {
-  auto cst = TCheckpoint::ParseStr("x <- y or z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y or z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1257,12 +1320,13 @@ FIXTURE(InfixLogicalOr) {
 }
 
 FIXTURE(InfixLogicalXor) {
-  auto cst = TCheckpoint::ParseStr("x <- y xor z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y xor z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1284,12 +1348,13 @@ FIXTURE(InfixLogicalXor) {
 }
 
 FIXTURE(InfixIn) {
-  auto cst = TCheckpoint::ParseStr("x <- y in z;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y in z;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1311,12 +1376,13 @@ FIXTURE(InfixIn) {
 }
 
 FIXTURE(PostFixObjMember) {
-  auto cst = TCheckpoint::ParseStr("x <- y.foo;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y.foo;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1336,12 +1402,13 @@ FIXTURE(PostFixObjMember) {
 }
 
 FIXTURE(PostFixIsKnown) {
-  auto cst = TCheckpoint::ParseStr("x <- y is known;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y is known;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1351,8 +1418,9 @@ FIXTURE(PostFixIsKnown) {
     "          Name -> Name;\n"
     "        }\n"
     "        IsKwd -> IsKwd;\n"
-    "        KnownKwd -> KnownKwd;\n"
-    "        OptKnownBool -> NoKnownBool;\n"
+    "        IsKnown -> IsKnown {\n"
+    "          KnownKwd -> KnownKwd;\n"
+    "        }\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
@@ -1362,24 +1430,27 @@ FIXTURE(PostFixIsKnown) {
 }
 
 FIXTURE(PostFixIsKnownBoolLiteral) {
-  auto cst = TCheckpoint::ParseStr("x <- y is known true;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y is known true;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixIsKnown {\n"
-    "        Expr -> RefExpr {\n"
+    "      Value -> PostfixIsKnownExpr {\n"
+    "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
     "        IsKwd -> IsKwd;\n"
-    "        KnownKwd -> KnownKwd;\n"
-    "        OptKnownBool -> KnownBool {\n"
-    "          BoolLiteral -> TrueKwd;\n"
+    "        IsKnown -> IsKnown {\n"
+    "          KnownKwd -> KnownKwd;\n"
+    "        }\n"
+    "        Rhs -> LiteralExpr {\n"
+    "          Literal -> TrueKwd;\n"
     "        }\n"
     "      }\n"
     "      Semi -> Semi;\n"
@@ -1390,12 +1461,13 @@ FIXTURE(PostFixIsKnownBoolLiteral) {
 }
 
 FIXTURE(PostFixIsUnknown) {
-  auto cst = TCheckpoint::ParseStr("x <- y is unknown;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y is unknown;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1406,7 +1478,6 @@ FIXTURE(PostFixIsUnknown) {
     "        }\n"
     "        IsKwd -> IsKwd;\n"
     "        UnknownKwd -> UnknownKwd;\n"
-    "        OptKnownBool -> NoKnownBool;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
@@ -1416,12 +1487,13 @@ FIXTURE(PostFixIsUnknown) {
 }
 
 FIXTURE(PostfixCast) {
-  auto cst = TCheckpoint::ParseStr("x <- y as [real?]?;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y as [real?]?;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1453,12 +1525,13 @@ FIXTURE(PostfixCast) {
 }
 
 FIXTURE(PostfixSlice) {
-  auto cst = TCheckpoint::ParseStr("x <- y[10];");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y[10];");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1473,7 +1546,7 @@ FIXTURE(PostfixSlice) {
     "            Literal -> IntLiteral;\n"
     "          }\n"
     "        }\n"
-    "        CloseBracket -> CloseBracket;"
+    "        CloseBracket -> CloseBracket;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
@@ -1483,29 +1556,24 @@ FIXTURE(PostfixSlice) {
 }
 
 FIXTURE(ReadExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- read (time_pnt) from <[\"games\", \"cafe\"]>;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- *<[\"games\", \"cafe\"]>::(time_pnt);");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
     "      Value -> ReadExpr {\n"
-    "        ReadKwd -> ReadKwd;\n"
-    "        OpenParen -> OpenParen;\n"
-    "        Type -> TimePntType {\n"
-    "          TimePntKwd -> TimePntKwd;\n"
-    "        }\n"
-    "        CloseParen -> CloseParen;\n"
-    "        FromKwd -> FromKwd;\n"
+    "        Star -> Star;\n"
     "        Expr -> AddrCtor {\n"
     "          OpenAddr -> OpenAddr;\n"
     "          OptAddrMemberList -> AddrMemberList {\n"
     "            AddrMember -> AddrMember {\n"
-    "              OptOrdering -> NoOrdering;\n"
+    "              OptOrdering -> NoOrdering {}\n"
     "              Expr -> LiteralExpr {\n"
     "                Literal -> DoubleQuotedStrLiteral;\n"
     "              }\n"
@@ -1514,17 +1582,23 @@ FIXTURE(ReadExpr) {
     "              Comma -> Comma;\n"
     "              AddrMemberList -> AddrMemberList {\n"
     "                AddrMember -> AddrMember {\n"
-    "                  OptOrdering -> NoOrdering;\n"
+    "                  OptOrdering -> NoOrdering {}\n"
     "                  Expr -> LiteralExpr {\n"
     "                    Literal -> DoubleQuotedStrLiteral;\n"
     "                  }\n"
     "                }\n"
-    "                OptAddrMemberListTail -> NoAddrMemberListTail;\n"
+    "                OptAddrMemberListTail -> NoAddrMemberListTail {}\n"
     "              }\n"
     "            }\n"
     "          }\n"
     "          CloseAddr -> CloseAddr;\n"
     "        }\n"
+    "        Colons -> Colons;\n"
+    "        OpenParen -> OpenParen;\n"
+    "        Type -> TimePntType {\n"
+    "          TimePntKwd -> TimePntKwd;\n"
+    "        }\n"
+    "        CloseParen -> CloseParen;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
@@ -1534,12 +1608,13 @@ FIXTURE(ReadExpr) {
 }
 
 FIXTURE(AssertExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- (y) assert { that > 10; };");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (y) assert { that > 10; };");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1577,12 +1652,13 @@ FIXTURE(AssertExpr) {
 }
 
 FIXTURE(IfExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- ( 10 if y == z else 15 );");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- ( 10 if y == z else 15 );");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1616,23 +1692,24 @@ FIXTURE(IfExpr) {
 }
 
 FIXTURE(GivenExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- given ( time_pnt );");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- given::(time_pnt);");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
     "      Value -> GivenExpr {\n"
     "        GivenKwd -> GivenKwd;\n"
+    "        Colons -> Colons;\n"
     "        OpenParen -> OpenParen;\n"
     "        Type -> TimePntType {\n"
     "          TimePntKwd -> TimePntKwd;\n"
     "        }\n"
-    "        OptDefaultValue -> NoDefaultValue;\n"
     "        CloseParen -> CloseParen;\n"
     "      }\n"
     "      Semi -> Semi;\n"
@@ -1643,12 +1720,13 @@ FIXTURE(GivenExpr) {
 }
 
 FIXTURE(WhereExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- (y + z) where { y = 10; z = 20; };");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (y + z) where { y = 10; z = 20; };");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1685,7 +1763,7 @@ FIXTURE(WhereExpr) {
     "              }\n"
     "              Semi -> Semi;\n"
     "            }\n"
-    "            OptDefSeq -> NoDefSeq;\n"
+    "            OptDefSeq -> NoDefSeq {}\n"
     "          }\n"
     "        }\n"
     "        CloseBrace -> CloseBrace;\n"
@@ -1697,28 +1775,27 @@ FIXTURE(WhereExpr) {
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
-FIXTURE(GivenOptDefault) {
-  auto cst = TCheckpoint::ParseStr("x <- given ( int or 10 );");
+FIXTURE(GivenOptType) {
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- given::(int?);");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      LeftArrow -> LeftArrow;\n"
     "      Value -> GivenExpr {\n"
     "        GivenKwd -> GivenKwd;\n"
+    "        Colons -> Colons;\n"
     "        OpenParen -> OpenParen;\n"
-    "        Type -> IntType {\n"
-    "          IntKwd -> IntKwd;\n"
-    "        }\n"
-    "        OptDefaultValue -> DefaultValue {\n"
-    "          OrKwd -> OrKwd;\n"
-    "          Expr -> LiteralExpr {\n"
-    "            Literal -> IntLiteral;\n"
+    "        Type -> OptType {\n"
+    "          Type -> IntType {\n"
+    "            IntKwd -> IntKwd;\n"
     "          }\n"
+    "          QuestionMark -> QuestionMark;\n"
     "        }\n"
     "        CloseParen -> CloseParen;\n"
     "      }\n"
@@ -1730,13 +1807,13 @@ FIXTURE(GivenOptDefault) {
 }
 
 FIXTURE(EffectingExpr) {
-  auto cst = TCheckpoint::ParseStr("x <- (10) effecting { <[ 'games', r'cafe' ]> <- 15; };");
-
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (10) effecting { <[ 'games', r'cafe' ]> <- 15; };");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1752,12 +1829,11 @@ FIXTURE(EffectingExpr) {
     "          OpenBrace -> OpenBrace;\n"
     "          OptStmtSeq -> StmtSeq {\n"
     "            Stmt -> MutateStmt {\n"
-    "              OptExistenceConstraint -> NoExistenceConstraint;\n"
     "              Lhs -> AddrCtor {\n"
     "                OpenAddr -> OpenAddr;\n"
     "                OptAddrMemberList -> AddrMemberList {\n"
     "                  AddrMember -> AddrMember {\n"
-    "                    OptOrdering -> NoOrdering;"
+    "                    OptOrdering -> NoOrdering {}\n"
     "                    Expr -> LiteralExpr {\n"
     "                      Literal -> SingleQuotedStrLiteral;\n"
     "                    }\n"
@@ -1766,12 +1842,12 @@ FIXTURE(EffectingExpr) {
     "                    Comma -> Comma;\n"
     "                    AddrMemberList -> AddrMemberList {\n"
     "                      AddrMember -> AddrMember {\n"
-    "                        OptOrdering -> NoOrdering;\n"
+    "                        OptOrdering -> NoOrdering {}\n"
     "                        Expr -> LiteralExpr {\n"
     "                          Literal -> SingleQuotedRawStrLiteral;\n"
     "                        }\n"
     "                      }\n"
-    "                      OptAddrMemberListTail -> NoAddrMemberListTail;\n"
+    "                      OptAddrMemberListTail -> NoAddrMemberListTail {}\n"
     "                    }\n"
     "                  }\n"
     "                }\n"
@@ -1785,7 +1861,7 @@ FIXTURE(EffectingExpr) {
     "              }\n"
     "              Semi -> Semi;\n"
     "            }\n"
-    "            OptStmtSeq -> NoStmtSeq;\n"
+    "            OptStmtSeq -> NoStmtSeq {}\n"
     "          }\n"
     "          CloseBrace -> CloseBrace;\n"
     "        }\n"
@@ -1800,12 +1876,13 @@ FIXTURE(EffectingExpr) {
 // precedence
 
 FIXTURE(LogicalOrLogicalXor) {
-  auto cst = TCheckpoint::ParseStr("x <- true or false xor false;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true or false xor false;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1833,12 +1910,13 @@ FIXTURE(LogicalOrLogicalXor) {
 }
 
 FIXTURE(LogicalXorLogicalAnd) {
-  auto cst = TCheckpoint::ParseStr("x <- false xor false and true;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false xor false and true;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1852,7 +1930,7 @@ FIXTURE(LogicalXorLogicalAnd) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
-    "          AndKwd -> AndKwd;"
+    "          AndKwd -> AndKwd;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> TrueKwd;\n"
     "          }\n"
@@ -1866,12 +1944,13 @@ FIXTURE(LogicalXorLogicalAnd) {
 }
 
 FIXTURE(LogicalAndEquality) {
-  auto cst = TCheckpoint::ParseStr("x <- false and false == true;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false and false == true;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1885,7 +1964,7 @@ FIXTURE(LogicalAndEquality) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
-    "          EqEq -> EqEq;"
+    "          EqEq -> EqEq;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> TrueKwd;\n"
     "          }\n"
@@ -1899,12 +1978,13 @@ FIXTURE(LogicalAndEquality) {
 }
 
 FIXTURE(EqualityInequality) {
-  auto cst = TCheckpoint::ParseStr("x <- true != true < false;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true != true < false;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1918,7 +1998,7 @@ FIXTURE(EqualityInequality) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> TrueKwd;\n"
     "          }\n"
-    "          Lt -> Lt;"
+    "          Lt -> Lt;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
@@ -1932,12 +2012,13 @@ FIXTURE(EqualityInequality) {
 }
 
 FIXTURE(InequalityBitwiseOr) {
-  auto cst = TCheckpoint::ParseStr("x <- true != false | true;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true != false | true;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1951,7 +2032,7 @@ FIXTURE(InequalityBitwiseOr) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
-    "          Bar -> Bar;"
+    "          Bar -> Bar;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> TrueKwd;\n"
     "          }\n"
@@ -1965,12 +2046,13 @@ FIXTURE(InequalityBitwiseOr) {
 }
 
 FIXTURE(BitwiseOrBitwiseXor) {
-  auto cst = TCheckpoint::ParseStr("x <- false | false ^ false;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false | false ^ false;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -1984,7 +2066,7 @@ FIXTURE(BitwiseOrBitwiseXor) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
-    "          Hat -> Hat;"
+    "          Hat -> Hat;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
@@ -1998,12 +2080,13 @@ FIXTURE(BitwiseOrBitwiseXor) {
 }
 
 FIXTURE(BitwiseXorBitwiseAnd) {
-  auto cst = TCheckpoint::ParseStr("x <- false ^ false & true;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false ^ false & true;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -2017,7 +2100,7 @@ FIXTURE(BitwiseXorBitwiseAnd) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> FalseKwd;\n"
     "          }\n"
-    "          Ampersand -> Ampersand;"
+    "          Ampersand -> Ampersand;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> TrueKwd;\n"
     "          }\n"
@@ -2030,17 +2113,18 @@ FIXTURE(BitwiseXorBitwiseAnd) {
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
-// TODO(#282): Currently there are no shift_and_rotate operators
-FIXTURE(InequalityShiftAndRotate) {}
-FIXTURE(ShiftAndRotateAddAndSub) {}
+/* The 2014 file had empty InequalityShiftAndRotate / ShiftAndRotateAddAndSub
+   placeholders: the language never grew shift/rotate operators, so there is
+   nothing to pin (#504). */
 
 FIXTURE(BitwiseAndAddAndSub) {
-  auto cst = TCheckpoint::ParseStr("x <- 6 & 2 + 3;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 6 & 2 + 3;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -2054,7 +2138,7 @@ FIXTURE(BitwiseAndAddAndSub) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> IntLiteral;\n"
     "          }\n"
-    "          Plus -> Plus;"
+    "          Plus -> Plus;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> IntLiteral;\n"
     "          }\n"
@@ -2068,12 +2152,13 @@ FIXTURE(BitwiseAndAddAndSub) {
 }
 
 FIXTURE(AddAndSubMulAndDiv) {
-  auto cst = TCheckpoint::ParseStr("x <- 6 - 2 * 3;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 6 - 2 * 3;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -2087,7 +2172,7 @@ FIXTURE(AddAndSubMulAndDiv) {
     "          Lhs -> LiteralExpr {\n"
     "            Literal -> IntLiteral;\n"
     "          }\n"
-    "          Star -> Star;"
+    "          Star -> Star;\n"
     "          Rhs -> LiteralExpr {\n"
     "            Literal -> IntLiteral;\n"
     "          }\n"
@@ -2101,12 +2186,13 @@ FIXTURE(AddAndSubMulAndDiv) {
 }
 
 FIXTURE(MulAndDivExp) {
-  auto cst = TCheckpoint::ParseStr("x <- 1 / 3 ** 4;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 1 / 3 ** 4;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -2134,12 +2220,13 @@ FIXTURE(MulAndDivExp) {
 }
 
 FIXTURE(ExpUnary) {
-  auto cst = TCheckpoint::ParseStr("x <- 3 ** -4 ;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 3 ** -4 ;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
@@ -2164,12 +2251,13 @@ FIXTURE(ExpUnary) {
 }
 
 FIXTURE(UnaryFuncAndMember) {
-  auto cst = TCheckpoint::ParseStr("x <- -a.dist;");
+  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- -a.dist;");
   const char *ts =
     "Checkpoint {\n"
     "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
     "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
     "    CheckpointStmt -> KvEntry {\n"
+    "      IdLiteral -> IdLiteral;\n"
     "      Key -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
