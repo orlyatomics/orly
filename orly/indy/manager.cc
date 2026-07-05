@@ -451,7 +451,17 @@ void TManager::RunReplicateTransaction() {
                             UpdateReplicationNotificationCb(session_id, mutation.GetRepoId(), tracker_id);
                           } else {
                             Server::TMetaRecord meta_record;
-                            Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetMetadata().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), meta_record);
+                            /* Not every replicated update carries a TMetaRecord: system-repo
+                               commits (SaveIndexNamespaceMapping, SaveInstalledPackage) have void
+                               metadata, and decoding that throws.  Skip the notification -- nobody
+                               is waiting on a system commit -- instead of letting the exception
+                               unwind past the rest of the batch's notifications (#499).  The
+                               global-pov branch above guards its decode the same way. */
+                            try {
+                              Sabot::ToNative(*Sabot::State::TAny::TWrapper(mutation.GetUpdate().GetMetadata().NewState(mutation.GetUpdate().GetSuprena().get(), state_alloc)), meta_record);
+                            } catch (const exception &/*ex*/) {
+                              continue;
+                            }
                             /* Notify every original update's own tracker id (the map key), not one
                                shared id for the whole mutation (#327) -- when updates are merged, a
                                single mutation's meta record can carry several originally-distinct
@@ -1326,9 +1336,13 @@ void TManager::SaveRepo(TRepo *base_repo) {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
     Orly::Indy::TRepo *repo = dynamic_cast<Orly::Indy::TRepo *>(base_repo);
     assert(repo);
-    /* Perform transaction on System repo to save this repo */ {
+    /* Perform transaction on System repo to save this repo.  The system
+       repo is node-local state rebuilt from replication control items
+       (TRepoReplication) on the slave -- its transactions must stay off the
+       replication stream, where the slave's independently numbered system
+       repo dies applying them (#499). */ {
       TSuprena arena;
-      auto transaction = NewTransaction();
+      auto transaction = NewTransaction(false);
       TStatus status = repo->GetStatus();
       int state = 0;
       switch (status) {
@@ -1363,9 +1377,11 @@ void TManager::SaveRepo(TRepo *base_repo) {
 
 void TManager::SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std::string &namespace_name) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  /* Perform transaction on System repo to save this mapping */ {
+  /* Perform transaction on System repo to save this mapping.  Node-local:
+     the mapping crosses to a slave as a TIndexIdReplication control item
+     (or the join-time index-map walk), never as this transaction (#499). */ {
     TSuprena arena;
-    auto transaction = NewTransaction();
+    auto transaction = NewTransaction(false);
     auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ {
       TIndexKey(SystemIDNSIndexId, TKey(make_tuple(index_id), &arena, state_alloc)),
       TKey(namespace_name, &arena, state_alloc)} }, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
@@ -1377,9 +1393,12 @@ void TManager::SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std:
 
 void TManager::SaveInstalledPackage(const std::vector<std::string> &package_name, uint64_t version, bool installed) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  /* Perform transaction on System repo to save this record */ {
+  /* Perform transaction on System repo to save this record.  Node-local:
+     each server records its own installs; replicating this transaction
+     would collide with the slave's independently numbered system repo
+     (#499). */ {
     TSuprena arena;
-    auto transaction = NewTransaction();
+    auto transaction = NewTransaction(false);
     auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ {
       TIndexKey(SystemPackageIndexId, TKey(make_tuple(package_name, static_cast<int64_t>(version)), &arena, state_alloc)),
       TKey(installed, &arena, state_alloc)} }, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc));

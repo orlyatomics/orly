@@ -90,7 +90,13 @@ std::pair<size_t, size_t> TMetaRewriter::RewriteMetaData(Disk::Util::TEngine *en
 
   Indy::Util::TBlockVec block_vec_copy = block_vec;
   block_vec_copy.Trim(old_num_meta_blocks);
-  const size_t num_sequential_block_pairings = block_vec_copy.Size();
+  /* The count of run-length pairings, NOT the block count (#501): the reader
+     parses exactly this many (block_id, num_blocks) pairs, and the writer
+     loop below emits one pair per GetSeqBlockMap() entry.  Counting blocks
+     here made the reader over-read whenever the destination blocks were
+     contiguous (one run covering many blocks), garbling everything after
+     the pairings — most visibly the index-segment offsets. */
+  const size_t num_sequential_block_pairings = block_vec_copy.GetSeqBlockMap().size();
 
   size_t bytes_required_for_meta_data = TData::NumMetaFields * sizeof(size_t);  // meta fields
   bytes_required_for_meta_data += num_sequential_block_pairings * sizeof(size_t) * 2UL;  // num_sequential_block_pairings

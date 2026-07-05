@@ -686,6 +686,13 @@ namespace Orly {
         jump_runnable(FramePoolManager.get(), &WsRunner);
       }
 
+      /* Durably save a newly minted (index id -> package namespace) mapping,
+         enqueue it for replication to a slave, and add it to the local id
+         set.  The caller must hold IndexMapMutex and have already inserted
+         the id into IndexByIndexId.  Not for ids learned *from* the master:
+         the slave-receive path saves without re-enqueueing. */
+      void RegisterAndReplicateIndexId(const Base::TUuid &idx_id, const std::string &pkg_key, const Indy::TKey &val);
+
       /* Serves a client on the given fd.  Launched as a thread by AcceptClientConnections() when a client connects. */
       void ServeClient(Base::TFd &fd, const Socket::TAddress &client_address);
 
@@ -737,7 +744,9 @@ namespace Orly {
 
       Orly::Indy::L0::TManager::TPtr<Indy::TRepo> GlobalRepo;
 
-      Orly::Indy::TManager::TState RepoState;
+      /* Written by StateChangeCb, read by RPC handlers (BeginImport's solo
+         check, #498) and the reporter. */
+      std::atomic<Orly::Indy::TManager::TState> RepoState;
 
       Orly::Package::TManager PackageManager;
 
@@ -787,6 +796,21 @@ namespace Orly {
          a local of WaitForSlave) so Shutdown() can shut it down to wake the
          blocked accept (#440). */
       Base::TFd SlaveSocket;
+
+      /* Guards ImportInProgress and SlaveHandshakeActive: imports and slave
+         joins exclude each other (#498).  BeginImport() refuses unless the
+         server is solo and no join handshake is under way; WaitForSlave()
+         defers an accepted join until a running import finishes. */
+      std::mutex ImportGateMutex;
+
+      /* True between BeginImport() and EndImport().  Covered by
+         ImportGateMutex. */
+      bool ImportInProgress = false;
+
+      /* True from the moment WaitForSlave() commits to handing an accepted
+         slave to the manager until that handoff returns.  Covered by
+         ImportGateMutex. */
+      bool SlaveHandshakeActive = false;
 
       /* Serializes WaitForSlave()'s publication of SlaveSocket against
          Shutdown()'s wake-up shutdown(2) of it: TFd is not atomic, and
