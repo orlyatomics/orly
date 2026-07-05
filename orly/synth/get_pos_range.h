@@ -21,7 +21,6 @@
 #include <cassert>
 
 #include <orly/pos_range.h>
-#include <orly/orly.checkpoint.cst.h>
 #include <orly/orly.package.cst.h>
 
 namespace Orly {
@@ -239,9 +238,6 @@ namespace Orly {
 
     template <>
     TPosRange GetPosRange(const Package::Syntax::TPostfixIsVariant *that);
-
-    template <>
-    TPosRange GetPosRange(const Package::Syntax::TPostfixOptCheckpoint *that);
 
     template <>
     TPosRange GetPosRange(const Package::Syntax::TPostfixSlice *that);

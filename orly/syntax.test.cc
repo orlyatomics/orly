@@ -1,12 +1,12 @@
 /* <orly/syntax.test.cc>
 
    CST-shape pins for the orly grammar, revived from twelve years of bit-rot
-   (#504): every expected tree is regenerated from the live parser (so these
-   pin the CURRENT grammar against regression), kv-entry inputs carry the id
-   literal the modern kv_entry production requires, and four fixtures whose
-   2014 constructs no longer exist were rewritten onto their nearest live
-   equivalents (free/given moved to the ::(type) spelling, `read ... from`
-   became the prefix-star read, given-with-default became given-of-optional).
+   (#504) and re-harnessed onto the package root when the dead checkpoint and
+   command grammar roots were deleted (#515): every expected tree is
+   regenerated from the live parser, so these pin the CURRENT grammar --
+   operator-precedence shapes above all -- against regression.  Each fixture
+   wraps its expression in a `x = EXPR;` definition, the package grammar's
+   smallest container for a bare expression.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -22,24 +22,25 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-#include <orly/orly.checkpoint.cst.h>
+#include <orly/orly.package.cst.h>
 
 #include <tools/nycr/test.h>
 #include <base/test/kit.h>
 
-using namespace Orly::Checkpoint::Syntax;
+using namespace Orly::Package::Syntax;
 using namespace Tools::Nycr::Test;
 
 // installed package
 
 FIXTURE(InstalledPackage) {
-  auto cst = TCheckpoint::ParseStr("imports <a/b> #1;");
+  auto cst = TPackage::ParseStr("x is package <a/b> #1;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> InstalledPackage {\n"
-    "      ImportsKwd -> ImportsKwd;\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> PackageDef {\n"
+    "      Name -> Name;\n"
+    "      IsKwd -> IsKwd;\n"
+    "      PackageKwd -> PackageKwd;\n"
     "      PackageName -> PackageName {\n"
     "        Lt -> Lt;\n"
     "        PackageNameMemberList -> PackageNameMemberList {\n"
@@ -60,6 +61,7 @@ FIXTURE(InstalledPackage) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -68,110 +70,95 @@ FIXTURE(InstalledPackage) {
 // literal
 
 FIXTURE(IdLiteral) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- {00000000-0000-0000-0000-000000000000};");
+  auto cst = TPackage::ParseStr("x = {00000000-0000-0000-0000-000000000000};");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> LiteralExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> LiteralExpr {\n"
     "        Literal -> IdLiteral;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(IntLiteral) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 3;");
+  auto cst = TPackage::ParseStr("x = 3;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> LiteralExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> LiteralExpr {\n"
     "        Literal -> IntLiteral;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(RealLiteral) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 10.5;");
+  auto cst = TPackage::ParseStr("x = 10.5;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> LiteralExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> LiteralExpr {\n"
     "        Literal -> RealLiteral;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(StrLiteral) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- '10';");
+  auto cst = TPackage::ParseStr("x = '10';");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> LiteralExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> LiteralExpr {\n"
     "        Literal -> SingleQuotedStrLiteral;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(BoolLiteral) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true;");
+  auto cst = TPackage::ParseStr("x = true;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> LiteralExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> LiteralExpr {\n"
     "        Literal -> TrueKwd;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -180,18 +167,14 @@ FIXTURE(BoolLiteral) {
 // type
 
 FIXTURE(ParenType) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- unknown (id);");
+  auto cst = TPackage::ParseStr("x = unknown (id);");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> UnknownCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> UnknownCtor {\n"
     "        UnknownKwd -> UnknownKwd;\n"
     "        Type -> ParenType {\n"
     "          OpenParen -> OpenParen;\n"
@@ -203,24 +186,21 @@ FIXTURE(ParenType) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(KeysFreeMember) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- keys (int) @ <[free::(int)]>;");
+  auto cst = TPackage::ParseStr("x = keys (int) @ <[free::(int)]>;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> DbKeysExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> DbKeysExpr {\n"
     "        KeysKwd -> KeysKwd;\n"
     "        OpenParen -> OpenParen;\n"
     "        Type -> IntType {\n"
@@ -246,24 +226,21 @@ FIXTURE(KeysFreeMember) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(SeqType) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [1, 2, 3] as int*;");
+  auto cst = TPackage::ParseStr("x = [1, 2, 3] as int*;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixCast {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixCast {\n"
     "        Expr -> ListCtor {\n"
     "          OpenBracket -> OpenBracket;\n"
     "          ExprList -> ExprList {\n"
@@ -300,6 +277,7 @@ FIXTURE(SeqType) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -308,18 +286,14 @@ FIXTURE(SeqType) {
 // expr
 
 FIXTURE(ParenExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (1 + 2) * 3;");
+  auto cst = TPackage::ParseStr("x = (1 + 2) * 3;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixMul {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixMul {\n"
     "        Lhs -> ParenExpr {\n"
     "          OpenParen -> OpenParen;\n"
     "          Expr -> InfixPlus {\n"
@@ -340,50 +314,45 @@ FIXTURE(ParenExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(RefExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y;");
+  auto cst = TPackage::ParseStr("x = y;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> RefExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> RefExpr {\n"
     "        Name -> Name;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(ThatExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- that;");
+  auto cst = TPackage::ParseStr("x = that;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> ThatExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> ThatExpr {\n"
     "        ThatKwd -> ThatKwd;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -392,18 +361,14 @@ FIXTURE(ThatExpr) {
 // list constructor
 
 FIXTURE(EmptyList) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- empty [time_diff];");
+  auto cst = TPackage::ParseStr("x = empty [time_diff];");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> EmptyCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> EmptyCtor {\n"
     "        EmptyKwd -> EmptyKwd;\n"
     "        Type -> ListType {\n"
     "          OpenBracket -> OpenBracket;\n"
@@ -415,24 +380,21 @@ FIXTURE(EmptyList) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(NonEmptyList) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [1, 2, 3];");
+  auto cst = TPackage::ParseStr("x = [1, 2, 3];");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> ListCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> ListCtor {\n"
     "        OpenBracket -> OpenBracket;\n"
     "        ExprList -> ExprList {\n"
     "          Expr -> LiteralExpr {\n"
@@ -460,6 +422,7 @@ FIXTURE(NonEmptyList) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -468,18 +431,14 @@ FIXTURE(NonEmptyList) {
 // set constructor
 
 FIXTURE(EmptySet) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- empty {str};");
+  auto cst = TPackage::ParseStr("x = empty {str};");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> EmptyCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> EmptyCtor {\n"
     "        EmptyKwd -> EmptyKwd;\n"
     "        Type -> SetType {\n"
     "          OpenBrace -> OpenBrace;\n"
@@ -491,24 +450,21 @@ FIXTURE(EmptySet) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(NonEmptySet) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- {1, 2, 3};");
+  auto cst = TPackage::ParseStr("x = {1, 2, 3};");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> SetCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> SetCtor {\n"
     "        OpenBrace -> OpenBrace;\n"
     "        ExprList -> ExprList {\n"
     "          Expr -> LiteralExpr {\n"
@@ -536,6 +492,7 @@ FIXTURE(NonEmptySet) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -544,18 +501,14 @@ FIXTURE(NonEmptySet) {
 // dictionary constructor
 
 FIXTURE(EmptyDict) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- empty {int:bool};");
+  auto cst = TPackage::ParseStr("x = empty {int:bool};");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> EmptyCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> EmptyCtor {\n"
     "        EmptyKwd -> EmptyKwd;\n"
     "        Type -> DictType {\n"
     "          OpenBrace -> OpenBrace;\n"
@@ -571,24 +524,21 @@ FIXTURE(EmptyDict) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(NonEmptyDict) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- { 1: true, 2: true, 3: false };");
+  auto cst = TPackage::ParseStr("x = { 1: true, 2: true, 3: false };");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> DictCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> DictCtor {\n"
     "        OpenBrace -> OpenBrace;\n"
     "        DictMemberList -> DictMemberList {\n"
     "          DictMember -> DictMember {\n"
@@ -634,6 +584,7 @@ FIXTURE(NonEmptyDict) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -642,42 +593,35 @@ FIXTURE(NonEmptyDict) {
 // empty addr
 
 FIXTURE(EmptyAddr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <[]>;");
+  auto cst = TPackage::ParseStr("x = <[]>;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> AddrCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> AddrCtor {\n"
     "        OpenAddr -> OpenAddr;\n"
     "        OptAddrMemberList -> NoAddrMemberList {}\n"
     "        CloseAddr -> CloseAddr;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(NonEmptyAddr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <[1, asc 1.1]>;");
+  auto cst = TPackage::ParseStr("x = <[1, asc 1.1]>;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> AddrCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> AddrCtor {\n"
     "        OpenAddr -> OpenAddr;\n"
     "        OptAddrMemberList -> AddrMemberList {\n"
     "          AddrMember -> AddrMember {\n"
@@ -705,6 +649,7 @@ FIXTURE(NonEmptyAddr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -713,42 +658,35 @@ FIXTURE(NonEmptyAddr) {
 // object constructor
 
 FIXTURE(EmptyObj) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <{}>;");
+  auto cst = TPackage::ParseStr("x = <{}>;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> ObjCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> ObjCtor {\n"
     "        OpenObj -> OpenObj;\n"
     "        OptObjMemberList -> NoObjMemberList {}\n"
     "        CloseObj -> CloseObj;\n"
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(NonEmptyObj) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- <{ .foo: 10, .bar: 2.5 }>;");
+  auto cst = TPackage::ParseStr("x = <{ .foo: 10, .bar: 2.5 }>;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> ObjCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> ObjCtor {\n"
     "        OpenObj -> OpenObj;\n"
     "        OptObjMemberList -> ObjMemberList {\n"
     "          ObjMember -> ObjMember {\n"
@@ -778,6 +716,7 @@ FIXTURE(NonEmptyObj) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -786,18 +725,14 @@ FIXTURE(NonEmptyObj) {
 // range constructor
 
 FIXTURE(Range) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [0..10);");
+  auto cst = TPackage::ParseStr("x = [0..10);");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> RangeCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> RangeCtor {\n"
     "        OpenBracket -> OpenBracket;\n"
     "        Expr -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
@@ -813,24 +748,21 @@ FIXTURE(Range) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(RangeWithStrideAndUndefinedEnd) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- [2, 4 .. );");
+  auto cst = TPackage::ParseStr("x = [2, 4 .. );");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> RangeCtor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> RangeCtor {\n"
     "        OpenBracket -> OpenBracket;\n"
     "        Expr -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
@@ -848,24 +780,21 @@ FIXTURE(RangeWithStrideAndUndefinedEnd) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PrefixMinus) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- -y;");
+  auto cst = TPackage::ParseStr("x = -y;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PrefixMinus {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PrefixMinus {\n"
     "        Minus -> Minus;\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
@@ -873,24 +802,21 @@ FIXTURE(PrefixMinus) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PrefixPlus) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- +y;");
+  auto cst = TPackage::ParseStr("x = +y;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PrefixPlus {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PrefixPlus {\n"
     "        Plus -> Plus;\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
@@ -898,24 +824,21 @@ FIXTURE(PrefixPlus) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PrefixLogicalNot) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- not y;");
+  auto cst = TPackage::ParseStr("x = not y;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PrefixLogicalNot {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PrefixLogicalNot {\n"
     "        NotKwd -> NotKwd;\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
@@ -923,24 +846,21 @@ FIXTURE(PrefixLogicalNot) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixDiv) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y / z;");
+  auto cst = TPackage::ParseStr("x = y / z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixDiv {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixDiv {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -951,24 +871,21 @@ FIXTURE(InfixDiv) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixExp) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y ** z;");
+  auto cst = TPackage::ParseStr("x = y ** z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixExp {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixExp {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -979,24 +896,21 @@ FIXTURE(InfixExp) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixMinus) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y - z;");
+  auto cst = TPackage::ParseStr("x = y - z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixMinus {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixMinus {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1007,23 +921,20 @@ FIXTURE(InfixMinus) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 FIXTURE(InfixMod) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y % z;");
+  auto cst = TPackage::ParseStr("x = y % z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixMod {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixMod {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1034,24 +945,21 @@ FIXTURE(InfixMod) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixMul) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y * z;");
+  auto cst = TPackage::ParseStr("x = y * z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixMul {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixMul {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1062,24 +970,21 @@ FIXTURE(InfixMul) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixPlus) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y + z;");
+  auto cst = TPackage::ParseStr("x = y + z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixPlus {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixPlus {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1090,24 +995,21 @@ FIXTURE(InfixPlus) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixEq) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y == z;");
+  auto cst = TPackage::ParseStr("x = y == z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixEq {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixEq {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1118,24 +1020,21 @@ FIXTURE(InfixEq) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixNeq) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y != z;");
+  auto cst = TPackage::ParseStr("x = y != z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixNeq {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixNeq {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1146,24 +1045,21 @@ FIXTURE(InfixNeq) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixLt) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y < z;");
+  auto cst = TPackage::ParseStr("x = y < z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLt {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLt {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1174,24 +1070,21 @@ FIXTURE(InfixLt) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixLtEq) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y <= z;");
+  auto cst = TPackage::ParseStr("x = y <= z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLtEq {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLtEq {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1202,24 +1095,21 @@ FIXTURE(InfixLtEq) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixGt) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y > z;");
+  auto cst = TPackage::ParseStr("x = y > z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixGt {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixGt {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1230,24 +1120,21 @@ FIXTURE(InfixGt) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixGtEq) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y >= z;");
+  auto cst = TPackage::ParseStr("x = y >= z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixGtEq {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixGtEq {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1258,24 +1145,21 @@ FIXTURE(InfixGtEq) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixLogicalAnd) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y and z;");
+  auto cst = TPackage::ParseStr("x = y and z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLogicalAnd {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLogicalAnd {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1286,24 +1170,21 @@ FIXTURE(InfixLogicalAnd) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixLogicalOr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y or z;");
+  auto cst = TPackage::ParseStr("x = y or z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLogicalOr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLogicalOr {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1314,24 +1195,21 @@ FIXTURE(InfixLogicalOr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixLogicalXor) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y xor z;");
+  auto cst = TPackage::ParseStr("x = y xor z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLogicalXor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLogicalXor {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1342,24 +1220,21 @@ FIXTURE(InfixLogicalXor) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InfixIn) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y in z;");
+  auto cst = TPackage::ParseStr("x = y in z;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixIn {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixIn {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1370,24 +1245,21 @@ FIXTURE(InfixIn) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PostFixObjMember) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y.foo;");
+  auto cst = TPackage::ParseStr("x = y.foo;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixObjMember {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixObjMember {\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1396,24 +1268,21 @@ FIXTURE(PostFixObjMember) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PostFixIsKnown) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y is known;");
+  auto cst = TPackage::ParseStr("x = y is known;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixIsKnown {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixIsKnown {\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1424,24 +1293,21 @@ FIXTURE(PostFixIsKnown) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PostFixIsKnownBoolLiteral) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y is known true;");
+  auto cst = TPackage::ParseStr("x = y is known true;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixIsKnownExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixIsKnownExpr {\n"
     "        Lhs -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1455,24 +1321,21 @@ FIXTURE(PostFixIsKnownBoolLiteral) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PostFixIsUnknown) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y is unknown;");
+  auto cst = TPackage::ParseStr("x = y is unknown;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixIsUnknown {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixIsUnknown {\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1481,24 +1344,21 @@ FIXTURE(PostFixIsUnknown) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PostfixCast) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y as [real?]?;");
+  auto cst = TPackage::ParseStr("x = y as [real?]?;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixCast {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixCast {\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1519,24 +1379,21 @@ FIXTURE(PostfixCast) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(PostfixSlice) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- y[10];");
+  auto cst = TPackage::ParseStr("x = y[10];");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PostfixSlice {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PostfixSlice {\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
     "        }\n"
@@ -1550,24 +1407,21 @@ FIXTURE(PostfixSlice) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(ReadExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- *<[\"games\", \"cafe\"]>::(time_pnt);");
+  auto cst = TPackage::ParseStr("x = *<[\"games\", \"cafe\"]>::(time_pnt);");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> ReadExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> ReadExpr {\n"
     "        Star -> Star;\n"
     "        Expr -> AddrCtor {\n"
     "          OpenAddr -> OpenAddr;\n"
@@ -1602,24 +1456,21 @@ FIXTURE(ReadExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(AssertExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (y) assert { that > 10; };");
+  auto cst = TPackage::ParseStr("x = (y) assert { that > 10; };");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> AssertExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> AssertExpr {\n"
     "        OpenParen -> OpenParen;\n"
     "        Expr -> RefExpr {\n"
     "          Name -> Name;\n"
@@ -1646,24 +1497,21 @@ FIXTURE(AssertExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(IfExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- ( 10 if y == z else 15 );");
+  auto cst = TPackage::ParseStr("x = ( 10 if y == z else 15 );");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> IfExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> IfExpr {\n"
     "        OpenParen -> OpenParen;\n"
     "        TrueCase -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
@@ -1686,24 +1534,21 @@ FIXTURE(IfExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(GivenExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- given::(time_pnt);");
+  auto cst = TPackage::ParseStr("x = given::(time_pnt);");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> GivenExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> GivenExpr {\n"
     "        GivenKwd -> GivenKwd;\n"
     "        Colons -> Colons;\n"
     "        OpenParen -> OpenParen;\n"
@@ -1714,24 +1559,21 @@ FIXTURE(GivenExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(WhereExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (y + z) where { y = 10; z = 20; };");
+  auto cst = TPackage::ParseStr("x = (y + z) where { y = 10; z = 20; };");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> WhereExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> WhereExpr {\n"
     "        OpenParen -> OpenParen;\n"
     "        Expr -> InfixPlus {\n"
     "          Lhs -> RefExpr {\n"
@@ -1770,24 +1612,21 @@ FIXTURE(WhereExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(GivenOptType) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- given::(int?);");
+  auto cst = TPackage::ParseStr("x = given::(int?);");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> GivenExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> GivenExpr {\n"
     "        GivenKwd -> GivenKwd;\n"
     "        Colons -> Colons;\n"
     "        OpenParen -> OpenParen;\n"
@@ -1801,24 +1640,21 @@ FIXTURE(GivenOptType) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(EffectingExpr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- (10) effecting { <[ 'games', r'cafe' ]> <- 15; };");
+  auto cst = TPackage::ParseStr("x = (10) effecting { <[ 'games', r'cafe' ]> <- 15; };");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> EffectingExpr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> EffectingExpr {\n"
     "        OpenParen -> OpenParen;\n"
     "        Expr -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
@@ -1868,6 +1704,7 @@ FIXTURE(EffectingExpr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -1876,18 +1713,14 @@ FIXTURE(EffectingExpr) {
 // precedence
 
 FIXTURE(LogicalOrLogicalXor) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true or false xor false;");
+  auto cst = TPackage::ParseStr("x = true or false xor false;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLogicalOr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLogicalOr {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> TrueKwd;\n"
     "        }\n"
@@ -1904,24 +1737,21 @@ FIXTURE(LogicalOrLogicalXor) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(LogicalXorLogicalAnd) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false xor false and true;");
+  auto cst = TPackage::ParseStr("x = false xor false and true;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLogicalXor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLogicalXor {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> FalseKwd;\n"
     "        }\n"
@@ -1938,24 +1768,21 @@ FIXTURE(LogicalXorLogicalAnd) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(LogicalAndEquality) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false and false == true;");
+  auto cst = TPackage::ParseStr("x = false and false == true;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixLogicalAnd {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixLogicalAnd {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> FalseKwd;\n"
     "        }\n"
@@ -1972,24 +1799,21 @@ FIXTURE(LogicalAndEquality) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(EqualityInequality) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true != true < false;");
+  auto cst = TPackage::ParseStr("x = true != true < false;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixNeq {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixNeq {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> TrueKwd;\n"
     "        }\n"
@@ -2006,24 +1830,21 @@ FIXTURE(EqualityInequality) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(InequalityBitwiseOr) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- true != false | true;");
+  auto cst = TPackage::ParseStr("x = true != false | true;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixNeq {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixNeq {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> TrueKwd;\n"
     "        }\n"
@@ -2040,24 +1861,21 @@ FIXTURE(InequalityBitwiseOr) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(BitwiseOrBitwiseXor) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false | false ^ false;");
+  auto cst = TPackage::ParseStr("x = false | false ^ false;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixBitwiseOr {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixBitwiseOr {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> FalseKwd;\n"
     "        }\n"
@@ -2074,24 +1892,21 @@ FIXTURE(BitwiseOrBitwiseXor) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(BitwiseXorBitwiseAnd) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- false ^ false & true;");
+  auto cst = TPackage::ParseStr("x = false ^ false & true;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixBitwiseXor {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixBitwiseXor {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> FalseKwd;\n"
     "        }\n"
@@ -2108,6 +1923,7 @@ FIXTURE(BitwiseXorBitwiseAnd) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
@@ -2118,18 +1934,14 @@ FIXTURE(BitwiseXorBitwiseAnd) {
    nothing to pin (#504). */
 
 FIXTURE(BitwiseAndAddAndSub) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 6 & 2 + 3;");
+  auto cst = TPackage::ParseStr("x = 6 & 2 + 3;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixBitwiseAnd {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixBitwiseAnd {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
     "        }\n"
@@ -2146,24 +1958,21 @@ FIXTURE(BitwiseAndAddAndSub) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(AddAndSubMulAndDiv) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 6 - 2 * 3;");
+  auto cst = TPackage::ParseStr("x = 6 - 2 * 3;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixMinus {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixMinus {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
     "        }\n"
@@ -2180,24 +1989,21 @@ FIXTURE(AddAndSubMulAndDiv) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(MulAndDivExp) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 1 / 3 ** 4;");
+  auto cst = TPackage::ParseStr("x = 1 / 3 ** 4;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixDiv {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixDiv {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
     "        }\n"
@@ -2214,24 +2020,21 @@ FIXTURE(MulAndDivExp) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(ExpUnary) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- 3 ** -4 ;");
+  auto cst = TPackage::ParseStr("x = 3 ** -4 ;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> InfixExp {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> InfixExp {\n"
     "        Lhs -> LiteralExpr {\n"
     "          Literal -> IntLiteral;\n"
     "        }\n"
@@ -2245,24 +2048,21 @@ FIXTURE(ExpUnary) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));
 }
 
 FIXTURE(UnaryFuncAndMember) {
-  auto cst = TCheckpoint::ParseStr("{01234567-89ab-cdef-0123-456789abcdef} " "x <- -a.dist;");
+  auto cst = TPackage::ParseStr("x = -a.dist;");
   const char *ts =
-    "Checkpoint {\n"
-    "  OptCheckpointStmtSeq -> CheckpointStmtSeq {\n"
-    "    OptCheckpointStmtSeq -> NoCheckpointStmtSeq {}\n"
-    "    CheckpointStmt -> KvEntry {\n"
-    "      IdLiteral -> IdLiteral;\n"
-    "      Key -> RefExpr {\n"
-    "        Name -> Name;\n"
-    "      }\n"
-    "      LeftArrow -> LeftArrow;\n"
-    "      Value -> PrefixMinus {\n"
+    "Package {\n"
+    "  OptDefSeq -> DefSeq {\n"
+    "    Def -> FuncDef {\n"
+    "      Name -> Name;\n"
+    "      Eq -> Eq;\n"
+    "      Expr -> PrefixMinus {\n"
     "        Minus -> Minus;\n"
     "        Expr -> PostfixObjMember {\n"
     "          Expr -> RefExpr {\n"
@@ -2274,6 +2074,7 @@ FIXTURE(UnaryFuncAndMember) {
     "      }\n"
     "      Semi -> Semi;\n"
     "    }\n"
+    "    OptDefSeq -> NoDefSeq {}\n"
     "  }\n"
     "}\n";
   EXPECT_TRUE(cst.Get()->Test(ParseNode(ts).get(), 0));

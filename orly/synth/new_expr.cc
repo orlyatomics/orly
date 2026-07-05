@@ -209,9 +209,6 @@ TExpr *TExprFactory::NewExpr(const Package::Syntax::TExpr *root) const {
     virtual void operator()(const Syntax::TPostfixIsUnknown *that) const { OnAffix(that->GetExpr(), Expr::TIsUnknown::New, GetPosRange(that)); }
     virtual void operator()(const Syntax::TPostfixIsVariant *that) const { Out = new TPostfixIsVariant(ExprFactory, that); }
     virtual void operator()(const Syntax::TPostfixObjMember *that) const { Out = new TObjMemberExpr(ExprFactory, that); }
-    virtual void operator()(const Syntax::TPostfixOptCheckpoint *that) const {
-      throw TCompileError(HERE, GetPosRange(that), "expr ? is not allowed in orly programs. It is available only in checkpoints.");
-    }
     virtual void operator()(const Syntax::TPostfixSlice *that) const { Out = new TPostfixSlice(ExprFactory, that); }
     virtual void operator()(const Syntax::TPrefixAddrOf *that) const { OnAffix(that->GetExpr(), Expr::TAddrOf::New, GetPosRange(that)); }
     virtual void operator()(const Syntax::TPrefixExists *that) const { Out = new TExistsCtor(ExprFactory, that); }
