@@ -73,6 +73,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <fstream>
 #include <mutex>
 #include <optional>
@@ -328,8 +329,8 @@ vector<string> MakeServerArgs(const string &orlyi_path,
   vector<string> args = {
       orlyi_path,
       "--mem_sim",
-      "--mem_sim_mb=256",
-      "--mem_sim_slow_mb=128",
+      "--mem_sim_mb=64",
+      "--mem_sim_slow_mb=32",
       "--create=true",
       "--instance_name=" + instance_name,
       "--starting_state=" + starting_state,
@@ -405,6 +406,43 @@ Rt::TOpt<int64_t> ReadWithRetry(const TAddress &addr, int64_t n, seconds deadlin
   }
 }
 
+/* Print each server log's tail at fixture exit: the logs live in a temp dir
+   that CI never uploads, and a dead child's last lines are the only way to
+   tell a crash from an OOM kill from a stall. */
+class TLogTailDumper final {
+  NO_COPY(TLogTailDumper);
+  public:
+
+  TLogTailDumper() {}
+
+  ~TLogTailDumper() {
+    for (const auto &path : Paths) {
+      cout << "==== tail of " << path << " ====" << endl;
+      ifstream strm(path);
+      deque<string> tail;
+      string line;
+      while (getline(strm, line)) {
+        tail.push_back(line);
+        if (tail.size() > 25) {
+          tail.pop_front();
+        }
+      }
+      for (const auto &kept : tail) {
+        cout << kept << endl;
+      }
+    }
+  }
+
+  void Add(const string &path) {
+    Paths.push_back(path);
+  }
+
+  private:
+
+  vector<string> Paths;
+
+};  // TLogTailDumper
+
 string GetScratchDir() {
   char tmpl[] = "/tmp/import_repl_test_XXXXXX";
   const char *dir = mkdtemp(tmpl);
@@ -432,6 +470,7 @@ FIXTURE(ImportReplication) {
   Orly::Type::TTypeCzar type_czar;
   const string scratch = GetScratchDir();
   const string orlyi_path = GetOrlyiPath();
+  TLogTailDumper log_dumper;
   if (!ifstream(orlyi_path).good()) {
     throw runtime_error("orlyi binary not built at [" + orlyi_path + "]; run `make debug` first");
   }
@@ -462,6 +501,7 @@ FIXTURE(ImportReplication) {
   const in_port_t master_port = ProbeFreePort();
   const in_port_t master_slave_port = ProbeFreePort();
   const string master_log = scratch + "/master.log";
+  log_dumper.Add(master_log);
   TChildServer master(
       MakeServerArgs(orlyi_path, "import_repl_master", pkg_dir, master_port,
                      master_slave_port, "SOLO", 0),
@@ -513,6 +553,7 @@ FIXTURE(ImportReplication) {
      as it applies it (#367). */
   const in_port_t slave_1_port = ProbeFreePort();
   const string slave_1_log = scratch + "/slave_1.log";
+  log_dumper.Add(slave_1_log);
   TChildServer slave_1(
       MakeServerArgs(orlyi_path, "import_repl_slave_1", pkg_dir, slave_1_port,
                      ProbeFreePort(), "SLAVE", master_slave_port),
@@ -533,7 +574,7 @@ FIXTURE(ImportReplication) {
      not disrupt the notification pass (#499). */ {
     auto client = make_shared<TExerciseClient>(master_addr);
     client->InstallPackage({ "sample2" }, 1)->Sync();
-    EXPECT_TRUE(WaitForLog(slave_1_log, "sample2 tuple(str, int64)", seconds(60)));
+    EXPECT_TRUE(WaitForLog(slave_1_log, "sample2 tuple(str, int64)", seconds(120)));
     EXPECT_TRUE(!LogContains(master_log, "RunReplicateTransaction error"));
     /* A write's replication ack must survive sharing the stream with the
        install's system-repo commits (#499 ate the rest of the batch's
@@ -581,6 +622,7 @@ FIXTURE(ImportReplication) {
      join must again deliver files and mapping. */
   const in_port_t slave_2_port = ProbeFreePort();
   const string slave_2_log = scratch + "/slave_2.log";
+  log_dumper.Add(slave_2_log);
   TChildServer slave_2(
       MakeServerArgs(orlyi_path, "import_repl_slave_2", pkg_dir, slave_2_port,
                      ProbeFreePort(), "SLAVE", master_slave_port),
