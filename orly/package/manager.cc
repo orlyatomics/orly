@@ -16,7 +16,6 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-//TODO(#356): We assume dlclose never fails.
 #include <orly/package/manager.h>
 
 #include <cassert>
@@ -39,16 +38,17 @@ using namespace Base;
 using namespace std;
 using namespace Orly::Package;
 
-TManager::TManager(const Jhm::TTree &package_dir) : PackageDir(package_dir) {}
+TManager::TManager(const Jhm::TTree &package_dir)
+    : PackageDir(package_dir), Installed(std::make_shared<const TInstalled>()) {}
 
 //When the installed map destructs, the shared pointers will naturally go away, unloading the packages.
 TManager::~TManager() {}
 
 TLoaded::TPtr TManager::Get(const TName &package) const {
-
-  shared_lock<shared_timed_mutex> lock(InstallLock);
-  auto it = Installed.find(package);
-  if(it == Installed.end()) {
+  /* Lock-free: walk our own pinned snapshot (#356). */
+  const auto installed = Installed.load();
+  auto it = installed->find(package);
+  if(it == installed->end()) {
     THROW_ERROR(TManager::TError) << "Cannot get non-installed package \"" << package << '"';
   }
   return it->second;
@@ -60,9 +60,9 @@ void TManager::Install(const TVersionedNames &packages, const std::function<void
 
 void TManager::Load(const TVersionedNames &packages, const std::function<void(TLoaded::TPtr, bool)> &pre_install_step) {
 
-  unique_lock<shared_timed_mutex> lock(InstallLock);
+  lock_guard<mutex> lock(WriteLock);
 
-  TInstalled installed(Installed);
+  TInstalled installed(*Installed.load());
 
   list<std::tuple<TLoaded::TPtr, bool>> about_to_install;
 
@@ -110,7 +110,7 @@ void TManager::Load(const TVersionedNames &packages, const std::function<void(TL
   }
 
   // Guaranteed no-throw / the transaction will complete
-  std::swap(Installed, installed);
+  Installed.store(std::make_shared<const TInstalled>(std::move(installed)));
 }
 
 const Jhm::TTree &TManager::GetPackageDir() const {
@@ -124,8 +124,8 @@ void TManager::SetPackageDir(const Jhm::TTree &package_dir) {
 
 void TManager::Uninstall(const TVersionedNames &packages) {
 
-  unique_lock<shared_timed_mutex> lock(InstallLock);
-  TInstalled installed(Installed);
+  lock_guard<mutex> lock(WriteLock);
+  TInstalled installed(*Installed.load());
 
   for(const TVersionedName &package: packages) {
     auto installed_it = installed.find(package.Name);
@@ -135,25 +135,14 @@ void TManager::Uninstall(const TVersionedNames &packages) {
     installed.erase(installed_it);
   }
 
-  std::swap(Installed, installed);
-}
-
-TManager::TInstalledSnapshot TManager::SnapshotInstalled() const {
-  shared_lock<shared_timed_mutex> lock(InstallLock);
-  // Cheap shared_ptr copy; also pins the loaded packages alive for the lifetime of the snapshot.
-  return Installed;
-}
-
-void TManager::RestoreInstalled(TInstalledSnapshot snapshot) {
-  unique_lock<shared_timed_mutex> lock(InstallLock);
-  // No-throw swap; safe to call from a rollback path.
-  std::swap(Installed, snapshot);
+  Installed.store(std::make_shared<const TInstalled>(std::move(installed)));
 }
 
 void TManager::YieldInstalled(std::function<bool (const TVersionedName &name)> cb) const {
-  shared_lock<shared_timed_mutex> lock(InstallLock);
-
-  for(const auto &it: Installed) {
+  /* Lock-free, and the callback runs against our own pinned snapshot, so it
+     can take as long as it likes without holding up an install (#356). */
+  const auto installed = Installed.load();
+  for(const auto &it: *installed) {
     if(!cb(it.second->GetName())) {
       break;
     }
