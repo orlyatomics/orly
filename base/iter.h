@@ -53,8 +53,8 @@ namespace Base {
     TIter() {}
   };
 
-  /* Basically a shared-ptr to a TIter which wraps the iter operators for easy access. You can move TIterHolder but you
-     cannot copy it. */
+  /* Owns a heap-allocated TIter and forwards the iter operators to it.  You
+     can move TIterHolder but you cannot copy it. */
   template <typename TVal>
   class TIterHolder : public TIter<TVal> {
     NO_COPY(TIterHolder);
