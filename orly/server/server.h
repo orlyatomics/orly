@@ -647,7 +647,14 @@ namespace Orly {
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
         Indy::Fiber::TFrame *Frame;
 
-        /* TODO(#364): Push <strm/fd.h> up to here, that should own our Fd and be our common Io library */
+        /* The Fd is RAII-owned right here; wrapping it in a <base/strm/fd.h>
+           device so strm becomes "our common Io library" (#364) is declined:
+           the RPC path this connection feeds is built on base/io's buffered
+           streams, and every driver's wire behavior sits on that stack --
+           migrating it is a protocol-risking rewrite, not a refactor.  The
+           two stream stacks have settled into clear roles: base/io under
+           rpc/, base/strm for the newer flat binary paths (csv_to_bin, the
+           importer's file reads). */
         Base::TFd Fd;
 
         const Socket::TAddress ClientAddress;
