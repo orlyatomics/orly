@@ -1,6 +1,6 @@
 /* <orly/orly.nycr>
 
-   Nycr grammar for Orly checkpoint and package files.
+   Nycr grammar for Orly package files.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -86,7 +86,6 @@ gt_eq             = '">="' inequality_prec left;
 hash_sign         = '"#"';
 id_kwd            = '"id"';
 if_kwd            = '"if"' lowest_prec left;
-imports_kwd       = '"imports"';
 in_kwd            = '"in"' equality_prec left;
 int_kwd           = '"int"';
 is_kwd            = '"is"' equality_prec left;
@@ -185,24 +184,8 @@ name    : opt_name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
 
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
-    COMMAND
+    PACKAGE NAMES
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
-command -> expr <orly/command/syntax> sr 1;
-
-/* ------------------------------------------------------------------------------------------------------------------------------------------------
-    CHECKPOINTS
-   ------------------------------------------------------------------------------------------------------------------------------------------------ */
-
-checkpoint -> opt_checkpoint_stmt_seq <orly/checkpoint/syntax> sr 1;
-
-opt_checkpoint_stmt_seq;
-no_checkpoint_stmt_seq : opt_checkpoint_stmt_seq -> empty;
-checkpoint_stmt_seq    : opt_checkpoint_stmt_seq -> opt_checkpoint_stmt_seq checkpoint_stmt;
-
-checkpoint_stmt;
-bad_checkpoint_stmt : checkpoint_stmt -> error semi;
-installed_package   : checkpoint_stmt -> imports_kwd package_name semi;
-kv_entry            : checkpoint_stmt -> id_literal key:expr left_arrow value:expr semi;
 
 package_name -> lt package_name_member_list gt package_version;
 
@@ -512,7 +495,6 @@ postfix_is_variant  : postfix_expr -> expr is_kwd name;                         
 postfix_cast        : postfix_expr -> expr as_kwd type;                           /* cast to new type */
 postfix_call        : postfix_expr -> expr open_paren opt_call_args close_paren;  /* call built-in or user-specifed function */
 postfix_slice       : postfix_expr -> expr open_bracket slice close_bracket;      /* slicing a list or looking up in a dict */
-postfix_opt_checkpoint : postfix_expr -> expr question_mark;                      /* "a"? for use in checkpoints when it is important to keep the type as optional. */
 
   built_in_func : expr;
   time_diff_ctor   : built_in_func -> time_diff_kwd;

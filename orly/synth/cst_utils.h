@@ -22,7 +22,6 @@
 #include <functional>
 
 #include <base/class_traits.h>
-#include <orly/orly.checkpoint.cst.h>
 #include <orly/orly.package.cst.h>
 
 namespace Orly {
@@ -81,49 +80,6 @@ namespace Orly {
         ForEach(node, cb); // Call the above version
       }
     }
-
-    template <>
-    struct ItemInfo<Checkpoint::Syntax::TName> {
-      NO_CONSTRUCTION(ItemInfo);
-
-      typedef Checkpoint::Syntax::TNoPackageNameMemberListTail TNoListTailNode;
-      typedef Checkpoint::Syntax::TPackageNameMemberListTail   TListTailNode;
-      typedef Checkpoint::Syntax::TPackageNameMemberList       TNode;
-      typedef Checkpoint::Syntax::TName                        TItem;
-
-      static const TItem *GetItem(const TNode *node) {
-        assert(node);
-        return node->GetName();
-      }
-
-      static const TNode *TryGetNext(const TNode *node) {
-        assert(node);
-        auto list_tail = TryGetNode<TListTailNode, TNoListTailNode>(node->GetOptPackageNameMemberListTail());
-        return list_tail ? list_tail->GetPackageNameMemberList() : nullptr;
-      }
-
-    };  // ItemInfo<Checkpoint::Syntax::TName>
-
-    template <>
-    struct ItemInfo<Checkpoint::Syntax::TCheckpointStmt> {
-      NO_CONSTRUCTION(ItemInfo);
-
-      typedef Checkpoint::Syntax::TOptCheckpointStmtSeq TOptNode;
-      typedef Checkpoint::Syntax::TNoCheckpointStmtSeq  TNoNode;
-      typedef Checkpoint::Syntax::TCheckpointStmtSeq    TNode;
-      typedef Checkpoint::Syntax::TCheckpointStmt       TItem;
-
-      static const TItem *GetItem(const TNode *node) {
-        assert(node);
-        return node->GetCheckpointStmt();
-      }
-
-      static const TNode *TryGetNext(const TNode *node) {
-        assert(node);
-        return TryGetNode<TNode, TNoNode>(node->GetOptCheckpointStmtSeq());
-      }
-
-    };  // ItemInfo<Checkpoint::Syntax::TCheckpointStmt>
 
     template <>
     struct ItemInfo<Package::Syntax::TAddrMember> {

@@ -16,15 +16,15 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-#include <orly/orly.command.cst.h>
+#include <orly/orly.package.cst.h>
 
 #include <tools/nycr/test.h>
 #include <base/test/kit.h>
 
-using namespace Orly::Command::Syntax;
+using namespace Orly::Package::Syntax;
 using namespace Tools::Nycr::Test;
 
 FIXTURE(Typical) {
-  TCommand::ParseStr("1+2a");
-  TCommand::ParseStr("2b1a");
+  TPackage::ParseStr("x = 1+2a;");
+  TPackage::ParseStr("x = 2b1a;");
 }

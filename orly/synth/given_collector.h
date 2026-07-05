@@ -187,7 +187,6 @@ namespace Orly {
       virtual void operator()(const Package::Syntax::TPostfixIsUnknown *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPostfixIsVariant *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPostfixObjMember *that) const { Push(that->GetExpr()); }
-      virtual void operator()(const Package::Syntax::TPostfixOptCheckpoint *) const { /* DO NOTHING */ }
       virtual void operator()(const Package::Syntax::TPostfixSlice *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPrefixAddrOf *that) const { Push(that->GetExpr()); }
       virtual void operator()(const Package::Syntax::TPrefixExists *that) const { Push(that->GetExpr()); }
