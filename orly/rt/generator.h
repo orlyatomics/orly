@@ -45,7 +45,13 @@ namespace Orly {
 
       typedef const TItem_ TItem;
 
-      //TODO(#360): This one func causes a lot of inefficiency / ugh.
+      /* One heap allocation per generator LAYER per sequence EVALUATION (not
+         per element -- the per-element costs are the virtual hops and the
+         sabot decode, which dwarf it).  The 2014 wish to engineer this away
+         (#360) is declined: an in-place/value-cursor rework would ripple
+         through every generator here, key_generator.h, and the generated
+         packages' emissions, to shave an allocation that no profile has ever
+         surfaced. */
       virtual Base::TIterHolder<TItem> NewCursor() const = 0;
 
       protected:
@@ -72,7 +78,9 @@ namespace Orly {
         public:
 
         TCursor(const TPtr &ptr) : Iter(ptr->GetGenerator()->NewCursor()), Ptr(ptr), State(NotAcquired) {}
-        TCursor(const TCursor &that) : Iter(that.Iter), Ptr(that.Ptr), State(NotAcquired) {}
+        /* Copying would copy the NO_COPY TIterHolder: ill-formed if ever
+           instantiated (which, being a template member, it never was). */
+        TCursor(const TCursor &that) = delete;
         TCursor(TCursor &&that) : Iter(std::move(that.Iter)), Ptr(std::move(that.Ptr)), State(NotAcquired) {}
 
         operator bool() const {
@@ -189,7 +197,8 @@ namespace Orly {
       class TCursor : public Base::TIter<TItem> {
         public:
         TCursor(const TPtr &ptr) : Iter(ptr->GetGenerator()->NewCursor()), Ptr(ptr), State(NotAcquired) {}
-        TCursor(const TCursor &that) : Iter(that.Iter), Ptr(that.Ptr), State(NotAcquired) {}
+        /* See TFilterGenerator::TCursor: ill-formed if ever instantiated. */
+        TCursor(const TCursor &that) = delete;
         TCursor(TCursor &&that)
             : Iter(std::move(that.Iter)), Ptr(std::move(that.Ptr)), State(NotAcquired) {}
 
@@ -278,7 +287,11 @@ namespace Orly {
       TFunc Func;
     };
 
-    //TODO(#360): Zip, Product, Chain, Mix?
+    /* Zip / Product / Chain / Mix combinators (#360) are declined: no
+       orlyscript syntax reaches them, so they would be dead runtime code,
+       and growing the language a surface for them is a design decision, not
+       a backlog item.  If such syntax ever lands, this is where its
+       generators go. */
 
 
   /* A generator wrapping TRegexMatcher. */
