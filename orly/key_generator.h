@@ -22,6 +22,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <base/likely.h>
 #include <orly/atom/kit2.h>
@@ -84,89 +85,70 @@ namespace Orly {
 
     typedef std::shared_ptr<const TKeyGenerator> TPtr;
 
-    //TODO(#351): CODY: This cursor needs a rewrite. For now it is roughly copied from what was generated, as that seemed to work.
-    class TCursor
+    /* Walks the generator's underlying key cursor, decoding each key into a
+       native TRet lazily -- at most once per position, on the first bool or
+       deref probe after construction or an advance (#351). */
+    class TCursor final
         : public Base::TIter<const TRet> {
+      NO_COPY(TCursor);
       public:
 
-      typedef const TRet TVal;
+      using TVal = const TRet;
 
-      TCursor(TKeyGenerator::TPtr &ptr)
-          : Cached(false), Valid(false), Item(0),
-            /*Iter(&ptr->GetContext(), ptr->GetStart()),*/
-            Iter(ptr->PackageContext->NewKeyCursor(&ptr->GetContext(), ptr->GetStart())),
+      explicit TCursor(const typename TKeyGenerator::TPtr &ptr)
+          : Iter(ptr->PackageContext->NewKeyCursor(&ptr->GetContext(), ptr->GetStart())),
             Ptr(ptr) {}
 
-      TCursor(const TKeyGenerator::TPtr &ptr)
-          : Cached(false), Valid(false), Item(0),
-            /* Iter(&ptr->GetContext(), ptr->GetStart()), */
-            Iter(ptr->PackageContext->NewKeyCursor(&ptr->GetContext(), ptr->GetStart())),
-            Ptr(ptr) {}
+      TCursor(TCursor &&that) = default;
 
-      TCursor(const TCursor &that) = delete;
-
-      TCursor(TCursor &&that)
-          : Cached(that.Cached),
-            Valid(that.Valid),
-            Item(std::move(that.Item)),
-            Iter(std::move(that.Iter)),
-            Ptr(std::move(that.Ptr)) {
-        that.Item = 0;
-      }
-
-      virtual ~TCursor() {
-        delete Item;
-      }
-
-      operator bool() const {
+      operator bool() const override {
         Refresh();
-        assert(Cached);
-        return Valid;
+        return Item.has_value();
       }
 
-      TVal &operator*() const {
+      TVal &operator*() const override {
         Refresh();
-        assert(Cached);
-        assert(Valid);
+        assert(Item);
         return *Item;
       }
 
-      Base::TIter<TVal> &operator++() {
-        ++(*Iter);
-        Cached = false;
+      Base::TIter<TVal> &operator++() override {
+        assert(Iter);
+        ++*Iter;
+        Fresh = false;
         return *this;
       }
 
       private:
 
-      inline void Refresh() const {
-        if (!Cached) {
-          Cached = true;
-          if (static_cast<bool>(*Iter)) {
+      /* Decode the key at the current position into Item, or disengage Item
+         if the underlying cursor is exhausted.  Assigns through an engaged
+         Item so a decode reuses its storage. */
+      void Refresh() const {
+        if (!Fresh) {
+          Fresh = true;
+          if (*Iter) {
             void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-            if (Item) {
-              *Item = Sabot::AsNative<TRet>(*Sabot::State::TAny::TWrapper((*Iter)->GetState(state_alloc)));
-            } else {
-              Item = new TRet(Sabot::AsNative<TRet>(*Sabot::State::TAny::TWrapper((*Iter)->GetState(state_alloc))));
-            }
-            Valid = true;
+            Item = Sabot::AsNative<TRet>(*Sabot::State::TAny::TWrapper((*Iter)->GetState(state_alloc)));
           } else {
-            Valid = false;
+            Item.reset();
           }
         }
       }
 
-      mutable bool Cached;
+      /* True once Item reflects the current position. */
+      mutable bool Fresh = false;
 
-      mutable bool Valid;
+      /* The decoded key at the current position; disengaged past the end. */
+      mutable std::optional<TRet> Item;
 
-      mutable TRet *Item;
+      std::unique_ptr<Orly::TKeyCursor> Iter;
 
-      mutable std::unique_ptr<Orly::TKeyCursor> Iter;
+      /* Keeps the generator (and with it the package context and the start
+         key's arena) alive for as long as this cursor walks it. */
+      const typename TKeyGenerator::TPtr Ptr;
 
-      const TKeyGenerator::TPtr Ptr;
-
-    }; // TCursor<TKeyGenerator<TRet>>
+    };  // TCursor<TKeyGenerator<TRet>>
 
     virtual ~TKeyGenerator() {}
 

@@ -19,6 +19,7 @@
 #include <orly/package/loaded.h>
 
 #include <dlfcn.h>
+#include <syslog.h>
 
 #include <base/as_str.h>
 #include <base/thrower.h>
@@ -41,7 +42,12 @@ TLoaded::TPtr TLoaded::Load(const Jhm::TTree &package_dir, const TVersionedName 
 }
 
 TLoaded::~TLoaded() {
-  dlclose(Handle);
+  /* dlclose can fail (it returns nonzero and sets dlerror); from a dtor the
+     only honest response is to say so loudly (#356). */
+  if (dlclose(Handle) != 0) {
+    const char *err = dlerror();
+    syslog(LOG_ERR, "package [%s]: dlclose failed: %s", AsStr(Name).c_str(), err ? err : "(no dlerror)");
+  }
 }
 
 bool TLoaded:: ForEachTest(const function<bool (const TTest *)> &cb) const {
@@ -126,7 +132,10 @@ TLoaded::TLoaded(const Jhm::TTree &package_dir, const TVersionedName &name) : Na
     }
 
   } catch (...) {
-    dlclose(Handle);
+    if (dlclose(Handle) != 0) {
+      const char *err = dlerror();
+      syslog(LOG_ERR, "package [%s]: dlclose failed during failed load: %s", AsStr(name).c_str(), err ? err : "(no dlerror)");
+    }
     throw;
   }
 }
