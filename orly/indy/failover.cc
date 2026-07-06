@@ -32,8 +32,13 @@ TConnectionFailed::TConnectionFailed(const string &error_msg)
 
 TCommonContext::~TCommonContext() {}
 
-void TCommonContext::Shutdown() {
-  IfLt0(shutdown(Device->GetFd(), SHUT_WR));
+void TCommonContext::Shutdown() noexcept {
+  /* Full close, not SHUT_WR: erroring the READ side is the point.  The
+     reader loop parked in Read() collapses, which fails every outstanding
+     future -- waking a replicate loop parked in future->Sync() on an
+     unresponsive peer (#461).  Best-effort: ENOTCONN just means the peer
+     hung up first, and nothing useful can be done with any error here. */
+  shutdown(Device->GetFd(), SHUT_RDWR);
 }
 
 TCommonContext::TCommonContext(const Rpc::TProtocol &protocol,

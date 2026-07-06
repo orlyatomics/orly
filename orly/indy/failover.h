@@ -62,7 +62,9 @@ namespace Orly {
 
       virtual ~TCommonContext();
 
-      void Shutdown();
+      /* Hard-close the connection (SHUT_RDWR): collapses the reader loop and
+         fails all outstanding futures, waking any fiber parked in Sync(). */
+      void Shutdown() noexcept;
 
       virtual bool Queue();
 
