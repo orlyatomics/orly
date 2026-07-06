@@ -789,6 +789,13 @@ namespace Orly {
 
         inline TManager::TPtr<TRepo> ForceOpenRepo(const Base::TUuid &repo_id);
 
+        /* The repo with the given id iff it is LIVE in this manager (open,
+           or closed but still cached); a null ptr otherwise.  Never
+           constructs and never touches the (unported, #173) reload path:
+           this is how a reloaded pov attaches to a repo that survived in
+           memory without minting an empty one (#439). */
+        TManager::TPtr<TRepo> TryOpenLiveRepo(const Base::TUuid &repo_id);
+
         virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
                                      const std::optional<TTtl> &ttl,
                                      const std::optional<TManager::TPtr<TRepo>> &parent_repo,

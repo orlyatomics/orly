@@ -18,6 +18,7 @@
 
 #include <orly/server/pov.h>
 #include <optional>
+#include <sstream>
 
 using namespace std;
 using namespace Base;
@@ -29,13 +30,28 @@ const Indy::L0::TManager::TPtr<Indy::TRepo> &TPov::GetRepo(const TServer *server
   if (!Repo) {
     assert(server);
     auto repo_manager = server->GetRepoManager();
-    std::optional<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
-    if (SharedParents.empty()) {
-      parent_repo = server->GetGlobalRepo();
+    if (Reloaded) {
+      /* This pov came back from a durable disk layer, so its repo predates
+         this object.  ATTACH if the repo is alive (on a promoted slave,
+         replication built it); NEVER create.  Creating would resurrect the
+         pov as an empty shell parented to global, silently swallowing every
+         update tetris had not yet promoted at shutdown (#439). */
+      Repo = repo_manager->TryGetLiveRepo(GetId());
+      if (!Repo) {
+        std::ostringstream strm;
+        strm << "pov {" << GetId() << "} cannot be revived: point-of-view state does not survive a server restart"
+                " (povs are ephemeral, #439); create a new pov";
+        throw std::runtime_error(strm.str());
+      }
     } else {
-      parent_repo = repo_manager->ForceGetRepo(SharedParents.back());
+      std::optional<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
+      if (SharedParents.empty()) {
+        parent_repo = server->GetGlobalRepo();
+      } else {
+        parent_repo = repo_manager->ForceGetRepo(SharedParents.back());
+      }
+      Repo = repo_manager->GetRepo(GetId(), GetTtl(), parent_repo, Policy == TPolicy::Safe, true);
     }
-    Repo = repo_manager->GetRepo(GetId(), GetTtl(), parent_repo, Policy == TPolicy::Safe, true);
   }
   return Repo;
 }
@@ -47,10 +63,10 @@ TPov::TPov(Durable::TManager *manager,
            TAudience audience,
            TPolicy policy,
            const TSharedParents &shared_parents)
-    : TObj(manager, id, ttl), SessionId(session_id), Audience(audience), Policy(policy), SharedParents(shared_parents) {}
+    : TObj(manager, id, ttl), SessionId(session_id), Audience(audience), Policy(policy), SharedParents(shared_parents), Reloaded(false) {}
 
 TPov::TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm)
-    : TObj(manager, id, strm) {
+    : TObj(manager, id, strm), Reloaded(true) {
   strm >> SessionId >> reinterpret_cast<char &>(Audience) >> reinterpret_cast<char &>(Policy) >> SharedParents;
 }
 

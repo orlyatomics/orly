@@ -777,6 +777,34 @@ void TManager::TObj::OnPtrAdoptOld() noexcept {
   assert(PtrCount > 0);
 }
 
+TManager::TPtr<TManager::TRepo> TManager::TryOpenLiveRepo(const Base::TUuid &repo_id) {
+  std::unique_lock<std::mutex> lock(DurableMutex);
+  for (;;) {
+    auto iter = OpenableObjs.find(repo_id);
+    if (iter == OpenableObjs.end()) {
+      /* Not live; per contract, do NOT construct or reload. */
+      return TPtr<TManager::TRepo>();
+    }
+    TObj *openable_obj = iter->second;
+    if (!openable_obj) {
+      /* Another opener holds the slot mid-construction; wait for it to
+         finish (or fail and erase the slot), then look again. */
+      DurableCond.wait(lock);
+      continue;
+    }
+    /* Same re-open dance as Open(): a closed-but-cached object leaves the
+       closed set. */
+    TPtr<TManager::TRepo> ptr(openable_obj, Orly::Indy::L0::Old);
+    const auto &deadline = openable_obj->GetDeadline();
+    if (deadline) {
+      size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, repo_id));
+      assert(erased_from_closed == 1);
+      openable_obj->Deadline.reset();
+    }
+    return ptr;
+  }
+}
+
 template <>
 TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
   std::pair<std::unordered_map<TId, TObj *>::iterator, bool> ret;

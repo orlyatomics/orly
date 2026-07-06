@@ -79,19 +79,23 @@ client() { PYTHONPATH="$REPO_ROOT/clients/python" python3 -c "$1"; }
 
 echo "[3/8] start fresh (create=true), install, write"
 start_server true run1
-client "
+# The pov id is captured for cycle 2: a pre-restart pov must be REFUSED
+# after the restart, not silently resurrected as an empty shell (#439).
+OLD_POV="$(client "
 import orly
 c = orly.connect('ws://127.0.0.1:19602/', timeout=10, recv_timeout=60)
 c.new_session(); c.install('kv', 1); pov = c.new_pov()
 for n in range(1, 11):
     c.call(pov, 'kv', 'write_val', {'n': n, 'x': n * 100})
 assert c.call(pov, 'kv', 'read_val', {'n': 5}) == 500
-c.close()"
+print(pov)
+c.close()" | tail -1)"
+echo "   wrote 10 keys via pov $OLD_POV"
 
 echo "[4/8] stop (flush-on-shutdown makes the old 75s flush window unnecessary, #440)"
 stop_server
 
-echo "[5/8] restart (create=false): data + package must survive"
+echo "[5/8] restart (create=false): data + package must survive; old pov must be refused"
 start_server false run2
 client "
 import orly
@@ -100,6 +104,15 @@ c.new_session(); pov = c.new_pov()
 vals = [c.call(pov, 'kv', 'read_val', {'n': n}) for n in range(1, 11)]
 assert vals == [n * 100 for n in range(1, 11)], f'data lost: {vals}'
 print('   data + auto-reinstalled package OK:', vals)
+# Povs are ephemeral (#439): the pre-restart pov's durable record reloads,
+# but its un-promoted state is gone -- the server must say so instead of
+# minting an empty shell that reads through to global.
+try:
+    c.call('$OLD_POV', 'kv', 'read_val', {'n': 5})
+    raise SystemExit('pre-restart pov was resurrected silently (#439)')
+except orly.OrlyError as ex:
+    assert 'ephemeral' in str(ex), f'wrong error for dead pov: {ex}'
+print('   pre-restart pov refused cleanly (#439)')
 c.uninstall('kv', 1)
 c.close()"
 
