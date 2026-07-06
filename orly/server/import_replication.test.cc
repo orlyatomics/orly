@@ -91,6 +91,7 @@
 #include <orly/atom/core_vector_builder.h>
 #include <orly/client/client.h>
 #include <orly/compiler.h>
+#include <orly/protocol.h>
 #include <orly/rt/opt.h>
 #include <orly/sabot/to_native.h>
 #include <orly/type/type_czar.h>
@@ -710,7 +711,12 @@ FIXTURE(ImportReplication) {
    graceful SIGINT must still complete: StopReplicationServices() hard-closes
    the replication socket, which fails the parked future and collapses the
    reader loop, so JoinReplicationServices() returns.  Before that fix this
-   fixture hung at Reap() and failed on the deadline. */
+   fixture hung at Reap() and failed on the deadline.
+
+   The fixture also holds an ESTABLISHED client connection (a raw handshake,
+   then silence) across the shutdown: the drain must hard-close it so its
+   TConnection releases the session's durable ptr before Clear() runs,
+   instead of Clear() logging-and-leaking the still-ptr'd session (#460). */
 FIXTURE(GracefulShutdownUnresponsiveSlave) {
   Orly::Type::TTypeCzar type_czar;
   const string scratch = GetScratchDir();
@@ -760,6 +766,34 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
     throw runtime_error("slave never reached Slave state; see " + slave_log);
   }
 
+  /* A raw, handshaked-then-silent client connection, still ESTABLISHED when
+     the master shuts down: the #460 shape.  (A real TClient would abort()
+     this test process when the server hard-closes on it, so speak the
+     12-byte handshake by hand and just hold the fd.)  The master's drain
+     must hard-close it so its TConnection releases the session's durable
+     ptr before Clear() runs. */
+  TFd silent_client(socket(AF_INET, SOCK_STREAM, 0));
+  /* handshake scope */ {
+    sockaddr_in addr;
+    Base::Zero(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(master_port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    Util::IfLt0(::connect(silent_client, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+    Handshake::THandshake<Handshake::TNewSession> handshake((seconds(600)));
+    Util::IfLt0(::send(silent_client, &handshake, sizeof(handshake), 0));
+    Handshake::TNewSession::TReply reply;
+    size_t got = 0;
+    while (got < sizeof(reply)) {
+      ssize_t piece = ::recv(silent_client, reinterpret_cast<char *>(&reply) + got, sizeof(reply) - got, 0);
+      Util::IfLt0(piece);
+      if (!piece) {
+        throw runtime_error("master closed the silent connection during its handshake; see " + master_log);
+      }
+      got += static_cast<size_t>(piece);
+    }
+  }
+
   /* Freeze the slave, then push one write through the master.  The
      replicate loop picks it up on the next replication tick, logs the RPC
      write, and parks in Sync(). */
@@ -794,6 +828,11 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   master.Interrupt();
   EXPECT_TRUE(master.Reap(seconds(60)));
   EXPECT_TRUE(LogContains(master_log, "RunReplicationQueue shutting down (#461)"));
+  /* The drain must have seen the silent connection (#460)... */
+  EXPECT_TRUE(LogContains(master_log, "draining ["));
+  /* ...and Clear() must therefore have found no still-ptr'd durable to
+     log-and-leak. */
+  EXPECT_TRUE(!LogContains(master_log, "leaking it"));
 
   slave.Kill();
   slave.Reap(seconds(60));

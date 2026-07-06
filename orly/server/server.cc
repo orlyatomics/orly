@@ -1331,6 +1331,30 @@ void TServer::Shutdown() {
   if (Reporter) {
     Reporter->Stop();
   }
+  /* Hard-close every established client connection: the listening sockets
+     are already down and TConnection::New refuses under ShutdownCalled, so
+     after this kick no serving loop can outlive the drain wait below.  The
+     loops wind down alongside the settle sleep; in-flight requests finish
+     against the still-live pipeline and their responses just fail to send
+     (#460). */ {
+    std::vector<std::shared_ptr<TConnection>> live_connections;
+    /* acquire Connection lock */ {
+      std::lock_guard<std::mutex> lock(ConnectionMutex);
+      live_connections.reserve(ConnectionBySessionId.size());
+      for (const auto &item : ConnectionBySessionId) {
+        if (auto connection = item.second.lock()) {
+          live_connections.push_back(std::move(connection));
+        }
+      }
+    }  // release Connection lock
+    if (!live_connections.empty()) {
+      syslog(LOG_INFO, "TServer::Shutdown() draining [%zu] live client connections (#460)", live_connections.size());
+    }
+    for (const auto &connection : live_connections) {
+      connection->InterruptRun();
+    }
+  }  // our refs drop here, OUTSIDE the lock: if one is the last ref, its
+     // OnRelease takes ConnectionMutex itself.
   /* Let the in-flight update pipeline settle while ALL of the cadence
      machinery (replication release, mergers, tetris) is still running: a
      write that arrived just before the signal is not mergeable until the
@@ -1362,6 +1386,18 @@ void TServer::Shutdown() {
      far) -- there is nothing to join. */
   if (HousekeeperHandle && !Scheduler->Cancel(HousekeeperHandle)) {
     HousekeeperExited.Pop();
+  }
+  /* Wait for the kicked connections to actually release their sessions:
+     the durable Clear() in the teardown jumper below must see only
+     genuinely closed durables.  Bounded -- a serving loop wedged in a long
+     request must not hold shutdown hostage (cf. #461); a straggler just
+     means Clear() logs-and-leaks it, exactly as before the drain existed
+     (#460). */ {
+    std::unique_lock<std::mutex> lock(ConnectionMutex);
+    if (!ConnectionDrainedCv.wait_for(lock, std::chrono::seconds(10),
+                                      [this] { return LiveConnectionCount == 0; })) {
+      syslog(LOG_WARNING, "TServer::Shutdown(): [%zu] client connection(s) still live after the drain deadline (#460)", LiveConnectionCount);
+    }
   }
   /* Tear down the fiber-entangled managers on a fiber, while every runner
      is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
@@ -1650,6 +1686,14 @@ void TServer::TConnection::Run(TFd &fd) {
   /* Install the socket as our RPC device. */
   auto device = make_shared<TDevice>(move(fd));
   BinaryIoStream = make_shared<TBinaryIoStream>(device);
+  /* Publish the device so a draining Shutdown() can hard-close it; if the
+     drain already started, don't enter the loop at all (#460). */ {
+    std::lock_guard<std::mutex> lock(RunLock);
+    if (DrainRequested) {
+      return;
+    }
+    RunDevice = device;
+  }
   /* In our serving loop, we'll wake up for two things:
        (1) the client sending us a message or
        (2) the session having a notification to send OR the client ack'ing the last notification we sent.
@@ -1718,6 +1762,13 @@ shared_ptr<TServer::TConnection> TServer::TConnection::New(TServer *server, cons
   std::shared_ptr<TConnection> result = nullptr;
   /* acquire Connection lock */ {
     lock_guard<mutex> lock(server->ConnectionMutex);
+    if (server->ShutdownCalled) {
+      /* A handshake racing Shutdown() must not mint a fresh session ptr
+         behind the drain's back (#460).  Checked under the lock: the drain
+         snapshots this map under the same lock after setting the flag, so
+         any connection that got in before the flag is in the snapshot. */
+      throw std::runtime_error("TServer is shutting down; refusing new client connection");
+    }
     auto &slot = server->ConnectionBySessionId.insert(make_pair(session->GetId(), weak_ptr<TConnection>())).first->second;
     result = slot.lock();
     if (!result) {
@@ -1725,6 +1776,7 @@ shared_ptr<TServer::TConnection> TServer::TConnection::New(TServer *server, cons
       success = true;
       result = shared_ptr<TConnection>(new TConnection(server, session), OnRelease);
       slot = result;
+      ++server->LiveConnectionCount;
     }
   }  // release Connection lock
   if (!success) {
@@ -1763,12 +1815,31 @@ TServer::TConnection::TConnection(TServer *server, const Durable::TPtr<TSession>
 
 void TServer::TConnection::OnRelease(TConnection *connection) {
   assert(connection);
+  TServer *server = connection->Server;
   /* extra */ {
-    lock_guard<mutex> lock(connection->Server->ConnectionMutex);
-    auto erased = connection->Server->ConnectionBySessionId.erase(connection->Session->GetId());
+    lock_guard<mutex> lock(server->ConnectionMutex);
+    auto erased = server->ConnectionBySessionId.erase(connection->Session->GetId());
     assert(erased == 1);
   }
   delete connection;
+  /* Count down AFTER the delete: the map entry has to die first (so a
+     reconnect can immediately re-slot the session), but Shutdown()'s drain
+     needs the session's durable ptr actually gone, which only the delete
+     delivers (#460). */ {
+    lock_guard<mutex> lock(server->ConnectionMutex);
+    --server->LiveConnectionCount;
+    server->ConnectionDrainedCv.notify_all();
+  }
+}
+
+void TServer::TConnection::InterruptRun() noexcept {
+  std::lock_guard<std::mutex> lock(RunLock);
+  DrainRequested = true;
+  if (RunDevice) {
+    /* Wakes the serving loop's poll; the past-end read then breaks the
+       loop.  Best-effort: the loop may already be on its way out. */
+    shutdown(RunDevice->GetFd(), SHUT_RDWR);
+  }
 }
 
 void TServer::AcceptClientConnections() {
