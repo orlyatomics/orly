@@ -49,6 +49,8 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 - **Single-node first.** Fail-over / replication / hundreds of thousands of transactions per second on one node. Sharding was designed for but never built; that part of the original pitch is currently aspirational. The master/slave pair (attach, join-time sync, live replication, failover promotion, bulk-import hand-off) is exercised end-to-end in CI ([#367](https://github.com/orlyatomics/orly/issues/367)/[#501](https://github.com/orlyatomics/orly/issues/501)); note that bulk imports are a solo-server operation — a replicating master refuses them ([#498](https://github.com/orlyatomics/orly/issues/498)).
 
+- **Restart durability.** A disk-backed `orlyi` gives everything durable back after a graceful stop/restart ([#435](https://github.com/orlyatomics/orly/issues/435), gated in CI by `tests/restart_test.sh`): global data, sessions (`resume session` works across restarts), index-id mappings, and the installed-package registry (packages auto-reinstall; an uninstall stays uninstalled). Graceful shutdown flushes dirty memory layers ([#440](https://github.com/orlyatomics/orly/issues/440)), drains live client connections ([#460](https://github.com/orlyatomics/orly/issues/460)), and completes even against an unresponsive replication peer ([#461](https://github.com/orlyatomics/orly/issues/461)). One deliberate caveat: **POVs are ephemeral** — un-promoted pov-local updates do not survive a restart, and a pre-restart pov id is refused with a clean error rather than silently resurrected empty ([#439](https://github.com/orlyatomics/orly/issues/439)); see [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
 ## Quick start
 
 System dependencies (Ubuntu 24.04):
