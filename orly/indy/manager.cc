@@ -215,6 +215,14 @@ void TManager::RunReplicationQueue() {
           if (!(ReplicationRead = Context->Queue())) {
             syslog(LOG_INFO, "TManager: joining context");
             Context->Join();
+            if (ReplicationServicesStopping) {
+              /* The connection died because StopReplicationServices()
+                 hard-closed it (#461).  Don't run the failover transition --
+                 Demote()/PromoteSlave() would re-arm WaitForSlave() mid-
+                 teardown -- just leave. */
+              syslog(LOG_INFO, "TManager::RunReplicationQueue shutting down (#461)");
+              return;
+            }
             std::lock_guard<std::mutex> lock(ContextLock);
             switch (State) {
               case Solo : {
@@ -533,6 +541,20 @@ void TManager::StopReplicationServices() {
   ReplicationQueueSem.Push();
   ReplicationWorkSem.Push();
   ReplicationSem.Push();
+  /* A CONNECTED pair's loops are parked past those epolls: the queue loop
+     blocks in Read() on the socket, and a master-mode replicate loop can be
+     parked in future->Sync() on a slave RPC -- neither is sem-wakeable, and
+     an unresponsive peer would hold JoinReplicationServices() forever
+     (#461).  Hard-close the socket: the read errors out, which fails every
+     outstanding future (waking Sync()) and collapses the reader loop. */
+  std::shared_ptr<TCommonContext> context;
+  /* acquire Context lock */ {
+    std::lock_guard<std::mutex> lock(ContextLock);
+    context = Context;
+  }  // release Context lock
+  if (context) {
+    context->Shutdown();
+  }
 }
 
 void TManager::JoinReplicationServices() {

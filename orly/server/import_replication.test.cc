@@ -44,10 +44,11 @@
         them are reachable only because the package bound to the imported
         index id (#367).
 
-   The kills are SIGKILL, deliberately: the slave promotes on connection
-   DEATH, and slave/master graceful shutdown while paired still stalls in
-   the #440/#461 teardown cluster — which is that work's to pin, not
-   this test's.
+   The kills in this scenario are SIGKILL, deliberately: the slave promotes
+   on connection DEATH, and a hard kill is what delivers that
+   deterministically.  Graceful shutdown while paired — including with an
+   UNRESPONSIVE peer — is pinned separately by the
+   GracefulShutdownUnresponsiveSlave fixture below (#461).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -175,6 +176,21 @@ bool LogContains(const string &path, const string &needle) {
   return false;
 }
 
+/* Occurrences of needle in the log so far.  Pairing traffic already pushes
+   replication notifications, so a caller that needs evidence of a FRESH push
+   counts before and waits for growth. */
+size_t CountInLog(const string &path, const string &needle) {
+  ifstream strm(path);
+  string line;
+  size_t count = 0;
+  while (getline(strm, line)) {
+    if (line.find(needle) != string::npos) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 bool WaitForLog(const string &path, const string &needle, seconds deadline) {
   const auto give_up = steady_clock::now() + deadline;
   while (steady_clock::now() < give_up) {
@@ -233,6 +249,14 @@ class TChildServer final {
   void Kill() {
     if (Pid > 0) {
       kill(Pid, SIGKILL);
+    }
+  }
+
+  /* SIGSTOP: the process freezes but its sockets stay open -- the shape of
+     an UNRESPONSIVE peer, as opposed to Kill()'s vanished one. */
+  void Suspend() {
+    if (Pid > 0) {
+      kill(Pid, SIGSTOP);
     }
   }
 
@@ -607,10 +631,10 @@ FIXTURE(ImportReplication) {
      clients' dispatch threads wind down before their server goes away. */
   this_thread::sleep_for(seconds(2));
   cout << "Stopping slave 1" << endl;
-  /* SIGKILL, not SIGINT: slave-mode graceful shutdown can stall in the
-     #440/#461 teardown cluster, and what this test needs is the master's
-     reaction to the slave VANISHING, which a hard kill delivers
-     deterministically. */
+  /* SIGKILL, not SIGINT: what this test needs is the master's reaction to
+     the slave VANISHING, which a hard kill delivers deterministically (a
+     graceful slave stop demotes the master through the same path but on the
+     slave's schedule). */
   slave_1.Kill();
   slave_1.Reap(seconds(60));
   if (!WaitForLog(master_log, "demoted back to solo", seconds(120))) {
@@ -653,7 +677,7 @@ FIXTURE(ImportReplication) {
   /* Fail over: kill the master; slave 2 promotes itself to solo.  SIGKILL,
      because the slave promotes on connection DEATH; a graceful master
      shutdown demotes itself first and the slave never takes the promotion
-     path (that ordering belongs to the #440/#461 teardown work). */
+     path (graceful paired shutdown is the other fixture's to pin, #461). */
   this_thread::sleep_for(seconds(2));
   cout << "Stopping the master" << endl;
   master.Kill();
@@ -676,4 +700,101 @@ FIXTURE(ImportReplication) {
     }
     deadline = seconds(30);
   }
+}
+
+/* #461: graceful shutdown of a PAIRED master whose slave has gone
+   unresponsive.  SIGSTOP keeps the slave's replication socket open but the
+   process silent: the master's replicate loop writes its PushNotifications
+   RPC into the socket (the fresh RPC-write log line is the evidence it got
+   there) and parks in future->Sync() with no answer ever coming.  A
+   graceful SIGINT must still complete: StopReplicationServices() hard-closes
+   the replication socket, which fails the parked future and collapses the
+   reader loop, so JoinReplicationServices() returns.  Before that fix this
+   fixture hung at Reap() and failed on the deadline. */
+FIXTURE(GracefulShutdownUnresponsiveSlave) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = GetScratchDir();
+  const string orlyi_path = GetOrlyiPath();
+  TLogTailDumper log_dumper;
+  if (!ifstream(orlyi_path).good()) {
+    throw runtime_error("orlyi binary not built at [" + orlyi_path + "]; run `make debug` first");
+  }
+
+  /* One package, installed while solo (like the main fixture); all this
+     fixture needs is one write to push through the replication stream once
+     the slave has stopped answering. */
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  { ofstream marker(pkg_dir + "/__orly__"); }
+  {
+    ofstream src(scratch + "/sample.orly");
+    src << SamplePackage;
+  }
+  Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
+
+  const in_port_t master_port = ProbeFreePort();
+  const in_port_t master_slave_port = ProbeFreePort();
+  const string master_log = scratch + "/master.log";
+  log_dumper.Add(master_log);
+  TChildServer master(
+      MakeServerArgs(orlyi_path, "graceful_master", pkg_dir, master_port,
+                     master_slave_port, "SOLO", 0),
+      master_log);
+  if (!WaitForPort(master_port, seconds(240))) {
+    throw runtime_error("master never came up; see " + master_log);
+  }
+  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  /* install scope */ {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    client->InstallPackage({ "sample" }, 1)->Sync();
+  }
+
+  const in_port_t slave_port = ProbeFreePort();
+  const string slave_log = scratch + "/slave.log";
+  log_dumper.Add(slave_log);
+  TChildServer slave(
+      MakeServerArgs(orlyi_path, "graceful_slave", pkg_dir, slave_port,
+                     ProbeFreePort(), "SLAVE", master_slave_port),
+      slave_log);
+  if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
+    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  }
+
+  /* Freeze the slave, then push one write through the master.  The
+     replicate loop picks it up on the next replication tick, logs the RPC
+     write, and parks in Sync(). */
+  const char *push_marker = "Write TSlave::PushNotificationsId";
+  const size_t pushes_before = CountInLog(master_log, push_marker);
+  cout << "Suspending the slave" << endl;
+  slave.Suspend();
+  /* write scope */ {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    auto client = make_shared<TExerciseClient>(master_addr);
+    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    auto push_result = client->Try(**pov_id, { "sample" }, TClosure(string("write_val"),
+                                                                    string("n"), 1L,
+                                                                    string("x"), 101L));
+    bool committed;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*push_result)->GetValue().NewState((*push_result)->GetArena().get(), state_alloc)), committed);
+    EXPECT_TRUE(committed);
+  }
+  /* Wait for the fresh push: only then is the loop provably at (or past)
+     the Write, about to park in Sync() on the frozen peer. */
+  const auto marker_deadline = steady_clock::now() + seconds(60);
+  while (CountInLog(master_log, push_marker) <= pushes_before) {
+    if (steady_clock::now() >= marker_deadline) {
+      throw runtime_error("master never issued a replication push after the slave froze; see " + master_log);
+    }
+    this_thread::sleep_for(milliseconds(250));
+  }
+
+  /* The point of the fixture: graceful shutdown must complete despite the
+     in-flight replication RPC. */
+  cout << "Interrupting the master" << endl;
+  master.Interrupt();
+  EXPECT_TRUE(master.Reap(seconds(60)));
+  EXPECT_TRUE(LogContains(master_log, "RunReplicationQueue shutting down (#461)"));
+
+  slave.Kill();
+  slave.Reap(seconds(60));
 }
