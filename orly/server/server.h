@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -516,6 +517,12 @@ namespace Orly {
            if the client times out, commits a syntax error, or otherwise does something weird. */
         void Run(Base::TFd &fd);
 
+        /* Hard-close the serving socket so Run()'s poll wakes and the loop
+           winds down; called by TServer::Shutdown()'s connection drain
+           (#460).  If Run() hasn't installed its device yet, it sees the
+           drain flag and bails before entering its loop. */
+        void InterruptRun() noexcept;
+
         /* Run the given jump-runnable on the server's websockets runner. */
         void RunWs(Indy::Fiber::TJumpRunnable &&jump_runnable) {
           Server->RunWs(std::move(jump_runnable));
@@ -573,6 +580,18 @@ namespace Orly {
         TServer *const Server;
 
         const Durable::TPtr<TSession> Session;
+
+        /* Guards RunDevice and DrainRequested against the InterruptRun() /
+           Run()-startup race (#460). */
+        std::mutex RunLock;
+
+        /* The serving loop's socket device, published by Run() so
+           InterruptRun() can hard-close it. */
+        std::shared_ptr<Io::TDevice> RunDevice;
+
+        /* Set by InterruptRun(); a Run() that hasn't started its loop yet
+           bails when it sees this. */
+        bool DrainRequested = false;
 
       };  // TServer::TConnection
 
@@ -825,11 +844,23 @@ namespace Orly {
          -1) and leave the accept parked forever (#440). */
       std::mutex SlaveSocketLock;
 
-      /* Covers ConnectionBySessionId. */
+      /* Covers ConnectionBySessionId, LiveConnectionCount, and
+         ConnectionDrainedCv. */
       std::mutex ConnectionMutex;
 
       /* All our open connections. */
       std::unordered_map<Base::TUuid, std::weak_ptr<TConnection>> ConnectionBySessionId;
+
+      /* Connections whose TConnection object still exists -- and so still
+         holds its session's durable ptr.  NOT the same as the map above:
+         OnRelease() erases the map entry BEFORE deleting the object (so a
+         reconnect can immediately re-slot the session), but Shutdown()'s
+         drain must wait for the session ptrs to actually be gone (#460). */
+      size_t LiveConnectionCount = 0;
+
+      /* Signaled by TConnection::OnRelease(); Shutdown()'s drain waits here
+         for LiveConnectionCount to reach zero (#460). */
+      std::condition_variable ConnectionDrainedCv;
 
       std::unique_ptr<TIndyReporter> Reporter;
 
