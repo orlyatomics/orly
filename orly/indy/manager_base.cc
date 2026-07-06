@@ -258,6 +258,8 @@ void TManager::CloseAllUnreferencedObjects() {
   for (const auto &item: OpenableObjs) {
     if (item.second->PtrCount == 0) {
       to_erase.emplace_back(item.first);
+      /* Teardown sweep: this is a sanctioned discard (#521). */
+      item.second->DiscardSanctioned = true;
       delete item.second;
     }
   }
@@ -283,6 +285,8 @@ bool TManager::PreDtor() {
          ptr. */
       continue;
     }
+    /* Teardown sweep: this is a sanctioned discard (#521). */
+    item.second->DiscardSanctioned = true;
     delete item.second;
   }
   return false;
@@ -601,6 +605,10 @@ void TManager::DestroyObj(TObj *obj) noexcept {
   assert(obj);
   size_t erased_from_openable = OpenableObjs.erase(obj->GetId());
   assert(erased_from_openable == 1);
+  /* Every path into here is the manager discarding a closed object per its
+     ttl contract (zero-ttl close, uncacheable close, cache eviction), so the
+     destructor may drop unmerged state without complaint (#521). */
+  obj->DiscardSanctioned = true;
   delete obj;
 }
 
@@ -653,7 +661,7 @@ void TManager::TObj::SetTtl(const TTtl &ttl) {
 }
 
 TManager::TObj::TObj(TManager *manager, const TId &id, const TTtl &ttl)
-    : Manager(manager), Id(id), PtrCount(0), OnDisk(false), Ttl(ttl) {
+    : Manager(manager), Id(id), PtrCount(0), OnDisk(false), DiscardSanctioned(false), Ttl(ttl) {
   assert(manager);
   Sem = new TSem;
 }

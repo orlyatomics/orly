@@ -291,12 +291,24 @@ TRepo::TRepo(L0::TManager *manager,
 }
 
 TRepo::~TRepo() {
-  assert(CurMemoryLayer->IsEmpty());
-  assert(!InTetris);
-  if (ParentRepo && InTetris) {
-    Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
-    InTetris = false;
+  /* A repo that dies with updates still in its current memory layer is
+     normally a lifecycle bug -- somebody destroyed it before its data was
+     merged away.  The exception is a sanctioned discard (#521): when the
+     manager drops an expired or torn-down pov's repo, dying with unmerged
+     data is the ttl contract working -- e.g. a ttl=0 pov whose owner
+     disconnected while its last write was parked on a replication stall.
+     Log the drop so the data loss stays visible in release builds too. */
+  assert(CurMemoryLayer->IsEmpty() || IsDiscardSanctioned());
+  if (!CurMemoryLayer->IsEmpty()) {
+    Log(LOG_INFO, "discarding", "dropping unmerged updates still in the memory layer of an expired pov (#521)");
   }
+  /* A repo joined to Tetris is pinned by its player's TChild ptr, so reaching
+     this destructor with InTetris set means the players -- and possibly the
+     whole TetrisManager -- are already gone (server teardown deletes the
+     TetrisManager before the repo manager); there is no player left to Part
+     from, and calling into the manager here would touch freed memory.
+     Outside a sanctioned discard, that state is still a lifecycle bug. */
+  assert(!InTetris || IsDiscardSanctioned());
   delete CurMemoryLayer;
 }
 

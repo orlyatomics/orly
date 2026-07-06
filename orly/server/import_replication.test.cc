@@ -832,12 +832,13 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   /* write scope */ {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
     auto client = make_shared<TExerciseClient>(master_addr);
-    /* A ttl long enough that the durable layer cleaner cannot expire the
-       pov mid-test: with the slave frozen, the pov's write is parked on the
-       replication stream, and destroying a repo whose memory layer still
-       holds that write asserts in ~TRepo (#521) -- a real engine bug, but
-       not the one this fixture pins. */
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(600));
+    /* ttl=0 on purpose: with the slave frozen, the pov's write is parked on
+       the replication stream, so the pov's repo dies (client disconnect, then
+       shutdown teardown) with that write still in its memory layer.  That
+       discard is sanctioned -- expiry of an unsafe pov drops unmerged data by
+       contract -- and must not trip the ~TRepo lifecycle assert, which would
+       abort the master mid-shutdown and fail the Reap below (#521). */
+    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
     auto push_result = client->Try(**pov_id, { "sample" }, TClosure(string("write_val"),
                                                                     string("n"), 1L,
                                                                     string("x"), 101L));
@@ -878,6 +879,13 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   /* ...and Clear() must therefore have found no still-ptr'd durable to
      log-and-leak. */
   EXPECT_TRUE(!LogContains(master_log, "leaking it"));
+  /* The whole teardown must have run to its end marker: an abort anywhere
+     mid-Shutdown -- e.g. the #521 ~TRepo lifecycle assert tripping on the
+     ttl=0 pov's repo, whose parked write it must discard as sanctioned --
+     dies before this line (Reap alone cannot see that; it ignores how the
+     child exited).  Deliberately not an exit-status check: the known #522
+     static-dtor abort happens after this marker and is tracked separately. */
+  EXPECT_TRUE(LogContains(master_log, "TServer::Shutdown() complete"));
 
   slave.Kill();
   slave.Reap(seconds(60));

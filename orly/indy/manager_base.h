@@ -279,6 +279,16 @@ namespace Orly {
              The default implementation of this function returns no dependent objects. */
           virtual bool ForEachDependentPtr(const std::function<bool (TAnyPtr &)> &cb) noexcept;
 
+          /* True once the manager has decided to discard this object per its
+             ttl/teardown contract: a zero-ttl close, an uncacheable close, a
+             cache eviction, or manager teardown.  ~TRepo consults this before
+             asserting that it is not dropping unmerged data -- an expired pov
+             dying with updates still parked in its memory layer is the ttl
+             contract working, not a lifecycle bug (#521). */
+          bool IsDiscardSanctioned() const {
+            return DiscardSanctioned;
+          }
+
           private:
 
           /* Increment the count of pointers currently sharing this durable object.
@@ -316,6 +326,10 @@ namespace Orly {
           /* See accessor. */
           bool OnDisk;
 
+          /* See IsDiscardSanctioned().  Set only by the manager, at the points
+             where it discards a closed object. */
+          bool DiscardSanctioned;
+
           /* See accessor. */
           TTtl Ttl;
 
@@ -329,7 +343,7 @@ namespace Orly {
           template <typename>
           friend class TPtr;
 
-          /* For ~TObj() & Deadline. */
+          /* For ~TObj(), Deadline & DiscardSanctioned. */
           friend class TManager;
 
         };  // TObj
