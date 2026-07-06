@@ -73,6 +73,11 @@ shared_ptr<const TAnyRequest> TContext::Read() {
 
 void TContext::FailAllFutures(const string &error_msg) {
   lock_guard<mutex> lock(FutureByRequestIdMutex);
+  /* Latch the failure so a Write() racing the reader's collapse gets an
+     already-failed future instead of registering an orphan that nothing can
+     ever complete (#520). */
+  AllFuturesFailed = true;
+  AllFuturesFailedError = error_msg;
   for (const auto &iter: FutureByRequestId) {
     string my_error = error_msg;
     iter.second->SetErrorResult(my_error);

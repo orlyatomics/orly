@@ -230,6 +230,15 @@ namespace Rpc {
        The associated future will accept that result when it arrives. */
     std::unordered_map<TRequestId, std::shared_ptr<TAnyFuture>> FutureByRequestId;
 
+    /* Set by FailAllFutures().  Once the reader has collapsed, nothing can
+       ever deliver a result, so a Write() racing the collapse must fail its
+       future immediately instead of registering it -- an orphaned
+       registration leaves the caller's Sync() parked forever (#520). */
+    bool AllFuturesFailed = false;
+
+    /* The message FailAllFutures() failed with, replayed onto late Writes. */
+    std::string AllFuturesFailedError;
+
     /* The number of requests returned by Read() which have not yet been handled. */
     std::atomic_size_t UnhandledRequestCount;
 
@@ -391,6 +400,13 @@ namespace Rpc {
     assert(item.second);
     /* extra */ {
       std::lock_guard<std::mutex> lock(FutureByRequestIdMutex);
+      if (AllFuturesFailed) {
+        /* The reader is gone; no result can ever arrive.  Hand back an
+           already-failed future rather than an orphan (#520). */
+        std::string my_error = AllFuturesFailedError;
+        item.second->SetErrorResult(my_error);
+        return item.second;
+      }
       item.first = NextRequestId++;
       bool is_unique = FutureByRequestId.insert(item).second;
       assert(item.second);
