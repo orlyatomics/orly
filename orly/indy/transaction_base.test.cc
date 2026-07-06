@@ -129,7 +129,15 @@ class TMyManager
     return create ? OpenOrCreate(repo_id, ttl, parent_repo, is_safe) : ForceOpenRepo(repo_id);
   }
 
+  /* The teardown sweeps Indy::TManager runs in its destructor, exposed so a
+     fixture can drive the manager-discards-a-dirty-repo path (#521). */
+  void TearDownRepos() {
+    ReleaseDirtySelfPins();
+    CloseAllUnreferencedObjects();
+  }
+
   using TManager::OpenOrCreate;
+  using L0::TManager::TryOpenLiveRepo;
 
   private:
 
@@ -499,6 +507,48 @@ FIXTURE(Issue172StaleDiscard) {
       EXPECT_TRUE(static_cast<bool>(walker));
     }
 
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #521: a zero-ttl fast repo discarded with an update still in its current
+   memory layer must not trip the ~TRepo lifecycle assert.  This is the pov
+   shape from orly/server: a ttl=0 fast private pov commits a write whose
+   lifecycle never finishes (in production, parked on a replication stall),
+   the owner disconnects, and the repo -- kept alive only by its MakeDirty()
+   self-pin -- is finally discarded by the manager's teardown sweeps.  That
+   discard is sanctioned (expiry of an unsafe pov drops unmerged data by
+   contract); before the fix, ReleaseDirtySelfPins() aborted the whole
+   process on assert(CurMemoryLayer->IsEmpty()). */
+FIXTURE(Issue521SanctionedDiscard) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TUuid repo_id(TUuid::Twister);
+    Base::TUuid idx_id(TUuid::Twister);
+    /* Commit one update to a zero-ttl fast repo, then drop every external
+       ptr.  The update is never released and no merge runner is latched in
+       this harness, so it stays in CurMemoryLayer and the MakeDirty()
+       self-pin is all that keeps the repo open. */ {
+      auto repo = manager->GetRepo(repo_id, TTtl(0), std::nullopt, false, true);
+      auto transaction = manager->NewTransaction();
+      auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(1L), &arena, state_alloc)), TKey(10L, &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Best), &arena, state_alloc));
+      transaction->Push(repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+    /* The sweep drops the self-pin; the zero-ttl repo closes and the manager
+       destroys it with the unmerged update still aboard -- a sanctioned
+       discard that must complete without tripping ~TRepo's asserts. */
+    manager->TearDownRepos();
+    EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(repo_id)));
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();
