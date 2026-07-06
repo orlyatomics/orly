@@ -319,12 +319,16 @@ class TJhm : public TCmd {
 
       if (VerboseTests || status) {
         TStatusLine::Cleanup(); // Make sure the TEST:/TESTS: line stays at the top.
-        cout << "TEST: " << test << '\n';
+        /* endl, not '\n': EchoOutput writes raw to fd 1, so cout must be
+           flushed or (in a non-tty run, e.g. CI) the header and every queued
+           TESTS: line land displaced from the test's own output, making the
+           failure read as if the test printed nothing (#520). */
+        cout << "TEST: " << test << endl;
         EchoOutput(subprocess->TakeStdOutFromChild());
         EchoOutput(subprocess->TakeStdErrFromChild());
       }
       if (status) {
-        cout << "EXITCODE: " << status << '\n';
+        cout << "EXITCODE: " << status << endl;
         any_failed = true;
       }
       EraseOrFail(running, test);

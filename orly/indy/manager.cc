@@ -419,17 +419,20 @@ void TManager::RunReplicateTransaction() {
           if (!replication_streamer.IsEmpty()) {
             try {
               Base::TTimer timer;
-              //auto future = context->Write<void>(TSlave::PushNotificationsId, replication_streamer);
               auto future = context->Write<void>(TSlave::PushNotificationsId, replication_streamer);
               timer.Stop();
-              if (timer.GetTotal() < 1s) {
-                syslog(LOG_INFO, "Write TSlave::PushNotificationsId took [%fs]", ToSecondsDouble(timer.GetTotal()));
-              }
+              /* Unconditional (the old <1s gate hid exactly the slow writes
+                 worth seeing, #520), and paired with the 'acked' line below:
+                 a 'took' with no 'acked' after it means this loop is parked
+                 in Sync() on an unresponsive slave -- the observable fact
+                 the graceful-shutdown fixture keys on. */
+              syslog(LOG_INFO, "Write TSlave::PushNotificationsId took [%fs]", ToSecondsDouble(timer.GetTotal()));
               assert(future);
               future->Sync();  // wait for the future to complete
               if (!static_cast<bool>(*future)) {
                 throw std::runtime_error("Future did not complete.");
               }
+              syslog(LOG_INFO, "Write TSlave::PushNotificationsId acked");
               /* now apply all the necessary replication notifications. */
               for (TReplicationQueue::TItemCollection::TCursor csr(copy_queue.GetItemCollection()); csr; ++csr) {
                 switch (csr->GetKind()) {

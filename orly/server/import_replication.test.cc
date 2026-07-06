@@ -177,9 +177,7 @@ bool LogContains(const string &path, const string &needle) {
   return false;
 }
 
-/* Occurrences of needle in the log so far.  Pairing traffic already pushes
-   replication notifications, so a caller that needs evidence of a FRESH push
-   counts before and waits for growth. */
+/* Occurrences of needle in the log so far. */
 size_t CountInLog(const string &path, const string &needle) {
   ifstream strm(path);
   string line;
@@ -259,6 +257,37 @@ class TChildServer final {
     if (Pid > 0) {
       kill(Pid, SIGSTOP);
     }
+  }
+
+  /* One-line status of the child for failure messages: distinguishes a
+     frozen-but-alive child (state T) from one an assert or the kernel's OOM
+     killer took -- the difference between a fixture bug and a dead server
+     (#520). */
+  string Describe() {
+    if (Pid <= 0) {
+      return "already reaped";
+    }
+    int status;
+    pid_t ret = waitpid(Pid, &status, WNOHANG);
+    if (ret == Pid) {
+      Pid = -1;
+      ostringstream strm;
+      if (WIFEXITED(status)) {
+        strm << "exited with status " << WEXITSTATUS(status);
+      } else if (WIFSIGNALED(status)) {
+        strm << "killed by signal " << WTERMSIG(status);
+      } else {
+        strm << "reaped with raw status " << status;
+      }
+      return strm.str();
+    }
+    ifstream stat_strm("/proc/" + to_string(Pid) + "/stat");
+    string stat_line;
+    getline(stat_strm, stat_line);
+    const auto close_paren = stat_line.rfind(')');
+    const string state = (close_paren != string::npos && close_paren + 2 < stat_line.size())
+        ? string(1, stat_line[close_paren + 2]) : string("?");
+    return "alive, state [" + state + "]";
   }
 
   /* Wait for the child to exit; true if it did. */
@@ -448,7 +477,7 @@ class TLogTailDumper final {
       string line;
       while (getline(strm, line)) {
         tail.push_back(line);
-        if (tail.size() > 25) {
+        if (tail.size() > 60) {
           tail.pop_front();
         }
       }
@@ -794,17 +823,21 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
     }
   }
 
-  /* Freeze the slave, then push one write through the master.  The
-     replicate loop picks it up on the next replication tick, logs the RPC
-     write, and parks in Sync(). */
-  const char *push_marker = "Write TSlave::PushNotificationsId";
-  const size_t pushes_before = CountInLog(master_log, push_marker);
+  /* Freeze the slave, then push one write through the master so the
+     replicate loop has something to push against the frozen peer. */
+  const char *push_marker = "Write TSlave::PushNotificationsId took";
+  const char *ack_marker = "Write TSlave::PushNotificationsId acked";
   cout << "Suspending the slave" << endl;
   slave.Suspend();
   /* write scope */ {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
     auto client = make_shared<TExerciseClient>(master_addr);
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    /* A ttl long enough that the durable layer cleaner cannot expire the
+       pov mid-test: with the slave frozen, the pov's write is parked on the
+       replication stream, and destroying a repo whose memory layer still
+       holds that write asserts in ~TRepo (#521) -- a real engine bug, but
+       not the one this fixture pins. */
+    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(600));
     auto push_result = client->Try(**pov_id, { "sample" }, TClosure(string("write_val"),
                                                                     string("n"), 1L,
                                                                     string("x"), 101L));
@@ -812,18 +845,30 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
     Sabot::ToNative(*Sabot::State::TAny::TWrapper((*push_result)->GetValue().NewState((*push_result)->GetArena().get(), state_alloc)), committed);
     EXPECT_TRUE(committed);
   }
-  /* Wait for the fresh push: only then is the loop provably at (or past)
-     the Write, about to park in Sync() on the frozen peer. */
+  /* Wait until a push is OUTSTANDING (written, never acked): that is the
+     replicate loop provably parked in future->Sync() on the frozen peer,
+     the state the SIGINT below must survive.  Not 'wait for a fresh push':
+     if a push races the SIGSTOP itself -- and the silent client's own
+     session handshake above makes one likely -- the loop parks BEFORE the
+     pov's write can generate another marker, and a fresh one can never
+     come (#520).  This wait terminates either way: the loop is already
+     parked (an unacked marker exists), or it is idle and the pov write
+     forces one more push that the frozen slave can never answer. */
   const auto marker_deadline = steady_clock::now() + seconds(60);
-  while (CountInLog(master_log, push_marker) <= pushes_before) {
+  while (CountInLog(master_log, push_marker) <= CountInLog(master_log, ack_marker)) {
     if (steady_clock::now() >= marker_deadline) {
-      throw runtime_error("master never issued a replication push after the slave froze; see " + master_log);
+      throw runtime_error("master never parked a replication push against the frozen slave"
+                          " (slave: " + slave.Describe() + "); see " + master_log);
     }
     this_thread::sleep_for(milliseconds(250));
   }
 
   /* The point of the fixture: graceful shutdown must complete despite the
-     in-flight replication RPC. */
+     in-flight replication RPC.  Record the slave's state first: if it was
+     killed rather than frozen (OOM, assert), the master sees a dead peer --
+     a different scenario than the one this fixture pins, and the one thing
+     the CI logs could not tell us in #520. */
+  cout << "Slave state before interrupting the master: " << slave.Describe() << endl;
   cout << "Interrupting the master" << endl;
   master.Interrupt();
   EXPECT_TRUE(master.Reap(seconds(60)));
