@@ -117,6 +117,11 @@ namespace Orly {
 
       inline TManager::TPtr<Indy::TRepo> ForceGetRepo(const Base::TUuid &repo_id);
 
+      /* The repo iff it is live in this manager; null otherwise.  Never
+         constructs and never touches the (unported, #173) reload path
+         (#439). */
+      inline TManager::TPtr<Indy::TRepo> TryGetLiveRepo(const Base::TUuid &repo_id);
+
       inline TManager::TPtr<Indy::TRepo> GetSystemRepo() const;
 
       virtual void RunReplicationQueue() override;
@@ -609,6 +614,10 @@ namespace Orly {
 
     inline TManager::TPtr<Indy::TRepo> TManager::ForceGetRepo(const Base::TUuid &repo_id) {
       return ForceOpenRepo(repo_id);
+    }
+
+    inline TManager::TPtr<Indy::TRepo> TManager::TryGetLiveRepo(const Base::TUuid &repo_id) {
+      return TryOpenLiveRepo(repo_id);
     }
 
     inline TManager::TPtr<Indy::TRepo> TManager::GetSystemRepo() const {

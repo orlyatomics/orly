@@ -139,6 +139,15 @@ namespace Orly {
       mutable Indy::L0::TManager::TPtr<Indy::TRepo> Repo;
       mutable std::mutex RepoLock;
 
+      /* True iff this object came back from a durable disk layer (the
+         stream constructor) rather than being freshly minted.  A reloaded
+         pov may only ATTACH to a live repo, never create one: repos do not
+         survive a restart (the L0 save/reload path was never ported, #173),
+         so creating here would silently resurrect the pov as an empty
+         shell, swallowing every update tetris had not yet promoted at
+         shutdown (#439). */
+      const bool Reloaded;
+
       /* For access to constructors/destructor. */
       friend class Durable::TManager;
 

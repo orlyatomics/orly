@@ -85,6 +85,11 @@ exit;
   - Clients: `call_batch` (python), `CallBatch` (go), `callBatch` (ts).
 - **POV flavors**: `safe` vs unsafe (conflict guarantee), `shared` vs `private`
   (visibility), optional `parent`. Demos use `new safe shared pov;`.
+- **POVs are ephemeral across restarts** (#439). Updates promoted to the global
+  POV are durable; a private/shared POV's own un-promoted state is not. After a
+  server restart, a `try` against a pre-restart POV id fails with a clean
+  "povs are ephemeral" error — create a new POV and retry. (Sessions, by
+  contrast, do survive: `resume session <id>;` works across a restart.)
 - **Time-travel is not a protocol verb.** Historical / as-of reads are expressed
   *in orlyscript* — a package method that takes an `.as_of` argument (and/or a
   key-encoded version axis) and folds history in-engine. The protocol just calls
