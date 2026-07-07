@@ -45,6 +45,11 @@ RUN mkdir -p /opt/orly-packages /tmp/pkgout && touch /opt/orly-packages/__orly__
 
 FROM ubuntu:24.04
 
+# Link the ghcr package to this repo (package page shows the source/README).
+LABEL org.opencontainers.image.source="https://github.com/orlyatomics/orly" \
+      org.opencontainers.image.description="Orly database: mem-sim orlyi + orlyc + example packages" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 # Runtime .so set verified via ldd on orlyi/orlyc, plus what in-container
 # package compiles need: g++ (orlyc execs `g++ -I$ORLY_SRC_ROOT ...`) and
 # uuid-dev (generated code includes base/uuid.h -> <uuid/uuid.h>; the lib
