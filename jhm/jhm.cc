@@ -20,10 +20,13 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
 #include <unordered_map>
+
+#include <poll.h>
 
 #include <base/backtrace.h>
 #include <base/cmd.h>
@@ -36,6 +39,7 @@
 #include <jhm/status_line.h>
 #include <jhm/test.h>
 #include <jhm/work_finder.h>
+#include <base/util/io.h>
 #include <base/util/path.h>
 
 using namespace Base;
@@ -93,6 +97,29 @@ void WriteCompileCommandsJson(const TEnv &env) {
     return;
   }
   out << TJson(std::move(entries));
+}
+
+/* Echo whatever output the pump has already delivered for a TIMED-OUT test,
+   giving up after a quiet period instead of waiting for EOF: a SIGKILLed
+   test can leave grandchildren holding the pipe's write side (its forked
+   servers, say), and then EOF never comes -- the reporter must not inherit
+   the wedge the timeout just cut short (#537). */
+void EchoOutputBounded(TFd &&fd) {
+  uint8_t buf[4096];
+  for (;;) {
+    pollfd p;
+    p.fd = fd;
+    p.events = POLLIN;
+    p.revents = 0;
+    if (poll(&p, 1, 2000) <= 0 || !(p.revents & POLLIN)) {
+      break;
+    }
+    ssize_t got = read(fd, buf, sizeof(buf));
+    if (got <= 0) {
+      break;
+    }
+    WriteExactly(STDOUT_FILENO, buf, static_cast<size_t>(got));
+  }
 }
 
 }  // namespace
@@ -281,9 +308,23 @@ class TJhm : public TCmd {
       }
     }
 
+    /* A test that wedges must become a named failure in minutes, not a
+       silently cancelled job half an hour later: without a per-test
+       timeout, one hung binary eats the whole CI job budget and the only
+       evidence is the orphan-process list (#537).  The flag wins if given;
+       otherwise the config may override the default. */
+    uint32_t test_timeout_secs = TestTimeout;
+    if (test_timeout_secs == UnsetTestTimeout) {
+      double configured = DefaultTestTimeoutSecs;
+      env.GetConfig().TryRead({"test", "timeout_secs"}, configured);
+      test_timeout_secs = static_cast<uint32_t>(configured);
+    }
+
     TPump pump;
     unordered_map<int, TFile *> pid_to_test;
     unordered_map<TFile *, unique_ptr<TSubprocess>> running;
+    unordered_map<TFile *, chrono::steady_clock::time_point> started_at;
+    unordered_map<TFile *, uint32_t> timed_out;
     bool any_failed = false;
     size_t next_test = 0;
 
@@ -294,6 +335,7 @@ class TJhm : public TCmd {
       }
       auto subprocess = TSubprocess::New(pump, cmd);
       pid_to_test[subprocess->GetChildId()] = test;
+      started_at[test] = chrono::steady_clock::now();
       running.emplace(test, move(subprocess));
     };
 
@@ -311,7 +353,30 @@ class TJhm : public TCmd {
     report_status();
 
     while (!running.empty()) {
-      auto pid = TSubprocess::WaitAll();
+      auto pid = TSubprocess::TryWaitAll();
+      if (!pid) {
+        /* Nothing has exited; sweep for tests past their deadline.  A killed
+           test still flows through the reap below on a later pass, so the
+           bookkeeping (echo, EXITCODE, refill) stays in one place. */
+        if (test_timeout_secs) {
+          const auto now = chrono::steady_clock::now();
+          for (const auto &item : running) {
+            if (timed_out.count(item.first)) {
+              continue;  // already killed; the reap is on its way
+            }
+            const auto ran = chrono::duration_cast<chrono::seconds>(now - started_at.at(item.first)).count();
+            if (ran >= test_timeout_secs) {
+              TStatusLine::Cleanup();
+              cout << "TIMEOUT: " << item.first << " still running after " << ran
+                   << "s; killing it" << endl;
+              kill(item.second->GetChildId(), SIGKILL);
+              timed_out[item.first] = static_cast<uint32_t>(ran);
+            }
+          }
+        }
+        this_thread::sleep_for(chrono::milliseconds(100));
+        continue;
+      }
       TFile *test = pid_to_test.at(pid);
       EraseOrFail(pid_to_test, pid);
       auto &subprocess = running.at(test);
@@ -324,8 +389,18 @@ class TJhm : public TCmd {
            TESTS: line land displaced from the test's own output, making the
            failure read as if the test printed nothing (#520). */
         cout << "TEST: " << test << endl;
-        EchoOutput(subprocess->TakeStdOutFromChild());
-        EchoOutput(subprocess->TakeStdErrFromChild());
+        if (timed_out.count(test)) {
+          EchoOutputBounded(subprocess->TakeStdOutFromChild());
+          EchoOutputBounded(subprocess->TakeStdErrFromChild());
+        } else {
+          EchoOutput(subprocess->TakeStdOutFromChild());
+          EchoOutput(subprocess->TakeStdErrFromChild());
+        }
+      }
+      if (timed_out.count(test)) {
+        cout << "TIMEOUT: " << test << " killed after " << timed_out.at(test)
+             << "s (test.timeout_secs=" << test_timeout_secs << ")" << endl;
+        any_failed = true;
       }
       if (status) {
         cout << "EXITCODE: " << status << endl;
@@ -356,6 +431,11 @@ class TJhm : public TCmd {
       Param(
           &TJhm::PrintTests, "print_tests", Optional, "print-test\0", "Write a list of tests to the given filename.");
       Param(&TJhm::RunTests, "run_tests", Optional, "test\0", "Run the unit tests");
+      Param(&TJhm::TestTimeout,
+            "test_timeout",
+            Optional,
+            "test-timeout\0",
+            "Per-test timeout in seconds when running tests (0 disables; default 600, or config test.timeout_secs)");
       Param(&TJhm::VerboseTests, "verbose_tests", Optional, "verbose-test\0", "Run tests in verbose mode");
       Param(&TJhm::WorkerCount,
             "worker_count",
@@ -371,11 +451,16 @@ class TJhm : public TCmd {
     }
   };
 
+  /* Sentinel meaning "flag not given": fall back to config, then default. */
+  static constexpr uint32_t UnsetTestTimeout = std::numeric_limits<uint32_t>::max();
+  static constexpr double DefaultTestTimeoutSecs = 600;
+
   bool PrintCmd = false;
   string Config = "debug";
   string ConfigMixin;
   string PrintTests;
   bool RunTests = false;
+  uint32_t TestTimeout = UnsetTestTimeout;
   bool VerboseTests = false;
   uint32_t WorkerCount = 0;
   vector<string> Targets;

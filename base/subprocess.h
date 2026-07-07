@@ -34,6 +34,9 @@ namespace Base {
     static int WaitAll();
     // Returns the pid of the process which exited / work us up.
 
+    /* Like WaitAll(), but never blocks: returns 0 when no child has exited yet. */
+    static int TryWaitAll();
+
     /* Destroying this object won't stop the child process, we'll just stop talking to it. */
     ~TSubprocess() = default;
 

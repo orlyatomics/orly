@@ -38,6 +38,15 @@ int TSubprocess::WaitAll() {
   return status.si_pid;
 }
 
+int TSubprocess::TryWaitAll() {
+  /* waitid() with WNOHANG leaves the siginfo untouched when no child is
+     ready, so si_pid must be zeroed to make that case detectable. */
+  siginfo_t status;
+  status.si_pid = 0;
+  IfNe0(waitid(P_ALL, 0, &status, WEXITED | WNOWAIT | WNOHANG));
+  return status.si_pid;
+}
+
 int TSubprocess::Wait() const {
   int status;
   IfLt0(waitpid(ChildId, &status, 0));
