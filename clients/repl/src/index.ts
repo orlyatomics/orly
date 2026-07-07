@@ -262,7 +262,10 @@ async function main(): Promise<void> {
     } catch {
       client.close();
     }
-    process.exit(0);
+    // No process.exit(): it truncates pending pipe writes (a piped consumer
+    // would lose the last result/error, #542). With stdin, readline, and the
+    // socket all closed, the event loop drains and node exits on its own.
+    process.exitCode = 0;
   };
 
   const runCommand = async (line: string): Promise<void> => {
@@ -326,8 +329,11 @@ async function main(): Promise<void> {
     prompt();
   });
 
+  // stdin EOF (piped input, Ctrl-D). Quitting immediately would tear down
+  // the socket and scratch dir under whatever entry is still compiling
+  // (#542) — chain it so EOF means "quit after pending entries drain".
   rl.on("close", () => {
-    void quit();
+    chain = chain.then(() => quit());
   });
 
   prompt();
@@ -335,5 +341,5 @@ async function main(): Promise<void> {
 
 main().catch((e) => {
   console.error(e instanceof Error ? e.message : String(e));
-  process.exit(1);
+  process.exitCode = 1;
 });
