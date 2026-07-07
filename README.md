@@ -53,7 +53,24 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 ## Quick start
 
-System dependencies (Ubuntu 24.04):
+**Docker** (any host — the engine itself is Linux-only, so this is also the
+macOS/Windows path):
+
+```sh
+docker run --rm -p 8082:8082 ghcr.io/orlyatomics/orly
+```
+
+That's a solo mem-sim server with the `sample`, `graph`, and `market` example
+packages pre-compiled and installable, speaking the
+[WebSocket + JSON protocol](docs/PROTOCOL.md) on `ws://127.0.0.1:8082/` —
+point any client driver ([`clients/`](clients/)) or the
+[MCP server](clients/mcp/) at it. `orlyc` and the source headers are in the
+image, so it compiles your own `.orly` packages too
+(`docker exec <ctr> orlyc -o /var/lib/orly/packages yourpkg.orly`). Extra
+`docker run ... <flags>` pass straight through to `orlyi`
+([#530](https://github.com/orlyatomics/orly/issues/530)).
+
+**From source** — system dependencies (Ubuntu 24.04):
 
 ```sh
 sudo apt-get install -y \

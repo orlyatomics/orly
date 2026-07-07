@@ -1,0 +1,14 @@
+# Keep the build context to the source tree: no VCS history, no host build
+# output (the image does its own release build), no Node artifacts.
+# tools/jhm + make_dep_file are host-built (gitignored) binaries; if they
+# leak into the context, `make bootstrap` skips bootstrap.sh and the .jhm
+# tree-root marker it creates, and jhm dies at "Unable to find .jhm".
+.git
+.claude
+tools/jhm
+tools/make_dep_file
+**/node_modules
+**/dist
+**/__pycache__
+**/package-lock.json
+*.log
