@@ -1,0 +1,1 @@
+- **Added**: `jhm --test` now enforces a per-test timeout (default 600s; `--test-timeout <secs>` or config `test.timeout_secs`, 0 disables). A wedged test binary is SIGKILLed and reported as a named `TIMEOUT:` failure with its output echoed, instead of silently eating the rest of the CI job's 30-minute budget with the only evidence in the orphan-process list (#537).
