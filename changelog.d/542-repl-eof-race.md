@@ -1,1 +1,0 @@
-- **Fixed**: `orly-repl` with piped stdin (`echo '1 + 1;' | orly-repl ...`, the docker `repl` mode's shape) aborted in-flight entries on EOF and exited 0 with no output — the result never printed and the error text was truncated by `process.exit`. EOF now quits only after pending entries drain, exit lets output flush, and the smoke gains a piped-EOF regression scenario (#542).
