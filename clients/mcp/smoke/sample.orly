@@ -1,0 +1,6 @@
+package #1;
+read_val = (*<['values', n]>::(int?)) where { n = given::(int); };
+write_val = ((true) effecting { new <['values', n]> <- x; } ) where {
+  n = given::(int);
+  x = given::(int);
+};

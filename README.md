@@ -189,7 +189,7 @@ All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./
 
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — the WebSocket + JSON client protocol an application uses to talk to a running `orlyi` (the path the `examples/` drivers use): connection, statements, and JSON marshaling.
 
-**Client libraries** implement that protocol so apps don't hand-roll it: [`clients/python`](clients/python) (`orly`), [`clients/go`](clients/go) (`orly`), and [`clients/ts`](clients/ts) (`orly` — typed, browser + Node). The `examples/` drivers run on them.
+**Client libraries** implement that protocol so apps don't hand-roll it: [`clients/python`](clients/python) (`orly`), [`clients/go`](clients/go) (`orly`), and [`clients/ts`](clients/ts) (`orly` — typed, browser + Node). The `examples/` drivers run on them. For AI-agent runtimes, [`clients/mcp`](clients/mcp) (`orly-mcp`) wraps the TS driver in an [MCP](https://modelcontextprotocol.io) server, so any MCP-speaking agent can use a running `orlyi` as conflict-free shared memory — N agents share a POV id and write concurrently with the engine as the merge ([#526](https://github.com/orlyatomics/orly/issues/526)).
 
 ## Supported platforms
 
