@@ -1,0 +1,83 @@
+# Build (and on demand, publish) the Orly runtime image (#530).
+#
+# Pull requests touching the docker files build the image and gate it with
+# the MCP smoke pointed at the CONTAINERIZED server (the same smoke.mjs that
+# gates clients/mcp against a host orlyi) -- no push. A version tag or a
+# manual dispatch additionally pushes to ghcr.io/orlyatomics/orly.
+name: docker
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker/**
+      - .github/workflows/docker.yml
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  image:
+    name: build image + in-container smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t ghcr.io/orlyatomics/orly:ci .
+
+      - name: Start container
+        run: |
+          docker run -d --name orly -p 8082:8082 ghcr.io/orlyatomics/orly:ci
+          for _ in $(seq 1 60); do
+            if ss -tln | grep -q ':8082'; then exit 0; fi
+            sleep 1
+          done
+          echo "container never opened :8082; logs:"
+          docker logs orly | tail -40
+          exit 1
+
+      # The same MCP smoke that gates clients/mcp, but ORLY_URL points at the
+      # container and the `sample` package is the one BAKED into the image --
+      # exercising install/new_pov/call/call_batch/error against the published
+      # artifact end to end.
+      - name: MCP smoke against the container
+        run: |
+          (cd clients/ts && npm install --silent && npx tsc)
+          (cd clients/mcp && npm install --silent && npx tsc)
+          ORLY_URL=ws://127.0.0.1:8082/ node clients/mcp/smoke/smoke.mjs
+
+      # The image also claims in-container package compiles (orlyc + g++ +
+      # ORLY_SRC_ROOT). Gate that claim: compile a from-scratch user package
+      # to a loadable .so inside the running container. (This caught a
+      # missing uuid-dev in the runtime stage during development.)
+      - name: In-container orlyc compile
+        run: |
+          docker exec orly bash -c '
+            set -e
+            mkdir -p /tmp/user
+            printf "package #1;\nhello = (42) where {};\n" > /tmp/user/hello.orly
+            cd /tmp/user && orlyc -o /tmp/user /tmp/user/hello.orly
+            test -s /tmp/user/hello.1.so
+          '
+
+      - name: Container logs (for diagnosis)
+        if: always()
+        run: docker logs orly 2>&1 | tail -60
+
+      - name: Push to ghcr.io
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag ghcr.io/orlyatomics/orly:ci ghcr.io/orlyatomics/orly:latest
+          docker push ghcr.io/orlyatomics/orly:latest
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            ver="${GITHUB_REF#refs/tags/}"
+            docker tag ghcr.io/orlyatomics/orly:ci "ghcr.io/orlyatomics/orly:${ver}"
+            docker push "ghcr.io/orlyatomics/orly:${ver}"
+          fi
