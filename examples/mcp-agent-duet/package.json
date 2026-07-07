@@ -1,0 +1,10 @@
+{
+  "name": "mcp-agent-duet",
+  "private": true,
+  "description": "Two MCP agents build one knowledge graph in one shared Orly POV, concurrently",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
