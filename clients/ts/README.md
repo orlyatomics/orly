@@ -1,4 +1,4 @@
-# orly — TypeScript client
+# @orlyatomics/orly — TypeScript client
 
 A typed client for the Orly database over its WebSocket + JSON protocol
 (see [`docs/PROTOCOL.md`](../../docs/PROTOCOL.md)). Works in the **browser**
@@ -10,15 +10,20 @@ JSON result.
 ## Install
 
 ```sh
-npm install orly          # plus `npm install ws` for Node
+npm install @orlyatomics/orly     # plus `npm install ws` for Node
 ```
 
 Requires a running `orlyi` (default `ws://127.0.0.1:8082/`).
 
+(Inside this repo, packages and examples install the driver under the alias
+`orly` — `"orly": "file:../ts"` — so their imports read `from "orly"`; the
+same alias is available to consumers as
+`npm install orly@npm:@orlyatomics/orly`.)
+
 ## Use
 
 ```ts
-import { connect } from "orly";
+import { connect } from "@orlyatomics/orly";
 
 const c = await connect();                 // opens the WebSocket
 await c.newSession();

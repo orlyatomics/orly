@@ -27,5 +27,22 @@
   "devDependencies": {
     "@types/node": "^26.1.0",
     "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/orlyatomics/orly.git",
+    "directory": "clients/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/orlyatomics/orly/issues"
+  },
+  "keywords": [
+    "mcp",
+    "agents",
+    "database",
+    "orly"
+  ],
+  "engines": {
+    "node": ">=18"
   }
 }

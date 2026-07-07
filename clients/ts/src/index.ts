@@ -10,7 +10,7 @@
  * imports the `ws` package).
  *
  * ```ts
- * import { connect } from "orly";
+ * import { connect } from "@orlyatomics/orly";  // in-repo: from "orly" (alias)
  *
  * const c = await connect();               // opens a WebSocket
  * await c.newSession();
