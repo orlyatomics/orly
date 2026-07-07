@@ -212,6 +212,8 @@ All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./
 
 **Client libraries** implement that protocol so apps don't hand-roll it: [`clients/python`](clients/python) (`orly`), [`clients/go`](clients/go) (`orly`), and [`clients/ts`](clients/ts) (`orly` — typed, browser + Node). The `examples/` drivers run on them. For AI-agent runtimes, [`clients/mcp`](clients/mcp) (`orly-mcp`) wraps the TS driver in an [MCP](https://modelcontextprotocol.io) server, so any MCP-speaking agent can use a running `orlyi` as conflict-free shared memory — N agents share a POV id and write concurrently with the engine as the merge ([#526](https://github.com/orlyatomics/orly/issues/526)).
 
+**Interactive orlyscript** — [`clients/repl`](clients/repl) (`orly-repl`) is a REPL against a running `orlyi`: type an expression and see its value, define functions and call them, write through a POV and read back — no package files by hand. Each entry is compiled with `orlyc` into a synthetic package and installed behind the scenes ([#535](https://github.com/orlyatomics/orly/issues/535)).
+
 ## Supported platforms
 
 Linux only, x86-64. Verified on Ubuntu 24.04. Earlier releases probably work; not re-tested in the revival pass.

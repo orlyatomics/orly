@@ -597,6 +597,16 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/mcp
 
+      # orlyscript REPL smoke (#535): drives the orly-repl binary over stdin
+      # against a live mem-sim orlyi — expression eval, definitions (incl.
+      # multi-line entry), cross-definition calls, storage write/read-back,
+      # and compile-error recovery. Rides this job for the already-built
+      # orlyi/orlyc + Node toolchain.
+      - name: REPL smoke (clients/repl)
+        run: bash smoke/run-smoke.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/repl
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so
