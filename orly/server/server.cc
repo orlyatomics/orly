@@ -1489,6 +1489,14 @@ TServer::~TServer() {
     delete Fiber::TFrame::LocalFramePool;
     Fiber::TFrame::LocalFramePool = nullptr;
     FramePoolManager.release();
+    /* The static disk-event pool manager must be released for the same
+       reason: every TJumpRunnable (including Shutdown()'s own teardown
+       jumper) makes a LocalEventPool on its scheduler-worker thread, and
+       the merge and durable runners make their own.  Left owned, the
+       unique_ptr's destructor runs in __run_exit_handlers, finds those
+       pools, and throws out of a noexcept destructor -- aborting a process
+       whose shutdown already completed cleanly (#522). */
+    Disk::Util::TDiskController::TEvent::DiskEventPoolManager.release();
     return;
   }
   WsRunner.ShutDown();

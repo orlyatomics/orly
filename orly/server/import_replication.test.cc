@@ -271,6 +271,7 @@ class TChildServer final {
     pid_t ret = waitpid(Pid, &status, WNOHANG);
     if (ret == Pid) {
       Pid = -1;
+      RawStatus = status;
       ostringstream strm;
       if (WIFEXITED(status)) {
         strm << "exited with status " << WEXITSTATUS(status);
@@ -290,6 +291,13 @@ class TChildServer final {
     return "alive, state [" + state + "]";
   }
 
+  /* True iff the child has been reaped and exited zero.  This sees what no
+     log EXPECT can: a post-Shutdown() abort in static destructors leaves
+     every log marker in place and still exits 134 (#522). */
+  bool ExitedCleanly() const {
+    return RawStatus && WIFEXITED(*RawStatus) && WEXITSTATUS(*RawStatus) == 0;
+  }
+
   /* Wait for the child to exit; true if it did. */
   bool Reap(seconds deadline) {
     if (Pid <= 0) {
@@ -300,6 +308,9 @@ class TChildServer final {
       int status;
       pid_t ret = waitpid(Pid, &status, WNOHANG);
       if (ret == Pid || (ret < 0 && errno == ECHILD)) {
+        if (ret == Pid) {
+          RawStatus = status;
+        }
         Pid = -1;
         return true;
       }
@@ -313,6 +324,10 @@ class TChildServer final {
   private:
 
   pid_t Pid;
+
+  /* Raw wait status from the reap; unknown until the child has been waited
+     for (and stays unknown on the ECHILD path, where someone else got it). */
+  std::optional<int> RawStatus;
 
 };  // TChildServer
 
@@ -883,9 +898,13 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
      mid-Shutdown -- e.g. the #521 ~TRepo lifecycle assert tripping on the
      ttl=0 pov's repo, whose parked write it must discard as sanctioned --
      dies before this line (Reap alone cannot see that; it ignores how the
-     child exited).  Deliberately not an exit-status check: the known #522
-     static-dtor abort happens after this marker and is tracked separately. */
+     child exited). */
   EXPECT_TRUE(LogContains(master_log, "TServer::Shutdown() complete"));
+  /* ...and the exit itself must be clean.  The static disk-event pool
+     manager used to find leaked per-thread pools in __run_exit_handlers
+     and terminate AFTER that marker, turning every graceful shutdown into
+     exit 134 (#522). */
+  EXPECT_TRUE(master.ExitedCleanly());
 
   slave.Kill();
   slave.Reap(seconds(60));
