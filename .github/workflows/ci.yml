@@ -511,6 +511,15 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/recursive-variants
 
+      # Two-agent MCP demo (#528): agents ada + byte, each through its own
+      # orly-mcp stdio server, write ONE shared pov concurrently; the verifier
+      # checks tag provenance, counters, and the cross-agent reach() BFS
+      # against corpus-derived ground truth.
+      - name: mcp-agent-duet run.sh (two MCP agents, one pov)
+        run: ../retry-on-ws-timeout.sh ./run.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: examples/mcp-agent-duet
+
   prediction-market-e2e:
     name: prediction-market headless browser (Playwright)
     runs-on: ubuntu-24.04
