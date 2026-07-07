@@ -2,10 +2,23 @@
 
 An interactive orlyscript REPL against a running `orlyi` ([#535](https://github.com/orlyatomics/orly/issues/535)). Type an expression, see its value; define a function, call it in the next entry; write through a POV and read it back — without hand-writing package files.
 
-On npm as `orly-repl` ([#540](https://github.com/orlyatomics/orly/issues/540)): `npx orly-repl --package-dir ...` anywhere `orlyc` and the server's package directory are reachable (see below — the docker image's `repl` mode is the zero-setup path).
+## Quick start
+
+Zero setup, using the docker image's built-in `repl` mode ([#538](https://github.com/orlyatomics/orly/issues/538)) — orlyi starts inside the container and the prompt appears when it's ready:
+
+```sh
+docker run -it --rm ghcr.io/orlyatomics/orly repl
+```
+
+Or from npm ([`orly-repl`](https://www.npmjs.com/package/orly-repl), [#540](https://github.com/orlyatomics/orly/issues/540)) against your own `orlyi` — this needs `orlyc` runnable and the server's package directory reachable (see [How it works](#how-it-works)):
+
+```sh
+npx orly-repl --package-dir /path/to/packages
+```
+
+Either way:
 
 ```
-$ orly-repl --package-dir /path/to/packages
 orly-repl: connected to ws://127.0.0.1:8082/
 pov 3f0e... (private, new); :help for help
 orly> 1 + 2;
@@ -24,7 +37,7 @@ orly> *<['k', 1]>::(int);
 
 There is no eval statement in the wire protocol, so the REPL drives the same loop a package author would, invisibly: every entry is folded into a synthetic package (`repl_<pid>`), compiled with `orlyc`, copied into the server's package directory, and installed at the next version number (a newer install re-points the unversioned name; old versions are deliberately never uninstalled, since uninstalling any version unregisters the whole name). Expressions are wrapped as a generated nullary method and called against the session's POV. Compile errors print the orlyc/g++ diagnostics and leave your definitions untouched.
 
-The consequences of that design:
+The consequences of that design (all pre-wired inside the docker image's `repl` mode):
 
 - **`orlyc` must be runnable from the REPL's host** (`ORLYC` / `--orlyc`; default `orlyc` on PATH). Multi-word commands work, e.g. `ORLYC="docker exec orly orlyc"`.
 - **The server's package directory must be writable at the same path the server sees it** (`ORLY_PACKAGE_DIR` / `--package-dir`).
@@ -42,29 +55,24 @@ The consequences of that design:
 
 Commands at the prompt: `:help`, `:defs`, `:drop <name>`, `:src` (show the synthetic package source), `:pov`, `:quit`.
 
-## Against the docker image
+In the docker `repl` mode, flags after `repl` go to orly-repl (e.g. `docker run -it --rm ghcr.io/orlyatomics/orly repl --shared`); against an already-running default-entrypoint container, use the shim: `docker exec -it <ctr> orly-repl --package-dir /var/lib/orly/packages`.
 
-The REPL is baked into the image ([#538](https://github.com/orlyatomics/orly/issues/538)), so the whole thing is one line — orlyi starts inside the container and the prompt appears when it's ready:
+## Joining agents (the debugger use)
 
-```sh
-docker run -it --rm ghcr.io/orlyatomics/orly repl
-```
+`orly-repl --pov <id> ...` attaches to a POV your agents (e.g. via [`clients/mcp`](../mcp)) are already writing — the REPL then reads and writes the same live state, which makes it a debugger for agent shared memory.
 
-Flags after `repl` go to orly-repl (e.g. `repl --shared`). Against an already-running default-entrypoint container, use the shim: `docker exec -it <ctr> orly-repl --package-dir /var/lib/orly/packages`.
-
-If you'd rather run the REPL on the host against a containerized server (say, to join a pov your host-side agents are using), the compile/install loop needs a package directory both sides can see at the same path, and `orlyc` runs inside the container:
+If the agents' server runs in docker and the REPL runs on the host, the compile/install loop needs a package directory both sides can see at the same path, with `orlyc` running inside the container:
 
 ```sh
 mkdir -p /tmp/orly-repl/packages && touch /tmp/orly-repl/packages/__orly__
 docker run -d --name orly -p 8082:8082 -v /tmp/orly-repl:/tmp/orly-repl \
   ghcr.io/orlyatomics/orly --package_dir=/tmp/orly-repl/packages
-npx tsc && node dist/index.js \
+npx orly-repl \
   --package-dir /tmp/orly-repl/packages \
-  --orlyc "docker exec orly orlyc"
+  --orlyc "docker exec orly orlyc" \
+  --pov <id>
 ```
 
-## Building and joining agents
+## Development
 
-`orly-repl --pov <id> ...` attaches to a POV your agents (e.g. via [`clients/mcp`](../mcp)) are already writing — the REPL then reads and writes the same live state, which makes it a debugger for agent shared memory.
-
-Build: `npm install && npx tsc`. Smoke test (needs a built tree, see the repo README): `npm run smoke`.
+From a checkout: `npm install && npx tsc`. Smoke test (needs a built tree, see the repo README): `npm run smoke`.
