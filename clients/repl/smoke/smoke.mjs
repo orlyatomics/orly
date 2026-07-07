@@ -100,6 +100,28 @@ try {
   const code = await exited;
   if (code !== 0) throw new Error(`repl exited ${code}\n--- transcript ---\n${transcript}`);
 
+  // Piped-EOF regression (#542): the docker/CI shape — all input arrives at
+  // once and stdin closes immediately, while the first entry is still
+  // compiling. The entry must complete, print, and exit 0 anyway.
+  const piped = spawn(process.execPath, ["dist/index.js"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let pipedOut = "";
+  piped.stdout.on("data", (d) => { pipedOut += d; });
+  piped.stderr.on("data", (d) => { pipedOut += d; });
+  const pipedExit = new Promise((resolve) => piped.on("exit", resolve));
+  piped.stdin.end("40 + 2;\n");
+  const pipedCode = await Promise.race([
+    pipedExit,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`piped-EOF: no exit\n--- transcript ---\n${pipedOut}`)), STEP_TIMEOUT_MS),
+    ),
+  ]);
+  if (pipedCode !== 0 || !pipedOut.includes("42\n")) {
+    piped.kill("SIGKILL");
+    throw new Error(`piped-EOF: exit ${pipedCode}\n--- transcript ---\n${pipedOut}`);
+  }
+
   console.log("orly-repl smoke: all checks passed");
   process.exit(0);
 } catch (e) {

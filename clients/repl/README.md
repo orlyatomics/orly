@@ -2,6 +2,8 @@
 
 An interactive orlyscript REPL against a running `orlyi` ([#535](https://github.com/orlyatomics/orly/issues/535)). Type an expression, see its value; define a function, call it in the next entry; write through a POV and read it back — without hand-writing package files.
 
+On npm as `orly-repl` ([#540](https://github.com/orlyatomics/orly/issues/540)): `npx orly-repl --package-dir ...` anywhere `orlyc` and the server's package directory are reachable (see below — the docker image's `repl` mode is the zero-setup path).
+
 ```
 $ orly-repl --package-dir /path/to/packages
 orly-repl: connected to ws://127.0.0.1:8082/
