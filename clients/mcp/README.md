@@ -14,17 +14,12 @@ repo [Quick start](../../README.md#quick-start)).
 
 ## Setup
 
-```sh
-cd clients/mcp
-npm install
-npm run build
-```
-
-Register with your MCP client, pointing `ORLY_URL` at your server (default
-`ws://127.0.0.1:8082/`). For Claude Code:
+From npm ([#540](https://github.com/orlyatomics/orly/issues/540)), no checkout
+needed — register with your MCP client, pointing `ORLY_URL` at your server
+(default `ws://127.0.0.1:8082/`). For Claude Code:
 
 ```sh
-claude mcp add orly -e ORLY_URL=ws://127.0.0.1:8082/ -- node /path/to/orly/clients/mcp/dist/index.js
+claude mcp add orly -e ORLY_URL=ws://127.0.0.1:8082/ -- npx -y orly-mcp
 ```
 
 or in a JSON MCP config:
@@ -33,13 +28,16 @@ or in a JSON MCP config:
 {
   "mcpServers": {
     "orly": {
-      "command": "node",
-      "args": ["/path/to/orly/clients/mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "orly-mcp"],
       "env": { "ORLY_URL": "ws://127.0.0.1:8082/" }
     }
   }
 }
 ```
+
+From a checkout instead (`cd clients/mcp && npm install && npm run build`),
+substitute `node /path/to/orly/clients/mcp/dist/index.js` for `npx -y orly-mcp`.
 
 ## Tools
 
