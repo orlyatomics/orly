@@ -579,6 +579,15 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/prediction-market/web
 
+      # MCP server smoke (#526): an MCP stdio client spawns clients/mcp's
+      # server and exercises every tool (install / new_pov / call / call_batch
+      # / error surface) against a live mem-sim orlyi. Rides this job for the
+      # already-built tree + Node toolchain.
+      - name: MCP server smoke (clients/mcp)
+        run: bash smoke/run-smoke.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/mcp
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so
