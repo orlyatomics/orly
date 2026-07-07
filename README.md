@@ -70,6 +70,13 @@ image, so it compiles your own `.orly` packages too
 `docker run ... <flags>` pass straight through to `orlyi`
 ([#530](https://github.com/orlyatomics/orly/issues/530)).
 
+Or skip the client entirely and type orlyscript at it
+([#538](https://github.com/orlyatomics/orly/issues/538)):
+
+```sh
+docker run -it --rm ghcr.io/orlyatomics/orly repl
+```
+
 **From source** — system dependencies (Ubuntu 24.04):
 
 ```sh

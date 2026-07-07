@@ -42,7 +42,15 @@ Commands at the prompt: `:help`, `:defs`, `:drop <name>`, `:src` (show the synth
 
 ## Against the docker image
 
-The image ships `orlyc` but the compile/install loop needs a package directory both sides can see, so start the container with one mounted at an identical path, and run `orlyc` inside the container:
+The REPL is baked into the image ([#538](https://github.com/orlyatomics/orly/issues/538)), so the whole thing is one line — orlyi starts inside the container and the prompt appears when it's ready:
+
+```sh
+docker run -it --rm ghcr.io/orlyatomics/orly repl
+```
+
+Flags after `repl` go to orly-repl (e.g. `repl --shared`). Against an already-running default-entrypoint container, use the shim: `docker exec -it <ctr> orly-repl --package-dir /var/lib/orly/packages`.
+
+If you'd rather run the REPL on the host against a containerized server (say, to join a pov your host-side agents are using), the compile/install loop needs a package directory both sides can see at the same path, and `orlyc` runs inside the container:
 
 ```sh
 mkdir -p /tmp/orly-repl/packages && touch /tmp/orly-repl/packages/__orly__
@@ -52,8 +60,6 @@ npx tsc && node dist/index.js \
   --package-dir /tmp/orly-repl/packages \
   --orlyc "docker exec orly orlyc"
 ```
-
-(Compiled `.so` paths land in the shared mount, so the container-side `orlyc` and the host-side REPL agree on where everything is.)
 
 ## Building and joining agents
 
