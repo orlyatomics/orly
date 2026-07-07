@@ -425,13 +425,13 @@ Package::TVersionedName Orly::Compiler::Compile(
     auto subproc = TSubprocess::New(pump, gcc_cmd);
     auto status = subproc->Wait();
     if (status || failed) {
-      if (options.DebugCc) {
-        EchoOutput(subproc->TakeStdOutFromChild());
-        EchoOutput(subproc->TakeStdErrFromChild());
-      }
-
-      //NOTE: use '-d' to get the error messages.
-      out_strm << "Error while compiling an Intermediate Representation. See a Orly team member with your Orly code for support" << endl;
+      /* Always surface the compiler's own diagnostics (#533): without them
+         an environment-shaped failure -- a missing system header, a bad
+         ORLY_SRC_ROOT, toolchain drift -- is undiagnosable. This used to be
+         gated behind -d, dead-ending users at a generic message. */
+      EchoOutput(subproc->TakeStdOutFromChild());
+      EchoOutput(subproc->TakeStdErrFromChild());
+      out_strm << "Error while compiling the generated C++ (g++ diagnostics above; the generated sources are kept in the output directory)" << endl;
       throw TCompileFailure(HERE, "Compiling C++ and linking");
     }
 
