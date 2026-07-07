@@ -1,0 +1,28 @@
+{
+  "name": "orly-repl",
+  "version": "0.1.0",
+  "description": "Interactive orlyscript REPL: type expressions and definitions, evaluated live against a running orlyi",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/orlyatomics/orly",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "orly-repl": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "smoke": "bash smoke/run-smoke.sh"
+  },
+  "dependencies": {
+    "orly": "file:../ts",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^5.0.0"
+  }
+}
