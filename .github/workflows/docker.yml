@@ -66,6 +66,18 @@ jobs:
             test -s /tmp/user/hello.1.so
           '
 
+      # The repl entrypoint mode (#538): pipe an expression into
+      # `docker run -i ... repl` (its own in-container orlyi; no port mapping
+      # needed, and no clash with the container above) and assert the value
+      # comes back. Gates node in the runtime stage, the baked orly-repl
+      # build, and the entrypoint's background-orlyi handshake at once.
+      - name: REPL mode against the image
+        run: |
+          printf '40 + 2;\n:quit\n' \
+            | docker run -i --rm ghcr.io/orlyatomics/orly:ci repl \
+            | tee /tmp/repl-out
+          grep -qE '(^|orly> )42$' /tmp/repl-out
+
       - name: Container logs (for diagnosis)
         if: always()
         run: docker logs orly 2>&1 | tail -60
