@@ -66,6 +66,7 @@
 
 #include <alloca.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -371,6 +372,35 @@ class TExerciseClient final
 
 };  // TExerciseClient
 
+/* Wait for an RPC future's answer with a deadline: poll the future's event
+   fd instead of dereferencing straight into TFuture::Sync()'s untimed park.
+   A server that never answers -- the #537 CI wedge -- then becomes a named
+   test failure with the log tails attached, not a silent hang that eats the
+   job's whole budget.  After this returns, Sync()/deref are instant (and
+   still surface TRemoteError, which callers like the #498 refusal rely on). */
+void AwaitAnswered(const Rpc::TAnyFuture &future, const char *what, seconds deadline = seconds(240)) {
+  pollfd p;
+  p.fd = future.GetEventFd();
+  p.events = POLLIN;
+  p.revents = 0;
+  int ret = poll(&p, 1, static_cast<int>(duration_cast<milliseconds>(deadline).count()));
+  if (ret <= 0) {
+    throw runtime_error(string("RPC [") + what + "] unanswered after " +
+                        to_string(deadline.count()) + "s (#537)");
+  }
+}
+
+/* Pass-through wrapper so a call site can bound the wait at the point of
+   creation: auto result = Answered(client->Try(...), "Try") parks at most
+   the deadline, after which derefs are instant. */
+template <typename TVal>
+shared_ptr<Rpc::TFuture<TVal>> Answered(shared_ptr<Rpc::TFuture<TVal>> future,
+                                        const char *what,
+                                        seconds deadline = seconds(240)) {
+  AwaitAnswered(*future, what, deadline);
+  return future;
+}
+
 /* Write a one-row core-vector import file: <['values', n]> <- x, under a
    random index id that only the importing server will know about. */
 void WriteImportFile(const string &path, int64_t n, int64_t x) {
@@ -425,8 +455,9 @@ vector<string> MakeServerArgs(const string &orlyi_path,
 /* read_val(n) via the given client; unknown if the key is absent. */
 Rt::TOpt<int64_t> ReadVal(const shared_ptr<TExerciseClient> &client, const Base::TUuid &pov_id, int64_t n) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  auto read_result = client->Try(pov_id, { "sample" }, TClosure(string("read_val"),
-                                                                string("n"), n));
+  auto read_result = Answered(client->Try(pov_id, { "sample" }, TClosure(string("read_val"),
+                                                                         string("n"), n)),
+                              "read_val Try");
   Rt::TOpt<int64_t> out;
   Sabot::ToNative(*Sabot::State::TAny::TWrapper((*read_result)->GetValue().NewState((*read_result)->GetArena().get(), state_alloc)), out);
   return out;
@@ -436,9 +467,10 @@ Rt::TOpt<int64_t> ReadVal(const shared_ptr<TExerciseClient> &client, const Base:
    acknowledge the replication; false on deadline. */
 bool WriteValReplicated(const shared_ptr<TExerciseClient> &client, const Base::TUuid &pov_id, int64_t n, int64_t x) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  auto push_result = client->Try(pov_id, { "sample" }, TClosure(string("write_val"),
-                                                                string("n"), n,
-                                                                string("x"), x));
+  auto push_result = Answered(client->Try(pov_id, { "sample" }, TClosure(string("write_val"),
+                                                                         string("n"), n,
+                                                                         string("x"), x)),
+                              "write_val Try");
   bool committed;
   Sabot::ToNative(*Sabot::State::TAny::TWrapper((*push_result)->GetValue().NewState((*push_result)->GetArena().get(), state_alloc)), committed);
   if (!committed) {
@@ -460,7 +492,8 @@ Rt::TOpt<int64_t> ReadWithRetry(const TAddress &addr, int64_t n, seconds deadlin
   for (;;) {
     try {
       auto client = make_shared<TExerciseClient>(addr);
-      auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+      auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)),
+                             "NewFastPrivatePov (retry read)", seconds(30));
       Rt::TOpt<int64_t> out = ReadVal(client, **pov_id, n);
       if (out.IsKnown()) {
         return out;
@@ -583,20 +616,20 @@ FIXTURE(ImportReplication) {
   /* Import while solo — the only legal time (#498).  The importer mints the
      index id itself: this mapping is what must later reach the slaves. */ {
     auto client = make_shared<TExerciseClient>(master_addr);
-    client->BeginImport()->Sync();
+    Answered(client->BeginImport(), "BeginImport")->Sync();
     /* merge_simultaneous must exceed the file count divided by the merge
        rounds you can afford: a value of 1 merges each file into itself and
        the merge loop never converges. */
-    client->ImportCoreVector(import_pattern, "sample", 1, 1, 4)->Sync();
+    Answered(client->ImportCoreVector(import_pattern, "sample", 1, 1, 4), "ImportCoreVector")->Sync();
     /* A single-file import skips the merge phase entirely; it used to hand
        uninitialized sequence numbers to AddFileToRepo (#497). */
-    client->ImportCoreVector(scratch + "/single.bin", "sample", 1, 1, 4)->Sync();
-    client->EndImport()->Sync();
+    Answered(client->ImportCoreVector(scratch + "/single.bin", "sample", 1, 1, 4), "ImportCoreVector single")->Sync();
+    Answered(client->EndImport(), "EndImport")->Sync();
 
     /* Install the package: it must adopt the importer's index id, making
        all three imported rows readable. */
-    client->InstallPackage({ "sample" }, 1)->Sync();
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage sample")->Sync();
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     Rt::TOpt<int64_t> row_42 = ReadVal(client, **pov_id, 42L);
     EXPECT_TRUE(row_42.IsKnown());
     if (row_42.IsKnown()) {
@@ -642,13 +675,13 @@ FIXTURE(ImportReplication) {
      join instead), and the system-repo commits the install replicates must
      not disrupt the notification pass (#499). */ {
     auto client = make_shared<TExerciseClient>(master_addr);
-    client->InstallPackage({ "sample2" }, 1)->Sync();
+    Answered(client->InstallPackage({ "sample2" }, 1), "InstallPackage sample2")->Sync();
     EXPECT_TRUE(WaitForLog(slave_1_log, "sample2 tuple(str, int64)", seconds(120)));
     EXPECT_TRUE(!LogContains(master_log, "RunReplicateTransaction error"));
     /* A write's replication ack must survive sharing the stream with the
        install's system-repo commits (#499 ate the rest of the batch's
        notifications). */
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 9L, 909L));
   }
 
@@ -657,7 +690,7 @@ FIXTURE(ImportReplication) {
     auto client = make_shared<TExerciseClient>(master_addr);
     bool import_refused = false;
     try {
-      client->BeginImport()->Sync();
+      Answered(client->BeginImport(), "BeginImport (paired)")->Sync();
     } catch (const exception &/*ex*/) {
       import_refused = true;
     }
@@ -666,8 +699,8 @@ FIXTURE(ImportReplication) {
     /* Master still healthy: install on the slave, write through the master,
        and wait for the slave to acknowledge the replication. */
     auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_1_port));
-    slave_client->InstallPackage({ "sample" }, 1)->Sync();
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave 1")->Sync();
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 7L, 707L));
   }
 
@@ -707,9 +740,9 @@ FIXTURE(ImportReplication) {
   /* Install on slave 2, then push one more row through the master so the
      live stream to slave 2 is exercised too. */ {
     auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_2_port));
-    slave_client->InstallPackage({ "sample" }, 1)->Sync();
+    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave 2")->Sync();
     auto client = make_shared<TExerciseClient>(master_addr);
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 8L, 808L));
   }
 
@@ -796,7 +829,7 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   const TAddress master_addr(TAddress::IPv4Loopback, master_port);
   /* install scope */ {
     auto client = make_shared<TExerciseClient>(master_addr);
-    client->InstallPackage({ "sample" }, 1)->Sync();
+    Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage (graceful)")->Sync();
   }
 
   const in_port_t slave_port = ProbeFreePort();
@@ -853,10 +886,12 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
        discard is sanctioned -- expiry of an unsafe pov drops unmerged data by
        contract -- and must not trip the ~TRepo lifecycle assert, which would
        abort the master mid-shutdown and fail the Reap below (#521). */
-    auto pov_id = client->NewFastPrivatePov(std::nullopt, seconds(0));
-    auto push_result = client->Try(**pov_id, { "sample" }, TClosure(string("write_val"),
-                                                                    string("n"), 1L,
-                                                                    string("x"), 101L));
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)),
+                           "NewFastPrivatePov (graceful)");
+    auto push_result = Answered(client->Try(**pov_id, { "sample" }, TClosure(string("write_val"),
+                                                                             string("n"), 1L,
+                                                                             string("x"), 101L)),
+                                "write_val Try (graceful)");
     bool committed;
     Sabot::ToNative(*Sabot::State::TAny::TWrapper((*push_result)->GetValue().NewState((*push_result)->GetArena().get(), state_alloc)), committed);
     EXPECT_TRUE(committed);
