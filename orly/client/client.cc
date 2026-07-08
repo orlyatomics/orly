@@ -54,9 +54,24 @@ TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &ses
   IoThread = thread(&TClient::IoMain, this);
 }
 
+thread_local bool TClient::DispatchSelfDestructed = false;
+
 TClient::~TClient() {
   DestructionUnderway = true;
   Destructing.Push();
+  /* A pending push request holds a shared_ptr to this client, so the LAST
+     owner can be the dispatch thread itself, dropping that request right
+     after executing it -- the ack that satisfied the application's final
+     wait is, by construction, still in flight while the application's
+     handle goes out of scope (#537).  Joining ourselves would throw
+     straight out of a destructor; detach instead and raise the flag that
+     tells DispatchMain to unwind without touching the dead object. */
+  if (DispatchThread.get_id() == this_thread::get_id()) {
+    DispatchSelfDestructed = true;
+    IoThread.join();
+    DispatchThread.detach();
+    return;
+  }
   IoThread.join();
   DispatchThread.join();
 }
@@ -152,6 +167,16 @@ void TClient::DispatchMain() {
             } catch (const exception &ex) {
               syslog(LOG_ERR, "orly client; dispatch thread; exception event handler; %s", ex.what());
             }
+            /* Drop the request HERE and check for self-destruction before
+               touching any member again: the request holds a shared_ptr to
+               this client, and if the application released its handle while
+               this push was in flight, that reset just destroyed the client
+               ON THIS THREAD (#537).  ~TClient detached us and raised the
+               flag; every member access below would be use-after-free. */
+            request.reset();
+            if (DispatchSelfDestructed) {
+              return;
+            }
           }
         } while (BinaryIoStream->HasBufferedData());
       }
@@ -160,6 +185,14 @@ void TClient::DispatchMain() {
     BinaryIoStream.reset();
     Device.reset();
   } catch (const exception &ex) {
+    /* If the unwind itself destroyed the client on this thread (a request
+       constructed inside Read() owns a context ref, and its unwind-time drop
+       can be the last one, #537), the object is gone: report and leave
+       without touching a single member. */
+    if (DispatchSelfDestructed) {
+      syslog(LOG_INFO, "orly client; dispatch thread; exiting after self-destruction; %s", ex.what());
+      return;
+    }
     /* A server push can race ~TClient: Rpc::TContext::Read's
        shared_from_this() throws bad_weak_ptr once the shared count is gone
        (#503).  During destruction that is expected -- the thread is about

@@ -144,6 +144,15 @@ namespace Orly {
          an expected teardown-window exception from a real one (#503). */
       std::atomic<bool> DestructionUnderway = false;
 
+      /* Raised by ~TClient when it finds itself running ON the dispatch
+         thread -- a pending push request holds a shared_ptr to this client,
+         so the dispatch thread's drop of that request can be the last owner
+         (#537).  DispatchMain checks this after every request drop and after
+         an unwind: once it is set, the client object is gone and no member
+         may be touched.  thread_local: a dispatch thread serves exactly one
+         client, and the flag must outlive the object it reports on. */
+      static thread_local bool DispatchSelfDestructed;
+
       Base::TEventSemaphore Destructing;
 
     };  // TClient
