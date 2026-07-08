@@ -54,9 +54,24 @@ TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &ses
   IoThread = thread(&TClient::IoMain, this);
 }
 
+thread_local bool TClient::DispatchSelfDestructed = false;
+
 TClient::~TClient() {
   DestructionUnderway = true;
   Destructing.Push();
+  /* A pending push request holds a shared_ptr to this client, so the LAST
+     owner can be the dispatch thread itself, dropping that request right
+     after executing it -- the ack that satisfied the application's final
+     wait is, by construction, still in flight while the application's
+     handle goes out of scope (#537).  Joining ourselves would throw
+     straight out of a destructor; detach instead and raise the flag that
+     tells DispatchMain to unwind without touching the dead object. */
+  if (DispatchThread.get_id() == this_thread::get_id()) {
+    DispatchSelfDestructed = true;
+    IoThread.join();
+    DispatchThread.detach();
+    return;
+  }
   IoThread.join();
   DispatchThread.join();
 }
@@ -152,6 +167,16 @@ void TClient::DispatchMain() {
             } catch (const exception &ex) {
               syslog(LOG_ERR, "orly client; dispatch thread; exception event handler; %s", ex.what());
             }
+            /* Drop the request HERE and check for self-destruction before
+               touching any member again: the request holds a shared_ptr to
+               this client, and if the application released its handle while
+               this push was in flight, that reset just destroyed the client
+               ON THIS THREAD (#537).  ~TClient detached us and raised the
+               flag; every member access below would be use-after-free. */
+            request.reset();
+            if (DispatchSelfDestructed) {
+              return;
+            }
           }
         } while (BinaryIoStream->HasBufferedData());
       }
@@ -160,10 +185,24 @@ void TClient::DispatchMain() {
     BinaryIoStream.reset();
     Device.reset();
   } catch (const exception &ex) {
+    /* If the unwind itself destroyed the client on this thread (a request
+       constructed inside Read() owns a context ref, and its unwind-time drop
+       can be the last one, #537), the object is gone: report and leave
+       without touching a single member. */
+    if (DispatchSelfDestructed) {
+      syslog(LOG_INFO, "orly client; dispatch thread; exiting after self-destruction; %s", ex.what());
+      return;
+    }
     /* A server push can race ~TClient: Rpc::TContext::Read's
        shared_from_this() throws bad_weak_ptr once the shared count is gone
        (#503).  During destruction that is expected -- the thread is about
-       to be joined -- so only a live client's exception is fatal. */
+       to be joined -- so only a live client's exception is fatal.
+       Close the internal pipe on this path too: leaving it open used to
+       strand the i/o thread in poll() -- before the i/o thread watched the
+       destruction semaphore itself, that pipe-close was its only shutdown
+       signal, and ~TClient wedged forever in IoThread.join() (#537). */
+    BinaryIoStream.reset();
+    Device.reset();
     if (DestructionUnderway) {
       syslog(LOG_INFO, "orly client; dispatch thread; exiting during destruction; %s", ex.what());
       return;
@@ -175,31 +214,45 @@ void TClient::DispatchMain() {
 
 void TClient::IoMain() {
   try {
-    /* Loop while the internal pipe is open, relaying data between the pipe and the server. */
-    pollfd polls[2];
-    for (size_t i = 0; i < 2; ++i) {
+    /* Loop while the internal pipe is open, relaying data between the pipe and the server.
+       The destruction semaphore MUST be in this thread's poll set: the pipe-close this loop
+       otherwise waits for comes from the dispatch thread's normal exit, and the dispatch
+       thread has an exception exit (a server push racing ~TClient, #503) that skips it.
+       Without a direct destruction wake-up, ~TClient's IoThread.join() parks forever --
+       the #537 CI wedge. */
+    pollfd polls[3];
+    for (size_t i = 0; i < 3; ++i) {
       polls[i].events = POLLIN;
     }
-    polls[0].fd = InternalSocket;
+    polls[0].fd = Destructing.GetFd();
+    polls[1].fd = InternalSocket;
     TFd server_socket;
     char buf[4096];
     /* Loop here until this client object is being destroyed. */
     for (;;) {
       /* Decide which events will wake us. */
-      int fd_count = 1;
+      int fd_count = 2;
       if (server_socket.IsOpen()) {
         /* We're connected to the server, so we'll wake up if it talks to us. */
-        polls[1].fd = server_socket;
-        fd_count = 2;
+        polls[2].fd = server_socket;
+        fd_count = 3;
       } else {
-        /* We'll wake up only for the internal pipe, so get rid of any lingering bits in the second poller. */
-        polls[1].revents = 0;
-        fd_count = 1;
+        /* We'll wake up only for the destruction semaphore and the internal pipe,
+           so get rid of any lingering bits in the last poller. */
+        polls[2].revents = 0;
+        fd_count = 2;
       }
       /* Wait for something to happen... */
       IfLt0(poll(polls, fd_count, -1));
       /* ... and now it has. */
       if (polls[0].revents) {
+        /* We're destructing.  Close our end of the internal pipe on the way out: a
+           dispatch thread parked mid-Read() on a partial message gets EOF from this,
+           which is ITS wake-up (the #503 catch tolerates it). */
+        InternalSocket.Reset();
+        break;
+      }
+      if (polls[1].revents) {
         /* The internal pipe has awakened us. */
         size_t size;
         try {
@@ -286,7 +339,7 @@ void TClient::IoMain() {
           syslog(LOG_ERR, "orly client; i/o thread; could not connect to server; %s; dropping reply", err_msg.c_str());
         }
       }
-      if (polls[1].revents) {
+      if (polls[2].revents) {
         /* The server has awakened us. */
         size_t size;
         try {
