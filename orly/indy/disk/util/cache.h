@@ -26,7 +26,6 @@
 
 #include <sched.h>
 #include <unistd.h>
-#include <xmmintrin.h>
 
 #include <atomic>
 #include <stdexcept>
@@ -286,16 +285,21 @@ namespace Orly {
           inline void PreGet(size_t page_id) {
             const size_t slot_num = page_id % NumSlots;
             TSlot *const my_slot = &SlotArray[slot_num];
-            _mm_prefetch(my_slot, _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<uint8_t *>(my_slot) + sizeof(TSlot), _MM_HINT_T0);
+            // Portable prefetch: `__builtin_prefetch(p, rw, locality)` gives identical
+            // codegen to the `_mm_prefetch` it replaced on x86-64 (gcc lowers locality 3
+            // and 2 to prefetcht0/prefetcht1), and also compiles on aarch64, where
+            // <xmmintrin.h> does not exist. These are advisory hints, so a target with no
+            // prefetch instruction simply drops them (#548).
+            __builtin_prefetch(my_slot, 0, 3);
+            __builtin_prefetch(reinterpret_cast<uint8_t *>(my_slot) + sizeof(TSlot), 0, 3);
           }
 
           /* Returns a pointer to the main slot object. Initializes the slot if it does not exist yet. Increments the reference count on the actual slot holding our page. */
           inline TSlot *Get(size_t page_id, TSlot *&data_slot) {
             const size_t slot_num = page_id % NumSlots;
             TSlot &slot = SlotArray[slot_num];
-            _mm_prefetch(&slot, _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<uint8_t *>(&slot) + sizeof(TSlot), _MM_HINT_T0);
+            __builtin_prefetch(&slot, 0, 3);
+            __builtin_prefetch(reinterpret_cast<uint8_t *>(&slot) + sizeof(TSlot), 0, 3);
             std::atomic<size_t> *const cur_slot = &(slot.PageId);
             for (;;) {
               size_t val = std::atomic_load(cur_slot);
@@ -441,8 +445,8 @@ namespace Orly {
           /* Decrements the reference count on the given page_id for this slot. */
           inline void Release(TSlot *slot_ptr, size_t page_id) {
             assert(&SlotArray[page_id % NumSlots] == slot_ptr);
-            _mm_prefetch(slot_ptr, _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<uint8_t *>(slot_ptr) + sizeof(TSlot), _MM_HINT_T0);
+            __builtin_prefetch(slot_ptr, 0, 3);
+            __builtin_prefetch(reinterpret_cast<uint8_t *>(slot_ptr) + sizeof(TSlot), 0, 3);
             TSlot &slot = *slot_ptr;
             std::atomic<size_t> *const cur_slot = &(slot.PageId);
             /* lock the slot */
@@ -512,8 +516,8 @@ namespace Orly {
           inline void Clear(size_t page_id) {
             const size_t slot_num = page_id % NumSlots;
             TSlot &slot = SlotArray[slot_num];
-            _mm_prefetch(&slot, _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<uint8_t *>(&slot) + sizeof(TSlot), _MM_HINT_T0);
+            __builtin_prefetch(&slot, 0, 3);
+            __builtin_prefetch(reinterpret_cast<uint8_t *>(&slot) + sizeof(TSlot), 0, 3);
             std::atomic<size_t> *const cur_slot = &(slot.PageId);
             for (;;) {
               size_t val = std::atomic_load(cur_slot);

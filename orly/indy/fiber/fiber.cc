@@ -18,7 +18,6 @@
 
 #include <orly/indy/fiber/fiber.h>
 
-#include <xmmintrin.h>
 
 #include <thread>
 
@@ -157,7 +156,7 @@ void TRunner::Run() {
                   frame->InboundQueueNextFrame = ReadyToRunQueue;
                   ReadyToRunQueue = frame;
                   //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-                  //_mm_prefetch(frame->MyFiber.jmp, _MM_HINT_T1);
+                  //__builtin_prefetch(frame->MyFiber.jmp, 0, 2);
                 } else {
                   frame->InboundQueueNextFrame = rt_queue;
                   rt_queue = frame;
@@ -172,7 +171,7 @@ void TRunner::Run() {
                 ReadyToRunQueue = frame;
                 //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
                 #ifdef FAST_SWITCH
-                _mm_prefetch(frame->MyFiber.jmp, _MM_HINT_T1);
+                __builtin_prefetch(frame->MyFiber.jmp, 0, 2);
                 #endif
               }
               rt_queue = nullptr;
@@ -193,7 +192,7 @@ void TRunner::Run() {
       for (;;) {
         for (TFrame *frame = ReadyToRunQueue; ReadyToRunQueue; frame = ReadyToRunQueue) {
           ReadyToRunQueue = frame->InboundQueueNextFrame;
-          _mm_prefetch(reinterpret_cast<uint8_t *>(ReadyToRunQueue) + offsetof(TFrame, MyFiber), _MM_HINT_T0);
+          __builtin_prefetch(reinterpret_cast<uint8_t *>(ReadyToRunQueue) + offsetof(TFrame, MyFiber), 0, 3);
           fiber_t *sched_fib = &frame->GetFiber();
           TFrame::LocalFrame = frame;
           FreeFrame = nullptr;

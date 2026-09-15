@@ -82,7 +82,6 @@
       "-Wno-format",
       "-Wno-format-security",
       "-Wno-ignored-qualifiers",
-      "-msse2",
       "-pthread",
       "-fno-strict-aliasing",
 
