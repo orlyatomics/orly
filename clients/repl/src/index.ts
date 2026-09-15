@@ -221,6 +221,11 @@ const HELP = `orlyscript goes straight in; end a statement with ";" (multi-line 
   double = (x * 2) where { x = given::(int); };   define (then: double(.x: 21);)
   (true) effecting { new <['k']> <- 1; };  write through the pov
   *<['k']>::(int);                         read it back
+merging writes -- the commutative field calls; note the leading * and the ::(type):
+  (true) effecting { *<['hits']>::(int) += 1; };        counter, no 'new' needed
+  (true) effecting { *<['tags']>::({str}) |= {'blue'}; };  set-union, same idea
+  these merge across concurrent clients without locks; += on an absent key folds
+  from the monoid identity (0 / empty set), so there is nothing to create first.
 commands:
   :defs          show current definitions
   :drop <name>   remove a definition

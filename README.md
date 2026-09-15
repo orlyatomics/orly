@@ -11,29 +11,78 @@
 </p>
 
 <p align="center">
-  <b>Orly</b> — a non-relational database built around <i>Points of View</i>,<br />
-  causally-ordered merge, and a compiled query language (<i>Orlyscript</i>).
+  <b>Orly</b> — a database where <i>concurrent writers never conflict</i>.<br />
+  Many writers, one shared graph, no locks and no merge code.
 </p>
 
-<p align="center">
-  <b>Write from many clients at once — no locks, no conflict-resolution code — and query any past state.</b>
-</p>
+Every multi-agent system reinvents shared memory: a mutex, a queue, or a
+single-writer service everyone funnels through. Orly removes the problem rather
+than coordinating around it — commutative writes (`+=`, set-union `|=`) merge by
+construction, so N writers can hit the same key at once and every contribution
+lands.
 
-Concurrent commutative writes (`x += 1`, set-union `|=`) merge without losing
-updates, and every value is a fold over its own history, so a point-in-time read
-is just a query at an earlier version. The clearest showcase is a small
+## Try it in 30 seconds
+
+```sh
+docker run -it --rm ghcr.io/orlyatomics/orly repl
+```
+
+```
+(true) effecting { *<['hits']>::(int) += 1; };
+(true) effecting { *<['hits']>::(int) += 1; };
+*<['hits']>::(int);                              --> 2
+
+(true) effecting { *<['tags']>::({str}) |= {'blue'}; };
+(true) effecting { *<['tags']>::({str}) |= {'green'}; };
+*<['tags']>::({str});                            --> ["blue", "green"]
+```
+
+No `new`, no read-modify-write, no lock — `+=` on an absent key folds from the
+monoid identity (`0` / the empty set), so there is nothing to create first.
+
+Those two writes happen to come from one REPL, which only shows you the
+*operator*. The claim that matters is that they need not be ordered,
+coordinated, or from the same client:
+**[`examples/agent-swarm/`](examples/agent-swarm/)** runs 8 agents extracting
+from 40 documents concurrently into one graph, deliberately colliding on hot
+keys, and CI checks every contribution against independently-derived ground
+truth — 147 provenance records, 105 counters, 76 pairs, zero lost writes.
+
+## Point your agents at it
+
+`orly-mcp` is an [MCP](https://modelcontextprotocol.io) server, so an agent
+runtime can use Orly as shared memory without touching the query language:
+
+```jsonc
+// claude_desktop_config.json / .mcp.json / Cursor
+{
+  "mcpServers": {
+    "orly": {
+      "command": "npx",
+      "args": ["-y", "orly-mcp"],
+      "env": { "ORLY_URL": "ws://127.0.0.1:8082/" }
+    }
+  }
+}
+```
+
+Two agents given the same pov id share one graph and merge concurrently —
+that topology is **[`examples/mcp-agent-duet/`](examples/mcp-agent-duet/)**,
+gated in CI, with a recipe for running it as two live Claude Code sessions.
+
+## What it is underneath
+
+A non-relational database built around *Points of View*, causally-ordered
+merge, and a compiled query language (*Orlyscript*).
+
+Every value is a fold over its own history, so a point-in-time read is just a
+query at an earlier version. The clearest showcase is a small
 **[parimutuel prediction market](examples/prediction-market/)** ("Polymarket
 clone"): N traders bet on one market *concurrently* — zero coordination, not a
 single bet lost — the implied prices are a read-time fold of the trade log, and
 the price history is time-travel. Build on it from **[Python](clients/python)**,
 **[Go](clients/go)**, or **[TypeScript](clients/ts)** (browser + Node), all
 speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
-
----
-
-> **Status — 2026.** Dormant from 2019 until early 2026. A modernization pass brought the codebase back to building and testing cleanly on a current toolchain — `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13 — and a substantial language arc followed: sum types / tagged unions, recursive and mutually-recursive variants (storable and client-transmissible), variant widening, and recursive-return type verification. On the engine side, the LSM merge / disk-compaction subsystem — dormant since the original codebase because of an inverted scheduler deadline — was reactivated and its latent correctness and stability bugs fixed, making writes O(N) instead of O(N²) ([#227](https://github.com/orlyatomics/orly/issues/227)). See [`CHANGELOG.md`](CHANGELOG.md) for what's landed and [#10](https://github.com/orlyatomics/orly/issues/10) for the original revival status; the open issues track an engine-integrity and test-hardening backlog (latent revival defects plus sanitizer / coverage gaps). Contributions welcome.
-
----
 
 ## Features
 
@@ -53,8 +102,10 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 ## Quick start
 
-**Docker** (any host — the engine itself is Linux-only, so this is also the
-macOS/Windows path):
+**Docker** — the engine itself is Linux-only, so this is also the macOS/Windows
+path. The published image is `linux/amd64`; on Apple Silicon it runs under
+emulation, which prints a platform-mismatch warning and is still fast enough for
+the REPL and the examples (a cold `docker run ... repl` answers in ~2s):
 
 ```sh
 docker run --rm -p 8082:8082 ghcr.io/orlyatomics/orly
@@ -70,12 +121,8 @@ image, so it compiles your own `.orly` packages too
 `docker run ... <flags>` pass straight through to `orlyi`
 ([#530](https://github.com/orlyatomics/orly/issues/530)).
 
-Or skip the client entirely and type orlyscript at it
-([#538](https://github.com/orlyatomics/orly/issues/538)):
-
-```sh
-docker run -it --rm ghcr.io/orlyatomics/orly repl
-```
+The `repl` mode shown at the top of this README is the same image
+([#538](https://github.com/orlyatomics/orly/issues/538)).
 
 **From source** — system dependencies (Ubuntu 24.04):
 
@@ -236,6 +283,10 @@ Linux only, x86-64. Verified on Ubuntu 24.04. Earlier releases probably work; no
 | Go (for the optional Go driver in `examples/`) | 1.22+ |
 
 Build flags live in [`root.jhm`](root.jhm); per-target overrides in `debug.jhm` / `release.jhm` / `bootstrap.jhm`.
+
+## Project status
+
+Dormant from 2019 until early 2026. A modernization pass brought the codebase back to building and testing cleanly on a current toolchain — `make debug`, `make test`, `make release`, and the Orlyscript `lang_test.py` harness all pass on Ubuntu 24.04 + gcc 13 — and a substantial language arc followed: sum types / tagged unions, recursive and mutually-recursive variants (storable and client-transmissible), variant widening, and recursive-return type verification. On the engine side, the LSM merge / disk-compaction subsystem — dormant since the original codebase because of an inverted scheduler deadline — was reactivated and its latent correctness and stability bugs fixed, making writes O(N) instead of O(N²) ([#227](https://github.com/orlyatomics/orly/issues/227)). See [`CHANGELOG.md`](CHANGELOG.md) for what's landed and [#10](https://github.com/orlyatomics/orly/issues/10) for the original revival status; the open issues track an engine-integrity and test-hardening backlog (latent revival defects plus sanitizer / coverage gaps). Contributions welcome.
 
 ## Contributing
 
