@@ -167,20 +167,38 @@ FIXTURE(SemFiresOnlyAfterFlush) {
     const Durable::TTtl ttl(600);
     const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
     const std::string blob = "some serialized durable";
+    /* The write delay this fixture runs the manager at.  Deliberately longer than the 300ms
+       the others use: the negative assertion below is only meaningful while the flush has not
+       yet had a chance to run, so the window has to be wide relative to scheduler jitter on a
+       loaded CI runner.  The cost is that sem.Pop() then waits this long -- ~2s on one fixture
+       against a 203-binary suite (#551). */
+    const auto write_delay = milliseconds(2000);
     /* manager scope */ {
       TDurableManager durable_manager(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
                                       100UL /* max cache size */,
-                                      milliseconds(300) /* write delay */,
+                                      write_delay,
                                       milliseconds(300) /* merge delay */,
                                       milliseconds(10000) /* layer cleaning interval */,
                                       20UL /* temp file consol thresh */,
                                       true /* create */);
       Durable::TSem sem;
+      const auto saved_at = steady_clock::now();
       durable_manager.Save(id, deadline, ttl, blob, &sem);
-      /* Not yet: the writer flushes on a 300ms cadence, and durability must not be signalled
-         before the data is written (#277).  (Pre-#277, Save() pushed the sem synchronously,
-         which makes this assertion fail.) */
-      EXPECT_FALSE(sem.GetFd().IsReadable(0));
+      const bool fired_immediately = sem.GetFd().IsReadable(0);
+      const auto elapsed = steady_clock::now() - saved_at;
+      /* Not yet: durability must not be signalled before the data is written (#277).
+         (Pre-#277, Save() pushed the sem synchronously, which makes this assertion fail.)
+
+         Guarded on measured elapsed time rather than asserted outright.  The check is only
+         SOUND while less than the write delay has actually passed -- if this thread was
+         descheduled past it, the flush has legitimately run and a fired sem proves nothing
+         about #277.  Asserting unconditionally is what made this fixture fail intermittently
+         on loaded runners and, worse, point the blame at whatever change was under test
+         (#551).  With a 2s window the skip should be vanishingly rare; it exists so that when
+         it does happen the answer is "unprovable here", not "regression". */
+      if (elapsed < write_delay) {
+        EXPECT_FALSE(fired_immediately);
+      }
       /* Now block for it: the flush makes it fire. */
       sem.Pop();
       /* Visible through this manager, too. */
