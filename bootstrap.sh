@@ -37,6 +37,10 @@ common_flags=(
   )
 
 #Build JHM
+# No -msse2: SSE2 is mandatory in the x86-64 baseline ABI, so the flag was a
+# no-op there (verified: `g++ -dM -E` emits a byte-identical macro set with and
+# without it, __SSE2__ included) while being a hard error on aarch64. Dropping
+# it changes nothing on the supported platform and unblocks the arm build (#548).
 $CC -o tools/jhm                                                                                                                              \
  "${common_flags[@]}"                                                                                                                         \
   jhm/jobs/util.cc jhm/job.cc base/slice.cc jhm/test.cc jhm/jobs/flex.cc base/web/daemonize.cc                                                \
@@ -48,7 +52,7 @@ $CC -o tools/jhm                                                                
   jhm/jobs/bison.cc base/strm/syntax_error.cc jhm/jobs/nycr.cc base/dir_walker.cc jhm/jobs/dep.cc base/util/time.cc                           \
   base/strm/out.cc base/event_semaphore.cc base/strm/in.cc base/strm/past_end.cc base/unreachable.cc base/path.cc base/backtrace.cc           \
   -I./ -DSRC_ROOT=\"`pwd`\"                                                                                                                   \
-  -msse2 -pthread
+  -pthread
 
 #Build make_dep_file
 $CC -o tools/make_dep_file                                                                                                                    \
@@ -58,7 +62,7 @@ $CC -o tools/make_dep_file                                                      
   jhm/make_dep_file.cc base/thrower.cc base/fd.cc base/split.cc base/subprocess.cc base/pump.cc base/backtrace.cc                             \
   base/web/daemonize.cc                                                                                                                       \
   -I./ -DSRC_ROOT=\"`pwd`\"                                                                                                                   \
-  -msse2 -pthread
+  -pthread
 
 mkdir -p ../.jhm
 
