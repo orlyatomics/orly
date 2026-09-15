@@ -42,15 +42,14 @@ jobs:
             timeout: 90
           - arch: arm64
             runner: ubuntu-24.04-arm
-            # The arm leg ran >79 min on `jhm -c release` at 4 workers and was
-            # killed by a 90-minute cap, while the SAME runner class does
-            # `make debug` in 14 min (ci.yml). The difference is LTO: it is
-            # memory-hungry and largely serial at link time, so if the arm
-            # runner has less RAM per core, 4 concurrent LTO jobs thrash and
-            # FEWER workers is faster. 2 is the first thing to try; the
-            # capacity report above is what tells us whether that was the
-            # right diagnosis.
-            workers: 2
+            # Back to 4: the memory-thrash theory was tested and refuted --
+            # both runners are 4-core/15GB with zero swap used, and HALVING the
+            # workers made it worse (>90 min at 4, >180 min at 2). The profiling
+            # run then showed `jhm -c release` completing on the bare arm runner
+            # in 8m06s at 4 workers, so the build is not the problem. Timeout
+            # stays generous until a native arm image build has actually been
+            # observed to finish.
+            workers: 4
             timeout: 180
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
@@ -77,8 +76,36 @@ jobs:
 
       # Plain `docker build`, not buildx: each runner is native for its own
       # architecture, so there is nothing to cross-compile or emulate.
+      # Is this build NATIVE, or is it being emulated? That is the whole question
+      # after the profiling run (#548): `jhm -c release` on the bare arm runner
+      # finishes in 8m06s -- faster than x86 -- while the SAME command inside
+      # `docker build` on the same runner class never finished in 180 minutes. A
+      # >20x gap on identical hardware is the signature of qemu, not of slow
+      # codegen.
+      - name: Docker and emulation state
+        run: |
+          docker version --format 'client={{.Client.Arch}} server={{.Server.Arch}}' || true
+          echo "--- registered binfmt handlers (any qemu-* here means emulation is available):"
+          ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -i qemu || echo "  none"
+          echo "--- what arch does the base image resolve to here:"
+          docker pull -q ubuntu:24.04 >/dev/null 2>&1 || true
+          docker image inspect ubuntu:24.04 --format '  ubuntu:24.04 -> {{.Architecture}}' || true
+
+      # --platform pinned explicitly rather than relying on the daemon's default.
+      # If the default was resolving to amd64 on the arm runner, every RUN line
+      # was going through qemu, which explains the 20x. Pinning it costs nothing
+      # if the default was already correct.
       - name: Build image
-        run: docker build --build-arg JHM_WORKER_COUNT=${{ matrix.workers }} -t "$IMAGE" .
+        run: |
+          docker build --platform "linux/${{ matrix.arch }}" \
+            --build-arg JHM_WORKER_COUNT=${{ matrix.workers }} \
+            -t "$IMAGE" .
+
+      - name: Confirm the built image is the intended architecture
+        run: |
+          got=$(docker image inspect "$IMAGE" --format '{{.Architecture}}')
+          echo "built image architecture: $got (wanted ${{ matrix.arch }})"
+          test "$got" = "${{ matrix.arch }}"
 
       - name: Start container
         run: |
