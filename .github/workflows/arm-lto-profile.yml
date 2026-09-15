@@ -18,6 +18,12 @@ name: arm-lto-profile
 
 on:
   workflow_dispatch:
+  # TEMPORARY, and the reason is a GitHub constraint rather than a preference:
+  # `workflow_dispatch` is only dispatchable once the workflow exists on the
+  # DEFAULT branch, and this diagnostic needs to run before anything merges.
+  # Drop this trigger (or the whole file) once #548's arm question is answered.
+  push:
+    branches: [feat/548-multiarch-image]
 
 jobs:
   profile:
