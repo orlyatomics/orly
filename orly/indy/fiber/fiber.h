@@ -257,7 +257,7 @@ namespace Orly {
 
       struct fiber_t {
         ucontext_t fib;
-        jmp_buf jmp;  // unused under TSan; kept so layout/_mm_prefetch sites compile.
+        jmp_buf jmp;  // unused under TSan; kept so layout/prefetch sites compile.
         uint8_t *start_of_stack;
         /* The TSan handle for this fiber's logical thread of execution. Minted
            in create_fiber, released in free_fiber. The scheduler's MainFiber

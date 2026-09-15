@@ -128,6 +128,48 @@ jobs:
         if: always()
         run: ccache --show-stats --verbose
 
+  arm64-build:
+    name: aarch64 build (informational)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    # Informational, NOT a merge gate: aarch64 has never been a supported
+    # platform (README says "Linux only, x86-64"), so this job exists to
+    # answer whether it *could* be, with evidence instead of opinion. The
+    # published docker image is amd64-only, which means every Apple Silicon
+    # user -- most of the audience the MCP work is aimed at -- gets a
+    # platform-mismatch warning on the very first command in the README.
+    #
+    # `continue-on-error` so a failure reports the state of the port without
+    # turning master red. Promote it to a gate only once it is reliably green.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
+            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
+            bison flex
+
+      - name: Report toolchain and arch
+        run: |
+          uname -m
+          g++ --version | head -1
+
+      # The only x86-specific code in the tree was `_mm_prefetch` (#548), now
+      # `__builtin_prefetch`. The fiber layer is setjmp/longjmp over ucontext,
+      # both POSIX, so there is no hand-rolled context switch to port. What
+      # this job actually discovers is everything *else* -- alignment, atomics,
+      # type-size and disk-format assumptions -- that x86-only development
+      # never had to confront.
+      - name: make debug
+        run: make debug
+
+      - name: make test
+        run: make test
+
   release-build:
     name: jhm -c release
     runs-on: ubuntu-24.04
