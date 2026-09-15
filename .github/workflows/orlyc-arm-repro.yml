@@ -80,7 +80,13 @@ jobs:
           set +e
           mkdir -p /tmp/pkgout && cd /tmp/pkgout
           ORLYC=$GITHUB_WORKSPACE/../out_orly/release/orly/orlyc
-          "$ORLYC" -o /tmp/pkgout "$GITHUB_WORKSPACE/orly/clients/mcp/smoke/sample.orly" \
+          PKG=$GITHUB_WORKSPACE/clients/mcp/smoke/sample.orly
+          # Assert both inputs exist before timing anything. The first run of this
+          # job "passed" in 2 seconds because the package path had a doubled
+          # segment -- orlyc exited 1 on both arches and the repro proved nothing.
+          test -x "$ORLYC" || { echo "no orlyc at $ORLYC"; exit 1; }
+          test -f "$PKG"   || { echo "no package at $PKG"; exit 1; }
+          "$ORLYC" -o /tmp/pkgout "$PKG" \
             > /tmp/orlyc.out 2>&1 &
           PID=$!
           echo "orlyc pid=$PID"
