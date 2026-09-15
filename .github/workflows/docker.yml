@@ -37,10 +37,23 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
+            # Matches the Dockerfile default; the x86 leg builds in ~10 min.
+            workers: 4
+            timeout: 90
           - arch: arm64
             runner: ubuntu-24.04-arm
+            # The arm leg ran >79 min on `jhm -c release` at 4 workers and was
+            # killed by a 90-minute cap, while the SAME runner class does
+            # `make debug` in 14 min (ci.yml). The difference is LTO: it is
+            # memory-hungry and largely serial at link time, so if the arm
+            # runner has less RAM per core, 4 concurrent LTO jobs thrash and
+            # FEWER workers is faster. 2 is the first thing to try; the
+            # capacity report above is what tells us whether that was the
+            # right diagnosis.
+            workers: 2
+            timeout: 180
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
       packages: write
@@ -51,13 +64,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Report runner architecture
-        run: uname -m
+      # Cores and RAM, not just the arch: the release build in the Dockerfile is
+      # LTO, which is memory-hungry and largely serial at link time. When a leg
+      # is slow, "how many cores and how much RAM did it have" is the first
+      # question and the one that is impossible to answer after the fact.
+      - name: Report runner capacity
+        run: |
+          uname -m
+          echo "nproc: $(nproc)"
+          free -g || true
+          echo "JHM_WORKER_COUNT will be: ${{ matrix.workers }}"
 
       # Plain `docker build`, not buildx: each runner is native for its own
       # architecture, so there is nothing to cross-compile or emulate.
       - name: Build image
-        run: docker build -t "$IMAGE" .
+        run: docker build --build-arg JHM_WORKER_COUNT=${{ matrix.workers }} -t "$IMAGE" .
 
       - name: Start container
         run: |
