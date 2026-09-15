@@ -151,7 +151,7 @@ jobs:
           sudo apt-get install -y -qq \
             build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
             libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
-            bison flex
+            bison flex valgrind
 
       - name: Report toolchain and arch
         run: |
