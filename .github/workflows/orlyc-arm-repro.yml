@@ -1,0 +1,130 @@
+# One-shot diagnostic for #554: why does `orlyc` hang on aarch64?
+#
+# The profiling round answered #548's original question and produced a better
+# one. `jhm -c release` is FINE on arm -- 482s inside docker, 8m06s on the bare
+# runner, both faster than the amd64 leg's 11m05s. What hangs is the NEXT docker
+# step: compiling the example packages with the freshly built orlyc, which
+# emitted its header line and then nothing for 37 minutes.
+#
+# Per the Dockerfile's own comment, "each orlyc run stands up and tears down its
+# embedded mem-sim server" -- so the suspicion is that server never completes its
+# handshake or teardown on aarch64.
+#
+# `make test` does not exercise the orlyc shell-out path and lang_test.py is not
+# in the arm job, which is why #550 could be green while this was broken.
+#
+# This reproduces it in ~9 minutes instead of a 45-minute docker build, and if it
+# hangs, says WHERE: thread backtraces, kernel wait channel, and process state.
+# amd64 runs as the control -- orlyc demonstrably works there.
+#
+# Deliberately not a gate.
+name: orlyc-arm-repro
+
+on:
+  workflow_dispatch:
+  # TEMPORARY, and the reason is a GitHub constraint rather than a preference:
+  # `workflow_dispatch` is only dispatchable once the workflow exists on the
+  # DEFAULT branch, and this diagnostic needs to run before anything merges.
+  # Drop this trigger (or the whole file) once #548's arm question is answered.
+  push:
+    branches: [feat/548-multiarch-image]
+
+jobs:
+  repro:
+    name: orlyc repro (${{ matrix.arch }})
+    strategy:
+      # Both arches, so the comparison is like-for-like rather than against a
+      # remembered number from a different workflow.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # Long enough to actually finish if it can. If it cannot, the timestamped
+    # progress still shows the SHAPE of the curve, which is the whole point.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Capacity
+        run: |
+          uname -m
+          echo "nproc: $(nproc)"
+          free -g
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
+            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
+            bison flex valgrind moreutils
+
+      - name: Bootstrap
+        run: make bootstrap version
+
+      - name: Build orlyc only
+        run: |
+          PATH="$PWD/tools:$PATH" \
+            jhm -c release --worker-count 4 orly/orlyc
+          ls -la ../out_orly/release/orly/orlyc
+
+      # The actual repro. Backgrounded so that if it hangs we can interrogate the
+      # live process rather than just observing that it never returned.
+      - name: Run orlyc on one package, with a deadline
+        id: repro
+        run: |
+          set +e
+          mkdir -p /tmp/pkgout && cd /tmp/pkgout
+          ORLYC=$GITHUB_WORKSPACE/../out_orly/release/orly/orlyc
+          "$ORLYC" -o /tmp/pkgout "$GITHUB_WORKSPACE/orly/clients/mcp/smoke/sample.orly" \
+            > /tmp/orlyc.out 2>&1 &
+          PID=$!
+          echo "orlyc pid=$PID"
+          for i in $(seq 1 60); do
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 5
+          done
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "HUNG=1" >> "$GITHUB_OUTPUT"
+            echo "=== still alive after 300s -- interrogating pid $PID"
+            echo "--- /proc/$PID/status:"; grep -E "State|Threads" /proc/$PID/status
+            echo "--- wchan (kernel function it is blocked in):"
+            cat /proc/$PID/wchan 2>/dev/null; echo
+            echo "--- per-thread state and wchan:"
+            for t in /proc/$PID/task/*; do
+              printf "  tid %s  state=%s  wchan=%s\n" "$(basename $t)" \
+                "$(awk '/^State:/{print $2}' $t/status 2>/dev/null)" \
+                "$(cat $t/wchan 2>/dev/null)"
+            done
+            echo "--- all-thread backtraces:"
+            sudo gdb -p "$PID" -batch \
+              -ex "set pagination off" -ex "thread apply all bt" 2>&1 | tail -80
+            kill -9 "$PID" 2>/dev/null
+          else
+            wait "$PID"; rc=$?
+            echo "orlyc exited rc=$rc"
+            echo "HUNG=0" >> "$GITHUB_OUTPUT"
+            ls -la /tmp/pkgout
+          fi
+          echo "=== orlyc output:"; cat /tmp/orlyc.out || true
+
+      - name: Verdict
+        if: always()
+        run: |
+          if [ "${{ steps.repro.outputs.HUNG }}" = "1" ]; then
+            echo "orlyc HUNG on ${{ matrix.arch }} -- see backtraces above (#554)"
+          else
+            echo "orlyc completed on ${{ matrix.arch }}"
+          fi
+
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orlyc-repro-${{ matrix.arch }}
+          path: /tmp/orlyc.out
+          if-no-files-found: warn
