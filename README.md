@@ -270,7 +270,24 @@ All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./
 
 ## Supported platforms
 
-Linux only, x86-64. Verified on Ubuntu 24.04. Earlier releases probably work; not re-tested in the revival pass.
+Linux. Verified on Ubuntu 24.04.
+
+**x86-64** is the platform the project is built and released against, and the
+one the published docker image targets.
+
+**aarch64** builds clean and passes `make test` in CI ([#548](https://github.com/orlyatomics/orly/issues/548)) — 1753 build jobs,
+203 test binaries, zero failures on a native arm runner. Getting there needed
+exactly two changes, which says more about the codebase than about the port:
+`_mm_prefetch` became `__builtin_prefetch`, and a `-msse2` flag that was a no-op
+on x86-64 was dropped. There is no inline assembly anywhere in the tree, and the
+fiber fast path is `setjmp`/`longjmp` bootstrapped from `ucontext` — both POSIX
+— so there was no hand-rolled context switch to port.
+
+That job is deliberately **informational, not a merge gate**: one green run is
+evidence, not a support commitment. Treat aarch64 as "known to work, not yet
+released against" until it has been green for a while.
+
+Earlier releases probably work; not re-tested in the revival pass.
 
 ## Toolchain
 
