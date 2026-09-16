@@ -350,6 +350,92 @@ namespace Orly {
       /* Forward Declaration */
       class TFrame;
 
+      /* GCC may not inline, clone, or infer anything about a `noipa`
+         function, so every call really is a call -- which is the whole point
+         of TFiberSafeLocal, below.  It survives -flto, which plain `noinline`
+         alone does not guarantee. */
+      #if defined(__GNUC__) && !defined(__clang__)
+      #define ORLY_FIBER_NO_IPA __attribute__((noipa))
+      #else
+      #define ORLY_FIBER_NO_IPA __attribute__((noinline))
+      #endif
+
+      /* A thread-local pointer that stays correct when the reader is a fiber
+         that has changed threads.  Use it for anything a fiber may read;
+         plain `__thread` is only safe on a stack that never migrates.
+
+         Why (#554).  A fiber's C stack outlives the OS thread that last ran
+         it: frames come from a cross-thread pool and are routinely re-latched
+         onto a runner belonging to a different thread.  But the compiler
+         assumes the opposite.  GCC computes the thread pointer ONCE per
+         function -- one `mrs x, tpidr_el0` hoisted out of the loop on
+         aarch64 -- and derives every `__thread` access in that function from
+         it, so a read taken after a fiber switch yields the value belonging
+         to whichever thread ran the fiber BEFORE the switch.
+
+         In TFrame::Run() that is fatal rather than merely wrong: the loop
+         reads TRunner::LocalRunner after the runnable returns, to switch back
+         to "my" scheduler.  A migrated frame read the previous thread's
+         runner and longjmp'd onto THAT thread's scheduler stack -- two OS
+         threads executing one stack, and the hijacked runner's Run() never
+         returning.  That is the aarch64 orlyc hang: the durable manager's
+         writer host job never left its runner loop, so ~TDurableManager
+         waited forever on SchedulerExitedSem and TServer::Shutdown() wedged.
+         x86-64 folds the TLS base into each access's addressing mode, so
+         there is nothing to hoist and nothing to go stale -- which is why
+         only arm ever showed it.
+
+         Nothing cheaper suppresses the hoist: `volatile`, `thread_local`, an
+         `asm volatile` memory clobber, `returns_twice` on the switch, and all
+         four -ftls-model settings still emit one loop-invariant `mrs`.  The
+         thread pointer is not memory as far as the optimiser is concerned; it
+         is a function-invariant, and only an opaque call re-reads it. */
+      template <typename TVal, typename TTag>
+      class TFiberSafeLocal final {
+        NO_COPY(TFiberSafeLocal);
+        public:
+
+        TFiberSafeLocal() = default;
+
+        /* Stand in for the bare `TVal *` this replaces, so that reading it
+           looks (and reads) exactly as it did before. */
+        operator TVal *() const {
+          return Get();
+        }
+
+        TVal *operator->() const {
+          return Get();
+        }
+
+        explicit operator bool() const {
+          return Get() != nullptr;
+        }
+
+        TFiberSafeLocal &operator=(TVal *val) {
+          Set(val);
+          return *this;
+        }
+
+        /* Spell the read out where an implicit conversion would be deduced
+           away (a template parameter, say). */
+        ORLY_FIBER_NO_IPA TVal *Get() const {
+          return Slot;
+        }
+
+        ORLY_FIBER_NO_IPA void Set(TVal *val) {
+          Slot = val;
+        }
+
+        private:
+
+        /* Touched only by Get()/Set(), which the compiler must call. */
+        static __thread TVal *Slot;
+
+      };  // TFiberSafeLocal
+
+      template <typename TVal, typename TTag>
+      __thread TVal *TFiberSafeLocal<TVal, TTag>::Slot = nullptr;
+
       class alignas(64) TRunner {
         NO_COPY(TRunner);
         public:
@@ -436,7 +522,10 @@ namespace Orly {
 
         fiber_t MainFiber;
 
-        static __thread TRunner *LocalRunner;
+        /* The runner whose Run() loop owns the calling thread.  Fiber-safe:
+           see TFiberSafeLocal (#554). */
+        struct TLocalRunnerTag;
+        inline static TFiberSafeLocal<TRunner, TLocalRunnerTag> LocalRunner;
 
         TFrame *FreeFrame;
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FreeFramePool;
@@ -699,9 +788,12 @@ namespace Orly {
           return MyFiber;
         }
 
-        static __thread TFrame *LocalFrame;
+        /* Both fiber-safe: see TFiberSafeLocal (#554). */
+        struct TLocalFrameTag;
+        inline static TFiberSafeLocal<TFrame, TLocalFrameTag> LocalFrame;
 
-        static __thread Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool *LocalFramePool;
+        struct TLocalFramePoolTag;
+        inline static TFiberSafeLocal<Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool, TLocalFramePoolTag> LocalFramePool;
 
         private:
 
@@ -1089,7 +1181,7 @@ namespace Orly {
         public:
 
         TSwitchToRunner(TRunner *runner_to_switch_to)
-            : ComeFromRunner(Base::AssertTrue(TRunner::LocalRunner)) {
+            : ComeFromRunner(Base::AssertTrue(TRunner::LocalRunner.Get())) {
           assert(runner_to_switch_to);
           SwitchTo(runner_to_switch_to);
         }
