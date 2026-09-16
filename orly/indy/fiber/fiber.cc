@@ -24,9 +24,8 @@
 using namespace std::literals;
 using namespace Orly::Indy::Fiber;
 
-__thread TRunner *TRunner::LocalRunner = nullptr;
-__thread TFrame *TFrame::LocalFrame = nullptr;
-__thread Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool *TFrame::LocalFramePool = nullptr;
+/* TRunner::LocalRunner, TFrame::LocalFrame and TFrame::LocalFramePool are
+   inline static TFiberSafeLocal members now, and define themselves (#554). */
 FiberLocal::TFiberLocal *FiberLocal::TFiberLocal::Root = nullptr;
 
 /********************************************************/
