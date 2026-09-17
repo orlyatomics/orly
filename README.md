@@ -103,9 +103,9 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 ## Quick start
 
 **Docker** — the engine itself is Linux-only, so this is also the macOS/Windows
-path. The published image is `linux/amd64`; on Apple Silicon it runs under
-emulation, which prints a platform-mismatch warning and is still fast enough for
-the REPL and the examples (a cold `docker run ... repl` answers in ~2s):
+path. The published image is multi-arch (`linux/amd64` and `linux/arm64`), so
+Apple Silicon pulls a native image rather than running under emulation. A cold
+`docker run ... repl` answers in ~2s:
 
 ```sh
 docker run --rm -p 8082:8082 ghcr.io/orlyatomics/orly
@@ -272,20 +272,27 @@ All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./
 
 Linux. Verified on Ubuntu 24.04.
 
-**x86-64** is the platform the project is built and released against, and the
-one the published docker image targets.
+**x86-64** and **aarch64**. Both are built and released against: the published
+docker image is a multi-arch manifest, each architecture built on its own native
+runner and gated by the same smokes — the MCP smoke, an in-container `orlyc`
+compile, and the REPL — run on that architecture's own image, so what is
+published is proven to work rather than merely to build.
 
-**aarch64** builds clean and passes `make test` in CI ([#548](https://github.com/orlyatomics/orly/issues/548)) — 1753 build jobs,
-203 test binaries, zero failures on a native arm runner. Getting there needed
-exactly two changes, which says more about the codebase than about the port:
-`_mm_prefetch` became `__builtin_prefetch`, and a `-msse2` flag that was a no-op
-on x86-64 was dropped. There is no inline assembly anywhere in the tree, and the
-fiber fast path is `setjmp`/`longjmp` bootstrapped from `ucontext` — both POSIX
-— so there was no hand-rolled context switch to port.
+The port itself needed exactly two changes, which says more about the codebase
+than about the port: `_mm_prefetch` became `__builtin_prefetch`, and a `-msse2`
+flag that was a no-op on x86-64 was dropped ([#548](https://github.com/orlyatomics/orly/issues/548)). There is no inline
+assembly anywhere in the tree, and the fiber fast path is `setjmp`/`longjmp`
+bootstrapped from `ucontext` — both POSIX — so there was no hand-rolled context
+switch to port. aarch64 runs `make test` in CI: 1753 build jobs, 203 test
+binaries, zero failures on a native arm runner.
 
-That job is deliberately **informational, not a merge gate**: one green run is
-evidence, not a support commitment. Treat aarch64 as "known to work, not yet
-released against" until it has been green for a while.
+One aarch64-specific defect has been found and fixed, and it is worth knowing
+the shape of it: `orlyc` deadlocked on arm because the compiler hoists the
+thread pointer out of a loop, so a fiber that had migrated OS threads read the
+previous thread's scheduler and switched onto its stack ([#554](https://github.com/orlyatomics/orly/issues/554)). It reproduced
+only in release builds. The `make test` job remains **informational rather than
+a merge gate**, and the arm coverage that matters for that class of bug is a
+release-build `orlyc` run ([#556](https://github.com/orlyatomics/orly/issues/556)).
 
 Earlier releases probably work; not re-tested in the revival pass.
 
