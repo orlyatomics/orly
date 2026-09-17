@@ -2,9 +2,18 @@
 
 All notable changes to Orly.
 
-The project does not currently cut numbered releases. Entries reference the originating pull request and the closed issue where applicable. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Entries reference the originating pull request and the closed issue where applicable. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/) with the pre-1.0 caveat that the orlyscript language, the wire protocol and the on-disk format may still change between minor versions. In-repo work lands as a fragment in `changelog.d/`; `tools/fold_changelog.py` folds them into `[Unreleased]`, and cutting a release moves that section under a version heading.
 
 ## [Unreleased]
+
+### Fixed
+
+## [v0.1.0] — 2026-09-17
+
+First numbered release. Everything below had already shipped to `master`; this draws a line under it so
+there is an immutable image and a version string to refer to, rather than only a moving `:latest` and a
+commit hash. The version matches the clients already published at `0.1.0` — `@orlyatomics/orly`,
+`orly-mcp`, `orly-repl` on npm, and the `clients/go/v0.1.0` module tag.
 
 ### Fixed
 - **Fixed**: `orlyc` no longer hangs on aarch64 while tearing down its embedded test server. A fiber's stack outlives the OS thread that last ran it — frames come from a cross-thread pool and are routinely re-latched onto a runner on a different thread — but GCC computes the thread pointer once per function (one hoisted `mrs x, tpidr_el0` on aarch64) and derives every `__thread` access from it, so `TFrame::Run()`'s read of `TRunner::LocalRunner` *after* the runnable returned yielded the previous thread's runner and `longjmp`ed onto that thread's scheduler stack. Two OS threads then executed one stack, the hijacked runner's `Run()` never returned, and `~TDurableManager` waited forever on `SchedulerExitedSem` inside `TServer::Shutdown()`. The three fiber thread-locals are now `TFiberSafeLocal` slots read through `noipa` accessors, so the thread pointer is re-read at every access; nothing cheaper works (`volatile`, `thread_local`, an `asm` memory clobber, `returns_twice`, and all four `-ftls-model` settings all still emit one loop-invariant `mrs`). x86-64 folds the TLS base into each access's addressing mode, which is why only arm ever showed it (#554).
