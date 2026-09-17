@@ -210,10 +210,18 @@ jobs:
 
       # Assert the thing this whole change exists for, rather than assuming the
       # stitch worked: the published manifest must advertise both platforms.
+      # Parse the index rather than grepping it. The first version of this
+      # matched '"architecture":"[a-z0-9]+"' against the raw JSON, but
+      # `imagetools inspect --raw` pretty-prints -- the bytes are
+      # '"architecture": "amd64"', with a space -- so it matched nothing and
+      # failed a manifest that was in fact correct. It shipped unexercised
+      # because this job only runs on a dispatch or a tag, and the first real
+      # publish was the first time it ever ran (#552).
       - name: Verify the manifest lists both platforms
         run: |
           got=$(docker buildx imagetools inspect --raw ghcr.io/orlyatomics/orly:latest \
-                  | grep -oE '"architecture":"[a-z0-9]+"' | sort -u | tr '\n' ' ')
-          echo "manifest advertises: $got"
-          echo "$got" | grep -q '"architecture":"amd64"'
-          echo "$got" | grep -q '"architecture":"arm64"'
+                  | jq -r '.manifests[]?.platform | select(. != null) | "\(.os)/\(.architecture)"' \
+                  | sort -u)
+          echo "manifest advertises:"; echo "$got" | sed 's/^/  /'
+          grep -qx 'linux/amd64' <<<"$got"
+          grep -qx 'linux/arm64' <<<"$got"
