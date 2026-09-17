@@ -65,6 +65,7 @@
    limitations under the License. */
 
 #include <alloca.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -290,6 +291,64 @@ class TChildServer final {
     const string state = (close_paren != string::npos && close_paren + 2 < stat_line.size())
         ? string(1, stat_line[close_paren + 2]) : string("?");
     return "alive, state [" + state + "]";
+  }
+
+  /* Everything the kernel will say about a child that would not die.
+
+     A Reap() timeout means a shutdown that wedged, and the log tails alone
+     cannot say WHERE: the only syslog between the connection drain and
+     "TServer::Shutdown() complete" is the drain's own deadline warning, so a
+     wedge anywhere in between looks identical from the log (#564).
+
+     Per-thread `wchan` names the kernel function each thread is blocked in,
+     which separates a runner loop sleeping on its timer from a genuinely
+     blocked wait.  `syscall` is the more valuable half: its last two fields
+     are the user stack pointer and PC, and in #554 the stack pointer was what
+     identified two OS threads sharing one stack while gdb was confidently
+     reporting the same bogus frame for both.  Read it before trusting any
+     userspace unwinder on an optimised build.
+
+     Best-effort and noexcept throughout -- this runs on a path that has
+     already failed, and must not turn a diagnosable failure into a crash. */
+  void DumpWedge(ostream &strm) const noexcept {
+    try {
+      if (Pid <= 0) {
+        strm << "  (no live child to interrogate)" << endl;
+        return;
+      }
+      const string task_dir = "/proc/" + to_string(Pid) + "/task";
+      DIR *dir = opendir(task_dir.c_str());
+      if (!dir) {
+        strm << "  (cannot open " << task_dir << ")" << endl;
+        return;
+      }
+      while (const dirent *ent = readdir(dir)) {
+        const string tid = ent->d_name;
+        if (tid == "." || tid == "..") {
+          continue;
+        }
+        const string base = task_dir + "/" + tid;
+        string state = "?", wchan, syscall_line;
+        /* State: from status */ {
+          ifstream status(base + "/status");
+          for (string line; getline(status, line); ) {
+            if (line.rfind("State:", 0) == 0) {
+              const auto tab = line.find_first_not_of(" \t", 6);
+              state = (tab == string::npos) ? "?" : line.substr(tab, 1);
+              break;
+            }
+          }
+        }
+        { ifstream w(base + "/wchan"); getline(w, wchan); }
+        { ifstream sc(base + "/syscall"); getline(sc, syscall_line); }
+        strm << "  tid " << tid << "  state=" << state
+             << "  wchan=" << (wchan.empty() ? "-" : wchan)
+             << "  syscall=" << (syscall_line.empty() ? "-" : syscall_line) << endl;
+      }
+      closedir(dir);
+    } catch (...) {
+      strm << "  (interrogation threw; ignoring)" << endl;
+    }
   }
 
   /* True iff the child has been reaped and exited zero.  This sees what no
@@ -922,7 +981,16 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   cout << "Slave state before interrupting the master: " << slave.Describe() << endl;
   cout << "Interrupting the master" << endl;
   master.Interrupt();
-  EXPECT_TRUE(master.Reap(seconds(60)));
+  /* Interrogate BEFORE asserting: a failed Reap is the only moment the wedged
+     process still exists, and #564 has so far cost two CI failures that could
+     not be diagnosed afterwards from log tails.  Reap() leaves Pid set when it
+     times out, so the child is still there to read. */
+  const bool master_reaped = master.Reap(seconds(60));
+  if (!master_reaped) {
+    cout << "master did not exit within 60s of SIGINT -- interrogating before it dies (#564)" << endl;
+    master.DumpWedge(cout);
+  }
+  EXPECT_TRUE(master_reaped);
   EXPECT_TRUE(LogContains(master_log, "RunReplicationQueue shutting down (#461)"));
   /* The drain must have seen the silent connection (#460)... */
   EXPECT_TRUE(LogContains(master_log, "draining ["));
