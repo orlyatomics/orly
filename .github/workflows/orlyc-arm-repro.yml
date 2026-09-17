@@ -1,33 +1,32 @@
-# One-shot diagnostic for #554: why does `orlyc` hang on aarch64?
+# Compiles one package with a RELEASE `orlyc` on each arch, with a deadline and
+# a stack dump on expiry. Written to answer #554 -- why `orlyc` hung on aarch64 --
+# and kept because it is the only thing in CI that exercises that path on arm.
 #
-# The profiling round answered #548's original question and produced a better
-# one. `jhm -c release` is FINE on arm -- 482s inside docker, 8m06s on the bare
-# runner, both faster than the amd64 leg's 11m05s. What hangs is the NEXT docker
-# step: compiling the example packages with the freshly built orlyc, which
-# emitted its header line and then nothing for 37 minutes.
+# What it covers that nothing else does. `make debug` and `make test` never run
+# `orlyc`'s embedded mem-sim server, and `lang_test.py` is not in the arm job --
+# which is why #550 could report 1753 clean build jobs and 203 passing test
+# binaries on aarch64 while this was broken.
 #
-# Per the Dockerfile's own comment, "each orlyc run stands up and tears down its
-# embedded mem-sim server" -- so the suspicion is that server never completes its
-# handshake or teardown on aarch64.
+# Why RELEASE specifically. #554 was the optimiser hoisting a thread-pointer read
+# out of a loop, so a fiber that had migrated OS threads switched back onto
+# another thread's scheduler stack. `-O0` does not hoist: 15 pre-fix debug runs
+# were clean while release wedged on the first attempt, 3 out of 3. A debug-build
+# guard would have caught nothing, and the same is true of the next defect of this
+# shape. See #556 for whether this should become a gate.
 #
-# `make test` does not exercise the orlyc shell-out path and lang_test.py is not
-# in the arm job, which is why #550 could be green while this was broken.
-#
-# This reproduces it in ~9 minutes instead of a 45-minute docker build, and if it
-# hangs, says WHERE: thread backtraces, kernel wait channel, and process state.
-# amd64 runs as the control -- orlyc demonstrably works there.
+# Cost is ~9 minutes because it builds the `orly/orlyc` target alone rather than
+# the whole tree, so it never pays for the full-tree LTO link. amd64 runs as the
+# control.
 #
 # Deliberately not a gate.
 name: orlyc-arm-repro
 
 on:
+  # Dispatch-only. It carried a temporary branch-scoped `push:` trigger while it
+  # lived on a feature branch, because `workflow_dispatch` only works once a
+  # workflow exists on the default branch; that constraint is gone now the file
+  # is on master, and the branch it named no longer exists.
   workflow_dispatch:
-  # TEMPORARY, and the reason is a GitHub constraint rather than a preference:
-  # `workflow_dispatch` is only dispatchable once the workflow exists on the
-  # DEFAULT branch, and this diagnostic needs to run before anything merges.
-  # Drop this trigger (or the whole file) once #548's arm question is answered.
-  push:
-    branches: [feat/548-multiarch-image]
 
 jobs:
   repro:
