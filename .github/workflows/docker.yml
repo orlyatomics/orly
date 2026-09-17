@@ -95,11 +95,36 @@ jobs:
       # If the default was resolving to amd64 on the arm runner, every RUN line
       # was going through qemu, which explains the 20x. Pinning it costs nothing
       # if the default was already correct.
+      # The version has to be handed to the build: .dockerignore excludes .git,
+      # so `make version`'s `git describe` finds nothing inside the container
+      # and the binaries used to report "Build: unknown" even on a release tag.
+      - name: Resolve the version to stamp
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            ver="${GITHUB_REF#refs/tags/}"
+          else
+            ver="dev-${GITHUB_SHA:0:12}"
+          fi
+          echo "ORLY_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "stamping: $ver"
+
       - name: Build image
         run: |
           docker build --platform "linux/${{ matrix.arch }}" \
             --build-arg JHM_WORKER_COUNT=${{ matrix.workers }} \
+            --build-arg ORLY_VERSION="$ORLY_VERSION" \
             -t "$IMAGE" .
+
+      # Assert the stamp landed, on every build including pull requests -- the
+      # point being that this runs constantly rather than only on a publish.
+      # The manifest check in this same workflow was gated to publishes only,
+      # so it went unexercised until it failed its first real run (#559).
+      - name: Confirm the binaries know their own version
+        run: |
+          got=$(docker run --rm --entrypoint orlyc "$IMAGE" --help 2>&1 \
+                  | sed -n 's/^Build: //p')
+          echo "orlyc reports: ${got:-<nothing>}"
+          [ "$got" = "$ORLY_VERSION" ]
 
       - name: Confirm the built image is the intended architecture
         run: |
