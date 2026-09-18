@@ -1,46 +1,45 @@
-# Hunt for #564: GracefulShutdownUnresponsiveSlave wedges on aarch64.
+# Hunt for #564: a graceful shutdown that wedges on aarch64.
 #
-# The failure is real but rare -- roughly one arm run in sixteen, and never
-# once on amd64. It did not reproduce in 22 local runs on a native arm64
-# container, including ten with the cores deliberately oversubscribed, so the
-# way to get evidence is many samples on the runner class that actually shows
-# it.
+# Third design, and the first grounded in evidence about what actually
+# reproduces it. The previous two synthesised load -- one test binary behind
+# CPU spinners, then four concurrent copies of it -- and took 83 CI samples
+# without a single reproduction, against a rate of about one per arm CI run.
+# The concurrent-copies version also manufactured its own failures: the
+# fixture's ProbeFreePort() binds port 0, reads the number and closes the
+# socket before the caller binds it for real, so two copies racing for the
+# same ephemeral port produce a bogus "Connection refused".
 #
-# #565 made the fixture interrogate a master that will not die, dumping each
-# thread's state, kernel wait channel and syscall line at the one moment the
-# wedged process still exists. This workflow's whole job is to make that dump
-# happen: build the test alone (not the whole tree) and run it until it fails
-# or the iteration budget runs out, then upload whatever it printed.
+# The only demonstrated reproducer is `make test` itself -- 203 binaries, four
+# at a time, on a machine that has already been churning for ten minutes --
+# which is exactly what the arm CI job runs. jhm caches nothing between test
+# runs, so looping it gives genuine repeated samples of the real condition.
 #
-# Both observed failures carried load signatures -- a TransitionToSlave that
-# took over two minutes -- so the runs happen against a deliberately
-# oversubscribed box, mirroring `make test` running four binaries at once.
+# With #565 and #568 merged, a catch is self-describing: the fixture dumps
+# every thread's state, wait channel and stack pointer, and the join names the
+# replication loop that never returned.
 #
-# Dispatch-only, and temporary: delete it, or fold it into the arm guard #556
-# asks for, once #564 is diagnosed.
+# Dispatch-only, and temporary: delete it once #564 is diagnosed.
 name: arm-wedge-hunt
 
 on:
   workflow_dispatch:
     inputs:
       rounds:
-        description: "Rounds of 4 concurrent runs (4 samples per round)"
+        description: "How many full `make test` passes to run"
         required: false
-        default: "6"
+        default: "5"
 
 jobs:
   hunt:
     name: hunt the shutdown wedge (arm64)
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
 
       - name: Capacity
         run: |
-          uname -m
-          echo "nproc: $(nproc)"
-          free -g
+          uname -m; echo "nproc: $(nproc)"; free -g
 
       - name: Install system dependencies
         run: |
@@ -50,73 +49,54 @@ jobs:
             libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
             bison flex valgrind
 
-      - name: Build the fixture and the server it forks
-        run: |
-          make bootstrap version
-          PATH="$PWD/tools:$PATH" jhm -c debug --worker-count 4 \
-            orly/server/import_replication.test orly/server/orlyi
+      - name: Build the tree once
+        run: make debug
 
-      - name: Run until it wedges
+      - name: Run the suite until the wedge appears
         id: hunt
         run: |
           set +e
-          TEST=../out_orly/debug/orly/server/import_replication.test
-          test -x "$TEST" || { echo "no test binary at $TEST"; exit 1; }
-          # Run COPIES CONCURRENTLY rather than one at a time behind CPU
-          # spinners. The first version of this did the latter and took 35
-          # samples without once reproducing #564, while CI reproduces it about
-          # one run in sixteen -- the difference being that CI's `make test`
-          # runs four real binaries at once, so the contention is for disk,
-          # memory and the scheduler, not just for CPU. Concurrent copies buy
-          # the right kind of load and four samples per round at the same time.
-          ROUNDS=${{ github.event.inputs.rounds || '6' }}
-          COPIES=4
           caught=""
-          for r in $(seq 1 "$ROUNDS"); do
-            echo "==================== round $r ($COPIES concurrent) ===================="
-            pids=""
-            for c in $(seq 1 "$COPIES"); do
-              timeout -s KILL 900 "$TEST" --le --log_info > "/tmp/hunt.r$r.c$c.out" 2>&1 &
-              pids="$pids $!"
-            done
-            for p in $pids; do wait "$p"; done
-            for c in $(seq 1 "$COPIES"); do
-              f="/tmp/hunt.r$r.c$c.out"
-              g=$(grep -c "end GracefulShutdownUnresponsiveSlave; fail" "$f")
-              i=$(grep -c "end ImportReplication; fail" "$f")
-              echo "  round $r copy $c: graceful_fail=$g import_fail=$i"
-              # Only the graceful fixture is what this hunt is for. An
-              # ImportReplication failure is a different arm flake and must not
-              # end the batch -- that is what cut the first hunt short at 15 of
-              # 20 samples.
-              if [ "$g" != "0" ]; then
-                caught="round $r copy $c"
-                echo "CAUGHT the shutdown wedge: $caught"
-                echo "--- wedge dump ---"
-                grep -A 200 "interrogating before it dies" "$f" || \
-                  echo "(the graceful fixture failed WITHOUT a Reap timeout -- different failure mode, read the artifact)"
-              fi
-            done
+          for r in $(seq 1 "${{ github.event.inputs.rounds || '5' }}"); do
+            echo "==================== make test, round $r ===================="
+            PATH="$PWD/tools:$PATH" jhm --test > "/tmp/suite.$r.log" 2>&1
+            rc=$?
+            echo "round $r rc=$rc"
+            # #568: the join names the loop that never returned.
+            if grep -q "JoinReplicationServices() still waiting" "/tmp/suite.$r.log"; then
+              caught="round $r"
+              echo "CAUGHT -- the join reported a stalled loop:"
+              grep "JoinReplicationServices() still waiting" "/tmp/suite.$r.log" | head -5
+            fi
+            # #565: the fixture interrogates a master that would not die.
+            if grep -q "interrogating before it dies" "/tmp/suite.$r.log"; then
+              caught="round $r"
+              echo "CAUGHT -- thread dump from the wedged master:"
+              grep -A 120 "interrogating before it dies" "/tmp/suite.$r.log"
+            fi
+            if grep -q "end GracefulShutdownUnresponsiveSlave; fail" "/tmp/suite.$r.log"; then
+              caught="round $r"
+              echo "the graceful fixture failed in round $r"
+            fi
             [ -n "$caught" ] && break
           done
           [ -n "$caught" ] && echo "caught=$caught" >> "$GITHUB_OUTPUT"
-          # Report the hunt itself as successful; a caught wedge is the payload,
-          # not a build failure.
+          # A catch is the payload, not a build failure.
           exit 0
 
-      - name: Upload every run's output
+      - name: Upload every suite log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arm-wedge-hunt
-          path: /tmp/hunt.*.out
+          name: arm-wedge-hunt-suites
+          path: /tmp/suite.*.log
           if-no-files-found: warn
 
       - name: Verdict
         if: always()
         run: |
           if [ -n "${{ steps.hunt.outputs.caught }}" ]; then
-            echo "WEDGE CAUGHT on iteration ${{ steps.hunt.outputs.caught }} -- see the log above and the artifact (#564)"
+            echo "WEDGE CAUGHT in ${{ steps.hunt.outputs.caught }} -- the log above names the loop (#564)"
           else
             echo "no wedge in this batch; dispatch again for more samples (#564)"
           fi
