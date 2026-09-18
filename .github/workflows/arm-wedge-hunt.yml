@@ -23,10 +23,10 @@ name: arm-wedge-hunt
 on:
   workflow_dispatch:
     inputs:
-      iterations:
-        description: "How many times to run the fixture"
+      rounds:
+        description: "Rounds of 4 concurrent runs (4 samples per round)"
         required: false
-        default: "20"
+        default: "6"
 
 jobs:
   hunt:
@@ -62,28 +62,44 @@ jobs:
           set +e
           TEST=../out_orly/debug/orly/server/import_replication.test
           test -x "$TEST" || { echo "no test binary at $TEST"; exit 1; }
-          # Oversubscribe: `make test` runs four binaries at once, and both
-          # real failures looked load-related.
-          for c in 1 2 3 4; do bash -c 'while :; do :; done' & done
-          LOAD=$(jobs -p | tr '\n' ' ')
-          rc=0
-          for i in $(seq 1 ${{ github.event.inputs.iterations || '20' }}); do
-            echo "==================== iteration $i ===================="
-            timeout -s KILL 600 "$TEST" --le --log_info > "/tmp/hunt.$i.out" 2>&1
-            rc=$?
-            tail -5 "/tmp/hunt.$i.out"
-            if [ $rc -ne 0 ]; then
-              echo "CAUGHT on iteration $i (rc=$rc)"
-              echo "caught=$i" >> "$GITHUB_OUTPUT"
-              echo "--- the wedge dump, if the fixture produced one ---"
-              grep -A 200 "interrogating before it dies" "/tmp/hunt.$i.out" || \
-                echo "(no dump -- the failure was not a Reap timeout)"
-              break
-            fi
-            pkill -9 -x orlyi 2>/dev/null
+          # Run COPIES CONCURRENTLY rather than one at a time behind CPU
+          # spinners. The first version of this did the latter and took 35
+          # samples without once reproducing #564, while CI reproduces it about
+          # one run in sixteen -- the difference being that CI's `make test`
+          # runs four real binaries at once, so the contention is for disk,
+          # memory and the scheduler, not just for CPU. Concurrent copies buy
+          # the right kind of load and four samples per round at the same time.
+          ROUNDS=${{ github.event.inputs.rounds || '6' }}
+          COPIES=4
+          caught=""
+          for r in $(seq 1 "$ROUNDS"); do
+            echo "==================== round $r ($COPIES concurrent) ===================="
+            pids=""
+            for c in $(seq 1 "$COPIES"); do
+              timeout -s KILL 900 "$TEST" --le --log_info > "/tmp/hunt.r$r.c$c.out" 2>&1 &
+              pids="$pids $!"
+            done
+            for p in $pids; do wait "$p"; done
+            for c in $(seq 1 "$COPIES"); do
+              f="/tmp/hunt.r$r.c$c.out"
+              g=$(grep -c "end GracefulShutdownUnresponsiveSlave; fail" "$f")
+              i=$(grep -c "end ImportReplication; fail" "$f")
+              echo "  round $r copy $c: graceful_fail=$g import_fail=$i"
+              # Only the graceful fixture is what this hunt is for. An
+              # ImportReplication failure is a different arm flake and must not
+              # end the batch -- that is what cut the first hunt short at 15 of
+              # 20 samples.
+              if [ "$g" != "0" ]; then
+                caught="round $r copy $c"
+                echo "CAUGHT the shutdown wedge: $caught"
+                echo "--- wedge dump ---"
+                grep -A 200 "interrogating before it dies" "$f" || \
+                  echo "(the graceful fixture failed WITHOUT a Reap timeout -- different failure mode, read the artifact)"
+              fi
+            done
+            [ -n "$caught" ] && break
           done
-          kill $LOAD 2>/dev/null
-          echo "final rc=$rc"
+          [ -n "$caught" ] && echo "caught=$caught" >> "$GITHUB_OUTPUT"
           # Report the hunt itself as successful; a caught wedge is the payload,
           # not a build failure.
           exit 0
