@@ -541,6 +541,23 @@ namespace Orly {
          reaps exactly that many exits (#440). */
       std::atomic<size_t> ReplicationServicesStarted;
       Base::TEventSemaphore ReplicationServicesExited;
+
+      /* Which replication loops are inside their bodies right now, as a bit
+         per service.  Purely so that a shutdown which does not finish can say
+         WHICH loop it is still waiting for: JoinReplicationServices() is an
+         unbounded wait, and when it hangs the log simply stops, with no way
+         to tell the three loops apart afterwards (#564).  Set alongside
+         Started, cleared alongside the Exited push, by TServiceLatch. */
+      enum TReplicationService : unsigned {
+        ReplicationQueueService = 1u << 0,
+        ReplicationWorkService = 1u << 1,
+        ReplicateTransactionService = 1u << 2
+      };
+      std::atomic<unsigned> ReplicationServicesRunning{0};
+
+      /* Renders ReplicationServicesRunning as service names, for the log
+         line above.  Returns "none" when the mask is empty. */
+      static std::string DescribeReplicationServices(unsigned mask);
       std::chrono::steady_clock::time_point ReplicationNextTime;
 
       std::chrono::milliseconds ReplicationDelay;

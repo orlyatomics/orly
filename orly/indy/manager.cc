@@ -16,6 +16,8 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
+#include <poll.h>
+
 #include <orly/indy/manager.h>
 #include <optional>
 
@@ -183,9 +185,42 @@ L0::TManager::TPtr<TRepo> TManager::NewFastRepo(const TUuid &repo_id,
   return New(repo_id, *ttl, parent_repo, false);
 }
 
+namespace {
+
+  /* Counts a replication loop in on entry and out on exit -- the Started
+     count and the Exited push that JoinReplicationServices() reaps (#440),
+     plus the running-bit that lets a stalled join name the loop it is still
+     waiting for (#564).  RAII so that every exit path is covered, including
+     the exceptional ones the loops rely on. */
+  class TServiceLatch final {
+    NO_COPY(TServiceLatch);
+    public:
+
+    TServiceLatch(std::atomic<size_t> &started, std::atomic<unsigned> &running,
+                  Base::TEventSemaphore &exited, unsigned bit)
+        : Running(running), Exited(exited), Bit(bit) {
+      ++started;
+      Running.fetch_or(Bit);
+    }
+
+    ~TServiceLatch() {
+      Running.fetch_and(~Bit);
+      Exited.Push();
+    }
+
+    private:
+
+    std::atomic<unsigned> &Running;
+    Base::TEventSemaphore &Exited;
+    const unsigned Bit;
+
+  };  // TServiceLatch
+
+}  // namespace
+
 void TManager::RunReplicationQueue() {
-  ++ReplicationServicesStarted;
-  Base::TPushOnExit exit_latch(ReplicationServicesExited);
+  TServiceLatch exit_latch(ReplicationServicesStarted, ReplicationServicesRunning,
+                           ReplicationServicesExited, ReplicationQueueService);
   try {
     epoll_event event;
     int timeout = -1;
@@ -258,8 +293,8 @@ void TManager::RunReplicationQueue() {
 }
 
 void TManager::RunReplicationWork() {
-  ++ReplicationServicesStarted;
-  Base::TPushOnExit exit_latch(ReplicationServicesExited);
+  TServiceLatch exit_latch(ReplicationServicesStarted, ReplicationServicesRunning,
+                           ReplicationServicesExited, ReplicationWorkService);
   try {
     epoll_event event;
     int timeout = -1;
@@ -311,8 +346,8 @@ void TManager::RunReplicationWork() {
 }
 
 void TManager::RunReplicateTransaction() {
-  ++ReplicationServicesStarted;
-  Base::TPushOnExit exit_latch(ReplicationServicesExited);
+  TServiceLatch exit_latch(ReplicationServicesStarted, ReplicationServicesRunning,
+                           ReplicationServicesExited, ReplicateTransactionService);
   epoll_event event;
   int timeout = -1;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -560,12 +595,67 @@ void TManager::StopReplicationServices() {
   }
 }
 
+std::string TManager::DescribeReplicationServices(unsigned mask) {
+  static const std::pair<unsigned, const char *> names[] = {
+    {ReplicationQueueService, "RunReplicationQueue"},
+    {ReplicationWorkService, "RunReplicationWork"},
+    {ReplicateTransactionService, "RunReplicateTransaction"}
+  };
+  std::string ret;
+  for (const auto &item : names) {
+    if (mask & item.first) {
+      if (!ret.empty()) {
+        ret += ", ";
+      }
+      ret += item.second;
+    }
+  }
+  return ret.empty() ? std::string("none") : ret;
+}
+
 void TManager::JoinReplicationServices() {
   /* Reap exactly as many exits as loops that actually entered; a loop
      whose fiber never got to run can't be waited for (and never touches
      us).  Every entered loop pushes Exited on its way out, including the
      exception paths. */
+
+  /* The wait itself stays unbounded ON PURPOSE -- the manager teardown that
+     follows frees the fds and collections a still-parked loop references
+     (#440), so giving up here would trade a hang for a use-after-free.  What
+     changes is that it stops being silent.
+
+     This join is where aarch64 shutdowns wedge (#564), and until now the log
+     simply stopped: the only syslog between the connection drain and
+     "TServer::Shutdown() complete" is the drain's own deadline warning, so a
+     wedge here was indistinguishable from a wedge anywhere else in Shutdown().
+     Poll the exit semaphore's fd instead of blocking on it outright, and every
+     time the poll expires say which loops have still not returned.  A failure
+     now names its own culprit on the first occurrence, with no reproduction
+     needed -- which matters for a bug seen roughly once in eighteen CI runs
+     and never once locally in 83 attempts. */
+  static const int report_every_ms = 15000;
   for (size_t n = ReplicationServicesStarted; n > 0; --n) {
+    for (;;) {
+      pollfd waiting;
+      Base::Zero(waiting);
+      waiting.fd = ReplicationServicesExited.GetFd();
+      waiting.events = POLLIN;
+      const int ret = poll(&waiting, 1, report_every_ms);
+      if (ret < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        ::Util::ThrowSystemError(errno);
+      }
+      if (ret > 0) {
+        break;
+      }
+      syslog(LOG_WARNING,
+             "TManager::JoinReplicationServices() still waiting after %dms;"
+             " replication loop(s) that have not returned: [%s] (#564)",
+             report_every_ms,
+             DescribeReplicationServices(ReplicationServicesRunning.load()).c_str());
+    }
     ReplicationServicesExited.Pop();
   }
 }
