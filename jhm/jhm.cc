@@ -99,11 +99,22 @@ void WriteCompileCommandsJson(const TEnv &env) {
   out << TJson(std::move(entries));
 }
 
-/* Echo whatever output the pump has already delivered for a TIMED-OUT test,
-   giving up after a quiet period instead of waiting for EOF: a SIGKILLed
-   test can leave grandchildren holding the pipe's write side (its forked
-   servers, say), and then EOF never comes -- the reporter must not inherit
-   the wedge the timeout just cut short (#537). */
+/* Echo whatever output the pump has already delivered, giving up after a
+   quiet period instead of waiting for EOF: a test can leave grandchildren
+   holding the pipe's write side (its forked servers, say), and then EOF
+   never comes -- the reporter must not inherit a wedge it is trying to
+   report on (#537).
+
+   Used on EVERY reap, not just timed-out ones (#570).  The original scope
+   assumed only a SIGKILLed test strands children, but a test that exits on
+   its OWN can stand up servers and fail before reaping them just as easily,
+   and that path used to wait for an EOF that could never arrive -- one
+   aarch64 run sat in it for 110 minutes with 61 tests still queued, which is
+   precisely the silent budget-eating failure #537 set out to abolish.
+
+   Costs nothing in the normal case: a pipe whose writers are all gone polls
+   readable immediately and reads zero, so the quiet period is only ever
+   spent in the pathological case it exists for. */
 void EchoOutputBounded(TFd &&fd) {
   uint8_t buf[4096];
   for (;;) {
@@ -389,13 +400,9 @@ class TJhm : public TCmd {
            TESTS: line land displaced from the test's own output, making the
            failure read as if the test printed nothing (#520). */
         cout << "TEST: " << test << endl;
-        if (timed_out.count(test)) {
-          EchoOutputBounded(subprocess->TakeStdOutFromChild());
-          EchoOutputBounded(subprocess->TakeStdErrFromChild());
-        } else {
-          EchoOutput(subprocess->TakeStdOutFromChild());
-          EchoOutput(subprocess->TakeStdErrFromChild());
-        }
+        /* Bounded on both paths -- see EchoOutputBounded (#570). */
+        EchoOutputBounded(subprocess->TakeStdOutFromChild());
+        EchoOutputBounded(subprocess->TakeStdErrFromChild());
       }
       if (timed_out.count(test)) {
         cout << "TIMEOUT: " << test << " killed after " << timed_out.at(test)
