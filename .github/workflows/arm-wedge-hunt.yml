@@ -59,8 +59,30 @@ jobs:
           caught=""
           for r in $(seq 1 "${{ github.event.inputs.rounds || '5' }}"); do
             echo "==================== make test, round $r ===================="
-            PATH="$PWD/tools:$PATH" jhm --test > "/tmp/suite.$r.log" 2>&1
+            # Bound the round OURSELVES, well under the job cap. The first
+            # reproduction of #564 hung a round for 110 minutes and the job's
+            # own 120-minute timeout cut it off mid-evidence -- the artifacts
+            # that mattered were never written. A round we kill is a round we
+            # still have the logs for, and the loop moves on to the next
+            # sample instead of the batch dying.
+            #
+            # stdbuf so a killed round still yields everything jhm wrote up to
+            # the kill, rather than losing the last block-buffered chunk.
+            timeout -s KILL 1500 stdbuf -oL -eL \
+              env PATH="$PWD/tools:$PATH" jhm --test > "/tmp/suite.$r.log" 2>&1
             rc=$?
+            if [ $rc -eq 137 ]; then
+              echo "round $r was killed at its 25-minute bound (a hung suite is itself a catch)"
+              caught="round $r (suite hung)"
+            fi
+            # The orlyi child logs are where #568's join warning actually
+            # lands. The fixture only surfaces them when IT fails its own
+            # assertions, so anything killed from outside loses them -- which
+            # is how the first reproduction escaped. Keep them unconditionally.
+            for d in /tmp/import_repl_test_*; do
+              [ -d "$d" ] || continue
+              tar -czf "/tmp/scratch.$r.$(basename "$d").tgz" "$d" 2>/dev/null
+            done
             echo "round $r rc=$rc"
             # #568: the join names the loop that never returned.
             if grep -q "JoinReplicationServices() still waiting" "/tmp/suite.$r.log"; then
@@ -89,7 +111,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: arm-wedge-hunt-suites
-          path: /tmp/suite.*.log
+          path: |
+            /tmp/suite.*.log
+            /tmp/scratch.*.tgz
           if-no-files-found: warn
 
       - name: Verdict
