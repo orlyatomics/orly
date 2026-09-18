@@ -1,0 +1,106 @@
+# Hunt for #564: GracefulShutdownUnresponsiveSlave wedges on aarch64.
+#
+# The failure is real but rare -- roughly one arm run in sixteen, and never
+# once on amd64. It did not reproduce in 22 local runs on a native arm64
+# container, including ten with the cores deliberately oversubscribed, so the
+# way to get evidence is many samples on the runner class that actually shows
+# it.
+#
+# #565 made the fixture interrogate a master that will not die, dumping each
+# thread's state, kernel wait channel and syscall line at the one moment the
+# wedged process still exists. This workflow's whole job is to make that dump
+# happen: build the test alone (not the whole tree) and run it until it fails
+# or the iteration budget runs out, then upload whatever it printed.
+#
+# Both observed failures carried load signatures -- a TransitionToSlave that
+# took over two minutes -- so the runs happen against a deliberately
+# oversubscribed box, mirroring `make test` running four binaries at once.
+#
+# Dispatch-only, and temporary: delete it, or fold it into the arm guard #556
+# asks for, once #564 is diagnosed.
+name: arm-wedge-hunt
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "How many times to run the fixture"
+        required: false
+        default: "20"
+
+jobs:
+  hunt:
+    name: hunt the shutdown wedge (arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Capacity
+        run: |
+          uname -m
+          echo "nproc: $(nproc)"
+          free -g
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
+            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
+            bison flex valgrind
+
+      - name: Build the fixture and the server it forks
+        run: |
+          make bootstrap version
+          PATH="$PWD/tools:$PATH" jhm -c debug --worker-count 4 \
+            orly/server/import_replication.test orly/server/orlyi
+
+      - name: Run until it wedges
+        id: hunt
+        run: |
+          set +e
+          TEST=../out_orly/debug/orly/server/import_replication.test
+          test -x "$TEST" || { echo "no test binary at $TEST"; exit 1; }
+          # Oversubscribe: `make test` runs four binaries at once, and both
+          # real failures looked load-related.
+          for c in 1 2 3 4; do bash -c 'while :; do :; done' & done
+          LOAD=$(jobs -p | tr '\n' ' ')
+          rc=0
+          for i in $(seq 1 ${{ github.event.inputs.iterations || '20' }}); do
+            echo "==================== iteration $i ===================="
+            timeout -s KILL 600 "$TEST" --le --log_info > "/tmp/hunt.$i.out" 2>&1
+            rc=$?
+            tail -5 "/tmp/hunt.$i.out"
+            if [ $rc -ne 0 ]; then
+              echo "CAUGHT on iteration $i (rc=$rc)"
+              echo "caught=$i" >> "$GITHUB_OUTPUT"
+              echo "--- the wedge dump, if the fixture produced one ---"
+              grep -A 200 "interrogating before it dies" "/tmp/hunt.$i.out" || \
+                echo "(no dump -- the failure was not a Reap timeout)"
+              break
+            fi
+            pkill -9 -x orlyi 2>/dev/null
+          done
+          kill $LOAD 2>/dev/null
+          echo "final rc=$rc"
+          # Report the hunt itself as successful; a caught wedge is the payload,
+          # not a build failure.
+          exit 0
+
+      - name: Upload every run's output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-wedge-hunt
+          path: /tmp/hunt.*.out
+          if-no-files-found: warn
+
+      - name: Verdict
+        if: always()
+        run: |
+          if [ -n "${{ steps.hunt.outputs.caught }}" ]; then
+            echo "WEDGE CAUGHT on iteration ${{ steps.hunt.outputs.caught }} -- see the log above and the artifact (#564)"
+          else
+            echo "no wedge in this batch; dispatch again for more samples (#564)"
+          fi
