@@ -33,18 +33,6 @@ const Base::TUuid TDurableManager::DurableByIdFileId("20E91BAE-3465-4E9B-918F-C2
 
 const Base::TUuid TDurableManager::TSortedByIdFile::NullId("00000000-0000-0000-0000-000000000000");
 
-TFlush::TFlush(chrono::milliseconds delay) : Delay(delay) {
-  UpdateNext();
-}
-
-void TFlush::WaitFor() {
-  ::Util::SleepUntil(Next);
-  UpdateNext();
-}
-void TFlush::UpdateNext() {
-  Next = chrono::steady_clock::now() + Delay;
-}
-
 TDurableManager::TMapping::~TMapping() {
   EntryCollection.DeleteEachMember();
 }
@@ -365,10 +353,11 @@ void TDurableManager::RunWriter() {
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
     Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
   }
-  TFlush next_flush(DurableWriteDelay);
+  /* The writer flushes as soon as a save signals it, without waiting out DurableWriteDelay
+     (#576). A TFlush delay sat here, but SleepUntil never slept, so this is the behaviour
+     every caller has relied on; turning on a write-behind would need its own measurement. */
   SlushSem.Pop();
   for (;!ShutDown; SlushSem.Pop()) {
-    next_flush.WaitFor();
     FlushCurLayer(false);
   }
   /* Final drain (#277): flush whatever is still sitting in the memory layer so shutting down
@@ -470,10 +459,9 @@ void TDurableManager::RunMerger() {
     Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
   }
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
-  TFlush next_flush(DurableMergeDelay);
+  /* Unpaced, like the writer above (#576). */
   MergeSem.Pop();
   for (;!ShutDown; MergeSem.Pop()) {
-    next_flush.WaitFor();
     std::vector<size_t> gen_vec;
     std::map<size_t, std::vector<TDiskOrderedLayer *>> gen_to_gen_id_map;
     std::vector<TDiskOrderedLayer *> gen_layer_vec;

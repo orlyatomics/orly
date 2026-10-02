@@ -558,6 +558,7 @@ namespace Orly {
       /* Renders ReplicationServicesRunning as service names, for the log
          line above.  Returns "none" when the mask is empty. */
       static std::string DescribeReplicationServices(unsigned mask);
+      /* Neither is applied: replication is unpaced (#576, see RunReplicateTransaction). */
       std::chrono::steady_clock::time_point ReplicationNextTime;
 
       std::chrono::milliseconds ReplicationDelay;

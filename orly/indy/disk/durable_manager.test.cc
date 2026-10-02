@@ -188,9 +188,9 @@ FIXTURE(SemFiresOnlyAfterFlush) {
          essentially every run, and correct code is never failed.
 
          This used to be asserted the other way round: "the sem has not fired just after Save()",
-         on the premise that the writer waits out its write delay first.  It does not --
-         Util::SleepUntil never sleeps (#576), so the writer flushes the moment the save arrives
-         and that assertion was a race against it.  That race is the #551 flake, and why widening
+         on the premise that the writer waits out its write delay first.  It never did --
+         Util::SleepUntil never slept (#576), and the writer now has no delay at all -- so it
+         flushes the moment the save arrives and that assertion was a race against it.  That race is the #551 flake, and why widening
          the delay to 2s did not stop it. */
       std::vector<TFileObj> durable_files;
       mem_engine.GetEngine()->AppendFileGenSet(TDurableManager::DurableByIdFileId, durable_files);

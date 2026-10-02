@@ -2,9 +2,8 @@
 
    Durable-state manager: tracks `Durable::TManager` objects that need
    periodic flush-to-disk, batches their serialized form into one stream,
-   and replays them on startup. `TFlush` schedules the periodic flush
-   tick; `TDurableManager` owns the per-object layers and the runner loop
-   that processes them. Large header -- the public `TDurableManager`
+   and replays them on startup. `TDurableManager` owns the per-object
+   layers and the runner loops that process them. Large header -- the public `TDurableManager`
    class declaration lives well below the top.
 
    Consumers: `orly/server/orlyi`, the replication path.
@@ -92,22 +91,6 @@ namespace Orly {
     }  // DurableManager
 
     namespace Disk {
-
-      /* Helper Used for maintaining a simple counter of when to flush. */
-      class TFlush {
-        public:
-
-        /* Sets the next flush for delay milliseconds after construction */
-        TFlush(std::chrono::milliseconds delay);
-
-        /* Sleeps until the current next flush time, then updates the flush time. */
-        void WaitFor();
-        void UpdateNext();
-
-        private:
-        std::chrono::milliseconds Delay;
-        std::chrono::steady_clock::time_point Next;
-      };
 
       class TDurableManager
           : public Durable::TManager {
@@ -769,6 +752,7 @@ namespace Orly {
 
         size_t TempFileConsolThresh;
 
+        /* Neither is applied: the writer and merger are unpaced (#576). */
         std::chrono::milliseconds DurableWriteDelay;
         std::chrono::milliseconds DurableMergeDelay;
 

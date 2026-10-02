@@ -39,11 +39,11 @@ namespace Util {
     return time <= TClock::now();
   }
 
-  /* Sleep until the given time is reached. Does a comparison first because that provides a noticable speed boost in
-     testing done (a while ago at this point), which I don't want to remove / test at the moment. */
+  /* Sleep until the given time is reached; return at once if it already has.
+     Until #576 the comparison was inverted, so this never slept at all. */
   template <typename TClock>
   void SleepUntil(std::chrono::time_point<TClock> time) {
-    if (time < std::chrono::steady_clock::now()) {
+    if (time > TClock::now()) {
       std::this_thread::sleep_until(time);
     }
   }
