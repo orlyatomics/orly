@@ -153,6 +153,32 @@ jobs:
           (cd clients/mcp && npm install --silent && npx tsc)
           ORLY_URL=ws://127.0.0.1:8082/ node clients/mcp/smoke/smoke.mjs
 
+      # The MCP smoke writes, but it exits as soon as each write answers. The
+      # v0.1.0 arm64 image passed it while segfaulting just AFTER the first
+      # write through a POV (#578), so a smoke that never looks back cannot
+      # see that shape. Write through every POV flavour, five fresh POVs
+      # each, wait, and assert the server is still the same running process.
+      - name: Server survives writes through every POV flavour
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          PYTHONPATH=clients/python python3 - <<'PY'
+          import orly
+          c = orly.connect("ws://127.0.0.1:8082/")
+          c.new_session()
+          c.install("sample", 1)
+          n = 0
+          for _ in range(5):
+              for kind in ("safe shared", "safe private", "fast shared", "fast private"):
+                  n += 1
+                  pov = c.send(f"new {kind} pov;")
+                  c.call(pov, "sample", "write_val", {"n": 1000 + n, "x": n})
+          print(f"{n} writes answered")
+          PY
+          sleep 5
+          state=$(docker inspect orly --format '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}')
+          echo "container after writes: $state"
+          test "$state" = "running exit=0 restarts=0"
+
       # The image also claims in-container package compiles (orlyc + g++ +
       # ORLY_SRC_ROOT). Gate that claim: compile a from-scratch user package
       # to a loadable .so inside the running container. (This caught a
