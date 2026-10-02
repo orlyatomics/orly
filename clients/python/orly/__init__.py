@@ -139,14 +139,15 @@ class Client:
         self.send(f"uninstall {package}.{int(version)};")
 
     def new_pov(self, safe=True, shared=True, parent=None):
-        """Create a POV; returns its id. Defaults to ``new safe shared pov;``."""
-        parts = ["new"]
-        if safe:
-            parts.append("safe")
-        parts.append("shared" if shared else "private")
-        parts.append("pov")
+        """Create a POV; returns its id. Defaults to ``new safe shared pov;``.
+
+        ``safe=False`` makes a ``fast`` POV; ``parent`` is a POV id, and the
+        new POV is created ``from`` it. The grammar has no default guarantee,
+        so one of ``safe``/``fast`` is always spelled out (#580).
+        """
+        parts = ["new", "safe" if safe else "fast", "shared" if shared else "private", "pov"]
         if parent is not None:
-            parts.append(f"parent {lit(parent)}")
+            parts.append(f"from {{{parent}}}")
         return self.send(" ".join(parts) + ";")
 
     # -- methods --------------------------------------------------------

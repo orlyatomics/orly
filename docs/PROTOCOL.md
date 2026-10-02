@@ -49,7 +49,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Set TTL | `set ttl <durable-id> <seconds>;` | — |
 | Install package | `install <pkg>.<version>;` | — |
 | Uninstall package | `uninstall <pkg>.<version>;` | — |
-| New POV | `new [safe] [shared\|private] pov [parent <id>];` | POV id (string) |
+| New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause pov <id>;` / `unpause pov <id>;` | `"paused"` / `"unpaused"` |

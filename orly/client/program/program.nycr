@@ -2,8 +2,7 @@
 
    Grammar for Orly client shell.
 
-      new private pov (under <id>) ;
-      new shared pov (under <id>) ;
+      new (safe|fast) (private|shared) pov (from {<id>}) ;
       ttl <id> = <time_diff> ;
       install <package> ;
       uninstall <package> ;
