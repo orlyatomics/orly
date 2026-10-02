@@ -27,5 +27,5 @@ __thread size_t TReadFile<LogicalPageSize, LogicalBlockSize, PhysicalBlockSize, 
 template<>
 __thread size_t TReadFile<LogicalBlockSize, LogicalBlockSize, PhysicalBlockSize, CheckedPage>::HashHitCount;
 
-template<>
-__thread TLocalReadFileCache<LogicalPageSize, LogicalBlockSize, PhysicalBlockSize, CheckedPage, true> *TLocalReadFileCache<LogicalPageSize, LogicalBlockSize, PhysicalBlockSize, CheckedPage, true>::Cache = nullptr;
+/* TLocalReadFileCache::Cache is an inline static TFiberSafeLocal now, and
+   defines itself (#578). */

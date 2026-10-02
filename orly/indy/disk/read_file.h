@@ -36,6 +36,7 @@
 #include <orly/indy/disk/indy_util_reporter.h>
 #include <orly/indy/disk/util/cache.h>
 #include <orly/indy/disk/util/engine.h>
+#include <orly/indy/fiber/fiber.h>
 #include <orly/indy/update.h>
 #include <orly/sabot/match_prefix_state.h>
 
@@ -924,7 +925,11 @@ namespace Orly {
           delete loader;
         }
 
-        static __thread TLocalReadFileCache *Cache;
+        /* Fiber-safe: see TFiberSafeLocal (#554).  TSafeRepo::RemoveFile reads
+           this after SwitchTo()ing onto each scheduler, and a bare __thread
+           read there returned the originating thread's (null) cache (#578). */
+        struct TCacheTag;
+        inline static Fiber::TFiberSafeLocal<TLocalReadFileCache, TCacheTag> Cache;
 
         private:
 

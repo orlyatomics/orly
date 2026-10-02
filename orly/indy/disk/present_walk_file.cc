@@ -23,4 +23,5 @@ using namespace Orly;
 using namespace Orly::Atom;
 using namespace Orly::Indy::Disk;
 
-__thread TLocalWalkerCache *TLocalWalkerCache::Cache = nullptr;
+/* TLocalWalkerCache::Cache is an inline static TFiberSafeLocal now, and
+   defines itself (#578). */

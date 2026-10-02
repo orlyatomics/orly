@@ -380,7 +380,9 @@ namespace Orly {
           delete loader;
         }
 
-        static __thread TLocalWalkerCache *Cache;
+        /* Fiber-safe: see TFiberSafeLocal (#554, #578). */
+        struct TCacheTag;
+        inline static Fiber::TFiberSafeLocal<TLocalWalkerCache, TCacheTag> Cache;
 
         class TLoaderObj {
           NO_COPY(TLoaderObj);
