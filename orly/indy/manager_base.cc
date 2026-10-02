@@ -611,13 +611,23 @@ void TManager::RemoveLayersFromQueue() {
     for (TRepo::TDataLayer *layer : mem_layers) {
       delete layer;
     }
-    if (!disk_layers.empty()) {
+    /* Only a layer marked for delete removes its file, and so needs its
+       caches dropped. That test also keeps the tour out of ~TManager, which
+       drains layers a repo's teardown queued, never marked for delete, after
+       the derived manager (and its ForEachScheduler) is gone. */
+    std::vector<TRepo::TDataLayer *> to_clear;
+    for (TRepo::TDataLayer *layer : disk_layers) {
+      if (layer->GetMarkedForDelete()) {
+        to_clear.push_back(layer);
+      }
+    }
+    if (!to_clear.empty()) {
       Fiber::TRunner *const home_runner = Fiber::TRunner::LocalRunner;
       bool moved = false;
-      ForEachScheduler([&disk_layers, &moved](Fiber::TRunner *runner) {
+      ForEachScheduler([&to_clear, &moved](Fiber::TRunner *runner) {
         Fiber::SwitchTo(runner);
         moved = true;
-        for (TRepo::TDataLayer *layer : disk_layers) {
+        for (TRepo::TDataLayer *layer : to_clear) {
           layer->ClearLocalCaches();
         }
         return true;
@@ -625,9 +635,9 @@ void TManager::RemoveLayersFromQueue() {
       if (moved) {
         Fiber::SwitchTo(home_runner);
       }
-      for (TRepo::TDataLayer *layer : disk_layers) {
-        delete layer; /* POSSIBLE SEGFAULT */
-      }
+    }
+    for (TRepo::TDataLayer *layer : disk_layers) {
+      delete layer; /* POSSIBLE SEGFAULT */
     }
   }
 }
