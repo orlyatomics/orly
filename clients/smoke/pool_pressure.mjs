@@ -13,6 +13,11 @@ const URL = process.env.ORLY_URL;
 const REPORT_PORT = +process.env.ORLY_REPORT_PORT;
 const K = +(process.env.K ?? 8);
 const SECS = +(process.env.SECS ?? 30);
+/* Each phase also stops at MAX_WRITES, so a fast runner doesn't write several
+   times what a slow one does. Every write lands on the server's 256 MB mem-sim
+   disk, and a full disk aborts the server, so uncapped the smoke flaked on the
+   fastest runners only. #584 aborted within ~2,000 writes, far below the cap. */
+const MAX_WRITES = +(process.env.MAX_WRITES ?? 60000);
 
 /* The reporter's headers end in bare \n, which node's http parser rejects. */
 function report() {
@@ -38,7 +43,7 @@ async function phase(label, povFor) {
     const c = await connect(URL);
     await c.newSession();
     const pov = await povFor(c);
-    for (let i = 0; !stop; ++i) {
+    for (let i = 0; !stop && writes < MAX_WRITES; ++i) {
       try {
         await c.call(pov, "sample", "write_val", { n: w * 10_000_000 + i, x: i });
         ++writes;
@@ -51,7 +56,7 @@ async function phase(label, povFor) {
   };
   const writers = Array.from({ length: K }, (_, w) => writer(w));
   const t0 = Date.now();
-  while (Date.now() - t0 < SECS * 1000 && failures.length === 0) {
+  while (Date.now() - t0 < SECS * 1000 && writes < MAX_WRITES && failures.length === 0) {
     await new Promise((r) => setTimeout(r, 1000));
     const body = await report();
     const upd = pool(body, "Update Pool"), layers = pool(body, "Repo Data Layer Pool");
