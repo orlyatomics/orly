@@ -277,8 +277,7 @@ Linux. Verified on Ubuntu 24.04.
 **x86-64** and **aarch64**. Both are built and released against: the published
 docker image is a multi-arch manifest, each architecture built on its own native
 runner and gated by the same smokes — the MCP smoke, an in-container `orlyc`
-compile, and the REPL — run on that architecture's own image, so what is
-published is proven to work rather than merely to build.
+compile, and the REPL — run on that architecture's own image.
 
 The port itself needed exactly two changes, which says more about the codebase
 than about the port: `_mm_prefetch` became `__builtin_prefetch`, and a `-msse2`
@@ -288,13 +287,23 @@ bootstrapped from `ucontext` — both POSIX — so there was no hand-rolled cont
 switch to port. aarch64 runs `make test` in CI: 1753 build jobs, 203 test
 binaries, zero failures on a native arm runner.
 
-One aarch64-specific defect has been found and fixed, and it is worth knowing
-the shape of it: `orlyc` deadlocked on arm because the compiler hoists the
-thread pointer out of a loop, so a fiber that had migrated OS threads read the
-previous thread's scheduler and switched onto its stack ([#554](https://github.com/orlyatomics/orly/issues/554)). It reproduced
-only in release builds. The `make test` job remains **informational rather than
-a merge gate**, and the arm coverage that matters for that class of bug is a
-release-build `orlyc` run ([#556](https://github.com/orlyatomics/orly/issues/556)).
+Two aarch64-specific defects have been found and fixed, and they share one
+shape worth knowing: a fiber that has migrated OS threads reads a thread-local
+through a thread pointer the compiler computed before the switch, so it gets the
+*previous* thread's value. x86-64 re-derives the TLS base at every access, so
+only arm shows it, and only in optimised builds. `orlyc` deadlocked
+([#554](https://github.com/orlyatomics/orly/issues/554)), and the `v0.1.0`
+arm64 image segfaulted just after the first write
+([#578](https://github.com/orlyatomics/orly/issues/578), fixed in `v0.1.1`).
+The image smokes passed `v0.1.0` anyway, because that crash lands after the
+write has already answered.
+
+So the debug `make test` job above stays **informational**, and what guards the
+class is two other CI checks ([#556](https://github.com/orlyatomics/orly/issues/556)).
+A lint rejects any bare thread-local that isn't allowlisted with a reason it can
+never be read across a fiber switch. An `aarch64 release smoke` job builds
+`orlyi`/`orlyc` release on an arm runner, compiles a package, and writes through
+every POV flavour on 20 fresh servers, checking that each one survives.
 
 Earlier releases probably work; not re-tested in the revival pass.
 
