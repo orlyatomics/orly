@@ -2353,7 +2353,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
             throw;
           }
           for (auto f : ToMerge) {
-            global_repo->RemoveFile(f);
+            global_repo->RemoveFile(f, false);
           }
         } else {
           gen_id = ToMerge.front();

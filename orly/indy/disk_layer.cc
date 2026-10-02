@@ -43,7 +43,7 @@ TDiskLayer::~TDiskLayer() {
   if (GetMarkedForDelete()) {
     assert(Repo->IsSafeRepo());
     try {
-      Repo->RemoveFile(GenId);
+      Repo->RemoveFile(GenId, CachesCleared);
     } catch (const Disk::TDiskServiceShutdown &/*ex*/) {
       /*ignore, we're shutting down by force! */
     } catch (const std::exception &ex) {
@@ -58,6 +58,15 @@ TDiskLayer::~TDiskLayer() {
     } catch (...) {
       syslog(LOG_ERR, "TDiskLayer::~TDiskLayer RemoveFile(%ld) failed: unknown exception", GenId);
     }
+  }
+}
+
+void TDiskLayer::ClearLocalCaches() {
+  /* Only a layer on its way out may drop its file's caches; a live one is
+     still being read through them. */
+  if (GetMarkedForDelete()) {
+    Repo->ClearLocalFileCaches(GenId);
+    CachesCleared = true;
   }
 }
 

@@ -511,6 +511,12 @@ namespace Orly {
 
             virtual TSequenceNumber GetHighestSeq() const = 0;
 
+            /* Drop whatever the calling runner caches about this layer (#584).
+               The layer cleaner calls this on every runner for a whole batch
+               of dead layers in one tour, so that deleting them doesn't tour
+               the runners once per layer.  Only disk layers cache anything. */
+            virtual void ClearLocalCaches() {}
+
             static void *operator new(size_t size) {
               return Pool.Alloc(size);
             }
@@ -561,7 +567,12 @@ namespace Orly {
                                     bool can_tail,
                                     bool can_tail_tombstone);
 
-          virtual void RemoveFile(size_t gen_id);
+          /* caches_cleared: the caller already ran ClearLocalFileCaches on
+             every runner (the batched layer cleaner, #584). */
+          virtual void RemoveFile(size_t gen_id, bool caches_cleared);
+
+          /* Drop the calling runner's cached readers/walkers for a file. */
+          virtual void ClearLocalFileCaches(size_t gen_id);
 
           virtual size_t WriteFile(TMemoryLayer *memory_layer,
                                    Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,

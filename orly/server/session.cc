@@ -37,6 +37,44 @@ using namespace Orly::Notification;
 using namespace Orly::Server;
 using namespace Util;
 
+/* Write backpressure (#234, #584), applied after a write's transaction has
+   committed: we hold no repo lock, and the merges and Tetris run on their own
+   runners, so YieldSlow lets them make progress.
+
+   Two signals. The first is the writer's memtable backlog past the
+   high-watermark: the merge isn't promoting this POV fast enough. Every merge
+   step copies the whole unpromoted backlog before it frees the old copy, so the
+   backlog must stay well below the Update pool's capacity or one merge fills
+   the pool (#584). Each POV's watermark is therefore capped at 1/32 of it, so
+   several POVs backing up at once still leave room for their merges. That
+   loop always terminates, because every memtable drains.
+
+   The second is the Update / Update Entry pools past half full, whatever
+   holds them: merges need that much room to copy into. That wait is
+   bounded, because the pools also hold data that drains slowly or never (a
+   fast POV keeps its writes in memory): past the deadline the write proceeds,
+   and an allocation that then fails fails just this call. */
+static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold) {
+  if (!backlog_threshold) {
+    return;
+  }
+  backlog_threshold = std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
+  constexpr double pool_threshold = 0.5;
+  const auto pools_full = [] {
+    return Indy::TUpdate::GetUpdatePoolUsedPct() > pool_threshold
+        || Indy::TUpdate::GetUpdateEntryPoolUsedPct() > pool_threshold;
+  };
+  const auto pool_deadline = steady_clock::now() + seconds(5);
+  for (;;) {
+    if (repo->GetMemBacklogDepth() > backlog_threshold
+        || (pools_full() && steady_clock::now() < pool_deadline)) {
+      Indy::Fiber::YieldSlow();
+    } else {
+      break;
+    }
+  }
+}
+
 /* The run_time recorded in an update's TMetaRecord. Rt::TContext::Now()
    memoizes wall time into OptNow on first use, so this is Known whenever the
    client supplied `now` or the executed method (or a predicate) evaluated it;
@@ -276,17 +314,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
        backed up past the high-watermark, the global merge is not draining this
        writer fast enough; cooperatively yield this fiber until it drains, so
        sustained accept paces to promote instead of growing the memtable without
-       bound (bad_alloc at high K). We hold no repo lock here and the merge runs
-       on its own runner, so YieldSlow lets it make progress; the loop re-reads
-       the live depth and always terminates because every memtable drains
-       (Tetris promote for children, disk merge for safe repos). */
+       bound (bad_alloc at high K). See ApplyWriteBackpressure. */
     if (had_effects) {
-      const size_t backpressure_threshold = server->GetWriteBackpressureThreshold();
-      if (backpressure_threshold) {
-        while (repo->GetMemBacklogDepth() > backpressure_threshold) {
-          Indy::Fiber::YieldSlow();
-        }
-      }
+      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold());
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();
@@ -446,12 +476,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     }
     /* Write backpressure (#234), applied once per batch (one transaction). */
     if (had_effects) {
-      const size_t backpressure_threshold = server->GetWriteBackpressureThreshold();
-      if (backpressure_threshold) {
-        while (repo->GetMemBacklogDepth() > backpressure_threshold) {
-          Indy::Fiber::YieldSlow();
-        }
-      }
+      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold());
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();

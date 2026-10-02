@@ -504,20 +504,31 @@ bool TRepo::HasDiskMergeCandidate(TMapping *mapping) const {
 void TRepo::StepMergeMem() {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
+  /* #584: set while a failure would leave the repo exactly as we found it, so
+     that running out of pool space retries the merge later instead of
+     aborting the server. That covers the in-memory copy phase: until the root
+     writes a file or the new mapping is published, the merge has only built
+     copies, and the layers it is merging are untouched. */
+  bool can_retry = true;
   try {
     /*** If the current memory layer is not empty, add it to the mapping layer and create a new current memory layer ***/
     /* acquire DataLayer lock */ {
       std::lock_guard<std::mutex> lock(DataLock);
       assert(CurMemoryLayer);
       if (!CurMemoryLayer->IsEmpty()) {
-        AddMapping(CurMemoryLayer);
+        /* Allocate the replacement first: if that fails, nothing has changed
+           yet (the old code had already retired CurMemoryLayer into the
+           mapping and left the repo with none). */
+        TMemoryLayer *const next_mem = new TMemoryLayer(Manager);
+        can_retry = false;
         try {
-          CurMemoryLayer = new TMemoryLayer(Manager);
-        } catch (const std::exception &ex) {
-          CurMemoryLayer = nullptr;
-          syslog(LOG_EMERG, "Error allocating new CurMemoryLayer for Repo [%s]", ex.what());
+          AddMapping(CurMemoryLayer);
+        } catch (...) {
+          delete next_mem;
           throw;
         }
+        CurMemoryLayer = next_mem;
+        can_retry = true;
         //EnqueueMergeMem();
       }
     }  // release DataLayer lock
@@ -539,8 +550,8 @@ void TRepo::StepMergeMem() {
           new_mem = new TMemoryLayer(Manager);
         }  // release DataLayer lock
         assert(new_mem);
+        std::vector<TMemoryLayer *> mem_to_merge_vec;
         try {
-          std::vector<TMemoryLayer *> mem_to_merge_vec;
           for (TMapping::TEntryCollection::TCursor csr(mapping->GetEntryCollection(), InvCon::TOrient::Rev); csr; ++csr) {
             TDataLayer *layer = csr->GetLayer();
             if (layer->GetKind() != TDataLayer::Mem || layer->GetMarkedTaken()) {
@@ -571,6 +582,8 @@ void TRepo::StepMergeMem() {
                 TMemoryLayer *const src = reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0]);
                 size_t num_keys = 0U;
                 TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
+                /* A half-written file can't be rolled back (#584). */
+                can_retry = false;
                 size_t gen_id = WriteFile(src, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
                 {
                   std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
@@ -716,6 +729,8 @@ void TRepo::StepMergeMem() {
                 if (!new_mem->IsEmpty()) {
                   size_t num_keys = 0U;
                   TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
+                  /* A half-written file can't be rolled back (#584). */
+                  can_retry = false;
                   size_t gen_id = WriteFile(new_mem, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
                   {
                     std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
@@ -732,6 +747,8 @@ void TRepo::StepMergeMem() {
               ReleaseMapping(mapping);
               return;
             }
+          /* From here on we publish the new mapping, which can't be undone. */
+          can_retry = false;
           /* acquire Mapping lock */ {
             std::lock_guard<std::mutex> lock(MappingLock);
             TMapping *cur_mapping = MappingCollection.TryGetLastMember();
@@ -796,6 +813,14 @@ void TRepo::StepMergeMem() {
           }
         } catch (const exception &ex) {
           syslog(LOG_ERR, "Caught exception in StepMergeMem [%s]", ex.what());
+          if (can_retry) {
+            /* Roll back: drop the partial copy and hand the layers back. */
+            delete new_mem;
+            assert(!new_disk);
+            for (TMemoryLayer *layer : mem_to_merge_vec) {
+              layer->UnmarkTaken();
+            }
+          }
           ReleaseMapping(mapping);
           throw;
         }
@@ -803,6 +828,16 @@ void TRepo::StepMergeMem() {
       }  // release the current mapping
       CheckRemoveDirty();
     }  // release MemMerge lock
+  } catch (const std::bad_alloc &) {
+    if (!can_retry) {
+      syslog(LOG_EMERG, "StepMergeMem caught error [std::bad_alloc] after publishing; aborting");
+      abort();
+    }
+    /* Out of pool space before anything was published (#584). The layers
+       that would free it are still queued for the layer cleaner, so try
+       again on the next merge cycle rather than abort. */
+    syslog(LOG_WARNING, "StepMergeMem out of pool space; merge rolled back, will retry");
+    EnqueueMergeMem();
   } catch (const std::exception &ex) {
     syslog(LOG_EMERG, "StepMergeMem caught error [%s]", ex.what());
     abort();
@@ -1500,11 +1535,29 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   out_saved_low_seq = fold_data_file.GetLowestSequence();
   out_saved_high_seq = fold_data_file.GetHighestSequence();
   /* Reclaim the intermediate file's blocks. */
-  RemoveFile(intermediate_gen_id);
+  RemoveFile(intermediate_gen_id, false);
   return final_gen_id;
 }
 
-void TSafeRepo::RemoveFile(size_t gen_id) {
+void TSafeRepo::ClearLocalFileCaches(size_t gen_id) {
+  const Base::TUuid &repo_id = GetId();
+  Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
+    Disk::Util::LogicalBlockSize,
+    Disk::Util::PhysicalBlockSize,
+    Disk::Util::CheckedPage>::TLocalReadFile *my_read_file = Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
+    Disk::Util::LogicalBlockSize,
+    Disk::Util::PhysicalBlockSize,
+    Disk::Util::CheckedPage>::Cache->Get(Manager->GetEngine(), repo_id, gen_id);
+  for (const auto &index_pair : my_read_file->GetIndexByIdMap()) {
+    Disk::TLocalWalkerCache::Cache->Clear(repo_id, gen_id, index_pair.first);
+  }
+  Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
+    Disk::Util::LogicalBlockSize,
+    Disk::Util::PhysicalBlockSize,
+    Disk::Util::CheckedPage, true>::Cache->Clear(repo_id, gen_id);
+}
+
+void TSafeRepo::RemoveFile(size_t gen_id, bool caches_cleared) {
   Util::TBlockVec block_vec;
   /* reader life span */ {
     TReader reader(Manager->GetEngine(), GetId(), Low, gen_id);
@@ -1530,25 +1583,12 @@ void TSafeRepo::RemoveFile(size_t gen_id) {
       throw;
     }
   }
-  /* Now we can go to each scheduler and remove anything they have cached about this file... */ {
+  /* Now we can go to each scheduler and remove anything they have cached about this file... */
+  if (!caches_cleared) {
     Manager->ForEachScheduler([this, gen_id](Fiber::TRunner *runner) {
       Fiber::TRunner *cur_runner = Fiber::TRunner::LocalRunner;
       Fiber::SwitchTo(runner);
-      const Base::TUuid &repo_id = GetId();
-      Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
-        Disk::Util::LogicalBlockSize,
-        Disk::Util::PhysicalBlockSize,
-        Disk::Util::CheckedPage>::TLocalReadFile *my_read_file = Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
-        Disk::Util::LogicalBlockSize,
-        Disk::Util::PhysicalBlockSize,
-        Disk::Util::CheckedPage>::Cache->Get(Manager->GetEngine(), repo_id, gen_id);
-      for (const auto &index_pair : my_read_file->GetIndexByIdMap()) {
-        Disk::TLocalWalkerCache::Cache->Clear(repo_id, gen_id, index_pair.first);
-      }
-      Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
-        Disk::Util::LogicalBlockSize,
-        Disk::Util::PhysicalBlockSize,
-        Disk::Util::CheckedPage, true>::Cache->Clear(repo_id, gen_id);
+      ClearLocalFileCaches(gen_id);
       Fiber::SwitchTo(cur_runner);
       return true;
     });
