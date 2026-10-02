@@ -18,6 +18,7 @@
 
 #include <orly/indy/disk/util/volume_manager.h>
 
+#include <atomic>
 #include <sstream>
 
 #include <linux/fs.h>
@@ -1330,8 +1331,7 @@ inline size_t TVolume::TStrategy::TryReserveSeqBlocks(std::unique_lock<std::mute
         }
         continue;
       } else {
-        syslog(LOG_EMERG, "out of disk space");
-        abort();
+        throw TDiskFull("no free blocks on this volume");
       }
     } else {
       return alloced;
@@ -2828,21 +2828,30 @@ void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed s
     if (csr->GetDesc().StorageSpeed == storage_speed) {
       try {
         return csr->TryAllocateSequentialBlocks(num_blocks, cb);
-      } catch (const std::exception &) {
+      } catch (const TDiskFull &) {
         continue;
       }
     }
   }
   /* this means there are no blocks left of the storage kind we requested. We're going to start allocating from other volumes,
      in plain collection order; a smarter placement policy only matters if multi-volume operation ever ships (#330). */
+  /* LOG_ERR, not WARNING: the default mask drops warnings, and a full volume should be visible. */
+  static std::atomic<bool> warned_fallback(false);
+  if (!warned_fallback.exchange(true)) {
+    syslog(LOG_ERR, "no free blocks at storage speed [%d]; allocating from another volume (logged once)", static_cast<int>(storage_speed));
+  }
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
+    if (csr->GetDesc().StorageSpeed == storage_speed) {
+      continue;  // already tried above
+    }
     try {
       return csr->TryAllocateSequentialBlocks(num_blocks, cb);
-    } catch (const std::exception &) {
+    } catch (const TDiskFull &) {
       continue;
     }
   }
-  throw std::logic_error("Out of disk space.");
+  syslog(LOG_ERR, "out of disk space: no volume can provide [%ld] blocks", num_blocks);
+  throw TDiskFull("out of disk space on every volume");
 }
 
 void TVolumeManager::MarkBlockRangeUsed(const TBlockRange &block_range) {

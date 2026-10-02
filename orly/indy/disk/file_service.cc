@@ -475,10 +475,17 @@ void TFileService::Runner() {
             } else if (cur_image_block_vec.size() < blocks_required_for_base_image) {
               const size_t to_add = blocks_required_for_base_image - cur_image_block_vec.size();
               for (size_t i = 0; i < to_add; ++i) {
-                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const Util::TBlockRange &block_range) {
-                  assert(block_range.second == 1UL);
-                  cur_image_block_vec.push_back(block_range.first);
-                });
+                try {
+                  VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const Util::TBlockRange &block_range) {
+                    assert(block_range.second == 1UL);
+                    cur_image_block_vec.push_back(block_range.first);
+                  });
+                } catch (const Util::TDiskFull &ex) {
+                  /* None of the handlers below completes the queued ops for this, so their
+                     waiters would hang (#590). Abort, as before. */
+                  syslog(LOG_EMERG, "TFileService base image [%s]; aborting", ex.what());
+                  abort();
+                }
               }
             }
             if (image_buf_block_vec.size() > blocks_required_for_base_image) {

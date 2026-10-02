@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/disk/merge_data_file.h>
+#include <exception>
 #include <optional>
 
 #include <orly/indy/disk/util/hash_util.h>
@@ -66,6 +67,9 @@ class TMergeDataFileImpl {
         TempFileConsolThresh(temp_file_consol_thresh),
         UpdateCollector(HERE, Source::MergeDataFileUpdateIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true) {
     assert(!CanTailTombstones || gen_vec.size() == 1);
+    /* Once InsertFile has been issued the file map may own our blocks, so an unwind past that
+       point must not free them. */
+    bool file_inserted = false;
     try {
       for (const auto &iter : gen_vec) {
         ReadFileVec.emplace_back(new TReader(HERE, Source::MergeDataFileScan, Engine, file_uuid, iter));
@@ -942,11 +946,17 @@ class TMergeDataFileImpl {
         Engine->GetVolMan()->SyncToDisk(block_id_to_num_seq_blocks);
       } /* done sync file to disk */
       /* wait for file entry to flush */ {
+        file_inserted = true;
         Engine->InsertFile(file_uid, TFileObj::TKind::DataFile, gen_id, StartingBlockId, StartingBlockOffset, FileLength, total_num_keys, LowestSeq, HighestSeq, completion_trigger);
         completion_trigger.Wait();
       }
     } catch (const std::exception &ex) {
       syslog(LOG_ERR, "MergeDataFile gen [%ld] caught error [%s]", gen_id, ex.what());
+      /* The output never reached the file map, so nothing else will free its blocks (#590).
+         The index files were destroyed on the way here and waited out their writes. */
+      if (!file_inserted) {
+        Engine->FreeAllBlocks(BlockVec);
+      }
       throw;
     }
     /* Let's make sure that all the blocks we have allocated were written to */
@@ -2215,6 +2225,20 @@ class TMergeDataFileImpl {
     }
 
     virtual ~TMergeIndexFile() {
+      if (std::uncaught_exceptions() > UncaughtAtCtor) {
+        /* The merge is being abandoned (#590). Writing the meta now would touch blocks that may
+           never have been reserved (PrepKeyRange not reached, or its reservation threw), so
+           only let the key stream's writes land before the merge frees the blocks. */
+        if (KeyStream) {
+          KeyStream.reset();
+          try {
+            KeyTrigger.Wait();
+          } catch (const std::exception &ex) {
+            syslog(LOG_ERR, "TMergeIndexFile: key stream write failed while abandoning [%s]", ex.what());
+          }
+        }
+        return;
+      }
       assert(WasPrepared);
       assert(KeyStream->GetOffset() <= MaxByteOffsetOfKeyStream);
       KeyStream.reset();
@@ -2693,6 +2717,8 @@ class TMergeDataFileImpl {
     size_t CurKeyOffset;
     std::unique_ptr<TDataOutStream> KeyStream;
     TCompletionTrigger KeyTrigger;
+    /* Lets the destructor tell an unwind from the normal end of the merge. */
+    const int UncaughtAtCtor = std::uncaught_exceptions();
     std::unordered_map<size_t, std::shared_ptr<const TBufBlock>> KeyCollisionMap;
     size_t ByteOffsetOfHistory;
     std::vector<std::vector<bool>> HistoryKeeperFilterVec;

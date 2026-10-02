@@ -49,6 +49,7 @@
 #include <base/mlock.h>
 #include <base/scheduler.h>
 #include <base/sigma_calc.h>
+#include <base/thrower.h>
 #include <base/inv_con/ordered_list.h>
 #include <base/inv_con/unordered_list.h>
 #include <base/inv_con/unordered_multimap.h>
@@ -65,6 +66,12 @@ namespace Orly {
     namespace Disk {
 
       namespace Util {
+
+        /* No block can be reserved: the volume (or, from TVolumeManager, every volume) is full
+           and nothing is pending discard. This used to be an abort() inside the allocator, which
+           also made TVolumeManager's fallback to another volume dead code (#590). A file builder
+           that sees it releases the blocks it had reserved before rethrowing. */
+        DEFINE_ERROR(TDiskFull, std::runtime_error, "out of disk space");
 
         struct TLogicalExtent {
           const size_t Start;
