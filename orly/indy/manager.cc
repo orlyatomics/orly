@@ -371,8 +371,11 @@ void TManager::RunReplicateTransaction() {
         syslog(LOG_INFO, "TManager::RunReplicateTransaction shutting down (#440)");
         return;
       }
-      SleepUntil(ReplicationNextTime);
-      ReplicationNextTime = chrono::steady_clock::now() + ReplicationDelay;
+      /* No pacing here (#576). This loop used to SleepUntil(ReplicationNextTime), but
+         SleepUntil never slept, so replication has always run back to back. It gates
+         ReleaseUpdate even in SOLO, so a real ReplicationDelay would hold every write back
+         from merging for up to that long. Keep the observed behaviour; turning a delay on
+         would need its own measurement. */
       TReplicationStreamer replication_streamer;
       TState state_used;
       TReplicationQueue copy_queue;
