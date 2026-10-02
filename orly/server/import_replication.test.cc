@@ -227,9 +227,11 @@ class TChildServer final {
       execv(argv[0], const_cast<char **>(argv.data()));
       _exit(127);
     }
+    Live().insert(this);
   }
 
   ~TChildServer() {
+    Live().erase(this);
     Interrupt();
     if (Pid > 0 && !Reap(seconds(10))) {
       kill(Pid, SIGKILL);
@@ -311,12 +313,19 @@ class TChildServer final {
      Best-effort and noexcept throughout -- this runs on a path that has
      already failed, and must not turn a diagnosable failure into a crash. */
   void DumpWedge(ostream &strm) const noexcept {
+    if (Pid <= 0) {
+      strm << "  (no live child to interrogate)" << endl;
+      return;
+    }
+    DumpThreads(to_string(Pid), strm);
+  }
+
+  /* The per-thread half of DumpWedge(), for any /proc entry: a child's pid,
+     or "self" for the test process, whose client threads were the culprit
+     in #537. */
+  static void DumpThreads(const string &proc_entry, ostream &strm) noexcept {
     try {
-      if (Pid <= 0) {
-        strm << "  (no live child to interrogate)" << endl;
-        return;
-      }
-      const string task_dir = "/proc/" + to_string(Pid) + "/task";
+      const string task_dir = "/proc/" + proc_entry + "/task";
       DIR *dir = opendir(task_dir.c_str());
       if (!dir) {
         strm << "  (cannot open " << task_dir << ")" << endl;
@@ -378,6 +387,33 @@ class TChildServer final {
         return false;
       }
       this_thread::sleep_for(milliseconds(250));
+    }
+  }
+
+  /* Every child still owned by a fixture, so a failure deep inside a helper
+     can interrogate the servers it cannot see (#574).  The fixtures are
+     single-threaded, hence no lock. */
+  static set<TChildServer *> &Live() {
+    static set<TChildServer *> live;
+    return live;
+  }
+
+  /* Everything the kernel will say about every live child and about this
+     process, taken while they all still exist: teardown SIGKILLs the
+     children, after which nothing can tell a wedged server from a dead one
+     (#574).  Describe() first, because a child that already died answers
+     the question by itself ("killed by signal 11"). */
+  static void InterrogateAll(ostream &strm) noexcept {
+    try {
+      for (TChildServer *child : Live()) {
+        const pid_t pid = child->Pid;
+        strm << "child " << pid << ": " << child->Describe() << endl;
+        child->DumpWedge(strm);
+      }
+      strm << "this test process (client side, #537):" << endl;
+      DumpThreads("self", strm);
+    } catch (...) {
+      strm << "  (interrogation threw; ignoring)" << endl;
     }
   }
 
@@ -444,8 +480,13 @@ void AwaitAnswered(const Rpc::TAnyFuture &future, const char *what, seconds dead
   p.revents = 0;
   int ret = poll(&p, 1, static_cast<int>(duration_cast<milliseconds>(deadline).count()));
   if (ret <= 0) {
-    throw runtime_error(string("RPC [") + what + "] unanswered after " +
-                        to_string(deadline.count()) + "s (#537)");
+    const string msg = string("RPC [") + what + "] unanswered after " +
+                       to_string(deadline.count()) + "s (#537)";
+    /* The throw unwinds into teardown, which kills every server, so this is
+       the last moment the hang can be seen in place (#574). */
+    cout << msg << " -- interrogating before teardown (#574)" << endl;
+    TChildServer::InterrogateAll(cout);
+    throw runtime_error(msg);
   }
 }
 
