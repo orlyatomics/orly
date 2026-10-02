@@ -92,9 +92,8 @@ namespace Orly {
           using event_t = Disk::Util::TDiskController::TEvent;
           using pool_mngr_t = Base::TThreadLocalGlobalPoolManager<event_t>;
           using pool_t = pool_mngr_t::TThreadLocalPool;
-          pool_t *&pool = event_t::LocalEventPool;
-          if (!pool) {
-            pool = new pool_t(event_t::DiskEventPoolManager.get());
+          if (!event_t::LocalEventPool) {
+            event_t::LocalEventPool = new pool_t(event_t::DiskEventPoolManager.get());
           }
         }
 

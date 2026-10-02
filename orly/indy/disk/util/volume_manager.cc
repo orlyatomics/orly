@@ -39,7 +39,8 @@ using namespace Orly::Indy::Disk::Util;
 using namespace ::Util;
 
 std::unique_ptr<Base::TThreadLocalGlobalPoolManager<TDiskController::TEvent>> TDiskController::TEvent::DiskEventPoolManager;
-__thread Base::TThreadLocalGlobalPoolManager<TDiskController::TEvent>::TThreadLocalPool *TDiskController::TEvent::LocalEventPool = nullptr;
+/* TDiskController::TEvent::LocalEventPool is an inline static TFiberSafeLocal
+   now, and defines itself (#578). */
 
 namespace Orly {
 

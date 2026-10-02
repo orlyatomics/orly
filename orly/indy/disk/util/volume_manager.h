@@ -55,6 +55,7 @@
 #include <orly/indy/disk/priority.h>
 #include <orly/indy/disk/result.h>
 #include <orly/indy/disk/util/device_util.h>
+#include <orly/indy/fiber/fiber.h>
 #include <base/util/error.h>
 
 namespace Orly {
@@ -415,7 +416,9 @@ namespace Orly {
             }
 
             static std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Disk::Util::TDiskController::TEvent>> DiskEventPoolManager;
-            static __thread Base::TThreadLocalGlobalPoolManager<TEvent>::TThreadLocalPool *LocalEventPool;
+            /* Fiber-safe: see TFiberSafeLocal (#554, #578). */
+            struct TLocalEventPoolTag;
+            inline static Fiber::TFiberSafeLocal<Base::TThreadLocalGlobalPoolManager<TEvent>::TThreadLocalPool, TLocalEventPoolTag> LocalEventPool;
 
             private:
 
