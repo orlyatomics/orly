@@ -23,6 +23,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include <base/scheduler.h>
 #include <base/uuid.h>
@@ -156,8 +157,8 @@ static void RunOnFiber(const std::function<void (Fiber::TRunner::TRunnerCons &,
   Fiber::TFrame::LocalFramePool = nullptr;
 }
 
-/* The saver's sem must not fire before the write-behind flush has actually happened, must fire
-   once it has, and the save must then be readable from disk by a fresh manager. */
+/* The saver's sem must fire only once the save is on disk (#277), and the save must then be
+   readable from disk by a fresh manager. */
 FIXTURE(SemFiresOnlyAfterFlush) {
   RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {
     TScheduler scheduler(TScheduler::TPolicy(4, 8, milliseconds(30000)));
@@ -167,40 +168,33 @@ FIXTURE(SemFiresOnlyAfterFlush) {
     const Durable::TTtl ttl(600);
     const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
     const std::string blob = "some serialized durable";
-    /* The write delay this fixture runs the manager at.  Deliberately longer than the 300ms
-       the others use: the negative assertion below is only meaningful while the flush has not
-       yet had a chance to run, so the window has to be wide relative to scheduler jitter on a
-       loaded CI runner.  The cost is that sem.Pop() then waits this long -- ~2s on one fixture
-       against a 203-binary suite (#551). */
-    const auto write_delay = milliseconds(2000);
     /* manager scope */ {
       TDurableManager durable_manager(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
                                       100UL /* max cache size */,
-                                      write_delay,
+                                      milliseconds(300) /* write delay */,
                                       milliseconds(300) /* merge delay */,
                                       milliseconds(10000) /* layer cleaning interval */,
                                       20UL /* temp file consol thresh */,
                                       true /* create */);
       Durable::TSem sem;
-      const auto saved_at = steady_clock::now();
       durable_manager.Save(id, deadline, ttl, blob, &sem);
-      const bool fired_immediately = sem.GetFd().IsReadable(0);
-      const auto elapsed = steady_clock::now() - saved_at;
-      /* Not yet: durability must not be signalled before the data is written (#277).
-         (Pre-#277, Save() pushed the sem synchronously, which makes this assertion fail.)
-
-         Guarded on measured elapsed time rather than asserted outright.  The check is only
-         SOUND while less than the write delay has actually passed -- if this thread was
-         descheduled past it, the flush has legitimately run and a fired sem proves nothing
-         about #277.  Asserting unconditionally is what made this fixture fail intermittently
-         on loaded runners and, worse, point the blame at whatever change was under test
-         (#551).  With a 2s window the skip should be vanishingly rare; it exists so that when
-         it does happen the answer is "unprovable here", not "regression". */
-      if (elapsed < write_delay) {
-        EXPECT_FALSE(fired_immediately);
-      }
-      /* Now block for it: the flush makes it fire. */
       sem.Pop();
+      /* #277: by the time the sem fires, the save must already be on disk.  The writer registers
+         the durable file with the engine, and waits for that to land, before it releases the
+         savers (TSortedByIdFile's constructor, then ReleaseSavers), so this holds on every
+         interleaving and cannot fail on correct code.  Pre-#277, Save() pushed the sem
+         synchronously: Pop() then returns at once, while the writer has barely started writing
+         the file, so the set is all but certainly still empty -- a regression is caught on
+         essentially every run, and correct code is never failed.
+
+         This used to be asserted the other way round: "the sem has not fired just after Save()",
+         on the premise that the writer waits out its write delay first.  It does not --
+         Util::SleepUntil never sleeps (#576), so the writer flushes the moment the save arrives
+         and that assertion was a race against it.  That race is the #551 flake, and why widening
+         the delay to 2s did not stop it. */
+      std::vector<TFileObj> durable_files;
+      mem_engine.GetEngine()->AppendFileGenSet(TDurableManager::DurableByIdFileId, durable_files);
+      EXPECT_FALSE(durable_files.empty());
       /* Visible through this manager, too. */
       std::string loaded;
       EXPECT_TRUE(durable_manager.TryLoad(id, loaded));
