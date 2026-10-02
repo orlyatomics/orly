@@ -31,6 +31,11 @@ sent as one WebSocket text message. The server replies with one JSON message:
 - `result` is present on statements that produce a value (see each statement).
   Its shape depends on the statement; for `try` it is the JSON marshaling of the
   method's return value (see "JSON marshaling" below).
+- A statement that fails to compile replies `"status": "source_error"`, with
+  the message in `result` and its position in `pos` (`line:col-line:col`).
+  `compiler_loc` names the compiler source line that raised it -- useful in a
+  compiler bug report, meaningless to the statement's author, so clients should
+  not show it by default (#557).
 
 ## Statements
 

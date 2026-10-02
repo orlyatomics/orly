@@ -23,6 +23,7 @@
 #include <base/as_str.h>
 #include <orly/error.h>
 #include <orly/type/add_visitor.h>
+#include <orly/type/addr.h>
 #include <orly/type/comp_visitor.h>
 #include <orly/type/div_visitor.h>
 #include <orly/type/equal_visitor.h>
@@ -32,6 +33,8 @@
 #include <orly/type/min_max_visitor.h>
 #include <orly/type/mod_visitor.h>
 #include <orly/type/mult_visitor.h>
+#include <orly/type/mutable.h>
+#include <orly/type/seq.h>
 #include <orly/type/set_ops_visitor.h>
 #include <orly/type/sub_visitor.h>
 #include <orly/type/unwrap.h>
@@ -120,6 +123,20 @@ const TMutator &TMutate::GetMutator() const {
 }
 
 void TMutate::TypeCheck() const {
+  /* A mutation writes to the database, so its target must be a stored value:
+     `*<[key]>::(type)`, or something bound to one. Code gen assumes this and
+     dereferences the target's mutable type, so a plain value here crashed
+     orlyc, and a bare address fell through to the operator's visitor as
+     "This expression is invalid." (#557). Sequences are left for the visitor,
+     which has its own diagnostic for them. */
+  const Type::TType lhs_type = GetLhs()->GetExpr()->GetType();
+  if (!lhs_type.Is<Type::TSeq>() && !Type::UnwrapOptional(lhs_type).Is<Type::TMutable>()) {
+    throw TExprError(HERE, GetPosRange(), lhs_type.Is<Type::TAddr>()
+        ? "The left side of a mutation must be a stored value, but this is an address. "
+          "Name the value stored at it with `*` and its type, as in `*<['counter']>::(int) += n`."
+        : "The left side of a mutation must be a stored value, such as `*<['counter']>::(int)`, "
+          "but this is a plain value.");
+  }
   Type::TType dummy;
   /* NOTE: It would be nice to use a templatized helper function for this but that would require
            the helper function and the TMutateTypeVisitor to be in the header.

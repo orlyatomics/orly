@@ -1,0 +1,13 @@
+[
+  1,
+  [
+    [],
+    [
+      "Synth + Symbols"
+    ],
+    [
+      "TypeCheck",
+      "22:28-22:35 The left side of a mutation must be a stored value, such as `*<['counter']>::(int)`, but this is a plain value."
+    ]
+  ]
+]

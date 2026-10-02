@@ -157,6 +157,8 @@ the cache). Check-only modes: `--syntax-only` stops after parsing,
 `--semantic-only` after type-checking — neither writes output — and
 `--transient-cc` keeps only the linked `.so`, removing the generated C++
 intermediates.
+Diagnostics name only your code's position; `--compiler-locations` appends
+the compiler source line that raised each one, for filing a compiler bug.
 
 Exercise the Orlyscript test suite against compiled `.orly` programs:
 

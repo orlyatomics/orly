@@ -541,6 +541,9 @@ class TWsImpl final
       } catch (const TSourceError &src_error) {
         reply["result"] = src_error.what();
         reply["pos"] = AsStr(src_error.GetPosRange());
+        /* Kept out of "result" so a client shows a clean message; the
+           compiler line is there for whoever is reporting a bug (#557). */
+        reply["compiler_loc"] = AsStr(src_error.GetCodeLocation());
         reply["status"] = "source_error";
       } catch (const exception &ex) {
         reply["result"] = ex.what();

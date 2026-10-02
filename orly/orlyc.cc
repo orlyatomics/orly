@@ -52,6 +52,7 @@ class TCompilerConfig : public Base::TCmd {
         MachineForm(false),
         OutputDir(Util::GetCwd()),
         SemanticOnly(false),
+        ShowCompilerLocations(false),
         SkipTests(false),
         SyntaxOnly(false),
         TransientCc(false),
@@ -69,6 +70,8 @@ class TCompilerConfig : public Base::TCmd {
       Param(&TCompilerConfig::MachineForm, "machine_form", Optional, "machine-form\0m\0", "Print out machine readable progress.");
       Param(&TCompilerConfig::OutputDir, "output_directory", Optional, "output\0o\0", "The directory to write output to.");
       Param(&TCompilerConfig::SemanticOnly, "semantic_only", Optional, "semantic-only\0", "Don't produce output, just syntactically and semantically validate the program.");
+      Param(&TCompilerConfig::ShowCompilerLocations, "show_compiler_locations", Optional, "compiler-locations\0",
+          "Append the compiler source line that raised each diagnostic. For reporting a compiler bug; it says nothing about your code.");
       Param(&TCompilerConfig::SkipTests, "skip_tests", Optional, "skip-tests\0", "Don't run tests after compiling.");
       Param(&TCompilerConfig::SyntaxOnly, "syntax_only", Optional, "syntax-only\0", "Don't produce output or type-check, just syntactically validate the program.");
       Param(&TCompilerConfig::TransientCc, "transient_cc", Optional, "transient-cc\0", "Remove the generated C++ intermediates after a successful compile, leaving only the linked package.");
@@ -98,6 +101,7 @@ class TCompilerConfig : public Base::TCmd {
   bool MachineForm;
   std::string OutputDir;
   bool SemanticOnly;
+  bool ShowCompilerLocations;
   std::string Source;
   bool SkipTests;
   bool SyntaxOnly;
@@ -285,7 +289,12 @@ int CompileCode(const TCompilerConfig &cmd) {
       cerr << "compile failure: " << ex.what() << endl;
     }
   } catch (const TSourceError &src_error) {
-    cerr << src_error.GetPosRange() << ' ' << src_error.what() << endl;
+    cerr << src_error.GetPosRange() << ' ' << src_error.what();
+    /* An impossible error already names its location in the message. */
+    if (cmd.ShowCompilerLocations && !dynamic_cast<const TImpossibleError *>(&src_error)) {
+      cerr << ' ' << src_error.GetCodeLocation();
+    }
+    cerr << endl;
   } catch (const exception &ex) {
     cerr << "error: " << ex.what() << endl;
   }

@@ -1,0 +1,13 @@
+[
+  1,
+  [
+    [],
+    [
+      "Synth + Symbols"
+    ],
+    [
+      "TypeCheck",
+      "24:28-24:47 The left side of a mutation must be a stored value, but this is an address. Name the value stored at it with `*` and its type, as in `*<['counter']>::(int) += n`."
+    ]
+  ]
+]
