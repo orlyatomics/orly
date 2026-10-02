@@ -176,14 +176,14 @@ export class Client {
   uninstall(pkg: string, version: number): Promise<unknown> {
     return this.send(`uninstall ${pkg}.${version};`);
   }
-  /** Create a POV; resolves its id. Defaults to `new safe shared pov;`. */
+  /** Create a POV; resolves its id. Defaults to `new safe shared pov;`.
+   *  `safe: false` makes a `fast` POV; `parent` is a POV id, and the new POV
+   *  is created `from` it. The grammar has no default guarantee, so one of
+   *  `safe`/`fast` is always spelled out (#580). */
   newPov(opts: { safe?: boolean; shared?: boolean; parent?: string } = {}): Promise<string> {
     const { safe = true, shared = true, parent } = opts;
-    const parts = ["new"];
-    if (safe) parts.push("safe");
-    parts.push(shared ? "shared" : "private");
-    parts.push("pov");
-    if (parent) parts.push(`parent ${lit(parent)}`);
+    const parts = ["new", safe ? "safe" : "fast", shared ? "shared" : "private", "pov"];
+    if (parent) parts.push(`from {${parent}}`);
     return this.sendString(parts.join(" ") + ";");
   }
 

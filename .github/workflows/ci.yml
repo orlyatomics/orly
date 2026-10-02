@@ -649,6 +649,20 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/repl
 
+      # Client new-POV smoke (#580): the Python and TS drivers each create all
+      # four POV flavours (safe/fast x shared/private), with and without a
+      # parent, and write + read through every one. Every other smoke only
+      # creates the default POV, which is how both drivers shipped invalid
+      # statements for the rest.
+      - name: Install python websocket-client
+        run: pip3 install --break-system-packages websocket-client
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+
+      - name: client new-POV smoke (clients/smoke)
+        run: bash run-new-pov.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so
