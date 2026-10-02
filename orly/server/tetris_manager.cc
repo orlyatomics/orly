@@ -18,6 +18,7 @@
 
 #include <orly/server/tetris_manager.h>
 
+#include <new>
 #include <thread>
 
 #include <base/debug_log.h>
@@ -223,7 +224,25 @@ void TTetrisManager::TPlayer::Main() {
         DEBUG_LOG("tetris player %p: unpaused", this);
       } else if (ChildCount) {
         //DEBUG_LOG("tetris player %p: playing tetris; child_count = %ld", this, ChildCount);
-        Play();
+        try {
+          Play();
+        } catch (const std::bad_alloc &) {
+          /* Out of pool space mid-round (#584). Nothing was committed: a
+             transaction destroyed without CommitAction discards its pushes,
+             and the child keeps its peeked update for the next round. Before
+             this, the exception killed the player fiber silently and its POV
+             never promoted again. Yield (below) so the merges and the layer
+             cleaner can free space, then play again. */
+          syslog(LOG_WARNING, "tetris player %p: out of pool space; retrying the round", static_cast<void *>(this));
+        }
+        /* Let other fibers on this runner run between rounds (#584). Without
+           this the player monopolized the runner, and a fiber that hopped here
+           -- the repo layer cleaner, visiting every runner to drop a dead
+           file's caches -- never ran again, so no dead layer was ever freed.
+           It must be YieldSlow: a plain Yield re-queues locally, and the
+           runner keeps draining its local queue without ever taking in frames
+           handed over from other runners (TRunner::Run). */
+        Fiber::YieldSlow();
         if (usleep(0) < 0) {
           DEBUG_LOG("tetris player %p: signal detected", this);
           break;

@@ -672,8 +672,12 @@ namespace Orly {
                                 bool can_tail,
                                 bool can_tail_tombstone) override;
 
-      /* Reclaim a generation file's blocks and drop its per-scheduler caches. */
-      virtual void RemoveFile(size_t gen_id) override;
+      /* Reclaim a generation file's blocks, first dropping its per-scheduler
+         caches on every runner unless the caller already has. */
+      virtual void RemoveFile(size_t gen_id, bool caches_cleared) override;
+
+      /* Drop the calling runner's cached readers/walkers for a file. */
+      virtual void ClearLocalFileCaches(size_t gen_id) override;
 
       /* Serialize a memtable to a new on-disk generation file; returns its
          generation id (and, by reference, its saved sequence range / key count). */

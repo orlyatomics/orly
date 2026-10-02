@@ -254,6 +254,10 @@ namespace Orly {
         return static_cast<double>(Pool.GetNumBlocksUsed()) / Pool.GetMaxBlocks();
       }
 
+      static inline size_t GetUpdatePoolMaxBlocks() {
+        return Pool.GetMaxBlocks();
+      }
+
       static inline double GetUpdateEntryPoolUsedPct() {
         return static_cast<double>(TEntry::Pool.GetNumBlocksUsed()) / TEntry::Pool.GetMaxBlocks();
       }

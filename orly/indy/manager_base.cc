@@ -20,6 +20,8 @@
 
 #include <sys/syscall.h>
 
+#include <vector>
+
 #include <base/assert_true.h>
 #include <base/cpu_clock.h>
 #include <base/shutting_down.h>
@@ -144,7 +146,12 @@ size_t TManager::TRepo::MergeFiles(const std::vector<size_t> &/*gen_id_vec*/,
   throw;
 }
 
-void TManager::TRepo::RemoveFile(size_t /*gen_id*/) {
+void TManager::TRepo::RemoveFile(size_t /*gen_id*/, bool /*caches_cleared*/) {
+  assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
+  throw;
+}
+
+void TManager::TRepo::ClearLocalFileCaches(size_t /*gen_id*/) {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;
 }
@@ -583,20 +590,54 @@ void TManager::EnqueueMergeDisk(TRepo *repo) {
 }
 
 void TManager::RemoveLayersFromQueue() {
-  TRepo::TDataLayer *layer = nullptr;
+  /* #584: drain in batches. Mem layers are cheap to delete (their updates go
+     back to the pools the writers and merges are starved of), so free them
+     first. A disk layer's removal must first drop what every runner caches
+     about its file, which means visiting each runner (TSafeRepo::RemoveFile).
+     Doing that once per layer cost ~24ms each and fell behind the merges, so
+     visit the runners once for the whole batch, then delete the batch. */
   for (;;) {
+    std::vector<TRepo::TDataLayer *> mem_layers, disk_layers;
     /* acquire Removal lock */ {
       std::lock_guard<std::mutex> lock(RemovalLock);
-      layer = RemovalCollection.TryGetFirstMember();
-      if (layer) {
+      for (TRepo::TDataLayer *layer = RemovalCollection.TryGetFirstMember(); layer; layer = RemovalCollection.TryGetFirstMember()) {
         layer->RemoveFromCollection();
+        (layer->GetKind() == TRepo::TDataLayer::Mem ? mem_layers : disk_layers).push_back(layer);
       }
     }  // release Removal lock
-    if (layer) {
-      delete layer; /* POSSIBLE SEGFAULT */
-      layer = nullptr;
-    } else {
+    if (mem_layers.empty() && disk_layers.empty()) {
       break;
+    }
+    for (TRepo::TDataLayer *layer : mem_layers) {
+      delete layer;
+    }
+    /* Only a layer marked for delete removes its file, and so needs its
+       caches dropped. That test also keeps the tour out of ~TManager, which
+       drains layers a repo's teardown queued, never marked for delete, after
+       the derived manager (and its ForEachScheduler) is gone. */
+    std::vector<TRepo::TDataLayer *> to_clear;
+    for (TRepo::TDataLayer *layer : disk_layers) {
+      if (layer->GetMarkedForDelete()) {
+        to_clear.push_back(layer);
+      }
+    }
+    if (!to_clear.empty()) {
+      Fiber::TRunner *const home_runner = Fiber::TRunner::LocalRunner;
+      bool moved = false;
+      ForEachScheduler([&to_clear, &moved](Fiber::TRunner *runner) {
+        Fiber::SwitchTo(runner);
+        moved = true;
+        for (TRepo::TDataLayer *layer : to_clear) {
+          layer->ClearLocalCaches();
+        }
+        return true;
+      });
+      if (moved) {
+        Fiber::SwitchTo(home_runner);
+      }
+    }
+    for (TRepo::TDataLayer *layer : disk_layers) {
+      delete layer; /* POSSIBLE SEGFAULT */
     }
   }
 }

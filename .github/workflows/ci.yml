@@ -286,6 +286,18 @@ jobs:
           ../out_orly/release/orly/server/orlyi --help > /tmp/orlyi-help.txt
           test -s /tmp/orlyi-help.txt
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # #584: 8 concurrent writers against a 20000-update pool (forced small,
+      # since the default is sized from the host's free RAM). On the release
+      # build because that is what users run, and on this 4-core runner
+      # because that topology reproduced the abort.
+      - name: Concurrent writers survive a small Update pool
+        run: bash clients/smoke/run-pool-pressure.sh
+
   restart-test:
     name: restart durability (tests/restart_test.sh)
     runs-on: ubuntu-24.04

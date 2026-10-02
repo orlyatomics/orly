@@ -62,9 +62,15 @@ namespace Orly {
 
       inline virtual TSequenceNumber GetHighestSeq() const override;
 
+      virtual void ClearLocalCaches() override;
+
       private:
 
       L0::TManager::TRepo *Repo;
+
+      /* Set once ClearLocalCaches has run on every runner, so the destructor
+         can skip that tour (#584). */
+      bool CachesCleared = false;
 
       size_t GenId;
 
