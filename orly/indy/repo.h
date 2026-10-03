@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <unordered_map>
 #include <vector>
 
@@ -330,6 +331,19 @@ namespace Orly {
 
       /* The live memtable that AppendUpdate inserts into. */
       TMemoryLayer *CurMemoryLayer;
+
+      /* #590: how many merges of each kind in a row have failed for lack of disk space. A failed
+         merge hands its inputs back and retries after a backoff that doubles with the streak; a
+         merge that succeeds ends the streak. */
+      std::atomic<size_t> MergeMemDiskFullStreak{0UL};
+      std::atomic<size_t> MergeDiskDiskFullStreak{0UL};
+
+      /* Counts one more failure in 'streak' and returns how long to wait before retrying.
+         Logging is rate-limited across all repos. */
+      static std::chrono::milliseconds NextDiskFullBackoff(std::atomic<size_t> &streak, const char *merge_kind, const char *err);
+
+      /* Ends 'streak' after a successful merge, logging (rate-limited) how many retries it took. */
+      static void EndDiskFullStreak(std::atomic<size_t> &streak, const char *merge_kind);
 
       private:
 

@@ -1235,7 +1235,12 @@ TDataFile::TDataFile(Util::TEngine *engine,
     }
   } catch (const std::exception &err) {
     std::cout << "Exception: " << err.what() << std::endl;
-    for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr; ++csr) {
+    /* Running out of space before the file map has it is not final: StepMergeMem hands the
+       same updates back and writes them again later (#590). Leave their notifications pending
+       then. A Failed now would delete the transaction's completion record
+       (TTransactionCompletion::RegisterFailure), and the retry's Completed would call into it. */
+    const bool caller_retries = !file_inserted && dynamic_cast<const Disk::Util::TDiskFull *>(&err);
+    for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr && !caller_retries; ++csr) {
       const auto &obj = csr->GetPersistenceNotification();
       if (obj) {
         obj->Call(TUpdate::TPersistenceNotification::Failed);

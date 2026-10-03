@@ -298,6 +298,11 @@ jobs:
       - name: Concurrent writers survive a small Update pool
         run: bash clients/smoke/run-pool-pressure.sh
 
+      # #590: fill every volume of a tiny mem-sim disk. A merge that runs out of
+      # space must hand its inputs back and retry rather than abort orlyi.
+      - name: A full disk doesn't abort the server
+        run: bash clients/smoke/run-disk-full.sh
+
   restart-test:
     name: restart durability (tests/restart_test.sh)
     runs-on: ubuntu-24.04

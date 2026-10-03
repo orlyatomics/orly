@@ -589,6 +589,30 @@ void TManager::EnqueueMergeDisk(TRepo *repo) {
   }  // release MergeDisk lock
 }
 
+/* The queues are ordered by due time, so setting the key re-sorts a repo that is already
+   queued, and a repo waiting out a backoff holds up nobody behind it. */
+void TManager::EnqueueMergeMemAfter(TRepo *repo, milliseconds delay) {
+  /* acquire MergeMem lock */ {
+    std::lock_guard<std::mutex> lock(MergeMemLock);
+    repo->SetTimeOfNextMergeMem(steady_clock::now() + delay);
+    if (repo->MergeMemMembership.TryGetCollector() == nullptr) {
+      MergeMemQueue.Insert(&repo->MergeMemMembership);
+      MergeMemSem.Push();
+    }
+  }  // release MergeMem lock
+}
+
+void TManager::EnqueueMergeDiskAfter(TRepo *repo, milliseconds delay) {
+  /* acquire MergeDisk lock */ {
+    Fiber::TFiberLock::TLock lock(MergeDiskLock);
+    repo->SetTimeOfNextMergeDisk(steady_clock::now() + delay);
+    if (repo->MergeDiskMembership.TryGetCollector() == nullptr) {
+      MergeDiskQueue.Insert(&repo->MergeDiskMembership);
+      MergeDiskSem.Push();
+    }
+  }  // release MergeDisk lock
+}
+
 void TManager::RemoveLayersFromQueue() {
   /* #584: drain in batches. Mem layers are cheap to delete (their updates go
      back to the pools the writers and merges are starved of), so free them
