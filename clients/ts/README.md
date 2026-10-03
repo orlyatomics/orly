@@ -56,4 +56,6 @@ Results come back via the engine's JSON marshaling, so:
 - variants are `{ Tag: <payload> }` (`{ Tag: {} }` for payload-less arms).
 
 `call` resolves the parsed value as-is; handle these in your code. Non-`ok`
-replies reject with an `OrlyError`.
+replies reject with an `OrlyError`. A write the server refuses because it is low
+on disk space rejects with its subclass `InsufficientStorageError`: nothing was
+written, reads still work, and the write can be retried later.

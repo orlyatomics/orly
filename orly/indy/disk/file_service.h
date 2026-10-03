@@ -101,6 +101,10 @@ namespace Orly {
 
         typedef std::unordered_map<Base::TUuid, std::unordered_map<size_t, TFileObj>> TFileMap;
 
+        /* Grow a base image's block list toward 'target' blocks. Short of 'required' on a full
+           disk, waits for space instead of aborting (#590). */
+        void GrowBaseImage(std::vector<size_t> &image_block_vec, size_t target, size_t required);
+
         /* Forward Declarations. */
         class TOp;
 

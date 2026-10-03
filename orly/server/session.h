@@ -69,6 +69,10 @@ namespace Orly {
            in Try() yields until a writer's POV child drains below this. */
         virtual size_t GetWriteBackpressureThreshold() const = 0;
 
+        /* Throws TInsufficientStorage (orly/server/insufficient_storage.h) if a write must be
+           refused for lack of disk space (#590). Called only for writes. */
+        virtual void CheckWriteAdmission() {}
+
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
            periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator

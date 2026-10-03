@@ -121,3 +121,85 @@ FIXTURE(EveryAllocatableBlockReadable) {
     vol_man->FreeSequentialBlocks(range);
   }
 }
+
+/* Write admission (#590): with a data floor set, Ordinary allocations stop while
+   that much is still available, and Essential ones (the durable store, the file
+   map) can still use it. GetSpace() must agree with what the allocator hands out:
+   the 2 MB slow volume has 32 blocks, less than one word of the block map, and
+   until #590 a partial last word was never scanned, so those blocks counted as
+   free but could not be allocated. */
+FIXTURE(DataFloorKeepsSpaceForEssential) {
+  const TScheduler::TPolicy scheduler_policy(4, 10, milliseconds(10));
+  TScheduler scheduler;
+  scheduler.SetPolicy(scheduler_policy);
+  Sim::TMemEngine mem_engine(&scheduler,
+                             8 /* fast mem: 8 MB */,
+                             2 /* slow mem: 2 MB */,
+                             4096 /* page cache slots */,
+                             1 /* num page lru */,
+                             16 /* block cache slots */,
+                             1 /* num block lru */);
+  TVolumeManager *vol_man = mem_engine.GetVolMan();
+  const TSpace before = vol_man->GetSpace();
+  EXPECT_GT(before.Total, 0UL);
+  EXPECT_EQ(before.GetAvailable(), before.Total - before.Used + before.DiscardPending);
+  const size_t floor = 2UL << 20;
+  vol_man->SetDataFloor(floor);
+  vector<TBlockRange> ranges;
+  const auto take = [&](TAllocClass alloc_class) -> size_t {
+    size_t taken = 0UL;
+    for (;;) {
+      try {
+        vol_man->TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+          ranges.push_back(range);
+          taken += range.second;
+        }, alloc_class);
+      } catch (const TDiskFull &) {
+        return taken;
+      }
+    }
+  };
+  const size_t ordinary = take(TAllocClass::Ordinary);
+  EXPECT_GT(ordinary, 0UL);
+  /* Ordinary stopped with the floor still available, and not much more. */
+  const size_t at_floor = vol_man->GetSpace().GetAvailable();
+  EXPECT_GE(at_floor, floor);
+  EXPECT_LT(at_floor, floor + PhysicalBlockSize);
+  /* Essential takes what is left, across both volumes. */
+  const size_t essential = take(TAllocClass::Essential);
+  EXPECT_EQ(essential * PhysicalBlockSize, at_floor);
+  EXPECT_EQ(vol_man->GetSpace().GetAvailable(), 0UL);
+  for (const auto &range : ranges) {
+    vol_man->FreeSequentialBlocks(range);
+  }
+  /* Freed blocks wait for discard, and count as available meanwhile. */
+  EXPECT_EQ(vol_man->GetSpace().GetAvailable(), before.GetAvailable());
+}
+
+/* A claim counts while it lives. One that ends in an exception (a merge that ran
+   out of space and will retry) is remembered for a while after; one that ends
+   normally is not. */
+FIXTURE(PendingClaims) {
+  const TScheduler::TPolicy scheduler_policy(4, 10, milliseconds(10));
+  TScheduler scheduler;
+  scheduler.SetPolicy(scheduler_policy);
+  Sim::TMemEngine mem_engine(&scheduler, 8, 2, 4096, 1, 16, 1);
+  TVolumeManager *vol_man = mem_engine.GetVolMan();
+  EXPECT_EQ(vol_man->GetPendingClaims(), 0UL);
+  /* claims */ {
+    TVolumeManager::TClaim a(vol_man, 100UL);
+    TVolumeManager::TClaim b(vol_man, 50UL);
+    EXPECT_EQ(vol_man->GetPendingClaims(), 150UL);
+  }
+  EXPECT_EQ(vol_man->GetPendingClaims(), 0UL);
+  EXPECT_EQ(vol_man->GetRecentPeakClaims(), 0UL);
+  try {
+    TVolumeManager::TClaim a(vol_man, 100UL);
+    TVolumeManager::TClaim b(vol_man, 50UL);
+    throw TDiskFull("test");
+  } catch (const TDiskFull &) {}
+  EXPECT_EQ(vol_man->GetPendingClaims(), 0UL);
+  EXPECT_EQ(vol_man->GetRecentPeakClaims(), 150UL);
+  /* A null volume manager (no disk engine) is a no-op. */
+  TVolumeManager::TClaim none(nullptr, 100UL);
+}

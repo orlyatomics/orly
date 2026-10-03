@@ -18,6 +18,7 @@
 
 #include <orly/indy/disk/util/volume_manager.h>
 
+#include <algorithm>
 #include <atomic>
 #include <sstream>
 
@@ -843,6 +844,8 @@ namespace Orly {
 
           std::pair<size_t, size_t> AppendUsage(std::stringstream &ss) const;
 
+          TSpace GetSpace() const;
+
           inline void TryAllocateSequentialBlocks(size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb);
 
           void FreeSequentialBlocks(const TBlockRange &block_range);
@@ -868,7 +871,11 @@ namespace Orly {
                 SuperBytes(PhysicalBlockSize),
                 NumBlocks(((volume->GetDesc().NumLogicalExtent / volume->GetDesc().ReplicationFactor) * volume->GetDesc().DeviceDesc.Capacity) / PhysicalBlockSize),
                 NumBlocksPerExtent(NumBlocks / Volume->GetDesc().NumLogicalExtent),
-                BlockMapByteSize(ceil(static_cast<double>(NumBlocks) / 8)),
+                /* Whole 64-bit words: the allocator scans the map a word at a time, so a byte
+                   count that isn't a multiple of 8 left the last NumBlocks % 64 blocks
+                   unallocatable, though they counted as free (#590). Bits past NumBlocks stay
+                   clear and every scan checks block_id < NumBlocks. */
+                BlockMapByteSize(((NumBlocks + 63UL) / 64UL) * sizeof(size_t)),
                 BlockMapBufByteSize(ceil(static_cast<double>(NumBlocks) / (getpagesize() * 64)) * getpagesize()),
                 DiscardRunnerScheduled(false),
                 DiscardShuttingDown(false),
@@ -1677,6 +1684,17 @@ std::pair<size_t, size_t> TVolume::TStrategy::AppendUsage(std::stringstream &ss)
   const size_t total_bytes = NumBlocks * Util::PhysicalBlockSize;
   ss << "Volume_" << Volume->GetVolumeId() << " = " << bytes_used << " / " << total_bytes << std::endl;
   return make_pair(bytes_used, total_bytes);
+}
+
+TSpace TVolume::TStrategy::GetSpace() const {
+  /* Same order as the discard runner: discard map, then block map. */
+  std::lock_guard<std::mutex> discard_lock(const_cast<std::mutex &>(DiscardMapLock));
+  std::lock_guard<std::mutex> block_lock(const_cast<std::mutex &>(BlockMapLock));
+  TSpace space;
+  space.Total = NumBlocks * Util::PhysicalBlockSize;
+  space.Used = BlocksUsed * Util::PhysicalBlockSize;
+  space.DiscardPending = DiscardBlockWaiting * Util::PhysicalBlockSize;
+  return space;
 }
 
 inline void TVolume::TStrategy::TryAllocateSequentialBlocks(size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb) {
@@ -2812,6 +2830,11 @@ std::pair<size_t, size_t> TVolume::AppendUsage(std::stringstream &ss) const {
   return Strategy->AppendUsage(ss);
 }
 
+TSpace TVolume::GetSpace() const {
+  assert(Strategy);
+  return Strategy->GetSpace();
+}
+
 bool TVolume::Init(const TExtentSet &extent_set) {
   bool success = true;
   switch (Desc.Kind) {
@@ -2877,7 +2900,47 @@ void TVolumeManager::AddExistingVolume(TVolume *volume, size_t volume_id) {
   }
 }
 
-void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb) {
+/* For a log line repeated on every failure: tries 1, 2, 4, 8, ... */
+static bool IsPowerOfTwoCount(std::atomic<size_t> &count) {
+  const size_t prev = count++;
+  return (prev & (prev + 1UL)) == 0UL;
+}
+
+void TVolumeManager::NotePeakClaims(size_t total) const {
+  std::lock_guard<std::mutex> lock(PeakClaimsMutex);
+  const auto now = std::chrono::steady_clock::now();
+  if (total >= PeakClaims || now - PeakClaimsAt > std::chrono::minutes(1)) {
+    PeakClaims = total;
+    PeakClaimsAt = now;
+  }
+}
+
+size_t TVolumeManager::GetRecentPeakClaims() const {
+  const size_t cur = GetPendingClaims();
+  std::lock_guard<std::mutex> lock(PeakClaimsMutex);
+  const auto now = std::chrono::steady_clock::now();
+  if (now - PeakClaimsAt > std::chrono::minutes(1)) {
+    PeakClaims = cur;
+    PeakClaimsAt = now;
+  }
+  return std::max(PeakClaims, cur);
+}
+
+void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb,
+                                                 TAllocClass alloc_class) {
+  if (alloc_class == TAllocClass::Ordinary) {
+    if (const size_t floor = GetDataFloor()) {
+      const size_t available = GetSpace().GetAvailable();
+      if (available < floor + num_blocks * PhysicalBlockSize) {
+        static std::atomic<size_t> floor_hits(0UL);
+        if (IsPowerOfTwoCount(floor_hits)) {
+          syslog(LOG_ERR, "data allocation of [%ld] blocks refused: [%ld] MiB available, [%ld] MiB kept for server state (logged at 1, 2, 4, ...)",
+                 num_blocks, available >> 20, floor >> 20);
+        }
+        throw TDiskFull("out of disk space for data; the rest is kept for server state");
+      }
+    }
+  }
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
     if (csr->GetDesc().StorageSpeed == storage_speed) {
       try {
@@ -2904,7 +2967,10 @@ void TVolumeManager::TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed s
       continue;
     }
   }
-  syslog(LOG_ERR, "out of disk space: no volume can provide [%ld] blocks", num_blocks);
+  static std::atomic<size_t> full_hits(0UL);
+  if (IsPowerOfTwoCount(full_hits)) {
+    syslog(LOG_ERR, "out of disk space: no volume can provide [%ld] blocks (logged at 1, 2, 4, ...)", num_blocks);
+  }
   throw TDiskFull("out of disk space on every volume");
 }
 
@@ -2984,6 +3050,14 @@ void TVolumeManager::SyncToDisk(const std::vector<TBlockRange> &block_range_vec)
       throw std::runtime_error("Error while SyncToDisk()");
     }
   }
+}
+
+TSpace TVolumeManager::GetSpace() const {
+  TSpace space;
+  for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
+    space += csr->GetSpace();
+  }
+  return space;
 }
 
 void TVolumeManager::AppendVolumeUsageReport(std::stringstream &ss) const {

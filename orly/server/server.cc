@@ -18,8 +18,11 @@
 
 #include <orly/server/server.h>
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <optional>
+#include <sstream>
 #include <poll.h>
 #include <sys/syscall.h>
 
@@ -34,6 +37,7 @@
 #include <orly/atom/core_vector.h>
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/protocol.h>
+#include <orly/server/insufficient_storage.h>
 #include <orly/sabot/to_native.h>
 #include <base/strm/fd.h>
 #include <base/strm/bin/in.h>
@@ -299,6 +303,20 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "the watermark, so accept paces to promote instead of growing memtables "
       "without bound. 0 disables. Default 50000."
   );
+  Param(
+      &TCmd::DiskReserveMb, "disk_reserve_mb", Optional, "disk_reserve_mb\0",
+      "Write admission (issue #590): refuse writes, with an insufficient_storage error, while "
+      "free disk space is below this many MiB plus what recent disk merges may still "
+      "allocate. Reads keep working. Below half the reserve, merges and flushes stop as well, "
+      "keeping the rest for session state and the file map. Default 0: use disk_reserve_pct."
+  );
+  Param(
+      &TCmd::DiskReservePct, "disk_reserve_pct", Optional, "disk_reserve_pct\0",
+      "Write admission reserve as a percentage of total disk space (issue #590), used when "
+      "disk_reserve_mb is 0; never less than 64 MiB or a quarter of the disk, whichever is "
+      "smaller. Setting this and disk_reserve_mb both to 0 turns write admission off. "
+      "Default 10."
+  );
 
   /******** Object Pools ********/
 
@@ -419,6 +437,8 @@ TServer::TCmd::TCmd()
       LogAssertionFailures(true),
       TetrisCommutativeFastlane(false),
       TetrisBackpressureThreshold(50000UL),
+      DiskReserveMb(0UL),
+      DiskReservePct(10UL),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -1278,6 +1298,10 @@ void TServer::Init() {
 
     HousekeeperHandle = Scheduler->ScheduleCancelable(bind(&TServer::CleanHouse, this));
     Reporter = make_unique<TIndyReporter>(this, Scheduler, Cmd.ReportingPortNumber);
+    /* Sets the data floor before the first write does (#590). */
+    if (Cmd.DiskReserveMb || Cmd.DiskReservePct) {
+      RefreshWriteAdmission(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
     DEBUG_LOG("TServer::Init end");
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "TServer::Init() caught exception [%s]", ex.what());
@@ -1517,6 +1541,67 @@ TWs::TSessionPin *TServer::NewSession() {
 TWs::TSessionPin *TServer::ResumeSession(const TUuid &id) {
   assert(DurableManager);
   return new TSessionPin(this, id);
+}
+
+size_t TServer::GetDiskReserve(size_t total_bytes) const {
+  if (Cmd.DiskReserveMb) {
+    return Cmd.DiskReserveMb << 20;
+  }
+  /* A percentage alone leaves a small disk next to nothing for session state and the file map,
+     so take at least 64 MiB, or a quarter of a disk smaller than 256 MiB. */
+  const size_t min_reserve = Cmd.DiskReservePct ? std::min<size_t>(64UL << 20, total_bytes / 4UL) : 0UL;
+  return std::max(min_reserve, total_bytes / 100UL * Cmd.DiskReservePct);
+}
+
+void TServer::RefreshWriteAdmission(int64_t now_ns) {
+  auto *vol_man = RepoManager->GetEngine()->GetVolMan();
+  const Disk::Util::TSpace space = vol_man->GetSpace();
+  const size_t reserve = GetDiskReserve(space.Total);
+  /* Below half the reserve, merges and flushes stop too; the rest is the durable store's and
+     the file map's, so sessions keep working on a disk the data has filled. */
+  vol_man->SetDataFloor(reserve / 2UL);
+  /* A merge's claim covers what it will still allocate. Use the recent peak, not just what is
+     claimed this instant: a merge that can't fit fails and retries, so its claim blinks. */
+  const size_t needed = reserve + vol_man->GetRecentPeakClaims();
+  const size_t available = space.GetAvailable();
+  AdmissionAvailable = available;
+  AdmissionNeeded = needed;
+  AdmissionTotal = space.Total;
+  const bool was_refusing = RefusingWrites;
+  /* Hysteresis: once refusing, wait for a quarter of the reserve more than the threshold, so
+     writes don't flap on and off at the edge. */
+  const bool refuse = was_refusing ? available < needed + reserve / 4UL : available < needed;
+  if (refuse != was_refusing) {
+    RefusingWrites = refuse;
+    /* LOG_ERR, not WARNING: the default mask drops warnings. */
+    syslog(LOG_ERR, "write admission: %s writes; %ld MiB available of %ld MiB, threshold %ld MiB (reserve %ld + merge claims %ld); %ld refused so far",
+           refuse ? "refusing" : "accepting", available >> 20, space.Total >> 20, needed >> 20, reserve >> 20, (needed - reserve) >> 20,
+           RefusedWriteCount.load());
+  }
+  AdmissionCheckedAtNs = now_ns;
+}
+
+void TServer::CheckWriteAdmission() {
+  if (!Cmd.DiskReserveMb && !Cmd.DiskReservePct) {
+    return;
+  }
+  /* Short enough that a fill-up is caught within a few writes, long enough that the volume
+     locks are not taken per write. */
+  constexpr int64_t refresh_interval_ns = 10'000'000;
+  const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  int64_t checked_at = AdmissionCheckedAtNs.load(std::memory_order_relaxed);
+  if (now_ns - checked_at >= refresh_interval_ns
+      && AdmissionCheckedAtNs.compare_exchange_strong(checked_at, now_ns)) {
+    RefreshWriteAdmission(now_ns);
+  }
+  if (RefusingWrites.load(std::memory_order_relaxed)) {
+    ++RefusedWriteCount;
+    std::ostringstream msg;
+    msg << "insufficient storage: write refused; " << (AdmissionAvailable.load() >> 20) << " MiB of "
+        << (AdmissionTotal.load() >> 20) << " MiB disk available, below the " << (AdmissionNeeded.load() >> 20)
+        << " MiB reserved for merges and server state; reads still work";
+    throw TInsufficientStorage(msg.str());
+  }
 }
 
 bool TServer::ForEachIndex(const std::function<
@@ -1954,6 +2039,8 @@ string TServer::ImportCoreVector(const string &file_pattern,
       2. merge all our generated files from the file system iteratively till we have 1 file
       3. insert that 1 file into our repo system
      */
+  /* A bulk import is a write: don't start one below the disk reserve (#590). */
+  CheckWriteAdmission();
   string result;
   const size_t merge_simultaneous = merge_simultaneous_in;
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
@@ -2883,6 +2970,18 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
   const size_t max_buf_in_block_lru = block_cache->GetMaxCacheSize();
   #endif
   engine->GetVolMan()->AppendVolumeUsageReport(ss);
+  /* Write admission (#590). */ {
+    const Disk::Util::TSpace space = engine->GetVolMan()->GetSpace();
+    const size_t claims = engine->GetVolMan()->GetRecentPeakClaims();
+    const bool enabled = Server->Cmd.DiskReserveMb || Server->Cmd.DiskReservePct;
+    ss << "Write Admission = " << (!enabled ? "off" : Server->RefusingWrites ? "refusing" : "accepting")
+       << "; available " << space.GetAvailable() << " / " << space.Total
+       << "; discard pending " << space.DiscardPending
+       << "; reserve " << Server->GetDiskReserve(space.Total)
+       << "; data floor " << engine->GetVolMan()->GetDataFloor()
+       << "; merge claims (1 min peak) " << claims
+       << "; refused " << Server->RefusedWriteCount.load() << endl;
+  }
   size_t try_count;
   size_t try_read_count;
   size_t try_write_count;

@@ -24,8 +24,12 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <exception>
 #include <cassert>
 #include <limits>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <unordered_map>
@@ -72,6 +76,31 @@ namespace Orly {
            also made TVolumeManager's fallback to another volume dead code (#590). A file builder
            that sees it releases the blocks it had reserved before rethrowing. */
         DEFINE_ERROR(TDiskFull, std::runtime_error, "out of disk space");
+
+        /* Who an allocation is for (#590). Essential is what the server needs to keep running
+           whatever the data does: the durable store (sessions, POVs; its writer and merger) and
+           the file map. Everything else is Ordinary: memory-layer flushes, data merges, imports.
+           Ordinary allocations stop short of the floor set by TVolumeManager::SetDataFloor, so
+           the last of the disk stays for Essential ones. */
+        enum class TAllocClass { Ordinary, Essential };
+
+        /* A snapshot of a volume's (or, summed, every volume's) block accounting, in bytes.
+           Freed blocks wait for the discard runner before they can be handed out again, but a
+           failed allocation runs it on the spot, so discard-pending space counts as available. */
+        struct TSpace {
+          size_t Total = 0UL;
+          size_t Used = 0UL;
+          size_t DiscardPending = 0UL;
+          size_t GetAvailable() const {
+            return Total - Used + DiscardPending;
+          }
+          TSpace &operator+=(const TSpace &that) {
+            Total += that.Total;
+            Used += that.Used;
+            DiscardPending += that.DiscardPending;
+            return *this;
+          }
+        };
 
         struct TLogicalExtent {
           const size_t Start;
@@ -932,6 +961,8 @@ namespace Orly {
 
           std::pair<size_t, size_t> AppendUsage(std::stringstream &ss) const;
 
+          TSpace GetSpace() const;
+
           void DiscardAll();
 
           private:
@@ -1021,7 +1052,20 @@ namespace Orly {
           inline void ReadBlock(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, size_t block_id,
                                 DiskPriority priority, TCompletionTrigger &trigger, bool abort_on_error = true);
 
-          void TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb);
+          /* Throws TDiskFull if no volume has room, or, for an Ordinary allocation, if it would
+             leave less than the data floor available. */
+          void TryAllocateSequentialBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, const std::function<void (const TBlockRange &block_range)> &cb,
+                                           TAllocClass alloc_class = TAllocClass::Ordinary);
+
+          /* Bytes an Ordinary allocation must leave available (free plus discard-pending). 0,
+             the default, turns the floor off. */
+          void SetDataFloor(size_t num_bytes) {
+            DataFloor.store(num_bytes, std::memory_order_relaxed);
+          }
+
+          size_t GetDataFloor() const {
+            return DataFloor.load(std::memory_order_relaxed);
+          }
 
           void MarkBlockRangeUsed(const TBlockRange &block_range);
 
@@ -1030,6 +1074,49 @@ namespace Orly {
           void SyncToDisk(const std::vector<TBlockRange> &block_range_vec);
 
           void AppendVolumeUsageReport(std::stringstream &ss) const;
+
+          /* Every volume's space, summed. Takes each volume's allocator locks briefly. */
+          TSpace GetSpace() const;
+
+          /* Space that work already under way will still allocate before it frees anything:
+             a disk merge reserves its output as it goes while its inputs stay live (#590).
+             Write admission keeps this much free on top of its reserve. */
+          size_t GetPendingClaims() const {
+            return PendingClaims.load(std::memory_order_relaxed);
+          }
+
+          /* What is claimed now, or, if more, the most that was claimed at once when a claim
+             ended in failure in about the last minute. A merge that can't find room fails,
+             hands its inputs back and retries, so its claim comes and goes; admission uses
+             this so the refusal doesn't lift between tries. A merge that succeeds has freed
+             its inputs, so its claim is not remembered. */
+          size_t GetRecentPeakClaims() const;
+
+          /* Registers a pending claim for its lifetime. Destroyed by an exception (a merge
+             that ran out of space), it is remembered for GetRecentPeakClaims. Each fiber has
+             its own exception state (#594), so std::uncaught_exceptions() is reliable here. */
+          class TClaim {
+            NO_COPY(TClaim);
+            public:
+            TClaim(TVolumeManager *vol_man, size_t num_bytes)
+                : VolMan(vol_man), NumBytes(num_bytes), UncaughtAtCtor(std::uncaught_exceptions()) {
+              if (VolMan) {
+                VolMan->PendingClaims.fetch_add(NumBytes, std::memory_order_relaxed);
+              }
+            }
+            ~TClaim() {
+              if (VolMan) {
+                const size_t total = VolMan->PendingClaims.fetch_sub(NumBytes, std::memory_order_relaxed);
+                if (std::uncaught_exceptions() > UncaughtAtCtor) {
+                  VolMan->NotePeakClaims(total);
+                }
+              }
+            }
+            private:
+            TVolumeManager *VolMan;
+            size_t NumBytes;
+            int UncaughtAtCtor;
+          };  // TClaim
 
           void DiscardAllDevices();
 
@@ -1065,6 +1152,17 @@ namespace Orly {
           std::vector<bool> AllocatedExtentBlocks;
 
           std::unordered_map<size_t, TVolume *> LogicalExtentStartToVolumeMap;
+
+          void NotePeakClaims(size_t total) const;
+
+          std::atomic<size_t> PendingClaims {0UL};
+
+          std::atomic<size_t> DataFloor {0UL};
+
+          /* For GetRecentPeakClaims. */
+          mutable std::mutex PeakClaimsMutex;
+          mutable size_t PeakClaims = 0UL;
+          mutable std::chrono::steady_clock::time_point PeakClaimsAt;
 
           static constexpr size_t ExtentAllocationBlockSize = 16UL * 1024UL * 1024UL * 1024UL * 1024UL; /* 16 TB */
 

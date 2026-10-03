@@ -1,17 +1,14 @@
 #!/bin/bash
 # Disk-full smoke (#590): K=8 writers overwrite keys on a mem-sim orlyi whose
-# volumes are tiny (MEM_MB fast, SLOW_MB slow), so every volume fills within a
-# minute or two. Before #590 a full disk aborted orlyi from inside a merge; now
-# a merge that runs out of space hands its inputs back and retries.
+# volumes are tiny (MEM_MB fast, SLOW_MB slow), so free space runs low within a
+# minute or two. orlyi must then refuse writes with "insufficient_storage",
+# keep serving reads (on old and new sessions), and never abort.
 #   0. Build the orly TS client (clients/ts).
 #   1. Compile clients/mcp/smoke/sample.orly with orlyc.
 #   2. Start a fresh mem-sim orlyi with tiny volumes.
-#   3. Run disk_full.mjs: write until the log shows a merge retrying for space,
-#      a little longer, then read.
-#   4. Fail on any merge abort. If orlyi is alive, the read must have worked.
-#      If it died, it must have been one of the full-disk aborts still left
-#      (durable writer/merger, file-service base image), which waiting for
-#      space or refusing writes early (#590 step 4) has yet to remove.
+#   3. Run disk_full.mjs: write until refused, idle, then read and write.
+#   4. Fail unless disk_full.mjs passed, orlyi is still alive, and its log
+#      shows no abort of any kind.
 
 set -e
 
@@ -67,47 +64,35 @@ if ! ss -tln 2>/dev/null | grep -q ":$WS_PORT"; then
   exit 1
 fi
 
-echo "[3/3] K=8 writers until the disk is full, then a read"
+echo "[3/3] K=8 writers until writes are refused, idle, then read and write"
 status=0
-ORLY_URL="ws://127.0.0.1:$WS_PORT/" ORLYI_LOG="$WORK/orlyi.log" node disk_full.mjs > "$WORK/smoke.out" 2>&1 || status=$?
+ORLY_URL="ws://127.0.0.1:$WS_PORT/" node disk_full.mjs > "$WORK/smoke.out" 2>&1 || status=$?
 cat "$WORK/smoke.out"
 sleep 2
-MERGE_ABORT='StepMergeDisk \[|StepMergeMem caught error|StepTail \[|Fiber Runner caught exception'
-KNOWN_ABORT='TDurableManager::Run(Writer|Merger) .*aborting|TFileService base image .*aborting'
-if grep -Eq "$MERGE_ABORT" "$WORK/orlyi.log"; then
-  echo "DISK FULL FAIL: a merge aborted:"
-  grep -E "$MERGE_ABORT" "$WORK/orlyi.log" | head -3
+# Check the log before the process: an abort that has been logged may still be
+# unwinding (or dumping core) when we look.
+ABORT='aborting|StepMergeDisk \[|StepMergeMem caught error|StepTail \[|Fiber Runner caught exception|FATAL'
+if grep -Eq "$ABORT" "$WORK/orlyi.log"; then
+  echo "DISK FULL FAIL: orlyi logged an abort:"
+  grep -E "$ABORT" "$WORK/orlyi.log" | head -3
   status=1
 fi
-# A read that failed may be the first sign of an abort that hasn't been logged yet.
-if ! grep -q "^READ: ok" "$WORK/smoke.out"; then
-  for _ in $(seq 1 10); do
-    grep -Eq "$KNOWN_ABORT" "$WORK/orlyi.log" && break
-    kill -0 "$ORLYI_PID" 2>/dev/null || break
-    sleep 1
-  done
+if ! kill -0 "$ORLYI_PID" 2>/dev/null; then
+  wait "$ORLYI_PID" || true
+  echo "DISK FULL FAIL: orlyi died"
+  status=1
 fi
-if [ "$status" -eq 0 ]; then
-  # Check the log before the process: an abort that has been logged may still be
-  # unwinding (or dumping core) when we look, and the read it broke has failed.
-  if grep -Eq "$KNOWN_ABORT" "$WORK/orlyi.log"; then
-    echo "NOTE: orlyi hit a full-disk abort that is still expected (#590 step 4):"
-    grep -E "$KNOWN_ABORT" "$WORK/orlyi.log" | head -1
-  elif kill -0 "$ORLYI_PID" 2>/dev/null; then
-    if ! grep -q "^READ: ok" "$WORK/smoke.out"; then
-      echo "DISK FULL FAIL: orlyi is up but the read failed"
-      status=1
-    fi
-  else
-    wait "$ORLYI_PID" || true
-    echo "DISK FULL FAIL: orlyi died, and not in a known full-disk abort"
+for line in "^READ: ok" "^NEW SESSION READ: ok" "^DISK FULL OK"; do
+  if ! grep -q "$line" "$WORK/smoke.out"; then
+    echo "DISK FULL FAIL: missing \"$line\""
     status=1
   fi
-fi
-grep -cE "inputs handed back" "$WORK/orlyi.log" | sed 's/^/merge retry lines (rate-limited): /'
+done
+grep -E "write admission:" "$WORK/orlyi.log" | head -4 || true
+grep -cE "out of disk space" "$WORK/orlyi.log" | sed 's/^/out-of-space retry lines (rate-limited): /'
 if [ "$status" -ne 0 ]; then
   echo "orlyi log (disk / merge / abort lines):"
-  grep -E "out of disk|StepMerge|StepTail|aborting|bad_alloc" "$WORK/orlyi.log" | sed 's/\[[0-9]*\]//g' | sort | uniq -c | sort -rn | head -20 || true
+  grep -E "out of disk|admission|StepMerge|StepTail|aborting|bad_alloc" "$WORK/orlyi.log" | sed 's/\[[0-9]*\]//g' | sort | uniq -c | sort -rn | head -20 || true
   tail -20 "$WORK/orlyi.log"
 fi
 exit "$status"

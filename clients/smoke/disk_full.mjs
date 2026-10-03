@@ -1,46 +1,43 @@
 /** Disk-full smoke (#590); run by run-disk-full.sh.
  *
  * K writers overwrite a small key set on one shared safe POV against an orlyi
- * whose mem-sim volumes are tiny, so the disk fills within a minute or two.
- * Overwrites never shrink the data (safe repos keep history), so the disk
- * stays full once it fills. The smoke waits until orlyi's log shows a merge
- * that ran out of space and handed its inputs back, keeps writing a little
- * longer so the merges retry, then stops and checks that the server is still
- * up and still answers a read.
+ * whose mem-sim volumes are tiny. Overwrites never shrink the data (safe repos
+ * keep history), so free space only goes down. Once it falls below the write
+ * admission reserve, orlyi must refuse writes with status
+ * "insufficient_storage" instead of stalling or aborting, and keep serving
+ * reads.
  *
- * Writes are expected to slow down or stall once the disk is full: nothing
- * refuses them yet, so they pile up in memory while the merges wait for space.
- * A write that doesn't come back within STALL_S ends the write phase early;
- * that is not a failure.
- *
- * The durable writer and merger, and the file service's base image, still
- * abort on a full disk (they can't wait for space yet), so orlyi may die
- * here. run-disk-full.sh tells that apart from a merge abort; this script
- * only reports whether the read worked. */
+ * Checks, in order:
+ *   - writes are eventually refused with "insufficient_storage", and every
+ *     other write either succeeds or is refused that way (no other error, and
+ *     no write that hangs for STALL_S);
+ *   - after IDLE_SECS with no writes, a read on an existing session works, a
+ *     new connection can open a session and read, and a write gets an answer
+ *     (accepted or refused) rather than hanging.
+ * run-disk-full.sh also requires orlyi to be alive with no abort in its log. */
 
-import fs from "node:fs";
-import { connect } from "../ts/dist/index.js";
+import { connect, InsufficientStorageError } from "../ts/dist/index.js";
 
 const URL = process.env.ORLY_URL;
-const LOG = process.env.ORLYI_LOG;
 const K = +(process.env.K ?? 8);
 const KEYS = +(process.env.KEYS ?? 20000);
 const MAX_SECS = +(process.env.MAX_SECS ?? 300);
-const AFTER_FULL_SECS = +(process.env.AFTER_FULL_SECS ?? 15);
+const AFTER_REFUSED_SECS = +(process.env.AFTER_REFUSED_SECS ?? 10);
+const IDLE_SECS = +(process.env.IDLE_SECS ?? 10);
 const STALL_S = +(process.env.STALL_S ?? 20);
-const RETRY_LINE = /out of disk space .* inputs handed back/;
 
 const withTimeout = (p, secs, what) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} took over ${secs}s`)), secs * 1000))]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (msg) => { console.error(`DISK FULL FAIL: ${msg}`); process.exit(1); };
+const isRefusal = (err) => err instanceof InsufficientStorageError;
 
 const setup = await connect(URL);
 await setup.newSession();
 await setup.install("sample", 1);
 const pov = await setup.newPov({ safe: true, shared: true });
 
-let writes = 0, stop = false, ended = "";
+let writes = 0, refused = 0, stop = false, error = null, first_refusal = null;
 const writers = Array.from({ length: K }, async (_, w) => {
   const c = await connect(URL);
   await c.newSession();
@@ -49,7 +46,14 @@ const writers = Array.from({ length: K }, async (_, w) => {
       await withTimeout(c.call(pov, "sample", "write_val", { n: (w * 7919 + i) % KEYS, x: i }), STALL_S, "a write");
       ++writes;
     } catch (err) {
-      if (!stop) { stop = true; ended = `writes stalled (${err?.message ?? err})`; }
+      if (isRefusal(err)) {
+        if (!refused++) {
+          first_refusal = err.reply.result;
+        }
+        await sleep(50);
+        continue;
+      }
+      if (!stop) { stop = true; error = err?.message ?? String(err); }
       return;
     }
   }
@@ -57,30 +61,57 @@ const writers = Array.from({ length: K }, async (_, w) => {
 });
 
 const t0 = Date.now();
-let full_at = null;
+let refused_at = null;
 while (!stop) {
   await sleep(1000);
   const secs = (Date.now() - t0) / 1000;
-  if (!full_at && RETRY_LINE.test(fs.readFileSync(LOG, "utf8"))) {
-    full_at = secs;
-    console.log(`  t=${secs.toFixed(0)}s writes=${writes}: disk full, merges retrying`);
+  if (refused && refused_at === null) {
+    refused_at = secs;
+    console.log(`  t=${secs.toFixed(0)}s writes=${writes}: first refusal: ${first_refusal}`);
   }
-  if (full_at !== null && secs - full_at >= AFTER_FULL_SECS) { stop = true; ended = "ran past disk full"; }
-  if (secs >= MAX_SECS) { stop = true; ended = "time limit"; }
-  if (Math.round(secs) % 10 === 0) console.log(`  t=${secs.toFixed(0)}s writes=${writes}`);
+  if (refused_at !== null && secs - refused_at >= AFTER_REFUSED_SECS) { stop = true; }
+  if (secs >= MAX_SECS) { stop = true; }
+  if (Math.round(secs) % 10 === 0) console.log(`  t=${secs.toFixed(0)}s writes=${writes} refused=${refused}`);
 }
-console.log(`write phase ended: ${ended}; ${writes} writes`);
+console.log(`write phase ended: ${writes} writes, ${refused} refused`);
 await Promise.race([Promise.allSettled(writers), sleep(2000)]);
 
-if (full_at === null) {
-  fail(`the disk never filled (${writes} writes in ${MAX_SECS}s); the smoke checked nothing`);
+if (error) {
+  fail(`a write failed other than by refusal: ${error}`);
 }
-/* Reuse the setup session for the read: it already exists, so this asks for no new durable
-   state on a full disk. */
+if (refused_at === null) {
+  fail(`no write was refused (${writes} writes in ${MAX_SECS}s); the smoke checked nothing`);
+}
+
+console.log(`idle ${IDLE_SECS}s`);
+await sleep(IDLE_SECS * 1000);
+
 try {
   await withTimeout(setup.call(pov, "sample", "read_val", { n: 1 }), 30, "the read");
   console.log("READ: ok");
 } catch (err) {
-  console.log(`READ: failed (${err?.message ?? err})`);
+  fail(`read on an existing session failed: ${err?.message ?? err}`);
 }
+try {
+  const c = await withTimeout(connect(URL), 30, "connect");
+  await withTimeout(c.newSession(), 30, "a new session");
+  await withTimeout(c.call(pov, "sample", "read_val", { n: 2 }), 30, "the read");
+  console.log("NEW SESSION READ: ok");
+  /* Either answer is fine: finished merges release their claim on space, which can lift the
+     refusal. A hang or any other error is not. */
+  try {
+    await withTimeout(c.call(pov, "sample", "write_val", { n: 2, x: -1 }), 30, "the write");
+    console.log("WRITE AFTER IDLE: accepted");
+  } catch (err) {
+    if (!isRefusal(err)) {
+      fail(`a write after the idle failed other than by refusal: ${err?.message ?? err}`);
+    }
+    console.log("WRITE AFTER IDLE: refused");
+  }
+  c.close();
+} catch (err) {
+  fail(`new session after the idle: ${err?.message ?? err}`);
+}
+setup.close();
+console.log("DISK FULL OK");
 process.exit(0);
