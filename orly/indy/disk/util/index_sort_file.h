@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cassert>
+#include <exception>
 
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
@@ -154,6 +155,7 @@ namespace Orly {
                 Size(sorter.GetSize()),
                 CodeLocation(code_location),
                 UtilSrc(util_src) {
+            TAbandonOnUnwind abandon_on_unwind(this);
             const size_t max_per_block = LogicalCheckedBlockSize / sizeof(TVal);
             const size_t num_compressed_blocks = ceil(static_cast<double>(sorter.GetSize()) / max_per_block);
             /* max blocks = max raw data + [num elem + compressed size] per block.
@@ -266,6 +268,7 @@ namespace Orly {
             const size_t max_per_block = LogicalCheckedBlockSize / sizeof(TVal);
             typename InvCon::OrderedList::TCollection<TOwner, TMe, size_t>::TImpl merge_list(collection.GetCollector());
             try {
+              TAbandonOnUnwind abandon_on_unwind(this);
               const size_t num_csr_required = num_to_merge;
               const size_t read_ahead_per_csr = std::max(1UL, total_read_ahead_slots / num_csr_required);
               std::vector<std::unique_ptr<typename Indy::Util::TSorter<TVal, MemSize>::TCursor>> csr_vec;
@@ -399,6 +402,39 @@ namespace Orly {
               Engine->FreeSeqBlocks(iter.second.first, iter.second.second);
             }
           }
+
+          private:
+
+          /* A constructor that throws never reaches the destructor above, so its reserved blocks
+             would leak (#590). This guard, declared first in each constructor body, lets any
+             writes already issued land and then frees them. */
+          class TAbandonOnUnwind {
+            NO_COPY(TAbandonOnUnwind);
+            public:
+
+            explicit TAbandonOnUnwind(TIndexSortFile *file)
+                : File(file), UncaughtAtCtor(std::uncaught_exceptions()) {}
+
+            ~TAbandonOnUnwind() {
+              if (std::uncaught_exceptions() > UncaughtAtCtor) {
+                try {
+                  File->CompletionTrigger.Wait();
+                } catch (const std::exception &ex) {
+                  syslog(LOG_ERR, "TIndexSortFile: write failed while abandoning [%s]", ex.what());
+                }
+                File->Engine->FreeAllBlocks(File->BlockVec);
+              }
+            }
+
+            private:
+
+            TIndexSortFile *const File;
+
+            const int UncaughtAtCtor;
+
+          };  // TAbandonOnUnwind
+
+          public:
 
           virtual size_t GetFileLength() const override {
             return FileLength;

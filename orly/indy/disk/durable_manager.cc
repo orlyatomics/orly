@@ -358,7 +358,14 @@ void TDurableManager::RunWriter() {
      every caller has relied on; turning on a write-behind would need its own measurement. */
   SlushSem.Pop();
   for (;!ShutDown; SlushSem.Pop()) {
-    FlushCurLayer(false);
+    try {
+      FlushCurLayer(false);
+    } catch (const Disk::Util::TDiskFull &ex) {
+      /* Nothing here can wait for space yet (#590), and an exception escaping this fiber ends
+         the writer silently, so every later save would wait forever. Abort, as before. */
+      syslog(LOG_EMERG, "TDurableManager::RunWriter [%s]; aborting", ex.what());
+      abort();
+    }
   }
   /* Final drain (#277): flush whatever is still sitting in the memory layer so shutting down
      doesn't silently drop saves, and mark the writer retired (under DataLock) so any save that
@@ -494,7 +501,15 @@ void TDurableManager::RunMerger() {
     if (gen_vec.size()) {
       auto now = Durable::TDeadline::clock::now();
       size_t gen_id = ++NextDurableByIdGenId;
-      TMergeSortedByIdFile merge_sort_file(gen_vec, Engine, storage_speed, gen_id, now.time_since_epoch().count(), TempFileConsolThresh, Low, Notify);
+      std::optional<TMergeSortedByIdFile> merge_sort_file_storage;
+      try {
+        merge_sort_file_storage.emplace(gen_vec, Engine, storage_speed, gen_id, now.time_since_epoch().count(), TempFileConsolThresh, Low, Notify);
+      } catch (const Disk::Util::TDiskFull &ex) {
+        /* Same as the writer: the inputs stay MarkTaken and this fiber would end silently (#590). */
+        syslog(LOG_EMERG, "TDurableManager::RunMerger [%s]; aborting", ex.what());
+        abort();
+      }
+      TMergeSortedByIdFile &merge_sort_file = *merge_sort_file_storage;
       /* acquire Mapping lock */ {
         std::lock_guard<std::mutex> mapping_lock(MappingLock);
         TMapping *cur_mapping = MappingCollection.TryGetLastMember();

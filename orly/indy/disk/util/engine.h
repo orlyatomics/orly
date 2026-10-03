@@ -111,25 +111,46 @@ namespace Orly {
                 });
               }
             } catch (const std::exception &/*ex*/) {
-              append_vec.erase(append_vec.begin() + (append_vec.size() - (num_blocks - left)), append_vec.end());
+              /* Hand back what this call reserved, not just forget it: the caller only owns
+                 what was in append_vec before the call (#590). */
+              const auto first_new = append_vec.begin() + (append_vec.size() - (num_blocks - left));
+              for (auto iter = first_new; iter != append_vec.end(); ++iter) {
+                FreeBlock(*iter);
+              }
+              append_vec.erase(first_new, append_vec.end());
               throw;
             }
           }
 
+          /* On failure (TDiskFull once every volume is full), the blocks this call reserved are
+             freed again and append_vec is left as it was (#590). */
           void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, Indy::Util::TBlockVec &append_vec) {
             assert(num_blocks > 0);
+            const size_t orig_size = append_vec.Size();
             size_t left = num_blocks;
-            while (left > 0) {
-              VolMan->TryAllocateSequentialBlocks(storage_speed, left, [&](const TBlockRange &range) {
-                append_vec.PushBack(range);
-                #ifndef NDEBUG
-                for (size_t i = 0; i < range.second; ++i) {
-                  assert(GetPageCache()->AssertNoRefCount((range.first + i) * 16));
-                  assert(GetBlockCache()->AssertNoRefCount(range.first + i));
-                }
-                #endif
-                left -= range.second;
-              });
+            try {
+              while (left > 0) {
+                VolMan->TryAllocateSequentialBlocks(storage_speed, left, [&](const TBlockRange &range) {
+                  append_vec.PushBack(range);
+                  #ifndef NDEBUG
+                  for (size_t i = 0; i < range.second; ++i) {
+                    assert(GetPageCache()->AssertNoRefCount((range.first + i) * 16));
+                    assert(GetBlockCache()->AssertNoRefCount(range.first + i));
+                  }
+                  #endif
+                  left -= range.second;
+                });
+              }
+            } catch (const std::exception &/*ex*/) {
+              const size_t num_new = append_vec.Size() - orig_size;
+              if (num_new) {
+                append_vec.ForEachSeqRangeInRange([this](size_t block_id, size_t num_seq_blocks) -> bool {
+                  FreeSeqBlocks(block_id, num_seq_blocks);
+                  return true;
+                }, orig_size, append_vec.Size());
+                append_vec.Trim(num_new);
+              }
+              throw;
             }
           }
 
@@ -139,6 +160,17 @@ namespace Orly {
 
           void FreeSeqBlocks(size_t block_id, size_t num_blocks) {
             VolMan->FreeSequentialBlocks(TBlockRange(block_id, num_blocks));
+          }
+
+          /* Free every block in block_vec and empty it. For a file builder giving up before its
+             file reached the file map (#590). */
+          void FreeAllBlocks(Indy::Util::TBlockVec &block_vec) {
+            if (block_vec.Size()) {
+              for (const auto &iter : block_vec.GetSeqBlockMap()) {
+                FreeSeqBlocks(iter.second.first, iter.second.second);
+              }
+              block_vec.Trim(block_vec.Size());
+            }
           }
 
           inline TVolumeManager *GetVolMan() const {

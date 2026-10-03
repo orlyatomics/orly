@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/disk/data_file.h>
+#include <exception>
 #include <optional>
 
 #include <orly/indy/disk/in_file.h>
@@ -166,6 +167,20 @@ class TIndexFile
   }
 
   virtual ~TIndexFile() {
+    if (std::uncaught_exceptions() > UncaughtAtCtor) {
+      /* The data file is being abandoned (#590). Writing the meta now would touch blocks that
+         may never have been reserved (PrepKeyRange not reached, or its reservation threw), so
+         only let the key stream's writes land before the builder frees the blocks. */
+      if (KeyStream) {
+        KeyStream.reset();
+        try {
+          KeyTrigger.Wait();
+        } catch (const std::exception &ex) {
+          syslog(LOG_ERR, "TIndexFile: key stream write failed while abandoning [%s]", ex.what());
+        }
+      }
+      return;
+    }
     /* write out the index meta-data */ {
       TDataFile::TDataOutStream meta_stream(HERE,
                                             Source::DataFileOther,
@@ -245,6 +260,8 @@ class TIndexFile
   std::unique_ptr<TDataFile::TDataOutStream> KeyStream;
   size_t CurKeyOffset;
   TCompletionTrigger KeyTrigger;
+  /* Lets the destructor tell an unwind from the normal end of the build. */
+  const int UncaughtAtCtor = std::uncaught_exceptions();
   Atom::TCore::TArena *CurArena;
   size_t NumHistoryElem;
   size_t ByteOffsetOfHistory;
@@ -296,7 +313,7 @@ class TIndexFile
 
   size_t EndOfHistoryStream;
 
-  TDataFile::TBlockVec *BlockVec;
+  TDataFile::TBlockVec *BlockVec = nullptr;
   size_t FileSize;
 
   size_t TempFileConsolThresh;
@@ -785,6 +802,9 @@ TDataFile::TDataFile(Util::TEngine *engine,
       NumKeys(0UL),
       TempFileConsolThresh(temp_file_consol_thresh),
       UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true) {
+  /* Once InsertFile has been issued the file map may own our blocks, so an unwind past that
+     point must not free them. */
+  bool file_inserted = false;
   try {
     auto main_arena_note_index = make_unique<TIndexFile::TOrderedNoteIndex>(
         HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
@@ -1203,6 +1223,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
       Engine->GetVolMan()->SyncToDisk(block_id_to_num_seq_blocks);
     } /* done sync file to disk */
     /* wait for file entry to flush */ {
+      file_inserted = true;
       Engine->InsertFile(file_uid, TFileObj::TKind::DataFile, gen_id, StartingBlockId, StartingBlockOffset, FileLength, total_num_keys, LowestSeq, HighestSeq, completion_trigger);
       completion_trigger.Wait();
     }
@@ -1219,6 +1240,11 @@ TDataFile::TDataFile(Util::TEngine *engine,
       if (obj) {
         obj->Call(TUpdate::TPersistenceNotification::Failed);
       }
+    }
+    /* The file never reached the file map, so nothing else will free its blocks (#590). The
+       index files were destroyed on the way here and waited out their writes. */
+    if (!file_inserted) {
+      Engine->FreeAllBlocks(BlockVec);
     }
     throw;
   }
