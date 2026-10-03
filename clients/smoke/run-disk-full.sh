@@ -79,21 +79,29 @@ if grep -Eq "$MERGE_ABORT" "$WORK/orlyi.log"; then
   grep -E "$MERGE_ABORT" "$WORK/orlyi.log" | head -3
   status=1
 fi
+# A read that failed may be the first sign of an abort that hasn't been logged yet.
+if ! grep -q "^READ: ok" "$WORK/smoke.out"; then
+  for _ in $(seq 1 10); do
+    grep -Eq "$KNOWN_ABORT" "$WORK/orlyi.log" && break
+    kill -0 "$ORLYI_PID" 2>/dev/null || break
+    sleep 1
+  done
+fi
 if [ "$status" -eq 0 ]; then
-  if kill -0 "$ORLYI_PID" 2>/dev/null; then
+  # Check the log before the process: an abort that has been logged may still be
+  # unwinding (or dumping core) when we look, and the read it broke has failed.
+  if grep -Eq "$KNOWN_ABORT" "$WORK/orlyi.log"; then
+    echo "NOTE: orlyi hit a full-disk abort that is still expected (#590 step 4):"
+    grep -E "$KNOWN_ABORT" "$WORK/orlyi.log" | head -1
+  elif kill -0 "$ORLYI_PID" 2>/dev/null; then
     if ! grep -q "^READ: ok" "$WORK/smoke.out"; then
       echo "DISK FULL FAIL: orlyi is up but the read failed"
       status=1
     fi
   else
     wait "$ORLYI_PID" || true
-    if grep -Eq "$KNOWN_ABORT" "$WORK/orlyi.log"; then
-      echo "NOTE: orlyi died in a full-disk abort that is still expected (#590 step 4):"
-      grep -E "$KNOWN_ABORT" "$WORK/orlyi.log" | head -1
-    else
-      echo "DISK FULL FAIL: orlyi died, and not in a known full-disk abort"
-      status=1
-    fi
+    echo "DISK FULL FAIL: orlyi died, and not in a known full-disk abort"
+    status=1
   fi
 fi
 grep -cE "inputs handed back" "$WORK/orlyi.log" | sed 's/^/merge retry lines (rate-limited): /'
