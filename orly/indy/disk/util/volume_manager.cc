@@ -782,6 +782,10 @@ namespace Orly {
               return NumReq;
             }
 
+            inline size_t GetPhysicalOffsetStart() const {
+              return PhysicalOffsetStart;
+            }
+
             inline size_t GetTotalNumBytes() const {
               return TotalBytes;
             }
@@ -947,6 +951,19 @@ namespace Orly {
 
           virtual void DoDiscard(const TBlockRange &block_range) const = 0;
 
+          /* #590: a device submit either delivers its completion or throws without delivering it (the
+             memory device completes inline; the persistent one enqueues only once its event is
+             allocated). When a submit throws, deliver the completion we registered for it as an
+             error, through the channel the device would have used. Otherwise the count can never
+             be met, and a trigger destructor, which now waits for it, would hang. */
+          static inline void CompleteUnsubmitted(TCompletionTrigger &trigger) {
+            trigger.Callback(TDiskResult::Error, "I/O submit failed");
+          }
+
+          static inline void CompleteUnsubmitted(const TIOCallback &cb) {
+            cb(TDiskResult::Error, "I/O submit failed");
+          }
+
           inline void CheckRange(const TOffset start_offset, long long nbytes, const TDevice *device) {
             /* Desc.Capacity counts only the payload the allocator can hand out; the device
                provides SuperBytes of superblock *in addition to* it (TMemoryDevice allocates
@@ -1029,8 +1046,10 @@ namespace Orly {
         TGroupRequest *TVolume::TStrategy::NewGroupRequest<Orly::Indy::Disk::TCompletionTrigger, const TIOCallback>(size_t total_num_request,
                                                                                                                     TCompletionTrigger &trigger,
                                                                                                                     const TIOCallback &cb) {
+          /* Allocate first: a registration whose request never exists would never complete (#590). */
+          TGroupRequest *const group_request = new TGroupRequest(total_num_request, cb);
           trigger.WaitForOneMore();
-          return new TGroupRequest(total_num_request, cb);
+          return group_request;
         }
 
         template <typename... TArgs>
@@ -1049,11 +1068,16 @@ namespace Orly {
                                                                              TCompletionTrigger &trigger) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          trigger.WaitForMore(dev_set.size());
           for (auto device : dev_set) {
             assert(start_offset + nbytes <= device->Desc.Capacity);
-            device->Write(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, logical_start_offset,
-                          trigger);
+            trigger.WaitForOneMore();
+            try {
+              device->Write(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, logical_start_offset,
+                            trigger);
+            } catch (...) {
+              CompleteUnsubmitted(trigger);
+              throw;
+            }
           }
         }
 
@@ -1067,11 +1091,16 @@ namespace Orly {
                                                                                                 TCompletionTrigger &trigger, const TIOCallback &cb) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          trigger.WaitForMore(dev_set.size());
           for (auto device : dev_set) {
             assert(start_offset + nbytes <= device->Desc.Capacity);
-            device->Write(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, logical_start_offset,
-                          cb);
+            trigger.WaitForOneMore();
+            try {
+              device->Write(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, logical_start_offset,
+                            cb);
+            } catch (...) {
+              CompleteUnsubmitted(cb);
+              throw;
+            }
           }
         }
 
@@ -1089,11 +1118,17 @@ namespace Orly {
                                                                             bool abort_on_error, TCompletionTrigger &trigger) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          trigger.WaitForOneMore();
           auto device = *dev_set.begin(); /* #332 investigated and declined: replication-factor > 1 (the only scenario where dev_set has more than one entry) is never exercised by any test or provisioning path in this tree -- every real volume creation uses --replication-factor's default of 1, same as the never-shipped multi-volume path closed by #330. Smarter selection has no live case to improve. */
           CheckRange(start_offset, nbytes, device);
           assert(start_offset + nbytes <= static_cast<long long>(device->Desc.Capacity));
-          device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, trigger);
+          /* Register after CheckRange, which throws (#590). */
+          trigger.WaitForOneMore();
+          try {
+            device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, trigger);
+          } catch (...) {
+            CompleteUnsubmitted(trigger);
+            throw;
+          }
         }
 
         template <>
@@ -1105,11 +1140,17 @@ namespace Orly {
                                                                                                const TIOCallback &cb) {
           assert(device_num < DeviceVec.size());
           const TDeviceSet &dev_set = DeviceVec[device_num];
-          trigger.WaitForOneMore();
           auto device = *dev_set.begin(); /* #332 investigated and declined: replication-factor > 1 (the only scenario where dev_set has more than one entry) is never exercised by any test or provisioning path in this tree -- every real volume creation uses --replication-factor's default of 1, same as the never-shipped multi-volume path closed by #330. Smarter selection has no live case to improve. */
           CheckRange(start_offset, nbytes, device);
           assert(start_offset + nbytes <= static_cast<long long>(device->Desc.Capacity));
-          device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, cb);
+          /* Register after CheckRange, which throws (#590). */
+          trigger.WaitForOneMore();
+          try {
+            device->Read(code_location, buf_kind, util_src, buf, start_offset + SuperBytes, nbytes, priority, abort_on_error, cb);
+          } catch (...) {
+            CompleteUnsubmitted(cb);
+            throw;
+          }
         }
 
         template <typename... TArgs>
@@ -1135,8 +1176,13 @@ namespace Orly {
           for (const auto &buf_vec : device_request.VecPerOp) {
             trigger.WaitForOneMore();
             const size_t num_bytes_in_op = buf_vec.size() * bytes_per_segment;
-            device->ReadV(code_location, buf_kind, util_src, buf_vec, device_request.PhysicalOffsetStart + SuperBytes + bytes_in, num_bytes_in_op,
-                          priority, abort_on_error, trigger);
+            try {
+              device->ReadV(code_location, buf_kind, util_src, buf_vec, device_request.PhysicalOffsetStart + SuperBytes + bytes_in, num_bytes_in_op,
+                            priority, abort_on_error, trigger);
+            } catch (...) {
+              CompleteUnsubmitted(trigger);
+              throw;
+            }
             bytes_in += num_bytes_in_op;
           }
         }
@@ -2066,6 +2112,14 @@ void TVolume::TStripedStrategy::DoStripeV(TOp op, const Base::TCodeLocation &cod
         }
       }
       assert(total_num_requests);
+      /* Range-check every device before the group request exists: SubmitRequest checks again, but
+         a throw there, after earlier devices were submitted, would leave the group (and the
+         trigger completion it stands for) short forever (#590). */
+      for (size_t i = 0; i < num_devices; ++i) {
+        if (device_req_arr[i].GetNumRequest() > 0) {
+          CheckRange(device_req_arr[i].GetPhysicalOffsetStart(), device_req_arr[i].GetTotalNumBytes(), *DeviceVec[i].begin());
+        }
+      }
       TGroupRequest *const group_request = NewGroupRequest<TArgs...>(total_num_requests, args...);
       for (size_t i = 0; i < num_devices; ++i) {
         if (device_req_arr[i].GetNumRequest() > 0) {

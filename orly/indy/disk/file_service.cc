@@ -327,6 +327,9 @@ void TFileService::InsertFile(const Base::TUuid &file_uid,
       OpQueue.Insert(op->GetQueueMembership());
     }  // release Queue lock
   } catch (...) {
+    /* The op registered itself with the trigger; complete it so a waiter (or the trigger's
+       destructor, which waits too) isn't left one completion short (#590). */
+    op->Complete(TDiskResult::Error, "file service op not queued");
     delete op;
     throw;
   }
@@ -361,6 +364,9 @@ void TFileService::RemoveFile(const Base::TUuid &file_uid,
       OpQueue.Insert(op->GetQueueMembership());
     }  // release Queue lock
   } catch (...) {
+    /* The op registered itself with the trigger; complete it so a waiter (or the trigger's
+       destructor, which waits too) isn't left one completion short (#590). */
+    op->Complete(TDiskResult::Error, "file service op not queued");
     delete op;
     throw;
   }
