@@ -986,6 +986,10 @@ namespace Orly {
                             const TOffset start_offset, long long nbytes, DiskPriority priority, TCacheInstr cache_instr, TCompletionTrigger &trigger,
                             bool abort_on_error = true);
 
+          /* The overloads taking both a trigger and a callback register each I/O on the trigger
+             but report it only to the callback, which must pass it on with trigger.Callback().
+             The trigger's destructor waits for every registered I/O (#590), so a callback that
+             doesn't complete the trigger makes that destructor wait forever. */
           inline void Write(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf,
                             const TOffset start_offset, long long nbytes, DiskPriority priority, TCacheInstr cache_instr, TCompletionTrigger &trigger,
                             const TIOCallback &cb, bool abort_on_error = true);
