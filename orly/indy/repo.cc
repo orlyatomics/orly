@@ -1585,6 +1585,17 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
                              TSequenceNumber release_up_to,
                              bool can_tail,
                              bool can_tail_tombstone) {
+  /* Until it finishes, this merge allocates up to the size of its inputs while they stay live.
+     Write admission keeps that much free on top of its reserve, and, if the merge fails for
+     space, keeps it free for its retry (#590). */
+  size_t input_bytes = 0UL;
+  for (size_t gen_id : gen_id_vec) {
+    size_t block_id, block_offset, file_size, num_keys;
+    if (Manager->GetEngine()->FindFile(GetId(), gen_id, block_id, block_offset, file_size, num_keys)) {
+      input_bytes += file_size;
+    }
+  }
+  Disk::Util::TVolumeManager::TClaim claim(Manager->GetEngine()->GetVolMan(), input_bytes);
   size_t intermediate_gen_id = GetNextGenId();
   bool my_can_tail = can_tail && !static_cast<bool>(GetParentRepo()) && IsTailingAllowed();
   bool my_can_tail_tombstone = my_can_tail && can_tail_tombstone && (gen_id_vec.size() == 1);

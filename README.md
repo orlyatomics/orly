@@ -100,6 +100,8 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 - **Restart durability.** A disk-backed `orlyi` gives everything durable back after a graceful stop/restart ([#435](https://github.com/orlyatomics/orly/issues/435), gated in CI by `tests/restart_test.sh`): global data, sessions (`resume session` works across restarts), index-id mappings, and the installed-package registry (packages auto-reinstall; an uninstall stays uninstalled). Graceful shutdown flushes dirty memory layers ([#440](https://github.com/orlyatomics/orly/issues/440)), drains live client connections ([#460](https://github.com/orlyatomics/orly/issues/460)), and completes even against an unresponsive replication peer ([#461](https://github.com/orlyatomics/orly/issues/461)). One deliberate caveat: **POVs are ephemeral** — un-promoted pov-local updates do not survive a restart, and a pre-restart pov id is refused with a clean error rather than silently resurrected empty ([#439](https://github.com/orlyatomics/orly/issues/439)); see [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
+- **A full disk refuses writes, not the server.** When free space falls below a reserve (`--disk_reserve_pct`, default 10%; or `--disk_reserve_mb`) plus what running merges still need, `orlyi` refuses writes with `"status": "insufficient_storage"` and keeps serving reads, new sessions and new POVs. The last part of the reserve is kept for session state and the file map, so they keep working on a disk that data has filled. Writes resume by themselves when space comes back. The reporting port's `Write Admission` line shows the state ([#590](https://github.com/orlyatomics/orly/issues/590)).
+
 ## Quick start
 
 **Docker** — the engine itself is Linux-only, so this is also the macOS/Windows

@@ -28,7 +28,8 @@ import time as _time
 import websocket  # the `websocket-client` package
 
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
-           "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "Lit", "lit",
+           "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
+           "Lit", "lit",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -58,6 +59,12 @@ class OrlyError(RuntimeError):
         self.statement = statement
         self.reply = reply
         super().__init__(f"{statement!r}\n  -> {reply}")
+
+
+class InsufficientStorage(OrlyError):
+    """Raised when the server refuses a write because it is low on disk space
+    (``"status": "insufficient_storage"``). Nothing was written, reads still
+    work, and the write can be retried once space is freed."""
 
 
 class Lit:
@@ -117,7 +124,10 @@ class Client:
         """Send one statement; return its ``result``, or raise ``OrlyError``."""
         self.ws.send(statement)
         reply = _json.loads(self.ws.recv())
-        if reply.get("status") != "ok":
+        status = reply.get("status")
+        if status == "insufficient_storage":
+            raise InsufficientStorage(statement, reply)
+        if status != "ok":
             raise OrlyError(statement, reply)
         return reply.get("result")
 

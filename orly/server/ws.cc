@@ -46,6 +46,7 @@
 #include <orly/client/program/translate_expr.h>
 #include <orly/indy/key.h>
 #include <orly/orly.package.cst.h>
+#include <orly/server/insufficient_storage.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
 #include <orly/synth/cst_utils.h>
@@ -545,6 +546,11 @@ class TWsImpl final
            compiler line is there for whoever is reporting a bug (#557). */
         reply["compiler_loc"] = AsStr(src_error.GetCodeLocation());
         reply["status"] = "source_error";
+      } catch (const Orly::Server::TInsufficientStorage &ex) {
+        /* A write refused for lack of disk space (#590): its own status, so a client can tell
+           it from a failed statement and keep reading. */
+        reply["result"] = ex.what();
+        reply["status"] = "insufficient_storage";
       } catch (const exception &ex) {
         reply["result"] = ex.what();
         reply["status"] = "exception";

@@ -298,9 +298,9 @@ jobs:
       - name: Concurrent writers survive a small Update pool
         run: bash clients/smoke/run-pool-pressure.sh
 
-      # #590: fill every volume of a tiny mem-sim disk. A merge that runs out of
-      # space must hand its inputs back and retry rather than abort orlyi.
-      - name: A full disk doesn't abort the server
+      # #590: fill a tiny mem-sim disk. Writes must come back refused with
+      # insufficient_storage while reads, new sessions and orlyi itself carry on.
+      - name: A full disk refuses writes and keeps serving reads
         run: bash clients/smoke/run-disk-full.sh
 
   restart-test:

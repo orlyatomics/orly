@@ -24,6 +24,7 @@ package orly
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -43,6 +44,12 @@ const (
 	DefaultRetries = 5
 	defaultBackoff = 250 * time.Millisecond
 )
+
+// ErrInsufficientStorage is wrapped by the error a write gets when the server
+// refuses it for lack of disk space ("status": "insufficient_storage"). Nothing
+// was written, reads still work, and the write can be retried once space is
+// freed. Test with errors.Is.
+var ErrInsufficientStorage = errors.New("orly: insufficient storage")
 
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
@@ -94,6 +101,9 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	var r reply
 	if err := json.Unmarshal(msg, &r); err != nil {
 		return nil, fmt.Errorf("orly: parse reply to %q: %w (raw: %s)", stmt, err, msg)
+	}
+	if r.Status == "insufficient_storage" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrInsufficientStorage)
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)

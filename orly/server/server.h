@@ -296,6 +296,13 @@ namespace Orly {
            disables backpressure. */
         size_t TetrisBackpressureThreshold;
 
+        /* Write admission on low disk space (#590). Writes are refused while free plus
+           discard-pending space is below the reserve plus what recent disk merges may still
+           allocate. The reserve is DiskReserveMb if set, else DiskReservePct percent of the
+           total but at least min(64 MiB, total / 4); both 0 turns admission off. */
+        size_t DiskReserveMb;
+        size_t DiskReservePct;
+
         /******** Object Pools ********/
 
         size_t DurableMappingPoolSize;
@@ -378,6 +385,10 @@ namespace Orly {
       size_t GetWriteBackpressureThreshold() const override {
         return Cmd.TetrisBackpressureThreshold;
       }
+
+      /* See TSession::TServer. Throws TInsufficientStorage while disk space is below the
+         reserve (#590). */
+      void CheckWriteAdmission() override;
 
       /* Called when the websockets server wishes to create a new session. */
       virtual TWs::TSessionPin *NewSession() override;
@@ -767,6 +778,18 @@ namespace Orly {
       std::unique_ptr<Indy::Disk::Util::TDiskEngine> DiskEngine;
 
       std::unique_ptr<Orly::Indy::TManager> RepoManager;
+
+      /* Write admission (#590). The decision is recomputed from the volume manager at most
+         every AdmissionRefreshInterval, by whichever writer finds it stale; the rest read the
+         cached result. */
+      void RefreshWriteAdmission(int64_t now_ns);
+      size_t GetDiskReserve(size_t total_bytes) const;
+      std::atomic<int64_t> AdmissionCheckedAtNs {0};
+      std::atomic<bool> RefusingWrites {false};
+      std::atomic<size_t> AdmissionAvailable {0UL};
+      std::atomic<size_t> AdmissionNeeded {0UL};
+      std::atomic<size_t> AdmissionTotal {0UL};
+      std::atomic<size_t> RefusedWriteCount {0UL};
 
       Orly::Indy::L0::TManager::TPtr<Indy::TRepo> GlobalRepo;
 

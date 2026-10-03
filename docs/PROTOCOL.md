@@ -36,6 +36,15 @@ sent as one WebSocket text message. The server replies with one JSON message:
   `compiler_loc` names the compiler source line that raised it -- useful in a
   compiler bug report, meaningless to the statement's author, so clients should
   not show it by default (#557).
+- A write refused because the server is low on disk space replies
+  `"status": "insufficient_storage"`, with the reason in `result` (#590). Only
+  writes are refused: reads, new sessions and new POVs keep working. Nothing was
+  written, so the write can be retried once space is freed. The refusal starts
+  when free space falls below `orlyi`'s reserve plus what recent disk merges may
+  still allocate. The reserve is `--disk_reserve_mb` if set, else
+  `--disk_reserve_pct` of the disk (default 10%, and at least 64 MiB or a quarter
+  of the disk, whichever is smaller). Over the binary protocol the same refusal
+  is an error whose message starts with `insufficient storage`.
 
 ## Statements
 
@@ -113,7 +122,8 @@ exit;
    a payload-less arm as `{"Tag": {}}`.
 4. **Records are objects** keyed by field name (without the leading `.`).
 5. **Errors are stringly-typed** — failures surface as a non-`ok` `status`, not a
-   structured error code.
+   structured error code. `insufficient_storage` is the one status worth matching
+   on: it means "retry later", not "this statement is wrong".
 
 ## Toward a client SDK
 

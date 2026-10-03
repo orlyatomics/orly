@@ -18,6 +18,9 @@
 
 #include <orly/indy/disk/file_service.h>
 
+#include <chrono>
+#include <thread>
+
 #include <base/mem_aligned_ptr.h>
 #include <orly/indy/disk/indy_util_reporter.h>
 
@@ -471,28 +474,19 @@ void TFileService::Runner() {
             /* write out a new base image */
             const size_t blocks_required_for_base_image = std::max(1UL, static_cast<size_t>(ceil(static_cast<double>(NumRunnerCopyFiles) / NumElemPerBaseImageBlock)));
             auto &cur_image_block_vec = (CurBaseImageCounter % 2 == 0) ? Image1BlockIdVec : Image2BlockIdVec;
-            if (cur_image_block_vec.size() > blocks_required_for_base_image) {
-              size_t removed = 0UL;
-              const size_t to_remove = cur_image_block_vec.size() - blocks_required_for_base_image;
-              for (size_t i = cur_image_block_vec.size() - 1; i > 0 && removed < to_remove; --i, ++removed) {
+            /* Each image keeps spare blocks beyond what it needs, so a growing file count rarely
+               needs a fresh allocation, and never one that a full disk can refuse while the
+               spare lasts (#590). Spare blocks are not written or linked into the chain; after
+               a restart they are simply free again. */
+            const size_t spare = std::max(2UL, blocks_required_for_base_image / 8UL);
+            const size_t target = blocks_required_for_base_image + spare;
+            if (cur_image_block_vec.size() > target + spare) {
+              for (size_t i = cur_image_block_vec.size() - 1; i >= target; --i) {
                 VolMan->FreeSequentialBlocks(Util::TBlockRange(cur_image_block_vec[i], 1UL));
               }
-              cur_image_block_vec.resize(blocks_required_for_base_image);
-            } else if (cur_image_block_vec.size() < blocks_required_for_base_image) {
-              const size_t to_add = blocks_required_for_base_image - cur_image_block_vec.size();
-              for (size_t i = 0; i < to_add; ++i) {
-                try {
-                  VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const Util::TBlockRange &block_range) {
-                    assert(block_range.second == 1UL);
-                    cur_image_block_vec.push_back(block_range.first);
-                  });
-                } catch (const Util::TDiskFull &ex) {
-                  /* None of the handlers below completes the queued ops for this, so their
-                     waiters would hang (#590). Abort, as before. */
-                  syslog(LOG_EMERG, "TFileService base image [%s]; aborting", ex.what());
-                  abort();
-                }
-              }
+              cur_image_block_vec.resize(target);
+            } else if (cur_image_block_vec.size() < target) {
+              GrowBaseImage(cur_image_block_vec, target, blocks_required_for_base_image);
             }
             if (image_buf_block_vec.size() > blocks_required_for_base_image) {
               image_buf_block_vec.resize(blocks_required_for_base_image);
@@ -626,6 +620,41 @@ void TFileService::Runner() {
   delete Disk::Util::TDiskController::TEvent::LocalEventPool;
   Disk::Util::TDiskController::TEvent::LocalEventPool = nullptr;
   Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
+}
+
+void TFileService::GrowBaseImage(std::vector<size_t> &image_block_vec, size_t target, size_t required) {
+  size_t tries = 0UL;
+  while (image_block_vec.size() < target) {
+    try {
+      VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const Util::TBlockRange &block_range) {
+        assert(block_range.second == 1UL);
+        image_block_vec.push_back(block_range.first);
+      }, Util::TAllocClass::Essential);
+    } catch (const Util::TDiskFull &ex) {
+      if (image_block_vec.size() >= required) {
+        /* Only the spare is short; top it up on a later image. */
+        return;
+      }
+      /* The image must grow and nothing is free. Write admission refuses user writes long
+         before this (#590), so getting here means the spare and the reserve are both gone.
+         None of the queued ops can complete without this image, and the frees that would make
+         room wait on those ops, so the only space that can still appear is discard-pending
+         blocks. Wait for it rather than abort; reads don't need this loop. */
+      if (ShuttingDown) {
+        throw TDiskServiceShutdown();
+      }
+      if ((tries & (tries + 1UL)) == 0UL) {
+        syslog(LOG_ERR, "TFileService base image needs [%ld] blocks, has [%ld]: [%s] (try %ld); waiting for space",
+               required, image_block_vec.size(), ex.what(), tries + 1UL);
+      }
+      ++tries;
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      Fiber::YieldSlow();
+    }
+  }
+  if (tries) {
+    syslog(LOG_ERR, "TFileService base image got its blocks after %ld tries", tries);
+  }
 }
 
 void TFileService::AddToMap(TFileMap &file_map,

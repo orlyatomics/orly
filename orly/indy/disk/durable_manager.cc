@@ -218,6 +218,7 @@ void TDurableManager::RunLayerCleaner() {
       syslog(LOG_INFO, "TDurableManager::RunLayerCleaner shutting down (#440)");
       return;
     }
+    KickDiskFullRetries();
     for (;;) {
       /* Acquire Removal lock */ {
         std::lock_guard<std::mutex> removal_lock(RemovalLock);
@@ -358,14 +359,9 @@ void TDurableManager::RunWriter() {
      every caller has relied on; turning on a write-behind would need its own measurement. */
   SlushSem.Pop();
   for (;!ShutDown; SlushSem.Pop()) {
-    try {
-      FlushCurLayer(false);
-    } catch (const Disk::Util::TDiskFull &ex) {
-      /* Nothing here can wait for space yet (#590), and an exception escaping this fiber ends
-         the writer silently, so every later save would wait forever. Abort, as before. */
-      syslog(LOG_EMERG, "TDurableManager::RunWriter [%s]; aborting", ex.what());
-      abort();
-    }
+    /* Out of disk space is handled inside: the layer stays readable in memory and is retried
+       on the next save or layer-cleaner tick (#590). */
+    FlushCurLayer(false);
   }
   /* Final drain (#277): flush whatever is still sitting in the memory layer so shutting down
      doesn't silently drop saves, and mark the writer retired (under DataLock) so any save that
@@ -374,6 +370,9 @@ void TDurableManager::RunWriter() {
      stranded savers anyway (FlushCurLayer's catch does) and let the destructor proceed. */
   try {
     FlushCurLayer(true);
+    if (!UnflushedLayers.empty()) {
+      syslog(LOG_ERR, "TDurableManager::RunWriter final drain: out of disk space; unflushed saves lost");
+    }
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "TDurableManager::RunWriter final drain failed; unflushed saves lost [%s]", ex.what());
   }
@@ -391,8 +390,19 @@ void TDurableManager::ReleaseSavers(TMemSlushLayer *mem_layer) {
 }
 
 bool TDurableManager::FlushCurLayer(bool retire_writer) {
-  Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
-  TMemSlushLayer *old_mem_layer = nullptr;
+  /* First whatever an earlier round could not write for lack of disk space (#590). While that
+     still fails, leave new saves in the current layer instead of starting one layer per round:
+     layers come from a fixed pool. */
+  const bool had_unflushed = !UnflushedLayers.empty();
+  if (had_unflushed && !WriteUnflushedLayers()) {
+    std::lock_guard<std::mutex> data_lock(DataLock);
+    if (retire_writer) {
+      WriterRetired = true;
+    }
+    ReleaseSavers(CurMemoryLayer);
+    return true;
+  }
+  bool rotated = false;
   /* acquire DataLayer lock */ {
     std::lock_guard<std::mutex> data_lock(DataLock);
     assert(CurMemoryLayer);
@@ -400,64 +410,112 @@ bool TDurableManager::FlushCurLayer(bool retire_writer) {
       WriterRetired = true;
     }
     if (CurMemoryLayer->GetNumEntries()) {
-      old_mem_layer = CurMemoryLayer;
       AddMapping(CurMemoryLayer);
+      UnflushedLayers.push_back(CurMemoryLayer);
       CurMemoryLayer = new TMemSlushLayer(this);
+      rotated = true;
     }
   }  // release DataLayer lock
-
-  if (!old_mem_layer) {
-    return false;
+  if (rotated) {
+    WriteUnflushedLayers();
   }
-  try {
-    auto now = Durable::TDeadline::clock::now();
-    size_t gen_id = ++NextDurableByIdGenId;
-    TSortedByIdFile sorted_by_id_file(old_mem_layer,
-                                      Engine,
-                                      storage_speed,
-                                      gen_id,
-                                      now.time_since_epoch().count(),
-                                      TempFileConsolThresh,
-                                      Medium);
-    /* The sorted-by-id file's constructor waits on its completion triggers, so by here every
-       block of the new file is confirmed written: the saves in this layer are durable and we
-       can finally release their savers (#277). */
-    ReleaseSavers(old_mem_layer);
-    MergeSem.Push();
+  return had_unflushed || rotated;
+}
 
-    /* acquire Mapping lock */ {
-      std::lock_guard<std::mutex> mapping_lock(MappingLock);
-      TMapping *cur_mapping = MappingCollection.TryGetLastMember();
-      cur_mapping->Incr();
-      try {
-        TMapping *new_mapping = new TMapping(this);
-        for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
-          /* if it's not old_mem_layer, keep it */
-          if (cur_csr->GetLayer() != old_mem_layer) {
-            new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
-          } else {
-            cur_csr->GetLayer()->MarkForDelete();
-          }
-        }
-        /* add our new sorted file */
-        new TMapping::TEntry(new_mapping, new TDiskOrderedLayer(this, Engine, gen_id, sorted_by_id_file.GetNumDurable()));
-        cur_mapping->Decr();
-      } catch (...) {
-        cur_mapping->Decr();
-        throw;
+bool TDurableManager::WriteUnflushedLayers() {
+  /* Oldest first. A layer that hits a full disk stays in the mapping, where reads still find
+     it, and is written on a later round. */
+  while (!UnflushedLayers.empty()) {
+    TMemSlushLayer *mem_layer = UnflushedLayers.front();
+    try {
+      WriteMemLayer(mem_layer);
+    } catch (const Disk::Util::TDiskFull &ex) {
+      /* Don't hold the savers until space comes back: that could be never, and a session
+         waiting on its save would stop answering reads too. Their saves stay readable from
+         memory; durability waits for the retry, and a crash before it loses them. */
+      for (TMemSlushLayer *layer : UnflushedLayers) {
+        ReleaseSavers(layer);
       }
-    }  // release Mapping lock
-  } catch (...) {
-    /* The write failed (in practice: the disk service is being shut down by force).  The data
-       is not durable, but stranding the savers forever would deadlock the very shutdown that
-       caused this -- wake them and let the failure surface through the engine.  This matches
-       the pre-#277 contract, where the sem never meant durability at all. */
-    ReleaseSavers(old_mem_layer);
-    throw;
+      WriterRetryDue = true;
+      const size_t prev = WriterDiskFullStreak++;
+      if (ShouldLogDiskFullRetry(prev)) {
+        syslog(LOG_ERR, "TDurableManager writer out of disk space [%s] (try %ld); %ld layer(s) held in memory, retrying",
+               ex.what(), prev + 1UL, UnflushedLayers.size());
+      }
+      return false;
+    } catch (...) {
+      /* Anything else (in practice: the disk service is being shut down by force). The data
+         is not durable, but stranding the savers forever would deadlock the very shutdown
+         that caused this; wake them and let the failure surface. This matches the pre-#277
+         contract, where the sem never meant durability at all. */
+      for (TMemSlushLayer *layer : UnflushedLayers) {
+        ReleaseSavers(layer);
+      }
+      throw;
+    }
+    UnflushedLayers.pop_front();
+  }
+  WriterRetryDue = false;
+  if (const size_t retries = WriterDiskFullStreak.exchange(0UL)) {
+    syslog(LOG_ERR, "TDurableManager writer flushed after %ld retries for disk space", retries);
   }
   return true;
 }
 
+void TDurableManager::WriteMemLayer(TMemSlushLayer *old_mem_layer) {
+  Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
+  auto now = Durable::TDeadline::clock::now();
+  size_t gen_id = ++NextDurableByIdGenId;
+  TSortedByIdFile sorted_by_id_file(old_mem_layer,
+                                    Engine,
+                                    storage_speed,
+                                    gen_id,
+                                    now.time_since_epoch().count(),
+                                    TempFileConsolThresh,
+                                    Medium);
+  /* The sorted-by-id file's constructor waits on its completion triggers, so by here every
+     block of the new file is confirmed written: the saves in this layer are durable and we
+     can finally release their savers (#277). */
+  ReleaseSavers(old_mem_layer);
+  MergeSem.Push();
+
+  /* acquire Mapping lock */ {
+    std::lock_guard<std::mutex> mapping_lock(MappingLock);
+    TMapping *cur_mapping = MappingCollection.TryGetLastMember();
+    cur_mapping->Incr();
+    try {
+      TMapping *new_mapping = new TMapping(this);
+      for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
+        /* if it's not old_mem_layer, keep it */
+        if (cur_csr->GetLayer() != old_mem_layer) {
+          new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
+        } else {
+          cur_csr->GetLayer()->MarkForDelete();
+        }
+      }
+      /* add our new sorted file */
+      new TMapping::TEntry(new_mapping, new TDiskOrderedLayer(this, Engine, gen_id, sorted_by_id_file.GetNumDurable()));
+      cur_mapping->Decr();
+    } catch (...) {
+      cur_mapping->Decr();
+      throw;
+    }
+  }  // release Mapping lock
+}
+
+bool TDurableManager::ShouldLogDiskFullRetry(size_t prev) {
+  /* 1, 2, 4, 8, ... : enough to see it is still happening without filling the log. */
+  return (prev & (prev + 1UL)) == 0UL;
+}
+
+void TDurableManager::KickDiskFullRetries() {
+  if (WriterRetryDue) {
+    SlushSem.Push();
+  }
+  if (MergerRetryDue) {
+    MergeSem.Push();
+  }
+}
 
 void TDurableManager::RunMerger() {
   if (Engine->IsDiskBased()) {
@@ -469,6 +527,10 @@ void TDurableManager::RunMerger() {
   /* Unpaced, like the writer above (#576). */
   MergeSem.Pop();
   for (;!ShutDown; MergeSem.Pop()) {
+    if (MergerRetryDue && std::chrono::steady_clock::now() < MergerRetryAt) {
+      /* Backing off after a full disk; the layer cleaner's tick wakes us again. */
+      continue;
+    }
     std::vector<size_t> gen_vec;
     std::map<size_t, std::vector<TDiskOrderedLayer *>> gen_to_gen_id_map;
     std::vector<TDiskOrderedLayer *> gen_layer_vec;
@@ -505,9 +567,25 @@ void TDurableManager::RunMerger() {
       try {
         merge_sort_file_storage.emplace(gen_vec, Engine, storage_speed, gen_id, now.time_since_epoch().count(), TempFileConsolThresh, Low, Notify);
       } catch (const Disk::Util::TDiskFull &ex) {
-        /* Same as the writer: the inputs stay MarkTaken and this fiber would end silently (#590). */
-        syslog(LOG_EMERG, "TDurableManager::RunMerger [%s]; aborting", ex.what());
-        abort();
+        /* The output freed what it had reserved and the inputs are untouched, so hand them
+           back and try again later (#590). Merging is only housekeeping: the inputs stay
+           readable. A Notify would see a retried merge twice, but the server passes none. */
+        for (auto layer : gen_layer_vec) {
+          layer->UnmarkTaken();
+        }
+        const size_t prev = MergerDiskFullStreak++;
+        const std::chrono::milliseconds backoff(100L << std::min<size_t>(prev, 5UL));
+        MergerRetryAt = std::chrono::steady_clock::now() + backoff;
+        MergerRetryDue = true;
+        if (ShouldLogDiskFullRetry(prev)) {
+          syslog(LOG_ERR, "TDurableManager merger out of disk space [%s] (try %ld); inputs handed back, retrying in %ldms",
+                 ex.what(), prev + 1UL, static_cast<long>(backoff.count()));
+        }
+        continue;
+      }
+      MergerRetryDue = false;
+      if (const size_t retries = MergerDiskFullStreak.exchange(0UL)) {
+        syslog(LOG_ERR, "TDurableManager merger succeeded after %ld retries for disk space", retries);
       }
       TMergeSortedByIdFile &merge_sort_file = *merge_sort_file_storage;
       /* acquire Mapping lock */ {
@@ -553,7 +631,25 @@ TDurableManager::TSortedByIdFile::TSortedByIdFile(TMemSlushLayer *mem_layer,
                                                   size_t temp_file_consol_thresh,
                                                   DiskPriority priority)
     : Engine(engine), StorageSpeed(storage_speed), FileSize(0UL), NumDurable(0UL) {
-  THashSorter hash_sorter(HERE, Source::DurableSortFileHashIndex, temp_file_consol_thresh, storage_speed, Engine, true);
+  bool file_inserted = false;
+  try {
+    Write(mem_layer, gen_id, latest_deadline_count, temp_file_consol_thresh, priority, file_inserted);
+  } catch (...) {
+    /* Nothing else will free the blocks of a file that never reached the file map (#590). */
+    if (!file_inserted) {
+      Engine->FreeAllBlocks(BlockVec);
+    }
+    throw;
+  }
+}
+
+void TDurableManager::TSortedByIdFile::Write(TMemSlushLayer *mem_layer,
+                                             size_t gen_id,
+                                             size_t latest_deadline_count,
+                                             size_t temp_file_consol_thresh,
+                                             DiskPriority priority,
+                                             bool &file_inserted) {
+  THashSorter hash_sorter(HERE, Source::DurableSortFileHashIndex, temp_file_consol_thresh, StorageSpeed, Engine, true);
   assert(mem_layer);
   assert(Engine);
   size_t total_durable_serialized_space = 0UL;
@@ -602,7 +698,8 @@ TDurableManager::TSortedByIdFile::TSortedByIdFile(TMemSlushLayer *mem_layer,
   byte_offset_of_hash_index += total_durable_serialized_space;
 
   /* reserve the blocks. */
-  Engine->AppendReserveBlocks(StorageSpeed, num_blocks, BlockVec);
+  /* Sessions and POVs are saved here: these files may use the space kept back from data (#590). */
+  Engine->AppendReserveBlocks(StorageSpeed, num_blocks, BlockVec, Util::TAllocClass::Essential);
   #ifndef NDEBUG
   std::unordered_set<size_t> written_block_set;
   #endif
@@ -779,6 +876,7 @@ TDurableManager::TSortedByIdFile::TSortedByIdFile(TMemSlushLayer *mem_layer,
     completion_trigger.Wait();
   }
   /* wait for file entry to flush */ {
+    file_inserted = true;
     Engine->InsertFile(DurableByIdFileId, TFileObj::TKind::DurableFile, gen_id, BlockVec.Front(), 0UL, BlockVec.Size() * Disk::Util::LogicalBlockSize, NumDurable, 0UL, 0UL, completion_trigger);
     completion_trigger.Wait();
   }
@@ -932,6 +1030,25 @@ TDurableManager::TMergeSortedByIdFile::TMergeSortedByIdFile(const std::vector<si
                                                             DiskPriority priority,
                                                             const TNotify *notify)
     : Engine(engine), StorageSpeed(storage_speed), NumDurable(0UL), FileSize(0UL) {
+  bool file_inserted = false;
+  try {
+    Write(gen_vec, gen_id, latest_deadline_count, temp_file_consol_thresh, priority, notify, file_inserted);
+  } catch (...) {
+    /* As in TSortedByIdFile (#590). */
+    if (!file_inserted) {
+      Engine->FreeAllBlocks(BlockVec);
+    }
+    throw;
+  }
+}
+
+void TDurableManager::TMergeSortedByIdFile::Write(const std::vector<size_t> &gen_vec,
+                                                  size_t gen_id,
+                                                  size_t latest_deadline_count,
+                                                  size_t temp_file_consol_thresh,
+                                                  DiskPriority priority,
+                                                  const TNotify *notify,
+                                                  bool &file_inserted) {
   THashSorter hash_sorter(HERE, Source::DurableMergeFileHashIndex, temp_file_consol_thresh, StorageSpeed, Engine, true);
   std::vector<std::unique_ptr<TSortedInFile>> in_file_vec;
   for (auto iter : gen_vec) {
@@ -1027,7 +1144,9 @@ TDurableManager::TMergeSortedByIdFile::TMergeSortedByIdFile(const std::vector<si
   }
 
   /* reserve the blocks. */
-  Engine->AppendReserveBlocks(StorageSpeed, num_blocks, BlockVec);
+  /* Essential like the writer's files (#590): every request re-saves its session and POV, so
+     the writer keeps producing superseded copies, and this merge is what frees them. */
+  Engine->AppendReserveBlocks(StorageSpeed, num_blocks, BlockVec, Util::TAllocClass::Essential);
   #ifndef NDEBUG
   std::unordered_set<size_t> written_block_set;
   #endif
@@ -1259,6 +1378,7 @@ TDurableManager::TMergeSortedByIdFile::TMergeSortedByIdFile(const std::vector<si
     completion_trigger.Wait();
   }
   /* wait for file entry to flush */ {
+    file_inserted = true;
     Engine->InsertFile(DurableByIdFileId, TFileObj::TKind::DurableFile, gen_id, BlockVec.Front(), 0UL, BlockVec.Size() * Disk::Util::LogicalBlockSize, NumDurable, 0UL, 0UL, completion_trigger);
     completion_trigger.Wait();
   }

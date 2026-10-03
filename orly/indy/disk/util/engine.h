@@ -96,7 +96,8 @@ namespace Orly {
             return range.first;
           }
 
-          void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, std::vector<size_t> &append_vec) {
+          void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, std::vector<size_t> &append_vec,
+                                   TAllocClass alloc_class = TAllocClass::Ordinary) {
             assert(num_blocks > 0);
             size_t left = num_blocks;
             try {
@@ -108,7 +109,7 @@ namespace Orly {
                     append_vec.push_back(range.first + i);
                   }
                   left -= range.second;
-                });
+                }, alloc_class);
               }
             } catch (const std::exception &/*ex*/) {
               /* Hand back what this call reserved, not just forget it: the caller only owns
@@ -124,7 +125,8 @@ namespace Orly {
 
           /* On failure (TDiskFull once every volume is full), the blocks this call reserved are
              freed again and append_vec is left as it was (#590). */
-          void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, Indy::Util::TBlockVec &append_vec) {
+          void AppendReserveBlocks(TVolume::TDesc::TStorageSpeed storage_speed, size_t num_blocks, Indy::Util::TBlockVec &append_vec,
+                                   TAllocClass alloc_class = TAllocClass::Ordinary) {
             assert(num_blocks > 0);
             const size_t orig_size = append_vec.Size();
             size_t left = num_blocks;
@@ -139,7 +141,7 @@ namespace Orly {
                   }
                   #endif
                   left -= range.second;
-                });
+                }, alloc_class);
               }
             } catch (const std::exception &/*ex*/) {
               const size_t num_new = append_vec.Size() - orig_size;

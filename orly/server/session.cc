@@ -24,6 +24,7 @@
 #include <orly/atom/suprena.h>
 #include <orly/indy/context.h>
 #include <orly/notification/all.h>
+#include <orly/server/insufficient_storage.h>
 #include <orly/server/meta_record.h>
 #include <orly/var/mutation.h>
 #include <base/util/time.h>
@@ -219,6 +220,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     effects = indy_context.MoveEffects();
     if (!effects.empty()) {
       had_effects = true;
+      /* Refuse the write, before it takes memory it would have to flush, while disk space is
+         low; a read (no effects) is never refused (#590). */
+      server->CheckWriteAdmission();
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Deferred entries from #49 phase 2: defer-safe commutative
@@ -333,6 +337,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     TServer::TryWalkerCountCalc.Push(walker_count);
     TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
     return TMethodResult(indy_context.GetArena(), result_core, tracker);
+  } catch (const TInsufficientStorage &) {
+    /* Not an error in the server: the server's admission log records the refusals (#590). */
+    throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::Try : [%s]", ex.what());
     throw;
@@ -399,6 +406,9 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     Package::TContext::TEffects effects = indy_context.MoveEffects();
     if (!effects.empty()) {
       had_effects = true;
+      /* Refuse the write, before it takes memory it would have to flush, while disk space is
+         low; a read (no effects) is never refused (#590). */
+      server->CheckWriteAdmission();
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Identical deferred-entry fold to Try() (#49/#232): defer-safe commutative
@@ -497,6 +507,9 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     TCore list_core(indy_context.GetArena(),
         Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_1, list_var)).get());
     return TMethodResult(indy_context.GetArena(), list_core, tracker);
+  } catch (const TInsufficientStorage &) {
+    /* Not an error in the server: the server's admission log records the refusals (#590). */
+    throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::TryBatch : [%s]", ex.what());
     throw;
@@ -636,6 +649,7 @@ void TSession::RunFuncCommit(TServer *server,
   if (effects.empty()) {
     return;
   }
+  server->CheckWriteAdmission();
 
   /* Commit the effects straight into this POV's repo, resolving every mutation
      against the current value (read-modify-write), exactly as SPA's compile-time

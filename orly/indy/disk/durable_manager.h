@@ -27,6 +27,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <functional>
 
 #include <base/class_traits.h>
@@ -199,12 +200,29 @@ namespace Orly {
         class TMemSlushLayer;
         class TMergeSortedByIdFile;
 
-        /* Swap out the current memory slush layer (if non-empty), write it to disk, release the
-           savers whose entries it holds (their durability sems, #277), and swap the new disk
-           layer into the mapping.  Returns true iff there was anything to flush.  When
-           'retire_writer' is set (the writer's shutdown drain), also marks the writer retired
-           under DataLock so later saves signal their own sems instead of waiting forever. */
+        /* Swap out the current memory slush layer (if non-empty), write it and any layer an
+           earlier round could not write to disk, release the savers whose entries they hold
+           (their durability sems, #277), and swap the new disk layers into the mapping.
+           Returns true iff there was anything to flush.  When 'retire_writer' is set (the
+           writer's shutdown drain), also marks the writer retired under DataLock so later saves
+           signal their own sems instead of waiting forever.  Out of disk space, the unwritten
+           layers stay in the mapping and UnflushedLayers, their savers are released, and the
+           next save or layer-cleaner tick retries (#590). */
         bool FlushCurLayer(bool retire_writer);
+
+        /* Write UnflushedLayers to disk, oldest first. Returns false, with the rest still queued
+           and their savers released, if the disk is full. Writer fiber only. */
+        bool WriteUnflushedLayers();
+
+        /* Write one memory layer that is already in the mapping as a disk layer, and swap it
+           out of the mapping.  Throws TDiskFull having freed whatever it reserved. */
+        void WriteMemLayer(TMemSlushLayer *mem_layer);
+
+        /* For logging a retry streak at tries 1, 2, 4, 8, ... */
+        static bool ShouldLogDiskFullRetry(size_t prev);
+
+        /* Called on each layer-cleaner tick: wake the writer or merger if one owes a retry. */
+        void KickDiskFullRetries();
 
         /* Push (and clear) the durability sem of every entry in the given layer.  Called by
            FlushCurLayer() once the layer is confirmed on disk -- or if the write failed, so a
@@ -246,6 +264,12 @@ namespace Orly {
           static const Base::TUuid NullId;
 
           private:
+
+          /* The constructor's body. The constructor frees BlockVec if this throws before the
+             file reaches the file map (#590); the completion trigger is local to this function,
+             so its in-flight writes are drained by then. */
+          void Write(TMemSlushLayer *mem_layer, size_t gen_id, size_t latest_deadline_count, size_t temp_file_consol_thresh,
+                     DiskPriority priority, bool &file_inserted);
 
           class THashObj {
             public:
@@ -335,6 +359,10 @@ namespace Orly {
           inline size_t GetNumDurable() const;
 
           private:
+
+          /* As TSortedByIdFile::Write. */
+          void Write(const std::vector<size_t> &gen_vec, size_t gen_id, size_t latest_deadline_count, size_t temp_file_consol_thresh,
+                     DiskPriority priority, const TNotify *notify, bool &file_inserted);
 
           typedef TSortedByIdFile::THashObj THashObj;
 
@@ -554,6 +582,9 @@ namespace Orly {
           inline bool GetMarkedTaken() const;
 
           inline void MarkTaken();
+
+          /* A merge that ran out of disk space hands its inputs back (#590). */
+          inline void UnmarkTaken();
 
           inline bool GetMarkedForDelete() const;
 
@@ -780,6 +811,23 @@ namespace Orly {
         Fiber::TSingleSem SlushSem;
         Fiber::TSingleSem MergeSem;
 
+        /* Memory layers in the mapping that are not on disk yet, oldest first. Only the writer
+           fiber touches it. Normally it is empty between rounds; it holds layers while the disk
+           is full (#590). */
+        std::deque<TMemSlushLayer *> UnflushedLayers;
+
+        /* Set while the writer or merger owes a retry after running out of disk space; the
+           layer cleaner's tick wakes them (KickDiskFullRetries). */
+        std::atomic<bool> WriterRetryDue {false};
+        std::atomic<bool> MergerRetryDue {false};
+
+        /* Consecutive out-of-space failures, for backoff and logging. */
+        std::atomic<size_t> WriterDiskFullStreak {0UL};
+        std::atomic<size_t> MergerDiskFullStreak {0UL};
+
+        /* Merger fiber only: no merge before this while MergerRetryDue. */
+        std::chrono::steady_clock::time_point MergerRetryAt;
+
         mutable TMappingCollection::TImpl MappingCollection;
 
         mutable TRemovalCollection::TImpl RemovalCollection;
@@ -908,6 +956,10 @@ namespace Orly {
 
       inline void TDurableManager::TDurableLayer::MarkTaken() {
         MarkedTaken = true;
+      }
+
+      inline void TDurableManager::TDurableLayer::UnmarkTaken() {
+        MarkedTaken = false;
       }
 
       inline TDurableManager::TMemSlushLayer::TMemSlushLayer(TDurableManager *manager)

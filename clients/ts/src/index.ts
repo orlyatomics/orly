@@ -50,6 +50,16 @@ export class OrlyError extends Error {
   }
 }
 
+/** Thrown when the server refuses a write because it is low on disk space
+ *  (`"status": "insufficient_storage"`). Nothing was written, reads still work, and the
+ *  write can be retried once space is freed. */
+export class InsufficientStorageError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "InsufficientStorageError";
+  }
+}
+
 /** Wrap a string to inject it into a statement as raw orlyscript, un-encoded. */
 export class Raw {
   constructor(public readonly text: string) {}
@@ -141,7 +151,9 @@ export class Client {
       return;
     }
     if (reply == null || reply.status !== "ok") {
-      p.reject(new OrlyError(p.stmt, reply));
+      p.reject(reply?.status === "insufficient_storage"
+        ? new InsufficientStorageError(p.stmt, reply)
+        : new OrlyError(p.stmt, reply));
       return;
     }
     p.resolve(reply.result);
