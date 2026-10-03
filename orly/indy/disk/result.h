@@ -21,6 +21,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 
 #include <base/spin_lock.h>
 #include <base/event_counter.h>
@@ -116,6 +117,7 @@ namespace Orly {
 
         inline TCompletionTrigger();
 
+        /* Waits out any completions still outstanding (see the definition), never throws. */
         inline ~TCompletionTrigger();
 
         inline void WaitForMore(size_t num);
@@ -155,7 +157,36 @@ namespace Orly {
           Result(Success),
           ErrStr(nullptr) {}
 
-      inline TCompletionTrigger::~TCompletionTrigger() {}
+      inline TCompletionTrigger::~TCompletionTrigger() {
+        /* #590: a trigger is usually stack-owned, and an exception thrown between submitting I/O
+           and calling Wait() (a TDiskFull from a sorter spill mid-stream, say) destroys it with
+           writes still in flight. Their completions would then call into freed stack. So wait for
+           every registered completion here first. Any error they report is dropped: the frame is
+           already unwinding from another one. This only terminates if every registered completion
+           is eventually delivered, which is why the submit paths (volume_manager.cc,
+           file_service.cc) complete a registration themselves when its submit throws. */
+        bool should_wait = false;
+        /* set frame waiting */ {
+          Base::TSpinLock::TLock lock(SpinLock);
+          if (NumFinished.load() != WaitFor.load() && Fiber::TFrame::LocalFrame) {
+            assert(!FrameWaiting);
+            should_wait = true;
+            FrameWaiting = Fiber::TFrame::LocalFrame;
+            RunnerToReactivateOn = Fiber::TRunner::LocalRunner;
+          }
+        }
+        if (should_wait) {
+          Fiber::Wait();
+        } else {
+          /* Not on a fiber (tests, plain threads): nothing to park, so spin. */
+          while (NumFinished.load() != WaitFor.load()) {
+            std::this_thread::yield();
+          }
+        }
+        /* The last completer bumps the count under the lock; take it once so that completer is
+           past its final touch of this object before the memory goes away. */
+        Base::TSpinLock::TLock lock(SpinLock);
+      }
 
       inline void TCompletionTrigger::WaitForMore(size_t num) {
         WaitFor += num;

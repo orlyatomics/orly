@@ -18,6 +18,7 @@
 
 #include <orly/indy/fiber/fiber.h>
 
+#include <cxxabi.h>
 
 #include <thread>
 
@@ -27,6 +28,16 @@ using namespace Orly::Indy::Fiber;
 /* TRunner::LocalRunner, TFrame::LocalFrame and TFrame::LocalFramePool are
    inline static TFiberSafeLocal members now, and define themselves (#554). */
 FiberLocal::TFiberLocal *FiberLocal::TFiberLocal::Root = nullptr;
+
+void Orly::Indy::Fiber::swap_eh_state(eh_state_t &save_to, const eh_state_t &restore_from) {
+  /* The Itanium ABI's __cxa_eh_globals is opaque in <cxxabi.h>; eh_state_t mirrors its
+     (non-ARM-EABI) layout, which both libstdc++ and libc++abi use. */
+  eh_state_t *const globals = reinterpret_cast<eh_state_t *>(abi::__cxa_get_globals());
+  save_to.caught_exceptions = globals->caught_exceptions;
+  save_to.uncaught_exceptions = globals->uncaught_exceptions;
+  globals->caught_exceptions = restore_from.caught_exceptions;
+  globals->uncaught_exceptions = restore_from.uncaught_exceptions;
+}
 
 /********************************************************/
 /******************* EXTERN FIBER ***********************/

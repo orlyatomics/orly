@@ -156,6 +156,26 @@ namespace Orly {
 
       }  // FiberLocal
 
+      /* #590: each fiber keeps its own C++ exception state. The runtime keeps it per OS thread
+         (__cxa_get_globals(): the stack of caught exceptions and the uncaught count), but a fiber
+         can park while an exception is in flight -- a destructor waiting out its I/O during an
+         unwind -- or inside a catch handler. Without this, every other fiber on that runner then
+         sees the parked fiber's exception: std::uncaught_exceptions() is off by one (and the
+         index-file destructors use it to tell an abandoned build from a finished one), and
+         interleaved catch handlers pop each other's exceptions. switch_to_fiber swaps it out. */
+      #if defined(__ARM_EABI_UNWINDER__)
+      #error "eh_state_t mirrors the Itanium __cxa_eh_globals; the ARM EABI layout has another field"
+      #endif
+      struct eh_state_t {
+        void *caught_exceptions = nullptr;
+        unsigned int uncaught_exceptions = 0U;
+      };
+
+      /* Saves this thread's exception state into 'save_to' and installs 'restore_from'.
+         Never inlined (LTO included): __cxa_get_globals() is declared const, so an inlined call
+         could be reused across a switch that moved the fiber to another thread. */
+      __attribute__((noinline)) void swap_eh_state(eh_state_t &save_to, const eh_state_t &restore_from);
+
       #define FAST_SWITCH
 
       #ifdef FAST_SWITCH
@@ -172,6 +192,7 @@ namespace Orly {
         ucontext_t fib;
         jmp_buf jmp;
         uint8_t *start_of_stack;
+        eh_state_t eh;
       };
 
       struct fiber_ctx_t {
@@ -213,6 +234,7 @@ namespace Orly {
         //printf("ss_sp=[%p], [%p]\n", fib.fib.uc_stack.ss_sp, reinterpret_cast<uint8_t *>(fib.fib.uc_stack.ss_sp) + stack_size);
         fib.fib.uc_stack.ss_size = stack_size - bytes_of_loc;
         fib.fib.uc_link = 0;
+        fib.eh = eh_state_t{};
         ucontext_t tmp;
         fiber_ctx_t ctx = {ufnc, uctx, &fib.jmp, &tmp};
         makecontext(&fib.fib, reinterpret_cast<void(*)()>(fiber_start_fnc), 1, &ctx);
@@ -229,6 +251,7 @@ namespace Orly {
       }
 
       inline void switch_to_fiber(fiber_t &fib, fiber_t &prv) {
+        swap_eh_state(prv.eh, fib.eh);
         if (_setjmp(prv.jmp) == 0) {
           _longjmp(fib.jmp, 1);
         }
@@ -267,6 +290,7 @@ namespace Orly {
         /* Entry point, deferred until the first switch into this fiber. */
         void (*entry_fnc)(void *) = nullptr;
         void *entry_ctx = nullptr;
+        eh_state_t eh;
       };
 
       static void fiber_start_fnc(void *p) {
@@ -290,6 +314,7 @@ namespace Orly {
         }
         fib.fib.uc_stack.ss_size = stack_size - bytes_of_loc;
         fib.fib.uc_link = 0;
+        fib.eh = eh_state_t{};
         fib.entry_fnc = ufnc;
         fib.entry_ctx = uctx;
         fib.tsan_fiber = TSanFiber::Create();
@@ -314,6 +339,7 @@ namespace Orly {
       inline void switch_to_fiber(fiber_t &fib, fiber_t &prv) {
         /* Announce the switch to TSan, then swapcontext (which saves our
            resume point into prv.fib and resumes fib.fib). */
+        swap_eh_state(prv.eh, fib.eh);
         TSanFiber::SwitchTo(fib.tsan_fiber);
         swapcontext(&prv.fib, &fib.fib);
       }

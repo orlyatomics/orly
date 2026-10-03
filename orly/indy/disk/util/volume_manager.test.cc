@@ -47,25 +47,29 @@ using namespace Orly::Indy::Disk::Util;
 
 /* Write and read back one raw block through the volume manager (the mem
    device completes synchronously, so the callback overloads need no fiber
-   context). */
+   context). With a callback, the volume registers the I/O on the trigger but
+   reports it only to the callback, so the callback must complete the trigger;
+   the trigger's destructor waits for that (#590). */
 static void RoundTripBlock(TVolumeManager *vol_man, const size_t block_id, uint8_t *buf) {
   const size_t offset = block_id * PhysicalBlockSize;
   TCompletionTrigger write_trigger;
   bool write_done = false;
   vol_man->Write(HERE, FullBlock, 0 /* util_src */, buf, offset, PhysicalBlockSize, RealTime,
                  TCacheInstr::NoCache, write_trigger,
-                 [&write_done](TDiskResult result, const char */*err_str*/) {
+                 [&write_done, &write_trigger](TDiskResult result, const char *err_str) {
     EXPECT_TRUE(result == TDiskResult::Success);
     write_done = true;
+    write_trigger.Callback(result, err_str);
   });
   EXPECT_TRUE(write_done);
   memset(buf, 0, PhysicalBlockSize);
   TCompletionTrigger read_trigger;
   bool read_done = false;
   vol_man->Read(HERE, FullBlock, 0 /* util_src */, buf, offset, PhysicalBlockSize, RealTime, read_trigger,
-                [&read_done](TDiskResult result, const char */*err_str*/) {
+                [&read_done, &read_trigger](TDiskResult result, const char *err_str) {
     EXPECT_TRUE(result == TDiskResult::Success);
     read_done = true;
+    read_trigger.Callback(result, err_str);
   });
   EXPECT_TRUE(read_done);
 }
