@@ -594,6 +594,12 @@ namespace Orly {
 
           inline void EnqueueMergeDisk();
 
+          /* Queue a merge to run no sooner than 'delay' from now, moving it back if it is already
+             queued. For a merge that failed for lack of disk space and will retry (#590). */
+          inline void EnqueueMergeMemAfter(std::chrono::milliseconds delay);
+
+          inline void EnqueueMergeDiskAfter(std::chrono::milliseconds delay);
+
           virtual void StepMergeMem() = 0;
 
           virtual void StepMergeDisk(size_t block_slots_available) = 0;
@@ -847,6 +853,10 @@ namespace Orly {
 
         void EnqueueMergeDisk(TRepo *repo);
 
+        void EnqueueMergeMemAfter(TRepo *repo, std::chrono::milliseconds delay);
+
+        void EnqueueMergeDiskAfter(TRepo *repo, std::chrono::milliseconds delay);
+
         void RemoveLayersFromQueue();
 
         std::atomic<bool> ShuttingDown;
@@ -971,6 +981,14 @@ namespace Orly {
 
       inline void TManager::TRepo::EnqueueMergeDisk() {
         Manager->EnqueueMergeDisk(this);
+      }
+
+      inline void TManager::TRepo::EnqueueMergeMemAfter(std::chrono::milliseconds delay) {
+        Manager->EnqueueMergeMemAfter(this, delay);
+      }
+
+      inline void TManager::TRepo::EnqueueMergeDiskAfter(std::chrono::milliseconds delay) {
+        Manager->EnqueueMergeDiskAfter(this, delay);
       }
 
       inline void TManager::TRepo::RemoveFromClosedBuffer() {
