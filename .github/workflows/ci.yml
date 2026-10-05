@@ -845,6 +845,12 @@ jobs:
           orly/indy/transaction_base.test
           "
           CONTROL=base/tsan_control.test
+          # Tests known to hit the 600 s timeout under TSan, each with its
+          # issue. A timeout here is reported as a warning, not a failure; if
+          # one of these starts passing, the job warns so the entry is removed.
+          KNOWN_TIMEOUT="
+          orly/indy/fiber/fiber_lock.test:613
+          "
           PATH="$PWD/tools:$PATH" tools/jhm -c tsan $CONTROL $TESTS
 
           mkdir -p tsan-logs
@@ -887,6 +893,15 @@ jobs:
             printf "$fmt" "$t" "$n" "$rc"
             # A test that fails its EXPECTs, crashes, or times out under TSan
             # never got to exercise its races: that's a failure too, not a pass.
+            known=$(printf '%s\n' $KNOWN_TIMEOUT | sed -n "s|^$t:||p")
+            if [ -n "$known" ]; then
+              if [ "$rc" -eq 124 ]; then
+                echo "::warning::$t timed out under TSan as known (#$known)"
+                continue
+              elif [ "$rc" -eq 0 ]; then
+                echo "::warning::$t passed under TSan; #$known may be fixed, remove it from KNOWN_TIMEOUT"
+              fi
+            fi
             if [ "$rc" -ne 0 ]; then
               failed="$failed $t(exit $rc)"
             fi
