@@ -392,6 +392,10 @@ void TRepoTetrisManager::TPlayer::Play() {
     snapshot_txn->CommitAction();
     commit_timer.Start();
     ++(RepoTetrisManager->RoundCount);
+  } catch (const std::bad_alloc &) {
+    /* Out of pool space: TTetrisManager::TPlayer::Main logs it, rate-limited, and plays the
+       round again (#607). */
+    throw;
   } catch (const std::exception &ex) {
     syslog(LOG_EMERG, "Tetris::TPlayer::Play error : %s", ex.what());
     throw;

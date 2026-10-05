@@ -60,6 +60,17 @@ export class InsufficientStorageError extends OrlyError {
   }
 }
 
+/** Thrown when the server refuses a write because its update pools are down to the reserve kept
+ *  for merges (`"status": "insufficient_memory"`). Nothing was written, reads still work, and
+ *  the write can be retried; writes are accepted again once the merges have freed the pools,
+ *  usually within seconds. */
+export class InsufficientMemoryError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "InsufficientMemoryError";
+  }
+}
+
 /** Wrap a string to inject it into a statement as raw orlyscript, un-encoded. */
 export class Raw {
   constructor(public readonly text: string) {}
@@ -153,6 +164,8 @@ export class Client {
     if (reply == null || reply.status !== "ok") {
       p.reject(reply?.status === "insufficient_storage"
         ? new InsufficientStorageError(p.stmt, reply)
+        : reply?.status === "insufficient_memory"
+        ? new InsufficientMemoryError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
       return;
     }

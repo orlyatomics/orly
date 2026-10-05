@@ -34,6 +34,7 @@
 #include <base/uuid.h>
 #include <orly/durable/kit.h>
 #include <orly/indy/fiber/fiber.h>
+#include <orly/indy/update.h>
 #include <orly/method_request.h>
 #include <orly/method_result.h>
 #include <orly/notification/notification.h>
@@ -74,6 +75,20 @@ namespace Orly {
         /* Throws TInsufficientStorage (orly/server/insufficient_storage.h) if a write must be
            refused for lack of disk space (#590). Called only for writes. */
         virtual void CheckWriteAdmission() {}
+
+        /* Throws TInsufficientMemory (orly/server/insufficient_memory.h) if a write of
+           num_entries entries would use the update pools' reserve (#607); otherwise holds the
+           write's room in `admission` until that goes away. Called only for writes, once the
+           entries are known and before the update is built. */
+        virtual void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &/*admission*/, size_t /*num_entries*/) {}
+
+        /* Called when building an admitted write's update ran out of pool before anything was
+           committed. Throws TInsufficientMemory if memory admission is on, so the client sees a
+           refusal; otherwise returns, and the caller rethrows the std::bad_alloc (#607). */
+        virtual void RefuseWriteOutOfMemory() {}
+
+        /* True if writes are refused before they would use the update pools' reserve (#607). */
+        virtual bool IsMemoryAdmissionOn() const { return false; }
 
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the

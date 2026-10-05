@@ -18,6 +18,8 @@
 
 #include <orly/indy/update.h>
 
+#include <algorithm>
+
 using namespace std;
 using namespace Base;
 using namespace Orly::Atom;
@@ -27,6 +29,35 @@ TUpdate::TPersistenceNotification::TPersistenceNotification(const std::function<
     : Cb(cb) {}
 
 TUpdate::TPersistenceNotification::~TPersistenceNotification() {}
+
+TUpdate::TWriteAdmission::~TWriteAdmission() {
+  if (NumUpdates) {
+    Pool.ReleaseAdmitted(NumUpdates);
+    TEntry::Pool.ReleaseAdmitted(NumEntries);
+  }
+}
+
+bool TUpdate::TWriteAdmission::TryAcquire(size_t num_entries) {
+  assert(!NumUpdates);
+  constexpr size_t updates = 2UL;
+  const size_t entries = num_entries * 2UL;
+  if (!Pool.TryAdmit(updates)) {
+    return false;
+  }
+  if (!TEntry::Pool.TryAdmit(entries)) {
+    Pool.ReleaseAdmitted(updates);
+    return false;
+  }
+  NumUpdates = updates;
+  NumEntries = entries;
+  return true;
+}
+
+void TUpdate::SetPoolReservePct(size_t pct) {
+  pct = std::min<size_t>(pct, 100UL);
+  Pool.SetReserve(Pool.GetMaxBlocks() / 100UL * pct + Pool.GetMaxBlocks() % 100UL * pct / 100UL);
+  TEntry::Pool.SetReserve(TEntry::Pool.GetMaxBlocks() / 100UL * pct + TEntry::Pool.GetMaxBlocks() % 100UL * pct / 100UL);
+}
 
 shared_ptr<TUpdate> TUpdate::NewUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
