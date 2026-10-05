@@ -1399,7 +1399,14 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
             }
           }  // release Merge lock
           if (gen_id_vec.size() > 0) {
-            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), false, false);
+            /* Merge as a tail merge, dropping each input's superseded versions (#592). Otherwise
+               every version of every key survives every merge, and disk use grows with every write
+               ever made. MergeFiles allows this only for a repo with no parent, whose history no
+               one reads back: a slave join walks a view that pins the files it started from, and
+               live replication ships transactions, not files. A child's unpromoted updates are
+               what Tetris reads, so its merges keep everything. Tombstones stay: this pair need
+               not be the oldest files, so a tombstone may still be hiding an older version. */
+            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), true, false);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);

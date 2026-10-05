@@ -650,7 +650,8 @@ namespace Orly {
 
       virtual ~TSafeRepo();
 
-      /* Compact adjacent same-generation disk files into one new file. */
+      /* Compact adjacent same-generation disk files into one new file. At the root, the
+         merge also drops superseded versions (#592). */
       virtual void StepMergeDisk(size_t block_slots_available) override;
 
       /* Trim the oldest disk generation below the release horizon (root only). */
@@ -673,8 +674,10 @@ namespace Orly {
 
       /* Merge the given disk generations into one new file. Two-phase: a raw
          merge, then a commutative fold (TFoldDataFile) if any non-Assign entries
-         are present. can_tail/can_tail_tombstone allow dropping data below the
-         release horizon at the root. Returns the new generation id. */
+         are present. can_tail drops superseded versions, and can_tail_tombstone
+         also drops tombstones (single-file merges only). Both apply only at the
+         root and only when tailing is allowed. release_up_to plays no part in
+         either. Returns the new generation id. */
       virtual size_t MergeFiles(const std::vector<size_t> &gen_id_vec,
                                 Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                                 size_t max_block_cache_read_slots_allowed,
