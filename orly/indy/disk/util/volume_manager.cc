@@ -31,6 +31,7 @@
 #include <base/booster.h>
 #include <base/mem_aligned_ptr.h>
 #include <base/sigma_calc.h>
+#include <base/spin_lock.h>
 #include <base/zero.h>
 #include <orly/indy/disk/util/corruption_detector.h>
 
@@ -68,36 +69,25 @@ namespace Orly {
                 Result(Success),
                 ErrStr(nullptr) {}
 
+          /* Counts one of the group's NumRequest completions; the last one reports the group's result
+             to Cb and deletes the group. The sticky error and the count change together under the
+             lock, as in TCompletionTrigger::Callback (#452). With the count bumped first, a completer
+             still recording its error could have it missed by the last one, and then write it into a
+             group that had already been deleted. A submit that throws now delivers the group's
+             unsubmitted completions from the submitting thread, possibly while a device completes the
+             submitted ones, so the two can race. */
           inline void Callback(TDiskResult disk_result, const char *err_str) {
-            size_t prev = std::atomic_fetch_add(&NumFinished, 1UL);
-            switch (Result) {
-              case Success : {
-                switch (disk_result) {
-                  case Success : {
-                    break;
-                  }
-                  case Error : {
-                    Result = disk_result;
-                    ErrStr = err_str;
-                    break;
-                  }
-                  case DiskFailure : {
-                    Result = disk_result;
-                    break;
-                  }
-                  case ServerShutdown : {
-                    Result = disk_result;
-                    break;
-                  }
-                }
-                break;
+            bool is_last = false;
+            /* lock scope -- for every completer but the last, the unlock is its final touch */ {
+              Base::TSpinLock::TLock lock(SpinLock);
+              if (Result == Success && disk_result != Success) {
+                /* Keep the first failure; later results (of either kind) don't overwrite it. */
+                Result = disk_result;
+                ErrStr = err_str;
               }
-              default : {
-                /* if we're already in an error state, stay in it. */
-                break;
-              }
+              is_last = (++NumFinished == NumRequest);
             }
-            if ((prev + 1UL) == NumRequest) {
+            if (is_last) {
               Cb(Result, ErrStr);
               delete this;
             }
@@ -105,9 +95,11 @@ namespace Orly {
 
           private:
 
-          std::atomic<size_t> NumFinished;
+          Base::TSpinLock SpinLock;
 
-          size_t NumRequest;
+          size_t NumFinished;
+
+          const size_t NumRequest;
 
           const TIOCallback Cb;
 
@@ -912,8 +904,10 @@ namespace Orly {
           void Read(const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src, void *buf, size_t device_num,
                     const TOffset start_offset, long long nbytes, DiskPriority priority, bool abort_on_error, TArgs &...args);
 
+          /* With a group request, 'num_unsubmitted' counts the group's I/Os not yet submitted, across
+             every device; each submit takes one off. */
           template <typename... TArgs>
-          void SubmitRequest(size_t device_num, const TDeviceRequest &device_request, TGroupRequest *group_request,
+          void SubmitRequest(size_t device_num, const TDeviceRequest &device_request, TGroupRequest *group_request, size_t &num_unsubmitted,
                              const Base::TCodeLocation &code_location /* DEBUG */, TBufKind buf_kind, uint8_t util_src,
                              DiskPriority priority, bool abort_on_error, TArgs &...args);
 
@@ -969,6 +963,16 @@ namespace Orly {
 
           static inline void CompleteUnsubmitted(const TIOCallback &cb) {
             cb(TDiskResult::Error, "I/O submit failed");
+          }
+
+          /* A group counts one completion per I/O, so a throw part way through submitting it must
+             deliver one for each I/O not yet submitted: the submitted ones still complete through the
+             device, and the group reports to its callback once the last of either kind is in. The
+             group may be deleted by the last of these calls, so it isn't touched afterwards. */
+          static inline void CompleteUnsubmitted(TGroupRequest *group_request, size_t num_unsubmitted) {
+            for (size_t i = 0; i < num_unsubmitted; ++i) {
+              group_request->Callback(TDiskResult::Error, "I/O submit failed");
+            }
           }
 
           inline void CheckRange(const TOffset start_offset, long long nbytes, const TDevice *device) {
@@ -1162,7 +1166,7 @@ namespace Orly {
 
         template <typename... TArgs>
         void TVolume::TStrategy::SubmitRequest(size_t /*device_num*/, const TDeviceRequest &/*device_request*/, TGroupRequest */*group_request*/,
-                                               const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
+                                               size_t &/*num_unsubmitted*/, const Base::TCodeLocation &/*code_location*/ /* DEBUG */, TBufKind /*buf_kind*/, uint8_t /*util_src*/,
                                                DiskPriority /*priority*/, bool /*abort_on_error*/, TArgs &.../*args*/) {
           throw std::logic_error("Should not be reached");
         }
@@ -1170,6 +1174,7 @@ namespace Orly {
         template <>
         void TVolume::TStrategy::SubmitRequest<Orly::Indy::Disk::TCompletionTrigger>(size_t device_num, const TDeviceRequest &device_request,
                                                                                      TGroupRequest */*group_request*/,
+                                                                                     size_t &/*num_unsubmitted*/,
                                                                                      const Base::TCodeLocation &code_location /* DEBUG */,
                                                                                      TBufKind buf_kind, uint8_t util_src, DiskPriority priority,
                                                                                      bool abort_on_error, TCompletionTrigger &trigger) {
@@ -1198,6 +1203,7 @@ namespace Orly {
         void TVolume::TStrategy::SubmitRequest<Orly::Indy::Disk::TCompletionTrigger, const TIOCallback>(size_t device_num,
                                                                                                         const TDeviceRequest &device_request,
                                                                                                         TGroupRequest *group_request,
+                                                                                                        size_t &num_unsubmitted,
                                                                                                         const Base::TCodeLocation &code_location /* DEBUG */,
                                                                                                         TBufKind buf_kind, uint8_t util_src,
                                                                                                         DiskPriority priority, bool abort_on_error,
@@ -1212,7 +1218,17 @@ namespace Orly {
           const size_t bytes_per_segment = device_request.TotalBytes / device_request.NumReq;
           for (const auto &buf_vec : device_request.VecPerOp) {
             const size_t num_bytes_in_op = buf_vec.size() * bytes_per_segment;
-            device->ReadV(code_location, buf_kind, util_src, buf_vec, device_request.PhysicalOffsetStart + SuperBytes + bytes_in, num_bytes_in_op, priority, abort_on_error, group_request);
+            try {
+              device->ReadV(code_location, buf_kind, util_src, buf_vec, device_request.PhysicalOffsetStart + SuperBytes + bytes_in, num_bytes_in_op,
+                            priority, abort_on_error, group_request);
+            } catch (...) {
+              /* This I/O and every later one, on this device and the ones after it, were never
+                 submitted. Deliver them, so the group (and the trigger completion it stands for)
+                 still completes exactly once (#594). */
+              CompleteUnsubmitted(group_request, num_unsubmitted);
+              throw;
+            }
+            --num_unsubmitted;
             bytes_in += num_bytes_in_op;
           }
         }
@@ -2139,9 +2155,10 @@ void TVolume::TStripedStrategy::DoStripeV(TOp op, const Base::TCodeLocation &cod
         }
       }
       TGroupRequest *const group_request = NewGroupRequest<TArgs...>(total_num_requests, args...);
+      size_t num_unsubmitted = total_num_requests;
       for (size_t i = 0; i < num_devices; ++i) {
         if (device_req_arr[i].GetNumRequest() > 0) {
-          SubmitRequest(i, device_req_arr[i], group_request, code_location, buf_kind, util_src, priority, abort_on_error, args...);
+          SubmitRequest(i, device_req_arr[i], group_request, num_unsubmitted, code_location, buf_kind, util_src, priority, abort_on_error, args...);
         }
       }
       return;
