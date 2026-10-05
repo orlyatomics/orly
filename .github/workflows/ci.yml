@@ -838,30 +838,69 @@ jobs:
           orly/indy/context_fold.test
           orly/indy/context_xrepo.test
           orly/server/tetris_manager.test
+          base/inv_con/atomic_ordered_list.test
+          base/inv_con/atomic_unordered_list.test
+          base/latch.test
+          orly/indy/repo.test
+          orly/indy/transaction_base.test
           "
-          PATH="$PWD/tools:$PATH" tools/jhm -c tsan $TESTS
+          CONTROL=base/tsan_control.test
+          PATH="$PWD/tools:$PATH" tools/jhm -c tsan $CONTROL $TESTS
 
           mkdir -p tsan-logs
-          total=0
-          line="----------------------------------------------------------------"
-          fmt='%-48s %s\n'
-          printf "$fmt" "TEST" "TSAN WARNINGS"
-          echo "$line"
-          for t in $TESTS; do
-            bin="../out_orly/tsan/$t"
-            log="tsan-logs/$(echo "$t" | tr / _).log"
+          tsan_run() {  # tsan_run <target> <log>: the exit status is the test's own
             # Per-test wall-clock guard: a real deadlock under TSan would
-            # otherwise hang the job to its timeout. exitcode=0 so a race does
-            # not itself fail the run -- we count warnings from the logs.
+            # otherwise hang the job to its timeout (exit 124). exitcode=0 so a
+            # race doesn't change the exit status; races are counted from the log.
             timeout 600 setarch "$(uname -m)" -R \
               env TSAN_OPTIONS="halt_on_error=0 exitcode=0 history_size=4 suppressions=$PWD/orly/tsan.supp" \
-              "$bin" >"$log" 2>&1 || true
+              "../out_orly/tsan/$1" >"$2" 2>&1
+          }
+
+          # Negative control: a deliberate race TSan must report. If it isn't
+          # reported, TSan isn't instrumenting or the suppressions swallow
+          # everything, and a clean count below would mean nothing.
+          clog="tsan-logs/control.log"
+          crc=0
+          ORLY_TSAN_RACY_CONTROL=1 tsan_run "$CONTROL" "$clog" || crc=$?
+          cn=$(grep -c "WARNING: ThreadSanitizer" "$clog" || true)
+          if [ "$crc" -ne 0 ] || [ "$cn" -eq 0 ]; then
+            cat "$clog"
+            echo "::error::TSan control: expected the deliberate race to be reported and the test to pass; got exit $crc and $cn warning(s). The gate below would prove nothing."
+            exit 1
+          fi
+          echo "TSan control OK: the deliberate race was reported ($cn warning(s))."
+          echo
+
+          total=0
+          failed=""
+          line="----------------------------------------------------------------"
+          fmt='%-48s %-14s %s\n'
+          printf "$fmt" "TEST" "TSAN WARNINGS" "EXIT"
+          echo "$line"
+          for t in $TESTS; do
+            log="tsan-logs/$(echo "$t" | tr / _).log"
+            rc=0
+            tsan_run "$t" "$log" || rc=$?
             n=$(grep -c "WARNING: ThreadSanitizer" "$log" || true)
             total=$((total + n))
-            printf "$fmt" "$t" "$n"
+            printf "$fmt" "$t" "$n" "$rc"
+            # A test that fails its EXPECTs, crashes, or times out under TSan
+            # never got to exercise its races: that's a failure too, not a pass.
+            if [ "$rc" -ne 0 ]; then
+              failed="$failed $t(exit $rc)"
+            fi
           done
           echo "$line"
           echo "Total ThreadSanitizer warnings: $total"
+          if [ -n "$failed" ]; then
+            for t in $failed; do
+              log="tsan-logs/$(echo "${t%%(*}" | tr / _).log"
+              echo "::group::$t, last lines"; tail -40 "$log"; echo "::endgroup::"
+            done
+            echo "::error::test(s) failed, crashed or timed out under TSan:$failed"
+            exit 1
+          fi
           echo
           echo "Full reports are uploaded as the 'tsan-logs' artifact."
           # GATING (#184): the curated set is clean, so any un-suppressed race is
