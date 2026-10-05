@@ -90,6 +90,15 @@ Fully general: a list of distinct calls committed atomically together.
   v1; B's server path generalizes to it later** (the fold loop just varies the
   function per element). Tracked as a gated follow-up in
   [#255](https://github.com/orlyatomics/orly/issues/255) — implement on demand.
+- **Shipped (#255)** as `try {pov} [pkg1 m1 <{...}>, pkg2 m2 <{...}>, ...];`.
+  `TSession::RunBatch` is the shared body of B and C; it resolves a function only
+  when a call names a different method than the one before it. Settled choices:
+  all-or-nothing, as B; one meta record entry per batch (Tetris won't promote a
+  multi-entry update into the global POV, and clients wait on the batch's one
+  tracker id), naming the first call's method, with every call's package and
+  method under `<i>.$package` / `<i>.$method`; per-call results returned as
+  separate values (a JSON array whose entries may differ in type) instead of
+  one typed list.
 
 ## 3. Recommendation
 

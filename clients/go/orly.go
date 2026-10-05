@@ -174,6 +174,34 @@ func (c *Client) CallBatch(pov, pkg, method string, argsList []map[string]any) (
 	return c.Send(fmt.Sprintf("try {%s} %s %s [%s];", pov, pkg, method, strings.Join(recs, ", ")))
 }
 
+// Call is one element of a CallMany batch: a method of a package and its
+// arguments.
+type Call struct {
+	Pkg    string
+	Method string
+	Args   map[string]any
+}
+
+// CallMany runs several different methods on pov as one transaction (#255). It
+// builds `try {pov} [pkg method <{...}>, ...];` and returns a JSON array with one
+// result per call, in order (they may differ in type). Every call reads the same
+// pre-batch snapshot (no read-your-writes within a batch), and the batch is
+// all-or-nothing: if any call fails, none of the writes land.
+func (c *Client) CallMany(pov string, calls []Call) (json.RawMessage, error) {
+	if len(calls) == 0 {
+		return nil, fmt.Errorf("CallMany requires at least one call")
+	}
+	parts := make([]string, 0, len(calls))
+	for _, call := range calls {
+		r, err := litRecord(call.Args)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, fmt.Sprintf("%s %s %s", call.Pkg, call.Method, r))
+	}
+	return c.Send(fmt.Sprintf("try {%s} [%s];", pov, strings.Join(parts, ", ")))
+}
+
 // Exit ends the session.
 func (c *Client) Exit() error {
 	_, err := c.Send("exit;")

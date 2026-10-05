@@ -134,6 +134,7 @@ set_user_id_stmt    : stmt -> set_kwd user_id_kwd id_expr semi;
 set_ttl_stmt        : stmt -> set_kwd ttl_kwd id_expr to_kwd int_expr semi;
 try_stmt            : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name args:obj_expr semi;
 try_batch_stmt      : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name open_bracket obj_expr_list close_bracket semi;
+try_multi_stmt      : stmt -> try_kwd pov_id:id_expr open_bracket batch_call_list close_bracket semi;
 echo_stmt           : stmt -> echo_kwd expr semi;
 tail_stmt           : stmt -> tail_kwd semi;
 new_session_stmt    : stmt -> new_kwd session_kwd semi;
@@ -281,3 +282,13 @@ obj_expr_list -> obj_expr opt_obj_expr_list_tail;
   opt_obj_expr_list_tail;
   no_obj_expr_list_tail : opt_obj_expr_list_tail -> empty;
   obj_expr_list_tail    : opt_obj_expr_list_tail -> comma obj_expr_list;
+
+/* A bracketed list of calls, each naming its own package and method -- the argument form of
+   try_multi_stmt (N different methods, folded into one transaction, #255). */
+batch_call_list -> batch_call opt_batch_call_list_tail;
+
+  opt_batch_call_list_tail;
+  no_batch_call_list_tail : opt_batch_call_list_tail -> empty;
+  batch_call_list_tail    : opt_batch_call_list_tail -> comma batch_call_list;
+
+  batch_call -> package:name_list method_name:name args:obj_expr;

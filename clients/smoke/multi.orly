@@ -1,0 +1,13 @@
+package #1;
+/* Two methods with different key spaces and return types, for the mixed-batch
+   smoke (#255): one transaction may call both. */
+read_val = (*<['values', n]>::(int?)) where { n = given::(int); };
+write_val = ((true) effecting { new <['values', n]> <- x; } ) where {
+  n = given::(int);
+  x = given::(int);
+};
+read_name = (*<['names', n]>::(str?)) where { n = given::(int); };
+write_name = (("named") effecting { new <['names', n]> <- s; } ) where {
+  n = given::(int);
+  s = given::(str);
+};

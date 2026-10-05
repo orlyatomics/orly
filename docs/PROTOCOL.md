@@ -61,6 +61,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
+| Batch different methods | `try {<pov-id>} [<pkg1> <method1> <args1>, <pkg2> <method2> <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause pov <id>;` / `unpause pov <id>;` | `"paused"` / `"unpaused"` |
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
@@ -97,6 +98,16 @@ exit;
   - One update ⇒ **one** meta record / replication notification per batch (records
     the method plus all N arg sets under index-prefixed names).
   - Clients: `call_batch` (python), `CallBatch` (go), `callBatch` (ts).
+- **Mixed batched `try`** (`#255`) is the same, except that each call names its own
+  package and method: `try {<pov>} [pkg1 m1 <{...}>, pkg2 m2 <{...}>, ...];`. Use it
+  to make several different writes atomic, e.g. creating an entity and linking it in
+  one step. Every rule above holds: one transaction, all-or-nothing (a call to an
+  unknown package or method rejects the whole batch), the same pre-batch snapshot for
+  every call. `result` is a JSON array with one entry per call, in order; unlike a
+  same-method batch, the entries may differ in type. The meta record names the first
+  call's method and records every call's package and method under `<i>.$package` and
+  `<i>.$method`, next to its args.
+  - Clients: `call_many` (python), `CallMany` (go), `callMany` (ts).
 - **POV flavors**: `safe` vs unsafe (conflict guarantee), `shared` vs `private`
   (visibility), optional `parent`. Demos use `new safe shared pov;`.
 - **POVs are ephemeral across restarts** (#439). Updates promoted to the global

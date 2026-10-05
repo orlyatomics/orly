@@ -38,7 +38,9 @@
 #include <orly/method_result.h>
 #include <orly/notification/notification.h>
 #include <orly/package/manager.h>
+#include <orly/server/batch_call.h>
 #include <orly/server/pov.h>
+#include <orly/var.h>
 
 namespace Orly {
 
@@ -188,6 +190,11 @@ namespace Orly {
          whole batch before commit. */
       TMethodResult TryBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const std::vector<TClosure> &closures);
 
+      /* Mixed batched write (#255): like TryBatch, but each call names its own package and
+         method. Returns one result per call, in order; they may differ in type, so they come
+         back as separate values rather than one list. All-or-nothing, as TryBatch. */
+      std::vector<Var::TVar> TryMulti(TServer *server, const Base::TUuid &pov_id, const std::vector<TBatchCall> &calls);
+
       /* See <orly/protocol.h>. */
       bool RunTestSuite(TServer *server, const std::vector<std::string> &package_name, uint64_t package_version, bool verbose);
 
@@ -204,6 +211,16 @@ namespace Orly {
       static const Base::TUuid GlobalPovId;
 
       private:
+
+      /* The body of TryBatch and TryMulti: run every call against one context over the pov (each
+         reads the same pre-batch snapshot), fold all their effects into one update and commit it
+         once. Returns the per-call results and sets 'tracker' if anything was written. */
+      struct TCallView {
+        const std::vector<std::string> *FqName;
+        const TClosure *Closure;
+      };
+      std::vector<Var::TVar> RunBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<TCallView> &calls,
+                                      std::optional<TTracker> &tracker, const char *what);
 
       /* Add the given pov to the collection of povs we'll keep open.  (Private again since the
          memcache frontend -- the one outside caller -- was removed.) */

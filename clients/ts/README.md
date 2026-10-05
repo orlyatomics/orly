@@ -34,6 +34,10 @@ console.log(await c.call(pov, "mypkg", "get", { k: 1 }));
 await c.exit();
 ```
 
+`callMany(pov, [[pkg, method, args], ...])` runs several different methods in one
+transaction: every write lands or none does. It resolves to an array with one result
+per call.
+
 `call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`.
 Argument values are encoded by `lit`:
 
