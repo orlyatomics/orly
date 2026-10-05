@@ -322,6 +322,33 @@ jobs:
       - name: Concurrent writers survive a small Update pool
         run: bash clients/smoke/run-pool-pressure.sh
 
+      # #607: 8 writers of 200-write batches fill small update pools within
+      # seconds. Writes must come back refused with insufficient_memory (never
+      # bad_alloc), reads must keep working, writes must be accepted again once
+      # the merges catch up, and orlyi must not abort.
+      - name: Full update pools refuse writes and keep serving reads
+        run: bash clients/smoke/run-memory-full.sh
+
+      # Negative control for the step above: the same smoke with memory
+      # admission turned off must FAIL, and must fail after its writers ran
+      # (not because orlyi never came up). If it passes, the smoke can no
+      # longer tell whether admission works.
+      - name: The memory-full smoke fails with memory admission off
+        run: |
+          if ADMISSION=off bash clients/smoke/run-memory-full.sh > /tmp/memory-full-control.log 2>&1; then
+            cat /tmp/memory-full-control.log
+            echo "CONTROL FAIL: the memory-full smoke passed with memory admission off"
+            exit 1
+          fi
+          if ! grep -q '^\[3/3\].*(admission off)' /tmp/memory-full-control.log \
+             || ! grep -q '^MEMORY FULL FAIL' /tmp/memory-full-control.log; then
+            cat /tmp/memory-full-control.log
+            echo "CONTROL FAIL: the smoke failed before its writers could test anything"
+            exit 1
+          fi
+          grep '^MEMORY FULL FAIL' /tmp/memory-full-control.log | head -3 | cut -c1-300
+          echo "control OK: the smoke fails without memory admission"
+
       # #590: fill a tiny mem-sim disk. Writes must come back refused with
       # insufficient_storage while reads, new sessions and orlyi itself carry on.
       - name: A full disk refuses writes and keeps serving reads
