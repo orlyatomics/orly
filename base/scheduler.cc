@@ -57,8 +57,17 @@ void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job, const std::function
           ShutDown();
         }
     );
+    /* SIGTERM too: it is what `docker stop`, Kubernetes and systemd send. With only SIGINT
+       unblocked it stayed pending forever, so they waited out their timeout and SIGKILLed the
+       server without the graceful shutdown (#598). */
+    THandlerInstaller term_handler(
+        SIGTERM,
+        [](int) {
+          ShutDown();
+        }
+    );
     TScheduler scheduler(*this, pthread_self(), &main_job);
-    sigsuspend(&*TSet(TSet::Exclude, { SIGINT }));
+    sigsuspend(&*TSet(TSet::Exclude, { SIGINT, SIGTERM }));
     if (on_signal) {
       on_signal();
     }
