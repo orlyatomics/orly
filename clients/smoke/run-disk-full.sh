@@ -9,6 +9,12 @@
 #   3. Run disk_full.mjs: write until refused, idle, then read and write.
 #   4. Fail unless disk_full.mjs passed, orlyi is still alive, and its log
 #      shows no abort of any kind.
+#
+# ADMISSION=off starts orlyi with write admission turned off (both reserve
+# flags 0). It is the smoke's negative control: CI runs it and requires it to
+# FAIL, so a change that stops the smoke from noticing missing admission (the
+# disk never filling, say, or a refusal check that always passes) breaks CI
+# instead of passing quietly.
 
 set -e
 
@@ -21,6 +27,12 @@ WS_PORT=19732
 REPORT_PORT=19733
 MEM_MB="${MEM_MB:-16}"
 SLOW_MB="${SLOW_MB:-4}"
+ADMISSION="${ADMISSION:-on}"
+case "$ADMISSION" in
+  on)  ADMISSION_FLAGS=() ;;
+  off) ADMISSION_FLAGS=(--disk_reserve_mb=0 --disk_reserve_pct=0) ;;
+  *)   echo "ADMISSION must be on or off, not \"$ADMISSION\""; exit 1 ;;
+esac
 
 for bin in "$ORLYI" "$ORLYC"; do
   if [ ! -x "$bin" ]; then
@@ -50,6 +62,7 @@ cp "$WORK/sample.1.so" "$WORK/packages/"
          --starting_state=SOLO \
          --package_dir="$WORK/packages" \
          --update_pool_size=100000 --update_entry_pool_size=200000 \
+         "${ADMISSION_FLAGS[@]}" \
          > "$WORK/orlyi.log" 2>&1 &
 ORLYI_PID=$!
 
@@ -64,7 +77,7 @@ if ! ss -tln 2>/dev/null | grep -q ":$WS_PORT"; then
   exit 1
 fi
 
-echo "[3/3] K=8 writers until writes are refused, idle, then read and write"
+echo "[3/3] K=8 writers until writes are refused, idle, then read and write (admission $ADMISSION)"
 status=0
 ORLY_URL="ws://127.0.0.1:$WS_PORT/" node disk_full.mjs > "$WORK/smoke.out" 2>&1 || status=$?
 cat "$WORK/smoke.out"

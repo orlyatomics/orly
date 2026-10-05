@@ -303,6 +303,26 @@ jobs:
       - name: A full disk refuses writes and keeps serving reads
         run: bash clients/smoke/run-disk-full.sh
 
+      # Negative control for the step above: the same smoke with write
+      # admission turned off must FAIL, and must fail after its writers ran
+      # (not because orlyi never came up). If it passes, the smoke can no
+      # longer tell whether admission works.
+      - name: The disk-full smoke fails with write admission off
+        run: |
+          if ADMISSION=off bash clients/smoke/run-disk-full.sh > /tmp/disk-full-control.log 2>&1; then
+            cat /tmp/disk-full-control.log
+            echo "CONTROL FAIL: the disk-full smoke passed with write admission off"
+            exit 1
+          fi
+          if ! grep -q '^\[3/3\].*(admission off)' /tmp/disk-full-control.log \
+             || ! grep -q '^DISK FULL FAIL' /tmp/disk-full-control.log; then
+            cat /tmp/disk-full-control.log
+            echo "CONTROL FAIL: the smoke failed before its writers could test anything"
+            exit 1
+          fi
+          grep '^DISK FULL FAIL' /tmp/disk-full-control.log | head -3
+          echo "control OK: the smoke fails without write admission"
+
   restart-test:
     name: restart durability (tests/restart_test.sh)
     runs-on: ubuntu-24.04
