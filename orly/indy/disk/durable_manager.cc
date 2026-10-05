@@ -1144,8 +1144,9 @@ void TDurableManager::TMergeSortedByIdFile::Write(const std::vector<size_t> &gen
   }
 
   /* reserve the blocks. */
-  /* Essential like the writer's files (#590): every request re-saves its session and POV, so
-     the writer keeps producing superseded copies, and this merge is what frees them. */
+  /* Essential like the writer's files (#590): each save of a session or POV (when a connection
+     closes, say) supersedes its previous copy, so the writer keeps producing superseded copies,
+     and this merge is what frees them. */
   Engine->AppendReserveBlocks(StorageSpeed, num_blocks, BlockVec, Util::TAllocClass::Essential);
   #ifndef NDEBUG
   std::unordered_set<size_t> written_block_set;
