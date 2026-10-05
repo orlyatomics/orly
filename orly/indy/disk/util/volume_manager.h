@@ -632,6 +632,10 @@ namespace Orly {
 
           bool CheckCorruptCheck(TBufKind buf_kind, void *buf, const TOffset offset, long long nbytes) const;
 
+          /* Reports one read of a group request. TGroupRequest is private to volume_manager.cc, so
+             a device defined elsewhere (the test fault device, #608) completes it through this. */
+          static void CompleteGroupRequest(TGroupRequest *group_request, TDiskResult result, const char *err_str);
+
           TVolumeMembership::TImpl VolumeMembership;
 
           TDesc Desc;
