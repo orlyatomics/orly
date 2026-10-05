@@ -33,8 +33,12 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
+#include <unistd.h>
+
+#include <base/mem_aligned_ptr.h>
 #include <orly/indy/disk/sim/mem_engine.h>
 
 #include <base/test/kit.h>
@@ -202,4 +206,91 @@ FIXTURE(PendingClaims) {
   EXPECT_EQ(vol_man->GetRecentPeakClaims(), 150UL);
   /* A null volume manager (no disk engine) is a no-op. */
   TVolumeManager::TClaim none(nullptr, 100UL);
+}
+
+/* A memory device whose group-request ReadV submit throws on its ThrowOn-th call (counting from 1;
+   0 never throws), as TPersistentDevice::ReadV does when it can't allocate a disk event. */
+class TThrowingSubmitDevice
+    : public TMemoryDevice {
+  NO_COPY(TThrowingSubmitDevice);
+  public:
+
+  using TMemoryDevice::TMemoryDevice;
+
+  using TMemoryDevice::ReadV;
+
+  size_t ThrowOn = 0UL;
+
+  size_t NumSubmits = 0UL;
+
+  virtual void ReadV(const Base::TCodeLocation &code_location, TBufKind buf_kind, uint8_t util_src,
+                     const std::vector<void *> &buf_vec, const TOffset offset, long long nbytes, DiskPriority priority,
+                     bool abort_on_error, TGroupRequest *group_request) override {
+    if (++NumSubmits == ThrowOn) {
+      throw std::runtime_error("injected submit failure");
+    }
+    TMemoryDevice::ReadV(code_location, buf_kind, util_src, buf_vec, offset, nbytes, priority, abort_on_error, group_request);
+  }
+
+};
+
+/* #594: a vectored read with a callback is one group request: one trigger registration, completed
+   by the group once each of its I/Os (one per page on a memory device) has completed. A submit that
+   threw part way left the group short, so its callback never ran and the trigger's destructor
+   waited forever. Whichever submit throws, the callback must run exactly once, with an error, and
+   the trigger must then be destroyable. (The mem device completes synchronously, so this needs no
+   fiber; without a fiber the trigger's destructor spins rather than parks.) */
+FIXTURE(GroupSubmitThrows) {
+  const TScheduler::TPolicy scheduler_policy(4, 10, milliseconds(10));
+  TScheduler scheduler;
+  scheduler.SetPolicy(scheduler_policy);
+  TThrowingSubmitDevice device(512, 512, 32768 /* 16 MB */, true /* fsync */, true /* corruption check */);
+  TVolume volume(TVolume::TDesc{TVolume::TDesc::Striped, device.GetDesc(), TVolume::TDesc::Fast, 1UL, 1UL, 1024UL, 8UL, 0.85},
+                 [](TCacheInstr, const TOffset, void *, size_t) {}, &scheduler);
+  volume.AddDevice(&device, 0);
+  TVolumeManager vol_man(&scheduler);
+  vol_man.AddNewVolume(&volume);
+  size_t block_id = 0UL;
+  vol_man.TryAllocateSequentialBlocks(TVolume::TDesc::Fast, 1, [&block_id](const TBlockRange &range) {
+    block_id = range.first;
+  });
+  constexpr size_t num_pages = 4UL;
+  Base::TMemAlignedPtr<char> data = Base::MemAlignedAlloc<char>(getpagesize(), num_pages * PhysicalPageSize);
+  void *buf_array[num_pages];
+  for (size_t i = 0; i < num_pages; ++i) {
+    buf_array[i] = data.get() + i * PhysicalPageSize;
+  }
+  /* Read the pages, with the throw_on-th submit throwing; returns how many times the callback ran
+     and with what. */
+  auto read = [&](size_t throw_on, TDiskResult &result) {
+    device.ThrowOn = throw_on;
+    device.NumSubmits = 0UL;
+    size_t num_cb = 0UL;
+    bool threw = false;
+    /* trigger scope: its destructor waits for the registration */ {
+      TCompletionTrigger trigger;
+      try {
+        vol_man.ReadV(HERE, FullPage, 0 /* util_src */, buf_array, num_pages, block_id * PhysicalBlockSize, num_pages * PhysicalPageSize,
+                      RealTime, trigger, [&num_cb, &result, &trigger](TDiskResult cb_result, const char *err_str) {
+          ++num_cb;
+          result = cb_result;
+          trigger.Callback(cb_result, err_str);
+        });
+      } catch (const std::runtime_error &) {
+        threw = true;
+      }
+      EXPECT_EQ(threw, throw_on != 0UL);
+    }
+    return num_cb;
+  };
+  TDiskResult result = TDiskResult::Error;
+  EXPECT_EQ(read(0UL, result), 1UL);
+  EXPECT_TRUE(result == TDiskResult::Success);
+  /* One submit per page; the cases below need the group to have several. */
+  EXPECT_EQ(device.NumSubmits, num_pages);
+  for (size_t throw_on = 1; throw_on <= num_pages; ++throw_on) {
+    result = TDiskResult::Success;
+    EXPECT_EQ(read(throw_on, result), 1UL);
+    EXPECT_TRUE(result == TDiskResult::Error);
+  }
 }

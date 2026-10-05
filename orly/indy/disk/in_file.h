@@ -426,8 +426,10 @@ namespace Orly {
                   if (num_consec > 0UL) {
                     Cache->AsyncMultiGet(CodeLocation, Priority, Cache, BufKind, UtilSrc, consec_starting_page_id, num_consec, true, AsyncTrigger);
                   }
-                  /* this page does not follow logically, we'll have to do a separate request for this one */
-                  num_consec = 0UL;
+                  /* this page does not follow logically, we'll have to do a separate request for this one.
+                     It starts a new run of one page: starting the count at 0 dropped the last page of
+                     every run, and any page that ran alone, from the prefetch. */
+                  num_consec = 1UL;
                   consec_starting_page_id = page_id;
                   consec_next_page_id = consec_starting_page_id + 1UL;
                 }
