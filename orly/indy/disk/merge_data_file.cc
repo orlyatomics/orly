@@ -170,6 +170,16 @@ class TMergeDataFileImpl {
                 if (offset) {
                   main_arena_keeper.Emplace(*offset);
                 }
+                /* A commutative current entry (+=, |=, ...) is only a delta: reads fold it onto the
+                   key's history, as does the fold pass that follows this merge (#55). Keep the
+                   sequence numbers of that history so the pass below keeps the entries, or the key
+                   would read back as its last delta alone (#592). */
+                if (item.Mutator != TMutator::Assign && item.NumHistKeys > 0) {
+                  typename TReader::TIndexFile::THistoryKeyCursor hist_csr(source_file.get(), item.OffsetOfHistKeys / TData::KeyHistorySize);
+                  for (size_t i = 0; i < item.NumHistKeys && hist_csr; ++i, ++hist_csr) {
+                    seq_keeper->Emplace((*hist_csr).SeqNum);
+                  }
+                }
               }
             }
             ++source_idx;
@@ -945,6 +955,23 @@ class TMergeDataFileImpl {
         }
         Engine->GetVolMan()->SyncToDisk(block_id_to_num_seq_blocks);
       } /* done sync file to disk */
+      /* Record the whole sequence range of the inputs, not just the range that survived a tail
+         merge. A reload drops any file whose range lies inside another's as a merge input that a
+         crash left behind (TSafeRepo::ReConstructFromDisk); if the output's range shrank, an
+         input outside it would load next to the output and every entry they share would be
+         read twice (#592). */ {
+        std::vector<TFileObj> file_vec;
+        Engine->AppendFileGenSet(file_uuid, file_vec);
+        for (const auto &file : file_vec) {
+          for (size_t input_gen : gen_vec) {
+            if (file.GenId == input_gen) {
+              LowestSeq = std::min(LowestSeq, file.LowestSeq);
+              HighestSeq = std::max(HighestSeq, file.HighestSeq);
+              break;
+            }
+          }
+        }
+      }
       /* wait for file entry to flush */ {
         file_inserted = true;
         Engine->InsertFile(file_uid, TFileObj::TKind::DataFile, gen_id, StartingBlockId, StartingBlockOffset, FileLength, total_num_keys, LowestSeq, HighestSeq, completion_trigger);

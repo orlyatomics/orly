@@ -35,14 +35,18 @@
      6. write a row through the package and wait for the slave to
         acknowledge the replication;
      7. kill slave 1: the master must demote to solo, stay alive, and accept
-        slave 2 (#500), which again receives files and mapping;
+        slave 2 (#500), which again receives files and mapping.  Before
+        slave 2 joins, the solo master overwrites the same keys round after
+        round, so the files the join reads have had superseded versions
+        dropped by its disk merges (#592);
      8. write another row (live replication to slave 2), then kill the
         master: slave 2 promotes itself to solo;
      9. read every row on the promoted slave 2: the imported rows and the
         pre-join write arrived as synced data files (#501 pinned them
         unreadable), the last write arrived on the live stream, and all of
         them are reachable only because the package bound to the imported
-        index id (#367).
+        index id (#367).  Every overwritten key reads its last value
+        (#592).
 
    The kills in this scenario are SIGKILL, deliberately: the slave promotes
    on connection DEATH, and a hard kill is what delivers that
@@ -584,6 +588,14 @@ bool WriteValReplicated(const shared_ptr<TExerciseClient> &client, const Base::T
          client->WaitForReplication(tracker->Id, GlobalPovId, seconds(60));
 }
 
+/* write_val(n, x) via the given client, without waiting on replication. */
+void WriteVal(const shared_ptr<TExerciseClient> &client, const Base::TUuid &pov_id, int64_t n, int64_t x) {
+  Answered(client->Try(pov_id, { "sample" }, TClosure(string("write_val"),
+                                                      string("n"), n,
+                                                      string("x"), x)),
+           "write_val Try");
+}
+
 /* read_val(n) against the given server with retries, for reads against a
    slave that is still promoting or catching up.  Returns the value once a
    successful RPC yields a known value; unknown only after the deadline. */
@@ -820,6 +832,37 @@ FIXTURE(ImportReplication) {
   }
   EXPECT_TRUE(master.IsAlive());
 
+  /* While solo, overwrite the same keys round after round (#592). The master's disk merges drop
+     the superseded versions, and slave 2's join must still carry every key's latest value, in
+     the data files it copies and in the updates it pulls. */
+  const int64_t overwritten_keys = 40L, overwrite_rounds = 25L;
+  auto overwritten_val = [](int64_t round, int64_t key) { return round * 1000L + key; };
+  {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
+    for (int64_t round = 1L; round <= overwrite_rounds; ++round) {
+      for (int64_t key = 0L; key < overwritten_keys; ++key) {
+        WriteVal(client, **pov_id, 100L + key, overwritten_val(round, key));
+      }
+      /* let a memory merge (every 40ms) flush the round, so the rounds land in separate
+         files for the disk merges to combine */
+      this_thread::sleep_for(milliseconds(60));
+    }
+    /* The writes reach the global pov by promotion; wait for the last one before the join. */
+    const int64_t last_key = overwritten_keys - 1L;
+    const auto give_up = steady_clock::now() + seconds(60);
+    for (;;) {
+      Rt::TOpt<int64_t> row = ReadWithRetry(master_addr, 100L + last_key, seconds(30));
+      if (row.IsKnown() && row.GetVal() == overwritten_val(overwrite_rounds, last_key)) {
+        break;
+      }
+      if (steady_clock::now() >= give_up) {
+        throw runtime_error("the overwrites never reached the global pov; see " + master_log);
+      }
+      this_thread::sleep_for(milliseconds(200));
+    }
+  }
+
   /* Attach slave 2: the re-armed master must accept it (#500), and the
      join must again deliver files and mapping. */
   const in_port_t slave_2_port = ProbeFreePort();
@@ -877,6 +920,14 @@ FIXTURE(ImportReplication) {
       EXPECT_EQ(row.GetVal(), pair[1]);
     }
     deadline = seconds(30);
+  }
+  /* ...and so must every overwritten key, at its last value (#592). */
+  for (int64_t key = 0L; key < overwritten_keys; ++key) {
+    Rt::TOpt<int64_t> row = ReadWithRetry(TAddress(TAddress::IPv4Loopback, slave_2_port), 100L + key, seconds(30));
+    EXPECT_TRUE(row.IsKnown());
+    if (row.IsKnown()) {
+      EXPECT_EQ(row.GetVal(), overwritten_val(overwrite_rounds, key));
+    }
   }
 }
 

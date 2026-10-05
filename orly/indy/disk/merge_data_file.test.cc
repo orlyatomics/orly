@@ -23,8 +23,10 @@
 #include <base/scheduler.h>
 #include <orly/indy/disk/data_file.h>
 #include <orly/indy/disk/disk_test.h>
+#include <orly/indy/disk/fold_data_file.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/sim/mem_engine.h>
+#include <orly/indy/disk/update_walk_file.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
 
 #include <base/test/kit.h>
@@ -620,6 +622,207 @@ FIXTURE(NonAssignEntryCount) {
       EXPECT_EQ(merge.GetNumNonAssignEntries(), 2UL);
     }
 
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #592 helpers. */
+
+/* Insert one update writing several keys of one index, each as (key, value, mutator). */
+static void InsertTxn(TMockMem &mem_layer, TSequenceNumber seq_num, const TUuid &index_id,
+                      const vector<tuple<int64_t, int64_t, TMutator>> &entries) {
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
+  update->SetSequenceNumber(seq_num);
+  for (const auto &[key, val, mut] : entries) {
+    update->AddEntry(TIndexKey(index_id, TKey(make_tuple(key), &arena, state_alloc)), TKey(val, &arena, state_alloc), mut);
+  }
+  mem_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
+}
+
+/* The current (key -> value) pairs of one index in a file. */
+static map<int64_t, int64_t> ReadCurrent(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id, const TUuid &index_id) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, gen_id);
+  TReader::TArena main_arena(&reader, mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  TReader::TIndexFile idx_file(&reader, index_id, RealTime);
+  TReader::TArena idx_arena(&idx_file, mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  map<int64_t, int64_t> out;
+  void *key_state = alloca(Sabot::State::GetMaxStateSize());
+  void *val_state = alloca(Sabot::State::GetMaxStateSize());
+  for (TReader::TIndexFile::TKeyCursor csr(&idx_file); csr; ++csr) {
+    tuple<int64_t> key;
+    int64_t val = 0L;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*csr).Key.NewState(&idx_arena, key_state)), key);
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*csr).Value.NewState(&main_arena, val_state)), val);
+    out[get<0>(key)] = val;
+  }
+  return out;
+}
+
+/* A file's update count, and its current and history entry counts for one index. */
+static tuple<size_t, size_t, size_t> CountFile(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id, const TUuid &index_id) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, gen_id);
+  TReader::TIndexFile idx_file(&reader, index_id, RealTime);
+  return make_tuple(reader.GetNumUpdates(), idx_file.GetNumCurKeys(), idx_file.GetNumHistKeys());
+}
+
+/* #592: a tail merge keeps a commutative key's history. A `+=` entry is only a delta:
+   reads, and the fold pass that follows a merge, add it onto the older entries down to
+   the last Assign. The tail pass used to keep only the history that shared a sequence
+   number with some current entry, so it dropped a key's earlier `+=` and its Assign
+   base, and the key read back as its last delta alone. */
+FIXTURE(TailKeepsCommutativeHistory) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid index_id(TUuid::Twister);
+    /* key 42: Assign(10), += 1, += 1. key 7: overwritten once. */ {
+      TMockMem mem_layer;
+      InsertTxn(mem_layer, 1UL, index_id, {{42L, 10L, TMutator::Assign}});
+      InsertTxn(mem_layer, 2UL, index_id, {{42L, 1L, TMutator::Add}});
+      InsertTxn(mem_layer, 3UL, index_id, {{42L, 1L, TMutator::Add}});
+      InsertTxn(mem_layer, 4UL, index_id, {{7L, 70L, TMutator::Assign}});
+      InsertTxn(mem_layer, 5UL, index_id, {{7L, 71L, TMutator::Assign}});
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
+    }
+    /* A tail merge, as TSafeRepo::StepMergeDisk now runs it. */ {
+      TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{1UL}, file_id, 2UL, 0U, Low, 16384, 20UL, true, false);
+      EXPECT_EQ(merge.GetNumNonAssignEntries(), 2UL);
+    }
+    /* Key 42 keeps both older entries. Key 7 drops its superseded version, and that version's update. */
+    const auto counts = CountFile(mem_engine, file_id, 2UL, index_id);
+    EXPECT_EQ(get<0>(counts), 4UL);
+    EXPECT_EQ(get<1>(counts), 2UL);
+    EXPECT_EQ(get<2>(counts), 2UL);
+    /* The fold pass that MergeFiles runs next resolves the key to its full sum. */ {
+      TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, 2UL, 3UL, Low, 20UL);
+    }
+    const auto values = ReadCurrent(mem_engine, file_id, 3UL, index_id);
+    EXPECT_EQ(values.size(), 2UL);
+    EXPECT_EQ(values.at(42L), 12L);
+    EXPECT_EQ(values.at(7L), 71L);
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #592: repeated tail merges keep a file's size flat while the same keys are overwritten.
+   Each round overwrites every key twice. It also writes two keys in one update, then
+   overwrites one of them. Two chains merge the rounds in one at a time: one as a tail
+   merge, one as a plain merge. The plain chain keeps every version. The tail chain:
+   - keeps each key's current version, plus at most one older version;
+   - keeps whole any update that still holds a current value;
+   - still records the full sequence range of its inputs. */
+FIXTURE(TailBoundsOverwriteHistory) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid index_id(TUuid::Twister);
+    TSuprena arena;
+    const int64_t num_keys = 20L, num_rounds = 8L, pair_a = 1000L, pair_b = 1001L;
+    const size_t updates_per_round = num_keys * 2L + 2L;
+    TSequenceNumber seq = 0UL, last_pair_seq = 0UL;
+    size_t tail_gen = 0UL, plain_gen = 0UL;
+    vector<size_t> tail_updates, tail_hist, plain_updates, plain_hist;
+    for (int64_t round = 1L; round <= num_rounds; ++round) {
+      const size_t round_gen = round;
+      /* This round's file. */ {
+        TMockMem mem_layer;
+        for (int64_t pass = 0L; pass < 2L; ++pass) {
+          for (int64_t key = 0L; key < num_keys; ++key) {
+            InsertTxn(mem_layer, ++seq, index_id, {{key, round * 10L + pass, TMutator::Assign}});
+          }
+        }
+        last_pair_seq = ++seq;
+        InsertTxn(mem_layer, last_pair_seq, index_id, {{pair_a, round, TMutator::Assign}, {pair_b, round, TMutator::Assign}});
+        InsertTxn(mem_layer, ++seq, index_id, {{pair_a, round + 100L, TMutator::Assign}});
+        TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, round_gen, 20UL, 0U, Medium);
+      }
+      if (round == 1L) {
+        tail_gen = plain_gen = round_gen;
+        continue;
+      }
+      const size_t new_tail_gen = 100UL + round, new_plain_gen = 200UL + round;
+      /* tail chain */ {
+        TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{tail_gen, round_gen}, file_id, new_tail_gen, 0U, Low, 16384, 20UL, true, false);
+        /* the whole input range, though the first round's first versions are gone */
+        EXPECT_EQ(merge.GetLowestSequence(), 1UL);
+        EXPECT_EQ(merge.GetHighestSequence(), seq);
+      }
+      /* plain chain */ {
+        TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{plain_gen, round_gen}, file_id, new_plain_gen, 0U, Low, 16384, 20UL, false, false);
+      }
+      tail_gen = new_tail_gen;
+      plain_gen = new_plain_gen;
+      const auto tail_counts = CountFile(mem_engine, file_id, tail_gen, index_id);
+      const auto plain_counts = CountFile(mem_engine, file_id, plain_gen, index_id);
+      tail_updates.push_back(get<0>(tail_counts));
+      tail_hist.push_back(get<2>(tail_counts));
+      plain_updates.push_back(get<0>(plain_counts));
+      plain_hist.push_back(get<2>(plain_counts));
+      /* the plain chain keeps every update ever written */
+      EXPECT_EQ(get<0>(plain_counts), updates_per_round * round);
+    }
+    /* From the first merge on, the tail chain stays the same size while the plain chain grows. */
+    for (size_t i = 1UL; i < tail_updates.size(); ++i) {
+      EXPECT_EQ(tail_updates[i], tail_updates[0]);
+      EXPECT_EQ(tail_hist[i], tail_hist[0]);
+      EXPECT_GT(plain_updates[i], plain_updates[i - 1]);
+      EXPECT_GT(plain_hist[i], plain_hist[i - 1]);
+    }
+    /* What the tail chain keeps:
+       - every key's version from this round, plus its version from the round before (each
+         round's file is merged in whole, so its current versions survive once as history);
+       - this round's pair update and the previous round's, whole, because pair_b is still
+         current in each;
+       - pair_a's newer version from each of those two rounds. */
+    EXPECT_EQ(tail_updates.back(), 2UL * (num_keys + 2L));
+    /* every key reads its latest value in both chains */
+    for (size_t gen : {tail_gen, plain_gen}) {
+      const auto values = ReadCurrent(mem_engine, file_id, gen, index_id);
+      EXPECT_EQ(values.size(), size_t(num_keys + 2L));
+      for (int64_t key = 0L; key < num_keys; ++key) {
+        EXPECT_EQ(values.at(key), num_rounds * 10L + 1L);
+      }
+      EXPECT_EQ(values.at(pair_a), num_rounds + 100L);
+      EXPECT_EQ(values.at(pair_b), num_rounds);
+    }
+    /* Walk the tail chain's update index. Sequence numbers rise, every update that holds a
+       current value is there, and the pair update still carries both of its entries. */ {
+      TUpdateWalkFile walker(mem_engine.GetEngine(), file_id, tail_gen, 0U);
+      TSequenceNumber prev = 0UL;
+      size_t walked = 0UL;
+      bool saw_pair = false;
+      for (; walker; ++walker, ++walked) {
+        const TSequenceNumber cur = (*walker).SequenceNumber;
+        EXPECT_GT(cur, prev);
+        prev = cur;
+        if (cur == last_pair_seq) {
+          saw_pair = true;
+          map<TIndexKey, TKey> entry_map;
+          for (const auto &entry : (*walker).EntryVec) {
+            entry_map.insert(make_pair(entry.IndexKey, TKey(entry.Op, (*walker).MainArena)));
+          }
+          EXPECT_EQ(entry_map.size(), 2UL);
+          const TIndexKey key_b(index_id, TKey(make_tuple(pair_b), &arena, state_alloc));
+          if (EXPECT_TRUE(entry_map.find(key_b) != entry_map.end())) {
+            EXPECT_EQ(entry_map.find(key_b)->second, TKey(num_rounds, &arena, state_alloc));
+          }
+        }
+      }
+      EXPECT_EQ(walked, tail_updates.back());
+      EXPECT_EQ(prev, seq);
+      EXPECT_TRUE(saw_pair);
+    }
+    GracefullShutdown();
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();
