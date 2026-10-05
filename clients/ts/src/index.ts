@@ -236,10 +236,10 @@ export class Client {
   }
 
   pause(pov: string): Promise<unknown> {
-    return this.send(`pause pov ${lit(pov)};`);
+    return this.send(`pause {${pov}};`);
   }
   unpause(pov: string): Promise<unknown> {
-    return this.send(`unpause pov ${lit(pov)};`);
+    return this.send(`unpause {${pov}};`);
   }
 
   // -- teardown ---------------------------------------------------------
