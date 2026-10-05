@@ -134,6 +134,9 @@ namespace Orly {
                         size_t val = new_val | HighestBit;
                         val |= ThirdHighestBit; /* set the error bit */
                         std::atomic_store(&(BufAddr), val);
+                        /* The read was registered on the trigger, so its failure must complete it too,
+                           or the trigger's owner waits for it forever (#596). */
+                        trigger_ptr->Callback(result, err_str);
                       }
                       if (can_release) {
                         cache->Release(main_slot, page_id);
@@ -666,13 +669,17 @@ namespace Orly {
                   }
                   trigger_ptr->Callback(result, err_str);
                 } else {
+                  /* Mark the pages loaded as well as failed, as AsyncGet does: with only the error bit
+                     they would look loading forever, and SyncGetData would spin on them instead of
+                     throwing. Then complete the trigger the read was registered on (#596). */
                   for (size_t i = 0; i < num_pages; ++i) {
                     //const size_t this_page_id = from_page_id + i;
                     TSlot *const this_data_slot = my_data_slots[i];
                     size_t val = std::atomic_load(&(this_data_slot->BufAddr));
-                    val |= ThirdHighestBit; /* set the error bit */
+                    val |= HighestBit | ThirdHighestBit; /* set the loaded and error bits */
                     std::atomic_store(&(this_data_slot->BufAddr), val);
                   }
+                  trigger_ptr->Callback(result, err_str);
                 }
                 if (can_release) {
                   for (size_t i = 0; i < num_pages; ++i) {

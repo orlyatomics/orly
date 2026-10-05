@@ -25,6 +25,9 @@
 #pragma once
 
 #include <cassert>
+#include <exception>
+
+#include <syslog.h>
 
 #include <base/class_traits.h>
 #include <base/mini_cache.h>
@@ -163,7 +166,15 @@ namespace Orly {
         }
 
         virtual ~TStream() {
-          AsyncTrigger.Wait();
+          /* AsyncTrigger only tracks prefetches. Wait() throws after the barrier if one of them failed,
+             and a throw out of a destructor terminates. A failed prefetch that nothing went on to read
+             isn't this stream's error; one that is read reports it then, since the cache marks the page
+             loaded with an error and SyncGetData throws on it. So drain, and log the failure (#596). */
+          try {
+            AsyncTrigger.Wait();
+          } catch (const std::exception &ex) {
+            syslog(LOG_ERR, "TStream: a prefetch failed: %s", ex.what());
+          }
           if (MaxLocalCacheSize > 0) {
             /* do-little: LocalBufCache releases cache state correctly */
           } else if (MainSlot) {
