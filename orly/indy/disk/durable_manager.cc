@@ -135,6 +135,20 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
       AddMapping(new TDiskOrderedLayer(this, Engine, fi.GenId, fi.NumKeys));
     }
     NextDurableByIdGenId = max_gen_id + 1UL;
+    /* Number new saves above every entry already on disk (#609). Loads and merges keep an id's
+       entry with the highest sequence number, so starting again from 1 made every save after a
+       restart lose to the copy it replaced. The sequence number is only in the entries, so this
+       reads each entry's header once: one pass over the durable files, which merging keeps to
+       about one copy of each live session and POV. */
+    const auto scan_start = std::chrono::steady_clock::now();
+    size_t num_entries = 0UL;
+    for (const auto &fi : file_vec) {
+      num_entries += fi.NumKeys;
+      SeqNum = std::max(SeqNum, TSortedInFile(Engine, Medium, fi.GenId).FindMaxSeqNum(Medium));
+    }
+    const auto scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - scan_start).count();
+    syslog(LOG_INFO, "TDurableManager: resuming sequence numbers after %ld, from %ld file(s) and %ld entries in %ldms",
+           static_cast<long>(SeqNum), static_cast<long>(file_vec.size()), static_cast<long>(num_entries), static_cast<long>(scan_ms));
   }
   WriterHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
     Fiber::LaunchSlowFiberSched(&WriterScheduler, frame_pool_manager);
@@ -1019,6 +1033,27 @@ void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num
       }
     }
   }
+}
+
+TDurableManager::TSequenceNumber TDurableManager::TSortedInFile::FindMaxSeqNum(DiskPriority priority) const {
+  TSequenceNumber max_seq_num = 0UL;
+  if (!NumEntries) {
+    return max_seq_num;
+  }
+  /* Each entry: durable id, seq_num, deadline count, serialized size, serialized form. */
+  TInStream entry_stream(HERE, Source::DurableFetch, priority, this, PageCache, GetStartOfDurableByIdIndex());
+  TSequenceNumber cur_seq;
+  size_t cur_deadline_count;
+  TSerializedSize cur_serialized_size;
+  for (size_t i = 0; i < NumEntries; ++i) {
+    entry_stream.Skip(sizeof(uuid_t));
+    entry_stream.Read(&cur_seq, sizeof(TSequenceNumber));
+    entry_stream.Read(cur_deadline_count);
+    entry_stream.Read(cur_serialized_size);
+    entry_stream.Skip(cur_serialized_size);
+    max_seq_num = std::max(max_seq_num, cur_seq);
+  }
+  return max_seq_num;
 }
 
 TDurableManager::TMergeSortedByIdFile::TMergeSortedByIdFile(const std::vector<size_t> &gen_vec,
