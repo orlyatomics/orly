@@ -69,6 +69,7 @@ async function phase(label, povFor) {
   }
   stop = true;
   await Promise.all(writers);
+  const elapsed = (Date.now() - t0) / 1000;
   /* Dead layers must actually be freed: before #584's fix the layer cleaner
      wedged and occupancy kept climbing after the writes stopped. */
   let drained = null;
@@ -83,6 +84,11 @@ async function phase(label, povFor) {
     failures.push(`Update pool did not drain after the writes stopped: ${drained?.used}/${drained?.size}`);
   }
   console.log(`${label}: ${writes} writes, peak Update pool ${peak}, after drain ${drained?.used}`);
+  /* For tools/maint/ab_bench.py. A phase can stop at MAX_WRITES before SECS,
+     so compare writes per second, not the write count. */
+  const metric = label.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  console.log(`METRIC ${metric}_writes_per_s ${(writes / elapsed).toFixed(1)}`);
+  console.log(`METRIC ${metric}_peak_update_pool ${peak}`);
   if (failures.length) {
     console.error(`POOL PRESSURE FAIL (${label}):\n  ${failures.join("\n  ")}`);
     process.exit(1);
