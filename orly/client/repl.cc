@@ -63,6 +63,11 @@ namespace {
                        "try {pov_id} package method [<{.name: v1}>, <{.name: v2}>];",
                        "Try a method against N arg records in one transaction"});
     }
+    virtual void operator()(const TTryMultiStmt *) const override {
+      Infos.push_back({"try (mixed batch)",
+                       "try {pov_id} [pkg1 method1 <{.a: v}>, pkg2 method2 <{.b: w}>];",
+                       "Try N different methods in one transaction"});
+    }
     virtual void operator()(const TSetUserIdStmt *) const override {
       Infos.push_back({"set user", "set user {user_id};", "Set a user id"});
     }
@@ -147,6 +152,7 @@ namespace {
                    TSetTtlStmt,
                    TTryStmt,
                    TTryBatchStmt,
+                   TTryMultiStmt,
                    TSetUserIdStmt,
                    TPovStatusStmt,
                    TPovConsStmt,

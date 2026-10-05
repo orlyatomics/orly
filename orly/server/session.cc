@@ -350,22 +350,51 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   }
 }
 
-/* Batched write (#253). One method, resolved once, invoked against each of N
-   argument closures on the SAME context; every call's effects accumulate into
-   one effect set (TContext::AddEffect already Augments same-key changes -- the
-   identical accumulation a single method doing several `+=` to one key relies
-   on), which folds into ONE TUpdate committed ONCE. Mirrors Try() and reuses
-   its exact deferred-entry fold; the only differences are the call loop, the
-   one-entry-per-call list result, and a batch-shaped meta record. */
+/* Batched writes. TryBatch (#253) invokes one method against each of N argument
+   closures; TryMulti (#255) names a package and method per call. Both run in
+   RunBatch, on the SAME context; every call's effects accumulate into one effect
+   set (TContext::AddEffect already Augments same-key changes -- the identical
+   accumulation a single method doing several `+=` to one key relies on), which
+   folds into ONE TUpdate committed ONCE. Mirrors Try() and reuses its exact
+   deferred-entry fold; the only differences are the call loop, the per-call
+   results, and a batch-shaped meta record. */
 TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const vector<TClosure> &closures) {
+  std::vector<TCallView> calls;
+  calls.reserve(closures.size());
+  for (const auto &closure: closures) {
+    calls.push_back(TCallView{&fq_name, &closure});
+  }
+  std::optional<TTracker> tracker;
+  std::vector<Var::TVar> results = RunBatch(server, pov_id, calls, tracker, "TryBatch");
+  // Aggregate the N per-call results into one list-typed core (one entry per
+  // call, in order); the ws marshal renders it as a JSON array. Every call ran
+  // the same method, so the results share a type.
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  Var::TVar list_var = Var::TVar::List(results, results.front().GetType());
+  TCore list_core(&arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, list_var)).get());
+  return TMethodResult(&arena, list_core, tracker);
+}
+
+std::vector<Var::TVar> TSession::TryMulti(TServer *server, const TUuid &pov_id, const vector<TBatchCall> &calls) {
+  std::vector<TCallView> views;
+  views.reserve(calls.size());
+  for (const auto &call: calls) {
+    views.push_back(TCallView{&call.FqName, &call.Closure});
+  }
+  std::optional<TTracker> tracker;
+  return RunBatch(server, pov_id, views, tracker, "TryMulti");
+}
+
+vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const vector<TCallView> &calls,
+    std::optional<TTracker> &tracker, const char *what) {
   assert(Indy::Fiber::TRunner::LocalRunner);
-  assert(!closures.empty());  // grammar guarantees N >= 1
+  assert(!calls.empty());  // grammar guarantees N >= 1
   size_t prev_assignment_count = std::atomic_fetch_add(&server->FastAssignmentCounter, 1UL);
   Indy::Fiber::TSwitchToRunner RunnerSwitcher(server->FastRunnerVec[prev_assignment_count % server->FastRunnerVec.size()].get());
   Base::TTimer timer;
   Base::TTimer call_timer;
   bool had_effects = false;
-  std::optional<TTracker> tracker = std::optional<TTracker>();
   size_t walker_count = 0UL;
   TSuprena my_arena;
   try {
@@ -388,15 +417,26 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     Base::TUuid session_id = GetId().GetRaw();
     Indy::TIndyContext indy_context(user_id, session_id, context, &my_arena, server->GetScheduler(),
       Rt::TOpt<Base::Chrono::TTimePnt>(), Rt::TOpt<uint64_t>());
-    // Resolve the function ONCE (same method for every call in the batch).
-    auto func = server->GetPackageManager().Get(Package::TName{fq_name})->GetFunctionInfo(AsPiece(closures.front().GetMethodName()));
     // Run each call against the same context. Each call reads the SAME pre-batch
     // snapshot (no read-your-writes within a batch -- this is a write-coalescing
     // primitive, not a transaction script); effects accumulate across calls.
+    // A function is resolved again only when the call names a different method
+    // than the one before it, so a same-method batch (#253) resolves it once.
     std::vector<Var::TVar> results;
-    results.reserve(closures.size());
+    results.reserve(calls.size());
+    const std::vector<std::string> *func_fq_name = nullptr;
+    const std::string *func_method_name = nullptr;
+    std::shared_ptr<const Package::TFuncHolder> func;
+    bool mixed = false;
     call_timer.Start();
-    for (const auto &closure: closures) {
+    for (const auto &call: calls) {
+      const TClosure &closure = *call.Closure;
+      if (!func_fq_name || *func_fq_name != *call.FqName || *func_method_name != closure.GetMethodName()) {
+        mixed = mixed || func_fq_name;
+        func = server->GetPackageManager().Get(Package::TName{*call.FqName})->GetFunctionInfo(AsPiece(closure.GetMethodName()));
+        func_fq_name = call.FqName;
+        func_method_name = &closure.GetMethodName();
+      }
       Package::TArgMap prog_args;
       auto arena = closure.GetArena().get();
       for (const auto &item: closure.GetCoreByName()) {
@@ -448,17 +488,31 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
       TUuid update_id(TUuid::Twister);
       tracker = TTracker(update_id, seconds(0));
       const auto &predicate_results = indy_context.GetPredicateResults();
-      /* One meta record for the whole batch. The method is shared; each call's
-         args are recorded under an index prefix ("<i>.<name>") so all N arg sets
-         are preserved losslessly in the flat TArgByName map. Predicate results
-         span every call, in order. */
+      /* One meta record for the whole batch: one update, one tracker, one entry
+         (Tetris won't promote a multi-entry update into the global pov). Each
+         call's args are recorded under an index prefix ("<i>.<name>") so all N
+         arg sets are preserved losslessly in the flat TArgByName map; argument
+         names are identifiers, so the prefix can't collide with one. The entry
+         names the first call's package and method. In a mixed batch (#255) every
+         call's own package and method are recorded too, as "<i>.$package" (path
+         joined with '/') and "<i>.$method"; '$' can't appear in an argument name.
+         Predicate results span every call, in order. */
       TMetaRecord::TEntry::TArgByName meta_args_by_name;
-      for (size_t i = 0; i < closures.size(); ++i) {
-        auto closure_arena = closures[i].GetArena().get();
+      for (size_t i = 0; i < calls.size(); ++i) {
+        const TClosure &closure = *calls[i].Closure;
+        auto closure_arena = closure.GetArena().get();
         std::string prefix = std::to_string(i) + ".";
-        for (const auto &item: closures[i].GetCoreByName()) {
+        for (const auto &item: closure.GetCoreByName()) {
           auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)));
           meta_args_by_name.insert(make_pair(prefix + item.first, arg));
+        }
+        if (mixed) {
+          std::string package;
+          for (const auto &part: *calls[i].FqName) {
+            package += (package.empty() ? "" : "/") + part;
+          }
+          meta_args_by_name.insert(make_pair(prefix + "$package", Var::TVar(package)));
+          meta_args_by_name.insert(make_pair(prefix + "$method", Var::TVar(closure.GetMethodName())));
         }
       }
 
@@ -471,7 +525,7 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
       TMetaRecord meta_record(
           update_id,
           TMetaRecord::TEntry(
-              GetId(), GetUserId(), fq_name, closures.front().GetMethodName(),
+              GetId(), GetUserId(), *calls.front().FqName, calls.front().Closure->GetMethodName(),
               TMetaRecord::TEntry::TArgByName(meta_args_by_name.begin(), meta_args_by_name.end()),
               TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
               run_time, random_seed)
@@ -503,19 +557,12 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     }
     TServer::TryWalkerCountCalc.Push(walker_count);
     TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
-    // Aggregate the N per-call results into one list-typed core (one entry per
-    // call, in order); the ws marshal renders it as a JSON array. Built in the
-    // indy_context arena and deep-copied out by the TMethodResult ctor, exactly
-    // as Try() returns its single result_core.
-    Var::TVar list_var = Var::TVar::List(results, results.front().GetType());
-    TCore list_core(indy_context.GetArena(),
-        Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_1, list_var)).get());
-    return TMethodResult(indy_context.GetArena(), list_core, tracker);
+    return results;
   } catch (const TInsufficientStorage &) {
     /* Not an error in the server: the server's admission log records the refusals (#590). */
     throw;
   } catch (const exception &ex) {
-    syslog(LOG_ERR, "Error in Session::TryBatch : [%s]", ex.what());
+    syslog(LOG_ERR, "Error in Session::%s : [%s]", what, ex.what());
     throw;
   }
 }

@@ -731,6 +731,11 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 
+      - name: client mixed-batch smoke (clients/smoke)
+        run: bash run-multi-batch.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so

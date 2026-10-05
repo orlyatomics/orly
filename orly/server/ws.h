@@ -30,6 +30,8 @@
 #include <orly/method_request.h>
 #include <orly/method_result.h>
 #include <orly/package/manager.h>
+#include <orly/server/batch_call.h>
+#include <orly/var.h>
 
 namespace Orly {
 
@@ -94,6 +96,12 @@ namespace Orly {
           virtual TMethodResult TryBatch(
               const Base::TUuid &pov_id, const std::vector<std::string> &fq_name,
               const std::vector<TClosure> &closures) const = 0;
+
+          /* Override to perform a mixed batch: N calls, each naming its own package and
+             method, folded into a single transaction (#255). Returns one result per call,
+             in statement order; they may differ in type. */
+          virtual std::vector<Var::TVar> TryMulti(
+              const Base::TUuid &pov_id, const std::vector<Server::TBatchCall> &calls) const = 0;
 
           /* Override to perform the request. */
           virtual void UninstallPackage(const std::vector<std::string> &name, uint64_t version) const = 0;

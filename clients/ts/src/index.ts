@@ -222,6 +222,19 @@ export class Client {
     return this.send(`try {${pov}} ${pkg} ${method} ${lit(argsList)};`);
   }
 
+  /** Run several different methods on `pov` as one transaction (#255). Each call is
+   *  `[pkg, method, args]`; resolves to an array with one result per call, in order
+   *  (they may differ in type). Every call reads the same pre-batch snapshot (no
+   *  read-your-writes within a batch), and the batch is all-or-nothing: if any call
+   *  fails, none of the writes land. */
+  callMany(pov: string, calls: Array<[string, string, Args]>): Promise<unknown[]> {
+    if (calls.length === 0) {
+      throw new TypeError("orly: callMany requires at least one call");
+    }
+    const parts = calls.map(([pkg, method, args]) => `${pkg} ${method} ${lit(args)}`);
+    return this.send(`try {${pov}} [${parts.join(", ")}];`) as Promise<unknown[]>;
+  }
+
   pause(pov: string): Promise<unknown> {
     return this.send(`pause pov ${lit(pov)};`);
   }

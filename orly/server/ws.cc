@@ -307,6 +307,39 @@ class TWsImpl final
             Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
       }
 
+      virtual void operator()(const TTryMultiStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetPovId());
+        void *alloc = alloca(SabotStateSize);
+        /* One call per element, each naming its own package and method; the server folds
+           them all into a single transaction (#255). */
+        std::vector<Orly::Server::TBatchCall> calls;
+        auto list = stmt->GetBatchCallList();
+        while (list) {
+          auto call = list->GetBatchCall();
+          Orly::Server::TBatchCall batch_call{{}, TClosure(call->GetMethodName()->GetLexeme().GetText())};
+          TranslatePathName(batch_call.FqName, call->GetPackage());
+          auto members = dynamic_cast<const TObjMemberList *>(call->GetArgs()->GetOptObjMemberList());
+          while (members) {
+            auto member = members->GetObjMember();
+            TWrapper state(NewStateSabot(member->GetExpr(), alloc));
+            batch_call.Closure.AddArgBySabot(member->GetName()->GetLexeme().GetText(), state);
+            auto member_tail = dynamic_cast<const TObjMemberListTail *>(members->GetOptObjMemberListTail());
+            members = member_tail ? member_tail->GetObjMemberList() : nullptr;
+          }
+          calls.push_back(std::move(batch_call));
+          auto list_tail = dynamic_cast<const TBatchCallListTail *>(list->GetOptBatchCallListTail());
+          list = list_tail ? list_tail->GetBatchCallList() : nullptr;
+        }
+        /* The results may differ in type, so they come back as separate values: one JSON
+           array element per call, in order. */
+        TJson::TArray results;
+        for (const auto &var: GetSession()->TryMulti(pov_id, calls)) {
+          results.push_back(Var::ToJson(var));
+        }
+        Result = TJson(std::move(results));
+      }
+
       virtual void operator()(const TPovStatusStmt *stmt) const override {
         assert(stmt);
         bool is_pause = dynamic_cast<const TPauseKind *>(stmt->GetStatusKind()) != nullptr;

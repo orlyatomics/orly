@@ -1740,6 +1740,16 @@ TMethodResult TServer::TSessionPin::TryBatch(
   return move(method_result);
 }
 
+std::vector<Var::TVar> TServer::TSessionPin::TryMulti(const Base::TUuid &pov_id, const std::vector<TBatchCall> &calls) const {
+  std::vector<Var::TVar> results;
+  Conn->RunWs(Indy::Fiber::TJumpRunnable(
+      [this, &pov_id, &calls, &results] {
+        results = Conn->TryMulti(pov_id, calls);
+      }
+  ));
+  return results;
+}
+
 void TServer::TSessionPin::UninstallPackage(
     const std::vector<std::string> &name, uint64_t version) const {
   Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::UninstallPackage, Conn.get(), cref(name), version)));

@@ -184,6 +184,21 @@ class Client:
         records = lit([dict(a or {}) for a in args_list])
         return self.send(f"try {{{pov}}} {package} {method} {records};")
 
+    def call_many(self, pov, calls):
+        """Run several different methods on ``pov`` as **one transaction** (#255).
+
+        ``calls`` is a list of ``(package, method, args)`` tuples. Builds
+        ``try {<pov>} [<package> <method> <{...}>, ...];`` and returns a list with
+        one result per call, in order (they may differ in type). Like
+        ``call_batch``, every call reads the same pre-batch snapshot (no
+        read-your-writes within a batch) and the batch is all-or-nothing: if any
+        call fails, none of the writes land.
+        """
+        if not calls:
+            raise ValueError("call_many requires at least one call")
+        parts = [f"{package} {method} {lit(dict(args or {}))}" for package, method, args in calls]
+        return self.send(f"try {{{pov}}} [{', '.join(parts)}];")
+
     def pause(self, pov):
         return self.send(f"pause pov {lit(pov)};")
 
