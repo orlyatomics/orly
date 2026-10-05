@@ -151,7 +151,19 @@ namespace Orly {
 
         void Runner();
 
-        bool TryLoadFromBaseImage(size_t base_image_block, const size_t *cur_buf, TBufBlock *cur_buf_block);
+        /* Load the file map from the base image whose head block is already in 'cur_buf'. On
+           success, 'chain_out' holds the image's blocks after the head, in order. */
+        bool TryLoadFromBaseImage(size_t base_image_block, const size_t *cur_buf, TBufBlock *cur_buf_block, std::vector<size_t> &chain_out);
+
+        /* Read a base image's head and follow its chain without loading it. Returns true, with
+           the blocks after the head in 'chain_out', only if the image was written and every block
+           of its chain reads cleanly with the head's version (#610). */
+        bool ReadImageChain(size_t head_block_id, std::vector<size_t> &chain_out);
+
+        /* Mark a base image's chain used and append it to the image's block vector, which holds
+           only the head on reopen, so the next image written there reuses or frees those blocks.
+           If another owner already holds one of them, keeps none (#610). */
+        void AdoptImageChain(size_t head_block_id, const std::vector<size_t> &chain, std::vector<size_t> &image_block_vec);
 
         void ZeroImageBlocks(size_t image_1_block_id, size_t image_2_block_id);
 

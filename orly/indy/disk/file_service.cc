@@ -20,6 +20,7 @@
 
 #include <chrono>
 #include <thread>
+#include <unordered_set>
 
 #include <base/mem_aligned_ptr.h>
 #include <orly/indy/disk/indy_util_reporter.h>
@@ -54,6 +55,9 @@ TFileService::TFileService(Base::TScheduler *scheduler,
   /* allocate event pools */
   Image1BlockIdVec.push_back(image_1_block_id);
   Image2BlockIdVec.push_back(image_2_block_id);
+  /* The head block of the image the map was loaded from, if any, and the rest of its chain. */
+  size_t loaded_image_block = -1;
+  std::vector<size_t> loaded_chain;
   if (!create) {
     auto image_1_buf_block = make_unique<TBufBlock>();
     auto image_2_buf_block = make_unique<TBufBlock>();
@@ -121,7 +125,9 @@ TFileService::TFileService(Base::TScheduler *scheduler,
       //ZeroImageBlocks(image_1_block_id, image_2_block_id);
     }
     if (process_next_block) {
-      if (!TryLoadFromBaseImage(cur_image_block, cur_buf, cur_buf_block)) {
+      if (TryLoadFromBaseImage(cur_image_block, cur_buf, cur_buf_block, loaded_chain)) {
+        loaded_image_block = cur_image_block;
+      } else {
         /* the load was not successful, at this point we need to:
            - see if the other alternate block loaded successfully
            - see what the first version number (fvn) is in the append log.
@@ -169,9 +175,10 @@ TFileService::TFileService(Base::TScheduler *scheduler,
           process_next_block = true;
           VersionNumber = alternate_image_block_version;
           ++CurBaseImageCounter;
-          if (!TryLoadFromBaseImage(alternate_image_block, alternate_buf, alternate_buf_block)) {
+          if (!TryLoadFromBaseImage(alternate_image_block, alternate_buf, alternate_buf_block, loaded_chain)) {
             throw std::runtime_error("File System is corrupt. Both base images are irrecoverable");
           }
+          loaded_image_block = alternate_image_block;
         } else {
           throw std::runtime_error("File System is corrupt. Current base image is irrecoverable.");
         }
@@ -258,6 +265,25 @@ TFileService::TFileService(Base::TScheduler *scheduler,
       if (!keep_going) {
         break;
       }
+    }
+  }
+  /* Our own blocks next: the rest of each base image's chain (#610). The system block records
+     only each image's head, which the engine marks used; a chain block nobody marks looks free,
+     and a data file written over it breaks that image. Keep the chain of the image the map was
+     loaded from, and of the other image if its chain is intact, since that one is the fallback.
+     A broken chain is left alone: its links can't be trusted, and it can't be loaded anyway.
+     This runs after the files have marked theirs, so a block both claim stays with the file. */
+  if (!create && loaded_image_block != static_cast<size_t>(-1)) {
+    for (size_t image : {0UL, 1UL}) {
+      const size_t head_block_id = image ? image_2_block_id : image_1_block_id;
+      auto &image_block_vec = image ? Image2BlockIdVec : Image1BlockIdVec;
+      std::vector<size_t> chain;
+      if (head_block_id == loaded_image_block) {
+        chain = loaded_chain;
+      } else if (!ReadImageChain(head_block_id, chain)) {
+        continue;
+      }
+      AdoptImageChain(head_block_id, chain, image_block_vec);
     }
   }
   SchedulerHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
@@ -477,7 +503,8 @@ void TFileService::Runner() {
             /* Each image keeps spare blocks beyond what it needs, so a growing file count rarely
                needs a fresh allocation, and never one that a full disk can refuse while the
                spare lasts (#590). Spare blocks are not written or linked into the chain; after
-               a restart they are simply free again. */
+               a restart they are simply free again. The chain itself is kept across a restart
+               (#610), so after one this vector starts out as exactly the image's chain. */
             const size_t spare = std::max(2UL, blocks_required_for_base_image / 8UL);
             const size_t target = blocks_required_for_base_image + spare;
             if (cur_image_block_vec.size() > target + spare) {
@@ -795,12 +822,14 @@ void TFileService::ApplyImageBlock(TFileMap &file_map,
   }
 }
 
-bool TFileService::TryLoadFromBaseImage(size_t base_image_block, const size_t *cur_buf, TBufBlock *cur_buf_block) {
+bool TFileService::TryLoadFromBaseImage(size_t base_image_block, const size_t *cur_buf, TBufBlock *cur_buf_block, std::vector<size_t> &chain_out) {
   TCompletionTrigger trigger;
   Map.clear();
   NumFiles = 0UL;
   RunnerCopyMap.clear();
   NumRunnerCopyFiles = 0UL;
+  chain_out.clear();
+  std::unordered_set<size_t> seen {base_image_block};
   bool process_next_block = true;
   try {
     while (process_next_block) {
@@ -813,6 +842,10 @@ bool TFileService::TryLoadFromBaseImage(size_t base_image_block, const size_t *c
       const size_t next_block_id = cur_buf[1];
       process_next_block = next_block_id != static_cast<size_t>(-1);
       if (process_next_block) {
+        if (!seen.insert(next_block_id).second) {
+          throw std::runtime_error("Base image chain loops");
+        }
+        chain_out.push_back(next_block_id);
         VolMan->ReadBlock(HERE,
                           Util::CheckedBlock,
                           Source::FileService,
@@ -826,9 +859,75 @@ bool TFileService::TryLoadFromBaseImage(size_t base_image_block, const size_t *c
     }
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "TFileService::TryLoadFromBaseImage caught exception while loading from block [%ld], ex: [%s]", base_image_block, ex.what());
+    chain_out.clear();
     return false;
   }
   return true;
+}
+
+bool TFileService::ReadImageChain(size_t head_block_id, std::vector<size_t> &chain_out) {
+  chain_out.clear();
+  auto buf_block = make_unique<TBufBlock>();
+  const size_t *buf = reinterpret_cast<const size_t *>(buf_block->GetData());
+  std::unordered_set<size_t> seen {head_block_id};
+  size_t block_id = head_block_id;
+  size_t version = 0UL;
+  for (;;) {
+    try {
+      TCompletionTrigger trigger;
+      VolMan->ReadBlock(HERE, Util::CheckedBlock, Source::FileService, buf_block->GetData(), block_id, RealTime, trigger,
+                        false /* a broken image is reported, not fatal */);
+      trigger.Wait();
+    } catch (const TDiskError &ex) {
+      syslog(LOG_ERR, "TFileService: base image at block [%ld] can't be read at block [%ld]: [%s]; not keeping its chain", head_block_id, block_id, ex.what());
+      chain_out.clear();
+      return false;
+    }
+    if (block_id == head_block_id) {
+      version = buf[0];
+      if (!version) {
+        /* Never written: nothing to keep. */
+        return false;
+      }
+    } else if (buf[0] != version) {
+      syslog(LOG_ERR, "TFileService: base image at block [%ld] (version [%ld]) is broken at block [%ld] (version [%ld]); not keeping its chain",
+             head_block_id, version, block_id, buf[0]);
+      chain_out.clear();
+      return false;
+    } else {
+      chain_out.push_back(block_id);
+    }
+    const size_t next_block_id = buf[1];
+    if (next_block_id == static_cast<size_t>(-1)) {
+      return true;
+    }
+    if (!seen.insert(next_block_id).second) {
+      syslog(LOG_ERR, "TFileService: base image at block [%ld] has a chain that loops at block [%ld]; not keeping its chain", head_block_id, next_block_id);
+      chain_out.clear();
+      return false;
+    }
+    block_id = next_block_id;
+  }
+}
+
+void TFileService::AdoptImageChain(size_t head_block_id, const std::vector<size_t> &chain, std::vector<size_t> &image_block_vec) {
+  assert(image_block_vec.size() == 1UL && image_block_vec.front() == head_block_id);
+  size_t marked = 0UL;
+  try {
+    for (; marked < chain.size(); ++marked) {
+      VolMan->MarkBlockRangeUsed(Util::TBlockRange(chain[marked], 1UL));
+    }
+  } catch (const std::exception &ex) {
+    /* Something else already holds one of these blocks. Keep none of them: the next image
+       written here gets fresh blocks rather than writing over whoever has that one. */
+    syslog(LOG_ERR, "TFileService: base image at block [%ld]: chain block [%ld] is already in use [%s]; not keeping its chain",
+           head_block_id, chain[marked], ex.what());
+    for (size_t i = 0; i < marked; ++i) {
+      VolMan->FreeSequentialBlocks(Util::TBlockRange(chain[i], 1UL));
+    }
+    return;
+  }
+  image_block_vec.insert(image_block_vec.end(), chain.begin(), chain.end());
 }
 
 void TFileService::ZeroImageBlocks(size_t image_1_block_id, size_t image_2_block_id) {
