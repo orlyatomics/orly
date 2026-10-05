@@ -99,7 +99,7 @@ class TMyManager : public L1::TManager {
   public:
   TMyManager(Disk::Util::TEngine *engine, Base::TScheduler *scheduler,
              const std::vector<size_t> &mem_merge_cores, const std::vector<size_t> &disk_merge_cores)
-      : TManager(engine, 10ms, 100ms, true, true, 1000ms, scheduler, 100UL, 100UL, 20UL, mem_merge_cores, disk_merge_cores, true) {}
+      : TManager(engine, 10ms, 100ms, true, true, true, 1000ms, scheduler, 100UL, 100UL, 20UL, mem_merge_cores, disk_merge_cores, true) {}
   virtual ~TMyManager() {}
   virtual TRepo *ConstructRepo(const Base::TUuid &repo_id, const std::optional<TTtl> &ttl,
                                const std::optional<TManager::TPtr<TRepo>> &parent_repo, bool is_safe, bool) override {

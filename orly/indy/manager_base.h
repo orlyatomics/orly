@@ -370,6 +370,9 @@ namespace Orly {
 
           inline bool IsTailingAllowed() const;
 
+          /* See TManager::PruneMergeHistory. */
+          inline bool IsMergePruningAllowed() const;
+
           protected:
 
           /* Forward Declarations. */
@@ -791,6 +794,7 @@ namespace Orly {
                  std::chrono::milliseconds merge_mem_delay,
                  std::chrono::milliseconds merge_disk_delay,
                  bool allow_tailing,
+                 bool prune_merge_history,
                  bool no_realtime,
                  std::chrono::milliseconds layer_cleaning_interval,
                  Base::TScheduler *scheduler,
@@ -863,6 +867,10 @@ namespace Orly {
 
         bool AllowTailing;
 
+        /* Whether a root safe repo's disk merges drop superseded versions (#592). Independent of
+           AllowTailing, which gates only the tail statement. */
+        bool PruneMergeHistory;
+
         mutable TRemovalCollection::TImpl RemovalCollection;
         std::mutex RemovalLock;
         Base::TTimerFd LayerCleanerTimer;
@@ -926,6 +934,10 @@ namespace Orly {
 
       inline bool TManager::TRepo::IsTailingAllowed() const {
         return Manager->AllowTailing;
+      }
+
+      inline bool TManager::TRepo::IsMergePruningAllowed() const {
+        return Manager->PruneMergeHistory;
       }
 
       inline void TManager::TRepo::TMapping::Incr() {

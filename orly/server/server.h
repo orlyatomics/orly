@@ -262,6 +262,9 @@ namespace Orly {
         /* Support for tailing. */
         bool AllowTailing;
 
+        /* Whether the global pov's disk merges drop superseded versions (#592). */
+        bool PruneMergeHistory;
+
         /* We can use this to sync when the data layout has changed. */
         bool AllowFileSync;
 

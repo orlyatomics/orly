@@ -268,7 +268,12 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::AllowTailing, "allow_tailing", Optional, "allow_tailing\0",
-      "Turn on / off support for tailing."
+      "Turn on / off support for the tail statement, which drops superseded versions from the global pov's oldest disk file."
+  );
+  Param(
+      &TCmd::PruneMergeHistory, "prune_merge_history", Optional, "prune_merge_history\0",
+      "Turn on / off dropping superseded versions when the global pov's disk files are merged (#592). On by default. "
+      "Off keeps every version of every key on disk, so disk use grows with every write. Independent of allow_tailing."
   );
   Param(
       &TCmd::AllowFileSync, "allow_file_sync", Optional, "allow_file_sync\0",
@@ -431,6 +436,7 @@ TServer::TCmd::TCmd()
       NumDiskEvents(10000UL),
       ReportingPortNumber(19388),
       AllowTailing(true),
+      PruneMergeHistory(true),
       AllowFileSync(true),
       NoRealtime(false),
       DoFsync(true),
@@ -1041,6 +1047,7 @@ void TServer::Init() {
                                                     chrono::milliseconds(Cmd.ReplicationInterval),
                                                     RepoState,
                                                     Cmd.AllowTailing,
+                                                    Cmd.PruneMergeHistory,
                                                     Cmd.AllowFileSync,
                                                     Cmd.NoRealtime,
                                                     std::move(starting_sock),
