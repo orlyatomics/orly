@@ -94,8 +94,8 @@ FIXTURE(Caching) {
   auto manager = make_shared<TTestManager>(1000);
   auto session = manager->New<TSession>(TUuid::Twister, seconds(60));
   for (size_t i = 0; i < WarningCount; ++i) {
-    uint32_t seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
-    EXPECT_EQ(seq_number, i + 1);
+    auto seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
+    EXPECT_TRUE(seq_number && *seq_number == i + 1);
   }
   ValidateSession(session);
   auto id = session->GetId();
@@ -108,14 +108,38 @@ FIXTURE(Streaming) {
   auto manager = make_shared<TTestManager>(0);
   auto session = manager->New<TSession>(TUuid::Twister, seconds(60));
   for (size_t i = 0; i < WarningCount; ++i) {
-    uint32_t seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
-    EXPECT_EQ(seq_number, i + 1);
+    auto seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
+    EXPECT_TRUE(seq_number && *seq_number == i + 1);
   }
   ValidateSession(session);
   auto id = session->GetId();
   session.Reset();
   session = manager->Open<TSession>(id);
   ValidateSession(session);
+}
+
+/* A session held over WebSocket queues nothing, so nothing piles up for a consumer that will never come (#591). */
+FIXTURE(NotQueuing) {
+  auto manager = make_shared<TTestManager>(0);
+  auto session = manager->New<TSession>(TUuid::Twister, seconds(60));
+  session->SetQueuesNotifications(false);
+  for (size_t i = 0; i < WarningCount; ++i) {
+    EXPECT_FALSE(session->InsertNotification(TSystemShutdown::New(WarningDurations[i])).has_value());
+  }
+  EXPECT_EQ(session->GetNotificationCount(), 0UL);
+  /* Nothing was saved, and the setting isn't saved either: the reloaded session queues again. */
+  auto id = session->GetId();
+  session.Reset();
+  session = manager->Open<TSession>(id);
+  EXPECT_EQ(session->GetNotificationCount(), 0UL);
+  for (size_t i = 0; i < WarningCount; ++i) {
+    auto seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
+    EXPECT_TRUE(seq_number && *seq_number == i + 1);
+  }
+  ValidateSession(session);
+  /* Turning queuing off keeps what is already queued. */
+  session->SetQueuesNotifications(false);
+  EXPECT_EQ(session->GetNotificationCount(), WarningCount);
 }
 
 #if 0
@@ -206,8 +230,8 @@ FIXTURE(RepoManager) {
   auto durable_manager= make_shared<TDurableManager>(0, repo_manager.get(), repo_manager->GetSystemRepo());
   auto session = durable_manager->New<TSession>(seconds(60));
   for (size_t i = 0; i < WarningCount; ++i) {
-    uint32_t seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
-    EXPECT_EQ(seq_number, i + 1);
+    auto seq_number = session->InsertNotification(TSystemShutdown::New(WarningDurations[i]));
+    EXPECT_TRUE(seq_number && *seq_number == i + 1);
   }
   ValidateSession(session);
   auto id = session->GetId();

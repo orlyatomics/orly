@@ -1631,6 +1631,10 @@ TServer::TSessionPin::TSessionPin(TServer *server) {
       Conn = TConnection::New(
           server,
           server->DurableManager->New<TSession>(Base::TUuid::Twister, seconds(600)));
+      if (Conn) {
+        /* WebSocket has no way to deliver notifications (#591). */
+        Conn->GetSession()->SetQueuesNotifications(false);
+      }
   }));
   if (!Conn) {
     throw runtime_error("could not create session");
@@ -1641,6 +1645,10 @@ TServer::TSessionPin::TSessionPin(TServer *server, const TUuid &id) {
   assert(server);
   server->RunWs(Indy::Fiber::TJumpRunnable([this, server, &id] {
       Conn = TConnection::New(server, server->DurableManager->Open<TSession>(id));
+      if (Conn) {
+        /* WebSocket has no way to deliver notifications (#591). */
+        Conn->GetSession()->SetQueuesNotifications(false);
+      }
   }));
   if (!Conn) {
     throw runtime_error("could not resume session");
@@ -2738,6 +2746,8 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
     }
   } while (try_count < 3 && !connection);
   if (connection) {
+    /* The session may last have been held over WebSocket, which turns its queue off (#591). */
+    connection->GetSession()->SetQueuesNotifications(true);
     Scheduler->Schedule(std::bind(&TConnection::Run, connection, std::move(fd)));
     //connection->Run(fd);
   }

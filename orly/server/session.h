@@ -165,12 +165,25 @@ namespace Orly {
       void PausePov(TServer *server, const Base::TUuid &pov_id);
 
       /* Insert the given notification into the pending set and return the sequence number that is assigned to it.
-         If this function fails, it will delete the notification before throwing. */
-      uint32_t InsertNotification(Notification::TNotification *notification);
+         If the session isn't queuing notifications (see SetQueuesNotifications()), delete the notification and
+         return nullopt.  If this function fails, it will delete the notification before throwing. */
+      std::optional<uint32_t> InsertNotification(Notification::TNotification *notification);
 
       /* Remove the notification with the given sequence number.
          If notification doesn't exist (never existed or has already been discarded), do nothing. */
       void RemoveNotification(uint32_t seq_number);
+
+      /* Whether InsertNotification() queues notifications.  Only the binary protocol's serving loop
+         (TServer::TConnection::Run) pushes them and removes them once acked, so while a WebSocket client
+         holds the session nothing would ever drain the queue, and every write that Tetris promotes or a
+         slave replicates would leave one behind, in memory and in every save of the session (#591).  The server turns queuing off when a
+         WebSocket client attaches and back on when a binary client does.  The setting isn't saved: a
+         session loaded from the durable store queues, so a binary client that reconnects still finds what
+         arrived while it was away.  Notifications already queued are kept either way. */
+      void SetQueuesNotifications(bool queues) {
+        std::lock_guard<std::mutex> lock(NotificationMutex);
+        QueuesNotifications = queues;
+      }
 
       /* See <orly/protocol.h>. */
       void SetTimeToLive(TServer *server, const Base::TUuid &durable_id, const std::chrono::seconds &ttl);
@@ -271,6 +284,9 @@ namespace Orly {
       std::map<uint32_t, TNotification *> NotificationBySeqNumber;
       mutable std::mutex NotificationMutex;
       mutable Base::TEventSemaphore NotificationSem;
+
+      /* See SetQueuesNotifications().  Guarded by NotificationMutex. */
+      bool QueuesNotifications = true;
 
       /* Povs to keep alive while we're alive. */
       std::vector<Durable::TPtr<TPov>> Povs;
