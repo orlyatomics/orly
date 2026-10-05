@@ -37,7 +37,7 @@ function pool(body, name) {
 }
 
 async function phase(label, povFor) {
-  let writes = 0, stop = false, peak = 0;
+  let writes = 0, stop = false, peak = 0, first_write = 0, last_write = 0;
   const failures = [];
   const writer = async (w) => {
     const c = await connect(URL);
@@ -47,6 +47,8 @@ async function phase(label, povFor) {
       try {
         await c.call(pov, "sample", "write_val", { n: w * 10_000_000 + i, x: i });
         ++writes;
+        last_write = Date.now();
+        if (!first_write) first_write = last_write;
       } catch (err) {
         failures.push(`writer ${w}: ${err?.message ?? err}`);
         break;
@@ -69,6 +71,9 @@ async function phase(label, povFor) {
   }
   stop = true;
   await Promise.all(writers);
+  /* From the first acknowledged write to the last: the 1 s poll loop above
+     would quantise a phase that stops at MAX_WRITES to whole seconds. */
+  const elapsed = Math.max(last_write - first_write, 1) / 1000;
   /* Dead layers must actually be freed: before #584's fix the layer cleaner
      wedged and occupancy kept climbing after the writes stopped. */
   let drained = null;
@@ -83,6 +88,11 @@ async function phase(label, povFor) {
     failures.push(`Update pool did not drain after the writes stopped: ${drained?.used}/${drained?.size}`);
   }
   console.log(`${label}: ${writes} writes, peak Update pool ${peak}, after drain ${drained?.used}`);
+  /* For tools/maint/ab_bench.py. A phase can stop at MAX_WRITES before SECS,
+     so compare writes per second, not the write count. */
+  const metric = label.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  console.log(`METRIC ${metric}_writes_per_s ${(writes / elapsed).toFixed(1)}`);
+  console.log(`METRIC ${metric}_peak_update_pool ${peak}`);
   if (failures.length) {
     console.error(`POOL PRESSURE FAIL (${label}):\n  ${failures.join("\n  ")}`);
     process.exit(1);

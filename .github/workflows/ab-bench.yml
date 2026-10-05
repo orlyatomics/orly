@@ -1,0 +1,134 @@
+# Paired A/B benchmark of two commits, on the same runner.
+#
+# Each shot is one runner. It builds orlyi and orlyc release at ref_a and at
+# ref_b, then runs `command` against each build in turn with
+# tools/maint/ab_bench.py: `rounds` rounds, with the order flipping each round
+# (AB, BA, ...) so machine drift lands on both arms. The command and its
+# harness come from the ref this workflow is dispatched on, so both arms run
+# the same workload and only the binaries differ. Commands report numbers as
+# `METRIC <name> <value>` lines; clients/smoke/run-pool-pressure.sh prints
+# writes per second and peak Update pool for each phase.
+#
+# Read the paired B/A column. Comparing runs on different machines once made
+# #587 look 14% slower when it wasn't: build both arms on one runner and
+# alternate. Shots are independent samples on different machines; agreement
+# across shots is the evidence, so use more than one.
+#
+# Manual dispatch only. It measures and does not gate anything.
+name: ab-bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref_a:
+        description: 'Arm A: baseline commit, branch or tag'
+        required: true
+        default: 'master'
+      ref_b:
+        description: 'Arm B: candidate commit, branch or tag'
+        required: true
+      command:
+        description: 'Command to run from the repo root against each build (prints METRIC lines)'
+        required: false
+        default: 'bash clients/smoke/run-pool-pressure.sh'
+      rounds:
+        description: 'Rounds per shot (each round runs A and B once)'
+        required: false
+        default: '4'
+      shots:
+        description: 'Shots, as a JSON list; each is its own runner'
+        required: false
+        default: '[1, 2, 3, 4]'
+      runner:
+        description: 'Runner image'
+        required: false
+        default: 'ubuntu-24.04'
+        type: choice
+        options:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+
+jobs:
+  paired:
+    name: shot ${{ matrix.shot }} (${{ inputs.runner || 'ubuntu-24.04' }})
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: ${{ fromJSON(inputs.shots || '[1]') }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: harness/orly
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref_a || 'master' }}
+          path: A/orly
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref_b || 'master' }}
+          path: B/orly
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          version: 1.2
+
+      - name: Set up ccache
+        run: |
+          for c in gcc g++ cc c++; do sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"; done
+          { echo "CCACHE_DIR=$HOME/.ccache"; echo "CCACHE_MAXSIZE=4G"; echo "CCACHE_COMPRESS=1"; } >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-${{ runner.arch }}-release-build-none
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-${{ runner.arch }}-release-build-
+            orly-ccache-${{ runner.os }}-release-build-
+            orly-ccache-${{ runner.os }}-
+
+      - name: Build A and B (release orlyi + orlyc)
+        run: |
+          for t in A B; do
+            echo "$t = $(git -C $t/orly rev-parse HEAD) $(git -C $t/orly log -1 --format=%s)"
+            if ! (cd $t/orly && make bootstrap > /dev/null \
+                  && PATH="$PWD/tools:$PATH" tools/jhm -c release orly/server/orlyi orly/orlyc) > $t/build.log 2>&1; then
+              tail -40 $t/build.log
+              exit 1
+            fi
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Paired runs
+        working-directory: harness/orly
+        env:
+          COMMAND: ${{ inputs.command || 'bash clients/smoke/run-pool-pressure.sh' }}
+          ROUNDS: ${{ inputs.rounds || '4' }}
+          REF_A: ${{ inputs.ref_a || 'master' }}
+          REF_B: ${{ inputs.ref_b || 'master' }}
+        run: |
+          set -o pipefail
+          status=0
+          python3 tools/maint/ab_bench.py \
+            --a "$GITHUB_WORKSPACE/A/out_orly/release" --b "$GITHUB_WORKSPACE/B/out_orly/release" \
+            --label-a "$REF_A @ $(git -C "$GITHUB_WORKSPACE/A/orly" rev-parse --short HEAD)" \
+            --label-b "$REF_B @ $(git -C "$GITHUB_WORKSPACE/B/orly" rev-parse --short HEAD)" \
+            --rounds "$ROUNDS" --log-dir "$GITHUB_WORKSPACE/ab-logs" \
+            -- bash -c "$COMMAND" | tee "$GITHUB_WORKSPACE/ab-report.txt" || status=$?
+          { echo "### shot ${{ matrix.shot }} on ${{ inputs.runner || 'ubuntu-24.04' }}"; echo; sed -n '/^A = /,$p' "$GITHUB_WORKSPACE/ab-report.txt"; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ab-logs-shot-${{ matrix.shot }}
+          path: |
+            ab-logs/
+            ab-report.txt
+          if-no-files-found: ignore
