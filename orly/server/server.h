@@ -306,6 +306,11 @@ namespace Orly {
         size_t DiskReserveMb;
         size_t DiskReservePct;
 
+        /* Memory admission (#607): this percent of the Update and Update Entry pools is kept
+           for the merges and Tetris promotions that free them, and writes are refused before
+           they would use it. 0 turns memory admission off. */
+        size_t MemoryReservePct;
+
         /******** Object Pools ********/
 
         size_t DurableMappingPoolSize;
@@ -392,6 +397,17 @@ namespace Orly {
       /* See TSession::TServer. Throws TInsufficientStorage while disk space is below the
          reserve (#590). */
       void CheckWriteAdmission() override;
+
+      /* See TSession::TServer. Throws TInsufficientMemory if the write's updates would dip into
+         the update pools' reserve (#607). */
+      void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &admission, size_t num_entries) override;
+
+      /* See TSession::TServer. */
+      void RefuseWriteOutOfMemory() override;
+
+      bool IsMemoryAdmissionOn() const override {
+        return Cmd.MemoryReservePct != 0UL;
+      }
 
       /* Called when the websockets server wishes to create a new session. */
       virtual TWs::TSessionPin *NewSession() override;
@@ -799,6 +815,12 @@ namespace Orly {
       std::atomic<size_t> AdmissionNeeded {0UL};
       std::atomic<size_t> AdmissionTotal {0UL};
       std::atomic<size_t> RefusedWriteCount {0UL};
+
+      /* Memory admission (#607): writes refused so far, and whether the last check refused (for
+         logging the transitions once). */
+      std::atomic<size_t> MemoryRefusedWriteCount {0UL};
+      std::atomic<bool> RefusingWritesForMemory {false};
+      [[noreturn]] void ThrowInsufficientMemory() const;
 
       Orly::Indy::L0::TManager::TPtr<Indy::TRepo> GlobalRepo;
 

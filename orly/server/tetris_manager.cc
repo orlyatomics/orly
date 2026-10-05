@@ -239,7 +239,13 @@ void TTetrisManager::TPlayer::Main() {
              this, the exception killed the player fiber silently and its POV
              never promoted again. Yield (below) so the merges and the layer
              cleaner can free space, then play again. */
-          syslog(LOG_WARNING, "tetris player %p: out of pool space; retrying the round", static_cast<void *>(this));
+          /* Since #607 a pool miss on a fiber fails at once, without waiting, so this can come
+             round on every round until the merges free space. Log the 1st, 2nd, 4th, ... */
+          static std::atomic<size_t> pool_misses(0UL);
+          const size_t misses = ++pool_misses;
+          if ((misses & (misses - 1UL)) == 0UL) {
+            syslog(LOG_ERR, "tetris player %p: out of pool space; retrying the round (%ld times so far)", static_cast<void *>(this), misses);
+          }
         }
         /* Let other fibers on this runner run between rounds (#584). Without
            this the player monopolized the runner, and a fiber that hopped here

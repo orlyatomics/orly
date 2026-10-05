@@ -53,27 +53,46 @@ namespace Orly {
 
         inline size_t GetMaxBlocks() const;
 
-        void *Alloc(size_t size) {
-          void *ptr = TryAlloc(size);
-          if (!ptr) {
-            size_t retry = 2000UL;
-            while (!ptr && retry) {
-              --retry;
-              std::this_thread::sleep_for(std::chrono::milliseconds(1));
-              ptr = TryAlloc(size);
-            }
-            if (ptr) {
-              return ptr;
-            }
-            syslog(LOG_EMERG, "TPool::Alloc() [%s] bad_alloc after %ld retries", Name, 2000UL);
-            throw std::bad_alloc();
-          }
-          return ptr;
-        }
+        /* Takes a block. On a miss, off a fiber (startup, tests), retries for up to 2 s.
+
+           On a fiber a miss throws std::bad_alloc at once (#607). Sleeping here held up every
+           other fiber on the runner for up to 2 s (the #584 starvation class), and parking the
+           fiber instead isn't safe: callers allocate while holding plain mutexes, which a
+           parked fiber keeps, so another fiber on the same thread that wants one blocks the
+           thread for good. The callers that can wait retry where they hold no lock: the Tetris
+           player yields and plays the round again, the memory merge rolls back and is queued
+           again, and a write is refused before it allocates (TryAdmit). */
+        void *Alloc(size_t size);
 
         void Free(void *ptr);
 
         void *TryAlloc(size_t size);
+
+        /* Writer admission (#607). The last Reserve blocks are kept for the merges and the
+           Tetris promotions that free the pool: a writer first asks TryAdmit for the blocks it
+           is about to take, and is refused once the blocks in use plus those already promised
+           to writers would leave fewer than Reserve free. Allocations themselves are never
+           restricted, so the merges can always use the reserve.
+
+           Once refusing, a writer is admitted again only when a further Reserve / 4 is free, so
+           admission doesn't flap at the edge. A reserve of 0 refuses nothing, but still counts
+           what writers hold. */
+        void SetReserve(size_t reserve_blocks);
+
+        inline size_t GetReserve() const;
+
+        /* Promises num_blocks to a writer, or returns false and promises nothing. A writer that
+           was admitted calls ReleaseAdmitted with the same count once it has allocated. */
+        bool TryAdmit(size_t num_blocks);
+
+        void ReleaseAdmitted(size_t num_blocks);
+
+        inline size_t GetNumBlocksAdmitted() const;
+
+        inline bool IsRefusing() const;
+
+        /* How many allocations have failed, ever. */
+        inline size_t GetNumMisses() const;
 
         private:
 
@@ -99,6 +118,15 @@ namespace Orly {
 
         size_t MaxBlocks;
 
+        /* See SetReserve. Written under Mutex, read without it by the reporter. */
+        std::atomic<size_t> Reserve;
+
+        std::atomic<size_t> NumBlocksAdmitted;
+
+        std::atomic<bool> Refusing;
+
+        std::atomic<size_t> NumMisses;
+
       };  // TPool
 
       inline const char *TPool::GetName() const {
@@ -111,6 +139,22 @@ namespace Orly {
 
       inline size_t TPool::GetMaxBlocks() const {
         return MaxBlocks;
+      }
+
+      inline size_t TPool::GetReserve() const {
+        return Reserve.load();
+      }
+
+      inline size_t TPool::GetNumBlocksAdmitted() const {
+        return NumBlocksAdmitted.load();
+      }
+
+      inline bool TPool::IsRefusing() const {
+        return Refusing.load();
+      }
+
+      inline size_t TPool::GetNumMisses() const {
+        return NumMisses.load();
       }
 
     }  // Util

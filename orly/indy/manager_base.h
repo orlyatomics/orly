@@ -653,6 +653,11 @@ namespace Orly {
 
         inline size_t GetTempFileConsolThresh() const;
 
+        /* True once the merge runners have been told to stop (StopMergeRunners). */
+        bool IsShuttingDown() const {
+          return ShuttingDown;
+        }
+
         void RunLayerCleaner();
 
         /* Make RunLayerCleaner return: raise the stop flag and fire its

@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <new>
+
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/disk/in_file.h>
@@ -92,6 +94,20 @@ namespace Orly {
   namespace Indy {
 
     namespace Disk {
+
+      /* What TDataFile throws in place of std::bad_alloc when an allocation fails before the
+         file map has the file (#607). As with Util::TDiskFull, the file's blocks are freed and
+         its updates' persistence notifications are left pending, so the caller can write the
+         same layer again later. */
+      class TDataFileAllocFailed
+          : public std::bad_alloc {
+        public:
+
+        const char *what() const noexcept override {
+          return "data file not written: an allocation failed";
+        }
+
+      };  // TDataFileAllocFailed
 
       class TDataFile {
         NO_COPY(TDataFile);

@@ -46,6 +46,7 @@
 #include <orly/client/program/translate_expr.h>
 #include <orly/indy/key.h>
 #include <orly/orly.package.cst.h>
+#include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
@@ -584,6 +585,10 @@ class TWsImpl final
            it from a failed statement and keep reading. */
         reply["result"] = ex.what();
         reply["status"] = "insufficient_storage";
+      } catch (const Orly::Server::TInsufficientMemory &ex) {
+        /* A write refused because the update pools are down to the merges' reserve (#607). */
+        reply["result"] = ex.what();
+        reply["status"] = "insufficient_memory";
       } catch (const exception &ex) {
         reply["result"] = ex.what();
         reply["status"] = "exception";

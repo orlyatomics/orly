@@ -45,6 +45,18 @@ sent as one WebSocket text message. The server replies with one JSON message:
   `--disk_reserve_pct` of the disk (default 10%, and at least 64 MiB or a quarter
   of the disk, whichever is smaller). Over the binary protocol the same refusal
   is an error whose message starts with `insufficient storage`.
+- A write refused because the server's update pools are down to the reserve kept
+  for its merges replies `"status": "insufficient_memory"`, with the reason in
+  `result` (#607). Writes are buffered in fixed-size memory pools (the Update and
+  Update Entry pools) until merges flush them, and a merge needs room in those
+  same pools to do its work, so `orlyi` keeps `--memory_reserve_pct` of each pool
+  (default 50%) for the merges and refuses any write that would use it. Only
+  writes are refused: reads, new sessions and new POVs keep working. Nothing was
+  written, so the write can be retried; writes are accepted again once the merges
+  have freed the pools, usually within seconds. Large batches reach the limit
+  sooner, because a batch is held as one update with an entry per write.
+  `--memory_reserve_pct=0` turns this off. Over the binary protocol the same
+  refusal is an error whose message starts with `insufficient memory`.
 
 ## Statements
 
@@ -133,8 +145,9 @@ exit;
    a payload-less arm as `{"Tag": {}}`.
 4. **Records are objects** keyed by field name (without the leading `.`).
 5. **Errors are stringly-typed** — failures surface as a non-`ok` `status`, not a
-   structured error code. `insufficient_storage` is the one status worth matching
-   on: it means "retry later", not "this statement is wrong".
+   structured error code. `insufficient_storage` and `insufficient_memory` are the
+   statuses worth matching on: they mean "retry later", not "this statement is
+   wrong".
 
 ## Toward a client SDK
 

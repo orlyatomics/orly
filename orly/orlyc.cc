@@ -191,6 +191,9 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
           server_cmd.TransactionPoolSize = 200;
           server_cmd.UpdatePoolSize = 4000;
           server_cmd.UpdateEntryPoolSize = 8000;
+          /* No memory admission (#607): a test block's writes go to paused POVs, which never
+             drain, so a reserve would only turn a big test's writes into refusals. */
+          server_cmd.MemoryReservePct = 0;
           server_cmd.DiskBufferBlockPoolSize = 256;
           /* Populate the hardware-derived fast/slow/merge core assignment that
              Parse() would normally fill in; the server requires non-empty

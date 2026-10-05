@@ -29,7 +29,7 @@ import websocket  # the `websocket-client` package
 
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
-           "Lit", "lit",
+           "InsufficientMemory", "Lit", "lit",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -65,6 +65,14 @@ class InsufficientStorage(OrlyError):
     """Raised when the server refuses a write because it is low on disk space
     (``"status": "insufficient_storage"``). Nothing was written, reads still
     work, and the write can be retried once space is freed."""
+
+
+class InsufficientMemory(OrlyError):
+    """Raised when the server refuses a write because its update pools are
+    down to the reserve kept for merges (``"status": "insufficient_memory"``).
+    Nothing was written, reads still work, and the write can be retried;
+    writes are accepted again once the merges have freed the pools, usually
+    within seconds."""
 
 
 class Lit:
@@ -127,6 +135,8 @@ class Client:
         status = reply.get("status")
         if status == "insufficient_storage":
             raise InsufficientStorage(statement, reply)
+        if status == "insufficient_memory":
+            raise InsufficientMemory(statement, reply)
         if status != "ok":
             raise OrlyError(statement, reply)
         return reply.get("result")
