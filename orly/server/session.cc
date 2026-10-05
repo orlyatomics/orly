@@ -138,8 +138,12 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
   AddPov(pov);
 }
 
-uint32_t TSession::InsertNotification(TNotification *notification) {
+std::optional<uint32_t> TSession::InsertNotification(TNotification *notification) {
   lock_guard<mutex> lock(NotificationMutex);
+  if (!QueuesNotifications) {
+    delete notification;
+    return std::nullopt;
+  }
   uint32_t result = NextSeqNumber++;
   try {
     NotificationBySeqNumber.insert(make_pair(result, notification));
