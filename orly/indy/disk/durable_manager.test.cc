@@ -246,6 +246,68 @@ FIXTURE(ShutdownDrainFlushesAndReleases) {
   });
 }
 
+/* Saves made after a reopen must win over the copies already on disk (#609). Loads and merges
+   both keep an id's entry with the highest sequence number, so a manager that numbered its saves
+   from 1 again after a restart lost every new save to an older one: TryLoad returned the old copy
+   and the next merge discarded the new one for good. */
+FIXTURE(SeqNumSurvivesReopen) {
+  RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 8, milliseconds(30000)));
+    Sim::TMemEngine mem_engine(&scheduler, 64, 16, 64, 1, 32, 1);
+    TReplicationStub rep_stub;
+    const Durable::TId id(TUuid::Twister);
+    const Durable::TTtl ttl(600);
+    const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
+    auto save = [&](TDurableManager &manager, const std::string &blob) {
+      Durable::TSem sem;
+      manager.Save(id, deadline, ttl, blob, &sem);
+      sem.Pop();  // on disk, in a file of its own
+    };
+    auto num_files = [&] {
+      std::vector<TFileObj> files;
+      mem_engine.GetEngine()->AppendFileGenSet(TDurableManager::DurableByIdFileId, files);
+      return files.size();
+    };
+    /* Before the restart: two saves, so the copy on disk has a sequence number above 1. */ {
+      TDurableManager first(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                            100UL, milliseconds(300), milliseconds(300), milliseconds(10000), 20UL, true);
+      save(first, "before restart 1");
+      save(first, "before restart 2");
+    }
+    EXPECT_EQ(num_files(), 2UL);
+    /* After the restart: one more save, which must be the one a load returns. */ {
+      TDurableManager second(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                             100UL, milliseconds(300), milliseconds(300), milliseconds(10000), 20UL, false);
+      save(second, "after restart");
+      std::string loaded;
+      EXPECT_TRUE(second.TryLoad(id, loaded));
+      EXPECT_EQ(loaded, "after restart");
+      /* That makes three one-entry files, which the merger folds into a fourth. The merge keeps
+         the entry with the highest sequence number, so it must keep the new save, not drop it.
+         (The three inputs stay in the file map: only the layer cleaner, which this test doesn't
+         run, removes them. The mapping that TryLoad reads holds just the merged file.) */
+      const auto give_up = steady_clock::now() + seconds(30);
+      while (num_files() < 4UL && steady_clock::now() < give_up) {
+        std::this_thread::sleep_for(milliseconds(10));
+      }
+      EXPECT_EQ(num_files(), 4UL);
+      EXPECT_TRUE(second.TryLoad(id, loaded));
+      EXPECT_EQ(loaded, "after restart");
+    }
+    /* And it is still the new save after another restart. */ {
+      TDurableManager third(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                            100UL, milliseconds(300), milliseconds(300), milliseconds(10000), 20UL, false);
+      std::string loaded;
+      EXPECT_TRUE(third.TryLoad(id, loaded));
+      EXPECT_EQ(loaded, "after restart");
+      /* Its own saves must still be numbered above everything on disk. */
+      save(third, "after second restart");
+      EXPECT_TRUE(third.TryLoad(id, loaded));
+      EXPECT_EQ(loaded, "after second restart");
+    }
+  });
+}
+
 /* A null sem is a fire-and-forget save: no signal, no crash, still flushed. */
 FIXTURE(NullSemIsFireAndForget) {
   RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {

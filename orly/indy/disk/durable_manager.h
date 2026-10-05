@@ -419,6 +419,10 @@ namespace Orly {
 
           void FindInHash(TSequenceNumber &cur_max_seq_num, const Durable::TId &id, std::string &serialized_form_out) const;
 
+          /* The highest sequence number of any entry in the file, or 0 if it has none. Reads
+             every entry's header, skipping the serialized forms. */
+          TSequenceNumber FindMaxSeqNum(DiskPriority priority) const;
+
           private:
 
           Util::TPageCache *PageCache;
@@ -771,6 +775,8 @@ namespace Orly {
         std::mutex DataLock;
         TMemSlushLayer *CurMemoryLayer;
 
+        /* The last sequence number handed to a save. Loads and merges keep an id's entry with the
+           highest one, so on reopen this resumes from the highest on disk (#609). */
         TSequenceNumber SeqNum;
 
         size_t NextSlushGenId;
