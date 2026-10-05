@@ -676,7 +676,8 @@ namespace Orly {
          merge, then a commutative fold (TFoldDataFile) if any non-Assign entries
          are present. can_tail drops superseded versions, and can_tail_tombstone
          also drops tombstones (single-file merges only). Both apply only at the
-         root and only when tailing is allowed. release_up_to plays no part in
+         root. The callers check their own flags: --allow_tailing for StepTail,
+         --prune_merge_history for StepMergeDisk. release_up_to plays no part in
          either. Returns the new generation id. */
       virtual size_t MergeFiles(const std::vector<size_t> &gen_id_vec,
                                 Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,

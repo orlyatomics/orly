@@ -19,6 +19,7 @@
 #include <orly/indy/disk/merge_data_file.h>
 #include <exception>
 #include <optional>
+#include <sstream>
 
 #include <orly/indy/disk/util/hash_util.h>
 #include <orly/indy/util/block_vec.h>
@@ -976,6 +977,17 @@ class TMergeDataFileImpl {
         file_inserted = true;
         Engine->InsertFile(file_uid, TFileObj::TKind::DataFile, gen_id, StartingBlockId, StartingBlockOffset, FileLength, total_num_keys, LowestSeq, HighestSeq, completion_trigger);
         completion_trigger.Wait();
+      }
+      /* Say what a tail merge dropped (#592). Info level, like StepTail's own line. */
+      if (CanTail) {
+        size_t num_input_updates = 0UL;
+        for (const auto &reader : ReadFileVec) {
+          num_input_updates += reader->GetNumUpdates();
+        }
+        std::ostringstream strm;
+        strm << file_uid;
+        syslog(LOG_INFO, "MergeDataFile [%s] gen [%ld]: tail merge of [%ld] files kept [%ld] of [%ld] updates",
+               strm.str().c_str(), gen_id, gen_vec.size(), NumUpdates, num_input_updates);
       }
     } catch (const std::exception &ex) {
       syslog(LOG_ERR, "MergeDataFile gen [%ld] caught error [%s]", gen_id, ex.what());

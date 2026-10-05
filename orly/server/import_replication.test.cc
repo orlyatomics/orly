@@ -37,8 +37,9 @@
      7. kill slave 1: the master must demote to solo, stay alive, and accept
         slave 2 (#500), which again receives files and mapping.  Before
         slave 2 joins, the solo master overwrites the same keys round after
-        round, so the files the join reads have had superseded versions
-        dropped by its disk merges (#592);
+        round, and the test waits until the master's log shows a disk merge
+        of the global pov that dropped updates, so the files the join copies
+        include pruned ones (#592);
      8. write another row (live replication to slave 2), then kill the
         master: slave 2 promotes itself to solo;
      9. read every row on the promoted slave 2: the imported rows and the
@@ -53,6 +54,10 @@
    deterministically.  Graceful shutdown while paired — including with an
    UNRESPONSIVE peer — is pinned separately by the
    GracefulShutdownUnresponsiveSlave fixture below (#461).
+
+   The PrunedJoinWithoutFileSync fixture repeats the #592 part of step 7
+   with a slave that runs --allow_file_sync=false. That slave pulls the
+   updates over pruned files instead of copying them.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -79,12 +84,14 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cstdio>
 #include <condition_variable>
 #include <deque>
 #include <fstream>
 #include <mutex>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -528,7 +535,8 @@ vector<string> MakeServerArgs(const string &orlyi_path,
                               in_port_t port,
                               in_port_t slave_port,
                               const string &starting_state,
-                              in_port_t master_slave_port) {
+                              in_port_t master_slave_port,
+                              const vector<string> &extra_args = {}) {
   vector<string> args = {
       orlyi_path,
       "--mem_sim",
@@ -553,6 +561,7 @@ vector<string> MakeServerArgs(const string &orlyi_path,
   if (starting_state == "SLAVE") {
     args.push_back("--address_of_master=127.0.0.1:" + to_string(master_slave_port));
   }
+  args.insert(args.end(), extra_args.begin(), extra_args.end());
   return args;
 }
 
@@ -617,6 +626,85 @@ Rt::TOpt<int64_t> ReadWithRetry(const TAddress &addr, int64_t n, seconds deadlin
       return Rt::TOpt<int64_t>();
     }
     this_thread::sleep_for(seconds(1));
+  }
+}
+
+/* #592: the keys the pruning scenarios overwrite, how often, and the value of each write. */
+const int64_t OverwrittenKeyBase = 100L, OverwrittenKeys = 40L, OverwriteRounds = 25L;
+
+int64_t OverwrittenVal(int64_t round, int64_t key) {
+  return round * 1000L + key;
+}
+
+/* How many disk merges of the global pov's files have dropped updates, per the server's log
+   (TMergeDataFileImpl logs every tail merge at info level, #592). */
+size_t CountPruningMerges(const string &path) {
+  ostringstream global;
+  global << GlobalPovId;
+  const string prefix = "MergeDataFile [" + global.str() + "]";
+  ifstream strm(path);
+  string line;
+  size_t count = 0;
+  while (getline(strm, line)) {
+    if (line.find(prefix) == string::npos) {
+      continue;
+    }
+    const size_t kept_pos = line.find("kept [");
+    if (kept_pos == string::npos) {
+      continue;
+    }
+    unsigned long kept = 0, total = 0;
+    if (sscanf(line.c_str() + kept_pos, "kept [%lu] of [%lu] updates", &kept, &total) == 2 && kept < total) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+/* On a solo master, overwrite the same keys round after round. Then wait until two things have
+   happened: the writes have reached the global pov, and a disk merge has dropped superseded
+   versions there since the writes began. A slave that joins after this reads files that merge
+   has pruned (#592). */
+void OverwriteUntilPruned(const TAddress &master_addr, const string &master_log) {
+  const size_t pruned_before = CountPruningMerges(master_log);
+  auto client = make_shared<TExerciseClient>(master_addr);
+  auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
+  for (int64_t round = 1L; round <= OverwriteRounds; ++round) {
+    for (int64_t key = 0L; key < OverwrittenKeys; ++key) {
+      WriteVal(client, **pov_id, OverwrittenKeyBase + key, OverwrittenVal(round, key));
+    }
+  }
+  /* The writes reach the global pov by promotion, in order: wait for the last one. */
+  const int64_t last_key = OverwrittenKeys - 1L;
+  const auto give_up = steady_clock::now() + seconds(120);
+  for (;;) {
+    Rt::TOpt<int64_t> row = ReadWithRetry(master_addr, OverwrittenKeyBase + last_key, seconds(30));
+    if (row.IsKnown() && row.GetVal() == OverwrittenVal(OverwriteRounds, last_key)) {
+      break;
+    }
+    if (steady_clock::now() >= give_up) {
+      throw runtime_error("the overwrites never reached the global pov; see " + master_log);
+    }
+    this_thread::sleep_for(milliseconds(200));
+  }
+  /* The memory merge flushes the global pov every 40ms and the disk merge runs every 10ms, so
+     the overwrites span many files, and a pruning merge follows them closely. */
+  while (CountPruningMerges(master_log) <= pruned_before) {
+    if (steady_clock::now() >= give_up) {
+      throw runtime_error("no disk merge of the global pov dropped any update; see " + master_log);
+    }
+    this_thread::sleep_for(milliseconds(200));
+  }
+}
+
+/* Every overwritten key reads its last value on the server at addr (#592). */
+void ExpectOverwrittenKeys(const TAddress &addr) {
+  for (int64_t key = 0L; key < OverwrittenKeys; ++key) {
+    Rt::TOpt<int64_t> row = ReadWithRetry(addr, OverwrittenKeyBase + key, seconds(30));
+    EXPECT_TRUE(row.IsKnown());
+    if (row.IsKnown()) {
+      EXPECT_EQ(row.GetVal(), OverwrittenVal(OverwriteRounds, key));
+    }
   }
 }
 
@@ -832,36 +920,10 @@ FIXTURE(ImportReplication) {
   }
   EXPECT_TRUE(master.IsAlive());
 
-  /* While solo, overwrite the same keys round after round (#592). The master's disk merges drop
-     the superseded versions, and slave 2's join must still carry every key's latest value, in
-     the data files it copies and in the updates it pulls. */
-  const int64_t overwritten_keys = 40L, overwrite_rounds = 25L;
-  auto overwritten_val = [](int64_t round, int64_t key) { return round * 1000L + key; };
-  {
-    auto client = make_shared<TExerciseClient>(master_addr);
-    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
-    for (int64_t round = 1L; round <= overwrite_rounds; ++round) {
-      for (int64_t key = 0L; key < overwritten_keys; ++key) {
-        WriteVal(client, **pov_id, 100L + key, overwritten_val(round, key));
-      }
-      /* let a memory merge (every 40ms) flush the round, so the rounds land in separate
-         files for the disk merges to combine */
-      this_thread::sleep_for(milliseconds(60));
-    }
-    /* The writes reach the global pov by promotion; wait for the last one before the join. */
-    const int64_t last_key = overwritten_keys - 1L;
-    const auto give_up = steady_clock::now() + seconds(60);
-    for (;;) {
-      Rt::TOpt<int64_t> row = ReadWithRetry(master_addr, 100L + last_key, seconds(30));
-      if (row.IsKnown() && row.GetVal() == overwritten_val(overwrite_rounds, last_key)) {
-        break;
-      }
-      if (steady_clock::now() >= give_up) {
-        throw runtime_error("the overwrites never reached the global pov; see " + master_log);
-      }
-      this_thread::sleep_for(milliseconds(200));
-    }
-  }
+  /* While solo, overwrite the same keys round after round, until a disk merge has dropped
+     superseded versions (#592). Slave 2's join must still carry every key's latest value in the
+     data files it copies. */
+  OverwriteUntilPruned(master_addr, master_log);
 
   /* Attach slave 2: the re-armed master must accept it (#500), and the
      join must again deliver files and mapping. */
@@ -879,6 +941,8 @@ FIXTURE(ImportReplication) {
     throw runtime_error("slave 2 never reached Slave state; see " + slave_2_log);
   }
   EXPECT_TRUE(WaitForLog(slave_2_log, "Replicating index [", seconds(60)));
+  /* the join copied the master's data files, pruned ones included (#592) */
+  EXPECT_TRUE(LogContains(slave_2_log, "sync file ["));
 
   /* Install on slave 2, then push one more row through the master so the
      live stream to slave 2 is exercised too. */ {
@@ -922,13 +986,77 @@ FIXTURE(ImportReplication) {
     deadline = seconds(30);
   }
   /* ...and so must every overwritten key, at its last value (#592). */
-  for (int64_t key = 0L; key < overwritten_keys; ++key) {
-    Rt::TOpt<int64_t> row = ReadWithRetry(TAddress(TAddress::IPv4Loopback, slave_2_port), 100L + key, seconds(30));
-    EXPECT_TRUE(row.IsKnown());
-    if (row.IsKnown()) {
-      EXPECT_EQ(row.GetVal(), overwritten_val(overwrite_rounds, key));
-    }
+  ExpectOverwrittenKeys(TAddress(TAddress::IPv4Loopback, slave_2_port));
+}
+
+/* #592: a slave joining with --allow_file_sync=false pulls the master's updates over key ranges
+   (PullUpdateRange), walking files a disk merge has pruned, instead of copying the files. After
+   it promotes, every overwritten key must read its last value. */
+FIXTURE(PrunedJoinWithoutFileSync) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = GetScratchDir();
+  const string orlyi_path = GetOrlyiPath();
+  TLogTailDumper log_dumper;
+  if (!ifstream(orlyi_path).good()) {
+    throw runtime_error("orlyi binary not built at [" + orlyi_path + "]; run `make debug` first");
   }
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  { ofstream marker(pkg_dir + "/__orly__"); }
+  {
+    ofstream src(scratch + "/sample.orly");
+    src << SamplePackage;
+  }
+  Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
+
+  const in_port_t master_port = ProbeFreePort();
+  const in_port_t master_slave_port = ProbeFreePort();
+  const string master_log = scratch + "/master.log";
+  log_dumper.Add(master_log);
+  TChildServer master(
+      MakeServerArgs(orlyi_path, "pruned_join_master", pkg_dir, master_port,
+                     master_slave_port, "SOLO", 0),
+      master_log);
+  if (!WaitForPort(master_port, seconds(240))) {
+    throw runtime_error("master never came up; see " + master_log);
+  }
+  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage sample")->Sync();
+  }
+  OverwriteUntilPruned(master_addr, master_log);
+
+  const in_port_t slave_port = ProbeFreePort();
+  const string slave_log = scratch + "/slave.log";
+  log_dumper.Add(slave_log);
+  TChildServer slave(
+      MakeServerArgs(orlyi_path, "pruned_join_slave", pkg_dir, slave_port,
+                     ProbeFreePort(), "SLAVE", master_slave_port, {"--allow_file_sync=false"}),
+      slave_log);
+  if (!WaitForPort(slave_port, seconds(240))) {
+    throw runtime_error("slave never came up; see " + slave_log);
+  }
+  if (!WaitForLog(slave_log, "to [Slave]", seconds(120))) {
+    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  }
+  /* it pulled updates, and copied no file */
+  EXPECT_TRUE(LogContains(slave_log, "TSlave: PullUpdateRange from ["));
+  EXPECT_TRUE(!LogContains(slave_log, "sync file ["));
+  {
+    auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_port));
+    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave")->Sync();
+  }
+
+  /* Promote the slave: SIGKILL the master (see the header comment). The pause lets the
+     just-destroyed clients' dispatch threads wind down first. */
+  this_thread::sleep_for(seconds(2));
+  master.Kill();
+  master.Reap(seconds(60));
+  if (!WaitForLog(slave_log, "slave promoted to solo", seconds(120))) {
+    throw runtime_error("slave never promoted; see " + slave_log);
+  }
+  ExpectOverwrittenKeys(TAddress(TAddress::IPv4Loopback, slave_port));
 }
 
 /* #461: graceful shutdown of a PAIRED master whose slave has gone

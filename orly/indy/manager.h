@@ -67,6 +67,7 @@ namespace Orly {
                std::chrono::milliseconds replication_delay,
                TState state,
                bool allow_tailing,
+               bool prune_merge_history,
                bool allow_file_sync,
                bool no_realtime,
                Base::TFd &&socket,

@@ -1264,7 +1264,7 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           }
           if (gen_layer_to_tail) {
             syslog(LOG_INFO, "Tailing file [%ld] with [%ld] num keys", gen_id_to_tail, num_keys);
-            size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), true, true);
+            size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsTailingAllowed(), true);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
@@ -1401,12 +1401,16 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           if (gen_id_vec.size() > 0) {
             /* Merge as a tail merge, dropping each input's superseded versions (#592). Otherwise
                every version of every key survives every merge, and disk use grows with every write
-               ever made. MergeFiles allows this only for a repo with no parent, whose history no
-               one reads back: a slave join walks a view that pins the files it started from, and
-               live replication ships transactions, not files. A child's unpromoted updates are
-               what Tetris reads, so its merges keep everything. Tombstones stay: this pair need
-               not be the oldest files, so a tombstone may still be hiding an older version. */
-            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), true, false);
+               ever made. --prune_merge_history turns this off.
+
+               MergeFiles tails only a repo with no parent, whose history no one reads back. A
+               slave join walks a view that pins the files it started from, and live replication
+               ships transactions, not files. A child's unpromoted updates are what Tetris reads,
+               so its merges keep everything.
+
+               Tombstones stay: this pair need not be the oldest files, so a tombstone may still be
+               hiding an older version. */
+            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsMergePruningAllowed(), false);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
@@ -1604,7 +1608,9 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   }
   Disk::Util::TVolumeManager::TClaim claim(Manager->GetEngine()->GetVolMan(), input_bytes);
   size_t intermediate_gen_id = GetNextGenId();
-  bool my_can_tail = can_tail && !static_cast<bool>(GetParentRepo()) && IsTailingAllowed();
+  /* The callers apply their own flags: --allow_tailing for StepTail, --prune_merge_history for
+     StepMergeDisk. */
+  bool my_can_tail = can_tail && !static_cast<bool>(GetParentRepo());
   bool my_can_tail_tombstone = my_can_tail && can_tail_tombstone && (gen_id_vec.size() == 1);
   /* Phase A: standard merge. Produces a data file at intermediate_gen_id
      with same-mutator commutative runs still expanded -- correct but

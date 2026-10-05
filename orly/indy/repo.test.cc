@@ -118,8 +118,8 @@ class TMyManager
   NO_COPY(TMyManager);
   public:
 
-  TMyManager(Disk::Util::TEngine *engine, Base::TScheduler *scheduler)
-      : TManager(engine, 1h, 1h, true, true, 1000ms, scheduler,
+  TMyManager(Disk::Util::TEngine *engine, Base::TScheduler *scheduler, bool prune_merge_history = true)
+      : TManager(engine, 1h, 1h, true, prune_merge_history, true, 1000ms, scheduler,
                  100UL, 100UL, 20UL, MemMergeCoreVec, DiskMergeCoreVec, true) {}
 
   /* The sweeps Indy::TManager runs in its destructor. They also remove the files that merges
@@ -307,6 +307,164 @@ FIXTURE(RootMergeDropsSupersededHistory) {
       EXPECT_EQ(context[index_key(counter)], TKey(100L + 3L * num_rounds, &arena, state_alloc));
     }
 
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Shared setup for the fixtures below: a root safe repo on a stub manager, and helpers to
+   commit to it, flush its memory layer to a disk file, merge its disk files and read a key. */
+class TRootRepoFixture {
+  NO_COPY(TRootRepoFixture);
+  public:
+
+  explicit TRootRepoFixture(bool prune_merge_history)
+      : StateBuf(Sabot::State::GetMaxStateSize()),
+        State(StateBuf.data()),
+        Engine(&Scheduler, 256, 256, 16384, 1, 1024, 1),
+        IdxId(TUuid::Twister) {
+    Scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Manager = make_unique<TMyManager>(Engine.GetEngine(), &Scheduler, prune_merge_history);
+    Repo = Manager->GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+    Stepped = dynamic_cast<TSteppedSafeRepo *>(Repo.Get());
+    assert(Stepped);
+  }
+
+  ~TRootRepoFixture() {
+    Repo.Reset();
+    Manager.reset();
+  }
+
+  TIndexKey IndexKey(int64_t key) {
+    return TIndexKey(IdxId, TKey(make_tuple(key), &Arena, State));
+  }
+
+  void Commit(const vector<tuple<int64_t, int64_t, TMutator>> &entries) {
+    auto transaction = Manager->NewTransaction();
+    auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&Arena), TKey(Base::TUuid(TUuid::Twister), &Arena, State));
+    for (const auto &[key, val, mut] : entries) {
+      update->AddEntry(IndexKey(key), TKey(val, &Arena, State), mut);
+    }
+    transaction->Push(Repo, update);
+    transaction->Prepare();
+    transaction->CommitAction();
+    ++NumCommits;
+  }
+
+  void Flush() {
+    Stepped->StepMergeMem();
+  }
+
+  void MergeDisk(size_t passes) {
+    for (size_t i = 0UL; i < passes; ++i) {
+      Stepped->StepMergeDisk(256UL);
+    }
+  }
+
+  TKey Read(int64_t key) {
+    TSuprena ctx_arena;
+    TContext context(Repo, &ctx_arena);
+    return TKey(&Arena, State, context[IndexKey(key)]);
+  }
+
+  TKey Int(int64_t val) {
+    return TKey(val, &Arena, State);
+  }
+
+  size_t CountWalk() {
+    auto view = make_unique<Orly::Indy::TRepo::TView>(Stepped);
+    size_t count = 0UL;
+    auto walker_ptr = Stepped->NewUpdateWalker(view, 1UL);
+    for (TUpdateWalker &walker = *walker_ptr; walker; ++walker) {
+      ++count;
+    }
+    return count;
+  }
+
+  size_t NumCommits = 0UL;
+
+  private:
+
+  vector<uint8_t> StateBuf;
+
+  void *State;
+
+  TScheduler Scheduler;
+
+  Orly::Indy::Disk::Sim::TMemEngine Engine;
+
+  unique_ptr<TMyManager> Manager;
+
+  L0::TManager::TPtr<L0::TManager::TRepo> Repo;
+
+  TSteppedSafeRepo *Stepped = nullptr;
+
+  TSuprena Arena;
+
+  const Base::TUuid IdxId;
+
+};  // TRootRepoFixture
+
+/* #592 follow-up: a `+=` chain whose Assign base sits in a disk file outside the merge.
+   - The base file also holds 100 other keys, which puts it a generation above the two small
+     files after it. So StepMergeDisk merges only those two, leaving the base out.
+   - The two small files hold two `+= 1` each. The merged chain must keep all four deltas
+     for the read to fold onto the base: 10 + 4 = 14. */
+FIXTURE(RootMergeFoldsChainOntoBaseOutsideMerge) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(true);
+      const int64_t counter = -1L;
+      root.Commit({{counter, 10L, TMutator::Assign}});
+      for (int64_t key = 0L; key < 100L; ++key) {
+        root.Commit({{key, key, TMutator::Assign}});
+      }
+      root.Flush();
+      for (int64_t file = 0L; file < 2L; ++file) {
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Flush();
+      }
+      root.MergeDisk(4UL);
+      EXPECT_EQ(root.Read(counter), root.Int(14L));
+      /* and again after a third small file merges into the merged pair */
+      root.Commit({{counter, 1L, TMutator::Add}});
+      root.Flush();
+      root.MergeDisk(4UL);
+      EXPECT_EQ(root.Read(counter), root.Int(15L));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #592 follow-up: --prune_merge_history=false keeps every update through the same merges that
+   otherwise drop the superseded ones. */
+FIXTURE(PruneMergeHistoryFlag) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    for (bool prune : {true, false}) {
+      TRootRepoFixture root(prune);
+      for (int64_t round = 1L; round <= 8L; ++round) {
+        for (int64_t key = 0L; key < 20L; ++key) {
+          root.Commit({{key, round * 100L + key, TMutator::Assign}});
+        }
+        root.Flush();
+      }
+      root.MergeDisk(16UL);
+      for (int64_t key = 0L; key < 20L; ++key) {
+        EXPECT_EQ(root.Read(key), root.Int(800L + key));
+      }
+      const size_t walked = root.CountWalk();
+      if (prune) {
+        EXPECT_LT(walked, root.NumCommits / 2UL);
+      } else {
+        EXPECT_EQ(walked, root.NumCommits);
+      }
+    }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

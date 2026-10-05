@@ -463,6 +463,7 @@ namespace Orly {
                  std::chrono::milliseconds merge_mem_delay,
                  std::chrono::milliseconds merge_disk_delay,
                  bool allow_tailing,
+                 bool prune_merge_history,
                  bool no_realtime,
                  std::chrono::milliseconds layer_cleaning_interval,
                  Base::TScheduler *scheduler,

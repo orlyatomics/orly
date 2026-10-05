@@ -829,3 +829,231 @@ FIXTURE(TailBoundsOverwriteHistory) {
   });
 }
 
+
+/* #592 follow-up helpers. */
+
+/* One entry of a test update. A value of nullopt is a tombstone. */
+struct TTestEntry {
+  TUuid IndexId;
+  int64_t Key;
+  optional<int64_t> Val;
+  TMutator Mutator;
+};
+
+/* Insert one update holding the given entries, which may span indexes. */
+static void InsertEntries(TMockMem &mem_layer, TSequenceNumber seq_num, const vector<TTestEntry> &entries) {
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
+  update->SetSequenceNumber(seq_num);
+  for (const auto &entry : entries) {
+    const TKey val = entry.Val ? TKey(*entry.Val, &arena, state_alloc) : TKey(Native::TTombstone::Tombstone, &arena, state_alloc);
+    update->AddEntry(TIndexKey(entry.IndexId, TKey(make_tuple(entry.Key), &arena, state_alloc)), val, entry.Mutator);
+  }
+  mem_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
+}
+
+/* The current entries of one index in a file: key -> (value, or nullopt for a tombstone; mutator). */
+static map<int64_t, pair<optional<int64_t>, TMutator>> ReadState(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id, const TUuid &index_id) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, gen_id);
+  TReader::TArena main_arena(&reader, mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  TReader::TIndexFile idx_file(&reader, index_id, RealTime);
+  TReader::TArena idx_arena(&idx_file, mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  map<int64_t, pair<optional<int64_t>, TMutator>> out;
+  void *key_state = alloca(Sabot::State::GetMaxStateSize());
+  void *val_state = alloca(Sabot::State::GetMaxStateSize());
+  for (TReader::TIndexFile::TKeyCursor csr(&idx_file); csr; ++csr) {
+    tuple<int64_t> key;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*csr).Key.NewState(&idx_arena, key_state)), key);
+    optional<int64_t> val;
+    if (!(*csr).Value.IsTombstone()) {
+      int64_t v = 0L;
+      Sabot::ToNative(*Sabot::State::TAny::TWrapper((*csr).Value.NewState(&main_arena, val_state)), v);
+      val = v;
+    }
+    out[get<0>(key)] = make_pair(val, (*csr).Mutator);
+  }
+  return out;
+}
+
+/* #592 follow-up: tombstones survive a tail merge, and so does the chain of a `+=` written
+   after one.
+   - Key 10 is overwritten twice in the older input, then overwritten again and deleted in the
+     newer one. It must stay deleted, though its older versions are still in the inputs.
+   - Key 20 is assigned 100 in the older input. In the newer one it is deleted, then bumped by
+     5 and by 7. The merge must keep its chain down to the tombstone, so it folds to 12; folding
+     onto the old 100 would give 112. */
+FIXTURE(TailKeepsTombstonesAndChainsAfterThem) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid idx(TUuid::Twister);
+    /* older input */ {
+      TMockMem mem_layer;
+      InsertEntries(mem_layer, 1UL, {{idx, 10L, 1L, TMutator::Assign}});
+      InsertEntries(mem_layer, 2UL, {{idx, 10L, 2L, TMutator::Assign}});
+      InsertEntries(mem_layer, 3UL, {{idx, 20L, 100L, TMutator::Assign}});
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
+    }
+    /* newer input */ {
+      TMockMem mem_layer;
+      InsertEntries(mem_layer, 4UL, {{idx, 10L, 3L, TMutator::Assign}});
+      InsertEntries(mem_layer, 5UL, {{idx, 10L, nullopt, TMutator::Assign}});
+      InsertEntries(mem_layer, 6UL, {{idx, 20L, nullopt, TMutator::Assign}});
+      InsertEntries(mem_layer, 7UL, {{idx, 20L, 5L, TMutator::Add}});
+      InsertEntries(mem_layer, 8UL, {{idx, 20L, 7L, TMutator::Add}});
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 2UL, 20UL, 0U, Medium);
+    }
+    /* As StepMergeDisk runs it: a tail merge that keeps tombstones, then the fold. */ {
+      TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{1UL, 2UL}, file_id, 3UL, 0U, Low, 16384, 20UL, true, false);
+      EXPECT_GT(merge.GetNumNonAssignEntries(), 0UL);
+    }
+    {
+      TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, 3UL, 4UL, Low, 20UL);
+    }
+    const auto state = ReadState(mem_engine, file_id, 4UL, idx);
+    EXPECT_EQ(state.size(), 2UL);
+    if (EXPECT_TRUE(state.count(10L) == 1UL)) {
+      EXPECT_FALSE(state.at(10L).first.has_value());
+    }
+    if (EXPECT_TRUE(state.count(20L) == 1UL)) {
+      EXPECT_TRUE(state.at(20L).first == optional<int64_t>(12L));
+      EXPECT_TRUE(state.at(20L).second == TMutator::Assign);
+    }
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #592 follow-up: the keep rule spans indexes.
+   - Update 1 writes key 1 in index X and key 2 in index Y. Key 1 is overwritten later, so only
+     key 2 still holds a current value. The tail pass must keep update 1 whole, X entry
+     included, because its sequence number is kept for Y's sake.
+   - Update 3 writes key 5 in X and key 6 in Y. Both are overwritten later, by separate
+     updates, so both of its entries must go together.
+   All of this happens inside the older input. The newer input only adds an unrelated key:
+   an input's own current versions survive a merge as history. */
+FIXTURE(TailKeepsCrossIndexUpdatesWhole) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid idx_x(TUuid::Twister), idx_y(TUuid::Twister);
+    TSuprena arena;
+    /* older input */ {
+      TMockMem mem_layer;
+      InsertEntries(mem_layer, 1UL, {{idx_x, 1L, 10L, TMutator::Assign}, {idx_y, 2L, 20L, TMutator::Assign}});
+      InsertEntries(mem_layer, 2UL, {{idx_x, 1L, 11L, TMutator::Assign}});
+      InsertEntries(mem_layer, 3UL, {{idx_x, 5L, 50L, TMutator::Assign}, {idx_y, 6L, 60L, TMutator::Assign}});
+      InsertEntries(mem_layer, 4UL, {{idx_x, 5L, 51L, TMutator::Assign}});
+      InsertEntries(mem_layer, 5UL, {{idx_y, 6L, 61L, TMutator::Assign}});
+      InsertEntries(mem_layer, 6UL, {{idx_x, 1L, 12L, TMutator::Assign}});
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
+    }
+    /* newer input */ {
+      TMockMem mem_layer;
+      InsertEntries(mem_layer, 7UL, {{idx_x, 9L, 90L, TMutator::Assign}});
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 2UL, 20UL, 0U, Medium);
+    }
+    {
+      TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{1UL, 2UL}, file_id, 3UL, 0U, Low, 16384, 20UL, true, false);
+    }
+    /* latest values in both indexes */
+    const auto x = ReadState(mem_engine, file_id, 3UL, idx_x);
+    const auto y = ReadState(mem_engine, file_id, 3UL, idx_y);
+    EXPECT_TRUE(x.size() == 3UL && x.at(1L).first == optional<int64_t>(12L) && x.at(5L).first == optional<int64_t>(51L) && x.at(9L).first == optional<int64_t>(90L));
+    EXPECT_TRUE(y.size() == 2UL && y.at(2L).first == optional<int64_t>(20L) && y.at(6L).first == optional<int64_t>(61L));
+    /* Every update the walker finds, by sequence number. The walker's cores live in arenas
+       it moves on from, so copy them into ours. */
+    map<TSequenceNumber, map<TIndexKey, TKey>> updates;
+    for (TUpdateWalkFile walker(mem_engine.GetEngine(), file_id, 3UL, 0U); walker; ++walker) {
+      auto &entries = updates[(*walker).SequenceNumber];
+      for (const auto &entry : (*walker).EntryVec) {
+        entries.insert(make_pair(TIndexKey(entry.IndexKey.GetIndexId(), TKey(&arena, state_alloc, entry.IndexKey.GetKey())),
+                                 TKey(&arena, state_alloc, TKey(entry.Op, (*walker).MainArena))));
+      }
+    }
+    /* update 1 is whole: both its X and its Y entry */
+    if (EXPECT_TRUE(updates.count(1UL) == 1UL)) {
+      const auto &entries = updates.at(1UL);
+      EXPECT_EQ(entries.size(), 2UL);
+      const TIndexKey key_1(idx_x, TKey(make_tuple(1L), &arena, state_alloc));
+      const TIndexKey key_2(idx_y, TKey(make_tuple(2L), &arena, state_alloc));
+      EXPECT_TRUE(entries.count(key_1) == 1UL && entries.at(key_1) == TKey(10L, &arena, state_alloc));
+      EXPECT_TRUE(entries.count(key_2) == 1UL && entries.at(key_2) == TKey(20L, &arena, state_alloc));
+    }
+    /* update 3 is gone, both of its entries; so is key 1's middle version (update 2) */
+    EXPECT_EQ(updates.count(3UL), 0UL);
+    EXPECT_EQ(updates.count(2UL), 0UL);
+    /* nothing of update 3 lingers as history in either index */
+    const auto counts_x = CountFile(mem_engine, file_id, 3UL, idx_x);
+    const auto counts_y = CountFile(mem_engine, file_id, 3UL, idx_y);
+    EXPECT_EQ(get<2>(counts_x), 1UL);  // key 1 at update 1
+    EXPECT_EQ(get<2>(counts_y), 0UL);
+    EXPECT_EQ(get<0>(counts_x), 5UL);  // updates 1, 4, 5, 6 and 7
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #592 follow-up: a `+=` chain that spans the two inputs of a tail merge.
+   - Case 1: the Assign base is in the older input. The chain folds to the base plus every
+     delta.
+   - Case 2: the base is in a third file, outside the merge. The merged chain must stay a
+     commutative delta holding every increment from both inputs, so that a read can add it
+     onto that base. */
+FIXTURE(TailFoldsChainsAcrossInputs) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid idx(TUuid::Twister);
+    auto write_file = [&](size_t gen, const vector<tuple<TSequenceNumber, int64_t, TMutator>> &writes) {
+      TMockMem mem_layer;
+      for (const auto &[seq, val, mut] : writes) {
+        InsertEntries(mem_layer, seq, {{idx, 42L, val, mut}});
+      }
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, gen, 20UL, 0U, Medium);
+    };
+    auto tail_and_fold = [&](size_t older, size_t newer, size_t merged, size_t folded) {
+      {
+        TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{older, newer}, file_id, merged, 0U, Low, 16384, 20UL, true, false);
+      }
+      TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, merged, folded, Low, 20UL);
+    };
+    /* case 1: base 10 in the older input, then three += 1 */ {
+      write_file(1UL, {{1UL, 10L, TMutator::Assign}, {2UL, 1L, TMutator::Add}});
+      write_file(2UL, {{3UL, 1L, TMutator::Add}, {4UL, 1L, TMutator::Add}});
+      tail_and_fold(1UL, 2UL, 3UL, 4UL);
+      const auto state = ReadState(mem_engine, file_id, 4UL, idx);
+      if (EXPECT_TRUE(state.count(42L) == 1UL)) {
+        EXPECT_TRUE(state.at(42L).first == optional<int64_t>(13L));
+        EXPECT_TRUE(state.at(42L).second == TMutator::Assign);
+      }
+    }
+    /* case 2: base 10 in gen 10, outside the merge; two += 1 in each input */ {
+      write_file(10UL, {{11UL, 10L, TMutator::Assign}});
+      write_file(11UL, {{12UL, 1L, TMutator::Add}, {13UL, 1L, TMutator::Add}});
+      write_file(12UL, {{14UL, 1L, TMutator::Add}, {15UL, 1L, TMutator::Add}});
+      tail_and_fold(11UL, 12UL, 13UL, 14UL);
+      const auto state = ReadState(mem_engine, file_id, 14UL, idx);
+      if (EXPECT_TRUE(state.count(42L) == 1UL)) {
+        EXPECT_TRUE(state.at(42L).first == optional<int64_t>(4L));
+        EXPECT_TRUE(state.at(42L).second == TMutator::Add);
+      }
+      /* the base is untouched */
+      const auto base = ReadState(mem_engine, file_id, 10UL, idx);
+      EXPECT_TRUE(base.at(42L).first == optional<int64_t>(10L));
+    }
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
