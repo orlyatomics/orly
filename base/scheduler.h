@@ -109,8 +109,8 @@ namespace Base {
       }
 
       /* Starts a scheduler with this policy, then schedules the given job, passing it the scheduler.
-         This thread will then block until it receives ctrl-c, then it will shut down the scheduler
-         and return.  It's common to call this function from main(). */
+         This thread will then block until it receives ctrl-c (SIGINT) or SIGTERM, then it will shut
+         down the scheduler and return.  It's common to call this function from main(). */
       void RunUntilCtrlC(TMainJob &&main_job) const;
 
       /* As above, but runs 'on_signal' after ctrl-c lands and before the

@@ -50,6 +50,7 @@ start_server() {  # $1 = create true|false, $2 = log tag
     --reporting_port_number=19603 --connection_backlog=10 \
     --package_dir="$WORK/packages" --max_parallel_frames=4000 \
     --page_cache_size=256 --block_cache_size=64 --do_fsync --no_realtime \
+    --log_info \
     > "$WORK/orlyi-$2.log" 2>&1 &
   SRV_PID=$!
   for _ in $(seq 1 60); do
@@ -62,15 +63,23 @@ start_server() {  # $1 = create true|false, $2 = log tag
   echo "orlyi ($2) never came up:"; tail -20 "$WORK/orlyi-$2.log"; exit 1
 }
 
-stop_server() {
-  # SIGINT triggers TServer::Shutdown() (flush + orderly stop, #440);
-  # wait for the graceful exit, with kill -9 only as a last resort.
-  sudo kill -INT "$SRV_PID" 2>/dev/null || true
+stop_server() {  # $1 = signal (INT or TERM), $2 = log tag
+  # SIGINT and SIGTERM both trigger TServer::Shutdown() (flush + orderly stop,
+  # #440; SIGTERM is what docker stop sends, #598). The shutdown must finish on
+  # its own: needing kill -9 fails the test, since the data checks after a
+  # restart can't tell a flushed shutdown from a lucky one.
+  sudo kill "-$1" "$SRV_PID" 2>/dev/null || true
   for _ in $(seq 1 30); do
     sudo kill -0 "$SRV_PID" 2>/dev/null || break
     sleep 2
   done
-  sudo kill -9 "$SRV_PID" 2>/dev/null || true
+  if sudo kill -0 "$SRV_PID" 2>/dev/null; then
+    sudo kill -9 "$SRV_PID" 2>/dev/null || true
+    echo "orlyi ($2) ignored SIG$1 for 60s:"; tail -20 "$WORK/orlyi-$2.log"; exit 1
+  fi
+  if ! grep -q "TServer::Shutdown() complete" "$WORK/orlyi-$2.log"; then
+    echo "orlyi ($2) exited on SIG$1 without completing its shutdown:"; tail -20 "$WORK/orlyi-$2.log"; exit 1
+  fi
   SRV_PID=""
   sleep 2
 }
@@ -92,8 +101,8 @@ print(pov)
 c.close()" | tail -1)"
 echo "   wrote 10 keys via pov $OLD_POV"
 
-echo "[4/8] stop (flush-on-shutdown makes the old 75s flush window unnecessary, #440)"
-stop_server
+echo "[4/8] stop with SIGTERM, as docker stop does (#598; flush-on-shutdown, #440)"
+stop_server TERM run1
 
 echo "[5/8] restart (create=false): data + package must survive; old pov must be refused"
 start_server false run2
@@ -117,7 +126,7 @@ c.uninstall('kv', 1)
 c.close()"
 
 echo "[6/8] stop"
-stop_server
+stop_server INT run2
 
 echo "[7/8] restart: uninstall must have survived"
 start_server false run3
@@ -132,6 +141,6 @@ except orly.OrlyError as ex:
     assert 'non-installed' in str(ex), str(ex)
 print('   uninstall persisted OK')
 c.close()"
-stop_server
+stop_server INT run3
 
 echo "[8/8] PASS: restart durability verified"
