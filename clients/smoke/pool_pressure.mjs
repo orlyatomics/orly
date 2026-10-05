@@ -37,7 +37,7 @@ function pool(body, name) {
 }
 
 async function phase(label, povFor) {
-  let writes = 0, stop = false, peak = 0;
+  let writes = 0, stop = false, peak = 0, first_write = 0, last_write = 0;
   const failures = [];
   const writer = async (w) => {
     const c = await connect(URL);
@@ -47,6 +47,8 @@ async function phase(label, povFor) {
       try {
         await c.call(pov, "sample", "write_val", { n: w * 10_000_000 + i, x: i });
         ++writes;
+        last_write = Date.now();
+        if (!first_write) first_write = last_write;
       } catch (err) {
         failures.push(`writer ${w}: ${err?.message ?? err}`);
         break;
@@ -69,7 +71,9 @@ async function phase(label, povFor) {
   }
   stop = true;
   await Promise.all(writers);
-  const elapsed = (Date.now() - t0) / 1000;
+  /* From the first acknowledged write to the last: the 1 s poll loop above
+     would quantise a phase that stops at MAX_WRITES to whole seconds. */
+  const elapsed = Math.max(last_write - first_write, 1) / 1000;
   /* Dead layers must actually be freed: before #584's fix the layer cleaner
      wedged and occupancy kept climbing after the writes stopped. */
   let drained = null;
