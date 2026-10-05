@@ -140,6 +140,11 @@ TUpdate::TUpdate(const TUpdate *that, void *state_alloc)
     }
   } catch (...) {
     EntryCollection.DeleteEachMember();
+    /* Rethrow (#607). Swallowing this returned a copy with no entries: a transaction's copy of
+       a write (TPusher) then committed it, so a write that ran out of Update Entry pool was
+       acknowledged and lost, a Tetris promotion moved an empty update into the parent, and
+       the root's next flush crashed on a memory layer with updates but no entries. */
+    throw;
   }
 }
 
