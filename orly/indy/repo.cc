@@ -387,6 +387,57 @@ TRepo::~TRepo() {
 std::atomic<size_t> TRepo::PeakBacklogEntries {0UL};
 std::atomic<size_t> TRepo::PeakBacklogUpdates {0UL};
 
+TRepo::TBacklogReservation::~TBacklogReservation() {
+  if (!Reserved && !OversizedWaiting) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(Repo->DataLock);
+  if (Reserved) {
+    assert(Repo->ReservedBacklogUpdates >= 1UL);
+    assert(Repo->ReservedBacklogEntries >= NumEntries);
+    --Repo->ReservedBacklogUpdates;
+    Repo->ReservedBacklogEntries -= NumEntries;
+  }
+  if (OversizedWaiting) {
+    assert(Repo->OversizedBacklogWaiters);
+    --Repo->OversizedBacklogWaiters;
+  }
+}
+
+bool TRepo::TBacklogReservation::TryReserve(size_t update_cap, size_t entry_cap, size_t num_entries) {
+  assert(!Reserved);
+  std::lock_guard<std::mutex> lock(Repo->DataLock);
+  size_t backlog = 0UL;
+  if (Repo->LowestSeqNum && Repo->HighestSeqNum && *Repo->HighestSeqNum >= *Repo->LowestSeqNum) {
+    backlog = static_cast<size_t>(*Repo->HighestSeqNum - *Repo->LowestSeqNum) + 1UL;
+  }
+  const size_t updates = backlog + Repo->ReservedBacklogUpdates;
+  /* While the entry counts are unknown (see BacklogEntriesKnown), the cap in updates still holds. */
+  const size_t entries = (Repo->BacklogEntriesKnown ? Repo->BacklogEntries : 0UL) + Repo->ReservedBacklogEntries;
+  const bool oversized = num_entries > entry_cap;
+  const bool fits = updates < update_cap
+      && (oversized ? !entries : entries + num_entries <= entry_cap && !Repo->OversizedBacklogWaiters);
+  if (!fits) {
+    /* Read under the same lock as the backlog: AppendUpdate joins the parent's Tetris and
+       PopLowest parts from it under DataLock too. */
+    Undrainable = !Repo->ParentRepo || (Repo->GetStatus() == Normal && !Repo->InTetris && backlog);
+    if (oversized && !OversizedWaiting) {
+      OversizedWaiting = true;
+      ++Repo->OversizedBacklogWaiters;
+    }
+    return false;
+  }
+  if (OversizedWaiting) {
+    OversizedWaiting = false;
+    --Repo->OversizedBacklogWaiters;
+  }
+  ++Repo->ReservedBacklogUpdates;
+  Repo->ReservedBacklogEntries += num_entries;
+  NumEntries = num_entries;
+  Reserved = true;
+  return true;
+}
+
 std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
   std::optional<TSequenceNumber> new_seq;
   /* acquire Data lock */ {

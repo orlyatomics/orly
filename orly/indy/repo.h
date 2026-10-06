@@ -175,6 +175,60 @@ namespace Orly {
          is unknown (see BacklogEntriesKnown). */
       inline size_t GetMemBacklogEntries();
 
+      /* A writer's room in this repo's backlog, held from before it commits until after its
+         update is in the backlog (#721). The writer backpressure used to check the backlog cap
+         only after a write had committed, so every writer that came in while the backlog was
+         under the cap landed: with 8 writers of 200-write batches, the backlog of a POV capped at
+         1,250 entries reached 3,000 and more. TryReserve counts the backlog plus the room other
+         writers hold, under DataLock, so the cap holds however many writers arrive at once.
+
+         Declare it before the transaction, so it outlives the transaction and is released only
+         once AppendUpdate has counted the update (until then the write counts twice, which
+         errs on the safe side). */
+      class TBacklogReservation {
+        NO_COPY(TBacklogReservation);
+        public:
+
+        explicit TBacklogReservation(TRepo *repo)
+            : Repo(repo) {}
+
+        ~TBacklogReservation();
+
+        /* Takes room for one update of num_entries entries if the backlog's updates stay at or
+           under update_cap and its entries at or under entry_cap. A write bigger than entry_cap
+           alone gets room once the backlog holds no entries; while it waits, smaller writes
+           get none, so they can't keep the backlog from ever emptying. Returns false, and holds
+           nothing new, if there is no room. */
+        bool TryReserve(size_t update_cap, size_t entry_cap, size_t num_entries);
+
+        bool IsReserved() const {
+          return Reserved;
+        }
+
+        /* After TryReserve found no room: true if nothing will drain the backlog until another
+           write commits, because the repo is a root (nothing promotes it), or a child whose
+           join to its parent's Tetris was deferred under memory pressure, which only its next
+           AppendUpdate retries (#250). A paused or failed repo is not undrainable here; its
+           caller refuses writes to it. */
+        bool IsUndrainable() const {
+          return Undrainable;
+        }
+
+        private:
+
+        TRepo *Repo;
+
+        size_t NumEntries = 0UL;
+
+        bool Reserved = false;
+
+        bool Undrainable = false;
+
+        /* True while this is a write bigger than the entry cap that is waiting for room. */
+        bool OversizedWaiting = false;
+
+      };  // TBacklogReservation
+
       /* The most entries and updates any child repo's backlog has held since startup, after
          an AppendUpdate (#721), for the reporting port. */
       static size_t GetPeakBacklogEntries() {
@@ -618,6 +672,12 @@ namespace Orly {
       size_t BacklogEntries = 0UL;
       std::deque<uint32_t> BacklogEntryCounts;
       bool BacklogEntriesKnown = true;
+
+      /* #721: the room writers hold in the backlog (see TBacklogReservation), and how many
+         writes bigger than the entry cap are waiting for it; under DataLock. */
+      size_t ReservedBacklogUpdates = 0UL;
+      size_t ReservedBacklogEntries = 0UL;
+      size_t OversizedBacklogWaiters = 0UL;
 
       /* #721: see GetPeakBacklogEntries. */
       static std::atomic<size_t> PeakBacklogEntries;
