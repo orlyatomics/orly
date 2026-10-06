@@ -478,12 +478,16 @@ std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumb
   /* Tetris */
   switch (Status) {
     case Normal : {
+      /* Rejoin the parent's Tetris whether or not updates are waiting (#607). This used to
+         join only an empty repo, which AppendUpdate would have joined on its next write anyway,
+         and left a repo unpaused with a backlog out of Tetris until its next write. With
+         memory admission that write may be refused until the backlog is promoted, which then
+         never happens. Joining an empty repo is harmless: Tetris skips a child with nothing
+         to promote. */
       std::lock_guard<std::mutex> lock(DataLock);
-      if (!LowestSeqNum) {
-        if (ParentRepo && !InTetris) {
-          Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-          InTetris = true;
-        }
+      if (ParentRepo && !InTetris) {
+        Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
+        InTetris = true;
       }
       break;
     }
