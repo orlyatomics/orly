@@ -153,6 +153,12 @@ namespace Orly {
          DataLock. Used by write backpressure (#234) to pace accept to promote. */
       inline size_t GetMemBacklogDepth();
 
+      /* True if Tetris is promoting this repo's memtable backlog to its parent, so the backlog
+         drains: the repo has a parent and is in the parent's Tetris. False for a root, and for a
+         paused or failed repo, which leaves its parent's Tetris and keeps its backlog until it
+         is unpaused (#626). */
+      inline bool IsBacklogDraining();
+
       /* The sequence number of the oldest unpopped update. */
       inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
 
@@ -569,8 +575,11 @@ namespace Orly {
 
       /* Whether this repo is currently a registered child in its parent's Tetris
          merge. Gating Join on !InTetris makes it idempotent and lets a join that
-         failed under memory pressure retry on the next AppendUpdate (#250). */
-      bool InTetris;
+         failed under memory pressure retry on the next AppendUpdate (#250).
+         Atomic because ChangeStatus writes it without DataLock: taking DataLock there would
+         hold it across TTetrisManager::Part, which waits for the player's mutex, while the
+         player holds that mutex to peek this repo under DataLock (#626). */
+      std::atomic<bool> InTetris;
 
       /* Transactions drive AppendUpdate / PopLowest / promotion, so they reach
          the protected mutators. */
@@ -761,6 +770,11 @@ namespace Orly {
         return 0UL;
       }
       return static_cast<size_t>(*HighestSeqNum - *LowestSeqNum) + 1UL;
+    }
+
+    inline bool TRepo::IsBacklogDraining() {
+      /* ParentRepo is set at construction. */
+      return ParentRepo && InTetris.load();
     }
 
     inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
