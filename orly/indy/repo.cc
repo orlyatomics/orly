@@ -444,11 +444,20 @@ std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumb
   /* Tetris */
   switch (Status) {
     case Normal : {
+      /* Rejoin the parent's Tetris if, and only if, we have updates it hasn't promoted: the
+         writes made while we were paused.  AppendUpdate doesn't join a paused repo, so nobody
+         else will wake Tetris for them.  This test used to be inverted (`!LowestSeqNum`, from
+         2014), which stranded those writes until the next write joined us, and joined an empty
+         repo for nothing (#635).  An empty repo joins on its next AppendUpdate, as always. */
       std::lock_guard<std::mutex> lock(DataLock);
-      if (!LowestSeqNum) {
-        if (ParentRepo && !InTetris) {
+      if (LowestSeqNum && ParentRepo && !InTetris) {
+        /* As in AppendUpdate (#250): Join may allocate, and we're on the NO_THROW commit path.
+           On failure stay out of Tetris; the next AppendUpdate retries the join. */
+        try {
           Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
           InTetris = true;
+        } catch (const std::exception &ex) {
+          syslog(LOG_ERR, "ChangeStatus: deferred Tetris join under memory pressure: %s", ex.what());
         }
       }
       break;

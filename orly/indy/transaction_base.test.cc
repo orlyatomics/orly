@@ -17,12 +17,19 @@
    limitations under the License. */
 
 #include <orly/indy/transaction_base.h>
+#include <atomic>
+#include <chrono>
+#include <functional>
 #include <optional>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include <base/scheduler.h>
 #include <orly/indy/disk/sim/mem_engine.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
 #include <orly/indy/repo.h>
+#include <orly/server/tetris_manager.h>
 
 #include <base/test/kit.h>
 
@@ -624,4 +631,193 @@ FIXTURE(DiskPromoter) {
     fin = true;
     cond.notify_one();
   });
+}
+/* A Tetris manager whose players promote the way TRepoTetrisManager's do -- each round, for each
+   child with a backlog: Peek its lowest update, Push it to the parent and Pop it from the child,
+   all in one transaction -- minus the session metadata and package lookups the real player needs
+   to test assertions.  That is enough to drive a real TRepo's Join/Part/ChangeStatus, which is
+   what pause and unpause exercise. */
+class TPromotingTetrisManager final
+    : public Orly::Server::TTetrisManager {
+  NO_COPY(TPromotingTetrisManager);
+  public:
+
+  TPromotingTetrisManager(TScheduler *scheduler,
+                          Fiber::TRunner::TRunnerCons &runner_cons,
+                          Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager,
+                          TMyManager *repo_manager)
+      : Orly::Server::TTetrisManager(scheduler, runner_cons, frame_pool_manager, [](Fiber::TRunner *) {}, true),
+        RepoManager(repo_manager) {}
+
+  virtual ~TPromotingTetrisManager() {
+    StopAllPlayers();
+  }
+
+  /* Updates promoted from a child to its parent, across all players. */
+  std::atomic<size_t> PromotionCount{0UL};
+
+  /* If set, a player calls this between peeking a child and committing its promotion. */
+  std::function<void ()> OnPeeked;
+
+  private:
+
+  class TPlayer final
+      : public Orly::Server::TTetrisManager::TPlayer {
+    NO_COPY(TPlayer);
+    public:
+
+    TPlayer(TPromotingTetrisManager *manager, const TUuid &parent_id, const TUuid &child_id, bool is_paused, bool is_master)
+        : Orly::Server::TTetrisManager::TPlayer(manager), Manager(manager),
+          Parent(manager->RepoManager->GetRepo(parent_id, std::nullopt, std::nullopt, false, false)) {
+      OnJoin(child_id);
+      Start(is_paused, is_master);
+    }
+
+    private:
+
+    virtual void OnJoin(const TUuid &child_id) override {
+      std::lock_guard<std::mutex> lock(Mutex);
+      Children.emplace(child_id, Manager->RepoManager->GetRepo(child_id, std::nullopt, std::nullopt, false, false));
+    }
+
+    virtual void OnPart(const TUuid &child_id) override {
+      std::lock_guard<std::mutex> lock(Mutex);
+      Children.erase(child_id);
+    }
+
+    virtual void OnPause() override {}
+
+    virtual void OnUnpause() override {}
+
+    virtual void Play() override {
+      std::vector<L0::TManager::TPtr<Indy::TRepo>> children;
+      /* extra */ {
+        std::lock_guard<std::mutex> lock(Mutex);
+        for (const auto &item: Children) {
+          children.push_back(item.second);
+        }
+      }
+      for (const auto &child: children) {
+        if (!child->GetMemBacklogDepth()) {
+          continue;
+        }
+        auto transaction = Manager->RepoManager->NewTransaction();
+        auto update = transaction->Peek(child);
+        if (!update || child->GetStatus() != Normal) {
+          continue;
+        }
+        if (Manager->OnPeeked) {
+          Manager->OnPeeked();
+        }
+        transaction->Push(Parent, update);
+        transaction->Pop(child);
+        transaction->Prepare();
+        transaction->CommitAction();
+        transaction.reset();
+        ++(Manager->PromotionCount);
+      }
+    }
+
+    TPromotingTetrisManager *Manager;
+
+    L0::TManager::TPtr<Indy::TRepo> Parent;
+
+    std::mutex Mutex;
+
+    std::unordered_map<TUuid, L0::TManager::TPtr<Indy::TRepo>> Children;
+
+  };  // TPromotingTetrisManager::TPlayer
+
+  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &parent_id, const TUuid &child_id, bool is_paused, bool is_master) override {
+    return new TPlayer(this, parent_id, child_id, is_paused, is_master);
+  }
+
+  TMyManager *RepoManager;
+
+};  // TPromotingTetrisManager
+
+/* Commit one single-key update to `repo`. */
+static void PushOne(TMyManager *manager, const L0::TManager::TPtr<Indy::TRepo> &repo, const TUuid &idx_id, int64_t key) {
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  auto transaction = manager->NewTransaction();
+  auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(key), &arena, state_alloc)), TKey(key * 10L, &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+  transaction->Push(repo, update);
+  transaction->Prepare();
+  transaction->CommitAction();
+}
+
+/* Commit a pause (or an unpause) of `repo`. */
+static void SetPaused(TMyManager *manager, const L0::TManager::TPtr<Indy::TRepo> &repo, bool paused) {
+  auto transaction = manager->NewTransaction();
+  if (paused) {
+    transaction->Pause(repo);
+  } else {
+    transaction->UnPause(repo);
+  }
+  transaction->Prepare();
+  transaction->CommitAction();
+}
+
+/* Wait up to `timeout` for `pred`, polling.  True iff it came true. */
+static bool WaitFor(const std::function<bool ()> &pred, std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (!pred()) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(1ms);
+  }
+  return true;
+}
+
+/* #635: writes made while a pov is paused must reach its parent once it's unpaused, without any
+   further write.  ChangeStatus(Normal) rejoined the parent's Tetris only when the repo had NO
+   pending updates -- inverted -- and AppendUpdate never joins a paused repo, so nothing woke
+   Tetris for them until the next write. */
+FIXTURE(Issue635UnpausePromotesPausedWrites) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true);
+      const size_t write_count = 3UL;
+      int64_t key = 0;
+      for (size_t cycle = 0; cycle < 3UL; ++cycle) {
+        auto child = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, false, true);
+        const size_t promoted_before = tetris.PromotionCount;
+        SetPaused(manager.get(), child, true);
+        for (size_t i = 0; i < write_count; ++i) {
+          PushOne(manager.get(), child, idx_id, ++key);
+        }
+        /* Paused: nothing moves. */
+        std::this_thread::sleep_for(50ms);
+        EXPECT_EQ(child->GetMemBacklogDepth(), write_count);
+        SetPaused(manager.get(), child, false);
+        /* Promotion lands in milliseconds once Tetris knows about it; allow 10 s. */
+        bool promoted = WaitFor([&] {
+          return !child->GetMemBacklogDepth() && tetris.PromotionCount == promoted_before + write_count;
+        }, 10s);
+        EXPECT_TRUE(promoted);
+        if (!promoted) {
+          /* The pre-fix workaround: one more write joins the child and promotes everything, so the
+             fixture can tear down with no repo still holding unpromoted updates. */
+          PushOne(manager.get(), child, idx_id, ++key);
+          WaitFor([&] { return !child->GetMemBacklogDepth(); }, 10s);
+        }
+        EXPECT_EQ(child->GetMemBacklogDepth(), 0UL);
+      }
+      EXPECT_EQ(parent->GetMemBacklogDepth(), static_cast<size_t>(key));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
 }
