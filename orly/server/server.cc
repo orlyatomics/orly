@@ -3534,6 +3534,12 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
   }
   /* Lines the system log daemon had no room for; stderr kept them (#641). */
   ss << "Syslog Dropped = " << Base::TLog::GetDroppedCount() << endl;
+  /* The writer backlog cap (#721): the largest backlog any POV has held since startup, against
+     the cap the writer backpressure holds it to, and the writes refused because a full backlog
+     stopped draining. Before the Memory Admission line, which pollers read up to. */
+  ss << "Writer Backlog = peak " << TRepo::GetPeakBacklogEntries() << " entries / cap " << GetWriterBacklogEntryCap()
+     << "; peak " << TRepo::GetPeakBacklogUpdates() << " updates / cap " << GetWriterBacklogCap(Server->Cmd.TetrisBackpressureThreshold)
+     << "; stalled refusals " << GetStalledBacklogRefusals() << endl;
   /* Memory admission (#607). */ {
     const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
     ss << "Memory Admission = " << (!Server->Cmd.MemoryReservePct ? "off" : Server->RefusingWritesForMemory ? "refusing" : "accepting")

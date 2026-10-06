@@ -17,7 +17,13 @@
  *   - no write failing other than by refusal, and at least MIN_BATCHES batches through;
  *   - at most MAX_REFUSED_PCT percent of the batches sent refused;
  *   - no Update or Update Entry pool miss (the reporting port's Memory Admission line);
- *   - peak Update Entry use, polled once a second, below MAX_PEAK_PCT percent of the pool. */
+ *   - peak Update Entry use, polled once a second, below MAX_PEAK_PCT percent of the pool;
+ *   - the POV's backlog never past its cap, in entries or updates (#721; the reporting port's
+ *     Writer Backlog line, which records the peak at every commit). The cap used to be checked
+ *     after a write committed, and a writer that waited 5 s wrote anyway, so with K=8 the backlog
+ *     reached 2-3 times its cap.
+ *
+ * It prints METRIC lines for tools/maint/ab_bench.py before it checks anything. */
 
 import net from "node:net";
 import { connect, InsufficientMemoryError } from "../ts/dist/index.js";
@@ -53,7 +59,7 @@ await setup.newSession();
 await setup.install("sample", 1);
 const pov = await setup.newPov({ safe: true, shared: true });
 
-let batches = 0, refused = 0, stop = false, error = null, firstRefusal = null;
+let batches = 0, refused = 0, stop = false, error = null, firstRefusal = null, firstAck = 0, lastAck = 0;
 const batch = (w, i) => Array.from({ length: BATCH }, (_, j) => ({ n: (w * 7919 + i * BATCH + j) % KEYS, x: i }));
 const writers = Array.from({ length: K }, async (_, w) => {
   const c = await connect(URL);
@@ -62,6 +68,8 @@ const writers = Array.from({ length: K }, async (_, w) => {
     try {
       await withTimeout(c.callBatch(pov, "sample", "write_val", batch(w, i)), STALL_S, "a batch");
       ++batches;
+      lastAck = Date.now();
+      firstAck ||= lastAck;
     } catch (err) {
       if (err instanceof InsufficientMemoryError) {
         ++refused;
@@ -76,7 +84,7 @@ const writers = Array.from({ length: K }, async (_, w) => {
   c.close();
 });
 
-let peak = 0, max = 0, line = "";
+let peak = 0, max = 0, line = "", backlogLine = "";
 const t0 = Date.now();
 while (!stop && (Date.now() - t0) / 1000 < SECS) {
   await sleep(1000);
@@ -85,11 +93,23 @@ while (!stop && (Date.now() - t0) / 1000 < SECS) {
   const m = body.match(/Update Entry pool (\d+) \/ (\d+)/);
   if (m) { peak = Math.max(peak, +m[1]); max = +m[2]; }
   line = (body.match(/^Memory Admission = .*$/m) || [""])[0];
+  backlogLine = (body.match(/^Writer Backlog = .*$/m) || [""])[0];
 }
 stop = true;
 await Promise.race([Promise.allSettled(writers), sleep(STALL_S * 1000)]);
 console.log(`${batches} batches of ${BATCH} in ${SECS}s, ${refused} refused; peak Update Entry use ${peak} / ${max}`);
 console.log(line);
+console.log(backlogLine || "no Writer Backlog line on the reporting port");
+const bl = backlogLine.match(/peak (\d+) entries \/ cap (\d+); peak (\d+) updates \/ cap (\d+); stalled refusals (\d+)/);
+const secs = lastAck > firstAck ? (lastAck - firstAck) / 1000 : SECS;
+console.log(`METRIC batches_per_s ${(batches / secs).toFixed(1)}`);
+console.log(`METRIC refused_pct ${(100 * refused / Math.max(1, batches + refused)).toFixed(2)}`);
+console.log(`METRIC peak_entry_pool_pct ${max ? (100 * peak / max).toFixed(1) : 0}`);
+if (bl) {
+  console.log(`METRIC peak_backlog_entries ${bl[1]}`);
+  console.log(`METRIC peak_backlog_updates ${bl[3]}`);
+  console.log(`METRIC stalled_refusals ${bl[5]}`);
+}
 if (firstRefusal) console.log(`first refusal: ${firstRefusal.replace(/write_val \[.*\];/, "write_val [...];")}`);
 if (error) fail(`a batch failed: ${error}`);
 if (batches < MIN_BATCHES) fail(`only ${batches} batches went through`);
@@ -100,6 +120,9 @@ const misses = [...line.matchAll(/misses (\d+)/g)].map((m) => +m[1]);
 if (misses.length !== 2) fail(`couldn't read the pool misses from: ${line}`);
 if (misses.some((n) => n > 0)) fail(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
 if (!max || peak * 100 >= MAX_PEAK_PCT * max) fail(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
+if (!bl) fail(`couldn't read the writer backlog from: ${backlogLine}`);
+if (+bl[1] > +bl[2]) fail(`the POV's backlog reached ${bl[1]} entries, past its cap of ${bl[2]}`);
+if (+bl[3] > +bl[4]) fail(`the POV's backlog reached ${bl[3]} updates, past its cap of ${bl[4]}`);
 setup.close();
 console.log("BATCH BACKLOG OK");
 process.exit(0);

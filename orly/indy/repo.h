@@ -175,6 +175,16 @@ namespace Orly {
          is unknown (see BacklogEntriesKnown). */
       inline size_t GetMemBacklogEntries();
 
+      /* The most entries and updates any child repo's backlog has held since startup, after
+         an AppendUpdate (#721), for the reporting port. */
+      static size_t GetPeakBacklogEntries() {
+        return PeakBacklogEntries.load();
+      }
+
+      static size_t GetPeakBacklogUpdates() {
+        return PeakBacklogUpdates.load();
+      }
+
       /* The sequence number of the oldest unpopped update. */
       inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
 
@@ -608,6 +618,10 @@ namespace Orly {
       size_t BacklogEntries = 0UL;
       std::deque<uint32_t> BacklogEntryCounts;
       bool BacklogEntriesKnown = true;
+
+      /* #721: see GetPeakBacklogEntries. */
+      static std::atomic<size_t> PeakBacklogEntries;
+      static std::atomic<size_t> PeakBacklogUpdates;
 
       protected:
 

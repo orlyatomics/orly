@@ -81,13 +81,19 @@ using namespace Util;
    only make every write that lands past half full sit out its 5 s. Measured
    with a 25% reserve, it held writers to one batch per 5 s each, and reads on
    the same runners took as long. */
-static size_t GetBacklogCap(size_t backlog_threshold) {
+size_t Orly::Server::GetWriterBacklogCap(size_t backlog_threshold) {
   return std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
 }
 
 /* #628: a POV's backlog is capped in entries too, at 1/32 of the Update Entry pool. */
-static size_t GetBacklogEntryCap() {
+size_t Orly::Server::GetWriterBacklogEntryCap() {
   return std::max<size_t>(Indy::TUpdate::GetEntryPool().GetMaxBlocks() / 32, 1);
+}
+
+static std::atomic<size_t> StalledBacklogRefusals {0UL};
+
+size_t Orly::Server::GetStalledBacklogRefusals() {
+  return StalledBacklogRefusals.load();
 }
 
 /* #626: a write to a paused or failed POV whose backlog has reached the cap is refused before
@@ -112,7 +118,7 @@ static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRe
   if (status == Indy::Normal) {
     return;
   }
-  const size_t cap = GetBacklogCap(backlog_threshold), entry_cap = GetBacklogEntryCap();
+  const size_t cap = GetWriterBacklogCap(backlog_threshold), entry_cap = GetWriterBacklogEntryCap();
   const size_t backlog = repo->GetMemBacklogDepth();
   /* #628: in entries too, so a paused POV fed batches stops at the same share of the Entry
      pool as any other POV. */
@@ -135,8 +141,8 @@ static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &
   if (!backlog_threshold) {
     return;
   }
-  backlog_threshold = GetBacklogCap(backlog_threshold);
-  const size_t backlog_entry_threshold = GetBacklogEntryCap();
+  backlog_threshold = GetWriterBacklogCap(backlog_threshold);
+  const size_t backlog_entry_threshold = GetWriterBacklogEntryCap();
   constexpr double pool_threshold = 0.5;
   const auto pools_full = [wait_for_pools] {
     return wait_for_pools

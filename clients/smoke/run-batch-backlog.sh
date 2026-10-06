@@ -5,7 +5,9 @@
 # filled the Entry pool: merges and Tetris missed, and writers were refused.
 # With it capped in entries too, at most 1% of the batches may be refused (a
 # refused batch is retried; a loaded runner can refuse a few, #719), no pool
-# may miss, and the Entry pool must stay under 60% full. orlyi must not abort.
+# may miss, the Entry pool must stay under 60% full, and the POV's backlog must
+# never pass its cap (#721; the reporting port's Writer Backlog line). orlyi
+# must not abort.
 # EXTRA_ARGS go to orlyi; CI's negative control passes
 # --tetris_backpressure_threshold=0 (no backlog cap) and expects a failure.
 #   0. Build the orly TS client (clients/ts).

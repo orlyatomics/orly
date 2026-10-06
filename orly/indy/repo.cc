@@ -384,6 +384,9 @@ TRepo::~TRepo() {
   delete CurMemoryLayer;
 }
 
+std::atomic<size_t> TRepo::PeakBacklogEntries {0UL};
+std::atomic<size_t> TRepo::PeakBacklogUpdates {0UL};
+
 std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
   std::optional<TSequenceNumber> new_seq;
   /* acquire Data lock */ {
@@ -408,6 +411,10 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
       try {
         BacklogEntryCounts.push_back(static_cast<uint32_t>(std::min<size_t>(num_entries, std::numeric_limits<uint32_t>::max())));
         BacklogEntries += num_entries;
+        /* #721: the reporting port's peak backlog. */
+        const size_t depth = static_cast<size_t>(*HighestSeqNum - *LowestSeqNum) + 1UL;
+        for (size_t peak = PeakBacklogEntries.load(); BacklogEntries > peak && !PeakBacklogEntries.compare_exchange_weak(peak, BacklogEntries);) {}
+        for (size_t peak = PeakBacklogUpdates.load(); depth > peak && !PeakBacklogUpdates.compare_exchange_weak(peak, depth);) {}
       } catch (const std::bad_alloc &) {
         /* NO_THROW: stop counting until the backlog drains; the cap in updates still holds. */
         BacklogEntriesKnown = false;
