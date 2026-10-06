@@ -1764,7 +1764,10 @@ FIXTURE(SlaveInventoryKeepsPovShape) {
     Rt::TOpt<int64_t> on_master = ReadVal(client, late_ids.back(), 91L);
     EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9191L);
   }
-  /* Closing the client saves those povs, and the saves replicate. */
+  /* Each pov's record reached the slave when it was made: a pov is saved as it is created, and
+     the master streams that save at once (it is acked within milliseconds).  The slave used to
+     store such a save with a garbage deadline, so its durable layer could drop the record as
+     expired, and a read here failed with "durable object doesn't exist" (#676 follow-up). */
   client.reset();
   this_thread::sleep_for(seconds(3));
   pair.Failover();
