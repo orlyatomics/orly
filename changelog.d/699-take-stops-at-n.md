@@ -1,0 +1,1 @@
+- **Fixed**: `take N` no longer steps its source onto element N+1. After the Nth element it advanced the source once more and then tested it before checking the count, so a `take` over a key cursor decoded, and could fetch a page for, an element it then threw away. It now checks the count first and stops stepping once it has N (#699).

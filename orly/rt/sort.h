@@ -38,7 +38,21 @@ namespace Orly {
     std::vector<TVal> Sort(const std::vector<TVal> &val,
           const std::function<bool (const TVal &, const TVal &)> &comp) {
       std::vector<TVal> ret(val);
-      std::sort(ret.begin(), ret.end(), comp);
+      /* Stable, so ties keep their input order on every build (#698).
+         `std::sort` left that order unspecified, and with a comparator that
+         isn't a strict weak ordering (`lhs <= rhs`) it was undefined behaviour
+         that could read past the end of the vector. A comparator that is true
+         for an element against itself is non-strict; one check on the first
+         element finds it, and we then sort by its strict part, `comp(a, b) &&
+         !comp(b, a)`, which turns `<=` into `<` and keeps ties stable too. That
+         costs a second call per comparison, but only for such comparators. */
+      if (ret.size() > 1 && comp(ret.front(), ret.front())) {
+        std::stable_sort(ret.begin(), ret.end(), [&comp](const TVal &lhs, const TVal &rhs) {
+          return comp(lhs, rhs) && !comp(rhs, lhs);
+        });
+      } else {
+        std::stable_sort(ret.begin(), ret.end(), comp);
+      }
       return ret;
     }
 
