@@ -98,7 +98,18 @@ FIXTURE(Typical) {
   printf("Size of TRuner [%ld]\n", sizeof(TRunner));
   //const size_t num_iter = 10000UL;
   //const size_t num_iter = 100000UL;
+  #if defined(__SANITIZE_THREAD__)
+  /* #613: on runners 1-3 every iteration is two cross-runner fiber hops, and
+     under TSan each hop is a swapcontext plus TSan's own fiber switch. That
+     costs about 3 ms per iteration across the 1,024 fibers, so the full count
+     would need close to an hour under TSan, far past the job's 600 s guard.
+     The races TSan looks for are in the handoff itself, which 10,000 round
+     trips per fiber exercise just as well, so only the TSan build runs
+     fewer. */
+  const size_t num_iter = 10000UL;
+  #else
   const size_t num_iter = 1000000UL;
+  #endif
   const size_t num_runnable_per_thread = 256UL;
   size_t num_threads = 4UL;
   std::vector<TRunner *> runner_vec;
