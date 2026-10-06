@@ -74,6 +74,12 @@
    and the second one's entry, still there, must not make the master build
    an empty stand-in for it (#671).
 
+   The SlaveInventoryKeepsPovShape fixture joins a slave to a master already
+   holding shared povs: one with a child, a fast one, and a child under a
+   shared pov with no ttl.  The slave must build each inventoried repo with
+   the ttl, safety and parent the master sent, so that after a failover a
+   read through a pov under them still reaches global (#676).
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,6 +109,7 @@
 #include <condition_variable>
 #include <deque>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -1422,9 +1429,11 @@ FIXTURE(WriteToPovCreatedWhilePaired) {
 }
 
 /* Start a solo master and a slave paired with it, both with the sample package installed; the
-   slave gets slave_args.  For the #671 fixtures. */
+   slave gets slave_args, and before_join runs against the solo master before the slave starts.  For
+   the #671 and #676 fixtures. */
 struct TPairedServers {
-  TPairedServers(const string &scratch, const string &name, const vector<string> &slave_args, TLogTailDumper &log_dumper)
+  TPairedServers(const string &scratch, const string &name, const vector<string> &slave_args, TLogTailDumper &log_dumper,
+                 const function<void (const TAddress &)> &before_join = {})
       : PkgDir(scratch + "/packages"), MasterLog(scratch + "/master.log"), SlaveLog(scratch + "/slave.log"),
         MasterPort(ProbeFreePort()), MasterSlavePort(ProbeFreePort()), SlavePort(ProbeFreePort()),
         Master(MakeServerArgs(GetOrlyiPath(), name + "_master", PkgDir, MasterPort, MasterSlavePort, "SOLO", 0), MasterLog),
@@ -1435,6 +1444,9 @@ struct TPairedServers {
       throw runtime_error("master never came up; see " + MasterLog);
     }
     Answered(make_shared<TExerciseClient>(MasterAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (master)")->Sync();
+    if (before_join) {
+      before_join(MasterAddr());
+    }
     Slave = make_unique<TChildServer>(
         MakeServerArgs(GetOrlyiPath(), name + "_slave", PkgDir, SlavePort, ProbeFreePort(), "SLAVE", MasterSlavePort, slave_args),
         SlaveLog);
@@ -1666,4 +1678,102 @@ FIXTURE(ExpiredPovNotInventoried) {
   master.Reap(seconds(60));
   slave.Kill();
   slave.Reap(seconds(60));
+}
+
+/* read_val(n) through the given pov against the given server, retrying while the server refuses
+   or answers unknown, for reads against a slave that has just promoted.  Unknown only after the
+   deadline. */
+Rt::TOpt<int64_t> ReadPovWithRetry(const TAddress &addr, const Base::TUuid &pov_id, int64_t n, seconds deadline) {
+  const auto give_up = steady_clock::now() + deadline;
+  for (;;) {
+    try {
+      auto client = make_shared<TExerciseClient>(addr);
+      Rt::TOpt<int64_t> out = ReadVal(client, pov_id, n);
+      if (out.IsKnown()) {
+        return out;
+      }
+      cout << "read_val(" << n << ") through pov {" << pov_id << "}: unknown" << endl;
+    } catch (const exception &ex) {
+      cout << "read_val(" << n << ") through pov {" << pov_id << "} retry after [" << ex.what() << "]" << endl;
+    }
+    if (steady_clock::now() >= give_up) {
+      return Rt::TOpt<int64_t>();
+    }
+    this_thread::sleep_for(seconds(1));
+  }
+}
+
+/* #676: a slave's join builds each repo the master inventories.  It used to open each one with
+   GetRepo(..., create=false), which ignores the ttl, parent and safety it was sent, so every repo
+   the slave learnt of at the join came out safe, with no parent and a 1000 s ttl.  After a
+   failover, a read through a pov under a shared pov then reached neither the parent nor global.
+
+   The master holds, when the slave joins: a shared pov P with a child D, a fast shared pov F, and
+   a shared pov Y under a fast shared pov Z with no ttl.  Z has no saved-repo entry (only a repo
+   with a ttl gets one), so only Y's parent link tells the master about it.
+
+   A pov made before the join can't be read on the promoted slave at all: its durable record never
+   reached the slave.  So the reads go through povs made after the join, under P, D and Y; the
+   slave builds each under its own copy of that parent. */
+FIXTURE(SlaveInventoryKeepsPovShape) {
+  Orly::Type::TTypeCzar type_czar;
+  if (!ifstream(GetOrlyiPath()).good()) {
+    throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
+  }
+  TLogTailDumper log_dumper;
+  /* Open across the join, so the master keeps the povs made before it. */
+  shared_ptr<TExerciseClient> client;
+  Base::TUuid parent_id, child_id, fast_id, no_ttl_parent_id, under_no_ttl_id;
+  TPairedServers pair(NewSampleScratch(), "inventory_shape", {}, log_dumper, [&](const TAddress &master_addr) {
+    client = make_shared<TExerciseClient>(master_addr);
+    /* A value in the global pov, for the povs to read through their parents. */
+    const Base::TUuid writer_id = **Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
+    WriteVal(client, writer_id, 91L, 9191L);
+    Rt::TOpt<int64_t> in_global = ReadWithRetry(master_addr, 91L, seconds(60));
+    EXPECT_TRUE(in_global.IsKnown() && in_global.GetVal() == 9191L);
+    parent_id = **Answered(client->NewSafeSharedPov(std::nullopt, seconds(700)), "NewSafeSharedPov (P)");
+    child_id = **Answered(client->NewSafeSharedPov(parent_id, seconds(800)), "NewSafeSharedPov (D)");
+    fast_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(600)), "NewFastSharedPov (F)");
+    no_ttl_parent_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(0)), "NewFastSharedPov (Z)");
+    under_no_ttl_id = **Answered(client->NewSafeSharedPov(no_ttl_parent_id, seconds(900)), "NewSafeSharedPov (Y)");
+    /* Each read also makes the master build the pov's repo. */
+    for (const Base::TUuid &pov_id : { child_id, fast_id, under_no_ttl_id }) {
+      Rt::TOpt<int64_t> on_master = ReadVal(client, pov_id, 91L);
+      EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9191L);
+    }
+  });
+  /* The slave built each inventoried repo with the master's ttl and safety. */
+  auto built = [&pair](const Base::TUuid &repo_id, long ttl, bool is_safe) {
+    ostringstream strm;
+    strm << "Create Repo [" << repo_id << "] with ttl=[" << ttl << "], is_safe=[" << (is_safe ? "true" : "false") << "]";
+    const bool found = LogContains(pair.SlaveLog, strm.str());
+    if (!found) {
+      cout << "slave log lacks: " << strm.str() << endl;
+    }
+    return found;
+  };
+  EXPECT_TRUE(built(parent_id, 700, true));
+  EXPECT_TRUE(built(child_id, 800, true));
+  EXPECT_TRUE(built(fast_id, 600, false));
+  EXPECT_TRUE(built(no_ttl_parent_id, 0, false));
+  EXPECT_TRUE(built(under_no_ttl_id, 900, true));
+  /* Povs under P, D and Y, made while paired. */
+  vector<Base::TUuid> late_ids;
+  for (const Base::TUuid &parent : { parent_id, child_id, under_no_ttl_id }) {
+    late_ids.push_back(**Answered(client->NewSafeSharedPov(parent, seconds(600)), "NewSafeSharedPov (after the join)"));
+    Rt::TOpt<int64_t> on_master = ReadVal(client, late_ids.back(), 91L);
+    EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9191L);
+  }
+  /* Closing the client saves those povs, and the saves replicate. */
+  client.reset();
+  this_thread::sleep_for(seconds(3));
+  pair.Failover();
+  /* Each reads the global value through its parents. */
+  for (const Base::TUuid &pov_id : late_ids) {
+    Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.SlaveAddr(), pov_id, 91L, seconds(30));
+    cout << "read through pov {" << pov_id << "} on the promoted slave: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
+    EXPECT_TRUE(read.IsKnown() && read.GetVal() == 9191L);
+  }
+  pair.Slave->Kill();
+  pair.Slave->Reap(seconds(60));
 }
