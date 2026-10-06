@@ -419,7 +419,8 @@ namespace Orly {
       void CheckWriteAdmission() override;
 
       /* See TSession::TServer. Throws TInsufficientMemory if the write's updates would dip into
-         the update pools' reserve (#607). */
+         the update pools' reserve (#607), or TWriteTooLarge if it holds more entries than half the
+         Update Entry reserve (#687). */
       void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &admission, size_t num_entries) override;
 
       /* See TSession::TServer. */

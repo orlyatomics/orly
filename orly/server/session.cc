@@ -28,6 +28,7 @@
 #include <orly/notification/all.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/write_too_large.h>
 #include <orly/server/meta_record.h>
 #include <orly/var/mutation.h>
 #include <base/util/time.h>
@@ -453,6 +454,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   } catch (const TInsufficientMemory &) {
     /* Likewise (#607). */
     throw;
+  } catch (const TWriteTooLarge &) {
+    /* A client error, not a server one (#687). */
+    throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::Try : [%s]", ex.what());
     throw;
@@ -684,6 +688,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     throw;
   } catch (const TInsufficientMemory &) {
     /* Likewise (#607). */
+    throw;
+  } catch (const TWriteTooLarge &) {
+    /* A client error, not a server one (#687). */
     throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::%s : [%s]", what, ex.what());

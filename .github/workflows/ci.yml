@@ -350,6 +350,15 @@ jobs:
           grep '^MEMORY FULL FAIL' /tmp/memory-full-control.log | head -3 | cut -c1-300
           echo "control OK: the smoke fails without memory admission"
 
+      # #687: a single batch with more entries than half the Update Entry
+      # reserve must be refused with the typed, non-retryable status
+      # write_too_large (WriteTooLargeError / orly.WriteTooLarge), and the same
+      # rows split under the limit must land.
+      - name: An oversized write is refused as write_too_large
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          bash clients/smoke/run-write-too-large.sh
+
       # #626: writes to a paused POV, whose backlog never drains until it is
       # unpaused, must not wait for it: they go through (or are refused at the
       # memory reserve), reads carry on, and after the unpause a write is

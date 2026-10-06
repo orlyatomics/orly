@@ -65,4 +65,6 @@ on disk space rejects with its subclass `InsufficientStorageError`: nothing was
 written, reads still work, and the write can be retried later. A write refused
 because the server's update pools are down to the reserve kept for merges rejects
 with `InsufficientMemoryError`, which works the same way and usually clears within
-seconds.
+seconds. A single write with more entries than the server can ever merge (half
+its Update Entry reserve) rejects with `WriteTooLargeError`. That one is not
+retryable: split the batch into smaller ones.
