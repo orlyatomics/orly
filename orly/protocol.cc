@@ -20,6 +20,8 @@
 
 #include <cstdlib>
 
+#include <arpa/inet.h>
+
 #include <base/zero.h>
 
 using namespace std;
@@ -86,4 +88,24 @@ TOldSession::TOldSession(const TUuid &session_id) {
 
 TUuid TOldSession::GetSessionId() const {
   return TUuid(SessionId);
+}
+
+TAuth::TReply::TReply()
+    : Result(TResult::Uninitialized) {}
+
+TAuth::TReply::TReply(TResult result)
+    : Result(result) {}
+
+TAuth::TReply::TResult TAuth::TReply::GetResult() const {
+  return Result;
+}
+
+TAuth::TAuth()
+    : TokenSize(0) {}
+
+TAuth::TAuth(uint16_t token_size)
+    : TokenSize(htons(token_size)) {}
+
+uint16_t TAuth::GetTokenSize() const {
+  return ntohs(TokenSize);
 }

@@ -188,6 +188,23 @@ namespace Orly {
            default. */
         bool AllowRemoteCompile = false;
 
+        /* The shared secret clients must present (#710), from --auth_token_file, --auth_token,
+           ORLY_AUTH_TOKEN_FILE or ORLY_AUTH_TOKEN; CheckArgs() resolves them into AuthToken.
+           Empty and unset: no authentication, and nothing changes on the wire. */
+        std::string AuthTokenFlag;
+        std::string AuthTokenFileFlag;
+
+        /* The shared secret a joining slave must present, and that this server presents when it
+           joins a master as a slave (#710), from --replication_token_file,
+           --replication_token, ORLY_REPLICATION_TOKEN_FILE or ORLY_REPLICATION_TOKEN; when none
+           is set, the client token. CheckArgs() resolves them into ReplicationToken. */
+        std::string ReplicationTokenFlag;
+        std::string ReplicationTokenFileFlag;
+
+        /* What CheckArgs() resolved the above to; nullopt means off. Never log these. */
+        std::optional<std::string> AuthToken;
+        std::optional<std::string> ReplicationToken;
+
         /* The maximum number of connection requests to backlog against MainSocket. */
         int ConnectionBacklog;
 

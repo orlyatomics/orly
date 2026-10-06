@@ -95,7 +95,10 @@ namespace Orly {
 
       protected:
 
-      TClient(const Socket::TAddress &server_address, const std::optional<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live);
+      /* With no auth_token given, the client presents ORLY_AUTH_TOKEN_FILE or ORLY_AUTH_TOKEN if one is set (#710), and
+         nothing otherwise, as before. */
+      TClient(const Socket::TAddress &server_address, const std::optional<Base::TUuid> &session_id, const std::chrono::seconds &time_to_live,
+              const std::optional<std::string> &auth_token = std::nullopt);
 
       virtual void OnPovFailed(const Base::TUuid &repo_id) = 0;
 
@@ -132,6 +135,9 @@ namespace Orly {
       std::optional<Base::TUuid> SessionId;
 
       std::chrono::seconds TimeToLive;
+
+      /* The shared secret presented before each session request (#710), if any. */
+      std::optional<std::string> AuthToken;
 
       std::shared_ptr<Io::TDevice> Device;
 

@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,6 +79,12 @@ var ErrReadTooLarge = errors.New("orly: read too large")
 // them instead. Test with errors.Is.
 var ErrRemoteCompileDisabled = errors.New("orly: remote compile disabled")
 
+// ErrUnauthorized is wrapped by the error ConnectURL returns when the server
+// requires a token and this client presented none, or the wrong one
+// ("status": "unauthorized", #710). The server has closed the connection; no
+// statement ran. Not retryable as sent: fix the token. Test with errors.Is.
+var ErrUnauthorized = errors.New("orly: unauthorized")
+
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
 	conn *websocket.Conn
@@ -95,14 +102,56 @@ func Connect() (*Client, error) { return ConnectURL(DefaultURL) }
 // failed dial up to DefaultRetries times with exponential backoff, so a
 // just-started or loaded orlyi that is not yet accepting connections does not
 // flake the caller; the last error is returned once the retries are exhausted.
+//
+// It presents the token in ORLY_AUTH_TOKEN, or in the file named by
+// ORLY_AUTH_TOKEN_FILE, if either is set (#710); see ConnectURLWithToken.
 func ConnectURL(url string) (*Client, error) {
+	token, err := TokenFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return ConnectURLWithToken(url, token)
+}
+
+// TokenFromEnv returns ORLY_AUTH_TOKEN, or the contents of the file named by
+// ORLY_AUTH_TOKEN_FILE less a trailing newline, or "" if neither is set.
+func TokenFromEnv() (string, error) {
+	if path := os.Getenv("ORLY_AUTH_TOKEN_FILE"); path != "" {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("orly: read ORLY_AUTH_TOKEN_FILE: %w", err)
+		}
+		return strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r"), nil
+	}
+	return os.Getenv("ORLY_AUTH_TOKEN"), nil
+}
+
+// ConnectURLWithToken is ConnectURL with the server's shared secret (#710),
+// presented as the first message, {"auth": "<token>"}, before anything else.
+// An empty token presents none. A refused token returns an error wrapping
+// ErrUnauthorized, which is not retried. A server with a token answers only
+// "ok" or "unauthorized"; one started without a token answers with an error
+// status (it tries to parse the message as a statement) and the connection
+// carries on, so clients can get the token before the server starts requiring
+// it.
+func ConnectURLWithToken(url, token string) (*Client, error) {
 	delay := defaultBackoff
 	var err error
 	for attempt := 0; ; attempt++ {
 		var conn *websocket.Conn
 		conn, _, err = websocket.DefaultDialer.Dial(url, nil)
 		if err == nil {
-			return &Client{conn: conn}, nil
+			c := &Client{conn: conn}
+			if token == "" {
+				return c, nil
+			}
+			if err = c.authenticate(token); err == nil {
+				return c, nil
+			}
+			c.Close()
+			if errors.Is(err, ErrUnauthorized) {
+				return nil, err
+			}
 		}
 		if attempt >= DefaultRetries {
 			return nil, fmt.Errorf("orly: dial %s (after %d attempts): %w", url, attempt+1, err)
@@ -110,6 +159,30 @@ func ConnectURL(url string) (*Client, error) {
 		time.Sleep(delay)
 		delay *= 2
 	}
+}
+
+// authenticate presents the token as the first message. The token never
+// appears in an error.
+func (c *Client) authenticate(token string) error {
+	msg, err := json.Marshal(map[string]string{"auth": token})
+	if err != nil {
+		return err
+	}
+	if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+		return fmt.Errorf("orly: write auth: %w", err)
+	}
+	_, raw, err := c.conn.ReadMessage()
+	if err != nil {
+		return fmt.Errorf("orly: read after auth: %w", err)
+	}
+	var r reply
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return fmt.Errorf("orly: parse reply to auth: %w", err)
+	}
+	if r.Status == "unauthorized" {
+		return fmt.Errorf("orly: auth -> %s: %w", raw, ErrUnauthorized)
+	}
+	return nil
 }
 
 // Close closes the underlying WebSocket.
@@ -143,6 +216,9 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	}
 	if r.Status == "remote_compile_disabled" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrRemoteCompileDisabled)
+	}
+	if r.Status == "unauthorized" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrUnauthorized)
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)

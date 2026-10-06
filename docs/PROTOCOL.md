@@ -17,17 +17,23 @@ carries at most one session. Concurrency is modeled by opening **one connection
 (and session) per concurrent writer**, all operating on the same shared POV —
 that separateness is what exercises the commutative merge.
 
+If the server was started with a token (see "Shared secret" below), the first
+message on every connection must be `{"auth": "<token>"}`.
+
 ## Security and trust model
 
-Orly has **no authentication and no authorization** (#705). Anyone who can open
-a connection to `orlyi` can create sessions and POVs, install and uninstall
-packages, and read and write any data the installed packages reach. `set user
-id` records who a client *says* it is; it is attribution, not identity. Neither
-the WebSocket nor the binary protocol encrypts traffic.
+By default Orly has **no authentication and no authorization** (#705). Anyone
+who can open a connection to `orlyi` can create sessions and POVs, install and
+uninstall packages, and read and write any data the installed packages reach.
+`set user id` records who a client *says* it is; it is attribution, not
+identity. Neither the WebSocket nor the binary protocol encrypts traffic.
 
 So run `orlyi` only where every client that can reach it is trusted: on the
 same host, on a private network, or behind an application that authenticates
-its users and talks to `orlyi` on their behalf.
+its users and talks to `orlyi` on their behalf. An optional shared secret
+(#710, below) makes accidental exposure much harder; it is one secret for
+every client, not per-user identities or permissions, and it travels in the
+clear unless TLS carries the connection (see "TLS via a reverse proxy").
 
 - **Listeners.** By default `orlyi` binds its client (`--port_number`),
   WebSocket (`--ws_port_number`) and reporting (`--reporting_port_number`)
@@ -37,9 +43,9 @@ its users and talks to `orlyi` on their behalf.
   (`client listener bound to 127.0.0.1:19380`, with `--log_info`).
 - **Replication.** The replication listener (`--slave_port_number`) binds
   every interface by default, because a slave usually runs on another host.
-  Replication is unauthenticated too, and its stream carries all of the data,
-  so keep peers on a private network and set `--slave_bind_address` to that
-  network's address.
+  Without a replication token it is unauthenticated too, and its stream
+  carries all of the data, so keep peers on a private network and set
+  `--slave_bind_address` to that network's address.
 - **Docker.** Inside the published image `orlyi` binds every interface, since
   `docker run -p` can't reach a loopback listener in the container. Who can
   connect is then decided by the `-p` mapping: `-p 127.0.0.1:8082:8082`
@@ -55,6 +61,121 @@ its users and talks to `orlyi` on their behalf.
   server and `install` them over the protocol, which is what every client and
   example in this repo does. `install` only loads packages already in the
   package directory.
+
+### Shared secret (#710)
+
+Off unless configured. Start `orlyi` with a token and every client connection
+must present it before any statement runs, and a slave must present the
+replication token to join a master.
+
+| setting | flag | environment | default |
+| -- | -- | -- | -- |
+| client token | `--auth_token_file=<path>` (or `--auth_token=<value>`) | `ORLY_AUTH_TOKEN_FILE`, `ORLY_AUTH_TOKEN` | none: no authentication |
+| replication token | `--replication_token_file=<path>` (or `--replication_token=<value>`) | `ORLY_REPLICATION_TOKEN_FILE`, `ORLY_REPLICATION_TOKEN` | the client token |
+
+- A token is 16 to 1024 printable ASCII characters with no spaces, for example
+  `openssl rand -hex 32`. A file holds the token and at most one trailing
+  newline. A flag beats the environment; giving both a file and a value at the
+  same level is an error, and so is a malformed token, so `orlyi` refuses to
+  start rather than run open by mistake.
+- Prefer the file or the environment: a flag's value is visible in process
+  listings until `orlyi` scrubs it from its command line just after startup.
+  `orlyi` never logs a token. The startup log says which listeners require one
+  (`client listener bound to 127.0.0.1:19380; token required`).
+- Comparison takes the same time wherever a presented token first differs.
+- **WebSocket.** The first message on the connection is `{"auth": "<token>"}`
+  (a JSON object with exactly that key). The reply is `{"status": "ok",
+  "result": null}`, and statements follow as usual. A first message that is
+  anything else, or carries a different token, gets `"status": "unauthorized"`
+  and the server closes the connection (close code 1008), so nothing sent
+  after it runs; a connection that hasn't authenticated within 10 seconds is
+  closed too. A first message is used rather than a header because browsers
+  can't set headers on a WebSocket, and a failed HTTP upgrade reaches browser
+  code only as an anonymous close, while this reply is a status a client can
+  match. Keep in mind that a token in browser code is visible to whoever loads
+  the page; for a browser app, put an application that authenticates users in
+  front of `orlyi`.
+- **Binary protocol** (`orly/protocol.h`). Before the session request the
+  client sends `THandshake<TAuth>`: the 11-byte header with request kind `'A'`,
+  the token's length as a big-endian `uint16`, then the token. The server
+  replies one byte, `'A'` (accepted: send the session request next) or `'R'`
+  (refused; it hangs up). A session request with no accepted `TAuth` before it
+  is refused and the server hangs up: a new-session request gets the nil
+  session id, an old-session request gets result `'U'`. Health checks need no
+  token. The C++ client (`orly/client`, `orly_client`) presents
+  `ORLY_AUTH_TOKEN_FILE` or `ORLY_AUTH_TOKEN`.
+- **Replication.** A master with a replication token sends the 8 bytes
+  `ORLYAUTH` to a slave as soon as it connects. The slave answers `ORLYAUTH`,
+  the token's length as a big-endian `uint16`, and the token; the master
+  replies `'A'` or `'R'`. On a mismatch both sides log it (master:
+  `replication: refused a slave from 10.0.0.2:41234: the slave presented a
+  different replication token`; slave: `replication: cannot join master
+  10.0.0.1:19381: the master refused this slave's replication token`), the
+  slave exits, and the master keeps listening for another slave. A slave with
+  no token can't answer: the master logs that and refuses it after 10 seconds.
+- **No token, no change.** Without a token neither side sends any of the
+  above, and the bytes on the wire are the same as before #710. A server
+  without a token answers a WebSocket auth message as the statement it doesn't
+  parse (`"status": "exception"`), and the clients here take any reply but
+  `unauthorized` to mean the server needs no token and carry on. Likewise a
+  slave with a token joins a master without one, logging that it wasn't asked.
+  That lets clients and slaves get the token before the server requires it.
+
+**Turning it on.** Every client and every replica needs the token, or it is
+refused as soon as the server requires one:
+
+1. Generate a token and give it to every client (`ORLY_AUTH_TOKEN_FILE` or
+   `ORLY_AUTH_TOKEN` for the Python, Go and TypeScript clients, the MCP server,
+   the REPL and `orly_client`; or the clients' `token` option) and to every
+   replica. Clients that have it keep working against the server as it is.
+2. Restart slaves with the token (or `--replication_token_file`), then the
+   master. A slave started with the token joins a master without one.
+3. Restart the master (or solo server) with `--auth_token_file`. From then on a
+   client or slave without the token is refused, and logged at `LOG_WARNING`
+   (clients) or `LOG_ERR` (slaves).
+
+Taking it off is the same in reverse: restart the server without a token, and
+clients that still send one keep working.
+
+### TLS via a reverse proxy
+
+`orlyi` doesn't speak TLS. To encrypt traffic, and with it the token, keep
+`orlyi` on loopback (the default) and put a TLS-terminating proxy on the same
+host. With [Caddy](https://caddyserver.com), the WebSocket needs nothing
+beyond a site block; Caddy obtains the certificate and passes the WebSocket
+upgrade through. The binary protocol is plain TCP, which core Caddy doesn't
+proxy, so that part needs a Caddy built with the
+[caddy-l4](https://github.com/mholt/caddy-l4) module
+(`xcaddy build --with github.com/mholt/caddy-l4`):
+
+```caddyfile
+{
+	# Binary protocol: TLS on 19443, plain TCP to orlyi's client port.
+	layer4 {
+		:19443 {
+			@orly tls sni orly.example.com
+			route @orly {
+				tls
+				proxy 127.0.0.1:19380
+			}
+		}
+	}
+}
+
+# WebSocket: wss://orly.example.com/ to orlyi's WebSocket port. This site
+# block is also where Caddy gets the certificate the layer4 route uses.
+orly.example.com {
+	reverse_proxy 127.0.0.1:8082
+}
+```
+
+Clients then connect to `wss://orly.example.com/` with the token as usual.
+The C++ client speaks plain TCP, so give it a local TLS tunnel, for example
+`socat TCP-LISTEN:19380,bind=127.0.0.1,fork,reuseaddr OPENSSL:orly.example.com:19443,cafile=/etc/ssl/certs/ca-certificates.crt`,
+and point it at `127.0.0.1:19380`. Replication between hosts can be carried the
+same way (a layer4 route to the master's `--slave_port_number`, a tunnel on the
+slave's host for `--address_of_master`), or over a private network or VPN.
+Only the proxy's port should be reachable from other machines.
 
 ## Request / reply
 
@@ -136,6 +257,10 @@ sent as one WebSocket text message. The server replies with one JSON message:
   `"status": "remote_compile_disabled"` (#705). It is a configuration answer,
   not a transient one: retrying won't change it. See "Security and trust
   model" above.
+- `unauthorized` (#710): the server requires a token and the connection's
+  first message wasn't `{"auth": "<token>"}` with the right one. The server
+  closes the connection after this reply; nothing else on it ran. Not
+  retryable as sent: fix the token. See "Shared secret" above.
 
 ## Statements
 
@@ -229,7 +354,8 @@ exit;
    statuses worth matching on: they mean "retry later", not "this statement is
    wrong". `write_too_large` and `read_too_large` mean the opposite: never
    retry them as sent; split the write, or read less. `remote_compile_disabled`
-   means the server doesn't take `compile` at all.
+   means the server doesn't take `compile` at all, and `unauthorized` that the
+   connection's token was missing or wrong.
 
 ## Toward a client SDK
 

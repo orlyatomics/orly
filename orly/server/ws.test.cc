@@ -23,6 +23,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -139,4 +140,104 @@ FIXTURE(LoopbackOnlyByDefault) {
   std::cout << "connect to " << buf << ":" << port << " -> " << (rc < 0 ? strerror(err) : "connected") << std::endl;
   EXPECT_TRUE(rc < 0);
   EXPECT_EQ(err, ECONNREFUSED);
+}
+
+/* Sends the messages in order on one connection, without waiting between them, and returns
+   every reply the server sends before it closes the connection or `msgs.size()` replies have
+   arrived. `closed` says whether the server closed the connection. */
+static vector<Base::TJson> SendPipelined(in_port_t port, const vector<string> &msgs, bool &closed) {
+  net::io_context ioc;
+  tcp::resolver resolver(ioc);
+  websocket::stream<tcp::socket> ws(ioc);
+  auto const results = resolver.resolve("127.0.0.1", to_string(port));
+  net::connect(ws.next_layer(), results.begin(), results.end());
+  ws.handshake("127.0.0.1", "/");
+  for (const auto &msg: msgs) {
+    ws.write(net::buffer(msg));
+  }
+  vector<Base::TJson> replies;
+  closed = false;
+  while (replies.size() < msgs.size()) {
+    beast::flat_buffer buffer;
+    beast::error_code ec;
+    ws.read(buffer, ec);
+    if (ec) {
+      closed = true;
+      break;
+    }
+    replies.push_back(Base::TJson::Parse(beast::buffers_to_string(buffer.data())));
+  }
+  if (!closed) {
+    beast::error_code ec;
+    ws.close(websocket::close_code::going_away, ec);
+  }
+  return replies;
+}
+
+static const string TestToken = "0123456789abcdef-test-token";
+
+/* Without a token, an auth message is just a statement that doesn't parse ("exception", as before
+   #710), and the connection carries on. */
+FIXTURE(AuthNoTokenUnchanged) {
+  TWsTestServer ws_test_server(8080, 100);
+  bool closed;
+  const auto replies = SendPipelined(
+      ws_test_server.GetPortNumber(), {R"({"auth": ")" + TestToken + R"("})", "echo 'hello';"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 2U)) {
+    EXPECT_EQ(replies[0]["status"], Base::TJson("exception"));
+    EXPECT_EQ(replies[1], Base::TJson::Parse(R"({"status":"ok","result":"hello"})"));
+  }
+}
+
+/* With a token, a connection whose first message isn't the auth message is refused with
+   "unauthorized" and closed; the statement never runs. */
+FIXTURE(AuthTokenMissing) {
+  TWsTestServer ws_test_server(8080, 100, TestToken);
+  bool closed;
+  const auto replies = SendPipelined(ws_test_server.GetPortNumber(), {"echo 'hello';", "echo 'again';"}, closed);
+  EXPECT_TRUE(closed);
+  if (EXPECT_EQ(replies.size(), 1U)) {
+    EXPECT_EQ(replies[0]["status"], Base::TJson("unauthorized"));
+  }
+}
+
+/* A wrong token is refused the same way, and a statement pipelined behind it never runs. */
+FIXTURE(AuthTokenWrong) {
+  TWsTestServer ws_test_server(8080, 100, TestToken);
+  bool closed;
+  const auto replies = SendPipelined(
+      ws_test_server.GetPortNumber(), {R"({"auth": "0123456789abcdef-wrong-token"})", "echo 'hello';"}, closed);
+  EXPECT_TRUE(closed);
+  if (EXPECT_EQ(replies.size(), 1U)) {
+    EXPECT_EQ(replies[0]["status"], Base::TJson("unauthorized"));
+    /* The reply never echoes a token. */
+    EXPECT_EQ(replies[0]["result"].GetString().find("wrong-token"), string::npos);
+  }
+}
+
+/* A token that is a prefix of the right one, or the right one with more after it, is wrong. */
+FIXTURE(AuthTokenPrefix) {
+  TWsTestServer ws_test_server(8080, 100, TestToken);
+  for (const string &presented: {TestToken.substr(0, TestToken.size() - 1), TestToken + "x"}) {
+    bool closed;
+    const auto replies = SendPipelined(
+        ws_test_server.GetPortNumber(), {R"({"auth": ")" + presented + R"("})"}, closed);
+    if (EXPECT_EQ(replies.size(), 1U)) {
+      EXPECT_EQ(replies[0]["status"], Base::TJson("unauthorized"));
+    }
+  }
+}
+
+/* The right token is accepted, and statements follow on the same connection. */
+FIXTURE(AuthTokenRight) {
+  TWsTestServer ws_test_server(8080, 100, TestToken);
+  bool closed;
+  const auto replies = SendPipelined(
+      ws_test_server.GetPortNumber(), {R"({"auth": ")" + TestToken + R"("})", "echo 'hello';"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 2U)) {
+    EXPECT_EQ(replies[0]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1], Base::TJson::Parse(R"({"status":"ok","result":"hello"})"));
+  }
 }

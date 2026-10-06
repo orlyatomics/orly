@@ -11,7 +11,9 @@
  * A thin wrapper over the TypeScript driver (`clients/ts`): one WebSocket +
  * session per server process, lazily connected to `ORLY_URL` (default
  * `ws://127.0.0.1:8082/`), reconnecting once on a dropped connection. All
- * statement building/escaping lives in the driver.
+ * statement building/escaping lives in the driver. A server started with a
+ * token (#710) needs it in `ORLY_AUTH_TOKEN`, or in a file named by
+ * `ORLY_AUTH_TOKEN_FILE`; the driver reads both.
  *
  * Argument encoding (JSON -> orlyscript, see `lit()` in the driver): numbers
  * become ints (`5` -> `5`), strings/booleans/arrays/objects become

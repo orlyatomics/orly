@@ -49,3 +49,11 @@ Results come back via the engine's JSON marshaling, so:
 - variants are `{"Tag": <payload>}` (`{"Tag": {}}` for payload-less arms).
 
 The client returns the parsed value as-is; handle these in your code.
+
+## Servers that require a token
+
+A server started with a token (#710) refuses connections without it. Pass
+`orly.connect(url, token=...)`, or set `ORLY_AUTH_TOKEN` (or
+`ORLY_AUTH_TOKEN_FILE`, a file holding it), which `connect` reads when no
+`token` is given. A missing or wrong token raises `orly.Unauthorized`. A client
+with a token also works against a server without one.

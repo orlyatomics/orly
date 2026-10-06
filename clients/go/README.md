@@ -73,3 +73,11 @@ Results come back via the engine's JSON marshaling, so:
 - variants are `{"Tag": <payload>}` (`{"Tag": {}}` for payload-less arms).
 
 `Call`/`Send` return the raw `json.RawMessage`; decode these in your code.
+
+## Servers that require a token
+
+A server started with a token (#710) refuses connections without it.
+`ConnectURL` presents `ORLY_AUTH_TOKEN` (or the contents of the file named by
+`ORLY_AUTH_TOKEN_FILE`); `ConnectURLWithToken(url, token)` takes it directly. A
+missing or wrong token returns an error wrapping `ErrUnauthorized`. A client
+with a token also works against a server without one.

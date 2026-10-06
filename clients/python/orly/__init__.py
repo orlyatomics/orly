@@ -23,6 +23,7 @@ callers compare numerically / as sets accordingly.
 """
 
 import json as _json
+import os as _os
 import time as _time
 
 import websocket  # the `websocket-client` package
@@ -30,7 +31,7 @@ import websocket  # the `websocket-client` package
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
            "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "RemoteCompileDisabled",
-           "Lit", "lit",
+           "Unauthorized", "Lit", "lit",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -94,6 +95,13 @@ class RemoteCompileDisabled(OrlyError):
     """Raised when a ``compile`` statement reaches a server started without
     ``--allow_remote_compile`` (``"status": "remote_compile_disabled"``,
     #705). Compile packages with ``orlyc`` and install them instead."""
+
+
+class Unauthorized(OrlyError):
+    """Raised by :func:`connect` when the server requires a token and this
+    client presented none, or the wrong one (``"status": "unauthorized"``,
+    #710). The server has closed the connection; no statement ran. Not
+    retryable as sent: fix the token."""
 
 
 class Lit:
@@ -164,8 +172,36 @@ class Client:
             raise ReadTooLarge(statement, reply)
         if status == "remote_compile_disabled":
             raise RemoteCompileDisabled(statement, reply)
+        if status == "unauthorized":
+            raise Unauthorized(statement, reply)
         if status != "ok":
             raise OrlyError(statement, reply)
+        return reply.get("result")
+
+    def authenticate(self, token):
+        """Present the server's shared secret (#710): the first message,
+        ``{"auth": "<token>"}``. :func:`connect` calls this when it has a token;
+        the token never appears in an error. A server with a token answers only
+        ``ok`` or ``unauthorized``. One started without a token answers with an
+        error status (it tries to parse the message as a statement) and the
+        connection carries on unauthenticated, so clients can get the token
+        before the server starts requiring it."""
+        try:
+            self._send_raw("<auth>", _json.dumps({"auth": token}))
+        except Unauthorized:
+            raise
+        except OrlyError:
+            pass
+
+    def _send_raw(self, label, message):
+        """Send ``message`` as-is, reporting errors against ``label``."""
+        self.ws.send(message)
+        reply = _json.loads(self.ws.recv())
+        status = reply.get("status")
+        if status == "unauthorized":
+            raise Unauthorized(label, reply)
+        if status != "ok":
+            raise OrlyError(label, reply)
         return reply.get("result")
 
     # -- session / package lifecycle ------------------------------------
@@ -260,9 +296,20 @@ class Client:
         return False
 
 
+def _token_from_env():
+    """``ORLY_AUTH_TOKEN``, or the contents of the file named by
+    ``ORLY_AUTH_TOKEN_FILE`` less a trailing newline, or None."""
+    path = _os.environ.get("ORLY_AUTH_TOKEN_FILE")
+    if path:
+        with open(path) as f:
+            token = f.read()
+        return token[:-1].rstrip("\r") if token.endswith("\n") else token
+    return _os.environ.get("ORLY_AUTH_TOKEN") or None
+
+
 def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S,
             recv_timeout=DEFAULT_RECV_TIMEOUT_S,
-            retries=DEFAULT_RETRIES, backoff=DEFAULT_BACKOFF_S):
+            retries=DEFAULT_RETRIES, backoff=DEFAULT_BACKOFF_S, token=None):
     """Open a WebSocket to a running ``orlyi`` and return a :class:`Client`.
 
     A just-started or heavily loaded ``orlyi`` can refuse the connection or time
@@ -277,14 +324,28 @@ def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S,
     generously: a method reply is normally milliseconds, so a long recv means a
     starved server, not a hung one, and we would rather wait it out than fail an
     otherwise-fine call (issue #224).
+
+    ``token`` is the server's shared secret (#710), presented before anything
+    else; it defaults to ``ORLY_AUTH_TOKEN`` or the file named by
+    ``ORLY_AUTH_TOKEN_FILE``. A refused token raises :class:`Unauthorized`,
+    which is not retried.
     """
+    if token is None:
+        token = _token_from_env()
     delay = backoff
     for attempt in range(retries + 1):
         try:
             ws = websocket.create_connection(url, timeout=timeout)
             # Decouple the per-call recv timeout from the connect timeout.
             ws.settimeout(recv_timeout)
-            return Client(ws)
+            client = Client(ws)
+            if token is not None:
+                try:
+                    client.authenticate(token)
+                except BaseException:
+                    client.close()
+                    raise
+            return client
         except (websocket.WebSocketException, OSError):
             if attempt == retries:
                 raise
