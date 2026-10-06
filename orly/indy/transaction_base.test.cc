@@ -17,8 +17,12 @@
    limitations under the License. */
 
 #include <orly/indy/transaction_base.h>
+#include <dirent.h>
+
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <optional>
@@ -50,10 +54,10 @@ Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transa
 
 Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize);
 
-/* Sized for Issue636PauseMidRound, whose parent keeps every update it is promoted: this
-   harness latches no merge runner, so nothing ever leaves a memory layer. */
-Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 4000UL);
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 8000UL);
+/* Sized for Issue636PauseMidRound and the #657 fixtures, whose parents keep every update they
+   are promoted: this harness latches no merge runner, so nothing ever leaves a memory layer. */
+Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 20000UL);
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 40000UL);
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -893,6 +897,248 @@ FIXTURE(Issue636PauseMidRound) {
       EXPECT_EQ(bad_totals, 0UL);
       EXPECT_EQ(stuck, 0UL);
       EXPECT_EQ(parent->GetMemBacklogDepth(), static_cast<size_t>(key));
+      EXPECT_EQ(tetris.PromotionCount, static_cast<size_t>(key));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* The Tetris manager of the fixture now running, for a debugger attached when TStallWatchdog
+   aborts: its lock and its players' pause state say who is parked waiting for whom. */
+static const Orly::Server::TTetrisManager *StalledTetrisManager = nullptr;
+
+/* Aborts the test, with every thread's wait channel printed, if Tick() isn't called for `limit`.
+   The #657 fixtures deadlock rather than fail, and a test that hangs eats the CI job's whole
+   budget without saying which test or where. */
+class TStallWatchdog final {
+  NO_COPY(TStallWatchdog);
+  public:
+
+  TStallWatchdog(const char *name, std::chrono::seconds limit)
+      : Name(name), Limit(limit), Stopping(false), Ticks(0UL), Thread([this] { Run(); }) {}
+
+  ~TStallWatchdog() {
+    Stopping = true;
+    Thread.join();
+  }
+
+  void Tick() {
+    ++Ticks;
+  }
+
+  private:
+
+  void Run() {
+    size_t last = Ticks;
+    auto since = std::chrono::steady_clock::now();
+    while (!Stopping) {
+      std::this_thread::sleep_for(100ms);
+      const size_t now_ticks = Ticks;
+      const auto now = std::chrono::steady_clock::now();
+      if (now_ticks != last) {
+        last = now_ticks;
+        since = now;
+      } else if (now - since > Limit) {
+        std::cout << Name << ": no progress for " << Limit.count() << "s after " << now_ticks
+                  << " ticks; deadlocked (#657).  Threads:" << std::endl;
+        if (DIR *dir = opendir("/proc/self/task")) {
+          while (const dirent *ent = readdir(dir)) {
+            const std::string tid = ent->d_name;
+            if (tid == "." || tid == "..") {
+              continue;
+            }
+            std::string wchan;
+            std::ifstream strm("/proc/self/task/" + tid + "/wchan");
+            std::getline(strm, wchan);
+            std::cout << "  tid " << tid << " wchan=" << (wchan.empty() ? "-" : wchan) << std::endl;
+          }
+          closedir(dir);
+        }
+        std::cout.flush();
+        abort();
+      }
+    }
+  }
+
+  const char *Name;
+
+  const std::chrono::seconds Limit;
+
+  std::atomic<bool> Stopping;
+
+  std::atomic<size_t> Ticks;
+
+  std::thread Thread;
+
+};  // TStallWatchdog
+
+/* #657: a commit holds the replication queue lock (a std::mutex) for its whole apply, and the
+   apply can wait for the Tetris manager's lock: PopLowest parts a drained child.  If that lock is
+   held by something that is itself waiting for the player -- PausePlayer, which parks until the
+   player acknowledges the pause -- neither moves, and every later commit in the server queues
+   behind the replication queue lock.  A server reaches this through BeginImport, which pauses the
+   global pov's player, while that player is promoting a burst of writes.
+
+   Each cycle writes one update to each of several children, so the player's round is a run of
+   commits that each drain a child and part it, then pauses and unpauses the parent's player
+   while that round is in flight. */
+FIXTURE(Issue657PausePlayerMidCommit) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      /* Before the manager, so it also covers the manager's teardown (StopAllPlayers). */
+      TStallWatchdog watchdog("Issue657PausePlayerMidCommit", 60s);
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      manager->SetTetrisManager(&tetris);
+      StalledTetrisManager = &tetris;
+      const TUuid idx_id(TUuid::Twister);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true);
+      std::vector<L0::TManager::TPtr<Indy::TRepo>> children;
+      for (size_t i = 0; i < 8UL; ++i) {
+        children.push_back(manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, false, true));
+      }
+      const size_t cycle_count = 300UL;
+      size_t stuck = 0UL;
+      int64_t key = 0;
+      for (size_t cycle = 0; cycle < cycle_count; ++cycle) {
+        for (const auto &child: children) {
+          PushOne(manager.get(), child, idx_id, ++key);
+        }
+        tetris.PausePlayer(parent->GetId());
+        watchdog.Tick();
+        tetris.UnpausePlayer(parent->GetId());
+        if (!WaitFor([&] { return tetris.PromotionCount == static_cast<size_t>(key); }, 10s)) {
+          ++stuck;
+          break;
+        }
+        watchdog.Tick();
+      }
+      std::cout << "Issue657PausePlayerMidCommit: " << cycle_count << " cycles, " << stuck << " stuck" << std::endl;
+      EXPECT_EQ(stuck, 0UL);
+      EXPECT_EQ(tetris.PromotionCount, static_cast<size_t>(key));
+      EXPECT_EQ(parent->GetMemBacklogDepth(), static_cast<size_t>(key));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* #657, the shape the issue describes: two players share the Tetris runner, and a fiber on
+   another runner takes the manager's lock briefly and often (IsPlayerPaused stands in for any
+   short holder).  Player A's commit holds the replication queue lock and parks on the manager's
+   lock in PopLowest -> Part; player B, on the same runner, reaches its own commit and blocks the
+   runner's thread on the replication queue lock.  When the brief holder lets go, the lock passes
+   to A, which can't run: its runner is blocked behind A's own commit. */
+FIXTURE(Issue657TwoPlayersBriefHolder) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      /* Before the manager, so it also covers the manager's teardown (StopAllPlayers). */
+      TStallWatchdog watchdog("Issue657TwoPlayersBriefHolder", 60s);
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      manager->SetTetrisManager(&tetris);
+      StalledTetrisManager = &tetris;
+      const TUuid idx_id(TUuid::Twister);
+      std::vector<L0::TManager::TPtr<Indy::TRepo>> parents, children;
+      for (size_t p = 0; p < 2UL; ++p) {
+        parents.push_back(manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true));
+        for (size_t i = 0; i < 4UL; ++i) {
+          children.push_back(manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parents.back(), false, true));
+        }
+      }
+      const size_t cycle_count = 400UL;
+      size_t stuck = 0UL, polls = 0UL;
+      int64_t key = 0;
+      for (size_t cycle = 0; cycle < cycle_count; ++cycle) {
+        for (const auto &child: children) {
+          PushOne(manager.get(), child, idx_id, ++key);
+        }
+        const auto deadline = std::chrono::steady_clock::now() + 10s;
+        while (tetris.PromotionCount != static_cast<size_t>(key)) {
+          if (std::chrono::steady_clock::now() >= deadline) {
+            ++stuck;
+            break;
+          }
+          tetris.IsPlayerPaused(parents[polls % 2UL]->GetId());
+          ++polls;
+        }
+        if (stuck) {
+          break;
+        }
+        watchdog.Tick();
+      }
+      std::cout << "Issue657TwoPlayersBriefHolder: " << cycle_count << " cycles, " << polls << " lock polls, "
+                << stuck << " stuck" << std::endl;
+      EXPECT_EQ(stuck, 0UL);
+      EXPECT_EQ(tetris.PromotionCount, static_cast<size_t>(key));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* #657: a write that joins a paused parent with no player constructs the player paused, and the
+   constructor used to park, inside the writer's commit (replication queue lock and the child's
+   DataLock held), until the new player's first round acknowledged the pause.  That round runs on
+   the Tetris runner, which another player's commit can be holding OS-blocked on the replication
+   queue lock. */
+FIXTURE(Issue657PausedJoinMidCommit) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      /* Before the manager, so it also covers the manager's teardown (StopAllPlayers). */
+      TStallWatchdog watchdog("Issue657PausedJoinMidCommit", 60s);
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      manager->SetTetrisManager(&tetris);
+      StalledTetrisManager = &tetris;
+      const TUuid idx_id(TUuid::Twister);
+      auto paused_parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true);
+      auto paused_child = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), paused_parent, false, true);
+      auto busy_parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true);
+      std::vector<L0::TManager::TPtr<Indy::TRepo>> busy_children;
+      for (size_t i = 0; i < 8UL; ++i) {
+        busy_children.push_back(manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), busy_parent, false, true));
+      }
+      const size_t cycle_count = 300UL;
+      size_t stuck = 0UL;
+      int64_t key = 0;
+      for (size_t cycle = 0; cycle < cycle_count; ++cycle) {
+        /* The paused parent has no player now (its only child drained last cycle), so the write
+           below constructs one, paused. */
+        tetris.PausePlayer(paused_parent->GetId());
+        for (const auto &child: busy_children) {
+          PushOne(manager.get(), child, idx_id, ++key);
+        }
+        PushOne(manager.get(), paused_child, idx_id, ++key);
+        watchdog.Tick();
+        tetris.UnpausePlayer(paused_parent->GetId());
+        if (!WaitFor([&] { return tetris.PromotionCount == static_cast<size_t>(key); }, 10s)) {
+          ++stuck;
+          break;
+        }
+        watchdog.Tick();
+      }
+      std::cout << "Issue657PausedJoinMidCommit: " << cycle_count << " cycles, " << stuck << " stuck" << std::endl;
+      EXPECT_EQ(stuck, 0UL);
       EXPECT_EQ(tetris.PromotionCount, static_cast<size_t>(key));
     }
     std::lock_guard<std::mutex> lock(mut);
