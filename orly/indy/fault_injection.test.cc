@@ -1073,9 +1073,9 @@ static void InitChild(const string &log_path) {
     close(fd);
   }
   /* No core dump. These children abort by design, and nothing reads their cores. A dump is not
-     free: GitHub's runners pipe it to apport, and the kernel does not reap the child until apport
-     has read it all, which took seconds under `make test`'s load and sometimes ran past
-     ChildDeadline, so a deliberate abort was reported as a hang (#682). */
+     free: GitHub's runners pipe it to systemd-coredump, and the child isn't reaped until the
+     dump is written. On an x86 runner that took 1.5 s per abort idle and over 5 s under load,
+     past ChildDeadline, so a deliberate abort was reported as a hang (#682). */
   prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
   /* Engine errors go to syslog; copy them to the log. */
   openlog("fault_injection", LOG_PERROR, LOG_USER);
