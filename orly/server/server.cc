@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <optional>
 #include <sstream>
@@ -38,6 +39,7 @@
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/protocol.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/memory_budget.h>
 #include <orly/sabot/to_native.h>
 #include <base/strm/fd.h>
 #include <base/strm/bin/in.h>
@@ -379,6 +381,16 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
 
   /******** End Object Pools ********/
 
+  Param(
+      &TCmd::MemoryBudgetMB, "memory_budget_mb", Optional, "memory_budget_mb\0",
+      "The memory, in MiB, that every pool, cache and frame count not set by its own flag is sized "
+      "from, in fixed proportions (#669). A smaller cgroup memory limit (a container's --memory, a "
+      "systemd MemoryMax=) still wins. Default 0: the cgroup limit if there is one smaller than "
+      "free RAM, otherwise free RAM. A cgroup limit or this flag is treated as a total: sizes given "
+      "explicitly come out of it first. orlyi refuses to start when the budget can't fund the "
+      "minimum working set."
+  );
+
 }
 
 class TIndexIdReader
@@ -457,159 +469,294 @@ TServer::TCmd::TCmd()
       UpdatePoolSize(100000UL),
       UpdateEntryPoolSize(200000UL),
       DiskBufferBlockPoolSize(7500UL),
+      MemoryBudgetMB(0UL),
       PackageDirectory(GetCwd()) {
-  /* TEMP DEBUG : computing defaults for settings */ {
-    std::stringstream ss;
-    const size_t page_size = getpagesize();
-    constexpr size_t mb = 1024 * 1024;
-    int num_phys_page = sysconf(_SC_PHYS_PAGES);
-    int num_avail_page = sysconf(_SC_AVPHYS_PAGES);
-    int num_conf_proc = sysconf(_SC_NPROCESSORS_CONF);
-    int num_proc = sysconf(_SC_NPROCESSORS_ONLN);
-    /* the defaults are calculated for a 4GB machine. */
-    #if 0
-    /* now we hard-code to a 2 core, 4GB machine for minimum testing purposes */
-    num_avail_page = mb / page_size * 4096;
-    num_proc = 8;
-    #endif
-    ss << "============================" << endl
-      << "===== DEFAULT SETTINGS =====" << endl
-      << "=== Computed for " << ((num_avail_page * page_size) / mb) << "MB ===" << endl
-      << "============================" << endl;
-    ss << "over-rides will be applied after these defaults." << endl;
-    const double mult_factor = static_cast<double>(num_avail_page) / ((4096 * mb) / page_size);
-    ss << "PageSize = [" << page_size << "]" << endl
-      << "MB on system = [" << ((num_phys_page * page_size) / mb) << "]" << endl
-      << "MB available on system = [" << ((num_avail_page * page_size) / mb) << "]" << endl
-      << "num processors on system = [" << num_conf_proc << "]" << endl
-      << "num processors available on system = [" << num_proc << "]" << endl;
-    const size_t bytes_alloted = num_avail_page * page_size;
-    int64_t bytes_available = bytes_alloted;
-    /* now we take a 25%  or 1GB hair-cut for further dynamic allocation, whichever is larger */
-    const size_t br_dynamic_alloc = std::max(static_cast<size_t>(bytes_available * 0.25), 1024 * mb);
-    bytes_available -= br_dynamic_alloc;
-    /* Disk Buffer Block pool */
-    DiskBufferBlockPoolSize *= mult_factor;
-    const size_t br_buffer_block_pool = DiskBufferBlockPoolSize * Disk::Util::PhysicalBlockSize;
-    bytes_available -= br_buffer_block_pool;
-    /* Update Entry pool */
-    UpdateEntryPoolSize *= mult_factor;
-    const size_t br_update_entry_pool = UpdateEntryPoolSize * sizeof(TUpdate::TEntry);
-    bytes_available -= br_update_entry_pool;
-    /* Update pool */
-    UpdatePoolSize *= mult_factor;
-    const size_t br_update_pool = UpdatePoolSize * sizeof(TUpdate);
-    bytes_available -= br_update_pool;
-    /* Transaction pool */
-    TransactionPoolSize *= mult_factor;
-    const size_t br_transaction_pool = TransactionPoolSize * L1::TTransaction::GetTransactionSize();
-    bytes_available -= br_transaction_pool;
-    /* Transaction Mutation pool */
-    TransactionMutationPoolSize *= mult_factor;
-    const size_t br_transaction_mutation_pool = TransactionMutationPoolSize * L1::TTransaction::GetTransactionMutationSize();
-    bytes_available -= br_transaction_mutation_pool;
-    /* Repo Data Layer pool */
-    RepoDataLayerPoolSize *= mult_factor;
-    const size_t br_repo_data_layer_pool = RepoDataLayerPoolSize * Indy::TManager::GetDataLayerSize();
-    bytes_available -= br_repo_data_layer_pool;
-    /* Repo Mapping Entry pool */
-    RepoMappingEntryPoolSize *= mult_factor;
-    const size_t br_repo_mapping_entry_pool = RepoMappingEntryPoolSize * Indy::TManager::GetMappingEntrySize();
-    bytes_available -= br_repo_mapping_entry_pool;
-    /* Repo Mapping pool */
-    RepoMappingPoolSize *= mult_factor;
-    const size_t br_repo_mapping_pool = RepoMappingPoolSize * Indy::TManager::GetMappingSize();
-    bytes_available -= br_repo_mapping_pool;
-    /* Durable Mem Entry pool */
-    DurableMemEntryPoolSize *= mult_factor;
-    const size_t br_durable_mem_entry_pool = DurableMemEntryPoolSize * Disk::TDurableManager::GetMemEntrySize();
-    bytes_available -= br_durable_mem_entry_pool;
-    /* Durable Layer pool */
-    DurableLayerPoolSize *= mult_factor;
-    const size_t br_durable_layer_pool = DurableLayerPoolSize * Disk::TDurableManager::GetDurableLayerSize();
-    bytes_available -= br_durable_layer_pool;
-    /* Durable Mapping Entry pool */
-    DurableMappingEntryPoolSize *= mult_factor;
-    const size_t br_durable_mapping_entry_pool = DurableMappingEntryPoolSize * Disk::TDurableManager::GetMappingEntrySize();
-    bytes_available -= br_durable_mapping_entry_pool;
-    /* Durable Mapping pool */
-    DurableMappingPoolSize *= mult_factor;
-    const size_t br_durable_mapping_pool = DurableMappingPoolSize * Disk::TDurableManager::GetMappingSize();
-    bytes_available -= br_durable_mapping_pool;
-    /* Repo Cache */
-    MaxRepoCacheSize *= mult_factor;
-    const size_t br_repo_cache = MaxRepoCacheSize * sizeof(Indy::TManager::TRepo);
-    bytes_available -= br_repo_cache;
-    /* File Service Append Log */
-    const size_t br_file_service_append_log = FileServiceAppendLogMB * mb;
-    bytes_available -= br_file_service_append_log;
-    /* Block Cache */
-    BlockCacheSizeMB *= mult_factor;
-    const size_t br_block_cache = BlockCacheSizeMB * mb;
-    bytes_available -= br_block_cache;
-    /* Page Cache */
-    PageCacheSizeMB *= mult_factor;
-    const size_t br_page_cache = PageCacheSizeMB * mb;
-    bytes_available -= br_page_cache;
-    /* Durable Cache pool */
-    DurableCacheSize *= mult_factor;
-    const size_t br_durable_cache = DurableCacheSize * std::max(sizeof(TPov), sizeof(TSession));
-    bytes_available -= br_durable_cache;
-    /* Fast Memory Sim */
-    MemorySimMB *= mult_factor;
-    const size_t br_fast_memory_sim = MemorySim ? MemorySimMB * mb : 0UL;
-    bytes_available -= br_fast_memory_sim;
-    /* Slow Memory Sim */
-    MemorySimSlowMB *= mult_factor;
-    const size_t br_slow_memory_sim = MemorySim ? MemorySimSlowMB * mb : 0UL;
-    bytes_available -= br_slow_memory_sim;
-    /* Fiber Frames */
-    NumFiberFrames *= mult_factor;
-    const size_t br_fiber_frame_stacks = NumFiberFrames * (StackSize + sizeof(Fiber::TFrame));
-    bytes_available -= br_fiber_frame_stacks;
-    /* Disk Events */
-    NumDiskEvents *= mult_factor;
-    const size_t br_disk_events = NumDiskEvents * sizeof(Disk::Util::TDiskController::TEvent);
-    bytes_available -= br_disk_events;
+  /* These defaults are for a 4 GiB budget. Unless the command line gives them,
+     ResolveMemoryDefaults() scales them to the actual one once Parse() is done (#669). The
+     core vectors likewise wait for ResolveCoreVecDefaults() (#240). */
+}
 
-    /* Fast Core Vector: the hardware-derived defaults are now computed in
-       ResolveCoreVecDefaults(), which must be called AFTER command-line parsing
-       so that --fast_cores / --slow_cores / etc. OVERRIDE these defaults instead
-       of appending to them (issue #240). This constructor runs before Parse(),
-       so populating the core vectors here would be the appended-to default. */
+namespace {
 
-    ss << "bytes_available left = [" << bytes_available << "]" << endl
-      << "[" << (100 * static_cast<double>(br_dynamic_alloc) / bytes_alloted) << "%] br_dynamic_alloc left = [" << br_dynamic_alloc << "]" << endl
-      << "[" << (100 * static_cast<double>(br_buffer_block_pool) / bytes_alloted) << "%] br_buffer_block_pool = [" << br_buffer_block_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_update_entry_pool) / bytes_alloted) << "%] br_update_entry_pool = [" << br_update_entry_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_update_pool) / bytes_alloted) << "%] br_update_pool = [" << br_update_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_transaction_pool) / bytes_alloted) << "%] br_transaction_pool = [" << br_transaction_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_transaction_mutation_pool) / bytes_alloted) << "%] br_transaction_mutation_pool = [" << br_transaction_mutation_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_repo_data_layer_pool) / bytes_alloted) << "%] br_repo_data_layer_pool = [" << br_repo_data_layer_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_repo_mapping_entry_pool) / bytes_alloted) << "%] br_repo_mapping_entry_pool = [" << br_repo_mapping_entry_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_repo_mapping_pool) / bytes_alloted) << "%] br_repo_mapping_pool = [" << br_repo_mapping_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_durable_mem_entry_pool) / bytes_alloted) << "%] br_durable_mem_entry_pool = [" << br_durable_mem_entry_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_durable_layer_pool) / bytes_alloted) << "%] br_durable_layer_pool = [" << br_durable_layer_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_durable_mapping_entry_pool) / bytes_alloted) << "%] br_durable_mapping_entry_pool = [" << br_durable_mapping_entry_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_durable_mapping_pool) / bytes_alloted) << "%] br_durable_mapping_pool = [" << br_durable_mapping_pool << "]" << endl
-      << "[" << (100 * static_cast<double>(br_repo_cache) / bytes_alloted) << "%] br_repo_cache = [" << br_repo_cache << "]" << endl
-      << "[" << (100 * static_cast<double>(br_file_service_append_log) / bytes_alloted) << "%] br_file_service_append_log = [" << br_file_service_append_log << "]" << endl
-      << "[" << (100 * static_cast<double>(br_block_cache) / bytes_alloted) << "%] br_block_cache = [" << br_block_cache << "]" << endl
-      << "[" << (100 * static_cast<double>(br_page_cache) / bytes_alloted) << "%] br_page_cache = [" << br_page_cache << "]" << endl
-      << "[" << (100 * static_cast<double>(br_durable_cache) / bytes_alloted) << "%] br_durable_cache = [" << br_durable_cache << "]" << endl
-      << "[" << (100 * static_cast<double>(br_fast_memory_sim) / bytes_alloted) << "%] br_fast_memory_sim = [" << br_fast_memory_sim << "]" << endl
-      << "[" << (100 * static_cast<double>(br_slow_memory_sim) / bytes_alloted) << "%] br_slow_memory_sim = [" << br_slow_memory_sim << "]" << endl
-      << "[" << (100 * static_cast<double>(br_fiber_frame_stacks) / bytes_alloted) << "%] br_fiber_frame_stacks = [" << br_fiber_frame_stacks << "]" << endl
-      << "[" << (100 * static_cast<double>(br_disk_events) / bytes_alloted) << "%] br_disk_events = [" << br_disk_events << "]" << endl;
-    /* Syslog, not stdout: orlyc embeds this server, and orlyc's stdout is
-       the machine-form compiler protocol that lang_test baselines compare
-       against -- this dump names the host's RAM, so it must never land
-       there (#440). */
-    std::string line;
-    while (std::getline(ss, line)) {
-      syslog(LOG_INFO, "%s", line.c_str());
+  constexpr size_t MiB = 1024UL * 1024UL;
+
+  /* TCmd's constructor holds the pre-#669 defaults, which were written for a machine with this
+     much free memory. A budget scales each of them by budget / this. */
+  constexpr size_t DefaultsAreForBytes = 4096UL * MiB;
+
+  /* What orlyi holds beyond the memory it plans for: code, libraries, thread stacks, the heap.
+     Measured on the arm64 image under a 1 GiB limit (#669): 13 MiB resident outside the planned
+     (locked) memory at idle, 32 MiB at the peak of the pool-pressure smoke. It's counted as
+     fixed so a hard budget leaves room for it. */
+  constexpr size_t ProcessBaselineBytes = 32UL * MiB;
+
+  /* What a hard budget keeps free for the heap, beyond the proportional share the scaling leaves.
+     The heap's growth under load hardly depends on the budget: measured on the image (#669), the
+     pool-pressure smoke peaked about 40 MiB above idle and #629's memory-full smoke about
+     100 MiB, at 640 MiB and at 1 GiB alike. Without this, a budget at the old floor of 620 MiB
+     was OOM-killed in one memory-full run of two. */
+  constexpr size_t MinHeapBytes = 128UL * MiB;
+
+  /* The minimum working set (#669): the merge reserve must hold one memory merge's copy of a
+     backlog of this many writes. */
+  constexpr size_t MinMergeCopyWrites = 1000UL;
+
+  /* The fewest fiber frames to plan for. orlyi's own service loops hold some for good and every
+     request in flight holds another. Measured on the image (#669): with 16 it can't start, with
+     24 it fails its first client, and 32 passed the pool-pressure smoke's 8 writers. */
+  constexpr size_t MinFiberFrames = 64UL;
+
+  /* The share of the Update and Update Entry pools kept for merges, in percent: #629's
+     --memory_reserve_pct and its default. Until #629 merges, TCmd has no such field and the
+     floor assumes the default. Once it does, this picks the field up on its own, and a reserve of
+     0 (admission off) still sizes the floor for the default, because merges need the room either
+     way. */
+  constexpr size_t DefaultMergeReservePct = 25UL;
+
+  template <typename TSomeCmd>
+  size_t GetMergeReservePct(const TSomeCmd &cmd) {
+    if constexpr (requires { cmd.MemoryReservePct; }) {
+      return cmd.MemoryReservePct ? static_cast<size_t>(cmd.MemoryReservePct) : DefaultMergeReservePct;
+    } else {
+      return DefaultMergeReservePct;
     }
   }
+
+  size_t CeilDiv(size_t num, size_t den) {
+    return (num + den - 1) / den;
+  }
+
+  size_t ToMiB(size_t bytes) {
+    return (bytes + MiB / 2) / MiB;
+  }
+
+  /* One size the budget sets. */
+  struct TSized {
+
+    TSized(const char *flag, size_t *field, size_t bytes_per_unit, bool allocated)
+        : Flag(flag), Field(field), BytesPerUnit(bytes_per_unit), Allocated(allocated), Default(*field), Given(false) {}
+
+    /* Its flag. */
+    const char *Flag;
+
+    /* The field. */
+    size_t *Field;
+
+    /* Bytes per unit of the field. */
+    size_t BytesPerUnit;
+
+    /* False if this run doesn't allocate it (the mem-sim volumes on a disk-backed server). */
+    bool Allocated;
+
+    /* The field's value before scaling. */
+    size_t Default;
+
+    /* True if the command line gave it. */
+    bool Given;
+
+    size_t GetBytes() const {
+      return Allocated ? *Field * BytesPerUnit : 0UL;
+    }
+
+  };  // TSized
+
+}  // namespace
+
+bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
+  return Base::TLog::TCmd::CheckArgs(cb) && ResolveMemoryDefaults(cb);
+}
+
+bool TServer::TCmd::ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsumer &cb) {
+  MemoryBudgetReport.clear();
+  std::vector<TSized> sized = {
+    {"max_parallel_frames", &NumFiberFrames, StackSize + sizeof(Fiber::TFrame), true},
+    {"page_cache_size", &PageCacheSizeMB, MiB, true},
+    {"block_cache_size", &BlockCacheSizeMB, MiB, true},
+    {"disk_buffer_block_pool_size", &DiskBufferBlockPoolSize, Disk::Util::PhysicalBlockSize, true},
+    {"update_entry_pool_size", &UpdateEntryPoolSize, sizeof(TUpdate::TEntry), true},
+    {"update_pool_size", &UpdatePoolSize, sizeof(TUpdate), true},
+    {"transaction_pool_size", &TransactionPoolSize, L1::TTransaction::GetTransactionSize(), true},
+    {"transaction_mutation_pool_size", &TransactionMutationPoolSize, L1::TTransaction::GetTransactionMutationSize(), true},
+    {"repo_data_layer_pool_size", &RepoDataLayerPoolSize, Indy::TManager::GetDataLayerSize(), true},
+    {"repo_mapping_entry_pool_size", &RepoMappingEntryPoolSize, Indy::TManager::GetMappingEntrySize(), true},
+    {"repo_mapping_pool_size", &RepoMappingPoolSize, Indy::TManager::GetMappingSize(), true},
+    {"durable_mem_entry_pool_size", &DurableMemEntryPoolSize, Disk::TDurableManager::GetMemEntrySize(), true},
+    {"durable_layer_pool_size", &DurableLayerPoolSize, Disk::TDurableManager::GetDurableLayerSize(), true},
+    {"durable_mapping_entry_pool_size", &DurableMappingEntryPoolSize, Disk::TDurableManager::GetMappingEntrySize(), true},
+    {"durable_mapping_pool_size", &DurableMappingPoolSize, Disk::TDurableManager::GetMappingSize(), true},
+    {"max_repo_cache_size", &MaxRepoCacheSize, sizeof(Indy::TManager::TRepo), true},
+    {"durable_cache_size", &DurableCacheSize, std::max(sizeof(TPov), sizeof(TSession)), true},
+    {"mem_sim_mb", &MemorySimMB, MiB, MemorySim},
+    {"mem_sim_slow_mb", &MemorySimSlowMB, MiB, MemorySim},
+    {"disk_event_pool_size", &NumDiskEvents, sizeof(Disk::Util::TDiskController::TEvent), true},
+  };
+  for (auto &item: sized) {
+    item.Default = *item.Field;
+    item.Given = WasGiven(item.Flag);
+  }
+
+  /* What's fixed whatever the budget: the process itself, the file service's append log, and
+     everything the command line sized. */
+  size_t fixed_bytes = ProcessBaselineBytes + FileServiceAppendLogMB * MiB;
+  std::ostringstream fixed_desc;
+  fixed_desc << "process baseline " << ToMiB(ProcessBaselineBytes) << ", append log " << FileServiceAppendLogMB;
+  /* What the scaled sizes cost at their defaults, that is, for a 4 GiB budget. */
+  size_t scaled_bytes_at_defaults = 0;
+  for (const auto &item: sized) {
+    if (item.Given) {
+      fixed_bytes += item.GetBytes();
+      if (item.Allocated) {
+        fixed_desc << ", " << item.Flag << " " << ToMiB(item.GetBytes());
+      }
+    } else {
+      scaled_bytes_at_defaults += item.GetBytes();
+    }
+  }
+
+  /* The budget and where it came from. */
+  const size_t page_size = getpagesize();
+  const long avail_pages = sysconf(_SC_AVPHYS_PAGES);
+  const size_t free_bytes = static_cast<size_t>(std::max(avail_pages, 0L)) * page_size;
+  const auto cgroup = ReadCgroupMemoryLimit();
+  /* An explicit budget is used as given, except that a smaller cgroup limit still wins: past
+     the limit the kernel kills the process, whatever it was told. */
+  const size_t flag_bytes = MemoryBudgetMB * MiB;
+  enum { FreeRam, Cgroup, Flag } source;
+  size_t budget_bytes;
+  if (MemoryBudgetMB && (!cgroup || flag_bytes <= cgroup->Bytes)) {
+    source = Flag;
+    budget_bytes = flag_bytes;
+  } else if (cgroup && (MemoryBudgetMB || cgroup->Bytes < free_bytes)) {
+    source = Cgroup;
+    budget_bytes = cgroup->Bytes;
+  } else {
+    source = FreeRam;
+    budget_bytes = free_bytes;
+  }
+  const std::string cgroup_desc = cgroup
+      ? "cgroup limit " + std::to_string(ToMiB(cgroup->Bytes)) + " MiB in " + cgroup->File
+      : std::string("no cgroup memory limit");
+  std::ostringstream budget_line;
+  budget_line << "memory budget: " << ToMiB(budget_bytes) << " MiB, from ";
+  switch (source) {
+    case FreeRam: {
+      budget_line << "free RAM (" << cgroup_desc << ")";
+      break;
+    }
+    case Cgroup: {
+      budget_line << "the cgroup limit in " << cgroup->File << " (free RAM " << ToMiB(free_bytes) << " MiB";
+      if (MemoryBudgetMB) {
+        budget_line << ", --memory_budget_mb=" << MemoryBudgetMB << " is larger";
+      }
+      budget_line << ")";
+      break;
+    }
+    case Flag: {
+      budget_line << "--memory_budget_mb (free RAM " << ToMiB(free_bytes) << " MiB, " << cgroup_desc << ")";
+      break;
+    }
+  }
+  MemoryBudgetReport.emplace_back(LOG_INFO, budget_line.str());
+
+  /* The scale. Sized from free RAM, as before #669: the defaults times free RAM / 4 GiB, with
+     nothing taken off for the sizes the command line gave. That keeps a bare host's pools
+     exactly what they were.
+
+     A cgroup limit or --memory_budget_mb is a total that orlyi must stay inside, or a container
+     is OOM-killed. The fixed costs and MinHeapBytes come out of it first, and the defaults are
+     scaled to the rest, in the same proportions. At 4 GiB the defaults plan 70% of it (frames 25%, page cache
+     25%, block cache and disk buffers 18%, pools 2%) and leave 30% for dynamic use, such as
+     merges, sessions and compiles; the mem-sim volumes, when they too are left to the budget,
+     would push that past 100%, so the scaled sizes never get more than 75% of the rest. */
+  double scale;
+  size_t scale_base = DefaultsAreForBytes;
+  const size_t held_back_bytes = fixed_bytes + MinHeapBytes;
+  if (source == FreeRam) {
+    /* The same expression as before #669, so the sizes match to the unit. */
+    scale = static_cast<double>(std::max(avail_pages, 0L)) / (DefaultsAreForBytes / page_size);
+  } else {
+    scale_base = std::max(DefaultsAreForBytes, scaled_bytes_at_defaults / 3 * 4);
+    scale = budget_bytes > held_back_bytes ? static_cast<double>(budget_bytes - held_back_bytes) / scale_base : 0.0;
+  }
+  for (auto &item: sized) {
+    if (!item.Given) {
+      *item.Field = static_cast<size_t>(static_cast<double>(*item.Field) * scale);
+    }
+  }
+  size_t planned_bytes = ProcessBaselineBytes + FileServiceAppendLogMB * MiB;
+  std::ostringstream sizes;
+  sizes << "memory plan sizes:";
+  for (const auto &item: sized) {
+    planned_bytes += item.GetBytes();
+    sizes << ' ' << item.Flag << '=' << *item.Field << (item.Given ? " (given)" : "");
+  }
+  std::ostringstream plan_line;
+  plan_line << "memory plan: " << ToMiB(planned_bytes) << " MiB of the " << ToMiB(budget_bytes) << " MiB budget; "
+            << ToMiB(fixed_bytes) << " MiB fixed (" << fixed_desc.str() << "), ";
+  if (source != FreeRam) {
+    plan_line << ToMiB(MinHeapBytes) << " MiB kept for the heap, ";
+  }
+  plan_line << "the rest scaled by " << scale;
+  MemoryBudgetReport.emplace_back(LOG_INFO, plan_line.str());
+  MemoryBudgetReport.emplace_back(LOG_INFO, sizes.str());
+
+  /* The minimum working set. The merge reserve, a share of the Update and Update Entry pools
+     kept for merges (#607/#629), must hold one memory merge's copy of a backlog of
+     MinMergeCopyWrites writes: that many updates, and twice that many entries, because #629
+     refuses any write bigger than half the entry reserve, so a batch of MinMergeCopyWrites
+     entries must stay admissible. And there must be enough frames to run on. */
+  const size_t reserve_pct = GetMergeReservePct(*this);
+  struct TFloor {
+    const char *Flag;
+    size_t Need;
+    std::string Why;
+  };
+  const std::string reserve_desc = "its " + std::to_string(reserve_pct) + "% merge reserve";
+  const TFloor floors[] = {
+    {"update_pool_size", CeilDiv(MinMergeCopyWrites * 100UL, reserve_pct), "for " + reserve_desc + " to hold one memory merge's copy of 1,000 writes"},
+    {"update_entry_pool_size", CeilDiv(2UL * MinMergeCopyWrites * 100UL, reserve_pct), "for " + reserve_desc + " to admit and copy a 1,000-entry write"},
+    {"max_parallel_frames", MinFiberFrames, "to run orlyi's own service loops and a few clients"},
+  };
+  std::vector<std::string> given_too_small;
+  double scale_needed = 0.0;
+  bool short_of_floor = false;
+  for (const auto &need: floors) {
+    for (const auto &item: sized) {
+      if (std::string(item.Flag) != need.Flag || *item.Field >= need.Need) {
+        continue;
+      }
+      std::ostringstream strm;
+      strm << item.Flag << "=" << *item.Field << " is below " << need.Need << ", the least " << need.Why;
+      if (item.Given) {
+        given_too_small.push_back("--" + strm.str());
+      } else {
+        short_of_floor = true;
+        scale_needed = std::max(scale_needed, static_cast<double>(need.Need) / std::max<size_t>(item.Default, 1UL));
+      }
+    }
+  }
+  if (!given_too_small.empty() || short_of_floor) {
+    std::ostringstream msg;
+    msg << "orlyi won't start: the memory budget can't fund the minimum working set. " << budget_line.str() << ". ";
+    for (const auto &line: given_too_small) {
+      msg << line << ". ";
+    }
+    if (short_of_floor) {
+      /* The smallest budget that sizes every floored pool to its floor. */
+      const size_t need_bytes = source == FreeRam
+          ? static_cast<size_t>(std::ceil(scale_needed * DefaultsAreForBytes))
+          : held_back_bytes + static_cast<size_t>(std::ceil(scale_needed * scale_base));
+      msg << "The budget must be at least " << CeilDiv(need_bytes, MiB) << " MiB";
+      if (source != FreeRam) {
+        msg << ": " << ToMiB(fixed_bytes) << " MiB fixed (" << fixed_desc.str() << "), " << ToMiB(MinHeapBytes)
+            << " MiB kept for the heap, and the rest for pools at their minimum";
+      }
+      msg << ". Raise the memory limit or --memory_budget_mb, or lower the sizes given explicitly.";
+    }
+    cb(msg.str());
+    return false;
+  }
+  return true;
 }
 
 void TServer::TCmd::ResolveCoreVecDefaults() {
@@ -768,6 +915,11 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Scheduler(scheduler),
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
+  /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
+     was open. */
+  for (const auto &[level, line]: Cmd.MemoryBudgetReport) {
+    syslog(level, "%s", line.c_str());
+  }
   InitalizeFramePoolManager(Cmd.NumFiberFrames, StackSize, &BGFastRunner);
   Disk::Util::TDiskController::TEvent::InitializeDiskEventPoolManager(Cmd.NumDiskEvents);
   using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
