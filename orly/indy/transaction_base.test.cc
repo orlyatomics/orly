@@ -1376,3 +1376,48 @@ FIXTURE(Issue665PopCompletionAfterDiscardIsNoOp) {
     cond.notify_one();
   }, 1UL /* a runner for the Tetris manager */);
 }
+
+/* #665 with #661: a pov with a ttl is cached, not destroyed, when its pop completes and nothing
+   holds it, and since #661 a cached repo keeps its parent.  The completion's TryOpenLiveRepo
+   reopens such a repo exactly as it was, so a later write rejoins Tetris through that parent and a
+   later completion releases in the same repo. */
+FIXTURE(Issue665PopCompletionOnCachedRepo) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<T665Manager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      const TUuid child_id(TUuid::Twister);
+      auto root = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      /* extra */ {
+        auto child = manager->GetRepo(child_id, TTtl(600s), root, false, true);
+        PushOne(manager.get(), child, idx_id, 1L);
+        PromoteOne(manager.get(), child, root);
+      }
+      /* Only the self-pin holds the child now.  Completing the pop releases update 1 and the pin,
+         and the child closes into the cache. */
+      StepMergeMem(root);
+      if (EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)))) {
+        auto child = manager->GetRepo(child_id, std::nullopt, std::nullopt, false, false);
+        EXPECT_EQ(child->GetReleasedUpTo(), 1UL);
+        const auto &parent = child->GetParentRepo();
+        EXPECT_TRUE(parent && parent->Get() == root.Get());
+        PushOne(manager.get(), child, idx_id, 2L);
+        PromoteOne(manager.get(), child, root);
+        StepMergeMem(root);
+        EXPECT_EQ(child->GetReleasedUpTo(), 2UL);
+      }
+      EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      EXPECT_EQ(root->GetNextSequenceNumber(), 3UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
