@@ -65,7 +65,7 @@ If the agents' server runs in docker and the REPL runs on the host, the compile/
 
 ```sh
 mkdir -p /tmp/orly-repl/packages && touch /tmp/orly-repl/packages/__orly__
-docker run -d --name orly -p 8082:8082 -v /tmp/orly-repl:/tmp/orly-repl \
+docker run -d --name orly -p 127.0.0.1:8082:8082 -v /tmp/orly-repl:/tmp/orly-repl \
   ghcr.io/orlyatomics/orly --package_dir=/tmp/orly-repl/packages
 npx orly-repl \
   --package-dir /tmp/orly-repl/packages \

@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <unordered_map>
 
 #include <base/class_traits.h>
@@ -119,7 +120,7 @@ namespace Orly {
          accept() with a socket shutdown. */
       void Stop();
 
-      TIndyReporter(const TServer *server, Base::TScheduler *scheduler, int port_number);
+      TIndyReporter(const TServer *server, Base::TScheduler *scheduler, const std::string &bind_address, int port_number);
 
       private:
 
@@ -171,6 +172,21 @@ namespace Orly {
 
         /* The port on which TServer::WaitForSlave listens for a slave. */
         in_port_t SlavePortNumber;
+
+        /* The address the client, WebSocket and reporting listeners bind (#705): an IPv4 or IPv6
+           literal. Loopback by default, because Orly has no authentication; 0.0.0.0 listens on
+           every interface. */
+        std::string BindAddress = "127.0.0.1";
+
+        /* The address the replication (slave) listener binds (#705). Every interface by default,
+           because a slave on another host must reach it; set it to a private interface's address
+           to keep replication off public networks. */
+        std::string SlaveBindAddress = "0.0.0.0";
+
+        /* Accept the `compile` statement over WebSocket (#705). It builds the source it is sent
+           with the system compiler and loads the result into this process, so it is off by
+           default. */
+        bool AllowRemoteCompile = false;
 
         /* The maximum number of connection requests to backlog against MainSocket. */
         int ConnectionBacklog;

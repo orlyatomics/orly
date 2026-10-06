@@ -18,6 +18,8 @@
 
 #include <orly/balancer/balancer.h>
 
+#include <sstream>
+
 #include <base/epoll.h>
 #include <base/util/io.h>
 
@@ -30,7 +32,8 @@ using namespace Util;
 TBalancer::TBalancer(TScheduler *scheduler, const TCmd &cmd)
     : Scheduler(scheduler), Handshake(make_shared<THandshake>()) {
   /* open the main socket */ {
-    TAddress address(TAddress::IPv4Any, cmd.PortNumber);
+    TAddress address(std::istringstream(cmd.BindAddress));
+    address.SetPort(cmd.PortNumber);
     MainSocket = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
     int flag = true;
     IfLt0(setsockopt(MainSocket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));

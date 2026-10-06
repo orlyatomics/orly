@@ -72,6 +72,12 @@ var ErrWriteTooLarge = errors.New("orly: write too large")
 // errors.Is.
 var ErrReadTooLarge = errors.New("orly: read too large")
 
+// ErrRemoteCompileDisabled is wrapped by the error a compile statement gets
+// from a server started without --allow_remote_compile ("status":
+// "remote_compile_disabled", #705). Compile packages with orlyc and install
+// them instead. Test with errors.Is.
+var ErrRemoteCompileDisabled = errors.New("orly: remote compile disabled")
+
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
 	conn *websocket.Conn
@@ -134,6 +140,9 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	}
 	if r.Status == "read_too_large" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrReadTooLarge)
+	}
+	if r.Status == "remote_compile_disabled" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrRemoteCompileDisabled)
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)

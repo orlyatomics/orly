@@ -26,6 +26,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include <base/class_traits.h>
 #include <base/cmd.h>
@@ -59,6 +60,9 @@ namespace Orly {
         /* The port on which we respond to TCP. */
         in_port_t PortNumber;
 
+        /* The IP address we listen on (#705): loopback unless told otherwise. */
+        std::string BindAddress = "127.0.0.1";
+
         /* The maximum number of connection requests to backlog against MainSocket. */
         int ConnectionBacklog;
 
@@ -75,6 +79,10 @@ namespace Orly {
             Param(
                 &TCmd::PortNumber, "port", Optional, "port\0",
                 "The port on which we listen for incoming traffic."
+            );
+            Param(
+                &TCmd::BindAddress, "bind_address", Optional, "bind_address\0",
+                "The IP address on which we listen (default 127.0.0.1, this host only)."
             );
             Param(
                 &TCmd::ConnectionBacklog, "connection_backlog", Optional, "connection_backlog\0cb\0",

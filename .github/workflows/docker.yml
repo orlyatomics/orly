@@ -134,7 +134,7 @@ jobs:
 
       - name: Start container
         run: |
-          docker run -d --name orly -p 8082:8082 "$IMAGE"
+          docker run -d --name orly -p 127.0.0.1:8082:8082 "$IMAGE"
           for _ in $(seq 1 60); do
             if ss -tln | grep -q ':8082'; then exit 0; fi
             sleep 1
@@ -179,6 +179,25 @@ jobs:
           echo "container after writes: $state"
           test "$state" = "running exit=0 restarts=0"
 
+      # #705: inside the container orlyi must bind every interface or the -p
+      # mapping can't reach it (the steps above prove it does), and compile
+      # over WebSocket stays off as on a bare host.
+      - name: Image listeners and remote compile (#705)
+        run: |
+          docker logs orly 2>&1 | grep 'listener bound to'
+          docker logs orly 2>&1 | grep 'websocket listener bound to 0.0.0.0:8082; remote compile disabled' > /dev/null
+          docker logs orly 2>&1 | grep 'client listener bound to 0.0.0.0:8080' > /dev/null
+          PYTHONPATH=clients/python python3 - <<'PY'
+          import orly
+          c = orly.connect("ws://127.0.0.1:8082/")
+          c.new_session()
+          try:
+              c.send('compile "x = 42;";')
+              raise SystemExit("the image accepted compile over websocket")
+          except orly.RemoteCompileDisabled as err:
+              print("compile refused:", err.reply["result"])
+          PY
+
       # The image also claims in-container package compiles (orlyc + g++ +
       # ORLY_SRC_ROOT). Gate that claim: compile a from-scratch user package
       # to a loadable .so inside the running container. (This caught a
@@ -218,7 +237,7 @@ jobs:
       - name: Runs under --memory=1g (#669)
         run: |
           docker run -d --name orly1g --memory=1g --memory-swap=1g \
-            --ulimit memlock=-1:-1 -p 8092:8082 "$IMAGE"
+            --ulimit memlock=-1:-1 -p 127.0.0.1:8092:8082 "$IMAGE"
           for _ in $(seq 1 60); do
             if ss -tln | grep -q ':8092' && docker logs orly1g 2>&1 | grep -q CleanHouse; then break; fi
             sleep 1

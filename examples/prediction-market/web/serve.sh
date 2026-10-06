@@ -3,6 +3,10 @@
 #   - compiles market.orly, starts a fresh orlyi with it,
 #   - builds the browser bundle,
 #   - serves this directory; open the printed URL in two tabs.
+# orlyi listens on 127.0.0.1 only, so open the page on this machine. To open
+# it from another one (a Windows browser against WSL, say), run with
+# ORLY_BIND_ADDRESS=0.0.0.0, on a network you trust: Orly has no
+# authentication (#705).
 set -e
 cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../../.. && pwd)"
@@ -24,6 +28,7 @@ echo "[2/4] start orlyi"
 pkill -9 -f 'instance_name=prediction_market_web' 2>/dev/null || true; sleep 1
 "$ORLYI" --mem_sim --create=true --port_number=19600 --slave_port_number=19601 \
   --connection_backlog=10 --instance_name=prediction_market_web --starting_state=SOLO \
+  --bind_address="${ORLY_BIND_ADDRESS:-127.0.0.1}" \
   --package_dir="$WORK/packages" > "$WORK/orlyi.log" 2>&1 &
 ORLYI_PID=$!
 for _ in $(seq 1 60); do ss -tln 2>/dev/null | grep -q ':8082' && break; sleep 1; done

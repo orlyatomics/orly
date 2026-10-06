@@ -152,10 +152,17 @@ namespace Orly {
 
         /* Use this factory to construct an instance of this class.
            The server will be open for business by the time this function
-           returns.  To shut down the server, destroy the object. */
+           returns.  To shut down the server, destroy the object.
+
+           The listener binds bind_address, an IPv4 or IPv6 literal; loopback
+           by default, because the protocol has no authentication (#705).
+           Unless allow_remote_compile is true, the `compile` statement is
+           refused with "status": "remote_compile_disabled". */
         static TWs *New(
             TSessionManager *session_mngr, size_t thread_count,
-            in_port_t port_number = 8080);
+            in_port_t port_number = 8080,
+            const std::string &bind_address = "127.0.0.1",
+            bool allow_remote_compile = false);
 
         protected:
 
