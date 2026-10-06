@@ -63,6 +63,26 @@
    paired master: the status changes must replicate without a sequence
    number to carry (#655).
 
+   The ExpiredPovNotInventoried fixture lets two povs with a ttl expire on a
+   solo master before a slave joins. The join must inventory neither: the
+   first one's saved-repo entry must be gone from the system repo by then,
+   and the second one's entry, still there, must not make the master build
+   an empty stand-in for it (#671).
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -1406,6 +1426,107 @@ FIXTURE(WriteToPovCreatedWhilePaired) {
       EXPECT_EQ(row.GetVal(), pair[1]);
     }
   }
+  slave.Kill();
+  slave.Reap(seconds(60));
+}
+
+FIXTURE(ExpiredPovNotInventoried) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = GetScratchDir();
+  const string orlyi_path = GetOrlyiPath();
+  TLogTailDumper log_dumper;
+  if (!ifstream(orlyi_path).good()) {
+    throw runtime_error("orlyi binary not built at [" + orlyi_path + "]; run `make debug` first");
+  }
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  { ofstream marker(pkg_dir + "/__orly__"); }
+  {
+    ofstream src(scratch + "/sample.orly");
+    src << SamplePackage;
+  }
+  Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
+
+  /* With no repo cache, a repo goes as soon as nothing holds it, and a fast housekeeper expires
+     a pov with a one-second ttl promptly, so the expired povs' repos are gone before the join. */
+  const in_port_t master_port = ProbeFreePort();
+  const in_port_t master_slave_port = ProbeFreePort();
+  const string master_log = scratch + "/master.log";
+  log_dumper.Add(master_log);
+  TChildServer master(
+      MakeServerArgs(orlyi_path, "expired_pov_master", pkg_dir, master_port,
+                     master_slave_port, "SOLO", 0,
+                     { "--max_repo_cache_size=0", "--housecleaning_interval=200" }),
+      master_log);
+  if (!WaitForPort(master_port, seconds(240))) {
+    throw runtime_error("master never came up; see " + master_log);
+  }
+  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  /* install scope */ {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage (expired pov)")->Sync();
+  }
+  auto to_str = [](const Base::TUuid &id) {
+    ostringstream strm;
+    strm << id;
+    return strm.str();
+  };
+  /* A pov with a ttl, written through and closed: its session goes with its client, then the
+     pov expires, then its repo goes. */
+  auto expire_pov = [&](int64_t n) {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    const Base::TUuid pov_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(1)), "NewFastSharedPov (expiring)");
+    WriteVal(client, pov_id, n, n * 100L);
+    return pov_id;
+  };
+  const string discarded = "TManager: discarded repo [";
+
+  /* The control: a live pov, held open by its client until the end, must be inventoried. */
+  auto live_client = make_shared<TExerciseClient>(master_addr);
+  const Base::TUuid live_pov = **Answered(live_client->NewSafeSharedPov(std::nullopt, seconds(600)), "NewSafeSharedPov (live)");
+  WriteVal(live_client, live_pov, 1, 100);
+
+  /* The first expired pov's saved entry goes with the next system-repo write, which creating
+     another pov with a ttl makes. */
+  const Base::TUuid removed_pov = expire_pov(2);
+  EXPECT_TRUE(WaitForLog(master_log, discarded + to_str(removed_pov) + "]", seconds(30)));
+  Answered(live_client->NewFastSharedPov(std::nullopt, seconds(600)), "NewFastSharedPov (system-repo write)");
+  EXPECT_TRUE(WaitForLog(master_log, "TManager: removed the saved entry of repo [" + to_str(removed_pov) + "]", seconds(30)));
+
+  /* The second one expires with nothing written to the system repo after it, so the join still
+     finds its saved entry. */
+  const Base::TUuid stale_pov = expire_pov(3);
+  EXPECT_TRUE(WaitForLog(master_log, discarded + to_str(stale_pov) + "]", seconds(30)));
+
+  const in_port_t slave_port = ProbeFreePort();
+  const string slave_log = scratch + "/slave.log";
+  log_dumper.Add(slave_log);
+  TChildServer slave(
+      MakeServerArgs(orlyi_path, "expired_pov_slave", pkg_dir, slave_port,
+                     ProbeFreePort(), "SLAVE", master_slave_port),
+      slave_log);
+  if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
+    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  }
+  EXPECT_TRUE(LogContains(slave_log, "TSlave::Inventory(" + to_str(live_pov) + ")"));
+  /* Before #671 the join walked every saved entry ever written and built an empty repo for each
+     pov that had gone, to inventory to the slave.  Here, with no repo cache, that stand-in went as
+     soon as the walk let go of it, under the sync view that still held its layers, and the master
+     aborted (`~TDataLayer(): RefCount == 0`) before the slave ever joined. */
+  EXPECT_FALSE(LogContains(slave_log, "TSlave::Inventory(" + to_str(removed_pov) + ")"));
+  EXPECT_FALSE(LogContains(slave_log, "TSlave::Inventory(" + to_str(stale_pov) + ")"));
+  EXPECT_FALSE(LogContains(master_log, "matched repo [" + to_str(removed_pov) + "]"));
+  EXPECT_TRUE(LogContains(master_log, "TMaster: saved repo [" + to_str(stale_pov) + "] has gone"));
+
+  const string master_state = master.Describe();
+  const string slave_state = slave.Describe();
+  cout << "master: " << master_state << "; slave: " << slave_state << endl;
+  EXPECT_TRUE(master_state.rfind("alive", 0) == 0);
+  EXPECT_TRUE(slave_state.rfind("alive", 0) == 0);
+  live_client.reset();
+
+  master.Kill();
+  master.Reap(seconds(60));
   slave.Kill();
   slave.Reap(seconds(60));
 }

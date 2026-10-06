@@ -434,6 +434,29 @@ namespace Orly {
 
       TRepo *ReconstructRepo(const Base::TUuid &repo_id) override;
 
+      /* Note a discarded repo with a ttl above 0.  ConstructRepo() wrote it a saved-repo entry in
+         the system repo, and the next system-repo write that creates a repo removes that entry
+         (#671).  Without this, nothing ever removed one: the system repo grew by an entry per
+         pov, and a slave's join walked them all. */
+      virtual void OnRepoDiscarded(const Base::TUuid &repo_id, const TTtl &ttl) noexcept override;
+
+      /* The ids in the saved-repo entries the walker yields, keeping only the newest version of
+         each entry and leaving out an entry whose newest version is a removal (#671).  The walker
+         must not skip tombstones: it yields every version of a key (#49), so skipping the removal
+         would yield the entry it removed. */
+      static std::vector<Base::TUuid> CollectSavedRepoIds(Indy::TPresentWalker &walker);
+
+      /* Add to 'op_by_key' a removal of the saved-repo entry of each repo noted by
+         OnRepoDiscarded() or QueueSavedReposLeftByRestart() that is still gone.  Never removes the
+         entry of 'keep', or of a live repo.  Does not read the system repo, so it runs on any
+         runner.  Returns the ids it removed, for LogSavedRepoRemovals() once the write commits, or
+         for RequeueSavedRepoRemovals() if it doesn't. */
+      std::vector<Base::TUuid> AddSavedRepoRemovals(TUpdate::TOpByKey &op_by_key, Atom::TSuprena &arena, void *state_alloc, const Base::TUuid &keep);
+
+      void RequeueSavedRepoRemovals(const std::vector<Base::TUuid> &repo_ids) noexcept;
+
+      static void LogSavedRepoRemovals(const std::vector<Base::TUuid> &repo_ids);
+
       virtual bool CanLoad(const L0::TId &id) override;
 
       /* The L0 manager's load/save/delete of durable objects by id. Not wired up: the call sites
@@ -468,6 +491,12 @@ namespace Orly {
       std::vector<std::pair<std::vector<std::string>, uint64_t>> GetInstalledPackages();
 
       void OnSlaveJoin(const Base::TFd &fd);
+
+      /* After a restart, note every saved-repo entry the system repo brought back, so the next
+         repo creation removes those whose repos are gone: all of them but the global repo's, as
+         no other repo survives a restart (#173, #439).  Walks the system repo, so it needs a
+         runner with a frame pool (#671). */
+      void QueueSavedReposLeftByRestart();
 
       inline virtual std::mutex &GetReplicationQueueLock() NO_THROW {
         return ReplicationLock;
@@ -579,7 +608,24 @@ namespace Orly {
 
       bool AllowFileSync;
 
-      std::unordered_map<Base::TUuid, std::unique_ptr<Indy::TRepo::TView>> SlaveSyncViewMap;
+      /* A repo being synced to a joining slave, with the view the sync reads.  The view holds the
+         repo's layers but not the repo, so the entry pins the repo too: without the pin, a repo
+         that went during the sync (expired, or discarded by the cache) took its layers with it
+         under the view, and the slave's fetch then opened an empty stand-in under its id (#671).
+         Declared in this order so the view goes before the pin. */
+      struct TSlaveSync {
+        L0::TManager::TPtr<Indy::TRepo> Repo;
+        std::unique_ptr<Indy::TRepo::TView> View;
+      };
+
+      std::unordered_map<Base::TUuid, TSlaveSync> SlaveSyncViewMap;
+
+      /* Covers DiscardedSavedRepos. */
+      std::mutex DiscardedSavedReposMutex;
+
+      /* Repos with a ttl above 0, discarded since the last system-repo write that created a repo,
+         whose saved-repo entries that write removes (#671). */
+      std::vector<Base::TUuid> DiscardedSavedRepos;
 
       friend class Orly::Server::TServer;
 

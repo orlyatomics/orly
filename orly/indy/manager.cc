@@ -19,12 +19,14 @@
 #include <poll.h>
 
 #include <orly/indy/manager.h>
+#include <algorithm>
 #include <optional>
 
 #include <base/debug_log.h>
 #include <base/opt_ostream.h>
 #include <base/shutting_down.h>
 #include <orly/indy/file_sync.h>
+#include <orly/native/defs.h>
 #include <orly/server/meta_record.h>
 #include <base/util/time.h>
 
@@ -691,9 +693,12 @@ TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSeq
     syslog(LOG_INFO, "TMaster::FetchUpdates(%s) [%lu -> %lu]", ss.str().c_str(), lowest, highest);
   }
   Base::TTimer timer;
-  auto repo = Manager->ForceGetRepo(repo_id);
+  /* The repo the join inventoried, pinned there: opening it by id could build an empty stand-in
+     if it had gone (#671). */
   assert(Manager->SlaveSyncViewMap.find(repo_id) != Manager->SlaveSyncViewMap.end());
-  const auto &view = Manager->SlaveSyncViewMap.find(repo_id)->second;
+  const auto &sync = Manager->SlaveSyncViewMap.find(repo_id)->second;
+  const auto &repo = sync.Repo;
+  const auto &view = sync.View;
   auto walker_ptr = repo->NewUpdateWalker(view, lowest, highest);
   TContextInputStreamer context;
   for (TUpdateWalker &walker = *walker_ptr; walker; ++walker) {
@@ -711,7 +716,7 @@ TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSeq
 TManager::TMaster::TViewDef TManager::TMaster::GetView(const Base::TUuid &repo_id) {
   assert(Manager->SlaveSyncViewMap.find(repo_id) != Manager->SlaveSyncViewMap.end());
   TViewDef ret;
-  const auto &view = Manager->SlaveSyncViewMap.find(repo_id)->second;
+  const auto &view = Manager->SlaveSyncViewMap.find(repo_id)->second.View;
   Manager->AugmentViewMapWithDiskLayers(ret, view);
   return ret;
 }
@@ -1356,19 +1361,27 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
         if (ttl->count() > 0) {
           /* Perform transaction on System repo to construct this repo */ {
             TSuprena arena;
-            auto transaction = NewTransaction(false /* don't replicate this transactions, we replicate system changes seperately */);
-            transaction->Push(SystemRepo, TUpdate::NewUpdate(TUpdate::TOpByKey{
-              { TIndexKey(SystemRepoIndexId, TKey(TSavedRepoKey(SavedRepoMagicNumber, repo_id), &arena, state_alloc)),
+            /* The same write removes the entries of repos that have gone since the last one (#671). */
+            TUpdate::TOpByKey op_by_key;
+            const std::vector<TUuid> removed = AddSavedRepoRemovals(op_by_key, arena, state_alloc, repo_id);
+            op_by_key[TIndexKey(SystemRepoIndexId, TKey(TSavedRepoKey(SavedRepoMagicNumber, repo_id), &arena, state_alloc))] =
                 TKey(TSavedRepoObj(is_safe,
                                    TSavedRepoObj::TRootPath(/* TODO(#173): fill in */),
                                    TSavedRepoObj::TOptSeq(),
                                    TSavedRepoObj::TOptSeq(),
                                    TSequenceNumber(1UL),
                                    TSequenceNumber(0UL), /* TODO(#173) : verify? */
-                                   TSavedRepoObj::Normal), &arena, state_alloc)
-                }}, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc)));
-            transaction->Prepare();
-            transaction->CommitAction();
+                                   TSavedRepoObj::Normal), &arena, state_alloc);
+            try {
+              auto transaction = NewTransaction(false /* don't replicate this transactions, we replicate system changes seperately */);
+              transaction->Push(SystemRepo, TUpdate::NewUpdate(op_by_key, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc)));
+              transaction->Prepare();
+              transaction->CommitAction();
+            } catch (...) {
+              RequeueSavedRepoRemovals(removed);
+              throw;
+            }
+            LogSavedRepoRemovals(removed);
           }
         }
         TRepo *repo = is_safe ?
@@ -1458,6 +1471,105 @@ L0::TManager::TRepo *TManager::ReconstructRepo(const TUuid &repo_id) {
   assert(repo_id == SystemRepoId);
   auto system_deadline = TDeadline::max();
   return TSafeRepo::ReConstructFromDisk(this, repo_id, system_deadline);
+}
+
+void TManager::OnRepoDiscarded(const TUuid &repo_id, const TTtl &ttl) noexcept {
+  /* Only ConstructRepo() writes saved-repo entries, and only for a ttl above 0.  The system and
+     global repos live as long as the manager does. */
+  if (ttl.count() <= 0 || repo_id == SystemRepoId || repo_id == GlobalPovId) {
+    return;
+  }
+  try {
+    /* acquire DiscardedSavedRepos lock */ {
+      std::lock_guard<std::mutex> lock(DiscardedSavedReposMutex);
+      DiscardedSavedRepos.push_back(repo_id);
+    }
+    std::ostringstream strm;
+    strm << repo_id;
+    syslog(LOG_INFO, "TManager: discarded repo [%s]; the next repo creation removes its saved entry (#671)", strm.str().c_str());
+  } catch (const std::exception &ex) {
+    /* Out of memory: the entry stays, as it did before #671. */
+    syslog(LOG_ERR, "TManager: could not note a discarded repo: %s", ex.what());
+  }
+}
+
+std::vector<TUuid> TManager::CollectSavedRepoIds(Indy::TPresentWalker &walker) {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  /* Pick each entry's newest version by sequence number, as GetInstalledPackages() does: the
+     walk yields every version, in no order we can rely on. */
+  std::unordered_map<TUuid, std::pair<TSequenceNumber, bool>> newest;
+  for (; walker; ++walker) {
+    TSavedRepoKey repo_id_tuple;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, state_alloc)), repo_id_tuple);
+    auto iter = newest.find(std::get<1>(repo_id_tuple));
+    if (iter == newest.end()) {
+      newest.emplace(std::get<1>(repo_id_tuple), std::make_pair((*walker).SequenceNumber, !(*walker).Op.IsTombstone()));
+    } else if ((*walker).SequenceNumber >= iter->second.first) {
+      iter->second = std::make_pair((*walker).SequenceNumber, !(*walker).Op.IsTombstone());
+    }
+  }
+  std::vector<TUuid> ids;
+  for (const auto &entry : newest) {
+    if (entry.second.second) {
+      ids.push_back(entry.first);
+    }
+  }
+  /* In id order, the order the walk had. */
+  std::sort(ids.begin(), ids.end());
+  return ids;
+}
+
+std::vector<TUuid> TManager::AddSavedRepoRemovals(TUpdate::TOpByKey &op_by_key, TSuprena &arena, void *state_alloc, const TUuid &keep) {
+  std::vector<TUuid> candidates;
+  /* acquire DiscardedSavedRepos lock */ {
+    std::lock_guard<std::mutex> lock(DiscardedSavedReposMutex);
+    candidates.swap(DiscardedSavedRepos);
+  }
+  try {
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    std::vector<TUuid> removed;
+    for (const auto &repo_id : candidates) {
+      /* A repo can be live again by now: a stand-in, say.  Its entry stays until it goes again. */
+      if (repo_id == keep || repo_id == SystemRepoId || repo_id == GlobalPovId || IsLiveRepo(repo_id)) {
+        continue;
+      }
+      op_by_key[TIndexKey(SystemRepoIndexId, TKey(TSavedRepoKey(SavedRepoMagicNumber, repo_id), &arena, state_alloc))] =
+          TKey(Native::TTombstone::Tombstone, &arena, state_alloc);
+      removed.push_back(repo_id);
+    }
+    return removed;
+  } catch (...) {
+    RequeueSavedRepoRemovals(candidates);
+    throw;
+  }
+}
+
+void TManager::QueueSavedReposLeftByRestart() {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  TSuprena arena;
+  auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
+  auto walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), false);
+  const std::vector<TUuid> left = CollectSavedRepoIds(*walker_ptr);
+  RequeueSavedRepoRemovals(left);
+  syslog(LOG_INFO, "TManager: [%ld] saved-repo entries came back with the system repo; the next repo creation removes those whose repos are gone (#671)", left.size());
+}
+
+void TManager::RequeueSavedRepoRemovals(const std::vector<TUuid> &repo_ids) noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(DiscardedSavedReposMutex);
+    DiscardedSavedRepos.insert(DiscardedSavedRepos.end(), repo_ids.begin(), repo_ids.end());
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "TManager: could not requeue saved-repo removals: %s", ex.what());
+  }
+}
+
+void TManager::LogSavedRepoRemovals(const std::vector<TUuid> &repo_ids) {
+  for (const auto &repo_id : repo_ids) {
+    std::ostringstream strm;
+    strm << repo_id;
+    syslog(LOG_INFO, "TManager: removed the saved entry of repo [%s] (#671)", strm.str().c_str());
+  }
 }
 
 bool TManager::CanLoad(const L0::TId &id) {
@@ -1619,7 +1731,8 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           PromoteSolo(fd);
           view = make_unique<Indy::TRepo::TView>(SystemRepo);
           syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>)");
-          walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), true);
+          /* Not skipping tombstones: CollectSavedRepoIds() needs to see a removed entry's removal (#671). */
+          walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), false);
         }  // release Context lock
         /* sync all the index ids */ {
           TIndexMapReplica index_map_replica;
@@ -1630,27 +1743,33 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::IndexId, index_map_replica);
         }
         assert(walker_ptr);
-        for (auto &walker = *walker_ptr; walker; ++walker) {
-          TSavedRepoKey repo_id_tuple;
-
-          Sabot::ToNative(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, state_alloc)), repo_id_tuple);
-
-          Base::TUuid repo_id = std::get<1>(repo_id_tuple);
+        for (const Base::TUuid &repo_id : CollectSavedRepoIds(*walker_ptr)) {
           /* log scope */ {
             std::ostringstream ss;
             ss << repo_id;
             syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [%s]", ss.str().c_str());
           }
-          auto repo = ForceGetRepo(repo_id);
+          /* An entry can outlive its repo: one discarded since the last repo creation, or one left
+             from before a restart.  Opening it by force would build an empty repo with no parent
+             and inventory that to the slave as if it were the pov (#671).  Skip it, and let the
+             next repo creation remove its entry. */
+          auto repo = TryGetLiveRepo(repo_id);
+          if (!repo) {
+            std::ostringstream ss;
+            ss << repo_id;
+            syslog(LOG_INFO, "TMaster: saved repo [%s] has gone; not inventorying it (#671)", ss.str().c_str());
+            RequeueSavedRepoRemovals({ repo_id });
+            continue;
+          }
           /* log scope */ {
             std::ostringstream ss;
             ss << repo_id;
-            syslog(LOG_INFO, "TMaster: got forced repo [%s]", ss.str().c_str());
+            syslog(LOG_INFO, "TMaster: got live repo [%s]", ss.str().c_str());
           }
           bool is_safe = repo->IsSafeRepo();
 
           assert(SlaveSyncViewMap.find(repo_id) == SlaveSyncViewMap.end());
-          const std::unique_ptr<Indy::TRepo::TView> &sync_view = SlaveSyncViewMap.emplace(repo_id, std::make_unique<Indy::TRepo::TView>(repo)).first->second;
+          const std::unique_ptr<Indy::TRepo::TView> &sync_view = SlaveSyncViewMap.emplace(repo_id, TSlaveSync{ repo, std::make_unique<Indy::TRepo::TView>(repo) }).first->second.View;
 
           std::optional<Base::TUuid> parent_repo_id;
           if (repo->GetParentRepo()) {

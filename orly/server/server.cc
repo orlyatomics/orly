@@ -1231,6 +1231,11 @@ void TServer::Init() {
       std::unordered_map<Base::TUuid, std::string> pkg_key_mapping;
       Indy::Fiber::TJumpRunnable idns_jumper([this, &pkg_key_mapping] {
           pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();
+          /* No repo but the global one survives a restart, so neither should their saved-repo
+             entries in the system repo (#671). */
+          if (!Cmd.Create) {
+            RepoManager->QueueSavedReposLeftByRestart();
+          }
       });
       idns_jumper(FramePoolManager.get(), &BGFastRunner);
       //auto pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();

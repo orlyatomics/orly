@@ -721,6 +721,7 @@ void TManager::DestroyObj(TObj *obj) noexcept {
   assert(obj);
   size_t erased_from_openable = OpenableObjs.erase(obj->GetId());
   assert(erased_from_openable == 1);
+  OnRepoDiscarded(obj->GetId(), obj->GetTtl());
   /* Every path into here is the manager discarding a closed object per its
      ttl contract (zero-ttl close, uncacheable close, cache eviction), so the
      destructor may drop unmerged state without complaint (#521). */
@@ -927,6 +928,11 @@ TManager::TPtr<TManager::TRepo> TManager::TryOpenLiveRepo(const Base::TUuid &rep
     }
     return ptr;
   }
+}
+
+bool TManager::IsLiveRepo(const Base::TUuid &repo_id) {
+  std::lock_guard<std::mutex> lock(DurableMutex);
+  return OpenableObjs.find(repo_id) != OpenableObjs.end();
 }
 
 template <>

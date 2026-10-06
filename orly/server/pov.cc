@@ -48,7 +48,18 @@ const Indy::L0::TManager::TPtr<Indy::TRepo> &TPov::GetRepo(const TServer *server
       if (SharedParents.empty()) {
         parent_repo = server->GetGlobalRepo();
       } else {
-        parent_repo = repo_manager->ForceGetRepo(SharedParents.back());
+        /* The parent's repo must be live.  After a restart the parent pov comes back from disk
+           without it (#439), and opening it by force built an empty repo with no parent: this pov
+           then read and wrote through a parent that went nowhere, instead of failing as the
+           parent itself does (#671). */
+        parent_repo = repo_manager->TryGetLiveRepo(SharedParents.back());
+        if (!*parent_repo) {
+          std::ostringstream strm;
+          strm << "pov {" << GetId() << "} cannot be made under pov {" << SharedParents.back()
+               << "}: that pov's state is gone, and point-of-view state does not survive a server restart"
+                  " (povs are ephemeral, #439); create a new pov";
+          throw std::runtime_error(strm.str());
+        }
       }
       Repo = repo_manager->GetRepo(GetId(), GetTtl(), parent_repo, Policy == TPolicy::Safe, true);
     }

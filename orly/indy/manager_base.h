@@ -851,6 +851,16 @@ namespace Orly {
            memory without minting an empty one (#439). */
         TManager::TPtr<TRepo> TryOpenLiveRepo(const Base::TUuid &repo_id);
 
+        /* True iff. the repo with the given id is LIVE in this manager (open, closed but still
+           cached, or being constructed right now).  Unlike TryOpenLiveRepo(), this never pins the
+           repo, so asking can't be what closes it. */
+        bool IsLiveRepo(const Base::TUuid &repo_id);
+
+        /* Called as the manager destroys a closed repo it is done with: one its ttl let go, or
+           one the cache discarded.  Not called for the teardown sweep.  Runs with the manager's
+           mutex held, so an override must not touch the manager; it may only take note. */
+        virtual void OnRepoDiscarded(const Base::TUuid &/*repo_id*/, const TTtl &/*ttl*/) noexcept {}
+
         virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
                                      const std::optional<TTtl> &ttl,
                                      const std::optional<TManager::TPtr<TRepo>> &parent_repo,
