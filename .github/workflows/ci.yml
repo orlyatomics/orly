@@ -350,6 +350,13 @@ jobs:
           grep '^MEMORY FULL FAIL' /tmp/memory-full-control.log | head -3 | cut -c1-300
           echo "control OK: the smoke fails without memory admission"
 
+      # #626: writes to a paused POV, whose backlog never drains until it is
+      # unpaused, must not wait for it: they go through (or are refused at the
+      # memory reserve), reads carry on, and after the unpause a write is
+      # accepted and reads back.
+      - name: Writes to a paused POV don't hang
+        run: bash clients/smoke/run-paused-pov.sh
+
       # #590: fill a tiny mem-sim disk. Writes must come back refused with
       # insufficient_storage while reads, new sessions and orlyi itself carry on.
       - name: A full disk refuses writes and keeps serving reads

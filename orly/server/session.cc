@@ -19,7 +19,9 @@
 #include <orly/server/session.h>
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <optional>
+#include <sstream>
 
 #include <orly/atom/suprena.h>
 #include <orly/indy/context.h>
@@ -48,8 +50,17 @@ using namespace Util;
    step copies the whole unpromoted backlog before it frees the old copy, so the
    backlog must stay well below the Update pool's capacity or one merge fills
    the pool (#584). Each POV's watermark is therefore capped at 1/32 of it, so
-   several POVs backing up at once still leave room for their merges. That
-   loop always terminates, because every memtable drains.
+   several POVs backing up at once still leave room for their merges.
+
+   Only a backlog that Tetris is promoting drains, so that wait applies only
+   to one (#626). A paused POV keeps its backlog until it is unpaused, and a
+   failed one keeps it for good; a write to either used to wait forever once
+   the backlog passed the cap. Such a POV is held to the same cap a different
+   way: RefuseWriteToStalledBacklog refuses its writes, before they commit,
+   once its backlog has reached the cap. The wait also gives up once the
+   backlog has not shrunk for 5 s, so a backlog that stops draining for some
+   other reason (the parent's player paused for an import, a deferred Tetris
+   join) can't hold a writer forever either.
 
    The second is the Update / Update Entry pools past half full, whatever
    holds them: merges need that much room to copy into. That wait is
@@ -62,11 +73,52 @@ using namespace Util;
    only make every write that lands past half full sit out its 5 s. Measured
    with a 25% reserve, it held writers to one batch per 5 s each, and reads on
    the same runners took as long. */
+static size_t GetBacklogCap(size_t backlog_threshold) {
+  return std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
+}
+
+/* #626: a write to a paused or failed POV whose backlog has reached the cap is refused before
+   it commits, with the typed status of #607. Nothing promotes that backlog until the POV is
+   unpaused, so waiting for it (as ApplyWriteBackpressure does for a POV that drains) would never
+   end.
+
+   Why refuse rather than let such a POV grow? Memory admission (#607) is global: a paused POV
+   allowed to grow fills the update pools to the merges' reserve, and then every write to every
+   POV is refused until it is unpaused. Measured with the paused-POV smoke (5,000-update pool),
+   that happened after 1,900 writes to the paused POV. Held to the cap, a paused POV takes at
+   most 1/32 of the Update pool, like any POV whose merges are behind, and the memory merge's
+   copy of its backlog stays as small as theirs (#584).
+
+   The cap is checked before commit, so concurrent writers can each pass it once and overshoot it
+   by one write apiece; ApplyWriteBackpressure doesn't wait for a backlog that can't drain. */
+static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold) {
+  if (!backlog_threshold) {
+    return;
+  }
+  const Indy::TStatus status = repo->GetStatus();
+  if (status == Indy::Normal) {
+    return;
+  }
+  const size_t cap = GetBacklogCap(backlog_threshold);
+  const size_t backlog = repo->GetMemBacklogDepth();
+  if (backlog < cap) {
+    return;
+  }
+  std::ostringstream msg;
+  msg << "insufficient memory: write refused; this POV is " << (status == Indy::Paused ? "paused" : "failed")
+      << " and already holds " << backlog << " unpromoted updates, the most one POV may hold (" << cap << ")";
+  if (status == Indy::Paused) {
+    msg << "; writes are accepted again once it is unpaused and they have been promoted";
+  }
+  msg << "; reads still work";
+  throw TInsufficientMemory(msg.str());
+}
+
 static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold, bool wait_for_pools) {
   if (!backlog_threshold) {
     return;
   }
-  backlog_threshold = std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
+  backlog_threshold = GetBacklogCap(backlog_threshold);
   constexpr double pool_threshold = 0.5;
   const auto pools_full = [wait_for_pools] {
     return wait_for_pools
@@ -74,9 +126,23 @@ static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &
             || Indy::TUpdate::GetUpdateEntryPoolUsedPct() > pool_threshold);
   };
   const auto pool_deadline = steady_clock::now() + seconds(5);
+  constexpr auto backlog_stall = seconds(5);
+  size_t lowest_backlog = std::numeric_limits<size_t>::max();
+  auto backlog_deadline = steady_clock::now() + backlog_stall;
+  const auto backlog_over = [&] {
+    const size_t backlog = repo->GetMemBacklogDepth();
+    if (backlog <= backlog_threshold || !repo->IsBacklogDraining()) {
+      return false;
+    }
+    const auto now = steady_clock::now();
+    if (backlog < lowest_backlog) {
+      lowest_backlog = backlog;
+      backlog_deadline = now + backlog_stall;
+    }
+    return now < backlog_deadline;
+  };
   for (;;) {
-    if (repo->GetMemBacklogDepth() > backlog_threshold
-        || (pools_full() && steady_clock::now() < pool_deadline)) {
+    if (backlog_over() || (pools_full() && steady_clock::now() < pool_deadline)) {
       Indy::Fiber::YieldSlow();
     } else {
       break;
@@ -235,6 +301,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
+      RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Deferred entries from #49 phase 2: defer-safe commutative
@@ -475,6 +542,7 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
+      RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Identical deferred-entry fold to Try() (#49/#232): defer-safe commutative

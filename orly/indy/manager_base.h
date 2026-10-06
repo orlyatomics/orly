@@ -631,7 +631,9 @@ namespace Orly {
 
           TManager *Manager;
 
-          TStatus Status;
+          /* Atomic because TRepo::ChangeStatus writes it without a lock, while the writer
+             backpressure reads it (#626). */
+          std::atomic<TStatus> Status;
 
           private:
 
