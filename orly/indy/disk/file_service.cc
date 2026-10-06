@@ -332,15 +332,26 @@ void TFileService::ShutDown() {
     return;
   }
   ShuttingDown = true;
+  /* Cancel-or-join the job hosting BGScheduler's loop first (#462, #463): a host that never got
+     a worker can neither be waited for nor be allowed to start late against the dying members.
+     A failed cancel means the loop is running, so the runner fiber latched onto it will run:
+     wake it and wait for it to finish, which frees its own frame. A cancelled host never ran
+     that fiber, so nothing would free its frame, and the frame pool's destructor would later
+     terminate on it ("Stack frame was not unwound properly"); free it here, as
+     ~TDurableManager does for its fibers (#631). */
+  const bool hosted = !Scheduler->Cancel(SchedulerHostHandle);
   RunSem.Push();
+  if (hosted) {
+    RunnerExitedSem.Pop();
+  }
   BGScheduler.ShutDown();
-  /* Cancel-or-join the job hosting BGScheduler's loop: the ShutDown()
-     above is only a flag, and member destruction below would otherwise
-     race a loop still on its way out (#463) -- while a host that never
-     got a worker can neither be waited for nor be allowed to start late
-     against the dying members (#462). */
-  if (!Scheduler->Cancel(SchedulerHostHandle)) {
+  if (hosted) {
     SchedulerExitedSem.Pop();
+  } else if (Fiber::TFrame::LocalFramePool) {
+    Fiber::TFrame::LocalFramePool->Free(Frame);
+  } else {
+    /* Not on a thread with a frame pool: leave the frame to the pool's owner. */
+    syslog(LOG_ERR, "TFileService::ShutDown: runner never ran and no local frame pool to return its frame to");
   }
   SchedulerHostHandle = nullptr;
 }
@@ -683,12 +694,14 @@ void TFileService::Runner() {
     CompleteQueuedOps(ServerShutdown, nullptr);
     delete Disk::Util::TDiskController::TEvent::LocalEventPool;
     Disk::Util::TDiskController::TEvent::LocalEventPool = nullptr;
+    RunnerExitedSem.Push();
     throw;
   }
   /* Ops queued after the last round would otherwise wait forever. */
   CompleteQueuedOps(ServerShutdown, nullptr);
   delete Disk::Util::TDiskController::TEvent::LocalEventPool;
   Disk::Util::TDiskController::TEvent::LocalEventPool = nullptr;
+  RunnerExitedSem.Push();
   Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
 }
 

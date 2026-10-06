@@ -267,6 +267,10 @@ namespace Orly {
            handshake as TDurableManager's SchedulerExitedSem). */
         Base::TEventSemaphore SchedulerExitedSem;
 
+        /* Pushed by Runner() just before it frees its own frame. A runner whose host job was
+           cancelled never runs, so the destructor frees its frame instead (#631). */
+        Base::TEventSemaphore RunnerExitedSem;
+
         /* A flag used to test abort on append log corruption */
         bool AbortOnAppendLogScan;
 

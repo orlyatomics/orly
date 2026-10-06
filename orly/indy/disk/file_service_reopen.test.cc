@@ -563,3 +563,28 @@ FIXTURE(CrashDuringFirstImageAfterRestart) {
 FIXTURE(CrashDuringFirstImageEver) {
   RunCrashDuringFirstImageAfterRestart(896UL, 7UL);
 }
+
+/* #631: a file service destroyed before its runner fiber has run must give that fiber's frame
+   back. It used not to, and the frame pool's destructor at the end of the run then terminated
+   on a frame that was never unwound ("Stack frame was not unwound properly"). Destroy one right
+   after creating it, many times over, so some of them lose that race. */
+FIXTURE(DestroyedBeforeItsRunnerRuns) {
+  constexpr size_t num_services = 20UL;
+  DUtil::TDiskController::TEvent::InitializeDiskEventPoolManager(1000UL);
+  Orly::Indy::Fiber::TFiberTestRunner runner([&](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &runner_cons) {
+    /* scope */ {
+      Base::TScheduler scheduler(Base::TScheduler::TPolicy(4, 4, milliseconds(10)));
+      TFramePoolManager *frame_pool_manager = Orly::Indy::Fiber::TFrame::LocalFramePool->GetPoolManager();
+      auto device = make_unique<DUtil::TMemoryDevice>(512, 512, NumLogicalBlocks, true /* fsync */, true);
+      TBoot boot(&scheduler, device.get());
+      const TLayout layout = Create(boot.GetVolMan());
+      for (size_t i = 0; i < num_services; ++i) {
+        TFileService fs(&scheduler, runner_cons, frame_pool_manager, boot.GetVolMan(), layout.Image1BlockId, layout.Image2BlockId, layout.AppendLogBlockVec, NoFileInit, true, false);
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL + num_services);
+  DUtil::TDiskController::TEvent::FinalizeDiskEventPoolManager();
+}
