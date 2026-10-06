@@ -81,9 +81,19 @@ namespace Orly {
 
         inline size_t GetReserve() const;
 
+        /* What TryAdmit saw when it refused a writer (#719), for the refusal message. */
+        struct TRefusal {
+          size_t Used = 0UL;
+          size_t Admitted = 0UL;
+          size_t Claimed = 0UL;
+          size_t Asked = 0UL;
+          size_t Limit = 0UL;
+        };
+
         /* Promises num_blocks to a writer, or returns false and promises nothing. A writer that
-           was admitted calls ReleaseAdmitted with the same count once it has allocated. */
-        bool TryAdmit(size_t num_blocks);
+           was admitted calls ReleaseAdmitted with the same count once it has allocated. On a
+           refusal, fills *refusal (if given) with the counts it compared. */
+        bool TryAdmit(size_t num_blocks, TRefusal *refusal = nullptr);
 
         void ReleaseAdmitted(size_t num_blocks);
 

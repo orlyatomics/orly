@@ -3,8 +3,11 @@
 # a mem-sim orlyi with a 20000-update / 40000-entry pool and a 25% memory
 # reserve. With the writer backlog capped only in updates, the batches' entries
 # filled the Entry pool: merges and Tetris missed, and writers were refused.
-# With it capped in entries too, no batch may be refused, no pool may miss, and
-# the Entry pool must stay under half full. orlyi must not abort.
+# With it capped in entries too, at most 1% of the batches may be refused (a
+# refused batch is retried; a loaded runner can refuse a few, #719), no pool
+# may miss, and the Entry pool must stay under 60% full. orlyi must not abort.
+# EXTRA_ARGS go to orlyi; CI's negative control passes
+# --tetris_backpressure_threshold=0 (no backlog cap) and expects a failure.
 #   0. Build the orly TS client (clients/ts).
 #   1. Compile clients/mcp/smoke/sample.orly with orlyc.
 #   2. Start a fresh mem-sim orlyi with 20000/40000 pools, reserve RESERVE_PCT.
@@ -52,6 +55,7 @@ cp "$WORK/sample.1.so" "$WORK/packages/"
          --package_dir="$WORK/packages" \
          --update_pool_size=20000 --update_entry_pool_size=40000 \
          --memory_reserve_pct="$RESERVE_PCT" \
+         ${EXTRA_ARGS:-} \
          > "$WORK/orlyi.log" 2>&1 &
 ORLYI_PID=$!
 

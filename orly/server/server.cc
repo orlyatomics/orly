@@ -1901,14 +1901,26 @@ void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t n
       && RefusingWritesForMemory.exchange(!admitted) == admitted) {
     /* LOG_ERR, not WARNING: the default mask drops warnings. */
     const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
-    syslog(LOG_ERR, "memory admission: %s writes; Update pool %ld / %ld, Update Entry pool %ld / %ld, reserves %ld / %ld; %ld refused so far",
+    syslog(LOG_ERR, "memory admission: %s writes; Update pool %ld / %ld, Update Entry pool %ld / %ld, reserves %ld / %ld; %ld refused so far%s",
            admitted ? "accepting" : "refusing", updates.GetNumBlocksUsed(), updates.GetMaxBlocks(),
            entries.GetNumBlocksUsed(), entries.GetMaxBlocks(), updates.GetReserve(), entries.GetReserve(),
-           MemoryRefusedWriteCount.load());
+           MemoryRefusedWriteCount.load(), admitted ? "" : ("; " + DescribeRefusal(admission)).c_str());
   }
   if (!admitted) {
-    ThrowInsufficientMemory();
+    ThrowInsufficientMemory(&admission);
   }
+}
+
+std::string TServer::DescribeRefusal(const TUpdate::TWriteAdmission &admission) {
+  /* What admission compared (#719): the blocks in use, those promised to writes in flight and
+     those claimed by merge and Tetris copies, plus this write's, against what writes may use. */
+  const auto &refusal = admission.GetRefusal();
+  std::ostringstream msg;
+  msg << "the " << (admission.WasEntryPoolRefused() ? "Update Entry" : "Update") << " pool had "
+      << refusal.Used << " in use, " << refusal.Admitted << " promised to other writes and "
+      << refusal.Claimed << " claimed for merge and Tetris copies, so this write's " << refusal.Asked
+      << " would pass the " << refusal.Limit << " writes may use";
+  return msg.str();
 }
 
 void TServer::RefuseWriteOutOfMemory() {
@@ -1919,12 +1931,16 @@ void TServer::RefuseWriteOutOfMemory() {
   ThrowInsufficientMemory();
 }
 
-void TServer::ThrowInsufficientMemory() const {
+void TServer::ThrowInsufficientMemory(const TUpdate::TWriteAdmission *refused) const {
   const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
   std::ostringstream msg;
   msg << "insufficient memory: write refused; the update pools are down to the reserve kept for merges (Update "
       << updates.GetNumBlocksUsed() << " / " << updates.GetMaxBlocks() << ", Update Entry "
-      << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks() << " in use); reads still work";
+      << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks() << " in use";
+  if (refused) {
+    msg << "; " << DescribeRefusal(*refused);
+  }
+  msg << "); reads still work";
   throw TInsufficientMemory(msg.str());
 }
 

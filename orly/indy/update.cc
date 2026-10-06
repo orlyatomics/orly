@@ -41,10 +41,12 @@ bool TUpdate::TWriteAdmission::TryAcquire(size_t num_entries) {
   assert(!NumUpdates);
   constexpr size_t updates = 2UL;
   const size_t entries = num_entries * 2UL;
-  if (!Pool.TryAdmit(updates)) {
+  if (!Pool.TryAdmit(updates, &Refusal)) {
+    EntryPoolRefused = false;
     return false;
   }
-  if (!TEntry::Pool.TryAdmit(entries)) {
+  if (!TEntry::Pool.TryAdmit(entries, &Refusal)) {
+    EntryPoolRefused = true;
     Pool.ReleaseAdmitted(updates);
     return false;
   }

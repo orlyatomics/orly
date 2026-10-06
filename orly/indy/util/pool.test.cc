@@ -69,6 +69,38 @@ FIXTURE(AdmitCountsBlocksInUse) {
   pool.ReleaseAdmitted(5UL);
 }
 
+/* A refusal reports what it compared (#719): the blocks in use, those promised to writers, those
+   claimed for copies, the blocks asked for, and what writers may use. */
+FIXTURE(RefusalReportsCounts) {
+  TPool pool(sizeof(void *), "test", 100UL);
+  pool.SetReserve(25UL);
+  vector<void *> blocks;
+  for (size_t i = 0; i < 40UL; ++i) {
+    blocks.push_back(pool.Alloc(sizeof(void *)));
+  }
+  EXPECT_TRUE(pool.TryAdmit(10UL));
+  EXPECT_TRUE(pool.TryClaim(20UL));
+  TPool::TRefusal refusal;
+  EXPECT_FALSE(pool.TryAdmit(6UL, &refusal));
+  EXPECT_EQ(refusal.Used, 40UL);
+  EXPECT_EQ(refusal.Admitted, 10UL);
+  EXPECT_EQ(refusal.Claimed, 20UL);
+  EXPECT_EQ(refusal.Asked, 6UL);
+  EXPECT_EQ(refusal.Limit, 75UL);
+  /* Once refusing, the limit includes the hysteresis. */
+  EXPECT_FALSE(pool.TryAdmit(6UL, &refusal));
+  EXPECT_EQ(refusal.Limit, 69UL);
+  /* An admission leaves it alone. */
+  pool.ReleaseClaim(20UL);
+  refusal = TPool::TRefusal();
+  EXPECT_TRUE(pool.TryAdmit(6UL, &refusal));
+  EXPECT_EQ(refusal.Used, 0UL);
+  pool.ReleaseAdmitted(16UL);
+  for (void *block : blocks) {
+    pool.Free(block);
+  }
+}
+
 /* Once refusing, a writer is admitted again only when a further reserve / 4 is free. */
 FIXTURE(Hysteresis) {
   TPool pool(sizeof(void *), "test", 100UL);
