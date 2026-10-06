@@ -117,6 +117,10 @@ namespace Orly {
 
 }
 
+void TDevice::CompleteGroupRequest(TGroupRequest *group_request, TDiskResult result, const char *err_str) {
+  group_request->Callback(result, err_str);
+}
+
 TDiskController::TDiskController()
     : DeviceCollection(this)
 #ifndef NDEBUG

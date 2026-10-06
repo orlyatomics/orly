@@ -65,6 +65,12 @@ namespace Orly {
 
       }
 
+      namespace Sim {
+
+        class TFaultEngine;
+
+      }
+
     }
 
 
@@ -852,6 +858,7 @@ namespace Orly {
 
         friend class Server::TIndyReporter;
         friend class Util::TDiskEngine;
+        friend class Sim::TFaultEngine;
 
       };  // TDurableManager
 
