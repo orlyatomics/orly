@@ -118,6 +118,10 @@ namespace Orly {
         /* Owned more than once. */
         std::vector<size_t> Shared;
 
+        /* Owned by the system block or the file service, but outside every volume. (A file's
+           block list that runs outside them makes the file unreadable instead.) */
+        std::vector<size_t> OutOfRange;
+
         /* Files whose block lists could not be read, with the error. Their blocks show up as
            leaked. */
         std::vector<std::string> Unreadable;
@@ -133,7 +137,7 @@ namespace Orly {
 
         /* True if nothing was found that makes continuing unsafe: no unheld or shared blocks. */
         bool IsSafe() const {
-          return Unheld.empty() && Shared.empty();
+          return Unheld.empty() && Shared.empty() && OutOfRange.empty();
         }
 
         /* True if nothing at all was found. */

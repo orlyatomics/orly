@@ -3146,6 +3146,16 @@ void TVolumeManager::ForEachHeldBlock(const std::function<void (size_t block_id)
   }
 }
 
+std::vector<TBlockRange> TVolumeManager::GetBlockExtents() const {
+  std::vector<TBlockRange> extents;
+  for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
+    for (const auto &extent : csr->GetLogicalExtentVec()) {
+      extents.emplace_back(extent.Start / PhysicalBlockSize, extent.Span / PhysicalBlockSize);
+    }
+  }
+  return extents;
+}
+
 bool TVolumeManager::IsBlockHeld(size_t block_id) const {
   for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
     if (csr->IsBlockHeld(block_id)) {

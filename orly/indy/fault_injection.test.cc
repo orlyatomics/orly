@@ -1218,6 +1218,10 @@ static void InjectAndRecheck(TCaseEnv &env, const TRecord &record) {
         record.Put("open_check_unsafe", to_string(check.Unheld.size() + check.Shared.size()));
         record.Put("open_check_seq", to_string(check.SeqProblems.size()));
         record.Put("open_check_us", to_string(static_cast<size_t>(check.Seconds * 1e6)));
+        record.Put("open_check_unreadable", to_string(check.Unreadable.size()));
+        for (const auto &line : check.Unreadable) {
+          record.Put("open_check_unreadable_file", line);
+        }
         record.Put("open_check_files", to_string(check.NumFiles));
         record.Put("open_check_blocks", to_string(check.NumOwned));
         if (InjectOpenCheckCorruption) {

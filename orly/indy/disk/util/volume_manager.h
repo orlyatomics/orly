@@ -1098,6 +1098,10 @@ namespace Orly {
              block outside every volume. */
           bool IsBlockHeld(size_t block_id) const;
 
+          /* Every logical extent of every volume, as (first block id, number of blocks). Block
+             ids are logical addresses, so they are sparse: extents sit far apart. */
+          std::vector<TBlockRange> GetBlockExtents() const;
+
           /* Space that work already under way will still allocate before it frees anything:
              a disk merge reserves its output as it goes while its inputs stay live (#590).
              Write admission keeps this much free on top of its reserve. */

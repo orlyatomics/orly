@@ -22,9 +22,12 @@
 #include <chrono>
 #include <iomanip>
 #include <map>
+#include <optional>
+#include <limits>
 #include <set>
 #include <sstream>
 
+#include <cassert>
 #include <syslog.h>
 
 #include <orly/indy/disk/file_service.h>
@@ -91,40 +94,88 @@ vector<TSeqRangeProblem> Orly::Indy::Disk::FindSeqRangeProblems(const vector<TFi
 
 namespace {
 
-  /* A bit per block id, grown as needed. */
-  class TBlockSet {
+  /* Block ids are logical addresses, sparse across the volumes' extents. This maps them to a
+     dense index, so a set of them is a bit per block the volumes actually have. */
+  class TBlockIndex {
     public:
 
-    /* Sets the bit; returns false if it was already set. */
-    bool Insert(size_t block_id) {
-      if (block_id >= Bits.size()) {
-        Bits.resize(std::max(block_id + 1UL, Bits.size() * 2UL), false);
+    explicit TBlockIndex(vector<pair<size_t, size_t>> extents)
+        : Extents(std::move(extents)) {
+      sort(Extents.begin(), Extents.end());
+      for (const auto &extent : Extents) {
+        Bases.push_back(Size);
+        Size += extent.second;
       }
-      if (Bits[block_id]) {
+    }
+
+    /* The dense index of a block, or nothing for a block outside every extent. */
+    optional<size_t> Find(size_t block_id) const {
+      auto iter = upper_bound(Extents.begin(), Extents.end(), make_pair(block_id, numeric_limits<size_t>::max()));
+      if (iter == Extents.begin()) {
+        return nullopt;
+      }
+      --iter;
+      if (block_id - iter->first >= iter->second) {
+        return nullopt;
+      }
+      return Bases[iter - Extents.begin()] + (block_id - iter->first);
+    }
+
+    /* The block id at a dense index. */
+    size_t GetBlockId(size_t index) const {
+      auto iter = upper_bound(Bases.begin(), Bases.end(), index);
+      assert(iter != Bases.begin());
+      --iter;
+      return Extents[iter - Bases.begin()].first + (index - *iter);
+    }
+
+    /* True if every block of the range lies in one extent. */
+    bool Contains(const pair<size_t, size_t> &range) const {
+      if (range.second > Size) {
         return false;
       }
-      Bits[block_id] = true;
-      ++Size;
-      return true;
-    }
-
-    bool Contains(size_t block_id) const {
-      return block_id < Bits.size() && Bits[block_id];
-    }
-
-    void Erase(size_t block_id) {
-      if (Contains(block_id)) {
-        Bits[block_id] = false;
-        --Size;
-      }
+      const auto first = Find(range.first);
+      return range.second == 0UL || (first && Find(range.first + range.second - 1UL) == *first + range.second - 1UL);
     }
 
     size_t GetSize() const {
       return Size;
     }
 
-    size_t GetLimit() const {
-      return Bits.size();
+    private:
+
+    vector<pair<size_t, size_t>> Extents;
+
+    vector<size_t> Bases;
+
+    size_t Size = 0UL;
+
+  };  // TBlockIndex
+
+  /* A bit per block, by dense index. */
+  class TBlockSet {
+    public:
+
+    explicit TBlockSet(size_t size)
+        : Bits(size, false) {}
+
+    /* Sets the bit; returns false if it was already set. */
+    bool Insert(size_t index) {
+      assert(index < Bits.size());
+      if (Bits[index]) {
+        return false;
+      }
+      Bits[index] = true;
+      ++Size;
+      return true;
+    }
+
+    bool Contains(size_t index) const {
+      return Bits[index];
+    }
+
+    size_t GetSize() const {
+      return Size;
     }
 
     private:
@@ -144,6 +195,24 @@ namespace {
       return true;
     });
     return files;
+  }
+
+  /* A file's block ranges, read in full before any is used. Throws if a range lies outside
+     the volumes or the list is longer than they are: the walk must never loop over a block
+     list that a file's metadata gets wrong. */
+  vector<pair<size_t, size_t>> ReadRanges(const TForEachFileBlockRange &for_each_file_block_range,
+                                          const Base::TUuid &file_uid, const TFileObj &file, const TBlockIndex &index) {
+    vector<pair<size_t, size_t>> ranges;
+    size_t total = 0UL;
+    for_each_file_block_range(file_uid, file, [&](const pair<size_t, size_t> &range) {
+      if (!index.Contains(range) || (total += range.second) > index.GetSize()) {
+        ostringstream msg;
+        msg << "block range [" << range.first << ", +" << range.second << "] lies outside the volumes";
+        throw runtime_error(msg.str());
+      }
+      ranges.push_back(range);
+    });
+    return ranges;
   }
 
   bool IsInMap(TFileService *file_service, const Base::TUuid &file_uid, size_t gen_id) {
@@ -182,10 +251,14 @@ TOpenCheck Orly::Indy::Disk::CheckOpenConsistency(Util::TVolumeManager *vol_man,
      has left the map, so its blocks can only look unheld, and that is re-checked below. */
   const TFileVec files = GetFiles(file_service);
   check.NumFiles = files.size();
-  TBlockSet owned;
+  const TBlockIndex index(vol_man->GetBlockExtents());
+  TBlockSet owned(index.GetSize());
   set<size_t> shared;
   auto own = [&](size_t block_id) {
-    if (!owned.Insert(block_id)) {
+    const auto pos = index.Find(block_id);
+    if (!pos) {
+      check.OutOfRange.push_back(block_id);
+    } else if (!owned.Insert(*pos)) {
       shared.insert(block_id);
     }
   };
@@ -199,32 +272,41 @@ TOpenCheck Orly::Indy::Disk::CheckOpenConsistency(Util::TVolumeManager *vol_man,
   }
   map<Base::TUuid, vector<TFileObj>> data_files_by_repo;
   for (const auto &[file_uid, file] : files) {
+    /* A file that leaves the map while we read it may have had its blocks freed and reused,
+       so what we read may be anything: count it only if it is still in the map after. */
     try {
-      for_each_file_block_range(file_uid, file, [&](const pair<size_t, size_t> &range) {
-        for (size_t i = 0UL; i < range.second; ++i) {
-          own(range.first + i);
+      const auto ranges = ReadRanges(for_each_file_block_range, file_uid, file, index);
+      if (IsInMap(file_service, file_uid, file.GenId)) {
+        for (const auto &range : ranges) {
+          for (size_t i = 0UL; i < range.second; ++i) {
+            own(range.first + i);
+          }
         }
-      });
+      }
     } catch (const exception &ex) {
-      check.Unreadable.push_back(DescribeFile(file_uid, file) + ": " + ex.what());
+      if (IsInMap(file_service, file_uid, file.GenId)) {
+        check.Unreadable.push_back(DescribeFile(file_uid, file) + ": " + ex.what());
+      }
     }
     if (file.Kind == TFileObj::DataFile) {
       data_files_by_repo[file_uid].push_back(file);
     }
   }
   check.NumOwned = owned.GetSize();
-  TBlockSet held;
-  vol_man->ForEachHeldBlock([&held](size_t block_id) {
-    held.Insert(block_id);
+  TBlockSet held(index.GetSize());
+  vol_man->ForEachHeldBlock([&](size_t block_id) {
+    if (const auto pos = index.Find(block_id)) {
+      held.Insert(*pos);
+    }
   });
   check.NumHeld = held.GetSize();
   vector<size_t> unheld, leaked;
-  for (size_t block_id = 0UL; block_id < max(owned.GetLimit(), held.GetLimit()); ++block_id) {
-    const bool is_owned = owned.Contains(block_id), is_held = held.Contains(block_id);
+  for (size_t pos = 0UL; pos < index.GetSize(); ++pos) {
+    const bool is_owned = owned.Contains(pos), is_held = held.Contains(pos);
     if (is_owned && !is_held) {
-      unheld.push_back(block_id);
+      unheld.push_back(index.GetBlockId(pos));
     } else if (is_held && !is_owned) {
-      leaked.push_back(block_id);
+      leaked.push_back(index.GetBlockId(pos));
     }
   }
   /* An unheld block counts only if it is still not held and its owner still owns it: is
@@ -254,13 +336,13 @@ TOpenCheck Orly::Indy::Disk::CheckOpenConsistency(Util::TVolumeManager *vol_man,
         continue;
       }
       try {
-        for_each_file_block_range(file_uid, file, [&](const pair<size_t, size_t> &range) {
+        for (const auto &range : ReadRanges(for_each_file_block_range, file_uid, file, index)) {
           for (size_t i = 0UL; i < range.second; ++i) {
             if (candidates.count(range.first + i)) {
               confirmed.insert(range.first + i);
             }
           }
-        });
+        }
       } catch (const exception &) {
         /* Already reported as unreadable. */
       }
@@ -288,11 +370,11 @@ TOpenCheck Orly::Indy::Disk::CheckOpenConsistency(Util::TVolumeManager *vol_man,
         continue;
       }
       try {
-        for_each_file_block_range(file_uid, file, [&](const pair<size_t, size_t> &range) {
+        for (const auto &range : ReadRanges(for_each_file_block_range, file_uid, file, index)) {
           for (size_t i = 0UL; i < range.second; ++i) {
             candidates.erase(range.first + i);
           }
-        });
+        }
       } catch (const exception &) {
         /* A new file we can't read: leave its blocks as leaked rather than guess. */
       }
@@ -346,6 +428,10 @@ void Orly::Indy::Disk::ReportOpenCheck(const TOpenCheck &check) {
            "for discard; a new file could be written over them. Blocks: %s",
            check.Unheld.size(), ListBlocks(check.Unheld).c_str());
   }
+  if (!check.OutOfRange.empty()) {
+    syslog(LOG_CRIT, "open check: %ld blocks owned by the system block or the file service lie outside every volume. Blocks: %s",
+           check.OutOfRange.size(), ListBlocks(check.OutOfRange).c_str());
+  }
   if (!check.Shared.empty()) {
     syslog(LOG_CRIT, "open check: %ld blocks are owned twice; freeing one owner would free the other's. Blocks: %s",
            check.Shared.size(), ListBlocks(check.Shared).c_str());
@@ -353,7 +439,7 @@ void Orly::Indy::Disk::ReportOpenCheck(const TOpenCheck &check) {
   if (!check.IsSafe()) {
     ostringstream msg;
     msg << "open check failed: " << check.Unheld.size() << " blocks owned but not held, " << check.Shared.size()
-        << " owned twice; continuing would let new files overwrite live data (see the log; --open_check=false skips this)";
+        << " owned twice, " << check.OutOfRange.size() << " outside every volume; continuing would let new files overwrite live data (see the log; --open_check=false skips this)";
     throw TOpenCheckFailed(msg.str());
   }
 }
