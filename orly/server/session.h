@@ -340,6 +340,11 @@ namespace Orly {
 
       /* Povs to keep alive while we're alive. */
       std::vector<Durable::TPtr<TPov>> Povs;
+
+      /* Guards Povs.  Lock order (#713): the durable manager's Mutex, then this.  The manager
+         holds its Mutex when the session's last pointer goes and calls ForEachDependentPtr,
+         which takes this.  So nothing may copy or drop a durable pointer while holding this,
+         since that takes the manager's Mutex; only moves, which take no lock, happen under it. */
       std::mutex PovMutex;
 
       /* For access to constructors/destructor. */

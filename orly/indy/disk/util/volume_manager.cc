@@ -1706,7 +1706,14 @@ void TVolume::TStrategy::AppendTouchedDevicesToSet(TDeviceSet &device_set, size_
 }
 
 std::pair<size_t, size_t> TVolume::TStrategy::AppendUsage(std::stringstream &ss) const {
-  const size_t bytes_used = BlocksUsed * Util::PhysicalBlockSize;
+  /* The reporting port calls this from its own thread; the allocators change BlocksUsed under
+     BlockMapLock, so read it under that too (#713). */
+  size_t blocks_used;
+  /* block map lock */ {
+    std::lock_guard<std::mutex> block_lock(const_cast<std::mutex &>(BlockMapLock));
+    blocks_used = BlocksUsed;
+  }
+  const size_t bytes_used = blocks_used * Util::PhysicalBlockSize;
   const size_t total_bytes = NumBlocks * Util::PhysicalBlockSize;
   ss << "Volume_" << Volume->GetVolumeId() << " = " << bytes_used << " / " << total_bytes << std::endl;
   return make_pair(bytes_used, total_bytes);

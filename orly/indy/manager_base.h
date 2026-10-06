@@ -552,7 +552,15 @@ namespace Orly {
 
             bool MarkedForDelete;
 
-            bool MarkedTaken;
+            /* Set and cleared by the merges (StepMergeMem under MemMergeLock, the disk merges under
+               MergeLock), read by Decr() and Incr() on any thread that holds a reference, such
+               as a view dying on a Tetris round's thread (#713). Those hold neither merge lock, so
+               the flag is atomic. Its ordering is not what makes the removal correct: a merge only
+               marks a layer in the mapping it has acquired, whose entry holds a reference, and
+               that reference goes only under MappingLock after the merge's own ReleaseMapping or
+               PublishMemMerge. So the Decr() that takes the count to zero always happens after
+               the mark, and sees it. See Decr(). */
+            std::atomic<bool> MarkedTaken;
 
             static Util::TPool Pool;
 
@@ -999,7 +1007,7 @@ namespace Orly {
       }
 
       inline void TManager::TRepo::TDataLayer::RemoveFromCollection() {
-        assert(MarkedTaken);
+        assert(GetMarkedTaken());
         assert(RemovalMembership.TryGetCollection());
         RemovalMembership.Remove();
       }
@@ -1013,15 +1021,15 @@ namespace Orly {
       }
 
       inline bool TManager::TRepo::TDataLayer::GetMarkedTaken() const {
-        return MarkedTaken;
+        return MarkedTaken.load(std::memory_order_acquire);
       }
 
       inline void TManager::TRepo::TDataLayer::MarkTaken() {
-        MarkedTaken = true;
+        MarkedTaken.store(true, std::memory_order_release);
       }
 
       inline void TManager::TRepo::TDataLayer::UnmarkTaken() {
-        MarkedTaken = false;
+        MarkedTaken.store(false, std::memory_order_release);
       }
 
       inline void TManager::TRepo::EnqueueMergeMem() {

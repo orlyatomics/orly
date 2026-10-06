@@ -100,13 +100,17 @@ TManager::TRepo::TDataLayer::~TDataLayer() {
 
 void TManager::TRepo::TDataLayer::Incr() {
   assert(!RemovalMembership.TryGetCollection());
-  assert(!(MarkedTaken && RefCount == 0));
+  assert(!(GetMarkedTaken() && RefCount == 0));
   __sync_add_and_fetch(&RefCount, 1U);
 }
 
 void TManager::TRepo::TDataLayer::Decr() {
   size_t count = __sync_sub_and_fetch(&RefCount, 1U);
-  if (MarkedTaken && count == 0) {
+  /* Only the last reference looks at the flag (#713). That one is ordered after any merge that
+     marked the layer (see MarkedTaken), so a taken layer is always queued for removal. An earlier
+     reference used to read the plain bool while a merge set it, which was a data race though its
+     answer went unused. */
+  if (count == 0 && GetMarkedTaken()) {
     std::lock_guard<std::mutex> removal_lock(Manager->RemovalLock);
     assert(!RemovalMembership.TryGetCollection());
     RemovalMembership.Insert(&Manager->RemovalCollection);
