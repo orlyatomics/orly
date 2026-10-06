@@ -17,9 +17,13 @@
    limitations under the License. */
 
 #include <orly/indy/replication.h>
+#include <alloca.h>
+#include <chrono>
 #include <optional>
 
 #include <base/debug_log.h>
+#include <orly/sabot/state.h>
+#include <orly/sabot/to_native.h>
 
 using namespace std;
 using namespace Base;
@@ -165,8 +169,31 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
 
 void TReplicationStreamer::PushDurable(const TDurableReplication &durable) {
   DurableBuilder.Push(durable.GetId());
-  DurableBuilder.Push(durable.GetTtl());
+  /* As a Sabot duration, like a repo's ttl.  Pushed as a bare TTtl (seconds), it did not come
+     back as the ttl it was: the slave stored a garbage deadline, and its durable layer then
+     dropped the record as expired at the next write or merge, whenever that deadline fell below
+     now (#676 follow-up). */
+  DurableBuilder.Push(Sabot::TStdDuration(durable.GetTtl()));
   DurableBuilder.Push(durable.GetSerializedObj());
+}
+
+void TReplicationStreamer::ForEachDurable(const std::function<void (const Base::TUuid &, const TTtl &, const std::string &)> &cb) const {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  const Atom::TCoreVector &durable_vec = GetDurableVec();
+  Atom::TCore::TArena *arena = durable_vec.GetArena();
+  Base::TUuid id;
+  Sabot::TStdDuration nsec_ttl;
+  std::string serialized_obj;
+  for (auto iter = durable_vec.GetCores().begin(), end = durable_vec.GetCores().end(); iter != end; ++iter) {
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), id);
+    ++iter;
+    assert(iter != end);
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), nsec_ttl);
+    ++iter;
+    assert(iter != end);
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), serialized_obj);
+    cb(id, std::chrono::duration_cast<TTtl>(nsec_ttl), serialized_obj);
+  }
 }
 
 void TReplicationStreamer::PushRepo(const TRepoReplication &repo) {

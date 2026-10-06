@@ -1176,25 +1176,14 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
           }
           /* Store the durable saves next */ {
             auto now = chrono::system_clock::now();
-            std::vector<TCore>::const_iterator durable_iter = replication_streamer.GetDurableVec().GetCores().begin();
-            std::vector<TCore>::const_iterator durable_end = replication_streamer.GetDurableVec().GetCores().end();
-            TCore::TArena *durable_arena = replication_streamer.GetDurableVec().GetArena();
-            Base::TUuid durable_id;
-            TTtl durable_ttl;
-            std::string serialized_obj;
             assert(Manager->DurableManager);
-            for (; durable_iter != durable_end; ++durable_iter) {
-              Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), durable_id);
-              ++durable_iter;
-              Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), durable_ttl);
-              ++durable_iter;
-              Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), serialized_obj);
-              /* Fire-and-forget (null sem): the replication stream must not block per object on
-                 the durable flush cadence.  The old stack sem here was never popped, which only
-                 worked while Save() signalled synchronously before returning; with the sem now
-                 pushed after the disk write (#277) it would be a use-after-free. */
+            /* Fire-and-forget (null sem): the replication stream must not block per object on
+               the durable flush cadence.  The old stack sem here was never popped, which only
+               worked while Save() signalled synchronously before returning; with the sem now
+               pushed after the disk write (#277) it would be a use-after-free. */
+            replication_streamer.ForEachDurable([this, &now](const Base::TUuid &durable_id, const TTtl &durable_ttl, const std::string &serialized_obj) {
               Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, nullptr);
-            }
+            });
           }
           /* Store the transaction changes next */ {
             TCore::TArena *arena = replication_streamer.GetTransactionVec().GetArena();
@@ -1279,25 +1268,14 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
           }
           /* Store the durable saves next */ {
             auto now = chrono::system_clock::now();
-            std::vector<TCore>::const_iterator durable_iter = replication_streamer.GetDurableVec().GetCores().begin();
-            std::vector<TCore>::const_iterator durable_end = replication_streamer.GetDurableVec().GetCores().end();
-            TCore::TArena *durable_arena = replication_streamer.GetDurableVec().GetArena();
-            Base::TUuid durable_id;
-            TTtl durable_ttl;
-            std::string serialized_obj;
             assert(Manager->DurableManager);
-            for (; durable_iter != durable_end; ++durable_iter) {
-              Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), durable_id);
-              ++durable_iter;
-              Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), durable_ttl);
-              ++durable_iter;
-              Sabot::ToNative(*Sabot::State::TAny::TWrapper(durable_iter->NewState(durable_arena, state_alloc)), serialized_obj);
-              /* Fire-and-forget (null sem): the replication stream must not block per object on
-                 the durable flush cadence.  The old stack sem here was never popped, which only
-                 worked while Save() signalled synchronously before returning; with the sem now
-                 pushed after the disk write (#277) it would be a use-after-free. */
+            /* Fire-and-forget (null sem): the replication stream must not block per object on
+               the durable flush cadence.  The old stack sem here was never popped, which only
+               worked while Save() signalled synchronously before returning; with the sem now
+               pushed after the disk write (#277) it would be a use-after-free. */
+            replication_streamer.ForEachDurable([this, &now](const Base::TUuid &durable_id, const TTtl &durable_ttl, const std::string &serialized_obj) {
               Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, nullptr);
-            }
+            });
           }
           /* Apply the transactions next */
           Base::TTimer timer;

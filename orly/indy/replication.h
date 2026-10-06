@@ -18,6 +18,8 @@
 
 #include <optional>
 
+#include <functional>
+
 #include <orly/atom/core_vector.h>
 #include <orly/atom/core_vector_builder.h>
 #include <orly/indy/transaction_base.h>
@@ -339,6 +341,11 @@ namespace Orly {
       void PushDurable(const TDurableReplication &durable_replica);
 
       void PushRepo(const TRepoReplication &repo_replica);
+
+      /* Calls 'cb' with the id, ttl and serialized form of each durable save, in order.  The
+         slave applies durable saves through this, so it decodes exactly what PushDurable()
+         encoded (#676 follow-up). */
+      void ForEachDurable(const std::function<void (const Base::TUuid &, const TTtl &, const std::string &)> &cb) const;
 
       inline const Atom::TCoreVector &GetIndexIdVec() const {
         assert(IndexIdVector);
