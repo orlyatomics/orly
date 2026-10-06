@@ -10,7 +10,11 @@
 #   0. Build the orly TS client (clients/ts).
 #   1. Compile clients/mcp/smoke/sample.orly with orlyc.
 #   2. Fresh orlyi: memory_full.mjs.
-#   3. Fresh orlyi: memory_drain.mjs (only if 2 passed).
+#   3. Fresh orlyi: memory_drain.mjs over 8 POVs (only if 2 passed).
+#   4. Fresh orlyi: memory_drain.mjs over 32 POVs with 32 writers (only if 3
+#      passed). Each round of Tetris used to copy out every waiting child's
+#      update to promote one, and 32 backlogs' copies took the whole reserve,
+#      so no round ever completed and the pools never drained (#660).
 # Each fails unless its script passed, orlyi is still alive, and its log shows
 # no abort of any kind.
 #
@@ -46,13 +50,13 @@ for bin in "$ORLYI" "$ORLYC"; do
   fi
 done
 
-echo "[0/3] build clients/ts"
+echo "[0/4] build clients/ts"
 (cd "$REPO_ROOT/clients/ts" && npm install --silent && npx tsc)
 
 WORK="$(mktemp -d)"
 trap 'kill -9 $ORLYI_PID 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
-echo "[1/3] compile sample.orly (orlyi logs -> $WORK/orlyi.log)"
+echo "[1/4] compile sample.orly (orlyi logs -> $WORK/orlyi.log)"
 (cd "$WORK" && "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/mcp/smoke/sample.orly")
 mkdir "$WORK/packages"
 touch "$WORK/packages/__orly__"
@@ -108,7 +112,7 @@ check_orlyi() {
 }
 
 status=0
-echo "[2/3] K=8 writers of 200-write batches through refusals, with a reader; idle; then write and read (admission $ADMISSION)"
+echo "[2/4] K=8 writers of 200-write batches through refusals, with a reader; idle; then write and read (admission $ADMISSION)"
 start_orlyi
 ORLY_URL="ws://127.0.0.1:$WS_PORT/" node memory_full.mjs > "$WORK/smoke.out" 2>&1 || status=$?
 cat "$WORK/smoke.out"
@@ -123,7 +127,7 @@ check_orlyi "MEMORY FULL"
 
 # Only once the first scenario has passed: the control needs it to be the one that fails.
 if [ "$status" -eq 0 ]; then
-  echo "[3/3] fill a paused POV until refused, unpause, require the pools to drain (admission $ADMISSION)"
+  echo "[3/4] fill a paused POV until refused, unpause, require the pools to drain (admission $ADMISSION)"
   start_orlyi
   ORLY_URL="ws://127.0.0.1:$WS_PORT/" ORLY_REPORT_PORT=$REPORT_PORT node memory_drain.mjs > "$WORK/drain.out" 2>&1 || status=$?
   cat "$WORK/drain.out"
@@ -132,5 +136,17 @@ if [ "$status" -eq 0 ]; then
     status=1
   fi
   check_orlyi "MEMORY DRAIN"
+fi
+
+if [ "$status" -eq 0 ]; then
+  echo "[4/4] the same over 32 paused POVs with 32 writers (#660)"
+  start_orlyi
+  ORLY_URL="ws://127.0.0.1:$WS_PORT/" ORLY_REPORT_PORT=$REPORT_PORT POVS=32 K=32 node memory_drain.mjs > "$WORK/drain32.out" 2>&1 || status=$?
+  cat "$WORK/drain32.out"
+  if ! grep -q "^MEMORY DRAIN OK" "$WORK/drain32.out"; then
+    echo "MEMORY DRAIN 32 FAIL: missing \"MEMORY DRAIN OK\""
+    status=1
+  fi
+  check_orlyi "MEMORY DRAIN 32"
 fi
 exit "$status"

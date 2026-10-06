@@ -106,7 +106,16 @@ namespace Orly {
           bool Play(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
+          /* Takes this child's promotion hold on `transaction` and says whether the child can play
+             this round: it has an update (or holds one already) and isn't paused.  Copies nothing,
+             so it makes no pool claim; it runs under the player's mutex. */
           bool Refresh(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction);
+
+          /* Copies this child's lowest update out on `transaction`, which Refresh must have
+             taken the hold on, and parses its metadata; true at once if we hold one already.
+             False if there is no update, or no room to copy it (#607).  Only for a child the
+             round may promote, outside the player's mutex (#660). */
+          bool Peek(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction);
 
           static bool SortsBefore(const TChild *lhs, const TChild *rhs);
 
@@ -115,7 +124,7 @@ namespace Orly {
              GetExpectedPredicateResults). Such a child provably cannot
              conflict (architecture.md §5), so the fast-lane may promote it in
              the same round as any other assertion-free child. Requires a
-             prior Refresh(). */
+             prior Peek(). */
           bool IsAssertionFree() const;
 
           /* Fast-lane promotion (#234): drop any prior snapshot Peek, re-Peek
@@ -130,17 +139,18 @@ namespace Orly {
           bool RepeekAndPlay(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
-          /* Drop the peeked update and what was parsed from it; the next Refresh peeks again. */
+          /* Drop the peeked update and what was parsed from it; the next Peek copies it again. */
           void Flush();
 
           private:
 
           bool TestAssertions(Indy::TContext &context) const;
 
+
           /* The player which owns us.  Never null. */
           TPlayer *Player;
 
-          /* The number of rounds of tetris we have played. */
+          /* The number of rounds we have been ready to play since our last promotion (or failure). */
           size_t Age;
 
           /* The number of times we have tested our assertions and failed. */
