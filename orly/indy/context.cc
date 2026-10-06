@@ -19,6 +19,7 @@
 #include <orly/indy/context.h>
 
 #include <sstream>
+#include <stdexcept>
 
 #include <orly/server/read_too_large.h>
 
@@ -46,6 +47,22 @@ TContext::TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TC
 
 TContext::~TContext() {
   assert(KeyCursorCollector->KeyCursorCollection.IsEmpty());
+}
+
+void TContext::ReleaseViews() {
+  if (OpenCursorCount) {
+    throw logic_error("TContext::ReleaseViews: a key cursor is still open on this context");
+  }
+  /* Each pair's view is destroyed before its repo pointer, so the view's Decr runs under a repo
+     that is still pinned. */
+  RepoTree.clear();
+  ViewsReleased = true;
+}
+
+void TContext::CheckViewsHeld() const {
+  if (ViewsReleased) [[unlikely]] {
+    throw logic_error("TContext: read after the context's views were released");
+  }
 }
 
 void TContext::SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena) {
@@ -118,6 +135,7 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
       FoldArena(ctx->GetArena()),
       FoldDedupProbes(&ctx->FoldDedupProbes),
       Context(ctx) {
+  ctx->CheckViewsHeld();
   assert(Fiber::TFrame::LocalFramePool);
   size_t pos = 0;
   ctx->PresentWalkConsTimer.Start();
@@ -145,6 +163,7 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
       FoldArena(ctx->GetArena()),
       FoldDedupProbes(&ctx->FoldDedupProbes),
       Context(ctx) {
+  ctx->CheckViewsHeld();
   ctx->PresentWalkConsTimer.Start();
   size_t pos = 0;
   for (const auto &iter : repo_tree) {
@@ -314,8 +333,10 @@ TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &patte
       Valid(true),
       Cached(false),
       Csr(context, context->RepoTree, Key),
-      ContextMembership(this) {
+      ContextMembership(this),
+      Owner(context) {
   ++(context->WalkerCount);
+  ++(context->OpenCursorCount);
 }
 
 TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to)
@@ -325,12 +346,16 @@ TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &from,
       Valid(true),
       Cached(false),
       Csr(context, context->RepoTree, Key, To),
-      ContextMembership(this) {
+      ContextMembership(this),
+      Owner(context) {
   ++(context->WalkerCount);
+  ++(context->OpenCursorCount);
 }
 
 TContext::TKeyCursor::~TKeyCursor() {
   ContextMembership.Remove();
+  assert(Owner->OpenCursorCount);
+  --(Owner->OpenCursorCount);
 }
 
 TContext::TKeyCursor::operator bool() const {
