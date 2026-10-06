@@ -56,7 +56,10 @@ sent as one WebSocket text message. The server replies with one JSON message:
   have freed the pools, usually within seconds. Large batches reach the limit
   sooner, because a batch is held as one update with an entry per write.
   `--memory_reserve_pct=0` turns this off. Over the binary protocol the same
-  refusal is an error whose message starts with `insufficient memory`.
+  refusal is an error whose message starts with `insufficient memory`. A single
+  write (a batch, say) with more entries than half that reserve is rejected
+  outright with `"status": "exception"` and a message starting `write too
+  large`, because retrying it can't succeed: split it into smaller batches.
 
 ## Statements
 

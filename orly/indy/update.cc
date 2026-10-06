@@ -53,6 +53,31 @@ bool TUpdate::TWriteAdmission::TryAcquire(size_t num_entries) {
   return true;
 }
 
+TUpdate::TCopyClaim::~TCopyClaim() {
+  Release();
+}
+
+bool TUpdate::TCopyClaim::TryAcquire(size_t num_updates, size_t num_entries) {
+  assert(!NumUpdates && !NumEntries);
+  if (!Pool.TryClaim(num_updates)) {
+    return false;
+  }
+  if (!TEntry::Pool.TryClaim(num_entries)) {
+    Pool.ReleaseClaim(num_updates);
+    return false;
+  }
+  NumUpdates = num_updates;
+  NumEntries = num_entries;
+  return true;
+}
+
+void TUpdate::TCopyClaim::Release() {
+  Pool.ReleaseClaim(NumUpdates);
+  TEntry::Pool.ReleaseClaim(NumEntries);
+  NumUpdates = 0UL;
+  NumEntries = 0UL;
+}
+
 void TUpdate::SetPoolReservePct(size_t pct) {
   pct = std::min<size_t>(pct, 100UL);
   Pool.SetReserve(Pool.GetMaxBlocks() / 100UL * pct + Pool.GetMaxBlocks() % 100UL * pct / 100UL);

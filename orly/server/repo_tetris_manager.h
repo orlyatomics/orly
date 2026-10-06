@@ -130,9 +130,10 @@ namespace Orly {
           bool RepeekAndPlay(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
-          private:
-
+          /* Drop the peeked update and what was parsed from it; the next Refresh peeks again. */
           void Flush();
+
+          private:
 
           bool TestAssertions(Indy::TContext &context) const;
 

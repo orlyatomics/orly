@@ -122,3 +122,37 @@ FIXTURE(AllocThrowsWhenEmpty) {
   pool.Free(a);
   pool.Free(b);
 }
+
+/* A copy's claim is granted whole or not at all, against what is in use, promised and already
+   claimed, so two copies never each hold part of what they need (#607). */
+FIXTURE(ClaimIsAllOrNothing) {
+  TPool pool(sizeof(void *), "test", 100UL);
+  vector<void *> blocks;
+  for (size_t i = 0; i < 60UL; ++i) {
+    blocks.push_back(pool.Alloc(sizeof(void *)));
+  }
+  EXPECT_FALSE(pool.TryClaim(50UL));
+  EXPECT_EQ(pool.GetNumBlocksClaimed(), 0UL);
+  EXPECT_TRUE(pool.TryClaim(40UL));
+  EXPECT_FALSE(pool.TryClaim(1UL));
+  EXPECT_TRUE(pool.TryClaim(0UL));
+  pool.ReleaseClaim(40UL);
+  EXPECT_TRUE(pool.TryClaim(40UL));
+  pool.ReleaseClaim(40UL);
+  EXPECT_EQ(pool.GetNumBlocksClaimed(), 0UL);
+  for (void *block : blocks) {
+    pool.Free(block);
+  }
+}
+
+/* Writers count claims, so a write admitted while a copy holds its claim can't take the blocks
+   the copy is about to allocate. */
+FIXTURE(WritersCountClaims) {
+  TPool pool(sizeof(void *), "test", 100UL);
+  pool.SetReserve(25UL);
+  EXPECT_TRUE(pool.TryClaim(50UL));
+  EXPECT_TRUE(pool.TryAdmit(25UL));
+  EXPECT_FALSE(pool.TryAdmit(1UL));
+  pool.ReleaseClaim(50UL);
+  pool.ReleaseAdmitted(25UL);
+}

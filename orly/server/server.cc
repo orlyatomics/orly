@@ -1625,6 +1625,16 @@ void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t n
   if (!Cmd.MemoryReservePct) {
     return;
   }
+  /* Promoting a write copies it twice (Tetris's peek and the parent's copy), and only the
+     reserve is sure to be free for that, so a write bigger than half the reserve might never be
+     promoted (#607). It can't succeed by retrying, so it isn't an insufficient_memory refusal. */
+  const size_t entry_reserve = TUpdate::GetEntryPool().GetReserve();
+  if (num_entries * 2UL > entry_reserve) {
+    std::ostringstream msg;
+    msg << "write too large: its " << num_entries << " entries are more than half the " << entry_reserve
+        << " Update Entry blocks kept for merges (--memory_reserve_pct); split it into smaller batches";
+    throw std::runtime_error(msg.str());
+  }
   const bool admitted = admission.TryAcquire(num_entries);
   if (!admitted) {
     ++MemoryRefusedWriteCount;
@@ -3066,9 +3076,11 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
     const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
     ss << "Memory Admission = " << (!Server->Cmd.MemoryReservePct ? "off" : Server->RefusingWritesForMemory ? "refusing" : "accepting")
        << "; Update pool " << updates.GetNumBlocksUsed() << " / " << updates.GetMaxBlocks()
-       << " reserve " << updates.GetReserve() << " admitted " << updates.GetNumBlocksAdmitted() << " misses " << updates.GetNumMisses()
+       << " reserve " << updates.GetReserve() << " admitted " << updates.GetNumBlocksAdmitted()
+       << " claimed " << updates.GetNumBlocksClaimed() << " misses " << updates.GetNumMisses()
        << "; Update Entry pool " << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks()
-       << " reserve " << entries.GetReserve() << " admitted " << entries.GetNumBlocksAdmitted() << " misses " << entries.GetNumMisses()
+       << " reserve " << entries.GetReserve() << " admitted " << entries.GetNumBlocksAdmitted()
+       << " claimed " << entries.GetNumBlocksClaimed() << " misses " << entries.GetNumMisses()
        << "; refused " << Server->MemoryRefusedWriteCount.load() << endl;
   }
   size_t try_count;
