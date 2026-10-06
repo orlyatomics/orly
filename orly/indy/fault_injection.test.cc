@@ -1455,8 +1455,8 @@ FIXTURE(FoldMergeCrashBeforeInputRemoval) {
     }
     cout << "  after the reload: " << get(reopen, "files_after_reload") << endl;
     EXPECT_TRUE(run.Reached);
-    /* The leftover inputs' blocks are not freed yet (#620). */
-    EXPECT_TRUE(run.Outcome == "ok" || run.Outcome == "leak");
+    /* "ok" also means the reload freed the leftover inputs' blocks (#620). */
+    EXPECT_EQ(run.Outcome, "ok");
     EXPECT_EQ(get(reopen, "verify"), "");
   }
   if (!getenv("ORLY_FAULT_KEEP")) {
