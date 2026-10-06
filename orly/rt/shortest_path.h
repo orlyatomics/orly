@@ -1,11 +1,11 @@
 /* <orly/rt/shortest_path.h>
 
    `BidirShortestPath<...>`: bidirectional BFS over a key-cursor
-   graph in an orly index. Returns all minimum-length paths between
-   `src` and `target` (each path expressed as a vector of edge keys).
-   Used by orlyscript's `shortest_path` builtin and the
-   `degrees.orly` / `connections.orly` / `social_graph.orly` sample
-   queries.
+   graph in an orly index. Returns shortest paths between `src` and
+   `target`, each a vector of edge keys, or the limit the search hit
+   (see <orly/rt/bidir_bfs.h>). The graph is taken as undirected: an
+   edge keyed <[a, ..., b]> is assumed to have its twin <[b, ..., a]>.
+   No orlyscript builtin emits a call to it yet.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -23,143 +23,68 @@
 
 #pragma once
 
+#include <memory>
+#include <vector>
+
 #include <base/class_traits.h>
 #include <base/uuid.h>
 #include <orly/indy/fiber/extern_fiber.h>
 #include <orly/package/api.h>
 #include <orly/package/rt.h>
+#include <orly/rt/bidir_bfs.h>
 
 namespace Orly {
 
   namespace Rt {
 
+    /* `num_parallel` fibers read the cursors of a frontier's nodes at once,
+       so one blocked on I/O doesn't stall the others. Each search level
+       expands the smaller frontier, and the search stops at `limits` (#695). */
     template <typename TKeyType, typename TSearchType, size_t SrcPos, size_t TargetPos>
-    std::vector<std::vector<TKeyType>> BidirShortestPath(Orly::Package::TContext &ctx,
-                                                         const size_t num_parallel,
-                                                         const Base::TUuid &idx_id,
-                                                         const TSearchType &val_args,
-                                                         const std::tuple_element_t<SrcPos, TKeyType> &src,
-                                                         const std::tuple_element_t<TargetPos, TKeyType> &target) {
+    TShortestPathResult<TKeyType> BidirShortestPath(Orly::Package::TContext &ctx,
+                                                    const size_t num_parallel,
+                                                    const Base::TUuid &idx_id,
+                                                    const TSearchType &val_args,
+                                                    const std::tuple_element_t<SrcPos, TKeyType> &src,
+                                                    const std::tuple_element_t<TargetPos, TKeyType> &target,
+                                                    const TShortestPathLimits &limits = TShortestPathLimits()) {
       using match_t = std::tuple_element_t<SrcPos, TKeyType>;
       static_assert(std::is_same<match_t, std::tuple_element_t<TargetPos, TKeyType>>::value, "Cannot follow links of differing types");
-      using edge_vec_t = std::vector<TKeyType>;
-      std::vector<edge_vec_t> ret;
       Atom::TSuprena arena;
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-      TSearchType src_search_key_tuple = val_args;
-      std::get<SrcPos>(src_search_key_tuple) = src;
-      const Indy::TIndexKey src_search_key(idx_id, Indy::TKey(src_search_key_tuple,
-                                                              &arena,
-                                                              state_alloc));
-      std::unique_ptr<TKeyCursor> src_kcp(ctx.NewKeyCursor(&ctx.GetFlux(), src_search_key));
-      TKeyType key;
-      // for each edge from our src
-      std::unordered_set<match_t> seen_set;
-      using sp_map_t = std::unordered_map<match_t, edge_vec_t>;
-      sp_map_t sp_to, sp_from;
-      seen_set.emplace(src);
-      sp_to.emplace(src, edge_vec_t{});
-      for (auto &kc = *src_kcp; kc; ++kc) {
-        Sabot::ToNative(*Sabot::State::TAny::TWrapper(kc->GetState(state_alloc)), key);
-        const match_t &to = std::get<TargetPos>(key);
-        // if the edge is our target, we have a winner
-        if (to == target) {
-          ret.emplace_back(edge_vec_t{key});
-        } else {
-          sp_to.emplace(to, edge_vec_t{key});
-        }
-      }
-      if (ret.empty()) {
-        TSearchType target_search_key_tuple = val_args;
-        std::get<SrcPos>(target_search_key_tuple) = target;
-        const Indy::TIndexKey target_search_key(idx_id, Indy::TKey(target_search_key_tuple,
-                                                                   &arena,
-                                                                   state_alloc));
-        std::unique_ptr<TKeyCursor> target_kcp(ctx.NewKeyCursor(&ctx.GetFlux(), target_search_key));
-        // for each edge to our target
-        seen_set.emplace(target);
-        sp_from.emplace(target, edge_vec_t{});
-        for (auto &kc = *target_kcp; kc; ++kc) {
-          Sabot::ToNative(*Sabot::State::TAny::TWrapper(kc->GetState(state_alloc)), key);
-          const match_t from = std::get<TargetPos>(key); // don't take by reference as we're going to swap src / target
-          // swap the positions since we're searching in reverse
-          std::swap(std::get<SrcPos>(key), std::get<TargetPos>(key));
-          auto p = sp_to.find(from);
-          if (p != sp_to.end()) {
-            // we discovered the path src -> from <- target
-            ret.emplace_back(edge_vec_t{sp_to.find(from)->second.front(), key});
-          }
-          sp_from.emplace(from, edge_vec_t{key});
-        }
-      }
-      if (ret.empty()) {
-        // if we still don't have a result, we need to start looking at depth > 2
+      TSearchType search_key_tuple = val_args;
+      /* Emit every edge of every node in `frontier`. On the target side, an
+         edge <[node, ..., neighbor]> is reported as its twin <[neighbor, ...,
+         node]>, which is the way a path from `src` crosses it. */
+      auto expand = [&](const std::vector<match_t> &frontier, bool from_target, auto &emit) {
+        Indy::ExternFiber::TSync extern_sync(num_parallel);
+        auto iter = frontier.begin();
         bool keep_going = true;
-        size_t dep = 1UL;
-        for (;keep_going; ++dep) {
-          size_t num_explored = 0UL;
-          sp_map_t tmp_sp_map;
-          /* remove entries in sp_to that exist in seen_set. We are only interested in the ones we have not explored yet. */ {
-            for (auto iter = sp_to.begin(); iter != sp_to.end();) {
-              if (seen_set.find(iter->first) != seen_set.end()) {
-                auto cp_iter = iter;
-                ++iter;
-                sp_to.erase(cp_iter);
-              } else {
-                ++iter;
+        auto sub_scanner_func = [&]() {
+          TKeyType k;
+          while (keep_going && iter != frontier.end()) {
+            const match_t &node = *iter;
+            ++iter; // increment the iterator before we have a chance to block
+            std::get<SrcPos>(search_key_tuple) = node;
+            const Indy::TIndexKey search_key(idx_id, Indy::TKey(search_key_tuple, &arena, state_alloc));
+            std::unique_ptr<TKeyCursor> kcp(ctx.NewKeyCursor(&ctx.GetFlux(), search_key));
+            for (auto &kc = *kcp; keep_going && kc; ++kc) {
+              Sabot::ToNative(*Sabot::State::TAny::TWrapper(kc->GetState(state_alloc)), k);
+              const match_t neighbor = std::get<TargetPos>(k);
+              if (from_target) {
+                std::swap(std::get<SrcPos>(k), std::get<TargetPos>(k));
               }
+              keep_going = emit(node, neighbor, k);
             }
-          }  // done cleaning sp_to
-          const size_t expected_to_see = sp_to.size();
-          if (expected_to_see == 0) {
-            keep_going = false;
-            break;
           }
-          /* Sub Scan Path */
-          Indy::ExternFiber::TSync extern_sync(num_parallel);
-          auto iter = sp_to.begin();
-          auto sub_scanner_func = [&]() {
-            TKeyType k;
-            for (;iter != sp_to.end();) {
-              const match_t &match = iter->first;
-              assert(seen_set.find(match) == seen_set.end());
-              edge_vec_t edge_vec(iter->second.begin(), iter->second.end());
-              ++iter; // increment the iterator before we have a chance to block
-              ++num_explored;
-              std::get<SrcPos>(src_search_key_tuple) = match;
-              const Indy::TIndexKey search_key(idx_id, Indy::TKey(src_search_key_tuple,
-                                                                  &arena,
-                                                                  state_alloc));
-              std::unique_ptr<TKeyCursor> kcp(ctx.NewKeyCursor(&ctx.GetFlux(), search_key));
-              for (auto &kc = *kcp; kc; ++kc) {
-                Sabot::ToNative(*Sabot::State::TAny::TWrapper(kc->GetState(state_alloc)), k);
-                const match_t &to = std::get<TargetPos>(k);
-                edge_vec.emplace_back(k);
-                auto p = sp_from.find(to);
-                if (p != sp_from.end()) {
-                  // we've discovered an intersection between sp_to and sp_from, report it
-                  edge_vec_t result(edge_vec.begin(), edge_vec.end());
-                  auto riter = p->second.rbegin();
-                  result.insert(result.end(), riter, p->second.rend());
-                  ret.emplace_back(result);
-                  keep_going = false;
-                }
-                tmp_sp_map.emplace(to, edge_vec);
-                edge_vec.pop_back();
-              }
-              seen_set.emplace(match);
-            }
-            extern_sync.Complete();
-          };
-          for (size_t i = 0; i < num_parallel; ++i) {
-            Indy::ExternFiber::SchedTaskLocally(sub_scanner_func);
-          }
-          extern_sync.Sync();
-          assert(num_explored == expected_to_see);
-          sp_to.insert(tmp_sp_map.begin(), tmp_sp_map.end());
+          extern_sync.Complete();
+        };
+        for (size_t i = 0; i < num_parallel; ++i) {
+          Indy::ExternFiber::SchedTaskLocally(sub_scanner_func);
         }
-      }
-      return ret;
+        extern_sync.Sync();
+      };
+      return BidirBfs<match_t, TKeyType>(src, target, limits, expand);
     }
 
   }  // Rt
