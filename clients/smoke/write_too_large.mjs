@@ -26,7 +26,7 @@ for (let attempt = 0; attempt < 2; ++attempt) {
     fail(`a ${TOTAL}-entry batch was accepted with a limit of ${LIMIT}`);
   } catch (err) {
     if (!(err instanceof WriteTooLargeError)) {
-      fail(`a ${TOTAL}-entry batch failed with ${err?.name}, not WriteTooLargeError: ${err?.message ?? err}`);
+      fail(`a ${TOTAL}-entry batch failed with ${err?.name}, not WriteTooLargeError: ${JSON.stringify(err?.reply) ?? err}`);
     }
     if (!(err instanceof OrlyError) || err instanceof InsufficientMemoryError) {
       fail("WriteTooLargeError has the wrong class hierarchy");

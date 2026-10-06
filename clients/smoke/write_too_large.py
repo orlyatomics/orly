@@ -24,6 +24,9 @@ except orly.WriteTooLarge as err:
     assert err.reply["status"] == "write_too_large", err.reply
     assert err.reply["result"].startswith("write too large"), err.reply
     print("py: refused", total, "entries")
+except orly.OrlyError as err:
+    raise SystemExit(f"WRITE TOO LARGE FAIL (py): a {total}-entry batch raised "
+                     f"{type(err).__name__}, not WriteTooLarge: {err.reply}")
 assert c.call(pov, "sample", "read_val", {"n": 5000}) != 9, "the refused batch left a write behind"
 
 for i in range(0, total, LIMIT):
