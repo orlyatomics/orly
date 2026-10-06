@@ -130,8 +130,23 @@ try:
 except orly.OrlyError as ex:
     assert 'ephemeral' in str(ex), f'wrong error for dead pov: {ex}'
 print('   pre-restart pov refused cleanly (#439)')
+# Nor may a new pov be made under it (#671): its repo is gone, and the child used to get an
+# empty stand-in as its parent, with no way through to global, so it read nothing.
+try:
+    child = c.new_pov(parent='$OLD_POV')
+    got = c.call(child, 'kv', 'read_val', {'n': 5})
+    raise SystemExit(f'pov made under a dead pov reads {got!r} for a key global has as 500 (#671)')
+except orly.OrlyError as ex:
+    assert 'ephemeral' in str(ex), f'wrong error for a pov under a dead pov: {ex}'
+print('   pov under the pre-restart pov refused cleanly (#671)')
 c.uninstall('kv', 1)
 c.close()"
+# The pre-restart pov's saved-repo entry in the system repo must go with the first repo creation
+# after the restart; nothing removed one before #671, so the system repo grew without bound.
+if ! grep -q "TManager: removed the saved entry of repo \[$OLD_POV\]" "$WORK/orlyi-run2.log"; then
+  echo "pre-restart pov's saved-repo entry was not removed (#671)"; exit 1
+fi
+echo "   pre-restart pov's saved-repo entry removed (#671)"
 
 echo "[6/8] stop"
 stop_server INT run2
