@@ -414,10 +414,36 @@ namespace Orly {
 
         };  // TToSync
 
+        /* The inventory in the order to build it: each repo after its parent, when the parent is in
+           the inventory too (#676). */
+        static std::vector<const TToSync *> OrderInventory(const std::vector<TToSync> &queue);
+
+        /* A repo the replication stream created during the sync, under a parent not here yet:
+           most likely one the inventory hasn't built yet (#676). */
+        struct TDeferredRepo {
+          Base::TUuid RepoId;
+          TTtl Ttl;
+          Base::TUuid ParentRepoId;
+          bool IsSafe;
+        };
+
+        /* Keep the repo for SyncInventory() to build once it has built the inventory, and return
+           true; false if it has done that already. */
+        bool DeferRepo(const TDeferredRepo &repo);
+
         TManager *Manager;
 
         /* queue of repos to synchronize */
         std::vector<TToSync> ToSyncQueue;
+
+        /* Covers InventoryBuilt and DeferredRepos. */
+        std::mutex DeferredReposMutex;
+
+        /* True once SyncInventory() has built the inventory and taken DeferredRepos. */
+        bool InventoryBuilt = false;
+
+        /* Repos for SyncInventory() to build after the inventory, in the order they came. */
+        std::vector<TDeferredRepo> DeferredRepos;
 
         /* A core-vec slush buffer representing the updates we've accumulated */
         std::unique_ptr<Orly::Atom::TCoreVectorBuilder> SlushCoreVec;

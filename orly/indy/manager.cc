@@ -21,6 +21,7 @@
 #include <orly/indy/manager.h>
 #include <algorithm>
 #include <optional>
+#include <unordered_set>
 
 #include <base/debug_log.h>
 #include <base/opt_ostream.h>
@@ -766,9 +767,49 @@ void TManager::TSlave::ScheduleSyncInventory() {
   //Manager->Scheduler->Schedule(std::bind(&TManager::TSlave::SyncInventory, this));
 }
 
+bool TManager::TSlave::DeferRepo(const TDeferredRepo &repo) {
+  std::lock_guard<std::mutex> lock(DeferredReposMutex);
+  if (InventoryBuilt) {
+    return false;
+  }
+  DeferredRepos.push_back(repo);
+  std::ostringstream strm;
+  strm << "Slave deferring repo [" << repo.RepoId << "] until the inventory is built: its parent [" << repo.ParentRepoId << "] isn't here yet (#676)";
+  syslog(LOG_INFO, "%s", strm.str().c_str());
+  return true;
+}
+
+std::vector<const TManager::TSlave::TToSync *> TManager::TSlave::OrderInventory(const std::vector<TToSync> &queue) {
+  std::unordered_map<TUuid, const TToSync *> by_id;
+  for (const auto &to_sync : queue) {
+    by_id.emplace(to_sync.RepoId, &to_sync);
+  }
+  std::vector<const TToSync *> ordered;
+  std::unordered_set<TUuid> placed;
+  for (const auto &to_sync : queue) {
+    /* The entry and those of its ancestors in the inventory not placed yet, nearest first. */
+    std::vector<const TToSync *> chain;
+    for (const TToSync *cur = &to_sync; cur && placed.insert(cur->RepoId).second; ) {
+      chain.push_back(cur);
+      const auto iter = cur->ParentRepoId ? by_id.find(*cur->ParentRepoId) : by_id.end();
+      cur = (iter != by_id.end()) ? iter->second : nullptr;
+    }
+    ordered.insert(ordered.end(), chain.rbegin(), chain.rend());
+  }
+  return ordered;
+}
+
 void TManager::TSlave::SyncInventory() {
   syslog(LOG_INFO, "TSlave: calling SyncInventory()");
-  for (const auto &to_sync : ToSyncQueue) {
+  /* Build each repo with the ttl, safety and parent the master sent (#676).  This used to open each
+     one with GetRepo(..., create=false), which ignores all three: a repo not here yet came out of
+     ReconstructRepo safe, with no parent and a 1000 s ttl, so after a failover a pov under a shared
+     pov read through to nothing.  Every repo built here stays held until the sync is done, so a
+     parent with no ttl is still here when its children are built under it; after that each child
+     holds its parent (#668). */
+  std::unordered_map<TUuid, L0::TManager::TPtr<L0::TManager::TRepo>> built;
+  for (const TToSync *to_sync_ptr : OrderInventory(ToSyncQueue)) {
+    const TToSync &to_sync = *to_sync_ptr;
     const TUuid &repo_id = to_sync.RepoId;
     size_t ttl = to_sync.Ttl;
     const std::optional<TUuid> &parent_repo_id = to_sync.ParentRepoId;
@@ -781,25 +822,43 @@ void TManager::TSlave::SyncInventory() {
       ss << repo_id;
       syslog(LOG_INFO, "TSlave::Inventory(%s)", ss.str().c_str());
     }
+    /* Engaged only for a real parent (#661). */
     std::optional<L0::TManager::TPtr<TRepo>> parent_repo;
     if (parent_repo_id) {
-      /* log scope */ {
+      /* The copy built above, or one already here (the global pov, or a repo the replication
+         stream created during the sync).  Never a stand-in: opening the parent by force would
+         build an empty repo with no parent of its own (#671).  A parent the master didn't send
+         and this slave lacks leaves the repo out, and after a failover its pov is refused like
+         any other the new master lacks. */
+      const auto iter = built.find(*parent_repo_id);
+      parent_repo = (iter != built.end()) ? iter->second : L0::TManager::TPtr<TRepo>(Manager->TryGetLiveRepo(*parent_repo_id));
+      if (!*parent_repo) {
         std::ostringstream ss;
-        ss << *parent_repo_id;
-        syslog(LOG_INFO, "TSlave::Inventory::ForgeGetRepo(%s)", ss.str().c_str());
+        ss << "TSlave::Inventory not building repo [" << repo_id << "]: its parent [" << *parent_repo_id << "] isn't here (#676)";
+        syslog(LOG_INFO, "%s", ss.str().c_str());
+        continue;
       }
-      parent_repo = Manager->ForceGetRepo(*parent_repo_id);
     }
     /* log scope */ {
       std::ostringstream ss;
       ss << repo_id;
       syslog(LOG_INFO, "TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
     }
-    auto repo = Manager->GetRepo(repo_id, chrono::seconds(ttl), parent_repo, is_safe, false);
+    auto repo = Manager->GetRepo(repo_id, chrono::seconds(ttl), parent_repo, is_safe, true);
+    built.emplace(repo_id, repo);
     /* log scope */ {
+      /* A repo already here keeps the shape it was built with; say so if that isn't what the
+         master sent. */
+      const auto &has_parent = repo->GetParentRepo();
+      const bool parent_matches = (has_parent && *has_parent) ?
+          (parent_repo_id && (*has_parent)->GetId() == *parent_repo_id) : !parent_repo_id;
       std::ostringstream ss;
       ss << repo_id;
-      syslog(LOG_INFO, "done TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
+      if (parent_matches && repo->IsSafeRepo() == is_safe) {
+        syslog(LOG_INFO, "done TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
+      } else {
+        syslog(LOG_WARNING, "TSlave::Inventory: repo [%s] was already here with another parent or safety than the master's (#676)", ss.str().c_str());
+      }
     }
     //repo->SetNextSequenceNumber(next_id);
     repo->SetReleasedUpTo(next_id > 0UL ? next_id - 1UL : 0UL);
@@ -870,6 +929,37 @@ void TManager::TSlave::SyncInventory() {
     //std::cout << "TSlave::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
     assert(!snap_highest || (*snap_highest == snap_next_id - 1));
   }
+  /* The repos the replication stream created during the sync under a parent not built then, in
+     the order they came, so a parent the stream created comes before its children (#676).  More
+     can come while these are built; they wait for the next round.  Their mutations wait in the
+     slush until the slave applies it, after this. */
+  for (;;) {
+    std::vector<TDeferredRepo> deferred;
+    /* acquire DeferredRepos lock */ {
+      std::lock_guard<std::mutex> lock(DeferredReposMutex);
+      if (DeferredRepos.empty()) {
+        InventoryBuilt = true;
+        break;
+      }
+      deferred.swap(DeferredRepos);
+    }
+    for (const auto &repo : deferred) {
+      const auto iter = built.find(repo.ParentRepoId);
+      std::optional<L0::TManager::TPtr<TRepo>> parent_repo =
+          (iter != built.end()) ? iter->second : L0::TManager::TPtr<TRepo>(Manager->TryGetLiveRepo(repo.ParentRepoId));
+      std::ostringstream ss;
+      if (!*parent_repo) {
+        ss << "Slave not creating repo [" << repo.RepoId << "]: its parent [" << repo.ParentRepoId << "] has gone here (#671)";
+        syslog(LOG_INFO, "%s", ss.str().c_str());
+        continue;
+      }
+      built.emplace(repo.RepoId, Manager->GetRepo(repo.RepoId, repo.Ttl, parent_repo, repo.IsSafe, true));
+      ss << "Slave created deferred repo [" << repo.RepoId << "] under [" << repo.ParentRepoId << "] (#676)";
+      syslog(LOG_INFO, "%s", ss.str().c_str());
+    }
+  }
+  /* Each repo built here now holds its parent (#668); let go of the rest. */
+  built.clear();
   auto sync_future = Write<void>(TMaster::NotifyFinishSyncInventoryId);
   assert(sync_future);
   sync_future->Sync();  // wait for the future to complete
@@ -1065,7 +1155,21 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                  claim a parent the repo doesn't have (#661). */
               std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> opt_parent_repo;
               if (opt_parent_repo_id) {
-                opt_parent_repo = Manager->ForceGetRepo(*opt_parent_repo_id);
+                /* The parent may not be here yet only because the inventory hasn't built it.
+                   Opening it by force built an empty stand-in with no parent, and the inventory
+                   then found that and kept it, so every pov under the parent read through to
+                   nothing after a failover.  Leave the repo for SyncInventory() to build after
+                   the inventory instead (#676); once it has, a parent not here has gone, as in
+                   the Slave case below (#671). */
+                opt_parent_repo = Manager->TryGetLiveRepo(*opt_parent_repo_id);
+                if (!*opt_parent_repo) {
+                  if (!DeferRepo(TDeferredRepo{ repo_id, repo_ttl, *opt_parent_repo_id, is_safe })) {
+                    std::ostringstream strm;
+                    strm << "Slave not creating repo [" << repo_id << "]: its parent [" << *opt_parent_repo_id << "] has gone here (#671)";
+                    syslog(LOG_INFO, "%s", strm.str().c_str());
+                  }
+                  continue;
+                }
               }
               Manager->GetRepo(repo_id, repo_ttl, opt_parent_repo, is_safe, true);
             }
@@ -1160,8 +1264,8 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                    with no parent, and the pov read through that to nothing after a failover.
                    Leave the pov out instead: its mutations are then skipped as for any gone repo,
                    and after a failover it is refused like any pov the new master lacks (#671).
-                   (While syncing, the SyncSlave case above may still build a parent by force: one
-                   not inventoried yet, which the inventory would build the same way.) */
+                   (While syncing, the SyncSlave case above defers such a repo instead, since its
+                   parent may just not be built yet (#676).) */
                 opt_parent_repo = Manager->TryGetLiveRepo(*opt_parent_repo_id);
                 if (!*opt_parent_repo) {
                   std::ostringstream strm;
@@ -1789,24 +1893,44 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::IndexId, index_map_replica);
         }
         assert(walker_ptr);
-        for (const Base::TUuid &repo_id : CollectSavedRepoIds(*walker_ptr)) {
-          /* log scope */ {
-            std::ostringstream ss;
-            ss << repo_id;
-            syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [%s]", ss.str().c_str());
+        /* The live repos to inventory, each after its parent, so the slave can build a repo
+           under its parent as it goes (#676).  A parent goes in even without a saved-repo entry
+           of its own (a repo with no ttl gets none): the slave has nothing else to build its
+           children under. */
+        std::vector<L0::TManager::TPtr<Indy::TRepo>> to_inventory;
+        /* inventory order */ {
+          std::unordered_set<Base::TUuid> queued;
+          for (const Base::TUuid &repo_id : CollectSavedRepoIds(*walker_ptr)) {
+            /* log scope */ {
+              std::ostringstream ss;
+              ss << repo_id;
+              syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [%s]", ss.str().c_str());
+            }
+            /* An entry can outlive its repo: one discarded since the last repo creation, or one
+               left from before a restart.  Opening it by force would build an empty repo with no
+               parent and inventory that to the slave as if it were the pov (#671).  Skip it, and
+               let the next repo creation remove its entry. */
+            auto repo = TryGetLiveRepo(repo_id);
+            if (!repo) {
+              std::ostringstream ss;
+              ss << repo_id;
+              syslog(LOG_INFO, "TMaster: saved repo [%s] has gone; not inventorying it (#671)", ss.str().c_str());
+              RequeueSavedRepoRemovals({ repo_id });
+              continue;
+            }
+            /* The repo and those of its ancestors not queued yet, nearest first.  A live repo
+               holds its parent open (#668), so each one here is live too. */
+            std::vector<L0::TManager::TPtr<Indy::TRepo>> chain;
+            for (L0::TManager::TPtr<Indy::TRepo> cur = repo; cur && queued.insert(cur->GetId()).second; ) {
+              chain.push_back(cur);
+              const auto &parent = cur->GetParentRepo();
+              cur = (parent && *parent) ? L0::TManager::TPtr<Indy::TRepo>(*parent) : L0::TManager::TPtr<Indy::TRepo>();
+            }
+            to_inventory.insert(to_inventory.end(), chain.rbegin(), chain.rend());
           }
-          /* An entry can outlive its repo: one discarded since the last repo creation, or one left
-             from before a restart.  Opening it by force would build an empty repo with no parent
-             and inventory that to the slave as if it were the pov (#671).  Skip it, and let the
-             next repo creation remove its entry. */
-          auto repo = TryGetLiveRepo(repo_id);
-          if (!repo) {
-            std::ostringstream ss;
-            ss << repo_id;
-            syslog(LOG_INFO, "TMaster: saved repo [%s] has gone; not inventorying it (#671)", ss.str().c_str());
-            RequeueSavedRepoRemovals({ repo_id });
-            continue;
-          }
+        }
+        for (const auto &repo : to_inventory) {
+          const Base::TUuid &repo_id = repo->GetId();
           /* log scope */ {
             std::ostringstream ss;
             ss << repo_id;
@@ -1818,7 +1942,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           const std::unique_ptr<Indy::TRepo::TView> &sync_view = SlaveSyncViewMap.emplace(repo_id, TSlaveSync{ repo, std::make_unique<Indy::TRepo::TView>(repo) }).first->second.View;
 
           std::optional<Base::TUuid> parent_repo_id;
-          if (repo->GetParentRepo()) {
+          if (repo->GetParentRepo() && *repo->GetParentRepo()) {
             parent_repo_id = (*repo->GetParentRepo())->GetId();
           }
           size_t ttl = repo->GetTtl().count();
