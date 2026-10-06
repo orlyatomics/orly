@@ -45,22 +45,25 @@ namespace Orly {
                          const TComparator &comp)
             : Begin(begin), End(end), SafeSync(safe_sync), Comp(comp) {
           SafeSync.WaitForMore(1UL);
-          Frame = TFrame::LocalFramePool->Alloc();
-          work_pool.Schedule(Frame, this, static_cast<TRunnable::TFunc>(&TSubSortRunnable::DoSort));
-        }
-
-        ~TSubSortRunnable() {
-          TFrame::LocalFramePool->Free(Frame);
+          Pool = TFrame::LocalFramePool;
+          TFrame *frame = Pool->Alloc();
+          work_pool.Schedule(frame, this, static_cast<TRunnable::TFunc>(&TSubSortRunnable::DoSort));
         }
 
         void DoSort() {
           std::sort(Begin, End, Comp);
+          /* Have our runner free our frame once we have switched off it. Sort() used to free it
+             after the last Complete(), and a frame freed while its fiber is still on its way out
+             can be reused, or unmapped by the pool's destructor, under it (#644). Before
+             Complete(): after it, Sort() may already have destroyed this object. */
+          FreeMyFrame(Pool);
           SafeSync.Complete();
         }
 
         private:
 
-        TFrame *Frame;
+        /* The pool our frame came from: the constructing fiber's thread's pool. */
+        Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool *Pool;
 
         const TRandomAccessIterator Begin;
         const TRandomAccessIterator End;
@@ -87,23 +90,23 @@ namespace Orly {
                          const TComparator &comp)
             : Begin(begin), Middle(middle), End(end), WaitOnSafeSync(wait_on_safe_sync), TriggerToSafeSync(trigger_to_safe_sync), Comp(comp) {
           TriggerToSafeSync.WaitForMore(1UL);
-          Frame = TFrame::LocalFramePool->Alloc();
-          work_pool.Schedule(Frame, this, static_cast<TRunnable::TFunc>(&TInplaceMergeRunnable::DoMerge));
-        }
-
-        ~TInplaceMergeRunnable() {
-          TFrame::LocalFramePool->Free(Frame);
+          Pool = TFrame::LocalFramePool;
+          TFrame *frame = Pool->Alloc();
+          work_pool.Schedule(frame, this, static_cast<TRunnable::TFunc>(&TInplaceMergeRunnable::DoMerge));
         }
 
         void DoMerge() {
           WaitOnSafeSync.Sync();
           std::inplace_merge(Begin, Middle, End, Comp);
+          /* As in TSubSortRunnable::DoSort() (#644). */
+          FreeMyFrame(Pool);
           TriggerToSafeSync.Complete();
         }
 
         private:
 
-        TFrame *Frame;
+        /* The pool our frame came from: the constructing fiber's thread's pool. */
+        Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool *Pool;
 
         const TRandomAccessIterator Begin;
         const TRandomAccessIterator Middle;
