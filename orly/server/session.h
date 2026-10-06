@@ -239,6 +239,22 @@ namespace Orly {
          memcache frontend -- the one outside caller -- was removed.) */
       void AddPov(const Durable::TPtr<TPov> &pov);
 
+      /* Throw away a test pov once its section or case is done (#683): drop its repo's dirty
+         self-pin (a paused repo's writes are never promoted, so nothing else would), then stop
+         keeping the pov alive.  Test povs have a zero ttl, so the pov and its repo are destroyed
+         as the last pointers go.  A no-op for a pov we don't hold. */
+      void DiscardTestPov(TServer *server, const Base::TUuid &pov_id) noexcept;
+
+      /* Calls DiscardTestPov when it goes out of scope; the test runners hold one per test pov. */
+      struct TTestPovDiscard {
+        TSession *Session;
+        TServer *Server;
+        Base::TUuid PovId;
+        ~TTestPovDiscard() {
+          Session->DiscardTestPov(Server, PovId);
+        }
+      };
+
       TSession(Durable::TManager *manager, const Base::TUuid &id, const Durable::TTtl &ttl);
 
       TSession(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm);

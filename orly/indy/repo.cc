@@ -136,6 +136,13 @@ void TRepo::AddFileToRepo(size_t gen_id, TSequenceNumber saved_low_seq, TSequenc
   }
 }
 
+void TRepo::ReleaseDirtyPin() {
+  /* Under DataLock, like every other MakeDirty()/RemoveFromDirty(): a merge may be dropping or
+     taking the same pin on another runner. */
+  std::lock_guard<std::mutex> lock(DataLock);
+  RemoveFromDirty();
+}
+
 void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
   /* #227: publish ReleasedUpTo UNDER DataLock. StepMergeMem reads it (also
      under DataLock) as the high-water mark below which a child repo DROPS its
