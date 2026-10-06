@@ -111,6 +111,9 @@ namespace Orly {
            structures (+1 for the memtable). */
         inline size_t GetNumEntries() const;
 
+        /* The mapping's disk layers and memory layers (#701). */
+        inline void CountLayers(size_t &disk_layers, size_t &mem_layers) const;
+
         /* The repo's NextUpdate as of the snapshot. */
         inline TSequenceNumber GetNextId() const {
           return NextId;
@@ -850,6 +853,14 @@ namespace Orly {
       size_t count = 0UL;
       for (TMapping::TEntryCollection::TCursor mapping_csr(Mapping->GetEntryCollection()); mapping_csr; ++mapping_csr, ++count) {}
       return count;
+    }
+
+    inline void TRepo::TView::CountLayers(size_t &disk_layers, size_t &mem_layers) const {
+      disk_layers = 0UL;
+      mem_layers = 0UL;
+      for (TMapping::TEntryCollection::TCursor mapping_csr(Mapping->GetEntryCollection()); mapping_csr; ++mapping_csr) {
+        ++(mapping_csr->GetLayer()->GetKind() == TDataLayer::Disk ? disk_layers : mem_layers);
+      }
     }
 
     inline void TRepo::GetSnapshot(std::optional<TSequenceNumber> &seq_num_start,
