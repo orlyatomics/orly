@@ -4,6 +4,12 @@
 # 8082. Extra `docker run ... <flags>` are appended verbatim, so any orlyi
 # flag can be overridden or added. Sizing knobs via env for the common case.
 #
+# Memory (#669): orlyi sizes its frames, caches and pools from a budget, and a
+# container's --memory limit caps it, so `docker run --memory=1g` plans for
+# 1 GiB. Without a limit the budget is ORLY_MEMORY_BUDGET_MB, 4096 by default,
+# rather than all of the host's free RAM. The mem-sim volumes are the data
+# store, not a cache, so they stay fixed and come out of the budget first.
+#
 # `docker run -it ... repl [orly-repl flags]` (#538) instead starts that same
 # orlyi in the background (logs to /var/log/orly/orlyi.log) and drops into
 # orly-repl pointed at it; when the REPL exits, the container exits.
@@ -13,6 +19,7 @@ orlyi_args=(
   --mem_sim
   --mem_sim_mb="${ORLY_MEM_SIM_MB:-256}"
   --mem_sim_slow_mb="${ORLY_MEM_SIM_SLOW_MB:-64}"
+  --memory_budget_mb="${ORLY_MEMORY_BUDGET_MB:-4096}"
   --create=true
   --instance_name="${ORLY_INSTANCE_NAME:-orly}"
   --starting_state=SOLO
@@ -22,9 +29,6 @@ orlyi_args=(
   --reporting_port_number=8083
   --connection_backlog=32
   --package_dir=/var/lib/orly/packages
-  --max_parallel_frames 4000
-  --page_cache_size 256
-  --block_cache_size 64
   --le --log_info
 )
 

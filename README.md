@@ -126,6 +126,40 @@ image, so it compiles your own `.orly` packages too
 The `repl` mode shown at the top of this README is the same image
 ([#538](https://github.com/orlyatomics/orly/issues/538)).
 
+**Memory.** `orlyi` sizes its fiber stacks, caches and pools from a memory
+budget, and a container's `--memory` limit caps it, so
+`docker run --memory=1g ...` plans for 1 GiB and stays inside it. Without a
+limit the image plans for 4 GiB. Set `-e ORLY_MEMORY_BUDGET_MB=<MiB>` to
+change that (a smaller `--memory` still wins). The startup log says what it
+chose:
+
+```
+memory budget: 1024 MiB, from the cgroup limit in /sys/fs/cgroup/memory.max (free RAM 14599 MiB, --memory_budget_mb=4096 is larger)
+memory plan: 732 MiB of the 1024 MiB budget; 356 MiB fixed (process baseline 32, append log 4, mem_sim_mb 256, mem_sim_slow_mb 64), 128 MiB kept for the heap, the rest scaled by 0.131836
+```
+
+The smallest limit the image runs in is **768 MiB** (`--memory=768m`). Below
+747 MiB, `orlyi` refuses to start and says how much it needs. The floor is the
+mem-sim volumes (`ORLY_MEM_SIM_MB` + `ORLY_MEM_SIM_SLOW_MB`, 320 MiB by
+default) plus about 430 MiB: the process, 128 MiB for the heap, and pools just
+large enough that their merge reserve holds one memory merge's copy of 1,000
+writes, with at least 64 fiber frames. Smaller mem-sim volumes lower it by the
+same amount. At 768 MiB the image passes the write-and-read-back, pool-pressure
+and memory-full smokes. Measured on native arm64
+([#669](https://github.com/orlyatomics/orly/issues/669)):
+
+| `--memory` | idle | peak, pool-pressure smoke |
+| -- | -- | -- |
+| 768 MiB | 524 MiB | 569 MiB |
+| 1 GiB | 719 MiB | 752 MiB |
+| 2 GiB | 1.40 GiB | 1.44 GiB |
+| 4 GiB | 2.81 GiB | 2.85 GiB |
+
+Compiling a package inside the container (`docker exec ... orlyc`) needs about
+640 MiB more, because `orlyc` stands up its own test server. Leave that room
+between the budget and the limit, for example
+`--memory=1536m -e ORLY_MEMORY_BUDGET_MB=800`.
+
 **From source** — system dependencies (Ubuntu 24.04):
 
 ```sh

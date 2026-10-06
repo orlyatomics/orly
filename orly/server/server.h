@@ -327,6 +327,26 @@ namespace Orly {
 
         /******** End Object Pools ********/
 
+        /* The memory the pools are planned for, in MiB (#669). 0, the default, picks it at
+           startup: the cgroup memory limit when there is one smaller than free RAM, otherwise
+           free RAM. Every pool, cache and frame count not given on the command line is scaled
+           from it; see ResolveMemoryDefaults(). */
+        size_t MemoryBudgetMB;
+
+        /* What ResolveMemoryDefaults() decided, as (syslog level, line) pairs for TServer to
+           log once the log is open. Empty until it runs. */
+        std::vector<std::pair<int, std::string>> MemoryBudgetReport;
+
+        /* Resolves the memory budget and sizes from it every pool the command line left at its
+           default (#669). Returns false, calling back with the reason, when the budget can't
+           fund the minimum working set. Runs from CheckArgs(), so at the end of Parse(). A
+           TCmd built without parsing (orlyc's embedded server) never runs it and keeps the
+           sizes it sets. */
+        bool ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsumer &cb);
+
+        /* See Base::TCmd. Resolves the memory budget. */
+        virtual bool CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) override;
+
         Socket::TAddress AddressOfMaster;
 
         std::string PackageDirectory;

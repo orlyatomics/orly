@@ -102,6 +102,14 @@ namespace Base {
       return Prog;
     }
 
+    /* True iff. the parameter with this name (its first name, as registered with Param()) was given
+       on the command line or in an args file, rather than left at its default. A default computed
+       from the environment, such as a pool sized from the memory budget (#669), uses this to leave
+       an explicit value alone. */
+    bool WasGiven(const std::string &name) const {
+      return GivenParams.count(name) != 0;
+    }
+
     protected:
 
     /* The base class for all meta-objects describing command objects. */
@@ -648,6 +656,7 @@ namespace Base {
               strm << '"' << param->GetDiagnosticName() << "\": given more than once";
               return cb(strm.str());
             }
+            cmd->GivenParams.insert(param->GetDiagnosticName());
             return param->OnRecognition(cmd, std::forward<TSource>(source), cb);
           }
 
@@ -693,6 +702,9 @@ namespace Base {
     void Parse(int argc, char *argv[], const TMeta &meta);
 
     private:
+
+    /* See WasGiven(). */
+    std::unordered_set<std::string> GivenParams;
 
     /* See accessor. */
     bool IsHelp;
