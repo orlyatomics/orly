@@ -1155,7 +1155,20 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                  claim a parent the repo doesn't have (#661). */
               std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> opt_parent_repo;
               if (opt_parent_repo_id) {
-                opt_parent_repo = Manager->ForceGetRepo(*opt_parent_repo_id);
+                /* The parent must be live here.  If this slave has discarded its copy (a parent
+                   with no ttl, or one the cache let go), opening it by force built an empty repo
+                   with no parent, and the pov read through that to nothing after a failover.
+                   Leave the pov out instead: its mutations are then skipped as for any gone repo,
+                   and after a failover it is refused like any pov the new master lacks (#671).
+                   (While syncing, the SyncSlave case above may still build a parent by force: one
+                   not inventoried yet, which the inventory would build the same way.) */
+                opt_parent_repo = Manager->TryGetLiveRepo(*opt_parent_repo_id);
+                if (!*opt_parent_repo) {
+                  std::ostringstream strm;
+                  strm << "Slave not creating repo [" << repo_id << "]: its parent [" << *opt_parent_repo_id << "] has gone here (#671)";
+                  syslog(LOG_INFO, "%s", strm.str().c_str());
+                  continue;
+                }
               }
               Manager->GetRepo(repo_id, repo_ttl, opt_parent_repo, is_safe, true);
             }
@@ -1202,6 +1215,13 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
   }
 }
 
+/* One syslog line per replicated mutation the slave skips because its repo has gone here (#671). */
+static void LogGoneRepo(const char *what, const Base::TUuid &repo_id, TSequenceNumber seq_num) {
+  std::ostringstream strm;
+  strm << repo_id;
+  syslog(LOG_INFO, "Slave skipping %s of repo [%s] at seq [%ld]: the repo has gone here (#671)", what, strm.str().c_str(), seq_num);
+}
+
 /* One syslog line per replicated status change the slave applies or discards. */
 static void LogStatusChange(const char *what, const Base::TUuid &repo_id, TSequenceNumber seq_num, bool applied) {
   std::ostringstream strm;
@@ -1231,7 +1251,13 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), repo_id);
       ++iter;
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), seq_num);
-      auto repo = Manager->ForceGetRepo(repo_id);
+      /* Apply only to a live repo.  Nothing on a slave pins its copy of a pov's repo, so the copy
+         can be gone by now: one with no ttl goes as soon as the slave builds it, and the cache can
+         let any other go.  Opening it by force built an empty repo whose sequence starts at 1,
+         so the next mutation past 1 failed the sequence check below (an assert in debug, "missing
+         data" in release), and a pov kept for a failover read through no parent (#671).  A
+         skipped mutation still reaches whatever it was promoted into: that's its own mutation. */
+      auto repo = Manager->TryGetLiveRepo(repo_id);
       switch (action) {
         case TTransactionAction::Push : {
           //std::cout << "Apply transaction PUSH [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
@@ -1252,28 +1278,48 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
             op_by_key[TIndexKey(index_id, TKey(key_core, arena))] = TKey(val_core, arena);
           }
           //std::cout << "Push\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
-          apply_transaction->Push(repo, TUpdate::NewUpdate(op_by_key, TKey(meta_core, arena), TKey(id_core, arena)), seq_num);
+          if (repo) {
+            apply_transaction->Push(repo, TUpdate::NewUpdate(op_by_key, TKey(meta_core, arena), TKey(id_core, arena)), seq_num);
+          } else {
+            LogGoneRepo("push", repo_id, seq_num);
+          }
           break;
         }
         case TTransactionAction::Pop : {
           //std::cout << "Apply transaction POP [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
           //std::cout << "Pop\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
-          apply_transaction->Pop(repo, seq_num);
+          if (repo) {
+            apply_transaction->Pop(repo, seq_num);
+          } else {
+            LogGoneRepo("pop", repo_id, seq_num);
+          }
           break;
         }
         /* For a status change, seq_num is EmptyRepoSequenceNumber when the master's repo had
            nothing pending (#655); TTransaction checks it against our copy either way.  Status
            changes are rare, so say which ones we apply. */
         case TTransactionAction::Fail : {
-          LogStatusChange("fail", repo_id, seq_num, apply_transaction->Fail(repo, seq_num));
+          if (repo) {
+            LogStatusChange("fail", repo_id, seq_num, apply_transaction->Fail(repo, seq_num));
+          } else {
+            LogGoneRepo("fail", repo_id, seq_num);
+          }
           break;
         }
         case TTransactionAction::Pause : {
-          LogStatusChange("pause", repo_id, seq_num, apply_transaction->Pause(repo, seq_num));
+          if (repo) {
+            LogStatusChange("pause", repo_id, seq_num, apply_transaction->Pause(repo, seq_num));
+          } else {
+            LogGoneRepo("pause", repo_id, seq_num);
+          }
           break;
         }
         case TTransactionAction::UnPause : {
-          LogStatusChange("unpause", repo_id, seq_num, apply_transaction->UnPause(repo, seq_num));
+          if (repo) {
+            LogStatusChange("unpause", repo_id, seq_num, apply_transaction->UnPause(repo, seq_num));
+          } else {
+            LogGoneRepo("unpause", repo_id, seq_num);
+          }
           break;
         }
         default : {
