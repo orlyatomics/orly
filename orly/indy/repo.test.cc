@@ -448,6 +448,10 @@ class TRootRepoFixture {
 
   size_t NumCommits = 0UL;
 
+  Disk::Util::TVolumeManager *GetVolMan() {
+    return Engine.GetEngine()->GetVolMan();
+  }
+
   private:
 
   vector<uint8_t> StateBuf;
@@ -671,6 +675,60 @@ FIXTURE(RepoOutlivesItsRunningMerge) {
       merger.join();
       /* with the merge done and nothing else pinning it, the repo is gone */
       EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(repo_id)));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #692: a disk merge whose pair can't fit in the free space must not keep the repo from merging
+   a pair that can. The disk merge takes the leftmost eligible pair, oldest first. Here that is two
+   big files, and the space left above the data floor is half of what they hold; two small files
+   behind them would fit easily. The merge used to retry the big pair forever, writing until it hit
+   the floor each time, and the failed claim kept write admission at the big pair's size. */
+FIXTURE(DiskMergeSkipsAPairThatCannotFit) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(true);
+      auto *vol_man = root.GetVolMan();
+      /* Writes keys [first, first + count) as one file; returns the space it took. */
+      auto write_file = [&](int64_t first, int64_t count) {
+        vector<tuple<int64_t, int64_t, TMutator>> entries;
+        for (int64_t key = first; key < first + count; ++key) {
+          entries.emplace_back(key, key, TMutator::Assign);
+        }
+        root.Commit(entries);
+        const size_t before = vol_man->GetSpace().GetAvailable();
+        root.Flush();
+        return before - vol_man->GetSpace().GetAvailable();
+      };
+      /* Two big files and two small ones. (The test's entry pool holds 20000.) */
+      size_t big = write_file(0L, 4500L);
+      big += write_file(4500L, 4500L);
+      size_t small = write_file(20000L, 1L);
+      small += write_file(20001L, 1L);
+      EXPECT_EQ(root.CountLayers(), 4UL);
+      EXPECT_GT(big / 2UL, small);
+      /* Room above the floor for half the big pair. */
+      const size_t room = big / 2UL;
+      vol_man->SetDataFloor(vol_man->GetSpace().GetAvailable() - room);
+      root.MergeDisk(3UL);
+      /* the small pair merged; the big pair is still two files */
+      EXPECT_EQ(root.CountLayers(), 3UL);
+      /* and admission isn't holding writes off for a merge that was skipped */
+      EXPECT_LT(vol_man->GetRecentPeakClaims(), room);
+      for (int64_t key : {0L, 4499L, 4500L, 8999L, 20000L, 20001L}) {
+        EXPECT_EQ(root.Read(key), root.Int(key));
+      }
+      /* With room, the big pair merges too. */
+      vol_man->SetDataFloor(0UL);
+      root.MergeDisk(3UL);
+      EXPECT_EQ(root.CountLayers(), 2UL);
+      for (int64_t key : {0L, 4499L, 4500L, 8999L, 20000L, 20001L}) {
+        EXPECT_EQ(root.Read(key), root.Int(key));
+      }
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
