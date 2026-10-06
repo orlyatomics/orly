@@ -1290,10 +1290,6 @@ struct TExpectedFailure {
 };
 
 static const vector<TExpectedFailure> ExpectedFailures{
-  /* #619: durable files enter the file map before their blocks are synced; startup aborts on
-     an acknowledged file. */
-  {"DurableSaveMerge", "Power", "reopen", 619},
-  {"DurableSaveMerge", "PowerTorn", "reopen", 619},
 };
 
 static bool IsExpected(const TRun &run) {
