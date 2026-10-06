@@ -59,6 +59,10 @@
    with a slave that runs --allow_file_sync=false. That slave pulls the
    updates over pruned files instead of copying them.
 
+   The PauseEmptyPovReplicates fixture pauses and unpauses an empty pov on a
+   paired master: the status changes must replicate without a sequence
+   number to carry (#655).
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -1229,6 +1233,86 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
      exit 134 (#522). */
   EXPECT_TRUE(master.ExitedCleanly());
 
+  slave.Kill();
+  slave.Reap(seconds(60));
+}
+
+/* #655: pausing or unpausing a pov with no unpromoted writes, on a master with a live slave.  The
+   status change's replicated sequence number is the pov's lowest unpromoted one, which an empty pov
+   doesn't have: the master's replication pass dereferenced the empty optional (an assert in debug,
+   garbage on the wire in release), and the slave dereferenced its own copy's empty one again.  The
+   common "pause, then write" order does exactly this, because the pov is empty when the pause
+   commits.  Both servers must survive, and the slave must apply both status changes.
+
+   No write follows: on a slave, the first replicated write to a pov created while paired crashes in
+   TRepo::AppendUpdate for a reason of its own (#661). */
+FIXTURE(PauseEmptyPovReplicates) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = GetScratchDir();
+  const string orlyi_path = GetOrlyiPath();
+  TLogTailDumper log_dumper;
+  if (!ifstream(orlyi_path).good()) {
+    throw runtime_error("orlyi binary not built at [" + orlyi_path + "]; run `make debug` first");
+  }
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  { ofstream marker(pkg_dir + "/__orly__"); }
+  {
+    ofstream src(scratch + "/sample.orly");
+    src << SamplePackage;
+  }
+  Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
+
+  const in_port_t master_port = ProbeFreePort();
+  const in_port_t master_slave_port = ProbeFreePort();
+  const string master_log = scratch + "/master.log";
+  log_dumper.Add(master_log);
+  TChildServer master(
+      MakeServerArgs(orlyi_path, "pause_empty_master", pkg_dir, master_port,
+                     master_slave_port, "SOLO", 0),
+      master_log);
+  if (!WaitForPort(master_port, seconds(240))) {
+    throw runtime_error("master never came up; see " + master_log);
+  }
+  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  /* install scope */ {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage (pause empty)")->Sync();
+  }
+
+  const in_port_t slave_port = ProbeFreePort();
+  const string slave_log = scratch + "/slave.log";
+  log_dumper.Add(slave_log);
+  TChildServer slave(
+      MakeServerArgs(orlyi_path, "pause_empty_slave", pkg_dir, slave_port,
+                     ProbeFreePort(), "SLAVE", master_slave_port),
+      slave_log);
+  if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
+    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  }
+
+  /* client scope */ {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    auto pov_id = Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov (pause empty)");
+    /* Both on the empty pov. */
+    Answered(client->PausePov(**pov_id), "PausePov (empty)")->Sync();
+    Answered(client->UnpausePov(**pov_id), "UnpausePov (empty)")->Sync();
+    ostringstream strm;
+    strm << **pov_id;
+    const string pov_str = strm.str();
+    EXPECT_TRUE(WaitForLog(slave_log, "Slave applying pause of repo [" + pov_str + "]", seconds(60)));
+    EXPECT_TRUE(WaitForLog(slave_log, "Slave applying unpause of repo [" + pov_str + "]", seconds(60)));
+    /* The master's replication pass is where it used to abort, so give it a moment past the ack. */
+    this_thread::sleep_for(seconds(2));
+  }
+  const string master_state = master.Describe();
+  const string slave_state = slave.Describe();
+  cout << "master: " << master_state << "; slave: " << slave_state << endl;
+  EXPECT_TRUE(master_state.rfind("alive", 0) == 0);
+  EXPECT_TRUE(slave_state.rfind("alive", 0) == 0);
+
+  master.Kill();
+  master.Reap(seconds(60));
   slave.Kill();
   slave.Reap(seconds(60));
 }
