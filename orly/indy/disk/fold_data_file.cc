@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include <orly/indy/memory_layer.h>
@@ -269,16 +271,33 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
         update->SetSequenceNumber(e.SeqNum);
         out_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
 
-        if (LowestSeq == 0UL || e.SeqNum < LowestSeq) LowestSeq = e.SeqNum;
-        if (e.SeqNum > HighestSeq) HighestSeq = e.SeqNum;
         ++NumKeys;
       }
     }
   }
 
-  // 5. Serialise the folded memory layer at dest_gen_id.
+  // 5. Serialise the folded memory layer at dest_gen_id. Record the
+  //    source's whole sequence range, not just that of the entries the fold
+  //    kept: the output replaces the merge's inputs, and a reload drops a
+  //    file only when its range lies inside another's. With the narrower
+  //    range, an input that a crash left behind would load next to the
+  //    output and its `+=` deltas would be counted twice (#618). The source
+  //    (TMergeDataFile's output) already records its inputs' whole range.
+  std::optional<std::pair<TSequenceNumber, TSequenceNumber>> source_range;
+  /* find the source's file-map entry */ {
+    std::vector<TFileObj> file_vec;
+    engine->AppendFileGenSet(file_uuid, file_vec);
+    for (const auto &file : file_vec) {
+      if (file.GenId == source_gen_id) {
+        source_range = std::make_pair(file.LowestSeq, file.HighestSeq);
+        break;
+      }
+    }
+  }
   TDataFile data_file(engine, storage_speed, &out_layer, file_uuid,
-                      dest_gen_id, temp_file_consol_thresh, 0U, priority);
+                      dest_gen_id, temp_file_consol_thresh, 0U, priority, source_range);
+  LowestSeq = data_file.GetLowestSequence();
+  HighestSeq = data_file.GetHighestSequence();
 }
 
 }}}  // namespace Orly::Indy::Disk

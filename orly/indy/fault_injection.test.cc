@@ -1300,10 +1300,6 @@ struct TExpectedFailure {
 };
 
 static const vector<TExpectedFailure> ExpectedFailures{
-  /* #618: a fold-path merge's narrowed output overlaps an input that reload keeps (debug: the
-     mapping assertion at manager_base.cc:46). */
-  {"MergeDiskFold", "Power", "reopen", 618},
-  {"MergeDiskFold", "PowerTorn", "reopen", 618},
   /* #619: durable files enter the file map before their blocks are synced; startup aborts on
      an acknowledged file. */
   {"DurableSaveMerge", "Power", "reopen", 619},

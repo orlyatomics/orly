@@ -1540,13 +1540,28 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
   size_t max_gen_id = 0UL;
   TParentRepo parent_repo;
   std::vector<size_t> gen_id_vec_to_remove;
-  /* remove any files that are obsolete due to merging */ {
+  /* Remove any files that are obsolete due to merging: the inputs of a merge whose output
+     reached the file map before a crash let them be removed. A merge output records the whole
+     sequence range of its inputs, so each input lies inside it.
+
+     A fold output written before #618 recorded only the range of the updates it kept, which
+     can leave an input overlapping it without lying inside it. Live files never overlap, so
+     such a pair is a merge's output and one of its inputs, and the input is the older file:
+     gen ids only grow. Drop it too. An input that a narrowed range misses altogether looks
+     like any other file and can't be told apart; that takes a crash in the merge's last step,
+     with such a store, and a first reopen by this code. */ {
     for (;;) {
       bool found_dup = false;
       for (auto cur = file_vec.begin(); cur != file_vec.end(); ++cur) {
         const auto &file = *cur;
         for (const auto &that_file : file_vec) {
-          if (file.LowestSeq >= that_file.LowestSeq && file.HighestSeq <= that_file.HighestSeq && file.GenId != that_file.GenId) {
+          if (file.GenId == that_file.GenId) {
+            continue;
+          }
+          const bool inside = file.LowestSeq >= that_file.LowestSeq && file.HighestSeq <= that_file.HighestSeq;
+          const bool overlaps = file.LowestSeq <= that_file.HighestSeq && that_file.LowestSeq <= file.HighestSeq;
+          const bool contains = that_file.LowestSeq >= file.LowestSeq && that_file.HighestSeq <= file.HighestSeq;
+          if (inside || (overlaps && !contains && file.GenId < that_file.GenId)) {
             gen_id_vec_to_remove.push_back(file.GenId);
             file_vec.erase(cur);
             found_dup = true;

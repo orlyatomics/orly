@@ -83,6 +83,8 @@ namespace Orly {
           return NumKeys;
         }
 
+        /* The sequence range the output's file-map entry records: the source's whole range,
+           which covers every entry the fold kept (#618). */
         inline TSequenceNumber GetLowestSequence() const {
           return LowestSeq;
         }
