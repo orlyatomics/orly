@@ -1244,7 +1244,11 @@ TDataFile::TDataFile(Util::TEngine *engine,
        same updates back and writes them again later (#590). Leave their notifications pending
        then. A Failed now would delete the transaction's completion record
        (TTransactionCompletion::RegisterFailure), and the retry's Completed would call into it. */
-    const bool caller_retries = !file_inserted && dynamic_cast<const Disk::Util::TDiskFull *>(&err);
+    /* An allocation that failed before the file map has the file is the same (#607): the memory
+       merge rolls back and retries when the pools have room. The other callers of TDataFile
+       write layers that carry no notifications. */
+    const bool alloc_failed = !file_inserted && dynamic_cast<const std::bad_alloc *>(&err);
+    const bool caller_retries = !file_inserted && (dynamic_cast<const Disk::Util::TDiskFull *>(&err) || alloc_failed);
     for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr && !caller_retries; ++csr) {
       const auto &obj = csr->GetPersistenceNotification();
       if (obj) {
@@ -1255,6 +1259,9 @@ TDataFile::TDataFile(Util::TEngine *engine,
        index files were destroyed on the way here and waited out their writes. */
     if (!file_inserted) {
       Engine->FreeAllBlocks(BlockVec);
+    }
+    if (alloc_failed) {
+      throw TDataFileAllocFailed();
     }
     throw;
   }

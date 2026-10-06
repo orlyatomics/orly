@@ -4,10 +4,12 @@
  * sample.write_val -- first all into ONE shared POV, then each into its own
  * private POV -- while the reporting port is polled for Update / Data Layer
  * pool occupancy. Fails if any write errors, the server stops answering, or
- * the Update pool hasn't drained once the writers stop. */
+ * the Update pool hasn't drained once the writers stop. A write refused with
+ * insufficient_memory (#607) is backpressure, not an error: it is retried and
+ * counted. */
 
 import net from "node:net";
-import { connect } from "../ts/dist/index.js";
+import { connect, InsufficientMemoryError } from "../ts/dist/index.js";
 
 const URL = process.env.ORLY_URL;
 const REPORT_PORT = +process.env.ORLY_REPORT_PORT;
@@ -37,7 +39,7 @@ function pool(body, name) {
 }
 
 async function phase(label, povFor) {
-  let writes = 0, stop = false, peak = 0, first_write = 0, last_write = 0;
+  let writes = 0, refused = 0, stop = false, peak = 0, first_write = 0, last_write = 0;
   const failures = [];
   const writer = async (w) => {
     const c = await connect(URL);
@@ -50,6 +52,15 @@ async function phase(label, povFor) {
         last_write = Date.now();
         if (!first_write) first_write = last_write;
       } catch (err) {
+        /* Since #607 a write that would use the update pools' merge reserve is refused, with
+           nothing written. That is backpressure, not a failure: retry the same write. Anything
+           else (a bad_alloc, a dead server) still fails the smoke. */
+        if (err instanceof InsufficientMemoryError) {
+          ++refused;
+          --i;
+          await new Promise((r) => setTimeout(r, 20));
+          continue;
+        }
         failures.push(`writer ${w}: ${err?.message ?? err}`);
         break;
       }
@@ -87,12 +98,13 @@ async function phase(label, povFor) {
   if (failures.length === 0 && !(drained && drained.used < drained.size / 2)) {
     failures.push(`Update pool did not drain after the writes stopped: ${drained?.used}/${drained?.size}`);
   }
-  console.log(`${label}: ${writes} writes, peak Update pool ${peak}, after drain ${drained?.used}`);
+  console.log(`${label}: ${writes} writes, ${refused} refused, peak Update pool ${peak}, after drain ${drained?.used}`);
   /* For tools/maint/ab_bench.py. A phase can stop at MAX_WRITES before SECS,
      so compare writes per second, not the write count. */
   const metric = label.toLowerCase().replace(/[^a-z0-9]+/g, "_");
   console.log(`METRIC ${metric}_writes_per_s ${(writes / elapsed).toFixed(1)}`);
   console.log(`METRIC ${metric}_peak_update_pool ${peak}`);
+  console.log(`METRIC ${metric}_refused ${refused}`);
   if (failures.length) {
     console.error(`POOL PRESSURE FAIL (${label}):\n  ${failures.join("\n  ")}`);
     process.exit(1);

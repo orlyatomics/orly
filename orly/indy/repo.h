@@ -159,6 +159,12 @@ namespace Orly {
          DataLock. Used by write backpressure (#234) to pace accept to promote. */
       inline size_t GetMemBacklogDepth();
 
+      /* True if Tetris is promoting this repo's memtable backlog to its parent, so the backlog
+         drains: the repo has a parent and is in the parent's Tetris. False for a root, and for a
+         paused or failed repo, which leaves its parent's Tetris and keeps its backlog until it
+         is unpaused (#626). */
+      inline bool IsBacklogDraining();
+
       /* The sequence number of the oldest unpopped update. */
       inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
 
@@ -345,15 +351,16 @@ namespace Orly {
       /* The live memtable that AppendUpdate inserts into. */
       TMemoryLayer *CurMemoryLayer;
 
-      /* #590: how many merges of each kind in a row have failed for lack of disk space. A failed
-         merge hands its inputs back and retries after a backoff that doubles with the streak; a
-         merge that succeeds ends the streak. */
+      /* #590: how many merges of each kind in a row have failed for lack of disk space (or, for
+         disk merges, pool space: #627). A failed merge hands its inputs back and retries after a
+         backoff that doubles with the streak; a merge that succeeds ends the streak. */
       std::atomic<size_t> MergeMemDiskFullStreak{0UL};
       std::atomic<size_t> MergeDiskDiskFullStreak{0UL};
 
       /* Counts one more failure in 'streak' and returns how long to wait before retrying.
          Logging is rate-limited across all repos. */
-      static std::chrono::milliseconds NextDiskFullBackoff(std::atomic<size_t> &streak, const char *merge_kind, const char *err);
+      static std::chrono::milliseconds NextDiskFullBackoff(std::atomic<size_t> &streak, const char *merge_kind, const char *err,
+                                                           const char *what_ran_out = "disk space");
 
       /* Ends 'streak' after a successful merge, logging (rate-limited) how many retries it took. */
       static void EndDiskFullStreak(std::atomic<size_t> &streak, const char *merge_kind);
@@ -582,8 +589,11 @@ namespace Orly {
 
       /* Whether this repo is currently a registered child in its parent's Tetris
          merge. Gating Join on !InTetris makes it idempotent and lets a join that
-         failed under memory pressure retry on the next AppendUpdate (#250). */
-      bool InTetris;
+         failed under memory pressure retry on the next AppendUpdate (#250).
+         Atomic because ChangeStatus writes it without DataLock: taking DataLock there would
+         hold it across TTetrisManager::Part, which waits for the player's mutex, while the
+         player holds that mutex to peek this repo under DataLock (#626). */
+      std::atomic<bool> InTetris;
 
       /* The promotion fence (#636).  A Tetris round promotes a child in two steps: it peeks
          the child's lowest update, then commits a transaction that pushes that update to the
@@ -740,6 +750,17 @@ namespace Orly {
                                 bool can_tail,
                                 bool can_tail_tombstone) override;
 
+      /* Make the mapping with merged_layer in place of input_layers current, and mark the inputs
+         for delete (#627). The inputs must be taken and in the current mapping. If an allocation
+         fails, the half-built mapping is deleted before MappingLock is released, so the repo is
+         as it was, and the std::bad_alloc propagates. */
+      void PublishDiskMerge(const std::vector<TDiskLayer *> &input_layers, TDiskLayer *merged_layer);
+
+      /* Undo a disk merge whose file is written but couldn't be published (#627): remove the
+         file, delete merged_layer, and hand input_layers back. No reader has seen the file, and
+         the inputs still hold all of its data. */
+      void DiscardDiskMerge(const std::vector<TDiskLayer *> &input_layers, TDiskLayer *merged_layer);
+
       /* Reclaim a generation file's blocks, first dropping its per-scheduler
          caches on every runner unless the caller already has. */
       virtual void RemoveFile(size_t gen_id, bool caches_cleared) override;
@@ -843,6 +864,11 @@ namespace Orly {
         return 0UL;
       }
       return static_cast<size_t>(*HighestSeqNum - *LowestSeqNum) + 1UL;
+    }
+
+    inline bool TRepo::IsBacklogDraining() {
+      /* ParentRepo is set at construction. */
+      return ParentRepo && InTetris.load();
     }
 
     inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {

@@ -38,6 +38,7 @@
 #include <orly/atom/core_vector.h>
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/protocol.h>
+#include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
 #include <orly/server/memory_budget.h>
 #include <orly/sabot/to_native.h>
@@ -324,6 +325,13 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "smaller. Setting this and disk_reserve_mb both to 0 turns write admission off. "
       "Default 10."
   );
+  Param(
+      &TCmd::MemoryReservePct, "memory_reserve_pct", Optional, "memory_reserve_pct\0",
+      "Memory admission (issue #607): keep this percent of the Update and Update Entry pools "
+      "for the merges and Tetris promotions that free them, and refuse writes, with an "
+      "insufficient_memory error, before they would use it. Reads, new sessions and new POVs "
+      "are never refused. 0 turns memory admission off. Default 25."
+  );
 
   /******** Object Pools ********/
 
@@ -457,6 +465,7 @@ TServer::TCmd::TCmd()
       TetrisBackpressureThreshold(50000UL),
       DiskReserveMb(0UL),
       DiskReservePct(10UL),
+      MemoryReservePct(25UL),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -506,11 +515,9 @@ namespace {
      24 it fails its first client, and 32 passed the pool-pressure smoke's 8 writers. */
   constexpr size_t MinFiberFrames = 64UL;
 
-  /* The share of the Update and Update Entry pools kept for merges, in percent: #629's
-     --memory_reserve_pct and its default. Until #629 merges, TCmd has no such field and the
-     floor assumes the default. Once it does, this picks the field up on its own, and a reserve of
-     0 (admission off) still sizes the floor for the default, because merges need the room either
-     way. */
+  /* The share of the Update and Update Entry pools kept for merges, in percent:
+     --memory_reserve_pct and its default (#607). A reserve of 0 (admission off) still sizes the
+     floor for the default, because merges need the room either way. */
   constexpr size_t DefaultMergeReservePct = 25UL;
 
   template <typename TSomeCmd>
@@ -1077,6 +1084,7 @@ void TServer::Init() {
 
     TUpdate::InitUpdatePool(Cmd.UpdatePoolSize);
     TUpdate::InitEntryPool(Cmd.UpdateEntryPoolSize);
+    TUpdate::SetPoolReservePct(Cmd.MemoryReservePct);
 
     Disk::TBufBlock::Pool.Init(Cmd.DiskBufferBlockPoolSize);
 
@@ -1780,6 +1788,57 @@ void TServer::CheckWriteAdmission() {
   }
 }
 
+void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t num_entries) {
+  if (!Cmd.MemoryReservePct) {
+    return;
+  }
+  /* Promoting a write copies it twice (Tetris's peek and the parent's copy), and only the
+     reserve is sure to be free for that, so a write bigger than half the reserve might never be
+     promoted (#607). It can't succeed by retrying, so it isn't an insufficient_memory refusal. */
+  const size_t entry_reserve = TUpdate::GetEntryPool().GetReserve();
+  if (num_entries * 2UL > entry_reserve) {
+    std::ostringstream msg;
+    msg << "write too large: its " << num_entries << " entries are more than half the " << entry_reserve
+        << " Update Entry blocks kept for merges (--memory_reserve_pct); split it into smaller batches";
+    throw std::runtime_error(msg.str());
+  }
+  const bool admitted = admission.TryAcquire(num_entries);
+  if (!admitted) {
+    ++MemoryRefusedWriteCount;
+  }
+  /* Log each change of state once. The load keeps the steady state free of writes to a
+     shared line. */
+  if (RefusingWritesForMemory.load(std::memory_order_relaxed) == admitted
+      && RefusingWritesForMemory.exchange(!admitted) == admitted) {
+    /* LOG_ERR, not WARNING: the default mask drops warnings. */
+    const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
+    syslog(LOG_ERR, "memory admission: %s writes; Update pool %ld / %ld, Update Entry pool %ld / %ld, reserves %ld / %ld; %ld refused so far",
+           admitted ? "accepting" : "refusing", updates.GetNumBlocksUsed(), updates.GetMaxBlocks(),
+           entries.GetNumBlocksUsed(), entries.GetMaxBlocks(), updates.GetReserve(), entries.GetReserve(),
+           MemoryRefusedWriteCount.load());
+  }
+  if (!admitted) {
+    ThrowInsufficientMemory();
+  }
+}
+
+void TServer::RefuseWriteOutOfMemory() {
+  if (!Cmd.MemoryReservePct) {
+    return;
+  }
+  ++MemoryRefusedWriteCount;
+  ThrowInsufficientMemory();
+}
+
+void TServer::ThrowInsufficientMemory() const {
+  const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
+  std::ostringstream msg;
+  msg << "insufficient memory: write refused; the update pools are down to the reserve kept for merges (Update "
+      << updates.GetNumBlocksUsed() << " / " << updates.GetMaxBlocks() << ", Update Entry "
+      << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks() << " in use); reads still work";
+  throw TInsufficientMemory(msg.str());
+}
+
 bool TServer::ForEachIndex(const std::function<
     bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const {
   lock_guard<mutex> lock(IndexMapMutex);
@@ -2310,7 +2369,9 @@ string TServer::ImportCoreVector(const string &file_pattern,
     ~TJobRunner() {}
 
     void Run() {
-      double pool_thresh = 0.8;
+      /* Flush before the update pools' reserve (#607): that is the merges' room, and an import
+         is a write. */
+      const double pool_thresh = std::min(0.8, 1.0 - 1.1 * static_cast<double>(TUpdate::GetUpdatePool().GetReserve()) / std::max<size_t>(TUpdate::GetUpdatePool().GetMaxBlocks(), 1UL));
       void *key_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
       void *val_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
       std::unordered_map<Base::TUuid, Base::TUuid> index_id_remapper;
@@ -3180,6 +3241,17 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
   }
   /* Lines the system log daemon had no room for; stderr kept them (#641). */
   ss << "Syslog Dropped = " << Base::TLog::GetDroppedCount() << endl;
+  /* Memory admission (#607). */ {
+    const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
+    ss << "Memory Admission = " << (!Server->Cmd.MemoryReservePct ? "off" : Server->RefusingWritesForMemory ? "refusing" : "accepting")
+       << "; Update pool " << updates.GetNumBlocksUsed() << " / " << updates.GetMaxBlocks()
+       << " reserve " << updates.GetReserve() << " admitted " << updates.GetNumBlocksAdmitted()
+       << " claimed " << updates.GetNumBlocksClaimed() << " misses " << updates.GetNumMisses()
+       << "; Update Entry pool " << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks()
+       << " reserve " << entries.GetReserve() << " admitted " << entries.GetNumBlocksAdmitted()
+       << " claimed " << entries.GetNumBlocksClaimed() << " misses " << entries.GetNumMisses()
+       << "; refused " << Server->MemoryRefusedWriteCount.load() << endl;
+  }
   size_t try_count;
   size_t try_read_count;
   size_t try_write_count;

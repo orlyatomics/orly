@@ -96,7 +96,18 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
         throw TCollapsedUpdateError(HERE);
       }
     }
+    /* Claim the parent's copy of the update before Push makes it (#607). If there's no
+       room, Play drops every child's peeked copy, so the player waits holding nothing. */
+    Indy::TUpdate::TCopyClaim claim;
+    size_t num_entries = 0UL;
+    for (Indy::TUpdate::TEntryCollection::TCursor csr(PeekedUpdate->GetEntryCollection()); csr; ++csr) {
+      ++num_entries;
+    }
+    if (!claim.TryAcquire(1UL, num_entries)) {
+      throw std::bad_alloc();
+    }
     transaction->Push(Player->Repo, PeekedUpdate);
+    claim.Release();
     transaction->Pop(Repo);
     ++(Player->RepoTetrisManager->PushCount);
     ++(Player->RepoTetrisManager->PopCount);
@@ -142,7 +153,15 @@ bool TRepoTetrisManager::TPlayer::TChild::Refresh(const unique_ptr<Indy::L1::TTr
      pending, and the child then sits the round out.  Holding it also orders our status read
      after any pause that has committed. */
   std::shared_ptr<Indy::TUpdate> peeked;
-  const bool held = PeekedUpdate ? transaction->HoldForPromotion(Repo) : static_cast<bool>(peeked = transaction->Peek(Repo));
+  bool held = false;
+  try {
+    held = PeekedUpdate ? transaction->HoldForPromotion(Repo) : static_cast<bool>(peeked = transaction->Peek(Repo));
+  } catch (const std::bad_alloc &) {
+    /* No room to copy this child's update out (#607): it sits this round out, so the children
+       that did get a copy can still be promoted. A hold the peek took ends with the round's
+       transaction. */
+    return false;
+  }
   if (!held || Repo->GetStatus() != Orly::Indy::Normal) {
     return false;
   }
@@ -392,6 +411,18 @@ void TRepoTetrisManager::TPlayer::Play() {
     snapshot_txn->CommitAction();
     commit_timer.Start();
     ++(RepoTetrisManager->RoundCount);
+  } catch (const std::bad_alloc &) {
+    /* Out of pool space: TTetrisManager::TPlayer::Main logs it, rate-limited, and plays the
+       round again (#607). Drop the children's peeked copies first, so that while it waits the
+       player holds nothing the merges or another round could use; the next round peeks
+       again. */
+    {
+      lock_guard<mutex> lock(Mutex);
+      for (const auto &item: ChildByPovId) {
+        item.second->Flush();
+      }
+    }
+    throw;
   } catch (const std::exception &ex) {
     syslog(LOG_EMERG, "Tetris::TPlayer::Play error : %s", ex.what());
     throw;

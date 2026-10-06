@@ -631,7 +631,9 @@ namespace Orly {
 
           TManager *Manager;
 
-          TStatus Status;
+          /* Atomic because TRepo::ChangeStatus writes it without a lock, while the writer
+             backpressure reads it (#626). */
+          std::atomic<TStatus> Status;
 
           private:
 
@@ -662,6 +664,11 @@ namespace Orly {
         inline Disk::Util::TEngine *GetEngine() const;
 
         inline size_t GetTempFileConsolThresh() const;
+
+        /* True once the merge runners have been told to stop (StopMergeRunners). */
+        bool IsShuttingDown() const {
+          return ShuttingDown;
+        }
 
         void RunLayerCleaner();
 

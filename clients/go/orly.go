@@ -51,6 +51,13 @@ const (
 // freed. Test with errors.Is.
 var ErrInsufficientStorage = errors.New("orly: insufficient storage")
 
+// ErrInsufficientMemory is wrapped by the error a write gets when the server
+// refuses it because its update pools are down to the reserve kept for merges
+// ("status": "insufficient_memory"). Nothing was written, reads still work, and
+// the write can be retried; writes are accepted again once the merges have
+// freed the pools, usually within seconds. Test with errors.Is.
+var ErrInsufficientMemory = errors.New("orly: insufficient memory")
+
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
 	conn *websocket.Conn
@@ -104,6 +111,9 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	}
 	if r.Status == "insufficient_storage" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrInsufficientStorage)
+	}
+	if r.Status == "insufficient_memory" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrInsufficientMemory)
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)

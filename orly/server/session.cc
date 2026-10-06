@@ -19,11 +19,14 @@
 #include <orly/server/session.h>
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <optional>
+#include <sstream>
 
 #include <orly/atom/suprena.h>
 #include <orly/indy/context.h>
 #include <orly/notification/all.h>
+#include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
 #include <orly/server/meta_record.h>
 #include <orly/var/mutation.h>
@@ -47,28 +50,99 @@ using namespace Util;
    step copies the whole unpromoted backlog before it frees the old copy, so the
    backlog must stay well below the Update pool's capacity or one merge fills
    the pool (#584). Each POV's watermark is therefore capped at 1/32 of it, so
-   several POVs backing up at once still leave room for their merges. That
-   loop always terminates, because every memtable drains.
+   several POVs backing up at once still leave room for their merges.
+
+   Only a backlog that Tetris is promoting drains, so that wait applies only
+   to one (#626). A paused POV keeps its backlog until it is unpaused, and a
+   failed one keeps it for good; a write to either used to wait forever once
+   the backlog passed the cap. Such a POV is held to the same cap a different
+   way: RefuseWriteToStalledBacklog refuses its writes, before they commit,
+   once its backlog has reached the cap. The wait also gives up once the
+   backlog has not shrunk for 5 s, so a backlog that stops draining for some
+   other reason (the parent's player paused for an import, a deferred Tetris
+   join) can't hold a writer forever either.
 
    The second is the Update / Update Entry pools past half full, whatever
    holds them: merges need that much room to copy into. That wait is
    bounded, because the pools also hold data that drains slowly or never (a
    fast POV keeps its writes in memory): past the deadline the write proceeds,
-   and an allocation that then fails fails just this call. */
-static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold) {
+   and an allocation that then fails fails just this call.
+
+   With memory admission on (#607) the second wait is skipped: admission keeps
+   the merges' room by refusing writes before they allocate, so the wait would
+   only make every write that lands past half full sit out its 5 s. Measured
+   with a 25% reserve, it held writers to one batch per 5 s each, and reads on
+   the same runners took as long. */
+static size_t GetBacklogCap(size_t backlog_threshold) {
+  return std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
+}
+
+/* #626: a write to a paused or failed POV whose backlog has reached the cap is refused before
+   it commits, with the typed status of #607. Nothing promotes that backlog until the POV is
+   unpaused, so waiting for it (as ApplyWriteBackpressure does for a POV that drains) would never
+   end.
+
+   Why refuse rather than let such a POV grow? Memory admission (#607) is global: a paused POV
+   allowed to grow fills the update pools to the merges' reserve, and then every write to every
+   POV is refused until it is unpaused. Measured with the paused-POV smoke (5,000-update pool),
+   that happened after 1,900 writes to the paused POV. Held to the cap, a paused POV takes at
+   most 1/32 of the Update pool, like any POV whose merges are behind, and the memory merge's
+   copy of its backlog stays as small as theirs (#584).
+
+   The cap is checked before commit, so concurrent writers can each pass it once and overshoot it
+   by one write apiece; ApplyWriteBackpressure doesn't wait for a backlog that can't drain. */
+static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold) {
   if (!backlog_threshold) {
     return;
   }
-  backlog_threshold = std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
+  const Indy::TStatus status = repo->GetStatus();
+  if (status == Indy::Normal) {
+    return;
+  }
+  const size_t cap = GetBacklogCap(backlog_threshold);
+  const size_t backlog = repo->GetMemBacklogDepth();
+  if (backlog < cap) {
+    return;
+  }
+  std::ostringstream msg;
+  msg << "insufficient memory: write refused; this POV is " << (status == Indy::Paused ? "paused" : "failed")
+      << " and already holds " << backlog << " unpromoted updates, the most one POV may hold (" << cap << ")";
+  if (status == Indy::Paused) {
+    msg << "; writes are accepted again once it is unpaused and they have been promoted";
+  }
+  msg << "; reads still work";
+  throw TInsufficientMemory(msg.str());
+}
+
+static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold, bool wait_for_pools) {
+  if (!backlog_threshold) {
+    return;
+  }
+  backlog_threshold = GetBacklogCap(backlog_threshold);
   constexpr double pool_threshold = 0.5;
-  const auto pools_full = [] {
-    return Indy::TUpdate::GetUpdatePoolUsedPct() > pool_threshold
-        || Indy::TUpdate::GetUpdateEntryPoolUsedPct() > pool_threshold;
+  const auto pools_full = [wait_for_pools] {
+    return wait_for_pools
+        && (Indy::TUpdate::GetUpdatePoolUsedPct() > pool_threshold
+            || Indy::TUpdate::GetUpdateEntryPoolUsedPct() > pool_threshold);
   };
   const auto pool_deadline = steady_clock::now() + seconds(5);
+  constexpr auto backlog_stall = seconds(5);
+  size_t lowest_backlog = std::numeric_limits<size_t>::max();
+  auto backlog_deadline = steady_clock::now() + backlog_stall;
+  const auto backlog_over = [&] {
+    const size_t backlog = repo->GetMemBacklogDepth();
+    if (backlog <= backlog_threshold || !repo->IsBacklogDraining()) {
+      return false;
+    }
+    const auto now = steady_clock::now();
+    if (backlog < lowest_backlog) {
+      lowest_backlog = backlog;
+      backlog_deadline = now + backlog_stall;
+    }
+    return now < backlog_deadline;
+  };
   for (;;) {
-    if (repo->GetMemBacklogDepth() > backlog_threshold
-        || (pools_full() && steady_clock::now() < pool_deadline)) {
+    if (backlog_over() || (pools_full() && steady_clock::now() < pool_deadline)) {
       Indy::Fiber::YieldSlow();
     } else {
       break;
@@ -227,6 +301,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
+      RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Deferred entries from #49 phase 2: defer-safe commutative
@@ -291,29 +366,40 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
               TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
               run_time, random_seed)
       );
-      auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
-      /* Register the defer-safe commutative mutations gathered above.
-         These don't go through TOpByKey because op_by_key is a map and
-         TUpdate's TOpByKey ctor always tags entries Assign -- the
-         AddEntry overload (added in #49 phase 1) takes the mutator.
+      /* Hold this write's room in the update pools, or refuse it, before it builds anything
+         there (#607). Released once the transaction below has committed. */
+      Indy::TUpdate::TWriteAdmission write_memory;
+      server->CheckMemoryAdmission(write_memory, op_by_key.size() + deferred_entries.size());
+      /* Nothing is committed until CommitAction, so running out of pool here (the merges can
+         take the reserve too) is a refusal, not a failed write (#607). */
+      try {
+        auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
+        /* Register the defer-safe commutative mutations gathered above.
+           These don't go through TOpByKey because op_by_key is a map and
+           TUpdate's TOpByKey ctor always tags entries Assign -- the
+           AddEntry overload (added in #49 phase 1) takes the mutator.
 
-         #perf: the deferred entries arrive in write order. AddEntry
-         ReverseInserts each into update->EntryCollection, which is ordered by
-         TKey; in write order across several indices each insert scans O(N) to
-         find its slot, so committing a transaction of N commutative writes
-         (e.g. a batched bulk load) is O(N^2) -- the dominant cost of a large
-         batch once the per-write read was removed. Sorting by TKey first makes
-         each ReverseInsert append in O(1) (O(N log N) total). Correct
-         regardless of sort quality: ReverseInsert always finds the right slot;
-         only the scan length depends on the order. */
-      std::ranges::sort(deferred_entries, {},
-                        [](const auto &entry) -> const Indy::TKey & {
-                          return std::get<0>(entry).GetKey();
-                        });
-      for (auto &entry : deferred_entries) {
-        update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+           #perf: the deferred entries arrive in write order. AddEntry
+           ReverseInserts each into update->EntryCollection, which is ordered by
+           TKey; in write order across several indices each insert scans O(N) to
+           find its slot, so committing a transaction of N commutative writes
+           (e.g. a batched bulk load) is O(N^2) -- the dominant cost of a large
+           batch once the per-write read was removed. Sorting by TKey first makes
+           each ReverseInsert append in O(1) (O(N log N) total). Correct
+           regardless of sort quality: ReverseInsert always finds the right slot;
+           only the scan length depends on the order. */
+        std::ranges::sort(deferred_entries, {},
+                          [](const auto &entry) -> const Indy::TKey & {
+                            return std::get<0>(entry).GetKey();
+                          });
+        for (auto &entry : deferred_entries) {
+          update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+        }
+        transaction->Push(repo, update);
+      } catch (const std::bad_alloc &) {
+        server->RefuseWriteOutOfMemory();
+        throw;
       }
-      transaction->Push(repo, update);
       transaction->Prepare();
       transaction->CommitAction();
     }
@@ -324,7 +410,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
        sustained accept paces to promote instead of growing the memtable without
        bound (bad_alloc at high K). See ApplyWriteBackpressure. */
     if (had_effects) {
-      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold());
+      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold(), !server->IsMemoryAdmissionOn());
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();
@@ -343,6 +429,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     return TMethodResult(indy_context.GetArena(), result_core, tracker);
   } catch (const TInsufficientStorage &) {
     /* Not an error in the server: the server's admission log records the refusals (#590). */
+    throw;
+  } catch (const TInsufficientMemory &) {
+    /* Likewise (#607). */
     throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::Try : [%s]", ex.what());
@@ -453,6 +542,7 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
+      RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Identical deferred-entry fold to Try() (#49/#232): defer-safe commutative
@@ -530,21 +620,32 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
               TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
               run_time, random_seed)
       );
-      auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
-      std::ranges::sort(deferred_entries, {},
-                        [](const auto &entry) -> const Indy::TKey & {
-                          return std::get<0>(entry).GetKey();
-                        });
-      for (auto &entry : deferred_entries) {
-        update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+      /* Hold this write's room in the update pools, or refuse it, before it builds anything
+         there (#607). Released once the transaction below has committed. */
+      Indy::TUpdate::TWriteAdmission write_memory;
+      server->CheckMemoryAdmission(write_memory, op_by_key.size() + deferred_entries.size());
+      /* Nothing is committed until CommitAction, so running out of pool here (the merges can
+         take the reserve too) is a refusal, not a failed write (#607). */
+      try {
+        auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
+        std::ranges::sort(deferred_entries, {},
+                          [](const auto &entry) -> const Indy::TKey & {
+                            return std::get<0>(entry).GetKey();
+                          });
+        for (auto &entry : deferred_entries) {
+          update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+        }
+        transaction->Push(repo, update);
+      } catch (const std::bad_alloc &) {
+        server->RefuseWriteOutOfMemory();
+        throw;
       }
-      transaction->Push(repo, update);
       transaction->Prepare();
       transaction->CommitAction();
     }
     /* Write backpressure (#234), applied once per batch (one transaction). */
     if (had_effects) {
-      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold());
+      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold(), !server->IsMemoryAdmissionOn());
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();
@@ -560,6 +661,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     return results;
   } catch (const TInsufficientStorage &) {
     /* Not an error in the server: the server's admission log records the refusals (#590). */
+    throw;
+  } catch (const TInsufficientMemory &) {
+    /* Likewise (#607). */
     throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::%s : [%s]", what, ex.what());
@@ -776,8 +880,17 @@ void TSession::RunFuncCommit(TServer *server,
           TMetaRecord::TEntry::TArgByName(),
           TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
           run_time, random_seed));
-  auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
-  transaction->Push(repo, update);
+  Indy::TUpdate::TWriteAdmission write_memory;
+  server->CheckMemoryAdmission(write_memory, op_by_key.size());
+  /* Nothing is committed until CommitAction, so running out of pool here (the merges can
+     take the reserve too) is a refusal, not a failed write (#607). */
+  try {
+    auto update = Indy::TUpdate::NewUpdate(op_by_key, Indy::TKey(meta_record, &my_arena, state_alloc_1), Indy::TKey(update_id, &my_arena, state_alloc_2));
+    transaction->Push(repo, update);
+  } catch (const std::bad_alloc &) {
+    server->RefuseWriteOutOfMemory();
+    throw;
+  }
   transaction->Prepare();
   transaction->CommitAction();
 }

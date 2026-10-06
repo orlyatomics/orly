@@ -18,6 +18,8 @@
 
 #include <orly/indy/update.h>
 
+#include <algorithm>
+
 using namespace std;
 using namespace Base;
 using namespace Orly::Atom;
@@ -27,6 +29,60 @@ TUpdate::TPersistenceNotification::TPersistenceNotification(const std::function<
     : Cb(cb) {}
 
 TUpdate::TPersistenceNotification::~TPersistenceNotification() {}
+
+TUpdate::TWriteAdmission::~TWriteAdmission() {
+  if (NumUpdates) {
+    Pool.ReleaseAdmitted(NumUpdates);
+    TEntry::Pool.ReleaseAdmitted(NumEntries);
+  }
+}
+
+bool TUpdate::TWriteAdmission::TryAcquire(size_t num_entries) {
+  assert(!NumUpdates);
+  constexpr size_t updates = 2UL;
+  const size_t entries = num_entries * 2UL;
+  if (!Pool.TryAdmit(updates)) {
+    return false;
+  }
+  if (!TEntry::Pool.TryAdmit(entries)) {
+    Pool.ReleaseAdmitted(updates);
+    return false;
+  }
+  NumUpdates = updates;
+  NumEntries = entries;
+  return true;
+}
+
+TUpdate::TCopyClaim::~TCopyClaim() {
+  Release();
+}
+
+bool TUpdate::TCopyClaim::TryAcquire(size_t num_updates, size_t num_entries) {
+  assert(!NumUpdates && !NumEntries);
+  if (!Pool.TryClaim(num_updates)) {
+    return false;
+  }
+  if (!TEntry::Pool.TryClaim(num_entries)) {
+    Pool.ReleaseClaim(num_updates);
+    return false;
+  }
+  NumUpdates = num_updates;
+  NumEntries = num_entries;
+  return true;
+}
+
+void TUpdate::TCopyClaim::Release() {
+  Pool.ReleaseClaim(NumUpdates);
+  TEntry::Pool.ReleaseClaim(NumEntries);
+  NumUpdates = 0UL;
+  NumEntries = 0UL;
+}
+
+void TUpdate::SetPoolReservePct(size_t pct) {
+  pct = std::min<size_t>(pct, 100UL);
+  Pool.SetReserve(Pool.GetMaxBlocks() / 100UL * pct + Pool.GetMaxBlocks() % 100UL * pct / 100UL);
+  TEntry::Pool.SetReserve(TEntry::Pool.GetMaxBlocks() / 100UL * pct + TEntry::Pool.GetMaxBlocks() % 100UL * pct / 100UL);
+}
 
 shared_ptr<TUpdate> TUpdate::NewUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -140,6 +196,11 @@ TUpdate::TUpdate(const TUpdate *that, void *state_alloc)
     }
   } catch (...) {
     EntryCollection.DeleteEachMember();
+    /* Rethrow (#607). Swallowing this returned a copy with no entries: a transaction's copy of
+       a write (TPusher) then committed it, so a write that ran out of Update Entry pool was
+       acknowledged and lost, a Tetris promotion moved an empty update into the parent, and
+       the root's next flush crashed on a memory layer with updates but no entries. */
+    throw;
   }
 }
 

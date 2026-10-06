@@ -102,6 +102,8 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 - **A full disk refuses writes, not the server.** When free space falls below a reserve (`--disk_reserve_pct`, default 10%; or `--disk_reserve_mb`) plus what running merges still need, `orlyi` refuses writes with `"status": "insufficient_storage"` and keeps serving reads, new sessions and new POVs. The last part of the reserve is kept for session state and the file map, so they keep working on a disk that data has filled. Writes resume by themselves when space comes back. The reporting port's `Write Admission` line shows the state ([#590](https://github.com/orlyatomics/orly/issues/590)).
 
+- **Full memory pools refuse writes, not the server.** Writes wait in fixed-size memory pools until merges flush them, and the merges need room in those pools to work. `orlyi` keeps a quarter of each pool for them (`--memory_reserve_pct`, default 25) and refuses writes that would use it with `"status": "insufficient_memory"`, while reads, new sessions and new POVs carry on. Writes are accepted again once the merges catch up, usually within seconds. The reporting port's `Memory Admission` line shows the state ([#607](https://github.com/orlyatomics/orly/issues/607)).
+
 ## Quick start
 
 **Docker** — the engine itself is Linux-only, so this is also the macOS/Windows

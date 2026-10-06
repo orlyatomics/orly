@@ -16,8 +16,14 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
+/* Before pool.h: fiber.h says Util::ThrowSystemError, meaning ::Util, which Orly::Indy::Util
+   (declared by pool.h) would hide. */
+#include <orly/indy/fiber/fiber.h>
+
 #include <orly/indy/util/pool.h>
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <string.h>
@@ -33,7 +39,12 @@ TPool::TPool(size_t block_size, const char *name, size_t block_count)
       FirstBlock(nullptr),
       Name(name),
       NumBlocksUsed(0UL),
-      MaxBlocks(0UL) {
+      MaxBlocks(0UL),
+      Reserve(0UL),
+      NumBlocksAdmitted(0UL),
+      NumBlocksClaimed(0UL),
+      Refusing(false),
+      NumMisses(0UL) {
   assert(block_size >= sizeof(void*));
   if (block_count) {
     Init(block_count);
@@ -71,6 +82,80 @@ TPool::~TPool() {
     syslog(LOG_ERR, "[%ld] Blocks left in [%s] pool", NumBlocksUsed.load(), Name);
   }
   free(Blob);
+}
+
+void *TPool::Alloc(size_t size) {
+  void *ptr = TryAlloc(size);
+  if (ptr) {
+    return ptr;
+  }
+  /* See the header: on a fiber, fail now and let the caller retry where it holds no lock. */
+  const bool on_fiber = Orly::Indy::Fiber::TFrame::LocalFrame.Get() != nullptr;
+  if (!on_fiber) {
+    for (size_t retry = 0; retry < 2000UL && !ptr; ++retry) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      ptr = TryAlloc(size);
+    }
+    if (ptr) {
+      return ptr;
+    }
+  }
+  /* A pool that runs dry is retried, so count every miss but log only the 1st, 2nd, 4th,
+     8th, ... per pool. */
+  const size_t misses = ++NumMisses;
+  if ((misses & (misses - 1UL)) == 0UL) {
+    syslog(LOG_ERR, "TPool::Alloc() [%s] bad_alloc %s; %ld blocks of %ld in use, %ld misses so far",
+           Name, on_fiber ? "on a fiber (not waiting)" : "after 2000 retries", NumBlocksUsed.load(), MaxBlocks, misses);
+  }
+  throw std::bad_alloc();
+}
+
+void TPool::SetReserve(size_t reserve_blocks) {
+  std::lock_guard<std::mutex> lock(Mutex);
+  Reserve = std::min(reserve_blocks, MaxBlocks);
+  Refusing = false;
+}
+
+bool TPool::TryAdmit(size_t num_blocks) {
+  std::lock_guard<std::mutex> lock(Mutex);
+  const size_t reserve = Reserve.load();
+  if (reserve) {
+    const size_t keep_free = std::min(MaxBlocks, reserve + (Refusing ? reserve / 4UL : 0UL));
+    if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > MaxBlocks - keep_free) {
+      Refusing = true;
+      return false;
+    }
+    Refusing = false;
+  }
+  NumBlocksAdmitted += num_blocks;
+  return true;
+}
+
+void TPool::ReleaseAdmitted(size_t num_blocks) {
+  std::lock_guard<std::mutex> lock(Mutex);
+  assert(NumBlocksAdmitted >= num_blocks);
+  NumBlocksAdmitted -= num_blocks;
+}
+
+bool TPool::TryClaim(size_t num_blocks) {
+  if (!num_blocks) {
+    return true;
+  }
+  std::lock_guard<std::mutex> lock(Mutex);
+  if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > MaxBlocks) {
+    return false;
+  }
+  NumBlocksClaimed += num_blocks;
+  return true;
+}
+
+void TPool::ReleaseClaim(size_t num_blocks) {
+  if (!num_blocks) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(Mutex);
+  assert(NumBlocksClaimed >= num_blocks);
+  NumBlocksClaimed -= num_blocks;
 }
 
 void TPool::Free(void *ptr) {

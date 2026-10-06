@@ -262,6 +262,63 @@ namespace Orly {
         return static_cast<double>(TEntry::Pool.GetNumBlocksUsed()) / TEntry::Pool.GetMaxBlocks();
       }
 
+      /* Writer admission on the update pools (#607). A write with num_entries entries takes two
+         updates (the one it builds, and the transaction's copy that goes into the memtable) and
+         twice as many entries. TryAcquire promises those blocks to the write, or returns false
+         without promising anything if either pool would dip into its reserve (TPool::TryAdmit);
+         the promise is released when this object goes away, once the write has committed. */
+      class TWriteAdmission {
+        NO_COPY(TWriteAdmission);
+        public:
+
+        TWriteAdmission() = default;
+
+        ~TWriteAdmission();
+
+        bool TryAcquire(size_t num_entries);
+
+        private:
+
+        size_t NumUpdates = 0UL;
+
+        size_t NumEntries = 0UL;
+
+      };  // TWriteAdmission
+
+      /* A copy's claim on both update pools (#607; see TPool::TryClaim): TryAcquire claims
+         num_updates updates and num_entries entries together or not at all, and the claim is
+         released by Release or when this object goes away. */
+      class TCopyClaim {
+        NO_COPY(TCopyClaim);
+        public:
+
+        TCopyClaim() = default;
+
+        ~TCopyClaim();
+
+        bool TryAcquire(size_t num_updates, size_t num_entries);
+
+        void Release();
+
+        private:
+
+        size_t NumUpdates = 0UL;
+
+        size_t NumEntries = 0UL;
+
+      };  // TCopyClaim
+
+      /* Sets both pools' reserves to pct percent of their size (#607); 0 turns refusals off. */
+      static void SetPoolReservePct(size_t pct);
+
+      static inline const Util::TPool &GetUpdatePool() {
+        return Pool;
+      }
+
+      static inline const Util::TPool &GetEntryPool() {
+        return TEntry::Pool;
+      }
+
       protected:
 
       TUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, void *state_alloc);

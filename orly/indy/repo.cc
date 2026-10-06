@@ -18,9 +18,12 @@
 
 #include <orly/indy/repo.h>
 
+#include <algorithm>
 #include <fstream>
 #include <limits>
+#include <new>
 #include <optional>
+#include <thread>
 
 #include <base/debug_log.h>
 #include <orly/indy/disk/util/hash_util.h>
@@ -54,6 +57,53 @@ class TReader
 
   using TReadFile::FindInHash;
 };
+
+/* Counts the updates and entries a memory merge copies out of 'layers' (#607): every update
+   past 'bound', or every update when 'all', with its entries. */
+static void CountCopy(const std::vector<TMemoryLayer *> &layers, TSequenceNumber bound, bool all,
+                      size_t &updates, size_t &entries) {
+  for (const TMemoryLayer *layer : layers) {
+    for (TMemoryLayer::TUpdateCollection::TCursor csr(layer->GetUpdateCollection()); csr; ++csr) {
+      if (all || csr->GetSequenceNumber() > bound) {
+        ++updates;
+        for (TUpdate::TEntryCollection::TCursor entry(csr->GetEntryCollection()); entry; ++entry) {
+          ++entries;
+        }
+      }
+    }
+  }
+}
+
+/* A Data Layer pool block for the disk layer that a memory merge's file becomes, taken before
+   the file is written (#607). Once the file map has the file, the merge can't be undone, so
+   recording the file mustn't depend on an allocation that can fail. */
+class TDiskLayerSlot {
+  NO_COPY(TDiskLayerSlot);
+  public:
+
+  TDiskLayerSlot()
+      : Mem(TDiskLayer::operator new(sizeof(TDiskLayer))) {}
+
+  ~TDiskLayerSlot() {
+    if (Mem) {
+      TDiskLayer::operator delete(Mem, sizeof(TDiskLayer));
+    }
+  }
+
+  /* TDiskLayer's constructor doesn't throw. */
+  TDiskLayer *Make(L0::TManager *manager, L0::TManager::TRepo *repo, size_t gen_id, size_t num_keys,
+                   TSequenceNumber lowest_seq, TSequenceNumber highest_seq) {
+    assert(Mem);
+    TDiskLayer *layer = ::new (Mem) TDiskLayer(manager, repo, gen_id, num_keys, lowest_seq, highest_seq);
+    Mem = nullptr;
+    return layer;
+  }
+
+  private:
+
+  void *Mem;
+
+};  // TDiskLayerSlot
 
 void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed) {
   //assert(!ParentRepo);
@@ -159,6 +209,12 @@ void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
     assert(seq_num == ReleasedUpTo + 1L || ensure_or_discard);
     if (!ensure_or_discard || seq_num == ReleasedUpTo + 1L) {
       ReleasedUpTo = seq_num;
+      /* This repo's memory merge can now drop its copies up to here (#607). Queue it:
+         otherwise only this repo's next write queued it, and a merge that ran before this
+         release had left them in place. A repo whose backlog Tetris drained kept the released
+         copies in the update pools until a write that memory admission might refuse until
+         they were freed. Queuing an already queued repo does nothing. */
+      EnqueueMergeMem();
     }
     if ((HighestSeqNum && seq_num == *HighestSeqNum) || (!HighestSeqNum && seq_num == NextUpdate - 1)) {
       if (!IsSafeRepo()) {
@@ -424,6 +480,11 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
         op_by_key.insert(make_pair(iter.IndexKey, TKey(iter.Op, item.MainArena)));
       }
     }
+    /* Claim the copy before making it (#607; see TPool::TryClaim). */
+    TUpdate::TCopyClaim claim;
+    if (!claim.TryAcquire(1UL, item.EntryVec.size())) {
+      throw std::bad_alloc();
+    }
     auto update = TUpdate::NewUpdate(op_by_key, TKey(item.Metadata, item.MainArena), TKey(item.Id, item.MainArena));
     for (const auto &iter : item.EntryVec) {
       if (iter.Mutator != TMutator::Assign) {
@@ -530,7 +591,7 @@ static bool ShouldLogDiskFullMerge() {
   return now_ns >= next && next_ns.compare_exchange_strong(next, now_ns + 10'000'000'000L);
 }
 
-std::chrono::milliseconds TRepo::NextDiskFullBackoff(std::atomic<size_t> &streak, const char *merge_kind, const char *err) {
+std::chrono::milliseconds TRepo::NextDiskFullBackoff(std::atomic<size_t> &streak, const char *merge_kind, const char *err, const char *what_ran_out) {
   /* 100ms, doubling to 3.2s. The merge queues are ordered by due time, so a repo backing off
      holds up no other repo's merges. */
   constexpr size_t max_shift = 5UL;
@@ -538,7 +599,7 @@ std::chrono::milliseconds TRepo::NextDiskFullBackoff(std::atomic<size_t> &streak
   const size_t shift = std::min(prev, max_shift);
   const std::chrono::milliseconds backoff(100L << shift);
   if (ShouldLogDiskFullMerge()) {
-    syslog(LOG_ERR, "%s out of disk space [%s] (try %ld); inputs handed back, retrying in %ldms", merge_kind, err, prev + 1UL, static_cast<long>(backoff.count()));
+    syslog(LOG_ERR, "%s out of %s [%s] (try %ld); inputs handed back, retrying in %ldms", merge_kind, what_ran_out, err, prev + 1UL, static_cast<long>(backoff.count()));
   }
   return backoff;
 }
@@ -546,7 +607,7 @@ std::chrono::milliseconds TRepo::NextDiskFullBackoff(std::atomic<size_t> &streak
 void TRepo::EndDiskFullStreak(std::atomic<size_t> &streak, const char *merge_kind) {
   const size_t retries = streak.exchange(0UL);
   if (retries && ShouldLogDiskFullMerge()) {
-    syslog(LOG_ERR, "%s succeeded after %ld retries for disk space", merge_kind, retries);
+    syslog(LOG_ERR, "%s succeeded after %ld retries for disk or pool space", merge_kind, retries);
   }
 }
 
@@ -572,7 +633,7 @@ void TRepo::StepMergeMem() {
            yet (the old code had already retired CurMemoryLayer into the
            mapping and left the repo with none). */
         TMemoryLayer *const next_mem = new TMemoryLayer(Manager);
-        can_retry = false;
+        /* AddMapping undoes itself if it fails (#607), so this stays retryable. */
         try {
           AddMapping(CurMemoryLayer);
         } catch (...) {
@@ -580,7 +641,6 @@ void TRepo::StepMergeMem() {
           throw;
         }
         CurMemoryLayer = next_mem;
-        can_retry = true;
         //EnqueueMergeMem();
       }
     }  // release DataLayer lock
@@ -617,6 +677,10 @@ void TRepo::StepMergeMem() {
           } catch (const Disk::Util::TDiskFull &) {
             can_retry = true;
             throw;
+          } catch (const Disk::TDataFileAllocFailed &) {
+            /* Same as running out of disk, for memory (#607). */
+            can_retry = true;
+            throw;
           }
         };
         try {
@@ -630,6 +694,32 @@ void TRepo::StepMergeMem() {
             mem_to_merge_vec.push_back(reinterpret_cast<TMemoryLayer *>(layer));
           }
           //syslog(LOG_INFO, "Layout Disk=[%ld]\tMem=[%ld]\tToMerge=[%ld]\t\t\tTaken=[%ld]", num_disk, total_count - num_disk, mem_to_merge_vec.size(), taken);
+          /* #607: claim the whole copy before making any of it (TPool::TryClaim). The safe root
+             writes several layers as one file by first copying them into one layer; if that copy
+             isn't granted, it writes the oldest layer by itself instead, which copies nothing.
+             That way the root can always flush what Tetris has promoted into it, however full
+             the pools are, and each promotion it makes room for shrinks some child's
+             unpromoted backlog, which is all a child's merge copies. A child or fast repo whose
+             copy isn't granted waits, holding nothing, and tries again on its next pass. */
+          TUpdate::TCopyClaim copy_claim;
+          if (mem_to_merge_vec.size() >= 2) {
+            size_t updates = 0UL, entries = 0UL;
+            CountCopy(mem_to_merge_vec, lower_seq_bound, !ParentRepo, updates, entries);
+            if (!copy_claim.TryAcquire(updates, entries)) {
+              if (!IsSafeRepo() || ParentRepo) {
+                throw std::bad_alloc();
+              }
+              for (size_t i = 0; i + 1 < mem_to_merge_vec.size(); ++i) {
+                mem_to_merge_vec[i]->UnmarkTaken();
+              }
+              mem_to_merge_vec.erase(mem_to_merge_vec.begin(), mem_to_merge_vec.end() - 1);
+              static std::atomic<size_t> single_flushes(0UL);
+              const size_t n = ++single_flushes;
+              if ((n & (n - 1UL)) == 0UL) {
+                syslog(LOG_ERR, "StepMergeMem: no room to combine the global repo's memory layers; flushing the oldest alone (%ld times so far)", n);
+              }
+            }
+          }
           if (mem_to_merge_vec.size() == 1) {
               //syslog(LOG_INFO, "mem_to_merge_vec.size() == 1");
               if (IsSafeRepo() && !ParentRepo && !reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0])->IsEmpty()) {
@@ -650,12 +740,13 @@ void TRepo::StepMergeMem() {
                 TMemoryLayer *const src = reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0]);
                 size_t num_keys = 0U;
                 TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
+                TDiskLayerSlot disk_slot;
                 size_t gen_id = write_file(src, saved_low_seq, saved_high_seq, num_keys);
                 {
                   std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                   Manager->MergeMemAverageKeysCalc.Push(num_keys);
                 }
-                new_disk = new TDiskLayer(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
+                new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
                 delete new_mem;
                 new_mem = nullptr;
               } else {
@@ -685,6 +776,11 @@ void TRepo::StepMergeMem() {
                   /* child with a mix of released + unreleased entries -> keep
                      only the unreleased remainder in memory; the released ones
                      live in the parent. */
+                  size_t updates = 0UL, entries = 0UL;
+                  CountCopy({src}, lower_seq_bound, false, updates, entries);
+                  if (!copy_claim.TryAcquire(updates, entries)) {
+                    throw std::bad_alloc();
+                  }
                   std::unordered_map<const TUpdate *, TUpdate *> update_remap;
                   for (TMemoryLayer::TUpdateCollection::TCursor csr(src->GetUpdateCollection()); csr; ++csr) {
                     if (csr->GetSequenceNumber() > lower_seq_bound) {
@@ -706,6 +802,7 @@ void TRepo::StepMergeMem() {
                       new_mem->ImporterAppendEntry(new_entry);
                     }
                   }
+                  copy_claim.Release();
                   /* new_mem (unreleased remainder) is added to the mapping
                      below; src is MarkForDelete'd there. */
                 }
@@ -785,6 +882,7 @@ void TRepo::StepMergeMem() {
                   }
                 }
               }  // end sorter alloca scope
+              copy_claim.Release();
               if (IsSafeRepo() && !ParentRepo) {
                 /* #227: ONLY the root flushes (see the size==1 path above).
                    A safe ROOT always consumes new_mem here; it may come out
@@ -795,12 +893,13 @@ void TRepo::StepMergeMem() {
                 if (!new_mem->IsEmpty()) {
                   size_t num_keys = 0U;
                   TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
+                  TDiskLayerSlot disk_slot;
                   size_t gen_id = write_file(new_mem, saved_low_seq, saved_high_seq, num_keys);
                   {
                     std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                     Manager->MergeMemAverageKeysCalc.Push(num_keys);
                   }
-                  new_disk = new TDiskLayer(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
+                  new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
                 }
                 delete new_mem;
                 new_mem = nullptr;
@@ -811,17 +910,37 @@ void TRepo::StepMergeMem() {
               ReleaseMapping(mapping);
               return;
             }
-          /* From here on we publish the new mapping, which can't be undone. */
-          can_retry = false;
-          /* acquire Mapping lock */ {
+          if (new_mem) {
+            /* #227: new_mem survives to the mapping only for repos that do
+               NOT flush to disk -- fast repos (!IsSafeRepo) and safe CHILD
+               repos (ParentRepo), which keep their unreleased data in
+               memory so the cross-repo dedup keeps working. The safe ROOT
+               always flushed + nulled new_mem above. */
+            assert(!IsSafeRepo() || ParentRepo);
+            assert(new_mem->IsEmpty() == (new_mem->GetSize() == 0UL));
+            if (new_mem->IsEmpty()) {
+              DEBUG_LOG("New mem is empty, resetting to nullptr");
+              delete new_mem;
+              new_mem = nullptr;
+            }
+          }
+          /* Publish the new mapping. Building it takes blocks from the mapping pools; if that
+             fails, the half-built mapping is deleted before the lock is released, so it is as if
+             the publish never started (#607). With only memory layers involved, the merge then
+             rolls back like any copy-phase failure. A file already written can't be taken back,
+             so the publish waits for room instead, on this merge runner, holding no lock but
+             MemMergeLock (which only this repo's memory merge takes). */
+          auto publish = [&] {
             std::lock_guard<std::mutex> lock(MappingLock);
             TMapping *cur_mapping = MappingCollection.TryGetLastMember();
+            assert(cur_mapping);
             cur_mapping->Incr();
+            TMapping *new_mapping = nullptr;
             size_t total_disk_layers = 0U;
-            bool has_merge_candidate = false;
+            std::vector<TDataLayer *> merged;
             try {
-              TMapping *new_mapping = new TMapping(this);
-              assert(cur_mapping);
+              merged.reserve(mem_to_merge_vec.size());
+              new_mapping = new TMapping(this);
               for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
                 assert(cur_csr->GetLayer() != new_mem);
                 assert(cur_csr->GetLayer() != new_disk);
@@ -829,7 +948,7 @@ void TRepo::StepMergeMem() {
                 for (auto layer : mem_to_merge_vec) {
                   if (layer == cur_csr->GetLayer()) {
                     found = true;
-                    layer->MarkForDelete();
+                    merged.push_back(layer);
                     break;
                   }
                 }
@@ -840,20 +959,6 @@ void TRepo::StepMergeMem() {
                   }
                 }
               }
-              if (new_mem) {
-                /* #227: new_mem survives to the mapping only for repos that do
-                   NOT flush to disk -- fast repos (!IsSafeRepo) and safe CHILD
-                   repos (ParentRepo), which keep their unreleased data in
-                   memory so the cross-repo dedup keeps working. The safe ROOT
-                   always flushed + nulled new_mem above. */
-                assert(!IsSafeRepo() || ParentRepo);
-                assert(new_mem->IsEmpty() == (new_mem->GetSize() == 0UL));
-                if (new_mem->IsEmpty()) {
-                  DEBUG_LOG("New mem is empty, resetting to nullptr");
-                  delete new_mem;
-                  new_mem = nullptr;
-                }
-              }
               if (new_disk) {
                 new TMapping::TEntry(new_mapping, new_disk);
               } else if (new_mem) {
@@ -862,21 +967,56 @@ void TRepo::StepMergeMem() {
                 DEBUG_LOG("We cleaned away everything, not adding anything to the mapping");
                 /* we've cleaned away everything */
               }
-              total_disk_layers += new_disk ? 1UL : 0UL;
-              has_merge_candidate = HasDiskMergeCandidate(new_mapping);
-              cur_mapping->Decr();
             } catch (...) {
+              /* The new mapping is the last member, so delete it first; then the Decr leaves
+                 cur_mapping current, as it was. */
+              delete new_mapping;
               cur_mapping->Decr();
               throw;
             }
+            for (TDataLayer *layer : merged) {
+              layer->MarkForDelete();
+            }
+            total_disk_layers += new_disk ? 1UL : 0UL;
+            const bool has_merge_candidate = HasDiskMergeCandidate(new_mapping);
+            cur_mapping->Decr();
             /* #325: skip the pass when its scan would provably find nothing mergeable;
                see HasDiskMergeCandidate. */
             if (total_disk_layers >= 3 && has_merge_candidate) {
               EnqueueMergeDisk();
             }
+          };
+          for (size_t failures = 0UL;;) {
+            try {
+              publish();
+              break;
+            } catch (const std::bad_alloc &) {
+              if (!new_disk) {
+                /* Nothing written, so can_retry is still set: roll back below. */
+                throw;
+              }
+              ++failures;
+              if ((failures & (failures - 1UL)) == 0UL) {
+                syslog(LOG_ERR, "StepMergeMem: no pool room to publish the file it wrote (try %ld); waiting for the layer cleaner", failures);
+              }
+              if (Manager->IsShuttingDown()) {
+                /* Give up, but leave the merged layers taken: their data is in the file, which
+                   the file map has, and a second copy must never be written. The repo keeps
+                   serving them from memory until it goes away. */
+                syslog(LOG_ERR, "StepMergeMem: shutting down with a written file unpublished; its layers stay in memory");
+                delete new_disk;
+                ReleaseMapping(mapping);
+                return;
+              }
+              /* This runner hosts only the merge loop, which sleeps between merges anyway. */
+              std::this_thread::sleep_for(std::chrono::milliseconds(std::min<size_t>(1UL << std::min<size_t>(failures, 10UL), 1000UL)));
+            }
           }
+          /* Published: from here on there is nothing to roll back. */
+          can_retry = false;
         } catch (const exception &ex) {
-          if (!can_retry || !dynamic_cast<const Disk::Util::TDiskFull *>(&ex)) {
+          /* Retryable shortages are logged, rate-limited, where they are retried. */
+          if (!can_retry || !(dynamic_cast<const Disk::Util::TDiskFull *>(&ex) || dynamic_cast<const std::bad_alloc *>(&ex))) {
             syslog(LOG_ERR, "Caught exception in StepMergeMem [%s]", ex.what());
           }
           if (can_retry) {
@@ -897,13 +1037,23 @@ void TRepo::StepMergeMem() {
     }  // release MemMerge lock
   } catch (const std::bad_alloc &) {
     if (!can_retry) {
-      syslog(LOG_EMERG, "StepMergeMem caught error [std::bad_alloc] after publishing; aborting");
-      abort();
+      /* Not from the pools any more (#607): the copy, the file's disk layer and the publish are
+         all covered above. What is left is a heap allocation failing in TDataFile after the
+         file map took the file. The merged layers stay taken, so their data is never written
+         twice; they keep serving reads from memory, and later merges skip them. */
+      syslog(LOG_ERR, "StepMergeMem: out of memory after its file reached the file map; its layers stay in memory");
+      EnqueueMergeMem();
+      return;
     }
     /* Out of pool space before anything was published (#584). The layers
        that would free it are still queued for the layer cleaner, so try
-       again on the next merge cycle rather than abort. */
-    syslog(LOG_WARNING, "StepMergeMem out of pool space; merge rolled back, will retry");
+       again on the next merge cycle rather than abort. Logged rate-limited: on a fiber the
+       pools fail at once (#607), so this can come round every merge cycle. */
+    static std::atomic<size_t> pool_misses(0UL);
+    const size_t misses = ++pool_misses;
+    if ((misses & (misses - 1UL)) == 0UL) {
+      syslog(LOG_ERR, "StepMergeMem out of pool space; merge rolled back, will retry (%ld times so far)", misses);
+    }
     EnqueueMergeMem();
   } catch (const Disk::Util::TDiskFull &ex) {
     if (!can_retry) {
@@ -927,8 +1077,9 @@ size_t TRepo::AddMapping(TDataLayer *layer) {
     TMapping *last = MappingCollection.TryGetLastMember();
     last->Incr();
     assert(last);
+    TMapping *new_mapping = nullptr;
     try {
-      TMapping *new_mapping = new TMapping(this);
+      new_mapping = new TMapping(this);
       for (TMapping::TEntryCollection::TCursor csr(last->GetEntryCollection()); csr; ++csr) {
         new TMapping::TEntry(new_mapping, csr->GetLayer());
         ++total;
@@ -939,7 +1090,14 @@ size_t TRepo::AddMapping(TDataLayer *layer) {
       last->Decr();
       assert(MappingCollection.TryGetLastMember() == new_mapping);
     } catch (const std::exception &ex) {
-      syslog(LOG_ERR, "Error in TRepo::AddMapping [%s]", ex.what());
+      /* The new mapping became the current one when it was constructed, so a half-built one
+         would hide layers from every reader. Delete it (which makes `last` current again)
+         before dropping our hold on `last`: the repo is then as it was (#607). */
+      delete new_mapping;
+      last->Decr();
+      if (!dynamic_cast<const std::bad_alloc *>(&ex)) {
+        syslog(LOG_ERR, "Error in TRepo::AddMapping [%s]", ex.what());
+      }
       throw;
     }
   }  // release Mapping lock
@@ -1284,6 +1442,15 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
         TDiskLayer *gen_layer_to_tail = nullptr;
         size_t num_keys = 0U;
         TSequenceNumber lowest_seq = numeric_limits<uint64_t>::max(), highest_seq = 0UL;
+        /* The tailed file's disk layer, taken before the file is written (#627). */
+        std::optional<TDiskLayerSlot> disk_slot;
+        auto hand_back = [&] {
+          if (gen_layer_to_tail) {
+            std::lock_guard<std::mutex> lock(MergeLock);
+            gen_layer_to_tail->UnmarkTaken();
+          }
+          ReleaseMapping(mapping);
+        };
         try {
           /* acquire Merge lock */ {
             std::lock_guard<std::mutex> lock(MergeLock);
@@ -1299,22 +1466,24 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           }
           if (gen_layer_to_tail) {
             syslog(LOG_INFO, "Tailing file [%ld] with [%ld] num keys", gen_id_to_tail, num_keys);
+            disk_slot.emplace();
             size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsTailingAllowed(), true);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
             }
-            new_merge_disk = new TDiskLayer(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
+            new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
           }
         } catch (const Disk::Util::TDiskFull &ex) {
           /* #590: as in StepMergeDisk, hand the layer back. Tailing runs once per request
              (TServer::TailGlobalPov), not from a queue, so report it and don't retry. */
-          if (gen_layer_to_tail) {
-            std::lock_guard<std::mutex> lock(MergeLock);
-            gen_layer_to_tail->UnmarkTaken();
-          }
-          ReleaseMapping(mapping);
+          hand_back();
           syslog(LOG_ERR, "StepTail out of disk space [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
+          return;
+        } catch (const std::bad_alloc &ex) {
+          /* #627: likewise for pool space. MergeFiles has written nothing it keeps. */
+          hand_back();
+          syslog(LOG_ERR, "StepTail out of pool space [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
           return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepTail [1083] caught error [%s]", ex.what());
@@ -1325,60 +1494,26 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           ReleaseMapping(mapping);
           throw;
         }
-        try {
-          if (gen_layer_to_tail) {
-            assert(new_merge_disk);
-            /* acquire Mapping lock */ {
-              std::lock_guard<std::mutex> lock(MappingLock);
-              size_t total_disk_layers = 0U;
-              bool has_merge_candidate = false;
-              TMapping *cur_mapping = MappingCollection.TryGetLastMember();
-              cur_mapping->Incr();
-              try {
-                TMapping *new_mapping = new TMapping(this);
-                assert(cur_mapping);
-                for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
-                  assert(cur_csr->GetLayer() != new_merge_disk);
-                  bool found = false;
-                  if (gen_layer_to_tail == cur_csr->GetLayer()) {
-                    gen_layer_to_tail->MarkForDelete();
-                    found = true;
-                  }
-                  if (!found) {
-                    new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
-                    if (cur_csr->GetLayer()->GetKind() == TDataLayer::Disk) {
-                      ++total_disk_layers;
-                    }
-                  }
-                }
-                new TMapping::TEntry(new_mapping, new_merge_disk);
-                ++total_disk_layers;
-                has_merge_candidate = HasDiskMergeCandidate(new_mapping);
-                cur_mapping->Decr();
-              } catch (const std::exception &ex) {
-                syslog(LOG_EMERG, "StepTail [1161] caught error [%s]", ex.what());
-                cur_mapping->Decr();
-                throw;
-              } catch (...) {
-                syslog(LOG_EMERG, "StepTail [1165] caught error");
-                cur_mapping->Decr();
-                throw;
-              }
-              /* #325: skip the pass when its scan would provably find nothing mergeable;
-                 see HasDiskMergeCandidate. */
-              if (total_disk_layers >= 3 && has_merge_candidate) {
-                EnqueueMergeDisk();
-              }
-            }
+        if (gen_layer_to_tail) {
+          assert(new_merge_disk);
+          try {
+            PublishDiskMerge({gen_layer_to_tail}, new_merge_disk);
+          } catch (const std::bad_alloc &ex) {
+            /* #627: the half-built mapping is gone; drop the tailed file and hand the layer
+               back. */
+            DiscardDiskMerge({gen_layer_to_tail}, new_merge_disk);
+            ReleaseMapping(mapping);
+            syslog(LOG_ERR, "StepTail out of pool space publishing [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
+            return;
+          } catch (const std::exception &ex) {
+            syslog(LOG_EMERG, "StepTail [1176] caught error [%s]", ex.what());
+            ReleaseMapping(mapping);
+            throw;
+          } catch (...) {
+            syslog(LOG_EMERG, "StepTail [1180] caught error");
+            ReleaseMapping(mapping);
+            throw;
           }
-        } catch (const std::exception &ex) {
-          syslog(LOG_EMERG, "StepTail [1176] caught error [%s]", ex.what());
-          ReleaseMapping(mapping);
-          throw;
-        } catch (...) {
-          syslog(LOG_EMERG, "StepTail [1180] caught error");
-          ReleaseMapping(mapping);
-          throw;
         }
         ReleaseMapping(mapping);
       }
@@ -1387,6 +1522,67 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
     syslog(LOG_EMERG, "StepTail [1188] caught error [%s]", ex.what());
     abort();
   }
+}
+
+void TSafeRepo::PublishDiskMerge(const std::vector<TDiskLayer *> &input_layers, TDiskLayer *merged_layer) {
+  assert(merged_layer);
+  std::lock_guard<std::mutex> lock(MappingLock);
+  TMapping *cur_mapping = MappingCollection.TryGetLastMember();
+  assert(cur_mapping);
+  cur_mapping->Incr();
+  TMapping *new_mapping = nullptr;
+  size_t total_disk_layers = 0U;
+  try {
+    new_mapping = new TMapping(this);
+    for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
+      assert(cur_csr->GetLayer() != merged_layer);
+      if (std::find(input_layers.begin(), input_layers.end(), cur_csr->GetLayer()) == input_layers.end()) {
+        new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
+        if (cur_csr->GetLayer()->GetKind() == TDataLayer::Disk) {
+          ++total_disk_layers;
+        }
+      }
+    }
+    new TMapping::TEntry(new_mapping, merged_layer);
+    ++total_disk_layers;
+  } catch (...) {
+    /* The new mapping became the last member, so the current one, when it was constructed.
+       Deleting it (and the entries it has) makes cur_mapping current again, as in
+       TRepo::AddMapping (#607). */
+    delete new_mapping;
+    cur_mapping->Decr();
+    throw;
+  }
+  for (TDiskLayer *layer : input_layers) {
+    layer->MarkForDelete();
+  }
+  const bool has_merge_candidate = HasDiskMergeCandidate(new_mapping);
+  cur_mapping->Decr();
+  /* #325: skip the pass when its scan would provably find nothing mergeable; see
+     HasDiskMergeCandidate. */
+  if (total_disk_layers >= 3 && has_merge_candidate) {
+    EnqueueMergeDisk();
+  }
+}
+
+void TSafeRepo::DiscardDiskMerge(const std::vector<TDiskLayer *> &input_layers, TDiskLayer *merged_layer) {
+  assert(merged_layer);
+  const size_t gen_id = merged_layer->GetGenId();
+  /* Not marked for delete, so its destructor leaves the file alone. */
+  delete merged_layer;
+  try {
+    RemoveFile(gen_id, false);
+  } catch (const std::exception &ex) {
+    /* Then the file's blocks stay used until a restart, which drops a file whose sequence range
+       another file covers (ReConstructFromDisk). Its data is all in the inputs. */
+    syslog(LOG_ERR, "could not remove unpublished merge file [%ld]: [%s]", gen_id, ex.what());
+  }
+  /* acquire Merge lock */ {
+    std::lock_guard<std::mutex> lock(MergeLock);
+    for (TDiskLayer *layer : input_layers) {
+      layer->UnmarkTaken();
+    }
+  }  // release Merge lock
 }
 
 void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
@@ -1401,6 +1597,23 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
         std::vector<TDiskLayer *> gen_layer_vec;
         size_t num_keys = 0U;
         TSequenceNumber lowest_seq = numeric_limits<uint64_t>::max(), highest_seq = 0UL;
+        /* The merged file's disk layer, taken before the file is written (#627): once the file
+           is written, failing to record it would mean undoing the write. */
+        std::optional<TDiskLayerSlot> disk_slot;
+        /* MergeFiles has freed whatever it reserved, so hand the inputs back and try again later.
+           Unmarking makes this pair mergeable again without a mapping install, which is what
+           normally re-runs the merge gate (see HasDiskMergeCandidate), so re-enqueue
+           explicitly. */
+        auto hand_back = [&](const char *what_ran_out, const char *err) {
+          /* acquire Merge lock */ {
+            std::lock_guard<std::mutex> lock(MergeLock);
+            for (TDiskLayer *layer : gen_layer_vec) {
+              layer->UnmarkTaken();
+            }
+          }  // release Merge lock
+          ReleaseMapping(mapping);
+          EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", err, what_ran_out));
+        };
         try {
           //std::map<size_t, std::vector<TDiskLayer *>> gen_to_gen_id_map;
           /* acquire Merge lock */ {
@@ -1434,6 +1647,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
             }
           }  // release Merge lock
           if (gen_id_vec.size() > 0) {
+            disk_slot.emplace();
             /* Merge as a tail merge, dropping each input's superseded versions (#592). Otherwise
                every version of every key survives every merge, and disk use grows with every write
                ever made. --prune_merge_history turns this off.
@@ -1450,21 +1664,16 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
             }
-            new_merge_disk = new TDiskLayer(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
+            new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
           }
         } catch (const Disk::Util::TDiskFull &ex) {
-          /* #590: MergeFiles has freed whatever it reserved, so hand the inputs back and try
-             again later, when the discard runner or other merges may have made room. Unmarking
-             makes this pair mergeable again without a mapping install, which is what normally
-             re-runs the merge gate (see HasDiskMergeCandidate), so re-enqueue explicitly. */
-          /* acquire Merge lock */ {
-            std::lock_guard<std::mutex> lock(MergeLock);
-            for (TDiskLayer *layer : gen_layer_vec) {
-              layer->UnmarkTaken();
-            }
-          }  // release Merge lock
-          ReleaseMapping(mapping);
-          EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", ex.what()));
+          /* #590 */
+          hand_back("disk space", ex.what());
+          return;
+        } catch (const std::bad_alloc &ex) {
+          /* #627: the same, for pool space. Nothing is written yet: the disk layer slot comes
+             before MergeFiles, and MergeFiles keeps no file when it throws. */
+          hand_back("pool space", ex.what());
           return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepMergeDisk [1113] caught error [%s]", ex.what());
@@ -1475,64 +1684,27 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           ReleaseMapping(mapping);
           throw;
         }
-        try {
-          if (gen_id_vec.size() > 0) {
-            assert(new_merge_disk);
-            assert(gen_layer_vec.size() == gen_id_vec.size());
-            /* acquire Mapping lock */ {
-              std::lock_guard<std::mutex> lock(MappingLock);
-              size_t total_disk_layers = 0U;
-              bool has_merge_candidate = false;
-              TMapping *cur_mapping = MappingCollection.TryGetLastMember();
-              cur_mapping->Incr();
-              try {
-                TMapping *new_mapping = new TMapping(this);
-                assert(cur_mapping);
-                for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
-                  assert(cur_csr->GetLayer() != new_merge_disk);
-                  bool found = false;
-                  for (auto layer : gen_layer_vec) {
-                    if (layer == cur_csr->GetLayer()) {
-                      layer->MarkForDelete();
-                      found = true;
-                      break;
-                    }
-                  }
-                  if (!found) {
-                    new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
-                    if (cur_csr->GetLayer()->GetKind() == TDataLayer::Disk) {
-                      ++total_disk_layers;
-                    }
-                  }
-                }
-                new TMapping::TEntry(new_mapping, new_merge_disk);
-                ++total_disk_layers;
-                has_merge_candidate = HasDiskMergeCandidate(new_mapping);
-                cur_mapping->Decr();
-              } catch (const std::exception &ex) {
-                syslog(LOG_EMERG, "StepMergeDisk [1161] caught error [%s]", ex.what());
-                cur_mapping->Decr();
-                throw;
-              } catch (...) {
-                syslog(LOG_EMERG, "StepMergeDisk [1165] caught error");
-                cur_mapping->Decr();
-                throw;
-              }
-              /* #325: skip the pass when its scan would provably find nothing mergeable;
-                 see HasDiskMergeCandidate. */
-              if (total_disk_layers >= 3 && has_merge_candidate) {
-                EnqueueMergeDisk();
-              }
-            }
+        if (gen_id_vec.size() > 0) {
+          assert(new_merge_disk);
+          assert(gen_layer_vec.size() == gen_id_vec.size());
+          try {
+            PublishDiskMerge(gen_layer_vec, new_merge_disk);
+          } catch (const std::bad_alloc &ex) {
+            /* #627: the merged file is written, but no reader has it, and the inputs still hold
+               all its data. Drop it and retry the merge later, as when it runs out of disk. */
+            DiscardDiskMerge(gen_layer_vec, new_merge_disk);
+            ReleaseMapping(mapping);
+            EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", ex.what(), "pool space"));
+            return;
+          } catch (const std::exception &ex) {
+            syslog(LOG_EMERG, "StepMergeDisk [1176] caught error [%s]", ex.what());
+            ReleaseMapping(mapping);
+            throw;
+          } catch (...) {
+            syslog(LOG_EMERG, "StepMergeDisk [1180] caught error");
+            ReleaseMapping(mapping);
+            throw;
           }
-        } catch (const std::exception &ex) {
-          syslog(LOG_EMERG, "StepMergeDisk [1176] caught error [%s]", ex.what());
-          ReleaseMapping(mapping);
-          throw;
-        } catch (...) {
-          syslog(LOG_EMERG, "StepMergeDisk [1180] caught error");
-          ReleaseMapping(mapping);
-          throw;
         }
         ReleaseMapping(mapping);
         if (!gen_id_vec.empty()) {
@@ -1738,6 +1910,21 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     out_num_keys = fold_data_file.GetNumKeys();
     out_saved_low_seq = fold_data_file.GetLowestSequence();
     out_saved_high_seq = fold_data_file.GetHighestSequence();
+  } catch (const std::bad_alloc &) {
+    /* #627: the fold holds an update and an entry for every key of the merged file in the
+       update pools at once, so a big enough file can never fold, whatever the pools' reserve
+       (#607). Folding only bounds read amplification: the unfolded file is a correct result,
+       as on the fast path above, and a later merge that takes it in folds again. The fold's
+       own output freed itself (TDataFile, before the file map has it). */
+    static std::atomic<size_t> fold_misses(0UL);
+    const size_t misses = ++fold_misses;
+    if ((misses & (misses - 1UL)) == 0UL) {
+      syslog(LOG_ERR, "MergeFiles: no pool space to fold %ld keys; keeping the merge unfolded (%ld times so far)", merge_data_file.GetNumKeys(), misses);
+    }
+    out_num_keys = merge_data_file.GetNumKeys();
+    out_saved_low_seq = merge_data_file.GetLowestSequence();
+    out_saved_high_seq = merge_data_file.GetHighestSequence();
+    return intermediate_gen_id;
   } catch (const std::exception &ex) {
     /* The fold's own output frees itself (it is a TDataFile), but the intermediate file is
        complete and in the file map, and no layer owns it, so nothing else would ever remove it
