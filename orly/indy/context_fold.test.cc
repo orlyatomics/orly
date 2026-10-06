@@ -86,8 +86,9 @@ Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transa
 
 Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize);
 
-Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 100UL);
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 200UL);
+/* Room for HotKeyFoldDedupIsLinear's 4,000 unmerged writes. */
+Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 5000UL);
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 5000UL);
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -503,6 +504,58 @@ FIXTURE(MultDeferredFold) {
     run_scenario("Assign4_then_Mult5",     {{TMutator::Assign,4},{TMutator::Mult,5}},       20);
     /* A newer destructive Assign masks older mult history. */
     run_scenario("Mult6_then_Assign10",    {{TMutator::Mult,6},{TMutator::Assign,10}},      10);
+
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #696: reading a hot `+=` key folds every unmerged entry on it, and the fold
+   dedups those entries by UpdateId. The dedup used to scan a vector of the ids
+   seen so far, so a key with W unmerged entries cost W(W-1)/2 comparisons to
+   read. Count the dedup's work (ids hashed plus ids compared, not time) at W
+   and 8W: it must stay linear in W, and the value must still be W. */
+FIXTURE(HotKeyFoldDedupIsLinear) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Base::TUuid idx_id(TUuid::Twister);
+    const TIndexKey counter_key(idx_id, TKey(make_tuple(1L), &arena, state_alloc));
+
+    /* Commit `writes` distinct `+= 1`s to one key, read it once, and return
+       the dedup's probes for that read. Nothing merges the repo's memory
+       layer here, so every write is an entry the read folds. */
+    auto probes_for = [&](int64_t writes) {
+      Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+      auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+      auto repo = manager->GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      for (int64_t i = 0; i < writes; ++i) {
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena),
+                                         TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        update->AddEntry(counter_key, TKey(1L, &arena, state_alloc), TMutator::Add);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      EXPECT_EQ(context[counter_key], TKey(writes, &arena, state_alloc));
+      return context.GetFoldDedupProbes();
+    };
+
+    const int64_t w = 500;
+    const size_t at_w = probes_for(w), at_8w = probes_for(8 * w);
+    std::printf("HotKeyFoldDedupIsLinear: W=%ld: %zu probes, 8W=%ld: %zu probes\n",
+                static_cast<long>(w), at_w, static_cast<long>(8 * w), at_8w);
+    /* About one hash per entry. The linear scan made W(W-1)/2 comparisons:
+       124,750 and 7,998,000 here. */
+    EXPECT_LE(at_w, static_cast<size_t>(2 * w));
+    EXPECT_LE(at_8w, static_cast<size_t>(2 * 8 * w));
 
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
