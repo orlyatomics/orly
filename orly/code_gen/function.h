@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <set>
 #include <unordered_set>
 
 #include <orly/code_gen/cpp_printer.h>
@@ -144,6 +145,10 @@ namespace Orly {
       /* Write the function's arguments out in C++. */
       void WriteArgs(TCppPrinter &out) const;
 
+      /* Take the named argument by value instead of by const reference, so the
+         body can move from it (#697). */
+      void SetArgByValue(const std::string &name);
+
       /* Writes body of function. */
       void WriteBody(TCppPrinter &out) const;
 
@@ -177,6 +182,7 @@ namespace Orly {
 
       private:
       TArgs Args;
+      std::set<std::string> ByValueArgs;
       TInline::TPtr Body;
       Expr::TExpr::TPtr Expr;
       bool Implicit, KeepMutable;

@@ -43,6 +43,22 @@ namespace Orly {
       return start;
     }
 
+    /* A reduce function that takes its carry by value. orlyc emits one when
+       the body uses `start` where it can be moved from (see TReduce in
+       <orly/code_gen/builder.cc>), so each step can add to the carry in place
+       instead of copying it: collecting N elements costs O(N), not O(N^2)
+       (#697). */
+    template <typename TRes, typename TSrc>
+    using TMovingReduceFunc = std::function<TRes (TRes carry, const TSrc &that)>;
+
+    template <typename TRes, typename TSrc>
+    TRes Reduce(const typename TGenerator<TSrc>::TPtr &gen, const TMovingReduceFunc<TRes, TSrc> &reduce_func, TRes start) {
+      for(auto it = gen->NewCursor(); it; ++it) {
+        start = reduce_func(std::move(start), *it);
+      }
+      return start;
+    }
+
     template <typename TRes, typename TSrc>
     using TFastReduceFunc = std::function<void (TRes &carry, const TSrc &that)>;
 

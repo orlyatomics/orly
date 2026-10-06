@@ -57,6 +57,26 @@ namespace Orly {
       TInline::TPtr Seq, Start;
     }; // TReduce
 
+    /* `std::move(carry)`: a reduce body's one use of `start`, when that use
+       runs once per call. The carry is then taken by value, so moving it lets
+       `start + [that]` add to it in place rather than copy it (#697). */
+    class TMoveCarry : public TInline {
+      NO_COPY(TMoveCarry);
+      public:
+
+      static TInline::TPtr New(const L0::TPackage *package, const TInline::TPtr &carry);
+
+      void WriteExpr(TCppPrinter &out) const override;
+
+      /* Dependency graph */
+      virtual void AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const override;
+
+      private:
+      TMoveCarry(const L0::TPackage *package, const TInline::TPtr &carry);
+
+      TInline::TPtr Carry;
+    }; // TMoveCarry
+
 
   } // CodeGen
 
