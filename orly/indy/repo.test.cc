@@ -141,6 +141,11 @@ class TLatchedFastRepo final
     EnqueueMergeMem();
   }
 
+  /* Run one memory merge, as the merge runner would. */
+  void StepMem() {
+    StepMergeMem();
+  }
+
   protected:
 
   virtual void StepMergeMem() override {
@@ -774,6 +779,14 @@ class TPoolHog {
     return Blocks.size();
   }
 
+  /* Gives back 'n' of the blocks it took, so the pool has exactly that much room. */
+  void Give(size_t n) {
+    for (; n && !Blocks.empty(); --n) {
+      Free(Blocks.back());
+      Blocks.pop_back();
+    }
+  }
+
   void Release() {
     for (void *block : Blocks) {
       Free(block);
@@ -913,6 +926,134 @@ FIXTURE(DiskMergeWithMappingPoolsFull) {
         EXPECT_EQ(fixture.CountLayers(), 1UL);
         EXPECT_TRUE(fixture.ReadsCorrectly());
         fixture.AddFile();
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #691: a memory merge that has written its file but finds no pool room to publish it must not
+   hold the merge runner while it waits. Every repo's memory merge runs on that one runner, and
+   another repo's merge can be exactly what frees the room: merging a repo's memory layers
+   replaces its mapping with a smaller one.
+
+   Repo A (the root) has three disk files and a sealed memory layer to flush. Repo B (a fast
+   repo) has ten memory layers waiting to merge. The mapping entry pool is left with one free
+   entry: too few for A's new mapping (four entries), enough for B's (one), and B's merge frees
+   ten. On the runner, A's merge comes first, then B's, then A's again. A's first merge used to
+   sleep until the pool had room, which nothing on the runner could give it; a watchdog gives the
+   pool back after 5 s so that the test ends. */
+FIXTURE(MemMergePublishWaitsOffTheRunner) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    using TMapping = TSteppedSafeRepo::TMappingType;
+    TRunnerFileCaches file_caches;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Orly::Indy::Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    /* B's merges must not park (see TLatchedFastRepo). */ {
+      std::lock_guard<std::mutex> lock(MergeLatch.Mutex);
+      MergeLatch.Released = true;
+    }
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      TSuprena arena;
+      const Base::TUuid idx_id(TUuid::Twister);
+      auto a = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto b = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false);
+      auto *stepped_a = dynamic_cast<TSteppedSafeRepo *>(a.Get());
+      auto *latched_b = dynamic_cast<TLatchedFastRepo *>(b.Get());
+      if (!EXPECT_TRUE(stepped_a && latched_b)) {
+        std::lock_guard<std::mutex> lock(mut);
+        fin = true;
+        cond.notify_one();
+        return;
+      }
+      auto commit = [&](auto &repo, int64_t key) {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(TIndexKey(idx_id, TKey(make_tuple(key), &arena, state)), TKey(key * 10L, &arena, state), TMutator::Assign);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      auto read = [&](auto &repo, int64_t key) {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        return TKey(&arena, state, context[TIndexKey(idx_id, TKey(make_tuple(key), &arena, state))]);
+      };
+      auto count_layers = [](Orly::Indy::TRepo *repo) {
+        Orly::Indy::TRepo::TView view(repo);
+        return view.GetNumEntries();
+      };
+      /* A: three disk files. */
+      for (int64_t key = 0L; key < 3L; ++key) {
+        commit(a, key);
+        stepped_a->StepMergeMem();
+      }
+      EXPECT_EQ(count_layers(stepped_a), 3UL);
+      /* B: ten memory layers, each sealed by a merge that then gives up. */
+      bool fail_b = true;
+      std::mutex hog_mutex;
+      std::optional<TPoolHog> hog;
+      TSteppedSafeRepo::OnMergeMemSealedForTest = [&](Orly::Indy::TRepo *repo) {
+        if (repo == latched_b && fail_b) {
+          throw std::bad_alloc();
+        }
+        std::lock_guard<std::mutex> lock(hog_mutex);
+        if (repo == stepped_a && !hog) {
+          hog.emplace([] { return TMapping::TEntry::operator new(sizeof(TMapping::TEntry)); },
+                      [](void *ptr) { TMapping::TEntry::operator delete(ptr, sizeof(TMapping::TEntry)); });
+          hog->Give(1UL);
+        }
+      };
+      for (int64_t key = 100L; key < 110L; ++key) {
+        commit(b, key);
+        latched_b->StepMem();
+      }
+      fail_b = false;
+      EXPECT_EQ(count_layers(latched_b), 10UL);
+      /* A's next merge seals one more layer, writes it, and then can't publish. */
+      commit(a, 3L);
+      std::mutex watch_mutex;
+      std::condition_variable watch_cond;
+      bool runner_done = false, watchdog_fired = false;
+      std::thread watchdog([&] {
+        std::unique_lock<std::mutex> lock(watch_mutex);
+        if (!watch_cond.wait_for(lock, 5s, [&] { return runner_done; })) {
+          watchdog_fired = true;
+          std::lock_guard<std::mutex> hog_lock(hog_mutex);
+          if (hog) {
+            hog->Release();
+          }
+        }
+      });
+      /* the runner: A, then B, then A again */
+      stepped_a->StepMergeMem();
+      latched_b->StepMem();
+      stepped_a->StepMergeMem();
+      /* runner done */ {
+        std::lock_guard<std::mutex> lock(watch_mutex);
+        runner_done = true;
+        watch_cond.notify_all();
+      }
+      watchdog.join();
+      EXPECT_FALSE(watchdog_fired);
+      TSteppedSafeRepo::OnMergeMemSealedForTest = nullptr;
+      /* hog released */ {
+        std::lock_guard<std::mutex> lock(hog_mutex);
+        hog.reset();
+      }
+      EXPECT_EQ(count_layers(latched_b), 1UL);
+      EXPECT_EQ(count_layers(stepped_a), 4UL);
+      for (int64_t key = 0L; key < 4L; ++key) {
+        EXPECT_EQ(read(a, key), TKey(key * 10L, &arena, state));
+      }
+      for (int64_t key = 100L; key < 110L; ++key) {
+        EXPECT_EQ(read(b, key), TKey(key * 10L, &arena, state));
       }
     }
     std::lock_guard<std::mutex> lock(mut);
