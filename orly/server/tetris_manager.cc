@@ -30,15 +30,13 @@ using namespace Orly::Indy;
 using namespace Orly::Server;
 
 bool TTetrisManager::IsPlayerPaused(const TUuid &parent_pov_id) const {
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
+  lock_guard<mutex> lock(Mutex);
   return PausedSet.find(parent_pov_id) != PausedSet.end();
 }
 
 void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id) {
   /* Lock the map and locate (or create) the slot where this parent pov's player would be. */
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
+  lock_guard<mutex> lock(Mutex);
   if (Stopping) {
     /* We're tearing down: no new players.  The piece stays unpromoted, exactly as if it had
        arrived just after the player it would have joined was stopped. */
@@ -52,8 +50,7 @@ void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id)
   } else {
     /* The player for this parent pov doesn't exist, so create one, starting with this child. */
     try {
-      //lock_guard<mutex> lock(MasterLock);
-      Fiber::TFiberLock::TLock master_lock(MasterFiberMutex);
+      lock_guard<mutex> master_lock(MasterMutex);
       player = NewPlayer(parent_pov_id, child_pov_id, PausedSet.find(parent_pov_id) != PausedSet.end(), IsMaster);
     } catch (...) {
       PlayerByParentPovId.erase(iter);
@@ -64,39 +61,72 @@ void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id)
 
 void TTetrisManager::Part(const TUuid &parent_pov_id, const TUuid &child_pov_id) {
   /* Lock the map and locate the slot where this parent pov's player would be. */
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
+  lock_guard<mutex> lock(Mutex);
   auto iter = PlayerByParentPovId.find(parent_pov_id);
   if (iter != PlayerByParentPovId.end()) {
-    /* We found the player, so part the child from it. */
-    if (!iter->second->Part(child_pov_id)) {
+    /* We found the player, so part the child from it.  Once its child count reaches zero the
+       player may free itself at any moment, so we keep it alive (ToucherCount) until we are done
+       with it (#636). */
+    TPlayer *player = iter->second;
+    ++(player->ToucherCount);
+    if (!player->Part(child_pov_id)) {
       /* This was the parent's last child, so we'll let it self-destruct quietly in another thread
          and remove it from the map.  The next time we try to join to this parent pov, we'll launch
          another player, even if the old one is still in the process of self-destructing. */
-      iter->second->OnClose();
       PlayerByParentPovId.erase(iter);
+      player->OnClose();
     }
+    /* Last touch. */
+    --(player->ToucherCount);
   }
 }
 
 void TTetrisManager::PausePlayer(const TUuid &parent_pov_id) {
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
-  PausedSet.insert(parent_pov_id);
-  auto iter = PlayerByParentPovId.find(parent_pov_id);
-  if (iter != PlayerByParentPovId.end()) {
-    iter->second->Pause();
+  Fiber::TFiberLock::TLock gate(PauseGate);
+  /* Ask under Mutex, but wait for the answer outside it (#657).  The player may be partway
+     through a round whose commits join or part children, which takes Mutex: waiting for the
+     player while holding Mutex deadlocked the pair, with the player's commit holding the
+     replication queue lock, so every other commit stopped too.  BeginImport() pauses the global
+     pov's player this way. */
+  TPlayer *player = nullptr;
+  /* extra */ {
+    lock_guard<mutex> lock(Mutex);
+    PausedSet.insert(parent_pov_id);
+    auto iter = PlayerByParentPovId.find(parent_pov_id);
+    if (iter != PlayerByParentPovId.end()) {
+      player = iter->second;
+      /* Keep it alive while we wait: its last child may part meanwhile.  It still acknowledges
+         the pause first, because Main() tests Paused before ChildCount. */
+      ++(player->ToucherCount);
+      player->RequestPause();
+    }
+  }
+  if (player) {
+    player->AwaitPause();
+    --(player->ToucherCount);
   }
 }
 
 void TTetrisManager::UnpausePlayer(const TUuid &parent_pov_id) {
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
-  if (PausedSet.erase(parent_pov_id)) {
-    auto iter = PlayerByParentPovId.find(parent_pov_id);
-    if (iter != PlayerByParentPovId.end()) {
-      iter->second->Unpause();
+  Fiber::TFiberLock::TLock gate(PauseGate);
+  TPlayer *player = nullptr;
+  /* extra */ {
+    lock_guard<mutex> lock(Mutex);
+    if (PausedSet.erase(parent_pov_id)) {
+      auto iter = PlayerByParentPovId.find(parent_pov_id);
+      if (iter != PlayerByParentPovId.end()) {
+        player = iter->second;
+        ++(player->ToucherCount);
+      }
     }
+  }
+  if (player) {
+    /* A player constructed paused (a child joined a paused parent) no longer waits for its first
+       round to acknowledge the pause, so it may not have yet (#657).  Wait for that before
+       unpausing.  A player PausePlayer() paused has acknowledged already: this returns at once. */
+    player->AwaitPause();
+    player->Unpause();
+    --(player->ToucherCount);
   }
 }
 
@@ -113,11 +143,14 @@ bool TTetrisManager::TPlayer::Part(const Base::TUuid &child_pov_id) {
   return result;
 }
 
-void TTetrisManager::TPlayer::Pause() {
-  /* Flag the player and park this fiber until Main() acknowledges: TSafeSync
-     holds the waiting frame and re-activates it on Complete() (#376). */
-  Paused = true;
+void TTetrisManager::TPlayer::RequestPause() {
   PausedSync.WaitForMore(1);
+  Paused = true;
+}
+
+void TTetrisManager::TPlayer::AwaitPause() {
+  /* TSafeSync holds the waiting frame and re-activates it on Complete() (#376); if Main() has
+     already completed it, this returns at once. */
   PausedSync.Sync();
 }
 
@@ -129,9 +162,14 @@ void TTetrisManager::TPlayer::Stop() {
      the count hits zero and the player never touches our stack after the flip. */
   std::atomic<bool> stopped(false);
   StopFlag.store(&stopped);
+  /* Keep ourselves alive across the zeroing and the push: Main() frees us once the count is zero
+     and ToucherCount has drained (#636). */
+  ++ToucherCount;
   ChildCount = 0;
-  /* Wake the player in case it is still waiting for permission to work. */
+  /* Wake the player in case it is still waiting for permission to work, or is paused (#657). */
   CanWork.Push();
+  PauseWake.Push();
+  --ToucherCount;
   /* Wait for the player fiber to finish self-destructing.  It runs on the manager's fiber
      scheduler, a different thread, so yielding here cannot starve it.  Server shutdown tears
      us down from a plain thread, so only fiber-yield when we actually are a fiber. */
@@ -145,16 +183,16 @@ void TTetrisManager::TPlayer::Stop() {
 }
 
 void TTetrisManager::TPlayer::Unpause() {
-  assert(Unpaused);
+  assert(PauseHeld);
   /* Signal the player thread to continue. */
-  UnpausedSync.Complete();
-  Unpaused = false;
-  //Unpaused->Push();
-  //Unpaused = nullptr;
+  PauseHeld = false;
+  PauseWake.Push();
 }
 
 void TTetrisManager::TPlayer::OnClose() {
   CanWork.Push();
+  /* A paused player whose last child just parted must still exit (#657). */
+  PauseWake.Push();
 }
 
 TTetrisManager::TPlayer::~TPlayer() {
@@ -165,7 +203,7 @@ TTetrisManager::TPlayer::~TPlayer() {
 }
 
 TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
-    : TetrisManager(tetris_manager), ChildCount(1), StopFlag(nullptr), Paused(false), Unpaused(false) {
+    : TetrisManager(tetris_manager), ChildCount(1), ToucherCount(0UL), StopFlag(nullptr), Paused(false), PauseHeld(false) {
   assert(tetris_manager);
   /* Take the frame from our manager's pool, not TFrame::LocalFramePool: we may be running on a
      thread that has no pool of its own (#633, WsRunner during `unpause`).  See PlayerFramePool. */
@@ -183,30 +221,20 @@ void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
   if (is_master) {
     CanWork.Push();
   }
+  /* Born paused: Main() sees the request before it plays a round.  We used to park here until
+     Main() acknowledged it, but we run inside Join(), under the manager's Mutex and usually inside
+     the joining child's commit, and Main() runs on the Tetris runner, whose thread another
+     player's commit can be holding blocked on the replication queue lock that our commit holds
+     (#657).  Whoever unpauses waits for the acknowledgement instead (UnpausePlayer()). */
   if (is_paused) {
-    //TEventSemaphore sem;
-    //Paused = &sem;
-    Paused = true;
-    PausedSync.WaitForMore(1);
-    try {
-      TetrisFrame->Latch(&TetrisManager->FiberScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TTetrisManager::TPlayer::Main));
-    } catch (...) {
-      FramePool->Free(TetrisFrame);
-      TetrisFrame = nullptr;
-      throw;
-    }
-    /* Park until the newly latched Main() acknowledges the pause -- the
-       frame-parking re-activation queue the 2014 stub wished for is what
-       TSafeSync is (#376). */
-    PausedSync.Sync();
-  } else {
-    try {
-      TetrisFrame->Latch(&TetrisManager->FiberScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TTetrisManager::TPlayer::Main));
-    } catch (...) {
-      FramePool->Free(TetrisFrame);
-      TetrisFrame = nullptr;
-      throw;
-    }
+    RequestPause();
+  }
+  try {
+    TetrisFrame->Latch(&TetrisManager->FiberScheduler, this, static_cast<Fiber::TRunnable::TFunc>(&TTetrisManager::TPlayer::Main));
+  } catch (...) {
+    FramePool->Free(TetrisFrame);
+    TetrisFrame = nullptr;
+    throw;
   }
 }
 
@@ -217,14 +245,20 @@ void TTetrisManager::TPlayer::Main() {
     CanWork.Pop();
     for (;;) {
       if (Paused) {
-        PausedSync.Complete();
+        /* Ready the unpause before acknowledging the pause: once AwaitPause() returns, an
+           UnpausePlayer() may call Unpause() at once (#657). */
         Paused = false;
+        PauseHeld = true;
+        PausedSync.Complete();
         DEBUG_LOG("tetris player %p: pausing", this);
         OnPause();
-        Unpaused = true;
-        UnpausedSync.WaitForMore(1);
         DEBUG_LOG("tetris player %p: paused", this);
-        UnpausedSync.Sync();
+        /* Stay paused until Unpause(), or until there is nothing left to play for: our last child
+           parted, or we are being stopped.  Neither of those can reach a sleeping paused player any
+           other way (#657). */
+        while (PauseHeld && ChildCount) {
+          PauseWake.Pop();
+        }
         DEBUG_LOG("tetris player %p: unpausing", this);
         OnUnpause();
         DEBUG_LOG("tetris player %p: unpaused", this);
@@ -258,6 +292,17 @@ void TTetrisManager::TPlayer::Main() {
       }
     }
     //DEBUG_LOG("tetris player %p: self-destructing", this);
+    /* Our last child may have been parted (or we were stopped) by another thread, which drops
+       our child count to zero and then still touches us: OnClose() and Stop() push CanWork.
+       Seeing the zero count we would otherwise free ourselves, and close CanWork's eventfd, under
+       its feet (#636: pausing a player's only child from WsRunner threw "Bad file descriptor"
+       out of the NO_THROW commit path).  Those callers bracket the whole thing with
+       ToucherCount, so wait for it to drain, as do PausePlayer() and UnpausePlayer() while they
+       wait on us outside the manager's Mutex (#657).  Spin with YieldSlow, so other frames on
+       this runner -- a pauser's re-activation among them -- keep running. */
+    while (ToucherCount.load()) {
+      Fiber::YieldSlow();
+    }
     /* If a Stop() is waiting on us, its stack flag must flip only after we are completely
        dead.  Copy the pointer to our stack first; 'this' is invalid after the delete. */
     std::atomic<bool> *stop_flag = StopFlag.load();
@@ -314,11 +359,11 @@ void TTetrisManager::StopAllPlayers() {
   /* Snatch the whole player map under the lock, but do the actual stopping after releasing it:
      a player that is mid-Play() may be re-entering the manager right now (promotion calls back
      into Join()/Part(), e.g. from indy/repo.cc AppendUpdate), and Stop() waits for that player
-     to die -- waiting while holding FiberMutex deadlocks the pair (#280).  Once 'Stopping' is
+     to die -- waiting while holding Mutex deadlocks the pair (#280).  Once 'Stopping' is
      set, Join() stops spawning players, so the map stays empty for our caller's destructor. */
   std::unordered_map<TUuid, TPlayer *> players;
   /* extra */ {
-    Fiber::TFiberLock::TLock lock(FiberMutex);
+    lock_guard<mutex> lock(Mutex);
     Stopping = true;
     players.swap(PlayerByParentPovId);
   }
@@ -339,10 +384,8 @@ void TTetrisManager::StopAllPlayers() {
 }
 
 void TTetrisManager::BecomeMaster() {
-  //lock_guard<mutex> lock(Mutex);
-  Fiber::TFiberLock::TLock lock(FiberMutex);
-  //lock_guard<mutex> master_lock(MasterLock);
-  Fiber::TFiberLock::TLock master_lock(MasterFiberMutex);
+  lock_guard<mutex> lock(Mutex);
+  lock_guard<mutex> master_lock(MasterMutex);
   IsMaster = true;
   for (const auto &item: PlayerByParentPovId) {
     item.second->BecomeMaster();

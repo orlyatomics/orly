@@ -572,6 +572,39 @@ namespace Orly {
          failed under memory pressure retry on the next AppendUpdate (#250). */
       bool InTetris;
 
+      /* The promotion fence (#636).  A Tetris round promotes a child in two steps: it peeks
+         the child's lowest update, then commits a transaction that pushes that update to the
+         parent and pops it from the child.  A pause that commits in between used to leave the
+         round popping a paused repo and parting it from the player a second time.  The round
+         can't skip the pop once it is committing (the push to the parent is in the same
+         commit), and the pause can't wait for the round from inside its own commit (all
+         commits are serialized on the replication queue lock, which the round needs too).
+         So the two meet here, before either commits:
+
+           * a transaction that peeks this repo takes a promotion hold (TryHoldForPromotion),
+             released when that transaction's popper is destroyed, after its commit;
+           * a pause first registers itself (BeginPause), from which point no new hold is
+             granted, then waits for the holds already taken to be released, then commits;
+             EndPause after the commit lets Tetris peek the repo again.
+
+         A round that has already peeked therefore finishes, pop included, before the pause
+         commits, and a round that peeks later sees the pause (or, once it has committed, no
+         longer has the repo as a child).  Plain atomics, not a lock: the hold is taken with
+         the player's mutex held, and the pause's commit takes that mutex (Part -> OnPart). */
+      inline bool TryHoldForPromotion() NO_THROW;
+
+      inline void ReleasePromotionHold() NO_THROW;
+
+      inline void BeginPause() NO_THROW;
+
+      inline bool IsHeldForPromotion() const NO_THROW;
+
+      inline void EndPause() NO_THROW;
+
+      /* Promotion holds currently taken, and pauses registered (see above). */
+      std::atomic<size_t> PromotionHoldCount;
+      std::atomic<size_t> PauseCount;
+
       /* Transactions drive AppendUpdate / PopLowest / promotion, so they reach
          the protected mutators. */
       friend class L1::TTransaction;
@@ -753,6 +786,38 @@ namespace Orly {
       seq_num_start = LowestSeqNum;
       seq_num_limit = HighestSeqNum;
       next_seq_num = NextUpdate;
+    }
+
+    inline bool TRepo::TryHoldForPromotion() NO_THROW {
+      /* Dekker-style with BeginPause/IsHeldForPromotion, so both sides are seq_cst: either we
+         see the pause and back out, or the pause sees our hold and waits for it. */
+      if (PauseCount.load()) {
+        return false;
+      }
+      ++PromotionHoldCount;
+      if (PauseCount.load()) {
+        --PromotionHoldCount;
+        return false;
+      }
+      return true;
+    }
+
+    inline void TRepo::ReleasePromotionHold() NO_THROW {
+      assert(PromotionHoldCount.load());
+      --PromotionHoldCount;
+    }
+
+    inline void TRepo::BeginPause() NO_THROW {
+      ++PauseCount;
+    }
+
+    inline bool TRepo::IsHeldForPromotion() const NO_THROW {
+      return PromotionHoldCount.load() != 0UL;
+    }
+
+    inline void TRepo::EndPause() NO_THROW {
+      assert(PauseCount.load());
+      --PauseCount;
     }
 
     inline size_t TRepo::GetMemBacklogDepth() {

@@ -131,8 +131,23 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
 
 bool TRepoTetrisManager::TPlayer::TChild::Refresh(const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction) {
   assert(transaction);
-  if (Repo->GetStatus() == Orly::Indy::Normal && Repo->GetSequenceNumberStart() && !PeekedUpdate) {
-    PeekedUpdate = transaction->Peek(Repo);
+  if (!Repo->GetSequenceNumberStart()) {
+    ++Age;
+    return static_cast<bool>(PeekedUpdate);
+  }
+  /* Take the child's promotion hold on this round's transaction first, even when we still hold
+     an update peeked in an earlier round: the hold is what keeps a pause from committing while
+     this round may still promote the child (#636).  Peek takes it as it reads; for an update we
+     already hold, HoldForPromotion takes it alone.  It is refused while a pause of the child is
+     pending, and the child then sits the round out.  Holding it also orders our status read
+     after any pause that has committed. */
+  std::shared_ptr<Indy::TUpdate> peeked;
+  const bool held = PeekedUpdate ? transaction->HoldForPromotion(Repo) : static_cast<bool>(peeked = transaction->Peek(Repo));
+  if (!held || Repo->GetStatus() != Orly::Indy::Normal) {
+    return false;
+  }
+  if (!PeekedUpdate) {
+    PeekedUpdate = std::move(peeked);
     if (PeekedUpdate) {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(PeekedUpdate->GetMetadata().NewState(&PeekedUpdate->GetSuprena(), state_alloc)), MetaRecord);

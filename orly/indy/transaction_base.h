@@ -57,7 +57,16 @@ namespace Orly {
         bool UnPause(const L0::TManager::TPtr<TRepo> &repo,
                      const std::optional<TSequenceNumber> &follow_or_discard = std::optional<TSequenceNumber>());
 
+        /* Peek the repo's lowest unpopped update.  The first peek of a repo in a transaction also
+           takes the repo's promotion hold (TRepo::TryHoldForPromotion, #636) until the transaction
+           is destroyed; if a pause of the repo is pending or under way, the hold is refused and
+           this returns null without attaching anything to the repo. */
         const std::shared_ptr<TUpdate> &Peek(const L0::TManager::TPtr<TRepo> &repo);
+
+        /* Take the repo's promotion hold for this transaction, as Peek does, without reading the
+           update: for a promoter that already holds the update from an earlier transaction's
+           peek.  True iff this transaction now holds it. */
+        bool HoldForPromotion(const L0::TManager::TPtr<TRepo> &repo);
 
         void Prepare();
 
@@ -391,6 +400,9 @@ namespace Orly {
 
           TState State;
 
+          /* True iff we took Repo's promotion hold (#636); our destructor releases it. */
+          bool HoldsPromotion;
+
           mutable std::shared_ptr<TRepo::TView> View;
 
           mutable std::shared_ptr<TUpdate> Update;
@@ -414,9 +426,17 @@ namespace Orly {
 
           TStatus Status;
 
+          /* True iff we registered a pause of Repo (TRepo::BeginPause, #636); our destructor
+             ends it, after the status change has committed. */
+          bool HoldsPause;
+
           friend class TTransaction;
 
         };  // TStatusChanger
+
+        /* Attach a Peek-state popper holding the repo's promotion hold, or return null (attaching
+           nothing) if the hold is refused because a pause of the repo is pending (#636). */
+        TPopper *NewPeeker(const L0::TManager::TPtr<TRepo> &repo);
 
         bool GetCommitFlag() const;
 

@@ -18,8 +18,10 @@
 
 #include <orly/indy/transaction_base.h>
 #include <optional>
+#include <thread>
 
 #include <base/debug_log.h>
+#include <orly/indy/fiber/fiber.h>
 
 using namespace std;
 using namespace Base;
@@ -183,7 +185,25 @@ bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const std::optio
   }
   assert (!follow_or_discard || (*(repo->GetSequenceNumberStart()) >= *follow_or_discard));
   if ((!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard))) {
-    new TStatusChanger(this, repo, Paused);
+    /* Let any Tetris round that has already peeked this repo finish promoting it before the
+       pause can commit, and keep new rounds from peeking it (#636; see TRepo::BeginPause).  We
+       wait here, before the commit, because the round's own commit needs the replication queue
+       lock our commit will hold.  A round is short, and on a slave no round runs at all. */
+    repo->BeginPause();
+    try {
+      while (repo->IsHeldForPromotion()) {
+        if (Fiber::TFrame::LocalFrame) {
+          Fiber::YieldSlow();
+        } else {
+          std::this_thread::yield();
+        }
+      }
+      auto *status_changer = new TStatusChanger(this, repo, Paused);
+      status_changer->HoldsPause = true;
+    } catch (...) {
+      repo->EndPause();
+      throw;
+    }
     return true;
   }
   return false;
@@ -227,11 +247,43 @@ const std::shared_ptr<Orly::Indy::TUpdate> &TTransaction::Peek(const L0::TManage
       };
     }
   } else {
-    popper = new TPopper(this, repo, TPopper::Peek);
+    popper = NewPeeker(repo);
+    if (!popper) {
+      /* A pause of this repo is pending or under way (#636): nothing to promote. */
+      static const std::shared_ptr<TUpdate> no_update;
+      return no_update;
+    }
   }
   popper->DoPeek();
   const auto &ret = popper->GetUpdate();
   return ret;
+}
+
+bool TTransaction::HoldForPromotion(const L0::TManager::TPtr<TRepo> &repo) {
+  TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
+  if (mutation) {
+    if (mutation->GetKind() != TMutation::Popper) {
+      assert(false);  // Cannot attach a Popper alongside a Pusher or StatusChanger
+      throw std::runtime_error("Cannot attach a Popper alongside another kind of mutation on the same repo.");
+    }
+    return dynamic_cast<TPopper *>(mutation)->HoldsPromotion;
+  }
+  return NewPeeker(repo) != nullptr;
+}
+
+TTransaction::TPopper *TTransaction::NewPeeker(const L0::TManager::TPtr<TRepo> &repo) {
+  if (!repo->TryHoldForPromotion()) {
+    return nullptr;
+  }
+  TPopper *popper;
+  try {
+    popper = new TPopper(this, repo, TPopper::Peek);
+  } catch (...) {
+    repo->ReleasePromotionHold();
+    throw;
+  }
+  popper->HoldsPromotion = true;
+  return popper;
 }
 
 void TTransaction::Prepare() {
@@ -646,7 +698,8 @@ TTransaction::TPusher::~TPusher() NO_THROW {
 
 TTransaction::TPopper::TPopper(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, TState state)
     : TMutation(transaction, repo),
-      State(state) {}
+      State(state),
+      HoldsPromotion(false) {}
 
 TTransaction::TPopper::~TPopper() NO_THROW {
   /* NO_THROW commit point; guard the whole body so an allocation failure on the
@@ -673,6 +726,10 @@ TTransaction::TPopper::~TPopper() NO_THROW {
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "~TPopper: swallowing exception on commit path to avoid terminate (#250): %s", ex.what());
   }
+  /* Last: our pop (if any) has landed, so a pause waiting on the repo may now commit (#636). */
+  if (HoldsPromotion) {
+    Repo->ReleasePromotionHold();
+  }
 }
 
 void TTransaction::TPopper::DoPeek() const {
@@ -683,7 +740,7 @@ void TTransaction::TPopper::DoPeek() const {
 }
 
 TTransaction::TStatusChanger::TStatusChanger(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, TStatus status)
-    : TMutation(transaction, repo), Status(status) {}
+    : TMutation(transaction, repo), Status(status), HoldsPause(false) {}
 
 TTransaction::TStatusChanger::~TStatusChanger() NO_THROW {
   /* NO_THROW commit point; guard the whole body so an allocation failure on the
@@ -710,6 +767,10 @@ TTransaction::TStatusChanger::~TStatusChanger() NO_THROW {
     }
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "~TStatusChanger: swallowing exception on commit path to avoid terminate (#250): %s", ex.what());
+  }
+  /* Last: the pause has committed (or been discarded), so Tetris may peek the repo again. */
+  if (HoldsPause) {
+    Repo->EndPause();
   }
 }
 

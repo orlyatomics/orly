@@ -81,8 +81,14 @@ namespace Orly {
            If the result is zero, this function does not call OnPart() and returns false. */
         bool Part(const Base::TUuid &child_pov_id);
 
-        /* Pause operations.  This function will not return until we're actually paused. */
-        void Pause();
+        /* Ask Main() to pause at the top of its next round.  Call under the manager's Mutex; then
+           release it and AwaitPause() (#657). */
+        void RequestPause();
+
+        /* Park until Main() has acknowledged the pause most recently requested.  Returns at once if
+           it already has.  Never call it holding the manager's Mutex: the player may need that mutex
+           (its commits join and part children) to finish the round it is in (#657). */
+        void AwaitPause();
 
         /* Stops this player and causes it to self-destruct.  Blocks until the player does so. */
         void Stop();
@@ -141,8 +147,13 @@ namespace Orly {
 
         /* The number of children currently joined to us.  This starts at one, as we must be constructed with a single child.
            Main() will run as long as this value is non-zero. Atomic because Join/Part mutate it under the manager's
-           FiberMutex while the player's own Main() fiber reads it unlocked each round (#262 follow-up: TSan data race). */
+           Mutex while the player's own Main() fiber reads it unlocked each round (#262 follow-up: TSan data race). */
         std::atomic<size_t> ChildCount;
+
+        /* Threads still touching us after dropping ChildCount (Part() then OnClose(), and Stop()), or
+           waiting on our pause outside the manager's Mutex (PausePlayer(), UnpausePlayer()); Main()
+           won't free us until it drains (#636, #657). */
+        std::atomic<size_t> ToucherCount;
 
         /* Usually null; Stop() points this at a flag on its own stack.  Main() copies the pointer
            to its stack before 'delete this' and flips the flag as its very last act, so neither side
@@ -151,16 +162,19 @@ namespace Orly {
            stopper's wakeup race the delete (#280). */
         std::atomic<std::atomic<bool> *> StopFlag;
 
-        /* Set by Pause(); Main() sees it, completes PausedSync (parking the
-           pauser's fiber until then), and parks itself on UnpausedSync. */
-        bool Paused;
+        /* Set by RequestPause() (or by Start() for a player born paused); Main() sees it, completes
+           PausedSync (re-activating an AwaitPause()), and parks itself on PauseWake.  Atomic:
+           written under the manager's Mutex, read by Main() without it. */
+        std::atomic<bool> Paused;
         Indy::Fiber::TSafeSync PausedSync;
 
-        /* Set by Main() once paused; Unpause() completes UnpausedSync to
-           re-activate the player's parked frame (#376: the fiber-native
-           park/re-activate the 2014 stub wished for). */
-        bool Unpaused;
-        Indy::Fiber::TSafeSync UnpausedSync;
+        /* Set by Main() before it acknowledges a pause, cleared by Unpause().  While it is set,
+           Main() stays parked on PauseWake -- unless it has no children left, so a paused player
+           whose last child parts (or that is stopped) still exits instead of sleeping where no
+           unpause can reach it: Part() takes it out of the map, so UnpausePlayer() can't find it
+           (#657).  Unpause(), OnClose() and Stop() all push PauseWake; Main() re-checks. */
+        std::atomic<bool> PauseHeld;
+        Indy::Fiber::TSingleSem PauseWake;
 
         Base::TEventSemaphore CanWork;
 
@@ -168,6 +182,9 @@ namespace Orly {
            PlayerFramePool, never the constructing thread's (#633). */
         Indy::Fiber::TFrame *TetrisFrame;
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
+
+        /* For ToucherCount. */
+        friend class TTetrisManager;
 
       };  // TTetrisManager::TPlayer
 
@@ -213,9 +230,24 @@ namespace Orly {
       std::mutex PlayerFrameMutex;
       std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool> PlayerFramePool;
 
-      /* Covers 'Players' and 'PausedSet', below. */
-      //mutable std::mutex Mutex;
-      mutable Indy::Fiber::TFiberLock FiberMutex;
+      /* Covers 'PlayerByParentPovId', 'PausedSet' and 'Stopping', below.
+
+         A plain mutex, not a fiber lock, and nothing may park while holding it (#657).  Commits take
+         it from inside their apply: AppendUpdate joins and PopLowest parts a child, holding the repo
+         manager's replication queue lock (a std::mutex) and the child's DataLock.  A fiber lock
+         parks a contended waiter and hands the lock to it on its own runner; if that runner's thread
+         is meanwhile OS-blocked on the replication queue lock (another player's commit on the
+         Tetris runner), the new owner never runs, and the commit that holds the replication queue
+         lock never finishes.  With a plain mutex a contended commit blocks its thread for as long as
+         the holder takes, and every holder here is brief and never waits for a fiber.  The waits
+         that used to happen under it -- PausePlayer() for the player's acknowledgement, and a
+         paused Join() for the new player's -- now happen outside it (PauseGate). */
+      mutable std::mutex Mutex;
+
+      /* Serializes PausePlayer() and UnpausePlayer(), which park waiting for a player to
+         acknowledge a pause.  Taken before Mutex and never by a commit, so parking under it holds
+         up only other pausers (#657). */
+      Indy::Fiber::TFiberLock PauseGate;
 
       /* A mapping from parent point of view's id to its running tetris player.
          A particular parent pov will appear in this map only after at least one call to Join() has named it,
@@ -226,7 +258,7 @@ namespace Orly {
       /* The ids of the parent points of view which are currently paused. */
       std::unordered_set<Base::TUuid> PausedSet;
 
-      /* Set (under FiberMutex) by StopAllPlayers() before it stops the players it snatched from the
+      /* Set (under Mutex) by StopAllPlayers() before it stops the players it snatched from the
          map.  Join() checks it so a piece that lands mid-teardown doesn't spawn a fresh player that
          nobody would ever stop. */
       bool Stopping;
@@ -237,9 +269,9 @@ namespace Orly {
          be touching povs (or us) when our caller's destructor starts tearing them down (#280). */
       std::atomic<size_t> LivePlayerCount;
 
+      /* Covers 'IsMaster'.  Only ever taken under Mutex. */
       bool IsMaster;
-      //std::mutex MasterLock;
-      Indy::Fiber::TFiberLock MasterFiberMutex;
+      std::mutex MasterMutex;
 
     };  // TTetrisManager
 
