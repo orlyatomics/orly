@@ -262,6 +262,9 @@ namespace Orly {
         /* Support for tailing. */
         bool AllowTailing;
 
+        /* Whether to check the store's block accounting and sequence ranges at open (#700). */
+        bool OpenCheck;
+
         /* Whether the global pov's disk merges drop superseded versions (#592). */
         bool PruneMergeHistory;
 

@@ -848,6 +848,12 @@ namespace Orly {
 
           void MarkBlockRangeUsed(const TBlockRange &block_range);
 
+          /* See TVolume. */
+          void ForEachHeldBlock(const std::function<void (size_t block_id)> &cb) const;
+
+          /* See TVolume. */
+          bool IsBlockHeld(size_t block_id) const;
+
           bool Init(const TExtentSet &extent_set);
 
           inline const std::vector<TLogicalExtent> &GetLogicalExtentVec() const {
@@ -1808,6 +1814,49 @@ void TVolume::TStrategy::MarkBlockRangeUsed(const TBlockRange &block_range) {
     syslog(LOG_ERR, "Trying to mark block range used from [%ld] for [%ld] blocks, not supported accross multiple logical extents", block_range.first, block_range.second);
     throw std::logic_error("MarkBlockRangeUsed not supported accross multiple logical extents");
   }  // release block lock
+}
+
+void TVolume::TStrategy::ForEachHeldBlock(const std::function<void (size_t block_id)> &cb) const {
+  /* A consistent copy of both maps, taking the locks in the discard runner's order. */
+  const size_t num_words = BlockMapByteSize / sizeof(size_t);
+  std::vector<size_t> discard_map(num_words), block_map(num_words);
+  /* acquire discard and block locks */ {
+    std::lock_guard<std::mutex> discard_lock(const_cast<std::mutex &>(DiscardMapLock));
+    std::lock_guard<std::mutex> map_lock(const_cast<std::mutex &>(BlockMapLock));
+    std::copy(DiscardMapBuf.get(), DiscardMapBuf.get() + num_words, discard_map.begin());
+    std::copy(BlockMapBuf.get(), BlockMapBuf.get() + num_words, block_map.begin());
+  }
+  constexpr size_t num_per_seg = 8UL * sizeof(size_t);
+  for (size_t word = 0UL; word < num_words; ++word) {
+    size_t held = block_map[word] & ~discard_map[word];
+    while (held) {
+      const size_t block = word * num_per_seg + static_cast<size_t>(__builtin_ctzl(held));
+      held &= held - 1UL;
+      if (block >= NumBlocks) {
+        break;
+      }
+      /* The inverse of MarkBlockRangeUsed's mapping. */
+      const size_t extent_num = block / NumBlocksPerExtent;
+      cb(ExtentVec[extent_num].Start / PhysicalBlockSize + block % NumBlocksPerExtent);
+    }
+  }
+}
+
+bool TVolume::TStrategy::IsBlockHeld(size_t block_id) const {
+  const size_t offset = block_id * PhysicalBlockSize;
+  for (size_t extent_num = 0UL; extent_num < ExtentVec.size(); ++extent_num) {
+    const TLogicalExtent &extent = ExtentVec[extent_num];
+    if (offset >= extent.Start && offset < extent.Start + extent.Span) {
+      const size_t block = ((offset - extent.Start) / PhysicalBlockSize) + (extent_num * NumBlocksPerExtent);
+      if (block >= NumBlocks) {
+        return false;
+      }
+      std::lock_guard<std::mutex> discard_lock(const_cast<std::mutex &>(DiscardMapLock));
+      std::lock_guard<std::mutex> map_lock(const_cast<std::mutex &>(BlockMapLock));
+      return !CheckDiscardBuf(block) && CheckBufBlock(block);
+    }
+  }
+  return false;
 }
 
 void TVolume::TStrategy::DiscardRunner() {
@@ -2856,6 +2905,16 @@ TSpace TVolume::GetSpace() const {
   return Strategy->GetSpace();
 }
 
+void TVolume::ForEachHeldBlock(const std::function<void (size_t block_id)> &cb) const {
+  assert(Strategy);
+  Strategy->ForEachHeldBlock(cb);
+}
+
+bool TVolume::IsBlockHeld(size_t block_id) const {
+  assert(Strategy);
+  return Strategy->IsBlockHeld(block_id);
+}
+
 bool TVolume::Init(const TExtentSet &extent_set) {
   bool success = true;
   switch (Desc.Kind) {
@@ -3079,6 +3138,21 @@ TSpace TVolumeManager::GetSpace() const {
     space += csr->GetSpace();
   }
   return space;
+}
+
+void TVolumeManager::ForEachHeldBlock(const std::function<void (size_t block_id)> &cb) const {
+  for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
+    csr->ForEachHeldBlock(cb);
+  }
+}
+
+bool TVolumeManager::IsBlockHeld(size_t block_id) const {
+  for (TVolumeCollection::TCursor csr(&VolumeCollection); csr; ++csr) {
+    if (csr->IsBlockHeld(block_id)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void TVolumeManager::AppendVolumeUsageReport(std::stringstream &ss) const {

@@ -1142,6 +1142,52 @@ static void InitChild(const string &log_path) {
   _exit(0);
 }
 
+/* Set by the OpenCheckCatchesCorruption fixture before it forks: after the reopen child's own
+   open check, corrupt the block accounting two ways and check again (#700). */
+static bool InjectOpenCheckCorruption = false;
+
+/* Leak a block (allocate it for nobody) and free one block of a live file, then run the
+   open check again and record what it found. */
+static void InjectAndRecheck(TCaseEnv &env, const TRecord &record) {
+  auto *vol_man = env.Engine->GetVolMan();
+  size_t stray = 0UL;
+  vol_man->TryAllocateSequentialBlocks(Disk::Util::TVolume::TDesc::Fast, 1UL, [&stray](const Disk::Util::TBlockRange &range) {
+    stray = range.first;
+  });
+  optional<size_t> freed;
+  vector<pair<Base::TUuid, Disk::TFileObj>> files;
+  env.Engine->GetFileService()->ForEachFile([&files](const Base::TUuid &file_uid, const Disk::TFileObj &file) {
+    files.emplace_back(file_uid, file);
+    return true;
+  });
+  for (const auto &[file_uid, file] : files) {
+    if (!freed) {
+      env.Engine->ForEachFileBlockRange(file.Kind, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize,
+                                        [&freed](const Disk::Util::TBlockRange &range) {
+        if (!freed) {
+          freed = range.first;
+        }
+      });
+    }
+  }
+  if (!freed) {
+    record.Put("inject", "no file to corrupt");
+    return;
+  }
+  vol_man->FreeSequentialBlocks(Disk::Util::TBlockRange(*freed, 1UL));
+  const auto check = env.Engine->CheckOpenConsistency();
+  record.Put("inject_leaked_ok", check.Leaked == vector<size_t>{stray} ? "1" : "0");
+  record.Put("inject_unheld_ok", check.Unheld == vector<size_t>{*freed} ? "1" : "0");
+  string fatal = "0";
+  try {
+    Disk::ReportOpenCheck(check);
+  } catch (const Disk::TOpenCheckFailed &) {
+    fatal = "1";
+  }
+  record.Put("inject_fatal", fatal);
+  record.Put("inject", "done");
+}
+
 /* Child B: open a new engine over the image a power loss left, and check it. */
 [[noreturn]] static void RunReopenChild(const string &case_name, const string &dir) {
   InitChild(dir + "/reopen.log");
@@ -1156,11 +1202,28 @@ static void InitChild(const string &log_path) {
     record.Put("phase", "open");
     try {
       const TFaultImage image = TFaultImage::Load(dir + "/image");
+      const auto open_start = std::chrono::steady_clock::now();
       env.Engine = make_unique<TFaultEngine>(&scheduler, runner_cons, frame_pool_manager, &plan, test_case->GetLayout(), &image, test_case->GetFileInitCb());
+      record.Put("open_us", to_string(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - open_start).count()));
       record.Put("phase", "verify");
       record.Put("verify", test_case->Verify(env, op_record));
       record.Put("phase", "leak");
       record.Put("leak", to_string(test_case->GetLeak(env)));
+      /* The open-time consistency check orlyi runs (#700) must agree: nothing unsafe, and a
+         leak exactly when the count above finds one. */
+      if (!test_case->GetFileInitCb()) {
+        record.Put("phase", "open_check");
+        const auto check = env.Engine->CheckOpenConsistency();
+        record.Put("open_check_leaked", to_string(check.Leaked.size()));
+        record.Put("open_check_unsafe", to_string(check.Unheld.size() + check.Shared.size()));
+        record.Put("open_check_seq", to_string(check.SeqProblems.size()));
+        record.Put("open_check_us", to_string(static_cast<size_t>(check.Seconds * 1e6)));
+        record.Put("open_check_files", to_string(check.NumFiles));
+        record.Put("open_check_blocks", to_string(check.NumOwned));
+        if (InjectOpenCheckCorruption) {
+          InjectAndRecheck(env, record);
+        }
+      }
       record.Put("phase", "close");
       test_case->Close(env);
     } catch (const exception &ex) {
@@ -1234,7 +1297,7 @@ struct TRun {
   /* The fault fired. */
   bool Reached = false;
 
-  /* "ok", or a failure category: "abort", "hang", "crash", "leak", "lost", "reopen". */
+  /* "ok", or a failure category: "abort", "hang", "crash", "leak", "lost", "reopen", "open-check". */
   string Outcome;
 
   string Detail;
@@ -1283,9 +1346,19 @@ static TRun RunOne(const string &case_name, const TMode &mode, size_t n, const s
       } else if (reopen.count("verify") && !reopen.at("verify").empty()) {
         run.Outcome = "lost";
         run.Detail = reopen.at("verify");
+      } else if (reopen.count("open_check_unsafe") && reopen.at("open_check_unsafe") != "0") {
+        run.Outcome = "open-check";
+        run.Detail = "the open check found " + reopen.at("open_check_unsafe") + " owned blocks free or owned twice";
       } else if (!reopen.count("leak") || reopen.at("leak") != "0") {
         run.Outcome = "leak";
         run.Detail = "after reopen: " + (reopen.count("leak") ? reopen.at("leak") : string("?")) + " blocks";
+        if (reopen.count("open_check_leaked")) {
+          run.Detail += " (the open check reports " + reopen.at("open_check_leaked") + " leaked)";
+        }
+      } else if (reopen.count("open_check_leaked") && (reopen.at("open_check_leaked") != "0" || reopen.at("open_check_seq") != "0")) {
+        run.Outcome = "open-check";
+        run.Detail = "the open check reports " + reopen.at("open_check_leaked") + " leaked blocks and " + reopen.at("open_check_seq") +
+                     " sequence range problems on a store with none";
       } else {
         run.Outcome = "ok";
       }
@@ -1491,6 +1564,51 @@ FIXTURE(FoldMergeCrashBeforeInputRemoval) {
     (void)ignored;
   } else {
     cout << "runs kept in " << root << endl;
+  }
+}
+
+/* The open-time check (#700) on a store of real data and durable files, reopened after a power
+   loss: clean as reopened, then it must find a leaked block and a live block freed, and refuse
+   the open for the second. */
+FIXTURE(OpenCheckCatchesCorruption) {
+  if (!EXPECT_EQ(CountThreads(), 1UL)) {
+    /* fork() needs a single-threaded parent */
+    return;
+  }
+  char root_buf[] = "/tmp/orly_fault_XXXXXX";
+  if (!EXPECT_TRUE(mkdtemp(root_buf) != nullptr)) {
+    return;
+  }
+  const string root = root_buf;
+  auto get = [](const map<string, string> &record, const string &key) {
+    const auto pos = record.find(key);
+    return (pos == record.end()) ? string("?") : pos->second;
+  };
+  InjectOpenCheckCorruption = true;
+  for (const string case_name : {"MergeDisk", "DurableSaveMerge"}) {
+    const string dir = root + "/" + case_name;
+    const TRun run = RunOne(case_name, FindMode("Power"), 1UL, dir);
+    const auto reopen = TRecord::Read(dir + "/reopen");
+    cout << case_name << ": " << run.Outcome << " (" << run.Detail << "); inject " << get(reopen, "inject")
+         << ", leaked found " << get(reopen, "inject_leaked_ok") << ", unheld found " << get(reopen, "inject_unheld_ok")
+         << ", fatal " << get(reopen, "inject_fatal") << endl
+         << "  open " << get(reopen, "open_us") << " us; check " << get(reopen, "open_check_us") << " us over "
+         << get(reopen, "open_check_files") << " files, " << get(reopen, "open_check_blocks") << " blocks" << endl;
+    EXPECT_TRUE(run.Reached);
+    /* As reopened, the store is clean. */
+    EXPECT_EQ(run.Outcome, "ok");
+    EXPECT_EQ(get(reopen, "open_check_leaked"), "0");
+    EXPECT_EQ(get(reopen, "open_check_unsafe"), "0");
+    EXPECT_EQ(get(reopen, "inject"), "done");
+    EXPECT_EQ(get(reopen, "inject_leaked_ok"), "1");
+    EXPECT_EQ(get(reopen, "inject_unheld_ok"), "1");
+    EXPECT_EQ(get(reopen, "inject_fatal"), "1");
+  }
+  InjectOpenCheckCorruption = false;
+  if (!getenv("ORLY_FAULT_KEEP")) {
+    const string cmd = "rm -rf " + root;
+    int ignored = system(cmd.c_str());
+    (void)ignored;
   }
 }
 

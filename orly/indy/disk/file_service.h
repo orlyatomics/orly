@@ -108,6 +108,10 @@ namespace Orly {
 
         inline size_t GetNumFiles() const;
 
+        /* Appends the blocks the file service itself owns: both base images (head, chain and
+           spare) and the append log (#700). */
+        void AppendOwnBlocks(std::vector<size_t> &out) const;
+
         private:
 
         typedef std::unordered_map<Base::TUuid, std::unordered_map<size_t, TFileObj>> TFileMap;
@@ -240,6 +244,9 @@ namespace Orly {
         TFileMap RunnerCopyMap;
         size_t NumRunnerCopyFiles;
 
+        /* Guards the image block vectors, which the runner changes as images grow and shrink,
+           for AppendOwnBlocks (#700). Never held across I/O or a yield. */
+        mutable std::mutex ImageLock;
         std::vector<size_t> Image1BlockIdVec;
         std::vector<size_t> Image2BlockIdVec;
         std::vector<size_t> AppendLogBlockVec;
