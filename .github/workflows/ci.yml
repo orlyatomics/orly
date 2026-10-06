@@ -293,7 +293,7 @@ jobs:
       # too. Each runs to the end, so one failure doesn't hide another.
       - name: Storage and merge unit tests (release)
         run: |
-          tests="orly/atom/kit2 orly/indy/repo orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
+          tests="orly/atom/kit2 orly/indy/key orly/indy/repo orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
           PATH="$PWD/tools:$PATH" tools/jhm -c release $(for t in $tests; do printf '%s.test ' "$t"; done)
           failed=""
           for t in $tests; do

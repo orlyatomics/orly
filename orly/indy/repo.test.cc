@@ -30,6 +30,7 @@
 
 #include <base/scheduler.h>
 #include <orly/indy/context.h>
+#include <orly/indy/disk/merge_data_file.h>
 #include <orly/indy/disk/present_walk_file.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/sim/mem_engine.h>
@@ -498,6 +499,7 @@ FIXTURE(UnfoldedMergeReadsItsHistory) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRunnerFileCaches file_caches;
     const int64_t counter = -1L;
+    const size_t fallbacks = TKey::GetNumSameArenaFallbacks();
     /* the chain of RootMergeFoldsChainOntoBaseOutsideMerge, base outside the merge */ {
       TRootRepoFixture root(true);
       root.KeepMergesUnfolded();
@@ -538,6 +540,51 @@ FIXTURE(UnfoldedMergeReadsItsHistory) {
         EXPECT_EQ(root.Read(key), root.Int(num_rounds * 1000L + key));
       }
     }
+    /* without duplicate notes, no read needed to compare values in full (#674) */
+    EXPECT_EQ(TKey::GetNumSameArenaFallbacks(), fallbacks);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #674: a release merge from before #666 could write two copies of one key's note into its output
+   arena. The arena is ordered, so a reader compares two of its cores by offset, and took the copies
+   for two keys. Build such a file with the merge's test knob and read a `+=` chain out of it: the
+   fold stopped at the first entry that named the other copy, and the counter read 2, not 14. */
+FIXTURE(DuplicateNotesReadAsOneKey) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    const int64_t counter = -1L;
+    Disk::TMergeDataFile::KeepsEqualNotes = true;
+    const size_t fallbacks = TKey::GetNumSameArenaFallbacks();
+    /* the chain of UnfoldedMergeReadsItsHistory, every note kept */ {
+      TRootRepoFixture root(true);
+      root.KeepMergesUnfolded();
+      root.Commit({{counter, 10L, TMutator::Assign}});
+      for (int64_t key = 0L; key < 100L; ++key) {
+        root.Commit({{key, key, TMutator::Assign}});
+      }
+      root.Flush();
+      for (int64_t file = 0L; file < 2L; ++file) {
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Flush();
+      }
+      root.MergeDisk(4UL);
+      EXPECT_EQ(root.Read(counter), root.Int(14L));
+      for (int64_t key = 0L; key < 100L; ++key) {
+        EXPECT_EQ(root.Read(key), root.Int(key));
+      }
+      /* and once more, with the merged file itself an input */
+      root.Commit({{counter, 1L, TMutator::Add}});
+      root.Flush();
+      root.MergeDisk(4UL);
+      EXPECT_EQ(root.Read(counter), root.Int(15L));
+    }
+    Disk::TMergeDataFile::KeepsEqualNotes = false;
+    /* the reads above went through the fallback */
+    EXPECT_GT(TKey::GetNumSameArenaFallbacks(), fallbacks);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

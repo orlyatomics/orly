@@ -1,0 +1,6 @@
+package #1;
+/* Counters for the read-heavy smoke (#674): `+=` writes, then point and range reads that fold
+   each counter's history. */
+bump = ((true) effecting { *<['count', n]>::(int) += 1; }) where { n = given::(int); };
+count = (((*<['count', n]>::(int)) if *<['count', n]>::(int?) is known else 0)) where { n = given::(int); };
+total = ([0..last] reduce start 0 + count(.n: that)) where { last = given::(int); };

@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <orly/atom/kit2.h>
 #include <orly/sabot/get_hash.h>
 #include <orly/sabot/order_states.h>
@@ -88,7 +90,21 @@ namespace Orly {
 
       static inline Atom::TComparison Compare(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
+      /* The number of times an equality test above has found two cores in one ordered arena at
+         different offsets with equal hashes, and so compared their values in full (#674). Without
+         duplicate notes, only a hash collision gets there. */
+      static inline size_t GetNumSameArenaFallbacks();
+
       private:
+
+      /* For two keys whose hashes are equal: true iff. their values are. In an ordered arena a quick
+         comparison goes by offset, and a release merge from before #666 could write two copies of
+         one note there (#674), so when one arena's offsets differ, compare the values in full.
+         Ordering is left to Compare(), which still goes by offset. */
+      static inline bool HaveEqualValues(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+
+      /* See accessor. */
+      static inline std::atomic<size_t> NumSameArenaFallbacks{0UL};
 
       Atom::TCore::TArena *Arena;
 
@@ -257,16 +273,36 @@ namespace Orly {
       return *this;
     }
 
+    inline bool TKey::HaveEqualValues(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
+      Atom::TComparison comp;
+      if (lhs_arena && rhs_arena && lhs.TryQuickOrderComparison(lhs_arena, rhs, rhs_arena, comp)) {
+        /* Only cores in one ordered arena are compared by offset. Every other quick answer, and a
+           quick Eq anywhere, is the values' answer. */
+        if (Atom::IsEq(comp) || lhs_arena != rhs_arena || !lhs_arena->IsOrdered()) {
+          return Atom::IsEq(comp);
+        }
+        NumSameArenaFallbacks.fetch_add(1UL, std::memory_order_relaxed);
+      }
+      void *lhs_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+      void *rhs_state_alloc = reinterpret_cast<uint8_t *>(lhs_state_alloc) + Sabot::State::GetMaxStateSize();
+      return Atom::IsEq(Sabot::OrderStates(*Sabot::State::TAny::TWrapper(lhs.NewState(lhs_arena, lhs_state_alloc)),
+                                           *Sabot::State::TAny::TWrapper(rhs.NewState(rhs_arena, rhs_state_alloc))));
+    }
+
+    inline size_t TKey::GetNumSameArenaFallbacks() {
+      return NumSameArenaFallbacks.load(std::memory_order_relaxed);
+    }
+
     inline bool TKey::EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
       size_t lhs_hash, rhs_hash;
       if (lhs.TryGetQuickHash(lhs_hash) && rhs.TryGetQuickHash(rhs_hash)) {
-        return lhs_hash == rhs_hash && Atom::IsEq(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
+        return lhs_hash == rhs_hash && HaveEqualValues(lhs, lhs_arena, rhs, rhs_arena);
       }
       return Atom::IsEq(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
     }
 
     inline bool TKey::TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      return lhs.ForceGetIndirectHash() == rhs.ForceGetIndirectHash() && Atom::IsEq(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
+      return lhs.ForceGetIndirectHash() == rhs.ForceGetIndirectHash() && HaveEqualValues(lhs, lhs_arena, rhs, rhs_arena);
     }
 
     inline bool TKey::operator==(const TKey &that) const {
@@ -275,12 +311,14 @@ namespace Orly {
 
     inline bool TKey::NeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
       size_t lhs_hash, rhs_hash;
-      return (lhs.TryGetQuickHash(lhs_hash) && rhs.TryGetQuickHash(rhs_hash) && (lhs_hash != rhs_hash)) || Atom::IsNe(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
+      if (lhs.TryGetQuickHash(lhs_hash) && rhs.TryGetQuickHash(rhs_hash)) {
+        return lhs_hash != rhs_hash || !HaveEqualValues(lhs, lhs_arena, rhs, rhs_arena);
+      }
+      return Atom::IsNe(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
     }
 
     inline bool TKey::TupleNeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
-      return (lhs.ForceGetIndirectHash() != rhs.ForceGetIndirectHash()) ||
-              Atom::IsNe(TKey::Compare(lhs, lhs_arena, rhs, rhs_arena));
+      return lhs.ForceGetIndirectHash() != rhs.ForceGetIndirectHash() || !HaveEqualValues(lhs, lhs_arena, rhs, rhs_arena);
     }
 
     inline bool TKey::operator!=(const TKey &that) const {

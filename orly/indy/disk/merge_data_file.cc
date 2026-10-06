@@ -2017,7 +2017,7 @@ class TMergeDataFileImpl {
             TRemapSorter &remap_sorter = *(remap_sorter_vec[file]);
             const Atom::TCore::TNote *const note = merge_note.GetNote();
             const size_t note_size = sizeof(Atom::TCore::TNote) + note->GetRawSize();
-            if (!prev_note || merge_note != *prev_note) {  // new note
+            if (!prev_note || merge_note != *prev_note || TMergeDataFile::KeepsEqualNotes.load(std::memory_order_relaxed)) {  // new note
               if (note_size > max_temp_note_size) {
                 if ((temp_note = reinterpret_cast<Atom::TCore::TNote *>(realloc(temp_note, note_size))) == 0) {
                   free(temp_note);
