@@ -276,6 +276,10 @@ namespace Orly {
           /* Override to call back for each durable object at which we point.
              NOTE: Do NOT invoke any shared pointer copy-constructors or you will deadlock.
              The pointer you call back with may be altered.  In particular, you should expect it to be set null.
+             The manager calls this only when it is about to destroy the object, so a pointer it nulls
+             is never seen again.  A cached object keeps its dependents open: in this manager nothing
+             can reopen one by id once it's gone (reload was never ported, #173), so a cached repo
+             that let go of its parent could never get it back (#661).
              The default implementation of this function returns no dependent objects. */
           virtual bool ForEachDependentPtr(const std::function<bool (TAnyPtr &)> &cb) noexcept;
 
@@ -311,6 +315,12 @@ namespace Orly {
              This is done when the object is adopted by a pointer which is not the object's first.
              NOTE: This function assumes that the manager's mutex has already been obtained. */
           void OnPtrAdoptOld() noexcept;
+
+          /* Detach every dependent pointer (see ForEachDependentPtr()) and append the object each
+             one held to 'dependents'.  The caller owns those references from then on, and must
+             release each one with OnPtrRelease() once it holds no lock of the manager's.  Call only
+             on an object that is about to be destroyed. */
+          void TakeDependents(std::vector<TObj *> &dependents) noexcept;
 
           /* See accessor. */
           TManager *Manager;
@@ -788,10 +798,11 @@ namespace Orly {
         void DestroyObj(TObj *obj) noexcept;
 
         /* If we're caching, insert the given object into the set of closed objects.
-           Discard enough old objects to make room.
+           Discard enough old objects to make room.  A discarded object's dependents are appended to
+           'dependents', for the caller to release once it has dropped the mutex (#661).
            Return true iff. the object is successfully cached.
            This function assumes that the mutex has already been obtained. */
-        bool TryCacheObj(TObj *obj) noexcept;
+        bool TryCacheObj(TObj *obj, std::vector<TObj *> &dependents) noexcept;
 
 
 

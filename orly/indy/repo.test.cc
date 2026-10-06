@@ -156,9 +156,9 @@ class TMyManager
   NO_COPY(TMyManager);
   public:
 
-  TMyManager(Disk::Util::TEngine *engine, Base::TScheduler *scheduler, bool prune_merge_history = true)
+  TMyManager(Disk::Util::TEngine *engine, Base::TScheduler *scheduler, bool prune_merge_history = true, size_t max_repo_cache_size = 100UL)
       : TManager(engine, 1h, 1h, true, prune_merge_history, true, 1000ms, scheduler,
-                 100UL, 100UL, 20UL, MemMergeCoreVec, DiskMergeCoreVec, true) {}
+                 100UL, max_repo_cache_size, 20UL, MemMergeCoreVec, DiskMergeCoreVec, true) {}
 
   /* The sweeps Indy::TManager runs in its destructor. They also remove the files that merges
      retired, which needs ForEachScheduler: ~TManager's own drain runs after this object is gone. */
@@ -549,6 +549,81 @@ FIXTURE(RepoOutlivesItsRunningMerge) {
       merger.join();
       /* with the merge done and nothing else pinning it, the repo is gone */
       EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(repo_id)));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #661: a repo in the cache keeps its parent open.
+   (a) A child with a ttl is closed, so it goes into the cache, and is opened again by id, as a
+       slave opens a replicated repo for each batch. It must still reach its parent: a read of a
+       key only the parent has falls through to it (context.cc), and promotion joins the parent's
+       Tetris player. Caching used to null the parent pointer and leave the optional engaged, so
+       both dereferenced null.
+   (b) A ttl-0 parent with a cached child stays live until the cache discards the child, and goes
+       when it does: the discarded child's reference is released, not leaked. Teardown then has to
+       sweep cached children before the parents they pin. */
+FIXTURE(CachedRepoKeepsItsParent) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Orly::Indy::Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      /* A cache of 4 repos: every repo takes a memory layer, and this test's pool has 100. */
+      TMyManager manager(engine.GetEngine(), &scheduler, true, 4UL);
+      TSuprena arena;
+      const Base::TUuid idx_id(TUuid::Twister);
+      const Base::TUuid root_id(TUuid::Twister), child_id(TUuid::Twister), ttl0_parent_id(TUuid::Twister), ttl0_child_id(TUuid::Twister);
+      auto root = manager.GetRepo(root_id, TTtl::max(), std::nullopt, true);
+      /* extra */ {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(TIndexKey(idx_id, TKey(make_tuple(int64_t(7)), &arena, state)), TKey(int64_t(77), &arena, state), TMutator::Assign);
+        transaction->Push(root, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+
+      /* (a) */
+      manager.GetRepo(child_id, TTtl(3600s), root, true);  // dropped at once: closed, so cached
+      /* extra */ {
+        auto child = manager.TryOpenLiveRepo(child_id);
+        EXPECT_TRUE(static_cast<bool>(child));
+        if (child) {
+          const auto &parent = child->GetParentRepo();
+          EXPECT_TRUE(static_cast<bool>(parent));
+          const bool live = parent && static_cast<bool>(*parent);
+          EXPECT_TRUE(live);
+          if (live) {
+            EXPECT_TRUE((*parent)->GetId() == root_id);
+            TSuprena ctx_arena;
+            TContext context(child, &ctx_arena);
+            EXPECT_EQ(TKey(&arena, state, context[TIndexKey(idx_id, TKey(make_tuple(int64_t(7)), &arena, state))]),
+                      TKey(int64_t(77), &arena, state));
+          }
+        }
+      }
+
+      /* (b) */ {
+        auto ttl0_parent = manager.GetRepo(ttl0_parent_id, TTtl(0s), std::nullopt, true);
+        manager.GetRepo(ttl0_child_id, TTtl(3600s), ttl0_parent, true);  // cached
+      }
+      /* Only the cached child holds the ttl-0 parent now. */
+      EXPECT_TRUE(static_cast<bool>(manager.TryOpenLiveRepo(ttl0_parent_id)));
+      /* Fill the cache: the two children above have the soonest deadlines, so they go first. */
+      for (size_t i = 0; i < 4UL; ++i) {
+        manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl(3600s), root, true);
+      }
+      EXPECT_FALSE(static_cast<bool>(manager.TryOpenLiveRepo(ttl0_child_id)));
+      EXPECT_FALSE(static_cast<bool>(manager.TryOpenLiveRepo(ttl0_parent_id)));
+      /* Teardown: the root is still held by the cached fillers. */
+      root.Reset();
+      EXPECT_TRUE(static_cast<bool>(manager.TryOpenLiveRepo(root_id)));
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

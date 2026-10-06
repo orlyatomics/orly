@@ -249,9 +249,9 @@ TManager::~TManager() {
 }
 
 void TManager::ReleaseDirtySelfPins() {
-  /* Releasing a pin can cascade: a repo whose count hits zero closes,
-     force-releases its parent ptr (possibly closing the parent too), and
-     caching it can evict other closed repos -- all of which mutate
+  /* Releasing a pin can cascade: a repo whose count hits zero closes, and
+     caching it can evict other closed repos, releasing their parents
+     (possibly closing those too) -- all of which mutate
      OpenableObjs/ClosedObjs.  So rescan from the top after every release
      instead of iterating; repo counts at teardown are small. */
   for (;;) {
@@ -274,17 +274,34 @@ void TManager::CloseAllUnreferencedObjects() {
   MergeDiskQueue.RemoveEachMember();
   MergeMemQueue.RemoveEachMember();
   RemoveLayersFromQueue(); /* get rid of any layers that were previously registered in this queue */
-  std::vector<TId> to_erase;
-  for (const auto &item: OpenableObjs) {
-    if (item.second->PtrCount == 0) {
-      to_erase.emplace_back(item.first);
-      /* Teardown sweep: this is a sanctioned discard (#521). */
-      item.second->DiscardSanctioned = true;
-      delete item.second;
+  /* A cached repo holds its parent open (#661), so destroying it can close the parent, which
+     then needs sweeping too.  Sweep until a pass releases no dependents. */
+  for (;;) {
+    std::vector<TId> to_erase;
+    std::vector<TObj *> dependents;
+    for (const auto &item: OpenableObjs) {
+      TObj *obj = item.second;
+      if (obj && obj->PtrCount == 0) {
+        to_erase.emplace_back(item.first);
+        if (obj->Deadline) {
+          ClosedObjs.erase(std::make_pair(*obj->Deadline, item.first));
+        }
+        obj->TakeDependents(dependents);
+        /* Teardown sweep: this is a sanctioned discard (#521). */
+        obj->DiscardSanctioned = true;
+        delete obj;
+      }
     }
-  }
-  for (const auto &id : to_erase) {
-    OpenableObjs.erase(id);
+    for (const auto &id : to_erase) {
+      OpenableObjs.erase(id);
+    }
+    if (dependents.empty()) {
+      break;
+    }
+    /* Each release may cache or destroy its object, so it runs after the scan above. */
+    for (TObj *obj : dependents) {
+      obj->OnPtrRelease();
+    }
   }
   RemoveLayersFromQueue(); /* get rid of all layers pushed by the closing of the open map */
 }
@@ -711,7 +728,7 @@ void TManager::DestroyObj(TObj *obj) noexcept {
   delete obj;
 }
 
-bool TManager::TryCacheObj(TObj *obj) noexcept {
+bool TManager::TryCacheObj(TObj *obj, vector<TObj *> &dependents) noexcept {
   assert(obj);
   bool success = false;
   if (MaxCacheSize) {
@@ -725,6 +742,9 @@ bool TManager::TryCacheObj(TObj *obj) noexcept {
         auto iter = ClosedObjs.begin();
         TObj *cached_obj = iter->second;
         ClosedObjs.erase(iter);
+        /* A cached object still holds its dependents (#661); they outlive it, and are released
+           by our caller once the mutex is free. */
+        cached_obj->TakeDependents(dependents);
         DestroyObj(cached_obj);
       }
       /* Insert this object into the cache in order of its deadline. */
@@ -779,10 +799,28 @@ void TManager::TObj::OnPtrAcquire() noexcept {
   assert(PtrCount > 0);
 }
 
+void TManager::TObj::TakeDependents(vector<TObj *> &dependents) noexcept {
+  ForEachDependentPtr(
+      [this, &dependents](TAnyPtr &ptr) {
+        try {
+          TObj *obj = ptr.ForceRelease();
+          if (obj) {
+            dependents.push_back(obj);
+          }
+        } catch (const exception &ex) {
+          Log(LOG_CRIT, "releasing dependent", ex);
+        }
+        return true;
+      }
+  );
+}
+
 void TManager::TObj::OnPtrRelease() noexcept {
   bool async = false;
   TSem *sem = nullptr;
-  unordered_set<TObj *> dependent_objs;
+  /* A vector, not a set: two objects destroyed here (this one, and one the cache discards to make
+     room for it) may share a parent, and each holds a reference of its own. */
+  vector<TObj *> dependent_objs;
   /* extra */ {
     lock_guard<mutex> lock(Manager->DurableMutex);
     /* Under the lock, like every other access to PtrCount: TPtrs to one repo are released on
@@ -808,25 +846,15 @@ void TManager::TObj::OnPtrRelease() noexcept {
         } catch (const exception &ex) {
           Log(LOG_ERR, "saving", ex);
         }
-        /* Before we cache or delete the object, force it to release all its dependent objects.
-           We'll take responsibility for them here and release them properly outside of the lock. */
-        ForEachDependentPtr(
-            [this, &dependent_objs](TAnyPtr &ptr) {
-              try {
-                TObj *obj = ptr.ForceRelease();
-                if (obj) {
-                  dependent_objs.insert(obj);
-                }
-              } catch (const exception &ex) {
-                Log(LOG_CRIT, "releasing dependent", ex);
-              }
-              return true;
-            }
-        );
-        /* If we saved successfully, try to cache the object. */
-        bool cached = async ? Manager->TryCacheObj(this) : false;
-        /* If the object is not now in the cache, evict it from the openable set and destroy it. */
+        /* If we saved successfully, try to cache the object.  A cached object keeps its dependents
+           open: Open() hands it back exactly as it was, and nothing could restore a pointer
+           released here (#661).  Caching may discard older cached objects, whose dependents we
+           take responsibility for and release properly outside of the lock. */
+        bool cached = async ? Manager->TryCacheObj(this, dependent_objs) : false;
+        /* If the object is not now in the cache, release its dependents, evict it from the
+           openable set and destroy it. */
         if (!cached) {
+          TakeDependents(dependent_objs);
           Manager->DestroyObj(this);
         }
       } else {
@@ -839,29 +867,15 @@ void TManager::TObj::OnPtrRelease() noexcept {
             Log(LOG_CRIT, "deleting", ex);
           }
         }
-        /* Before we cache or delete the object, force it to release all its dependent objects.
+        /* Before we delete the object, force it to release all its dependent objects.
            We'll take responsibility for them here and release them properly outside of the lock. */
-        ForEachDependentPtr(
-            [this, &dependent_objs](TAnyPtr &ptr) {
-              try {
-                TObj *obj = ptr.ForceRelease();
-                if (obj) {
-                  dependent_objs.insert(obj);
-                }
-              } catch (const exception &ex) {
-                Log(LOG_CRIT, "releasing dependent", ex);
-              }
-              return true;
-            }
-        );
+        TakeDependents(dependent_objs);
         Manager->DestroyObj(this);
       }
     }
   }  // end of mutex lock; after this scope closes, 'this' may be a bad pointer
   /* Release any dependents we found. */
-  for (auto obj: dependent_objs) {
-    stringstream ss;
-    ss << obj->GetId();
+  for (TObj *obj : dependent_objs) {
     obj->OnPtrRelease();
   }
   /* If there's an asynch operation pending, we'll wait for it using the semaphore we stole. */
