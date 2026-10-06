@@ -33,6 +33,21 @@ const Base::TUuid TDurableManager::DurableByIdFileId("20E91BAE-3465-4E9B-918F-C2
 
 const Base::TUuid TDurableManager::TSortedByIdFile::NullId("00000000-0000-0000-0000-000000000000");
 
+/* Make a durable file's blocks durable before the file map names it (#619). The file map's own
+   write syncs only the device holding its append-log sector, and a durable file's blocks are
+   striped across the others, so without this a power loss can leave an acknowledged save in the
+   map with its blocks still in the device cache, and startup aborts reading it. Data files do the
+   same before their InsertFile (data_file.cc, merge_data_file.cc). */
+static void SyncDurableFileBlocks(Orly::Indy::Disk::Util::TEngine *engine, const Orly::Indy::Util::TBlockVec &block_vec) {
+  std::vector<Orly::Indy::Disk::Util::TBlockRange> block_range_vec;
+  for (const auto &iter : block_vec.GetSeqBlockMap()) {
+    block_range_vec.emplace_back(iter.second.first, iter.second.second);
+  }
+  if (!block_range_vec.empty()) {
+    engine->GetVolMan()->SyncToDisk(block_range_vec);
+  }
+}
+
 TDurableManager::TMapping::~TMapping() {
   EntryCollection.DeleteEachMember();
 }
@@ -918,6 +933,7 @@ void TDurableManager::TSortedByIdFile::Write(TMemSlushLayer *mem_layer,
   /* wait for the pages to get flushed */ {
     completion_trigger.Wait();
   }
+  SyncDurableFileBlocks(Engine, BlockVec);
   /* wait for file entry to flush */ {
     file_inserted = true;
     Engine->InsertFile(DurableByIdFileId, TFileObj::TKind::DurableFile, gen_id, BlockVec.Front(), 0UL, BlockVec.Size() * Disk::Util::LogicalBlockSize, NumDurable, 0UL, 0UL, completion_trigger);
@@ -1442,6 +1458,7 @@ void TDurableManager::TMergeSortedByIdFile::Write(const std::vector<size_t> &gen
     }
     completion_trigger.Wait();
   }
+  SyncDurableFileBlocks(Engine, BlockVec);
   /* wait for file entry to flush */ {
     file_inserted = true;
     Engine->InsertFile(DurableByIdFileId, TFileObj::TKind::DurableFile, gen_id, BlockVec.Front(), 0UL, BlockVec.Size() * Disk::Util::LogicalBlockSize, NumDurable, 0UL, 0UL, completion_trigger);

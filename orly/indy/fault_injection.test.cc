@@ -262,14 +262,25 @@ class THostedFiber final
       Fiber::LaunchSlowFiberSched(&Runner, frame_pool_manager);
       Exited.Push();
     });
-    Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
-    frame->Latch(&Runner, this, static_cast<Fiber::TRunnable::TFunc>(&THostedFiber::Run));
+    Frame = Fiber::TFrame::LocalFramePool->Alloc();
+    Frame->Latch(&Runner, this, static_cast<Fiber::TRunnable::TFunc>(&THostedFiber::Run));
   }
 
+  /* The caller has already told the runnable to stop. Cancel first, as ~TFileService does
+     (#631): if the host never ran, neither did the latched frame, so free it here; otherwise the
+     loop is running and will run the fiber, so wait for it to finish (it frees its own frame)
+     before shutting the loop down. Shutting down first could leave the frame latched and never
+     run, and the frame pool's destructor then terminates on it. */
   ~THostedFiber() {
+    const bool hosted = !Scheduler->Cancel(Handle);
+    if (hosted) {
+      RunExited.Pop();
+    }
     Runner.ShutDown();
-    if (Handle && !Scheduler->Cancel(Handle)) {
+    if (hosted) {
       Exited.Pop();
+    } else {
+      Fiber::TFrame::LocalFramePool->Free(Frame);
     }
   }
 
@@ -277,6 +288,7 @@ class THostedFiber final
 
   void Run() {
     (Runnable->*Func)();
+    RunExited.Push();
     Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
   }
 
@@ -287,6 +299,10 @@ class THostedFiber final
   Fiber::TRunnable *Runnable;
 
   Fiber::TRunnable::TFunc Func;
+
+  Fiber::TFrame *Frame;
+
+  TEventSemaphore RunExited;
 
   TScheduler::TJobHandle Handle;
 
@@ -1290,10 +1306,6 @@ struct TExpectedFailure {
 };
 
 static const vector<TExpectedFailure> ExpectedFailures{
-  /* #619: durable files enter the file map before their blocks are synced; startup aborts on
-     an acknowledged file. */
-  {"DurableSaveMerge", "Power", "reopen", 619},
-  {"DurableSaveMerge", "PowerTorn", "reopen", 619},
 };
 
 static bool IsExpected(const TRun &run) {
