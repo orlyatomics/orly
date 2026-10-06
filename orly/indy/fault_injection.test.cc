@@ -1037,6 +1037,13 @@ static void InitChild(const string &log_path) {
     record.Put("phase", "teardown");
     env.Engine.reset();
     record.Put("phase", "done");
+    /* Everything under test has shut down. Don't unwind the fiber scaffolding: when an engine
+       lives only briefly, ~TFileService can cancel its runner's host job before the job runs,
+       and the frame latched onto that runner was never run, so the frame pool's destructor
+       terminates on it ("Stack frame was not unwound properly"), in a fraction of runs (#631).
+       Everything a run checks is done by here; remove this early exit when #631 is fixed. */
+    fflush(nullptr);
+    _exit(0);
   });
   fflush(nullptr);
   _exit(0);
@@ -1069,6 +1076,13 @@ static void InitChild(const string &log_path) {
     record.Put("phase", "teardown");
     env.Engine.reset();
     record.Put("phase", "done");
+    /* Everything under test has shut down. Don't unwind the fiber scaffolding: when an engine
+       lives only briefly, ~TFileService can cancel its runner's host job before the job runs,
+       and the frame latched onto that runner was never run, so the frame pool's destructor
+       terminates on it ("Stack frame was not unwound properly"), in a fraction of runs (#631).
+       Everything a run checks is done by here; remove this early exit when #631 is fixed. */
+    fflush(nullptr);
+    _exit(0);
   });
   fflush(nullptr);
   _exit(0);
