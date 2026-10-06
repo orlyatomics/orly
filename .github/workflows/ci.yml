@@ -357,6 +357,13 @@ jobs:
       - name: Writes to a paused POV don't hang
         run: bash clients/smoke/run-paused-pov.sh
 
+      # #628: 200-write batches on one POV with a 25% memory reserve. The
+      # writer backlog cap counts entries, so no batch may be refused, the
+      # merges and Tetris must never miss a pool block, and the Entry pool must
+      # stay under half full.
+      - name: Batched writes stay within their backlog cap
+        run: bash clients/smoke/run-batch-backlog.sh
+
       # #590: fill a tiny mem-sim disk. Writes must come back refused with
       # insufficient_storage while reads, new sessions and orlyi itself carry on.
       - name: A full disk refuses writes and keeps serving reads

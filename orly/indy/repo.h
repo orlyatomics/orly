@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <unordered_map>
 #include <vector>
@@ -164,6 +165,12 @@ namespace Orly {
          paused or failed repo, which leaves its parent's Tetris and keeps its backlog until it
          is unpaused (#626). */
       inline bool IsBacklogDraining();
+
+      /* How many entries the un-promoted updates of GetMemBacklogDepth hold (#628). A batch is
+         one update with an entry per write, and the memory merge copies entries, so this is the
+         cost the writer backpressure caps. 0 for a root (nothing promotes it) and while the count
+         is unknown (see BacklogEntriesKnown). */
+      inline size_t GetMemBacklogEntries();
 
       /* The sequence number of the oldest unpopped update. */
       inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
@@ -571,6 +578,16 @@ namespace Orly {
       /* The sequence number the next pushed update will take. */
       TSequenceNumber NextUpdate;
 
+      /* #628: how many entries the unpromoted updates hold, kept for a child repo (the only kind
+         Tetris pops), under DataLock. AppendUpdate pushes each update's entry count onto
+         BacklogEntryCounts and PopLowest pops it, since the popped update itself is gone by
+         then. BacklogEntriesKnown is false while the counts don't cover the whole backlog: a repo
+         reconstructed with a backlog, sequence numbers taken by the importer, or a push the
+         heap refused. It turns true again when the backlog drains. */
+      size_t BacklogEntries = 0UL;
+      std::deque<uint32_t> BacklogEntryCounts;
+      bool BacklogEntriesKnown = true;
+
       protected:
 
       /* Manager GC hook: visit the parent-repo pointer so it is kept reachable. */
@@ -871,6 +888,11 @@ namespace Orly {
       return ParentRepo && InTetris.load();
     }
 
+    inline size_t TRepo::GetMemBacklogEntries() {
+      std::lock_guard<std::mutex> lock(DataLock);
+      return BacklogEntriesKnown ? BacklogEntries : 0UL;
+    }
+
     inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
       return LowestSeqNum;
     }
@@ -908,6 +930,8 @@ namespace Orly {
       if (!LowestSeqNum) {
         LowestSeqNum = starting;
       }
+      /* The importer's updates bypass AppendUpdate (#628). */
+      BacklogEntriesKnown = false;
       return starting;
     }
 

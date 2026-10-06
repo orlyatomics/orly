@@ -62,6 +62,12 @@ using namespace Util;
    other reason (the parent's player paused for an import, a deferred Tetris
    join) can't hold a writer forever either.
 
+   The backlog is capped in entries too, at 1/32 of the Update Entry pool
+   (#628). The merge copies entries as well as updates, and a batch is a
+   single update with an entry per write, so a cap in updates alone let a
+   batching POV's backlog hold most of the Entry pool. A single update bigger
+   than the cap waits only until it is promoted itself.
+
    The second is the Update / Update Entry pools past half full, whatever
    holds them: merges need that much room to copy into. That wait is
    bounded, because the pools also hold data that drains slowly or never (a
@@ -75,6 +81,11 @@ using namespace Util;
    the same runners took as long. */
 static size_t GetBacklogCap(size_t backlog_threshold) {
   return std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
+}
+
+/* #628: a POV's backlog is capped in entries too, at 1/32 of the Update Entry pool. */
+static size_t GetBacklogEntryCap() {
+  return std::max<size_t>(Indy::TUpdate::GetEntryPool().GetMaxBlocks() / 32, 1);
 }
 
 /* #626: a write to a paused or failed POV whose backlog has reached the cap is refused before
@@ -99,14 +110,18 @@ static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRe
   if (status == Indy::Normal) {
     return;
   }
-  const size_t cap = GetBacklogCap(backlog_threshold);
+  const size_t cap = GetBacklogCap(backlog_threshold), entry_cap = GetBacklogEntryCap();
   const size_t backlog = repo->GetMemBacklogDepth();
-  if (backlog < cap) {
+  /* #628: in entries too, so a paused POV fed batches stops at the same share of the Entry
+     pool as any other POV. */
+  const size_t entries = repo->GetMemBacklogEntries();
+  if (backlog < cap && entries < entry_cap) {
     return;
   }
   std::ostringstream msg;
   msg << "insufficient memory: write refused; this POV is " << (status == Indy::Paused ? "paused" : "failed")
-      << " and already holds " << backlog << " unpromoted updates, the most one POV may hold (" << cap << ")";
+      << " and already holds " << backlog << " unpromoted updates (" << entries << " entries), the most one POV may hold ("
+      << cap << " updates, " << entry_cap << " entries)";
   if (status == Indy::Paused) {
     msg << "; writes are accepted again once it is unpaused and they have been promoted";
   }
@@ -119,6 +134,7 @@ static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &
     return;
   }
   backlog_threshold = GetBacklogCap(backlog_threshold);
+  const size_t backlog_entry_threshold = GetBacklogEntryCap();
   constexpr double pool_threshold = 0.5;
   const auto pools_full = [wait_for_pools] {
     return wait_for_pools
@@ -129,14 +145,18 @@ static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &
   constexpr auto backlog_stall = seconds(5);
   size_t lowest_backlog = std::numeric_limits<size_t>::max();
   auto backlog_deadline = steady_clock::now() + backlog_stall;
+  size_t lowest_entries = std::numeric_limits<size_t>::max();
   const auto backlog_over = [&] {
     const size_t backlog = repo->GetMemBacklogDepth();
-    if (backlog <= backlog_threshold || !repo->IsBacklogDraining()) {
+    /* #628: the entries too, which is what a batch's backlog is made of. */
+    const size_t entries = repo->GetMemBacklogEntries();
+    if ((backlog <= backlog_threshold && entries <= backlog_entry_threshold) || !repo->IsBacklogDraining()) {
       return false;
     }
     const auto now = steady_clock::now();
-    if (backlog < lowest_backlog) {
-      lowest_backlog = backlog;
+    if (backlog < lowest_backlog || entries < lowest_entries) {
+      lowest_backlog = std::min(lowest_backlog, backlog);
+      lowest_entries = std::min(lowest_entries, entries);
       backlog_deadline = now + backlog_stall;
     }
     return now < backlog_deadline;

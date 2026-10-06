@@ -346,6 +346,8 @@ TRepo::TRepo(L0::TManager *manager,
       InTetris(false),
       PromotionHoldCount(0UL),
       PauseCount(0UL) {
+  /* No entry counts for a backlog loaded from disk (#628). */
+  BacklogEntriesKnown = !lowest;
   try {
     /* acquire Mapping lock */ {
       std::lock_guard<std::mutex> lock(MappingLock);
@@ -394,7 +396,20 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
     update->SetSequenceNumber(*new_seq);
     assert(CurMemoryLayer);
     bool was_empty = CurMemoryLayer->IsEmpty();
+    const size_t size_before = CurMemoryLayer->GetSize();
     CurMemoryLayer->Insert(update);
+    /* #628: count the update's entries for the writer backpressure. Only a child's backlog is
+       ever popped, so a root doesn't keep counts. */
+    if (ParentRepo && BacklogEntriesKnown) {
+      const size_t num_entries = CurMemoryLayer->GetSize() - size_before;
+      try {
+        BacklogEntryCounts.push_back(static_cast<uint32_t>(std::min<size_t>(num_entries, std::numeric_limits<uint32_t>::max())));
+        BacklogEntries += num_entries;
+      } catch (const std::bad_alloc &) {
+        /* NO_THROW: stop counting until the backlog drains; the cap in updates still holds. */
+        BacklogEntriesKnown = false;
+      }
+    }
     if (was_empty) {
       EnqueueMergeMem();
     }
@@ -434,11 +449,21 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
     std::lock_guard<std::mutex> lock(DataLock);
     popped_seq = LowestSeqNum;
     next_update = NextUpdate;
+    /* #628 */
+    if (BacklogEntriesKnown && !BacklogEntryCounts.empty()) {
+      assert(BacklogEntries >= BacklogEntryCounts.front());
+      BacklogEntries -= BacklogEntryCounts.front();
+      BacklogEntryCounts.pop_front();
+    }
     if (*LowestSeqNum < *HighestSeqNum) {
       ++(*LowestSeqNum);
     } else {
       LowestSeqNum.reset();
       HighestSeqNum.reset();
+      /* Drained: whatever was unknown is gone with it (#628). */
+      BacklogEntryCounts.clear();
+      BacklogEntries = 0UL;
+      BacklogEntriesKnown = true;
       if (ParentRepo) {
         assert(InTetris);
         Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
