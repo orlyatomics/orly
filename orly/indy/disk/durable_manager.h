@@ -156,6 +156,14 @@ namespace Orly {
 
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
 
+        /* True once the writer or the merger has stopped writing after an I/O error other than
+           a full disk, such as the file service refusing file-map changes (#621). Saves are still
+           accepted and readable from memory, but nothing more reaches the disk until a restart.
+           Also true once a merged input's file could not be removed. */
+        bool HasFailed() const {
+          return WriterFailed || MergerFailed || RemovalFailed;
+        }
+
         /* Kick the writer and wait (bounded) until the current in-memory
            slush layer has been handed to a disk file -- the durable half of
            flush-on-shutdown (#440).  The destructor's semaphore handshake
@@ -217,7 +225,8 @@ namespace Orly {
         bool FlushCurLayer(bool retire_writer);
 
         /* Write UnflushedLayers to disk, oldest first. Returns false, with the rest still queued
-           and their savers released, if the disk is full. Writer fiber only. */
+           and their savers released, if the disk is full or the writer has failed. Writer fiber
+           only. */
         bool WriteUnflushedLayers();
 
         /* Write one memory layer that is already in the mapping as a disk layer, and swap it
@@ -614,6 +623,12 @@ namespace Orly {
 
           inline TDurableLayer(TDurableManager *manager);
 
+          protected:
+
+          TDurableManager *GetManager() const {
+            return Manager;
+          }
+
           private:
 
           TDurableManager *Manager;
@@ -832,6 +847,17 @@ namespace Orly {
            layer cleaner's tick wakes them (KickDiskFullRetries). */
         std::atomic<bool> WriterRetryDue {false};
         std::atomic<bool> MergerRetryDue {false};
+
+        /* Set for good when the writer or merger hits an I/O error that is not a full disk
+           (#621). Retrying is pointless and unsafe after one (the file service refuses every
+           later file-map change, and each retry would write a whole file first), so they stop
+           writing; saves stay in memory, readable, as they do while the disk is full. */
+        std::atomic<bool> WriterFailed {false};
+        std::atomic<bool> MergerFailed {false};
+
+        /* Set when a merged input's file could not be removed; it stays on disk and in the file
+           map, and its blocks stay allocated until a restart. */
+        std::atomic<bool> RemovalFailed {false};
 
         /* Consecutive out-of-space failures, for backoff and logging. */
         std::atomic<size_t> WriterDiskFullStreak {0UL};

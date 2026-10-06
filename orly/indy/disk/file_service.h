@@ -23,7 +23,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
+#include <optional>
 
 #include <unistd.h>
 
@@ -144,6 +146,17 @@ namespace Orly {
 
           inline void Complete(TDiskResult result, const char *err_str);
 
+          /* For a removal: the file as the map held it, to put back if the removal fails. */
+          std::optional<TFileObj> Removed;
+
+          TKind GetKind() const {
+            return Kind;
+          }
+
+          const Base::TUuid &GetFileUUID() const {
+            return FileUUID;
+          }
+
           private:
 
           TQueueMembership::TImpl QueueMembership;
@@ -159,6 +172,13 @@ namespace Orly {
         };  // TOp
 
         void Runner();
+
+        /* Complete every op still queued with 'result', without writing anything. */
+        void CompleteQueuedOps(TDiskResult result, const char *err_str);
+
+        /* Complete an op whose change did not reach the disk. A removal puts its file back in the
+           map: the disk may still name it, so its blocks stay with it (#621). */
+        void FailOp(TOp *op, TDiskResult result, const char *err_str);
 
         /* Load the file map from the base image whose head block is already in 'cur_buf'. On
            success, 'chain_out' holds the image's blocks after the head, in order. */
@@ -234,6 +254,12 @@ namespace Orly {
 
         Base::TEventSemaphore RunSem;
         bool ShuttingDown;
+
+        /* Set by the runner when a file-map change could not be made durable: an fsync (or a
+           write) of the append log or a base image failed (#621). From then on the runner writes
+           nothing more and completes every op with an error; the in-memory map keeps serving
+           reads, and a restart reloads the map from what reached the disk. */
+        std::atomic<bool> Failed;
 
         /* Pushed by the scheduler job hosting BGScheduler's loop when the
            loop returns; the destructor pops it so BGScheduler (a member) is
