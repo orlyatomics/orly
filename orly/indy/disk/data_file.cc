@@ -793,7 +793,8 @@ TDataFile::TDataFile(Util::TEngine *engine,
                      size_t gen_id,
                      size_t temp_file_consol_thresh,
                      TSequenceNumber /*release_up_to*/,
-                     DiskPriority priority)
+                     DiskPriority priority,
+                     const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range)
     : Engine(engine),
       StorageSpeed(storage_speed),
       Priority(priority),
@@ -1222,6 +1223,10 @@ TDataFile::TDataFile(Util::TEngine *engine,
       }
       Engine->GetVolMan()->SyncToDisk(block_id_to_num_seq_blocks);
     } /* done sync file to disk */
+    if (cover_range) {
+      LowestSeq = std::min(LowestSeq, cover_range->first);
+      HighestSeq = std::max(HighestSeq, cover_range->second);
+    }
     /* wait for file entry to flush */ {
       file_inserted = true;
       Engine->InsertFile(file_uid, TFileObj::TKind::DataFile, gen_id, StartingBlockId, StartingBlockOffset, FileLength, total_num_keys, LowestSeq, HighestSeq, completion_trigger);

@@ -28,6 +28,9 @@
 #include <orly/indy/memory_layer.h>
 #include <orly/sabot/all.h>
 
+#include <optional>
+#include <utility>
+
 namespace Orly {
 
   namespace Indy {
@@ -159,6 +162,9 @@ namespace Orly {
         */
         //static const size_t NumMetaFields = 10UL;
 
+        /* The file map records the sequence range of the updates written, widened to cover
+           'cover_range' if one is given. A file that replaces others records their whole range,
+           so that a reload recognises them as its inputs (TSafeRepo::ReConstructFromDisk). */
         TDataFile(Util::TEngine *engine,
                   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                   TMemoryLayer *memory_layer,
@@ -166,7 +172,8 @@ namespace Orly {
                   size_t gen_id,
                   size_t temp_file_consol_thresh,
                   TSequenceNumber release_up_to,
-                  DiskPriority priority);
+                  DiskPriority priority,
+                  const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range = std::nullopt);
 
         inline size_t GetNumKeys() const {
           return NumKeys;
