@@ -51,6 +51,7 @@ TFileService::TFileService(Base::TScheduler *scheduler,
       CurRingSector(0UL),
       OpQueue(this),
       ShuttingDown(false),
+      Failed(false),
       AbortOnAppendLogScan(abort_on_append_log_scan) {
   /* allocate event pools */
   Image1BlockIdVec.push_back(image_1_block_id);
@@ -398,8 +399,14 @@ void TFileService::InsertFile(const Base::TUuid &file_uid,
 void TFileService::RemoveFile(const Base::TUuid &file_uid,
                               size_t file_gen,
                               TCompletionTrigger &trigger) {
+  std::optional<TFileObj> removed;
   /* acquire Mutex */ {
     std::lock_guard<std::mutex> lock(Mutex);
+    if (auto uid_iter = Map.find(file_uid); uid_iter != Map.end()) {
+      if (auto gen_iter = uid_iter->second.find(file_gen); gen_iter != uid_iter->second.end()) {
+        removed = gen_iter->second;
+      }
+    }
     RemoveFromMap(Map,
                   file_uid,
                   file_gen);
@@ -416,6 +423,7 @@ void TFileService::RemoveFile(const Base::TUuid &file_uid,
                                        0UL,
                                        0UL)),
                     trigger);
+  op->Removed = removed;
   try {
     /*Acquire Queue lock */ {
       std::lock_guard<std::mutex> lock(QueueLock);
@@ -495,10 +503,14 @@ void TFileService::Runner() {
   std::vector<std::unique_ptr<TBufBlock>> image_buf_block_vec;
   image_buf_block_vec.emplace_back(new TBufBlock());
   TCompletionTrigger append_log_flush_trigger;
+  /* What the ops of a failed round, and every op after it, are completed with (#621). */
+  static constexpr const char *FailedErr = "file service: a file-map change could not be made durable; file-map changes are refused until restart";
   try {
     for (;;) {
       RunSem.Pop();
-      if (!ShuttingDown) {
+      if (!ShuttingDown && Failed) {
+        CompleteQueuedOps(Error, FailedErr);
+      } else if (!ShuttingDown) {
         TOpQueue::TImpl cur_queue(this);
         size_t to_apply = 0UL;
         const size_t cur_version_num = ++VersionNumber;
@@ -631,52 +643,87 @@ void TFileService::Runner() {
               break;
             }
           }
-        } catch (const TDiskFailure &err) {
+        } catch (const TDiskServiceShutdown &) {
+          /* This round's change may be half written; write nothing after it. */
+          Failed = true;
           for(;;) {
             TOp *op = cur_queue.TryGetFirstMember();
             if (op) {
-              op->Complete(DiskFailure, nullptr);
-              delete op;
+              FailOp(op, ServerShutdown, nullptr);
             } else {
               break;
             }
           }
-          throw;
-        } catch (const TDiskError &err) {
+        } catch (const std::exception &ex) {
+          /* A write or sync of the append log or a base image failed, most likely an fsync (#621).
+             After a failed fsync, nothing written to that device since its last good sync can be
+             trusted to be on disk, and fsync may not report the loss again, so retrying is not
+             safe; nor is carrying on, because the next sector or image would build on one whose
+             contents are unknown. So: fail this round's ops, and refuse every later change. The
+             map in memory still has them and keeps serving reads; a restart reloads what is on
+             disk. The runner itself stays up, so no caller is left waiting. */
+          syslog(LOG_CRIT, "TFileService: file-map change failed [%s]; refusing all file-map changes until restart", ex.what());
+          Failed = true;
+          const TDiskResult result = dynamic_cast<const TDiskFailure *>(&ex) ? DiskFailure : Error;
           for(;;) {
             TOp *op = cur_queue.TryGetFirstMember();
             if (op) {
-              op->Complete(Error, err.what());
-              delete op;
+              FailOp(op, result, FailedErr);
             } else {
               break;
             }
           }
-          throw;
-        } catch (const TDiskServiceShutdown &err) {
-          for(;;) {
-            TOp *op = cur_queue.TryGetFirstMember();
-            if (op) {
-              op->Complete(ServerShutdown, nullptr);
-              delete op;
-            } else {
-              break;
-            }
-          }
-          throw;
+          CompleteQueuedOps(Error, FailedErr);
         }
       } else {
         break;
       }
     }
   } catch (const std::exception &ex) {
+    CompleteQueuedOps(ServerShutdown, nullptr);
     delete Disk::Util::TDiskController::TEvent::LocalEventPool;
     Disk::Util::TDiskController::TEvent::LocalEventPool = nullptr;
     throw;
   }
+  /* Ops queued after the last round would otherwise wait forever. */
+  CompleteQueuedOps(ServerShutdown, nullptr);
   delete Disk::Util::TDiskController::TEvent::LocalEventPool;
   Disk::Util::TDiskController::TEvent::LocalEventPool = nullptr;
   Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
+}
+
+void TFileService::CompleteQueuedOps(TDiskResult result, const char *err_str) {
+  for (;;) {
+    TOp *op = nullptr;
+    /* Acquire Queue lock */ {
+      std::lock_guard<std::mutex> lock(QueueLock);
+      op = OpQueue.TryGetFirstMember();
+      if (op) {
+        op->Remove();
+      }
+    }  // release Queue lock
+    if (!op) {
+      break;
+    }
+    FailOp(op, result, err_str);
+  }
+}
+
+void TFileService::FailOp(TOp *op, TDiskResult result, const char *err_str) {
+  if (op->GetKind() == TOp::RemoveFile && op->Removed) {
+    const TFileObj &file = *op->Removed;
+    std::lock_guard<std::mutex> lock(Mutex);
+    try {
+      AddToMap(Map, op->GetFileUUID(), file.Kind, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, file.NumKeys,
+               file.LowestSeq, file.HighestSeq);
+      ++NumFiles;
+    } catch (const std::exception &ex) {
+      /* Re-inserted since; the map names it already. */
+      syslog(LOG_ERR, "TFileService: putting back gen [%ld] after a failed removal: [%s]", file.GenId, ex.what());
+    }
+  }
+  op->Complete(result, err_str);
+  delete op;
 }
 
 void TFileService::GrowBaseImage(std::vector<size_t> &image_block_vec, size_t target, size_t required) {

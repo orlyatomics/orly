@@ -810,6 +810,10 @@ class TDurableSaveMergeCase final
       if (files.size() == 1UL) {
         break;
       }
+      /* A writer or merger that hit an I/O error stops writing (#621): the merge won't come. */
+      if (Manager->HasFailed()) {
+        throw std::runtime_error("durable manager stopped writing after an I/O error; files=" + to_string(files.size()));
+      }
       if (std::chrono::steady_clock::now() > give_up) {
         throw std::runtime_error("durable merge did not finish; files=" + to_string(files.size()));
       }
@@ -1304,12 +1308,6 @@ static const vector<TExpectedFailure> ExpectedFailures{
      an acknowledged file. */
   {"DurableSaveMerge", "Power", "reopen", 619},
   {"DurableSaveMerge", "PowerTorn", "reopen", 619},
-  /* #621: an fsync error kills the file service runner; every later file-map change hangs. */
-  {"MergeMem", "Sync", "hang", 621},
-  {"MergeDisk", "Sync", "hang", 621},
-  {"MergeDiskFold", "Sync", "hang", 621},
-  {"DurableSaveMerge", "Sync", "hang", 621},
-  {"BaseImage", "Sync", "hang", 621},
 };
 
 static bool IsExpected(const TRun &run) {

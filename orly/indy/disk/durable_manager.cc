@@ -79,6 +79,7 @@ TDurableManager::TDiskOrderedLayer::~TDiskOrderedLayer() {
          failure to reclaim one dead layer's blocks costs leaked disk space, not
          integrity -- log it loudly and keep the server alive. */
       syslog(LOG_ERR, "~TDiskOrderedLayer: failed to reclaim gen [%ld] file: %s; leaking its blocks", GenId, ex.what());
+      GetManager()->RemovalFailed = true;
     }
   }
 }
@@ -385,7 +386,7 @@ void TDurableManager::RunWriter() {
   try {
     FlushCurLayer(true);
     if (!UnflushedLayers.empty()) {
-      syslog(LOG_ERR, "TDurableManager::RunWriter final drain: out of disk space; unflushed saves lost");
+      syslog(LOG_ERR, "TDurableManager::RunWriter final drain: %s; unflushed saves lost", WriterFailed ? "writer failed" : "out of disk space");
     }
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "TDurableManager::RunWriter final drain failed; unflushed saves lost [%s]", ex.what());
@@ -437,6 +438,12 @@ bool TDurableManager::FlushCurLayer(bool retire_writer) {
 }
 
 bool TDurableManager::WriteUnflushedLayers() {
+  if (WriterFailed) {
+    for (TMemSlushLayer *layer : UnflushedLayers) {
+      ReleaseSavers(layer);
+    }
+    return UnflushedLayers.empty();
+  }
   /* Oldest first. A layer that hits a full disk stays in the mapping, where reads still find
      it, and is written on a later round. */
   while (!UnflushedLayers.empty()) {
@@ -457,15 +464,21 @@ bool TDurableManager::WriteUnflushedLayers() {
                ex.what(), prev + 1UL, UnflushedLayers.size());
       }
       return false;
-    } catch (...) {
-      /* Anything else (in practice: the disk service is being shut down by force). The data
-         is not durable, but stranding the savers forever would deadlock the very shutdown
-         that caused this; wake them and let the failure surface. This matches the pre-#277
-         contract, where the sem never meant durability at all. */
+    } catch (const std::exception &ex) {
+      /* Anything else: the disk service is being shut down by force, or an I/O error, such as
+         the file service refusing file-map changes after a failed fsync (#621). The data is
+         not durable, but stranding the savers would deadlock whoever waits on them; wake them.
+         Then stop writing for good: the layers stay in the mapping, readable, as on a full
+         disk. Letting the error out of the writer fiber ended the fiber, and the destructor
+         then waited forever for it to finish. */
       for (TMemSlushLayer *layer : UnflushedLayers) {
         ReleaseSavers(layer);
       }
-      throw;
+      WriterFailed = true;
+      const bool shutting_down = dynamic_cast<const Disk::TDiskServiceShutdown *>(&ex) != nullptr;
+      syslog(shutting_down ? LOG_ERR : LOG_CRIT, "TDurableManager writer failed [%s]; %ld layer(s) held in memory, not written until restart",
+             ex.what(), UnflushedLayers.size());
+      return false;
     }
     UnflushedLayers.pop_front();
   }
@@ -541,6 +554,10 @@ void TDurableManager::RunMerger() {
   /* Unpaced, like the writer above (#576). */
   MergeSem.Pop();
   for (;!ShutDown; MergeSem.Pop()) {
+    if (MergerFailed) {
+      /* Stopped for good after an I/O error (#621); the inputs stay readable. */
+      continue;
+    }
     if (MergerRetryDue && std::chrono::steady_clock::now() < MergerRetryAt) {
       /* Backing off after a full disk; the layer cleaner's tick wakes us again. */
       continue;
@@ -595,6 +612,18 @@ void TDurableManager::RunMerger() {
           syslog(LOG_ERR, "TDurableManager merger out of disk space [%s] (try %ld); inputs handed back, retrying in %ldms",
                  ex.what(), prev + 1UL, static_cast<long>(backoff.count()));
         }
+        continue;
+      } catch (const std::exception &ex) {
+        /* Any other error: the disk service is shutting down, or an I/O error, such as the file
+           service refusing file-map changes (#621). Hand the inputs back, as above, and stop
+           merging; letting the error out of the merger fiber ended the fiber, and the
+           destructor then waited forever for it to finish. */
+        for (auto layer : gen_layer_vec) {
+          layer->UnmarkTaken();
+        }
+        MergerFailed = true;
+        const bool shutting_down = dynamic_cast<const Disk::TDiskServiceShutdown *>(&ex) != nullptr;
+        syslog(shutting_down ? LOG_ERR : LOG_CRIT, "TDurableManager merger failed [%s]; not merging until restart", ex.what());
         continue;
       }
       MergerRetryDue = false;
