@@ -47,6 +47,8 @@ const TCore::TNote *TNoteInterner::Propose(TCore::TNote *proposed_note) {
   }
   if (interned_note != proposed_note) {
     delete proposed_note;
+  } else {
+    ByteSize += sizeof(TCore::TNote) + interned_note->GetRawSize();
   }
   return interned_note;
 }

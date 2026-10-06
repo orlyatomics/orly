@@ -44,6 +44,11 @@ namespace Orly {
       /* The number of notes we contain. */
       inline size_t GetSize() const;
 
+      /* The bytes our notes hold (#694). */
+      inline size_t GetByteSize() const {
+        return NoteInterner.GetByteSize();
+      }
+
       inline const TNoteInterner::TNotes &GetNotes() const;
 
       /* See base class. */

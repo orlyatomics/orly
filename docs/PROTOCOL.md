@@ -75,6 +75,24 @@ sent as one WebSocket text message. The server replies with one JSON message:
   but leaves less of the pool for writes. `--memory_reserve_pct=0` turns the
   check off along with the rest of memory admission. Over the binary protocol
   the same refusal is an error whose message starts with `write too large`.
+- A method call that walks more rows, or builds more result memory, than the
+  per-read budget replies `"status": "read_too_large"`, with the reason in
+  `result` (#694). Like `write_too_large` it is **not retryable as sent**: the
+  same call would pass the same budget again. Read a narrower range, or page
+  through it with a key bound. A row is each key a range read (`keys ... @`)
+  visits and each point read (`*<[...]>`), hit or miss; a key's history folded
+  on read counts once. Result memory is what the call builds in its arena,
+  which is its result once encoded. The limits are `--read_budget_rows` and
+  `--read_budget_mb`; by default the memory limit is a sixteenth of the memory
+  budget (`--memory_budget_mb`, or a container's memory limit, #679), at least
+  16 MiB, and the row limit is that memory over 256 bytes: 256 MiB and
+  1,048,576 rows at 4 GiB, 64 MiB and 262,144 rows at 1 GiB. `orlyi` logs them at
+  startup (`read budget:`). A batch (`callMany`, `try {pov} [...]`) shares one
+  budget across its calls. `--read_budget_mb=0` turns both limits off, unless
+  `--read_budget_rows` is given as well; 0 turns either off on its own. Values
+  computed without reading any rows (`[0..n]`) count only once they are part
+  of the result. Over the binary protocol the refusal is an error whose message
+  starts with `read too large`.
 
 ## Statements
 
@@ -165,8 +183,8 @@ exit;
 5. **Errors are stringly-typed** — failures surface as a non-`ok` `status`, not a
    structured error code. `insufficient_storage` and `insufficient_memory` are the
    statuses worth matching on: they mean "retry later", not "this statement is
-   wrong". `write_too_large` is the third, and means the opposite: never retry
-   it as sent, split it.
+   wrong". `write_too_large` and `read_too_large` mean the opposite: never
+   retry them as sent; split the write, or read less.
 
 ## Toward a client SDK
 

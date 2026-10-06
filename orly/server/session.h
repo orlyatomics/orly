@@ -92,6 +92,12 @@ namespace Orly {
         /* True if writes are refused before they would use the update pools' reserve (#607). */
         virtual bool IsMemoryAdmissionOn() const { return false; }
 
+        /* The per-read budget (#694): the most rows a method call may walk and the most bytes it
+           may build in its arena before it is refused with TReadTooLarge
+           (orly/server/read_too_large.h). 0 means no limit. */
+        virtual size_t GetReadBudgetRows() const { return 0UL; }
+        virtual size_t GetReadBudgetBytes() const { return 0UL; }
+
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
            periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator
