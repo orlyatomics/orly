@@ -1167,18 +1167,18 @@ class TMergeDataFileImpl {
       assert(Arena == that.Arena);
       assert(Note);
       assert(that.Note);
-      const size_t lhs_note_size = sizeof(Atom::TCore::TNote) + Note->GetRawSize();
-      const size_t rhs_note_size = sizeof(Atom::TCore::TNote) + that.Note->GetRawSize();
-      return lhs_note_size == rhs_note_size && memcmp(Note, that.Note, lhs_note_size) == 0;
+      /* Not a memcmp of the whole note: notes written before #666 carry garbage in the header's
+         Unused bits, and two copies of one value left apart here would both reach the merged
+         arena. The arena is ordered, so readers compare its cores by offset, and the copies
+         would read as different keys. */
+      return Note->HasSameBytes(*that.Note);
     }
 
     bool operator!=(const TMergeNote &that) const {
       assert(Arena == that.Arena);
       assert(Note);
       assert(that.Note);
-      const size_t lhs_note_size = sizeof(Atom::TCore::TNote) + Note->GetRawSize();
-      const size_t rhs_note_size = sizeof(Atom::TCore::TNote) + that.Note->GetRawSize();
-      return lhs_note_size != rhs_note_size || memcmp(Note, that.Note, lhs_note_size) != 0;
+      return !(*this == that);
     }
 
     Atom::TCore::TArena *GetArena() const {
