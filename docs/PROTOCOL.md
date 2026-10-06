@@ -50,7 +50,7 @@ sent as one WebSocket text message. The server replies with one JSON message:
   `result` (#607). Writes are buffered in fixed-size memory pools (the Update and
   Update Entry pools) until merges flush them, and a merge needs room in those
   same pools to do its work, so `orlyi` keeps `--memory_reserve_pct` of each pool
-  (default 50%) for the merges and refuses any write that would use it. Only
+  (default 25%) for the merges and refuses any write that would use it. Only
   writes are refused: reads, new sessions and new POVs keep working. Nothing was
   written, so the write can be retried; writes are accepted again once the merges
   have freed the pools, usually within seconds. Large batches reach the limit

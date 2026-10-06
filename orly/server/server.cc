@@ -330,7 +330,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Memory admission (issue #607): keep this percent of the Update and Update Entry pools "
       "for the merges and Tetris promotions that free them, and refuse writes, with an "
       "insufficient_memory error, before they would use it. Reads, new sessions and new POVs "
-      "are never refused. 0 turns memory admission off. Default 50."
+      "are never refused. 0 turns memory admission off. Default 25."
   );
 
   /******** Object Pools ********/
@@ -465,7 +465,7 @@ TServer::TCmd::TCmd()
       TetrisBackpressureThreshold(50000UL),
       DiskReserveMb(0UL),
       DiskReservePct(10UL),
-      MemoryReservePct(50UL),
+      MemoryReservePct(25UL),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
