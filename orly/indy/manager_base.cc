@@ -748,12 +748,15 @@ void TManager::TObj::OnPtrAcquire() noexcept {
 }
 
 void TManager::TObj::OnPtrRelease() noexcept {
-  assert(PtrCount);
   bool async = false;
   TSem *sem = nullptr;
   unordered_set<TObj *> dependent_objs;
   /* extra */ {
     lock_guard<mutex> lock(Manager->DurableMutex);
+    /* Under the lock, like every other access to PtrCount: TPtrs to one repo are released on
+       several threads at once (a Tetris player and a session, say), and this read used to sit
+       before the lock, a data race TSan reports once a test shares a repo across threads. */
+    assert(PtrCount);
     --PtrCount;
     if (!PtrCount) {
       /* We're transitioning from open to closed.  We should not yet have a deadline but we should have a sem available. */
