@@ -14,6 +14,10 @@
    predictable: with a one-block append log (NumSectorsPerBlock sectors), round 129 * k writes
    base image k, to image 1 for odd k and image 2 for even k.
 
+   The crash fixtures (#616) take the first base image written after a restart and try every state
+   a crash can leave it in: each block it wrote is old, new, or torn (half its sectors new). Every
+   state must reopen with either the old file map or the new one.
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,8 +34,12 @@
 
 #include <orly/indy/disk/file_service.h>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -106,11 +114,13 @@ namespace {
   }
 
   /* First boot: lay out the fixed blocks, as TDiskEngine does on create. */
-  TLayout Create(DUtil::TVolumeManager *vol_man) {
+  TLayout Create(DUtil::TVolumeManager *vol_man, size_t num_append_log_blocks = 1UL) {
     TLayout layout;
     layout.Image1BlockId = AllocOne(vol_man);
     layout.Image2BlockId = AllocOne(vol_man);
-    layout.AppendLogBlockVec.push_back(AllocOne(vol_man));
+    for (size_t i = 0; i < num_append_log_blocks; ++i) {
+      layout.AppendLogBlockVec.push_back(AllocOne(vol_man));
+    }
     return layout;
   }
 
@@ -123,11 +133,15 @@ namespace {
     }
   }
 
+  void InsertFile(TFileService &fs, const Base::TUuid &file_uid, size_t gen) {
+    TCompletionTrigger trigger;
+    fs.InsertFile(file_uid, TFileObj::DataFile, gen, gen * 12UL, gen * 123UL, gen * 4096UL, gen * 2013UL, gen * 9UL, gen * 2022UL, trigger);
+    trigger.Wait();
+  }
+
   void InsertFiles(TFileService &fs, const Base::TUuid &file_uid, size_t num_files) {
     for (size_t i = 1; i <= num_files; ++i) {
-      TCompletionTrigger trigger;
-      fs.InsertFile(file_uid, TFileObj::DataFile, i, i * 12UL, i * 123UL, i * 4096UL, i * 2013UL, i * 9UL, i * 2022UL, trigger);
-      trigger.Wait();
+      InsertFile(fs, file_uid, i);
     }
   }
 
@@ -267,6 +281,185 @@ namespace {
     return n;
   }
 
+  /* Raw block contents, read and written without checksums, by block id. A block of zeros is
+     left out. */
+  using TRawImage = unordered_map<size_t, string>;
+
+  TRawImage ReadRaw(DUtil::TVolumeManager *vol_man, const vector<size_t> &block_ids) {
+    TRawImage raw;
+    auto buf_block = make_unique<TBufBlock>();
+    const char *data = buf_block->GetData();
+    for (size_t block_id : block_ids) {
+      TCompletionTrigger trigger;
+      vol_man->ReadBlock(HERE, DUtil::FullBlock, Source::FileService, buf_block->GetData(), block_id, RealTime, trigger);
+      trigger.Wait();
+      if (any_of(data, data + DUtil::PhysicalBlockSize, [](char c) { return c != 0; })) {
+        raw.emplace(block_id, string(data, DUtil::PhysicalBlockSize));
+      }
+    }
+    return raw;
+  }
+
+  const string &RawBlock(const TRawImage &raw, size_t block_id) {
+    static const string zeros(DUtil::PhysicalBlockSize, '\0');
+    auto iter = raw.find(block_id);
+    return iter != raw.end() ? iter->second : zeros;
+  }
+
+  /* Make the device hold exactly 'want', writing only the blocks that differ. */
+  void WriteRaw(DUtil::TVolumeManager *vol_man, const vector<size_t> &block_ids, const TRawImage &want) {
+    const TRawImage have = ReadRaw(vol_man, block_ids);
+    auto buf_block = make_unique<TBufBlock>();
+    for (size_t block_id : block_ids) {
+      const string &bytes = RawBlock(want, block_id);
+      if (bytes != RawBlock(have, block_id)) {
+        memcpy(buf_block->GetData(), bytes.data(), DUtil::PhysicalBlockSize);
+        TCompletionTrigger trigger;
+        vol_man->WriteBlock(HERE, DUtil::FullBlock, Source::FileService, buf_block->GetData(), block_id, RealTime, DUtil::TCacheInstr::NoCache, trigger);
+        trigger.Wait();
+      }
+    }
+  }
+
+  /* What a crash leaves of one block the file service wrote. */
+  enum class TBlockState { Old, New, Torn };
+
+  const char *GetName(TBlockState state) {
+    switch (state) {
+      case TBlockState::Old: return "old";
+      case TBlockState::New: return "new";
+      case TBlockState::Torn: return "torn";
+    }
+    return "?";
+  }
+
+  /* Write 'num_files' files on a fresh file system whose append log is 'num_append_log_blocks'
+     blocks, and restart. The first change after the restart writes a base image. Then, for every
+     state a crash during that write can leave behind (each block it changed old, new or torn),
+     put the device in that state, restart, and require the file map to be the old one (or the new
+     one, if every block made it). Each state's server then makes one more change, which writes
+     another base image, and a last restart must still load. */
+  void RunCrashDuringFirstImageAfterRestart(size_t num_files, size_t num_append_log_blocks) {
+    DUtil::TDiskController::TEvent::InitializeDiskEventPoolManager(1000UL);
+    Orly::Indy::Fiber::TFiberTestRunner runner([&](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &runner_cons) {
+      /* scope */ {
+        Base::TScheduler scheduler(Base::TScheduler::TPolicy(4, 4, milliseconds(10)));
+        TFramePoolManager *frame_pool_manager = Orly::Indy::Fiber::TFrame::LocalFramePool->GetPoolManager();
+        auto device = make_unique<DUtil::TMemoryDevice>(512, 512, NumLogicalBlocks, true /* fsync */, true);
+        const Base::TUuid file_uid(Base::TUuid::Twister);
+        auto open = [&](const TBoot &boot, const TLayout &layout) {
+          MarkFixedBlocks(boot.GetVolMan(), layout);
+          return make_unique<TFileService>(&scheduler, runner_cons, frame_pool_manager, boot.GetVolMan(), layout.Image1BlockId, layout.Image2BlockId,
+                                           layout.AppendLogBlockVec, NoFileInit, false, false);
+        };
+        vector<size_t> all_blocks;
+        TLayout layout;
+        /* first boot */ {
+          TBoot boot(&scheduler, device.get());
+          const auto everything = AllocateEverything(boot.GetVolMan());
+          all_blocks.assign(everything.begin(), everything.end());
+          sort(all_blocks.begin(), all_blocks.end());
+          layout = Create(boot.GetVolMan(), num_append_log_blocks);
+          TFileService fs(&scheduler, runner_cons, frame_pool_manager, boot.GetVolMan(), layout.Image1BlockId, layout.Image2BlockId, layout.AppendLogBlockVec, NoFileInit, true, false);
+          InsertFiles(fs, file_uid, num_files);
+        }
+        /* second boot: one more file, which goes into a base image */
+        TRawImage before, after;
+        /* scope */ {
+          TBoot boot(&scheduler, device.get());
+          auto fs = open(boot, layout);
+          EXPECT_EQ(fs->GetNumFiles(), num_files);
+          before = ReadRaw(boot.GetVolMan(), all_blocks);
+          InsertFile(*fs, file_uid, num_files + 1UL);
+          after = ReadRaw(boot.GetVolMan(), all_blocks);
+        }
+        vector<size_t> written;
+        for (size_t block_id : all_blocks) {
+          if (RawBlock(before, block_id) != RawBlock(after, block_id)) {
+            written.push_back(block_id);
+          }
+        }
+        /* The image's head and the rest of its chain, and nothing else: the change went into the
+           image, not the append log. */
+        EXPECT_EQ(written.size(), (num_files + 1UL + 817UL) / 818UL);
+        size_t num_states = 1UL;
+        for (size_t i = 0; i < written.size(); ++i) {
+          num_states *= 3UL;
+        }
+        size_t num_failed = 0UL;
+        for (size_t state = 0; state < num_states; ++state) {
+          TRawImage want = before;
+          bool all_new = true;
+          ostringstream desc;
+          for (size_t i = 0, rest = state; i < written.size(); ++i, rest /= 3UL) {
+            const auto block_state = static_cast<TBlockState>(rest % 3UL);
+            const size_t block_id = written[i];
+            desc << (i ? ", " : "") << "block " << block_id << ' ' << GetName(block_state);
+            all_new = all_new && block_state == TBlockState::New;
+            switch (block_state) {
+              case TBlockState::Old: {
+                break;
+              }
+              case TBlockState::New: {
+                want[block_id] = RawBlock(after, block_id);
+                break;
+              }
+              case TBlockState::Torn: {
+                string bytes = RawBlock(before, block_id);
+                bytes.replace(0UL, DUtil::PhysicalBlockSize / 2UL, RawBlock(after, block_id), 0UL, DUtil::PhysicalBlockSize / 2UL);
+                want[block_id] = bytes;
+                break;
+              }
+            }
+          }
+          const size_t expected = all_new ? num_files + 1UL : num_files;
+          /* the crash */ {
+            TBoot boot(&scheduler, device.get());
+            WriteRaw(boot.GetVolMan(), all_blocks, want);
+          }
+          bool ok = true;
+          /* restart, and one more change */ {
+            TBoot boot(&scheduler, device.get());
+            try {
+              auto fs = open(boot, layout);
+              if (!EXPECT_EQ(fs->GetNumFiles(), expected)) {
+                ok = false;
+              }
+              InsertFile(*fs, file_uid, num_files + 2UL);
+            } catch (const std::exception &ex) {
+              cout << "restart failed: " << ex.what() << endl;
+              ok = false;
+            }
+          }
+          /* and once more */
+          if (ok) {
+            TBoot boot(&scheduler, device.get());
+            try {
+              auto fs = open(boot, layout);
+              if (!EXPECT_EQ(fs->GetNumFiles(), expected + 1UL)) {
+                ok = false;
+              }
+              Settle(*fs);
+            } catch (const std::exception &ex) {
+              cout << "second restart failed: " << ex.what() << endl;
+              ok = false;
+            }
+          }
+          if (!ok) {
+            cout << "crash state " << desc.str() << ": FAILED" << endl;
+            ++num_failed;
+          }
+        }
+        EXPECT_EQ(num_failed, 0UL);
+        cout << num_states << " crash states, " << num_failed << " failed" << endl;
+      }
+      std::lock_guard<std::mutex> lock(mut);
+      fin = true;
+      cond.notify_one();
+    }, 2UL + 2UL * 9UL /* each file service takes a runner id, and ids aren't reused: two boots, then two per crash state */);
+    DUtil::TDiskController::TEvent::FinalizeDiskEventPoolManager();
+  }
+
 }  // namespace
 
 /* 1,100 files: image 1 was written at version 903 and image 2 at 1032, both two blocks long, and
@@ -339,4 +532,34 @@ FIXTURE(ImagesSurviveWritesAfterReopen) {
              [](TFileService &fs) {
     EXPECT_EQ(fs.GetNumFiles(), 1100UL);
   });
+}
+
+/* #616: 1,160 files leave image 1 at version 903, image 2 at version 1032, and the append log full
+   with versions 1033-1160. Image 2 loads. The first base image written after the restart must go
+   to image 1, so that image 2 and the log can still stand in for it if the write is cut short. */
+FIXTURE(FirstImageAfterRestartGoesToTheOtherImage) {
+  RunRestart(1160UL,
+             [](DUtil::TVolumeManager *, const vector<size_t> &, const vector<size_t> &) {},
+             [](TFileService &fs, DUtil::TVolumeManager *vol_man, const vector<size_t> &, const vector<size_t> &) {
+    EXPECT_EQ(fs.GetNumFiles(), 1160UL);
+    InsertFile(fs, Base::TUuid(Base::TUuid::Twister), 1161UL);
+    /* Create() put image 1's head at block 0 and image 2's at block 1. */
+    vector<size_t> chain;
+    EXPECT_EQ(ReadImageChain(vol_man, 0UL, chain), 1161UL);  // image 1: the one not loaded
+    chain.clear();
+    EXPECT_EQ(ReadImageChain(vol_man, 1UL, chain), 1032UL);  // image 2: left as it was loaded
+  });
+}
+
+/* #616: a crash at any point of that write. */
+FIXTURE(CrashDuringFirstImageAfterRestart) {
+  RunCrashDuringFirstImageAfterRestart(1160UL, 1UL);
+}
+
+/* The same, for the first base image this file system ever writes, after a restart: 896 files
+   fill a seven-block append log (versions 1-896) and neither image has been written. A crash that
+   leaves the new image's head but not its second block must replay the whole log, not keep the
+   818 files the broken image's head held (#616, the smaller problem). */
+FIXTURE(CrashDuringFirstImageEver) {
+  RunCrashDuringFirstImageAfterRestart(896UL, 7UL);
 }
