@@ -378,6 +378,8 @@ TRepo::~TRepo() {
      from, and calling into the manager here would touch freed memory.
      Outside a sanctioned discard, that state is still a lifecycle bug. */
   assert(!InTetris || IsDiscardSanctioned());
+  /* #691: not marked for delete, so the file stays in the file map. */
+  delete UnpublishedMergeDisk;
   delete CurMemoryLayer;
 }
 
@@ -648,6 +650,25 @@ void TRepo::StepMergeMem() {
      writes a file or the new mapping is published, the merge has only built
      copies, and the layers it is merging are untouched. */
   bool can_retry = true;
+  /* #691: finish a merge whose publish is still waiting before starting another. */ {
+    std::lock_guard<std::mutex> lock(MemMergeLock);
+    if (UnpublishedMergeDisk) {
+      try {
+        PublishMemMerge(UnpublishedMergeLayers, UnpublishedMergeDisk);
+      } catch (const std::bad_alloc &) {
+        DeferUnpublishedMemMerge();
+        return;
+      }
+      if (UnpublishedMergeTries > 1UL) {
+        syslog(LOG_ERR, "StepMergeMem: published the file it wrote after %ld tries", UnpublishedMergeTries);
+      }
+      UnpublishedMergeDisk = nullptr;
+      UnpublishedMergeLayers.clear();
+      UnpublishedMergeTries = 0UL;
+      /* The merge below may find nothing to do and skip this. */
+      CheckRemoveDirty();
+    }
+  }
   try {
     /*** If the current memory layer is not empty, add it to the mapping layer and create a new current memory layer ***/
     /* acquire DataLayer lock */ {
@@ -952,90 +973,24 @@ void TRepo::StepMergeMem() {
           /* Publish the new mapping. Building it takes blocks from the mapping pools; if that
              fails, the half-built mapping is deleted before the lock is released, so it is as if
              the publish never started (#607). With only memory layers involved, the merge then
-             rolls back like any copy-phase failure. A file already written can't be taken back,
-             so the publish waits for room instead, on this merge runner, holding no lock but
-             MemMergeLock (which only this repo's memory merge takes). */
-          auto publish = [&] {
-            std::lock_guard<std::mutex> lock(MappingLock);
-            TMapping *cur_mapping = MappingCollection.TryGetLastMember();
-            assert(cur_mapping);
-            cur_mapping->Incr();
-            TMapping *new_mapping = nullptr;
-            size_t total_disk_layers = 0U;
-            std::vector<TDataLayer *> merged;
-            try {
-              merged.reserve(mem_to_merge_vec.size());
-              new_mapping = new TMapping(this);
-              for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
-                assert(cur_csr->GetLayer() != new_mem);
-                assert(cur_csr->GetLayer() != new_disk);
-                bool found = false;
-                for (auto layer : mem_to_merge_vec) {
-                  if (layer == cur_csr->GetLayer()) {
-                    found = true;
-                    merged.push_back(layer);
-                    break;
-                  }
-                }
-                if (!found) {
-                  new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
-                  if (cur_csr->GetLayer()->GetKind() == TDataLayer::Disk && !cur_csr->GetLayer()->GetMarkedTaken()) {
-                    ++total_disk_layers;
-                  }
-                }
-              }
-              if (new_disk) {
-                new TMapping::TEntry(new_mapping, new_disk);
-              } else if (new_mem) {
-                new TMapping::TEntry(new_mapping, new_mem);
-              } else {
-                DEBUG_LOG("We cleaned away everything, not adding anything to the mapping");
-                /* we've cleaned away everything */
-              }
-            } catch (...) {
-              /* The new mapping is the last member, so delete it first; then the Decr leaves
-                 cur_mapping current, as it was. */
-              delete new_mapping;
-              cur_mapping->Decr();
+             rolls back like any copy-phase failure. A file already written can't be taken back:
+             its updates have been told they are persisted, and the file map has it. So the
+             merged layers stay taken, and the publish is retried by this repo's next memory merge
+             (#691), leaving the merge runner to the other repos. */
+          try {
+            PublishMemMerge(mem_to_merge_vec, new_disk ? static_cast<TDataLayer *>(new_disk) : static_cast<TDataLayer *>(new_mem));
+          } catch (const std::bad_alloc &) {
+            if (!new_disk) {
+              /* Nothing written, so can_retry is still set: roll back below. */
               throw;
             }
-            for (TDataLayer *layer : merged) {
-              layer->MarkForDelete();
-            }
-            total_disk_layers += new_disk ? 1UL : 0UL;
-            const bool has_merge_candidate = HasDiskMergeCandidate(new_mapping);
-            cur_mapping->Decr();
-            /* #325: skip the pass when its scan would provably find nothing mergeable;
-               see HasDiskMergeCandidate. */
-            if (total_disk_layers >= 3 && has_merge_candidate) {
-              EnqueueMergeDisk();
-            }
-          };
-          for (size_t failures = 0UL;;) {
-            try {
-              publish();
-              break;
-            } catch (const std::bad_alloc &) {
-              if (!new_disk) {
-                /* Nothing written, so can_retry is still set: roll back below. */
-                throw;
-              }
-              ++failures;
-              if ((failures & (failures - 1UL)) == 0UL) {
-                syslog(LOG_ERR, "StepMergeMem: no pool room to publish the file it wrote (try %ld); waiting for the layer cleaner", failures);
-              }
-              if (Manager->IsShuttingDown()) {
-                /* Give up, but leave the merged layers taken: their data is in the file, which
-                   the file map has, and a second copy must never be written. The repo keeps
-                   serving them from memory until it goes away. */
-                syslog(LOG_ERR, "StepMergeMem: shutting down with a written file unpublished; its layers stay in memory");
-                delete new_disk;
-                ReleaseMapping(mapping);
-                return;
-              }
-              /* This runner hosts only the merge loop, which sleeps between merges anyway. */
-              std::this_thread::sleep_for(std::chrono::milliseconds(std::min<size_t>(1UL << std::min<size_t>(failures, 10UL), 1000UL)));
-            }
+            assert(!new_mem);
+            UnpublishedMergeLayers.swap(mem_to_merge_vec);
+            UnpublishedMergeDisk = new_disk;
+            UnpublishedMergeTries = 0UL;
+            DeferUnpublishedMemMerge();
+            ReleaseMapping(mapping);
+            return;
           }
           /* Published: from here on there is nothing to roll back. */
           can_retry = false;
@@ -1093,6 +1048,81 @@ void TRepo::StepMergeMem() {
     syslog(LOG_EMERG, "StepMergeMem caught error [%s]", ex.what());
     abort();
   }
+}
+
+void TRepo::PublishMemMerge(const std::vector<TMemoryLayer *> &merged_layers, TDataLayer *new_layer) {
+  std::lock_guard<std::mutex> lock(MappingLock);
+  TMapping *cur_mapping = MappingCollection.TryGetLastMember();
+  assert(cur_mapping);
+  cur_mapping->Incr();
+  TMapping *new_mapping = nullptr;
+  size_t total_disk_layers = 0U;
+  std::vector<TDataLayer *> merged;
+  try {
+    merged.reserve(merged_layers.size());
+    new_mapping = new TMapping(this);
+    for (TMapping::TEntryCollection::TCursor cur_csr(cur_mapping->GetEntryCollection()); cur_csr; ++cur_csr) {
+      assert(cur_csr->GetLayer() != new_layer);
+      bool found = false;
+      for (auto layer : merged_layers) {
+        if (layer == cur_csr->GetLayer()) {
+          found = true;
+          merged.push_back(layer);
+          break;
+        }
+      }
+      if (!found) {
+        new TMapping::TEntry(new_mapping, cur_csr->GetLayer());
+        if (cur_csr->GetLayer()->GetKind() == TDataLayer::Disk && !cur_csr->GetLayer()->GetMarkedTaken()) {
+          ++total_disk_layers;
+        }
+      }
+    }
+    if (new_layer) {
+      new TMapping::TEntry(new_mapping, new_layer);
+    } else {
+      DEBUG_LOG("We cleaned away everything, not adding anything to the mapping");
+      /* we've cleaned away everything */
+    }
+  } catch (...) {
+    /* The new mapping is the last member, so delete it first; then the Decr leaves
+       cur_mapping current, as it was. */
+    delete new_mapping;
+    cur_mapping->Decr();
+    throw;
+  }
+  for (TDataLayer *layer : merged) {
+    layer->MarkForDelete();
+  }
+  total_disk_layers += (new_layer && new_layer->GetKind() == TDataLayer::Disk) ? 1UL : 0UL;
+  const bool has_merge_candidate = HasDiskMergeCandidate(new_mapping);
+  cur_mapping->Decr();
+  /* #325: skip the pass when its scan would provably find nothing mergeable;
+     see HasDiskMergeCandidate. */
+  if (total_disk_layers >= 3 && has_merge_candidate) {
+    EnqueueMergeDisk();
+  }
+}
+
+void TRepo::DeferUnpublishedMemMerge() {
+  assert(UnpublishedMergeDisk);
+  const size_t tries = ++UnpublishedMergeTries;
+  if ((tries & (tries - 1UL)) == 0UL) {
+    syslog(LOG_ERR, "StepMergeMem: no pool room to publish the file it wrote (try %ld); retrying later", tries);
+  }
+  if (Manager->IsShuttingDown()) {
+    /* Give up, but leave the merged layers taken: their data is in the file, which the file map
+       has, and a second copy must never be written. The repo keeps serving them from memory
+       until it goes away. */
+    syslog(LOG_ERR, "StepMergeMem: shutting down with a written file unpublished; its layers stay in memory");
+    delete UnpublishedMergeDisk;
+    UnpublishedMergeDisk = nullptr;
+    UnpublishedMergeLayers.clear();
+    return;
+  }
+  /* 2ms, doubling to 1s, as the wait on the runner did. The merge queue is ordered by due
+     time, so this holds up no other repo's merge. */
+  EnqueueMergeMemAfter(std::chrono::milliseconds(std::min<size_t>(1UL << std::min<size_t>(tries, 10UL), 1000UL)));
 }
 
 size_t TRepo::AddMapping(TDataLayer *layer) {

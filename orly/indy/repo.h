@@ -355,6 +355,24 @@ namespace Orly {
          memtable still holds data; otherwise re-enqueue another mem merge. */
       void CheckRemoveDirty();
 
+      /* #691: a memory merge whose file is written (and in the file map) but whose new mapping
+         found no pool room. The merged layers stay taken and keep serving reads until the
+         publish goes through. The publish is retried at the start of this repo's next memory
+         merge, after a backoff, rather than on the merge runner, which every repo's memory merge
+         shares, and where another repo's merge may be what frees the room. Guarded by
+         MemMergeLock. */
+      std::vector<TMemoryLayer *> UnpublishedMergeLayers;
+      TDiskLayer *UnpublishedMergeDisk = nullptr;
+      size_t UnpublishedMergeTries = 0UL;
+
+      /* Builds and installs the mapping that replaces 'merged_layers' with 'new_layer' (if any).
+         On std::bad_alloc nothing has changed. Call with MemMergeLock held. */
+      void PublishMemMerge(const std::vector<TMemoryLayer *> &merged_layers, TDataLayer *new_layer);
+
+      /* #691: counts a failed publish of UnpublishedMergeDisk and queues the retry, or, when the
+         manager is shutting down, gives it up (the file stays in the file map). */
+      void DeferUnpublishedMemMerge();
+
       /* The live memtable that AppendUpdate inserts into. */
       TMemoryLayer *CurMemoryLayer;
 
