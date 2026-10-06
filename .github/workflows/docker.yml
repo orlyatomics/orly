@@ -281,6 +281,50 @@ jobs:
           echo "control: $state"
           test "$state" = "exited oom=true"
 
+      # #710: the image takes the shared secret the recommended way, a token
+      # file mounted read-only and named by ORLY_AUTH_TOKEN_FILE, which the
+      # entrypoint passes through to orlyi. Its listeners must say a token is
+      # required, a client without it or with a wrong one must be refused as
+      # unauthorized, and one with it served. (A container without a token is
+      # the one the steps above already exercise unchanged.)
+      - name: Image honours a shared secret (#710)
+        run: |
+          mkdir -p /tmp/orly-secret
+          od -An -tx1 -N24 /dev/urandom | tr -d ' \n' > /tmp/orly-secret/token
+          docker run -d --name orlyauth --memory=1g --memory-swap=1g \
+            --ulimit memlock=-1:-1 -p 127.0.0.1:8093:8082 \
+            -v /tmp/orly-secret/token:/run/secrets/orly_token:ro \
+            -e ORLY_AUTH_TOKEN_FILE=/run/secrets/orly_token "$IMAGE"
+          for _ in $(seq 1 60); do
+            if ss -tln | grep -q ':8093' && docker logs orlyauth 2>&1 | grep -q CleanHouse; then break; fi
+            sleep 1
+          done
+          docker logs orlyauth 2>&1 | grep 'websocket listener bound to 0.0.0.0:8082; remote compile disabled; token required'
+          ORLY_AUTH_TOKEN_FILE=/tmp/orly-secret/token PYTHONPATH=clients/python python3 - <<'PY'
+          import orly
+          url = "ws://127.0.0.1:8093/"
+          try:
+              orly.connect(url, token="0123456789abcdef-not-the-token", retries=0)
+              raise SystemExit("the image accepted a wrong token")
+          except orly.Unauthorized:
+              print("wrong token refused")
+          ok = orly.connect(url)  # the token from ORLY_AUTH_TOKEN_FILE
+          print("session with the token:", ok.new_session())
+          PY
+          PYTHONPATH=clients/python python3 - <<'PY'
+          import orly
+          c = orly.connect("ws://127.0.0.1:8093/", retries=0)
+          try:
+              c.new_session()
+              raise SystemExit("the image served a client with no token")
+          except orly.Unauthorized:
+              print("no token refused")
+          PY
+          if docker logs orlyauth 2>&1 | grep -qF "$(cat /tmp/orly-secret/token)"; then
+            echo "the token is in the container log"; exit 1
+          fi
+          docker rm -f orlyauth
+
       - name: Container logs (for diagnosis)
         if: always()
         run: |
