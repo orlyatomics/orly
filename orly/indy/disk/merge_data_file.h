@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/disk/data_file.h>
@@ -76,6 +78,11 @@ namespace Orly {
         inline TSequenceNumber GetHighestSequence() const {
           return HighestSeq;
         }
+
+        /* Test only. When true, a merge writes every input's copy of an equal note into its output
+           arena, as release merges did before #666 whenever the copies' unused header bits held
+           different garbage. A test sets it to build such a file (#674). Nothing else does. */
+        static inline std::atomic<bool> KeepsEqualNotes{false};
 
         private:
 
