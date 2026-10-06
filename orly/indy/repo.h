@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -65,6 +66,11 @@ namespace Orly {
       public:
 
       using TParentRepo = L0::TManager::TRepo::TParentRepo;
+
+      /* Test-only: called by StepMergeMem just after it seals the current memory layer into the
+         mapping, with no lock held, so a unit test can append to the repo mid-merge (#665).
+         Empty, and never set, in production: one null check per memory merge. */
+      static std::function<void (TRepo *)> OnMergeMemSealedForTest;
 
       /* An immutable, consistent read snapshot of the repo: the pinned disk
          layer set (Mapping), the pinned live memtable (CurrentMemoryLayer), the

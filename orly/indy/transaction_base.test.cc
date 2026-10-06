@@ -52,7 +52,8 @@ Orly::Indy::Util::TPool L0::TManager::TRepo::TDataLayer::Pool(sizeof(TMemoryLaye
 Orly::Indy::Util::TPool L1::TTransaction::TMutation::Pool(max(max(sizeof(L1::TTransaction::TPusher), sizeof(L1::TTransaction::TPopper)), sizeof(L1::TTransaction::TStatusChanger)), "Transaction::TMutation", 100UL);
 Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transaction", 100UL);
 
-Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize);
+/* Blocks for the #665 fixtures' safe root, which writes its memory layers to disk files. */
+Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize, 256UL);
 
 /* Sized for Issue636PauseMidRound and the #657 fixtures, whose parents keep every update they
    are promoted: this harness latches no merge runner, so nothing ever leaves a memory layer. */
@@ -1140,6 +1141,280 @@ FIXTURE(Issue657PausedJoinMidCommit) {
       std::cout << "Issue657PausedJoinMidCommit: " << cycle_count << " cycles, " << stuck << " stuck" << std::endl;
       EXPECT_EQ(stuck, 0UL);
       EXPECT_EQ(tetris.PromotionCount, static_cast<size_t>(key));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* #665 harness.  A Tetris manager whose players never promote and pin nothing: the fixture does
+   each promotion by hand, so it decides when a pop commits, and the only pins on the child are
+   the ones the fixture and the repo itself hold.  (A real player's TChild pins the child until it
+   parts, which only shifts the moment the child can be discarded; the bug is the same.) */
+class TIdleTetrisManager final
+    : public Orly::Server::TTetrisManager {
+  NO_COPY(TIdleTetrisManager);
+  public:
+
+  TIdleTetrisManager(TScheduler *scheduler,
+                     Fiber::TRunner::TRunnerCons &runner_cons,
+                     Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager)
+      : Orly::Server::TTetrisManager(scheduler, runner_cons, frame_pool_manager, [](Fiber::TRunner *) {}, true) {}
+
+  virtual ~TIdleTetrisManager() {
+    StopAllPlayers();
+  }
+
+  private:
+
+  class TPlayer final
+      : public Orly::Server::TTetrisManager::TPlayer {
+    NO_COPY(TPlayer);
+    public:
+
+    TPlayer(TIdleTetrisManager *manager, bool is_paused, bool is_master)
+        : Orly::Server::TTetrisManager::TPlayer(manager) {
+      Start(is_paused, is_master);
+    }
+
+    private:
+
+    virtual void OnJoin(const TUuid &) override {}
+
+    virtual void OnPart(const TUuid &) override {}
+
+    virtual void OnPause() override {}
+
+    virtual void OnUnpause() override {}
+
+    virtual void Play() override {
+      std::this_thread::sleep_for(1ms);
+    }
+
+  };  // TIdleTetrisManager::TPlayer
+
+  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &, const TUuid &, bool is_paused, bool is_master) override {
+    return new TPlayer(this, is_paused, is_master);
+  }
+
+};  // TIdleTetrisManager
+
+/* Repos whose memory merge a fixture can step by hand. */
+class TSteppedSafeRepo final
+    : public TSafeRepo {
+  NO_COPY(TSteppedSafeRepo);
+  public:
+  using TSafeRepo::TSafeRepo;
+  using Orly::Indy::TRepo::StepMergeMem;
+};  // TSteppedSafeRepo
+
+class TSteppedFastRepo final
+    : public TFastRepo {
+  NO_COPY(TSteppedFastRepo);
+  public:
+  using TFastRepo::TFastRepo;
+  using Orly::Indy::TRepo::StepMergeMem;
+};  // TSteppedFastRepo
+
+/* Builds stepped repos, and opens a missing repo the way orlyi does (Indy::TManager::
+   ReconstructRepo): a fresh, empty safe repo under the asked-for id.  That stand-in is what a pop
+   completion used to land on once the popped repo was gone (#665). */
+class T665Manager final
+    : public TMyManager {
+  NO_COPY(T665Manager);
+  public:
+
+  using TMyManager::TMyManager;
+
+  virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
+                               const std::optional<TTtl> &ttl,
+                               const std::optional<TManager::TPtr<TRepo>> &parent_repo,
+                               bool is_safe,
+                               bool /*create*/) override {
+    return is_safe ?
+      static_cast<TRepo *>(new TSteppedSafeRepo(this, repo_id, *ttl, parent_repo))
+    : static_cast<TRepo *>(new TSteppedFastRepo(this, repo_id, *ttl, parent_repo));
+  }
+
+  virtual TRepo *ReconstructRepo(const Base::TUuid &repo_id) override {
+    return TSafeRepo::ReConstructFromDisk(this, repo_id, L0::TDeadline::clock::now() + std::chrono::seconds(1000));
+  }
+
+  /* The teardown sweep that drops every repo's self-pin: a sanctioned discard (#521). */
+  void DropDirtySelfPins() {
+    ReleaseDirtySelfPins();
+  }
+
+};  // T665Manager
+
+/* Promote the child's oldest update to the parent, as a Tetris round does: peek it, push it to the
+   parent and pop it from the child, in one transaction.  With a safe parent the pop's completion,
+   which releases the update in the child, waits until the parent writes the update to disk: the
+   parent's next memory merge. */
+static void PromoteOne(T665Manager *manager, const L0::TManager::TPtr<Indy::TRepo> &child, const L0::TManager::TPtr<Indy::TRepo> &parent) {
+  auto transaction = manager->NewTransaction();
+  auto update = transaction->Peek(child);
+  if (!EXPECT_TRUE(static_cast<bool>(update))) {
+    return;
+  }
+  transaction->Push(parent, update);
+  transaction->Pop(child);
+  transaction->Prepare();
+  transaction->CommitAction();
+}
+
+static void StepMergeMem(const L0::TManager::TPtr<Indy::TRepo> &repo) {
+  if (auto *safe = dynamic_cast<TSteppedSafeRepo *>(repo.Get())) {
+    safe->StepMergeMem();
+  } else if (auto *fast = dynamic_cast<TSteppedFastRepo *>(repo.Get())) {
+    fast->StepMergeMem();
+  } else {
+    EXPECT_TRUE(false);
+  }
+}
+
+/* #665: a ttl-0 pov's repo must not be discarded while a pop of one of its updates is still
+   waiting for its completion, and the completion must land on that repo.
+
+   The child writes, Tetris pops the write into the safe root, and the pop's completion waits for
+   the root's next memory merge to put it on disk.  Meanwhile the child's own memory merge runs,
+   and a second write lands while it does.  The merge sealed the current memory layer before it
+   began; the second write goes to a fresh one.  The merge then drops the first write (released),
+   finds no data in the mapping, and used to drop the repo's self-pin, with the second write
+   unreleased in the current layer.  Once Tetris popped that write and the pov's owner let go,
+   nothing pinned the repo, and the manager discarded it as an expired pov ("dropping unmerged
+   updates", #521).  When the root's merge then completed the pop, the completion's ForceOpenRepo
+   built an empty repo under the old id and released update 2 in it: `seq_num < NextUpdate` in
+   debug, a resurrected empty pov in release. */
+FIXTURE(Issue665PopCompletionOutlivesMergeRace) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<T665Manager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      const TUuid child_id(TUuid::Twister);
+      auto root = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      auto child = manager->GetRepo(child_id, TTtl(0), root, false, true);
+      /* Write 1, promote it, and complete the pop: update 1 is released in the child. */
+      PushOne(manager.get(), child, idx_id, 1L);
+      PromoteOne(manager.get(), child, root);
+      StepMergeMem(root);
+      EXPECT_EQ(child->GetReleasedUpTo(), 1UL);
+      /* The child's merge; write 2 lands after it has sealed the layer holding update 1. */
+      bool wrote_mid_merge = false;
+      Orly::Indy::TRepo::OnMergeMemSealedForTest = [&](Orly::Indy::TRepo *repo) {
+        if (!wrote_mid_merge && repo->GetId() == child_id) {
+          wrote_mid_merge = true;
+          PushOne(manager.get(), child, idx_id, 2L);
+        }
+      };
+      StepMergeMem(child);
+      Orly::Indy::TRepo::OnMergeMemSealedForTest = nullptr;
+      EXPECT_TRUE(wrote_mid_merge);
+      /* Promote update 2.  Its pop waits on the root's merge. */
+      PromoteOne(manager.get(), child, root);
+      EXPECT_EQ(child->GetReleasedUpTo(), 1UL);
+      /* The pov's owner lets go.  Update 2 is unreleased, so the repo must stay. */
+      child.Reset();
+      EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      /* The root's merge completes the pop: the child releases update 2, and with nothing left
+         to release and nobody holding it, the ttl-0 pov goes. */
+      StepMergeMem(root);
+      EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      /* Both writes reached the root. */
+      EXPECT_EQ(root->GetNextSequenceNumber(), 3UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* #665: a pop's completion for a repo the manager has already discarded is a no-op.  It must not
+   open the repo, which for a missing id constructs an empty one: `seq_num < NextUpdate` in
+   ReleaseUpdate in debug, and in release an empty repo resurrected under the expired pov's id.
+   The discard here is the manager's sweep of self-pins, a sanctioned discard (#521), taken while
+   the pop's completion waits on the root's merge. */
+FIXTURE(Issue665PopCompletionAfterDiscardIsNoOp) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<T665Manager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      const TUuid child_id(TUuid::Twister);
+      auto root = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      auto child = manager->GetRepo(child_id, TTtl(0), root, false, true);
+      PushOne(manager.get(), child, idx_id, 1L);
+      PushOne(manager.get(), child, idx_id, 2L);
+      PromoteOne(manager.get(), child, root);
+      PromoteOne(manager.get(), child, root);
+      /* Both pops wait on the root's merge.  The owner lets go, and the sweep discards the pov. */
+      child.Reset();
+      EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      manager->DropDirtySelfPins();
+      EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      /* The completions find nothing to release, and must leave it that way. */
+      StepMergeMem(root);
+      EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      EXPECT_EQ(root->GetNextSequenceNumber(), 3UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* #665 with #661: a pov with a ttl is cached, not destroyed, when its pop completes and nothing
+   holds it, and since #661 a cached repo keeps its parent.  The completion's TryOpenLiveRepo
+   reopens such a repo exactly as it was, so a later write rejoins Tetris through that parent and a
+   later completion releases in the same repo. */
+FIXTURE(Issue665PopCompletionOnCachedRepo) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<T665Manager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      const TUuid child_id(TUuid::Twister);
+      auto root = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      /* extra */ {
+        auto child = manager->GetRepo(child_id, TTtl(600s), root, false, true);
+        PushOne(manager.get(), child, idx_id, 1L);
+        PromoteOne(manager.get(), child, root);
+      }
+      /* Only the self-pin holds the child now.  Completing the pop releases update 1 and the pin,
+         and the child closes into the cache. */
+      StepMergeMem(root);
+      if (EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)))) {
+        auto child = manager->GetRepo(child_id, std::nullopt, std::nullopt, false, false);
+        EXPECT_EQ(child->GetReleasedUpTo(), 1UL);
+        const auto &parent = child->GetParentRepo();
+        EXPECT_TRUE(parent && parent->Get() == root.Get());
+        PushOne(manager.get(), child, idx_id, 2L);
+        PromoteOne(manager.get(), child, root);
+        StepMergeMem(root);
+        EXPECT_EQ(child->GetReleasedUpTo(), 2UL);
+      }
+      EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(child_id)));
+      EXPECT_EQ(root->GetNextSequenceNumber(), 3UL);
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
