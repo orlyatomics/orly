@@ -817,8 +817,10 @@ namespace Orly {
               Iter(std::move(that.Iter)),
               Ptr(std::move(that.Ptr)) {}
 
+        /* Check the count first: testing `Iter` once the count is reached
+           would evaluate the element after the last one taken (#699). */
         operator bool() const {
-          return Iter && CurCount < Ptr->GetCount();
+          return CurCount < Ptr->GetCount() && Iter;
         }
 
         TItem &operator*() const {
@@ -832,8 +834,11 @@ namespace Orly {
           if (!*this) {
             throw TPastEndError(HERE);
           }
-          ++CurCount;
-          ++Iter;
+          /* Don't step the source past the last element taken: stepping it
+             decodes, and may fetch, an element nobody reads (#699). */
+          if (++CurCount < Ptr->GetCount()) {
+            ++Iter;
+          }
           return *this;
         }
 

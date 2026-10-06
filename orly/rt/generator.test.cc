@@ -181,3 +181,87 @@ FIXTURE(GenericGenerators) {
   }
   EXPECT_EQ(count, 2u);
 }
+
+/* A source that counts how far its cursor has been stepped and how many
+   elements have been read from it, standing in for a walker whose every step
+   decodes, and may fetch, an element (#699). */
+class TCountingGenerator final
+    : public TGenerator<int>,
+      public std::enable_shared_from_this<TCountingGenerator> {
+  public:
+
+  struct TCounts {
+    size_t Steps = 0;
+    size_t Reads = 0;
+  };
+
+  using TPtr = std::shared_ptr<const TCountingGenerator>;
+
+  class TCursor final : public Base::TIter<const int> {
+    public:
+
+    TCursor(const TPtr &ptr) : Ptr(ptr), Pos(0) {}
+
+    virtual operator bool() const override {
+      return Pos < Ptr->Size;
+    }
+
+    virtual const int &operator*() const override {
+      ++Ptr->Counts->Reads;
+      Val = Pos;
+      return Val;
+    }
+
+    virtual Base::TIter<const int> &operator++() override {
+      ++Ptr->Counts->Steps;
+      ++Pos;
+      return *this;
+    }
+
+    private:
+
+    TPtr Ptr;
+
+    int Pos;
+
+    mutable int Val;
+
+  };  // TCursor
+
+  TCountingGenerator(int size, TCounts *counts) : Size(size), Counts(counts) {}
+
+  virtual Base::TIterHolder<const int> NewCursor() const override {
+    return MakeHolder(new TCursor(shared_from_this()));
+  }
+
+  int Size;
+
+  TCounts *Counts;
+
+};  // TCountingGenerator
+
+FIXTURE(TakeStepsOnlyOverTakenElements) {
+  for (int64_t take_count : {0L, 1L, 3L, 9L}) {
+    TCountingGenerator::TCounts counts;
+    auto src = std::make_shared<const TCountingGenerator>(100, &counts);
+    int64_t seen = 0;
+    for (auto it = TTakeGenerator<int>::New(take_count, src)->NewCursor(); it; ++it) {
+      EXPECT_EQ(*it, seen);
+      ++seen;
+    }
+    EXPECT_EQ(seen, take_count);
+    /* Taking N reads N elements and steps between them N-1 times; it never
+       steps onto element N+1. */
+    EXPECT_EQ(counts.Reads, static_cast<size_t>(take_count));
+    EXPECT_EQ(counts.Steps, static_cast<size_t>(take_count > 0 ? take_count - 1 : 0));
+  }
+  /* Taking more than there are stops at the end of the source. */
+  TCountingGenerator::TCounts counts;
+  auto src = std::make_shared<const TCountingGenerator>(5, &counts);
+  int64_t seen = 0;
+  for (auto it = TTakeGenerator<int>::New(10, src)->NewCursor(); it; ++it) {
+    ++seen;
+  }
+  EXPECT_EQ(seen, 5);
+  EXPECT_EQ(counts.Steps, 5u);
+}
