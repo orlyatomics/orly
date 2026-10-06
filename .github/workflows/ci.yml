@@ -849,7 +849,6 @@ jobs:
           # issue. A timeout here is reported as a warning, not a failure; if
           # one of these starts passing, the job warns so the entry is removed.
           KNOWN_TIMEOUT="
-          orly/indy/fiber/fiber_lock.test:613
           "
           PATH="$PWD/tools:$PATH" tools/jhm -c tsan $CONTROL $TESTS
 
