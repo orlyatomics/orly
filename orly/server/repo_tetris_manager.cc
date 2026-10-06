@@ -143,44 +143,51 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
   return success;
 }
 
-bool TRepoTetrisManager::TPlayer::TChild::Refresh(
-    const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction, bool peek) {
+bool TRepoTetrisManager::TPlayer::TChild::Refresh(const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction) {
   assert(transaction);
   if (!Repo->GetSequenceNumberStart()) {
     ++Age;
     return static_cast<bool>(PeekedUpdate);
   }
-  /* Take the child's promotion hold on this round's transaction first, even when we still hold
-     an update peeked in an earlier round: the hold is what keeps a pause from committing while
-     this round may still promote the child (#636).  Peek takes it as it reads; for an update we
-     already hold, or one we won't copy out yet (peek false, #660), HoldForPromotion takes it
-     alone.  It is refused while a pause of the child is pending, and the child then sits the
-     round out.  Holding it also orders our status read after any pause that has committed. */
-  std::shared_ptr<Indy::TUpdate> peeked;
+  /* Take the child's promotion hold on this round's transaction, even when we still hold an
+     update peeked in an earlier round: the hold is what keeps a pause from committing while this
+     round may still promote the child (#636).  It is refused while a pause of the child is
+     pending, and the child then sits the round out.  Holding it also orders our status read after
+     any pause that has committed.
+
+     We take only the hold here, under the player's mutex, and copy nothing: Peek copies the update
+     out later, outside the mutex, and only for a child the round may promote (#660). */
   bool held = false;
   try {
-    held = (PeekedUpdate || !peek) ? transaction->HoldForPromotion(Repo) : static_cast<bool>(peeked = transaction->Peek(Repo));
+    held = transaction->HoldForPromotion(Repo);
   } catch (const std::bad_alloc &) {
-    /* No room to copy this child's update out (#607): it sits this round out, so the children
-       that did get a copy can still be promoted. A hold the peek took ends with the round's
-       transaction. */
     return false;
   }
   if (!held || Repo->GetStatus() != Orly::Indy::Normal) {
     return false;
   }
-  if (!PeekedUpdate && peeked) {
-    Load(std::move(peeked));
-  }
   ++Age;
-  /* Not peeked yet, but it has an update and we hold it: PeekAndPlay copies it out if its turn
-     comes (#660). */
-  return PeekedUpdate || !peek;
+  return true;
 }
 
-void TRepoTetrisManager::TPlayer::TChild::Load(std::shared_ptr<Indy::TUpdate> &&peeked) {
-  assert(peeked);
-  assert(!PeekedUpdate);
+bool TRepoTetrisManager::TPlayer::TChild::Peek(const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction) {
+  assert(transaction);
+  if (PeekedUpdate) {
+    return true;
+  }
+  /* Refresh took the hold on this transaction, so this Peek reads through that same popper, and
+     Play's Pop promotes it (Peek->Pop on one mutation, as RepeekAndPlay requires). */
+  std::shared_ptr<Indy::TUpdate> peeked;
+  try {
+    peeked = transaction->Peek(Repo);
+  } catch (const std::bad_alloc &) {
+    /* No room to copy this child's update out (#607): it sits this round out. A hold ends with
+       the round's transaction. */
+    return false;
+  }
+  if (!peeked) {
+    return false;
+  }
   PeekedUpdate = std::move(peeked);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Sabot::ToNative(*Sabot::State::TAny::TWrapper(PeekedUpdate->GetMetadata().NewState(&PeekedUpdate->GetSuprena(), state_alloc)), MetaRecord);
@@ -190,31 +197,11 @@ void TRepoTetrisManager::TPlayer::TChild::Load(std::shared_ptr<Indy::TUpdate> &&
         Player->RepoTetrisManager->PackageManager->Get(Package::TName{entry.GetPackageFqName()})
             ->GetFunctionInfo(AsPiece(entry.GetMethodName()));
   }
-  /* A new update: its assertions haven't failed yet.  Age is not reset here: it counts the
-     rounds this child has been ready since its last promotion, peeked or not, so a lazy peek
-     doesn't send it to the back of the queue (#660). */
+  /* A new update: its assertions haven't failed yet.  Age is not reset here: it counts the rounds
+     this child has been ready since its last promotion, copied out or not, so a child's place in
+     the queue doesn't depend on when its turn to be copied came (#660). */
   FailureCount = 0;
-}
-
-bool TRepoTetrisManager::TPlayer::TChild::PeekAndPlay(
-    const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context) {
-  assert(transaction);
-  if (!PeekedUpdate) {
-    /* Refresh took the hold on this transaction, so this Peek reads through that same popper,
-       and Play's Pop promotes it (Peek->Pop on one mutation, as RepeekAndPlay requires). */
-    std::shared_ptr<Indy::TUpdate> peeked;
-    try {
-      peeked = transaction->Peek(Repo);
-    } catch (const std::bad_alloc &) {
-      /* No room for even this one copy (#607): the next child may be smaller. */
-      return false;
-    }
-    if (!peeked) {
-      return false;
-    }
-    Load(std::move(peeked));
-  }
-  return Play(transaction, context);
+  return true;
 }
 
 bool TRepoTetrisManager::TPlayer::TChild::SortsBefore(const TChild *lhs, const TChild *rhs) {
@@ -235,9 +222,9 @@ bool TRepoTetrisManager::TPlayer::TChild::RepeekAndPlay(
   /* Drop the snapshot-phase Peek (it lives on a different transaction) so the
      Refresh below re-Peeks this child on `transaction`; the subsequent Pop in
      Play then promotes that very popper (Peek->Pop) instead of minting a second
-     one. Refresh re-parses the metadata Flush just cleared. */
+     one. Peek re-parses the metadata Flush just cleared. */
   Flush();
-  return Refresh(transaction, true) && Play(transaction, context);
+  return Refresh(transaction) && Peek(transaction) && Play(transaction, context);
 }
 
 namespace Orly {
@@ -362,13 +349,7 @@ void TRepoTetrisManager::TPlayer::Play() {
     /* Snapshot every child that is ready to participate this round. Refresh takes each child's
        promotion hold on `snapshot_txn`; it carries no Push/Pop so it costs nothing to discard,
        and it is the transaction the assertion-bearing (one-per-round) promotion below reuses.
-
-       Only the fast lane copies every child's update out here, because it must read each one's
-       metadata to classify it. The one-per-round path copies a child's update only when its
-       turn comes (PeekAndPlay): a round promotes at most one child, and copying all of them
-       first took the whole pool when many children had backlogs, so the copy for the one
-       promotion never fit and no round ever completed (#660). */
-    const bool peek_all = RepoTetrisManager->CommutativeFastlane;
+       Refresh copies nothing, so no pool claim is made under the player's mutex. */
     unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> snapshot_txn = RepoTetrisManager->RepoManager->NewTransaction();
     vector<TChild *> children;
     snapshot_timer.Start();
@@ -377,10 +358,18 @@ void TRepoTetrisManager::TPlayer::Play() {
       children.reserve(ChildByPovId.size());
       for (const auto &item: ChildByPovId) {
         TChild *child = item.second;
-        if (child->Refresh(snapshot_txn, peek_all)) {
+        if (child->Refresh(snapshot_txn)) {
           children.push_back(child);
         }
       }
+    }
+    /* Only the fast lane copies every ready child's update out before playing, because it must
+       read each one's metadata to classify it. The one-per-round path below copies a child's
+       update only when its turn comes: a round promotes at most one child, and copying all of
+       them first took the whole pool when many children had backlogs, so the copy for the one
+       promotion never fit and no round ever completed (#660). */
+    if (RepoTetrisManager->CommutativeFastlane) {
+      std::erase_if(children, [&snapshot_txn](TChild *child) { return !child->Peek(snapshot_txn); });
     }
     snapshot_timer.Stop();
     RepoTetrisManager->ChildrenConsideredCount += children.size();
@@ -438,7 +427,7 @@ void TRepoTetrisManager::TPlayer::Play() {
       /* Give each child a chance to play.  At most one will be permitted to
          promote (for now), but any number might fail due to age. */
       for (TChild *child: children) {
-        if (child->PeekAndPlay(snapshot_txn, context)) {
+        if (child->Peek(snapshot_txn) && child->Play(snapshot_txn, context)) {
           break;
         }
       }

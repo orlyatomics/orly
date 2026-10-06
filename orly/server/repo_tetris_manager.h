@@ -106,16 +106,16 @@ namespace Orly {
           bool Play(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
-          /* Takes this child's promotion hold on `transaction` and says whether the child can
-             play this round.  With `peek`, it also copies the child's lowest update out (if it
-             doesn't hold one already) and is ready only once it has; without, a child that has
-             an update is ready uncopied, and PeekAndPlay copies it if its turn comes (#660). */
-          bool Refresh(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, bool peek);
+          /* Takes this child's promotion hold on `transaction` and says whether the child can play
+             this round: it has an update (or holds one already) and isn't paused.  Copies nothing,
+             so it makes no pool claim; it runs under the player's mutex. */
+          bool Refresh(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction);
 
-          /* Copies this child's update out on `transaction`, if Refresh didn't, then Play()s it.
-             False if there is no update, or no room to copy it (#607). */
-          bool PeekAndPlay(
-              const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
+          /* Copies this child's lowest update out on `transaction`, which Refresh must have
+             taken the hold on, and parses its metadata; true at once if we hold one already.
+             False if there is no update, or no room to copy it (#607).  Only for a child the
+             round may promote, outside the player's mutex (#660). */
+          bool Peek(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction);
 
           static bool SortsBefore(const TChild *lhs, const TChild *rhs);
 
@@ -124,7 +124,7 @@ namespace Orly {
              GetExpectedPredicateResults). Such a child provably cannot
              conflict (architecture.md §5), so the fast-lane may promote it in
              the same round as any other assertion-free child. Requires a
-             prior Refresh(). */
+             prior Peek(). */
           bool IsAssertionFree() const;
 
           /* Fast-lane promotion (#234): drop any prior snapshot Peek, re-Peek
@@ -139,15 +139,13 @@ namespace Orly {
           bool RepeekAndPlay(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
-          /* Drop the peeked update and what was parsed from it; the next Refresh peeks again. */
+          /* Drop the peeked update and what was parsed from it; the next Peek copies it again. */
           void Flush();
 
           private:
 
           bool TestAssertions(Indy::TContext &context) const;
 
-          /* Takes `peeked` as our update and parses its metadata. */
-          void Load(std::shared_ptr<Indy::TUpdate> &&peeked);
 
           /* The player which owns us.  Never null. */
           TPlayer *Player;
