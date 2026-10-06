@@ -63,25 +63,16 @@
    paired master: the status changes must replicate without a sequence
    number to carry (#655).
 
+   The SlaveMutationForDiscardedRepo and SlavePovUnderDiscardedParent
+   fixtures replicate to a slave that has already discarded its copy of a
+   pov's repo, or of the pov's parent's.  The slave must leave the pov alone,
+   not build an empty stand-in for the gone repo and apply to that (#671).
+
    The ExpiredPovNotInventoried fixture lets two povs with a ttl expire on a
    solo master before a slave joins. The join must inventory neither: the
    first one's saved-repo entry must be gone from the system repo by then,
    and the second one's entry, still there, must not make the master build
    an empty stand-in for it (#671).
-
-   Copyright 2010-2026 Atomic Kismet Company
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -1428,6 +1419,152 @@ FIXTURE(WriteToPovCreatedWhilePaired) {
   }
   slave.Kill();
   slave.Reap(seconds(60));
+}
+
+/* Start a solo master and a slave paired with it, both with the sample package installed; the
+   slave gets slave_args.  For the #671 fixtures. */
+struct TPairedServers {
+  TPairedServers(const string &scratch, const string &name, const vector<string> &slave_args, TLogTailDumper &log_dumper)
+      : PkgDir(scratch + "/packages"), MasterLog(scratch + "/master.log"), SlaveLog(scratch + "/slave.log"),
+        MasterPort(ProbeFreePort()), MasterSlavePort(ProbeFreePort()), SlavePort(ProbeFreePort()),
+        Master(MakeServerArgs(GetOrlyiPath(), name + "_master", PkgDir, MasterPort, MasterSlavePort, "SOLO", 0), MasterLog),
+        Slave(nullptr) {
+    log_dumper.Add(MasterLog);
+    log_dumper.Add(SlaveLog);
+    if (!WaitForPort(MasterPort, seconds(240))) {
+      throw runtime_error("master never came up; see " + MasterLog);
+    }
+    Answered(make_shared<TExerciseClient>(MasterAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (master)")->Sync();
+    Slave = make_unique<TChildServer>(
+        MakeServerArgs(GetOrlyiPath(), name + "_slave", PkgDir, SlavePort, ProbeFreePort(), "SLAVE", MasterSlavePort, slave_args),
+        SlaveLog);
+    if (!WaitForPort(SlavePort, seconds(240)) || !WaitForLog(SlaveLog, "to [Slave]", seconds(120))) {
+      throw runtime_error("slave never reached Slave state; see " + SlaveLog);
+    }
+    Answered(make_shared<TExerciseClient>(SlaveAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (slave)")->Sync();
+  }
+
+  TAddress MasterAddr() const {
+    return TAddress(TAddress::IPv4Loopback, MasterPort);
+  }
+
+  TAddress SlaveAddr() const {
+    return TAddress(TAddress::IPv4Loopback, SlavePort);
+  }
+
+  /* SIGKILL the master, so the slave promotes (see the header comment). */
+  void Failover() {
+    Master.Kill();
+    Master.Reap(seconds(60));
+    if (!WaitForLog(SlaveLog, "slave promoted to solo", seconds(120))) {
+      throw runtime_error("slave never promoted (" + Slave->Describe() + "); see " + SlaveLog);
+    }
+  }
+
+  const string PkgDir, MasterLog, SlaveLog;
+  const in_port_t MasterPort, MasterSlavePort, SlavePort;
+  TChildServer Master;
+  unique_ptr<TChildServer> Slave;
+};
+
+/* Write the sample package to a fresh scratch dir and compile it there. */
+string NewSampleScratch() {
+  const string scratch = GetScratchDir();
+  Util::IfLt0(mkdir((scratch + "/packages").c_str(), 0755));
+  { ofstream marker(scratch + "/packages/__orly__"); }
+  {
+    ofstream src(scratch + "/sample.orly");
+    src << SamplePackage;
+  }
+  Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(scratch + "/packages"), {});
+  return scratch;
+}
+
+/* #671, the slave's apply path: a replicated mutation for a repo the slave has discarded.  With
+   no repo cache, the slave discards its copy of a new pov's repo as soon as it has built it, and
+   discards whatever it applied a write to once that write is promoted.  The slave used to open
+   the gone repo by force for each mutation, which builds an empty repo whose sequence starts at
+   1, so the first mutation past sequence 1 failed the slave's sequence check (seen: the assert in
+   TTransaction::Pop, in a debug build; "missing data" for a push in release). */
+FIXTURE(SlaveMutationForDiscardedRepo) {
+  Orly::Type::TTypeCzar type_czar;
+  if (!ifstream(GetOrlyiPath()).good()) {
+    throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
+  }
+  TLogTailDumper log_dumper;
+  TPairedServers pair(NewSampleScratch(), "gone_repo", { "--max_repo_cache_size=0" }, log_dumper);
+  /* client scope */ {
+    auto client = make_shared<TExerciseClient>(pair.MasterAddr());
+    const Base::TUuid pov_id = **Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov");
+    EXPECT_TRUE(WriteValReplicated(client, pov_id, 71L, 7171L));
+    /* Let the slave's merge release what it applied the first write to. */
+    this_thread::sleep_for(seconds(2));
+    EXPECT_TRUE(WriteValReplicated(client, pov_id, 72L, 7272L));
+    this_thread::sleep_for(seconds(2));
+  }
+  cout << "slave: " << pair.Slave->Describe() << endl;
+  EXPECT_TRUE(pair.Slave->IsAlive());
+  EXPECT_FALSE(LogContains(pair.SlaveLog, "missing data"));
+  /* Both writes reach the slave's global pov all the same. */
+  pair.Failover();
+  const int64_t expected_by_key[][2] = {{71L, 7171L}, {72L, 7272L}};
+  for (const auto &row : expected_by_key) {
+    Rt::TOpt<int64_t> val = ReadWithRetry(pair.SlaveAddr(), row[0], seconds(60));
+    EXPECT_TRUE(val.IsKnown());
+    if (val.IsKnown()) {
+      EXPECT_EQ(val.GetVal(), row[1]);
+    }
+  }
+  pair.Slave->Kill();
+  pair.Slave->Reap(seconds(60));
+}
+
+/* #671, the slave's repo creation: a pov whose parent the slave has discarded.  The parent is a
+   shared pov with no ttl, so the slave discards its copy of the parent's repo as soon as it has
+   built it; the child has a ttl, so the slave keeps its copy.  The slave used to open the gone
+   parent by force, which builds an empty repo with no parent, and gave the child that.  After a
+   failover the child then read through to nothing: a key the global pov holds read as unknown.
+   Now the slave doesn't build the child, so after a failover it is refused as a pov whose state is
+   gone (#439), like any other pov the new master doesn't have. */
+FIXTURE(SlavePovUnderDiscardedParent) {
+  Orly::Type::TTypeCzar type_czar;
+  if (!ifstream(GetOrlyiPath()).good()) {
+    throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
+  }
+  TLogTailDumper log_dumper;
+  TPairedServers pair(NewSampleScratch(), "gone_parent", {}, log_dumper);
+  Base::TUuid child_id;
+  /* client scope */ {
+    auto client = make_shared<TExerciseClient>(pair.MasterAddr());
+    /* A value in the global pov, for the child to read through its parent. */
+    const Base::TUuid writer_id = **Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
+    EXPECT_TRUE(WriteValReplicated(client, writer_id, 81L, 8181L));
+    const Base::TUuid parent_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(0)), "NewFastSharedPov (parent)");
+    child_id = **Answered(client->NewSafeSharedPov(parent_id), "NewSafeSharedPov (child)");
+    /* On the master the child reads the global value through its parent. */
+    Rt::TOpt<int64_t> on_master = ReadVal(client, child_id, 81L);
+    EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 8181L);
+  }
+  /* Closing the client closes the child pov, which saves it; the save replicates, so the
+     promoted slave knows the child pov. */
+  this_thread::sleep_for(seconds(3));
+  pair.Failover();
+  bool refused = false;
+  std::optional<Rt::TOpt<int64_t>> read;
+  try {
+    auto client = make_shared<TExerciseClient>(pair.SlaveAddr());
+    read = ReadVal(client, child_id, 81L);
+  } catch (const exception &ex) {
+    refused = true;
+    cout << "child read on the promoted slave refused: " << ex.what() << endl;
+  }
+  if (read) {
+    cout << "child read on the promoted slave: " << (read->IsKnown() ? to_string(read->GetVal()) : string("unknown")) << endl;
+  }
+  /* Refusing is right; so would be reading the global value.  Reading nothing is not. */
+  EXPECT_TRUE(refused || (read->IsKnown() && read->GetVal() == 8181L));
+  pair.Slave->Kill();
+  pair.Slave->Reap(seconds(60));
 }
 
 FIXTURE(ExpiredPovNotInventoried) {
