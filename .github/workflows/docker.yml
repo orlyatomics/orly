@@ -205,9 +205,71 @@ jobs:
             | tee /tmp/repl-out
           grep -qE '(^|orly> )42$' /tmp/repl-out
 
+      # Under a memory limit (#669). orlyi used to size every pool from the
+      # host's free RAM, and the entrypoint pinned 4000 fiber frames (4 GiB of
+      # stacks), so the image was OOM-killed while idle under --memory=1g and
+      # 4g. It now sizes from the cgroup limit. memlock is unlimited here, as
+      # it is on OrbStack: orlyi mlocks its pools, caches and stacks, so every
+      # planned byte is resident from the start and an over-plan dies at once
+      # instead of when load finally touches it. A runner's default memlock
+      # limit would hide the bug. The container must start, size from the
+      # cgroup, take writes and read them back, and still be running and not
+      # OOM-killed afterwards.
+      - name: Runs under --memory=1g (#669)
+        run: |
+          docker run -d --name orly1g --memory=1g --memory-swap=1g \
+            --ulimit memlock=-1:-1 -p 8092:8082 "$IMAGE"
+          for _ in $(seq 1 60); do
+            if ss -tln | grep -q ':8092' && docker logs orly1g 2>&1 | grep -q CleanHouse; then break; fi
+            sleep 1
+          done
+          docker logs orly1g 2>&1 | grep 'memory \(budget\|plan\)'
+          docker logs orly1g 2>&1 | grep -q 'memory budget: 1024 MiB, from the cgroup limit'
+          PYTHONPATH=clients/python python3 - <<'PY'
+          import orly
+          c = orly.connect("ws://127.0.0.1:8092/")
+          c.new_session()
+          c.install("sample", 1)
+          pov = c.send("new safe shared pov;")
+          for n in range(1, 501):
+              c.call(pov, "sample", "write_val", {"n": n, "x": n * 7})
+          r = orly.connect("ws://127.0.0.1:8092/")
+          r.new_session()
+          bad = [n for n in range(1, 501) if r.call(pov, "sample", "read_val", {"n": n}) != n * 7]
+          print(f"500 writes, {500 - len(bad)} read back")
+          assert not bad, bad[:5]
+          PY
+          sleep 5
+          state=$(docker inspect orly1g --format '{{.State.Status}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}')
+          echo "container after writes: $state; peak $(( $(docker exec orly1g cat /sys/fs/cgroup/memory.peak) >> 20 )) MiB"
+          test "$state" = "running oom=false restarts=0"
+
+      # The negative control: the same container with the cgroup hidden from
+      # orlyi (an empty tmpfs over /sys/fs/cgroup; the kernel still enforces the
+      # limit). orlyi then sizes as if unlimited, for the entrypoint's default
+      # 4 GiB budget, which is what every build before #669 did. That must be
+      # OOM-killed, or the step above isn't testing the fix.
+      - name: Negative control, cgroup hidden, must be OOM-killed (#669)
+        run: |
+          docker run -d --name orly1g-ctl --memory=1g --memory-swap=1g \
+            --ulimit memlock=-1:-1 --tmpfs /sys/fs/cgroup "$IMAGE"
+          for _ in $(seq 1 60); do
+            if [ "$(docker inspect orly1g-ctl --format '{{.State.Running}}')" != true ]; then break; fi
+            sleep 1
+          done
+          docker logs orly1g-ctl 2>&1 | grep 'memory budget' || true
+          state=$(docker inspect orly1g-ctl --format '{{.State.Status}} oom={{.State.OOMKilled}}')
+          echo "control: $state"
+          test "$state" = "exited oom=true"
+
       - name: Container logs (for diagnosis)
         if: always()
-        run: docker logs orly 2>&1 | tail -60
+        run: |
+          docker logs orly 2>&1 | tail -60
+          for c in orly1g orly1g-ctl; do
+            echo "--- $c"
+            docker logs "$c" 2>&1 | grep -v 'TRunnerCons\|Scheduler TID\|RUNNER \[' | tail -20 || true
+          done
 
       # Each leg pushes its own arch-tagged image; the manifest job below
       # stitches them together. Pushing per-arch tags (rather than the
