@@ -58,6 +58,22 @@ class TReader
   using TReadFile::FindInHash;
 };
 
+/* Counts the updates and entries a memory merge copies out of 'layers' (#607): every update
+   past 'bound', or every update when 'all', with its entries. */
+static void CountCopy(const std::vector<TMemoryLayer *> &layers, TSequenceNumber bound, bool all,
+                      size_t &updates, size_t &entries) {
+  for (const TMemoryLayer *layer : layers) {
+    for (TMemoryLayer::TUpdateCollection::TCursor csr(layer->GetUpdateCollection()); csr; ++csr) {
+      if (all || csr->GetSequenceNumber() > bound) {
+        ++updates;
+        for (TUpdate::TEntryCollection::TCursor entry(csr->GetEntryCollection()); entry; ++entry) {
+          ++entries;
+        }
+      }
+    }
+  }
+}
+
 /* A Data Layer pool block for the disk layer that a memory merge's file becomes, taken before
    the file is written (#607). Once the file map has the file, the merge can't be undone, so
    recording the file mustn't depend on an allocation that can fail. */
@@ -412,6 +428,12 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
     std::lock_guard<std::mutex> lock(DataLock);
     popped_seq = LowestSeqNum;
     next_update = NextUpdate;
+    /* The popped update now lives in the parent, so this repo's memory merge can drop its copy.
+       Queue that merge (#607): otherwise only this repo's next write queued it, and a repo whose
+       backlog Tetris drained after its last merge kept the released copies in the update pools
+       until that write. With memory admission the write may be refused until they are freed,
+       so they never were. Queuing an already queued repo does nothing. */
+    EnqueueMergeMem();
     if (*LowestSeqNum < *HighestSeqNum) {
       ++(*LowestSeqNum);
     } else {
@@ -457,6 +479,11 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
       if (iter.Mutator == TMutator::Assign) {
         op_by_key.insert(make_pair(iter.IndexKey, TKey(iter.Op, item.MainArena)));
       }
+    }
+    /* Claim the copy before making it (#607; see TPool::TryClaim). */
+    TUpdate::TCopyClaim claim;
+    if (!claim.TryAcquire(1UL, item.EntryVec.size())) {
+      throw std::bad_alloc();
     }
     auto update = TUpdate::NewUpdate(op_by_key, TKey(item.Metadata, item.MainArena), TKey(item.Id, item.MainArena));
     for (const auto &iter : item.EntryVec) {
@@ -667,6 +694,32 @@ void TRepo::StepMergeMem() {
             mem_to_merge_vec.push_back(reinterpret_cast<TMemoryLayer *>(layer));
           }
           //syslog(LOG_INFO, "Layout Disk=[%ld]\tMem=[%ld]\tToMerge=[%ld]\t\t\tTaken=[%ld]", num_disk, total_count - num_disk, mem_to_merge_vec.size(), taken);
+          /* #607: claim the whole copy before making any of it (TPool::TryClaim). The safe root
+             writes several layers as one file by first copying them into one layer; if that copy
+             isn't granted, it writes the oldest layer by itself instead, which copies nothing.
+             That way the root can always flush what Tetris has promoted into it, however full
+             the pools are, and each promotion it makes room for shrinks some child's
+             unpromoted backlog, which is all a child's merge copies. A child or fast repo whose
+             copy isn't granted waits, holding nothing, and tries again on its next pass. */
+          TUpdate::TCopyClaim copy_claim;
+          if (mem_to_merge_vec.size() >= 2) {
+            size_t updates = 0UL, entries = 0UL;
+            CountCopy(mem_to_merge_vec, lower_seq_bound, !ParentRepo, updates, entries);
+            if (!copy_claim.TryAcquire(updates, entries)) {
+              if (!IsSafeRepo() || ParentRepo) {
+                throw std::bad_alloc();
+              }
+              for (size_t i = 0; i + 1 < mem_to_merge_vec.size(); ++i) {
+                mem_to_merge_vec[i]->UnmarkTaken();
+              }
+              mem_to_merge_vec.erase(mem_to_merge_vec.begin(), mem_to_merge_vec.end() - 1);
+              static std::atomic<size_t> single_flushes(0UL);
+              const size_t n = ++single_flushes;
+              if ((n & (n - 1UL)) == 0UL) {
+                syslog(LOG_ERR, "StepMergeMem: no room to combine the global repo's memory layers; flushing the oldest alone (%ld times so far)", n);
+              }
+            }
+          }
           if (mem_to_merge_vec.size() == 1) {
               //syslog(LOG_INFO, "mem_to_merge_vec.size() == 1");
               if (IsSafeRepo() && !ParentRepo && !reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0])->IsEmpty()) {
@@ -723,6 +776,11 @@ void TRepo::StepMergeMem() {
                   /* child with a mix of released + unreleased entries -> keep
                      only the unreleased remainder in memory; the released ones
                      live in the parent. */
+                  size_t updates = 0UL, entries = 0UL;
+                  CountCopy({src}, lower_seq_bound, false, updates, entries);
+                  if (!copy_claim.TryAcquire(updates, entries)) {
+                    throw std::bad_alloc();
+                  }
                   std::unordered_map<const TUpdate *, TUpdate *> update_remap;
                   for (TMemoryLayer::TUpdateCollection::TCursor csr(src->GetUpdateCollection()); csr; ++csr) {
                     if (csr->GetSequenceNumber() > lower_seq_bound) {
@@ -744,6 +802,7 @@ void TRepo::StepMergeMem() {
                       new_mem->ImporterAppendEntry(new_entry);
                     }
                   }
+                  copy_claim.Release();
                   /* new_mem (unreleased remainder) is added to the mapping
                      below; src is MarkForDelete'd there. */
                 }
@@ -823,6 +882,7 @@ void TRepo::StepMergeMem() {
                   }
                 }
               }  // end sorter alloca scope
+              copy_claim.Release();
               if (IsSafeRepo() && !ParentRepo) {
                 /* #227: ONLY the root flushes (see the size==1 path above).
                    A safe ROOT always consumes new_mem here; it may come out

@@ -42,6 +42,7 @@ TPool::TPool(size_t block_size, const char *name, size_t block_count)
       MaxBlocks(0UL),
       Reserve(0UL),
       NumBlocksAdmitted(0UL),
+      NumBlocksClaimed(0UL),
       Refusing(false),
       NumMisses(0UL) {
   assert(block_size >= sizeof(void*));
@@ -120,7 +121,7 @@ bool TPool::TryAdmit(size_t num_blocks) {
   const size_t reserve = Reserve.load();
   if (reserve) {
     const size_t keep_free = std::min(MaxBlocks, reserve + (Refusing ? reserve / 4UL : 0UL));
-    if (NumBlocksUsed + NumBlocksAdmitted + num_blocks > MaxBlocks - keep_free) {
+    if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > MaxBlocks - keep_free) {
       Refusing = true;
       return false;
     }
@@ -134,6 +135,27 @@ void TPool::ReleaseAdmitted(size_t num_blocks) {
   std::lock_guard<std::mutex> lock(Mutex);
   assert(NumBlocksAdmitted >= num_blocks);
   NumBlocksAdmitted -= num_blocks;
+}
+
+bool TPool::TryClaim(size_t num_blocks) {
+  if (!num_blocks) {
+    return true;
+  }
+  std::lock_guard<std::mutex> lock(Mutex);
+  if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > MaxBlocks) {
+    return false;
+  }
+  NumBlocksClaimed += num_blocks;
+  return true;
+}
+
+void TPool::ReleaseClaim(size_t num_blocks) {
+  if (!num_blocks) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(Mutex);
+  assert(NumBlocksClaimed >= num_blocks);
+  NumBlocksClaimed -= num_blocks;
 }
 
 void TPool::Free(void *ptr) {

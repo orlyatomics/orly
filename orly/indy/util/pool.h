@@ -87,6 +87,20 @@ namespace Orly {
 
         void ReleaseAdmitted(size_t num_blocks);
 
+        /* Claims for the copies that free the pool (#607): a memory merge or a Tetris promotion
+           claims every block its copy will take before it copies anything, and releases the
+           claim once the copy is done. A claim is granted only if the blocks in use, those
+           promised to writers and those already claimed leave room for all of it, so two
+           copies never each hold part of what they need while both wait for the rest. A copy
+           that is refused waits holding nothing. Writers count claims too (TryAdmit). Blocks a
+           claimant has already allocated count twice until it releases its claim, which errs
+           towards refusing. */
+        bool TryClaim(size_t num_blocks);
+
+        void ReleaseClaim(size_t num_blocks);
+
+        inline size_t GetNumBlocksClaimed() const;
+
         inline size_t GetNumBlocksAdmitted() const;
 
         inline bool IsRefusing() const;
@@ -123,6 +137,8 @@ namespace Orly {
 
         std::atomic<size_t> NumBlocksAdmitted;
 
+        std::atomic<size_t> NumBlocksClaimed;
+
         std::atomic<bool> Refusing;
 
         std::atomic<size_t> NumMisses;
@@ -147,6 +163,10 @@ namespace Orly {
 
       inline size_t TPool::GetNumBlocksAdmitted() const {
         return NumBlocksAdmitted.load();
+      }
+
+      inline size_t TPool::GetNumBlocksClaimed() const {
+        return NumBlocksClaimed.load();
       }
 
       inline bool TPool::IsRefusing() const {

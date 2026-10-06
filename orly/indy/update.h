@@ -285,6 +285,29 @@ namespace Orly {
 
       };  // TWriteAdmission
 
+      /* A copy's claim on both update pools (#607; see TPool::TryClaim): TryAcquire claims
+         num_updates updates and num_entries entries together or not at all, and the claim is
+         released by Release or when this object goes away. */
+      class TCopyClaim {
+        NO_COPY(TCopyClaim);
+        public:
+
+        TCopyClaim() = default;
+
+        ~TCopyClaim();
+
+        bool TryAcquire(size_t num_updates, size_t num_entries);
+
+        void Release();
+
+        private:
+
+        size_t NumUpdates = 0UL;
+
+        size_t NumEntries = 0UL;
+
+      };  // TCopyClaim
+
       /* Sets both pools' reserves to pct percent of their size (#607); 0 turns refusals off. */
       static void SetPoolReservePct(size_t pct);
 
