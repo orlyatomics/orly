@@ -1451,6 +1451,10 @@ void TServer::Shutdown() {
     DurableManager->Flush();
     delete TetrisManager;
     TetrisManager = nullptr;
+    /* Forget the Tetris runners: they are gone, but RepoManager.reset() below can still remove a
+       disk layer's file, and TSafeRepo::RemoveFile visits every runner ForEachScheduler names. A
+       fiber that switched to a dead runner never ran again, and shutdown hung forever (#648). */
+    ForEachSchedCallbackExtraSet.clear();
     DurableManager->Clear();
     DurableManager.reset();
     GlobalRepo.Reset();
@@ -1473,6 +1477,13 @@ void TServer::Shutdown() {
     runner->ShutDown();
   }
   if (DiskEngine) {
+    /* The file service's loop runs on a job of the scheduler that RunUntilCtrlC destroys before
+       ~TServer runs, so stop and join it here, not in ~TDiskEngine. Left running, the
+       scheduler's own teardown interrupted it (EINTR out of the runner) and gave up after ten
+       seconds, and ~TFileService then locked the destroyed scheduler's mutex and aborted the
+       process (#648). The managers that queue file ops are gone (the teardown jumper above),
+       and the disk controller still runs, so a base-image write in flight can finish. */
+    DiskEngine->ShutDownFileService();
     DiskEngine->GetController()->ShutDown();
   }
   /* Now nothing needs the runners; stop and join them. */
@@ -1533,6 +1544,7 @@ TServer::~TServer() {
   WsRunner.ShutDown();
   WsThread.join();
   delete TetrisManager;
+  ForEachSchedCallbackExtraSet.clear();  // as in Shutdown() (#648)
   DurableManager->Clear();
   DurableManager.reset();
   GlobalRepo.Reset();

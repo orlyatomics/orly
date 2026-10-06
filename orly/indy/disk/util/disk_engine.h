@@ -303,6 +303,12 @@ namespace Orly {
             return VolMan;
           }
 
+          /* Stop the file service's background loop while the scheduler hosting it is still
+             alive; see TFileService::ShutDown() (#648). */
+          void ShutDownFileService() {
+            FileService->ShutDown();
+          }
+
           void Report(std::stringstream &ss, double elapsed_time) const {
             DiskController->Report(ss, elapsed_time);
           }

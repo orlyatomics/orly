@@ -80,7 +80,15 @@ stop_server() {  # $1 = signal (INT or TERM), $2 = log tag
   if ! grep -q "TServer::Shutdown() complete" "$WORK/orlyi-$2.log"; then
     echo "orlyi ($2) exited on SIG$1 without completing its shutdown:"; tail -20 "$WORK/orlyi-$2.log"; exit 1
   fi
+  # A completed Shutdown() is not a clean exit: the server is destroyed after it, and on a disk
+  # volume that once aborted every time, after "Shutdown() complete" (#648). sudo exits with the
+  # server's status, or 128+N if a signal killed it.
+  local rc=0
+  wait "$SRV_PID" || rc=$?
   SRV_PID=""
+  if [ "$rc" -ne 0 ] || grep -qE "FATAL ERROR|TERMINATE" "$WORK/orlyi-$2.log"; then
+    echo "orlyi ($2) did not exit cleanly on SIG$1 (exit $rc):"; tail -20 "$WORK/orlyi-$2.log"; exit 1
+  fi
   sleep 2
 }
 

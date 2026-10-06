@@ -66,7 +66,16 @@ namespace Orly {
                      bool create = false,
                      bool abort_on_append_log_scan = true);
 
+        /* Calls ShutDown(). */
         ~TFileService();
+
+        /* Stop the runner and cancel-or-join the scheduler job hosting BGScheduler's loop. The
+           destructor does this too; call it first when the destructor will run after the
+           scheduler is gone. orlyi destroys the disk engine (and so this) in ~TServer, after
+           RunUntilCtrlC has destroyed the scheduler, so TServer::Shutdown() calls this while the
+           scheduler is still alive (#648). Idempotent. Call it only once nothing will queue
+           more file ops. */
+        void ShutDown();
 
         virtual void InsertFile(const Base::TUuid &file_uid,
                                 TFileObj::TKind file_kind,
