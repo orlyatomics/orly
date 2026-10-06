@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cstdlib>
 #include <thread>
 #include <utility>
@@ -78,6 +79,14 @@ namespace Base {
 
     /* Close the log. */
     ~TLog();
+
+    /* Lines dropped from the system log because the log daemon's socket was full. The stderr
+       echo keeps them. syslog() itself is defined in log.cc and never blocks on the daemon
+       (#641). */
+    static uint64_t GetDroppedCount();
+
+    /* Send to this socket instead of /dev/log (nullptr restores it). For tests. */
+    static void SetSocketPath(const char *path);
 
   };  // TLog
 

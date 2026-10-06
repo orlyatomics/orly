@@ -3021,6 +3021,8 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
        << "; merge claims (1 min peak) " << claims
        << "; refused " << Server->RefusedWriteCount.load() << endl;
   }
+  /* Lines the system log daemon had no room for; stderr kept them (#641). */
+  ss << "Syslog Dropped = " << Base::TLog::GetDroppedCount() << endl;
   size_t try_count;
   size_t try_read_count;
   size_t try_write_count;
