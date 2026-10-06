@@ -48,6 +48,7 @@
 #include <orly/orly.package.cst.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/write_too_large.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
 #include <orly/synth/cst_utils.h>
@@ -589,6 +590,10 @@ class TWsImpl final
         /* A write refused because the update pools are down to the merges' reserve (#607). */
         reply["result"] = ex.what();
         reply["status"] = "insufficient_memory";
+      } catch (const Orly::Server::TWriteTooLarge &ex) {
+        /* A write too big ever to be promoted (#687). Not retryable: the client must split it. */
+        reply["result"] = ex.what();
+        reply["status"] = "write_too_large";
       } catch (const exception &ex) {
         reply["result"] = ex.what();
         reply["status"] = "exception";

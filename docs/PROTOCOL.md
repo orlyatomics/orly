@@ -56,10 +56,25 @@ sent as one WebSocket text message. The server replies with one JSON message:
   have freed the pools, usually within seconds. Large batches reach the limit
   sooner, because a batch is held as one update with an entry per write.
   `--memory_reserve_pct=0` turns this off. Over the binary protocol the same
-  refusal is an error whose message starts with `insufficient memory`. A single
-  write (a batch, say) with more entries than half that reserve is rejected
-  outright with `"status": "exception"` and a message starting `write too
-  large`, because retrying it can't succeed: split it into smaller batches.
+  refusal is an error whose message starts with `insufficient memory`.
+- A single write with more entries than half the Update Entry pool's merge
+  reserve replies `"status": "write_too_large"`, with the reason in `result`
+  (#687). **Unlike `insufficient_memory`, it is not retryable**: promoting a
+  write copies it twice, and only the reserve is sure to be free for that, so a
+  write this big could never be promoted however long the client waits. Nothing
+  was written; split the write into smaller batches and send those. A write's
+  entries are roughly the keys it changes, so a batch (`callMany`, `try {pov}
+  [...]`) of N single-key calls has about N. The limit is
+  `--update_entry_pool_size` × `--memory_reserve_pct` / 100 / 2: with the
+  default 200,000-entry pool and 25% reserve, 25,000 entries. When the pool
+  isn't given explicitly it is scaled from the memory budget
+  (`--memory_budget_mb`, or a container's memory limit, #679), so a small
+  container has a much smaller limit, though `orlyi` won't start on a budget
+  that can't admit a 1,000-entry write. `orlyi` logs the pool sizes it chose at
+  startup (`memory plan sizes:`). Raising `--memory_reserve_pct` raises the limit
+  but leaves less of the pool for writes. `--memory_reserve_pct=0` turns the
+  check off along with the rest of memory admission. Over the binary protocol
+  the same refusal is an error whose message starts with `write too large`.
 
 ## Statements
 
@@ -150,7 +165,8 @@ exit;
 5. **Errors are stringly-typed** — failures surface as a non-`ok` `status`, not a
    structured error code. `insufficient_storage` and `insufficient_memory` are the
    statuses worth matching on: they mean "retry later", not "this statement is
-   wrong".
+   wrong". `write_too_large` is the third, and means the opposite: never retry
+   it as sent, split it.
 
 ## Toward a client SDK
 

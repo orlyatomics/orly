@@ -29,7 +29,7 @@ import websocket  # the `websocket-client` package
 
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
-           "InsufficientMemory", "Lit", "lit",
+           "InsufficientMemory", "WriteTooLarge", "Lit", "lit",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -73,6 +73,13 @@ class InsufficientMemory(OrlyError):
     Nothing was written, reads still work, and the write can be retried;
     writes are accepted again once the merges have freed the pools, usually
     within seconds."""
+
+
+class WriteTooLarge(OrlyError):
+    """Raised when a single write holds more entries than half the server's
+    Update Entry pool's merge reserve (``"status": "write_too_large"``), so it
+    could never be promoted. Nothing was written. Unlike ``InsufficientMemory``
+    it is NOT retryable: split the batch into smaller ones."""
 
 
 class Lit:
@@ -137,6 +144,8 @@ class Client:
             raise InsufficientStorage(statement, reply)
         if status == "insufficient_memory":
             raise InsufficientMemory(statement, reply)
+        if status == "write_too_large":
+            raise WriteTooLarge(statement, reply)
         if status != "ok":
             raise OrlyError(statement, reply)
         return reply.get("result")

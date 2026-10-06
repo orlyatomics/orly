@@ -71,6 +71,17 @@ export class InsufficientMemoryError extends OrlyError {
   }
 }
 
+/** Thrown when a single write holds more entries than half the server's Update Entry pool's
+ *  merge reserve (`"status": "write_too_large"`), so it could never be promoted. Nothing was
+ *  written. Unlike `InsufficientMemoryError` it is NOT retryable: split the batch into smaller
+ *  ones. */
+export class WriteTooLargeError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "WriteTooLargeError";
+  }
+}
+
 /** Wrap a string to inject it into a statement as raw orlyscript, un-encoded. */
 export class Raw {
   constructor(public readonly text: string) {}
@@ -166,6 +177,8 @@ export class Client {
         ? new InsufficientStorageError(p.stmt, reply)
         : reply?.status === "insufficient_memory"
         ? new InsufficientMemoryError(p.stmt, reply)
+        : reply?.status === "write_too_large"
+        ? new WriteTooLargeError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
       return;
     }

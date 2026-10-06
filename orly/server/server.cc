@@ -40,6 +40,7 @@
 #include <orly/protocol.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/write_too_large.h>
 #include <orly/server/memory_budget.h>
 #include <orly/sabot/to_native.h>
 #include <base/strm/fd.h>
@@ -1799,8 +1800,8 @@ void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t n
   if (num_entries * 2UL > entry_reserve) {
     std::ostringstream msg;
     msg << "write too large: its " << num_entries << " entries are more than half the " << entry_reserve
-        << " Update Entry blocks kept for merges (--memory_reserve_pct); split it into smaller batches";
-    throw std::runtime_error(msg.str());
+        << " Update Entry blocks kept for merges (--memory_reserve_pct); retrying won't help, split it into smaller batches";
+    throw TWriteTooLarge(msg.str());
   }
   const bool admitted = admission.TryAcquire(num_entries);
   if (!admitted) {

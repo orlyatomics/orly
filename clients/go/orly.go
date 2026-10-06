@@ -58,6 +58,13 @@ var ErrInsufficientStorage = errors.New("orly: insufficient storage")
 // freed the pools, usually within seconds. Test with errors.Is.
 var ErrInsufficientMemory = errors.New("orly: insufficient memory")
 
+// ErrWriteTooLarge is wrapped by the error a write gets when it holds more
+// entries than half the server's Update Entry pool's merge reserve
+// ("status": "write_too_large"), so it could never be promoted. Nothing was
+// written. Unlike ErrInsufficientMemory it is NOT retryable: split the batch
+// into smaller ones. Test with errors.Is.
+var ErrWriteTooLarge = errors.New("orly: write too large")
+
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
 	conn *websocket.Conn
@@ -114,6 +121,9 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	}
 	if r.Status == "insufficient_memory" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrInsufficientMemory)
+	}
+	if r.Status == "write_too_large" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrWriteTooLarge)
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)

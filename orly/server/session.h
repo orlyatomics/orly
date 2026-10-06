@@ -77,7 +77,9 @@ namespace Orly {
         virtual void CheckWriteAdmission() {}
 
         /* Throws TInsufficientMemory (orly/server/insufficient_memory.h) if a write of
-           num_entries entries would use the update pools' reserve (#607); otherwise holds the
+           num_entries entries would use the update pools' reserve (#607), or TWriteTooLarge
+           (orly/server/write_too_large.h) if num_entries is more than half the Update Entry
+           reserve, so the write could never be promoted (#687); otherwise holds the
            write's room in `admission` until that goes away. Called only for writes, once the
            entries are known and before the update is built. */
         virtual void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &/*admission*/, size_t /*num_entries*/) {}
