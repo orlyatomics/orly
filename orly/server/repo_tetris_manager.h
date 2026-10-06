@@ -106,7 +106,16 @@ namespace Orly {
           bool Play(
               const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
-          bool Refresh(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction);
+          /* Takes this child's promotion hold on `transaction` and says whether the child can
+             play this round.  With `peek`, it also copies the child's lowest update out (if it
+             doesn't hold one already) and is ready only once it has; without, a child that has
+             an update is ready uncopied, and PeekAndPlay copies it if its turn comes (#660). */
+          bool Refresh(const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, bool peek);
+
+          /* Copies this child's update out on `transaction`, if Refresh didn't, then Play()s it.
+             False if there is no update, or no room to copy it (#607). */
+          bool PeekAndPlay(
+              const std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context);
 
           static bool SortsBefore(const TChild *lhs, const TChild *rhs);
 
@@ -137,10 +146,13 @@ namespace Orly {
 
           bool TestAssertions(Indy::TContext &context) const;
 
+          /* Takes `peeked` as our update and parses its metadata. */
+          void Load(std::shared_ptr<Indy::TUpdate> &&peeked);
+
           /* The player which owns us.  Never null. */
           TPlayer *Player;
 
-          /* The number of rounds of tetris we have played. */
+          /* The number of rounds we have been ready to play since our last promotion (or failure). */
           size_t Age;
 
           /* The number of times we have tested our assertions and failed. */

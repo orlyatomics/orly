@@ -325,8 +325,9 @@ jobs:
       # #607: 8 writers of 200-write batches fill small update pools within
       # seconds. Writes must come back refused with insufficient_memory (never
       # bad_alloc), reads must keep working, writes must be accepted again once
-      # the merges catch up, and orlyi must not abort. Then a paused POV is
-      # filled until refused and unpaused, and the pools must drain.
+      # the merges catch up, and orlyi must not abort. Then paused POVs are
+      # filled until refused and unpaused, and the pools must drain: 8 POVs,
+      # then 32 POVs with 32 writers (#660).
       - name: Full update pools refuse writes and keep serving reads
         run: bash clients/smoke/run-memory-full.sh
 
@@ -341,7 +342,7 @@ jobs:
             echo "CONTROL FAIL: the memory-full smoke passed with memory admission off"
             exit 1
           fi
-          if ! grep -q '^\[2/3\].*(admission off)' /tmp/memory-full-control.log \
+          if ! grep -q '^\[2/4\].*(admission off)' /tmp/memory-full-control.log \
              || ! grep -q '^MEMORY FULL FAIL' /tmp/memory-full-control.log; then
             cat /tmp/memory-full-control.log
             echo "CONTROL FAIL: the smoke failed before its writers could test anything"
