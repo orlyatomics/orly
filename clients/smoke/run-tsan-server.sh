@@ -18,6 +18,12 @@
 # Suppressions come from orly/tsan.supp, as for the unit tests. Every report
 # is kept under $LOG_DIR (default ./tsan-logs/server).
 #
+# orlyi sizes every pool and cache it isn't given a flag for from free RAM
+# (#669), and TSan's shadow memory multiplies whatever it touches: on a 16 GB
+# runner the unbudgeted server grew to 15 GB and the runner was shut down
+# (#717). So the server gets a fixed 1 GiB budget, as in the run that found
+# #713.
+#
 # Run from anywhere, after `tools/jhm -c tsan orly/server/orlyi orly/orlyc`.
 # TSan needs a low-ASLR address space: CI lowers vm.mmap_rnd_bits, and every
 # binary here also runs under `setarch -R`.
@@ -74,6 +80,7 @@ run_smoke() {
            --starting_state=SOLO \
            --package_dir="$WORK/packages" \
            --update_pool_size=5000 --update_entry_pool_size=10000 \
+           --memory_budget_mb=1024 \
            > "$dir/orlyi.log" 2>&1 &
   ORLYI_PID=$!
   local up=no
