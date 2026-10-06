@@ -20,7 +20,9 @@
 
 #include <atomic>
 #include <cassert>
+#include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -162,7 +164,8 @@ namespace Orly {
 
         Base::TEventSemaphore CanWork;
 
-        /* The fiber frame used to run our logic. */
+        /* The fiber frame used to run our logic, and the pool it came from: always our manager's
+           PlayerFramePool, never the constructing thread's (#633). */
         Indy::Fiber::TFrame *TetrisFrame;
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
 
@@ -197,6 +200,18 @@ namespace Orly {
       Indy::Fiber::TRunner FiberScheduler;
       std::unique_ptr<std::thread> FiberThread;
       Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
+
+      /* Every player's frame comes from this pool (#633).  A player is constructed on whatever
+         thread calls Join() -- a fast runner committing a write, the slow runner at startup, or
+         WsRunner running `unpause` -- and TFrame::LocalFramePool is not something those threads
+         can be relied on to have: WsRunner's thread never installs one, so taking the frame from
+         it segfaulted every unpause.  A TThreadLocalPool is single-owner for allocation (its
+         AvailableQueue is unsynchronized), so we serialize Alloc() under PlayerFrameMutex and let
+         any thread call it.  Free() is a lock-free cross-thread push and needs no lock; peers may
+         steal from our free list exactly as from any other pool.  Destroyed after ~TTetrisManager
+         has joined FiberThread, so every player frame has been handed back by then. */
+      std::mutex PlayerFrameMutex;
+      std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool> PlayerFramePool;
 
       /* Covers 'Players' and 'PausedSet', below. */
       //mutable std::mutex Mutex;
