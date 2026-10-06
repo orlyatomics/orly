@@ -10,21 +10,14 @@
 # real but provably-benign report is documented and suppressed here rather
 # than ignored at the job level.
 #
-# (A prior entry, deadlock:Orly::Spa::FluxCapacitor::TSync::TLocal::IncrLockCount,
-# was a test harness lock-order artifact in the SPA flux_capacitor engine; it
-# became dead when that engine was deleted in #266 and was removed here.)
-
-# TEMPORARY, a REAL inversion, fixed by #660 (#713).  The orlyi smoke in the
-# TSan job reports a cycle between a child repo's DataLock and the Tetris
-# player's mutex:
-#   - TChild::Refresh, holding the player's mutex, peeks the child's
-#     transaction, and the peek opens a TRepo::TView, which takes DataLock;
-#   - TRepo::ChangeStatus, holding DataLock, joins the player
-#     (TTetrisManager::Join -> TPlayer::OnJoin), which takes the player's mutex.
-# Both run on reachable paths, so it is a potential deadlock, not a false
-# positive.  #660 (branch ohohoreilly/660-unpause-drain) has Refresh take only
-# the holds under the player's mutex and peek after releasing it; with that
-# change applied, the smoke reports nothing.  This entry only matches reports
-# with Refresh on a stack.  #660 must delete it, and the gate then proves the
-# cycle is gone.
-deadlock:Orly::Server::TRepoTetrisManager::TPlayer::TChild::Refresh
+# There are currently no active suppressions.
+#
+# Earlier entries, kept here as history:
+# - deadlock:Orly::Spa::FluxCapacitor::TSync::TLocal::IncrLockCount was a test
+#   harness lock-order artifact in the SPA flux_capacitor engine; it became dead
+#   when that engine was deleted in #266.
+# - deadlock:Orly::Server::TRepoTetrisManager::TPlayer::TChild::Refresh covered
+#   a real inversion the orlyi smoke found (#713): TChild::Refresh peeked a
+#   child repo (taking its DataLock) under the Tetris player's mutex, while
+#   TRepo::ChangeStatus joined the player (taking that mutex) under DataLock.
+#   #660 stopped Refresh peeking under the mutex, and the entry went in #717.
