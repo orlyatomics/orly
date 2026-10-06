@@ -97,6 +97,8 @@ TFileService::TFileService(Base::TScheduler *scheduler,
     TBufBlock *alternate_buf_block = nullptr;
     size_t alternate_image_block = -1;
     //size_t alternate_version_number = 0UL;
+    /* Until an image loads, CurBaseImageCounter names the newest image. Once one has loaded, it is
+       set to name the other one (below). */
     if (version_1 > version_2) {
       VersionNumber = version_1;
       CurBaseImageCounter = 0UL;
@@ -169,12 +171,19 @@ TFileService::TFileService(Base::TScheduler *scheduler,
         if (alternate_image_block_version == 0UL && first_append_log_version == 1UL) {
           /* the alternate block was empty and the append log starts at v1, this means all our changes
              (except the last one in the most recent image block) are recoverable by playing back the
-             append log. */
+             append log. Start that from nothing: drop whatever the failed load applied, and replay
+             from version 1, not from the failed image's version (#616). CurBaseImageCounter still
+             names the failed image, which is where the next image goes; writing it to the empty
+             one would give both images the same version. */
+          Map.clear();
+          NumFiles = 0UL;
+          RunnerCopyMap.clear();
+          NumRunnerCopyFiles = 0UL;
+          VersionNumber = 0UL;
         } else if (first_append_log_version == alternate_image_block_version + 1) {
           /* we can recover using the alternate base image block and replaying the append log from there. */
           process_next_block = true;
           VersionNumber = alternate_image_block_version;
-          ++CurBaseImageCounter;
           if (!TryLoadFromBaseImage(alternate_image_block, alternate_buf, alternate_buf_block, loaded_chain)) {
             throw std::runtime_error("File System is corrupt. Both base images are irrecoverable");
           }
@@ -183,6 +192,16 @@ TFileService::TFileService(Base::TScheduler *scheduler,
           throw std::runtime_error("File System is corrupt. Current base image is irrecoverable.");
         }
       }
+    }
+    /* The next base image goes to the image the map was NOT loaded from (#616). While running,
+       the file service alternates, so the image being written is never the one the append log
+       follows; if that write is cut short, the other image plus the log still load. After a
+       restart the same must hold: the append log now starts right after the loaded image, so
+       writing over that one would leave neither image the log can be replayed onto. */
+    if (loaded_image_block == image_1_block_id) {
+      CurBaseImageCounter = 1UL;
+    } else if (loaded_image_block == image_2_block_id) {
+      CurBaseImageCounter = 0UL;
     }
     /* now spin over the append only log and grab all the valid sectors with their deltas */
     std::vector<std::unique_ptr<TBufBlock>> append_log_buf_vec;
