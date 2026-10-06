@@ -146,6 +146,8 @@ void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
      burst (only surfaced once the merge scheduler fix made StepMergeMem run).
      Serializing it with the seq-number state the merge snapshots closes that
      window. */
+  /* Released after DataLock: it can be this repo's last pin (#614). */
+  L0::TManager::TPtr<L0::TManager::TRepo> dirty_pin;
   /* Acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
     assert(seq_num < NextUpdate);
@@ -155,7 +157,7 @@ void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
     }
     if ((HighestSeqNum && seq_num == *HighestSeqNum) || (!HighestSeqNum && seq_num == NextUpdate - 1)) {
       if (!IsSafeRepo()) {
-        RemoveFromDirty();
+        dirty_pin = TakeDirtyPin();
       }
     }
   }
@@ -1114,7 +1116,14 @@ void TRepo::CheckRemoveDirty() {
       }
     }
     if (!found_non_empty_mem) {
-      RemoveFromDirty();
+      /* Under DataLock, like every other touch of the dirty pin: ReleaseUpdate() can drop it on
+         another thread at the same moment, and two unsynchronised resets of one pointer can
+         release it twice (#614). The merge runner's pin keeps this repo alive past the release. */
+      L0::TManager::TPtr<L0::TManager::TRepo> dirty_pin;
+      /* acquire Data lock */ {
+        std::lock_guard<std::mutex> lock(DataLock);
+        dirty_pin = TakeDirtyPin();
+      }  // release Data lock
     } else {
       EnqueueMergeMem();
     }

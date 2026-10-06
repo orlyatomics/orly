@@ -613,6 +613,14 @@ namespace Orly {
 
           void RemoveFromDirty();
 
+          /* Hand the MakeDirty() self-pin to the caller (#614). Call it under the lock MakeDirty()
+             runs under (DataLock), so two threads never reset the pin at once, and let the returned
+             pointer go only after unlocking: dropping the last pin destroys this repo, which must
+             not happen while one of its own mutexes is held. */
+          TPtr<TRepo> TakeDirtyPin() {
+            return TPtr<TRepo>(std::move(DirtyPtr));
+          }
+
           inline void RemoveFromClosedBuffer();
 
           mutable TMappingCollection::TImpl MappingCollection;
@@ -637,6 +645,12 @@ namespace Orly {
 
           TQueueMembership::TImpl MergeMemMembership;
           TQueueMembership::TImpl MergeDiskMembership;
+
+          /* While this repo is in the manager's MergeMemQueue, the queue's pin on it; while a merge
+             runner is merging it, the runner holds this pin instead. So no repo is destroyed under
+             its own StepMergeMem(), which used to happen when a closed ttl=0 pov's last pin, its
+             dirty self-pin, dropped on another thread mid-merge (#614). Guarded by MergeMemLock. */
+          TPtr<TRepo> MergeMemPin;
 
           friend class TManager;
           friend class Orly::Indy::TManager;
@@ -814,7 +828,8 @@ namespace Orly {
            never drop and PreDtor would see a live ptr on every one.  By the
            time this runs everything durable has been flushed
            (FlushMemMerges) and a fast repo's data is volatile by design, so
-           releasing the pins loses nothing.  Call before
+           releasing the pins loses nothing.  Also drops the merge queue's
+           pins (#614) on repos still queued for a memory merge.  Call before
            CloseAllUnreferencedObjects(). */
         void ReleaseDirtySelfPins();
 

@@ -238,6 +238,20 @@ TManager::~TManager() {
 }
 
 void TManager::ReleaseDirtySelfPins() {
+  /* Repos still queued for a memory merge hold the queue's pin (#614). The merge runners are
+     stopped by now. Drop each pin outside the lock, since a release can destroy a repo. */
+  for (;;) {
+    TPtr<TRepo> pin;
+    /* acquire MergeMem lock */ {
+      std::lock_guard<std::mutex> lock(MergeMemLock);
+      TRepo *repo = MergeMemQueue.TryGetFirstMember();
+      if (!repo) {
+        break;
+      }
+      repo->MergeMemMembership.Remove();
+      pin = std::move(repo->MergeMemPin);
+    }  // release MergeMem lock
+  }
   /* Releasing a pin can cascade: a repo whose count hits zero closes,
      force-releases its parent ptr (possibly closing the parent too), and
      caching it can evict other closed repos -- all of which mutate
@@ -377,11 +391,13 @@ void TManager::FlushMemMerges() {
       break;
     }
     TRepo *repo = nullptr;
+    TPtr<TRepo> pin;  // the queue's pin, held until the merge returns (#614)
     /* acquire MergeMem lock */ {
       std::lock_guard<std::mutex> lock(MergeMemLock);
       repo = MergeMemQueue.TryGetFirstMember();
       if (repo) {
         repo->MergeMemMembership.Remove();
+        pin = std::move(repo->MergeMemPin);
       }
     }  // release MergeMem lock
     if (!repo) {
@@ -416,6 +432,11 @@ void TManager::RunMergeMem() {
     MergeMemThreadCPUMap.insert(make_pair(pthread_self(), cpu_clock::now()));
   }
   while(!ShuttingDown) {
+    /* The queue's pin on the repo we pop, held until its merge returns: without it a closed
+       pov's repo could be destroyed on another thread mid-merge, freeing the layers and the
+       repo the merge is reading (#614). It drops at the end of each pass, outside every lock
+       and every member function of the repo, so a last release destroys the repo safely. */
+    TPtr<TRepo> pin;
     /* we can only have 1 thread waiting on MergeMemSem at a time */ {
       lock_guard<mutex> epoll_lock(MergeMemEpollLock);
       if (should_sleep) {
@@ -442,6 +463,7 @@ void TManager::RunMergeMem() {
         } else {
           repo->SetTimeOfNextMergeMem(now + MergeMemDelay);
           repo->MergeMemMembership.Remove();
+          pin = std::move(repo->MergeMemPin);
         }
         if (!MergeMemQueue.IsEmpty()) {
           MergeMemSem.Push();
@@ -572,10 +594,17 @@ void TManager::OnClose(TRepo *repo) {
 }
 
 void TManager::EnqueueMergeMem(TRepo *repo) {
+  /* A queued repo carries a pin, which the merge runner takes over for the merge (#614).
+     Open() takes DurableMutex, so pin before taking MergeMemLock. Every caller holds a pin of
+     its own, so if the repo is already queued and ours goes unused, dropping it is never the
+     last release. */
+  TPtr<TRepo> pin = Open<TRepo>(repo->GetId());
   /* acquire MergeMem lock */ {
     std::lock_guard<std::mutex> lock(MergeMemLock);
     if (repo->MergeMemMembership.TryGetCollector() == nullptr) {
       MergeMemQueue.Insert(&repo->MergeMemMembership);
+      assert(!repo->MergeMemPin);
+      repo->MergeMemPin = std::move(pin);
       MergeMemSem.Push();
     }
   }  // release MergeMem lock
@@ -594,11 +623,14 @@ void TManager::EnqueueMergeDisk(TRepo *repo) {
 /* The queues are ordered by due time, so setting the key re-sorts a repo that is already
    queued, and a repo waiting out a backoff holds up nobody behind it. */
 void TManager::EnqueueMergeMemAfter(TRepo *repo, milliseconds delay) {
+  TPtr<TRepo> pin = Open<TRepo>(repo->GetId());  // see EnqueueMergeMem (#614)
   /* acquire MergeMem lock */ {
     std::lock_guard<std::mutex> lock(MergeMemLock);
     repo->SetTimeOfNextMergeMem(steady_clock::now() + delay);
     if (repo->MergeMemMembership.TryGetCollector() == nullptr) {
       MergeMemQueue.Insert(&repo->MergeMemMembership);
+      assert(!repo->MergeMemPin);
+      repo->MergeMemPin = std::move(pin);
       MergeMemSem.Push();
     }
   }  // release MergeMem lock
