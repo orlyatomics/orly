@@ -20,6 +20,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <iostream>
 #include <optional>
 #include <thread>
 #include <unordered_map>
@@ -49,8 +50,10 @@ Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transa
 
 Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize);
 
-Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 100UL);
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 200UL);
+/* Sized for Issue636PauseMidRound, whose parent keeps every update it is promoted: this
+   harness latches no merge runner, so nothing ever leaves a memory layer. */
+Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 4000UL);
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 8000UL);
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -815,6 +818,82 @@ FIXTURE(Issue635UnpausePromotesPausedWrites) {
         EXPECT_EQ(child->GetMemBacklogDepth(), 0UL);
       }
       EXPECT_EQ(parent->GetMemBacklogDepth(), static_cast<size_t>(key));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* #636: pausing a pov at any point of a promotion round must be safe.  A round peeks a child,
+   then pushes its update to the parent and pops it from the child in one commit.  A pause that
+   committed in between left the round popping a paused repo (PopLowest asserts Status == Normal)
+   and parting it from the player a second time.
+
+   The player here holds each round open for a moment after its peek, and the test pauses the
+   child over and over while rounds are in flight, many of them inside that window.  Whatever the
+   timing: once pause has returned nothing more of the child's reaches the parent, no update is
+   lost or promoted twice, and after unpause the child drains. */
+FIXTURE(Issue636PauseMidRound) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      std::atomic<bool> in_window(false);
+      tetris.OnPeeked = [&in_window] {
+        in_window = true;
+        std::this_thread::sleep_for(200us);
+        in_window = false;
+      };
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true);
+      auto child = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, false, true);
+      const size_t cycle_count = 300UL;
+      size_t paused_in_window = 0UL, late_promotions = 0UL, bad_totals = 0UL, stuck = 0UL;
+      int64_t key = 0;
+      for (size_t cycle = 0; cycle < cycle_count; ++cycle) {
+        for (size_t i = 0; i < 3UL; ++i) {
+          PushOne(manager.get(), child, idx_id, ++key);
+        }
+        /* Vary where the pause lands: mostly inside a round's window, sometimes anywhere. */
+        if (cycle % 4UL) {
+          WaitFor([&] { return in_window.load() || !child->GetMemBacklogDepth(); }, 1s);
+        }
+        if (in_window) {
+          ++paused_in_window;
+        }
+        SetPaused(manager.get(), child, true);
+        const size_t parent_at_pause = parent->GetMemBacklogDepth();
+        std::this_thread::sleep_for(2ms);
+        if (parent->GetMemBacklogDepth() != parent_at_pause) {
+          ++late_promotions;
+        }
+        if (parent->GetMemBacklogDepth() + child->GetMemBacklogDepth() != static_cast<size_t>(key)) {
+          ++bad_totals;
+        }
+        SetPaused(manager.get(), child, false);
+        if (!WaitFor([&] { return !child->GetMemBacklogDepth(); }, 10s)) {
+          ++stuck;
+          break;
+        }
+      }
+      std::cout << "Issue636PauseMidRound: " << cycle_count << " pauses, " << paused_in_window
+                << " inside a round's peek-to-commit window; " << late_promotions << " promoted after pause returned, "
+                << bad_totals << " with updates lost or duplicated, " << stuck << " stuck" << std::endl;
+      /* The test only proves something if many pauses really did land mid-round.  Typically
+         about half do; a loaded machine (CI) lands fewer, so ask for a tenth. */
+      EXPECT_GT(paused_in_window, cycle_count / 10UL);
+      EXPECT_EQ(late_promotions, 0UL);
+      EXPECT_EQ(bad_totals, 0UL);
+      EXPECT_EQ(stuck, 0UL);
+      EXPECT_EQ(parent->GetMemBacklogDepth(), static_cast<size_t>(key));
+      EXPECT_EQ(tetris.PromotionCount, static_cast<size_t>(key));
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

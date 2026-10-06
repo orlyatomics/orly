@@ -144,6 +144,10 @@ namespace Orly {
            FiberMutex while the player's own Main() fiber reads it unlocked each round (#262 follow-up: TSan data race). */
         std::atomic<size_t> ChildCount;
 
+        /* Threads still touching us after dropping ChildCount (Part() then OnClose(), and Stop());
+           Main() won't free us until it drains (#636). */
+        std::atomic<size_t> ToucherCount;
+
         /* Usually null; Stop() points this at a flag on its own stack.  Main() copies the pointer
            to its stack before 'delete this' and flips the flag as its very last act, so neither side
            touches this object (or the stopper's stack) after the other is done with it.  The old
@@ -168,6 +172,9 @@ namespace Orly {
            PlayerFramePool, never the constructing thread's (#633). */
         Indy::Fiber::TFrame *TetrisFrame;
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FramePool;
+
+        /* For ToucherCount. */
+        friend class TTetrisManager;
 
       };  // TTetrisManager::TPlayer
 

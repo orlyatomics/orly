@@ -251,7 +251,9 @@ TRepo::TRepo(L0::TManager *manager,
       ParentRepo(parent_repo),
       NextUpdate(1U),
       ReleasedUpTo(0U),
-      InTetris(false) {
+      InTetris(false),
+      PromotionHoldCount(0UL),
+      PauseCount(0UL) {
   try {
     /* acquire Mapping lock */ {
       std::lock_guard<std::mutex> lock(MappingLock);
@@ -278,7 +280,9 @@ TRepo::TRepo(L0::TManager *manager,
       HighestSeqNum(highest),
       NextUpdate(next_update),
       ReleasedUpTo(lowest ? *lowest : 0UL),
-      InTetris(false) {
+      InTetris(false),
+      PromotionHoldCount(0UL),
+      PauseCount(0UL) {
   try {
     /* acquire Mapping lock */ {
       std::lock_guard<std::mutex> lock(MappingLock);

@@ -68,14 +68,20 @@ void TTetrisManager::Part(const TUuid &parent_pov_id, const TUuid &child_pov_id)
   Fiber::TFiberLock::TLock lock(FiberMutex);
   auto iter = PlayerByParentPovId.find(parent_pov_id);
   if (iter != PlayerByParentPovId.end()) {
-    /* We found the player, so part the child from it. */
-    if (!iter->second->Part(child_pov_id)) {
+    /* We found the player, so part the child from it.  Once its child count reaches zero the
+       player may free itself at any moment, so we keep it alive (ToucherCount) until we are done
+       with it (#636). */
+    TPlayer *player = iter->second;
+    ++(player->ToucherCount);
+    if (!player->Part(child_pov_id)) {
       /* This was the parent's last child, so we'll let it self-destruct quietly in another thread
          and remove it from the map.  The next time we try to join to this parent pov, we'll launch
          another player, even if the old one is still in the process of self-destructing. */
-      iter->second->OnClose();
       PlayerByParentPovId.erase(iter);
+      player->OnClose();
     }
+    /* Last touch. */
+    --(player->ToucherCount);
   }
 }
 
@@ -129,9 +135,13 @@ void TTetrisManager::TPlayer::Stop() {
      the count hits zero and the player never touches our stack after the flip. */
   std::atomic<bool> stopped(false);
   StopFlag.store(&stopped);
+  /* Keep ourselves alive across the zeroing and the push: Main() frees us once the count is zero
+     and ToucherCount has drained (#636). */
+  ++ToucherCount;
   ChildCount = 0;
   /* Wake the player in case it is still waiting for permission to work. */
   CanWork.Push();
+  --ToucherCount;
   /* Wait for the player fiber to finish self-destructing.  It runs on the manager's fiber
      scheduler, a different thread, so yielding here cannot starve it.  Server shutdown tears
      us down from a plain thread, so only fiber-yield when we actually are a fiber. */
@@ -165,7 +175,7 @@ TTetrisManager::TPlayer::~TPlayer() {
 }
 
 TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
-    : TetrisManager(tetris_manager), ChildCount(1), StopFlag(nullptr), Paused(false), Unpaused(false) {
+    : TetrisManager(tetris_manager), ChildCount(1), ToucherCount(0UL), StopFlag(nullptr), Paused(false), Unpaused(false) {
   assert(tetris_manager);
   /* Take the frame from our manager's pool, not TFrame::LocalFramePool: we may be running on a
      thread that has no pool of its own (#633, WsRunner during `unpause`).  See PlayerFramePool. */
@@ -258,6 +268,17 @@ void TTetrisManager::TPlayer::Main() {
       }
     }
     //DEBUG_LOG("tetris player %p: self-destructing", this);
+    /* Our last child may have been parted (or we were stopped) by another thread, which drops
+       our child count to zero and then still touches us: OnClose() and Stop() push CanWork.
+       Seeing the zero count we would otherwise free ourselves, and close CanWork's eventfd, under
+       its feet (#636: pausing a player's only child from WsRunner threw "Bad file descriptor"
+       out of the NO_THROW commit path).  Those callers bracket the whole thing with
+       ToucherCount, so wait for it to drain.  Spin, don't lock: taking the manager's FiberMutex
+       here would make this fiber a lock waiter on the Tetris runner, and a runner thread that is
+       OS-blocked elsewhere (on a repo's DataLock, say) would then hold that mutex hostage. */
+    while (ToucherCount.load()) {
+      Fiber::YieldSlow();
+    }
     /* If a Stop() is waiting on us, its stack flag must flip only after we are completely
        dead.  Copy the pointer to our stack first; 'this' is invalid after the delete. */
     std::atomic<bool> *stop_flag = StopFlag.load();
