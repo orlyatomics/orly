@@ -1639,8 +1639,27 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           ReleaseMapping(mapping);
           EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", err, what_ran_out));
         };
+        /* #692: set when an eligible pair is skipped because it can't fit. */
+        bool skipped_unfit = false;
         try {
           //std::map<size_t, std::vector<TDiskLayer *>> gen_to_gen_id_map;
+          /* #692: a merge allocates up to the size of its inputs while they stay live (see
+             MergeFiles), so take only a pair that fits in the room above the data floor that other
+             merges haven't claimed. A pair that can't fit would write until it hit the floor, fail,
+             and be retried forever, and, taken first, would keep a pair that fits from merging. */
+          std::unordered_map<const TDataLayer *, size_t> file_bytes;
+          for (TMapping::TEntryCollection::TCursor csr(mapping->GetEntryCollection()); csr; ++csr) {
+            TDataLayer *layer = csr->GetLayer();
+            size_t block_id, block_offset, file_size, file_keys;
+            if (layer->GetKind() == TDataLayer::TKind::Disk
+                && Manager->GetEngine()->FindFile(GetId(), reinterpret_cast<TDiskLayer *>(layer)->GetGenId(), block_id, block_offset, file_size, file_keys)) {
+              file_bytes[layer] = file_size;
+            }
+          }
+          auto *const vol_man = Manager->GetEngine()->GetVolMan();
+          const size_t available = vol_man->GetSpace().GetAvailable();
+          const size_t unavailable = vol_man->GetDataFloor() + vol_man->GetPendingClaims();
+          const size_t room = available > unavailable ? available - unavailable : 0UL;
           /* acquire Merge lock */ {
             std::lock_guard<std::mutex> lock(MergeLock);
             for (TMapping::TEntryCollection::TCursor csr(mapping->GetEntryCollection()); csr; ++csr) {
@@ -1654,6 +1673,15 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
                   && (!rhs_layer->GetMarkedTaken())  // my neighbor is not marked taken
                   && (Disk::Util::SuggestGeneration(lhs_layer->GetSize()) <= Disk::Util::SuggestGeneration(rhs_layer->GetSize()))  // in in the same or lower gen set than my neighbor
                   ) {
+                auto bytes_of = [&file_bytes](const TDataLayer *layer) {
+                  const auto iter = file_bytes.find(layer);
+                  return iter == file_bytes.end() ? 0UL : iter->second;
+                };
+                const size_t pair_bytes = bytes_of(lhs_layer) + bytes_of(rhs_layer);
+                if (pair_bytes > room) {
+                  skipped_unfit = true;
+                  continue;
+                }
                 lowest_seq = std::min(lowest_seq, lhs_layer->GetLowestSeq());
                 highest_seq = std::max(highest_seq, lhs_layer->GetHighestSeq());
                 num_keys += lhs_layer->GetSize();
@@ -1671,6 +1699,14 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
               }
             }
           }  // release Merge lock
+          if (gen_id_vec.empty() && skipped_unfit) {
+            /* Nothing fits: write nothing, and look again after a backoff. No claim is noted for
+               write admission, which already keeps its reserve free: a pair that can't fit even
+               with writes held off would otherwise hold them off for good. */
+            ReleaseMapping(mapping);
+            EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", "no mergeable pair fits in the free space", "disk space"));
+            return;
+          }
           if (gen_id_vec.size() > 0) {
             disk_slot.emplace();
             /* Merge as a tail merge, dropping each input's superseded versions (#592). Otherwise
