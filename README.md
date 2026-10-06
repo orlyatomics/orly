@@ -156,9 +156,11 @@ and memory-full smokes. Measured on native arm64
 | 4 GiB | 2.81 GiB | 2.85 GiB |
 
 Compiling a package inside the container (`docker exec ... orlyc`) needs about
-640 MiB more, because `orlyc` stands up its own test server. Leave that room
+400 MiB more, nearly all of it the `g++` run that builds the package; the test
+server `orlyc` stands up for a package's `test` blocks peaks at about 150 MiB,
+after `g++` exits, and a package without tests gets none. Leave that room
 between the budget and the limit, for example
-`--memory=1536m -e ORLY_MEMORY_BUDGET_MB=800`.
+`--memory=1280m -e ORLY_MEMORY_BUDGET_MB=800` (measured peak 948 MiB).
 
 **From source** — system dependencies (Ubuntu 24.04):
 

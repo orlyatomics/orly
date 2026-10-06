@@ -117,6 +117,13 @@ class TPackageBuilder {
     Synth->GetSymbol()->TypeCheck();
   }
 
+  /* The package's own top-level test{} blocks (#678). Call after
+     BuildSymbols. */
+  size_t GetTestBlockCount() const {
+    assert(Synth);
+    return Synth->GetSymbol()->GetTests().size();
+  }
+
   /* The source-relative paths of the packages this one imports (#171). Each
      import lowered to a Symbol::TImportFunction carrying its source package name
      (e.g. `imports/lib`); convert that to the package's `.orly` rel path so the
@@ -174,7 +181,8 @@ Package::TVersionedName Orly::Compiler::Compile(
       TPath core_file,
       const TTree &out_tree,
       const TOptions &options,
-      ostream &out_strm) {
+      ostream &out_strm,
+      size_t *test_block_count) {
   const bool machine_mode = options.MachineMode;
   /* Nabbed by Compile() to prevent multiple threads from trying to compile. */
   static mutex Compiling;
@@ -331,6 +339,10 @@ Package::TVersionedName Orly::Compiler::Compile(
 
   if(failed) {
     throw TCompileFailure(HERE, "Compiling Orly language");
+  }
+
+  if (test_block_count) {
+    *test_block_count = packages[core_rel]->GetTestBlockCount();
   }
 
   auto versioned_name = Package::TVersionedName{

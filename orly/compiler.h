@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <iostream>
 #include <string>
 
@@ -48,11 +49,16 @@ namespace Orly {
       bool TransientCc = false;
     };  // TOptions
 
+    /* If test_block_count is given, it is set to the number of top-level
+       test{} blocks in the package being compiled, in every mode. Its
+       imports' tests don't count: they don't run. orlyc stands up no server
+       for a package without tests (#678). */
     Package::TVersionedName Compile(
         Base::TPath core_file,
         const Jhm::TTree &out_tree,
         const TOptions &options,
-        std::ostream &out_strm = std::cout);
+        std::ostream &out_strm = std::cout,
+        size_t *test_block_count = nullptr);
 
   }  // Compiler
 

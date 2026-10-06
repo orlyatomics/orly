@@ -26,6 +26,7 @@
 #include <base/scheduler.h>
 #include <orly/compiler.h>
 #include <orly/error.h>
+#include <orly/package/loaded.h>
 #include <orly/server/server.h>
 #include <orly/server/session.h>
 #include <orly/type.h>
@@ -122,6 +123,32 @@ class TIndyTestServerCmd final : public Orly::Server::TServer::TCmd {
   TIndyTestServerCmd() : Orly::Server::TServer::TCmd() {}
 };
 
+/* The fiber frames the embedded server gets (#678). Each frame's 1 MiB stack
+   is mlocked, so wherever memlock is unlimited (OrbStack, or a container run
+   with `--ulimit memlock=-1`) every frame is resident for the whole run,
+   used or not. This used to be 512, which is 512 MiB, and got an
+   in-container compile OOM-killed under `--memory=1g`.
+
+   What holds a frame during a test run is fixed, not a function of the
+   package: the server's service loops, the one fiber RunPackageTests runs
+   the whole suite on, one case after another, and short-lived fibers for
+   startup and teardown. Tetris players, the one per-POV user of frames,
+   don't come into it: every POV RunTestSuite makes is paused before its
+   first write, and a paused repo never joins Tetris. Measured on the debug
+   build: a one-case package needs 12 frames (11 fail) with 4 or 16 cores
+   reported; the most frame-hungry lang tests (mutations,
+   variants_recursive_storage) fail at 12 and pass at 16, with 4 cores
+   reported and with 64; partial_mutations' 214 cases pass at 12. A
+   generated package of 1,000 cases ran about 300 of them before another
+   pool ran out, the same at 16, 64 and 512 frames. 64 is four times the
+   largest need seen, and matches the floor orlyi enforces (#669). */
+static constexpr size_t TestServerFiberFrames = 64;
+
+/* The directory the package was written to, and the server installs from. */
+static std::string PackageDir(const TCompilerConfig &cmd) {
+  return cmd.OutputDir.size() > 0 ? cmd.OutputDir : Util::GetCwd();
+}
+
 static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompilerConfig &cmd) {
   int result_code = EXIT_FAILURE;
   /* The server's fiber machinery (transactions, the engine) must run inside a
@@ -160,7 +187,7 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
           server_cmd.Create = true;
           server_cmd.StartingState = "SOLO";
           server_cmd.InstanceName = "orlyc";
-          server_cmd.PackageDirectory = cmd.OutputDir.size() > 0 ? cmd.OutputDir : Util::GetCwd();
+          server_cmd.PackageDirectory = PackageDir(cmd);
           /* No client should ever connect; bind listeners to ephemeral ports so
              concurrent lang_test compilers never collide on a port. */
           server_cmd.PortNumber = 0;
@@ -175,7 +202,7 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
           server_cmd.BlockCacheSizeMB = 8;
           server_cmd.DurableCacheSize = 256;
           server_cmd.MaxRepoCacheSize = 512;
-          server_cmd.NumFiberFrames = 512;
+          server_cmd.NumFiberFrames = TestServerFiberFrames;
           server_cmd.NumDiskEvents = 512;
           server_cmd.NumMemMergeThreads = 1;
           server_cmd.NumDiskMergeThreads = 1;
@@ -255,6 +282,7 @@ int CompileCode(const TCompilerConfig &cmd) {
   int result = EXIT_FAILURE;
   try {
     Package::TVersionedName output;
+    size_t test_block_count = 0;
     /* A TypeCzar must be live while we compile (it owns the type singletons /
        interners the compiler builds against). The indy test server stands up
        its own TypeCzar, and a process may hold only one, so let this one die
@@ -267,10 +295,24 @@ int CompileCode(const TCompilerConfig &cmd) {
                     .MachineMode = cmd.MachineForm,
                     .SemanticOnly = cmd.SemanticOnly,
                     .SyntaxOnly = cmd.SyntaxOnly,
-                    .TransientCc = cmd.TransientCc});
+                    .TransientCc = cmd.TransientCc},
+                   cout,
+                   &test_block_count);
       if (cmd.SkipTests || cmd.SemanticOnly || cmd.SyntaxOnly) {
         if (cmd.MachineForm) {
           cout << "MM_NOTICE: Skipped tests" << endl;
+        }
+        return EXIT_SUCCESS;
+      }
+      if (test_block_count == 0) {
+        /* Nothing for a server to run, so don't stand one up (#678). Its
+           install step was this compile's only check that the package loads,
+           so load it here the same way: dlopen with RTLD_NOW, then the API
+           version, name and version checks. The package's static init builds
+           types, hence under this TypeCzar. */
+        Package::TLoaded::Load(PackageDir(cmd), output);
+        if (cmd.MachineForm) {
+          cout << "MM_NOTICE: No tests" << endl;
         }
         return EXIT_SUCCESS;
       }

@@ -7,8 +7,10 @@
 #   #554  orlyc's embedded server wedged at teardown   -> step 1
 #   #578  orlyi segfaulted right after the first write  -> step 2
 #
-#   1. Compile one package with the release orlyc, under a deadline. orlyc
-#      stands up and tears down a whole mem-sim server, which is what hung.
+#   1. Compile two packages with the release orlyc, each under a deadline:
+#      one with test{} blocks, so orlyc stands up and tears down a whole
+#      mem-sim server to run them, which is what hung (a package without tests
+#      gets no server, #678); and the sample package step 2 installs.
 #      On expiry: per-thread state + wchan, then fail.
 #   2. RUNS times: start a fresh release orlyi, create every POV flavour,
 #      write through each, and check the server is still alive. On a crash:
@@ -25,10 +27,11 @@ ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
 ORLYI="$ORLY_OUT/orly/server/orlyi"
 ORLYC="$ORLY_OUT/orly/orlyc"
 PKG="$REPO_ROOT/clients/mcp/smoke/sample.orly"
+TESTED_PKG="$REPO_ROOT/tests/lang_tests/general/assertions.orly"
 RUNS="${1:-10}"
 WS_PORT=19722
 
-for f in "$ORLYI" "$ORLYC" "$PKG"; do
+for f in "$ORLYI" "$ORLYC" "$PKG" "$TESTED_PKG"; do
   test -e "$f" || { echo "missing: $f"; exit 1; }
 done
 
@@ -42,32 +45,36 @@ trap 'test -n "$ORLYI_PID" && kill -9 $ORLYI_PID 2>/dev/null; rm -rf "$WORK"' EX
 if [ "$(id -u)" = 0 ]; then SUDO=; else SUDO="sudo -n"; fi
 $SUDO sysctl -q kernel.print-fatal-signals=1 2>/dev/null || true
 
-echo "[1/2] release orlyc on one package (deadline 300s)"
+echo "[1/2] release orlyc on two packages (deadline 300s each)"
 mkdir "$WORK/pkgout"
-# `timeout` would need -s KILL anyway (RunUntilCtrlC masks SIGTERM), and a
-# killed process can't be interrogated, so poll instead.
-(cd "$WORK/pkgout" && exec "$ORLYC" -o "$WORK/pkgout" "$PKG") > "$WORK/orlyc.out" 2>&1 &
-PID=$!
-for _ in $(seq 1 60); do
-  kill -0 "$PID" 2>/dev/null || break
-  sleep 5
-done
-if kill -0 "$PID" 2>/dev/null; then
-  echo "FAIL: orlyc still running after 300s (the #554 shape). Threads:"
-  for t in /proc/$PID/task/*; do
-    printf "  tid %s  state=%s  wchan=%s\n" "$(basename "$t")" \
-      "$(awk '/^State:/{print $2}' "$t/status" 2>/dev/null)" \
-      "$(cat "$t/wchan" 2>/dev/null)"
+compile_under_deadline() {
+  # `timeout` would need -s KILL anyway (RunUntilCtrlC masks SIGTERM), and a
+  # killed process can't be interrogated, so poll instead.
+  (cd "$WORK/pkgout" && exec "$ORLYC" -o "$WORK/pkgout" "$1") > "$WORK/orlyc.out" 2>&1 &
+  PID=$!
+  for _ in $(seq 1 60); do
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 5
   done
-  kill -9 "$PID"
-  cat "$WORK/orlyc.out"
-  exit 1
-fi
-if ! wait "$PID"; then
-  echo "FAIL: orlyc exited non-zero"
-  cat "$WORK/orlyc.out"
-  exit 1
-fi
+  if kill -0 "$PID" 2>/dev/null; then
+    echo "FAIL: orlyc still running after 300s on $1 (the #554 shape). Threads:"
+    for t in /proc/$PID/task/*; do
+      printf "  tid %s  state=%s  wchan=%s\n" "$(basename "$t")" \
+        "$(awk '/^State:/{print $2}' "$t/status" 2>/dev/null)" \
+        "$(cat "$t/wchan" 2>/dev/null)"
+    done
+    kill -9 "$PID"
+    cat "$WORK/orlyc.out"
+    exit 1
+  fi
+  if ! wait "$PID"; then
+    echo "FAIL: orlyc exited non-zero on $1"
+    cat "$WORK/orlyc.out"
+    exit 1
+  fi
+}
+compile_under_deadline "$TESTED_PKG"
+compile_under_deadline "$PKG"
 mkdir "$WORK/packages"
 touch "$WORK/packages/__orly__"
 cp "$WORK/pkgout/sample.1.so" "$WORK/packages/"
