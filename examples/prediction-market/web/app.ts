@@ -85,7 +85,8 @@ async function main(): Promise<void> {
   el("me").textContent = me;
   // Point the WebSocket at the same host the page was served from, so this
   // works whether you open it as localhost or over the network (e.g. a WSL IP
-  // from a Windows browser), not just 127.0.0.1.
+  // from a Windows browser), not just 127.0.0.1. Over the network, orlyi must
+  // listen beyond loopback: serve.sh's ORLY_BIND_ADDRESS=0.0.0.0 (#705).
   client = await connect(`ws://${location.hostname || "127.0.0.1"}:8082/`);
   await client.newSession();
   await client.install("market", 0); // idempotent: no-op if already installed

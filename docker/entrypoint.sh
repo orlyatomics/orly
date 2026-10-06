@@ -10,6 +10,15 @@
 # rather than all of the host's free RAM. The mem-sim volumes are the data
 # store, not a cache, so they stay fixed and come out of the budget first.
 #
+# Network (#705): on a bare host orlyi binds its client, WebSocket and
+# reporting listeners to 127.0.0.1. Inside the container it must bind every
+# interface, or `docker run -p` can't reach it, so this passes
+# --bind_address=0.0.0.0. Who can connect is then decided by the -p mapping:
+# publish to the host's loopback (`-p 127.0.0.1:8082:8082`) unless clients on
+# other machines need it, because Orly has no authentication. The compile
+# statement over WebSocket stays off, as on a bare host; append
+# --allow_remote_compile to turn it on.
+#
 # `docker run -it ... repl [orly-repl flags]` (#538) instead starts that same
 # orlyi in the background (logs to /var/log/orly/orlyi.log) and drops into
 # orly-repl pointed at it; when the REPL exits, the container exits.
@@ -27,6 +36,7 @@ orlyi_args=(
   --slave_port_number=8081
   --ws_port_number=8082
   --reporting_port_number=8083
+  --bind_address=0.0.0.0
   --connection_backlog=32
   --package_dir=/var/lib/orly/packages
   --le --log_info

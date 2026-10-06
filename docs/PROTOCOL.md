@@ -17,6 +17,45 @@ carries at most one session. Concurrency is modeled by opening **one connection
 (and session) per concurrent writer**, all operating on the same shared POV —
 that separateness is what exercises the commutative merge.
 
+## Security and trust model
+
+Orly has **no authentication and no authorization** (#705). Anyone who can open
+a connection to `orlyi` can create sessions and POVs, install and uninstall
+packages, and read and write any data the installed packages reach. `set user
+id` records who a client *says* it is; it is attribution, not identity. Neither
+the WebSocket nor the binary protocol encrypts traffic.
+
+So run `orlyi` only where every client that can reach it is trusted: on the
+same host, on a private network, or behind an application that authenticates
+its users and talks to `orlyi` on their behalf.
+
+- **Listeners.** By default `orlyi` binds its client (`--port_number`),
+  WebSocket (`--ws_port_number`) and reporting (`--reporting_port_number`)
+  listeners to `127.0.0.1`, so only processes on the same host can connect.
+  `--bind_address=<ip>` changes that for all three; `--bind_address=0.0.0.0`
+  listens on every interface. `orlyi` logs each address it bound at startup
+  (`client listener bound to 127.0.0.1:19380`, with `--log_info`).
+- **Replication.** The replication listener (`--slave_port_number`) binds
+  every interface by default, because a slave usually runs on another host.
+  Replication is unauthenticated too, and its stream carries all of the data,
+  so keep peers on a private network and set `--slave_bind_address` to that
+  network's address.
+- **Docker.** Inside the published image `orlyi` binds every interface, since
+  `docker run -p` can't reach a loopback listener in the container. Who can
+  connect is then decided by the `-p` mapping: `-p 127.0.0.1:8082:8082`
+  publishes to the host's loopback only, while `-p 8082:8082` publishes on
+  every host interface, to anyone who can reach the host.
+- **`compile`.** The `compile` statement takes orlyscript source, builds it
+  into a package with the server's C++ compiler, and puts the result in the
+  package directory, from where `install` loads it into the `orlyi` process. A
+  client that can send it can run code of its choosing inside the server. It is
+  refused unless `orlyi` is started with `--allow_remote_compile`, both on a
+  bare host and in the image; a refused `compile` replies `"status":
+  "remote_compile_disabled"`. Without it, compile packages with `orlyc` on the
+  server and `install` them over the protocol, which is what every client and
+  example in this repo does. `install` only loads packages already in the
+  package directory.
+
 ## Request / reply
 
 A request is a single **orlyscript statement string**, terminated with `;`,
@@ -93,6 +132,10 @@ sent as one WebSocket text message. The server replies with one JSON message:
   computed without reading any rows (`[0..n]`) count only once they are part
   of the result. Over the binary protocol the refusal is an error whose message
   starts with `read too large`.
+- `compile` on a server started without `--allow_remote_compile` replies
+  `"status": "remote_compile_disabled"` (#705). It is a configuration answer,
+  not a transient one: retrying won't change it. See "Security and trust
+  model" above.
 
 ## Statements
 
@@ -106,6 +149,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Set TTL | `set ttl <durable-id> <seconds>;` | — |
 | Install package | `install <pkg>.<version>;` | — |
 | Uninstall package | `uninstall <pkg>.<version>;` | — |
+| Compile package | `compile "<orlyscript source>";` | `{"name": ..., "version": ...}`; refused unless `--allow_remote_compile` |
 | New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
@@ -184,7 +228,8 @@ exit;
    structured error code. `insufficient_storage` and `insufficient_memory` are the
    statuses worth matching on: they mean "retry later", not "this statement is
    wrong". `write_too_large` and `read_too_large` mean the opposite: never
-   retry them as sent; split the write, or read less.
+   retry them as sent; split the write, or read less. `remote_compile_disabled`
+   means the server doesn't take `compile` at all.
 
 ## Toward a client SDK
 

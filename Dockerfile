@@ -3,7 +3,7 @@
 # compile INSIDE the container (orlyc shells out to g++ with -I$ORLY_SRC_ROOT).
 #
 #   docker build -t ghcr.io/orlyatomics/orly .
-#   docker run --rm -p 8082:8082 ghcr.io/orlyatomics/orly
+#   docker run --rm -p 127.0.0.1:8082:8082 ghcr.io/orlyatomics/orly
 #
 # The WebSocket + JSON protocol is then on ws://127.0.0.1:8082/ -- point any
 # client driver (clients/{python,go,ts}) or the MCP server (clients/mcp) at it.

@@ -29,7 +29,8 @@ import websocket  # the `websocket-client` package
 
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
-           "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "Lit", "lit",
+           "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "RemoteCompileDisabled",
+           "Lit", "lit",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -87,6 +88,12 @@ class ReadTooLarge(OrlyError):
     the server's per-read budget (``"status": "read_too_large"``;
     ``--read_budget_rows``, ``--read_budget_mb``). Like ``WriteTooLarge`` it is
     NOT retryable as sent: read a narrower range."""
+
+
+class RemoteCompileDisabled(OrlyError):
+    """Raised when a ``compile`` statement reaches a server started without
+    ``--allow_remote_compile`` (``"status": "remote_compile_disabled"``,
+    #705). Compile packages with ``orlyc`` and install them instead."""
 
 
 class Lit:
@@ -155,6 +162,8 @@ class Client:
             raise WriteTooLarge(statement, reply)
         if status == "read_too_large":
             raise ReadTooLarge(statement, reply)
+        if status == "remote_compile_disabled":
+            raise RemoteCompileDisabled(statement, reply)
         if status != "ok":
             raise OrlyError(statement, reply)
         return reply.get("result")

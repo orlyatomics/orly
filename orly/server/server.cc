@@ -24,6 +24,7 @@
 #include <cstring>
 #include <optional>
 #include <sstream>
+#include <arpa/inet.h>
 #include <poll.h>
 #include <sys/syscall.h>
 
@@ -63,6 +64,33 @@ using namespace Orly::Handshake;
 using namespace Orly::Indy;
 using namespace Orly::Server;
 using namespace ::Util;
+
+/* The address a listener binds (#705): an IPv4 (a.b.c.d) or IPv6 literal, and a port. Throws
+   std::invalid_argument for anything else; hostnames are not resolved. */
+static TAddress MakeBindAddress(const string &host, in_port_t port) {
+  sockaddr_storage storage{};
+  if (inet_pton(AF_INET, host.c_str(), &reinterpret_cast<sockaddr_in &>(storage).sin_addr) == 1) {
+    storage.ss_family = AF_INET;
+  } else if (inet_pton(AF_INET6, host.c_str(), &reinterpret_cast<sockaddr_in6 &>(storage).sin6_addr) == 1) {
+    storage.ss_family = AF_INET6;
+  } else {
+    throw invalid_argument("\"" + host + "\" is not an IPv4 or IPv6 address");
+  }
+  TAddress address(reinterpret_cast<const sockaddr &>(storage));
+  address.SetPort(port);
+  return address;
+}
+
+/* The address and port a listening socket actually got, for the startup log (#705). A port of 0
+   asks the kernel for one, so the configured port isn't always the bound one. */
+static string DescribeBound(int fd) {
+  sockaddr_storage storage{};
+  socklen_t len = sizeof(storage);
+  if (getsockname(fd, reinterpret_cast<sockaddr *>(&storage), &len) < 0) {
+    return "(unknown)";
+  }
+  return AsStr(TAddress(reinterpret_cast<const sockaddr &>(storage)));
+}
 
 const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
 const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
@@ -117,6 +145,21 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   Param(
       &TCmd::SlavePortNumber, "slave_port_number", Optional, "slave_port_number\0spn\0",
       "The port on which the server listens for a slave."
+  );
+  Param(
+      &TCmd::BindAddress, "bind_address", Optional, "bind_address\0",
+      "The IP address the client, websocket and reporting listeners bind (default 127.0.0.1, this host only). "
+      "Orly has no authentication: pass 0.0.0.0 to listen on every interface only on a trusted network."
+  );
+  Param(
+      &TCmd::SlaveBindAddress, "slave_bind_address", Optional, "slave_bind_address\0",
+      "The IP address the replication (slave) listener binds (default 0.0.0.0, every interface, so a slave on another "
+      "host can reach it). Replication is unauthenticated: set this to a private network's address."
+  );
+  Param(
+      &TCmd::AllowRemoteCompile, "allow_remote_compile", Optional, "allow_remote_compile\0",
+      "Accept the compile statement over websocket (default off). It builds the source it is sent with the system "
+      "compiler and loads it into this process; refused, it replies \"status\": \"remote_compile_disabled\"."
   );
   Param(
       &TCmd::ConnectionBacklog, "connection_backlog", Optional, "connection_backlog\0cb\0",
@@ -598,7 +641,19 @@ namespace {
 }  // namespace
 
 bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
-  return Base::TLog::TCmd::CheckArgs(cb) && ResolveMemoryDefaults(cb);
+  if (!Base::TLog::TCmd::CheckArgs(cb)) {
+    return false;
+  }
+  for (const auto &[flag, host]: {pair<const char *, const string &>{"bind_address", BindAddress},
+                                  pair<const char *, const string &>{"slave_bind_address", SlaveBindAddress}}) {
+    try {
+      MakeBindAddress(host, 0);
+    } catch (const invalid_argument &ex) {
+      cb(string("--") + flag + ": " + ex.what());
+      return false;
+    }
+  }
+  return ResolveMemoryDefaults(cb);
 }
 
 bool TServer::TCmd::ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsumer &cb) {
@@ -1102,7 +1157,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   }
 
   /* Launch the websockets server. */
-  Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber));
+  Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber, cmd.BindAddress, cmd.AllowRemoteCompile));
 
   } catch (const std::exception &ex) {
     /* We cannot unwind: several members' destructors (the durable manager,
@@ -1529,7 +1584,7 @@ void TServer::Init() {
     /* Open the listening socket for clients. A bind failure is logged and
        aborts startup. */
     auto open_listening_socket = [this](TFd &sock, in_port_t port, const char *who) {
-      TAddress address(TAddress::IPv4Any, port);
+      TAddress address = MakeBindAddress(Cmd.BindAddress, port);
       sock = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
       int flag = true;
       IfLt0(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
@@ -1540,16 +1595,17 @@ void TServer::Init() {
         throw;
       }
       IfLt0(listen(sock, Cmd.ConnectionBacklog));
+      syslog(LOG_INFO, "%s listener bound to %s", who, DescribeBound(sock).c_str());
     };
 
-    open_listening_socket(MainSocket, Cmd.PortNumber, "main");
+    open_listening_socket(MainSocket, Cmd.PortNumber, "client");
     /* Tracked for cancel-or-join at Shutdown() like the runner hosts: the
        loop exits promptly once Shutdown() shuts the socket down, but only
        the join proves it is out of TServer members (#462, #463). */
     ScheduleHostJob(bind(&TServer::AcceptClientConnections, this));
 
     HousekeeperHandle = Scheduler->ScheduleCancelable(bind(&TServer::CleanHouse, this));
-    Reporter = make_unique<TIndyReporter>(this, Scheduler, Cmd.ReportingPortNumber);
+    Reporter = make_unique<TIndyReporter>(this, Scheduler, Cmd.BindAddress, Cmd.ReportingPortNumber);
     /* Sets the data floor before the first write does (#590). */
     if (Cmd.DiskReserveMb || Cmd.DiskReservePct) {
       RefreshWriteAdmission(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -3171,14 +3227,15 @@ void TServer::WaitForSlave() {
   }
   DEBUG_LOG("TServer::WaitForSlave() entering");
   try {
-    TFd listener(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+    const TAddress slave_address = MakeBindAddress(Cmd.SlaveBindAddress, Cmd.SlavePortNumber);
+    TFd listener(socket(slave_address.GetFamily(), SOCK_STREAM, IPPROTO_TCP));
     int flag = true;
     IfLt0(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
     /* A previous slave session's listener can still be draining right after
        a demote; retry rather than killing the server (#500). */
     for (;;) {
       try {
-        Bind(listener, TAddress(TAddress::IPv4Any, Cmd.SlavePortNumber));
+        Bind(listener, slave_address);
         break;
       } catch (const std::system_error &err) {
         if (err.code().value() != EADDRINUSE || ShutdownCalled) {
@@ -3189,6 +3246,7 @@ void TServer::WaitForSlave() {
       }
     }
     IfLt0(listen(listener, 4));
+    syslog(LOG_INFO, "replication listener bound to %s", DescribeBound(listener).c_str());
     /* Publish the listener under the lock Shutdown() takes before its
        shutdown(2): either Shutdown() sees the fd we are about to accept
        on, or we see ShutdownCalled and bail before blocking (#440). */ {
@@ -3248,16 +3306,17 @@ void TServer::WaitForSlave() {
   DEBUG_LOG("TServer::WaitForSlave() exiting");
 }
 
-TIndyReporter::TIndyReporter(const TServer *server, TScheduler *scheduler, int port_number)
+TIndyReporter::TIndyReporter(const TServer *server, TScheduler *scheduler, const string &bind_address, int port_number)
     : Server(server), Scheduler(scheduler) {
   ReportTimer.Start();
   /* open the socket */ {
-    TAddress address(TAddress::IPv4Any, port_number);
+    TAddress address = MakeBindAddress(bind_address, static_cast<in_port_t>(port_number));
     Socket = TFd(socket(address.GetFamily(), SOCK_STREAM, 0));
     int flag = true;
     IfLt0(setsockopt(Socket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
     Bind(Socket, address);
     IfLt0(listen(Socket, 5));
+    syslog(LOG_INFO, "reporting listener bound to %s", DescribeBound(Socket).c_str());
   }
   Scheduler->Schedule(bind(&TIndyReporter::AcceptClientConnections, this));
 }

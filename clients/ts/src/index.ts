@@ -92,6 +92,16 @@ export class ReadTooLargeError extends OrlyError {
   }
 }
 
+/** Thrown when a `compile` statement reaches a server started without `--allow_remote_compile`
+ *  (`"status": "remote_compile_disabled"`, #705). Compile packages with `orlyc` and install them
+ *  instead. */
+export class RemoteCompileDisabledError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "RemoteCompileDisabledError";
+  }
+}
+
 /** Wrap a string to inject it into a statement as raw orlyscript, un-encoded. */
 export class Raw {
   constructor(public readonly text: string) {}
@@ -191,6 +201,8 @@ export class Client {
         ? new WriteTooLargeError(p.stmt, reply)
         : reply?.status === "read_too_large"
         ? new ReadTooLargeError(p.stmt, reply)
+        : reply?.status === "remote_compile_disabled"
+        ? new RemoteCompileDisabledError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
       return;
     }

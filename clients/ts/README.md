@@ -70,4 +70,6 @@ its Update Entry reserve) rejects with `WriteTooLargeError`. That one is not
 retryable: split the batch into smaller ones. A call that walks more rows, or builds more
 result memory, than the server's per-read budget rejects with
 `ReadTooLargeError`; that one isn't retryable as sent either: read a narrower
-range.
+range. A `compile` statement sent to a
+server started without `--allow_remote_compile` rejects with
+`RemoteCompileDisabledError`.

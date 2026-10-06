@@ -24,6 +24,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <syslog.h>
 #include <thread>
@@ -72,6 +73,23 @@ namespace websocket = beast::websocket;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
+namespace {
+
+  /* The error the `compile` statement gets when the server was started without
+     --allow_remote_compile (#705). Reported as "status": "remote_compile_disabled". */
+  class TRemoteCompileDisabled
+      : public std::runtime_error {
+    public:
+
+    TRemoteCompileDisabled()
+        : std::runtime_error(
+              "remote compile disabled: this server does not accept the compile statement; "
+              "compile packages with orlyc and install them, or start orlyi with --allow_remote_compile") {}
+
+  };  // TRemoteCompileDisabled
+
+}  // namespace
+
 /* The implementation of the TWs interface declared in the header.
 
    Each connection runs on its own asio strand, so per-connection handlers
@@ -97,19 +115,38 @@ class TWsImpl final
   /* Starts up the server. */
   TWsImpl(
       TSessionManager *session_mngr, size_t thread_count,
-      in_port_t port_number)
+      in_port_t port_number, const std::string &bind_address, bool allow_remote_compile)
       : SessionManager(session_mngr),
+        AllowRemoteCompile(allow_remote_compile),
         TmpDirMaker(MakeCompileTmpDir()),
         IoCtx(thread_count ? static_cast<int>(thread_count) : 1),
         Acceptor(IoCtx) {
     assert(session_mngr);
     syslog(LOG_INFO, "ws compile tmp dir = \"%s\"", TmpDirMaker.GetPath().c_str());
 
-    tcp::endpoint endpoint(tcp::v4(), port_number);
+    boost::system::error_code ec;
+    const auto address = net::ip::make_address(bind_address, ec);
+    if (ec) {
+      throw std::invalid_argument("ws bind address \"" + bind_address + "\" is not an IPv4 or IPv6 address");
+    }
+    tcp::endpoint endpoint(address, port_number);
     Acceptor.open(endpoint.protocol());
     Acceptor.set_option(net::socket_base::reuse_address(true));
     Acceptor.bind(endpoint);
     Acceptor.listen(8192);
+    /* Log what the kernel gave us: a port of 0 asks for an ephemeral one. */ {
+      const auto bound = Acceptor.local_endpoint();
+      std::ostringstream strm;
+      strm << bound;
+      syslog(LOG_INFO, "websocket listener bound to %s; remote compile %s",
+             strm.str().c_str(), allow_remote_compile ? "allowed" : "disabled");
+      if (allow_remote_compile && !bound.address().is_loopback()) {
+        syslog(LOG_WARNING,
+               "websocket listener on %s accepts compile from any client that reaches it; "
+               "Orly has no authentication",
+               strm.str().c_str());
+      }
+    }
 
     DoAccept();
 
@@ -380,6 +417,9 @@ class TWsImpl final
 
       virtual void operator()(const TCompileStmt *stmt) const override {
         assert(stmt);
+        if (!Conn->Ws->AllowRemoteCompile) {
+          throw TRemoteCompileDisabled();
+        }
         ostringstream out_strm;
         Result = TJson::Object;
         try {
@@ -600,6 +640,10 @@ class TWsImpl final
            sent: the client must read less. */
         reply["result"] = ex.what();
         reply["status"] = "read_too_large";
+      } catch (const TRemoteCompileDisabled &ex) {
+        /* `compile` on a server started without --allow_remote_compile (#705). */
+        reply["result"] = ex.what();
+        reply["status"] = "remote_compile_disabled";
       } catch (const exception &ex) {
         reply["result"] = ex.what();
         reply["status"] = "exception";
@@ -648,6 +692,9 @@ class TWsImpl final
 
   /* The session manager interface passed to us at construction time. */
   TSessionManager *SessionManager;
+
+  /* Whether the compile statement is accepted (#705). */
+  const bool AllowRemoteCompile;
 
   /* Creates and destroys the tmp dir used by the compile stmt. */
   TTmpDirMaker TmpDirMaker;
@@ -701,6 +748,6 @@ void TWsImpl::DoAccept() {
 
 TWs *TWs::New(
     TSessionManager *session_mngr, size_t thread_count,
-    in_port_t port_number) {
-  return new TWsImpl(session_mngr, thread_count, port_number);
+    in_port_t port_number, const std::string &bind_address, bool allow_remote_compile) {
+  return new TWsImpl(session_mngr, thread_count, port_number, bind_address, allow_remote_compile);
 }
