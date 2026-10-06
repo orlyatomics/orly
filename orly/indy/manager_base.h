@@ -682,6 +682,15 @@ namespace Orly {
 
         void RunMergeDisk();
 
+        /* Run one merge for the repo with this id, which the caller has just taken off the merge
+           queue (#614). The queue holds a raw pointer, and nothing else keeps the repo alive for
+           the merge. A fast child pov loses its last pin when Tetris releases its last update,
+           and that can land mid-merge. So pin the repo by id first, and skip it if it has already
+           gone. */
+        void StepQueuedMergeMem(const Base::TUuid &repo_id);
+
+        void StepQueuedMergeDisk(const Base::TUuid &repo_id);
+
         void GetFileGenSet(const Base::TUuid &repo_id, std::vector<Disk::TFileObj> &file_vec);
 
         Server::TTetrisManager *GetTetrisManager() const;
