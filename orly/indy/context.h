@@ -100,6 +100,9 @@ namespace Orly {
            TContext, so the folded TCore outlives the walker. */
         Atom::TCore::TExtensibleArena *FoldArena;
 
+        /* The enclosing TContext's FoldDedupProbes. */
+        size_t *FoldDedupProbes;
+
       };  // TPresentWalker
 
       public:
@@ -163,6 +166,13 @@ namespace Orly {
         return PresentWalkConsTimer;
       }
 
+      /* The work the read-time fold's dedup has done in this context: the
+         UpdateIds it has hashed plus the ones it has compared. Tests use it
+         to check that dedup stays linear in the entries folded (#696). */
+      inline size_t GetFoldDedupProbes() const {
+        return FoldDedupProbes;
+      }
+
       struct TKeyCursorCollector {
         NO_COPY(TKeyCursorCollector);
 
@@ -179,6 +189,10 @@ namespace Orly {
       size_t WalkerCount;
 
       Base::TTimer PresentWalkConsTimer;
+
+      /* See GetFoldDedupProbes(). Not atomic: a context is read by one
+         fiber at a time. */
+      size_t FoldDedupProbes = 0;
 
       friend class TIndyContext;
 

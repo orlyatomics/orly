@@ -79,7 +79,8 @@ bool TContext::Exists(const Indy::TIndexKey &key) {
 TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &key, bool exact_point)
     : MinHeap(repo_tree.size()),
       Valid(false),
-      FoldArena(ctx->GetArena()) {
+      FoldArena(ctx->GetArena()),
+      FoldDedupProbes(&ctx->FoldDedupProbes) {
   assert(Fiber::TFrame::LocalFramePool);
   size_t pos = 0;
   ctx->PresentWalkConsTimer.Start();
@@ -104,7 +105,8 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
 TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &from, const TIndexKey &to)
     : MinHeap(repo_tree.size()),
       Valid(false),
-      FoldArena(ctx->GetArena()) {
+      FoldArena(ctx->GetArena()),
+      FoldDedupProbes(&ctx->FoldDedupProbes) {
   ctx->PresentWalkConsTimer.Start();
   size_t pos = 0;
   for (const auto &iter : repo_tree) {
@@ -185,9 +187,27 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
   void *state_alloc_c = static_cast<uint8_t *>(state_alloc_b) + Sabot::State::GetMaxStateSize();
   Var::TVar acc = Var::ToVar(*Sabot::State::TAny::TWrapper(Item.Op.NewState(Item.OpArena, state_alloc_a)));
   const Base::TUuid zero_uuid;
-  std::vector<Base::TUuid> seen_update_ids;
+  /* A hash set, so a key with W unmerged entries folds in O(W) rather than
+     the O(W^2) a linear scan of the ids seen so far cost (#696). Its hash
+     and equality count themselves into the context's stats. */
+  struct TCountingHash {
+    size_t *Probes;
+    size_t operator()(const Base::TUuid &id) const {
+      ++*Probes;
+      return std::hash<Base::TUuid>()(id);
+    }
+  };
+  struct TCountingEq {
+    size_t *Probes;
+    bool operator()(const Base::TUuid &lhs, const Base::TUuid &rhs) const {
+      ++*Probes;
+      return lhs == rhs;
+    }
+  };
+  std::unordered_set<Base::TUuid, TCountingHash, TCountingEq> seen_update_ids(
+      0, TCountingHash{FoldDedupProbes}, TCountingEq{FoldDedupProbes});
   if (Item.UpdateId != zero_uuid) {
-    seen_update_ids.push_back(Item.UpdateId);
+    seen_update_ids.insert(Item.UpdateId);
   }
 
   while (MinHeap) {
@@ -222,20 +242,8 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
 
     /* Dedup by UpdateId. If we've already consumed this logical
        update from another repo's walker in the same fold, drop it. */
-    bool is_duplicate = false;
-    if (peek_update_id != zero_uuid) {
-      for (const auto &seen : seen_update_ids) {
-        if (seen == peek_update_id) {
-          is_duplicate = true;
-          break;
-        }
-      }
-    }
-    if (is_duplicate) {
+    if (peek_update_id != zero_uuid && !seen_update_ids.insert(peek_update_id).second) {
       continue;
-    }
-    if (peek_update_id != zero_uuid) {
-      seen_update_ids.push_back(peek_update_id);
     }
 
     Var::TVar peek_val = Var::ToVar(*Sabot::State::TAny::TWrapper(peek_op.NewState(peek_op_arena, state_alloc_b)));
