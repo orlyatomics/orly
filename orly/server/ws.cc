@@ -140,9 +140,11 @@ class TWsImpl final
       strm << bound;
       syslog(LOG_INFO, "websocket listener bound to %s; remote compile %s",
              strm.str().c_str(), allow_remote_compile ? "allowed" : "disabled");
+      /* LOG_ERR, not LOG_WARNING: the default log mask shows only errors, and an operator must
+         see this one without asking for more. */
       if (allow_remote_compile && !bound.address().is_loopback()) {
-        syslog(LOG_WARNING,
-               "websocket listener on %s accepts compile from any client that reaches it; "
+        syslog(LOG_ERR,
+               "WARNING: websocket listener on %s accepts compile from any client that reaches it; "
                "Orly has no authentication",
                strm.str().c_str());
       }

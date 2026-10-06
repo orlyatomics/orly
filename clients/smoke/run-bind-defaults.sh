@@ -50,8 +50,9 @@ bound() {
   ss -Htln "sport = :$1" 2>/dev/null | awk '{print $4}' | head -1
 }
 
-# --log_info alone enables only LOG_INFO (not "up to"), so --log_warning is
-# needed too for the remote-compile warning to reach the log.
+# --log_info adds only LOG_INFO to the default mask (errors and worse). The
+# remote-compile warning is logged at LOG_ERR so the default mask shows it;
+# run 2 checks it with no --log_* flag at all.
 start_orlyi() {
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
            --port_number=$PORT --slave_port_number=$SLAVE_PORT \
@@ -60,7 +61,7 @@ start_orlyi() {
            --instance_name=orly_bind_defaults_smoke \
            --starting_state=SOLO \
            --package_dir="$WORK/packages" \
-           --le --log_info --log_warning "$@" \
+           --le "$@" \
            > "$WORK/orlyi.log" 2>&1 &
   ORLYI_PID=$!
   for _ in $(seq 1 60); do
@@ -81,12 +82,13 @@ expect_bound() {  # port, expected address, listener name
   got="$(bound "$1")"
   echo "  $3 listener: $got"
   [ "$got" = "$2:$1" ] || fail "$3 listener bound to '$got', expected $2:$1"
-  grep -q "$3 listener bound to $2:$1" "$WORK/orlyi.log" \
+  [ -z "$CHECK_INFO_LOG" ] || grep -q "$3 listener bound to $2:$1" "$WORK/orlyi.log" \
     || fail "the log does not say '$3 listener bound to $2:$1'"
 }
 
 echo "[1/2] defaults: client/ws/reporting on 127.0.0.1, replication on 0.0.0.0, compile refused"
-start_orlyi
+CHECK_INFO_LOG=1
+start_orlyi --log_info
 expect_bound $PORT 127.0.0.1 client
 expect_bound $WS_PORT 127.0.0.1 websocket
 expect_bound $REPORTING_PORT 127.0.0.1 reporting
@@ -119,12 +121,15 @@ PY
 stop_orlyi
 
 echo "[2/2] --bind_address=0.0.0.0 --allow_remote_compile: every interface, compile accepted"
+# Default log level: only the bind addresses from ss, and the warning must still show.
+CHECK_INFO_LOG=
 start_orlyi --bind_address=0.0.0.0 --allow_remote_compile
 expect_bound $PORT 0.0.0.0 client
 expect_bound $WS_PORT 0.0.0.0 websocket
 expect_bound $REPORTING_PORT 0.0.0.0 reporting
 expect_bound $SLAVE_PORT 0.0.0.0 replication
-grep -q "accepts compile from any client" "$WORK/orlyi.log" || fail "no warning about remote compile on a public listener"
+grep -q "WARNING: websocket listener on 0.0.0.0:$WS_PORT accepts compile from any client" "$WORK/orlyi.log" \
+  || fail "no warning at the default log level about remote compile on a public listener"
 PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" python3 - "$WS_PORT" "$OTHER_IP" <<'PY' || fail "the --bind_address=0.0.0.0 checks failed"
 import sys
 import orly
