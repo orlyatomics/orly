@@ -25,10 +25,14 @@ namespace Orly {
   namespace Indy {
 
     /* The type of a number used to identify uniquely an update within a repo.
-       A repo assigns these numbers in sequence, starting at zero, as updates are pushed to it.
+       A repo assigns these numbers in sequence, starting at one, as updates are pushed to it.
        Sequence numbers cannot be maintained between repos.  A sequence number is meaningful only within a single repo.
        Throughout its life, a repo may never accept a number of updates greater than can be represented by this type; hence, it's a big type. */
     typedef uint64_t TSequenceNumber;
+
+    /* Never assigned to an update.  The replication stream sends it as the sequence number of a
+       status change (pause, unpause, fail) made while the repo had no unpromoted updates (#655). */
+    constexpr TSequenceNumber EmptyRepoSequenceNumber = 0UL;
 
   }  // Indy
 

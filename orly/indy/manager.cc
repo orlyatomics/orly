@@ -1187,6 +1187,13 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
   }
 }
 
+/* One syslog line per replicated status change the slave applies or discards. */
+static void LogStatusChange(const char *what, const Base::TUuid &repo_id, TSequenceNumber seq_num, bool applied) {
+  std::ostringstream strm;
+  strm << repo_id;
+  syslog(LOG_INFO, "Slave %s %s of repo [%s] at seq [%ld]", applied ? "applying" : "discarding", what, strm.str().c_str(), seq_num);
+}
+
 size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -1239,16 +1246,19 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
           apply_transaction->Pop(repo, seq_num);
           break;
         }
+        /* For a status change, seq_num is EmptyRepoSequenceNumber when the master's repo had
+           nothing pending (#655); TTransaction checks it against our copy either way.  Status
+           changes are rare, so say which ones we apply. */
         case TTransactionAction::Fail : {
-          apply_transaction->Fail(repo, seq_num);
+          LogStatusChange("fail", repo_id, seq_num, apply_transaction->Fail(repo, seq_num));
           break;
         }
         case TTransactionAction::Pause : {
-          apply_transaction->Pause(repo, seq_num);
+          LogStatusChange("pause", repo_id, seq_num, apply_transaction->Pause(repo, seq_num));
           break;
         }
         case TTransactionAction::UnPause : {
-          apply_transaction->UnPause(repo, seq_num);
+          LogStatusChange("unpause", repo_id, seq_num, apply_transaction->UnPause(repo, seq_num));
           break;
         }
         default : {

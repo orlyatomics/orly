@@ -107,9 +107,17 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TransactionBuilder.Push(replica.GetMutationList().size()); /* number of mutations in this transaction. */
   for (const auto &mutation : replica.GetMutationList()) {
-    assert(mutation.GetSequenceNumber());
-    TSequenceNumber mutation_seq_num = *mutation.GetSequenceNumber();
-    switch (mutation.GetKind()) {
+    /* A push or a pop always has a sequence number.  A status change (pause, unpause, fail) carries
+       the pov's lowest unpromoted one, which a pov with nothing pending doesn't have (#655): send
+       that as 0, which is never a real sequence number (they start at 1).  The slave reads 0 as
+       "my copy must be empty too" (TTransaction::Pause and friends). */
+    const L1::TTransaction::TReplica::TMutation::TKind kind = mutation.GetKind();
+    assert(mutation.GetSequenceNumber() ||
+           kind == L1::TTransaction::TReplica::TMutation::Pauser ||
+           kind == L1::TTransaction::TReplica::TMutation::UnPauser ||
+           kind == L1::TTransaction::TReplica::TMutation::Failer);
+    TSequenceNumber mutation_seq_num = mutation.GetSequenceNumber().value_or(EmptyRepoSequenceNumber);
+    switch (kind) {
       case L1::TTransaction::TReplica::TMutation::Pusher : {
         //std::cout << "\t\tPush[" << mutation.GetRepoId() << "]\t[" << mutation_seq_num << "]" << std::endl;
         const auto &cur_update = mutation.GetUpdate();
