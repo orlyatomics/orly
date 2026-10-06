@@ -1712,9 +1712,8 @@ Rt::TOpt<int64_t> ReadPovWithRetry(const TAddress &addr, const Base::TUuid &pov_
    a shared pov Y under a fast shared pov Z with no ttl.  Z has no saved-repo entry (only a repo
    with a ttl gets one), so only Y's parent link tells the master about it.
 
-   A pov made before the join can't be read on the promoted slave at all: its durable record never
-   reached the slave.  So the reads go through povs made after the join, under P, D and Y; the
-   slave builds each under its own copy of that parent. */
+   The reads go through povs made after the join, under P, D and Y; the slave builds each under its
+   own copy of that parent.  (Reads through povs made before the join are JoinSendsPovRecords'.) */
 FIXTURE(SlaveInventoryKeepsPovShape) {
   Orly::Type::TTypeCzar type_czar;
   if (!ifstream(GetOrlyiPath()).good()) {
@@ -1776,6 +1775,49 @@ FIXTURE(SlaveInventoryKeepsPovShape) {
     Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.SlaveAddr(), pov_id, 91L, seconds(30));
     cout << "read through pov {" << pov_id << "} on the promoted slave: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
     EXPECT_TRUE(read.IsKnown() && read.GetVal() == 9191L);
+  }
+  pair.Slave->Kill();
+  pair.Slave->Reap(seconds(60));
+}
+
+/* #680: a pov's durable record reached a slave only when the pov was saved while the two were
+   paired; the join sent the repos but not the records.  So after a failover, a pov made before
+   the join was refused on the promoted slave (`durable object doesn't exist`), although the slave
+   had its repo.  The join now sends the saved records of the povs it inventories.
+
+   Here a client makes a shared pov P and a child D under it before the slave joins, keeps its
+   connection open across the join, then closes it, which doesn't save them again.  Each must
+   still read the global value on the promoted slave. */
+FIXTURE(JoinSendsPovRecords) {
+  Orly::Type::TTypeCzar type_czar;
+  if (!ifstream(GetOrlyiPath()).good()) {
+    throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
+  }
+  TLogTailDumper log_dumper;
+  /* Open across the join, so the master keeps the povs made before it. */
+  shared_ptr<TExerciseClient> client;
+  Base::TUuid parent_id, child_id;
+  TPairedServers pair(NewSampleScratch(), "join_records", {}, log_dumper, [&](const TAddress &master_addr) {
+    client = make_shared<TExerciseClient>(master_addr);
+    const Base::TUuid writer_id = **Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
+    WriteVal(client, writer_id, 93L, 9393L);
+    Rt::TOpt<int64_t> in_global = ReadWithRetry(master_addr, 93L, seconds(60));
+    EXPECT_TRUE(in_global.IsKnown() && in_global.GetVal() == 9393L);
+    parent_id = **Answered(client->NewSafeSharedPov(std::nullopt, seconds(700)), "NewSafeSharedPov (P)");
+    child_id = **Answered(client->NewSafeSharedPov(parent_id, seconds(800)), "NewSafeSharedPov (D)");
+    for (const Base::TUuid &pov_id : { parent_id, child_id }) {
+      Rt::TOpt<int64_t> on_master = ReadVal(client, pov_id, 93L);
+      EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9393L);
+    }
+  });
+  client.reset();
+  this_thread::sleep_for(seconds(3));
+  EXPECT_TRUE(LogContains(pair.MasterLog, "saved pov record(s)"));
+  pair.Failover();
+  for (const Base::TUuid &pov_id : { parent_id, child_id }) {
+    Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.SlaveAddr(), pov_id, 93L, seconds(30));
+    cout << "read through pov {" << pov_id << "} on the promoted slave: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
+    EXPECT_TRUE(read.IsKnown() && read.GetVal() == 9393L);
   }
   pair.Slave->Kill();
   pair.Slave->Reap(seconds(60));

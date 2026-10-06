@@ -156,6 +156,12 @@ namespace Orly {
 
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
 
+        /* TryLoad() takes this manager's own locks, so it is safe without Durable::TManager's
+           mutex (#680). */
+        virtual bool TryReadSaved(const Durable::TId &id, std::string &serialized_form_out) override {
+          return TryLoad(id, serialized_form_out);
+        }
+
         /* True once the writer or the merger has stopped writing after an I/O error other than
            a full disk, such as the file service refusing file-map changes (#621). Saves are still
            accepted and readable from memory, but nothing more reaches the disk until a restart.

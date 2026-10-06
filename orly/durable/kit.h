@@ -243,6 +243,15 @@ namespace Orly {
 
       void Clear();
 
+      /* Copy the last saved form of the durable with the given id into 'blob' and return true,
+         or return false if none is saved.  Doesn't open the durable or touch its ttl, and doesn't
+         take the manager's mutex, so a manager whose storage can't be read without it saves
+         nothing here: the default.  For a joining slave, which needs the saved records of the
+         povs whose repos it gets (#680). */
+      virtual bool TryReadSaved(const TId &/*id*/, std::string &/*blob*/) {
+        return false;
+      }
+
       virtual void RunLayerCleaner() = 0;
 
       /* Make RunLayerCleaner return: without this the cleaner fiber sits in
