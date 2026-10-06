@@ -26,6 +26,7 @@
 
 #include <optional>
 #include <set>
+#include <thread>
 
 #include <base/scheduler.h>
 #include <orly/indy/context.h>
@@ -110,9 +111,46 @@ class TSteppedSafeRepo final
 
 };  // TSteppedSafeRepo
 
-/* A minimal L1::TManager that builds stepped safe repos. Its merge delays are an hour, so the
-   background merge loops run each repo's merges at most once, right when they are first queued;
-   the test drives every merge after that. */
+/* A latch a test can park a merge on (#614). It lives outside the repo, because the repo may be
+   gone by the time the merge is let go. */
+struct TMergeLatch {
+  std::mutex Mutex;
+  std::condition_variable Cond;
+  bool Entered = false;
+  bool Released = false;
+};
+
+static TMergeLatch MergeLatch;
+
+/* A fast repo whose memory merge parks on MergeLatch before it does any work (#614). */
+class TLatchedFastRepo final
+    : public TFastRepo {
+  NO_COPY(TLatchedFastRepo);
+  public:
+
+  using TFastRepo::TFastRepo;
+
+  /* Queue this repo for a memory merge, as AppendUpdate would. */
+  void QueueMergeMem() {
+    EnqueueMergeMem();
+  }
+
+  protected:
+
+  virtual void StepMergeMem() override {
+    /* park */ {
+      std::unique_lock<std::mutex> lock(MergeLatch.Mutex);
+      MergeLatch.Entered = true;
+      MergeLatch.Cond.notify_all();
+      MergeLatch.Cond.wait(lock, [] { return MergeLatch.Released; });
+    }
+    TFastRepo::StepMergeMem();
+  }
+
+};  // TLatchedFastRepo
+
+/* A minimal L1::TManager that builds stepped safe repos, and latched fast ones. Nothing here runs
+   the merge loops, so the tests drive every merge. */
 class TMyManager
     : public L1::TManager {
   NO_COPY(TMyManager);
@@ -132,9 +170,11 @@ class TMyManager
   virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
                                const std::optional<TTtl> &ttl,
                                const std::optional<TManager::TPtr<TRepo>> &parent_repo,
-                               bool /*is_safe*/,
+                               bool is_safe,
                                bool /*create*/) override {
-    return new TSteppedSafeRepo(this, repo_id, *ttl, parent_repo);
+    return is_safe ?
+      static_cast<TRepo *>(new TSteppedSafeRepo(this, repo_id, *ttl, parent_repo))
+    : static_cast<TRepo *>(new TLatchedFastRepo(this, repo_id, *ttl, parent_repo));
   }
 
   virtual void SaveRepo(Orly::Indy::L0::TManager::TRepo *) override {}
@@ -158,6 +198,8 @@ class TMyManager
                                        bool is_safe) {
     return OpenOrCreate(repo_id, ttl, parent_repo, is_safe);
   }
+
+  using L0::TManager::TryOpenLiveRepo;
 
   private:
 
@@ -464,6 +506,49 @@ FIXTURE(PruneMergeHistoryFlag) {
       } else {
         EXPECT_EQ(walked, root.NumCommits);
       }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #614: a repo must outlive a merge that is running on it. The merge runners take a repo off the
+   queue as a raw pointer, and a ttl-0 pov's repo is destroyed the moment its last pin goes, as
+   happens when Tetris releases its last update. That used to free the repo under a running
+   StepMergeMem (an assert in its entry loop in debug, a crash or worse in release). Here a merge
+   parks inside StepMergeMem while the test drops the last pin it holds: the repo must stay live
+   until the merge is done, then go. */
+FIXTURE(RepoOutlivesItsRunningMerge) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler);
+    const Base::TUuid repo_id(TUuid::Twister);
+    /* a ttl-0 fast repo: destroyed as soon as nothing pins it */
+    auto repo = manager->GetRepo(repo_id, TTtl::zero(), std::nullopt, false);
+    auto *latched = dynamic_cast<TLatchedFastRepo *>(repo.Get());
+    if (EXPECT_TRUE(latched != nullptr)) {
+      latched->QueueMergeMem();
+      /* drain the merge queue on another thread, as a merge runner would */
+      std::thread merger([&manager] { manager->FlushMemMerges(); });
+      /* wait for the merge to park inside StepMergeMem */ {
+        std::unique_lock<std::mutex> lock(MergeLatch.Mutex);
+        MergeLatch.Cond.wait(lock, [] { return MergeLatch.Entered; });
+      }
+      /* drop the test's pin, the last one but the merge's */
+      repo.Reset();
+      EXPECT_TRUE(static_cast<bool>(manager->TryOpenLiveRepo(repo_id)));
+      /* let the merge finish */ {
+        std::lock_guard<std::mutex> lock(MergeLatch.Mutex);
+        MergeLatch.Released = true;
+        MergeLatch.Cond.notify_all();
+      }
+      merger.join();
+      /* with the merge done and nothing else pinning it, the repo is gone */
+      EXPECT_FALSE(static_cast<bool>(manager->TryOpenLiveRepo(repo_id)));
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

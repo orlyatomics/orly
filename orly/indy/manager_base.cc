@@ -20,6 +20,7 @@
 
 #include <sys/syscall.h>
 
+#include <optional>
 #include <vector>
 
 #include <base/assert_true.h>
@@ -35,6 +36,16 @@ using namespace Util;
 
 TManager::TRepo::~TRepo() {
   assert(MappingCollection.IsEmpty()); /* otherwise didn't call PreDtor */
+  /* A repo can die while it waits in the mem-merge queue (#614). Leave the queue under its
+     lock, where a merge runner may be walking it, rather than in the membership's destructor,
+     which takes no lock. The disk-merge queue keeps the old behaviour: its lock is a fiber
+     lock, which this destructor cannot count on being able to take. Only repos with disk files
+     queue there, which in practice means the root, and the root outlives the runners. */ {
+    std::lock_guard<std::mutex> lock(Manager->MergeMemLock);
+    if (MergeMemMembership.TryGetCollector()) {
+      MergeMemMembership.Remove();
+    }
+  }
 }
 
 TManager::TRepo::TMapping::TEntry::TEntry(TMapping *mapping, TDataLayer *layer)
@@ -376,18 +387,45 @@ void TManager::FlushMemMerges() {
       syslog(LOG_WARNING, "TManager::FlushMemMerges: mem-merge queue still non-empty after 30s; giving up with unflushed repos");
       break;
     }
-    TRepo *repo = nullptr;
+    std::optional<Base::TUuid> repo_id;
     /* acquire MergeMem lock */ {
       std::lock_guard<std::mutex> lock(MergeMemLock);
-      repo = MergeMemQueue.TryGetFirstMember();
+      TRepo *repo = MergeMemQueue.TryGetFirstMember();
       if (repo) {
+        repo_id = repo->GetId();
         repo->MergeMemMembership.Remove();
       }
     }  // release MergeMem lock
-    if (!repo) {
+    if (!repo_id) {
       break;
     }
+    StepQueuedMergeMem(*repo_id);
+  }
+}
+
+void TManager::StepQueuedMergeMem(const Base::TUuid &repo_id) {
+  TPtr<TRepo> repo = TryOpenLiveRepo(repo_id);
+  if (!repo) {
+    return;
+  }
+  try {
     repo->StepMergeMem();
+  } catch (...) {
+    EnqueueMergeMem(repo.Get());
+    throw;
+  }
+}
+
+void TManager::StepQueuedMergeDisk(const Base::TUuid &repo_id) {
+  TPtr<TRepo> repo = TryOpenLiveRepo(repo_id);
+  if (!repo) {
+    return;
+  }
+  try {
+    repo->StepMergeDisk(BlockSlotsAvailablePerMerger);
+  } catch (...) {
+    EnqueueMergeDisk(repo.Get());
+    throw;
   }
 }
 
@@ -410,7 +448,8 @@ void TManager::RunMergeMem() {
   bool should_sleep = true;
   steady_clock::time_point deadline;
 
-    TRepo *repo = nullptr;
+  TRepo *repo = nullptr;
+  Base::TUuid repo_id;
   /* Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);
     MergeMemThreadCPUMap.insert(make_pair(pthread_self(), cpu_clock::now()));
@@ -441,6 +480,7 @@ void TManager::RunMergeMem() {
           cont = true;
         } else {
           repo->SetTimeOfNextMergeMem(now + MergeMemDelay);
+          repo_id = repo->GetId();
           repo->MergeMemMembership.Remove();
         }
         if (!MergeMemQueue.IsEmpty()) {
@@ -454,13 +494,8 @@ void TManager::RunMergeMem() {
         continue;
       }
     }  // release MergeMem lock
-    assert(repo);
-    try {
-      repo->StepMergeMem();
-    } catch (...) {
-      EnqueueMergeMem(repo);
-      throw;
-    }
+    /* Only the id leaves the lock: the repo may die before we pin it (#614). */
+    StepQueuedMergeMem(repo_id);
   }
   /* De-Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);
@@ -486,6 +521,7 @@ void TManager::RunMergeDisk() {
   bool should_sleep = true;
   steady_clock::time_point deadline;
   TRepo *repo = nullptr;
+  Base::TUuid repo_id;
   /* Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);
     auto start_val = cpu_clock::now();
@@ -515,6 +551,7 @@ void TManager::RunMergeDisk() {
           cont = true;
         } else {
           repo->SetTimeOfNextMergeDisk(now + MergeDiskDelay);
+          repo_id = repo->GetId();
           repo->MergeDiskMembership.Remove();
         }
         if (!MergeDiskQueue.IsEmpty()) {
@@ -528,13 +565,8 @@ void TManager::RunMergeDisk() {
         continue;
       }
     }  // release MergeDisk lock
-    assert(repo);
-    try {
-      repo->StepMergeDisk(BlockSlotsAvailablePerMerger);
-    } catch (...) {
-      EnqueueMergeDisk(repo);
-      throw;
-    }
+    /* As in RunMergeMem: only the id leaves the lock (#614). */
+    StepQueuedMergeDisk(repo_id);
   }
   /* De-Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);
