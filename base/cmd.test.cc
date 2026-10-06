@@ -146,3 +146,22 @@ FIXTURE(ArgsFile) {
   EXPECT_EQ(circle.LineWeight, 3.0);
   EXPECT_EQ(circle.Radius, 2.5);
 }
+
+FIXTURE(WasGiven) {
+  /* A flag counts as given under any of its names, and a positional by its arg name (#669). */
+  TArgs args({ "a/b/c/prog", "--lw=1.2", "2.5" });
+  TCircle circle(args.GetArgc(), args.GetArgv());
+  EXPECT_TRUE(circle.WasGiven("line_weight"));
+  EXPECT_TRUE(circle.WasGiven("radius"));
+  EXPECT_FALSE(circle.WasGiven("filled"));
+  EXPECT_FALSE(circle.WasGiven("outlined"));
+  /* Given at the default value is still given. */
+  EXPECT_EQ(circle.LineWeight, 1.2);
+}
+
+FIXTURE(WasGivenFromArgsFile) {
+  TArgs args({ "a/b/c/prog", "--args=" SRC_ROOT "base/cmd.test.args", "2.5" });
+  TCircle circle(args.GetArgc(), args.GetArgv());
+  EXPECT_TRUE(circle.WasGiven("filled"));
+  EXPECT_TRUE(circle.WasGiven("line_weight"));
+}
