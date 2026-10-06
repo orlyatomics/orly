@@ -50,6 +50,8 @@ bound() {
   ss -Htln "sport = :$1" 2>/dev/null | awk '{print $4}' | head -1
 }
 
+# --log_info alone enables only LOG_INFO (not "up to"), so --log_warning is
+# needed too for the remote-compile warning to reach the log.
 start_orlyi() {
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
            --port_number=$PORT --slave_port_number=$SLAVE_PORT \
@@ -58,7 +60,7 @@ start_orlyi() {
            --instance_name=orly_bind_defaults_smoke \
            --starting_state=SOLO \
            --package_dir="$WORK/packages" \
-           --le --log_info "$@" \
+           --le --log_info --log_warning "$@" \
            > "$WORK/orlyi.log" 2>&1 &
   ORLYI_PID=$!
   for _ in $(seq 1 60); do
