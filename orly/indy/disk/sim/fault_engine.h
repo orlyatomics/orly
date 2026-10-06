@@ -39,6 +39,7 @@
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/indy/disk/file_service.h>
 #include <orly/indy/disk/in_file.h>
+#include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/sim/fault_device.h>
 #include <orly/indy/disk/util/engine.h>
@@ -288,6 +289,16 @@ namespace Orly {
               });
             }
             return blocks.size();
+          }
+
+          /* The open-time consistency check (#700), as orlyi runs it on a TDiskEngine. Must run
+             on a fiber. Needs the default file walk. */
+          TOpenCheck CheckOpenConsistency() const {
+            assert(!CustomFileInit);
+            return Disk::CheckOpenConsistency(VolMan.get(), FileService.get(), {SystemBlockId},
+                [this](const Base::TUuid &/*file_uid*/, const TFileObj &file, const std::function<void (const Util::TBlockRange &)> &cb) {
+                  ForEachFileBlockRange(file.Kind, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
+                });
           }
 
           /* Every block range of a file, read from its metadata, as TDiskEngine's startup walk

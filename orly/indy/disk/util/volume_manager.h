@@ -967,6 +967,14 @@ namespace Orly {
 
           TSpace GetSpace() const;
 
+          /* Calls 'cb' with the id of every block this volume holds: marked used and not
+             waiting for discard (#700). Copies the maps under their locks first, so 'cb' runs
+             with no lock held. */
+          void ForEachHeldBlock(const std::function<void (size_t block_id)> &cb) const;
+
+          /* True if this volume holds the block: marked used and not waiting for discard. */
+          bool IsBlockHeld(size_t block_id) const;
+
           void DiscardAll();
 
           private:
@@ -1081,6 +1089,18 @@ namespace Orly {
 
           /* Every volume's space, summed. Takes each volume's allocator locks briefly. */
           TSpace GetSpace() const;
+
+          /* Calls 'cb' with every block any volume holds: marked used and not waiting for
+             discard (#700). */
+          void ForEachHeldBlock(const std::function<void (size_t block_id)> &cb) const;
+
+          /* True if the block is held: marked used and not waiting for discard. False for a
+             block outside every volume. */
+          bool IsBlockHeld(size_t block_id) const;
+
+          /* Every logical extent of every volume, as (first block id, number of blocks). Block
+             ids are logical addresses, so they are sparse: extents sit far apart. */
+          std::vector<TBlockRange> GetBlockExtents() const;
 
           /* Space that work already under way will still allocate before it frees anything:
              a disk merge reserves its output as it goes while its inputs stay live (#590).

@@ -26,6 +26,7 @@
 #include <thread>
 
 #include <base/debug_log.h>
+#include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/util/hash_util.h>
 
 using namespace std;
@@ -1873,7 +1874,19 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
      such a pair is a merge's output and one of its inputs, and the input is the older file:
      gen ids only grow. Drop it too. An input that a narrowed range misses altogether looks
      like any other file and can't be told apart; that takes a crash in the merge's last step,
-     with such a store, and a first reopen by this code. */ {
+     with such a store, and a first reopen by this code.
+
+     Each pair is logged, by kind (#700): a nested pair is what a crash leaves, anything else
+     is a store from before #618 or corruption. */ {
+    std::string repo_desc; {
+      stringstream ss;
+      ss << repo_id;
+      repo_desc = ss.str();
+    }
+    for (const auto &problem : Disk::FindSeqRangeProblems(file_vec)) {
+      syslog(problem.Kind == Disk::TSeqRangeProblem::Nested ? LOG_WARNING : LOG_ERR, "ReConstructFromDisk: repo [%s]: %s",
+             repo_desc.c_str(), problem.Describe().c_str());
+    }
     for (;;) {
       bool found_dup = false;
       for (auto cur = file_vec.begin(); cur != file_vec.end(); ++cur) {
@@ -1886,6 +1899,10 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
           const bool overlaps = file.LowestSeq <= that_file.HighestSeq && that_file.LowestSeq <= file.HighestSeq;
           const bool contains = that_file.LowestSeq >= file.LowestSeq && that_file.HighestSeq <= file.HighestSeq;
           if (inside || (overlaps && !contains && file.GenId < that_file.GenId)) {
+            syslog(inside ? LOG_WARNING : LOG_ERR,
+                   "ReConstructFromDisk: repo [%s]: dropping file [%ld] (seq [%ld -> %ld]) as a merge input left behind by file [%ld] (seq [%ld -> %ld])%s",
+                   repo_desc.c_str(), file.GenId, file.LowestSeq, file.HighestSeq, that_file.GenId, that_file.LowestSeq, that_file.HighestSeq,
+                   inside ? "" : "; the ranges only partly overlap, so updates outside the overlap go with it");
             gen_id_vec_to_remove.push_back(file.GenId);
             file_vec.erase(cur);
             found_dup = true;
@@ -1899,6 +1916,11 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
       if (!found_dup) {
         break;
       }
+    }
+    /* What is left must be strictly monotone: the release form of the neighbour check in
+       TManager::TRepo::TMapping::TEntry, which only asserts (#700). */
+    for (const auto &problem : Disk::FindSeqRangeProblems(file_vec)) {
+      syslog(LOG_ERR, "ReConstructFromDisk: repo [%s]: after dropping merge leftovers, %s", repo_desc.c_str(), problem.Describe().c_str());
     }
   }
   for (const auto &file : file_vec) {

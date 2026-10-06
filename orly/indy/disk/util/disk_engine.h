@@ -19,6 +19,7 @@
 #include <orly/indy/disk/util/disk_util.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/file_service.h>
+#include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/read_file.h>
 
 namespace Orly {
@@ -224,53 +225,10 @@ namespace Orly {
                                                             size_t starting_block_id,
                                                             size_t starting_block_offset,
                                                             size_t file_length) -> bool {
-              switch (file_kind) {
-                case TFileObj::TKind::DataFile: {
-                  TDataFileReader reader(PageCache.get(),
-                                         file_uid,
-                                         RealTime,
-                                         gen_id,
-                                         starting_block_id,
-                                         starting_block_offset,
-                                         file_length);
-
-
-                  TDataFileReader::TInStream in_stream(HERE, Source::System, RealTime, &reader, PageCache.get(), (reader.GetStartingBlockOffset() * Disk::Util::LogicalBlockSize) + (TData::NumMetaFields * sizeof(size_t)));
-                  size_t block_id;
-                  for (size_t i = 0; i < reader.GetNumMetaBlocks(); ++i) {
-                    in_stream.Read(block_id);
-                    VolMan->MarkBlockRangeUsed(TBlockRange(block_id, 1UL));
-                  }
-                  size_t num_contig_blocks;
-                  for (size_t i = 0; i < reader.GetNumSequentialBlockPairings(); ++i) {
-                    in_stream.Read(block_id);
-                    in_stream.Read(num_contig_blocks);
-                    VolMan->MarkBlockRangeUsed(TBlockRange(block_id, num_contig_blocks));
-                  }
-                  break;
-                }
-                case TFileObj::TKind::DurableFile: {
-                  TDurableManager::TSortedInFile sorted_in_file(PageCache.get(),
-                                                                RealTime,
-                                                                gen_id,
-                                                                starting_block_id,
-                                                                starting_block_offset,
-                                                                file_length);
-                  const size_t num_blocks = sorted_in_file.GetNumBlocks();
-                  typedef TStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, 0UL> TInStream;
-                  TInStream in_stream(HERE, Source::System, RealTime, &sorted_in_file, PageCache.get(), TDurableManager::TSortedByIdFile::NumMetaFields * sizeof(size_t));
-                  size_t block_id;
-                  for (size_t i = 0; i < num_blocks; ++i) {
-                    in_stream.Read(block_id);
-                    /* #328 investigated and declined: batching these into ranges would need the
-                       durable-file on-disk format to also store contiguous run lengths (like the
-                       DataFile case above does via GetNumSequentialBlockPairings()), a format
-                       change for a one-time startup scan cost with no demonstrated pain. */
-                    VolMan->MarkBlockRangeUsed(TBlockRange(block_id, 1UL));
-                  }
-                  break;
-                }
-              }
+              ForEachFileBlockRange(file_kind, file_uid, gen_id, starting_block_id, starting_block_offset, file_length,
+                                    [this](const TBlockRange &range) {
+                VolMan->MarkBlockRangeUsed(range);
+              });
               return true;
             };
             FileService = std::make_unique<TFileService>(scheduler,
@@ -285,6 +243,69 @@ namespace Orly {
 
             Engine =
                 std::make_unique<Util::TEngine>(VolMan, PageCache.get(), BlockCache.get(), FileService.get(), true);
+          }
+
+          /* Every block range of a file, read from its metadata: what the startup walk marks
+             used. Must run on a fiber. */
+          void ForEachFileBlockRange(TFileObj::TKind file_kind, const Base::TUuid &file_uid, size_t gen_id, size_t starting_block_id,
+                                     size_t starting_block_offset, size_t file_length,
+                                     const std::function<void (const TBlockRange &)> &cb) const {
+            switch (file_kind) {
+              case TFileObj::TKind::DataFile: {
+                TDataFileReader reader(PageCache.get(),
+                                       file_uid,
+                                       RealTime,
+                                       gen_id,
+                                       starting_block_id,
+                                       starting_block_offset,
+                                       file_length);
+
+
+                TDataFileReader::TInStream in_stream(HERE, Source::System, RealTime, &reader, PageCache.get(), (reader.GetStartingBlockOffset() * Disk::Util::LogicalBlockSize) + (TData::NumMetaFields * sizeof(size_t)));
+                size_t block_id;
+                for (size_t i = 0; i < reader.GetNumMetaBlocks(); ++i) {
+                  in_stream.Read(block_id);
+                  cb(TBlockRange(block_id, 1UL));
+                }
+                size_t num_contig_blocks;
+                for (size_t i = 0; i < reader.GetNumSequentialBlockPairings(); ++i) {
+                  in_stream.Read(block_id);
+                  in_stream.Read(num_contig_blocks);
+                  cb(TBlockRange(block_id, num_contig_blocks));
+                }
+                break;
+              }
+              case TFileObj::TKind::DurableFile: {
+                TDurableManager::TSortedInFile sorted_in_file(PageCache.get(),
+                                                              RealTime,
+                                                              gen_id,
+                                                              starting_block_id,
+                                                              starting_block_offset,
+                                                              file_length);
+                const size_t num_blocks = sorted_in_file.GetNumBlocks();
+                typedef TStream<Util::LogicalPageSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::CheckedPage, 0UL> TInStream;
+                TInStream in_stream(HERE, Source::System, RealTime, &sorted_in_file, PageCache.get(), TDurableManager::TSortedByIdFile::NumMetaFields * sizeof(size_t));
+                size_t block_id;
+                for (size_t i = 0; i < num_blocks; ++i) {
+                  in_stream.Read(block_id);
+                  /* #328 investigated and declined: batching these into ranges would need the
+                     durable-file on-disk format to also store contiguous run lengths (like the
+                     DataFile case above does via GetNumSequentialBlockPairings()), a format
+                     change for a one-time startup scan cost with no demonstrated pain. */
+                  cb(TBlockRange(block_id, 1UL));
+                }
+                break;
+              }
+            }
+          }
+
+          /* The open-time consistency check (#700): see <orly/indy/disk/open_check.h>. Must run on
+             a fiber. */
+          TOpenCheck CheckOpenConsistency() const {
+            return Disk::CheckOpenConsistency(VolMan, FileService.get(), {SystemBlockId},
+                [this](const Base::TUuid &file_uid, const TFileObj &file, const std::function<void (const TBlockRange &)> &cb) {
+                  ForEachFileBlockRange(file.Kind, file_uid, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
+                });
           }
 
           Util::TEngine *GetEngine() const {

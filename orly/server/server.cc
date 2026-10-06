@@ -275,6 +275,13 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Turn on / off support for the tail statement, which drops superseded versions from the global pov's oldest disk file."
   );
   Param(
+      &TCmd::OpenCheck, "open_check", Optional, "open_check\0",
+      "Turn on / off the consistency check of a reopened store (#700): every block held must belong to exactly "
+      "one file, base image or append log, and each repo's files must have disjoint sequence ranges. Leaked "
+      "blocks and overlapping ranges are logged; a block a live file owns that is free or owned twice refuses the "
+      "open, because new files would overwrite it. On by default. Off is for recovering such a store."
+  );
+  Param(
       &TCmd::PruneMergeHistory, "prune_merge_history", Optional, "prune_merge_history\0",
       "Turn on / off dropping superseded versions when the global pov's disk files are merged (#592). On by default. "
       "Off keeps every version of every key on disk, so disk use grows with every write. Independent of allow_tailing."
@@ -457,6 +464,7 @@ TServer::TCmd::TCmd()
       NumDiskEvents(10000UL),
       ReportingPortNumber(19388),
       AllowTailing(true),
+      OpenCheck(true),
       PruneMergeHistory(true),
       AllowFileSync(true),
       NoRealtime(false),
@@ -1300,6 +1308,29 @@ void TServer::Init() {
         }
         return true;
       });
+    }
+
+    /* Check the reopened store's block accounting and sequence ranges (#700), now that the
+       system and global repos have reloaded and dropped any merge leftovers, and before
+       anything writes. Every build runs it; see <orly/indy/disk/open_check.h>. A leak or an
+       overlap is logged; a block a live file owns that is free, or owned twice, refuses the
+       open, since the next file allocated could be written over it. A mem-sim store is always
+       new, so it has nothing to check. */
+    if (!Cmd.Create && !Cmd.MemorySim && Cmd.OpenCheck) {
+      Indy::Disk::TOpenCheck check;
+      std::exception_ptr check_error;
+      Indy::Fiber::TJumpRunnable check_jumper([this, &check, &check_error] {
+        try {
+          check = DiskEngine->CheckOpenConsistency();
+        } catch (...) {
+          check_error = std::current_exception();
+        }
+      });
+      check_jumper(FramePoolManager.get(), &BGFastRunner);
+      if (check_error) {
+        std::rethrow_exception(check_error);
+      }
+      Indy::Disk::ReportOpenCheck(check);
     }
 
     /* Reinstall the packages recorded as installed when this image was last

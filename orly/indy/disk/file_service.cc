@@ -561,10 +561,17 @@ void TFileService::Runner() {
             const size_t spare = std::max(2UL, blocks_required_for_base_image / 8UL);
             const size_t target = blocks_required_for_base_image + spare;
             if (cur_image_block_vec.size() > target + spare) {
-              for (size_t i = cur_image_block_vec.size() - 1; i >= target; --i) {
-                VolMan->FreeSequentialBlocks(Util::TBlockRange(cur_image_block_vec[i], 1UL));
+              /* Out of the vector before freed, so the open check never sees a freed block
+                 still listed (#700). */
+              std::vector<size_t> to_free;
+              /* acquire image lock */ {
+                std::lock_guard<std::mutex> lock(ImageLock);
+                to_free.assign(cur_image_block_vec.begin() + target, cur_image_block_vec.end());
+                cur_image_block_vec.resize(target);
               }
-              cur_image_block_vec.resize(target);
+              for (auto iter = to_free.rbegin(); iter != to_free.rend(); ++iter) {
+                VolMan->FreeSequentialBlocks(Util::TBlockRange(*iter, 1UL));
+              }
             } else if (cur_image_block_vec.size() < target) {
               GrowBaseImage(cur_image_block_vec, target, blocks_required_for_base_image);
             }
@@ -745,6 +752,7 @@ void TFileService::GrowBaseImage(std::vector<size_t> &image_block_vec, size_t ta
     try {
       VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const Util::TBlockRange &block_range) {
         assert(block_range.second == 1UL);
+        std::lock_guard<std::mutex> lock(ImageLock);
         image_block_vec.push_back(block_range.first);
       }, Util::TAllocClass::Essential);
     } catch (const Util::TDiskFull &ex) {
@@ -1017,7 +1025,15 @@ void TFileService::AdoptImageChain(size_t head_block_id, const std::vector<size_
     }
     return;
   }
+  std::lock_guard<std::mutex> lock(ImageLock);
   image_block_vec.insert(image_block_vec.end(), chain.begin(), chain.end());
+}
+
+void TFileService::AppendOwnBlocks(std::vector<size_t> &out) const {
+  std::lock_guard<std::mutex> lock(ImageLock);
+  out.insert(out.end(), Image1BlockIdVec.begin(), Image1BlockIdVec.end());
+  out.insert(out.end(), Image2BlockIdVec.begin(), Image2BlockIdVec.end());
+  out.insert(out.end(), AppendLogBlockVec.begin(), AppendLogBlockVec.end());
 }
 
 void TFileService::ZeroImageBlocks(size_t image_1_block_id, size_t image_2_block_id) {
