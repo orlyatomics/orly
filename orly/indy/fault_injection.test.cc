@@ -60,6 +60,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <syslog.h>
@@ -1170,8 +1171,27 @@ static void InitChild(const string &log_path) {
 
 /*** The parent ***/
 
-/* Waits for a child until the deadline, then kills it. The exit status, or nullopt on a hang. */
-static optional<int> WaitChild(pid_t pid, std::chrono::seconds deadline) {
+/* The State and CoreDumping lines of a live child's /proc status, so a run killed at the
+   deadline says whether it was stuck, or dying slowly. */
+static string DescribeProcStatus(pid_t pid) {
+  ifstream strm("/proc/" + to_string(pid) + "/status");
+  string line, out;
+  while (getline(strm, line)) {
+    if (line.rfind("State:", 0) == 0 || line.rfind("CoreDumping:", 0) == 0) {
+      for (auto &c : line) {
+        if (c == '\t') {
+          c = ' ';
+        }
+      }
+      out += (out.empty() ? "" : ", ") + line;
+    }
+  }
+  return out;
+}
+
+/* Waits for a child until the deadline, then kills it. The exit status, or nullopt on a hang,
+   with the child's state just before the kill in *at_kill. */
+static optional<int> WaitChild(pid_t pid, std::chrono::seconds deadline, string *at_kill) {
   const auto give_up = std::chrono::steady_clock::now() + deadline;
   for (;;) {
     int status = 0;
@@ -1180,6 +1200,7 @@ static optional<int> WaitChild(pid_t pid, std::chrono::seconds deadline) {
       return status;
     }
     if (std::chrono::steady_clock::now() > give_up) {
+      *at_kill = DescribeProcStatus(pid);
       kill(pid, SIGKILL);
       waitpid(pid, &status, 0);
       return nullopt;
@@ -1188,10 +1209,10 @@ static optional<int> WaitChild(pid_t pid, std::chrono::seconds deadline) {
   }
 }
 
-static string DescribeStatus(const optional<int> &status, const map<string, string> &record) {
+static string DescribeStatus(const optional<int> &status, const map<string, string> &record, const string &at_kill = "") {
   const auto phase = record.count("phase") ? record.at("phase") : "?";
   if (!status) {
-    return "hang in " + phase;
+    return "hang in " + phase + (at_kill.empty() ? "" : "; " + at_kill);
   }
   if (WIFSIGNALED(*status)) {
     return string(WTERMSIG(*status) == SIGABRT ? "abort" : strsignal(WTERMSIG(*status))) + " in " + phase;
@@ -1232,7 +1253,10 @@ static TRun RunOne(const string &case_name, const TMode &mode, size_t n, const s
   if (op_pid == 0) {
     RunOpChild(case_name, mode, n, dir);
   }
-  const auto op_status = WaitChild(op_pid, ChildDeadline);
+  const auto op_start = std::chrono::steady_clock::now();
+  string op_at_kill;
+  const auto op_status = WaitChild(op_pid, ChildDeadline, &op_at_kill);
+  const auto op_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - op_start).count();
   const auto record = TRecord::Read(dir + "/record");
   run.Injected = record.count("injected") ? record.at("injected") : "";
   if (mode.PowerLoss) {
@@ -1242,11 +1266,12 @@ static TRun RunOne(const string &case_name, const TMode &mode, size_t n, const s
       if (reopen_pid == 0) {
         RunReopenChild(case_name, dir);
       }
-      const auto reopen_status = WaitChild(reopen_pid, ChildDeadline);
+      string reopen_at_kill;
+      const auto reopen_status = WaitChild(reopen_pid, ChildDeadline, &reopen_at_kill);
       const auto reopen = TRecord::Read(dir + "/reopen");
       if (!reopen_status || !WIFEXITED(*reopen_status) || WEXITSTATUS(*reopen_status) != 0) {
         run.Outcome = "reopen";
-        run.Detail = DescribeStatus(reopen_status, reopen);
+        run.Detail = DescribeStatus(reopen_status, reopen, reopen_at_kill);
       } else if (reopen.count("threw")) {
         run.Outcome = "reopen";
         run.Detail = "threw: " + reopen.at("threw");
@@ -1268,12 +1293,12 @@ static TRun RunOne(const string &case_name, const TMode &mode, size_t n, const s
   }
   if (!op_status) {
     run.Outcome = "hang";
-    run.Detail = DescribeStatus(op_status, record);
+    run.Detail = DescribeStatus(op_status, record, op_at_kill);
     run.Reached = run.Reached || !run.Injected.empty();
   } else if (WIFSIGNALED(*op_status)) {
     run.Reached = run.Reached || !run.Injected.empty();
     run.Outcome = (WTERMSIG(*op_status) == SIGABRT) ? (run.Injected.empty() ? "abort" : "abort-after-io-error") : "crash";
-    run.Detail = DescribeStatus(op_status, record);
+    run.Detail = DescribeStatus(op_status, record) + ", " + to_string(op_ms) + "ms";
   } else if (WEXITSTATUS(*op_status) != 0 || !record.count("phase") || record.at("phase") != "done") {
     run.Outcome = "crash";
     run.Detail = DescribeStatus(op_status, record);
