@@ -116,13 +116,16 @@ void TPool::SetReserve(size_t reserve_blocks) {
   Refusing = false;
 }
 
-bool TPool::TryAdmit(size_t num_blocks) {
+bool TPool::TryAdmit(size_t num_blocks, TRefusal *refusal) {
   std::lock_guard<std::mutex> lock(Mutex);
   const size_t reserve = Reserve.load();
   if (reserve) {
     const size_t keep_free = std::min(MaxBlocks, reserve + (Refusing ? reserve / 4UL : 0UL));
     if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > MaxBlocks - keep_free) {
       Refusing = true;
+      if (refusal) {
+        *refusal = {NumBlocksUsed.load(), NumBlocksAdmitted.load(), NumBlocksClaimed.load(), num_blocks, MaxBlocks - keep_free};
+      }
       return false;
     }
     Refusing = false;

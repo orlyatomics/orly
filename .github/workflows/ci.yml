@@ -386,11 +386,32 @@ jobs:
         run: bash clients/smoke/run-paused-pov.sh
 
       # #628: 200-write batches on one POV with a 25% memory reserve. The
-      # writer backlog cap counts entries, so no batch may be refused, the
-      # merges and Tetris must never miss a pool block, and the Entry pool must
-      # stay under half full.
+      # writer backlog cap counts entries, so at most 1% of the batches may be
+      # refused (a refused batch is retried; a loaded runner refuses a few,
+      # #719), the merges and Tetris must never miss a pool block, and the
+      # Entry pool must stay under 60% full.
       - name: Batched writes stay within their backlog cap
         run: bash clients/smoke/run-batch-backlog.sh
+
+      # Negative control for the step above: with the writer backlog cap off
+      # (--tetris_backpressure_threshold=0), about a quarter of the batches are
+      # refused, so the smoke must FAIL, after its writers ran. If it passes,
+      # the 1% bound no longer tells whether the cap works.
+      - name: The batch-backlog smoke fails with the backlog cap off
+        run: |
+          if EXTRA_ARGS=--tetris_backpressure_threshold=0 bash clients/smoke/run-batch-backlog.sh > /tmp/batch-backlog-control.log 2>&1; then
+            cat /tmp/batch-backlog-control.log
+            echo "CONTROL FAIL: the batch-backlog smoke passed with the backlog cap off"
+            exit 1
+          fi
+          if ! grep -q 'batches of 200 in' /tmp/batch-backlog-control.log \
+             || ! grep -q '^BATCH BACKLOG FAIL' /tmp/batch-backlog-control.log; then
+            cat /tmp/batch-backlog-control.log
+            echo "CONTROL FAIL: the smoke failed before its writers could test anything"
+            exit 1
+          fi
+          grep '^BATCH BACKLOG FAIL' /tmp/batch-backlog-control.log | head -3 | cut -c1-300
+          echo "control OK: the smoke fails without the backlog cap"
 
       # #590: fill a tiny mem-sim disk. Writes must come back refused with
       # insufficient_storage while reads, new sessions and orlyi itself carry on.

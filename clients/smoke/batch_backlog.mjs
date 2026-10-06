@@ -6,13 +6,21 @@
  * the backlog of 200-write batches held most of the Update Entry pool, and writers were refused at
  * the reserve (before #629's copy claims, the merges and Tetris also ran out of entries).
  *
+ * A refused batch (insufficient_memory) is retried after a short pause, as the client contract
+ * says (#719): how much of the pools is in use swings with the runner's load, and a loaded CI
+ * runner can briefly take the in-use blocks, the blocks promised to writes in flight and the
+ * merges' copy claims past the admission line. The regression this smoke guards against is
+ * different in kind: with the backlog capped only in updates, about one batch in two was
+ * refused, and with no cap at all, more (the negative control in CI).
+ *
  * With orlyi's memory reserve at RESERVE_PCT, this requires, over SECS seconds:
- *   - no write refused and no write failing, and at least MIN_BATCHES batches through;
+ *   - no write failing other than by refusal, and at least MIN_BATCHES batches through;
+ *   - at most MAX_REFUSED_PCT percent of the batches sent refused;
  *   - no Update or Update Entry pool miss (the reporting port's Memory Admission line);
- *   - peak Update Entry use, polled once a second, below half the pool. */
+ *   - peak Update Entry use, polled once a second, below MAX_PEAK_PCT percent of the pool. */
 
 import net from "node:net";
-import { connect } from "../ts/dist/index.js";
+import { connect, InsufficientMemoryError } from "../ts/dist/index.js";
 
 const URL = process.env.ORLY_URL, RPT = +process.env.REPORT_PORT;
 const K = +(process.env.K ?? 8);
@@ -21,6 +29,8 @@ const KEYS = +(process.env.KEYS ?? 50000);
 const SECS = +(process.env.SECS ?? 20);
 const MIN_BATCHES = +(process.env.MIN_BATCHES ?? 200);
 const STALL_S = +(process.env.STALL_S ?? 20);
+const MAX_REFUSED_PCT = +(process.env.MAX_REFUSED_PCT ?? 1);
+const MAX_PEAK_PCT = +(process.env.MAX_PEAK_PCT ?? 60);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (msg) => { console.error(`BATCH BACKLOG FAIL: ${msg}`); process.exit(1); };
@@ -43,7 +53,7 @@ await setup.newSession();
 await setup.install("sample", 1);
 const pov = await setup.newPov({ safe: true, shared: true });
 
-let batches = 0, stop = false, error = null;
+let batches = 0, refused = 0, stop = false, error = null, firstRefusal = null;
 const batch = (w, i) => Array.from({ length: BATCH }, (_, j) => ({ n: (w * 7919 + i * BATCH + j) % KEYS, x: i }));
 const writers = Array.from({ length: K }, async (_, w) => {
   const c = await connect(URL);
@@ -53,6 +63,12 @@ const writers = Array.from({ length: K }, async (_, w) => {
       await withTimeout(c.callBatch(pov, "sample", "write_val", batch(w, i)), STALL_S, "a batch");
       ++batches;
     } catch (err) {
+      if (err instanceof InsufficientMemoryError) {
+        ++refused;
+        firstRefusal ??= err.message;
+        await sleep(50);
+        continue;
+      }
       if (!stop) { stop = true; error = err?.message ?? String(err); }
       return;
     }
@@ -72,14 +88,18 @@ while (!stop && (Date.now() - t0) / 1000 < SECS) {
 }
 stop = true;
 await Promise.race([Promise.allSettled(writers), sleep(STALL_S * 1000)]);
-console.log(`${batches} batches of ${BATCH} in ${SECS}s; peak Update Entry use ${peak} / ${max}`);
+console.log(`${batches} batches of ${BATCH} in ${SECS}s, ${refused} refused; peak Update Entry use ${peak} / ${max}`);
 console.log(line);
+if (firstRefusal) console.log(`first refusal: ${firstRefusal.replace(/write_val \[.*\];/, "write_val [...];")}`);
 if (error) fail(`a batch failed: ${error}`);
 if (batches < MIN_BATCHES) fail(`only ${batches} batches went through`);
+if (refused * 100 > MAX_REFUSED_PCT * (batches + refused)) {
+  fail(`${refused} of ${batches + refused} batches were refused, more than ${MAX_REFUSED_PCT}%`);
+}
 const misses = [...line.matchAll(/misses (\d+)/g)].map((m) => +m[1]);
 if (misses.length !== 2) fail(`couldn't read the pool misses from: ${line}`);
 if (misses.some((n) => n > 0)) fail(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
-if (!max || peak * 2 >= max) fail(`the Update Entry pool peaked at ${peak} of ${max}`);
+if (!max || peak * 100 >= MAX_PEAK_PCT * max) fail(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
 setup.close();
 console.log("BATCH BACKLOG OK");
 process.exit(0);

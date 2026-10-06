@@ -875,7 +875,11 @@ namespace Orly {
          logging the transitions once). */
       std::atomic<size_t> MemoryRefusedWriteCount {0UL};
       std::atomic<bool> RefusingWritesForMemory {false};
-      [[noreturn]] void ThrowInsufficientMemory() const;
+
+      /* The counts a refused write's admission compared (#719), for its message and the log. */
+      static std::string DescribeRefusal(const Indy::TUpdate::TWriteAdmission &admission);
+
+      [[noreturn]] void ThrowInsufficientMemory(const Indy::TUpdate::TWriteAdmission *refused = nullptr) const;
 
       /* The global repo's disk files and memory layers, for the reporter (#701). */
       void CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const;

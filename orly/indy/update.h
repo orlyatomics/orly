@@ -277,11 +277,25 @@ namespace Orly {
 
         bool TryAcquire(size_t num_entries);
 
+        /* After a refused TryAcquire (#719): the pool that refused (the Update Entry pool, or
+           else the Update pool), and the counts it compared. */
+        bool WasEntryPoolRefused() const {
+          return EntryPoolRefused;
+        }
+
+        const Util::TPool::TRefusal &GetRefusal() const {
+          return Refusal;
+        }
+
         private:
 
         size_t NumUpdates = 0UL;
 
         size_t NumEntries = 0UL;
+
+        bool EntryPoolRefused = false;
+
+        Util::TPool::TRefusal Refusal;
 
       };  // TWriteAdmission
 
