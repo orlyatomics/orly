@@ -31,6 +31,25 @@ using namespace Orly::Indy::L1;
 /* Test-only; empty in production. See header. */
 std::function<void ()> TTransaction::OnCommitBetweenPushAndPopForTest;
 
+/* Whether a replicated status change (pause, unpause, fail) lines up with our copy of the repo.
+   follow_or_discard is the master's lowest unpromoted sequence number when the change committed;
+   unset means the change is local and always applies.  EmptyRepoSequenceNumber means the master's
+   repo had nothing pending, so ours must be empty too (#655): dereferencing our empty lowest
+   sequence number, as this used to, is undefined.  A repo whose lowest sequence number differs
+   (either side empty, or a different number) is at a different point in the stream: discard. */
+static bool FollowsStatusChange(const Orly::Indy::L0::TManager::TPtr<Orly::Indy::TRepo> &repo, const std::optional<Orly::Indy::TSequenceNumber> &follow_or_discard) {
+  if (!follow_or_discard) {
+    return true;
+  }
+  const std::optional<Orly::Indy::TSequenceNumber> &start = repo->GetSequenceNumberStart();
+  if (*follow_or_discard == Orly::Indy::EmptyRepoSequenceNumber) {
+    return !start;
+  }
+  /* Never behind the master: that would mean we lost updates it had. */
+  assert(!start || *start >= *follow_or_discard);
+  return start && *start == *follow_or_discard;
+}
+
 bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const std::optional<TSequenceNumber> &ensure_or_discard) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
@@ -123,8 +142,7 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
   EnsureOrDiscard = EnsureOrDiscard || follow_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
   if (!mutation) {
-    assert (!follow_or_discard || (*(repo->GetSequenceNumberStart()) >= *follow_or_discard));
-    if (!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard)) {
+    if (FollowsStatusChange(repo, follow_or_discard)) {
       new TPopper(this, repo, TPopper::Fail);
       return true;
     }
@@ -140,8 +158,7 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
         TPopper &popper = *dynamic_cast<TPopper *>(mutation);
         switch (popper.GetState()) {
           case TPopper::Peek : {
-            assert (!follow_or_discard || (*(repo->GetSequenceNumberStart()) >= *follow_or_discard));
-            if (!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard)) {
+            if (FollowsStatusChange(repo, follow_or_discard)) {
               popper.SetState(TPopper::Fail);
               return true;
             }
@@ -150,8 +167,7 @@ bool TTransaction::Fail(const L0::TManager::TPtr<TRepo> &repo, const std::option
             break;
           }
           case TPopper::Pop : {
-            assert (!follow_or_discard || (*(repo->GetSequenceNumberStart()) >= *follow_or_discard));
-            if ((!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard))) {
+            if (FollowsStatusChange(repo, follow_or_discard)) {
               popper.SetState(TPopper::Fail);
               return true;
             }
@@ -183,8 +199,7 @@ bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const std::optio
     assert(false);  // Cannot attach a StatusChanger to a repo with an existing mutation
     throw std::runtime_error("Cannot attach a StatusChanger to a repo with an existing mutation.");
   }
-  assert (!follow_or_discard || (*(repo->GetSequenceNumberStart()) >= *follow_or_discard));
-  if ((!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard))) {
+  if (FollowsStatusChange(repo, follow_or_discard)) {
     /* Let any Tetris round that has already peeked this repo finish promoting it before the
        pause can commit, and keep new rounds from peeking it (#636; see TRepo::BeginPause).  We
        wait here, before the commit, because the round's own commit needs the replication queue
@@ -217,10 +232,9 @@ bool TTransaction::UnPause(const L0::TManager::TPtr<TRepo> &repo, const std::opt
     assert(false);  // Cannot attach a StatusChanger to a repo with an existing mutation
     throw std::runtime_error("Cannot attach a StatusChanger to a repo with an existing mutation.");
   }
-  assert (!follow_or_discard || (*(repo->GetSequenceNumberStart()) >= *follow_or_discard));
-  if ((!follow_or_discard || (*(repo->GetSequenceNumberStart()) == *follow_or_discard))) {
+  if (FollowsStatusChange(repo, follow_or_discard)) {
     new TStatusChanger(this, repo, Normal);
-    return false;
+    return true;
   }
   return false;
 }
