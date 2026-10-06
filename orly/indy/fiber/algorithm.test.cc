@@ -19,6 +19,7 @@
 #include <orly/indy/fiber/algorithm.h>
 
 #include <algorithm>
+#include <optional>
 #include <random>
 #include <thread>
 
@@ -115,7 +116,10 @@ void TestSort(const std::vector<TVal> &input_data, const size_t num_workers) {
   TRunner runner(runner_cons);
   TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> *frame_pool_manager = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>(num_frames + num_sub_frames, stack_size, &runner);
   TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(frame_pool_manager);
-  TRunnerPool work_pool(runner_cons, num_workers);
+  /* Destroyed (its workers joined) as soon as the sort is done, before the runner and the frame
+     pools go: a worker frees each sub-sort's frame only after switching off it, which can be
+     after Sort() has returned (#644). */
+  std::optional<TRunnerPool> work_pool(std::in_place, runner_cons, num_workers);
   try {
     auto launch_fiber_sched = [&]() {
       if (!TFrame::LocalFramePool) {
@@ -128,11 +132,12 @@ void TestSort(const std::vector<TVal> &input_data, const size_t num_workers) {
     std::mutex mut;
     std::condition_variable cond;
     bool fin = false;
-    TSortRunnable<TVal, 8> runnable(&runner, fiber_data, work_pool, mut, cond, fin);
+    TSortRunnable<TVal, 8> runnable(&runner, fiber_data, *work_pool, mut, cond, fin);
     std::unique_lock<std::mutex> lock(mut);
     while (!fin) {
       cond.wait(lock);
     }
+    work_pool.reset();
     runner.ShutDown();
     t1.join();
   } catch (const std::logic_error &ex) {
