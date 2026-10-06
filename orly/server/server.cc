@@ -1789,6 +1789,15 @@ void TServer::CheckWriteAdmission() {
   }
 }
 
+void TServer::CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const {
+  disk_layers = 0UL;
+  mem_layers = 0UL;
+  if (GlobalRepo) {
+    const Indy::TRepo::TView view(GlobalRepo);
+    view.CountLayers(disk_layers, mem_layers);
+  }
+}
+
 void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t num_entries) {
   if (!Cmd.MemoryReservePct) {
     return;
@@ -3239,6 +3248,12 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
        << "; data floor " << engine->GetVolMan()->GetDataFloor()
        << "; merge claims (1 min peak) " << claims
        << "; refused " << Server->RefusedWriteCount.load() << endl;
+  }
+  /* The global repo's layers (#701). Every disk file is one more place a read looks, and the
+     disk merges keep the count down; a count that stays high means they are behind. */ {
+    size_t disk_layers, mem_layers;
+    Server->CountGlobalLayers(disk_layers, mem_layers);
+    ss << "Global Layers = disk " << disk_layers << "; memory " << mem_layers << endl;
   }
   /* Lines the system log daemon had no room for; stderr kept them (#641). */
   ss << "Syslog Dropped = " << Base::TLog::GetDroppedCount() << endl;
