@@ -1316,3 +1316,96 @@ FIXTURE(PauseEmptyPovReplicates) {
   slave.Kill();
   slave.Reap(seconds(60));
 }
+
+/* #661: a slave must survive writes to a pov that was created while the pair was up, and the
+   writes must replicate. The slave builds its copy of the pov's repo from the replicated repo
+   record and drops its pointer straight away, so the repo (ttl > 0) goes into the cache before
+   the first push to it arrives. Caching used to force-release the repo's pointer to its parent
+   while still claiming a parent, so the first replicated write segfaulted the slave in
+   TTetrisManager::Join. A safe shared pov, because it has a ttl (the default 600 s) and its
+   writes promote to the global pov, where the promoted slave can read them back. */
+FIXTURE(WriteToPovCreatedWhilePaired) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = GetScratchDir();
+  const string orlyi_path = GetOrlyiPath();
+  TLogTailDumper log_dumper;
+  if (!ifstream(orlyi_path).good()) {
+    throw runtime_error("orlyi binary not built at [" + orlyi_path + "]; run `make debug` first");
+  }
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  { ofstream marker(pkg_dir + "/__orly__"); }
+  {
+    ofstream src(scratch + "/sample.orly");
+    src << SamplePackage;
+  }
+  Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
+
+  const in_port_t master_port = ProbeFreePort();
+  const in_port_t master_slave_port = ProbeFreePort();
+  const string master_log = scratch + "/master.log";
+  log_dumper.Add(master_log);
+  TChildServer master(
+      MakeServerArgs(orlyi_path, "paired_pov_master", pkg_dir, master_port,
+                     master_slave_port, "SOLO", 0),
+      master_log);
+  if (!WaitForPort(master_port, seconds(240))) {
+    throw runtime_error("master never came up; see " + master_log);
+  }
+  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage sample")->Sync();
+  }
+
+  const in_port_t slave_port = ProbeFreePort();
+  const string slave_log = scratch + "/slave.log";
+  log_dumper.Add(slave_log);
+  TChildServer slave(
+      MakeServerArgs(orlyi_path, "paired_pov_slave", pkg_dir, slave_port,
+                     ProbeFreePort(), "SLAVE", master_slave_port),
+      slave_log);
+  if (!WaitForPort(slave_port, seconds(240))) {
+    throw runtime_error("slave never came up; see " + slave_log);
+  }
+  if (!WaitForLog(slave_log, "to [Slave]", seconds(120))) {
+    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  }
+  {
+    auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_port));
+    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave")->Sync();
+  }
+
+  /* The pov is created on the paired master, so the slave learns of it from the replication
+     stream. Two writes: the first reaches the slave's cached copy, the second its reopened one. */
+  {
+    auto client = make_shared<TExerciseClient>(master_addr);
+    auto pov_id = Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov");
+    EXPECT_TRUE(WriteValReplicated(client, **pov_id, 61L, 6161L));
+    cout << "Slave state after the first write: " << slave.Describe() << endl;
+    EXPECT_TRUE(WriteValReplicated(client, **pov_id, 62L, 6262L));
+    cout << "Slave state after the second write: " << slave.Describe() << endl;
+  }
+  EXPECT_TRUE(slave.IsAlive());
+  EXPECT_TRUE(master.IsAlive());
+
+  /* Promote the slave (SIGKILL the master, see the header comment) and read both rows back
+     through the global pov. */
+  this_thread::sleep_for(seconds(2));
+  master.Kill();
+  master.Reap(seconds(60));
+  if (!WaitForLog(slave_log, "slave promoted to solo", seconds(120))) {
+    throw runtime_error("slave never promoted (" + slave.Describe() + "); see " + slave_log);
+  }
+  const TAddress slave_addr(TAddress::IPv4Loopback, slave_port);
+  const int64_t expected_by_key[][2] = {{61L, 6161L}, {62L, 6262L}};
+  for (const auto &pair : expected_by_key) {
+    Rt::TOpt<int64_t> row = ReadWithRetry(slave_addr, pair[0], seconds(60));
+    EXPECT_TRUE(row.IsKnown());
+    if (row.IsKnown()) {
+      EXPECT_EQ(row.GetVal(), pair[1]);
+    }
+  }
+  slave.Kill();
+  slave.Reap(seconds(60));
+}

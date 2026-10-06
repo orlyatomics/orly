@@ -1056,7 +1056,12 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(repo_iter->NewState(repo_arena, state_alloc)), is_safe);
               ++repo_iter;
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(repo_iter->NewState(repo_arena, state_alloc)), opt_parent_repo_id);
-              L0::TManager::TPtr<L0::TManager::TRepo> opt_parent_repo = static_cast<bool>(opt_parent_repo_id) ? Manager->ForceGetRepo(*opt_parent_repo_id) : L0::TManager::TPtr<Indy::TRepo>();
+              /* Engaged only for a real parent: an engaged optional holding a null pointer would
+                 claim a parent the repo doesn't have (#661). */
+              std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> opt_parent_repo;
+              if (opt_parent_repo_id) {
+                opt_parent_repo = Manager->ForceGetRepo(*opt_parent_repo_id);
+              }
               Manager->GetRepo(repo_id, repo_ttl, opt_parent_repo, is_safe, true);
             }
           }
@@ -1141,7 +1146,12 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(repo_iter->NewState(repo_arena, state_alloc)), is_safe);
               ++repo_iter;
               Sabot::ToNative(*Sabot::State::TAny::TWrapper(repo_iter->NewState(repo_arena, state_alloc)), opt_parent_repo_id);
-              L0::TManager::TPtr<L0::TManager::TRepo> opt_parent_repo = static_cast<bool>(opt_parent_repo_id) ? Manager->ForceGetRepo(*opt_parent_repo_id) : L0::TManager::TPtr<Indy::TRepo>();
+              /* Engaged only for a real parent: an engaged optional holding a null pointer would
+                 claim a parent the repo doesn't have (#661). */
+              std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> opt_parent_repo;
+              if (opt_parent_repo_id) {
+                opt_parent_repo = Manager->ForceGetRepo(*opt_parent_repo_id);
+              }
               Manager->GetRepo(repo_id, repo_ttl, opt_parent_repo, is_safe, true);
             }
           }
