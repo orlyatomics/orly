@@ -71,6 +71,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -414,6 +415,9 @@ struct TCaseEnv {
   unique_ptr<TFaultEngine> Engine;
   /* Running over the image a power loss left. */
   bool Reopened = false;
+  /* Lose power now: save the durable image and end the child, as a power loss at a Sync does.
+     Set in the operation's child only. */
+  std::function<void ()> Crash;
 };
 
 /* An operation under test. A fresh object runs in each child. */
@@ -551,12 +555,26 @@ class TRepoCase
     env.Record->Put("files_at_open", DescribeFiles(env));
     Fixture = make_unique<TRepoFixture>(env.Engine->GetEngine(), env.Scheduler, false);
     env.Record->Put("files_after_reload", DescribeFiles(env));
+    /* This object did not run Setup, so the keys come from the states it recorded. */
+    set<int64_t> keys;
+    for (const string &state : GetStates(record)) {
+      const string prefix = state + ".";
+      for (auto pos = record.lower_bound(prefix); pos != record.end() && pos->first.compare(0, prefix.size(), prefix) == 0; ++pos) {
+        keys.insert(stoll(pos->first.substr(prefix.size())));
+      }
+    }
+    if (keys.empty()) {
+      return "no keys recorded";
+    }
+    for (int64_t key : keys) {
+      env.Record->Put("read." + to_string(key), Fixture->Read(key));
+    }
     /* Every key must read as in one of the acceptable states, the same one for all keys. */
     string why;
     for (const string &state : GetStates(record)) {
       bool all = true;
       ostringstream diff;
-      for (int64_t key : Keys) {
+      for (int64_t key : keys) {
         const auto pos = record.find(state + "." + to_string(key));
         const string want = (pos == record.end()) ? "?" : pos->second;
         const string got = Fixture->Read(key);
@@ -605,8 +623,6 @@ class TRepoCase
 
   unique_ptr<TRepoFixture> Fixture;
 
-  vector<int64_t> Keys;
-
 };  // TRepoCase
 
 /* One StepMergeMem: a memory layer of overwrites and `+=` flushed to a second file. A reopen
@@ -621,11 +637,9 @@ class TMergeMemCase final
     for (int64_t key = 0L; key < 20L; ++key) {
       Fixture->Commit({{key, 100L + key, TMutator::Assign}});
       pre[key] = 100L + key;
-      Keys.push_back(key);
     }
     Fixture->Commit({{Counter, 10L, TMutator::Assign}});
     pre[Counter] = 10L;
-    Keys.push_back(Counter);
     Fixture->GetStepped()->StepMergeMem();
     post = pre;
     for (int64_t key = 0L; key < 20L; key += 2L) {
@@ -660,9 +674,21 @@ class TMergeDiskCase final
     : public TRepoCase {
   public:
 
+  /* Where the operation ends. */
+  enum class TEnd {
+    /* The repo's teardown, which removes the merge's inputs. */
+    Teardown,
+    /* Power is lost once the merge's output is in the file map, before its inputs are
+       removed. */
+    CrashBeforeRemoval,
+    /* As CrashBeforeRemoval, with the output's file-map entry recording only the range of the
+       updates the fold kept, as a fold output did before #618. */
+    CrashBeforeRemovalOldRange
+  };
+
   /* fold: the files hold only `+=` deltas, so MergeFiles takes the fold path. */
-  explicit TMergeDiskCase(bool fold)
-      : Fold(fold) {}
+  explicit TMergeDiskCase(bool fold, TEnd end = TEnd::Teardown)
+      : Fold(fold), End(end) {}
 
   virtual void Setup(TCaseEnv &env) override {
     Fixture = make_unique<TRepoFixture>(env.Engine->GetEngine(), env.Scheduler, true);
@@ -695,15 +721,21 @@ class TMergeDiskCase final
         Fixture->GetStepped()->StepMergeMem();
       }
     }
-    for (const auto &[key, val] : vals) {
-      Keys.push_back(key);
-    }
     RecordState(env, "want", vals);
   }
 
-  virtual void Op(TCaseEnv &) override {
+  virtual void Op(TCaseEnv &env) override {
     Fixture->GetStepped()->StepMergeDisk(256UL);
-    Fixture->Close();
+    if (End == TEnd::Teardown) {
+      Fixture->Close();
+      return;
+    }
+    env.Record->Put("files_before_crash", DescribeFiles(env));
+    if (End == TEnd::CrashBeforeRemovalOldRange) {
+      RecordOldRange(env);
+      env.Record->Put("files_with_old_range", DescribeFiles(env));
+    }
+    env.Crash();
   }
 
   private:
@@ -712,9 +744,43 @@ class TMergeDiskCase final
     return {"want"};
   }
 
+  /* Rewrite the merge output's file-map entry to the range a fold output recorded before #618:
+     only the updates it kept. Here those are counter B's last delta, the first input's last
+     update, and counter A's, the second input's last update. The file itself is unchanged. */
+  static void RecordOldRange(TCaseEnv &env) {
+    Disk::Util::TEngine *engine = env.Engine->GetEngine();
+    std::vector<Disk::TFileObj> files;
+    engine->AppendFileGenSet(FaultRepoId, files);
+    std::sort(files.begin(), files.end(), [](const Disk::TFileObj &lhs, const Disk::TFileObj &rhs) {
+      return lhs.GenId < rhs.GenId;
+    });
+    /* The base file, the two inputs and the output. */
+    if (files.size() != 4UL) {
+      throw logic_error("expected 4 files before the inputs' removal, found " + to_string(files.size()));
+    }
+    const Disk::TFileObj &first = files[1], &second = files[2], &output = files[3];
+    size_t block_id, block_offset, file_size, num_keys;
+    if (!engine->FindFile(FaultRepoId, output.GenId, block_id, block_offset, file_size, num_keys)) {
+      throw logic_error("merge output not in the file map");
+    }
+    /* removal */ {
+      Disk::TCompletionTrigger trigger;
+      engine->RemoveFile(FaultRepoId, output.GenId, trigger);
+      trigger.Wait();
+    }
+    /* insertion */ {
+      Disk::TCompletionTrigger trigger;
+      engine->InsertFile(FaultRepoId, Disk::TFileObj::TKind::DataFile, output.GenId, block_id, block_offset, file_size, num_keys,
+                         first.HighestSeq, second.HighestSeq, trigger);
+      trigger.Wait();
+    }
+  }
+
   static constexpr int64_t CounterA = -1L, CounterB = -2L;
 
   const bool Fold;
+
+  const TEnd End;
 
 };  // TMergeDiskCase
 
@@ -927,6 +993,13 @@ static unique_ptr<TCase> NewCase(const string &name) {
   if (name == "MergeDiskFold") {
     return make_unique<TMergeDiskCase>(true);
   }
+  /* Not swept: FoldMergeCrashBeforeInputRemoval runs these once. */
+  if (name == "MergeDiskFoldCrash") {
+    return make_unique<TMergeDiskCase>(true, TMergeDiskCase::TEnd::CrashBeforeRemoval);
+  }
+  if (name == "MergeDiskFoldCrashOldRange") {
+    return make_unique<TMergeDiskCase>(true, TMergeDiskCase::TEnd::CrashBeforeRemovalOldRange);
+  }
   if (name == "DurableSaveMerge") {
     return make_unique<TDurableSaveMergeCase>();
   }
@@ -997,17 +1070,18 @@ static void InitChild(const string &log_path) {
     TFaultPlan plan;
     auto test_case = NewCase(case_name);
     TCaseEnv env{&scheduler, &runner_cons, frame_pool_manager, &plan, &record, nullptr};
+    env.Crash = [&]() {
+      record.Put("power_loss", to_string(n));
+      try {
+        env.Engine->GetDurableImage().Save(image_path);
+      } catch (const exception &ex) {
+        record.Put("image", ex.what());
+        _exit(1);
+      }
+      _exit(PowerLossExit);
+    };
     if (mode.PowerLoss) {
-      plan.PowerLossAtSync(n, mode.Tear, n * 7919UL + 13UL, [&]() {
-        record.Put("power_loss", to_string(n));
-        try {
-          env.Engine->GetDurableImage().Save(image_path);
-        } catch (const exception &ex) {
-          record.Put("image", ex.what());
-          _exit(1);
-        }
-        _exit(PowerLossExit);
-      });
+      plan.PowerLossAtSync(n, mode.Tear, n * 7919UL + 13UL, env.Crash);
     } else {
       plan.FailNth(n, mode.Kinds, TOnAbortOnError::Report);
     }
@@ -1355,6 +1429,52 @@ FIXTURE(FaultDevicePowerLoss) {
   }
   EXPECT_EQ(image[Disk::Util::PhysicalBlockSize], 'a');
   EXPECT_EQ(image[Disk::Util::PhysicalBlockSize + Disk::Util::PhysicalSectorSize], 0);
+}
+
+/* #618: power is lost after a fold-path disk merge has put its output in the file map, before
+   its inputs are removed. Counter A's `+=` chain runs from an Assign base in the first file
+   through both inputs, and counter B has a delta in the first input only. A reopen must read
+   both exactly as written: an input that reload kept next to the output would count its deltas
+   twice. Run with the range a fold output records, and with the narrower range it recorded
+   before #618, which a store written by older code can still hold. */
+FIXTURE(FoldMergeCrashBeforeInputRemoval) {
+  if (!EXPECT_EQ(CountThreads(), 1UL)) {
+    /* fork() needs a single-threaded parent */
+    return;
+  }
+  char root_buf[] = "/tmp/orly_fault_XXXXXX";
+  if (!EXPECT_TRUE(mkdtemp(root_buf) != nullptr)) {
+    return;
+  }
+  const string root = root_buf;
+  auto get = [](const map<string, string> &record, const string &key) {
+    const auto pos = record.find(key);
+    return (pos == record.end()) ? string("?") : pos->second;
+  };
+  for (const string case_name : {"MergeDiskFoldCrash", "MergeDiskFoldCrashOldRange"}) {
+    const string dir = root + "/" + case_name;
+    /* The case loses power itself, so no Sync is ever the Nth. */
+    const TRun run = RunOne(case_name, FindMode("Power"), numeric_limits<size_t>::max(), dir);
+    const auto op = TRecord::Read(dir + "/record");
+    const auto reopen = TRecord::Read(dir + "/reopen");
+    cout << case_name << ": " << run.Outcome << " (" << run.Detail << ")" << endl
+         << "  before the crash: " << get(op, "files_before_crash") << endl;
+    if (op.count("files_with_old_range")) {
+      cout << "  with the old range: " << get(op, "files_with_old_range") << endl;
+    }
+    cout << "  after the reload: " << get(reopen, "files_after_reload") << endl;
+    EXPECT_TRUE(run.Reached);
+    /* The leftover inputs' blocks are not freed yet (#620). */
+    EXPECT_TRUE(run.Outcome == "ok" || run.Outcome == "leak");
+    EXPECT_EQ(get(reopen, "verify"), "");
+  }
+  if (!getenv("ORLY_FAULT_KEEP")) {
+    const string cmd = "rm -rf " + root;
+    int ignored = system(cmd.c_str());
+    (void)ignored;
+  } else {
+    cout << "runs kept in " << root << endl;
+  }
 }
 
 /* The sweep. Prints one line per failing run and a table of outcomes per case and mode. */
