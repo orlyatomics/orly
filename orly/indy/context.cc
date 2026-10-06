@@ -18,6 +18,10 @@
 
 #include <orly/indy/context.h>
 
+#include <sstream>
+
+#include <orly/server/read_too_large.h>
+
 #include <orly/rt/mutate.h>
 #include <orly/var/mutation.h>
 #include <orly/var/sabot_to_var.h>
@@ -44,6 +48,31 @@ TContext::~TContext() {
   assert(KeyCursorCollector->KeyCursorCollection.IsEmpty());
 }
 
+void TContext::SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena) {
+  assert(arena || !max_arena_bytes);
+  MaxRows = max_rows ? max_rows : Unlimited;
+  MaxArenaBytes = max_arena_bytes ? max_arena_bytes : Unlimited;
+  BudgetArena = arena;
+}
+
+void TContext::CheckArenaBudget() const {
+  if (MaxArenaBytes != Unlimited && BudgetArena->GetByteSize() > MaxArenaBytes) {
+    OnOverBudget();
+  }
+}
+
+void TContext::OnOverBudget() const {
+  std::ostringstream msg;
+  msg << "read too large: ";
+  if (RowsWalked > MaxRows) {
+    msg << "it walked more than " << MaxRows << " rows (--read_budget_rows)";
+  } else {
+    msg << "it used more than " << MaxArenaBytes << " bytes of result memory (--read_budget_mb)";
+  }
+  msg << "; retrying won't help, read a narrower range or raise the budget";
+  throw Server::TReadTooLarge(msg.str());
+}
+
 Indy::TKey TContext::operator[](const Indy::TIndexKey &index_key) {
   /* check to see if any of our current key cursors are on this key.
      We're doing this as a quick fix to the fact that we've lost which cursor (if any) this key
@@ -61,6 +90,10 @@ Indy::TKey TContext::operator[](const Indy::TIndexKey &index_key) {
      to the point where the cursor has advanced past what we're trying to read. */
   ++WalkerCount;
   TPresentWalker walker(this, RepoTree, index_key, /* exact_point */ true);
+  if (!walker) {
+    /* A hit was charged by the walker; a miss is still a lookup (#694). */
+    ChargeRow();
+  }
   if (walker) {
     const Indy::TPresentWalker::TItem &item = *walker;
     return Indy::TKey(Atom::TCore(GetArena(), alloca(Sabot::State::GetMaxStateSize()), item.OpArena, item.Op), GetArena());
@@ -73,6 +106,9 @@ Indy::TKey TContext::operator[](const Indy::TIndexKey &index_key) {
 bool TContext::Exists(const Indy::TIndexKey &key) {
   ++WalkerCount;
   TPresentWalker walker(this, RepoTree, key, /* exact_point */ true);
+  if (!walker) {
+    ChargeRow();
+  }
   return static_cast<bool>(walker);
 }
 
@@ -80,7 +116,8 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
     : MinHeap(repo_tree.size()),
       Valid(false),
       FoldArena(ctx->GetArena()),
-      FoldDedupProbes(&ctx->FoldDedupProbes) {
+      FoldDedupProbes(&ctx->FoldDedupProbes),
+      Context(ctx) {
   assert(Fiber::TFrame::LocalFramePool);
   size_t pos = 0;
   ctx->PresentWalkConsTimer.Start();
@@ -106,7 +143,8 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
     : MinHeap(repo_tree.size()),
       Valid(false),
       FoldArena(ctx->GetArena()),
-      FoldDedupProbes(&ctx->FoldDedupProbes) {
+      FoldDedupProbes(&ctx->FoldDedupProbes),
+      Context(ctx) {
   ctx->PresentWalkConsTimer.Start();
   size_t pos = 0;
   for (const auto &iter : repo_tree) {
@@ -153,6 +191,8 @@ void TContext::TPresentWalker::Refresh() {
       if (Var::IsDeferSafeCommutative(Item.Mutator)) {
         ApplyDeferredFold();
       }
+      /* One row for the read budget (#694). */
+      Context->ChargeRow();
       break;
     }
   }

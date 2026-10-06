@@ -340,6 +340,19 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "insufficient_memory error, before they would use it. Reads, new sessions and new POVs "
       "are never refused. 0 turns memory admission off. Default 25."
   );
+  Param(
+      &TCmd::ReadBudgetMB, "read_budget_mb", Optional, "read_budget_mb\0",
+      "The per-read memory budget (issue #694): a method call that builds more than this many "
+      "MiB of results is refused with a read_too_large error. Default: a sixteenth of the "
+      "memory budget (--memory_budget_mb), at least 16 MiB. 0 means no limit, and, unless "
+      "read_budget_rows is given too, no row limit either."
+  );
+  Param(
+      &TCmd::ReadBudgetRows, "read_budget_rows", Optional, "read_budget_rows\0",
+      "The per-read work budget (issue #694): a method call that walks more than this many "
+      "rows (each key a range read visits, and each point read) is refused with a "
+      "read_too_large error. Default: read_budget_mb / 256 bytes. 0 means no limit."
+  );
 
   /******** Object Pools ********/
 
@@ -475,6 +488,8 @@ TServer::TCmd::TCmd()
       DiskReserveMb(0UL),
       DiskReservePct(10UL),
       MemoryReservePct(25UL),
+      ReadBudgetMB(0UL),
+      ReadBudgetRows(0UL),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -518,6 +533,10 @@ namespace {
   /* The minimum working set (#669): the merge reserve must hold one memory merge's copy of a
      backlog of this many writes. */
   constexpr size_t MinMergeCopyWrites = 1000UL;
+
+  /* The per-read budget's floor, and the heap a row costs at least once a read holds it (#694). */
+  constexpr size_t MinReadBudgetMB = 16UL;
+  constexpr size_t ReadBudgetBytesPerRow = 256UL;
 
   /* The fewest fiber frames to plan for. orlyi's own service loops hold some for good and every
      request in flight holds another. Measured on the image (#669): with 16 it can't start, with
@@ -715,6 +734,35 @@ bool TServer::TCmd::ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsu
   plan_line << "the rest scaled by " << scale;
   MemoryBudgetReport.emplace_back(LOG_INFO, plan_line.str());
   MemoryBudgetReport.emplace_back(LOG_INFO, sizes.str());
+
+  /* The per-read budget (#694). A read builds its results on the heap, which the plan above
+     leaves to dynamic use alongside merges, sessions and compiles, and several reads run at
+     once, so one read gets a sixteenth of the budget: 256 MiB at the 4 GiB the defaults were
+     written for, 40 MiB in the smallest container orlyi starts in. A row costs at least
+     ReadBudgetBytesPerRow of heap once a read holds it, so the row limit follows from that. An
+     explicit 0 turns a limit off; --read_budget_mb=0 alone turns off both. */
+  const bool read_mb_given = WasGiven("read_budget_mb");
+  if (!read_mb_given) {
+    ReadBudgetMB = std::max(ToMiB(budget_bytes) / 16UL, MinReadBudgetMB);
+  }
+  if (!WasGiven("read_budget_rows")) {
+    ReadBudgetRows = ReadBudgetMB * MiB / ReadBudgetBytesPerRow;
+  }
+  std::ostringstream read_line;
+  read_line << "read budget: ";
+  if (ReadBudgetRows) {
+    read_line << ReadBudgetRows << " rows";
+  } else {
+    read_line << "no row limit";
+  }
+  read_line << " and ";
+  if (ReadBudgetMB) {
+    read_line << ReadBudgetMB << " MiB";
+  } else {
+    read_line << "no memory limit";
+  }
+  read_line << " per read" << (read_mb_given || WasGiven("read_budget_rows") ? "" : ", from the memory budget");
+  MemoryBudgetReport.emplace_back(LOG_INFO, read_line.str());
 
   /* The minimum working set. The merge reserve, a share of the Update and Update Entry pools
      kept for merges (#607/#629), must hold one memory merge's copy of a backlog of

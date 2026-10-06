@@ -314,6 +314,13 @@ namespace Orly {
            they would use it. 0 turns memory admission off. */
         size_t MemoryReservePct;
 
+        /* The per-read budget (#694): the most result memory, in MiB, and the most rows a
+           method call may use or walk before it is refused with read_too_large. Unless the
+           command line gives them, ResolveMemoryDefaults() derives them from the memory budget.
+           0 means no limit. */
+        size_t ReadBudgetMB;
+        size_t ReadBudgetRows;
+
         /******** Object Pools ********/
 
         size_t DurableMappingPoolSize;
@@ -428,6 +435,14 @@ namespace Orly {
 
       /* See TSession::TServer. */
       void RefuseWriteOutOfMemory() override;
+
+      size_t GetReadBudgetRows() const override {
+        return Cmd.ReadBudgetRows;
+      }
+
+      size_t GetReadBudgetBytes() const override {
+        return Cmd.ReadBudgetMB * 1024UL * 1024UL;
+      }
 
       bool IsMemoryAdmissionOn() const override {
         return Cmd.MemoryReservePct != 0UL;

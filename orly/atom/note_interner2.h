@@ -48,6 +48,9 @@ namespace Orly {
       /* The number of notes interned. */
       inline size_t GetSize() const;
 
+      /* The bytes the interned notes hold, headers included (#694). */
+      inline size_t GetByteSize() const;
+
       /* True iff. the given note is semantically equivalent to one of our internees. */
       bool IsKnown(const TCore::TNote *note) const;
 
@@ -63,6 +66,9 @@ namespace Orly {
       /* Our set of unique notes. */
       TNotes Notes;
 
+      /* See GetByteSize(). */
+      size_t ByteSize = 0UL;
+
     };  // TNoteInterner
 
     /* Inline */
@@ -75,6 +81,10 @@ namespace Orly {
 
     inline size_t TNoteInterner::GetSize() const {
       return Notes.size();
+    }
+
+    inline size_t TNoteInterner::GetByteSize() const {
+      return ByteSize;
     }
 
     /* comparison function for notes. */

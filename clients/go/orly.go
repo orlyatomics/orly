@@ -65,6 +65,13 @@ var ErrInsufficientMemory = errors.New("orly: insufficient memory")
 // into smaller ones. Test with errors.Is.
 var ErrWriteTooLarge = errors.New("orly: write too large")
 
+// ErrReadTooLarge is wrapped by the error a call gets when it walks more rows,
+// or builds more result memory, than the server's per-read budget
+// ("status": "read_too_large"; --read_budget_rows, --read_budget_mb). Like
+// ErrWriteTooLarge it is NOT retryable as sent: read a narrower range. Test with
+// errors.Is.
+var ErrReadTooLarge = errors.New("orly: read too large")
+
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
 	conn *websocket.Conn
@@ -124,6 +131,9 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	}
 	if r.Status == "write_too_large" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrWriteTooLarge)
+	}
+	if r.Status == "read_too_large" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrReadTooLarge)
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)

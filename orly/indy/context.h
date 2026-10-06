@@ -103,6 +103,9 @@ namespace Orly {
         /* The enclosing TContext's FoldDedupProbes. */
         size_t *FoldDedupProbes;
 
+        /* The context whose read budget each row is charged to (#694). */
+        TContext *Context;
+
       };  // TPresentWalker
 
       public:
@@ -162,6 +165,34 @@ namespace Orly {
         return WalkerCount;
       }
 
+      /* Bound the work and memory of what runs against this context (#694): at most max_rows
+         rows (each key a cursor yields, and each point lookup), and at most max_arena_bytes in
+         `arena`, which must be the arena this context allocates in. 0 means no limit. Once
+         either is passed, the next row throws TReadTooLarge (orly/server/read_too_large.h). */
+      void SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena);
+
+      /* Lift the budget, so the context can be used past it (to resolve a write's effects). */
+      void ClearReadBudget() {
+        MaxRows = MaxArenaBytes = Unlimited;
+      }
+
+      /* The rows charged so far. */
+      size_t GetRowsWalked() const {
+        return RowsWalked;
+      }
+
+      /* Count one row against the budget; throws TReadTooLarge once it is spent. */
+      inline void ChargeRow() {
+        ++RowsWalked;
+        if (RowsWalked > MaxRows || (MaxArenaBytes != Unlimited && BudgetArena->GetByteSize() > MaxArenaBytes)) [[unlikely]] {
+          OnOverBudget();
+        }
+      }
+
+      /* Throws TReadTooLarge if the arena has outgrown the budget. For the end of a read, whose
+         result is built in the arena after its last row. */
+      void CheckArenaBudget() const;
+
       const Base::TTimer &GetPresentWalkConsTimer() const {
         return PresentWalkConsTimer;
       }
@@ -187,6 +218,17 @@ namespace Orly {
       TRepoTree RepoTree;
 
       size_t WalkerCount;
+
+      static constexpr size_t Unlimited = static_cast<size_t>(-1);
+
+      /* Throws TReadTooLarge, saying which limit was passed. */
+      [[noreturn]] void OnOverBudget() const;
+
+      /* The read budget (#694). */
+      size_t RowsWalked = 0UL;
+      size_t MaxRows = Unlimited;
+      size_t MaxArenaBytes = Unlimited;
+      const Atom::TSuprena *BudgetArena = nullptr;
 
       Base::TTimer PresentWalkConsTimer;
 

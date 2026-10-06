@@ -1,0 +1,13 @@
+package #1;
+/* Read-budget smoke (#694): rows written one key each, then reads over all of them. */
+write_val = ((true) effecting { new <['values', n]> <- x; }) where {
+  n = given::(int);
+  x = given::(int);
+};
+read_val = (*<['values', n]>::(int?)) where { n = given::(int); };
+/* Walks every row: one per key. */
+count_all = (keys (int) @ <['values', free::(int)]>) reduce start 0 + 1;
+/* Point reads in a loop, with no range at all: n of them. */
+sum_points = ([0..last] reduce start 0 + (*<['values', that]>::(int) if *<['values', that]>::(int?) is known else 0)) where { last = given::(int); };
+/* Builds a big result from no rows at all, for the memory limit. */
+big_list = ([0..n] as [int]) where { n = given::(int); };

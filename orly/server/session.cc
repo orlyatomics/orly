@@ -28,6 +28,7 @@
 #include <orly/notification/all.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/read_too_large.h>
 #include <orly/server/write_too_large.h>
 #include <orly/server/meta_record.h>
 #include <orly/var/mutation.h>
@@ -313,9 +314,14 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     // Func it.
     auto func = server->GetPackageManager().Get(Package::TName{fq_name})->GetFunctionInfo(AsPiece(closure.GetMethodName()));
     Package::TContext::TEffects effects;
+    /* Bound what the call may walk and build (#694). Lifted once it returns: resolving a
+       write's effects and building its update are bounded by write admission instead. */
+    context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena);
     call_timer.Start();
     result_core = func->Call(indy_context, prog_args);
     call_timer.Stop();
+    context.CheckArenaBudget();
+    context.ClearReadBudget();
     effects = indy_context.MoveEffects();
     if (!effects.empty()) {
       had_effects = true;
@@ -457,6 +463,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   } catch (const TWriteTooLarge &) {
     /* A client error, not a server one (#687). */
     throw;
+  } catch (const TReadTooLarge &) {
+    /* Likewise (#694). */
+    throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::Try : [%s]", ex.what());
     throw;
@@ -541,6 +550,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     const std::string *func_method_name = nullptr;
     std::shared_ptr<const Package::TFuncHolder> func;
     bool mixed = false;
+    /* One read budget for the whole batch, as for a single call in Try() (#694). */
+    context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena);
     call_timer.Start();
     for (const auto &call: calls) {
       const TClosure &closure = *call.Closure;
@@ -560,6 +571,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
           Indy::TKey(call_core, indy_context.GetArena()).GetState(call_state_alloc))));
     }
     call_timer.Stop();
+    context.CheckArenaBudget();
+    context.ClearReadBudget();
     Package::TContext::TEffects effects = indy_context.MoveEffects();
     if (!effects.empty()) {
       had_effects = true;
@@ -691,6 +704,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     throw;
   } catch (const TWriteTooLarge &) {
     /* A client error, not a server one (#687). */
+    throw;
+  } catch (const TReadTooLarge &) {
+    /* Likewise (#694). */
     throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::%s : [%s]", what, ex.what());

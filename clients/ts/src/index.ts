@@ -82,6 +82,16 @@ export class WriteTooLargeError extends OrlyError {
   }
 }
 
+/** Thrown when a call walks more rows, or builds more result memory, than the server's per-read
+ *  budget (`"status": "read_too_large"`; `--read_budget_rows`, `--read_budget_mb`). Like
+ *  `WriteTooLargeError` it is NOT retryable as sent: read a narrower range. */
+export class ReadTooLargeError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "ReadTooLargeError";
+  }
+}
+
 /** Wrap a string to inject it into a statement as raw orlyscript, un-encoded. */
 export class Raw {
   constructor(public readonly text: string) {}
@@ -179,6 +189,8 @@ export class Client {
         ? new InsufficientMemoryError(p.stmt, reply)
         : reply?.status === "write_too_large"
         ? new WriteTooLargeError(p.stmt, reply)
+        : reply?.status === "read_too_large"
+        ? new ReadTooLargeError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
       return;
     }

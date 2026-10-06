@@ -361,6 +361,15 @@ jobs:
           pip3 install --break-system-packages --quiet websocket-client
           bash clients/smoke/run-write-too-large.sh
 
+      # #694: a read over the per-read budget (rows walked or result memory)
+      # must be refused with the typed status read_too_large
+      # (ReadTooLargeError / orly.ReadTooLarge), reads under it must answer,
+      # and the same reads must succeed with the budget off.
+      - name: An oversized read is refused as read_too_large
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          bash clients/smoke/run-read-budget.sh
+
       # #626: writes to a paused POV, whose backlog never drains until it is
       # unpaused, must not wait for it: they go through (or are refused at the
       # memory reserve), reads carry on, and after the unpause a write is
