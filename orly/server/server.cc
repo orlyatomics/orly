@@ -515,11 +515,9 @@ namespace {
      24 it fails its first client, and 32 passed the pool-pressure smoke's 8 writers. */
   constexpr size_t MinFiberFrames = 64UL;
 
-  /* The share of the Update and Update Entry pools kept for merges, in percent: #629's
-     --memory_reserve_pct and its default. Until #629 merges, TCmd has no such field and the
-     floor assumes the default. Once it does, this picks the field up on its own, and a reserve of
-     0 (admission off) still sizes the floor for the default, because merges need the room either
-     way. */
+  /* The share of the Update and Update Entry pools kept for merges, in percent:
+     --memory_reserve_pct and its default (#607). A reserve of 0 (admission off) still sizes the
+     floor for the default, because merges need the room either way. */
   constexpr size_t DefaultMergeReservePct = 25UL;
 
   template <typename TSomeCmd>
