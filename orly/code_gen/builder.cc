@@ -65,6 +65,30 @@ using namespace std;
 using namespace Orly;
 using namespace Orly::CodeGen;
 
+/* True iff the reduce's one `start` is evaluated at most once per call of its
+   body: it is reached from the body without passing into a nested function
+   (a where-clause function, or the per-element function of a filter, map,
+   sort, while, reduce, collated_by or collected_by), any of which may run it
+   again. If it is, the body may move from the carry (#697). This is caution
+   more than need: a nested function captures the carry by copy into a const
+   member, so `std::move` there would only copy it. */
+static bool StartRunsOncePerCall(const Expr::TReduce *reduce) {
+  const Expr::TExpr *start = reduce->GetStart().get();
+  bool found = false;
+  Expr::ForEachExpr(reduce->GetRhs(), [start, &found](const Expr::TExpr::TPtr &expr) {
+    if (expr.get() == start) {
+      found = true;
+      return true;
+    }
+    const Expr::TExpr *e = expr.get();
+    return dynamic_cast<const Expr::TFilter *>(e) || dynamic_cast<const Expr::TReduce *>(e) ||
+           dynamic_cast<const Expr::TSort *>(e) || dynamic_cast<const Expr::TWhile *>(e) ||
+           dynamic_cast<const Expr::TCollatedBy *>(e) || dynamic_cast<const Expr::TCollectedBy *>(e) ||
+           dynamic_cast<const Expr::TUnionMap *>(e);
+  }, /* include_inner_funcs */ false);
+  return found;
+}
+
 bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
   class TVisitor : public Expr::TExpr::TVisitor {
     public:
@@ -654,8 +678,18 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       // Build function
       TImplicitFunc::TPtr func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Reduce, that->GetRhs()->GetType(),
           {{"carry", that->GetStart()->GetType()}, {"that", that->GetThatType()}}, that->GetRhs(), true);
+      /* A reduce has exactly one `start`. When the body evaluates it once per
+         call, take the carry by value and move it into that use, so `start +
+         [that]` grows the carry in place instead of copying it each step
+         (#697). Not when it sits under a nested function (a filter, sort,
+         inner reduce and so on), which may run it more than once. */
+      TInline::TPtr carry = func->GetArg("carry");
+      if (StartRunsOncePerCall(that)) {
+        func->SetArgByValue("carry");
+        carry = TMoveCarry::New(Package, carry);
+      }
       /* Reduce ctx */ {
-        TReduceCtx ctx(func->GetArg("carry"), func->GetArg("that"));
+        TReduceCtx ctx(carry, func->GetArg("that"));
         func->Build();
       }
 

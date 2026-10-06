@@ -119,13 +119,22 @@ bool TFunction::HasArgs() const {
   return Args.size();
 }
 
+void TFunction::SetArgByValue(const std::string &name) {
+  assert(Args.count(name));
+  ByValueArgs.insert(name);
+}
+
 void TFunction::WriteArgs(TCppPrinter &out) const {
 
   out << Join(Args,
               ", ",
-              [](TCppPrinter &out, TArgs::const_reference arg) {
-                out << "const " << arg.second->GetType() << " &"
-                    << arg.second->GetId() << "/* " << arg.first << " */";
+              [this](TCppPrinter &out, TArgs::const_reference arg) {
+                if (ByValueArgs.count(arg.first)) {
+                  out << arg.second->GetType() << ' ';
+                } else {
+                  out << "const " << arg.second->GetType() << " &";
+                }
+                out << arg.second->GetId() << "/* " << arg.first << " */";
               });
 }
 

@@ -301,6 +301,74 @@ Orly::Rt::TSet<TVal> operator|(const Orly::Rt::TSet<TVal> &lhs, const Orly::Rt::
   return result;
 }
 
+/* The same operators with an expiring lhs, which they update in place and
+   return instead of copying. Generated code moves a `reduce` carry into its
+   one use, so `start + [that]` and `start | {that}` add to the carry rather
+   than copying it on every step (#697). An rhs that is the lhs itself goes to
+   the copying versions. */
+
+/* Add : dict + dict */
+template <typename TKey, typename TVal>
+Orly::Rt::TDict<TKey, TVal> operator+(
+      Orly::Rt::TDict<TKey, TVal> &&lhs,
+      const Orly::Rt::TDict<TKey, TVal> &rhs) {
+  if (&lhs == &rhs) {
+    return static_cast<const Orly::Rt::TDict<TKey, TVal> &>(lhs) + rhs;
+  }
+  for (const auto &iter : rhs) {
+    auto ret = lhs.insert(iter);
+    if (!ret.second) {
+      ret.first->second = iter.second;
+    }
+  }
+  return std::move(lhs);
+}
+
+/* Sub : dict - set */
+template <typename TKey, typename TVal>
+Orly::Rt::TDict<TKey, TVal> operator-(
+      Orly::Rt::TDict<TKey, TVal> &&lhs,
+      const Orly::Rt::TSet<TKey> &rhs) {
+  for (const auto &iter : rhs) {
+    lhs.erase(iter);
+  }
+  return std::move(lhs);
+}
+
+/* Add : list + list */
+template <typename TVal>
+std::vector<TVal> operator+(std::vector<TVal> &&lhs, const std::vector<TVal> &rhs) {
+  if (&lhs == &rhs) {
+    return static_cast<const std::vector<TVal> &>(lhs) + rhs;
+  }
+  lhs.insert(lhs.end(), rhs.begin(), rhs.end());
+  return std::move(lhs);
+}
+
+/* Sub : set - set */
+template <typename TVal>
+Orly::Rt::TSet<TVal> operator-(Orly::Rt::TSet<TVal> &&lhs, const Orly::Rt::TSet<TVal> &rhs) {
+  if (&lhs == &rhs) {
+    return Orly::Rt::TSet<TVal>();
+  }
+  for (const auto &elem : rhs) {
+    lhs.erase(elem);
+  }
+  return std::move(lhs);
+}
+
+/* Union : set | set */
+template <typename TVal>
+Orly::Rt::TSet<TVal> operator|(Orly::Rt::TSet<TVal> &&lhs, const Orly::Rt::TSet<TVal> &rhs) {
+  if (&lhs == &rhs) {
+    return std::move(lhs);
+  }
+  for (const auto &elem : rhs) {
+    lhs.insert(elem);
+  }
+  return std::move(lhs);
+}
+
 /* SymmetricDiff : set ^ set */
 template <typename TVal>
 Orly::Rt::TSet<TVal> operator^(const Orly::Rt::TSet<TVal> &lhs, const Orly::Rt::TSet<TVal> &rhs) {

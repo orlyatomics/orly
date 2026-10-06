@@ -53,3 +53,19 @@ void TReduce::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set)
   AppendDependency(Start, dependency_set);
   AppendDependency(Func->GetBody(), dependency_set);
 }
+
+TInline::TPtr TMoveCarry::New(const L0::TPackage *package, const TInline::TPtr &carry) {
+  return TInline::TPtr(new TMoveCarry(package, carry));
+}
+
+void TMoveCarry::WriteExpr(TCppPrinter &out) const {
+  out << "std::move(" << Carry << ')';
+}
+
+void TMoveCarry::AppendDependsOn(std::unordered_set<TInline::TPtr> &dependency_set) const {
+  AppendDependency(Carry, dependency_set);
+}
+
+TMoveCarry::TMoveCarry(const L0::TPackage *package, const TInline::TPtr &carry)
+  : TInline(package, carry->GetReturnType()),
+    Carry(carry) {}
