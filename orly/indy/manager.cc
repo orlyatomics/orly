@@ -1942,6 +1942,53 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             throw std::runtime_error("Future did not complete.");
           }
         }
+        /* The saved records of the povs whose repos the slave now has (#680).  A pov's record
+           otherwise reaches a slave only when it is saved while they are paired, so after a
+           failover a pov made before the join was refused on the promoted slave although its
+           repo was there.  A pov's durable id is its repo's id.  They go as durable saves on the
+           live stream's own message, which a syncing slave stores (as a slave from before this
+           change does too), in batches, read and sent with no lock held; all of them before
+           the slave is told to sync, so it has them before it says it is done.  A record saved
+           again meanwhile goes on the live stream too; a pov's record never changes (its ttl,
+           session, audience, policy and parents), so the order the two arrive in doesn't
+           matter. */
+        if (DurableManager) {
+          static const size_t max_batch_records = 1024UL;
+          static const size_t max_batch_bytes = 1UL << 20;
+          size_t num_sent = 0UL, num_batches = 0UL;
+          auto batch = std::make_unique<TReplicationStreamer>();
+          size_t batch_records = 0UL, batch_bytes = 0UL;
+          auto send_batch = [&]() {
+            Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
+            auto future = Context->Write<void>(TSlave::PushNotificationsId, *batch);
+            assert(future);
+            future->Sync();  // wait for the future to complete
+            if (!static_cast<bool>(*future)) {
+              throw std::runtime_error("Future did not complete.");
+            }
+            num_sent += batch_records;
+            ++num_batches;
+            batch = std::make_unique<TReplicationStreamer>();
+            batch_records = 0UL;
+            batch_bytes = 0UL;
+          };
+          std::string blob;
+          for (const auto &repo : to_inventory) {
+            if (!DurableManager->TryReadSaved(repo->GetId(), blob)) {
+              continue;
+            }
+            batch->PushDurable(TDurableReplication(repo->GetId(), repo->GetTtl(), blob));
+            ++batch_records;
+            batch_bytes += blob.size();
+            if (batch_records >= max_batch_records || batch_bytes >= max_batch_bytes) {
+              send_batch();
+            }
+          }
+          if (batch_records) {
+            send_batch();
+          }
+          syslog(LOG_INFO, "TMaster: sent the slave [%ld] saved pov record(s) in [%ld] batch(es) (#680)", num_sent, num_batches);
+        }
         /* trigger the slave to start synchronizing it's inventory */ {
           /* set false */ {
             std::lock_guard<std::mutex> slave_notify_lock(SlaveNotifyLock);
