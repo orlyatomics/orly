@@ -3,8 +3,8 @@
  * K writers send batches of BATCH writes to one shared safe POV. A batch is one update with an
  * entry per write, and a POV's memory merge copies its whole unpromoted backlog, so the writer
  * backpressure must cap that backlog in entries, not just updates. Capped only in updates (#586),
- * the backlog of 200-write batches held most of the Update Entry pool: the merges and Tetris ran
- * out of entries (pool misses), and writers were refused at the reserve.
+ * the backlog of 200-write batches held most of the Update Entry pool, and writers were refused at
+ * the reserve (before #629's copy claims, the merges and Tetris also ran out of entries).
  *
  * With orlyi's memory reserve at RESERVE_PCT, this requires, over SECS seconds:
  *   - no write refused and no write failing, and at least MIN_BATCHES batches through;
