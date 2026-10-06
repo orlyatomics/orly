@@ -1720,8 +1720,9 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   /* Fast path (#64): if the merge produced no non-Assign entries,
      there's nothing to fold and the intermediate file IS the final
      output. Skip the TFoldDataFile read+write+remove cycle entirely.
-     Most workloads are Assign-only and hit this path. */
-  if (merge_data_file.GetNumNonAssignEntries() == 0UL) {
+     Most workloads are Assign-only and hit this path. A test can also ask for the unfolded
+     output (#666). */
+  if (merge_data_file.GetNumNonAssignEntries() == 0UL || !FoldMergedFiles) {
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
     out_saved_high_seq = merge_data_file.GetHighestSequence();

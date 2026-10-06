@@ -713,6 +713,10 @@ namespace Orly {
       /* Allocate the next monotonic generation id (++NextGenId). */
       inline size_t GetNextGenId();
 
+      /* Test only. When false, MergeFiles keeps a merge's output unfolded, `+=` history and all,
+         so a test can read a TMergeDataFile back directly (#666). Nothing else serves one. */
+      bool FoldMergedFiles = true;
+
       private:
 
       /* true -- a safe repo is disk-backed. */

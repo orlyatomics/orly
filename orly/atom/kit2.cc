@@ -1076,6 +1076,11 @@ bool TCore::TNote::TIsEq::operator()(const TNote *lhs, const TNote *rhs) const {
           && memcmp(lhs->GetStart(), rhs->GetStart(), lhs->RawSize) == 0);
 }
 
+bool TCore::TNote::HasSameBytes(const TNote &that) const {
+  return Tycon == that.Tycon && Exemplar == that.Exemplar && UnReferenced == that.UnReferenced
+      && Pad == that.Pad && RawSize == that.RawSize && memcmp(GetStart(), that.GetStart(), RawSize) == 0;
+}
+
 void TCore::TNote::SetUnReferenced() {
   UnReferenced = true;
 }
@@ -1205,8 +1210,10 @@ TCore::TNote *TCore::TNote::New(const TNote *that) {
   return NewRawCopy(that->Tycon, that->Exemplar, that->UnReferenced, that->GetStart(), that->RawSize);
 }
 
+/* Unused must be zeroed here: release builds do not clear the allocation, and a disk merge
+   compares notes byte for byte (#666). */
 TCore::TNote::TNote(TTycon tycon, bool is_exemplar, bool is_un_referenced, size_t raw_size)
-    : Tycon(tycon), Exemplar(is_exemplar), UnReferenced(is_un_referenced), Pad(0), RawSize(raw_size) {}
+    : Tycon(tycon), Exemplar(is_exemplar), UnReferenced(is_un_referenced), Unused(0), Pad(0), RawSize(raw_size) {}
 
 void *TCore::TNote::operator new(size_t, size_t extra_size, size_t /*junk*/) {
   auto ptr = malloc(sizeof(TNote) + extra_size);

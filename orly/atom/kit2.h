@@ -737,6 +737,10 @@ namespace Orly {
       /* Assumes we're a tuple, get the number of non-free elements. */
       inline size_t GetTupleNumNonFree() const;
 
+      /* True iff. that note is this one byte for byte, leaving out the Unused flag bits. Notes
+         written to disk before #666 carry garbage there, so equal notes can differ in them. */
+      bool HasSameBytes(const TNote &that) const;
+
       /* Set this note as un-referenced. */
       void SetUnReferenced();
 

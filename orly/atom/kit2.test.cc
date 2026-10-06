@@ -18,10 +18,13 @@
 
 #include <orly/atom/kit2.h>
 
+#include <cstring>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include <orly/native/all.h>
 #include <orly/native/point.h>
@@ -452,4 +455,35 @@ FIXTURE(ConfirmStrSize) {
     EXPECT_EQ(*limit, '\0');
     EXPECT_EQ(strcmp(start, expected.c_str()), 0);
   }
+}
+
+/* #666: a note's Unused flag bits are not part of its value. Notes written to disk before #666
+   carry garbage there, so a disk merge must not tell two copies of one value apart by them. */
+FIXTURE(NoteEqualityIgnoresUnusedBits) {
+  static const char text[] = "a note long enough to live in an arena";
+  const auto *start = reinterpret_cast<const uint8_t *>(text);
+  unique_ptr<TCore::TNote> note(TCore::TNote::New(start, start + sizeof(text), false));
+  const size_t note_size = sizeof(TCore::TNote) + note->GetRawSize();
+  vector<uint8_t> copy(note_size);
+  memcpy(copy.data(), note.get(), note_size);
+  const auto *copied = reinterpret_cast<const TCore::TNote *>(copy.data());
+  EXPECT_TRUE(note->HasSameBytes(*copied));
+  /* The flags share the byte after the tycon. Flip each bit of it in turn: the six that change no
+     accessor are the Unused ones, and they must not affect equality. */
+  size_t num_unused = 0UL;
+  for (size_t bit = 0UL; bit < 8UL; ++bit) {
+    copy[1] ^= static_cast<uint8_t>(1U << bit);
+    if (copied->IsExemplar() == note->IsExemplar() && copied->IsUnReferenced() == note->IsUnReferenced()) {
+      ++num_unused;
+      EXPECT_NE(memcmp(copy.data(), note.get(), note_size), 0);
+      EXPECT_TRUE(note->HasSameBytes(*copied));
+    } else {
+      EXPECT_FALSE(note->HasSameBytes(*copied));
+    }
+    copy[1] ^= static_cast<uint8_t>(1U << bit);
+  }
+  EXPECT_EQ(num_unused, 6UL);
+  /* A real difference still counts. */
+  copy.back() ^= 1U;
+  EXPECT_FALSE(note->HasSameBytes(*copied));
 }

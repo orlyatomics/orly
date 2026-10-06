@@ -109,6 +109,8 @@ class TSteppedSafeRepo final
 
   using Orly::Indy::TRepo::StepMergeMem;
 
+  using TSafeRepo::FoldMergedFiles;
+
 };  // TSteppedSafeRepo
 
 /* A latch a test can park a merge on (#614). It lives outside the repo, because the repo may be
@@ -398,6 +400,11 @@ class TRootRepoFixture {
     Stepped->StepMergeMem();
   }
 
+  /* Keep merge outputs unfolded, so reads go through a TMergeDataFile's history (#666). */
+  void KeepMergesUnfolded() {
+    Stepped->FoldMergedFiles = false;
+  }
+
   void MergeDisk(size_t passes) {
     for (size_t i = 0UL; i < passes; ++i) {
       Stepped->StepMergeDisk(256UL);
@@ -476,6 +483,60 @@ FIXTURE(RootMergeFoldsChainOntoBaseOutsideMerge) {
       root.Flush();
       root.MergeDisk(4UL);
       EXPECT_EQ(root.Read(counter), root.Int(15L));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #666: read a `+=` chain straight out of an unfolded disk merge. A merge copies the notes of
+   its inputs' arenas into one ordered arena, and readers compare that arena's cores by offset.
+   In release builds the inputs' notes carried garbage in their unused header bits, the merge
+   kept two copies of the key, and the read stopped folding at the second: 2 instead of 14. */
+FIXTURE(UnfoldedMergeReadsItsHistory) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    const int64_t counter = -1L;
+    /* the chain of RootMergeFoldsChainOntoBaseOutsideMerge, base outside the merge */ {
+      TRootRepoFixture root(true);
+      root.KeepMergesUnfolded();
+      root.Commit({{counter, 10L, TMutator::Assign}});
+      for (int64_t key = 0L; key < 100L; ++key) {
+        root.Commit({{key, key, TMutator::Assign}});
+      }
+      root.Flush();
+      for (int64_t file = 0L; file < 2L; ++file) {
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Flush();
+      }
+      root.MergeDisk(4UL);
+      EXPECT_EQ(root.Read(counter), root.Int(14L));
+      root.Commit({{counter, 1L, TMutator::Add}});
+      root.Flush();
+      root.MergeDisk(4UL);
+      EXPECT_EQ(root.Read(counter), root.Int(15L));
+    }
+    /* one file per round, base and all, merged together */ {
+      TRootRepoFixture root(false);
+      root.KeepMergesUnfolded();
+      const int64_t num_keys = 100L, num_rounds = 10L;
+      root.Commit({{counter, 100L, TMutator::Assign}});
+      for (int64_t round = 1L; round <= num_rounds; ++round) {
+        for (int64_t key = 0L; key < num_keys; ++key) {
+          root.Commit({{key, round * 1000L + key, TMutator::Assign}});
+        }
+        for (int64_t i = 0L; i < 3L; ++i) {
+          root.Commit({{counter, 1L, TMutator::Add}});
+        }
+        root.Flush();
+      }
+      root.MergeDisk(static_cast<size_t>(num_rounds * 4L));
+      EXPECT_EQ(root.Read(counter), root.Int(100L + 3L * num_rounds));
+      for (int64_t key = 0L; key < num_keys; ++key) {
+        EXPECT_EQ(root.Read(key), root.Int(num_rounds * 1000L + key));
+      }
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
