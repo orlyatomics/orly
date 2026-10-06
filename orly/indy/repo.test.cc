@@ -108,6 +108,9 @@ class TSteppedSafeRepo final
 
   using Orly::Indy::TRepo::StepMergeMem;
 
+  /* So a test can fill the mapping pool (#627). */
+  using TMappingType = Orly::Indy::TRepo::TMapping;
+
 };  // TSteppedSafeRepo
 
 /* A minimal L1::TManager that builds stepped safe repos. Its merge delays are an hour, so the
@@ -382,6 +385,12 @@ class TRootRepoFixture {
     return count;
   }
 
+  /* How many layers the repo's current mapping holds: one per disk file, once flushed. */
+  size_t CountLayers() {
+    Orly::Indy::TRepo::TView view(Stepped);
+    return view.GetNumEntries();
+  }
+
   size_t NumCommits = 0UL;
 
   private:
@@ -463,6 +472,179 @@ FIXTURE(PruneMergeHistoryFlag) {
         EXPECT_LT(walked, root.NumCommits / 2UL);
       } else {
         EXPECT_EQ(walked, root.NumCommits);
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Takes every free block of a pool, through the class's own operator new, until it throws, and
+   gives them all back when released. On a fiber the pools fail at once (#607), so this doesn't
+   wait. */
+class TPoolHog {
+  NO_COPY(TPoolHog);
+  public:
+
+  TPoolHog(const function<void *()> &alloc, const function<void (void *)> &free)
+      : Free(free) {
+    for (;;) {
+      try {
+        Blocks.push_back(alloc());
+      } catch (const bad_alloc &) {
+        break;
+      }
+    }
+  }
+
+  ~TPoolHog() {
+    Release();
+  }
+
+  size_t GetSize() const {
+    return Blocks.size();
+  }
+
+  void Release() {
+    for (void *block : Blocks) {
+      Free(block);
+    }
+    Blocks.clear();
+  }
+
+  private:
+
+  function<void (void *)> Free;
+
+  vector<void *> Blocks;
+
+};  // TPoolHog
+
+/* #627: a disk merge that runs out of pool space must not abort the server. Each fixture below
+   writes two small disk files whose merge has a `+=` to fold, takes every free block of one
+   pool, and steps the disk merge. The merge must leave the repo readable and correct, and must
+   go through once the pool has room again. */
+class TDiskMergePoolFixture {
+  NO_COPY(TDiskMergePoolFixture);
+  public:
+
+  static constexpr int64_t Counter = -1L;
+
+  TDiskMergePoolFixture()
+      : Root(true) {
+    Root.Commit({{Counter, 10L, TMutator::Assign}});
+    for (int64_t key = 0L; key < 10L; ++key) {
+      Root.Commit({{key, key, TMutator::Assign}});
+    }
+    Root.Flush();
+    AddFile();
+  }
+
+  /* One more disk file, holding two `+= 1` on the counter. */
+  void AddFile() {
+    Root.Commit({{Counter, 1L, TMutator::Add}});
+    Root.Commit({{Counter, 1L, TMutator::Add}});
+    Root.Flush();
+    Expected += 2L;
+  }
+
+  size_t CountLayers() {
+    return Root.CountLayers();
+  }
+
+  bool ReadsCorrectly() {
+    bool ok = EXPECT_EQ(Root.Read(Counter), Root.Int(Expected));
+    for (int64_t key = 0L; key < 10L; ++key) {
+      ok = EXPECT_EQ(Root.Read(key), Root.Int(key)) && ok;
+    }
+    return ok;
+  }
+
+  TRootRepoFixture Root;
+
+  int64_t Expected = 10L;
+
+};  // TDiskMergePoolFixture
+
+/* The fold step builds a memory layer of updates from the Update pool. */
+FIXTURE(DiskMergeWithUpdatePoolFull) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TDiskMergePoolFixture fixture;
+      EXPECT_EQ(fixture.CountLayers(), 2UL);
+      {
+        TPoolHog hog([] { return TUpdate::operator new(sizeof(TUpdate)); },
+                     [](void *ptr) { TUpdate::operator delete(ptr, sizeof(TUpdate)); });
+        EXPECT_GT(hog.GetSize(), 0UL);
+        fixture.Root.MergeDisk(4UL);
+      }
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+      /* A fold is an optimisation: with no room for it, the merge keeps its unfolded output. */
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      /* and a later merge, with room, folds as usual */
+      fixture.AddFile();
+      fixture.Root.MergeDisk(4UL);
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* The merged file's disk layer comes from the Data Layer pool. */
+FIXTURE(DiskMergeWithDataLayerPoolFull) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TDiskMergePoolFixture fixture;
+      {
+        TPoolHog hog([] { return TDiskLayer::operator new(sizeof(TDiskLayer)); },
+                     [](void *ptr) { TDiskLayer::operator delete(ptr, sizeof(TDiskLayer)); });
+        EXPECT_GT(hog.GetSize(), 0UL);
+        fixture.Root.MergeDisk(4UL);
+        /* handed back, not merged */
+        EXPECT_EQ(fixture.CountLayers(), 2UL);
+      }
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+      fixture.Root.MergeDisk(4UL);
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Publishing the merge builds a new mapping, from the mapping and mapping entry pools. By then
+   the merged file is written, so the merge must undo the half-built mapping and drop the file. */
+FIXTURE(DiskMergeWithMappingPoolsFull) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      using TMapping = TSteppedSafeRepo::TMappingType;
+      TDiskMergePoolFixture fixture;
+      for (bool entries : {false, true}) {
+        {
+          TPoolHog hog(entries
+                           ? function<void *()>([] { return TMapping::TEntry::operator new(sizeof(TMapping::TEntry)); })
+                           : function<void *()>([] { return TMapping::operator new(sizeof(TMapping)); }),
+                       entries
+                           ? function<void (void *)>([](void *ptr) { TMapping::TEntry::operator delete(ptr, sizeof(TMapping::TEntry)); })
+                           : function<void (void *)>([](void *ptr) { TMapping::operator delete(ptr, sizeof(TMapping)); }));
+          EXPECT_GT(hog.GetSize(), 0UL);
+          fixture.Root.MergeDisk(4UL);
+          EXPECT_EQ(fixture.CountLayers(), 2UL);
+        }
+        EXPECT_TRUE(fixture.ReadsCorrectly());
+        fixture.Root.MergeDisk(4UL);
+        EXPECT_EQ(fixture.CountLayers(), 1UL);
+        EXPECT_TRUE(fixture.ReadsCorrectly());
+        fixture.AddFile();
       }
     }
     std::lock_guard<std::mutex> lock(mut);
