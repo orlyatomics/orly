@@ -18,6 +18,7 @@
 
 #include <orly/indy/transaction_base.h>
 #include <optional>
+#include <sstream>
 #include <thread>
 
 #include <base/debug_log.h>
@@ -385,7 +386,18 @@ void TTransaction::Prepare() {
     switch (result) {
       case TTransactionCompletion::Completed: {
         for (const auto &entry : release_set) {
-          auto base_repo = my_manager->ForceOpenRepo(entry.first);
+          /* The popped repo may be gone by now: the completion waits for the parent's update to
+             reach disk, and the manager can discard an expired pov in the meantime.  Its updates
+             are already in the parent, so there is nothing left to release.  ForceOpenRepo would
+             construct an empty repo under the old id, which then asserts in ReleaseUpdate (or, in
+             release, comes back as a resurrected pov), so only touch a repo that is live (#665). */
+          auto base_repo = my_manager->TryOpenLiveRepo(entry.first);
+          if (!base_repo) {
+            std::ostringstream strm;
+            strm << entry.first;
+            syslog(LOG_INFO, "TTransaction: repo [%s] was discarded before its pop of [%ld] completed; nothing to release (#665)", strm.str().c_str(), entry.second);
+            continue;
+          }
           TRepo *repo = dynamic_cast<TRepo *>(base_repo.Get());
           assert(repo);
           repo->ReleaseUpdate(entry.second, ensure_or_discard);

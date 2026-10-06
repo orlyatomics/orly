@@ -543,6 +543,9 @@ void TRepo::EndDiskFullStreak(std::atomic<size_t> &streak, const char *merge_kin
   }
 }
 
+/* Test-only; empty in production. See repo.h. */
+std::function<void (TRepo *)> TRepo::OnMergeMemSealedForTest;
+
 void TRepo::StepMergeMem() {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
@@ -574,6 +577,9 @@ void TRepo::StepMergeMem() {
         //EnqueueMergeMem();
       }
     }  // release DataLayer lock
+    if (OnMergeMemSealedForTest) {
+      OnMergeMemSealedForTest(this);
+    }
 
     /*** find the memory layers that we can merge and then flush to disk if we're a safe repo ***/
 
@@ -1118,8 +1124,17 @@ void TRepo::ReleaseMapping(TMapping *mapping) {
 }
 
 void TRepo::CheckRemoveDirty() {
+  /* Decide under DataLock, which AppendUpdate holds while it makes the repo dirty, and count the
+     current memory layer too.  StepMergeMem seals that layer into the mapping before it merges,
+     so an update appended while the merge runs lands in a fresh current layer the mapping
+     doesn't have.  Looking at the mapping alone, the merge dropped the repo's self-pin with that
+     update still unreleased, so an expired pov could be discarded while the update's pop had yet
+     to complete (#665).  The caller pins the repo (StepQueuedMergeMem, #614), so dropping the
+     pin here never destroys the repo under its own lock; ReleaseUpdate does the same.  Lock
+     order DataLock -> MappingLock, as in GetLowestUpdate. */
+  std::lock_guard<std::mutex> data_lock(DataLock);
   TMapping *mapping = AcquireCurrentMapping();
-  bool found_non_empty_mem = false;
+  bool found_non_empty_mem = !CurMemoryLayer->IsEmpty();
   try {
     for (TMapping::TEntryCollection::TCursor csr(mapping->GetEntryCollection()); csr; ++csr) {
       if (csr->GetLayer()->GetKind() == TDataLayer::TKind::Mem && !dynamic_cast<TMemoryLayer *>(csr->GetLayer())->IsEmpty()) {
