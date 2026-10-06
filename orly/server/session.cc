@@ -995,9 +995,12 @@ bool TSession::RunTestBlock(TServer *server,
 }
 
 void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
+  /* Copy the pointer before taking PovMutex, and drop the copy (if unused) after releasing it:
+     both take the durable manager's Mutex, which comes first in the lock order (see Povs). */
+  Durable::TPtr<TPov> copy = pov;
   std::lock_guard<std::mutex> lock(PovMutex);
-  if (find(Povs.begin(), Povs.end(), pov) == Povs.end()) {
-    Povs.push_back(pov);
+  if (find(Povs.begin(), Povs.end(), copy) == Povs.end()) {
+    Povs.push_back(std::move(copy));
   }
 }
 

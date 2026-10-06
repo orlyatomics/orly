@@ -226,6 +226,13 @@ documented and suppressed in [`orly/tsan.supp`](orly/tsan.supp). See
 [#177](https://github.com/orlyatomics/orly/issues/177) /
 [#184](https://github.com/orlyatomics/orly/issues/184).
 
+The same job also builds `orlyi` and `orlyc` under TSan and runs the
+memory-drain smoke against that server
+([`clients/smoke/run-tsan-server.sh`](clients/smoke/run-tsan-server.sh), #713),
+so WebSocket sessions, Tetris, the merges and the reporting port are covered
+too. It fails on any un-suppressed report from `orlyi`, after a negative
+control that makes `orlyi` race on purpose and requires TSan to report it.
+
 ## Examples
 
 ### [`examples/bitcoin-time-travel/`](examples/bitcoin-time-travel/) — time travel + multiverse via key-encoded version

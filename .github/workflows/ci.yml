@@ -27,7 +27,8 @@
 # A sixth job, `tsan`, builds the concurrency tests under ThreadSanitizer to
 # validate the lock-free / commutative-merge claim at the memory level (data-
 # race freedom). It is GATING (issue #184): the curated set is clean, so the
-# job FAILS on any un-suppressed race. Provably-benign reports are documented
+# job FAILS on any un-suppressed race. Since #713 it also runs orlyi under TSan
+# through the memory-drain smoke, so the server path is covered too. Provably-benign reports are documented
 # and suppressed in orly/tsan.supp. Sanitizer builds are slow, so it still
 # skips pull_request events and runs on push-to-master, the nightly schedule,
 # and manual dispatch. See issues #177 and #184.
@@ -1006,6 +1007,25 @@ jobs:
             exit 1
           fi
           echo "No un-suppressed ThreadSanitizer warnings."
+
+      # The unit tests above never start a server (#713). Build orlyi and orlyc
+      # under TSan too (they share most objects with the tests, so this adds
+      # little), and run the memory-drain smoke against that orlyi: WebSocket
+      # sessions, Tetris, the merge runners and the reporting port. The script
+      # runs its own negative control first (a deliberate race in orlyi that
+      # must be reported), then fails on any un-suppressed report, a smoke
+      # failure, or an orlyi that dies or doesn't shut down on SIGINT.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build orlyi + orlyc under TSan
+        run: PATH="$PWD/tools:$PATH" tools/jhm -c tsan orly/server/orlyi orly/orlyc
+
+      - name: orlyi smoke under TSan
+        timeout-minutes: 15
+        run: ORLY_OUT="$PWD/../out_orly/tsan" LOG_DIR="$PWD/tsan-logs/server" bash clients/smoke/run-tsan-server.sh
 
       - name: Upload TSan reports
         if: always()

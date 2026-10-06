@@ -27,6 +27,8 @@
 #include <new>
 #include <syslog.h>
 
+#include <atomic>
+
 #include <base/class_traits.h>
 
 namespace Orly {
@@ -57,7 +59,7 @@ namespace Orly {
             syslog(LOG_EMERG, "TLocklessPool::Alloc() [%s] bad_alloc", Name);
             throw std::bad_alloc();
           }
-          ++NumBlocksUsed;
+          NumBlocksUsed.store(NumBlocksUsed.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
           return ptr;
         }
 
@@ -83,7 +85,10 @@ namespace Orly {
 
         const char *Name;
 
-        size_t NumBlocksUsed;
+        /* Callers serialize Alloc and Free (the pool takes no lock of its own), but the reporting
+           port reads this count from its own thread, so it is atomic (#713). Only the reader needs
+           that: the writers' load-and-store is not a read-modify-write, and costs nothing more. */
+        std::atomic<size_t> NumBlocksUsed;
 
         size_t MaxBlocks;
 
@@ -94,7 +99,7 @@ namespace Orly {
       }
 
       inline size_t TLocklessPool::GetNumBlocksUsed() const {
-        return NumBlocksUsed;
+        return NumBlocksUsed.load(std::memory_order_relaxed);
       }
 
       inline size_t TLocklessPool::GetMaxBlocks() const {
@@ -105,7 +110,7 @@ namespace Orly {
         assert(ptr);
         TBlock *block = static_cast<TBlock *>(ptr);
         block->NextBlock = FirstBlock;
-        --NumBlocksUsed;
+        NumBlocksUsed.store(NumBlocksUsed.load(std::memory_order_relaxed) - 1, std::memory_order_relaxed);
         FirstBlock = block;
       }
 

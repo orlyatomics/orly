@@ -1061,3 +1061,90 @@ FIXTURE(MemMergePublishWaitsOffTheRunner) {
     cond.notify_one();
   });
 }
+
+/* #713: a view drops the last reference to a layer while a merge marks it taken. Decr() read the
+   plain bool MarkedTaken on every release, and the merge wrote it under a lock the view doesn't
+   take, so ThreadSanitizer reported a race on every orlyi run. The answer only matters to the
+   release that takes the count to zero, and that one can't be concurrent with the mark: the
+   merge's mapping holds a reference until it is released under MappingLock, after the mark. So
+   the layer must still be queued for removal, and every update it held freed by teardown.
+
+   A fast root repo keeps its merged layer in memory, so each round merges two layers: the one the
+   previous rounds merged into, and the round's own, which a view pinned before the merge sealed
+   it. The view goes away while the merge runs, after a delay that varies from round to round so
+   that some rounds land between the mark and the publish. */
+FIXTURE(ViewDropsLastRefToTakenLayer) {
+  const size_t updates_before = TUpdate::GetUpdatePool().GetNumBlocksUsed();
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Orly::Indy::Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    /* The fast repo's merges must not park (see TLatchedFastRepo). */ {
+      std::lock_guard<std::mutex> lock(MergeLatch.Mutex);
+      MergeLatch.Released = true;
+    }
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      TSuprena arena;
+      const Base::TUuid idx_id(TUuid::Twister);
+      auto repo = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false);
+      auto *latched = dynamic_cast<TLatchedFastRepo *>(repo.Get());
+      if (!EXPECT_TRUE(latched != nullptr)) {
+        std::lock_guard<std::mutex> lock(mut);
+        fin = true;
+        cond.notify_one();
+        return;
+      }
+      auto commit = [&](int64_t key) {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(TIndexKey(idx_id, TKey(make_tuple(key), &arena, state)), TKey(key * 10L, &arena, state), TMutator::Assign);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      commit(0L);
+      latched->StepMem();
+      std::mutex sealed_mutex;
+      std::condition_variable sealed_cond;
+      bool sealed = false;
+      Orly::Indy::TRepo::OnMergeMemSealedForTest = [&](Orly::Indy::TRepo *sealed_repo) {
+        if (sealed_repo == latched) {
+          std::lock_guard<std::mutex> lock(sealed_mutex);
+          sealed = true;
+          sealed_cond.notify_all();
+        }
+      };
+      /* Nothing runs the layer cleaner here, so every merged layer waits in the removal queue
+         until teardown: two per round, out of a Data Layer pool of 100. */
+      const int64_t num_rounds = 20L;
+      for (int64_t round = 1L; round <= num_rounds; ++round) {
+        commit(round);
+        auto view = make_unique<Orly::Indy::TRepo::TView>(latched);
+        sealed = false;
+        std::thread merger([latched] { latched->StepMem(); });
+        /* wait for the merge to seal the layer the view pins */ {
+          std::unique_lock<std::mutex> lock(sealed_mutex);
+          sealed_cond.wait(lock, [&] { return sealed; });
+        }
+        for (int64_t spin = 0L; spin < (round % 5L) * 4000L; ++spin) {
+          asm volatile("" ::: "memory");
+        }
+        view.reset();
+        merger.join();
+      }
+      Orly::Indy::TRepo::OnMergeMemSealedForTest = nullptr;
+      /* every round merged into one layer */ {
+        Orly::Indy::TRepo::TView view(latched);
+        EXPECT_EQ(view.GetNumEntries(), 1UL);
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+  /* A taken layer whose last release didn't queue it would keep its updates past teardown. */
+  EXPECT_EQ(TUpdate::GetUpdatePool().GetNumBlocksUsed(), updates_before);
+}

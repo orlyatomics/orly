@@ -20,6 +20,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 #include <base/backtrace.h>
 #include <base/debug_log.h>
@@ -95,9 +96,37 @@ static void LaunchServer(TScheduler *scheduler, const ::TCmd &cmd, shared_ptr<TS
   DEBUG_LOG("main: server constructed");
 }
 
+#if defined(__SANITIZE_THREAD__)
+/* The negative control for the TSan job's orlyi smoke (#713), as base/tsan_control.test is for
+   its unit tests. With ORLY_TSAN_RACY_CONTROL set, two threads increment a plain int with no
+   synchronisation, a data race TSan must report in this process's log. The job runs the smoke
+   once that way and fails unless the race is counted, so a change that stops orlyi being
+   instrumented, or its reports being collected, can't turn the gate green by accident. Only a
+   TSan build has this, and only the variable runs it. */
+[[gnu::noinline]] static void TsanControlBump(int &n) {
+  for (int i = 0; i < 100000; ++i) {
+    n = n + 1;
+  }
+}
+
+static void RunTsanRacyControl() {
+  if (!getenv("ORLY_TSAN_RACY_CONTROL")) {
+    return;
+  }
+  int n = 0;
+  std::thread a(TsanControlBump, std::ref(n));
+  std::thread b(TsanControlBump, std::ref(n));
+  a.join();
+  b.join();
+}
+#endif
+
 int main(int argc, char *argv[]) {
   // Make std::terminate calls produce more data / info for us.
   SetBacktraceOnTerminate();
+#if defined(__SANITIZE_THREAD__)
+  RunTsanRacyControl();
+#endif
   ::TCmd cmd(argc, argv);
   TLog log(cmd);
   if (cmd.Daemon) {

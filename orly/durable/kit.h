@@ -105,8 +105,10 @@ namespace Orly {
       TPtr();
 
       /* Move-construct from a donor pointer of our own type, leaving the donor null.
-         If the donor is already null, both pointers will end up null. */
-      TPtr(TPtr &&that);
+         If the donor is already null, both pointers will end up null.
+         noexcept, so that a std::vector of these moves them when it grows instead of copying
+         them, which would take the manager's Mutex under whatever lock guards the vector (#713). */
+      TPtr(TPtr &&that) noexcept;
 
       /* Copy-construct from a pointer of our own type.
          The durable will be shared between the pointers.
@@ -125,7 +127,7 @@ namespace Orly {
 
       /* Release our hold on our existing durable, if any, and move-assign from a donor pointer, leaving the donor null.
          If the donor is already null, both pointers will end up null. */
-      TPtr &operator=(TPtr &&that);
+      TPtr &operator=(TPtr &&that) noexcept;
 
       /* Release our hold on our existing durable, if any, and assign from a pointer of our own type.
          The given pointer's durable will be shared between the pointers.
@@ -481,7 +483,7 @@ namespace Orly {
         : SomeObj(nullptr) {}
 
     template <typename TSomeObj>
-    TPtr<TSomeObj>::TPtr(TPtr &&that) {
+    TPtr<TSomeObj>::TPtr(TPtr &&that) noexcept {
       SomeObj = that.SomeObj;
       that.SomeObj = nullptr;
     }
@@ -509,7 +511,7 @@ namespace Orly {
     }
 
     template <typename TSomeObj>
-    TPtr<TSomeObj> &TPtr<TSomeObj>::operator=(TPtr &&that) {
+    TPtr<TSomeObj> &TPtr<TSomeObj>::operator=(TPtr &&that) noexcept {
       std::swap(SomeObj, that.SomeObj);
       return *this;
     }
