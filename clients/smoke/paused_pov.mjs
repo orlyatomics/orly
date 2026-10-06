@@ -14,8 +14,9 @@
  *     commit);
  *   - every read succeeds, none taking STALL_S;
  *   - meanwhile a write to another POV is accepted and reads back, so the paused POV hasn't
- *     filled the pools that every writer shares.
- * Unpausing isn't exercised: it crashes orlyi on master when it has to start a Tetris player. */
+ *     filled the pools that every writer shares;
+ *   - after the unpause, the POV's writes are promoted to the global POV (a new POV reads them)
+ *     and a write to it is accepted again, as the refusal message promises. */
 
 import { connect, InsufficientMemoryError } from "../ts/dist/index.js";
 
@@ -110,6 +111,31 @@ try {
 } catch (err) {
   fail(`a write to another POV, while the paused one is full: ${err?.message ?? err}`);
 }
+const unpaused = await withTimeout(setup.send(`unpause {${pov}};`), 30, "unpause");
+if (unpaused !== "unpaused") fail(`unpause replied ${JSON.stringify(unpaused)}`);
+let promoted = false;
+for (const deadline = Date.now() + 30_000; !promoted && Date.now() < deadline;) {
+  const probe = await withTimeout(setup.newPov({ safe: true, shared: true }), 30, "a new POV");
+  try {
+    promoted = (await withTimeout(setup.call(probe, "sample", "read_val", { n: -1 }), 30, "a read")) === 42;
+  } catch (err) {
+    /* not there yet */
+  }
+  if (!promoted) await sleep(500);
+}
+if (!promoted) fail("the paused POV's writes weren't promoted within 30 s of the unpause");
+let accepted = false;
+for (const deadline = Date.now() + 30_000; !accepted && Date.now() < deadline;) {
+  try {
+    await withTimeout(setup.call(pov, "sample", "write_val", { n: 2, x: -2 }), 30, "the write");
+    accepted = true;
+  } catch (err) {
+    if (!isRefusal(err)) fail(`a write after the unpause failed other than by refusal: ${err?.message ?? err}`);
+    await sleep(500);
+  }
+}
+if (!accepted) fail("writes to the POV were still refused 30 s after the unpause");
+console.log("AFTER UNPAUSE: promoted, write accepted");
 setup.close();
 console.log("PAUSED POV OK");
 process.exit(0);

@@ -3,8 +3,9 @@
 # orlyi with a small Update pool, so its writer backlog cap is 156 updates.
 # A paused POV's backlog never drains until it is unpaused, and before the fix
 # every write past that cap waited for it forever. Writes past the cap must be
-# refused with insufficient_memory instead, reads must keep working, and
-# writes to other POVs must still be accepted. orlyi must not abort.
+# refused with insufficient_memory instead, reads must keep working, writes to
+# other POVs must still be accepted, and after the unpause the POV's writes must
+# be promoted and new ones accepted. orlyi must not abort.
 #   0. Build the orly TS client (clients/ts).
 #   1. Compile clients/mcp/smoke/sample.orly with orlyc.
 #   2. Start a fresh mem-sim orlyi with a 5000-update pool.
@@ -64,7 +65,7 @@ if ! ss -tln 2>/dev/null | grep -q ":$WS_PORT"; then
   exit 1
 fi
 
-echo "[3/3] K=8 writers on a paused POV, with a reader; then a write to another POV"
+echo "[3/3] K=8 writers on a paused POV, with a reader; a write to another POV; then unpause"
 status=0
 ORLY_URL="ws://127.0.0.1:$WS_PORT/" node paused_pov.mjs > "$WORK/smoke.out" 2>&1 || status=$?
 cat "$WORK/smoke.out"
@@ -82,7 +83,7 @@ if ! kill -0 "$ORLYI_PID" 2>/dev/null; then
   echo "PAUSED POV FAIL: orlyi died"
   status=1
 fi
-for line in "^PAUSED POV CAPPED" "^OTHER POV WRITE: accepted" "^PAUSED POV OK"; do
+for line in "^PAUSED POV CAPPED" "^OTHER POV WRITE: accepted" "^AFTER UNPAUSE: promoted, write accepted" "^PAUSED POV OK"; do
   if ! grep -q "$line" "$WORK/smoke.out"; then
     echo "PAUSED POV FAIL: missing \"$line\""
     status=1
