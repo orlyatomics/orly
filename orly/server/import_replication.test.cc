@@ -167,17 +167,34 @@ const char *Sample2Package =
 
 /* Grab a free TCP port from the kernel.  The port is released again before
    the server binds it, so a parallel test could steal it; the window is
-   tiny and a collision just fails this run's startup wait. */
+   tiny and a collision just fails this run's startup wait.
+
+   Never hand out the same port twice in this process.  A pair probes the
+   slave's ports before it starts the master, and the kernel can offer a
+   released port again, so the master's websocket or reporting port could be
+   the slave's client port; the slave then failed to start with "Address
+   already in use". */
 in_port_t ProbeFreePort() {
-  TFd sock(socket(AF_INET, SOCK_STREAM, 0));
-  sockaddr_in addr;
-  Base::Zero(addr);
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  Util::IfLt0(::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
-  socklen_t len = sizeof(addr);
-  Util::IfLt0(getsockname(sock, reinterpret_cast<sockaddr *>(&addr), &len));
-  return ntohs(addr.sin_port);
+  static mutex handed_out_mutex;
+  static set<in_port_t> handed_out;
+  for (int attempt = 0;; ++attempt) {
+    TFd sock(socket(AF_INET, SOCK_STREAM, 0));
+    sockaddr_in addr;
+    Base::Zero(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    Util::IfLt0(::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+    socklen_t len = sizeof(addr);
+    Util::IfLt0(getsockname(sock, reinterpret_cast<sockaddr *>(&addr), &len));
+    const in_port_t port = ntohs(addr.sin_port);
+    lock_guard<mutex> lock(handed_out_mutex);
+    if (handed_out.insert(port).second) {
+      return port;
+    }
+    if (attempt >= 1000) {
+      throw runtime_error("ProbeFreePort: the kernel keeps offering ports this test already used");
+    }
+  }
 }
 
 bool CanConnect(in_port_t port) {
