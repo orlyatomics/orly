@@ -20,6 +20,7 @@
 
 #include <mutex>
 #include <queue>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -431,4 +432,126 @@ FIXTURE(Typical) {
   runner.ShutDown();
   delete TFrame::LocalFramePool;
   t1.join();
+}
+
+/* #633: a player must not depend on the frame pool of whatever thread happens to call Join().
+
+   orlyi's WS statements run on WsRunner (TServer::RunWs), whose thread never installs a
+   TFrame::LocalFramePool: TJumpRunnable allocates its frame on the calling thread and only
+   latches it onto the runner.  `unpause` rejoins the POV to its parent's Tetris player from
+   there (~TStatusChanger -> TRepo::ChangeStatus -> Join -> NewPlayer), and TPlayer used to
+   allocate its frame from LocalFramePool -- null on that thread, so a debug build asserted and
+   a release build segfaulted on every unpause.
+
+   This drives Join() from a runner set up exactly like WsRunner, and repeats the join/drain
+   cycle well past the frame pool's capacity, so a player frame that is never returned shows up
+   as bad_alloc rather than passing quietly. */
+FIXTURE(JoinFromRunnerWithoutFramePool) {
+  const size_t stack_size = 1024UL * 1024UL;
+  const size_t pool_size = 30UL;
+  const size_t cycle_count = 3UL * pool_size;
+  TRunner::TRunnerCons runner_cons(2);
+  TRunner runner(runner_cons);
+  Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(pool_size, stack_size, &runner);
+  /* The test thread plays the WS I/O thread: it has a pool, and the frame it latches onto the
+     runner comes from it. */
+  auto *origin_pool = new Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  TFrame::LocalFramePool = origin_pool;
+  /* The runner thread plays WsThread: no LocalFramePool, deliberately. */
+  std::thread t1([&runner] {
+    assert(!TFrame::LocalFramePool);
+    runner.Run();
+  });
+
+  class TTest : public TRunnable {
+    NO_COPY(TTest);
+    public:
+
+    TTest(TRunner *runner,
+          TRunner::TRunnerCons &runner_cons,
+          Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> *frame_pool_manager,
+          Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool *origin_pool,
+          size_t cycle_count)
+        : RunnerCons(runner_cons), FramePoolManager(frame_pool_manager), OriginPool(origin_pool),
+          CycleCount(cycle_count), Finished(false), Failed(false) {
+      TFrame *frame = OriginPool->Alloc();
+      try {
+        frame->Latch(runner, this, static_cast<TRunnable::TFunc>(&TTest::Run));
+      } catch (...) {
+        OriginPool->Free(frame);
+        throw;
+      }
+    }
+
+    void Wait() {
+      std::unique_lock<std::mutex> lock(Mutex);
+      while (!Finished) {
+        Cond.wait(lock);
+      }
+    }
+
+    void Run() {
+      try {
+        /* Precondition: we are on a thread with no frame pool of its own. */
+        Failed = static_cast<bool>(TFrame::LocalFramePool);
+        TScheduler scheduler(TScheduler::TPolicy(10, 20, milliseconds(30000)));
+        TTetrisManager tetris_manager(&scheduler, RunnerCons, FramePoolManager, [](TRunner *) -> void{});
+        auto global_pov = tetris_manager.GetGlobalPov();
+        int expected_sum = 0;
+        for (size_t cycle = 0; cycle < CycleCount; ++cycle) {
+          /* A fresh shared pov each cycle, so each cycle constructs a new player for it (and,
+             once its sum reaches the global pov, a new one for the global pov too). */
+          auto shared_pov = new TTetrisManager::TPov(global_pov);
+          std::vector<TTetrisManager::TPov *> private_povs;
+          for (size_t i = 0; i < 2; ++i) {
+            private_povs.push_back(new TTetrisManager::TPov(shared_pov));
+          }
+          for (auto *pov: private_povs) {
+            pov->Push(static_cast<int>(cycle + 1));
+            expected_sum += static_cast<int>(cycle + 1);
+          }
+          for (auto *pov: private_povs) {
+            pov->WaitUntilEmpty();
+          }
+          shared_pov->WaitUntilEmpty();
+        }
+        Sum = global_pov->Sum();
+        ExpectedSum = expected_sum;
+      } catch (const std::exception &ex) {
+        syslog(LOG_ERR, "JoinFromRunnerWithoutFramePool: %s", ex.what());
+        Failed = true;
+      }
+      /* Return our frame to the pool it came from: this thread has none. */
+      Indy::Fiber::FreeMyFrame(OriginPool);
+      std::lock_guard<std::mutex> lock(Mutex);
+      Finished = true;
+      Cond.notify_one();
+    }
+
+    int Sum = -1;
+    int ExpectedSum = 0;
+
+    private:
+
+    TRunner::TRunnerCons &RunnerCons;
+    Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> *FramePoolManager;
+    Base::TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool *OriginPool;
+    const size_t CycleCount;
+
+    std::mutex Mutex;
+    std::condition_variable Cond;
+    bool Finished;
+
+    public:
+
+    bool Failed;
+  };
+  TTest test(&runner, runner_cons, &frame_pool_manager, origin_pool, cycle_count);
+  test.Wait();
+  EXPECT_FALSE(test.Failed);
+  EXPECT_EQ(test.Sum, test.ExpectedSum);
+  runner.ShutDown();
+  t1.join();
+  delete origin_pool;
+  TFrame::LocalFramePool = nullptr;
 }

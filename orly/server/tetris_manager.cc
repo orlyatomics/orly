@@ -167,10 +167,16 @@ TTetrisManager::TPlayer::~TPlayer() {
 TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
     : TetrisManager(tetris_manager), ChildCount(1), StopFlag(nullptr), Paused(false), Unpaused(false) {
   assert(tetris_manager);
-  assert(Fiber::TFrame::LocalFramePool);
+  /* Take the frame from our manager's pool, not TFrame::LocalFramePool: we may be running on a
+     thread that has no pool of its own (#633, WsRunner during `unpause`).  See PlayerFramePool. */
+  FramePool = Base::AssertTrue(tetris_manager->PlayerFramePool.get());
+  /* extra */ {
+    std::lock_guard<std::mutex> lock(tetris_manager->PlayerFrameMutex);
+    TetrisFrame = FramePool->Alloc();
+  }
+  /* Count ourselves only once nothing else here can throw: a throwing constructor never runs
+     the destructor that would drop the count again, and StopAllPlayers() would wait forever. */
   ++(tetris_manager->LivePlayerCount);
-  FramePool = Fiber::TFrame::LocalFramePool;
-  TetrisFrame = FramePool->Alloc();
 }
 
 void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
@@ -275,7 +281,10 @@ TTetrisManager::TTetrisManager(Base::TScheduler *scheduler,
                                Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
                                const std::function<void (Indy::Fiber::TRunner *)> &runner_setup_cb,
                                bool is_master)
-    : Scheduler(scheduler), FiberScheduler(runner_cons), Stopping(false), LivePlayerCount(0UL), IsMaster(is_master) {
+    : Scheduler(scheduler), FiberScheduler(runner_cons),
+      PlayerFramePool(std::make_unique<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool>(
+          Base::AssertTrue(frame_pool_manager))),
+      Stopping(false), LivePlayerCount(0UL), IsMaster(is_master) {
   assert(scheduler);
   Base::TEventSemaphore setup_is_complete;
   auto launch_sched = [this, runner_setup_cb, &setup_is_complete](Fiber::TRunner *runner,
