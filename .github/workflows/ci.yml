@@ -6,7 +6,8 @@
 #
 # Four jobs run on every push to master and every pull_request:
 #   1. debug-and-test     -- make debug + make test (188 binaries)
-#   2. release-build      -- jhm -c release direct + --help smoke on each binary
+#   2. release-build      -- jhm -c release direct + --help smoke on each binary,
+#                            plus the storage and merge unit tests in release (#666)
 #   3. lang-tests         -- make debug + python3 tools/lang_test.py
 #   4. examples           -- run each examples/* end-to-end with both
 #                            its Python and Go drivers (orlyc + orlyi + WS)
@@ -285,6 +286,29 @@ jobs:
           # asserting non-empty output is enough for a smoke check.
           ../out_orly/release/orly/server/orlyi --help > /tmp/orlyi-help.txt
           test -s /tmp/orlyi-help.txt
+
+      # #666: `make test` builds debug only, and a debug build zeroes memory that a release build
+      # leaves as it found it. A merge then wrote equal keys as different ones in release alone,
+      # and every debug test passed. So run the storage and merge unit tests on this release tree
+      # too. Each runs to the end, so one failure doesn't hide another.
+      - name: Storage and merge unit tests (release)
+        run: |
+          tests="orly/atom/kit2 orly/indy/repo orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
+          PATH="$PWD/tools:$PATH" tools/jhm -c release $(for t in $tests; do printf '%s.test ' "$t"; done)
+          failed=""
+          for t in $tests; do
+            echo "::group::$t.test"
+            start=$(date +%s)
+            if ! timeout -s KILL 600 "../out_orly/release/$t.test"; then
+              failed="$failed $t.test"
+            fi
+            echo "$t.test took $(( $(date +%s) - start ))s"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "FAILED in release:$failed"
+            exit 1
+          fi
 
       - name: Set up Node
         uses: actions/setup-node@v4
