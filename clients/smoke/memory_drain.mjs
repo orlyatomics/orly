@@ -1,12 +1,11 @@
 /** Memory-drain smoke (#607); run by run-memory-full.sh after memory_full.mjs.
  *
- * Reaches a full-pool state on purpose: K writers send BATCH-write batches to one shared safe
- * POV that is paused, so nothing is promoted and nothing drains, until every write is refused.
- * The POV's backlog then fills the update pools up to the reserve. Unpausing it leaves Tetris
- * and the memory merges to move that whole backlog to the global POV and flush it, with only the
- * reserve free to copy into. The pools must drain (below DRAIN_PCT of the Entry pool, 1% by
- * default, so that no promoted update is left behind) within
- * DRAIN_S, and a write must then be accepted and read back. */
+ * Reaches a full-pool state on purpose: K writers send BATCH-write batches to POVS shared safe
+ * POVs that are paused, so nothing is promoted and nothing drains, until every write is refused.
+ * The POVs' backlogs then fill the update pools up to the reserve. Unpausing them leaves Tetris
+ * and the memory merges to move all of it to the global POV and flush it, with only the reserve
+ * free to copy into. The Entry pool must drain below DRAIN_PCT (1% by default, so no promoted
+ * update may be left behind) within DRAIN_S, and a write must then be accepted and read back. */
 
 import net from "node:net";
 import { connect, InsufficientMemoryError } from "../ts/dist/index.js";
