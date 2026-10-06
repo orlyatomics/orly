@@ -423,6 +423,11 @@ jobs:
       - name: tests/incremental_test.sh (#312)
         run: ./tests/incremental_test.sh
 
+      # orlyc's test server must not run out of anything as cases accumulate
+      # (#683): 600 generated cases, twice the point where it used to fail.
+      - name: tests/many_cases_test.sh (#683)
+        run: ./tests/many_cases_test.sh
+
       # The #463 flake class -- a single test crashing once, deep in a loaded parallel run,
       # never reproducing on rerun -- has only ever yielded anecdotes. Capture cores so the
       # next occurrence yields a stack trace: the runner's default core_pattern pipes to

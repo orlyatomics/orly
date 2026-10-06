@@ -589,8 +589,17 @@ bool TSession::RunTestSuite(TServer *server,
         assert(test);
         /* One paused shared POV per top-level test{} section. The with-block's
            writes land here and are visible to every case via read fallthrough;
-           pausing keeps them from being promoted to the global POV. */
-        Base::TUuid spov = NewFastSharedPov(server, std::optional<Base::TUuid>(), std::chrono::seconds(1000));
+           pausing keeps them from being promoted to the global POV.
+
+           Test POVs live only as long as their section or case (#683). They are
+           made with a zero ttl and discarded (DiscardTestPov) once the section
+           or case is done, which destroys the POV and its repo. They used to be
+           held open until the run ended, and a written repo also pinned itself
+           (its paused writes are never promoted), so every section kept its
+           repos' data layers: the repo data-layer pool ran out after about 300
+           cases. */
+        Base::TUuid spov = NewFastSharedPov(server, std::optional<Base::TUuid>(), std::chrono::seconds(0));
+        TTestPovDiscard discard_spov{this, server, spov};
         PausePov(server, spov);
         SeedTestPovSequence(server, spov, std::optional<Base::TUuid>());
         if (test->WithBlock) {
@@ -785,7 +794,10 @@ bool TSession::RunTestBlock(TServer *server,
        the parent's writes (with-block + enclosing case) by read fallthrough,
        its own writes stay isolated from sibling cases (paused => not promoted
        up), and its SubCases run against it so they read-your-writes. */
-    Base::TUuid case_pov = NewFastSharedPov(server, parent_pov_id, std::chrono::seconds(1000));
+    Base::TUuid case_pov = NewFastSharedPov(server, parent_pov_id, std::chrono::seconds(0));
+    /* Discarded once this case and its SubCases are done, on every path out
+       of this iteration (#683; see RunTestSuite). */
+    TTestPovDiscard discard_case_pov{this, server, case_pov};
     PausePov(server, case_pov);
     SeedTestPovSequence(server, case_pov, parent_pov_id);
 
@@ -847,6 +859,27 @@ void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
   if (find(Povs.begin(), Povs.end(), pov) == Povs.end()) {
     Povs.push_back(pov);
   }
+}
+
+void TSession::DiscardTestPov(TServer *server, const Base::TUuid &pov_id) noexcept {
+  assert(server);
+  Durable::TPtr<TPov> discarded;
+  /* extra */ {
+    std::lock_guard<std::mutex> lock(PovMutex);
+    auto iter = find_if(Povs.begin(), Povs.end(),
+        [&pov_id](const Durable::TPtr<TPov> &pov) { return pov->GetId() == pov_id; });
+    if (iter == Povs.end()) {
+      return;
+    }
+    discarded = std::move(*iter);
+    Povs.erase(iter);
+  }
+  try {
+    discarded->GetRepo(server)->ReleaseDirtyPin();
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "Error in Session::DiscardTestPov : [%s]", ex.what());
+  }
+  /* 'discarded' closes the pov here, outside PovMutex, and with it the repo. */
 }
 
 void TSession::Write(Io::TBinaryOutputStream &strm) const {

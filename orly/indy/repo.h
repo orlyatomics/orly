@@ -177,6 +177,13 @@ namespace Orly {
          (entries at or below this may be dropped on the next mem/disk merge). */
       inline void SetReleasedUpTo(TSequenceNumber released_up_to);
 
+      /* Drop the self-pin (MakeDirty) that a write takes until its update is released.  For a
+         paused repo whose writes will never be promoted -- a compile-time test pov being thrown
+         away (#683) -- nothing else ever drops it, so the repo, its layers and its mappings
+         outlive the pov.  The caller must hold its own pointer to the repo, which then closes
+         when that pointer goes; with a zero ttl that destroys it, unmerged writes and all. */
+      void ReleaseDirtyPin();
+
       /* Reserve `num` consecutive sequence numbers in one shot and return the
          first; the bulk counterpart of AppendUpdate's per-update bookkeeping. */
       inline TSequenceNumber UseSequenceNumbers(size_t num);
