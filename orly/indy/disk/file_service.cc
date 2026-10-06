@@ -320,6 +320,16 @@ TFileService::TFileService(Base::TScheduler *scheduler,
 }
 
 TFileService::~TFileService() {
+  ShutDown();
+}
+
+void TFileService::ShutDown() {
+  /* The handle is cleared below once the host is cancelled or joined, so a second call (the
+     destructor after TServer::Shutdown()) touches neither the scheduler, which may be gone by
+     then, nor the exited latch, which was pushed only once (#648). */
+  if (!SchedulerHostHandle) {
+    return;
+  }
   ShuttingDown = true;
   RunSem.Push();
   BGScheduler.ShutDown();
@@ -328,9 +338,10 @@ TFileService::~TFileService() {
      race a loop still on its way out (#463) -- while a host that never
      got a worker can neither be waited for nor be allowed to start late
      against the dying members (#462). */
-  if (SchedulerHostHandle && !Scheduler->Cancel(SchedulerHostHandle)) {
+  if (!Scheduler->Cancel(SchedulerHostHandle)) {
     SchedulerExitedSem.Pop();
   }
+  SchedulerHostHandle = nullptr;
 }
 
 void TFileService::InsertFile(const Base::TUuid &file_uid,
