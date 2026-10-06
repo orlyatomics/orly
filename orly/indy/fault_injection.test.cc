@@ -1234,11 +1234,6 @@ static const vector<TExpectedFailure> ExpectedFailures{
      an acknowledged file. */
   {"DurableSaveMerge", "Power", "reopen", 619},
   {"DurableSaveMerge", "PowerTorn", "reopen", 619},
-  /* #620: reload drops leftover merge inputs without freeing their blocks. */
-  {"MergeDisk", "Power", "leak", 620},
-  {"MergeDisk", "PowerTorn", "leak", 620},
-  {"MergeDiskFold", "Power", "leak", 620},
-  {"MergeDiskFold", "PowerTorn", "leak", 620},
   /* #621: an fsync error kills the file service runner; every later file-map change hangs. */
   {"MergeMem", "Sync", "hang", 621},
   {"MergeDisk", "Sync", "hang", 621},

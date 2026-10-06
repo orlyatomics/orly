@@ -1529,6 +1529,32 @@ size_t TSafeRepo::AddSyncedFileToRepo(size_t starting_block_id,
   return gen_id;
 }
 
+/* The blocks a data file occupies, from its meta blocks. */
+static void ReadFileBlocks(Disk::Util::TEngine *engine, const Base::TUuid &repo_id, size_t gen_id, Orly::Indy::Util::TBlockVec &block_vec) {
+  TReader reader(engine, repo_id, Low, gen_id);
+  try {
+    TReader::TInStream in_stream(HERE, Source::FileRemoval, Low, &reader, engine->GetPageCache(), (reader.GetStartingBlockOffset() * Disk::Util::LogicalBlockSize) + (TData::NumMetaFields * sizeof(size_t)));
+    size_t block_id;
+    for (size_t i = 0; i < reader.GetNumMetaBlocks(); ++i) {
+      in_stream.Read(block_id);
+      block_vec.PushBack(block_id);
+    }
+    size_t num_contig_blocks;
+    for (size_t i = 0; i < reader.GetNumSequentialBlockPairings(); ++i) {
+      in_stream.Read(block_id);
+      in_stream.Read(num_contig_blocks);
+      block_vec.PushBack(std::make_pair(block_id, num_contig_blocks));
+    }
+    assert(block_vec.Size() == reader.GetNumBlocks());
+  } catch (const std::exception &ex) {
+    stringstream ss;
+    ss << repo_id;
+    syslog(LOG_ERR, "ReadFileBlocks [%s][%ld] caught error [%s] with NumBlocks=[%ld], NumMetaBlocks=[%ld], NumSequentialBlocks=[%ld], BlockVec.Size=[%ld], StartingBlockOffset=[%ld]",
+           ss.str().c_str(), gen_id, ex.what(), reader.GetNumBlocks(), reader.GetNumMetaBlocks(), reader.GetNumSequentialBlockPairings(), block_vec.Size(), reader.GetStartingBlockOffset());
+    throw;
+  }
+}
+
 TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
                                           const Base::TUuid &repo_id,
                                           const TDeadline &deadline) {
@@ -1569,11 +1595,36 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
     highest = !highest ? file.HighestSeq : std::max(*highest, file.HighestSeq);
     next_update = std::max(next_update, *highest + 1UL);
   }
+  /* Remove the leftovers and free their blocks, as TSafeRepo::RemoveFile does (#620). The
+     engine's startup walk of the file map marked their blocks used, so dropping the entries
+     alone would hold those blocks until the next restart.
+
+     Read each file's block list while its entry is still in the file map, and free the blocks
+     only once the removal is durable: a block freed before then could be reused by a new file
+     while a crash still left the old entry pointing at it. No other entry references these
+     blocks: the startup walk refuses to mark a block used twice
+     (TVolume::TStrategy::MarkBlockRangeUsed), and since then only free blocks have been
+     allocated. A file whose block list can't be read is removed without freeing, as before. */
+  std::vector<std::pair<size_t, size_t>> ranges_to_free;
+  for (size_t gen_id : gen_id_vec_to_remove) {
+    try {
+      Util::TBlockVec block_vec;
+      ReadFileBlocks(manager->GetEngine(), repo_id, gen_id, block_vec);
+      for (const auto &iter : block_vec.GetSeqBlockMap()) {
+        ranges_to_free.push_back(iter.second);
+      }
+    } catch (const std::exception &ex) {
+      syslog(LOG_ERR, "ReConstructFromDisk: removing leftover file [%ld] without freeing its blocks, which could not be read: [%s]", gen_id, ex.what());
+    }
+  }
   TCompletionTrigger trigger;
   for (size_t gen_id : gen_id_vec_to_remove) {
     manager->GetEngine()->RemoveFile(repo_id, gen_id, trigger);
   }
   trigger.Wait();
+  for (const auto &range : ranges_to_free) {
+    manager->GetEngine()->FreeSeqBlocks(range.first, range.second);
+  }
   /* 'deadline' is an absolute time point; convert it to the relative ttl TSafeRepo expects
      rather than reinterpreting its raw epoch tick count as a ttl (which produced an
      effectively-infinite ttl for any real deadline). */
@@ -1672,30 +1723,7 @@ void TSafeRepo::ClearLocalFileCaches(size_t gen_id) {
 
 void TSafeRepo::RemoveFile(size_t gen_id, bool caches_cleared) {
   Util::TBlockVec block_vec;
-  /* reader life span */ {
-    TReader reader(Manager->GetEngine(), GetId(), Low, gen_id);
-    try {
-      TReader::TInStream in_stream(HERE, Source::FileRemoval, Low, &reader, Manager->GetEngine()->GetPageCache(), (reader.GetStartingBlockOffset() * Disk::Util::LogicalBlockSize) + (TData::NumMetaFields * sizeof(size_t)));
-      size_t block_id;
-      for (size_t i = 0; i < reader.GetNumMetaBlocks(); ++i) {
-        in_stream.Read(block_id);
-        block_vec.PushBack(block_id);
-      }
-      size_t num_contig_blocks;
-      for (size_t i = 0; i < reader.GetNumSequentialBlockPairings(); ++i) {
-        in_stream.Read(block_id);
-        in_stream.Read(num_contig_blocks);
-        block_vec.PushBack(std::make_pair(block_id, num_contig_blocks));
-      }
-      assert(block_vec.Size() == reader.GetNumBlocks());
-    } catch (const std::exception &ex) {
-      stringstream ss;
-      ss << GetId();
-      syslog(LOG_ERR, "RemoveFile [%s][%ld] caught error [%s] with NumBlocks=[%ld], NumMetaBlocks=[%ld], NumSequentialBlocks=[%ld], BlockVec.Size=[%ld], StartingBlockOffset=[%ld]",
-             ss.str().c_str(), gen_id, ex.what(), reader.GetNumBlocks(), reader.GetNumMetaBlocks(), reader.GetNumSequentialBlockPairings(), block_vec.Size(), reader.GetStartingBlockOffset());
-      throw;
-    }
-  }
+  ReadFileBlocks(Manager->GetEngine(), GetId(), gen_id, block_vec);
   /* Now we can go to each scheduler and remove anything they have cached about this file... */
   if (!caches_cleared) {
     Manager->ForEachScheduler([this, gen_id](Fiber::TRunner *runner) {
