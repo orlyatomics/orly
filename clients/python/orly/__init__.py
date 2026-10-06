@@ -200,10 +200,10 @@ class Client:
         return self.send(f"try {{{pov}}} [{', '.join(parts)}];")
 
     def pause(self, pov):
-        return self.send(f"pause pov {lit(pov)};")
+        return self.send(f"pause {{{pov}}};")
 
     def unpause(self, pov):
-        return self.send(f"unpause pov {lit(pov)};")
+        return self.send(f"unpause {{{pov}}};")
 
     # -- teardown -------------------------------------------------------
     def exit(self):
