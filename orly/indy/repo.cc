@@ -202,6 +202,12 @@ void TRepo::ReleaseUpdate(TSequenceNumber seq_num, bool ensure_or_discard) {
     assert(seq_num == ReleasedUpTo + 1L || ensure_or_discard);
     if (!ensure_or_discard || seq_num == ReleasedUpTo + 1L) {
       ReleasedUpTo = seq_num;
+      /* This repo's memory merge can now drop its copies up to here (#607). Queue it:
+         otherwise only this repo's next write queued it, and a merge that ran before this
+         release had left them in place. A repo whose backlog Tetris drained kept the released
+         copies in the update pools until a write that memory admission might refuse until
+         they were freed. Queuing an already queued repo does nothing. */
+      EnqueueMergeMem();
     }
     if ((HighestSeqNum && seq_num == *HighestSeqNum) || (!HighestSeqNum && seq_num == NextUpdate - 1)) {
       if (!IsSafeRepo()) {
@@ -417,12 +423,6 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
     std::lock_guard<std::mutex> lock(DataLock);
     popped_seq = LowestSeqNum;
     next_update = NextUpdate;
-    /* The popped update now lives in the parent, so this repo's memory merge can drop its copy.
-       Queue that merge (#607): otherwise only this repo's next write queued it, and a repo whose
-       backlog Tetris drained after its last merge kept the released copies in the update pools
-       until that write. With memory admission the write may be refused until they are freed,
-       so they never were. Queuing an already queued repo does nothing. */
-    EnqueueMergeMem();
     if (*LowestSeqNum < *HighestSeqNum) {
       ++(*LowestSeqNum);
     } else {
