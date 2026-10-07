@@ -116,6 +116,12 @@ namespace Orly {
               db_keys_member->Accept(visitor);
               return true;
             });
+        /* The keyset-paging bound (#735). */
+        if (auto after = dynamic_cast<const Package::Syntax::TAfterDbKeysBound *>(that->GetOptDbKeysBound())) {
+          Push(after->GetExpr());
+        } else if (auto from = dynamic_cast<const Package::Syntax::TFromDbKeysBound *>(that->GetOptDbKeysBound())) {
+          Push(from->GetExpr());
+        }
       }
       virtual void operator()(const Package::Syntax::TDictCtor *that) const {
         ForEach<Package::Syntax::TDictMember>(that->GetDictMemberList(),

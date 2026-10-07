@@ -188,6 +188,19 @@ def lit(value):
     raise TypeError(f"cannot encode {type(value).__name__} as an orlyscript literal: {value!r}")
 
 
+def _integral_floats_to_ints(value):
+    """``value`` with every integral float in it (in lists and dicts too) made an
+    int: the engine sends integers as floats, and an ``int`` cursor sent back as
+    ``1.0`` would be a ``real`` (#735)."""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, list):
+        return [_integral_floats_to_ints(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _integral_floats_to_ints(v) for k, v in value.items()}
+    return value
+
+
 class Client:
     """A connection to a running ``orlyi`` (one WebSocket, one session)."""
 
@@ -399,6 +412,44 @@ class Client:
             raise ValueError("call_many requires at least one call")
         parts = [f"{package} {method} {lit(dict(args or {}))}" for package, method, args in calls]
         return self.send(f"try {{{pov}}} [{', '.join(parts)}];")
+
+    def pages(self, pov, package, method, args, cursor="last", page_size=None,
+              to_cursor=None):
+        """Keyset paging (#735): call a paging method page after page, yielding
+        each page's rows (a list).
+
+        The method takes its arguments plus a cursor (the argument named by
+        ``cursor``, default ``"last"``) and returns
+        ``<{.rows: [...], .last: ...}>``: a page of rows and the cursor to pass
+        for the page after it -- typically the last row's key, which the method
+        gives to ``keys (T) @ <[...]> after <[...]>``. ``args`` carries the first
+        page's cursor. The server keeps no state between pages; each page reads
+        the data as it is when that call runs. Iteration stops at the first
+        empty page or, given ``page_size``, at the first page shorter than it.
+
+        Integers come back from the server as floats, so before the returned
+        cursor is sent back, ``to_cursor`` (default: every integral float in it,
+        however nested, becomes an int) turns it into the value to encode. A
+        cursor holding ``real`` members that may be integral needs its own
+        ``to_cursor``, such as one wrapping them in :class:`Lit` with ``.0``.
+        """
+        if cursor not in args:
+            raise TypeError(f"orly: pages needs the first page's cursor as args[{cursor!r}]")
+        convert = _integral_floats_to_ints if to_cursor is None else to_cursor
+        nxt = dict(args)
+        while True:
+            page = self.call(pov, package, method, nxt)
+            if not isinstance(page, dict) or not isinstance(page.get("rows"), list) or cursor not in page:
+                raise TypeError(f"orly: {package} {method} must return "
+                                f"<{{.rows: [...], .{cursor}: ...}}> to be paged")
+            rows = page["rows"]
+            if not rows:
+                return
+            yield rows
+            if page_size is not None and len(rows) < page_size:
+                return
+            nxt = dict(nxt)
+            nxt[cursor] = convert(page[cursor])
 
     def pause(self, pov):
         return self.send(f"pause {{{pov}}};")

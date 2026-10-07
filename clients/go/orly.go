@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -574,6 +575,122 @@ func (c *Client) CallMany(pov string, calls []Call) (json.RawMessage, error) {
 		parts = append(parts, fmt.Sprintf("%s %s %s", call.Pkg, call.Method, r))
 	}
 	return c.Send(fmt.Sprintf("try {%s} [%s];", pov, strings.Join(parts, ", ")))
+}
+
+// ErrStopPages, returned by a Pages callback, stops paging; Pages then
+// returns nil.
+var ErrStopPages = errors.New("orly: stop paging")
+
+// PageOptions tunes Pages. The zero value pages with the cursor argument
+// "last" until the first empty page.
+type PageOptions struct {
+	// Cursor names the argument the method takes the cursor in, and the
+	// field of its result that holds the next one. Default "last".
+	Cursor string
+	// PageSize, when positive, also stops paging after the first page with
+	// fewer rows than this.
+	PageSize int
+	// ToCursor turns the returned cursor (decoded from JSON with UseNumber)
+	// into the value Lit encodes for the next call. Default: every integral
+	// number, however nested, becomes an int64 and every other number a
+	// float64. A cursor holding real members that may be integral needs its
+	// own, such as one returning Raw("3.0").
+	ToCursor func(json.RawMessage) (any, error)
+}
+
+// Pages is keyset paging (#735): it calls pkg method on pov page after page
+// and hands each page's rows to fn. The method takes args plus a cursor (the
+// argument named by opts.Cursor) and returns <{.rows: [...], .last: ...}>: a
+// page of rows and the cursor to pass for the page after it -- typically the
+// last row's key, which the method gives to `keys (T) @ <[...]> after <[...]>`.
+// args carries the first page's cursor. The server keeps no state between
+// pages; each page reads the data as it is when that call runs. Paging stops
+// at the first empty page, at a page shorter than opts.PageSize, or when fn
+// returns an error (ErrStopPages stops without one).
+func (c *Client) Pages(pov, pkg, method string, args map[string]any, opts PageOptions,
+	fn func(rows []json.RawMessage) error) error {
+	cursor := opts.Cursor
+	if cursor == "" {
+		cursor = "last"
+	}
+	if _, ok := args[cursor]; !ok {
+		return fmt.Errorf("orly: Pages needs the first page's cursor as args[%q]", cursor)
+	}
+	toCursor := opts.ToCursor
+	if toCursor == nil {
+		toCursor = integralNumbersToInts
+	}
+	next := make(map[string]any, len(args))
+	for k, v := range args {
+		next[k] = v
+	}
+	for {
+		raw, err := c.Call(pov, pkg, method, next)
+		if err != nil {
+			return err
+		}
+		var page map[string]json.RawMessage
+		var rows []json.RawMessage
+		if json.Unmarshal(raw, &page) != nil || page["rows"] == nil || page[cursor] == nil ||
+			json.Unmarshal(page["rows"], &rows) != nil {
+			return fmt.Errorf("orly: %s %s must return <{.rows: [...], .%s: ...}> to be paged, got %s",
+				pkg, method, cursor, raw)
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		if err := fn(rows); err != nil {
+			if errors.Is(err, ErrStopPages) {
+				return nil
+			}
+			return err
+		}
+		if opts.PageSize > 0 && len(rows) < opts.PageSize {
+			return nil
+		}
+		if next[cursor], err = toCursor(page[cursor]); err != nil {
+			return err
+		}
+	}
+}
+
+// integralNumbersToInts decodes raw with every integral number in it made an
+// int64: the engine sends integers as JSON floats (1.0), and an int cursor
+// sent back as a float would not be an int (#735).
+func integralNumbersToInts(raw json.RawMessage) (any, error) {
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	return numbersToLitValues(v), nil
+}
+
+func numbersToLitValues(v any) any {
+	switch x := v.(type) {
+	case json.Number:
+		if i, err := x.Int64(); err == nil {
+			return i
+		}
+		f, err := x.Float64()
+		if err == nil && f == math.Trunc(f) && math.Abs(f) < 1<<63 {
+			return int64(f)
+		}
+		return f
+	case []any:
+		for i := range x {
+			x[i] = numbersToLitValues(x[i])
+		}
+		return x
+	case map[string]any:
+		for k := range x {
+			x[k] = numbersToLitValues(x[k])
+		}
+		return x
+	default:
+		return v
+	}
 }
 
 // Exit ends the session.

@@ -163,6 +163,9 @@ void Orly::Expr::ForEachExpr(const TExpr::TPtr &root, const TCb &cb, bool includ
       for (auto &member : that->GetMembers()) {
         Yield(member.second);
       }
+      if (that->GetBound()) {
+        Yield(that->GetBound());
+      }
     }
     virtual void operator()(const TKnown *that) const {
       Unary(that);

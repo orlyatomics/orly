@@ -5,7 +5,7 @@
     [
       "Synth + Symbols",
       "Errors in: unsorted/multiple_sequences.orly",
-      "19:4-19:5 syntax error, unexpected Colon, expecting IsKwd or Eq or InKwd",
+      "19:4-19:5 syntax error, unexpected Colon, expecting IsKwd or InKwd or Eq",
       "22:1-22:2 syntax error, unexpected CloseBrace, expecting end of file",
       "26:1-26:2 syntax error, unexpected CloseBrace, expecting end of file",
       "30:1-30:2 syntax error, unexpected CloseBrace, expecting end of file",

@@ -1,0 +1,75 @@
+/* <clients/smoke/keyset_paging.orly>
+
+   Package for the keyset-paging smoke (#735): one group's edges, paged two
+   ways. `page` seeks to the last key of the previous page with
+   `keys ... after`, so every page costs the rows it returns; `page_skip`
+   walks and discards every row before the page with `skip`, so page k costs
+   k pages.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* Store edge `e` of group `g`, weighing `w`. */
+put = ((true) effecting {
+  new <['edge', g, e]> <- w;
+}) where {
+  g = given::(int);
+  e = given::(int);
+  w = given::(int);
+};
+
+/* Delete edge `e` of group `g`. */
+remove = ((true) effecting {
+  delete (int) @ <['edge', g, e]>;
+}) where {
+  g = given::(int);
+  e = given::(int);
+};
+
+/* One row of a page: the edge and its weight. */
+row = (<{.e: k.2, .w: *k::(int)}>) where {
+  k = given::(<[str, int, int]>);
+};
+
+/* The page of at most `n` edges of group `g` that come after edge `last`,
+   and the `last` to pass for the next page (`last` itself when the page is
+   empty). Start with a `last` below every edge, such as -1. */
+page = (<{.rows: rows, .last: (rows[length_of rows - 1].e if length_of rows > 0 else last)}>) where {
+  g = given::(int);
+  last = given::(int);
+  n = given::(int);
+  rows = row(.k: keys (int) @ <['edge', g, free::(int)]> after <['edge', g, last]> take n) as [<{.e: int, .w: int}>];
+};
+
+/* The same page found the old way: skip the first `s` edges. */
+page_skip = (row(.k: keys (int) @ <['edge', g, free::(int)]> skip s take n) as [<{.e: int, .w: int}>]) where {
+  g = given::(int);
+  s = given::(int);
+  n = given::(int);
+};
+
+test {
+  t0: put(.g: 1, .e: 10, .w: 100) {
+    t1: put(.g: 1, .e: 20, .w: 200) {
+      t2: put(.g: 2, .e: 5, .w: 50) {
+        first: page(.g: 1, .last: -1, .n: 1) == <{.rows: [<{.e: 10, .w: 100}>], .last: 10}>;
+        second: page(.g: 1, .last: 10, .n: 1) == <{.rows: [<{.e: 20, .w: 200}>], .last: 20}>;
+        done: page(.g: 1, .last: 20, .n: 1) == <{.rows: empty [<{.e: int, .w: int}>], .last: 20}>;
+        skipped: page_skip(.g: 1, .s: 1, .n: 1) == [<{.e: 20, .w: 200}>];
+      };
+    };
+  };
+};

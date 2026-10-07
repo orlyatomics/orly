@@ -133,6 +133,27 @@ TDbKeysExpr::TDbKeysExpr(const TExprFactory *expr_factory, const Package::Syntax
     if (!is_valid) {
       GetContext().AddError(GetPosRange(DbKeysExpr), "all free expressions must appear to the right of fixed expressions");
     }
+    class TBoundVisitor
+        : public Package::Syntax::TOptDbKeysBound::TVisitor {
+      NO_COPY(TBoundVisitor);
+      public:
+      TBoundVisitor(const TExprFactory *expr_factory, TExpr *&bound, bool &is_inclusive)
+          : ExprFactory(expr_factory), Bound(bound), IsInclusive(is_inclusive) {}
+      virtual void operator()(const Package::Syntax::TNoDbKeysBound *) const {}
+      virtual void operator()(const Package::Syntax::TAfterDbKeysBound *that) const {
+        Bound = ExprFactory->NewExpr(that->GetExpr());
+        IsInclusive = false;
+      }
+      virtual void operator()(const Package::Syntax::TFromDbKeysBound *that) const {
+        Bound = ExprFactory->NewExpr(that->GetExpr());
+        IsInclusive = true;
+      }
+      private:
+      const TExprFactory *ExprFactory;
+      TExpr *&Bound;
+      bool &IsInclusive;
+    };  // TBoundVisitor
+    DbKeysExpr->GetOptDbKeysBound()->Accept(TBoundVisitor(expr_factory, Bound, BoundIsInclusive));
   } catch (...) {
     Cleanup();
     throw;
@@ -148,13 +169,16 @@ Expr::TExpr::TPtr TDbKeysExpr::Build() const {
   for (auto &member : Members) {
     members.emplace_back(std::make_pair(member->GetAddrDir(), member->Build()));
   }
-  return Expr::TKeys::New(members, ValueType->GetSymbolicType(), GetPosRange(DbKeysExpr));
+  return Expr::TKeys::New(
+      members, ValueType->GetSymbolicType(), GetPosRange(DbKeysExpr), Bound ? Bound->Build() : nullptr, BoundIsInclusive);
 }
 
 void TDbKeysExpr::Cleanup() {
   for (auto member: Members) {
     delete member;
   }
+  delete Bound;
+  Bound = nullptr;
 }
 
 void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
@@ -162,12 +186,18 @@ void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
   for (auto member : Members) {
     member->ForEachInnerScope(cb);
   }
+  if (Bound) {
+    Bound->ForEachInnerScope(cb);
+  }
 }
 
 void TDbKeysExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
   assert(cb);
   for (auto member : Members) {
     member->ForEachRef(cb);
+  }
+  if (Bound) {
+    Bound->ForEachRef(cb);
   }
   ValueType->ForEachRef(cb);
 }

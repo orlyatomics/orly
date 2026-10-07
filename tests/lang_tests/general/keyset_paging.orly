@@ -1,0 +1,122 @@
+/* <orly/lang_tests/general/keyset_paging.orly>
+
+   Keyset paging (#735): `keys (T) @ <[pattern]> after <[key]>` walks the
+   pattern's keys that come after `key` in index order, and `from <[key]>`
+   includes `key` itself. The walk seeks to the bound, so a page costs the
+   rows it returns. Covers exclusive and inclusive bounds, a bound that is
+   not a stored key, empty pages, the end of the range, bounds outside the
+   pattern's range, a descending key member, composition with `take`, `if`,
+   `reverse_of` and `sorted_by`, a bound passed in as an argument, and rows
+   written between two pages on either side of the boundary.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+/* Group 1 holds 10, 20, 30, 40, 50. Groups 0 and 2 sit on either side of
+   it in the index, so a walk that leaks out of group 1 shows up. */
+write = (true) effecting {
+  new <['e', 0, 5]> <- 5;
+  new <['e', 0, 60]> <- 60;
+  new <['e', 1, 10]> <- 10;
+  new <['e', 1, 20]> <- 20;
+  new <['e', 1, 30]> <- 30;
+  new <['e', 1, 40]> <- 40;
+  new <['e', 1, 50]> <- 50;
+  new <['e', 2, 1]> <- 1;
+  new <['e', 2, 15]> <- 15;
+  new <['d', desc 1]> <- 1;
+  new <['d', desc 2]> <- 2;
+  new <['d', desc 3]> <- 3;
+  new <['d', desc 4]> <- 4;
+  new <['d', desc 5]> <- 5;
+};
+
+/* A paging method: the rows after `last`, at most `n` of them. The caller
+   passes the last key of the previous page back as `last`. */
+page = (*(keys (int) @ <['e', g, free::(int)]> after last take n)::(int) as [int]) where {
+  g = given::(int);
+  last = given::(<[str, int, int]>);
+  n = given::(int);
+};
+
+/* The keys themselves, so a caller can find the next bound. */
+page_keys = ((keys (int) @ <['e', 1, free::(int)]> after last take 2) as [<[str, int, int]>]) where {
+  last = given::(<[str, int, int]>);
+};
+
+/* Rows written between two pages: 15 lands before the boundary key 20,
+   35 after it. */
+insert_around = (true) effecting {
+  new <['e', 1, 15]> <- 15;
+  new <['e', 1, 35]> <- 35;
+};
+
+test {
+  t0: write {
+    /* Unbounded walk, for reference. */
+    all: *(keys (int) @ <['e', 1, free::(int)]>)::(int) as [int] == [10, 20, 30, 40, 50];
+
+    /* Exclusive and inclusive bounds on a stored key. */
+    after_stored: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 20]>)::(int) as [int] == [30, 40, 50];
+    from_stored: *(keys (int) @ <['e', 1, free::(int)]> from <['e', 1, 20]>)::(int) as [int] == [20, 30, 40, 50];
+
+    /* A bound between stored keys: `after` and `from` agree. */
+    after_gap: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 25]>)::(int) as [int] == [30, 40, 50];
+    from_gap: *(keys (int) @ <['e', 1, free::(int)]> from <['e', 1, 25]>)::(int) as [int] == [30, 40, 50];
+
+    /* Empty pages: after the last key, and past the end of the range. */
+    after_last: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 50]>)::(int) as [int] == empty [int];
+    past_end: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 999]>)::(int) as [int] == empty [int];
+    from_last: *(keys (int) @ <['e', 1, free::(int)]> from <['e', 1, 50]>)::(int) as [int] == [50];
+
+    /* A bound outside the pattern's range: below it leaves the whole range,
+       above it leaves nothing. Neither leaks keys of groups 0 or 2. */
+    below_range: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 0, 999]>)::(int) as [int] == [10, 20, 30, 40, 50];
+    above_range: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 2, 0]>)::(int) as [int] == empty [int];
+    other_prefix_below: *(keys (int) @ <['e', 1, free::(int)]> after <['a', 7, 7]>)::(int) as [int] == [10, 20, 30, 40, 50];
+    other_prefix_above: *(keys (int) @ <['e', 1, free::(int)]> after <['f', 0, 0]>)::(int) as [int] == empty [int];
+
+    /* Two free members. */
+    two_free: *(keys (int) @ <['e', free::(int), free::(int)]> after <['e', 1, 40]>)::(int) as [int] == [50, 1, 15];
+
+    /* A descending member: index order is 5, 4, 3, 2, 1, and `after`
+       follows index order, so paging runs downward. */
+    desc_all: *(keys (int) @ <['d', desc free::(int)]>)::(int) as [int] == [5, 4, 3, 2, 1];
+    desc_after: *(keys (int) @ <['d', desc free::(int)]> after <['d', desc 3]>)::(int) as [int] == [2, 1];
+    desc_from: *(keys (int) @ <['d', desc free::(int)]> from <['d', desc 3]>)::(int) as [int] == [3, 2, 1];
+
+    /* Composition. The bound binds tighter than `take`. */
+    with_take: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 10]> take 2)::(int) as [int] == [20, 30];
+    with_filter: *(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 10]> if that.2 % 20 == 0)::(int) as [int] == [20, 40];
+    with_reverse: reverse_of (*(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 20]>)::(int) as [int]) == [50, 40, 30];
+    with_sort: ((*(keys (int) @ <['e', 1, free::(int)]> after <['e', 1, 20]>)::(int) as [int]) sorted_by lhs > rhs) == [50, 40, 30];
+    bound_from_where: (*(keys (int) @ <['e', 1, free::(int)]> after b)::(int) as [int] == [40, 50]) where {
+      b = <['e', 1, 30]>;
+    };
+
+    /* A paging method, page by page. */
+    page_1: page(.g: 1, .last: <['e', 1, 0]>, .n: 2) == [10, 20];
+    page_2: page(.g: 1, .last: <['e', 1, 20]>, .n: 2) == [30, 40];
+    page_3: page(.g: 1, .last: <['e', 1, 40]>, .n: 2) == [50];
+    page_4: page(.g: 1, .last: <['e', 1, 50]>, .n: 2) == empty [int];
+    page_keys_1: page_keys(.last: <['e', 1, 0]>) == [<['e', 1, 10]>, <['e', 1, 20]>];
+
+    /* Rows written between page 1 (ending at 20) and page 2: the row before
+       the boundary is not seen by page 2, the row after it is. */
+    t1: insert_around {
+      page_2_after_writes: page(.g: 1, .last: <['e', 1, 20]>, .n: 2) == [30, 35];
+      page_1_again: page(.g: 1, .last: <['e', 1, 0]>, .n: 2) == [10, 15];
+    };
+  };
+};

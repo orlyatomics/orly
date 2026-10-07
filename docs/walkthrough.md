@@ -59,6 +59,60 @@ compatible update; a deletion cannot combine with an insertion and reports
 “Conflicting updates.” Assignment is a single replacement update, not a
 commutative merge like `+=` or `|=`.
 
+### Paging through keys
+
+`keys (T) @ <[pattern]>` walks every stored key that matches the pattern, in
+index order. To read it a page at a time, start each page after the last key
+of the previous one (keyset paging, #735):
+
+```orly
+/* The page of at most `n` edges of group `g` after edge `last`, and the
+   `last` to pass for the next page. Start with a `last` below every edge. */
+page = (<{.rows: rows, .last: (rows[length_of rows - 1].e if length_of rows > 0 else last)}>) where {
+  g = given::(int);
+  last = given::(int);
+  n = given::(int);
+  rows = row(.k: keys (int) @ <['edge', g, free::(int)]> after <['edge', g, last]> take n) as [<{.e: int, .w: int}>];
+};
+row = (<{.e: k.2, .w: *k::(int)}>) where {
+  k = given::(<[str, int, int]>);
+};
+```
+
+- `after <[key]>` starts the walk just past `key`; `from <[key]>` starts at it.
+  The bound need not be a stored key, and one outside the pattern's range gives
+  the whole range or nothing, never keys the pattern doesn't match.
+- The bound is a whole key with the pattern's shape: the same member types,
+  `desc` members included. Any other type is a compile error that names both.
+- The walk seeks to the bound, so a page costs the rows it reads wherever it
+  starts. `skip s take n` costs `s + n`: it reads and throws away every row
+  before the page, and a deep enough page is refused by the per-read budget
+  (`read_too_large`) where the keyset page answers.
+- The bound binds tighter than the operators after it, so
+  `keys ... after b take n`, `... if <pred>`, `reverse_of`, `sorted_by` and the
+  rest apply to the bounded walk.
+- Paging follows index order. To page downward, store that key member `desc`
+  (`<['edge', g, desc e]>`) and walk `desc free::(int)`. `reverse_of` reverses a
+  page after it is read; it doesn't page from the end.
+- `after` is a reserved word from this release on.
+
+The server keeps no state between pages. A method returns its rows and the
+cursor, and the caller passes the cursor back. The TypeScript, Python and Go
+clients have a helper that does this: `pages` in TypeScript (an async
+iterator) and Python (a generator), and `Pages` in Go (a callback).
+
+Each page reads the data as it is when that page runs. A row written or
+deleted before the boundary (the cursor) is not seen by later pages, and one
+after it is. A private POV that reads but doesn't write is no snapshot either:
+each page sees its parent POV exactly as the parent sees itself at that
+moment, including the parent's writes made after the first page and not yet
+promoted, and other POVs' writes once Tetris has promoted them to an ancestor
+(checked by `clients/smoke/run-keyset-paging.sh`). One exception, which is a
+bug: a POV's delete of a key that an ancestor holds isn't seen, by the POV or
+its children, until the delete is promoted
+([#791](https://github.com/orlyatomics/orly/issues/791)). For a fixed view,
+read every page in one call, or keep a version in the key and page over that.
+
 ## Compile to a `.so`
 
 `orlyc` produces a `.cc` then shells out to `g++` to build it into a shared library. Use the `--debug` flag during a first try — release-mode optimisations can mask things and aren't faster end-to-end on a single small package.

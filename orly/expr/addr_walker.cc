@@ -185,6 +185,9 @@ class expr_visitor_t
     for (auto &member : that->GetMembers()) {
       Yield(member.second);
     }
+    if (that->GetBound()) {
+      Yield(that->GetBound());
+    }
   }
   virtual void operator()(const TList *that) const {
     for(auto &it: that->GetExprs()) {
@@ -408,6 +411,9 @@ class expr_visitor_t
       Addrs.insert(make_pair(that->GetAddrType(), that->GetValueType()));
       for (auto &member : that->GetMembers()) {
         Yield(member.second);
+      }
+      if (that->GetBound()) {
+        Yield(that->GetBound());
       }
     }
     virtual void operator()(const TList *that) const {

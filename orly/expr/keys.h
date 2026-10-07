@@ -1,8 +1,10 @@
 /* <orly/expr/keys.h>
 
    `TKeys` -- the `keys <[pattern]>` IR node that walks the index
-   for matching keys. Carries the address-shaped key pattern and
-   the dereferenced value type. Lowered to `CodeGen::TKeys`.
+   for matching keys. Carries the address-shaped key pattern, the
+   dereferenced value type and, for keyset paging (#735), an optional
+   bound: `after <[..]>` starts the walk just past a key, `from <[..]>`
+   at it. Lowered to `CodeGen::TKeys`.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -39,7 +41,10 @@ namespace Orly {
 
       typedef std::shared_ptr<TKeys> TPtr;
 
-      static TPtr New(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range);
+      static TPtr New(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range,
+                      const TExpr::TPtr &bound = nullptr, bool bound_is_inclusive = false);
+
+      virtual ~TKeys();
 
       virtual void Accept(const TVisitor &visitor) const;
 
@@ -59,10 +64,26 @@ namespace Orly {
         return ValueType;
       }
 
+      /* The keyset-paging bound (#735), or null for an unbounded walk. Its
+         type is the pattern's address type (checked in GetTypeImpl). */
+      const TExpr::TPtr &GetBound() const {
+        return Bound;
+      }
+
+      /* True for `from` (the bound key itself is included), false for `after`. */
+      bool GetBoundIsInclusive() const {
+        return BoundIsInclusive;
+      }
+
       private:
       Type::TType ValueType;
 
-      TKeys(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range);
+      TExpr::TPtr Bound;
+
+      bool BoundIsInclusive;
+
+      TKeys(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range,
+            const TExpr::TPtr &bound, bool bound_is_inclusive);
 
     };  // TKeys
 
