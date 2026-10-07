@@ -10,6 +10,8 @@
  * Checks, in order:
  *   - writes are refused with "insufficient_memory", and every other write succeeds or is
  *     refused that way (no other error, and no write that hangs for STALL_S);
+ *   - with EXPECT_WAIT=1 (run-memory-full.sh sets it when admission is on), refusals come after
+ *     waiting for room (#765): a refused write's message says how long it waited;
  *   - writes keep going through: the run makes at least MIN_WRITES batches;
  *   - every read succeeds, none taking STALL_S;
  *   - after IDLE_SECS with no writes, a write is accepted (retrying refusals for up to 30 s),
@@ -26,6 +28,7 @@ const SECS = +(process.env.SECS ?? 30);
 const MIN_WRITES = +(process.env.MIN_WRITES ?? 100);
 const IDLE_SECS = +(process.env.IDLE_SECS ?? 5);
 const STALL_S = +(process.env.STALL_S ?? 20);
+const EXPECT_WAIT = process.env.EXPECT_WAIT === "1";
 
 const withTimeout = (p, secs, what) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} took over ${secs}s`)), secs * 1000))]);
@@ -40,7 +43,7 @@ await setup.install("sample", 1);
 const pov = await setup.newPov({ safe: true, shared: true });
 await setup.call(pov, "sample", "write_val", { n: 0, x: 0 });
 
-let writes = 0, refused = 0, stop = false, error = null, first_refusal = null;
+let writes = 0, refused = 0, waited_refusals = 0, stop = false, error = null, first_refusal = null;
 const writers = Array.from({ length: K }, async (_, w) => {
   const c = await connect(URL);
   await c.newSession();
@@ -52,6 +55,9 @@ const writers = Array.from({ length: K }, async (_, w) => {
       if (isRefusal(err)) {
         if (!refused++) {
           first_refusal = err.reply.result;
+        }
+        if (/it waited \d+ ms for room/.test(String(err.reply?.result ?? err.message))) {
+          ++waited_refusals;
         }
         await sleep(20);
         continue;
@@ -90,7 +96,7 @@ while (!stop && (Date.now() - t0) / 1000 < SECS) {
 }
 stop = true;
 await Promise.race([Promise.allSettled([...writers, reader]), sleep(STALL_S * 1000)]);
-console.log(`write phase ended: ${writes} batches of ${BATCH}, ${refused} refused; ${reads} reads, slowest ${slowest_read} ms`);
+console.log(`write phase ended: ${writes} batches of ${BATCH}, ${refused} refused (${waited_refusals} after waiting for room); ${reads} reads, slowest ${slowest_read} ms`);
 if (first_refusal) console.log(`first refusal: ${first_refusal}`);
 
 if (error) {
@@ -101,6 +107,11 @@ if (read_error) {
 }
 if (!refused) {
   fail(`no write was refused (${writes} batches in ${SECS}s); the smoke checked nothing`);
+}
+/* Not every refusal: one whose update ran out of pool while it was built (the merges may use
+   the reserve) is refused without having waited. */
+if (EXPECT_WAIT && !waited_refusals) {
+  fail(`none of the ${refused} refusals came after waiting for room (--admission_wait_ms)`);
 }
 if (writes < MIN_WRITES) {
   fail(`only ${writes} batches got through in ${SECS}s; writes stalled behind the refusals`);

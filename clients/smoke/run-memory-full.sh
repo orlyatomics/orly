@@ -23,6 +23,13 @@
 # requires it to FAIL, so a change that stops the smoke from noticing missing
 # admission (pools that never fill, say, or a refusal check that always
 # passes) breaks CI instead of passing quietly. The control fails in step 2.
+#
+# Since #765 a write that finds no room waits up to --admission_wait_ms for the
+# merges before it is refused. At the default (500 ms) the merges always freed
+# room in time here, so writers were paced and none was refused, and the smoke
+# checked nothing. It runs orlyi with ADMISSION_WAIT_MS (default 5 ms): writes
+# still wait, and step 2 requires refusals that came after a wait that ran
+# out, so it tests refusal at the end of the bounded wait.
 
 set -e
 
@@ -36,8 +43,9 @@ REPORT_PORT=19753
 UPDATE_POOL="${UPDATE_POOL:-5000}"
 ENTRY_POOL="${ENTRY_POOL:-10000}"
 ADMISSION="${ADMISSION:-on}"
+ADMISSION_WAIT_MS="${ADMISSION_WAIT_MS:-5}"
 case "$ADMISSION" in
-  on)  ADMISSION_FLAGS=() ;;
+  on)  ADMISSION_FLAGS=(--admission_wait_ms="$ADMISSION_WAIT_MS") ;;
   off) ADMISSION_FLAGS=(--memory_reserve_pct=0) ;;
   *)   echo "ADMISSION must be on or off, not \"$ADMISSION\""; exit 1 ;;
 esac
@@ -114,7 +122,8 @@ check_orlyi() {
 status=0
 echo "[2/4] K=8 writers of 200-write batches through refusals, with a reader; idle; then write and read (admission $ADMISSION)"
 start_orlyi
-ORLY_URL="ws://127.0.0.1:$WS_PORT/" node memory_full.mjs > "$WORK/smoke.out" 2>&1 || status=$?
+EXPECT_WAIT=$([ "$ADMISSION" = on ] && [ "$ADMISSION_WAIT_MS" != 0 ] && echo 1 || echo 0) \
+  ORLY_URL="ws://127.0.0.1:$WS_PORT/" node memory_full.mjs > "$WORK/smoke.out" 2>&1 || status=$?
 cat "$WORK/smoke.out"
 sleep 2
 for line in "^WRITE AFTER IDLE: accepted" "^NEW SESSION READ: ok" "^MEMORY FULL OK"; do
