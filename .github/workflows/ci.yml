@@ -397,8 +397,9 @@ jobs:
       # #628: 200-write batches on one POV with a 25% memory reserve. The
       # writer backlog cap counts entries, so at most 1% of the batches may be
       # refused (a refused batch is retried; a loaded runner refuses a few,
-      # #719), the merges and Tetris must never miss a pool block, and the
-      # Entry pool must stay under 60% full.
+      # #719), the merges and Tetris must never miss a pool block, the
+      # Entry pool must stay under 60% full, and the POV's backlog must never
+      # pass its cap (#721: the cap used to be checked after commit).
       - name: Batched writes stay within their backlog cap
         run: bash clients/smoke/run-batch-backlog.sh
 
