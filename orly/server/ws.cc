@@ -227,17 +227,25 @@ namespace {
           }
           /* Drop the work's captures (the session pin, the request) here, before replying. */
           work = nullptr;
-          (*shared_done)(std::move(finish), error);
+          /* Moved, not copied: the exception object must have one owner at a time, or this
+             thread's copy dies after the strand has read it, through a refcount TSan can't see
+             (it lives in uninstrumented libstdc++). */
+          (*shared_done)(std::move(finish), std::move(error));
           *shared_done = nullptr;
           self->Finished();
         };
         try {
           SessionManager->RunStatement(std::move(run));
           return;
+        } catch (const std::exception &ex) {
+          /* RunStatement() promises the work didn't run and never will.  A fresh exception, so
+             the one this handler holds isn't shared with the strand (see above). */
+          syslog(LOG_ERR, "ws: could not start a statement: %s (#761)", ex.what());
+          (*shared_done)(TFinish(), std::make_exception_ptr(std::runtime_error(
+              std::string("could not start the statement: ") + ex.what())));
         } catch (...) {
-          /* RunStatement() promises the work didn't run and never will. */
           syslog(LOG_ERR, "ws: could not start a statement (#761)");
-          (*shared_done)(TFinish(), std::current_exception());
+          (*shared_done)(TFinish(), std::make_exception_ptr(std::runtime_error("could not start the statement")));
         }
         /* That slot is free again; give it to the next waiting statement, if any. */
         std::lock_guard<std::mutex> lock(Mutex);
@@ -896,8 +904,9 @@ class TWsImpl final
                when nobody is left to reply to. */
             if (auto self = weak.lock()) {
               auto executor = self->WsStream.get_executor();
-              net::post(executor, [self = std::move(self), finish = std::move(finish), error]() mutable {
-                self->Finish(std::move(finish), error);
+              net::post(executor, [self = std::move(self), finish = std::move(finish),
+                                   error = std::move(error)]() mutable {
+                self->Finish(std::move(finish), std::move(error));
               });
             }
           });
