@@ -330,3 +330,121 @@ FIXTURE(NullSemIsFireAndForget) {
     EXPECT_EQ(loaded, blob);
   });
 }
+
+namespace Orly {
+
+  namespace Indy {
+
+    namespace Disk {
+
+      /* A friend of TDurableManager (see its header), for the test below. */
+      class TDurableManagerTestAccess {
+        public:
+
+        using TView = TDurableManager::TMapping::TView;
+
+        /* Does the mapping this view holds list this layer? (A mapping's entries don't change
+           once it is published.) */
+        static bool Lists(const TView &view, const TDurableManager::TMemSlushLayer *layer) {
+          for (TDurableManager::TMapping::TEntryCollection::TCursor csr(view.GetMapping()->GetEntryCollection()); csr; ++csr) {
+            if (csr->GetLayer() == layer) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        /* Is this layer waiting in the removal queue? Nothing runs the layer cleaner in these
+           tests, so a layer queued there stays until the manager goes. */
+        static bool IsQueuedForRemoval(TDurableManager &manager, const TDurableManager::TMemSlushLayer *layer) {
+          std::lock_guard<std::mutex> removal_lock(manager.RemovalLock);
+          for (TDurableManager::TRemovalCollection::TCursor csr(&manager.RemovalCollection); csr; ++csr) {
+            if (&*csr == layer) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+      };  // TDurableManagerTestAccess
+
+    }  // Disk
+
+  }  // Indy
+
+}  // Orly
+
+/* #727: a view drops its reference to a memory layer while the writer marks that layer for
+   delete. TView's destructor releases its memory layer before it takes MappingLock, and Decr()
+   read the plain bool MarkedForDelete on every release, while the writer set it under
+   MappingLock, so ThreadSanitizer reported a race on orlyi runs. The answer only matters to the
+   release that takes the count to zero, and that one can't be concurrent with the mark: the
+   mapping the writer replaces still lists the layer, and its entry's reference goes only under
+   MappingLock, after the mark. So the layer must still be queued for removal, and only when its
+   last reference goes.
+
+   Each round: `held` pins the current memory layer before a save lands in it. The writer moves
+   that layer into a new mapping and writes it to disk; the hook holds it there while `pin` takes
+   that mapping, so the writer's mark can't drop the layer's last mapping reference itself. Then
+   the writer marks the layer and publishes a mapping without it, and `held` goes after the mark,
+   on a thread that hasn't synchronized with the writer since the hook: before the fix, that read
+   is the race. */
+FIXTURE(ViewDropsRefToLayerBeingMarked) {
+  using TAccess = Disk::TDurableManagerTestAccess;
+  RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 8, milliseconds(30000)));
+    Sim::TMemEngine mem_engine(&scheduler, 64, 16, 64, 1, 32, 1);
+    TReplicationStub rep_stub;
+    const Durable::TTtl ttl(600);
+    const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
+    TDurableManager durable_manager(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                                    100UL, milliseconds(300), milliseconds(300), milliseconds(10000), 20UL, true);
+    std::mutex hook_mutex;
+    std::condition_variable hook_cond;
+    bool written = false, resume = false;
+    TDurableManager::OnMemLayerWrittenForTest = [&](TDurableManager *manager) {
+      if (manager == &durable_manager) {
+        std::unique_lock<std::mutex> lock(hook_mutex);
+        written = true;
+        hook_cond.notify_all();
+        hook_cond.wait(lock, [&] { return resume; });
+      }
+    };
+    for (size_t round = 0UL; round < 20UL; ++round) {
+      auto held = make_unique<TAccess::TView>(&durable_manager);
+      const auto *layer = held->GetCurLayer();
+      /* hook */ {
+        std::lock_guard<std::mutex> lock(hook_mutex);
+        written = false;
+        resume = false;
+      }
+      Durable::TSem sem;
+      durable_manager.Save(Durable::TId(TUuid::Twister), deadline, ttl, "round " + to_string(round), &sem);
+      unique_ptr<TAccess::TView> pin;
+      /* the writer is parked in the hook: its new mapping, which lists the layer, is the newest */ {
+        std::unique_lock<std::mutex> lock(hook_mutex);
+        hook_cond.wait(lock, [&] { return written; });
+        pin = make_unique<TAccess::TView>(&durable_manager);
+        resume = true;
+        hook_cond.notify_all();
+      }
+      EXPECT_TRUE(TAccess::Lists(*pin, layer));
+      sem.Pop();
+      /* Let the writer mark the layer. Waiting on anything the writer does after the mark would
+         order the mark before the release below, and hide the race. */
+      std::this_thread::sleep_for(milliseconds(20));
+      held.reset();
+      /* `pin`'s mapping still holds a reference, so the layer can't be queued yet... */
+      EXPECT_FALSE(TAccess::IsQueuedForRemoval(durable_manager, layer));
+      pin.reset();
+      /* ...and is once the last one goes. The merger's views pin mappings too, so its release may
+         come a moment later, on its thread. */
+      const auto give_up = steady_clock::now() + seconds(10);
+      while (!TAccess::IsQueuedForRemoval(durable_manager, layer) && steady_clock::now() < give_up) {
+        std::this_thread::sleep_for(milliseconds(1));
+      }
+      EXPECT_TRUE(TAccess::IsQueuedForRemoval(durable_manager, layer));
+    }
+    TDurableManager::OnMemLayerWrittenForTest = nullptr;
+  });
+}

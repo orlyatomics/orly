@@ -31,6 +31,9 @@ using namespace Orly::Indy::Disk;
 
 const Base::TUuid TDurableManager::DurableByIdFileId("20E91BAE-3465-4E9B-918F-C234DF84762A");
 
+/* Test-only; empty in production. See durable_manager.h. */
+std::function<void (TDurableManager *)> TDurableManager::OnMemLayerWrittenForTest;
+
 const Base::TUuid TDurableManager::TSortedByIdFile::NullId("00000000-0000-0000-0000-000000000000");
 
 /* Make a durable file's blocks durable before the file map names it (#619). The file map's own
@@ -520,6 +523,9 @@ void TDurableManager::WriteMemLayer(TMemSlushLayer *old_mem_layer) {
      can finally release their savers (#277). */
   ReleaseSavers(old_mem_layer);
   MergeSem.Push();
+  if (OnMemLayerWrittenForTest) {
+    OnMemLayerWrittenForTest(this);
+  }
 
   /* acquire Mapping lock */ {
     std::lock_guard<std::mutex> mapping_lock(MappingLock);
