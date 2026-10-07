@@ -1,7 +1,9 @@
 /** WebSocket concurrency smoke (#761); run by run-ws-scale.sh.
  *
  * Loads GROUPS groups of six keys, then, for each session count in LEVELS, opens that many
- * WebSocket sessions (each its own connection, session and POV) and has each run reads in a
+ * WebSocket sessions (each its own connection, session and shared POV; the POVs are made once
+ * and reused at every level, as a new POV per reader per level, ~700 a run, ran the 1 GiB server
+ * out of memory) and has each run reads in a
  * closed loop for SECS seconds: point reads of one random key, then small prefix reads that walk
  * one random group. Every read is checked. The sessions are spread over WORKERS worker threads so
  * the client isn't the bottleneck.
@@ -23,12 +25,11 @@ const value = (g, n) => g * 10 + n;
 
 if (!isMainThread) {
   /* A worker: open its sessions, wait for "go", read until the deadline, report. */
-  const { sessions, kind } = workerData;
+  const { povs, kind } = workerData;
   const clients = [];
-  for (let i = 0; i < sessions; ++i) {
+  for (const pov of povs) {
     const c = await connect(URL);
     await c.newSession();
-    const pov = await c.newPov({ safe: true, shared: true });
     clients.push({ c, pov });
   }
   parentPort.postMessage({ ready: true });
@@ -101,6 +102,8 @@ while (Number(await setup.call(probe, "ws_scale", "group", { g: GROUPS - 1 })) !
   await new Promise((r) => setTimeout(r, 100));
 }
 console.log(`loaded ${rows.length} keys in ${GROUPS} groups`);
+const readerPovs = [];
+for (let i = 0; i < Math.max(...LEVELS); ++i) readerPovs.push(await setup.newPov({ safe: true, shared: true }));
 
 const pct = (sorted, p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : NaN;
 const rps = {};
@@ -109,7 +112,9 @@ for (const kind of KINDS) {
   for (const level of LEVELS) {
     const nw = Math.min(level, WORKERS);
     const shares = Array.from({ length: nw }, (_, i) => Math.floor(level / nw) + (i < level % nw ? 1 : 0));
-    const workers = shares.map((sessions) => new Worker(new globalThis.URL(import.meta.url), { workerData: { sessions, kind } }));
+    const starts = shares.map((_, i) => shares.slice(0, i).reduce((a, b) => a + b, 0));
+    const workers = shares.map((sessions, i) => new Worker(new globalThis.URL(import.meta.url),
+        { workerData: { povs: readerPovs.slice(starts[i], starts[i] + sessions), kind } }));
     const results = workers.map((w) => new Promise((resolve, reject) => {
       w.on("error", reject);
       w.on("message", (m) => { if (!m.ready) resolve(m); });
