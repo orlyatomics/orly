@@ -43,83 +43,64 @@ using namespace Orly::Notification;
 using namespace Orly::Server;
 using namespace Util;
 
-/* Write backpressure (#234, #584), applied after a write's transaction has
-   committed: we hold no repo lock, and the merges and Tetris run on their own
-   runners, so YieldSlow lets them make progress.
+/* Write backpressure (#234, #584, #721).
 
-   Two signals. The first is the writer's memtable backlog past the
-   high-watermark: the merge isn't promoting this POV fast enough. Every merge
-   step copies the whole unpromoted backlog before it frees the old copy, so the
-   backlog must stay well below the Update pool's capacity or one merge fills
-   the pool (#584). Each POV's watermark is therefore capped at 1/32 of it, so
-   several POVs backing up at once still leave room for their merges.
+   The first signal is the writer's POV backlog: the updates Tetris has yet to promote from the
+   POV's memtable to its parent. Every merge step copies the whole unpromoted backlog before it
+   frees the old copy, and a memory merge claims a whole copy of it up front (#629), so the
+   backlog must stay well below the Update pool's capacity or one merge fills the pool (#584).
+   Each POV's backlog is therefore capped at 1/32 of it, so several POVs backing up at once still
+   leave room for their merges. It is capped in entries too, at 1/32 of the Update Entry pool
+   (#628): the merge copies entries as well as updates, and a batch is a single update with an
+   entry per write.
 
-   Only a backlog that Tetris is promoting drains, so that wait applies only
-   to one (#626). A paused POV keeps its backlog until it is unpaused, and a
-   failed one keeps it for good; a write to either used to wait forever once
-   the backlog passed the cap. Such a POV is held to the same cap a different
-   way: RefuseWriteToStalledBacklog refuses its writes, before they commit,
-   once its backlog has reached the cap. The wait also gives up once the
-   backlog has not shrunk for 5 s, so a backlog that stops draining for some
-   other reason (the parent's player paused for an import, a deferred Tetris
-   join) can't hold a writer forever either.
+   The cap is held before the write commits (#721). ReserveBacklogRoom takes the write's room in
+   the backlog (TRepo::TBacklogReservation) and, while there is none, waits for the backlog to
+   drain: we hold no repo lock, no pool blocks and no context views (#722), and the merges and Tetris run on their own
+   runners, so YieldSlow lets them make progress. The cap used to be checked after the commit, so
+   every writer that came in while the backlog was under it landed: with 8 writers of 200-write
+   batches, a backlog capped at 1,250 entries reached 3,000 and more, and its merge's claim got
+   other writers refused.
 
-   The backlog is capped in entries too, at 1/32 of the Update Entry pool
-   (#628). The merge copies entries as well as updates, and a batch is a
-   single update with an entry per write, so a cap in updates alone let a
-   batching POV's backlog hold most of the Entry pool. A single update bigger
-   than the cap waits only until it is promoted itself.
+   A writer that has waited 5 s without the backlog shrinking (the parent's player paused for an
+   import, merges far behind) is refused with insufficient_memory. It used to write anyway, past
+   the cap. A refusal leaves nothing half done, the client contract retries it, and the cap, which
+   is what bounds the merge's claim, still holds.
 
-   The second is the Update / Update Entry pools past half full, whatever
-   holds them: merges need that much room to copy into. That wait is
-   bounded, because the pools also hold data that drains slowly or never (a
-   fast POV keeps its writes in memory): past the deadline the write proceeds,
-   and an allocation that then fails fails just this call.
+   Only a backlog that Tetris is promoting drains (#626). A paused POV keeps its backlog until it
+   is unpaused, and a failed one keeps it for good, so a write to either that finds no room is
+   refused at once; RefuseWriteToStalledBacklog refuses most of them earlier, before they do any
+   work. A POV that is neither paused nor yet in its parent's Tetris (its join was deferred under
+   memory pressure, #250; TBacklogReservation::IsUndrainable) is let through without room, because
+   only its next AppendUpdate retries the join.
 
-   With memory admission on (#607) the second wait is skipped: admission keeps
-   the merges' room by refusing writes before they allocate, so the wait would
-   only make every write that lands past half full sit out its 5 s. Measured
-   with a 25% reserve, it held writers to one batch per 5 s each, and reads on
-   the same runners took as long. */
-static size_t GetBacklogCap(size_t backlog_threshold) {
+   The second signal is the Update / Update Entry pools past half full, whatever holds them:
+   merges need that much room to copy into. ApplyWriteBackpressure waits on it after the commit.
+   That wait is bounded, because the pools also hold data that drains slowly or never (a fast POV
+   keeps its writes in memory): past the deadline the write proceeds, and an allocation that then
+   fails fails just this call.
+
+   With memory admission on (#607) the second wait is skipped: admission keeps the merges' room
+   by refusing writes before they allocate, so the wait would only make every write that lands
+   past half full sit out its 5 s. Measured with a 25% reserve, it held writers to one batch per
+   5 s each, and reads on the same runners took as long. */
+size_t Orly::Server::GetWriterBacklogCap(size_t backlog_threshold) {
   return std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
 }
 
 /* #628: a POV's backlog is capped in entries too, at 1/32 of the Update Entry pool. */
-static size_t GetBacklogEntryCap() {
+size_t Orly::Server::GetWriterBacklogEntryCap() {
   return std::max<size_t>(Indy::TUpdate::GetEntryPool().GetMaxBlocks() / 32, 1);
 }
 
-/* #626: a write to a paused or failed POV whose backlog has reached the cap is refused before
-   it commits, with the typed status of #607. Nothing promotes that backlog until the POV is
-   unpaused, so waiting for it (as ApplyWriteBackpressure does for a POV that drains) would never
-   end.
+static std::atomic<size_t> StalledBacklogRefusals {0UL};
 
-   Why refuse rather than let such a POV grow? Memory admission (#607) is global: a paused POV
-   allowed to grow fills the update pools to the merges' reserve, and then every write to every
-   POV is refused until it is unpaused. Measured with the paused-POV smoke (5,000-update pool),
-   that happened after 1,900 writes to the paused POV. Held to the cap, a paused POV takes at
-   most 1/32 of the Update pool, like any POV whose merges are behind, and the memory merge's
-   copy of its backlog stays as small as theirs (#584).
+size_t Orly::Server::GetStalledBacklogRefusals() {
+  return StalledBacklogRefusals.load();
+}
 
-   The cap is checked before commit, so concurrent writers can each pass it once and overshoot it
-   by one write apiece; ApplyWriteBackpressure doesn't wait for a backlog that can't drain. */
-static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold) {
-  if (!backlog_threshold) {
-    return;
-  }
-  const Indy::TStatus status = repo->GetStatus();
-  if (status == Indy::Normal) {
-    return;
-  }
-  const size_t cap = GetBacklogCap(backlog_threshold), entry_cap = GetBacklogEntryCap();
-  const size_t backlog = repo->GetMemBacklogDepth();
-  /* #628: in entries too, so a paused POV fed batches stops at the same share of the Entry
-     pool as any other POV. */
-  const size_t entries = repo->GetMemBacklogEntries();
-  if (backlog < cap && entries < entry_cap) {
-    return;
-  }
+/* #626: the refusal of a write to a paused or failed POV whose backlog is full. */
+[[noreturn]] static void ThrowFullStalledBacklog(Indy::TStatus status, size_t backlog, size_t entries, size_t cap, size_t entry_cap) {
   std::ostringstream msg;
   msg << "insufficient memory: write refused; this POV is " << (status == Indy::Paused ? "paused" : "failed")
       << " and already holds " << backlog << " unpromoted updates (" << entries << " entries), the most one POV may hold ("
@@ -131,44 +112,87 @@ static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRe
   throw TInsufficientMemory(msg.str());
 }
 
-static void ApplyWriteBackpressure(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold, bool wait_for_pools) {
+/* #626: a write to a paused or failed POV whose backlog has reached the cap is refused before
+   it does any work, with the typed status of #607. Nothing promotes that backlog until the POV
+   is unpaused, so waiting for it would never end.
+
+   Why refuse rather than let such a POV grow? Memory admission (#607) is global: a paused POV
+   allowed to grow fills the update pools to the merges' reserve, and then every write to every
+   POV is refused until it is unpaused. Measured with the paused-POV smoke (5,000-update pool),
+   that happened after 1,900 writes to the paused POV. Held to the cap, a paused POV takes at
+   most 1/32 of the Update pool, like any POV whose merges are behind, and the memory merge's
+   copy of its backlog stays as small as theirs (#584).
+
+   This early check reads the backlog without holding room in it; ReserveBacklogRoom, just
+   before the commit, is what keeps concurrent writers from passing it together (#721). */
+static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold) {
   if (!backlog_threshold) {
     return;
   }
-  backlog_threshold = GetBacklogCap(backlog_threshold);
-  const size_t backlog_entry_threshold = GetBacklogEntryCap();
-  constexpr double pool_threshold = 0.5;
-  const auto pools_full = [wait_for_pools] {
-    return wait_for_pools
-        && (Indy::TUpdate::GetUpdatePoolUsedPct() > pool_threshold
-            || Indy::TUpdate::GetUpdateEntryPoolUsedPct() > pool_threshold);
-  };
-  const auto pool_deadline = steady_clock::now() + seconds(5);
+  const Indy::TStatus status = repo->GetStatus();
+  if (status == Indy::Normal) {
+    return;
+  }
+  const size_t cap = GetWriterBacklogCap(backlog_threshold), entry_cap = GetWriterBacklogEntryCap();
+  const size_t backlog = repo->GetMemBacklogDepth();
+  /* #628: in entries too, so a paused POV fed batches stops at the same share of the Entry
+     pool as any other POV. */
+  const size_t entries = repo->GetMemBacklogEntries();
+  if (backlog < cap && entries < entry_cap) {
+    return;
+  }
+  ThrowFullStalledBacklog(status, backlog, entries, cap, entry_cap);
+}
+
+/* #721: takes room in repo's backlog for a write of num_entries entries, waiting while the
+   backlog drains, or throws TInsufficientMemory. See the comment above GetWriterBacklogCap. */
+static void ReserveBacklogRoom(Indy::TRepo::TBacklogReservation &room, const Indy::L0::TManager::TPtr<Indy::TRepo> &repo,
+    size_t backlog_threshold, size_t num_entries) {
+  if (!backlog_threshold) {
+    return;
+  }
+  const size_t cap = GetWriterBacklogCap(backlog_threshold), entry_cap = GetWriterBacklogEntryCap();
   constexpr auto backlog_stall = seconds(5);
   size_t lowest_backlog = std::numeric_limits<size_t>::max();
-  auto backlog_deadline = steady_clock::now() + backlog_stall;
   size_t lowest_entries = std::numeric_limits<size_t>::max();
-  const auto backlog_over = [&] {
+  auto backlog_deadline = steady_clock::now() + backlog_stall;
+  while (!room.TryReserve(cap, entry_cap, num_entries)) {
+    const Indy::TStatus status = repo->GetStatus();
     const size_t backlog = repo->GetMemBacklogDepth();
-    /* #628: the entries too, which is what a batch's backlog is made of. */
     const size_t entries = repo->GetMemBacklogEntries();
-    if ((backlog <= backlog_threshold && entries <= backlog_entry_threshold) || !repo->IsBacklogDraining()) {
-      return false;
+    if (status != Indy::Normal) {
+      ThrowFullStalledBacklog(status, backlog, entries, cap, entry_cap);
+    }
+    if (room.IsUndrainable()) {
+      return;
     }
     const auto now = steady_clock::now();
     if (backlog < lowest_backlog || entries < lowest_entries) {
       lowest_backlog = std::min(lowest_backlog, backlog);
       lowest_entries = std::min(lowest_entries, entries);
       backlog_deadline = now + backlog_stall;
+    } else if (now >= backlog_deadline) {
+      ++StalledBacklogRefusals;
+      std::ostringstream msg;
+      msg << "insufficient memory: write refused; this POV's backlog holds " << backlog << " unpromoted updates ("
+          << entries << " entries), the most one POV may hold is " << cap << " updates and " << entry_cap
+          << " entries, this write has " << num_entries << ", and the backlog has not shrunk for "
+          << duration_cast<seconds>(backlog_stall).count() << " s; retry later; reads still work";
+      throw TInsufficientMemory(msg.str());
     }
-    return now < backlog_deadline;
-  };
-  for (;;) {
-    if (backlog_over() || (pools_full() && steady_clock::now() < pool_deadline)) {
-      Indy::Fiber::YieldSlow();
-    } else {
-      break;
-    }
+    Indy::Fiber::YieldSlow();
+  }
+}
+
+static void ApplyWriteBackpressure(bool wait_for_pools) {
+  if (!wait_for_pools) {
+    return;
+  }
+  constexpr double pool_threshold = 0.5;
+  const auto deadline = steady_clock::now() + seconds(5);
+  while ((Indy::TUpdate::GetUpdatePoolUsedPct() > pool_threshold || Indy::TUpdate::GetUpdateEntryPoolUsedPct() > pool_threshold)
+         && steady_clock::now() < deadline) {
+    Indy::Fiber::YieldSlow();
   }
 }
 
@@ -329,6 +353,8 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
       RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
+      /* Declared before the transaction so it outlives it (#721): see TBacklogReservation. */
+      Indy::TRepo::TBacklogReservation backlog_room(&*repo);
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Deferred entries from #49 phase 2: defer-safe commutative
@@ -393,6 +419,16 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
               TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
               run_time, random_seed)
       );
+      /* Hold this write's room in its POV's backlog, waiting for the backlog to drain, or
+         refuse it (#721). Before memory admission, so a waiting writer holds no pool blocks.
+
+         The statement has read everything it will (the call, then its effects' resolution
+         above), so it drops its context's views first (#722). They pin this repo's and every
+         ancestor's mapping and memtable as of the call, and with them the memory layers the
+         merges this wait is waiting for have replaced; held across the wait, they keep that
+         memory from being freed. The results are already in the arena. */
+      context.ReleaseViews();
+      ReserveBacklogRoom(backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
       /* Hold this write's room in the update pools, or refuse it, before it builds anything
          there (#607). Released once the transaction below has committed. */
       Indy::TUpdate::TWriteAdmission write_memory;
@@ -430,21 +466,10 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       transaction->Prepare();
       transaction->CommitAction();
     }
-    /* Write backpressure (#234). The transaction above is now destroyed, so its
-       Pusher has applied AppendUpdate to `repo`'s memtable. If that memtable has
-       backed up past the high-watermark, the global merge is not draining this
-       writer fast enough; cooperatively yield this fiber until it drains, so
-       sustained accept paces to promote instead of growing the memtable without
-       bound (bad_alloc at high K). See ApplyWriteBackpressure.
-
-       The statement has read everything it will (the call, then its effects' resolution
-       above) and committed, so it drops its context's views first (#722). They pin this
-       repo's and every ancestor's mapping and memtable as of the call, and with them the
-       memory layers the merges this wait is waiting for have replaced; held across the
-       wait, they keep that memory from being freed. The result is already in my_arena. */
+    /* Write backpressure on the pools (#584), with memory admission off. The backlog cap was
+       held before the commit (#721). See ApplyWriteBackpressure. */
     if (had_effects) {
-      context.ReleaseViews();
-      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold(), !server->IsMemoryAdmissionOn());
+      ApplyWriteBackpressure(server->GetWriteBackpressureThreshold() && !server->IsMemoryAdmissionOn());
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();
@@ -587,6 +612,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
       RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
+      /* Declared before the transaction so it outlives it (#721): see TBacklogReservation. */
+      Indy::TRepo::TBacklogReservation backlog_room(&*repo);
       auto transaction = server->GetRepoManager()->NewTransaction();
       Indy::TUpdate::TOpByKey op_by_key;
       /* Identical deferred-entry fold to Try() (#49/#232): defer-safe commutative
@@ -664,6 +691,16 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
               TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
               run_time, random_seed)
       );
+      /* Hold this write's room in its POV's backlog, waiting for the backlog to drain, or
+         refuse it (#721). Before memory admission, so a waiting writer holds no pool blocks.
+
+         The statement has read everything it will (the call, then its effects' resolution
+         above), so it drops its context's views first (#722). They pin this repo's and every
+         ancestor's mapping and memtable as of the call, and with them the memory layers the
+         merges this wait is waiting for have replaced; held across the wait, they keep that
+         memory from being freed. The results are already in the arena. */
+      context.ReleaseViews();
+      ReserveBacklogRoom(backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
       /* Hold this write's room in the update pools, or refuse it, before it builds anything
          there (#607). Released once the transaction below has committed. */
       Indy::TUpdate::TWriteAdmission write_memory;
@@ -687,12 +724,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       transaction->Prepare();
       transaction->CommitAction();
     }
-    /* Write backpressure (#234), applied once per batch (one transaction), after the
-       context's views are dropped, as in Try() (#722). Every call's result is already in
-       `results`. */
+    /* Write backpressure on the pools (#584), applied once per batch (one transaction). */
     if (had_effects) {
-      context.ReleaseViews();
-      ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold(), !server->IsMemoryAdmissionOn());
+      ApplyWriteBackpressure(server->GetWriteBackpressureThreshold() && !server->IsMemoryAdmissionOn());
     }
     walker_count = context.GetWalkerCount();
     timer.Stop();

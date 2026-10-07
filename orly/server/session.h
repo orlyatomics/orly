@@ -47,6 +47,15 @@ namespace Orly {
 
   namespace Server {
 
+    /* The writer backpressure's cap on one POV's backlog (#584, #628; see session.cc): in
+       updates, given the --tetris_backpressure_threshold, and in entries. */
+    size_t GetWriterBacklogCap(size_t backlog_threshold);
+    size_t GetWriterBacklogEntryCap();
+
+    /* How many writes were refused because their POV's backlog was full and stopped draining
+       (#721), for the reporting port. */
+    size_t GetStalledBacklogRefusals();
+
     /* An open session. */
     class TSession final
         : public Durable::TObj {

@@ -830,6 +830,79 @@ FIXTURE(Issue635UnpausePromotesPausedWrites) {
   }, 1UL /* a runner for the Tetris manager */);
 }
 
+/* #721: a writer's room in a POV's backlog counts the backlog plus the room other writers hold,
+   in updates and in entries, so writers arriving together can't pass the cap; a write bigger than
+   the entry cap gets room only once the backlog is empty, and smaller writes wait behind it; room
+   is given back when its reservation goes. The child is paused so its backlog holds still. */
+FIXTURE(Issue721BacklogReservation) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false, true);
+      auto child = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, false, true);
+      SetPaused(manager.get(), child, true);
+      int64_t key = 0;
+      for (size_t i = 0; i < 3UL; ++i) {
+        PushOne(manager.get(), child, idx_id, ++key);
+      }
+      EXPECT_EQ(child->GetMemBacklogDepth(), 3UL);
+      EXPECT_EQ(child->GetMemBacklogEntries(), 3UL);
+      /* Caps of 5 updates and 6 entries. */
+      constexpr size_t cap = 5UL, entry_cap = 6UL;
+      /* extra */ {
+        Indy::TRepo::TBacklogReservation first(&*child), second(&*child), third(&*child), fourth(&*child);
+        EXPECT_TRUE(first.TryReserve(cap, entry_cap, 2UL));
+        /* 3 in the backlog + 2 held + 2 more would pass 6 entries. */
+        EXPECT_FALSE(second.TryReserve(cap, entry_cap, 2UL));
+        EXPECT_FALSE(second.IsReserved());
+        EXPECT_TRUE(third.TryReserve(cap, entry_cap, 1UL));
+        /* 3 in the backlog + 2 held would pass 5 updates, however few entries. */
+        EXPECT_FALSE(fourth.TryReserve(cap, entry_cap, 0UL));
+      }
+      /* extra */ {
+        /* The room above was given back. */
+        Indy::TRepo::TBacklogReservation room(&*child);
+        EXPECT_TRUE(room.TryReserve(cap, entry_cap, 3UL));
+      }
+      /* extra */ {
+        Indy::TRepo::TBacklogReservation big(&*child);
+        /* Bigger than the cap: it waits for an empty backlog... */
+        EXPECT_FALSE(big.TryReserve(cap, entry_cap, 7UL));
+        /* extra */ {
+          /* ...and while it does, smaller writes wait behind it. */
+          Indy::TRepo::TBacklogReservation small(&*child);
+          EXPECT_FALSE(small.TryReserve(cap, entry_cap, 1UL));
+        }
+      }
+      /* extra */ {
+        /* Once it has gone, they don't. */
+        Indy::TRepo::TBacklogReservation small(&*child);
+        EXPECT_TRUE(small.TryReserve(cap, entry_cap, 1UL));
+      }
+      /* extra */ {
+        /* An empty backlog takes a write bigger than the cap. */
+        auto empty = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, false, true);
+        Indy::TRepo::TBacklogReservation big(&*empty), small(&*empty);
+        EXPECT_TRUE(big.TryReserve(cap, entry_cap, 7UL));
+        EXPECT_FALSE(small.TryReserve(cap, entry_cap, 1UL));
+      }
+      SetPaused(manager.get(), child, false);
+      EXPECT_TRUE(WaitFor([&] { return !child->GetMemBacklogDepth(); }, 10s));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
 /* #636: pausing a pov at any point of a promotion round must be safe.  A round peeks a child,
    then pushes its update to the parent and pops it from the child in one commit.  A pause that
    committed in between left the round popping a paused repo (PopLowest asserts Status == Normal)
