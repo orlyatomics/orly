@@ -19,7 +19,14 @@
 #include <orly/indy/memory_layer.h>
 #include <orly/indy/update.h>
 
+#include <atomic>
+#include <random>
+#include <thread>
+#include <tuple>
+#include <vector>
+
 #include <base/test/kit.h>
+#include <orly/sabot/to_native.h>
 
 using namespace std;
 using namespace Base;
@@ -266,6 +273,110 @@ FIXTURE(ExactPointSeek) {
       EXPECT_EQ(TKey((*w).Op, (*w).OpArena), TKey(int64_t(4444), &arena, state_alloc));
     }
   }
+}
+
+/* #770: a memory layer is read while it is still being written. One writer (Tetris promoting under
+   the repo's DataLock, or the merge thread building a new layer) inserts, and any number of readers
+   walk the layer at the same time without a lock: the present walkers (point, exact point through
+   the skip list, range) over the entry list and the update walker over the update list. A reader
+   must never follow a link to an entry it can't fully see. Under ThreadSanitizer this fixture is the
+   check that every link a reader follows is published with a release store and read with an
+   acquire load; run normally, it checks that whatever a reader finds is whole and that an entry
+   published before the reader looked is always found. */
+FIXTURE(ConcurrentWalkInsert) {
+  TMemoryLayer mem_layer(nullptr);
+  const Base::TUuid idx(Base::TUuid::Twister);
+  /* Keys arrive out of order (a permutation of 0..N-1), so most inserts land in the middle of the
+     list rather than at its tail. The value written for key k is k * 10. */
+  constexpr int64_t N = 1500, Stride = 7919;  // Stride is a prime that doesn't divide N
+  auto key_at = [](int64_t i) { return (i * Stride) % N; };
+  /* key_at(0 .. Published-1) are in the layer; release-stored by the writer after each insert. */
+  std::atomic<int64_t> published(0);
+  std::atomic<bool> done(false);
+  std::atomic<size_t> bad(0), missing(0), walks(0);
+  auto reader = [&](unsigned seed) {
+    std::mt19937_64 rng(seed);
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    while (!done.load(std::memory_order_acquire)) {
+      const int64_t known = published.load(std::memory_order_acquire);
+      const int64_t pick = known ? key_at(static_cast<int64_t>(rng() % known)) : 0;
+      const TIndexKey key(idx, TKey(make_tuple(pick), &arena, state_alloc));
+      /* Exact point read: the skip list, then level 0. A key published before we looked is there. */ {
+        auto wp = mem_layer.NewPresentWalker(key, /* exact_point */ true);
+        if (*wp) {
+          if (!(TKey((**wp).Op, (**wp).OpArena) == TKey(pick * 10, &arena, state_alloc))) {
+            ++bad;
+          }
+        } else if (known) {
+          ++missing;
+        }
+      }
+      /* Point read from the head of the list. */ {
+        auto wp = mem_layer.NewPresentWalker(key);
+        if (*wp) {
+          if (!(TKey((**wp).Op, (**wp).OpArena) == TKey(pick * 10, &arena, state_alloc))) {
+            ++bad;
+          }
+        } else if (known) {
+          ++missing;
+        }
+      }
+      /* Range read over a window of keys: every entry seen is whole and in order. */ {
+        const TIndexKey to(idx, TKey(make_tuple(pick + 64), &arena, state_alloc));
+        int64_t last = -1;
+        for (auto wp = mem_layer.NewPresentWalker(key, to); *wp; ++*wp) {
+          std::tuple<int64_t> kt;
+          int64_t v = -1;
+          Sabot::ToNative(*Sabot::State::TAny::TWrapper((**wp).Key.NewState((**wp).KeyArena, state_alloc)), kt);
+          Sabot::ToNative(*Sabot::State::TAny::TWrapper((**wp).Op.NewState((**wp).OpArena, state_alloc)), v);
+          const int64_t k = std::get<0>(kt);
+          if (k <= last || k < pick || k > pick + 64 || v != k * 10) {
+            ++bad;
+          }
+          last = k;
+        }
+      }
+      /* The update list, oldest first: sequence numbers strictly increase and each update is whole. */ {
+        TSequenceNumber last = 0;
+        size_t seen = 0;
+        for (auto wp = mem_layer.NewUpdateWalker(0); *wp; ++*wp) {
+          const auto &item = **wp;
+          if (item.SequenceNumber <= last || item.EntryVec.size() != 1) {
+            ++bad;
+          }
+          last = item.SequenceNumber;
+          if (++seen == 64) {
+            break;
+          }
+        }
+      }
+      ++walks;
+    }
+  };
+  std::vector<std::thread> readers;
+  for (unsigned r = 0; r < 3; ++r) {
+    readers.emplace_back(reader, r + 1);
+  }
+  /* The writer: one thread, as in the server. */ {
+    TSequenceNumber seq_num = 0UL;
+    for (int64_t i = 0; i < N; ++i) {
+      const int64_t k = key_at(i);
+      Insert(mem_layer, ++seq_num, idx, k * 10, k);
+      published.store(i + 1, std::memory_order_release);
+    }
+  }
+  /* Let the readers see the finished layer too. */
+  for (const size_t at_end = walks.load(); walks.load() < at_end + 3;) {
+    std::this_thread::yield();
+  }
+  done.store(true, std::memory_order_release);
+  for (auto &t : readers) {
+    t.join();
+  }
+  EXPECT_EQ(bad.load(), 0UL);
+  EXPECT_EQ(missing.load(), 0UL);
+  EXPECT_EQ(mem_layer.GetSize(), static_cast<size_t>(N));
 }
 
 #if 0

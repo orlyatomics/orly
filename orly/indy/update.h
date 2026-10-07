@@ -156,7 +156,8 @@ namespace Orly {
         };  // TKey
 
         typedef InvCon::OrderedList::TMembership<TEntry, TUpdate, TKey> TUpdateMembership;
-        typedef InvCon::OrderedList::TMembership<TEntry, TMemoryLayer, TEntryKey> TMemoryLayerMembership;
+        /* Published links: a memory layer is read while it is written (see TMemoryLayer). */
+        typedef InvCon::OrderedList::TMembership<TEntry, TMemoryLayer, TEntryKey, InvCon::OrderedList::TPublishedLinks> TMemoryLayerMembership;
 
         /* Construct an entry. The mutator defaults to TMutator::Assign,
            which is the historical / current behavior for every in-tree
@@ -355,7 +356,8 @@ namespace Orly {
 
       private:
 
-      typedef InvCon::OrderedList::TMembership<TUpdate, TMemoryLayer, TSequenceNumber> TMemoryLayerMembership;
+      /* Published links: a memory layer is read while it is written (see TMemoryLayer). */
+      typedef InvCon::OrderedList::TMembership<TUpdate, TMemoryLayer, TSequenceNumber, InvCon::OrderedList::TPublishedLinks> TMemoryLayerMembership;
 
       mutable Atom::TSuprena Suprena;
 
