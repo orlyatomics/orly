@@ -18,6 +18,10 @@
 
 #include <base/inv_con/ordered_list.h>
 
+#include <atomic>
+#include <thread>
+#include <vector>
+
 #include <base/class_traits.h>
 #include <base/test/kit.h>
 
@@ -461,4 +465,144 @@ FIXTURE(ReverseInsert) {
     EXPECT_EQ(csr->GetNumber(), seen++);
   }
   EXPECT_EQ(seen, num_iter);
+}
+
+/* A list with TPublishedLinks (#770): one writer, readers walking without a lock. */
+class TBoard;
+class TPin;
+
+class TBoard {
+  NO_COPY(TBoard);
+  public:
+
+  typedef InvCon::OrderedList::TCollection<TBoard, TPin, int, InvCon::OrderedList::TPublishedLinks> TPinCollection;
+
+  TBoard()
+      : PinCollection(this) {}
+
+  ~TBoard() {
+    PinCollection.DeleteEachMember();
+  }
+
+  TPinCollection *GetPinCollection() const {
+    return &PinCollection;
+  }
+
+  private:
+
+  mutable TPinCollection::TImpl PinCollection;
+
+};  // TBoard
+
+class TPin {
+  NO_COPY(TPin);
+  public:
+
+  typedef InvCon::OrderedList::TMembership<TPin, TBoard, int, InvCon::OrderedList::TPublishedLinks> TBoardMembership;
+
+  explicit TPin(int number)
+      : Number(number), BoardMembership(this, number) {}
+
+  int GetNumber() const {
+    return Number;
+  }
+
+  TBoardMembership::TImpl &GetMembership() {
+    return BoardMembership;
+  }
+
+  private:
+
+  /* A field of the member, written before it is inserted; a reader must see it. */
+  const int Number;
+
+  TBoardMembership::TImpl BoardMembership;
+
+};  // TPin
+
+/* The published list behaves exactly like the plain one when used from one thread. */
+FIXTURE(PublishedLinks) {
+  TBoard board;
+  auto numbers = [&board] {
+    std::vector<int> fwd, rev;
+    for (TBoard::TPinCollection::TCursor csr(board.GetPinCollection()); csr; ++csr) {
+      fwd.push_back(csr->GetNumber());
+    }
+    for (TBoard::TPinCollection::TCursor csr(board.GetPinCollection(), InvCon::Rev); csr; ++csr) {
+      rev.insert(rev.begin(), csr->GetNumber());
+    }
+    EXPECT_TRUE(fwd == rev);
+    return fwd;
+  };
+  EXPECT_TRUE(board.GetPinCollection()->IsEmpty());
+  TPin *p3 = new TPin(3), *p1 = new TPin(1), *p5 = new TPin(5), *p4 = new TPin(4);
+  p3->GetMembership().Insert(board.GetPinCollection());
+  p1->GetMembership().ReverseInsert(board.GetPinCollection());
+  p5->GetMembership().Insert(board.GetPinCollection());
+  p4->GetMembership().ReverseInsert(board.GetPinCollection());
+  EXPECT_TRUE(numbers() == std::vector<int>({ 1, 3, 4, 5 }));
+  EXPECT_EQ(board.GetPinCollection()->TryGetFirstMember(), p1);
+  EXPECT_EQ(board.GetPinCollection()->TryGetLastMember(), p5);
+  EXPECT_EQ(board.GetPinCollection()->TryGetFirstMember(4), p4);
+  EXPECT_FALSE(board.GetPinCollection()->TryGetLastMember(2));
+  EXPECT_EQ(p3->GetMembership().TryGetPrevMember(), p1);
+  EXPECT_EQ(p3->GetMembership().TryGetNextMember(), p4);
+  /* Moving a member: its key goes to the end, then back to the front. */
+  p3->GetMembership().SetKey(9);
+  EXPECT_TRUE(numbers() == std::vector<int>({ 1, 4, 5, 3 }));
+  p3->GetMembership().SetKey(0);
+  EXPECT_TRUE(numbers() == std::vector<int>({ 3, 1, 4, 5 }));
+  p4->GetMembership().Remove();
+  EXPECT_TRUE(numbers() == std::vector<int>({ 3, 1, 5 }));
+  EXPECT_FALSE(p4->GetMembership().TryGetCollection());
+  delete p4;
+}
+
+/* One writer inserts out of order, alternating Insert and ReverseInsert, while readers walk the
+   list forward and backward without a lock. Every walk sees a sorted list of whole members, and
+   finds every member published before it started. Under ThreadSanitizer this checks the
+   publication order; a plain list here is a data race. */
+FIXTURE(PublishedConcurrentWalk) {
+  TBoard board;
+  constexpr int N = 4000, Stride = 7919;  // a prime that doesn't divide N, so this is a permutation
+  std::atomic<int> published(0);
+  std::atomic<bool> done(false);
+  std::atomic<size_t> bad(0);
+  auto reader = [&](InvCon::TOrient orient) {
+    while (!done.load(std::memory_order_acquire)) {
+      const int known = published.load(std::memory_order_acquire);
+      int count = 0, last = orient == InvCon::Fwd ? -1 : N;
+      for (TBoard::TPinCollection::TCursor csr(board.GetPinCollection(), orient); csr; ++csr) {
+        const int number = csr->GetNumber();
+        if (orient == InvCon::Fwd ? number <= last : number >= last) {
+          ++bad;
+        }
+        last = number;
+        ++count;
+      }
+      if (count < known) {
+        ++bad;
+      }
+    }
+  };
+  std::thread fwd(reader, InvCon::Fwd), rev(reader, InvCon::Rev);
+  for (int i = 0; i < N; ++i) {
+    TPin *pin = new TPin((i * Stride) % N);
+    if (i % 2) {
+      pin->GetMembership().Insert(board.GetPinCollection());
+    } else {
+      pin->GetMembership().ReverseInsert(board.GetPinCollection());
+    }
+    published.store(i + 1, std::memory_order_release);
+  }
+  done.store(true, std::memory_order_release);
+  fwd.join();
+  rev.join();
+  EXPECT_EQ(bad.load(), 0UL);
+  int expected = 0;
+  for (TBoard::TPinCollection::TCursor csr(board.GetPinCollection()); csr; ++csr) {
+    EXPECT_EQ(csr->GetNumber(), expected);
+    ++expected;
+  }
+  EXPECT_EQ(expected, N);
 }
