@@ -693,9 +693,12 @@ namespace Orly {
         void JoinLayerCleaner();
 
         /* Stop the RunMergeMem/RunMergeDisk loops and wait for every one
-           that started to actually return (#440).  Must run on a fiber:
-           the wake sems are fiber primitives.  Call before FlushMemMerges
-           so the flush is the only drainer of the merge queues. */
+           that started to actually return (#440).  Call before FlushMemMerges
+           so the flush is the only drainer of the merge queues.  Call it off
+           the fiber runners (#744): the wait blocks the calling thread, and a
+           disk merge mid-step may need to visit every fast runner (RemoveFile
+           clears each one's caches), so blocking one of them can deadlock.
+           The wake sems can be pushed from any thread. */
         void StopMergeRunners();
 
         /* Merge every dirty repo's memory layer out to a disk file -- the

@@ -374,6 +374,8 @@ void TManager::JoinLayerCleaner() {
 }
 
 void TManager::StopMergeRunners() {
+  /* Not on a fiber runner: see the header (#744). */
+  assert(!Fiber::TRunner::LocalRunner);
   ShuttingDown = true;
   /* Wake and reap the merge loops one at a time: the sems are binary
      (TSingleSem), so a blind Push(n) would collapse into one wake.  A loop

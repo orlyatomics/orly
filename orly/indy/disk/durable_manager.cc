@@ -227,6 +227,31 @@ TDurableManager::~TDurableManager() {
   if (merger_hosted) {
     SchedulerExitedSem.Pop();
   }
+  /* Stop the layer cleaner no earlier than this, unless nothing will save again (#744): the
+     writer and the merger are what make dead layers, and only the cleaner gives them back to the
+     pool. TServer::Shutdown() used to stop it before its flush, while Tetris was still promoting;
+     under load the pool then ran dry, the bad_alloc killed the writer fiber, and every saver
+     waiting on it (a Tetris player among them) waited forever. A no-op if the owner already
+     stopped and joined it, as TServer now does once Tetris is gone. */
+  StopLayerCleaner();
+  JoinLayerCleaner();
+  /* Free the last mapping and the layers it lists. Nothing can read them now, and none is marked
+     for delete, so this frees memory and touches no file. They used to outlive the manager, and
+     the pool reported them at exit ("Blocks left in [Durable Layer] pool"). Only when it is the
+     one mapping left: an older one would still list some of these layers, and only a leaked view
+     keeps one. */
+  if (TMapping *last = MappingCollection.TryGetLastMember(); last && MappingCollection.TryGetFirstMember() == last) {
+    std::vector<TDurableLayer *> layers;
+    for (TMapping::TEntryCollection::TCursor csr(last->GetEntryCollection()); csr; ++csr) {
+      layers.push_back(csr->GetLayer());
+    }
+    delete last;
+    for (TDurableLayer *layer : layers) {
+      if (!layer->GetMarkedForDelete()) {
+        delete layer;
+      }
+    }
+  }
   Fiber::TFrame::LocalFramePool->Free(MergerFrame);
   Fiber::TFrame::LocalFramePool->Free(WriterFrame);
   delete CurMemoryLayer;
@@ -244,29 +269,35 @@ void TDurableManager::RunLayerCleaner() {
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
     Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
   }
-  TDurableLayer *durable_layer = nullptr;
   for (;;) {
     LayerCleanerTimer.Pop();
     if (LayerCleanerStopping) {
+      /* Stopped once nothing makes dead layers any more (#744): free what is queued on the
+         way out. */
+      RemoveQueuedLayers();
       syslog(LOG_INFO, "TDurableManager::RunLayerCleaner shutting down (#440)");
       return;
     }
+    /* Free first, so a writer or merger waiting out a dry pool finds blocks when woken. */
+    RemoveQueuedLayers();
     KickDiskFullRetries();
-    for (;;) {
-      /* Acquire Removal lock */ {
-        std::lock_guard<std::mutex> removal_lock(RemovalLock);
-        durable_layer = RemovalCollection.TryGetFirstMember();
-        if (durable_layer) {
-          durable_layer->RemoveFromCollection();
-        }
-      }  // release Removal lock
+  }
+}
+
+void TDurableManager::RemoveQueuedLayers() {
+  for (;;) {
+    TDurableLayer *durable_layer = nullptr;
+    /* Acquire Removal lock */ {
+      std::lock_guard<std::mutex> removal_lock(RemovalLock);
+      durable_layer = RemovalCollection.TryGetFirstMember();
       if (durable_layer) {
-        delete durable_layer;
-        durable_layer = nullptr;
-      } else {
-        break;
+        durable_layer->RemoveFromCollection();
       }
+    }  // release Removal lock
+    if (!durable_layer) {
+      break;
     }
+    delete durable_layer;
   }
 }
 
@@ -277,8 +308,9 @@ void TDurableManager::StopLayerCleaner() {
 
 void TDurableManager::JoinLayerCleaner() {
   /* A cleaner whose fiber never got to run can't be waited for (and never
-     touches us); one that did run pushes Exited on its way out. */
-  if (LayerCleanerStarted) {
+     touches us); one that did run pushes Exited on its way out, once, so only the first join
+     waits for it. */
+  if (LayerCleanerStarted && !LayerCleanerJoined.exchange(true)) {
     LayerCleanerExited.Pop();
   }
 }
@@ -392,24 +424,71 @@ void TDurableManager::RunWriter() {
      every caller has relied on; turning on a write-behind would need its own measurement. */
   SlushSem.Pop();
   for (;!ShutDown; SlushSem.Pop()) {
-    /* Out of disk space is handled inside: the layer stays readable in memory and is retried
-       on the next save or layer-cleaner tick (#590). */
-    FlushCurLayer(false);
+    /* Out of disk space, or out of Durable Layer pool blocks, is handled inside: the layer
+       stays readable in memory and is retried on the next save or layer-cleaner tick (#590,
+       #744). */
+    try {
+      FlushCurLayer(false);
+    } catch (const std::exception &ex) {
+      /* Nothing may leave this fiber: an exception out of it ended the fiber, and every saver
+         waiting on it, and the destructor, then waited forever (#744). Stop writing for good,
+         as after an I/O error (#621), and wake the savers. */
+      FailWriter(ex);
+    }
   }
   /* Final drain (#277): flush whatever is still sitting in the memory layer so shutting down
      doesn't silently drop saves, and mark the writer retired (under DataLock) so any save that
      lands after this signals its sem itself rather than waiting for a writer that is gone.  If
      the disk service is already being torn down by force, the flush can throw -- release the
-     stranded savers anyway (FlushCurLayer's catch does) and let the destructor proceed. */
-  try {
-    FlushCurLayer(true);
-    if (!UnflushedLayers.empty()) {
-      syslog(LOG_ERR, "TDurableManager::RunWriter final drain: %s; unflushed saves lost", WriterFailed ? "writer failed" : "out of disk space");
+     stranded savers anyway and let the destructor proceed.  A dry Durable Layer pool is waited
+     out, bounded: the layer cleaner still runs (the destructor stops it only after this, #744)
+     and refills it. */
+  const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  for (;;) {
+    try {
+      FlushCurLayer(true);
+    } catch (const std::exception &ex) {
+      FailWriter(ex);
     }
-  } catch (const std::exception &ex) {
-    syslog(LOG_ERR, "TDurableManager::RunWriter final drain failed; unflushed saves lost [%s]", ex.what());
+    if (!WriterOutOfLayers || WriterFailed) {
+      break;
+    }
+    if (std::chrono::steady_clock::now() > give_up) {
+      syslog(LOG_ERR, "TDurableManager::RunWriter final drain: the Durable Layer pool stayed dry for 30s");
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  if (!UnflushedLayers.empty() || WriterOutOfLayers || WriterFailed) {
+    syslog(LOG_ERR, "TDurableManager::RunWriter final drain: %s; unflushed saves lost",
+           WriterFailed ? "writer failed" : WriterOutOfLayers ? "out of Durable Layer pool blocks" : "out of disk space");
+    /* Whatever is left is not going to disk: wake every saver still waiting on it. */
+    std::lock_guard<std::mutex> data_lock(DataLock);
+    WriterRetired = true;
+    for (TMemSlushLayer *layer : UnflushedLayers) {
+      ReleaseSavers(layer);
+    }
+    ReleaseSavers(CurMemoryLayer);
   }
   WriterFinishedSem.Push();
+}
+
+void TDurableManager::FailWriter(const std::exception &ex) {
+  WriterFailed = true;
+  syslog(LOG_CRIT, "TDurableManager writer round failed [%s]; not writing until restart", ex.what());
+  std::lock_guard<std::mutex> data_lock(DataLock);
+  for (TMemSlushLayer *layer : UnflushedLayers) {
+    ReleaseSavers(layer);
+  }
+  ReleaseSavers(CurMemoryLayer);
+}
+
+void TDurableManager::OnLayerPoolMiss(const char *who) {
+  const size_t prev = LayerPoolMisses++;
+  if (ShouldLogDiskFullRetry(prev)) {
+    syslog(LOG_ERR, "TDurableManager %s: Durable Layer pool dry (miss %ld); retrying once the layer cleaner frees some",
+           who, prev + 1UL);
+  }
 }
 
 void TDurableManager::ReleaseSavers(TMemSlushLayer *mem_layer) {
@@ -443,9 +522,24 @@ bool TDurableManager::FlushCurLayer(bool retire_writer) {
       WriterRetired = true;
     }
     if (CurMemoryLayer->GetNumEntries()) {
+      /* Take the next memory layer from the pool before touching the mapping, so a dry pool
+         leaves everything as it was: the saves stay in this layer, readable, and the next round
+         (a save, or the layer cleaner's tick once it has freed some) retries. The pool doesn't
+         wait on a fiber; it throws (#607). As on a full disk, don't hold the savers meanwhile
+         (#590, #744). */
+      TMemSlushLayer *next_layer = nullptr;
+      try {
+        next_layer = new TMemSlushLayer(this);
+      } catch (const std::bad_alloc &) {
+        WriterOutOfLayers = true;
+        WriterRetryDue = true;
+        OnLayerPoolMiss("writer");
+        ReleaseSavers(CurMemoryLayer);
+        return had_unflushed;
+      }
       AddMapping(CurMemoryLayer);
       UnflushedLayers.push_back(CurMemoryLayer);
-      CurMemoryLayer = new TMemSlushLayer(this);
+      CurMemoryLayer = next_layer;
       rotated = true;
     }
   }  // release DataLayer lock
@@ -468,6 +562,16 @@ bool TDurableManager::WriteUnflushedLayers() {
     TMemSlushLayer *mem_layer = UnflushedLayers.front();
     try {
       WriteMemLayer(mem_layer);
+    } catch (const std::bad_alloc &) {
+      /* WriteMemLayer() takes its disk layer from the Durable Layer pool before it writes
+         anything, so a dry pool changed nothing: retry, as on a full disk (#744). */
+      for (TMemSlushLayer *layer : UnflushedLayers) {
+        ReleaseSavers(layer);
+      }
+      WriterOutOfLayers = true;
+      WriterRetryDue = true;
+      OnLayerPoolMiss("writer");
+      return false;
     } catch (const Disk::Util::TDiskFull &ex) {
       /* Don't hold the savers until space comes back: that could be never, and a session
          waiting on its save would stop answering reads too. Their saves stay readable from
@@ -501,6 +605,7 @@ bool TDurableManager::WriteUnflushedLayers() {
     UnflushedLayers.pop_front();
   }
   WriterRetryDue = false;
+  WriterOutOfLayers = false;
   if (const size_t retries = WriterDiskFullStreak.exchange(0UL)) {
     syslog(LOG_ERR, "TDurableManager writer flushed after %ld retries for disk space", retries);
   }
@@ -511,6 +616,10 @@ void TDurableManager::WriteMemLayer(TMemSlushLayer *old_mem_layer) {
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
   auto now = Durable::TDeadline::clock::now();
   size_t gen_id = ++NextDurableByIdGenId;
+  /* The disk layer comes from the Durable Layer pool. Take it first: a dry pool then throws
+     bad_alloc before anything is written, and the caller retries (#744). Taken after the file
+     was written, the bad_alloc left a half-built mapping as the current one. */
+  std::unique_ptr<TDiskOrderedLayer> disk_layer(new TDiskOrderedLayer(this, Engine, gen_id, 0UL));
   TSortedByIdFile sorted_by_id_file(old_mem_layer,
                                     Engine,
                                     storage_speed,
@@ -542,7 +651,9 @@ void TDurableManager::WriteMemLayer(TMemSlushLayer *old_mem_layer) {
         }
       }
       /* add our new sorted file */
-      new TMapping::TEntry(new_mapping, new TDiskOrderedLayer(this, Engine, gen_id, sorted_by_id_file.GetNumDurable()));
+      disk_layer->SetNumDurable(sorted_by_id_file.GetNumDurable());
+      new TMapping::TEntry(new_mapping, disk_layer.get());
+      disk_layer.release();
       cur_mapping->Decr();
     } catch (...) {
       cur_mapping->Decr();
@@ -613,8 +724,23 @@ void TDurableManager::RunMerger() {
       }
     }
     if (gen_vec.size()) {
+      /* The output layer comes from the Durable Layer pool: take it before merging, so a dry
+         pool costs nothing but a retry. Hand the inputs back and back off, as on a full disk
+         (#744). */
       auto now = Durable::TDeadline::clock::now();
       size_t gen_id = ++NextDurableByIdGenId;
+      std::unique_ptr<TDiskOrderedLayer> out_layer;
+      try {
+        out_layer.reset(new TDiskOrderedLayer(this, Engine, gen_id, 0UL));
+      } catch (const std::bad_alloc &) {
+        for (auto layer : gen_layer_vec) {
+          layer->UnmarkTaken();
+        }
+        OnLayerPoolMiss("merger");
+        MergerRetryAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        MergerRetryDue = true;
+        continue;
+      }
       std::optional<TMergeSortedByIdFile> merge_sort_file_storage;
       try {
         merge_sort_file_storage.emplace(gen_vec, Engine, storage_speed, gen_id, now.time_since_epoch().count(), TempFileConsolThresh, Low, Notify);
@@ -674,7 +800,9 @@ void TDurableManager::RunMerger() {
             }
           }
           /* add our new sorted file */
-          new TMapping::TEntry(new_mapping, new TDiskOrderedLayer(this, Engine, gen_id, merge_sort_file.GetNumDurable()));
+          out_layer->SetNumDurable(merge_sort_file.GetNumDurable());
+          new TMapping::TEntry(new_mapping, out_layer.get());
+          out_layer.release();
           cur_mapping->Decr();
         } catch (...) {
           cur_mapping->Decr();

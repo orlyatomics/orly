@@ -65,6 +65,13 @@ namespace Orly {
 
       void BecomeMaster();
 
+      /* The number of parent povs with children still waiting to be promoted into them, not
+         counting paused ones (their children wait for an unpause).  Zero means every update
+         committed to a pov has reached its parent, all the way up.  A graceful shutdown waits
+         for zero before its final flush, so acknowledged writes reach the global pov, and so
+         disk (#744). */
+      size_t GetUnpausedPlayerCount() const;
+
       protected:
 
       /* The base class for all players of the tetris. */

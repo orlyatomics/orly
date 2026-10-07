@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <sched.h>
+#include <time.h>
 
 #include <base/debug_log.h>
 #include <base/zero.h>
@@ -66,11 +67,21 @@ void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job, const std::function
           ShutDown();
         }
     );
-    TScheduler scheduler(*this, pthread_self(), &main_job);
-    sigsuspend(&*TSet(TSet::Exclude, { SIGINT, SIGTERM }));
-    if (on_signal) {
-      on_signal();
+    /* extra */ {
+      TScheduler scheduler(*this, pthread_self(), &main_job);
+      sigsuspend(&*TSet(TSet::Exclude, { SIGINT, SIGTERM }));
+      if (on_signal) {
+        on_signal();
+      }
     }
+    /* Consume any SIGINT or SIGTERM still pending under the mask: a second ctrl-c or `docker
+       stop`, or the ctrl-c the scheduler sends itself once it goes permanently quiescent, which a
+       long on_signal (orlyi's graceful shutdown waiting out a write backlog) makes likely.  Left
+       pending, it was delivered when the masker restored the old mask, after the handlers above
+       were gone, so a process that had just shut down cleanly died of SIGINT (#744). */
+    const TSet stop_sigs(TSet::Include, { SIGINT, SIGTERM });
+    const timespec no_wait = { 0, 0 };
+    while (sigtimedwait(stop_sigs.Get(), nullptr, &no_wait) > 0) {}
   } catch (const exception &ex) {
     syslog(LOG_ERR, "run_until_c; standard exception; %s", ex.what());
   } catch (...) {

@@ -8,8 +8,9 @@
 #   1. debug-and-test     -- make debug + make test (188 binaries)
 #   2. release-build      -- jhm -c release direct + --help smoke on each binary,
 #                            plus the storage and merge unit tests in release (#666),
-#                            the server smokes, and a 3-kill kill campaign (#730;
-#                            the full one is the kill-campaign workflow)
+#                            the server smokes, a 3-kill kill campaign (#730;
+#                            the full one is the kill-campaign workflow), and
+#                            four graceful stops under write load (#744)
 #   3. lang-tests         -- make debug + python3 tools/lang_test.py
 #   4. examples           -- run each examples/* end-to-end with both
 #                            its Python and Go drivers (orlyc + orlyi + WS)
@@ -479,6 +480,17 @@ jobs:
           fi
           grep -E 'VIOLATION|^KILL CAMPAIGN' /tmp/kill-control.log | head -5
           echo "control OK: the campaign catches writes lost after they were recovered"
+
+      # #744: SIGTERM orlyi under the campaign's write load, four times. Each stop must finish
+      # on its own within 60 s and exit cleanly, and every acknowledged write must come back
+      # after the restart. Before #744 most of these stops hung (a disk merge waited on a fast
+      # runner the teardown had blocked, and the layer cleaners stopped before the flush) and
+      # lost acknowledged writes; that negative control was run by hand, since it needs the old
+      # engine.
+      - name: Graceful stop under write load (#744)
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          STOPS=4 ./tests/graceful_stop_test.sh
 
   restart-test:
     name: restart durability (tests/restart_test.sh)
