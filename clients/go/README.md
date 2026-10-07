@@ -11,7 +11,7 @@ that the native C++ client (`orly/client`) speaks.
 ## Install
 
 ```sh
-go get github.com/orlyatomics/orly/clients/go@v0.1.0
+go get github.com/orlyatomics/orly/clients/go@v0.2.0
 ```
 
 The package is named `orly`; since the import path ends in `/go`, alias it:

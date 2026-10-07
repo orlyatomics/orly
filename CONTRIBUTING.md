@@ -55,3 +55,27 @@ Doc-stub cleanup tooling lives in
 Keep a PR to one concern. CI (`.github/workflows/ci.yml`) must be green:
 build + unit tests, the release build, the Orlyscript language suite, the
 end-to-end examples, and the `todo-lint` and ThreadSanitizer gates.
+
+## Releasing
+
+Releases are cut by a maintainer. Versions follow [`CHANGELOG.md`](CHANGELOG.md);
+the three npm packages and the Go client move together.
+
+1. Fold the changelog fragments (`python3 tools/fold_changelog.py`) and move
+   `[Unreleased]` under the new version heading. Keep an empty `[Unreleased]`
+   with its `### Fixed` subheading, or the next fold breaks.
+2. Bump `version` in `clients/ts`, `clients/mcp` and `clients/repl`
+   (`package.json`), and the `go get ...@vX.Y.Z` line in
+   [`clients/go/README.md`](clients/go/README.md). Merge that as a PR.
+3. Tag `vX.Y.Z` on the merge commit and push it. `docker.yml` publishes the
+   multi-arch image (`:vX.Y.Z` and `:latest`) on a `v*` tag; then
+   `gh release create vX.Y.Z`.
+4. Publish to npm from an interactive terminal: `tools/npm_publish.sh`
+   (`--dry-run` first). Each publish needs an npm 2FA code. The script skips
+   versions already on the registry and waits for the driver to resolve before
+   building `orly-mcp` and `orly-repl`, so it is safe to rerun.
+5. Tag the Go client. It is a nested module, so its tag carries the directory
+   prefix and is separate from the repo tag:
+   `git tag clients/go/vX.Y.Z <commit> && git push origin clients/go/vX.Y.Z`.
+   Then check `go list -m github.com/orlyatomics/orly/clients/go@vX.Y.Z`
+   resolves.
