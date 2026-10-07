@@ -2023,8 +2023,14 @@ void TServer::RunStatement(std::function<void ()> &&work) {
      one waiting) start these; an I/O thread gets its own frame pool the first time. */
   Indy::Fiber::TJumpRunnable::EnsureLocalFramePool(FramePoolManager.get());
   TWsStatementRunnable::TFramePool *frame_pool = Fiber::TFrame::LocalFramePool;
-  /* Throws (std::bad_alloc) with 'work' untouched when the frame pool is empty. */
-  auto *frame = frame_pool->Alloc();
+  /* No frame free: refuse at once, with 'work' untouched, as the retryable insufficient_memory
+     of #762. No waiting here: this runs on a WebSocket I/O thread or a fast runner, and either
+     would hold up everything else on it. The statement queue puts a refused statement back
+     until a statement in flight finishes and frees a frame (TStmtQueue::Launch()). */
+  auto *frame = frame_pool->TryAlloc();
+  if (!frame) {
+    throw TInsufficientMemory(Indy::Fiber::TFramePoolExhausted().what());
+  }
   TWsStatementRunnable *runnable = nullptr;
   try {
     runnable = new TWsStatementRunnable(std::move(work), frame_pool);

@@ -212,8 +212,9 @@ namespace {
        frame, say), report the failure and give the slot to the next waiting statement. */
     void Launch(TWork &&work, TDone &&done) {
       for (;;) {
-        /* Shared so the failure path below still has it after the closure is gone. */
+        /* Shared so the failure paths below still have them after the closure is gone. */
         auto shared_done = std::make_shared<TDone>(std::move(done));
+        TWork work_for_retry = work;
         /* Run the work, report it, then free its slot.  The order matters for Stop(): the
            done callback must have run before InFlight can reach zero. */
         std::function<void ()> run =
@@ -237,6 +238,21 @@ namespace {
         try {
           SessionManager->RunStatement(std::move(run));
           return;
+        } catch (const Orly::Server::TInsufficientMemory &ex) {
+          /* No fiber frame free (#762). If another statement is in flight, its end frees one and
+             starts the next waiting statement, so put this one back at the head of the queue and
+             give up its slot. With nothing else in flight, nothing would start it again: refuse
+             it, typed and retryable. A fresh exception, as below. */
+          {
+            std::lock_guard<std::mutex> lock(Mutex);
+            if (!Stopping && InFlight > 1) {
+              Waiting.emplace_front(std::move(work_for_retry), std::move(*shared_done));
+              --InFlight;
+              Idle.notify_all();
+              return;
+            }
+          }
+          (*shared_done)(TFinish(), std::make_exception_ptr(Orly::Server::TInsufficientMemory(ex.what())));
         } catch (const std::exception &ex) {
           /* RunStatement() promises the work didn't run and never will.  A fresh exception, so
              the one this handler holds isn't shared with the strand (see above). */
