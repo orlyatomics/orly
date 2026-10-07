@@ -94,6 +94,11 @@ so 300 ms by default), then writes every memory layer of the global POV to disk.
 for every POV's backlog to drain first, so writes that were still unpromoted after that window
 are lost, as the README's ephemeral-POV caveat says. `SIGNAL=TERM` runs the campaign this way.
 
+Under sustained write load a graceful stop currently hangs instead (#744): the Durable Layer pool
+runs out after `Shutdown()` has stopped its cleaner, and the teardown waits on fibers that died of
+it. Whatever stops `orlyi` after that (`docker stop`'s SIGKILL, say) makes it a crash, with the
+crash bound above. Until #744 is fixed, `SIGNAL=TERM` runs of the campaign fail on it.
+
 ## Power loss
 
 A SIGKILL leaves the kernel's page cache alone, so the campaign doesn't test what a power cut
@@ -131,4 +136,13 @@ CI runs 3 kills and the negative control in the release job on every push and pu
 
 ## Measured
 
-<!-- filled in from the campaign runs on the PR that added it (#730) -->
+One 40-kill run on a release build (arm64 Linux, 16 cores, in Docker; seed 1791372360), with
+loads of 1 to 6 s at about 1,500 transactions a second between kills:
+
+    KILL CAMPAIGN: kills=40 recovered=40 lost_per_kill=min 82 / median 2066.5 / max 11153
+    max_lost=11153 max_lost_txns=5855 max_lost_age_ms=3891 min_bound_margin=729 violations=0
+
+Every check held on every kill. The losses are large next to the 40 ms flush because promotion
+runs behind: the global POV had at most one memory layer waiting at each kill, so nearly all of a
+kill's loss was writes still in their POVs' backlogs, the oldest acknowledged up to 3.9 s
+earlier. Faster promotion would shrink the loss; nothing here bounds it in time.

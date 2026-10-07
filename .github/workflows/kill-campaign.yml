@@ -16,6 +16,7 @@ on:
   pull_request:
     paths:
       - 'tests/kill_campaign.*'
+      - 'docs/durability.md'
       - '.github/workflows/kill-campaign.yml'
   workflow_dispatch:
     inputs:

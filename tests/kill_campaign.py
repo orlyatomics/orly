@@ -289,8 +289,8 @@ def open_check(logpath):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--kills', type=int, default=int(os.environ.get('KILLS', 40)))
-    ap.add_argument('--seed', type=int, default=int(os.environ.get('SEED', 0)) or int(time.time()))
+    ap.add_argument('--kills', type=int, default=int(os.environ.get('KILLS') or 40))
+    ap.add_argument('--seed', type=int, default=int(os.environ.get('SEED') or 0) or int(time.time()))
     ap.add_argument('--min-run', type=float, default=1.0, help='shortest load before a kill (s)')
     ap.add_argument('--max-run', type=float, default=6.0, help='longest load before a kill (s)')
     ap.add_argument('--signal', choices=['KILL', 'TERM'], default=os.environ.get('SIGNAL', 'KILL'),
