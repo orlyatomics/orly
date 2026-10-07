@@ -130,9 +130,10 @@ image, so it compiles your own `.orly` packages too
 ([#530](https://github.com/orlyatomics/orly/issues/530)).
 
 `-p 127.0.0.1:8082:8082` publishes the port on this machine's loopback only.
-Orly has no authentication, so `-p 8082:8082`, which publishes it on every
-interface of the host, lets anyone who can reach the host read and write the
-database; do that only on a network you trust. See [Security](#security).
+Without a shared secret Orly has no authentication, so `-p 8082:8082`, which
+publishes it on every interface of the host, lets anyone who can reach the host
+read and write the database; do that only on a network you trust, or set a
+token. See [Security](#security).
 
 The `repl` mode shown at the top of this README is the same image
 ([#538](https://github.com/orlyatomics/orly/issues/538)).

@@ -120,7 +120,7 @@ const guard =
 
 // -- the server ------------------------------------------------------------
 
-const server = new McpServer({ name: "orly", version: "0.1.1" });
+const server = new McpServer({ name: "orly", version: "0.2.0" });
 
 server.registerTool(
   "orly_new_pov",
