@@ -1206,3 +1206,139 @@ FIXTURE(ViewDropsLastRefToTakenLayer) {
   /* A taken layer whose last release didn't queue it would keep its updates past teardown. */
   EXPECT_EQ(TUpdate::GetUpdatePool().GetNumBlocksUsed(), updates_before);
 }
+
+/* #722: a writer waiting out back-pressure used to keep its TContext's views, and with them the
+   mapping and memtable of its POV and of every ancestor as of the call: whatever a merge had
+   replaced since could not be freed until the wait ended. TContext::ReleaseViews drops them once
+   the statement has read and committed.
+
+   A safe child under a fast root (merged in memory, by hand; a child's writes would need a Tetris
+   player). A context on the child reads two keys, which live in the root; a writer then
+   overwrites one and the root's memory is merged, which replaces the root mapping the context
+   pinned. Checks that:
+   (a) until it releases, the context still reads its own snapshot, not the newer write;
+   (b) releasing drops exactly one reference from the pinned mapping of the child and of its
+       ancestor;
+   (c) values read before the release stay valid after it, and after the merge;
+   (d) any read after the release throws instead of seeing an empty repo, and so does opening a
+       key cursor;
+   (e) a context with a key cursor open refuses to release, and keeps reading. */
+FIXTURE(ContextReleasesViewsBeforeWait) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Orly::Indy::Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    /* The root's merges must not park (see TLatchedFastRepo). */ {
+      std::lock_guard<std::mutex> lock(MergeLatch.Mutex);
+      MergeLatch.Released = true;
+    }
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      TSuprena arena;
+      const Base::TUuid idx_id(TUuid::Twister);
+      auto root = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, false);
+      auto child = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), root, true);
+      auto *latched = dynamic_cast<TLatchedFastRepo *>(root.Get());
+      if (!EXPECT_TRUE(latched != nullptr)) {
+        std::lock_guard<std::mutex> lock(mut);
+        fin = true;
+        cond.notify_one();
+        return;
+      }
+      const auto index_key = [&](int64_t key) {
+        return TIndexKey(idx_id, TKey(make_tuple(key), &arena, state));
+      };
+      const auto commit = [&](const L0::TManager::TPtr<Orly::Indy::TRepo> &repo, int64_t key, int64_t val) {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(index_key(key), TKey(val, &arena, state), TMutator::Assign);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      commit(root, 1L, 10L);
+      commit(root, 2L, 20L);
+      /* (a), (b), (c), (d) */ {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        const TKey root_val = context[index_key(1L)];
+        const TKey child_val = context[index_key(2L)];
+        EXPECT_EQ(TKey(&arena, state, root_val), TKey(10L, &arena, state));
+        EXPECT_EQ(TKey(&arena, state, child_val), TKey(20L, &arena, state));
+        /* Probes taken after the context, so they pin the same mappings (nothing else merges). */
+        Orly::Indy::TRepo::TView root_probe(root), child_probe(child);
+        const size_t root_refs = root_probe.GetMapping()->GetRefCount();
+        const size_t child_refs = child_probe.GetMapping()->GetRefCount();
+        /* Another writer, then a merge that replaces the root's mapping. */
+        commit(root, 2L, 21L);
+        latched->QueueMergeMem();
+        latched->StepMem();
+        /* (a) */
+        EXPECT_EQ(TKey(&arena, state, context[index_key(2L)]), TKey(20L, &arena, state));
+        EXPECT_EQ(root_probe.GetMapping()->GetRefCount(), root_refs);
+        /* (b) */
+        context.ReleaseViews();
+        EXPECT_TRUE(context.HasReleasedViews());
+        EXPECT_EQ(root_probe.GetMapping()->GetRefCount(), root_refs - 1UL);
+        EXPECT_EQ(child_probe.GetMapping()->GetRefCount(), child_refs - 1UL);
+        /* (c) */
+        EXPECT_EQ(TKey(&arena, state, root_val), TKey(10L, &arena, state));
+        EXPECT_EQ(TKey(&arena, state, child_val), TKey(20L, &arena, state));
+        /* (d) */
+        bool threw = false;
+        try {
+          context[index_key(1L)];
+        } catch (const logic_error &) {
+          threw = true;
+        }
+        EXPECT_TRUE(threw);
+        threw = false;
+        try {
+          context.Exists(index_key(2L));
+        } catch (const logic_error &) {
+          threw = true;
+        }
+        EXPECT_TRUE(threw);
+        threw = false;
+        try {
+          TContext::TKeyCursor csr(&context, index_key(2L));
+        } catch (const logic_error &) {
+          threw = true;
+        }
+        EXPECT_TRUE(threw);
+        /* Releasing twice is harmless. */
+        context.ReleaseViews();
+      }
+      /* A fresh context sees the newer write. */ {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        EXPECT_EQ(TKey(&arena, state, context[index_key(2L)]), TKey(21L, &arena, state));
+      }
+      /* (e) */ {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        bool threw = false;
+        {
+          TContext::TKeyCursor csr(&context, index_key(2L));
+          EXPECT_TRUE(static_cast<bool>(csr));
+          try {
+            context.ReleaseViews();
+          } catch (const logic_error &) {
+            threw = true;
+          }
+          EXPECT_FALSE(context.HasReleasedViews());
+        }
+        EXPECT_TRUE(threw);
+        EXPECT_EQ(TKey(&arena, state, context[index_key(1L)]), TKey(10L, &arena, state));
+        context.ReleaseViews();
+        EXPECT_TRUE(context.HasReleasedViews());
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}

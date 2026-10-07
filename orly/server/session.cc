@@ -435,8 +435,15 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
        backed up past the high-watermark, the global merge is not draining this
        writer fast enough; cooperatively yield this fiber until it drains, so
        sustained accept paces to promote instead of growing the memtable without
-       bound (bad_alloc at high K). See ApplyWriteBackpressure. */
+       bound (bad_alloc at high K). See ApplyWriteBackpressure.
+
+       The statement has read everything it will (the call, then its effects' resolution
+       above) and committed, so it drops its context's views first (#722). They pin this
+       repo's and every ancestor's mapping and memtable as of the call, and with them the
+       memory layers the merges this wait is waiting for have replaced; held across the
+       wait, they keep that memory from being freed. The result is already in my_arena. */
     if (had_effects) {
+      context.ReleaseViews();
       ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold(), !server->IsMemoryAdmissionOn());
     }
     walker_count = context.GetWalkerCount();
@@ -680,8 +687,11 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       transaction->Prepare();
       transaction->CommitAction();
     }
-    /* Write backpressure (#234), applied once per batch (one transaction). */
+    /* Write backpressure (#234), applied once per batch (one transaction), after the
+       context's views are dropped, as in Try() (#722). Every call's result is already in
+       `results`. */
     if (had_effects) {
+      context.ReleaseViews();
       ApplyWriteBackpressure(repo, server->GetWriteBackpressureThreshold(), !server->IsMemoryAdmissionOn());
     }
     walker_count = context.GetWalkerCount();

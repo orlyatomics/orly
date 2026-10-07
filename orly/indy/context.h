@@ -151,6 +151,9 @@ namespace Orly {
 
         mutable TContextMembership::TImpl ContextMembership;
 
+        /* The context this cursor walks, which counts its open cursors (#722). */
+        TContext *Owner;
+
       };  // TKeyCursor
 
       TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena);
@@ -163,6 +166,24 @@ namespace Orly {
 
       inline size_t GetWalkerCount() const {
         return WalkerCount;
+      }
+
+      /* Drop this context's views of its repos (#722). Each view pins the repo's mapping and
+         memtable as of the context's construction, and with them every memory layer and disk
+         file that mapping lists, so a merge that has replaced them can't free them while the
+         context lives. A writer calls this once its statement has read everything it will
+         (the call and the resolution of its effects) and committed, before it waits out write
+         back-pressure, so the wait doesn't hold memory the merges are trying to free.
+
+         Values already read stay valid: point reads are copied into the context's arena. After
+         this, any read through the context (operator[], Exists, a new key cursor) throws
+         std::logic_error rather than silently seeing an empty repo. Throws std::logic_error,
+         and keeps the views, if a key cursor (which walks the pinned layers) is still open. */
+      void ReleaseViews();
+
+      /* True once ReleaseViews has run. */
+      inline bool HasReleasedViews() const {
+        return ViewsReleased;
       }
 
       /* Bound the work and memory of what runs against this context (#694): at most max_rows
@@ -218,6 +239,15 @@ namespace Orly {
       TRepoTree RepoTree;
 
       size_t WalkerCount;
+
+      /* See ReleaseViews(). */
+      bool ViewsReleased = false;
+
+      /* Key cursors constructed on this context and not yet destroyed (#722). */
+      size_t OpenCursorCount = 0UL;
+
+      /* Throws std::logic_error once ReleaseViews has run. */
+      void CheckViewsHeld() const;
 
       static constexpr size_t Unlimited = static_cast<size_t>(-1);
 
