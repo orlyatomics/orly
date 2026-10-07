@@ -378,6 +378,15 @@ jobs:
           pip3 install --break-system-packages --quiet websocket-client
           bash clients/smoke/run-read-budget.sh
 
+      # #762: point reads over ~40 disk layers (disk merges off) from 128
+      # WebSocket readers with 64 WebSocket threads and only 200 fiber frames.
+      # A read used to take a frame per disk layer and, when the pool ran dry
+      # part way, crash orlyi ("pure virtual method called"). Every read must
+      # answer (under 1% may be refused as insufficient_memory) and orlyi must
+      # stay up. On master this config kills orlyi within a second.
+      - name: Point reads over many disk layers survive a small frame pool
+        run: bash clients/smoke/run-read-fanout.sh
+
       # #705: with no bind flags, the client, WebSocket and reporting
       # listeners bind 127.0.0.1 (refused on this host's other address), the
       # replication listener binds every interface, each is logged, and

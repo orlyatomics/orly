@@ -1073,6 +1073,10 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     syslog(level, "%s", line.c_str());
   }
   InitalizeFramePoolManager(Cmd.NumFiberFrames, StackSize, &BGFastRunner);
+  /* Point reads build their per-layer walkers on fibers; keep half the frames for everything
+     else, so reads over many disk layers can't take every frame a statement needs to start
+     (#762). */
+  Indy::TRepo::SetReadPrepFrameBudget(Cmd.NumFiberFrames / 2UL);
   Disk::Util::TDiskController::TEvent::InitializeDiskEventPoolManager(Cmd.NumDiskEvents);
   using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
     Orly::Indy::Disk::Util::LogicalBlockSize,

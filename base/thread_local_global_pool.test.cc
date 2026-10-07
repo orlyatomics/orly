@@ -20,6 +20,7 @@
 
 #include <condition_variable>
 #include <thread>
+#include <vector>
 
 #include <base/test/kit.h>
 
@@ -198,4 +199,43 @@ FIXTURE(Borrowing) {
   });
   t1.join();
   t2.join();
+}
+
+/* TryAlloc (#762) returns null instead of throwing, and with steal=false takes nothing from
+   another pool's free queue: those are the objects other threads are waiting for. */
+FIXTURE(TryAllocWithoutStealing) {
+  const size_t pool_size = 4UL;
+  TThreadLocalGlobalPoolManager<TObj> manager(pool_size);
+  thread t1([&](){
+    TThreadLocalGlobalPoolManager<TObj>::TThreadLocalPool owner(&manager), other(&manager);
+    std::vector<TObj *> objs;
+    for (size_t i = 0; i < pool_size; ++i) {
+      TObj *obj = owner.TryAlloc(false);
+      EXPECT_TRUE(obj);
+      objs.push_back(obj);
+    }
+    /* The global pool is empty and nobody has freed anything. */
+    EXPECT_FALSE(owner.TryAlloc());
+    EXPECT_FALSE(other.TryAlloc());
+    /* One comes back to the owner's free queue. Without stealing, the other pool can't have
+       it; stealing, it can. */
+    owner.Free(objs.back());
+    objs.pop_back();
+    EXPECT_FALSE(other.TryAlloc(false));
+    TObj *stolen = other.TryAlloc();
+    EXPECT_TRUE(stolen);
+    objs.push_back(stolen);
+    /* Another comes back; the owner takes it without stealing. */
+    owner.Free(objs.front());
+    objs.erase(objs.begin());
+    TObj *mine = owner.TryAlloc(false);
+    EXPECT_TRUE(mine);
+    objs.push_back(mine);
+    EXPECT_FALSE(owner.TryAlloc());
+    EXPECT_FALSE(other.TryAlloc());
+    for (auto *obj : objs) {
+      owner.Free(obj);
+    }
+  });
+  t1.join();
 }

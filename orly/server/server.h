@@ -49,6 +49,7 @@
 #include <orly/notification/system_shutdown.h>
 #include <orly/notification/update_progress.h>
 #include <orly/package/manager.h>
+#include <orly/server/insufficient_memory.h>
 #include <orly/server/repo_tetris_manager.h>
 #include <orly/server/session.h>
 #include <orly/server/ws.h>
@@ -816,8 +817,15 @@ namespace Orly {
       void InstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
       /* Run the given jump-runnable on our websockets runner. */
+      /* Runs a WebSocket statement's closure on WsRunner. A statement that can't get a fiber
+         frame within TJumpRunnable::FrameWait never ran, so it is refused as retryable
+         insufficient_memory (#762) rather than as a bare std::bad_alloc. */
       void RunWs(Indy::Fiber::TJumpRunnable &&jump_runnable) {
-        jump_runnable(FramePoolManager.get(), &WsRunner);
+        try {
+          jump_runnable(FramePoolManager.get(), &WsRunner);
+        } catch (const Indy::Fiber::TFramePoolExhausted &ex) {
+          throw TInsufficientMemory(ex.what());
+        }
       }
 
       /* Durably save a newly minted (index id -> package namespace) mapping,

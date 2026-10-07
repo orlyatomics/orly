@@ -94,16 +94,25 @@ namespace Base {
       }
 
       inline TObj *Alloc() {
+        TObj *obj = TryAlloc();
+        if (!obj) {
+          syslog(LOG_ERR, "Bad Alloc in TThreadLocalPool [%s]", Demangle<TObj>().get());
+          throw std::bad_alloc();
+        }
+        return obj;
+      }
+
+      /* Like Alloc(), but returns null instead of logging and throwing when every pool is
+         empty, for a caller that has something else to do then (#762). With steal false, it
+         takes only from this pool and the global one, never from another thread's free queue:
+         for optional work that must not take the objects other threads are waiting for. */
+      inline TObj *TryAlloc(bool steal = true) {
         TObjBase *alloc_obj = AvailableQueue;
         if (alloc_obj) {
           /* Our available queue had something to offer. */
           AvailableQueue = alloc_obj->NextObj;
         } else {
-          alloc_obj = TryAllocUncommon();
-          if (!alloc_obj) {
-            syslog(LOG_ERR, "Bad Alloc in TThreadLocalPool [%s]", Demangle<TObj>().get());
-            throw std::bad_alloc();
-          }
+          alloc_obj = TryAllocUncommon(steal);
         }
         return static_cast<TObj *>(alloc_obj);
       }
@@ -114,7 +123,7 @@ namespace Base {
 
       private:
 
-      TObjBase *TryAllocUncommon() {
+      TObjBase *TryAllocUncommon(bool steal = true) {
         TObjBase *alloc_obj = nullptr;
         /* let's swap in our free queue and try to allocate from that. */
         TObjBase *cur_tail = FreeQueue.exchange(nullptr, std::memory_order_acquire);
@@ -129,7 +138,7 @@ namespace Base {
         } else {
           /* the free queue was empty as well. Time to borrow from the global pool */
           alloc_obj = Manager->TryAlloc();
-          if (!alloc_obj) {
+          if (!alloc_obj && steal) {
             /* the global pool was empty as well. Time to try to borrow from other pools...
                - We want to borrow starting from our right neighbor.
                - Until AtomicUnorderedList supports a "ForEachFromThis" we will use it (possibly) twice to scan right from our current member
