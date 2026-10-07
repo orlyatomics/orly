@@ -18,8 +18,12 @@
 
 #include <orly/indy/fiber/fiber.h>
 
+#include <algorithm>
+#include <chrono>
 #include <condition_variable>
+#include <iostream>
 #include <thread>
+#include <vector>
 
 #include <unistd.h>
 
@@ -752,4 +756,124 @@ FIXTURE(HandoffOutlivesPushingRunner) {
   }
   delete TFrame::LocalFramePool;
   TFrame::LocalFramePool = nullptr;
+}
+
+/* An idle runner parks until a frame is handed to it (#764); it used to poll
+   with 10 us sleeps, so every hop onto an idle runner paid a timer tick
+   (~60 us on bare Linux, ~3 ms in a Docker VM on macOS). A fiber on runner 1
+   idles for a while, so runner 2 has parked, then hops to runner 2 and back.
+   Prints the hop latencies. A hop whose wakeup was lost would wait out the
+   park's 100 ms safety net, so the median must be far below that. */
+FIXTURE(HopOntoParkedRunner) {
+  class THopper
+      : public TRunnable {
+    NO_COPY(THopper);
+    public:
+
+    THopper(TRunner *home, TRunner *away, size_t hops, std::chrono::microseconds idle,
+            std::vector<double> &to_parked, std::vector<double> &back, std::atomic<bool> &done)
+        : Home(home), Away(away), Hops(hops), Idle(idle), ToParked(to_parked), Back(back), Done(done) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(home, this, static_cast<TRunnable::TFunc>(&THopper::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~THopper() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    void Run() {
+      using namespace std::chrono;
+      for (size_t i = 0; i < Hops; ++i) {
+        /* Block this runner's thread, so the other runner has nothing to do
+           for long enough to park. */
+        std::this_thread::sleep_for(Idle);
+        const auto t0 = steady_clock::now();
+        SwitchTo(Away);
+        const auto t1 = steady_clock::now();
+        SwitchTo(Home);
+        const auto t2 = steady_clock::now();
+        ToParked.push_back(duration<double, std::micro>(t1 - t0).count());
+        Back.push_back(duration<double, std::micro>(t2 - t1).count());
+      }
+      Done.store(true);
+    }
+
+    private:
+
+    TFrame *Frame;
+
+    TRunner *Home, *Away;
+
+    const size_t Hops;
+
+    const std::chrono::microseconds Idle;
+
+    std::vector<double> &ToParked, &Back;
+
+    std::atomic<bool> &Done;
+
+  };
+  const size_t hops = 200UL;
+  TRunner::TRunnerCons runner_cons(2UL);
+  TRunner runner_1(runner_cons);
+  TRunner runner_2(runner_cons);
+  TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(1UL, 1024UL * 1024UL, &runner_1);
+  TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  std::vector<double> to_parked, back;
+  to_parked.reserve(hops);
+  back.reserve(hops);
+  try {
+    std::atomic<bool> done(false);
+    thread t1([&] { runner_1.Run(); });
+    thread t2([&] { runner_2.Run(); });
+    THopper hopper(&runner_1, &runner_2, hops, std::chrono::microseconds(2000), to_parked, back, done);
+    while (!done.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    runner_1.ShutDown();
+    runner_2.ShutDown();
+    t1.join();
+    t2.join();
+  } catch (...) {
+    delete TFrame::LocalFramePool;
+    TFrame::LocalFramePool = nullptr;
+    throw;
+  }
+  delete TFrame::LocalFramePool;
+  TFrame::LocalFramePool = nullptr;
+  auto pct = [](std::vector<double> v, double p) {
+    std::sort(v.begin(), v.end());
+    return v[std::min(v.size() - 1, static_cast<size_t>(p * v.size()))];
+  };
+  if (EXPECT_EQ(to_parked.size(), hops)) {
+    std::cout << "hop onto a parked runner: p50 " << pct(to_parked, 0.5) << " us, p99 " << pct(to_parked, 0.99) << " us" << std::endl
+              << "hop back onto a spinning runner: p50 " << pct(back, 0.5) << " us, p99 " << pct(back, 0.99) << " us" << std::endl;
+    EXPECT_LT(pct(to_parked, 0.5), 50000.0);
+  }
+}
+
+/* ShutDown() wakes a parked runner (#764): Run() returns well inside the
+   park's 100 ms safety net, rather than when the park next times out. */
+FIXTURE(ShutDownWakesParkedRunner) {
+  using namespace std::chrono;
+  constexpr size_t trials = 3UL;
+  TRunner::TRunnerCons runner_cons(trials);
+  double worst_ms = 0;
+  for (size_t trial = 0; trial < trials; ++trial) {
+    TRunner runner(runner_cons);
+    thread t([&] { runner.Run(); });
+    /* Long enough to finish the spin and park. */
+    std::this_thread::sleep_for(milliseconds(50));
+    const auto start = steady_clock::now();
+    runner.ShutDown();
+    t.join();
+    worst_ms = std::max(worst_ms, duration<double, std::milli>(steady_clock::now() - start).count());
+  }
+  std::cout << "slowest stop of a parked runner: " << worst_ms << " ms" << std::endl;
+  EXPECT_LT(worst_ms, 60.0);
 }

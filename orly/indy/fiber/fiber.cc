@@ -112,8 +112,10 @@ void TRunner::Run() {
   TFrame *rt_queue = nullptr; /* we use this to push come back right away jobs to the front... */
   TFrame *next_frame = nullptr; /* we use this to loop through a queue... */
   try {
-    const size_t laps_before_short_sleep = 100UL;
-    const size_t laps_before_long_sleep = 100UL;
+    /* Idle laps (each one polls every queue we can be handed frames on)
+       before we park. The spin keeps a busy server's handoffs free of
+       system calls; past it, an idle runner blocks instead of polling (#764). */
+    const size_t laps_before_park = 100UL;
     size_t laps_without_work = 0UL;
     for (; likely(KeepRunning.load());) {
       assert(!ReadyToRunQueue);
@@ -191,13 +193,10 @@ void TRunner::Run() {
       }
       if (ReadyToRunQueue) {
         laps_without_work = 0UL;
-      } else {
-        ++laps_without_work;
-        if (laps_without_work >= laps_before_long_sleep) {
-          std::this_thread::sleep_for(10000ns);
-        } else if (laps_without_work >= laps_before_short_sleep) {
-          std::this_thread::sleep_for(100000ns);
-        }
+      } else if (++laps_without_work >= laps_before_park) {
+        /* Stays past the threshold, so a wakeup that finds nothing (the
+           timeout, a stale wake) parks again after one more lap. */
+        Park();
       }
       for (;;) {
         for (TFrame *frame = ReadyToRunQueue; ReadyToRunQueue; frame = ReadyToRunQueue) {
@@ -245,3 +244,29 @@ void TRunner::Run() {
 }
 
 #pragma GCC diagnostic pop
+
+bool TRunner::HasInboundFrames() const {
+  if (InboundFrameQueue.load(std::memory_order_seq_cst)) {
+    return true;
+  }
+  for (size_t i = 0; i < TotalNumRunners; ++i) {
+    if (HandoffSlot(RunnerId, i).Ptr.load(std::memory_order_seq_cst)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void TRunner::Park() {
+  /* Every push onto our queues is followed by a Wake() of this slot, and
+     ShutDown() wakes it too, so the timeout only bounds the cost of a
+     wakeup we failed to foresee; it is not how work gets noticed. */
+  static constexpr auto safety_net = 100ms;
+  Base::TParker &parker = ParkSlots[RunnerId].Parker;
+  parker.PrepareToPark();
+  if (!KeepRunning.load(std::memory_order_seq_cst) || HasInboundFrames()) {
+    parker.CancelPark();
+    return;
+  }
+  parker.Park(safety_net);
+}

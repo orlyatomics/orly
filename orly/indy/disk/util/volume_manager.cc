@@ -132,6 +132,15 @@ TDiskController::TDiskController()
 TDiskController::~TDiskController() {
 }
 
+void TDiskController::ShutDown() {
+  KeepRunning.store(false, std::memory_order_seq_cst);
+  /* QueueRunner() re-checks KeepRunning after announcing a park, so this
+     can't slip in between and leave it asleep (see TParker). */
+  for (TPersistentDevice *device = DeviceCollection.TryGetFirstMember(); device; device = device->ControllerMembership.TryGetNextMember()) {
+    device->QueueParker.Wake();
+  }
+}
+
 void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, bool no_realtime, size_t core) {
   const size_t max_aio_num = 64;
   size_t inflight = 0UL;
@@ -163,10 +172,26 @@ void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, b
     memset(io_ev, 0, max_aio_num * sizeof(struct io_event));
     size_t num_laps_without_work = 0UL;
     const size_t laps_before_sleep = 5UL;
+    /* With one device (how TDiskEngine always runs us) an idle loop parks on
+       the device's QueueParker, which Enqueue() and ShutDown() wake, instead
+       of polling with 10 us sleeps that last a timer tick each (#764). With
+       I/O in flight, io_getevents() below blocks anyway. */
+    Base::TParker *const parker = device_vec.size() == 1UL ? &device_vec.front()->QueueParker : nullptr;
     while (likely(KeepRunning.load(std::memory_order_relaxed))) {
       ++num_laps_without_work;
       if (num_laps_without_work > laps_before_sleep) {
-        this_thread::sleep_for(10000ns);
+        if (parker && inflight == 0UL) {
+          /* Our priority queues are ours alone, and a non-empty one reset the
+             lap count above, so only the incoming queue can hold work. */
+          parker->PrepareToPark();
+          if (!KeepRunning.load(std::memory_order_seq_cst) || device_vec.front()->HasIncomingEvents()) {
+            parker->CancelPark();
+          } else {
+            parker->Park(100ms);
+          }
+        } else {
+          this_thread::sleep_for(10000ns);
+        }
       }
       /* wait for a queue to be ready */
       for (TPersistentDevice *ready_device : device_vec) {

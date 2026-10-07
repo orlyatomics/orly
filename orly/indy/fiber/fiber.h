@@ -37,6 +37,7 @@
 #include <base/assert_true.h>
 #include <base/class_traits.h>
 #include <base/likely.h>
+#include <base/parker.h>
 #include <base/spin_lock.h>
 #include <base/thread_local_global_pool.h>
 #include <base/zero.h>
@@ -480,6 +481,15 @@ namespace Orly {
           std::atomic<TFrame *> Ptr;
         };
 
+        /* Where an idle runner blocks until a frame is handed to it (#764).
+           It used to poll its queues with 10 us sleeps, so every hop onto an
+           idle runner paid the host's timer granularity: ~60 us on bare
+           Linux, ~3 ms in a Docker VM on macOS. Cons-owned, like the handoff
+           slots, so a pusher never touches a runner that may be dying. */
+        struct alignas(64) TParkSlot {
+          Base::TParker Parker;
+        };
+
         class TRunnerCons {
           NO_COPY(TRunnerCons);
           public:
@@ -493,10 +503,12 @@ namespace Orly {
             for (size_t i = 0; i < num_runners * num_runners; ++i) {
               HandoffMatrix[i].Ptr.store(nullptr, std::memory_order_relaxed);
             }
+            ParkSlots = new TParkSlot[num_runners];
             syslog(LOG_INFO, "TRunnerCons [%ld] ready", num_runners);
           }
 
           ~TRunnerCons() {
+            delete[] ParkSlots;
             delete[] HandoffMatrix;
           }
 
@@ -520,11 +532,14 @@ namespace Orly {
           /* See THandoffQueue. */
           THandoffQueue *HandoffMatrix;
 
+          /* One per runner id; see TParkSlot. */
+          TParkSlot *ParkSlots;
+
           friend class TRunner;
 
         };  // TRunnerCons
 
-        TRunner(TRunnerCons &runner_cons) : TRunner(runner_cons.NumRunners, runner_cons.GetNewId(), runner_cons.HandoffMatrix) {}
+        TRunner(TRunnerCons &runner_cons) : TRunner(runner_cons.NumRunners, runner_cons.GetNewId(), runner_cons.HandoffMatrix, runner_cons.ParkSlots) {}
 
         ~TRunner() {}
 
@@ -532,6 +547,9 @@ namespace Orly {
 
         void ShutDown() {
           KeepRunning.store(false);
+          /* Run() re-checks KeepRunning after announcing a park, so this
+             can't slip in between and leave it asleep (see TParker). */
+          ParkSlots[RunnerId].Parker.Wake();
         }
 
         static inline void Yield(fiber_t &fiber) {
@@ -558,7 +576,7 @@ namespace Orly {
 
         private:
 
-        TRunner(size_t total_num_runners, size_t runner_id, THandoffQueue *handoff_matrix)
+        TRunner(size_t total_num_runners, size_t runner_id, THandoffQueue *handoff_matrix, TParkSlot *park_slots)
             : FreeFrame(nullptr),
               FreeFramePool(nullptr),
               //MyFrameQueue(this),
@@ -570,7 +588,8 @@ namespace Orly {
               FrameToMoveToForeignRunner(nullptr),
               TotalNumRunners(total_num_runners),
               RunnerId(runner_id),
-              HandoffMatrix(handoff_matrix) {
+              HandoffMatrix(handoff_matrix),
+              ParkSlots(park_slots) {
           assert(runner_id < total_num_runners);
           #ifdef FAST_SWITCH
           Base::Zero(MainFiber.fib);
@@ -597,6 +616,15 @@ namespace Orly {
         /* Push 'frame' onto a Treiber-stack queue head (see definition). */
         static inline void PushFrameOntoQueue(std::atomic<TFrame *> &head, TFrame *frame);
 
+        /* True if a frame waits in any queue a peer or a plain thread pushes
+           onto for us. seq_cst loads: the re-check half of TParker's
+           protocol. */
+        bool HasInboundFrames() const;
+
+        /* Block until a frame is handed to us or ShutDown() is called (or a
+           safety-net timeout passes). */
+        void Park();
+
         //mutable TFrameQueue::TImpl MyFrameQueue;
         TFrame *ReadyToRunQueue;
         TFrame *NewReadyToRunQueue;
@@ -618,6 +646,10 @@ namespace Orly {
         /* The cons-owned handoff matrix we and our peers communicate through
            (see THandoffQueue); borrowed, never owned. */
         THandoffQueue *HandoffMatrix;
+
+        /* The cons-owned park slots, indexed by runner id (see TParkSlot);
+           borrowed, never owned. */
+        TParkSlot *ParkSlots;
 
         /* Access to ComeBackSoon */
         friend class TFrame;
@@ -1225,15 +1257,18 @@ namespace Orly {
 
       /* Push 'frame' onto a Treiber-stack queue head. The next-link field is a
          plain TFrame member written here and read by the draining runner; the
-         head's release CAS / acquire exchange publishes it across threads, so
-         it needs no atomic of its own. We relaxed-load the current head to seed
-         the link and let compare_exchange_weak refresh 'expected' on failure. */
+         head's CAS / the drainer's acquire exchange publishes it across threads,
+         so it needs no atomic of its own. We relaxed-load the current head to
+         seed the link and let compare_exchange_weak refresh 'expected' on
+         failure. The successful CAS is seq_cst, not just release: it is the
+         push half of TParker's protocol, ordered before the Wake() that
+         follows it (#764). */
       inline void TRunner::PushFrameOntoQueue(std::atomic<TFrame *> &head, TFrame *frame) {
         TFrame *expected = head.load(std::memory_order_relaxed);
         do {
           frame->InboundQueueNextFrame = expected;
         } while (!head.compare_exchange_weak(
-            expected, frame, std::memory_order_release, std::memory_order_relaxed));
+            expected, frame, std::memory_order_seq_cst, std::memory_order_relaxed));
       }
 
       inline void TRunner::ScheduleFrameSlow(TFrame *frame) {
@@ -1246,6 +1281,7 @@ namespace Orly {
         } else {
           PushFrameOntoQueue(InboundFrameQueue, frame);
         }
+        ParkSlots[RunnerId].Parker.Wake();
       }
 
       inline void TRunner::ScheduleFrameSlow(TRunner *other_runner, TFrame *frame) {
@@ -1254,6 +1290,7 @@ namespace Orly {
         assert(frame);
         assert(other_runner->HandoffMatrix == HandoffMatrix);
         PushFrameOntoQueue(HandoffSlot(other_runner->RunnerId, RunnerId).Ptr, frame);
+        ParkSlots[other_runner->RunnerId].Parker.Wake();
       }
 
       inline void TRunner::ScheduleFrame(TFrame *frame) {

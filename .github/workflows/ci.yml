@@ -331,6 +331,13 @@ jobs:
       - name: Concurrent writers survive a small Update pool
         run: bash clients/smoke/run-pool-pressure.sh
 
+      # #764: on an idle server a one-key read hops between fiber runners
+      # that have parked; each hop must cost a wakeup, not a sleep. The
+      # ceiling is loose (reads take ~0.2 ms here): it catches a lost wakeup,
+      # which waits out the park's 100 ms safety net, not a slowdown.
+      - name: Reads on an idle server don't wait for parked runners
+        run: MAX_P50_US=20000 bash clients/smoke/run-point-read.sh
+
       # #607: 8 writers of 200-write batches fill small update pools within
       # seconds. Writes must come back refused with insufficient_memory (never
       # bad_alloc), reads must keep working, writes must be accepted again once

@@ -51,6 +51,7 @@
 #include <base/likely.h>
 #include <base/mem_aligned_ptr.h>
 #include <base/mlock.h>
+#include <base/parker.h>
 #include <base/scheduler.h>
 #include <base/sigma_calc.h>
 #include <base/thrower.h>
@@ -348,10 +349,9 @@ namespace Orly {
           NO_COPY(TDiskController);
           public:
 
-            /* Ask QueueRunner() to exit its polling loop (#440). */
-            void ShutDown() {
-              KeepRunning.store(false, std::memory_order_relaxed);
-            }
+            /* Ask QueueRunner() to exit its polling loop (#440), and wake any
+               that is parked (#764). */
+            void ShutDown();
 
           typedef InvCon::UnorderedList::TCollection<TDiskController, TPersistentDevice> TDeviceCollection;
 
@@ -843,7 +843,19 @@ namespace Orly {
               inbound_event->NextEvent = IncomingEventQueue;
             } while (!__sync_bool_compare_and_swap(&IncomingEventQueue, inbound_event->NextEvent, inbound_event));
             assert(inbound_event->NextEvent != reinterpret_cast<void *>(0xbfffe0000));
+            /* The full-barrier CAS above is the push half of TParker's protocol. */
+            QueueParker.Wake();
           }
+
+          /* True if Enqueue() has pushed an event QueueRunner() hasn't taken.
+             seq_cst: the re-check half of TParker's protocol. */
+          bool HasIncomingEvents() const {
+            return __atomic_load_n(&IncomingEventQueue, __ATOMIC_SEQ_CST) != nullptr;
+          }
+
+          /* QueueRunner() parks here when it has no I/O in flight and nothing
+             queued, instead of polling with 10 us sleeps (#764). */
+          Base::TParker QueueParker;
 
           TControllerMembership::TImpl ControllerMembership;
 
