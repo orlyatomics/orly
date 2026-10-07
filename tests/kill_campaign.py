@@ -55,7 +55,10 @@ import time
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(REPO_ROOT, 'clients', 'python'))
-import orly  # noqa: E402
+try:
+    import orly  # noqa: E402
+except ImportError as ex:
+    sys.exit(f'kill campaign: cannot start: {ex} (install websocket-client for the python3 that runs this)')
 
 PKG = 'kill_campaign'
 INSTANCE = 'kill_campaign_730'
