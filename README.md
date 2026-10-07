@@ -204,6 +204,10 @@ The three production binaries land in `../out_orly/debug/` (or `../out_orly/rele
 | `orly/server/orlyi` | Database server |
 | `orly/client/orly_client` | Interactive client shell |
 
+[Release benchmarks](docs/benchmarks.md) document the tag/on-demand suite,
+versioned results, A/A noise and same-runner comparisons. The page states the
+smoke-scale fixtures and remaining keyset-paging/fixed-hardware coverage.
+
 `orlyc` compiles incrementally (#312): recompiling an unchanged package into
 the same output directory skips codegen and the gcc/link step outright (keyed
 on a source-content hash plus the compiler's build stamp; `--debug` bypasses

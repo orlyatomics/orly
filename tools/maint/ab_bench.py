@@ -21,11 +21,17 @@ machines is what made #587 look 14% slower when it wasn't.
 A run that exits non-zero is reported with the tail of its output and left out
 of the statistics, and the script exits 1 at the end. Everything else exits 0;
 this measures, it doesn't judge. Full output of every run goes to --log-dir.
+--json also retains the raw samples and exit statuses, including failed runs.
+--timeout bounds each command and kills its process group on expiry.
+--fail-fast stops after the first failed command rather than running the remaining pairs.
 """
 
 import argparse
+import json
+import math
 import os
 import re
+import signal
 import statistics
 import subprocess
 import sys
@@ -33,17 +39,32 @@ import sys
 METRIC = re.compile(r"^METRIC\s+(\S+)\s+(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$")
 
 
-def run(cmd, out_dir, log_path):
+def run(cmd, out_dir, log_path, timeout=None):
     env = dict(os.environ, ORLY_OUT=out_dir)
     with open(log_path, "w") as log:
-        proc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
+        if timeout is None:
+            proc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
+            rc = proc.returncode
+        else:
+            proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                    start_new_session=True)
+            try:
+                rc = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait()
+                log.write(f"\nTIMED OUT after {timeout}s\n")
+                rc = 124
     metrics = {}
     with open(log_path, errors="replace") as log:
         for line in log:
             m = METRIC.match(line.strip())
             if m:
                 metrics[m.group(1)] = float(m.group(2))
-    return proc.returncode, metrics
+    return rc, metrics
 
 
 def fmt(x):
@@ -58,6 +79,9 @@ def main():
     ap.add_argument("--label-b", default="B")
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--log-dir", default="ab-bench-logs")
+    ap.add_argument("--json", help="also write every run, including failed runs, as JSON")
+    ap.add_argument("--timeout", type=float, help="deadline in seconds for each command")
+    ap.add_argument("--fail-fast", action="store_true", help="stop after the first failed command")
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     args = ap.parse_args()
     cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
@@ -65,23 +89,38 @@ def main():
         ap.error("give the command to run after --")
     if args.rounds < 1:
         ap.error("--rounds must be at least 1")
+    if args.timeout is not None and (not math.isfinite(args.timeout) or args.timeout <= 0):
+        ap.error("--timeout must be finite and positive")
     os.makedirs(args.log_dir, exist_ok=True)
 
     arms = {"A": os.path.abspath(args.a), "B": os.path.abspath(args.b)}
     label = {"A": args.label_a, "B": args.label_b}
     results = {"A": [], "B": []}  # per round: metrics dict, or None if the run failed
+    runs = []
     failed = []
     for r in range(1, args.rounds + 1):
         for arm in ("AB" if r % 2 else "BA"):
             log_path = os.path.join(args.log_dir, f"round{r}-{arm}.log")
-            rc, metrics = run(cmd, arms[arm], log_path)
+            rc, metrics = run(cmd, arms[arm], log_path, args.timeout)
+            runs.append({"round": r, "arm": arm, "returncode": rc,
+                         "metrics": metrics, "log": log_path})
             shown = " ".join(f"{k}={fmt(v)}" for k, v in sorted(metrics.items()))
             print(f"round {r} {arm} ({label[arm]}): rc={rc} {shown}", flush=True)
             if rc != 0:
                 failed.append((r, arm, log_path))
                 results[arm].append(None)
+                if args.fail_fast:
+                    break
             else:
                 results[arm].append(metrics)
+        if failed and args.fail_fast:
+            break
+
+    if args.json:
+        with open(args.json, "w") as output:
+            json.dump({"schema_version": 1, "rounds": args.rounds, "labels": label,
+                       "runs": runs}, output, indent=2, allow_nan=False)
+            output.write("\n")
 
     names = sorted({k for arm in "AB" for m in results[arm] if m for k in m})
     print()
