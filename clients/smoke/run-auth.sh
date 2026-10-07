@@ -142,9 +142,12 @@ check_clients() {  # check_clients <required|open>
 echo "[1/6] no token: everything as before"
 start_master solo
 check_clients open || fail "a client check failed with no token configured"
-out="$(echo "echo 'binary hello';" | ORLY_AUTH_TOKEN="$TOKEN" timeout -s KILL 30 "$ORLY_CLIENT" --server_address=127.0.0.1:$PORT 2>&1 || true)"
-echo "$out" | grep -qF "binary hello" || fail "orly_client with a token against a server without one: $out"
-echo "  ok   orly_client: a client with a token still works (it reconnects without one)"
+# Exercise both sides of the close-vs-token-write race (#775).
+for attempt in $(seq 1 20); do
+  out="$(echo "echo 'binary hello';" | ORLY_AUTH_TOKEN="$TOKEN" timeout -s KILL 30 "$ORLY_CLIENT" --server_address=127.0.0.1:$PORT 2>&1 || true)"
+  echo "$out" | grep -qF "binary hello" || fail "orly_client with a token against a server without one (attempt $attempt): $out"
+done
+echo "  ok   orly_client: a client with a token still works (20 reconnects without one)"
 grep -qF "token required" "$WORK/solo.log" && fail "the log mentions a token with none configured"
 stop_all
 

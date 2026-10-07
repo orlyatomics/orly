@@ -281,14 +281,18 @@ void TClient::IoMain() {
               /* Present the token first (#710). A server without a token hangs up on it, as on any request it
                  doesn't know; then connect again and go on without one. */
               THandshake<TAuth> handshake(TimeToLive, static_cast<uint16_t>(AuthToken->size()));
-              WriteExactly(new_server_socket, &handshake, sizeof(handshake));
-              WriteExactly(new_server_socket, AuthToken->data(), AuthToken->size());
               TAuth::TReply reply;
               bool answered;
               try {
+                WriteExactly(new_server_socket, &handshake, sizeof(handshake));
+                WriteExactly(new_server_socket, AuthToken->data(), AuthToken->size());
                 answered = TryReadExactly(new_server_socket, &reply, sizeof(reply));
-              } catch (const system_error &) {
-                /* It hung up with our token still unread, which resets the connection. */
+              } catch (const system_error &ex) {
+                if (ex.code() != errc::connection_reset && ex.code() != errc::broken_pipe) {
+                  throw;
+                }
+                /* A tokenless server can close after the header, before the token write
+                   finishes. Treat that reset (or broken pipe) like EOF on the reply. */
                 answered = false;
               }
               if (!answered) {
