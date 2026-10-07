@@ -68,7 +68,7 @@ void TMutation::Write(TCppPrinter &out) const {
     case TMutator::Xor: out << "Xor";
       break;
   };
-  out << ", " << Rhs << ")";
+  out << ", Var::TVar(" << Rhs << "))";
 }
 
 TMutation::TMutation(const TPtrC<TInline> &mutable_, TMutator mutation, const TPtrC<TInline> &rhs)

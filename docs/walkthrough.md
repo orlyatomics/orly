@@ -31,6 +31,34 @@ Two things to notice:
 - `package #1;` declares the package name as `fizzbuzz` (taken from the filename) and the version as `1`. When the server loads this package it'll be addressable as `fizzbuzz.1`.
 - The `test { }` block runs at compile time, not at server time. `orlyc` will compile, then run those tests, and refuse to produce a `.so` if they fail.
 
+### Replacing a stored record
+
+Use whole-value assignment (`<-`) to replace an existing record, just as for
+a scalar. Use `new` only when creating the key:
+
+```orly
+p_t is <{.a: str, .b: int}>;
+put = (((true) effecting {
+  *<['k', k]>::(p_t) <- v;
+} if *<['k', k]>::(p_t?) is known else (true) effecting {
+  new <['k', k]> <- v;
+})) where {
+  k = given::(str);
+  v = given::(p_t);
+};
+```
+
+Calling `put(.k: "x", .v: <{.a: "one", .b: 1}>)` and then
+`put(.k: "x", .v: <{.a: "two", .b: 2}>)` replaces both fields. Assignment
+also replaces nested records. To change just one field, assign to that field,
+for example `*<['k', "x"]>::(p_t).a <- "two";` inside an effect block.
+
+Do not use `delete (p_t) @ <['k', k]>;` followed by `new <['k', k]> <- v;`
+in the same effect block. Effects on the same key must combine into one
+compatible update; a deletion cannot combine with an insertion and reports
+“Conflicting updates.” Assignment is a single replacement update, not a
+commutative merge like `+=` or `|=`.
+
 ## Compile to a `.so`
 
 `orlyc` produces a `.cc` then shells out to `g++` to build it into a shared library. Use the `--debug` flag during a first try — release-mode optimisations can mask things and aren't faster end-to-end on a single small package.

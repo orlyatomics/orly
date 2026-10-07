@@ -1,0 +1,44 @@
+/* <orly/lang_tests/general/issue_752_record_delete_new.orly>
+
+   The delete + new replacement repro from #752. Both branches must compile.
+   The existing-key branch still throws "Conflicting updates"; the test below
+   only runs the create branch. The rejected combination is covered by
+   Augment_DeleteNew_Throws in orly/var/mutation.test.cc, since Orlyscript
+   tests have no expected-exception form.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+p_t is <{.a: str, .b: int}>;
+put = (((true) effecting {
+  delete (p_t) @ <['k', k]>;
+  new <['k', k]> <- v;
+} if *<['k', k]>::(p_t?) is known else (true) effecting {
+  new <['k', k]> <- v;
+})) where {
+  k = given::(str);
+  v = given::(p_t);
+};
+get = (*<['k', k]>::(p_t)) where { k = given::(str); };
+test {
+  t1: put(.k: "x", .v: <{.a: "one", .b: 1}>) {
+    t_created: get(.k: "x") == <{.a: "one", .b: 1}>;
+    /* Calling this subtree reproduces the intentional runtime conflict:
+    t2: put(.k: "x", .v: <{.a: "two", .b: 2}>) {
+      t3: get(.k: "x").a == "two";
+    };
+    */
+  };
+};
