@@ -73,6 +73,11 @@ jobs:
       - name: Lint TODO convention
         run: python3 tools/maint/lint_todos.py
 
+      # Same tier: no merge-conflict markers left in any tracked text file
+      # (#734). See tools/maint/lint_conflict_markers.py.
+      - name: Lint merge-conflict markers
+        run: python3 tools/maint/lint_conflict_markers.py
+
       # Same tier: no bare __thread / thread_local outside an allowlist (#556).
       # A fiber migrates OS threads, and an optimised aarch64 build reads such
       # a variable through a thread pointer computed before the switch -- the

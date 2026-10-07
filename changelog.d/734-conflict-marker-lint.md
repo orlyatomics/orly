@@ -1,0 +1,1 @@
+- **Added**: a CI lint, `tools/maint/lint_conflict_markers.py`, in the "TODO convention lint" job that fails on a merge-conflict marker (`<<<<<<<`, `>>>>>>>`, and a `=======` between them) in any tracked text file, naming file:line, with an allowlist that requires a reason for the rare doc that shows a conflict (#734).
