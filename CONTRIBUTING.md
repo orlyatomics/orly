@@ -97,6 +97,21 @@ Check the lint job summary for the classification and its reason.
 python3 -B -m unittest discover -s tools/ci -p test_change_scope.py
 ```
 
+### Release CI
+
+The release producer still builds the complete default target set and all
+nine storage/merge test executables. A one-day artifact contains only smoke
+binaries and generated headers, not the object tree. Three isolated stock
+Ubuntu runners execute the resource, disk and durability groups, including
+every negative control. The required-check name remains `jhm -c release`;
+its aggregate fails if the producer or any group fails, is cancelled or is
+unexpectedly skipped.
+
+Consumers verify the archive checksum, all file hashes/permissions and the
+source SHA, run, producer attempt, architecture, compiler and absolute build
+layout. Failed-group reruns use the original producer's immutable artifact
+ID. If a runner's compiler changed since that build, rerun the producer too.
+
 ## Releasing
 
 Releases are cut by a maintainer. Versions follow [`CHANGELOG.md`](CHANGELOG.md);
