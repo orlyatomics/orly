@@ -1,0 +1,4 @@
+package #1;
+
+ps = ((true) effecting { new <['ps', k]> <- s; }) where { k = given::(int); s = given::(str); };
+gs = (*<['ps', k]>::(str?)) where { k = given::(int); };

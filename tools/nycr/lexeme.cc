@@ -155,7 +155,7 @@ string TLexeme::AsQuotedString(char quote, bool is_raw) const {
       case picking_hex_2: {
         hex_buf[1] = c;
         char *end;
-        c = strtoul(cursor, &end, 16);
+        c = strtoul(hex_buf, &end, 16);
         if (end != hex_buf + 2) {
           THROW << "quoted string contains bad hex escape sequence";
         }

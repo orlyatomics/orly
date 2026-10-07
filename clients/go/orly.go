@@ -402,9 +402,28 @@ func litSeq(xs []any, open, close string) (string, error) {
 }
 
 // quote renders a Go string as an orlyscript string literal, escaping
-// backslashes and double quotes (matching the engine's lexer).
+// backslashes and double quotes, and writing control characters as \n, \r,
+// \t or \xNN, since the engine's lexer refuses them raw.
 func quote(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	return "\"" + s + "\""
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\\' || c == '"':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c < 0x20 || c == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

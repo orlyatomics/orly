@@ -954,6 +954,13 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 
+      # String-escape smoke (#756): strings with newlines, tabs, carriage returns and other
+      # control characters written by the Python, TS and Go clients read back equal.
+      - name: client string-escape smoke (clients/smoke)
+        run: REQUIRE_GO=1 bash run-string-escapes.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so
