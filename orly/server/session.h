@@ -90,8 +90,12 @@ namespace Orly {
            (orly/server/write_too_large.h) if num_entries is more than half the Update Entry
            reserve, so the write could never be promoted (#687); otherwise holds the
            write's room in `admission` until that goes away. Called only for writes, once the
-           entries are known and before the update is built. */
-        virtual void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &/*admission*/, size_t /*num_entries*/) {}
+           entries are known and before the update is built.
+
+           If may_wait, a write that doesn't fit waits a bounded time for room first (#765), so
+           the caller must hold no lock, no pool blocks and no read views that pin memory the
+           merges would free. */
+        virtual void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &/*admission*/, size_t /*num_entries*/, bool /*may_wait*/ = true) {}
 
         /* Called when building an admitted write's update ran out of pool before anything was
            committed. Throws TInsufficientMemory if memory admission is on, so the client sees a

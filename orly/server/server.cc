@@ -403,6 +403,13 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "are never refused. 0 turns memory admission off. Default 25."
   );
   Param(
+      &TCmd::AdmissionWaitMs, "admission_wait_ms", Optional, "admission_wait_ms\0",
+      "Memory admission's wait (issue #765): a write that would use the reserve kept by "
+      "memory_reserve_pct waits up to this many milliseconds, in arrival order, for the merges "
+      "to free room before it is refused with insufficient_memory. 0 refuses at once. "
+      "Default 500."
+  );
+  Param(
       &TCmd::ReadBudgetMB, "read_budget_mb", Optional, "read_budget_mb\0",
       "The per-read memory budget (issue #694): a method call that builds more than this many "
       "MiB of results is refused with a read_too_large error. Default: a sixteenth of the "
@@ -550,6 +557,7 @@ TServer::TCmd::TCmd()
       DiskReserveMb(0UL),
       DiskReservePct(10UL),
       MemoryReservePct(25UL),
+      AdmissionWaitMs(500UL),
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       DurableMappingPoolSize(1000UL),
@@ -1235,6 +1243,9 @@ void TServer::Init() {
     TUpdate::InitUpdatePool(Cmd.UpdatePoolSize);
     TUpdate::InitEntryPool(Cmd.UpdateEntryPoolSize);
     TUpdate::SetPoolReservePct(Cmd.MemoryReservePct);
+    if (Cmd.MemoryReservePct && Cmd.AdmissionWaitMs) {
+      AdmissionWait = std::make_unique<TAdmissionWait>(std::chrono::milliseconds(Cmd.AdmissionWaitMs));
+    }
 
     Disk::TBufBlock::Pool.Init(Cmd.DiskBufferBlockPoolSize);
 
@@ -1703,6 +1714,13 @@ void TServer::Shutdown() {
   ShutdownCalled = true;
   assert(!Fiber::TRunner::LocalRunner);
   syslog(LOG_INFO, "TServer::Shutdown() begin");
+  /* Refuse the writes waiting for room at memory admission, and stop waiting (#765): the
+     connection drain below waits for every request in flight, and a stop must not wait on
+     writers parked there, or on the merges that would have let them in. They get
+     insufficient_memory, which the client contract retries. */
+  if (AdmissionWait) {
+    AdmissionWait->Close();
+  }
   /* Stop the websockets server first: no new work arrives. */
   Ws.reset();
   /* Cut off the work sources next: wake the accept loops (blocked in
@@ -2039,7 +2057,7 @@ void TServer::CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const {
   }
 }
 
-void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t num_entries) {
+void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t num_entries, bool may_wait) {
   if (!Cmd.MemoryReservePct) {
     return;
   }
@@ -2053,7 +2071,14 @@ void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t n
         << " Update Entry blocks kept for merges (--memory_reserve_pct); retrying won't help, split it into smaller batches";
     throw TWriteTooLarge(msg.str());
   }
-  const bool admitted = admission.TryAcquire(num_entries);
+  /* Wait a bounded time for room before refusing (#765); see TAdmissionWait. */
+  TAdmissionWait::TResult result;
+  if (AdmissionWait && may_wait) {
+    result = AdmissionWait->Admit(admission, num_entries);
+  } else {
+    result.Admitted = admission.TryAcquire(num_entries);
+  }
+  const bool admitted = result.Admitted;
   if (!admitted) {
     ++MemoryRefusedWriteCount;
   }
@@ -2069,7 +2094,7 @@ void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t n
            MemoryRefusedWriteCount.load(), admitted ? "" : ("; " + DescribeRefusal(admission)).c_str());
   }
   if (!admitted) {
-    ThrowInsufficientMemory(&admission);
+    ThrowInsufficientMemory(&admission, &result);
   }
 }
 
@@ -2093,7 +2118,7 @@ void TServer::RefuseWriteOutOfMemory() {
   ThrowInsufficientMemory();
 }
 
-void TServer::ThrowInsufficientMemory(const TUpdate::TWriteAdmission *refused) const {
+void TServer::ThrowInsufficientMemory(const TUpdate::TWriteAdmission *refused, const TAdmissionWait::TResult *wait) const {
   const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
   std::ostringstream msg;
   msg << "insufficient memory: write refused; the update pools are down to the reserve kept for merges (Update "
@@ -2101,6 +2126,10 @@ void TServer::ThrowInsufficientMemory(const TUpdate::TWriteAdmission *refused) c
       << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks() << " in use";
   if (refused) {
     msg << "; " << DescribeRefusal(*refused);
+  }
+  if (wait && wait->Waited) {
+    msg << "; it waited " << std::chrono::duration_cast<std::chrono::milliseconds>(wait->WaitTime).count()
+        << " ms for room (--admission_wait_ms)";
   }
   msg << "); reads still work";
   throw TInsufficientMemory(msg.str());
@@ -3604,7 +3633,15 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
        << "; Update Entry pool " << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks()
        << " reserve " << entries.GetReserve() << " admitted " << entries.GetNumBlocksAdmitted()
        << " claimed " << entries.GetNumBlocksClaimed() << " misses " << entries.GetNumMisses()
-       << "; refused " << Server->MemoryRefusedWriteCount.load() << endl;
+       << "; refused " << Server->MemoryRefusedWriteCount.load();
+    /* The wait before refusing (#765): writers waiting now, writers that have waited, those
+       of them refused when the wait ran out or the server stopped, and the longest wait. */
+    if (const auto *wait = Server->AdmissionWait.get()) {
+      ss << "; waiting " << wait->GetWaiting() << "; waited " << wait->GetWaited()
+         << "; wait timeouts " << wait->GetTimedOut() << "; refused at stop " << wait->GetClosedOut()
+         << "; longest wait " << wait->GetLongestWaitUs() / 1000UL << " ms";
+    }
+    ss << endl;
   }
   size_t try_count;
   size_t try_read_count;

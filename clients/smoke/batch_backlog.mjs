@@ -11,7 +11,9 @@
  * runner can briefly take the in-use blocks, the blocks promised to writes in flight and the
  * merges' copy claims past the admission line. The regression this smoke guards against is
  * different in kind: with the backlog capped only in updates, about one batch in two was
- * refused, and with no cap at all, more (the negative control in CI).
+ * refused, and with no cap at all, more. Since memory admission waits for room before it
+ * refuses (#765), an uncapped backlog's batches mostly wait instead, so the negative control
+ * in CI requires the backlog check itself to fail.
  *
  * With orlyi's memory reserve at RESERVE_PCT, this requires, over SECS seconds:
  *   - no write failing other than by refusal, and at least MIN_BATCHES batches through;
@@ -60,13 +62,17 @@ await setup.install("sample", 1);
 const pov = await setup.newPov({ safe: true, shared: true });
 
 let batches = 0, refused = 0, stop = false, error = null, firstRefusal = null, firstAck = 0, lastAck = 0;
+/* Each accepted batch's round trip, in ms (#765: a batch may now wait at admission). */
+const latencies = [];
 const batch = (w, i) => Array.from({ length: BATCH }, (_, j) => ({ n: (w * 7919 + i * BATCH + j) % KEYS, x: i }));
 const writers = Array.from({ length: K }, async (_, w) => {
   const c = await connect(URL);
   await c.newSession();
   for (let i = 0; !stop; ++i) {
     try {
+      const sent = performance.now();
       await withTimeout(c.callBatch(pov, "sample", "write_val", batch(w, i)), STALL_S, "a batch");
+      latencies.push(performance.now() - sent);
       ++batches;
       lastAck = Date.now();
       firstAck ||= lastAck;
@@ -105,24 +111,45 @@ const secs = lastAck > firstAck ? (lastAck - firstAck) / 1000 : SECS;
 console.log(`METRIC batches_per_s ${(batches / secs).toFixed(1)}`);
 console.log(`METRIC refused_pct ${(100 * refused / Math.max(1, batches + refused)).toFixed(2)}`);
 console.log(`METRIC peak_entry_pool_pct ${max ? (100 * peak / max).toFixed(1) : 0}`);
+latencies.sort((a, b) => a - b);
+const pct = (q) => latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * q))] : 0;
+console.log(`METRIC batch_p50_ms ${pct(0.5).toFixed(1)}`);
+console.log(`METRIC batch_p99_ms ${pct(0.99).toFixed(1)}`);
+/* Memory admission's wait (#765), when the server has one. */
+const wt = line.match(/waited (\d+); wait timeouts (\d+); refused at stop \d+; longest wait (\d+) ms/);
+if (wt) {
+  console.log(`METRIC admission_waited ${wt[1]}`);
+  console.log(`METRIC admission_wait_timeouts ${wt[2]}`);
+  console.log(`METRIC admission_longest_wait_ms ${wt[3]}`);
+}
 if (bl) {
   console.log(`METRIC peak_backlog_entries ${bl[1]}`);
   console.log(`METRIC peak_backlog_updates ${bl[3]}`);
   console.log(`METRIC stalled_refusals ${bl[5]}`);
 }
 if (firstRefusal) console.log(`first refusal: ${firstRefusal.replace(/write_val \[.*\];/, "write_val [...];")}`);
-if (error) fail(`a batch failed: ${error}`);
-if (batches < MIN_BATCHES) fail(`only ${batches} batches went through`);
+/* Every check runs and every failure is printed, so one can't hide another: the negative
+   control in CI must fail on the backlog cap itself (#765: with memory admission's wait, the
+   control's batches wait instead of being refused, so the refused share no longer tells). */
+const failures = [];
+if (error) failures.push(`a batch failed: ${error}`);
+if (batches < MIN_BATCHES) failures.push(`only ${batches} batches went through`);
 if (refused * 100 > MAX_REFUSED_PCT * (batches + refused)) {
-  fail(`${refused} of ${batches + refused} batches were refused, more than ${MAX_REFUSED_PCT}%`);
+  failures.push(`${refused} of ${batches + refused} batches were refused, more than ${MAX_REFUSED_PCT}%`);
 }
 const misses = [...line.matchAll(/misses (\d+)/g)].map((m) => +m[1]);
-if (misses.length !== 2) fail(`couldn't read the pool misses from: ${line}`);
-if (misses.some((n) => n > 0)) fail(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
-if (!max || peak * 100 >= MAX_PEAK_PCT * max) fail(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
-if (!bl) fail(`couldn't read the writer backlog from: ${backlogLine}`);
-if (+bl[1] > +bl[2]) fail(`the POV's backlog reached ${bl[1]} entries, past its cap of ${bl[2]}`);
-if (+bl[3] > +bl[4]) fail(`the POV's backlog reached ${bl[3]} updates, past its cap of ${bl[4]}`);
+if (misses.length !== 2) failures.push(`couldn't read the pool misses from: ${line}`);
+else if (misses.some((n) => n > 0)) failures.push(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
+if (!max || peak * 100 >= MAX_PEAK_PCT * max) failures.push(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
+if (!bl) failures.push(`couldn't read the writer backlog from: ${backlogLine}`);
+else {
+  if (+bl[1] > +bl[2]) failures.push(`the POV's backlog reached ${bl[1]} entries, past its cap of ${bl[2]}`);
+  if (+bl[3] > +bl[4]) failures.push(`the POV's backlog reached ${bl[3]} updates, past its cap of ${bl[4]}`);
+}
+if (failures.length) {
+  for (const f of failures) console.error(`BATCH BACKLOG FAIL: ${f}`);
+  process.exit(1);
+}
 setup.close();
 console.log("BATCH BACKLOG OK");
 process.exit(0);

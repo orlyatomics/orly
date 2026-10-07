@@ -49,6 +49,7 @@
 #include <orly/notification/system_shutdown.h>
 #include <orly/notification/update_progress.h>
 #include <orly/package/manager.h>
+#include <orly/server/admission_wait.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/repo_tetris_manager.h>
 #include <orly/server/session.h>
@@ -348,6 +349,11 @@ namespace Orly {
            they would use it. 0 turns memory admission off. */
         size_t MemoryReservePct;
 
+        /* Memory admission's wait (#765): a write that would take the update pools into the
+           reserve waits up to this many milliseconds, first come first served, for the merges
+           to free room, and is refused only then. 0 refuses at once, as before. */
+        size_t AdmissionWaitMs;
+
         /* The per-read budget (#694): the most result memory, in MiB, and the most rows a
            method call may use or walk before it is refused with read_too_large. Unless the
            command line gives them, ResolveMemoryDefaults() derives them from the memory budget.
@@ -465,7 +471,7 @@ namespace Orly {
       /* See TSession::TServer. Throws TInsufficientMemory if the write's updates would dip into
          the update pools' reserve (#607), or TWriteTooLarge if it holds more entries than half the
          Update Entry reserve (#687). */
-      void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &admission, size_t num_entries) override;
+      void CheckMemoryAdmission(Indy::TUpdate::TWriteAdmission &admission, size_t num_entries, bool may_wait = true) override;
 
       /* See TSession::TServer. */
       void RefuseWriteOutOfMemory() override;
@@ -901,10 +907,15 @@ namespace Orly {
       std::atomic<size_t> MemoryRefusedWriteCount {0UL};
       std::atomic<bool> RefusingWritesForMemory {false};
 
+      /* Memory admission's bounded wait (#765); null when admission or the wait is off. Closed
+         first thing in Shutdown(), so no write is left parked in it. */
+      std::unique_ptr<TAdmissionWait> AdmissionWait;
+
       /* The counts a refused write's admission compared (#719), for its message and the log. */
       static std::string DescribeRefusal(const Indy::TUpdate::TWriteAdmission &admission);
 
-      [[noreturn]] void ThrowInsufficientMemory(const Indy::TUpdate::TWriteAdmission *refused = nullptr) const;
+      [[noreturn]] void ThrowInsufficientMemory(const Indy::TUpdate::TWriteAdmission *refused = nullptr,
+          const TAdmissionWait::TResult *wait = nullptr) const;
 
       /* The global repo's disk files and memory layers, for the reporter (#701). */
       void CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const;

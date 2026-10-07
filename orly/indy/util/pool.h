@@ -118,7 +118,35 @@ namespace Orly {
         /* How many allocations have failed, ever. */
         inline size_t GetNumMisses() const;
 
+        /* Wakes writers waiting at admission when room comes back (#765). Once armed, the first
+           Free, ReleaseAdmitted or ReleaseClaim that leaves the blocks in use, promised and
+           claimed at or below level disarms the watch and, outside the pool's lock, calls the
+           process's room callback. One watch per pool; arming again replaces the level.
+
+           A waiter arms the watch and then retries TryAdmit: a release that lands before the
+           retry is seen by it, and one that lands after sees the armed level, so no wake is
+           lost. */
+        void ArmRoomWake(size_t level);
+
+        void DisarmRoomWake();
+
+        /* The level the watch is armed at, or NoRoomWake. */
+        inline size_t GetRoomWakeLevel() const;
+
+        static constexpr size_t NoRoomWake = static_cast<size_t>(-1);
+
+        /* The callback every pool's watch calls (#765). It runs on whatever thread released the
+           blocks, possibly holding that caller's locks (but not this pool's), so it must only
+           signal: take no lock but its own leaf one and never wait. Null turns it off. */
+        static void SetRoomCallback(void (*callback)());
+
         private:
+
+        /* Called with Mutex held after the counts went down: disarms the watch and returns true
+           if they reached its level. */
+        inline bool TakeRoomWake();
+
+        static void CallRoomCallback();
 
         class TBlock {
           NO_COPY(TBlock);
@@ -153,6 +181,11 @@ namespace Orly {
 
         std::atomic<size_t> NumMisses;
 
+        /* See ArmRoomWake. Written under Mutex or by a waiter arming it; read under Mutex. */
+        std::atomic<size_t> RoomWakeLevel;
+
+        static std::atomic<void (*)()> RoomCallback;
+
       };  // TPool
 
       inline const char *TPool::GetName() const {
@@ -185,6 +218,19 @@ namespace Orly {
 
       inline size_t TPool::GetNumMisses() const {
         return NumMisses.load();
+      }
+
+      inline size_t TPool::GetRoomWakeLevel() const {
+        return RoomWakeLevel.load();
+      }
+
+      inline bool TPool::TakeRoomWake() {
+        const size_t level = RoomWakeLevel.load(std::memory_order_relaxed);
+        if (level == NoRoomWake || NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed > level) {
+          return false;
+        }
+        RoomWakeLevel = NoRoomWake;
+        return true;
       }
 
     }  // Util

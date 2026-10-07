@@ -188,3 +188,56 @@ FIXTURE(WritersCountClaims) {
   pool.ReleaseClaim(50UL);
   pool.ReleaseAdmitted(25UL);
 }
+
+static size_t RoomCalls = 0UL;
+
+static void CountRoomCall() {
+  ++RoomCalls;
+}
+
+/* The room watch (#765) fires once, on the release that brings in use + promised + claimed to
+   its level, from Free, ReleaseAdmitted and ReleaseClaim alike, and then disarms. */
+FIXTURE(RoomWakeFiresAtItsLevel) {
+  TPool::SetRoomCallback(&CountRoomCall);
+  RoomCalls = 0UL;
+  TPool pool(sizeof(void *), "test", 100UL);
+  pool.SetReserve(25UL);
+  vector<void *> blocks;
+  for (size_t i = 0; i < 30UL; ++i) {
+    blocks.push_back(pool.Alloc(sizeof(void *)));
+  }
+  EXPECT_TRUE(pool.TryAdmit(20UL));
+  EXPECT_TRUE(pool.TryClaim(20UL));
+  /* 70 counted. */
+  EXPECT_EQ(pool.GetRoomWakeLevel(), TPool::NoRoomWake);
+  pool.ArmRoomWake(40UL);
+  EXPECT_EQ(pool.GetRoomWakeLevel(), 40UL);
+  pool.ReleaseAdmitted(20UL);
+  EXPECT_EQ(RoomCalls, 0UL);
+  for (size_t i = 0; i < 9UL; ++i) {
+    pool.Free(blocks.back());
+    blocks.pop_back();
+  }
+  /* 41 counted: not yet. */
+  EXPECT_EQ(RoomCalls, 0UL);
+  pool.Free(blocks.back());
+  blocks.pop_back();
+  EXPECT_EQ(RoomCalls, 1UL);
+  EXPECT_EQ(pool.GetRoomWakeLevel(), TPool::NoRoomWake);
+  /* Disarmed: no more calls. */
+  pool.Free(blocks.back());
+  blocks.pop_back();
+  EXPECT_EQ(RoomCalls, 1UL);
+  /* A claim's release fires it too. */
+  pool.ArmRoomWake(25UL);
+  pool.ReleaseClaim(20UL);
+  EXPECT_EQ(RoomCalls, 2UL);
+  /* Disarming stops it. */
+  pool.ArmRoomWake(0UL);
+  pool.DisarmRoomWake();
+  for (void *block : blocks) {
+    pool.Free(block);
+  }
+  EXPECT_EQ(RoomCalls, 2UL);
+  TPool::SetRoomCallback(nullptr);
+}

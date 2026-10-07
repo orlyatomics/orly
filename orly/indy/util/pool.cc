@@ -44,7 +44,8 @@ TPool::TPool(size_t block_size, const char *name, size_t block_count)
       NumBlocksAdmitted(0UL),
       NumBlocksClaimed(0UL),
       Refusing(false),
-      NumMisses(0UL) {
+      NumMisses(0UL),
+      RoomWakeLevel(NoRoomWake) {
   assert(block_size >= sizeof(void*));
   if (block_count) {
     Init(block_count);
@@ -135,9 +136,16 @@ bool TPool::TryAdmit(size_t num_blocks, TRefusal *refusal) {
 }
 
 void TPool::ReleaseAdmitted(size_t num_blocks) {
-  std::lock_guard<std::mutex> lock(Mutex);
-  assert(NumBlocksAdmitted >= num_blocks);
-  NumBlocksAdmitted -= num_blocks;
+  bool wake;
+  /* lock */ {
+    std::lock_guard<std::mutex> lock(Mutex);
+    assert(NumBlocksAdmitted >= num_blocks);
+    NumBlocksAdmitted -= num_blocks;
+    wake = TakeRoomWake();
+  }
+  if (wake) {
+    CallRoomCallback();
+  }
 }
 
 bool TPool::TryClaim(size_t num_blocks) {
@@ -156,18 +164,52 @@ void TPool::ReleaseClaim(size_t num_blocks) {
   if (!num_blocks) {
     return;
   }
-  std::lock_guard<std::mutex> lock(Mutex);
-  assert(NumBlocksClaimed >= num_blocks);
-  NumBlocksClaimed -= num_blocks;
+  bool wake;
+  /* lock */ {
+    std::lock_guard<std::mutex> lock(Mutex);
+    assert(NumBlocksClaimed >= num_blocks);
+    NumBlocksClaimed -= num_blocks;
+    wake = TakeRoomWake();
+  }
+  if (wake) {
+    CallRoomCallback();
+  }
 }
 
 void TPool::Free(void *ptr) {
   assert(ptr);
   TBlock *block = static_cast<TBlock *>(ptr);
-  std::lock_guard<std::mutex> lock(Mutex);
-  block->NextBlock = FirstBlock;
-  --NumBlocksUsed;
-  FirstBlock = block;
+  bool wake;
+  /* lock */ {
+    std::lock_guard<std::mutex> lock(Mutex);
+    block->NextBlock = FirstBlock;
+    --NumBlocksUsed;
+    FirstBlock = block;
+    wake = TakeRoomWake();
+  }
+  if (wake) {
+    CallRoomCallback();
+  }
+}
+
+void TPool::ArmRoomWake(size_t level) {
+  RoomWakeLevel = level;
+}
+
+void TPool::DisarmRoomWake() {
+  RoomWakeLevel = NoRoomWake;
+}
+
+std::atomic<void (*)()> TPool::RoomCallback {nullptr};
+
+void TPool::SetRoomCallback(void (*callback)()) {
+  RoomCallback = callback;
+}
+
+void TPool::CallRoomCallback() {
+  if (auto callback = RoomCallback.load()) {
+    callback();
+  }
 }
 
 void *TPool::TryAlloc(size_t size) {

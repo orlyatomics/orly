@@ -428,9 +428,11 @@ jobs:
         run: bash clients/smoke/run-batch-backlog.sh
 
       # Negative control for the step above: with the writer backlog cap off
-      # (--tetris_backpressure_threshold=0), about a quarter of the batches are
-      # refused, so the smoke must FAIL, after its writers ran. If it passes,
-      # the 1% bound no longer tells whether the cap works.
+      # (--tetris_backpressure_threshold=0), the smoke must FAIL, after its
+      # writers ran, and on the cap itself: the POV's backlog must pass it.
+      # Before memory admission waited for room (#765), about a quarter of the
+      # control's batches were refused; now they wait, so the refused share
+      # no longer tells whether the cap works, and the backlog peak does.
       - name: The batch-backlog smoke fails with the backlog cap off
         run: |
           if EXTRA_ARGS=--tetris_backpressure_threshold=0 bash clients/smoke/run-batch-backlog.sh > /tmp/batch-backlog-control.log 2>&1; then
@@ -444,7 +446,12 @@ jobs:
             echo "CONTROL FAIL: the smoke failed before its writers could test anything"
             exit 1
           fi
-          grep '^BATCH BACKLOG FAIL' /tmp/batch-backlog-control.log | head -3 | cut -c1-300
+          if ! grep -q "^BATCH BACKLOG FAIL: the POV's backlog reached .* past its cap" /tmp/batch-backlog-control.log; then
+            cat /tmp/batch-backlog-control.log
+            echo "CONTROL FAIL: the smoke failed, but not because the backlog passed its cap"
+            exit 1
+          fi
+          grep '^BATCH BACKLOG FAIL' /tmp/batch-backlog-control.log | head -4 | cut -c1-300
           echo "control OK: the smoke fails without the backlog cap"
 
       # #590: fill a tiny mem-sim disk. Writes must come back refused with
