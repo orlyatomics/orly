@@ -23,8 +23,15 @@
 #include <sstream>
 
 #include <orly/code_gen/binary.h>
+#include <orly/code_gen/builder.h>
+#include <orly/code_gen/context.h>
 #include <orly/code_gen/cpp_printer.h>
 #include <orly/code_gen/literal.h>
+#include <orly/expr/add.h>
+#include <orly/expr/free.h>
+#include <orly/expr/keys.h>
+#include <orly/expr/literal.h>
+#include <orly/expr/reduce.h>
 #include <orly/type.h>
 #include <orly/type/type_czar.h>
 
@@ -141,4 +148,41 @@ FIXTURE(CseLocalsEmitInDependencyOrder) {
   EXPECT_EQ(ordered.size(), 2u);
   EXPECT_TRUE(ordered[0] == inner);        // ...but emission order defines inner first.
   EXPECT_TRUE(ordered[1] == outer);
+}
+
+FIXTURE(KeyCountsInternSeparatelyFromKeySequences) {
+  Type::TTypeCzar type_czar;
+  TCodeScope scope(TIdScope::New());
+  auto &interner = *scope.GetInterner();
+  const auto seq_type = Type::TSeq::Get(Type::TAddr::Get({{TAddrDir::Asc, Type::TInt::Get()}}));
+  auto free = interner.GetTypedLeaf(nullptr, TTypedLeaf::Free, Type::TInt::Get(), TAddrDir::Asc);
+  auto keys = interner.GetKeys(nullptr, seq_type, Type::TInt::Get(),
+      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, false);
+  auto count = interner.GetKeys(nullptr, seq_type, Type::TInt::Get(),
+      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, true);
+  auto count_again = interner.GetKeys(nullptr, seq_type, Type::TInt::Get(),
+      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, true);
+  EXPECT_NE(keys, count);
+  EXPECT_EQ(count, count_again);
+  EXPECT_TRUE(keys->GetReturnType() == seq_type);
+  EXPECT_TRUE(count->GetReturnType() == Type::TInt::Get());
+}
+
+FIXTURE(CountOnlyReductionsUseKeyCountCodegen) {
+  Type::TTypeCzar type_czar;
+  TCodeScope scope(TIdScope::New());
+  TScopeCtx context(&scope);
+  for (bool reversed : {false, true}) {
+    auto free = Expr::TFree::New(Type::TInt::Get(), TPosRange(), TAddrDir::Asc);
+    auto keys = Expr::TKeys::New({{TAddrDir::Asc, free}}, Type::TInt::Get(), TPosRange());
+    auto reduce = Expr::TReduce::New(keys, TPosRange());
+    auto start = Expr::TStart::New(Expr::TLiteral::New(Var::TVar(0L), TPosRange()), TPosRange());
+    auto one = Expr::TLiteral::New(Var::TVar(1L), TPosRange());
+    reduce->SetStart(start);
+    reduce->SetRhs(reversed ? Expr::TAdd::New(one, start, TPosRange())
+                           : Expr::TAdd::New(start, one, TPosRange()));
+    auto result = BuildInline(nullptr, reduce, false);
+    EXPECT_TRUE(static_cast<bool>(std::dynamic_pointer_cast<const TKeys>(result)));
+    EXPECT_TRUE(result->GetReturnType() == Type::TInt::Get());
+  }
 }

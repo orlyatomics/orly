@@ -36,6 +36,7 @@
 #include <orly/indy/disk/sim/mem_engine.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
 #include <orly/indy/transaction_base.h>
+#include <orly/server/read_too_large.h>
 
 #include <base/test/kit.h>
 
@@ -1335,6 +1336,195 @@ FIXTURE(ContextReleasesViewsBeforeWait) {
         EXPECT_EQ(TKey(&arena, state, context[index_key(1L)]), TKey(10L, &arena, state));
         context.ReleaseViews();
         EXPECT_TRUE(context.HasReleasedViews());
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+FIXTURE(RangeCountsPreserveVisibilityAndSnapshots) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    class TContextWithoutCounts final : public Orly::TContextBase {
+      public:
+      explicit TContextWithoutCounts(Orly::Indy::TContext &context) : TContextBase(context.GetArena()), Context(context) {}
+      TKey operator[](const TIndexKey &key) override { return Context[key]; }
+      bool Exists(const TIndexKey &key) override { return Context.Exists(key); }
+      private:
+      Orly::Indy::TContext &Context;
+    };
+    class TCursorPackageContext final : public Orly::Package::TContext {
+      public:
+      TCursorPackageContext(Orly::Indy::TContext &context, TSuprena &arena, TScheduler &scheduler)
+          : Orly::Package::TContext({}, Base::TUuid(TUuid::Twister), &arena, &scheduler, {}, {}), Context(context) {}
+      Orly::TContextBase &GetFlux() override { return Context; }
+      Orly::TKeyCursor *NewKeyCursor(Orly::TContextBase *, const TIndexKey &pattern) const override {
+        return new Orly::Indy::TContext::TKeyCursor(&Context, pattern);
+      }
+      Orly::TKeyCursor *NewKeyCursor(Orly::TContextBase *, const TIndexKey &from, const TIndexKey &to) const override {
+        return new Orly::Indy::TContext::TKeyCursor(&Context, from, to);
+      }
+      private:
+      Orly::Indy::TContext &Context;
+    };
+    TRunnerFileCaches file_caches;
+    TSuprena arena;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      const Base::TUuid index_id(TUuid::Twister);
+      auto root = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto child = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), root, true);
+      /* Keep the child's updates unpromoted; this fixture has no Tetris service. */
+      {
+        auto transaction = manager.NewTransaction();
+        transaction->Pause(child);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      const auto key = [&](int64_t n) { return TIndexKey(index_id, TKey(make_tuple(n), &arena, state)); };
+      const TIndexKey all(index_id, TKey(make_tuple(Orly::Native::TFree<int64_t>()), &arena, state));
+      const auto commit = [&](const L0::TManager::TPtr<TRepo> &repo, int64_t n, const TKey &value, TMutator mutator = TMutator::Assign) {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(key(n), value, mutator);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      const auto flush = [&](const L0::TManager::TPtr<TRepo> &repo) {
+        dynamic_cast<TSteppedSafeRepo *>(repo.Get())->StepMergeMem();
+      };
+      for (int64_t n = 1; n <= 3; ++n) {
+        commit(root, n, TKey(n, &arena, state));
+      }
+      flush(root);
+      commit(root, 2, TKey(10L, &arena, state), TMutator::Add);
+      commit(root, 2, TKey(20L, &arena, state), TMutator::Add);
+      flush(root);
+      TSuprena pinned_arena;
+      TContext pinned(child, &pinned_arena);
+      EXPECT_EQ(pinned.CountKeys(all), 3L);
+      EXPECT_EQ(pinned.GetFoldDedupProbes(), 0UL);
+      commit(root, 1, TKey(Orly::Native::TTombstone::Tombstone, &arena, state));
+      commit(root, 4, TKey(7L, &arena, state), TMutator::Add);
+      {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        EXPECT_EQ(context.CountKeys(all), 3L);
+        EXPECT_EQ(context.CountKeys(key(1)), 0L);
+        EXPECT_EQ(context.CountKeys(key(4)), 1L);
+        EXPECT_EQ(context.CountKeys(key(2), key(3)), 2L);
+        EXPECT_EQ(context.CountKeys(key(2), key(2)), 1L);
+        EXPECT_EQ(context.CountKeys(key(9)), 0L);
+        EXPECT_EQ(context.CountKeys(key(9), key(10)), 0L);
+        const TIndexKey other_index(Base::TUuid(TUuid::Twister), key(3).GetKey());
+        auto mismatched_indexes = [&]() { context.CountKeys(key(2), other_index); };
+        EXPECT_THROW_FUNC(invalid_argument, mismatched_indexes);
+        EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
+        EXPECT_EQ(context[key(2)], TKey(32L, &arena, state));
+        context.ReleaseViews();
+        auto count_after_release = [&]() { context.CountKeys(all); };
+        EXPECT_THROW_FUNC(logic_error, count_after_release);
+      }
+      flush(root);
+      EXPECT_EQ(pinned.CountKeys(all), 3L);
+      EXPECT_EQ(pinned.CountKeys(key(1)), 1L);
+      EXPECT_EQ(pinned.CountKeys(key(4)), 0L);
+      /* A child shadows a parent's key, and a deferred upsert adds one key. */
+      /* Give the tombstone newer sequence numbers than the parent's entries. */
+      for (int i = 0; i < 10; ++i) {
+        commit(child, 3, TKey(Orly::Native::TTombstone::Tombstone, &arena, state));
+      }
+      commit(child, 2, TKey(1L, &arena, state), TMutator::Add);
+      commit(child, 5, TKey(9L, &arena, state), TMutator::Add);
+      {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        TIndyContext package_context({}, Base::TUuid(TUuid::Twister), context, &ctx_arena, &scheduler, {}, {});
+        const auto pattern = make_tuple(Orly::Native::TFree<int64_t>());
+        EXPECT_EQ(package_context.CountKeys(context, index_id, pattern), 3L);
+        EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
+        TContextWithoutCounts legacy_context(context);
+        TCursorPackageContext legacy_package_context(context, ctx_arena, scheduler);
+        EXPECT_EQ(legacy_package_context.CountKeys(legacy_context, index_id, pattern), 3L);
+        EXPECT_GT(context.GetFoldDedupProbes(), 0UL);
+      }
+      flush(child);
+      {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        EXPECT_EQ(context.CountKeys(all), 3L);
+        EXPECT_EQ(context.CountKeys(key(3)), 0L);
+        EXPECT_EQ(context.CountKeys(key(2), key(5)), 3L);
+        EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
+        EXPECT_EQ(context[key(2)], TKey(33L, &arena, state));
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+FIXTURE(RangeCountsRespectReadBudgetsWithoutFoldingValues) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TSuprena arena;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      auto repo = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      const Base::TUuid index_id(TUuid::Twister);
+      const TIndexKey all(index_id, TKey(make_tuple(Orly::Native::TFree<int64_t>()), &arena, state));
+      const TIndexKey absent(index_id, TKey(make_tuple(99L), &arena, state));
+      const string value(32768, 'x');
+      for (int pass = 0; pass < 2; ++pass) {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        for (int64_t n = 1; n <= 3; ++n) {
+          update->AddEntry(TIndexKey(index_id, TKey(make_tuple(n), &arena, state)), TKey(value, &arena, state), TMutator::Add);
+        }
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+        dynamic_cast<TSteppedSafeRepo *>(repo.Get())->StepMergeMem();
+      }
+      {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        const auto bytes_before = ctx_arena.GetByteSize();
+        context.SetReadBudget(3, 1, &ctx_arena);
+        EXPECT_EQ(context.CountKeys(all), 3L);
+        EXPECT_EQ(context.GetRowsWalked(), 3UL);
+        EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
+        EXPECT_EQ(ctx_arena.GetByteSize(), bytes_before);
+        EXPECT_EQ(context.CountKeys(absent), 0L);
+        auto over_rows = [&]() { context.CountKeys(all); };
+        EXPECT_THROW_FUNC(Orly::Server::TReadTooLarge, over_rows);
+        EXPECT_EQ(context.GetRowsWalked(), 4UL);
+        context.ClearReadBudget();
+        EXPECT_EQ(context.CountKeys(all), 3L);
+        const TIndexKey first(index_id, TKey(make_tuple(1L), &arena, state));
+        EXPECT_EQ(context[first], TKey(value + value, &arena, state));
+        EXPECT_GT(ctx_arena.GetByteSize(), bytes_before);
+      }
+      {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        TKey allocated(string(1024, 'y'), &ctx_arena, state);
+        context.SetReadBudget(0, 1, &ctx_arena);
+        auto over_bytes = [&]() { context.CountKeys(absent); };
+        EXPECT_THROW_FUNC(Orly::Server::TReadTooLarge, over_bytes);
       }
     }
     std::lock_guard<std::mutex> lock(mut);

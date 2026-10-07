@@ -23,6 +23,9 @@
 
 #pragma once
 
+#include <limits>
+#include <stdexcept>
+
 //To get the flux TContext
 #include <base/chrono.h>
 #include <base/scheduler.h>
@@ -111,6 +114,29 @@ namespace Orly {
             Sabot::State::TAny::TWrapper(Native::State::New(start, state_alloc)).get(),
             Sabot::State::TAny::TWrapper(Native::State::New(bound, bound_alloc)).get(),
             bound_is_inclusive, index_id);
+      }
+
+      template <typename... TArgs>
+      int64_t CountKeys(TContextBase &ctx, const Base::TUuid &index_id, const std::tuple<TArgs...> &start) {
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        const Indy::TIndexKey pattern(index_id, Indy::TKey(ctx.GetArena(),
+            Sabot::State::TAny::TWrapper(Native::State::New(start, state_alloc)).get()));
+        if (auto *counter = dynamic_cast<TKeyCountContext *>(this)) {
+          int64_t count = 0;
+          if (counter->TryCountKeys(ctx, pattern, count)) {
+            return count;
+          }
+        }
+        /* Other contexts retain their existing cursor semantics. */
+        std::unique_ptr<TKeyCursor> cursor(NewKeyCursor(&ctx, pattern));
+        int64_t count = 0;
+        for (; *cursor; ++*cursor) {
+          if (count == std::numeric_limits<int64_t>::max()) {
+            throw std::overflow_error("key count exceeds int range");
+          }
+          ++count;
+        }
+        return count;
       }
 
       /* Get the FluxCapacitor::TContext. Used by things like KeyGenerators and reading values out of the database. */

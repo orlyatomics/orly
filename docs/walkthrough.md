@@ -226,6 +226,50 @@ It's normal to see a few `FATAL ERROR: Fiber Runner caught exception` lines on s
 
 ## Going further
 
+### Counting a key range
+
+For a count without reading the stored values, use the existing count-only
+`reduce` pattern:
+
+```orly
+count_rows = ((keys (str) @ <["rows", space, free::(int)]>) reduce (start 0) + 1) where {
+  space = given::(int);
+};
+```
+
+The compiler recognises a direct `keys` expression reduced with the literal
+integer seed `0` and increment `1` (including `1 + (start 0)`). It emits a
+key-only count: no native key results are constructed and deferred value
+mutations are not decoded or folded. The value type, here `str`, still selects
+the index, just as it does for an ordinary `keys` read. Empty ranges return `0`;
+a fully bound key returns `0` or `1`. Overwrites and unmerged versions count
+once, deleted keys do not count, and descending key components work as usual.
+
+Other reductions, filters, mapped keys, and materialised lists keep their
+existing behavior. In particular, a filter on a stored value must read that
+value. `length_of` still measures containers and strings; it is not a new
+sequence-count operator.
+
+This is still a scan, linear in the keys and versions visited. It charges each
+visible key to `--read_budget_rows`, like an ordinary range read, and observes
+the same memory budget and POV snapshot. It does not yet skip whole files:
+persisted key counts include tombstones, and keys can overlap across files and
+POVs, so simply adding those counts would be wrong. No disk format changes are
+needed for this key-only path.
+
+For a frequently displayed total over a large range, consider a maintained
+counter instead. Change the row and its counter in the same `effecting` method,
+using `*<["row_counts", space]>::(int) += 1` for a new logical row and `+= -1`
+for a deletion. A first `+=` seeds a missing counter, so a destructive
+initialisation is unnecessary. Read the counter with an optional `(int?)`
+point lookup, treating a missing counter as `0` before the first insert.
+Overwrites, retries, and duplicate or concurrent creates must not increment
+twice: commutative increments avoid lost updates, but do not by themselves
+establish unique row membership. Use a range count when the membership is
+ad hoc, when exact counters cannot be maintained, or to reconcile a counter.
+
+### More resources
+
 - **More packages to play with**: `tests/lang_tests/general/` has ~90 small example programs covering different language features (filter, sort, reduce, maps, sets, etc.). Most have inline `test { }` blocks that double as documentation.
 - **The full client grammar** lives in `orly/client/program/program.nycr`. The interesting verbs are `install`, `uninstall`, `new ... pov`, `try`, `echo`, `compile`, `list_packages`, `set ttl`, `pause`, `unpause`, `import`.
 - **Snapshot-based regression testing**: `python3 tools/lang_test.py -d orly/data tests/lang_tests` compiles every `.orly` file and compares the output against stored `.test.state` snapshots. Pass `--update` to refresh snapshots after a deliberate change.

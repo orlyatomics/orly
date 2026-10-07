@@ -1,0 +1,72 @@
+package #1;
+
+count_prefix = ((keys (int) @ <["rows", space, free::(int)]>) reduce (start 0) + 1) where {
+  space = given::(int);
+};
+
+count_reversed = ((keys (int) @ <["rows", space, free::(int)]>) reduce 1 + (start 0)) where {
+  space = given::(int);
+};
+
+count_seeded = ((keys (int) @ <["rows", space, free::(int)]>) reduce (start 10) + 1) where {
+  space = given::(int);
+};
+
+count_filtered = ((keys (int) @ <["rows", space, free::(int)]> if that.2 > 1) reduce (start 0) + 1) where {
+  space = given::(int);
+};
+
+count_value_filtered = ((keys (int) @ <["rows", space, free::(int)]> if *that::(int) > 15) reduce (start 0) + 1) where {
+  space = given::(int);
+};
+
+test {
+  empty_range: count_prefix(.space: 1) == 0;
+};
+
+with {
+  <["rows", 1, 1]> <- 10;
+  <["rows", 1, 2]> <- 20;
+  <["rows", 1, 3]> <- 30;
+  <["rows", 2, 1]> <- 40;
+  <["rows", 1, 4]> <- true;
+  <["descending", desc 1]> <- 10;
+  <["descending", desc 2]> <- 20;
+  <["counter", 1]> <- 0;
+} test {
+  prefix: count_prefix(.space: 1) == 3;
+  other_prefix: count_prefix(.space: 2) == 1;
+  missing_prefix: count_prefix(.space: 3) == 0;
+  reversed_add: count_reversed(.space: 1) == 3;
+  point_present: (keys (int) @ <["rows", 1, 2]> reduce (start 0) + 1) == 1;
+  point_absent: (keys (int) @ <["rows", 1, 99]> reduce (start 0) + 1) == 0;
+  all_free: (keys (int) @ <[free::(str), free::(int), free::(int)]> reduce (start 0) + 1) == 4;
+  descending: (keys (int) @ <["descending", desc free::(int)]> reduce (start 0) + 1) == 2;
+  seeded: count_seeded(.space: 1) == 13;
+  filtered: count_filtered(.space: 1) == 2;
+  value_filtered: count_value_filtered(.space: 1) == 2;
+  weighted: (keys (int) @ <["rows", 1, free::(int)]> reduce (start 0) + 2) == 6;
+  real_count: (keys (int) @ <["rows", 1, free::(int)]> reduce (start 0.0) + 1.0) == 3.0;
+  mapped: ((keys (int) @ <["rows", 1, free::(int)]>).2 reduce (start 0) + 1) == 3;
+  normal_values: *(keys (int) @ <["rows", 1, free::(int)]>)::(int) as [int] == [10, 20, 30];
+  overwrite: ((true) effecting { *<["rows", 1, 2]>::(int) <- 200; }) {
+    unchanged_count: count_prefix(.space: 1) == 3;
+    changed_value: *<["rows", 1, 2]>::(int) == 200;
+  };
+  deletion: ((true) effecting { delete (int) @ <["rows", 1, 2]>; }) {
+    fewer_keys: count_prefix(.space: 1) == 2;
+    deleted_point: (keys (int) @ <["rows", 1, 2]> reduce (start 0) + 1) == 0;
+    recreation: ((true) effecting { new <["rows", 1, 2]> <- 200; }) {
+      restored_count: count_prefix(.space: 1) == 3;
+    };
+  };
+  deferred: ((true) effecting { *<["counter", 1]>::(int) += 2; }) {
+    more_deferred: ((true) effecting { *<["counter", 1]>::(int) += 3; }) {
+      one_key: (keys (int) @ <["counter", free::(int)]> reduce (start 0) + 1) == 1;
+      folded_value: *<["counter", 1]>::(int) == 5;
+      upsert: ((true) effecting { *<["counter", 2]>::(int) += 7; }) {
+        two_keys: (keys (int) @ <["counter", free::(int)]> reduce (start 0) + 1) == 2;
+      };
+    };
+  };
+};

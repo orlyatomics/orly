@@ -68,9 +68,11 @@ namespace Orly {
         /* exact_point true => fully-bound point read (operator[]/Exists), so
            layers may seek instead of head-scanning (#257). The TKeyCursor path
            leaves it false because its pattern may be a prefix. */
-        TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &key, bool exact_point = false);
+        TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &key,
+                       bool exact_point = false, bool keys_only = false);
 
-        TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &from, const TIndexKey &to);
+        TPresentWalker(TContext *context, const TRepoTree &repo_tree, const TIndexKey &from,
+                       const TIndexKey &to, bool keys_only = false);
 
         ~TPresentWalker();
 
@@ -110,6 +112,9 @@ namespace Orly {
         Util::TMinHeap<Indy::TPresentWalker::TItem, size_t, TChainOrder> MinHeap;
 
         bool Valid;
+
+        /* Counts need visibility and tombstones, but never resolved values. */
+        const bool KeysOnly;
 
         mutable TItem Item;
 
@@ -180,6 +185,12 @@ namespace Orly {
       virtual Indy::TKey operator[](const Indy::TIndexKey &key) override;
 
       virtual bool Exists(const Indy::TIndexKey &key) override;
+
+      /* Count visible keys without decoding or folding their values. Uses the same views
+         and read budget as a key cursor. Range endpoints are inclusive and use one index. */
+      int64_t CountKeys(const Indy::TIndexKey &pattern);
+
+      int64_t CountKeys(const Indy::TIndexKey &from, const Indy::TIndexKey &to);
 
       inline size_t GetWalkerCount() const {
         return WalkerCount;
@@ -276,6 +287,8 @@ namespace Orly {
       /* Throws std::logic_error once ReleaseViews has run. */
       void CheckViewsHeld() const;
 
+      int64_t CountKeys(TPresentWalker &walker);
+
       static constexpr size_t Unlimited = static_cast<size_t>(-1);
 
       /* Throws TReadTooLarge, saying which limit was passed. */
@@ -303,7 +316,8 @@ namespace Orly {
     };  // TContext
 
     class TIndyContext
-          : public Orly::Package::TContext {
+          : public Orly::Package::TContext,
+            public TKeyCountContext {
       NO_COPY(TIndyContext);
       public:
 
@@ -319,6 +333,14 @@ namespace Orly {
 
       virtual Orly::TContextBase &GetFlux() override{
         return DataContext;
+      }
+
+      bool TryCountKeys(TContextBase &context, const TIndexKey &pattern, int64_t &count) override {
+        if (auto *data_context = dynamic_cast<Indy::TContext *>(&context)) {
+          count = data_context->CountKeys(pattern);
+          return true;
+        }
+        return false;
       }
 
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const override {
