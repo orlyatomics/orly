@@ -117,6 +117,25 @@ class Lit:
         self.raw = str(raw)
 
 
+_SHORT_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _quote(s):
+    """A string as an orlyscript literal. The lexer refuses raw control characters, so those
+    are written as \\n, \\r, \\t or \\xNN."""
+    out = []
+    for ch in s:
+        if ch == "\\" or ch == '"':
+            out.append("\\" + ch)
+        elif ch in _SHORT_ESCAPES:
+            out.append(_SHORT_ESCAPES[ch])
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append("\\x%02x" % ord(ch))
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def lit(value):
     """Encode a Python value as an orlyscript literal.
 
@@ -139,7 +158,7 @@ def lit(value):
     if isinstance(value, float):
         return repr(value)
     if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        return _quote(value)
     if isinstance(value, dict):
         return "<{" + ", ".join(f".{k}: {lit(v)}" for k, v in value.items()) + "}>"
     if isinstance(value, (list, tuple)):

@@ -168,8 +168,17 @@ export function lit(value: unknown): string {
   }
 }
 
+/* The lexer refuses raw control characters, so those are written as \n, \r, \t or \xNN. */
 function quote(s: string): string {
-  return '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  const escaped = s
+    .replace(/[\\"]/g, "\\$&")
+    .replace(/[\x00-\x1f\x7f]/g, (c) => {
+      if (c === "\n") return "\\n";
+      if (c === "\r") return "\\r";
+      if (c === "\t") return "\\t";
+      return "\\x" + c.charCodeAt(0).toString(16).padStart(2, "0");
+    });
+  return '"' + escaped + '"';
 }
 
 /** The minimal browser-WebSocket surface this client relies on. */

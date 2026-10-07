@@ -301,7 +301,9 @@ exit;
 
 - **`try` args** are an orlyscript object literal: `<{.name: expr, ...}>` (empty:
   `<{}>`). Scalars, strings, records, sets, etc. are written as orlyscript
-  literals; string values must be escaped for an orlyscript string literal.
+  literals; string values must be escaped for an orlyscript string literal: `\\` and
+  `\"`, and control characters as `\n`, `\r`, `\t` or `\xNN` (the lexer refuses them raw).
+  The Python, Go and TypeScript clients do this for you.
 - **Batched `try`** (`#253`) invokes **one** `(pkg, method)` against **N** argument
   records — a bracketed, comma-separated list (`[<{...}>, <{...}>, ...]`, at least
   one) — folding all N calls into a **single transaction**. It exists to amortize
