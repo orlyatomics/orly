@@ -11,7 +11,9 @@
  * runner can briefly take the in-use blocks, the blocks promised to writes in flight and the
  * merges' copy claims past the admission line. The regression this smoke guards against is
  * different in kind: with the backlog capped only in updates, about one batch in two was
- * refused, and with no cap at all, more (the negative control in CI).
+ * refused, and with no cap at all, more. Since memory admission waits for room before it
+ * refuses (#765), an uncapped backlog's batches mostly wait instead, so the negative control
+ * in CI requires the backlog check itself to fail.
  *
  * With orlyi's memory reserve at RESERVE_PCT, this requires, over SECS seconds:
  *   - no write failing other than by refusal, and at least MIN_BATCHES batches through;
@@ -126,18 +128,28 @@ if (bl) {
   console.log(`METRIC stalled_refusals ${bl[5]}`);
 }
 if (firstRefusal) console.log(`first refusal: ${firstRefusal.replace(/write_val \[.*\];/, "write_val [...];")}`);
-if (error) fail(`a batch failed: ${error}`);
-if (batches < MIN_BATCHES) fail(`only ${batches} batches went through`);
+/* Every check runs and every failure is printed, so one can't hide another: the negative
+   control in CI must fail on the backlog cap itself (#765: with memory admission's wait, the
+   control's batches wait instead of being refused, so the refused share no longer tells). */
+const failures = [];
+if (error) failures.push(`a batch failed: ${error}`);
+if (batches < MIN_BATCHES) failures.push(`only ${batches} batches went through`);
 if (refused * 100 > MAX_REFUSED_PCT * (batches + refused)) {
-  fail(`${refused} of ${batches + refused} batches were refused, more than ${MAX_REFUSED_PCT}%`);
+  failures.push(`${refused} of ${batches + refused} batches were refused, more than ${MAX_REFUSED_PCT}%`);
 }
 const misses = [...line.matchAll(/misses (\d+)/g)].map((m) => +m[1]);
-if (misses.length !== 2) fail(`couldn't read the pool misses from: ${line}`);
-if (misses.some((n) => n > 0)) fail(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
-if (!max || peak * 100 >= MAX_PEAK_PCT * max) fail(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
-if (!bl) fail(`couldn't read the writer backlog from: ${backlogLine}`);
-if (+bl[1] > +bl[2]) fail(`the POV's backlog reached ${bl[1]} entries, past its cap of ${bl[2]}`);
-if (+bl[3] > +bl[4]) fail(`the POV's backlog reached ${bl[3]} updates, past its cap of ${bl[4]}`);
+if (misses.length !== 2) failures.push(`couldn't read the pool misses from: ${line}`);
+else if (misses.some((n) => n > 0)) failures.push(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
+if (!max || peak * 100 >= MAX_PEAK_PCT * max) failures.push(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
+if (!bl) failures.push(`couldn't read the writer backlog from: ${backlogLine}`);
+else {
+  if (+bl[1] > +bl[2]) failures.push(`the POV's backlog reached ${bl[1]} entries, past its cap of ${bl[2]}`);
+  if (+bl[3] > +bl[4]) failures.push(`the POV's backlog reached ${bl[3]} updates, past its cap of ${bl[4]}`);
+}
+if (failures.length) {
+  for (const f of failures) console.error(`BATCH BACKLOG FAIL: ${f}`);
+  process.exit(1);
+}
 setup.close();
 console.log("BATCH BACKLOG OK");
 process.exit(0);
