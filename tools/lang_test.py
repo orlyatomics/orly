@@ -120,6 +120,20 @@ def GetResult(proc):
   sections = [x.splitlines() for x in output.split('MM_NOTICE: ')]
   return proc.returncode(), sections
 
+# A diagnostics pin is a test whose point is a compile error: its `.state`
+# baseline pins the exact message. It names itself with this marker in its
+# source and passes when orlyc refuses it with exactly the pinned output, so it
+# isn't listed in .xfail as though it were a limitation. If the program ever
+# compiles, the return code no longer matches its baseline and the test fails.
+_EXPECT_COMPILE_ERROR = 'lang_test: expect-compile-error'
+
+def ExpectsCompileError(filepath):
+  try:
+    with open(filepath, 'r', errors='replace') as f:
+      return _EXPECT_COMPILE_ERROR in f.read()
+  except (IOError, OSError):
+    return False
+
 def GetStateFilename(filepath):
   dirpath, filename = os.path.split(filepath)
   return os.path.join(dirpath, '.' + filename + '.test.state')
@@ -244,6 +258,7 @@ def Main():
         f.write('\n')
       return
     else:
+      expects_error = ExpectsCompileError(filepath)
       try:
         # json.load yields lists; wrap in tuple so the `result == expected`
         # comparison below matches GetResult's (returncode, sections) tuple.
@@ -252,7 +267,12 @@ def Main():
       except (IOError, OSError) as ex:
         if ex.errno != 2:
           raise
-        if result[0] != 0:
+        if expects_error:
+          print('New diagnostics pin without a baseline:', filepath,
+                '-- run with -u to record it')
+          changed_files.append(filepath)
+          failed_files.append(filepath)
+        elif result[0] != 0:
           print('New failure:', filepath)
           print('Exited with code', result[0])
           print('OUTPUT: ')
@@ -263,8 +283,9 @@ def Main():
           passed_files.append(filepath)
         return
 
-      # Did we pass?
-      passed = result[0] == 0
+      # Did we pass? A diagnostics pin passes by failing to compile (and by
+      # matching its baseline, checked below).
+      passed = (result[0] != 0) if expects_error else (result[0] == 0)
 
       if result == expected:
         if passed:

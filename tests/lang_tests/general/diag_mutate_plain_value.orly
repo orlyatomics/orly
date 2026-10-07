@@ -2,8 +2,8 @@
 
    Diagnostics pin (issue #557): a mutation whose target is a plain value,
    not a stored one, used to crash orlyc with a segfault and no message.
-   It must report a clean error. EXPECTED to fail compilation (see
-   .xfail); the .state baseline pins the exact message.
+   It must report a clean error. It passes when compilation fails with the
+   message its .state baseline pins (lang_test: expect-compile-error).
 
    Copyright 2010-2026 Atomic Kismet Company
 

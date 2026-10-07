@@ -14,9 +14,6 @@
 general/unsorted/multiple_sequences.orly #74
 general/unsorted/sequence_in_effecting.orly #75
 
-# Diagnostics pins (not limitations): these tests fail compilation BY
-# DESIGN -- their .state baselines pin the exact compiler error messages.
-general/diag_mutable_type.orly #314
-general/diag_assign_type_mismatch.orly #314
-general/diag_mutate_address.orly #557
-general/diag_mutate_plain_value.orly #557
+# Diagnostics pins (general/diag_*.orly) are not listed here: they carry the
+# marker "lang_test: expect-compile-error" and pass when orlyc refuses them
+# with exactly the message their .state baseline pins.
