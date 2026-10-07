@@ -3,6 +3,7 @@
    Unit test for <orly/indy/disk/durable_manager.h>, pinning the durability-signal
    contract (#277): a saver's semaphore fires only once its save is actually on
    disk, and shutdown flushes (rather than drops) whatever is still in memory.
+   Flushed disk layers must also wake their merger after publication.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -22,7 +23,9 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <base/scheduler.h>
@@ -337,7 +340,7 @@ namespace Orly {
 
     namespace Disk {
 
-      /* A friend of TDurableManager (see its header), for the test below. */
+      /* A friend of TDurableManager (see its header), for the tests below. */
       class TDurableManagerTestAccess {
         public:
 
@@ -377,6 +380,24 @@ namespace Orly {
           return false;
         }
 
+        static Base::TScheduler::TJob SuspendQueuedMerger(TDurableManager &manager) {
+          auto job = *manager.MergerHostHandle;
+          if (!manager.Scheduler->Cancel(manager.MergerHostHandle)) {
+            throw std::runtime_error("merger host already started");
+          }
+          manager.MergerHostHandle.reset();
+          return job;
+        }
+
+        static void ResumeMerger(TDurableManager &manager, Base::TScheduler::TJob &&job) {
+          manager.MergerHostHandle = manager.Scheduler->ScheduleCancelable(std::move(job));
+        }
+
+        static void ConsumeMergeWake(TDurableManager &manager) {
+          manager.MergeSem.Push();
+          manager.MergeSem.Pop();
+        }
+
       };  // TDurableManagerTestAccess
 
     }  // Disk
@@ -384,6 +405,81 @@ namespace Orly {
   }  // Indy
 
 }  // Orly
+
+/* Consume an older coalesced merge wake while the third file is on disk but its layer is
+   not yet published. Publishing that layer must send a fresh wake: otherwise the merger sleeps
+   with three eligible inputs until another save happens. */
+FIXTURE(MergerWakesAfterLayerPublished) {
+  using TAccess = Disk::TDurableManagerTestAccess;
+  RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {
+    TEventSemaphore occupied, release_worker;
+    TScheduler scheduler(TScheduler::TPolicy(1, 1, seconds(30)));
+    scheduler.Schedule([&] {
+      occupied.Push();
+      release_worker.Pop();
+    });
+    occupied.Pop();
+    Sim::TMemEngine mem_engine(&scheduler, 64, 16, 64, 1, 32, 1);
+    TReplicationStub rep_stub;
+    std::mutex hook_mutex;
+    std::condition_variable hook_cond;
+    size_t written = 0UL;
+    bool resume = false;
+    /* manager scope */ {
+      TDurableManager durable_manager(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                                      100UL, milliseconds(0), milliseconds(0), milliseconds(10000), 20UL, true);
+      /* The sole worker is occupied, so the merger host is still queued. Keep its original
+         closure and latched frame, and start it only after consuming the early wake below. */
+      auto merger_host = TAccess::SuspendQueuedMerger(durable_manager);
+      TDurableManager::OnMemLayerWrittenForTest = [&](TDurableManager *manager) {
+        if (manager == &durable_manager) {
+          std::unique_lock<std::mutex> lock(hook_mutex);
+          if (++written == 3UL) {
+            hook_cond.notify_all();
+            hook_cond.wait(lock, [&] { return resume; });
+          }
+        }
+      };
+      scheduler.SetPolicy(TScheduler::TPolicy(4, 8, seconds(30)));
+      release_worker.Push();
+      const Durable::TTtl ttl(600);
+      const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
+      for (size_t i = 0UL; i < 3UL; ++i) {
+        Durable::TSem sem;
+        durable_manager.Save(Durable::TId(TUuid::Twister), deadline, ttl, "save " + to_string(i), &sem);
+        sem.Pop();
+      }
+      /* The writer is parked before publishing the third disk layer. The real merger cannot
+         run yet. Seed and consume a coalesced wake with only two published disk layers, standing
+         in for its early, ineligible scan. Seeding keeps Pop from hanging if all wakes regress. */
+      {
+        std::unique_lock<std::mutex> lock(hook_mutex);
+        const bool paused = hook_cond.wait_for(lock, seconds(5), [&] { return written == 3UL; });
+        if (EXPECT_TRUE(paused)) {
+          TAccess::TView view(&durable_manager);
+          EXPECT_EQ(TAccess::CountDiskLayers(view), 2UL);
+          TAccess::ConsumeMergeWake(durable_manager);
+        }
+        resume = true;
+        hook_cond.notify_all();
+      }
+      TAccess::ResumeMerger(durable_manager, std::move(merger_host));
+      auto num_files = [&] {
+        std::vector<TFileObj> files;
+        mem_engine.GetEngine()->AppendFileGenSet(TDurableManager::DurableByIdFileId, files);
+        return files.size();
+      };
+      /* No fourth save, retry tick or shutdown signal may rescue the missing wake. The layer
+         cleaner is not running, so a completed merge leaves its three inputs plus the output. */
+      const auto give_up = steady_clock::now() + seconds(5);
+      while (num_files() < 4UL && steady_clock::now() < give_up) {
+        std::this_thread::sleep_for(milliseconds(1));
+      }
+      EXPECT_EQ(num_files(), 4UL);
+    }
+    TDurableManager::OnMemLayerWrittenForTest = nullptr;
+  });
+}
 
 /* #727: a view drops its reference to a memory layer while the writer marks that layer for
    delete. TView's destructor releases its memory layer before it takes MappingLock, and Decr()

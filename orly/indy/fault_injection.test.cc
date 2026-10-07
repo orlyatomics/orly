@@ -1051,8 +1051,9 @@ static const vector<TMode> Modes{
 
 static constexpr int PowerLossExit = 42;
 
-/* A run takes well under a second; one still going after this is hung. */
-static constexpr std::chrono::seconds ChildDeadline{6};
+/* Leave room for setup, power-image copies and teardown on a loaded runner, including the
+   durable case's own 20-second merge guard. */
+static constexpr std::chrono::seconds ChildDeadline{30};
 
 static const TMode &FindMode(const string &name) {
   for (const auto &mode : Modes) {
@@ -1075,7 +1076,7 @@ static void InitChild(const string &log_path) {
   /* No core dump. These children abort by design, and nothing reads their cores. A dump is not
      free: GitHub's runners pipe it to systemd-coredump, and the child isn't reaped until the
      dump is written. On an x86 runner that took 1.5 s per abort idle and over 5 s under load,
-     past ChildDeadline, so a deliberate abort was reported as a hang (#682). */
+     past the then-6-second deadline, so a deliberate abort was reported as a hang (#682). */
   prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
   /* Engine errors go to syslog; copy them to the log. */
   openlog("fault_injection", LOG_PERROR, LOG_USER);
@@ -1097,6 +1098,7 @@ static void InitChild(const string &log_path) {
     auto test_case = NewCase(case_name);
     TCaseEnv env{&scheduler, &runner_cons, frame_pool_manager, &plan, &record, nullptr};
     env.Crash = [&]() {
+      record.Put("phase", "power_image");
       record.Put("power_loss", to_string(n));
       try {
         env.Engine->GetDurableImage().Save(image_path);
