@@ -1104,6 +1104,18 @@ namespace Orly {
       };  // TSingleSem
 
 
+      /* WakeOutsideSpinLock: TFiberLock, TSafeSync, TSingleSem and TSem claim the
+         waiting frame under their spin lock but schedule it only after the
+         unlock, as TCompletionTrigger (orly/indy/disk/result.h) does. Scheduling
+         onto a parked runner wakes it with a futex system call (#764), and the
+         woken runner may preempt us when it shares our core (the merge runners
+         are all pinned to the same cores). Woken inside the lock, its first act
+         -- the last-one-out re-lock in Pop() or Sync() -- spun on the lock we
+         still held until the kernel took its time slice back: ~3 ms per wake
+         between the memory merge runners, and 10-20% of x86 write throughput
+         (#772). Once the waiter is claimed, nothing else can claim it, so the
+         wake can wait until we are out of the lock. */
+
       /* Use this locking mechanism when you want to lock and run the critical section on your current scheduler (core). This is usefull if you intend
          to use thread local or fiber local storage. It is also beneficial if you want to stay with the same cpu cache. The total throughput using
          this lock is less than a Queued lock as the lock bounces between schedulers. */
@@ -1143,17 +1155,23 @@ namespace Orly {
           }
 
           inline ~TLock() {
-            /* Grab the spin lock to release control, and enqueue anyone who is waiting. */ {
+            TRunner *runner = nullptr;
+            TFrame *frame = nullptr;
+            /* Grab the spin lock to release control, and claim the next waiter, if any. */ {
               Base::TSpinLock::TLock lock(Lock.SpinLock);
               TLock *next_to_release;
               if (!(next_to_release = Lock.RootLock)) {
                 Lock.Taken = false;
               } else {
+                /* Ownership passes to it (Taken stays true). */
                 Lock.RootLock = next_to_release->NextLock;
-                /* schedule next guy... */
-                next_to_release->Runner->ScheduleFrame(next_to_release->Frame);
-                //TRunner::LocalRunner->ScheduleFrame(next_to_release->Frame);
+                runner = next_to_release->Runner;
+                frame = next_to_release->Frame;
               }
+            }
+            /* Schedule it after the unlock: see WakeOutsideSpinLock. */
+            if (frame) {
+              runner->ScheduleFrame(frame);
             }
             assert(DebugRunner == TRunner::LocalRunner);
           }
@@ -1426,9 +1444,9 @@ namespace Orly {
         }
         if (should_wait) {
           Fiber::Wait(come_back_right_away);
-          /* The completer that made us runnable did so from inside its
-             SpinLock scope, so it may still be releasing the lock while we
-             run. Take and release the lock once so that its unlock is its
+          /* The completer that made us runnable schedules us only after its
+             unlock (see WakeOutsideSpinLock), so this lock is free by now.
+             Taking and releasing it once still makes sure its unlock was its
              last touch of this object and we are the last one out -- our
              caller is free to destroy this object the moment we return
              (#386). */
@@ -1455,15 +1473,22 @@ namespace Orly {
            and destroy this object while we are still on our way into the
            (then freed) lock. Under the lock, a waiter can only see the full
            count once our unlock -- our last touch -- has completed (#386). */
-        Base::TSpinLock::TLock lock(SpinLock);
-        size_t prev = std::atomic_fetch_add(&Finished, 1UL);
-        if ((prev + 1UL) == WaitingFor.load() && FrameWaiting) {
-          /* there's a frame waiting for us... let's activate him. */
-          assert(RunnerToReactivateOn);
-          Fiber::TFrame *frame = FrameWaiting;
-          Fiber::TRunner *runner = RunnerToReactivateOn;
-          FrameWaiting = nullptr;
-          RunnerToReactivateOn = nullptr;
+        Fiber::TFrame *frame = nullptr;
+        Fiber::TRunner *runner = nullptr;
+        /* lock scope -- the unlock at the end is our last touch of this object */ {
+          Base::TSpinLock::TLock lock(SpinLock);
+          size_t prev = std::atomic_fetch_add(&Finished, 1UL);
+          if ((prev + 1UL) == WaitingFor.load() && FrameWaiting) {
+            /* there's a frame waiting for us... claim it for the wake below. */
+            assert(RunnerToReactivateOn);
+            frame = FrameWaiting;
+            runner = RunnerToReactivateOn;
+            FrameWaiting = nullptr;
+            RunnerToReactivateOn = nullptr;
+          }
+        }
+        /* See WakeOutsideSpinLock. */
+        if (frame) {
           runner->ScheduleFrame(frame);
         }
       }
@@ -1473,17 +1498,24 @@ namespace Orly {
       }
 
       inline void TSingleSem::Push() {
-        Base::TSpinLock::TLock lock(SpinLock);
-        if (FrameWaiting) {
-          assert(!FlagOn);
-          assert(RunnerToReactivateOn);
-          Fiber::TFrame *frame = FrameWaiting;
-          Fiber::TRunner *runner = RunnerToReactivateOn;
-          FrameWaiting = nullptr;
-          RunnerToReactivateOn = nullptr;
+        Fiber::TFrame *frame = nullptr;
+        Fiber::TRunner *runner = nullptr;
+        /* lock scope -- the unlock at the end is our last touch of this object */ {
+          Base::TSpinLock::TLock lock(SpinLock);
+          if (FrameWaiting) {
+            assert(!FlagOn);
+            assert(RunnerToReactivateOn);
+            frame = FrameWaiting;
+            runner = RunnerToReactivateOn;
+            FrameWaiting = nullptr;
+            RunnerToReactivateOn = nullptr;
+          } else {
+            FlagOn = true;
+          }
+        }
+        /* See WakeOutsideSpinLock. */
+        if (frame) {
           runner->ScheduleFrame(frame);
-        } else {
-          FlagOn = true;
         }
       }
 
@@ -1504,27 +1536,35 @@ namespace Orly {
         } // end spinlock scope
         if (do_wait) {
           Fiber::Wait();
-          /* The pusher that made us runnable did so from inside its SpinLock
-             scope, so it may still be releasing the lock while we run. Take
-             and release the lock once so that its unlock is its last touch of
-             this object and we are the last one out -- our caller is free to
-             destroy this object the moment we return (#386). */
+          /* The pusher that made us runnable schedules us only after its
+             unlock (see WakeOutsideSpinLock), so this lock is free by now.
+             Taking and releasing it once still makes sure its unlock was its
+             last touch of this object and we are the last one out -- our
+             caller is free to destroy this object the moment we return
+             (#386). */
           Base::TSpinLock::TLock lock(SpinLock);
         }
       }
 
       inline void TSem::Push() {
-        Base::TSpinLock::TLock lock(SpinLock);
-        if (FrameWaiting) {
-          assert(Count == 0UL);
-          assert(RunnerToReactivateOn);
-          Fiber::TFrame *frame = FrameWaiting;
-          Fiber::TRunner *runner = RunnerToReactivateOn;
-          FrameWaiting = nullptr;
-          RunnerToReactivateOn = nullptr;
+        Fiber::TFrame *frame = nullptr;
+        Fiber::TRunner *runner = nullptr;
+        /* lock scope -- the unlock at the end is our last touch of this object */ {
+          Base::TSpinLock::TLock lock(SpinLock);
+          if (FrameWaiting) {
+            assert(Count == 0UL);
+            assert(RunnerToReactivateOn);
+            frame = FrameWaiting;
+            runner = RunnerToReactivateOn;
+            FrameWaiting = nullptr;
+            RunnerToReactivateOn = nullptr;
+          } else {
+            ++Count;
+          }
+        }
+        /* See WakeOutsideSpinLock. */
+        if (frame) {
           runner->ScheduleFrame(frame);
-        } else {
-          ++Count;
         }
       }
 
