@@ -19,6 +19,7 @@
 #include <orly/indy/fiber/fiber.h>
 
 #include <cxxabi.h>
+#include <sched.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -355,12 +356,21 @@ namespace {
       for (size_t b = 0; b < T::NB; ++b) {
         fprintf(f, "%s%llu", b ? "/" : "", ld(d.LatNs[b]) / 1000ULL);
       }
+      fprintf(f, " to=");
+      for (size_t t = 0; t < T::MaxTo && t < Diag772Count.load(); ++t) {
+        if (ld(d.ToN[t])) {
+          const char *tl = Diag772Slots[t].Label.load();
+          fprintf(f, "%s#%zu:%llu:%lluus,", tl ? tl : "?", t, ld(d.ToN[t]), ld(d.ToNs[t]) / 1000ULL);
+        }
+      }
       fprintf(f, "\n");
     };
     const size_t n = std::min(Diag772Count.load(), Diag772Max);
     for (size_t i = 0; i < n; ++i) {
+      fprintf(f, "#%-3zu ", i);
       row(Diag772Slots[i], Diag772Slots[i].Label.load(), Diag772Slots[i].Tid.load());
     }
+    fprintf(f, "#--  ");
     row(T::NonRunner, "(non-runner)", 0);
   }
 }
@@ -386,6 +396,15 @@ TRunner::TDiag772 *TRunner::TDiag772::Register(const char *label) {
     return nullptr;
   }
   Diag772Slots[i].Label.store(label);
+  Diag772Slots[i].Index = i;
+  /* EXPERIMENT: ORLY_DIAG772_BATCH=label,label runs those runners SCHED_BATCH (no wakeup preemption). */
+  if (const char *batch = getenv("ORLY_DIAG772_BATCH"); batch && label) {
+    const std::string list = std::string(",") + batch + ",";
+    if (list.find(std::string(",") + label + ",") != std::string::npos) {
+      struct sched_param sp {};
+      sched_setscheduler(0, SCHED_BATCH, &sp);
+    }
+  }
   Diag772Slots[i].Tid.store(static_cast<long>(syscall(SYS_gettid)));
   return &Diag772Slots[i];
 }

@@ -20,7 +20,7 @@ if not writes:
     sys.exit(0)
 agg = collections.defaultdict(lambda: collections.Counter())
 for line in open(path):
-    label = line.split()[0]
+    label = line.split()[1] if line.startswith("#") else line.split()[0]
     kv = dict(re.findall(r'(\w+)=(\S+)', line))
     c = agg[label]
     for k in ('frames', 'parks', 'wakes_in', 'sleeps', 'wake_out', 'wake_out_us'):

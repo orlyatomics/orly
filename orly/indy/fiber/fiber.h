@@ -495,6 +495,9 @@ namespace Orly {
           std::atomic<uint64_t> LatN[NB]{}, LatNs[NB]{};
           std::atomic<const char *> Label{nullptr};
           std::atomic<long> Tid{0};
+          size_t Index = 0;
+          static constexpr size_t MaxTo = 64;
+          std::atomic<uint64_t> ToN[MaxTo]{}, ToNs[MaxTo]{};
           static bool Enabled;
           static TDiag772 NonRunner;
           static TDiag772 *Register(const char *label);
@@ -1339,6 +1342,10 @@ namespace Orly {
           TDiag772::Add(me->WakeOutNs, t1 - t0);
           if (TDiag772 *d = slot.Diag.load(std::memory_order_relaxed)) {
             TDiag772::Add(d->WakesIn, 1);
+            if (d->Index < TDiag772::MaxTo) {
+              TDiag772::Add(me->ToN[d->Index], 1);
+              TDiag772::Add(me->ToNs[d->Index], t1 - t0);
+            }
           }
         } else {
           int64_t expected = t0;
