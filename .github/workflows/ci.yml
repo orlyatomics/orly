@@ -965,6 +965,14 @@ jobs:
         with:
           go-version: '1.22'
 
+      - name: Client literal builders
+        run: |
+          npm --prefix clients/ts ci --ignore-scripts --no-audit --no-fund
+          npm --prefix clients/ts run build
+          node --test clients/ts/literals.test.mjs
+          PYTHONPATH=clients/python python3 -m unittest discover -s clients/python/tests
+          (cd clients/go && go test ./...)
+
       - name: Cache ccache
         uses: ./.github/actions/build-cache
         with:

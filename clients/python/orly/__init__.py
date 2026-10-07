@@ -24,6 +24,7 @@ callers compare numerically / as sets accordingly.
 
 import json as _json
 import os as _os
+import re as _re
 import time as _time
 
 import websocket  # the `websocket-client` package
@@ -161,7 +162,8 @@ def lit(value):
     - ``int`` -> decimal
     - ``float`` -> ``repr``
     - ``str`` -> a quoted, escaped string literal
-    - ``dict`` -> a record ``<{.k: v, ...}>`` (empty: ``<{}>``)
+    - ``dict`` -> a record ``<{.k: v, ...}>`` (empty: ``<{}>``);
+      field names are identifiers, including keywords such as ``id`` and ``to``
     - ``list`` / ``tuple`` -> ``[a, b, ...]``
     - ``set`` / ``frozenset`` -> ``{a, b, ...}``
     - ``Addr`` -> ``<[a, b, ...]>``
@@ -180,6 +182,12 @@ def lit(value):
     if isinstance(value, str):
         return _quote(value)
     if isinstance(value, dict):
+        for k in value:
+            if not isinstance(k, str) or not _re.fullmatch(r"[_a-zA-Z][_a-zA-Z0-9]*", k):
+                raise ValueError(
+                    f"orly: invalid record field name {k!r}; rename it to an identifier "
+                    "(letters, digits, underscore; no leading digit)"
+                )
         return "<{" + ", ".join(f".{k}: {lit(v)}" for k, v in value.items()) + "}>"
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(lit(v) for v in value) + "]"

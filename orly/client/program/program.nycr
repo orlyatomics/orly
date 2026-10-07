@@ -94,6 +94,53 @@ review_pov_kwd    = '"review_pov"';
 unary_placeholder = '' unary_prec right;
 name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
 
+/* Keep every word token legal as a field, including statement keywords. */
+field_name;
+  identifier_field_name : field_name -> name;
+  empty_kwd_field_name : field_name -> name:empty_kwd;
+  exit_kwd_field_name : field_name -> name:exit_kwd;
+  unknown_kwd_field_name : field_name -> name:unknown_kwd;
+  try_kwd_field_name : field_name -> name:try_kwd;
+  new_kwd_field_name : field_name -> name:new_kwd;
+  safe_kwd_field_name : field_name -> name:safe_kwd;
+  fast_kwd_field_name : field_name -> name:fast_kwd;
+  set_kwd_field_name : field_name -> name:set_kwd;
+  ttl_kwd_field_name : field_name -> name:ttl_kwd;
+  user_id_kwd_field_name : field_name -> name:user_id_kwd;
+  to_kwd_field_name : field_name -> name:to_kwd;
+  private_kwd_field_name : field_name -> name:private_kwd;
+  shared_kwd_field_name : field_name -> name:shared_kwd;
+  pause_kwd_field_name : field_name -> name:pause_kwd;
+  unpause_kwd_field_name : field_name -> name:unpause_kwd;
+  install_kwd_field_name : field_name -> name:install_kwd;
+  uninstall_kwd_field_name : field_name -> name:uninstall_kwd;
+  begin_kwd_field_name : field_name -> name:begin_kwd;
+  end_kwd_field_name : field_name -> name:end_kwd;
+  import_kwd_field_name : field_name -> name:import_kwd;
+  from_kwd_field_name : field_name -> name:from_kwd;
+  image_kwd_field_name : field_name -> name:image_kwd;
+  xact_kwd_field_name : field_name -> name:xact_kwd;
+  echo_kwd_field_name : field_name -> name:echo_kwd;
+  pov_kwd_field_name : field_name -> name:pov_kwd;
+  tail_kwd_field_name : field_name -> name:tail_kwd;
+  session_kwd_field_name : field_name -> name:session_kwd;
+  resume_kwd_field_name : field_name -> name:resume_kwd;
+  compile_kwd_field_name : field_name -> name:compile_kwd;
+  list_package_kwd_field_name : field_name -> name:list_package_kwd;
+  get_source_kwd_field_name : field_name -> name:get_source_kwd;
+  list_schema_kwd_field_name : field_name -> name:list_schema_kwd;
+  bool_type_field_name : field_name -> name:bool_type;
+  id_type_field_name : field_name -> name:id_type;
+  int_type_field_name : field_name -> name:int_type;
+  real_type_field_name : field_name -> name:real_type;
+  str_type_field_name : field_name -> name:str_type;
+  time_diff_type_field_name : field_name -> name:time_diff_type;
+  time_pnt_type_field_name : field_name -> name:time_pnt_type;
+  false_expr_field_name : field_name -> name:false_expr;
+  true_expr_field_name : field_name -> name:true_expr;
+  asc_ordering_field_name : field_name -> name:asc_ordering;
+  desc_ordering_field_name : field_name -> name:desc_ordering;
+
 name_list -> name opt_name_list_tail;
 
     opt_name_list_tail;
@@ -216,7 +263,7 @@ obj_type : type -> open_obj opt_obj_type_member_list close_obj;  /* <{ .name : t
   no_obj_type_member_list_tail : opt_obj_type_member_list_tail -> empty;
   obj_type_member_list_tail    : opt_obj_type_member_list_tail -> comma obj_type_member_list;
 
-  obj_type_member -> dot name colon type;
+  obj_type_member -> dot name:field_name colon type;
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     EXPRESSIONS
@@ -288,7 +335,7 @@ obj_expr : expr -> open_obj opt_obj_member_list close_obj;  /* <{ .name : expr, 
   no_obj_member_list_tail : opt_obj_member_list_tail -> empty;
   obj_member_list_tail    : opt_obj_member_list_tail -> comma obj_member_list;
 
-  obj_member -> dot name colon expr;
+  obj_member -> dot name:field_name colon expr;
 
 /* A bracketed list of object literals -- the argument form of try_batch_stmt
    (one method, N arg records, folded into one transaction). Mirrors expr_list. */

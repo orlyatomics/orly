@@ -169,6 +169,14 @@ FIXTURE(Addr) {
   EXPECT_EQ(DumpState("<[ desc 101 ]>"), "tuple(desc(101))");
 }
 
+FIXTURE(KeywordFields) {
+  const char *record = "<{.id: 1, .to: 2, .from: 3, .true: 4, .int: 5, .try: 6}>";
+  EXPECT_EQ(DumpType(record), "record(from: int64, id: int64, int: int64, to: int64, true: int64, try: int64)");
+  EXPECT_EQ(DumpState(record), "record(from: 3, id: 1, int: 5, to: 2, true: 4, try: 6)");
+  EXPECT_EQ(DumpType("unknown <{.id: int, .to: str}>"), "opt(record(id: int64, to: str))");
+  EXPECT_EQ(DumpState("<{.to: <{.id: 7}>}>"), "record(to: record(id: 7))");
+}
+
 FIXTURE(ParensType) {
   EXPECT_EQ(DumpType("(true)"), "bool");
   EXPECT_EQ(DumpType("((false))"), "bool");

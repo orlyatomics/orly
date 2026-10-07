@@ -236,7 +236,8 @@ function keyLit(key: unknown[] | OrlyAddr | Raw): string {
  * - array            -> `[a, b, ...]`
  * - `OrlySet`        -> `{a, b, ...}`
  * - `OrlyAddr`       -> `<[a, b, ...]>`
- * - object           -> a record `<{.k: v, ...}>` (empty: `<{}>`)
+ * - object           -> a record `<{.k: v, ...}>` (empty: `<{}>`);
+ *   field names are identifiers, including keywords such as `id` and `to`
  */
 export function lit(value: unknown): string {
   if (value instanceof Raw) return value.text;
@@ -258,7 +259,12 @@ export function lit(value: unknown): string {
     case "object": {
       if (Array.isArray(value)) return "[" + value.map(lit).join(", ") + "]";
       const m = value as Record<string, unknown>;
-      const parts = Object.keys(m).map((k) => `.${k}: ${lit(m[k])}`);
+      const parts = Object.keys(m).map((k) => {
+        if (!/^[_a-zA-Z]/.test(k) || /[^_a-zA-Z0-9]/.test(k)) {
+          throw new TypeError(`orly: invalid record field name ${JSON.stringify(k)}; rename it to an identifier (letters, digits, underscore; no leading digit)`);
+        }
+        return `.${k}: ${lit(m[k])}`;
+      });
       return "<{" + parts.join(", ") + "}>";
     }
     default:

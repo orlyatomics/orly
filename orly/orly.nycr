@@ -183,6 +183,92 @@ opt_name;
 no_name : opt_name -> empty;
 name    : opt_name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
 
+/* Only record fields use this token choice; bare identifiers remain names.
+   Include each word token here when adding a keyword. */
+field_name;
+  identifier_field_name : field_name -> name;
+  acos_kwd_field_name : field_name -> name:acos_kwd;
+  after_kwd_field_name : field_name -> name:after_kwd;
+  and_kwd_field_name : field_name -> name:and_kwd;
+  and_then_kwd_field_name : field_name -> name:and_then_kwd;
+  asc_kwd_field_name : field_name -> name:asc_kwd;
+  as_kwd_field_name : field_name -> name:as_kwd;
+  asin_kwd_field_name : field_name -> name:asin_kwd;
+  assert_kwd_field_name : field_name -> name:assert_kwd;
+  atan_kwd_field_name : field_name -> name:atan_kwd;
+  atan2_kwd_field_name : field_name -> name:atan2_kwd;
+  bool_kwd_field_name : field_name -> name:bool_kwd;
+  ceiling_kwd_field_name : field_name -> name:ceiling_kwd;
+  collated_by_kwd_field_name : field_name -> name:collated_by_kwd;
+  collected_by_kwd_field_name : field_name -> name:collected_by_kwd;
+  cos_kwd_field_name : field_name -> name:cos_kwd;
+  delete_kwd_field_name : field_name -> name:delete_kwd;
+  desc_kwd_field_name : field_name -> name:desc_kwd;
+  do_kwd_field_name : field_name -> name:do_kwd;
+  effecting_kwd_field_name : field_name -> name:effecting_kwd;
+  else_kwd_field_name : field_name -> name:else_kwd;
+  else_if_kwd_field_name : field_name -> name:else_if_kwd;
+  empty_kwd_field_name : field_name -> name:empty_kwd;
+  exists_kwd_field_name : field_name -> name:exists_kwd;
+  floor_kwd_field_name : field_name -> name:floor_kwd;
+  free_kwd_field_name : field_name -> name:free_kwd;
+  from_kwd_field_name : field_name -> name:from_kwd;
+  having_kwd_field_name : field_name -> name:having_kwd;
+  id_kwd_field_name : field_name -> name:id_kwd;
+  if_kwd_field_name : field_name -> name:if_kwd;
+  in_kwd_field_name : field_name -> name:in_kwd;
+  int_kwd_field_name : field_name -> name:int_kwd;
+  is_kwd_field_name : field_name -> name:is_kwd;
+  keys_kwd_field_name : field_name -> name:keys_kwd;
+  known_kwd_field_name : field_name -> name:known_kwd;
+  given_kwd_field_name : field_name -> name:given_kwd;
+  length_kwd_field_name : field_name -> name:length_kwd;
+  lhs_kwd_field_name : field_name -> name:lhs_kwd;
+  log_kwd_field_name : field_name -> name:log_kwd;
+  log_2_kwd_field_name : field_name -> name:log_2_kwd;
+  log_10_kwd_field_name : field_name -> name:log_10_kwd;
+  match_kwd_field_name : field_name -> name:match_kwd;
+  mutable_kwd_field_name : field_name -> name:mutable_kwd;
+  new_kwd_field_name : field_name -> name:new_kwd;
+  not_kwd_field_name : field_name -> name:not_kwd;
+  now_kwd_field_name : field_name -> name:now_kwd;
+  or_kwd_field_name : field_name -> name:or_kwd;
+  or_else_kwd_field_name : field_name -> name:or_else_kwd;
+  package_kwd_field_name : field_name -> name:package_kwd;
+  random_kwd_field_name : field_name -> name:random_kwd;
+  real_kwd_field_name : field_name -> name:real_kwd;
+  reduce_kwd_field_name : field_name -> name:reduce_kwd;
+  replace_kwd_field_name : field_name -> name:replace_kwd;
+  reverse_kwd_field_name : field_name -> name:reverse_kwd;
+  rhs_kwd_field_name : field_name -> name:rhs_kwd;
+  session_id_kwd_field_name : field_name -> name:session_id_kwd;
+  sin_kwd_field_name : field_name -> name:sin_kwd;
+  sorted_by_kwd_field_name : field_name -> name:sorted_by_kwd;
+  split_kwd_field_name : field_name -> name:split_kwd;
+  start_kwd_field_name : field_name -> name:start_kwd;
+  str_kwd_field_name : field_name -> name:str_kwd;
+  tan_kwd_field_name : field_name -> name:tan_kwd;
+  take_kwd_field_name : field_name -> name:take_kwd;
+  skip_kwd_field_name : field_name -> name:skip_kwd;
+  that_kwd_field_name : field_name -> name:that_kwd;
+  test_kwd_field_name : field_name -> name:test_kwd;
+  time_diff_kwd_field_name : field_name -> name:time_diff_kwd;
+  time_obj_kwd_field_name : field_name -> name:time_obj_kwd;
+  time_pnt_kwd_field_name : field_name -> name:time_pnt_kwd;
+  to_lower_kwd_field_name : field_name -> name:to_lower_kwd;
+  to_upper_kwd_field_name : field_name -> name:to_upper_kwd;
+  union_map_kwd_field_name : field_name -> name:union_map_kwd;
+  unknown_kwd_field_name : field_name -> name:unknown_kwd;
+  user_id_kwd_field_name : field_name -> name:user_id_kwd;
+  using_kwd_field_name : field_name -> name:using_kwd;
+  when_kwd_field_name : field_name -> name:when_kwd;
+  where_kwd_field_name : field_name -> name:where_kwd;
+  while_kwd_field_name : field_name -> name:while_kwd;
+  with_kwd_field_name : field_name -> name:with_kwd;
+  xor_kwd_field_name : field_name -> name:xor_kwd;
+  false_kwd_field_name : field_name -> name:false_kwd;
+  true_kwd_field_name : field_name -> name:true_kwd;
+
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     PACKAGE NAMES
@@ -317,7 +403,7 @@ obj_type : compound_type -> open_obj opt_obj_type_member_list close_obj;  /* <{ 
   no_obj_type_member_list_tail : opt_obj_type_member_list_tail -> empty;
   obj_type_member_list_tail    : opt_obj_type_member_list_tail -> comma obj_type_member_list;
 
-  obj_type_member -> dot name colon type;
+  obj_type_member -> dot name:field_name colon type;
 
 /* The variant / tagged-union type: <| Tag(type) | Tag2 | ... |> (#95 Phase 3).
    A distinct <| ... |> delimiter pair is used (rather than the issue's bare
@@ -405,7 +491,7 @@ obj_ctor : ctor -> open_obj opt_obj_member_list close_obj;  /* <{ .name : expr, 
   no_obj_member_list_tail : opt_obj_member_list_tail -> empty;
   obj_member_list_tail    : opt_obj_member_list_tail -> comma obj_member_list;
 
-  obj_member -> dot name colon expr;
+  obj_member -> dot name:field_name colon expr;
 
 range_ctor : ctor -> open_bracket expr opt_range_stride dots range_end;  /* [0 .. 9], [0 .. 10), [0, 2, .. 10), [0, -1, .. -10), [0..) */
 
@@ -483,7 +569,7 @@ infix_split       : infix_expr -> lhs:expr split_kwd rhs:expr;     /* split a st
 infix_while	  : infix_expr -> lhs:expr while_kwd rhs:expr;     /* take elements from a sequence while some expr is true */
 
 postfix_expr : affix_expr;
-postfix_obj_member  : postfix_expr -> expr dot name;                              /* member of obj */
+postfix_obj_member  : postfix_expr -> expr dot name:field_name;                   /* member of obj */
 postfix_addr_member : postfix_expr -> expr dot int_literal;                       /* member of addr */
 postfix_is_known_expr : postfix_expr -> lhs:expr is_kwd is_known rhs:expr;        /* test if value is known to be a specific value */
 postfix_is_known    : postfix_expr -> expr is_kwd is_known;                 	  /* test if value is known */

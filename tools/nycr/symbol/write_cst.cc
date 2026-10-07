@@ -48,6 +48,23 @@ static void WriteDef(const TKind *kind, ostream &strm);
 
 static void WriteFwdDecl(const TKind *kind, ostream &strm);
 
+static const TCompound::TMember *TryGetAtomMember(const TCompound *compound) {
+  const auto &members = compound->GetMembersInOrder();
+  return members.size() == 1 && dynamic_cast<const TAtom *>(members.front()->TryGetKind())
+      ? members.front() : nullptr;
+}
+
+/* Token-choice bases retain the lexeme without exposing which token matched. */
+static bool HasLexeme(const TBase *base) {
+  bool has_final = false, all_have_lexemes = true;
+  ForEachFinal(base, [&](const TFinal *final) {
+    has_final = true;
+    const auto *rule = dynamic_cast<const TRule *>(final);
+    all_have_lexemes &= dynamic_cast<const TAtom *>(final) || (rule && TryGetAtomMember(rule));
+  });
+  return has_final && all_have_lexemes;
+}
+
 void Tools::Nycr::Symbol::WriteCst(const char *root, const char *branch, const char *atom, const TLanguage *language) {
   WriteCstH(root, branch, atom, language);
   WriteCstCc(root, branch, atom, language);
@@ -170,8 +187,11 @@ static void WriteDecl(const TKind *kind, const string &namespace_prefix, ostream
       }
 
 
-      Strm << "  virtual void Accept(const TVisitor &visitor) const = 0;" << endl
-           << "  virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const = 0;" << endl
+      Strm << "  virtual void Accept(const TVisitor &visitor) const = 0;" << endl;
+      if (HasLexeme(that)) {
+        Strm << "  virtual const ::Tools::Nycr::TLexeme &GetLexeme() const = 0;" << endl;
+      }
+      Strm << "  virtual void Write(std::ostream &strm, size_t depth, const char *as_member) const = 0;" << endl
            << "  virtual bool Test(::Tools::Nycr::Test::TNode *that, const char *as_member) const = 0;" << endl
            << "  protected:" << endl
            << "  " << TType(that->GetName()) << "() {}" << endl;
@@ -259,6 +279,9 @@ static void WriteDecl(const TKind *kind, const string &namespace_prefix, ostream
              << "  virtual ~" << TType(that->GetName()) << "();" << endl;
       }
       WriteAccepts(that);
+      if (TryGetAtomMember(that)) {
+        Strm << "  const ::Tools::Nycr::TLexeme &GetLexeme() const;" << endl;
+      }
       for (auto iter = members_in_order.begin();
            iter != members_in_order.end(); ++iter) {
         const TCompound::TMember *member = *iter;
@@ -351,6 +374,11 @@ static void WriteDef(const TKind *kind, ostream &strm) {
             << endl
             << TType(that->GetName()) << "::~" << TType(that->GetName()) << "() = default;" << endl
             << endl;
+      }
+      if (const auto *member = TryGetAtomMember(that)) {
+        Strm << "const ::Tools::Nycr::TLexeme &" << TType(that->GetName()) << "::GetLexeme() const {" << endl
+             << "  return " << TUpper(member->GetName()) << "->GetLexeme();" << endl
+             << "}" << endl;
       }
       WriteWriteStart(that);
       Strm << " << endl;" << endl;

@@ -24,6 +24,30 @@
 using namespace Orly::Package::Syntax;
 using namespace Tools::Nycr::Test;
 
+FIXTURE(KeywordFields) {
+  auto cst = TPackage::ParseStr(
+      "fields is <{.id: int, .to: str, .start: int, .if: bool, .true: bool}>;"
+      "x = <{.id: 1, .to: \"target\", .start: 2, .if: true, .true: false}>;"
+      "y = x.id + x.start;"
+      "z = x.if and not x.true;"
+      "t = x.to;");
+  EXPECT_FALSE(cst.HasErrors());
+}
+
+FIXTURE(KeywordFieldLexeme) {
+  TIdKwd token(2, 4, 2, 6, "id", 2);
+  EXPECT_EQ(token.GetLexeme().GetText(), "id");
+  TIdKwdFieldName field(std::make_unique<TIdKwd>(2, 4, 2, 6, "id", 2));
+  const TFieldName &name = field;
+  EXPECT_EQ(name.GetLexeme().GetText(), "id");
+  EXPECT_EQ(name.GetLexeme().GetPosRange(), token.GetLexeme().GetPosRange());
+}
+
+FIXTURE(KeywordsRemainReserved) {
+  EXPECT_TRUE(TPackage::ParseStr("id = 1;").HasErrors());
+  EXPECT_TRUE(TPackage::ParseStr("start is int;").HasErrors());
+}
+
 FIXTURE(Take) {
   auto cst = TPackage::ParseStr("x = [1..5] take 2;");
   const char *ts =
