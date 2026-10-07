@@ -1,0 +1,20 @@
+package #1;
+/* Kill-and-recover campaign (#730). One call is one write of writer w: its n-th key, its own
+   `+=` counter and the shared `+=` total, all in one transaction. The value packs n and the
+   epoch it was written in (n * 1000 + epoch), so a range read over one writer's keys gives the
+   driver both, in key order. */
+put = ((true) effecting {
+  new <['w', w, n]> <- n * 1000 + e;
+  *<['c', w]>::(int) += 1;
+  *<['t']>::(int) += 1;
+}) where {
+  w = given::(int);
+  n = given::(int);
+  e = given::(int);
+};
+/* Every value writer w has, in key order (n ascending). */
+vals_of = (*(keys (int) @ <['w', w, free::(int)]>)::(int) as [int]) where { w = given::(int); };
+/* Writer w's `+=` counter: one per write it has. */
+count_of = (((*<['c', w]>::(int)) if *<['c', w]>::(int?) is known else 0)) where { w = given::(int); };
+/* The `+=` total every writer bumps: one per write in the store. */
+total = ((*<['t']>::(int)) if *<['t']>::(int?) is known else 0);

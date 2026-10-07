@@ -75,7 +75,10 @@ A POV is a `TPov` durable object (`orly/server/pov.{h,cc}`). It records:
 - an **audience** — `Private` (a leaf; one per session/transaction, the
   optimistic sandbox a client mutates) or `Shared` (an intermediate layer that
   lets several sessions share a common base before they diverge);
-- a **policy** — `Safe` (synchronous disk writes) or `Fast` (asynchronous);
+- a **policy** — `Safe` (backed by a disk-capable `TSafeRepo`) or `Fast` (a memory-only
+  `TFastRepo`). Only the global POV's repo writes data to disk, so a child POV of either
+  policy keeps its writes in memory until they are promoted, and neither waits for disk before
+  acknowledging a write; see [durability.md](durability.md);
 - the chain of **shared parents** up to the global POV (`TSession::GlobalPovId`),
   which has no parent and holds the committed state of the whole database.
 

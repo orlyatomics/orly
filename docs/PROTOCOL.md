@@ -327,8 +327,15 @@ exit;
   - Clients: `call_many` (python), `CallMany` (go), `callMany` (ts).
 - **POV flavors**: `safe` vs unsafe (conflict guarantee), `shared` vs `private`
   (visibility), optional `parent`. Demos use `new safe shared pov;`.
+- **An `ok` is not a durability promise** (#730). It means the write committed,
+  in memory, to the POV it named, on a safe POV as on a fast one. It is on disk
+  once Tetris has promoted it to the global POV and the global POV's memory merge
+  has written it, and nothing on this protocol says when that has happened. A
+  crash loses only the newest writes: a prefix of each POV's commit order
+  survives; see [`durability.md`](durability.md).
 - **POVs are ephemeral across restarts** (#439). Updates promoted to the global
-  POV are durable; a private/shared POV's own un-promoted state is not. After a
+  POV and written to disk survive; a private/shared POV's own un-promoted state
+  does not. After a
   server restart, a `try` against a pre-restart POV id fails with a clean
   "povs are ephemeral" error — create a new POV and retry. (Sessions, by
   contrast, do survive: `resume session <id>;` works across a restart.)
