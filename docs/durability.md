@@ -123,6 +123,7 @@ volume, and checks, against a ledger of what each writer sent and had acknowledg
 | atomic | a batch came back in part |
 | counter | a writer's `+=` counter differs from its key count, or the shared total from the sum |
 | bound | more acknowledged transactions were lost than the Update pool held just before the kill, plus those acknowledged after that look |
+| progress | over the whole campaign, none of a writer's writes ever came back after a restart: its POV was never promoted (#751) |
 | open | the restart fails, or the #700 open check finds more than leaked blocks or a merge's leftover input |
 | ephemeral | a POV from before the kill still accepts calls (#439) |
 

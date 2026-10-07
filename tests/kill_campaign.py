@@ -25,6 +25,8 @@ Per kill, for every writer it checks:
                transactions acknowledged after that look: every acknowledged transaction that
                isn't on disk yet holds at least one update in that pool, so the pool's size,
                --update_pool_size, bounds any kill's loss
+  progress     (over the whole campaign) some of every writer's writes came back after some
+               restart: a writer whose POV Tetris failed never gets any back (#751)
   open         the restart succeeds, and the #700 open check finds nothing worse than leaked
                blocks or a merge's leftover (nested) input
   ephemeral    a POV from before the kill is refused, not resurrected (#439)
@@ -489,6 +491,14 @@ def main():
             for v in kv:
                 log(f'  VIOLATION: {v}')
             violations += [f'kill {k}: {v}' for v in kv]
+        if len(per_kill) == args.kills and all(p is not None for p in per_kill):
+            # A writer none of whose writes ever came back, after every restart, was never
+            # promoted: its POV failed (#751) or its writes never left it.
+            for w in writers:
+                if w.floor == 0:
+                    v = f'progress: none of {w.name}\'s writes came back after any of {args.kills} restarts'
+                    log(f'  VIOLATION: {v}')
+                    violations.append(v)
         srv.kill()
     finally:
         if srv.proc is not None:
