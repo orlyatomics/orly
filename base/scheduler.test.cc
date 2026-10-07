@@ -20,6 +20,9 @@
 
 #include <atomic>
 
+#include <pthread.h>
+#include <signal.h>
+
 #include <syslog.h>
 
 #include <base/latch.h>
@@ -116,6 +119,30 @@ FIXTURE(PermanentQuiescence) {
   TScheduler::TPolicy(1, 4, milliseconds(10)).RunUntilCtrlC(bind(LittleMain, _1, expected, ref(count)));
   EXPECT_EQ(count.load(), expected);
   EXPECT_TRUE(IsShuttingDown());
+}
+
+static void SignalMain(TScheduler *, pthread_t main_thread, int sig) {
+  pthread_kill(main_thread, sig);
+}
+
+/* RunUntilCtrlC returns on SIGINT and on SIGTERM, again and again, and calls ShutDown() before
+   on_signal, in normal context: the handlers used to call it themselves, which isn't
+   async-signal-safe, and ThreadSanitizer reported it (#759). The TSan job runs this test and
+   fails on any report. */
+FIXTURE(StopSignals) {
+  const pthread_t main_thread = pthread_self();
+  for (int i = 0; i < 20; ++i) {
+    const int sig = (i % 2) ? SIGTERM : SIGINT;
+    bool called = false, was_shutting_down = false;
+    TScheduler::TPolicy(1, 4, milliseconds(10)).RunUntilCtrlC(
+        bind(SignalMain, _1, main_thread, sig),
+        [&called, &was_shutting_down] {
+          called = true;
+          was_shutting_down = IsShuttingDown();
+        });
+    EXPECT_TRUE(called);
+    EXPECT_TRUE(was_shutting_down);
+  }
 }
 
 /* Job cancellation (#462): a queued-but-never-taken job can be removed so
