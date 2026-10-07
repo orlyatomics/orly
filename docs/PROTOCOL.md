@@ -313,7 +313,10 @@ exit;
     …) to the same key across calls fold (summed on read — the win); a non-commutative
     `=`/delete to the same key within one batch collapses in statement order.
   - One update ⇒ **one** meta record / replication notification per batch (records
-    the method plus all N arg sets under index-prefixed names).
+    the method plus all N arg sets under index-prefixed names, and the call count
+    as `$calls`). When the batch's calls evaluated an `if`, Tetris replays every
+    call, in order and with its own args, to test the batch's predicate results
+    before promoting it (#751).
   - Clients: `call_batch` (python), `CallBatch` (go), `callBatch` (ts).
 - **Mixed batched `try`** (`#255`) is the same, except that each call names its own
   package and method: `try {<pov>} [pkg1 m1 <{...}>, pkg2 m2 <{...}>, ...];`. Use it

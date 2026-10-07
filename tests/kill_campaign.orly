@@ -12,6 +12,17 @@ put = ((true) effecting {
   n = given::(int);
   e = given::(int);
 };
+/* The same write, with its value behind an `if` (#751): Tetris replays every call of a batch of
+   these before promoting it. e is never 0, so the value is the same as put's. */
+put_cond = ((true) effecting {
+  new <['w', w, n]> <- ((n * 1000 + e) if e > 0 else 0);
+  *<['c', w]>::(int) += 1;
+  *<['t']>::(int) += 1;
+}) where {
+  w = given::(int);
+  n = given::(int);
+  e = given::(int);
+};
 /* Every value writer w has, in key order (n ascending). */
 vals_of = (*(keys (int) @ <['w', w, free::(int)]>)::(int) as [int]) where { w = given::(int); };
 /* Writer w's `+=` counter: one per write it has. */

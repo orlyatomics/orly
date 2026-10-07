@@ -26,7 +26,9 @@
 
 #include <cassert>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <orly/sabot/all.h>
 
@@ -54,6 +56,34 @@ namespace Orly {
             TExpectedPredicateResults &&expected_predicate_results, Base::Chrono::TTimePnt now, uint64_t random_seed)
             : SessionId(session_id), UserId(user_id), PackageFqName(package_fq_name), MethodName(method_name), ArgByName(std::move(arg_by_name)),
               ExpectedPredicateResults(std::move(expected_predicate_results)), RunTimestamp(now), RandomSeed(random_seed) {}
+
+        /* One method call an entry records (#751). An entry records one call, or a whole batch
+           of them (TSession::RunBatch, #253/#255), all committed as one update. */
+        struct TCall {
+
+          TPackageFqName PackageFqName;
+
+          std::string MethodName;
+
+          TArgByName ArgByName;
+
+        };  // TCall
+
+        /* The arg map that records a batch of calls in one entry, whose own package and method
+           are the first call's. Call i's args are recorded under an index prefix ("<i>.<name>");
+           argument names are identifiers, so the prefix can't collide with one. If the calls don't
+           all name the same package and method, each call's own are recorded too, as
+           "<i>.$package" (the path joined with '/') and "<i>.$method". "$calls" holds the number
+           of calls, so a batch of calls without args still records how many there were. '$' can't
+           appear in an argument name. */
+        static TArgByName EncodeBatch(const std::vector<TCall> &calls);
+
+        /* The calls this entry records, in the order they ran, each with its own package, method
+           and args. Tetris replays them in this order, on one context, to test the entry's
+           expected predicate results at promotion (#751). Throws std::runtime_error if the
+           record is malformed. Batch records written before "$calls" existed (v0.2.0) are read
+           by their index prefixes. */
+        std::vector<TCall> GetCalls() const;
 
         const TArgByName &GetArgByName() const {
           return ArgByName;

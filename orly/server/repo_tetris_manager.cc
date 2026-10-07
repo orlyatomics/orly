@@ -258,12 +258,23 @@ bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context
           Player->RepoTetrisManager->GetScheduler(), entry.GetRunTimestamp(), entry.GetRandomSeed());
       const auto &arg_by_name = entry.GetArgByName();
       try {
-        unordered_map<string, Indy::TKey> arg_map;
-        for (const auto &iter : arg_by_name) {
-          Atom::TCore core(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, iter.second)).get());
-          arg_map.insert(make_pair(iter.first, Indy::TKey(core, &my_arena)));
+        /* Replay the calls this entry records, in order, each with its own args, on one context,
+           as TSession::RunBatch ran them (#751). A batch records index-prefixed args, and in a
+           mixed batch each call's own method: replaying the entry as one call of its first method
+           looked up an arg name the batch never recorded, and failed the POV. */
+        for (const auto &call: entry.GetCalls()) {
+          std::shared_ptr<const Package::TFuncHolder> func = item.second;
+          if (call.PackageFqName != entry.GetPackageFqName() || call.MethodName != entry.GetMethodName()) {
+            func = Player->RepoTetrisManager->PackageManager->Get(Package::TName{call.PackageFqName})
+                ->GetFunctionInfo(AsPiece(call.MethodName));
+          }
+          Package::TArgMap arg_map;
+          for (const auto &iter : call.ArgByName) {
+            Atom::TCore core(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, iter.second)).get());
+            arg_map.insert(make_pair(iter.first, Indy::TKey(core, &my_arena)));
+          }
+          func->Call(indy_context, arg_map);
         }
-        item.second->Call(indy_context, arg_map);
         if (vector<bool>(expected_predicate_results.begin(), expected_predicate_results.end()) != indy_context.GetPredicateResults()) {
           if (Player->RepoTetrisManager->LogAssertionFailures) {
             stringstream ss;
@@ -290,7 +301,10 @@ bool TRepoTetrisManager::TPlayer::TChild::TestAssertions(Indy::TContext &context
       } catch (const exception &ex) {
         stringstream strm;
         strm << Repo->GetId();
-        syslog(LOG_INFO, "exception while testing assertions in pov %s; %s", strm.str().c_str(), ex.what());
+        /* Not an assertion conflict: the replay itself couldn't run. Every retry fails the same
+           way, so this POV is about to fail; say so where it shows (#751). */
+        syslog(LOG_ERR, "exception while testing assertions in pov %s (method %s); %s", strm.str().c_str(),
+            entry.GetMethodName().c_str(), ex.what());
         return false;
       }
     }

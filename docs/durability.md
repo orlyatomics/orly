@@ -108,8 +108,9 @@ does to writes the kernel hadn't written to the device. The fault-injection harn
 ## How it is checked
 
 `tests/kill_campaign.sh` runs `orlyi` on a loopback volume (it needs root, like
-`tests/restart_test.sh`) with eight writers: safe and fast POVs, private and shared, two writers
-sharing a POV, two POVs made `from` another POV, single writes and batches. Each write puts a
+`tests/restart_test.sh`) with ten writers: safe and fast POVs, private and shared, two writers
+sharing a POV, two POVs made `from` another POV, single writes and batches, and batches whose
+calls evaluate an `if`, which Tetris replays before promoting them (#751). Each write puts a
 key, bumps the writer's `+=` counter and bumps a `+=` total shared by every writer, in one
 transaction. It SIGKILLs `orlyi` at a random moment (40 times by default), restarts it on the same
 volume, and checks, against a ledger of what each writer sent and had acknowledged:
@@ -122,6 +123,7 @@ volume, and checks, against a ledger of what each writer sent and had acknowledg
 | atomic | a batch came back in part |
 | counter | a writer's `+=` counter differs from its key count, or the shared total from the sum |
 | bound | more acknowledged transactions were lost than the Update pool held just before the kill, plus those acknowledged after that look |
+| progress | over the whole campaign, none of a writer's writes ever came back after a restart: its POV was never promoted (#751) |
 | open | the restart fails, or the #700 open check finds more than leaked blocks or a merge's leftover input |
 | ephemeral | a POV from before the kill still accepts calls (#439) |
 

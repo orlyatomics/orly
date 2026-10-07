@@ -918,6 +918,14 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 
+      # Batch-promotion smoke (#751): batched calls with `if`s (and plain ones), sizes 1, 2 and
+      # 8, same-method and mixed, on all four POV flavours, checked after Tetris promotes them to
+      # global; each POV must still take writes. Python, TS and Go drivers (Go required here).
+      - name: client batch-promotion smoke (clients/smoke)
+        run: REQUIRE_GO=1 bash run-batch-promotion.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so

@@ -1,0 +1,41 @@
+package #1;
+/* Batched calls that Tetris must replay at promotion (#751). A call whose evaluation records a
+   predicate result -- any `if`, in an effect or in a value -- is replayed against the parent POV
+   before its update is promoted. A batch must replay call by call, each with its own args. */
+
+/* A conditional effect keyed by a read: update the key if it exists, create it if not. */
+put_cond = (((true) effecting {
+  *<['k', k]>::(str) <- v;
+} if *<['k', k]>::(str?) is known else (true) effecting {
+  new <['k', k]> <- v;
+})) where {
+  k = given::(str);
+  v = given::(str);
+};
+
+/* A conditional value with no read at all. */
+put_ci = ((true) effecting { new <['c', k]> <- (1 if x > 5 else 0); }) where {
+  k = given::(str);
+  x = given::(int);
+};
+
+/* A read that only feeds an assert (records no predicate result). */
+guard = ((fresh) effecting { new <['g', k]> <- true; }) where {
+  fresh = (*<['g', k]>::(bool?) is unknown) assert {that;};
+  k = given::(str);
+};
+
+/* A plain write. */
+put_plain = ((true) effecting { new <['p', k]> <- v; }) where {
+  k = given::(str);
+  v = given::(str);
+};
+
+/* A conditional write with no arguments, for a mixed batch: bumps a per-package counter. */
+tick = ((true) effecting { *<['t']>::(int) += (2 if *<['t']>::(int?) is known else 1); });
+
+get_k = (*<['k', k]>::(str?)) where { k = given::(str); };
+get_c = (*<['c', k]>::(int?)) where { k = given::(str); };
+get_g = (*<['g', k]>::(bool?)) where { k = given::(str); };
+get_p = (*<['p', k]>::(str?)) where { k = given::(str); };
+get_t = (*<['t']>::(int?));
