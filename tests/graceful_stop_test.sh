@@ -9,7 +9,7 @@
 #   SEED=<n>       random seed for the load lengths (default: the clock; printed)
 #   ORLY_OUT       build tree (default ../out_orly/release); needs orlyi, orlyc, orly_dm
 #   ORLYI_PREFIX   command to run orlyi and orlyc under ("setarch x86_64 -R" for a TSan build)
-#   EXTRA_ARGS     more orlyi flags
+#   EXTRA_ARGS     more orlyi flags (one named here replaces the default of the same name)
 #
 # Needs root for losetup and the /proc/partitions device scan, like restart_test.sh: it re-runs
 # itself under sudo. Ports 19940-19943. Prints one summary line starting "GRACEFUL STOP:" and

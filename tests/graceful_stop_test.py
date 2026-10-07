@@ -178,7 +178,12 @@ class Server:
             '--max_parallel_frames=4000', '--page_cache_size=256', '--block_cache_size=64',
             '--do_fsync', '--no_realtime', '--log_info',
             f'--update_pool_size={self.args.update_pool_size}',
-            f'--update_entry_pool_size={self.args.update_pool_size * 2}'] + self.args.extra_args.split()
+            f'--update_entry_pool_size={self.args.update_pool_size * 2}']
+        # A flag in --extra-args replaces the default of the same name: orlyi refuses a flag
+        # given twice.
+        extra = self.args.extra_args.split()
+        names = {a.split('=', 1)[0] for a in extra}
+        cmd = [a for a in cmd if a.split('=', 1)[0] not in names] + extra
         self.log = open(self.logpath, 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + self.args.startup_timeout
@@ -236,7 +241,8 @@ def main():
     ap.add_argument('--orly-out', default=os.environ.get('ORLY_OUT', os.path.join(REPO_ROOT, '../out_orly/release')))
     ap.add_argument('--orlyi-prefix', default=os.environ.get('ORLYI_PREFIX', ''),
                     help='command to run orlyi under, e.g. "setarch x86_64 -R" for a TSan build')
-    ap.add_argument('--extra-args', default=os.environ.get('EXTRA_ARGS', ''), help='more orlyi flags')
+    ap.add_argument('--extra-args', default=os.environ.get('EXTRA_ARGS', ''),
+                    help='more orlyi flags; one named here replaces the default of the same name')
     ap.add_argument('--port', type=int, default=19940)
     ap.add_argument('--volume-gb', type=int, default=3)
     ap.add_argument('--update-pool-size', type=int, default=100000)
