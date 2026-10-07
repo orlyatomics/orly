@@ -17,8 +17,8 @@ REPO_ROOT="$(cd ../.. && pwd)"
 ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
 ORLYI="$ORLY_OUT/orly/server/orlyi"
 ORLYC="$ORLY_OUT/orly/orlyc"
-WS_PORT=19762
-REPORT_PORT=19763
+WS_PORT=19872
+REPORT_PORT=19873
 IDLE_SECS="${IDLE_SECS:-5}"
 
 for bin in "$ORLYI" "$ORLYC"; do
@@ -43,7 +43,7 @@ cp "$WORK/read_fold.1.so" "$WORK/packages/"
 
 T0=$(date +%s.%N)
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=19760 --slave_port_number=19761 \
+         --port_number=19870 --slave_port_number=19871 \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_point_read_smoke \
