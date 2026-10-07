@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -136,6 +137,20 @@ namespace Orly {
         protected:
 
         TServer(size_t num_runners) : RunnerCons(num_runners), SlowAssignmentCounter(0UL), FastAssignmentCounter(0UL) {}
+
+        /* The fast runner a statement should switch to, or null to stay where it is: a
+           websocket statement already runs on a fast runner (#761), and a second hop would only
+           add a cross-runner handoff each way.  Anything else takes the next in rotation. */
+        Indy::Fiber::TRunner *NextFastRunner() {
+          Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
+          for (const auto &runner: FastRunnerVec) {
+            if (runner.get() == local) {
+              return nullptr;
+            }
+          }
+          const size_t prev_assignment_count = std::atomic_fetch_add(&FastAssignmentCounter, 1UL);
+          return FastRunnerVec[prev_assignment_count % FastRunnerVec.size()].get();
+        }
 
         void InitalizeFramePoolManager(size_t num_frames, size_t frame_stack_size, Indy::Fiber::TRunner *runner) {
           FramePoolManager = std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>>(

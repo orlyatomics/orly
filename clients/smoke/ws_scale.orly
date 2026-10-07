@@ -1,0 +1,18 @@
+package #1;
+/* WebSocket concurrency smoke (#761): groups of six keys, read one key at a time and a group at
+   a time. */
+put = ((true) effecting { new <['g', g, n]> <- v; }) where {
+  g = given::(int);
+  n = given::(int);
+  v = given::(int);
+};
+/* A point read. */
+get = (*<['g', g, n]>::(int?)) where {
+  g = given::(int);
+  n = given::(int);
+};
+/* A small prefix read: walks the group's six keys. */
+group = ((keys (int) @ <['g', g, free::(int)]>) reduce start 0 + 1) where { g = given::(int); };
+/* A read that only computes, for as long as n makes it: what the scale check runs, so a
+   statement's time is its execution, not the I/O thread's parsing and replying. */
+spin = ([0..n] reduce start 0 + that) where { n = given::(int); };

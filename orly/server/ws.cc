@@ -20,6 +20,10 @@
 
 #include <cassert>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -91,6 +95,226 @@ namespace {
 
   };  // TRemoteCompileDisabled
 
+  /* Fill in a reply's "result" and "status" for the exception being handled.  Call only from
+     inside a catch block. */
+  void SetErrorReply(TJson &reply) {
+    try {
+      throw;
+    } catch (const TSourceError &src_error) {
+      reply["result"] = src_error.what();
+      reply["pos"] = AsStr(src_error.GetPosRange());
+      /* Kept out of "result" so a client shows a clean message; the
+         compiler line is there for whoever is reporting a bug (#557). */
+      reply["compiler_loc"] = AsStr(src_error.GetCodeLocation());
+      reply["status"] = "source_error";
+    } catch (const Orly::Server::TInsufficientStorage &ex) {
+      /* A write refused for lack of disk space (#590): its own status, so a client can tell
+         it from a failed statement and keep reading. */
+      reply["result"] = ex.what();
+      reply["status"] = "insufficient_storage";
+    } catch (const Orly::Server::TInsufficientMemory &ex) {
+      /* A write refused because the update pools are down to the merges' reserve (#607). */
+      reply["result"] = ex.what();
+      reply["status"] = "insufficient_memory";
+    } catch (const Orly::Server::TWriteTooLarge &ex) {
+      /* A write too big ever to be promoted (#687). Not retryable: the client must split it. */
+      reply["result"] = ex.what();
+      reply["status"] = "write_too_large";
+    } catch (const Orly::Server::TReadTooLarge &ex) {
+      /* A read that walked or built more than the per-read budget (#694). Not retryable as
+         sent: the client must read less. */
+      reply["result"] = ex.what();
+      reply["status"] = "read_too_large";
+    } catch (const TRemoteCompileDisabled &ex) {
+      /* `compile` on a server started without --allow_remote_compile (#705). */
+      reply["result"] = ex.what();
+      reply["status"] = "remote_compile_disabled";
+    } catch (const exception &ex) {
+      reply["result"] = ex.what();
+      reply["status"] = "exception";
+    } catch (...) {
+      reply["result"] = "unknown exception";
+      reply["status"] = "exception";
+    }
+  }
+
+  /* The statements that run off the I/O threads (#761): try, batch and multi.  Each is a work
+     function, run by TWs::TSessionManager::RunStatement() (on the server, a fiber on a fast
+     runner), that calls the session and returns a finisher; the finisher turns the result into
+     the reply's JSON back on the connection's strand, so result rendering keeps the I/O
+     thread's stack and the fiber does only the statement.  A done callback carries the finisher,
+     or the exception the work threw, back to the connection.
+
+     At most MaxInFlight work functions run at once; the rest wait here in arrival order.  Each
+     in-flight statement holds a fiber frame for as long as it runs, plus whatever frames the
+     read itself fans out to, so an unbounded number of them would empty the frame pool (#762).
+     Since a connection has one statement in flight at most, the wait queue is never longer
+     than the number of connections. */
+  class TStmtQueue final
+      : public std::enable_shared_from_this<TStmtQueue> {
+    NO_COPY(TStmtQueue);
+    public:
+
+    using TFinish = std::function<TJson ()>;
+    using TWork = std::function<TFinish ()>;
+    using TDone = std::function<void (TFinish &&, std::exception_ptr)>;
+
+    TStmtQueue(TWs::TSessionManager *session_mngr, size_t max_in_flight)
+        : SessionManager(session_mngr), MaxInFlight(max_in_flight) {}
+
+    /* Run the work now if there's room, or once there is.  done is called exactly once, from
+       whichever thread finished the work (or refused it), never from inside this call while
+       the caller holds anything of ours. */
+    void Submit(TWork &&work, TDone &&done) {
+      /* lock */ {
+        std::unique_lock<std::mutex> lock(Mutex);
+        if (Stopping) {
+          lock.unlock();
+          done(TFinish(), std::make_exception_ptr(std::runtime_error("server shutting down")));
+          return;
+        }
+        if (MaxInFlight && InFlight >= MaxInFlight) {
+          Waiting.emplace_back(std::move(work), std::move(done));
+          return;
+        }
+        ++InFlight;
+      }
+      Launch(std::move(work), std::move(done));
+    }
+
+    /* Refuse what's waiting and wait for what's running.  After this returns, nothing of ours
+       runs or calls a done callback again.  The wait has no deadline, as the I/O threads'
+       join had before #761: a statement in flight is a client's write or read the server
+       already took, and the rest of the shutdown (TServer::Shutdown()) relies on the runners
+       still being up while it finishes. */
+    void Stop() {
+      std::deque<std::pair<TWork, TDone>> refused;
+      /* lock */ {
+        std::lock_guard<std::mutex> lock(Mutex);
+        Stopping = true;
+        refused.swap(Waiting);
+      }
+      for (auto &item: refused) {
+        item.second(TFinish(), std::make_exception_ptr(std::runtime_error("server shutting down")));
+      }
+      refused.clear();
+      std::unique_lock<std::mutex> lock(Mutex);
+      while (InFlight) {
+        if (Idle.wait_for(lock, std::chrono::seconds(10)) == std::cv_status::timeout && InFlight) {
+          syslog(LOG_WARNING, "ws: shutdown waiting for [%zu] statement(s) in flight (#761)", InFlight);
+        }
+      }
+    }
+
+    private:
+
+    /* Hand one admitted work function to the session manager.  If it can't take it (no fiber
+       frame, say), report the failure and give the slot to the next waiting statement. */
+    void Launch(TWork &&work, TDone &&done) {
+      for (;;) {
+        /* Shared so the failure paths below still have them after the closure is gone. */
+        auto shared_done = std::make_shared<TDone>(std::move(done));
+        TWork work_for_retry = work;
+        /* Run the work, report it, then free its slot.  The order matters for Stop(): the
+           done callback must have run before InFlight can reach zero. */
+        std::function<void ()> run =
+            [self = shared_from_this(), work = std::move(work), shared_done]() mutable {
+          TFinish finish;
+          std::exception_ptr error;
+          try {
+            finish = work();
+          } catch (...) {
+            error = std::current_exception();
+          }
+          /* Drop the work's captures (the session pin, the request) here, before replying. */
+          work = nullptr;
+          /* Moved, not copied: the exception object must have one owner at a time, or this
+             thread's copy dies after the strand has read it, through a refcount TSan can't see
+             (it lives in uninstrumented libstdc++). */
+          (*shared_done)(std::move(finish), std::move(error));
+          *shared_done = nullptr;
+          self->Finished();
+        };
+        try {
+          SessionManager->RunStatement(std::move(run));
+          return;
+        } catch (const Orly::Server::TInsufficientMemory &ex) {
+          /* No fiber frame free (#762). If another statement is in flight, its end frees one and
+             starts the next waiting statement, so put this one back at the head of the queue and
+             give up its slot. With nothing else in flight, nothing would start it again: refuse
+             it, typed and retryable. A fresh exception, as below. */
+          {
+            std::lock_guard<std::mutex> lock(Mutex);
+            if (!Stopping && InFlight > 1) {
+              Waiting.emplace_front(std::move(work_for_retry), std::move(*shared_done));
+              --InFlight;
+              Idle.notify_all();
+              return;
+            }
+          }
+          (*shared_done)(TFinish(), std::make_exception_ptr(Orly::Server::TInsufficientMemory(ex.what())));
+        } catch (const std::exception &ex) {
+          /* RunStatement() promises the work didn't run and never will.  A fresh exception, so
+             the one this handler holds isn't shared with the strand (see above). */
+          syslog(LOG_ERR, "ws: could not start a statement: %s (#761)", ex.what());
+          (*shared_done)(TFinish(), std::make_exception_ptr(std::runtime_error(
+              std::string("could not start the statement: ") + ex.what())));
+        } catch (...) {
+          syslog(LOG_ERR, "ws: could not start a statement (#761)");
+          (*shared_done)(TFinish(), std::make_exception_ptr(std::runtime_error("could not start the statement")));
+        }
+        /* That slot is free again; give it to the next waiting statement, if any. */
+        std::lock_guard<std::mutex> lock(Mutex);
+        if (Stopping || Waiting.empty()) {
+          --InFlight;
+          Idle.notify_all();
+          return;
+        }
+        work = std::move(Waiting.front().first);
+        done = std::move(Waiting.front().second);
+        Waiting.pop_front();
+      }
+    }
+
+    /* A statement finished; start the next waiting one in its slot, if any. */
+    void Finished() {
+      TWork work;
+      TDone done;
+      /* lock */ {
+        std::lock_guard<std::mutex> lock(Mutex);
+        if (Stopping || Waiting.empty()) {
+          --InFlight;
+          Idle.notify_all();
+          return;
+        }
+        work = std::move(Waiting.front().first);
+        done = std::move(Waiting.front().second);
+        Waiting.pop_front();
+      }
+      Launch(std::move(work), std::move(done));
+    }
+
+    TWs::TSessionManager *const SessionManager;
+
+    const size_t MaxInFlight;
+
+    /* Covers everything below. */
+    std::mutex Mutex;
+
+    /* Notified when InFlight drops. */
+    std::condition_variable Idle;
+
+    /* Admitted and not yet finished. */
+    size_t InFlight = 0;
+
+    /* Statements waiting for a slot, in arrival order. */
+    std::deque<std::pair<TWork, TDone>> Waiting;
+
+    /* Set by Stop(). */
+    bool Stopping = false;
+
+  };  // TStmtQueue
+
 }  // namespace
 
 /* The implementation of the TWs interface declared in the header.
@@ -119,10 +343,11 @@ class TWsImpl final
   TWsImpl(
       TSessionManager *session_mngr, size_t thread_count,
       in_port_t port_number, const std::string &bind_address, bool allow_remote_compile,
-      const std::string &auth_token)
+      const std::string &auth_token, size_t max_in_flight)
       : SessionManager(session_mngr),
         AllowRemoteCompile(allow_remote_compile),
         AuthToken(auth_token),
+        StmtQueue(std::make_shared<TStmtQueue>(session_mngr, max_in_flight)),
         TmpDirMaker(MakeCompileTmpDir()),
         IoCtx(thread_count ? static_cast<int>(thread_count) : 1),
         Acceptor(IoCtx) {
@@ -143,9 +368,10 @@ class TWsImpl final
       const auto bound = Acceptor.local_endpoint();
       std::ostringstream strm;
       strm << bound;
-      syslog(LOG_INFO, "websocket listener bound to %s; remote compile %s%s",
+      syslog(LOG_INFO, "websocket listener bound to %s; remote compile %s%s; %zu I/O thread(s), "
+             "%zu statement(s) in flight at most (0: no limit)",
              strm.str().c_str(), allow_remote_compile ? "allowed" : "disabled",
-             auth_token.empty() ? "" : "; token required");
+             auth_token.empty() ? "" : "; token required", thread_count ? thread_count : 1, max_in_flight);
       /* LOG_ERR, not LOG_WARNING: the default log mask shows only errors, and an operator must
          see this one without asking for more. */
       if (allow_remote_compile && auth_token.empty() && !bound.address().is_loopback()) {
@@ -179,10 +405,13 @@ class TWsImpl final
 
   class TConn;
 
-  /* Stops the io_context, joins the worker threads, and clears the
+  /* Refuses queued statements and waits for those in flight (#761), then
+     stops the io_context, joins the worker threads, and clears the
      connection set. Idempotent so the dtor can call it after a partially-
-     constructed start. */
+     constructed start.  The I/O threads keep running through the wait, so
+     the replies of the statements that finish are sent. */
   void Shutdown() {
+    StmtQueue->Stop();
     if (!IoCtx.stopped()) {
       IoCtx.stop();
     }
@@ -331,10 +560,12 @@ class TWsImpl final
           auto tail = dynamic_cast<const TObjMemberListTail *>(list->GetOptObjMemberListTail());
           list = tail ? tail->GetObjMemberList() : nullptr;
         }
-        TMethodResult result = GetSession()->Try(TMethodRequest(pov_id, fq_name, closure));
-        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        Result = Var::ToJson(
-            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
+        /* Runs off the I/O thread (#761); see TStmtQueue. */
+        Conn->Deferred = [session = GetSharedSession(),
+                          request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
+          auto result = std::make_shared<TMethodResult>(session->Try(*request));
+          return TStmtQueue::TFinish([result] { return ToJson(*result); });
+        };
       }
 
       virtual void operator()(const TTryBatchStmt *stmt) const override {
@@ -363,10 +594,13 @@ class TWsImpl final
           auto list_tail = dynamic_cast<const TObjExprListTail *>(list->GetOptObjExprListTail());
           list = list_tail ? list_tail->GetObjExprList() : nullptr;
         }
-        TMethodResult result = GetSession()->TryBatch(pov_id, fq_name, closures);
-        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        Result = Var::ToJson(
-            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
+        /* Runs off the I/O thread (#761); see TStmtQueue. */
+        Conn->Deferred = [session = GetSharedSession(), pov_id,
+                          fq_name = std::make_shared<const vector<string>>(std::move(fq_name)),
+                          closures = std::make_shared<const std::vector<TClosure>>(std::move(closures))] {
+          auto result = std::make_shared<TMethodResult>(session->TryBatch(pov_id, *fq_name, *closures));
+          return TStmtQueue::TFinish([result] { return ToJson(*result); });
+        };
       }
 
       virtual void operator()(const TTryMultiStmt *stmt) const override {
@@ -393,13 +627,20 @@ class TWsImpl final
           auto list_tail = dynamic_cast<const TBatchCallListTail *>(list->GetOptBatchCallListTail());
           list = list_tail ? list_tail->GetBatchCallList() : nullptr;
         }
-        /* The results may differ in type, so they come back as separate values: one JSON
-           array element per call, in order. */
-        TJson::TArray results;
-        for (const auto &var: GetSession()->TryMulti(pov_id, calls)) {
-          results.push_back(Var::ToJson(var));
-        }
-        Result = TJson(std::move(results));
+        /* Runs off the I/O thread (#761); see TStmtQueue. */
+        Conn->Deferred = [session = GetSharedSession(), pov_id,
+                          calls = std::make_shared<const std::vector<Orly::Server::TBatchCall>>(std::move(calls))] {
+          auto vars = std::make_shared<std::vector<Var::TVar>>(session->TryMulti(pov_id, *calls));
+          /* The results may differ in type, so they come back as separate values: one JSON
+             array element per call, in order. */
+          return TStmtQueue::TFinish([vars] {
+            TJson::TArray results;
+            for (const auto &var: *vars) {
+              results.push_back(Var::ToJson(var));
+            }
+            return TJson(std::move(results));
+          });
+        };
       }
 
       virtual void operator()(const TPovStatusStmt *stmt) const override {
@@ -558,10 +799,22 @@ class TWsImpl final
       using TWrapper = Orly::Sabot::State::TAny::TWrapper;
 
       TSessionPin *GetSession() const {
+        return GetSharedSession().get();
+      }
+
+      /* For a statement that runs after this visitor is gone (#761). */
+      const std::shared_ptr<TSessionPin> &GetSharedSession() const {
         if (!Conn->Session) {
           throw invalid_argument("session not yet established");
         }
-        return Conn->Session.get();
+        return Conn->Session;
+      }
+
+      /* A method result as the reply's JSON. */
+      static TJson ToJson(const TMethodResult &result) {
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        return Var::ToJson(
+            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
       }
 
       static TUuid Translate(const TIdExpr *id_expr) {
@@ -624,7 +877,11 @@ class TWsImpl final
     }
 
     /* Parse + run the incoming statement, format the JSON reply, write
-       it back. */
+       it back.  A try, batch or multi doesn't run here: it goes to the
+       statement queue (#761), and its reply is sent by Finish(), on this
+       strand, when it's done.  Either way the next message isn't read
+       until this one's reply is written, so a session's statements run
+       one at a time, in order. */
     void OnMsg() {
       const string payload = beast::buffers_to_string(ReadBuf.data());
       TJson reply = TJson::Object;
@@ -632,46 +889,62 @@ class TWsImpl final
         Authenticate(payload, reply);
       } else try {
         TJson result;
+        Deferred = nullptr;
         ParseStmtStr(
             payload.c_str(),
             [this, &result](const TStmt *stmt) {
               stmt->Accept(TStmtVisitor(this, result));
             });
+        if (Deferred) {
+          RunDeferred();
+          return;
+        }
         reply["result"] = std::move(result);
         reply["status"] = "ok";
-      } catch (const TSourceError &src_error) {
-        reply["result"] = src_error.what();
-        reply["pos"] = AsStr(src_error.GetPosRange());
-        /* Kept out of "result" so a client shows a clean message; the
-           compiler line is there for whoever is reporting a bug (#557). */
-        reply["compiler_loc"] = AsStr(src_error.GetCodeLocation());
-        reply["status"] = "source_error";
-      } catch (const Orly::Server::TInsufficientStorage &ex) {
-        /* A write refused for lack of disk space (#590): its own status, so a client can tell
-           it from a failed statement and keep reading. */
-        reply["result"] = ex.what();
-        reply["status"] = "insufficient_storage";
-      } catch (const Orly::Server::TInsufficientMemory &ex) {
-        /* A write refused because the update pools are down to the merges' reserve (#607). */
-        reply["result"] = ex.what();
-        reply["status"] = "insufficient_memory";
-      } catch (const Orly::Server::TWriteTooLarge &ex) {
-        /* A write too big ever to be promoted (#687). Not retryable: the client must split it. */
-        reply["result"] = ex.what();
-        reply["status"] = "write_too_large";
-      } catch (const Orly::Server::TReadTooLarge &ex) {
-        /* A read that walked or built more than the per-read budget (#694). Not retryable as
-           sent: the client must read less. */
-        reply["result"] = ex.what();
-        reply["status"] = "read_too_large";
-      } catch (const TRemoteCompileDisabled &ex) {
-        /* `compile` on a server started without --allow_remote_compile (#705). */
-        reply["result"] = ex.what();
-        reply["status"] = "remote_compile_disabled";
-      } catch (const exception &ex) {
-        reply["result"] = ex.what();
-        reply["status"] = "exception";
+      } catch (...) {
+        SetErrorReply(reply);
       }
+      SendReply(std::move(reply));
+    }
+
+    /* Hand the statement the visitor left in Deferred to the queue.  Its done callback runs on
+       whichever thread finished it and posts the rest back to this connection's strand. */
+    void RunDeferred() {
+      auto work = std::move(Deferred);
+      Deferred = nullptr;
+      Ws->StmtQueue->Submit(
+          std::move(work),
+          [weak = weak_from_this()](TStmtQueue::TFinish &&finish, std::exception_ptr error) {
+            /* The connection lives in Ws->Conns until it closes, and it can't close while a
+               statement is in flight (no read is pending), so this only fails at shutdown,
+               when nobody is left to reply to. */
+            if (auto self = weak.lock()) {
+              auto executor = self->WsStream.get_executor();
+              net::post(executor, [self = std::move(self), finish = std::move(finish),
+                                   error = std::move(error)]() mutable {
+                self->Finish(std::move(finish), std::move(error));
+              });
+            }
+          });
+    }
+
+    /* On the strand: the deferred statement is done; build its reply and send it. */
+    void Finish(TStmtQueue::TFinish &&finish, std::exception_ptr error) {
+      TJson reply = TJson::Object;
+      try {
+        if (error) {
+          std::rethrow_exception(error);
+        }
+        reply["result"] = finish();
+        reply["status"] = "ok";
+      } catch (...) {
+        SetErrorReply(reply);
+      }
+      SendReply(std::move(reply));
+    }
+
+    /* Write a reply, then read the next message (or close, after an exit or a refused token). */
+    void SendReply(TJson &&reply) {
       ReplyBuf = AsStr(reply);
       WsStream.text(true);
       WsStream.async_write(
@@ -757,7 +1030,12 @@ class TWsImpl final
     beast::flat_buffer ReadBuf;
     string ReplyBuf;
     bool Exiting = false;
-    unique_ptr<TSessionPin> Session;
+
+    /* Shared with a statement in flight (#761), which may finish after the connection closes. */
+    shared_ptr<TSessionPin> Session;
+
+    /* Set by the visitor to a statement that runs off the I/O thread (#761); see OnMsg(). */
+    TStmtQueue::TWork Deferred;
 
     /* How long a connection to a server with a token has to authenticate (#710). */
     static constexpr std::chrono::seconds AuthDeadline{10};
@@ -778,6 +1056,10 @@ class TWsImpl final
 
   /* The token every connection must present first (#710); empty, none is needed. */
   const std::string AuthToken;
+
+  /* Runs try, batch and multi statements off the I/O threads (#761).  Shared with the
+     statements in flight; Shutdown() waits for them. */
+  const std::shared_ptr<TStmtQueue> StmtQueue;
 
   /* Creates and destroys the tmp dir used by the compile stmt. */
   TTmpDirMaker TmpDirMaker;
@@ -832,6 +1114,7 @@ void TWsImpl::DoAccept() {
 TWs *TWs::New(
     TSessionManager *session_mngr, size_t thread_count,
     in_port_t port_number, const std::string &bind_address, bool allow_remote_compile,
-    const std::string &auth_token) {
-  return new TWsImpl(session_mngr, thread_count, port_number, bind_address, allow_remote_compile, auth_token);
+    const std::string &auth_token, size_t max_in_flight) {
+  return new TWsImpl(session_mngr, thread_count, port_number, bind_address, allow_remote_compile, auth_token,
+                     max_in_flight);
 }

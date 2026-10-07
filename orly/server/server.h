@@ -266,8 +266,14 @@ namespace Orly {
 
         size_t NumDiskMergeThreads;
 
-        /* The number of threads to use for answering websocket requests. */
+        /* The number of websocket I/O threads.  They read, parse and reply; statements run on the
+           fast runners and don't hold one while they execute (#761). */
         size_t NumWsThreads;
+
+        /* The most websocket try/batch/multi statements running at once; more wait their turn
+           (#761).  0, the default, picks max_parallel_frames / 8, at least 4: each one holds a
+           fiber frame while it runs, and a read fans out to more. */
+        size_t MaxWsInFlight;
 
         size_t MaxRepoCacheSize;
 
@@ -494,6 +500,9 @@ namespace Orly {
       /* Called when the websockets server wishes to resume an old session. */
       virtual TWs::TSessionPin *ResumeSession(const Base::TUuid &id) override;
 
+      /* Runs a websocket statement on a fiber on the fast runners, without waiting (#761). */
+      virtual void RunStatement(std::function<void ()> &&work) override;
+
       virtual bool ForEachIndex(const std::function<
           bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const final;
 
@@ -637,9 +646,9 @@ namespace Orly {
            drain flag and bails before entering its loop. */
         void InterruptRun() noexcept;
 
-        /* Run the given jump-runnable on the server's websockets runner. */
-        void RunWs(Indy::Fiber::TJumpRunnable &&jump_runnable) {
-          Server->RunWs(std::move(jump_runnable));
+        /* Run the given function on a fiber; see TServer::RunWs(). */
+        void RunWs(std::function<void ()> &&func) {
+          Server->RunWs(std::move(func));
         }
 
         /* Construct a new connection for the given server, connected to the given session.  Neither the server
@@ -822,11 +831,19 @@ namespace Orly {
       /* See <orly/protocol.h>. */
       void InstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      /* Run the given jump-runnable on our websockets runner. */
-      /* Runs a WebSocket statement's closure on WsRunner. A statement that can't get a fiber
-         frame within TJumpRunnable::FrameWait never ran, so it is refused as retryable
-         insufficient_memory (#762) rather than as a bare std::bad_alloc. */
-      void RunWs(Indy::Fiber::TJumpRunnable &&jump_runnable) {
+      /* Run the given function on a fiber and wait for it.  A websocket statement that runs
+         through RunStatement() is already on one, so it runs right here, on its fast runner
+         (#761); one that runs on the websocket I/O thread (setup statements such as
+         new_session, install or new_pov) jumps to the websockets runner and blocks that
+         thread until it's done, as before.  A jump that can't get a fiber frame within
+         TJumpRunnable::FrameWait never ran, so it is refused as retryable insufficient_memory
+         (#762) rather than as a bare std::bad_alloc. */
+      void RunWs(std::function<void ()> &&func) {
+        if (Indy::Fiber::TRunner::LocalRunner) {
+          func();
+          return;
+        }
+        Indy::Fiber::TJumpRunnable jump_runnable(std::move(func));
         try {
           jump_runnable(FramePoolManager.get(), &WsRunner);
         } catch (const Indy::Fiber::TFramePoolExhausted &ex) {

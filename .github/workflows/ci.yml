@@ -479,6 +479,40 @@ jobs:
           grep '^DISK FULL FAIL' /tmp/disk-full-control.log | head -3
           echo "control OK: the smoke fails without write admission"
 
+      # #761: WebSocket statements must not hold an I/O thread while they run. With one I/O
+      # thread, 16 sessions running a compute-only read of ~10 ms ("spin") must get at least 1.5x
+      # the reads/s of one session: this runner's 2 fast runners run two at once. Under a
+      # 4-core topology master measured 1.15x and this change 2.2-2.3x. Point reads can't tell:
+      # here they're so short that the I/O thread's own parsing and replying overlap a single
+      # statement in flight. Then the whole scale run at 1/3/16/64/256 sessions, point and
+      # prefix reads, prints its METRIC lines for the log.
+      - name: WebSocket reads scale with sessions, not I/O threads
+        run: |
+          GROUPS=200 KINDS=spin LEVELS=1,16 SECS=4 SPIN_N=2000000 SCALE_KIND=spin SCALE_CHECK=16:1.5 \
+            EXTRA_ARGS=--num_ws_threads=1 bash clients/smoke/run-ws-scale.sh
+          SECS=3 bash clients/smoke/run-ws-scale.sh
+
+      # Negative control for the step above: the same check with one statement in flight at a
+      # time (--max_ws_in_flight=1) must FAIL (1.03x under a 4-core topology), after its reads
+      # ran. If it passes, the bound no longer tells whether statements run concurrently.
+      - name: The WebSocket scale check fails with one statement in flight
+        run: |
+          if GROUPS=200 KINDS=spin LEVELS=1,16 SECS=4 SPIN_N=2000000 SCALE_KIND=spin SCALE_CHECK=16:1.5 \
+               EXTRA_ARGS="--num_ws_threads=1 --max_ws_in_flight=1" \
+               bash clients/smoke/run-ws-scale.sh > /tmp/ws-scale-control.log 2>&1; then
+            cat /tmp/ws-scale-control.log
+            echo "CONTROL FAIL: the WebSocket scale check passed with one statement in flight"
+            exit 1
+          fi
+          if ! grep -q '^spin reads, 16 session' /tmp/ws-scale-control.log \
+             || ! grep -q '^WS SCALE FAIL: 16 sessions read only' /tmp/ws-scale-control.log; then
+            cat /tmp/ws-scale-control.log
+            echo "CONTROL FAIL: the smoke failed before its reads could test anything"
+            exit 1
+          fi
+          grep '^WS SCALE FAIL' /tmp/ws-scale-control.log
+          echo "control OK: the scale check fails with one statement in flight"
+
       # #730: SIGKILL orlyi under write load on a loopback volume, restart it, and check every
       # write against the client's ledger and the loss bound in docs/durability.md. A short run;
       # the kill-campaign workflow runs the full 40 kills on dispatch.
