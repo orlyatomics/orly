@@ -15,7 +15,7 @@ set -e
 cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
-ORLYI="$ORLY_OUT/orly/server/orlyi"
+ORLYI="${ORLYI:-$ORLY_OUT/orly/server/orlyi}"
 ORLYC="$ORLY_OUT/orly/orlyc"
 WS_PORT=${WS_PORT:-19772}
 REPORT_PORT=${REPORT_PORT:-19773}

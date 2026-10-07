@@ -13,3 +13,6 @@ get = (*<['g', g, n]>::(int?)) where {
 };
 /* A small prefix read: walks the group's six keys. */
 group = ((keys (int) @ <['g', g, free::(int)]>) reduce start 0 + 1) where { g = given::(int); };
+/* A read that only computes, for as long as n makes it: what the scale check runs, so a
+   statement's time is its execution, not the I/O thread's parsing and replying. */
+spin = ([0..n] reduce start 0 + that) where { n = given::(int); };

@@ -11,9 +11,11 @@
  * Prints, per read kind and session count, reads per second and p50/p99 latency as METRIC lines
  * for tools/maint/ab_bench.py: ws_<kind>_rps_s<N>, ws_<kind>_p50_ms_s<N>, ws_<kind>_p99_ms_s<N>.
  *
- * SCALE_CHECK=<n>:<x> fails the run unless point reads/s at n sessions is at least x times the
- * rate at one session. Before #761 a statement held a WebSocket I/O thread while it ran, so with
- * --num_ws_threads=1 sixteen sessions read no faster than one. */
+ * KINDS may also name "spin": a read that only computes (a reduce over [0..SPIN_N]).
+ *
+ * SCALE_CHECK=<n>:<x> fails the run unless SCALE_KIND (default point) reads/s at n sessions is
+ * at least x times the rate at one session. Before #761 a statement held a WebSocket I/O thread
+ * while it ran, so with --num_ws_threads=1 sixteen sessions ran spins no faster than one. */
 
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { connect } from "../ts/dist/index.js";
@@ -21,6 +23,7 @@ import { connect } from "../ts/dist/index.js";
 const URL = process.env.ORLY_URL;
 const GROUPS = +(process.env.GROUPS ?? 2000);
 const PER_GROUP = 6;
+const SPIN_N = +(process.env.SPIN_N ?? 20000);
 const value = (g, n) => g * 10 + n;
 
 if (!isMainThread) {
@@ -46,6 +49,10 @@ if (!isMainThread) {
           const got = Number(await c.call(pov, "ws_scale", "get", { g, n }));
           lat.push(performance.now() - t0);
           if (got !== value(g, n)) failures.push(`get ${g},${n} read ${got}, want ${value(g, n)}`);
+        } else if (kind === "spin") {
+          const got = Number(await c.call(pov, "ws_scale", "spin", { n: SPIN_N }));
+          lat.push(performance.now() - t0);
+          if (got !== SPIN_N * (SPIN_N + 1) / 2) failures.push(`spin ${SPIN_N} read ${got}`);
         } else {
           const got = Number(await c.call(pov, "ws_scale", "group", { g }));
           lat.push(performance.now() - t0);
@@ -66,6 +73,7 @@ const KINDS = (process.env.KINDS ?? "point,prefix").split(",");
 const SECS = +(process.env.SECS ?? 5);
 const WORKERS = +(process.env.WORKERS ?? 4);
 const SCALE_CHECK = process.env.SCALE_CHECK ?? "";
+const SCALE_KIND = process.env.SCALE_KIND ?? "point";
 
 const setup = await connect(URL);
 await setup.newSession();
@@ -151,13 +159,13 @@ if (failures.length) {
 }
 if (SCALE_CHECK) {
   const [n, x] = SCALE_CHECK.split(":").map(Number);
-  const one = rps["point:1"], many = rps[`point:${n}`];
+  const one = rps[`${SCALE_KIND}:1`], many = rps[`${SCALE_KIND}:${n}`];
   if (!(one > 0) || !(many >= 0)) {
-    console.error(`WS SCALE FAIL: SCALE_CHECK needs point reads at 1 and ${n} sessions`);
+    console.error(`WS SCALE FAIL: SCALE_CHECK needs ${SCALE_KIND} reads at 1 and ${n} sessions`);
     process.exit(1);
   }
   const ratio = many / one;
-  console.log(`point reads/s at ${n} sessions / at 1 session = ${ratio.toFixed(2)} (want >= ${x})`);
+  console.log(`${SCALE_KIND} reads/s at ${n} sessions / at 1 session = ${ratio.toFixed(2)} (want >= ${x})`);
   if (ratio < x) {
     console.error(`WS SCALE FAIL: ${n} sessions read only ${ratio.toFixed(2)}x as fast as one`);
     process.exit(1);
