@@ -73,6 +73,29 @@ Discovered during slice C (each cost a real bug):
    `TScheduler::Shutdown` now logs any jobs that were scheduled but never
    ran; orlyc provisions 32.
 
+Discovered under write load (#744, each one hung or lost data on a graceful stop):
+
+7. **A layer cleaner must outlive everything that frees layers into it.** The
+   merges, Tetris promotion and the flush make dead layers, and only the two
+   cleaners give their pool blocks back. Stopped before the flush, the repo
+   pools ran dry (merges and Tetris rounds rolled back for the flush's whole
+   30 s, losing acknowledged writes) and so did the Durable Layer pool (its
+   bad_alloc killed the durable writer fiber, and every saver waiting on it
+   hung the stop). The repo cleaner now stops after the flush, and the durable
+   one after Tetris is gone.
+8. **Never block a fiber runner's thread waiting for a loop that may hop onto
+   it.** A disk merge mid-step visits every fast runner (`RemoveFile` clears
+   each one's caches after a fold), so `StopMergeRunners()` waiting on a fast
+   runner's fiber deadlocked against it. It, and the repo cleaner's join, run
+   on `Shutdown()`'s own thread, between a flush jumper and the teardown
+   jumper.
+9. **Promotion must finish while the release machinery still runs.** An
+   acknowledged write is only committed to its POV, and Tetris runs behind
+   the writers. `Shutdown()` waits (bounded, 30 s) for every unpaused Tetris
+   player to run out of children before the settle window, so the replication
+   release can still make the last promotions mergeable and the flush writes
+   them.
+
 ## Deliberate leaks (why the ASan smoke disables leak detection)
 
 Teardown frees every real resource but intentionally leaks a few pool

@@ -149,7 +149,8 @@ namespace Orly {
         virtual void StopLayerCleaner() override;
 
         /* See Durable::TManager: block until the cleaner loop has actually
-           returned (if it ever started). */
+           returned (if it ever started). Safe to call more than once: the destructor stops and
+           joins the cleaner itself (#744), so a caller that already did is not waited on twice. */
         virtual void JoinLayerCleaner() override;
 
         virtual void Save(const Durable::TId &id, const Durable::TDeadline &deadline, const TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem) override;
@@ -229,8 +230,9 @@ namespace Orly {
         /* Swap out the current memory slush layer (if non-empty), write it and any layer an
            earlier round could not write to disk, release the savers whose entries they hold
            (their durability sems, #277), and swap the new disk layers into the mapping.
-           Returns true iff there was anything to flush.  When 'retire_writer' is set (the
-           writer's shutdown drain), also marks the writer retired under DataLock so later saves
+           Returns true iff there was anything to flush.  Out of Durable Layer pool blocks,
+           nothing changes but WriterOutOfLayers, and the savers are released as on a full disk
+           (#744).  When 'retire_writer' is set (the writer's shutdown drain), also marks the writer retired under DataLock so later saves
            signal their own sems instead of waiting forever.  Out of disk space, the unwritten
            layers stay in the mapping and UnflushedLayers, their savers are released, and the
            next save or layer-cleaner tick retries (#590). */
@@ -250,6 +252,19 @@ namespace Orly {
 
         /* Called on each layer-cleaner tick: wake the writer or merger if one owes a retry. */
         void KickDiskFullRetries();
+
+        /* The writer or the merger ('who') found the Durable Layer pool dry (#744): log it,
+           rate-limited. */
+        void OnLayerPoolMiss(const char *who);
+
+        /* Something other than a full disk or a dry pool went wrong in a writer round: stop
+           writing for good, as after an I/O error (#621), and wake every saver. Writer fiber
+           only; takes DataLock. */
+        void FailWriter(const std::exception &ex);
+
+        /* Delete every layer in the removal queue. The layer cleaner's work, on each tick and
+           once more as it stops. */
+        void RemoveQueuedLayers();
 
         /* Push (and clear) the durability sem of every entry in the given layer.  Called by
            FlushCurLayer() once the layer is confirmed on disk -- or if the write failed, so a
@@ -789,6 +804,10 @@ namespace Orly {
 
           inline size_t GetNumDurable() const;
 
+          /* The writer and the merger take their output layer from the pool before they write
+             its file, and fill in the count once it is written (#744). */
+          inline void SetNumDurable(size_t num_durable);
+
           virtual void FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const;
 
           private:
@@ -867,6 +886,14 @@ namespace Orly {
         std::atomic<bool> WriterRetryDue {false};
         std::atomic<bool> MergerRetryDue {false};
 
+        /* Set while the writer owes a retry because the Durable Layer pool was dry (#744). The
+           pool refills as the layer cleaner deletes dead layers, so unlike a full disk this is
+           worth waiting out in the writer's final drain. */
+        std::atomic<bool> WriterOutOfLayers {false};
+
+        /* Durable Layer pool misses by the writer and the merger, for logging. */
+        std::atomic<size_t> LayerPoolMisses {0UL};
+
         /* Set for good when the writer or merger hits an I/O error that is not a full disk
            (#621). Retrying is pointless and unsafe after one (the file service refuses every
            later file-map change, and each retry would write a whole file first), so they stop
@@ -894,6 +921,8 @@ namespace Orly {
            returns; JoinLayerCleaner() waits on that handshake (#440). */
         std::atomic<bool> LayerCleanerStarted;
         Base::TEventSemaphore LayerCleanerExited;
+        /* Set by the first JoinLayerCleaner() that waits, so a second one returns at once. */
+        std::atomic<bool> LayerCleanerJoined {false};
 
         std::mutex RemovalLock;
 
@@ -1120,6 +1149,10 @@ namespace Orly {
 
       inline size_t TDurableManager::TDiskOrderedLayer::GetNumDurable() const {
         return NumDurable;
+      }
+
+      inline void TDurableManager::TDiskOrderedLayer::SetNumDurable(size_t num_durable) {
+        NumDurable = num_durable;
       }
 
     }  // Disk

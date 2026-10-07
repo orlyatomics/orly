@@ -1717,9 +1717,8 @@ void TServer::Shutdown() {
   /* Hard-close every established client connection: the listening sockets
      are already down and TConnection::New refuses under ShutdownCalled, so
      after this kick no serving loop can outlive the drain wait below.  The
-     loops wind down alongside the settle sleep; in-flight requests finish
-     against the still-live pipeline and their responses just fail to send
-     (#460). */ {
+     loops wind down during that wait; in-flight requests finish against the
+     still-live pipeline and their responses just fail to send (#460). */ {
     std::vector<std::shared_ptr<TConnection>> live_connections;
     /* acquire Connection lock */ {
       std::lock_guard<std::mutex> lock(ConnectionMutex);
@@ -1738,6 +1737,42 @@ void TServer::Shutdown() {
     }
   }  // our refs drop here, OUTSIDE the lock: if one is the last ref, its
      // OnRelease takes ConnectionMutex itself.
+  const auto shutdown_start = std::chrono::steady_clock::now();
+  auto ms_since_start = [&shutdown_start] {
+    return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - shutdown_start).count());
+  };
+  /* Wait for the kicked connections to actually release their sessions:
+     no write can commit after this, and the durable Clear() in the teardown
+     jumper below must see only genuinely closed durables.  Bounded -- a
+     serving loop wedged in a long request must not hold shutdown hostage
+     (cf. #461); a straggler just means Clear() logs-and-leaks it, exactly as
+     before the drain existed (#460). */ {
+    std::unique_lock<std::mutex> lock(ConnectionMutex);
+    if (!ConnectionDrainedCv.wait_for(lock, std::chrono::seconds(10),
+                                      [this] { return LiveConnectionCount == 0; })) {
+      syslog(LOG_WARNING, "TServer::Shutdown(): [%zu] client connection(s) still live after the drain deadline (#460)", LiveConnectionCount);
+    }
+  }
+  /* Let Tetris promote everything the povs hold, all the way up to the
+     global pov, while the merges, the layer cleaners and the replication
+     release that makes promoted updates mergeable all still run (#744).  An
+     acknowledged write is only committed to its pov; under write load
+     Tetris runs well behind, and whatever it promoted after the flush below
+     stayed in the global pov's memory layer and was dropped at exit.
+     Bounded, like the flush: a pov whose promotion can't make progress must
+     not hold the stop hostage.  Paused povs are not waited for. */
+  if (TetrisManager) {
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    size_t players = 0UL;
+    while ((players = TetrisManager->GetUnpausedPlayerCount()) > 0UL && std::chrono::steady_clock::now() < give_up) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (players) {
+      syslog(LOG_ERR, "TServer::Shutdown(): Tetris still promoting into [%zu] pov(s) after 30s; their unpromoted updates will be lost (#744)", players);
+    } else {
+      syslog(LOG_INFO, "TServer::Shutdown(): Tetris idle after %ldms (#744)", ms_since_start());
+    }
+  }
   /* Let the in-flight update pipeline settle while ALL of the cadence
      machinery (replication release, mergers, tetris) is still running: a
      write that arrived just before the signal is not mergeable until the
@@ -1749,50 +1784,45 @@ void TServer::Shutdown() {
   std::this_thread::sleep_for(std::chrono::milliseconds(
       3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100})));
   /* Now stop the standalone service loops -- the housekeeper (blocked on
-     its timer), the two layer cleaners (ditto), and the three replication
-     loops (blocked in epoll_wait) -- and WAIT for each to actually return:
+     its timer) and the three replication loops (blocked in epoll_wait) --
+     and WAIT for each to actually return:
      a stop is only a flag plus a wake, and the manager teardown below
      would otherwise free the very fds/collections a still-parked loop
      references (#440).  The fiber-level joins reap only loops that
      actually entered; that skip is sound because every runner HOST job is
      cancel-or-joined (here for the housekeeper, at the end of Shutdown()
      for the rest) -- a fiber latched onto a runner whose host was
-     cancelled can never run at all (#462). */
+     cancelled can never run at all (#462).
+     NOT the two layer cleaners (#744): the flush below, Tetris's promotions
+     and the merges all make dead layers, and the cleaners are what give
+     their pool blocks back.  Stopped here, before the flush, under write load
+     the repo pools ran dry (merges and Tetris rounds rolled back and retried
+     for the whole 30 s flush budget, which then gave up, losing acknowledged
+     writes) and so did the Durable Layer pool (its bad_alloc killed the
+     durable writer fiber, and every saver waiting on it hung the stop).
+     Each is stopped below once nothing makes dead layers for it. */
   HousecleaningTimer.FireNow();
   RepoManager->StopReplicationServices();
-  RepoManager->StopLayerCleaner();
-  DurableManager->StopLayerCleaner();
   RepoManager->JoinReplicationServices();
-  RepoManager->JoinLayerCleaner();
-  DurableManager->JoinLayerCleaner();
   /* A null handle means the job was never accepted (or Init never got that
      far) -- there is nothing to join. */
   if (HousekeeperHandle && !Scheduler->Cancel(HousekeeperHandle)) {
     HousekeeperExited.Pop();
   }
-  /* Wait for the kicked connections to actually release their sessions:
-     the durable Clear() in the teardown jumper below must see only
-     genuinely closed durables.  Bounded -- a serving loop wedged in a long
-     request must not hold shutdown hostage (cf. #461); a straggler just
-     means Clear() logs-and-leaks it, exactly as before the drain existed
-     (#460). */ {
-    std::unique_lock<std::mutex> lock(ConnectionMutex);
-    if (!ConnectionDrainedCv.wait_for(lock, std::chrono::seconds(10),
-                                      [this] { return LiveConnectionCount == 0; })) {
-      syslog(LOG_WARNING, "TServer::Shutdown(): [%zu] client connection(s) still live after the drain deadline (#460)", LiveConnectionCount);
-    }
-  }
-  /* Tear down the fiber-entangled managers on a fiber, while every runner
-     is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
-     its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
-     takes fiber locks. */
-  Indy::Fiber::TJumpRunnable teardown_jumper([this] {
-    /* Stop the merge loops first (their wake sems are fiber primitives, so
-       this must run on a fiber): the flush below must be the only drainer
-       of the merge queue, or a live merger mid-step could re-enqueue a
-       still-dirty repo after the flush saw an empty queue and returned,
-       and that repo would never reach disk (#440). */
-    RepoManager->StopMergeRunners();
+  /* Stop the merge loops first: the flush below must be the only drainer
+     of the merge queue, or a live merger mid-step could re-enqueue a
+     still-dirty repo after the flush saw an empty queue and returned, and
+     that repo would never reach disk (#440).  On this thread, not on a
+     fiber (#744): the wait blocks its thread, and a disk merge mid-step
+     visits every fast runner (MergeFiles removes its intermediate file
+     after a fold, and RemoveFile clears each runner's caches), so waiting
+     on a fast runner's fiber, as this used to, left that merge unable to
+     finish and the stop hung for good.  The wake sems can be pushed from
+     any thread. */
+  RepoManager->StopMergeRunners();
+  syslog(LOG_INFO, "TServer::Shutdown(): merge runners stopped after %ldms (#744)", ms_since_start());
+  /* Flush on a fiber, while every runner is still alive. */
+  Indy::Fiber::TJumpRunnable flush_jumper([this] {
     /* Flush-on-shutdown (#440): merge every dirty repo memory layer out to
        disk and write the durable slush layer, so a graceful stop loses
        nothing -- durability no longer depends on the merge cadence having
@@ -1801,6 +1831,21 @@ void TServer::Shutdown() {
        precede StopAllPlayers. */
     RepoManager->FlushMemMerges();
     DurableManager->Flush();
+  });
+  flush_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
+  syslog(LOG_INFO, "TServer::Shutdown(): flushed after %ldms (#744)", ms_since_start());
+  /* The merge runners are stopped and the flush is done, so nothing makes dead repo layers any
+     more: stop the repo layer cleaner, before Tetris goes (a disk layer's removal visits the
+     Tetris runners, #648).  Join it here, on this thread and not on a fiber: that removal also
+     hops onto every fast runner, so a fiber blocked in the join would hold up the very runner
+     the cleaner may be waiting to visit (#744). */
+  RepoManager->StopLayerCleaner();
+  RepoManager->JoinLayerCleaner();
+  /* Tear down the fiber-entangled managers on a fiber, while every runner
+     is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
+     its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
+     takes fiber locks. */
+  Indy::Fiber::TJumpRunnable teardown_jumper([this] {
     delete TetrisManager;
     TetrisManager = nullptr;
     /* Forget the Tetris runners: they are gone, but RepoManager.reset() below can still remove a
@@ -1808,6 +1853,12 @@ void TServer::Shutdown() {
        fiber that switched to a dead runner never ran again, and shutdown hung forever (#648). */
     ForEachSchedCallbackExtraSet.clear();
     DurableManager->Clear();
+    /* Nothing saves durables any more (Tetris is gone, the connections are drained, the
+       flush is done), so the durable layer cleaner can stop: join it here, while its runner
+       is alive, rather than wherever the manager's last reference happens to go (#744).
+       Blocking this runner's thread is safe: the cleaner never hops onto it. */
+    DurableManager->StopLayerCleaner();
+    DurableManager->JoinLayerCleaner();
     DurableManager.reset();
     GlobalRepo.Reset();
     RepoManager.reset();

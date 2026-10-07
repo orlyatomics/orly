@@ -389,6 +389,17 @@ void TTetrisManager::StopAllPlayers() {
   }
 }
 
+size_t TTetrisManager::GetUnpausedPlayerCount() const {
+  lock_guard<mutex> lock(Mutex);
+  size_t count = 0UL;
+  for (const auto &item : PlayerByParentPovId) {
+    if (PausedSet.find(item.first) == PausedSet.end()) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 void TTetrisManager::BecomeMaster() {
   lock_guard<mutex> lock(Mutex);
   lock_guard<mutex> master_lock(MasterMutex);

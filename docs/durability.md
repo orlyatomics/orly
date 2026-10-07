@@ -88,16 +88,26 @@ turn in that backlog.
 
 ## A graceful stop
 
-SIGTERM or SIGINT (`TServer::Shutdown`) lets promotion run for three periods of the slowest of
-`--replication_interval`, `--mem_interval` and `--durable_write_interval` (at least 100 ms each,
-so 300 ms by default), then writes every memory layer of the global POV to disk. It doesn't wait
-for every POV's backlog to drain first, so writes that were still unpromoted after that window
-are lost, as the README's ephemeral-POV caveat says. `SIGNAL=TERM` runs the campaign this way.
+SIGTERM or SIGINT (`TServer::Shutdown`) closes every client connection, waits for Tetris to
+promote every POV's backlog to the global POV, lets the release machinery settle for three periods
+of the slowest of `--replication_interval`, `--mem_interval` and `--durable_write_interval` (at
+least 100 ms each, so 300 ms by default), then writes every memory layer of the global POV to disk
+(#440, #744). So a graceful stop loses no acknowledged write, with two exceptions: a paused POV's
+backlog isn't waited for, and the wait for promotion is bounded at 30 s, after which `orlyi` logs
+`Tetris still promoting into [N] pov(s)` and the writes still unpromoted are lost, as the README's
+ephemeral-POV caveat says.
 
-Under sustained write load a graceful stop currently hangs instead (#744): the Durable Layer pool
-runs out after `Shutdown()` has stopped its cleaner, and the teardown waits on fibers that died of
-it. Whatever stops `orlyi` after that (`docker stop`'s SIGKILL, say) makes it a crash, with the
-crash bound above. Until #744 is fixed, `SIGNAL=TERM` runs of the campaign fail on it.
+**Time.** A stop takes as long as the backlog takes to promote (up to 30 s), plus the disk merge
+in flight when it starts, plus the flush (each of the repo flush and the durable flush is also
+bounded at 30 s). `orlyi` logs each step's time: `Tetris idle after`, `merge runners stopped
+after` and `flushed after`. A stop with no backlog takes about the 300 ms window; give
+`docker stop` (`--time`, 10 s by default) or your service manager enough grace for the backlog your
+writers can build up.
+
+`tests/graceful_stop_test.sh` stops `orlyi` with SIGTERM under the campaign's write load and
+requires every acknowledged write back after each restart; CI runs it on every push and pull
+request. `SIGNAL=TERM` runs the campaign the same way. Before #744 a graceful stop under load
+usually hung instead, and `docker stop`'s SIGKILL then made it a crash.
 
 ## Power loss
 

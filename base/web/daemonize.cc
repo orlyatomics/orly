@@ -31,27 +31,12 @@
 
 using namespace std;
 
-/* DefendAgainstSignals installs this signal handler
-   for SIGINT, SIGTERM, and SIGHUP. */
-static void HandleSignal(int sig) {
-  switch(sig) {
-    case SIGINT: {
-      syslog(LOG_NOTICE, "[SIGINT]");
-      break;
-    }
-    case SIGTERM: {
-      syslog(LOG_NOTICE, "[SIGTERM]");
-      break;
-    }
-    case SIGHUP: {
-      syslog(LOG_NOTICE, "[SIGHUP]");
-      break;
-    }
-    default: {
-      syslog(LOG_ERR, "[unexpected signal][%d]", sig);
-    }
-  }
-}
+/* DefendAgainstSignals installs this signal handler for SIGINT, SIGTERM, and SIGHUP, so they
+   don't kill the daemon. It does nothing: it used to syslog() each signal, which isn't
+   async-signal-safe (it locks and allocates, and can deadlock against the thread it interrupted),
+   and a handler must leave errno alone (#759). A program that wants these signals, such as orlyi
+   in TScheduler::TPolicy::RunUntilCtrlC, installs its own handler over this one. */
+static void HandleSignal(int) {}
 
 /* Install the given hander over a list of signals. */
 static void InstallSignalHandlers(initializer_list<int> signals, void (*handler)(int)) {

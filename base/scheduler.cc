@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <sched.h>
+#include <time.h>
 
 #include <base/debug_log.h>
 #include <base/zero.h>
@@ -51,26 +52,35 @@ void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job) const {
 void TScheduler::TPolicy::RunUntilCtrlC(TMainJob &&main_job, const std::function<void ()> &on_signal) const {
   try {
     TMasker masker(*TSet(TSet::Full));
-    THandlerInstaller handler(
-        SIGINT,
-        [](int) {
-          ShutDown();
-        }
-    );
+    /* The handlers only have to exist: a handled SIGINT or SIGTERM is what makes sigsuspend()
+       below return, and everything else happens after that, in normal context. They used to
+       call ShutDown() themselves, which takes a lock, allocates (an atexit registration the
+       first time), runs the listeners and overwrites errno, none of it safe in a signal handler;
+       TSan reported it on orlyi's SIGINT (#759). The do-nothing handler touches nothing, errno
+       included. */
+    THandlerInstaller handler(SIGINT);
     /* SIGTERM too: it is what `docker stop`, Kubernetes and systemd send. With only SIGINT
        unblocked it stayed pending forever, so they waited out their timeout and SIGKILLed the
        server without the graceful shutdown (#598). */
-    THandlerInstaller term_handler(
-        SIGTERM,
-        [](int) {
-          ShutDown();
-        }
-    );
-    TScheduler scheduler(*this, pthread_self(), &main_job);
-    sigsuspend(&*TSet(TSet::Exclude, { SIGINT, SIGTERM }));
-    if (on_signal) {
-      on_signal();
+    THandlerInstaller term_handler(SIGTERM);
+    /* extra */ {
+      TScheduler scheduler(*this, pthread_self(), &main_job);
+      /* Every other signal stays blocked on this thread, so this returns only once a SIGINT or
+         a SIGTERM has been handled. */
+      sigsuspend(&*TSet(TSet::Exclude, { SIGINT, SIGTERM }));
+      ShutDown();
+      if (on_signal) {
+        on_signal();
+      }
     }
+    /* Consume any SIGINT or SIGTERM that arrived after the first: a second ctrl-c or `docker
+       stop`, or the ctrl-c the scheduler sends itself once it goes permanently quiescent. They
+       stay pending under the mask, and left there one was delivered when the masker restored
+       the old mask, after the handlers above were gone, so a process that had just shut down
+       cleanly died of SIGINT. */
+    const TSet stop_sigs(TSet::Include, { SIGINT, SIGTERM });
+    const timespec no_wait = { 0, 0 };
+    while (sigtimedwait(stop_sigs.Get(), nullptr, &no_wait) > 0) {}
   } catch (const exception &ex) {
     syslog(LOG_ERR, "run_until_c; standard exception; %s", ex.what());
   } catch (...) {

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -187,17 +188,22 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
       std::vector<TFoldEntry> Entries;
     };
     std::vector<TKeyGroup> groups;
+    /* Each group's index in 'groups', by its key. Looking a key up by scanning 'groups' made a
+       fold O(entries x keys): a file of a few tens of thousands of keys took minutes of CPU, and a
+       graceful stop waits for the merge in flight (#744). TKey hashes by value, and == agrees with
+       it, so a key in the index file's arena finds its group's copy in out_arena. */
+    std::unordered_map<Indy::TKey, size_t> group_by_key;
 
     auto find_or_create = [&](const TCore &key_core, TCore::TArena *key_arena) -> TKeyGroup & {
       Indy::TKey probe(key_core, key_arena);
-      for (auto &g : groups) {
-        if (g.Key == probe) {
-          return g;
-        }
+      const auto iter = group_by_key.find(probe);
+      if (iter != group_by_key.end()) {
+        return groups[iter->second];
       }
       groups.emplace_back();
       auto &g = groups.back();
       g.Key = Indy::TKey(&out_arena, state_alloc, probe);
+      group_by_key.emplace(g.Key, groups.size() - 1);
       return g;
     };
 
