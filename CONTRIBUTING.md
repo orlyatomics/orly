@@ -71,6 +71,32 @@ no fallback key. `make bootstrap` still runs nycr generation. Normal nightly
 builds bypass both caches; sanitizers keep their compiler cache but rebuild
 bootstrap seeds. A new cache namespace starts cold and warms on master.
 
+### Documentation-only CI
+
+CI always reports its checks; there are no workflow-level path filters.
+The build-free lint job classifies the entire tested PR merge, not just
+the latest commit. Native builds and runtime tests may be skipped only
+when every changed path is allowlisted documentation: `README.md`,
+`CONTRIBUTING.md`, `CHANGELOG.md`, `docs/architecture.md`,
+`docs/walkthrough.md`, or a single-level `changelog.d/<name>.md` fragment
+whose name contains only letters, digits, hyphens and underscores.
+Both sides of renames and copies count. Symlinks, executable files,
+unknown paths, mixed changes, ambiguous merge history and failed
+classification retain full coverage. Contract documents such as
+`docs/durability.md`, `docs/PROTOCOL.md` and `docs/teardown-design.md`
+are deliberately not allowlisted.
+
+Client-only PRs still run every existing native and integration check.
+Master pushes, scheduled runs and manual dispatches always run full CI;
+the unsharded nightly retains its existing cache-disabled builds.
+The `jhm -c release` aggregate accepts a skipped producer only after a
+successful lint/classification job explicitly identifies a docs-only PR.
+Check the lint job summary for the classification and its reason.
+
+```sh
+python3 -B -m unittest discover -s tools/ci -p test_change_scope.py
+```
+
 ## Releasing
 
 Releases are cut by a maintainer. Versions follow [`CHANGELOG.md`](CHANGELOG.md);
