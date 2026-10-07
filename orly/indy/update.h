@@ -94,7 +94,7 @@ namespace Orly {
            express lanes over a memory layer's EntryCollection. Each TEntry
            carries one forward pointer per lane it participates in; lookups
            descend the lanes to skip most of the linear scan. See
-           TMemoryLayer::SkipInsert / SeekRun. */
+           TMemoryLayer::LinkEntry / SeekRun. */
         static constexpr size_t SkipMaxLevel = 16;
 
         inline const TKey &GetKey() const;
@@ -176,9 +176,9 @@ namespace Orly {
 
         /* Express-lane forward pointers for the layer's skip-list seek
            accelerator (#257). Index l is express lane l+1 over the layer's
-           EntryCollection (level 0). Written by TMemoryLayer::SkipInsert with
+           EntryCollection (level 0). Written by TMemoryLayer::LinkEntry with
            release ordering (single-writer per layer); read with acquire by
-           SkipFindFirstGE. Lanes above this entry's chosen height stay null.
+           SeekRun. Lanes above this entry's chosen height stay null.
            A best-effort accelerator only -- EntryCollection remains the
            authoritative ordered list, so a stale read just walks a little
            more of level 0, never a wrong result. */

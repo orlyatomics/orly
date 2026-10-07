@@ -20,10 +20,14 @@
 
 #include <orly/indy/update.h>
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <iostream>
 #include <random>
 #include <thread>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <base/test/kit.h>
@@ -424,6 +428,175 @@ FIXTURE(RangeWalk) {
   /* Another index's keys never appear. */
   EXPECT_TRUE(walk(key(idx_b, 1, 0), TIndexKey(idx_b, TKey(make_tuple(int64_t(1), Native::TFree<int64_t>()), &arena, state_alloc))) ==
               (std::vector<int64_t>{-1}));
+}
+
+/* An update holding one entry per (index id, key) in keys, each with op val, at seq_num. */
+static TUpdate *MakeUpdate(TSequenceNumber seq_num, const vector<pair<Base::TUuid, int64_t>> &keys, int64_t val) {
+  Atom::TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  TUpdate::TOpByKey op_by_key;
+  for (const auto &key : keys) {
+    op_by_key.emplace(TIndexKey(key.first, TKey(make_tuple(key.second), &arena, state_alloc)), TKey(val, &arena, state_alloc));
+  }
+  std::shared_ptr<TUpdate> update(TUpdate::NewUpdate(op_by_key, TKey(&arena), TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc)));
+  update->SetSequenceNumber(seq_num);
+  return TUpdate::CopyUpdate(update.get(), state_alloc);
+}
+
+/* #754: an insert finds its place through the skip list instead of walking back from the tail.
+   Insert single-entry and batched updates over two indexes, several versions of most keys, in a
+   shuffled order, and check level 0 comes out exactly as an independent sort of the same entries
+   (index key ascending, then sequence number descending), that the layer's size counts every
+   entry, and that exact-point seeks, which descend the express lanes, find every key's newest
+   version and nothing for absent keys. Run once with sequence numbers that follow the insertion
+   order (the commit path) and once with sequence numbers in no particular order (the fold). */
+FIXTURE(RandomOrderInsert) {
+  for (bool seq_follows_insertion : { true, false }) {
+    TMemoryLayer mem_layer(nullptr);
+    const Base::TUuid idx_a(Base::TUuid::Twister), idx_b(Base::TUuid::Twister);
+    const int64_t num_keys = 1500;
+    std::mt19937_64 rng(seq_follows_insertion ? 754 : 457);
+    /* Every write: (index id, key), versions 1 to 3 of each key. */
+    vector<pair<Base::TUuid, int64_t>> writes;
+    for (const auto &idx : { idx_a, idx_b }) {
+      for (int64_t k = 0; k < num_keys; ++k) {
+        for (uint64_t v = 0, versions = 1 + rng() % 3; v < versions; ++v) {
+          writes.emplace_back(idx, k);
+        }
+      }
+    }
+    std::shuffle(writes.begin(), writes.end(), rng);
+    /* Group them into updates: mostly single writes, some batches of up to 32 distinct keys. */
+    vector<vector<pair<Base::TUuid, int64_t>>> groups;
+    for (size_t i = 0; i < writes.size();) {
+      vector<pair<Base::TUuid, int64_t>> group;
+      const size_t want = (rng() % 4 == 0) ? 1 + rng() % 32 : 1;
+      for (; i < writes.size() && group.size() < want; ++i) {
+        if (std::find(group.begin(), group.end(), writes[i]) != group.end()) {
+          break;
+        }
+        group.push_back(writes[i]);
+      }
+      groups.push_back(std::move(group));
+    }
+    vector<TSequenceNumber> seqs(groups.size());
+    for (size_t i = 0; i < seqs.size(); ++i) {
+      seqs[i] = i + 1;
+    }
+    if (!seq_follows_insertion) {
+      std::shuffle(seqs.begin(), seqs.end(), rng);
+    }
+    vector<const TUpdate::TEntry *> expected;
+    for (size_t i = 0; i < groups.size(); ++i) {
+      TUpdate *update = MakeUpdate(seqs[i], groups[i], static_cast<int64_t>(seqs[i]));
+      for (TUpdate::TEntryCollection::TCursor csr(update->GetEntryCollection()); csr; ++csr) {
+        expected.push_back(&*csr);
+      }
+      mem_layer.Insert(update);
+    }
+    std::sort(expected.begin(), expected.end(), [](const TUpdate::TEntry *a, const TUpdate::TEntry *b) {
+      if (a->GetIndexKey() < b->GetIndexKey()) {
+        return true;
+      }
+      if (b->GetIndexKey() < a->GetIndexKey()) {
+        return false;
+      }
+      return a->GetSequenceNumber() > b->GetSequenceNumber();
+    });
+    EXPECT_EQ(mem_layer.GetSize(), expected.size());
+    /* Level 0 is exactly the sorted order. */ {
+      size_t pos = 0, mismatches = 0;
+      for (TMemoryLayer::TEntryCollection::TCursor csr(mem_layer.GetEntryCollection()); csr; ++csr, ++pos) {
+        if (pos >= expected.size() || &*csr != expected[pos]) {
+          ++mismatches;
+        }
+      }
+      EXPECT_EQ(pos, expected.size());
+      EXPECT_EQ(mismatches, 0UL);
+    }
+    /* Exact-point seeks find each key's newest version, whose op is its sequence number. */ {
+      TSuprena arena;
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      size_t runs = 0, wrong = 0;
+      for (size_t i = 0; i < expected.size(); ++i) {
+        if (i > 0 && expected[i - 1]->GetIndexKey() == expected[i]->GetIndexKey()) {
+          continue;  // not the newest of its run
+        }
+        ++runs;
+        auto wp = mem_layer.NewPresentWalker(expected[i]->GetIndexKey(), /* exact_point */ true);
+        auto &w = *wp;
+        if (!w || (*w).SequenceNumber != expected[i]->GetSequenceNumber()) {
+          ++wrong;
+        }
+      }
+      EXPECT_EQ(runs, static_cast<size_t>(2 * num_keys));
+      EXPECT_EQ(wrong, 0UL);
+      for (const auto &idx : { idx_a, idx_b }) {
+        for (int64_t k : { int64_t(-1), num_keys, num_keys + 7 }) {
+          auto wp = mem_layer.NewPresentWalker(TIndexKey(idx, TKey(make_tuple(k), &arena, state_alloc)), true);
+          EXPECT_FALSE(*wp);
+        }
+      }
+    }
+  }
+}
+
+/* #754: entries with the same index key and the same sequence number (two updates numbered alike)
+   keep the order they were inserted in, as OrderedList's ReverseInsert placed them, both when the
+   second one is out of order and when it is appended at the tail. */
+FIXTURE(EqualEntriesKeepInsertionOrder) {
+  TMemoryLayer mem_layer(nullptr);
+  const Base::TUuid idx(Base::TUuid::Twister);
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  mem_layer.Insert(MakeUpdate(7, { { idx, 50 } }, 1));
+  for (int64_t k = 100; k < 400; ++k) {
+    mem_layer.Insert(MakeUpdate(8 + k, { { idx, k } }, k));
+  }
+  mem_layer.Insert(MakeUpdate(7, { { idx, 50 } }, 2));  // out of order: 50 is far behind the tail
+  mem_layer.Insert(MakeUpdate(1000, { { idx, 500 } }, 1));
+  mem_layer.Insert(MakeUpdate(1000, { { idx, 500 } }, 2));  // in order: equal to the tail
+  for (int64_t k : { int64_t(50), int64_t(500) }) {
+    const TKey key(make_tuple(k), &arena, state_alloc);
+    vector<int64_t> ops;
+    for (TMemoryLayer::TEntryCollection::TCursor csr(mem_layer.GetEntryCollection()); csr; ++csr) {
+      if (csr->GetKey() == key) {
+        ops.push_back(TKey(csr->GetOp(), csr->GetKey().GetArena()) == TKey(int64_t(1), &arena, state_alloc) ? 1 : 2);
+      }
+    }
+    EXPECT_TRUE(ops == vector<int64_t>({ 1, 2 }));
+  }
+  EXPECT_EQ(mem_layer.GetSize(), 304UL);
+}
+
+/* #754 micro-benchmark: the time to insert one batch of 4,096 keys into a layer that already
+   holds 0 to ~130k entries, keys in order and at random. Before the fix the random column grew
+   with the layer (every insert walked back from the tail); now both stay flat. Prints a table
+   and checks nothing about timing -- a shared runner is too noisy for that. */
+FIXTURE(InsertOrderScaling) {
+  const int64_t batch = 4096, batches = 32;
+  std::mt19937_64 rng(754);
+  const Base::TUuid idx(Base::TUuid::Twister);
+  vector<vector<double>> ms(2);
+  for (int mode = 0; mode < 2; ++mode) {
+    TMemoryLayer mem_layer(nullptr);
+    int64_t next = 0;
+    for (int64_t b = 0; b < batches; ++b) {
+      vector<pair<Base::TUuid, int64_t>> keys;
+      for (int64_t i = 0; i < batch; ++i) {
+        keys.emplace_back(idx, mode == 0 ? next++ : static_cast<int64_t>(rng() >> 4));
+      }
+      TUpdate *update = MakeUpdate(static_cast<TSequenceNumber>(b + 1), keys, b);
+      const auto start = std::chrono::steady_clock::now();
+      mem_layer.Insert(update);
+      ms[mode].push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+  }
+  std::cout << "  entries before batch   in order ms   random ms" << std::endl;
+  for (int64_t b = 0; b < batches; b += 4) {
+    std::cout << "  " << b * batch << "\t\t\t" << ms[0][b] << "\t\t" << ms[1][b] << std::endl;
+  }
+  std::cout << "  " << (batches - 1) * batch << "\t\t\t" << ms[0].back() << "\t\t" << ms[1].back() << std::endl;
 }
 
 #if 0

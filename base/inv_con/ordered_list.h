@@ -385,6 +385,20 @@ namespace InvCon {
         }
       }
 
+      /* Link us into the given collection immediately after prev_membership, or at the front when it is null,
+         without searching. If we're in a collection, we're removed from it first. The caller vouches for the
+         order: prev_membership's key is <= ours and the key after it is > ours, which is exactly where Insert()
+         and ReverseInsert() would put us. This is for a collector that keeps its own index over the list (a skip
+         list, say) and so already knows the position; the linear search those two do is what it avoids. */
+      void InsertAfter(TTypedCollection *collection, TMembership *prev_membership) {
+        assert(collection);
+        assert(prev_membership != this);
+        Remove();
+        assert(!prev_membership || prev_membership->Collection == collection);
+        Link(collection, prev_membership,
+             prev_membership ? prev_membership->NextMembership.LoadOwn() : collection->FirstMembership.LoadOwn());
+      }
+
       /* Remove us from our collection.
          If we're not in a collection, this function does nothing. */
       void Remove() {
@@ -507,6 +521,7 @@ namespace InvCon {
 
         /* Make our base's protected mutators public. */
         using TBase::Insert;
+        using TBase::InsertAfter;
         using TBase::ReverseInsert;
         using TBase::Remove;
         using TBase::SetKey;
