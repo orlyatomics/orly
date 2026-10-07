@@ -344,6 +344,7 @@ TTetrisManager::TTetrisManager(Base::TScheduler *scheduler,
       Fiber::TFrame::LocalFramePool = new Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(frame_pool_manager);
       FramePool = Fiber::TFrame::LocalFramePool;
     }
+    runner->DiagLabel = "tetris";
     runner_setup_cb(runner);
     setup_is_complete.Push();
     runner->Run();

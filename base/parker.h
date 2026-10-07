@@ -99,7 +99,7 @@ namespace Base {
 
     /* Producer: call after pushing work (with a seq_cst RMW) where the
        consumer will look for it. */
-    void Wake() {
+    bool Wake() {
       if (State.load(std::memory_order_seq_cst) == Parked &&
           State.exchange(Running, std::memory_order_seq_cst) == Parked) {
         #if defined(__linux__)
@@ -107,7 +107,14 @@ namespace Base {
         #else
         State.notify_one();
         #endif
+        return true;
       }
+      return false;
+    }
+
+    /* DIAGNOSTIC (#772) */
+    bool LooksParked() const {
+      return State.load(std::memory_order_relaxed) == Parked;
     }
 
     private:

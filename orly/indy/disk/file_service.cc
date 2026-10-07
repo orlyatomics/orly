@@ -307,6 +307,7 @@ TFileService::TFileService(Base::TScheduler *scheduler,
     }
   }
   SchedulerHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
+    BGScheduler.DiagLabel = "fs-bg";
     Fiber::LaunchSlowFiberSched(&BGScheduler, frame_pool_manager);
     SchedulerExitedSem.Push();
   });

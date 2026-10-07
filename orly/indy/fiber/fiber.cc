@@ -19,7 +19,13 @@
 #include <orly/indy/fiber/fiber.h>
 
 #include <cxxabi.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>
+#include <string>
 #include <thread>
 
 using namespace std::literals;
@@ -117,6 +123,15 @@ void TRunner::Run() {
        system calls; past it, an idle runner blocks instead of polling (#764). */
     const size_t laps_before_park = 100UL;
     size_t laps_without_work = 0UL;
+    /* EXPERIMENT (#772): after the spin, poll with 10 us sleeps (the old loop) until idle this
+       long, then park. */
+    static const int64_t sleep_phase_ns = [] {
+      const char *env = getenv("ORLY_RUNNER_SLEEP_PHASE_US");
+      return env ? atol(env) * 1000L : 0L;
+    }();
+    Diag = TDiag772::Enabled ? TDiag772::Register(DiagLabel) : nullptr;
+    ParkSlots[RunnerId].Diag.store(Diag, std::memory_order_relaxed);
+    int64_t idle_start = 0;
     for (; likely(KeepRunning.load());) {
       assert(!ReadyToRunQueue);
       /* check for inbound frames */ {
@@ -192,11 +207,29 @@ void TRunner::Run() {
         }
       }
       if (ReadyToRunQueue) {
+        if (Diag && laps_without_work) {
+          const int64_t gap = TDiag772::Now() - idle_start;
+          const size_t b = TDiag772::Bucket(gap);
+          TDiag772::Add(Diag->GapN[b], 1);
+          TDiag772::Add(Diag->GapNs[b], gap);
+        }
         laps_without_work = 0UL;
-      } else if (++laps_without_work >= laps_before_park) {
-        /* Stays past the threshold, so a wakeup that finds nothing (the
-           timeout, a stale wake) parks again after one more lap. */
-        Park();
+      } else {
+        if (++laps_without_work == 1UL && (Diag || sleep_phase_ns)) {
+          idle_start = TDiag772::Now();
+        }
+        if (laps_without_work >= laps_before_park) {
+          if (sleep_phase_ns && TDiag772::Now() - idle_start < sleep_phase_ns) {
+            std::this_thread::sleep_for(10000ns);
+            if (Diag) {
+              TDiag772::Add(Diag->SleepLaps, 1);
+            }
+          } else {
+            /* Stays past the threshold, so a wakeup that finds nothing (the
+               timeout, a stale wake) parks again after one more lap. */
+            Park();
+          }
+        }
       }
       for (;;) {
         for (TFrame *frame = ReadyToRunQueue; ReadyToRunQueue; frame = ReadyToRunQueue) {
@@ -208,6 +241,9 @@ void TRunner::Run() {
           FreeFramePool = nullptr;
           //printf("[%p]\tSwitch to Frame\n", this);
           switch_to_fiber(*sched_fib, MainFiber);
+          if (Diag) {
+            TDiag772::Add(Diag->Frames, 1);
+          }
           //printf("[%p]\tDone Frame\n", this);
           if (FreeFrame) {
             assert(FreeFrame == frame);
@@ -268,5 +304,88 @@ void TRunner::Park() {
     parker.CancelPark();
     return;
   }
+  if (!Diag) {
+    parker.Park(safety_net);
+    return;
+  }
+  const int64_t t0 = TDiag772::Now();
   parker.Park(safety_net);
+  const int64_t t1 = TDiag772::Now();
+  TDiag772::Add(Diag->Parks, 1);
+  TDiag772::Add(Diag->ParkNs, t1 - t0);
+  const int64_t stamp = ParkSlots[RunnerId].WakeStamp.exchange(0, std::memory_order_relaxed);
+  if (stamp && stamp <= t1) {
+    const size_t b = TDiag772::Bucket(t1 - stamp);
+    TDiag772::Add(Diag->LatN[b], 1);
+    TDiag772::Add(Diag->LatNs[b], t1 - stamp);
+  } else {
+    TDiag772::Add(Diag->Unstamped, 1);
+  }
+}
+
+/* DIAGNOSTIC (#772) */
+bool TRunner::TDiag772::Enabled = getenv("ORLY_DIAG772") != nullptr;
+TRunner::TDiag772 TRunner::TDiag772::NonRunner;
+
+namespace {
+  constexpr size_t Diag772Max = 512;
+  TRunner::TDiag772 Diag772Slots[Diag772Max];
+  std::atomic<size_t> Diag772Count{0};
+
+  void Diag772Dump(FILE *f) {
+    using T = TRunner::TDiag772;
+    auto row = [f](const T &d, const char *label, long tid) {
+      auto ld = [](const std::atomic<uint64_t> &c) { return static_cast<unsigned long long>(c.load(std::memory_order_relaxed)); };
+      fprintf(f, "%-18s tid=%-7ld frames=%llu parks=%llu park_ms=%llu wakes_in=%llu unstamped=%llu sleeps=%llu wake_out=%llu wake_out_us=%llu",
+              label ? label : "?", tid, ld(d.Frames), ld(d.Parks), ld(d.ParkNs) / 1000000ULL, ld(d.WakesIn), ld(d.Unstamped), ld(d.SleepLaps),
+              ld(d.WakeOut), ld(d.WakeOutNs) / 1000ULL);
+      fprintf(f, " gaps=");
+      for (size_t b = 0; b < T::NB; ++b) {
+        fprintf(f, "%s%llu", b ? "/" : "", ld(d.GapN[b]));
+      }
+      fprintf(f, " gap_ms=");
+      for (size_t b = 0; b < T::NB; ++b) {
+        fprintf(f, "%s%llu", b ? "/" : "", ld(d.GapNs[b]) / 1000000ULL);
+      }
+      fprintf(f, " lat=");
+      for (size_t b = 0; b < T::NB; ++b) {
+        fprintf(f, "%s%llu", b ? "/" : "", ld(d.LatN[b]));
+      }
+      fprintf(f, " lat_us=");
+      for (size_t b = 0; b < T::NB; ++b) {
+        fprintf(f, "%s%llu", b ? "/" : "", ld(d.LatNs[b]) / 1000ULL);
+      }
+      fprintf(f, "\n");
+    };
+    const size_t n = std::min(Diag772Count.load(), Diag772Max);
+    for (size_t i = 0; i < n; ++i) {
+      row(Diag772Slots[i], Diag772Slots[i].Label.load(), Diag772Slots[i].Tid.load());
+    }
+    row(T::NonRunner, "(non-runner)", 0);
+  }
+}
+
+TRunner::TDiag772 *TRunner::TDiag772::Register(const char *label) {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    std::thread([] {
+      const char *path = getenv("ORLY_DIAG772");
+      const std::string tmp = std::string(path) + ".tmp";
+      for (;;) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (FILE *f = fopen(tmp.c_str(), "w")) {
+          Diag772Dump(f);
+          fclose(f);
+          rename(tmp.c_str(), path);
+        }
+      }
+    }).detach();
+  });
+  const size_t i = Diag772Count.fetch_add(1);
+  if (i >= Diag772Max) {
+    return nullptr;
+  }
+  Diag772Slots[i].Label.store(label);
+  Diag772Slots[i].Tid.store(static_cast<long>(syscall(SYS_gettid)));
+  return &Diag772Slots[i];
 }

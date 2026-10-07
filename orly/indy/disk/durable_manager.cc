@@ -170,6 +170,7 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
            static_cast<long>(SeqNum), static_cast<long>(file_vec.size()), static_cast<long>(num_entries), static_cast<long>(scan_ms));
   }
   WriterHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
+    WriterScheduler.DiagLabel = "durable-writer";
     Fiber::LaunchSlowFiberSched(&WriterScheduler, frame_pool_manager);
     SchedulerExitedSem.Push();
   });
@@ -181,6 +182,7 @@ TDurableManager::TDurableManager(TScheduler *scheduler,
     throw;
   }
   MergerHostHandle = scheduler->ScheduleCancelable([this, frame_pool_manager] {
+    MergerScheduler.DiagLabel = "durable-merger";
     Fiber::LaunchSlowFiberSched(&MergerScheduler, frame_pool_manager);
     SchedulerExitedSem.Push();
   });

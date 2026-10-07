@@ -1082,6 +1082,15 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Scheduler(scheduler),
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
+  /* DIAGNOSTIC (#772) */
+  DurableLayerCleanerRunner.DiagLabel = "durable-cleaner";
+  RepoLayerCleanerRunner.DiagLabel = "repo-cleaner";
+  BGFastRunner.DiagLabel = "bg-fast";
+  WaitForSlaveRunner.DiagLabel = "wait-slave";
+  RunReplicationQueueRunner.DiagLabel = "repl-queue";
+  RunReplicationWorkRunner.DiagLabel = "repl-work";
+  RunReplicateTransactionRunner.DiagLabel = "repl-txn";
+  WsRunner.DiagLabel = "ws";
   /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
      was open. */
   for (const auto &[level, line]: Cmd.MemoryBudgetReport) {
@@ -1125,6 +1134,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   }
   for (size_t i = 0; i < cmd.SlowCoreVec.size(); ++i) {
     SlowRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
+    SlowRunnerVec.back()->DiagLabel = "slow";
     syslog(LOG_INFO, "SLOW RUNNER [%ld] = [%p]", i, SlowRunnerVec.back().get());
     SlowRunnerThreadVec.emplace_back(new std::thread(std::bind(launch_slow_fiber_sched, cmd.SlowCoreVec[i], SlowRunnerVec.back().get())));
   }
@@ -1167,6 +1177,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   }
   for (size_t i = 0; i < cmd.FastCoreVec.size(); ++i) {
     FastRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
+    FastRunnerVec.back()->DiagLabel = "fast";
     FastRunnerThreadVec.emplace_back(new std::thread(std::bind(launch_fast_fiber_sched, cmd.FastCoreVec[i], FastRunnerVec.back().get())));
   }
 
@@ -1624,6 +1635,7 @@ void TServer::Init() {
       /* Merge memory layers in a repo. */
       for (size_t i = 0; i < Cmd.NumMemMergeThreads; ++i) {
         MergeMemRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
+        MergeMemRunnerVec.back()->DiagLabel = "merge-mem";
         Fiber::TRunner *cur_runner = MergeMemRunnerVec.back().get();
         ScheduleRunnerHost(cur_runner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
@@ -1639,6 +1651,7 @@ void TServer::Init() {
       /* Merge multiple disk files of a specific size category, in the same safe repo. */
       for (size_t i = 0; i < Cmd.NumDiskMergeThreads; ++i) {
         MergeDiskRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
+        MergeDiskRunnerVec.back()->DiagLabel = "merge-disk";
         Fiber::TRunner *cur_runner = MergeDiskRunnerVec.back().get();
         ScheduleRunnerHost(cur_runner);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();

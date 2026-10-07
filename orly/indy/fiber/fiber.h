@@ -486,8 +486,33 @@ namespace Orly {
            idle runner paid the host's timer granularity: ~60 us on bare
            Linux, ~3 ms in a Docker VM on macOS. Cons-owned, like the handoff
            slots, so a pusher never touches a runner that may be dying. */
+        /* DIAGNOSTIC (#772): per-runner counters, dumped to $ORLY_DIAG772 once a second. */
+        struct alignas(64) TDiag772 {
+          static constexpr size_t NB = 7;
+          std::atomic<uint64_t> Frames{0}, Parks{0}, ParkNs{0}, WakesIn{0}, SleepLaps{0}, Unstamped{0};
+          std::atomic<uint64_t> WakeOut{0}, WakeOutNs{0};
+          std::atomic<uint64_t> GapN[NB]{}, GapNs[NB]{};
+          std::atomic<uint64_t> LatN[NB]{}, LatNs[NB]{};
+          std::atomic<const char *> Label{nullptr};
+          std::atomic<long> Tid{0};
+          static bool Enabled;
+          static TDiag772 NonRunner;
+          static TDiag772 *Register(const char *label);
+          static int64_t Now() {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+          }
+          static size_t Bucket(int64_t ns) {
+            return ns < 10000 ? 0 : ns < 100000 ? 1 : ns < 1000000 ? 2 : ns < 5000000 ? 3 : ns < 20000000 ? 4 : ns < 100000000 ? 5 : 6;
+          }
+          static void Add(std::atomic<uint64_t> &c, uint64_t v) {
+            c.fetch_add(v, std::memory_order_relaxed);
+          }
+        };
+
         struct alignas(64) TParkSlot {
           Base::TParker Parker;
+          std::atomic<TDiag772 *> Diag{nullptr};
+          std::atomic<int64_t> WakeStamp{0};
         };
 
         class TRunnerCons {
@@ -551,6 +576,11 @@ namespace Orly {
              can't slip in between and leave it asleep (see TParker). */
           ParkSlots[RunnerId].Parker.Wake();
         }
+
+        /* DIAGNOSTIC (#772) */
+        const char *DiagLabel = nullptr;
+        TDiag772 *Diag = nullptr;
+        static inline void WakeSlot(TParkSlot &slot);
 
         static inline void Yield(fiber_t &fiber) {
           assert(LocalRunner);
@@ -678,6 +708,7 @@ namespace Orly {
             : WorkerCount(num_worker), AssignPos(0UL) {
           for (size_t i = 0; i < num_worker; ++i) {
             RunnerVec.emplace_back(new TRunner(runner_cons));
+            RunnerVec.back()->DiagLabel = "pool";
             ThreadVec.emplace_back(new std::thread(std::bind([](TRunner *runner) {
               runner->Run();
             }, RunnerVec.back().get())));
@@ -1281,7 +1312,7 @@ namespace Orly {
         } else {
           PushFrameOntoQueue(InboundFrameQueue, frame);
         }
-        ParkSlots[RunnerId].Parker.Wake();
+        WakeSlot(ParkSlots[RunnerId]);
       }
 
       inline void TRunner::ScheduleFrameSlow(TRunner *other_runner, TFrame *frame) {
@@ -1290,7 +1321,29 @@ namespace Orly {
         assert(frame);
         assert(other_runner->HandoffMatrix == HandoffMatrix);
         PushFrameOntoQueue(HandoffSlot(other_runner->RunnerId, RunnerId).Ptr, frame);
-        ParkSlots[other_runner->RunnerId].Parker.Wake();
+        WakeSlot(ParkSlots[other_runner->RunnerId]);
+      }
+
+      inline void TRunner::WakeSlot(TParkSlot &slot) {
+        if (!TDiag772::Enabled || !slot.Parker.LooksParked()) {
+          slot.Parker.Wake();
+          return;
+        }
+        const int64_t t0 = TDiag772::Now();
+        slot.WakeStamp.store(t0, std::memory_order_relaxed);
+        if (slot.Parker.Wake()) {
+          const int64_t t1 = TDiag772::Now();
+          TRunner *local = LocalRunner;
+          TDiag772 *me = (local && local->Diag) ? local->Diag : &TDiag772::NonRunner;
+          TDiag772::Add(me->WakeOut, 1);
+          TDiag772::Add(me->WakeOutNs, t1 - t0);
+          if (TDiag772 *d = slot.Diag.load(std::memory_order_relaxed)) {
+            TDiag772::Add(d->WakesIn, 1);
+          }
+        } else {
+          int64_t expected = t0;
+          slot.WakeStamp.compare_exchange_strong(expected, 0, std::memory_order_relaxed);
+        }
       }
 
       inline void TRunner::ScheduleFrame(TFrame *frame) {
