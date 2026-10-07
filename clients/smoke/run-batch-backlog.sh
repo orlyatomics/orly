@@ -8,6 +8,13 @@
 # may miss, the Entry pool must stay under 60% full, and the POV's backlog must
 # never pass its cap (#721; the reporting port's Writer Backlog line). orlyi
 # must not abort.
+# The smoke was calibrated when a WebSocket statement held one of orlyi's 4 I/O
+# threads, so at most 4 of the 8 writers' batches ran at once; --max_ws_in_flight=4
+# keeps that (#761). With all 8 running at once on a 4-core runner, the global
+# memory merge falls behind the writers now and then, and memory admission
+# (#607) refuses a few percent of the batches with the Update Entry pool at the
+# reserve: the designed refusal, but not what this smoke measures, which is the
+# per-POV backlog cap.
 # EXTRA_ARGS go to orlyi; CI's negative control passes
 # --tetris_backpressure_threshold=0 (no backlog cap) and expects a failure.
 #   0. Build the orly TS client (clients/ts).
@@ -57,6 +64,7 @@ cp "$WORK/sample.1.so" "$WORK/packages/"
          --package_dir="$WORK/packages" \
          --update_pool_size=20000 --update_entry_pool_size=40000 \
          --memory_reserve_pct="$RESERVE_PCT" \
+         --max_ws_in_flight=4 \
          ${EXTRA_ARGS:-} \
          > "$WORK/orlyi.log" 2>&1 &
 ORLYI_PID=$!
