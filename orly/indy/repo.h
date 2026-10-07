@@ -19,6 +19,7 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <unordered_map>
 #include <vector>
@@ -72,6 +73,14 @@ namespace Orly {
          mapping, with no lock held, so a unit test can append to the repo mid-merge (#665).
          Empty, and never set, in production: one null check per memory merge. */
       static std::function<void (TRepo *)> OnMergeMemSealedForTest;
+
+      /* The most fiber frames point reads may hold at once, across the whole process, for
+         building their per-layer sub-walkers in parallel (#762). A read past it builds inline
+         instead, so the frames other work needs to start (every WebSocket statement takes one)
+         stay free. orlyi sets it to half of --max_parallel_frames; unlimited by default. */
+      static void SetReadPrepFrameBudget(size_t frames) {
+        ReadPrepFrameBudget.store(frames, std::memory_order_relaxed);
+      }
 
       /* An immutable, consistent read snapshot of the repo: the pinned disk
          layer set (Mapping), the pinned live memtable (CurrentMemoryLayer), the
@@ -459,6 +468,10 @@ namespace Orly {
 
       private:
 
+      /* See SetReadPrepFrameBudget(): the budget, and the prep frames point reads hold now. */
+      static std::atomic<size_t> ReadPrepFrameBudget;
+      static std::atomic<size_t> ReadPrepFramesInUse;
+
       /* A repo's concrete present-walker: builds one sub-walker per data layer
          (each disk layer + the memtable) and k-way-merges them through MinHeap,
          yielding the newest entry per key in key order. (Same-key entries are
@@ -476,7 +489,8 @@ namespace Orly {
                        bool ignore_tombstone);
 
         /* Single-key walk; builds the per-layer sub-walkers in parallel across
-           fibers (see PrepVec / TRunnablePrep). exact_point enables seek. */
+           at most MaxPrepFibers fibers (see TRunnablePrep), or inline when the
+           frame pool is empty. exact_point enables seek. */
         TPresentWalker(const std::unique_ptr<TView> &view,
                        const TIndexKey &key,
                        bool ignore_tombstone,
@@ -495,26 +509,31 @@ namespace Orly {
 
         private:
 
-        /* A fiber task that builds one layer's sub-walker off the local frame
-           pool and signals the shared TSync barrier on completion -- lets the
-           single-key ctor construct all per-layer walkers concurrently. Move is
-           forbidden (it throws), so PrepVec must be reserved to its final size
-           up front. */
+        /* The most fibers one single-key walk fans out to build its per-layer
+           sub-walkers. Each prep fiber builds every MaxPrepFibers-th layer, so a
+           repo with many disk layers costs a read this many frames, not one per
+           layer (#762). */
+        static constexpr size_t MaxPrepFibers = 8UL;
+
+        /* Build the sub-walkers of the layers task, task + stride, ... into
+           their WalkerVec slots. Run by a prep fiber, or inline by the ctor for
+           a task that couldn't get a frame. */
+        void BuildLayerWalkers(const std::vector<TDataLayer *> &layers, size_t task, size_t stride);
+
+        /* A fiber task that builds some layers' sub-walkers (see
+           BuildLayerWalkers) on a frame from the local frame pool, and signals
+           the shared TSync barrier on completion -- lets the single-key ctor
+           build them concurrently. Move is forbidden (it throws), so the ctor
+           reserves its vector of these up front. An exception out of the build
+           is kept in Error for the ctor to rethrow after the barrier, so the
+           barrier always completes. */
         class TRunnablePrep
             : public Indy::Fiber::TRunnable {
           NO_COPY(TRunnablePrep);
           public:
 
-          TRunnablePrep(TDataLayer *layer, TPresentWalker *walker, Fiber::TSync *sync)
-              : Layer(layer), Walker(walker), Sync(sync) {
-            Frame = Fiber::TFrame::LocalFramePool->Alloc();
-            try {
-              Frame->Latch(this, static_cast<Fiber::TRunnable::TFunc>(&TRunnablePrep::Compute));
-            } catch (...) {
-              Fiber::TFrame::LocalFramePool->Free(Frame);
-              throw;
-            }
-          }
+          TRunnablePrep(TPresentWalker *walker, const std::vector<TDataLayer *> *layers, size_t task, size_t stride, Fiber::TSync *sync)
+              : Frame(nullptr), Walker(walker), Layers(layers), Task(task), Stride(stride), Sync(sync) {}
 
           TRunnablePrep(Orly::Indy::TRepo::TPresentWalker::TRunnablePrep &&) {
             throw std::logic_error("Moving TRunnablePrep is not allowed. This means you did not pre-allocate enough space to hold them.");
@@ -523,15 +542,53 @@ namespace Orly {
           virtual ~TRunnablePrep() {
           }
 
-          /* Fiber body: build this layer's sub-walker, append it to the parent
-             walker's WalkerVec, signal the barrier, and free the frame. */
+          /* Take a frame and start this task on it, adding it to the barrier.
+             False if the frame pool is empty: nothing was started, and the
+             caller must build this task's layers itself (#762: the frame
+             pool running dry used to unwind the ctor under running preps). */
+          bool TryStart() {
+            if (ReadPrepFramesInUse.fetch_add(1UL, std::memory_order_relaxed) >= ReadPrepFrameBudget.load(std::memory_order_relaxed)) {
+              ReadPrepFramesInUse.fetch_sub(1UL, std::memory_order_relaxed);
+              return false;
+            }
+            /* Not stolen from another thread's pool: those are the frames statements
+               returned and are waiting to start with (TJumpRunnable). */
+            Frame = Fiber::TFrame::LocalFramePool->TryAlloc(/*steal=*/false);
+            if (!Frame) {
+              ReadPrepFramesInUse.fetch_sub(1UL, std::memory_order_relaxed);
+              return false;
+            }
+            try {
+              Frame->Latch(this, static_cast<Fiber::TRunnable::TFunc>(&TRunnablePrep::Compute));
+            } catch (...) {
+              Fiber::TFrame::LocalFramePool->Free(Frame);
+              ReadPrepFramesInUse.fetch_sub(1UL, std::memory_order_relaxed);
+              throw;
+            }
+            /* Latch only queues the frame on this runner; it can't run (and
+               complete the barrier) until the ctor parks in Sync. */
+            Sync->WaitForMore(1UL);
+            return true;
+          }
+
+          /* The exception the build threw, if any. */
+          const std::exception_ptr &GetError() const {
+            return Error;
+          }
+
+          /* Fiber body: build this task's sub-walkers, signal the barrier, and
+             free the frame. */
           void Compute() {
-            //printf("TRunnablePrep::Compute()\n");
             assert(Walker);
-            assert(Layer);
+            assert(Layers);
             assert(Sync);
             assert(Fiber::TFrame::LocalFrame == Frame);
-            Walker->WalkerVec.emplace_back(Layer->NewPresentWalker(Walker->From, Walker->ExactPoint));
+            try {
+              Walker->BuildLayerWalkers(*Layers, Task, Stride);
+            } catch (...) {
+              Error = std::current_exception();
+            }
+            ReadPrepFramesInUse.fetch_sub(1UL, std::memory_order_relaxed);
             Sync->Complete();
             Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
           }
@@ -541,14 +598,21 @@ namespace Orly {
           /* The fiber frame this task runs on (from the local frame pool). */
           Fiber::TFrame *Frame;
 
-          /* The data layer to build a sub-walker for. */
-          TDataLayer *Layer;
-
-          /* The parent walker to append the sub-walker into. */
+          /* The parent walker whose WalkerVec slots this task fills. */
           TPresentWalker *Walker;
+
+          /* The view's disk layers, in mapping order (owned by the ctor). */
+          const std::vector<TDataLayer *> *Layers;
+
+          /* This task builds Layers[Task], Layers[Task + Stride], ... */
+          size_t Task;
+          size_t Stride;
 
           /* Barrier the ctor waits on for all prep tasks to finish. */
           Fiber::TSync *Sync;
+
+          /* What the build threw, rethrown by the ctor after the barrier. */
+          std::exception_ptr Error;
 
         };  // TRunnablePrep
 
@@ -571,10 +635,10 @@ namespace Orly {
         const TSequenceNumber Lower;
         const TSequenceNumber Upper;
 
-        /* One sub-walker per data layer (disk layers + memtable); PrepVec holds
-           the fiber tasks that build them for the single-key ctor. */
+        /* One sub-walker per data layer (disk layers + memtable). The
+           single-key ctor fills slot i with layer i's walker, then appends the
+           memtable's. */
         std::vector<std::unique_ptr<Indy::TPresentWalker>> WalkerVec;
-        std::vector<TRunnablePrep> PrepVec;
 
         /* K-way merge front: the current item of each sub-walker, keyed by its
            WalkerVec index; pops key-ascending, newest-sequence-first. */

@@ -700,6 +700,10 @@ void TRepo::EndDiskFullStreak(std::atomic<size_t> &streak, const char *merge_kin
 /* Test-only; empty in production. See repo.h. */
 std::function<void (TRepo *)> TRepo::OnMergeMemSealedForTest;
 
+atomic<size_t> TRepo::ReadPrepFrameBudget{numeric_limits<size_t>::max()};
+
+atomic<size_t> TRepo::ReadPrepFramesInUse{0UL};
+
 void TRepo::StepMergeMem() {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
@@ -1265,15 +1269,49 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       IgnoreTombstone(ignore_tombstone),
       ExactPoint(exact_point) {
   if (View->GetLower() && View->GetUpper()) {
-    size_t pos = 0UL;
-    Fiber::TSync sync(View->GetNumEntries());
-    PrepVec.reserve(View->GetNumEntries());
+    /* Build layer i's sub-walker into WalkerVec[i], fanned out over at most
+       MaxPrepFibers prep fibers. A task that can't get a frame is built inline
+       here instead, so an empty frame pool slows a read down rather than
+       failing it (#762). Every started task is waited for before anything
+       unwinds: the preps point into this object and this stack frame. */
+    vector<TDataLayer *> layers;
+    layers.reserve(View->GetNumEntries());
     for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
-      PrepVec.emplace_back(mapping_csr->GetLayer(), this, &sync);
-      //WalkerVec.emplace_back(mapping_csr->GetLayer()->NewPresentWalker(From));
+      layers.push_back(mapping_csr->GetLayer());
+    }
+    WalkerVec.resize(layers.size());
+    const size_t num_tasks = min(layers.size(), MaxPrepFibers);
+    Fiber::TSync sync;
+    vector<TRunnablePrep> prep_vec;
+    prep_vec.reserve(num_tasks);
+    exception_ptr error;
+    try {
+      size_t task = 0UL;
+      for (; task < num_tasks; ++task) {
+        prep_vec.emplace_back(this, &layers, task, num_tasks, &sync);
+        if (!prep_vec.back().TryStart()) {
+          prep_vec.pop_back();
+          break;
+        }
+      }
+      for (; task < num_tasks; ++task) {
+        BuildLayerWalkers(layers, task, num_tasks);
+      }
+    } catch (...) {
+      error = current_exception();
     }
     sync.Sync(true);
+    for (const auto &prep : prep_vec) {
+      if (!error && prep.GetError()) {
+        error = prep.GetError();
+      }
+    }
+    if (error) {
+      rethrow_exception(error);
+    }
+    size_t pos = 0UL;
     for (auto &walker_ptr : WalkerVec) {
+      assert(walker_ptr);
       Indy::TPresentWalker &walker = *walker_ptr;
       if (walker) {
         MinHeap.Insert(*walker, pos);
@@ -1288,6 +1326,12 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
     }
     Valid = static_cast<bool>(MinHeap);
     Init();
+  }
+}
+
+void TRepo::TPresentWalker::BuildLayerWalkers(const vector<TDataLayer *> &layers, size_t task, size_t stride) {
+  for (size_t i = task; i < layers.size(); i += stride) {
+    WalkerVec[i] = layers[i]->NewPresentWalker(From, ExactPoint);
   }
 }
 

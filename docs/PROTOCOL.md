@@ -217,6 +217,10 @@ sent as one WebSocket text message. The server replies with one JSON message:
   sooner, because a batch is held as one update with an entry per write.
   `--memory_reserve_pct=0` turns this off. Over the binary protocol the same
   refusal is an error whose message starts with `insufficient memory`.
+  A statement of any kind, read or write, also gets `insufficient_memory` when
+  no fiber frame came free for it within a second (every one of
+  `--max_parallel_frames` busy, #762). It never started, so it too can be
+  retried.
 - A single write with more entries than half the Update Entry pool's merge
   reserve replies `"status": "write_too_large"`, with the reason in `result`
   (#687). **Unlike `insufficient_memory`, it is not retryable**: promoting a

@@ -18,11 +18,15 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <condition_variable>
 #include <exception>
 #include <functional>
 #include <mutex>
+#include <new>
+#include <thread>
 
 #include <base/thread_local_global_pool.h>
 #include <orly/indy/fiber/fiber.h>
@@ -32,6 +36,19 @@ namespace Orly {
   namespace Indy {
 
     namespace Fiber {
+
+      /* Thrown by TJumpRunnable when no fiber frame came free within FrameWait (#762): the
+         closure never ran, so the caller may retry it. Over WebSocket this is reported as
+         "insufficient_memory". Still a std::bad_alloc, as the frame pool's own refusal was. */
+      class TFramePoolExhausted
+          : public std::bad_alloc {
+        public:
+
+        const char *what() const noexcept override {
+          return "no fiber frame free (all --max_parallel_frames in use); retry";
+        }
+
+      };  // TFramePoolExhausted
 
       /* Construct one of these with a closure of the function you want to run.
          When you call the object (it defines operator()), the closure will run
@@ -70,8 +87,7 @@ namespace Orly {
              fiber frees back to it.  Published to Main() through the Latch below. */
           FramePool = Fiber::TFrame::LocalFramePool;
           /* Make a frame and latch it into the runner. */
-          auto *frame = FramePool->Alloc();
-          assert(frame);
+          auto *frame = AllocFrame();
           try {
             frame->Latch(runner, this, static_cast<Fiber::TRunnable::TFunc>(&TJumpRunnable::Main));
           } catch (...) {
@@ -107,7 +123,32 @@ namespace Orly {
           }
         }
 
+        /* How long operator() waits for a frame before refusing with TFramePoolExhausted. */
+        static constexpr std::chrono::milliseconds FrameWait{1000};
+
         private:
+
+        /* A frame from FramePool. When the pool is empty (every frame running a statement or a
+           read's prep fibers, which finish quickly), wait for one, up to FrameWait, rather than
+           failing the statement at once (#762). This runs on a non-fiber thread that is about to
+           block on the closure anyway, so sleeping here holds up nothing else. */
+        Fiber::TFrame *AllocFrame() {
+          if (auto *frame = FramePool->TryAlloc()) {
+            return frame;
+          }
+          const auto deadline = std::chrono::steady_clock::now() + FrameWait;
+          std::chrono::microseconds nap{50};
+          for (;;) {
+            std::this_thread::sleep_for(nap);
+            if (auto *frame = FramePool->TryAlloc()) {
+              return frame;
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+              throw TFramePoolExhausted();
+            }
+            nap = std::min(nap * 2, std::chrono::microseconds{2000});
+          }
+        }
 
         /* Entry point of the fiber. */
         void Main() {
