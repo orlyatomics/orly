@@ -63,18 +63,22 @@ except ImportError as ex:
 PKG = 'kill_campaign'
 INSTANCE = 'kill_campaign_730'
 
-# (name, safe, shared, batch size, POV group, parent group). Writers in one group share its POV,
-# which must then be shared. A parent group makes the POV a child of that group's POV, so its
-# writes are promoted twice before they reach global.
+# (name, safe, shared, batch size, POV group, parent group, how it writes). Writers in one group
+# share its POV, which must then be shared. A parent group makes the POV a child of that group's
+# POV, so its writes are promoted twice before they reach global. 'put' writes with the `put`
+# method; 'cond' with `put_cond`, whose value is an `if`, so Tetris replays each call before it
+# promotes the batch (#751); 'mixed' alternates the two in one call_many batch (#255).
 WRITERS = [
-    ('safe-shared-single', True, True, 1, 'A', None),
-    ('safe-private-batch4', True, False, 4, 'B', None),
-    ('fast-shared-single', False, True, 1, 'C', None),
-    ('fast-private-batch4', False, False, 4, 'D', None),
-    ('safe-shared-pair1', True, True, 1, 'E', None),
-    ('safe-shared-pair2-batch3', True, True, 3, 'E', None),
-    ('safe-nested-single', True, True, 1, 'F', 'A'),
-    ('fast-nested-batch2', False, True, 2, 'G', 'C'),
+    ('safe-shared-single', True, True, 1, 'A', None, 'put'),
+    ('safe-private-batch4', True, False, 4, 'B', None, 'put'),
+    ('fast-shared-single', False, True, 1, 'C', None, 'put'),
+    ('fast-private-batch4', False, False, 4, 'D', None, 'put'),
+    ('safe-shared-pair1', True, True, 1, 'E', None, 'put'),
+    ('safe-shared-pair2-batch3', True, True, 3, 'E', None, 'put'),
+    ('safe-nested-single', True, True, 1, 'F', 'A', 'put'),
+    ('fast-nested-batch2', False, True, 2, 'G', 'C', 'put'),
+    ('safe-shared-cond-batch3', True, True, 3, 'H', None, 'cond'),
+    ('fast-private-mixed-batch2', False, False, 2, 'I', None, 'mixed'),
 ]
 
 
@@ -94,7 +98,7 @@ class Writer:
 
     def __init__(self, idx, spec):
         self.idx = idx
-        self.name, self.safe, self.shared, self.batch, self.group, self.parent = spec
+        self.name, self.safe, self.shared, self.batch, self.group, self.parent, self.how = spec
         self.floor = 0            # keys 1..floor came back after a restart
         self.epoch_of = [0]       # epoch_of[n]: the epoch that last sent key n
         self.txns = []            # transactions sent since the last restart
@@ -129,11 +133,18 @@ class Writer:
                 self.sent = end
                 args = [{'w': self.idx, 'n': n, 'e': epoch} for n in range(start, end + 1)]
                 try:
-                    if self.batch == 1:
-                        c.call(pov, PKG, 'put', args[0])
+                    if self.how == 'mixed':
+                        c.call_many(pov, [(PKG, 'put_cond' if i % 2 else 'put', a) for i, a in enumerate(args)])
+                    elif self.batch == 1:
+                        c.call(pov, PKG, 'put_cond' if self.how == 'cond' else 'put', args[0])
                     else:
-                        c.call_batch(pov, PKG, 'put', args)
-                except (orly.InsufficientMemory, orly.InsufficientStorage):
+                        c.call_batch(pov, PKG, 'put_cond' if self.how == 'cond' else 'put', args)
+                except (orly.InsufficientMemory, orly.InsufficientStorage) as ex:
+                    if 'this POV is failed' in str(ex):
+                        # Not back-pressure: Tetris failed this POV, so its acknowledged writes
+                        # will never be promoted (#751). Retrying can't help.
+                        self.error = f'write {start}..{end}: {ex}'
+                        return
                     # Refused, nothing written (docs/PROTOCOL.md): take it back and retry.
                     self.txns.pop()
                     self.sent = start - 1

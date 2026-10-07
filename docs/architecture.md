@@ -123,8 +123,9 @@ children have work:
    assertions captured at write time). A child's `Age` increments each round.
 2. **Order.** Ready children are sorted **oldest-`Age` first** (`SortsBefore`) —
    a deterministic priority, so a starved writer eventually wins.
-3. **Promote.** In that order, `TChild::Play` re-runs the update's method against
-   a snapshot `TContext` of the parent's current state (`TestAssertions`) and
+3. **Promote.** In that order, `TChild::Play` re-runs the update's method (for a
+   batched update, every call it records, in order, each with its own args; #751)
+   against a snapshot `TContext` of the parent's current state (`TestAssertions`) and
    compares the fresh predicate results to the recorded ones. If they match, the
    update **promotes**: `transaction->Push(parent_repo, update)` +
    `transaction->Pop(child_repo)` (so the parent assigns it a new sequence

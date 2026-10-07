@@ -207,6 +207,24 @@ static Base::Chrono::TTimePnt GetRunTime(const Rt::TOpt<Base::Chrono::TTimePnt> 
   return opt_now.IsKnown() ? opt_now.GetVal() : Base::Chrono::Now();
 }
 
+/* Tetris replays a batch's recorded calls to test its predicate results at promotion (#751), so
+   they must read back as exactly the calls that ran: same count, order, package, method and arg
+   names. If not, refuse before anything commits, rather than acknowledge a write whose promotion
+   can only fail. */
+static void CheckRecordedCalls(const TMetaRecord::TEntry &entry, const std::vector<TMetaRecord::TEntry::TCall> &ran) {
+  auto recorded = entry.GetCalls();
+  bool same = recorded.size() == ran.size();
+  for (size_t i = 0; same && i < ran.size(); ++i) {
+    same = recorded[i].PackageFqName == ran[i].PackageFqName && recorded[i].MethodName == ran[i].MethodName &&
+        recorded[i].ArgByName.size() == ran[i].ArgByName.size() &&
+        std::equal(recorded[i].ArgByName.begin(), recorded[i].ArgByName.end(), ran[i].ArgByName.begin(),
+            [](const auto &lhs, const auto &rhs) { return lhs.first == rhs.first; });
+  }
+  if (!same) {
+    throw std::logic_error("refusing a batch whose meta record doesn't replay as the calls that ran (#751)");
+  }
+}
+
 TMethodResult TSession::DoInPast(
     TServer */*server*/, const TUuid &/*pov_id*/, const vector<string> &/*fq_name*/, const TClosure &/*closure*/, const TUuid &/*tracking_id*/) {
   THROW_ERROR(TStubbed) << "DoInPast";
@@ -581,14 +599,12 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     const std::vector<std::string> *func_fq_name = nullptr;
     const std::string *func_method_name = nullptr;
     std::shared_ptr<const Package::TFuncHolder> func;
-    bool mixed = false;
     /* One read budget for the whole batch, as for a single call in Try() (#694). */
     context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena);
     call_timer.Start();
     for (const auto &call: calls) {
       const TClosure &closure = *call.Closure;
       if (!func_fq_name || *func_fq_name != *call.FqName || *func_method_name != closure.GetMethodName()) {
-        mixed = mixed || func_fq_name;
         func = server->GetPackageManager().Get(Package::TName{*call.FqName})->GetFunctionInfo(AsPiece(closure.GetMethodName()));
         func_fq_name = call.FqName;
         func_method_name = &closure.GetMethodName();
@@ -650,32 +666,22 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       tracker = TTracker(update_id, seconds(0));
       const auto &predicate_results = indy_context.GetPredicateResults();
       /* One meta record for the whole batch: one update, one tracker, one entry
-         (Tetris won't promote a multi-entry update into the global pov). Each
-         call's args are recorded under an index prefix ("<i>.<name>") so all N
-         arg sets are preserved losslessly in the flat TArgByName map; argument
-         names are identifiers, so the prefix can't collide with one. The entry
-         names the first call's package and method. In a mixed batch (#255) every
-         call's own package and method are recorded too, as "<i>.$package" (path
-         joined with '/') and "<i>.$method"; '$' can't appear in an argument name.
+         (Tetris won't promote a multi-entry update into the global pov). The entry names the
+         first call's package and method, and records every call's own (TEntry::EncodeBatch).
          Predicate results span every call, in order. */
-      TMetaRecord::TEntry::TArgByName meta_args_by_name;
-      for (size_t i = 0; i < calls.size(); ++i) {
-        const TClosure &closure = *calls[i].Closure;
+      std::vector<TMetaRecord::TEntry::TCall> recorded_calls;
+      recorded_calls.reserve(calls.size());
+      for (const auto &call: calls) {
+        const TClosure &closure = *call.Closure;
         auto closure_arena = closure.GetArena().get();
-        std::string prefix = std::to_string(i) + ".";
+        TMetaRecord::TEntry::TCall recorded{*call.FqName, closure.GetMethodName(), {}};
         for (const auto &item: closure.GetCoreByName()) {
-          auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)));
-          meta_args_by_name.insert(make_pair(prefix + item.first, arg));
+          recorded.ArgByName.insert(make_pair(
+              item.first, Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)))));
         }
-        if (mixed) {
-          std::string package;
-          for (const auto &part: *calls[i].FqName) {
-            package += (package.empty() ? "" : "/") + part;
-          }
-          meta_args_by_name.insert(make_pair(prefix + "$package", Var::TVar(package)));
-          meta_args_by_name.insert(make_pair(prefix + "$method", Var::TVar(closure.GetMethodName())));
-        }
+        recorded_calls.push_back(std::move(recorded));
       }
+      TMetaRecord::TEntry::TArgByName meta_args_by_name = TMetaRecord::TEntry::EncodeBatch(recorded_calls);
 
       uint64_t random_seed = 0;
       if(indy_context.GetOptRandomSeed().IsKnown()) {
@@ -687,10 +693,17 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
           update_id,
           TMetaRecord::TEntry(
               GetId(), GetUserId(), *calls.front().FqName, calls.front().Closure->GetMethodName(),
-              TMetaRecord::TEntry::TArgByName(meta_args_by_name.begin(), meta_args_by_name.end()),
+              std::move(meta_args_by_name),
               TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
               run_time, random_seed)
       );
+      /* Tetris replays this record's calls to test its predicate results before it promotes the
+         update (#751). Read them back as Tetris will, and refuse the write now, before anything
+         is committed, if they aren't the calls that ran: an update whose replay can't run would
+         be acknowledged and then never promoted, and would fail its POV. */
+      if (!predicate_results.empty()) {
+        CheckRecordedCalls(meta_record.GetEntry(update_id), recorded_calls);
+      }
       /* Hold this write's room in its POV's backlog, waiting for the backlog to drain, or
          refuse it (#721). Before memory admission, so a waiting writer holds no pool blocks.
 
