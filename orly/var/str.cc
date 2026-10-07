@@ -18,8 +18,6 @@
 
 #include <orly/var/str.h>
 
-#include <iomanip>
-
 #include <orly/type/str.h>
 
 using namespace Orly;
@@ -34,7 +32,20 @@ Type::TType TStr::GetType() const {
 }
 
 void TStr::Write(std::ostream &strm) const {
-  strm << "std::string(" << std::quoted(Val) << ')';
+  /* Emit a C++ string literal. Control bytes are written as 3-digit octal so a
+     following digit can't be absorbed into the escape (\x is greedy in C++). */
+  strm << "std::string(\"";
+  for (unsigned char c : Val) {
+    if (c == '\\' || c == '"') {
+      strm << '\\' << static_cast<char>(c);
+    } else if (c < 0x20 || c == 0x7f) {
+      strm << '\\' << static_cast<char>('0' + (c >> 6)) << static_cast<char>('0' + ((c >> 3) & 7))
+           << static_cast<char>('0' + (c & 7));
+    } else {
+      strm << static_cast<char>(c);
+    }
+  }
+  strm << "\")";
 }
 
 void TStr::Accept(const TVisitor &visitor) const {
