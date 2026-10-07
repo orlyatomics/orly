@@ -37,6 +37,31 @@ FIXTURE(Typical) {
   EXPECT_EQ(val.As<TList>()->GetVal().at(2), TVar(3l));
 }
 
+FIXTURE(Assign_Record) {
+  struct TRecord {
+    std::string A;
+    int64_t B;
+
+    TVar AsVar() const {
+      return TVar::Obj({{"a", TVar(A)}, {"b", TVar(B)}});
+    }
+  };
+
+  TVar val = TVar::Obj({{"a", TVar(std::string("one"))}, {"b", TVar(int64_t(1))}});
+  TRecord replacement{"two", 2};
+  auto mutation = TMutation::New(TMutator::Assign, TVar(replacement));
+  EXPECT_TRUE(mutation->IsFinal());
+  mutation->Apply(val);
+  EXPECT_EQ(val, replacement.AsVar());
+}
+
+FIXTURE(Augment_DeleteNew_Throws) {
+  auto deletion = TDelete::New();
+  auto replacement = TNew::New(TVar::Obj({{"a", TVar(std::string("two"))}, {"b", TVar(int64_t(2))}}));
+  auto thrower = [&] { deletion->Augment(replacement); };
+  EXPECT_THROW_FUNC(std::runtime_error, thrower);
+}
+
 /* TMutation::Augment combines two same-mutator commutative+associative
    ops into one. Until #48 Augment unconditionally threw -- the data-model
    side of the "field calls compose under contention" story the README has
