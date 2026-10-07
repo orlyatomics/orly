@@ -631,7 +631,6 @@ void TDurableManager::WriteMemLayer(TMemSlushLayer *old_mem_layer) {
      block of the new file is confirmed written: the saves in this layer are durable and we
      can finally release their savers (#277). */
   ReleaseSavers(old_mem_layer);
-  MergeSem.Push();
   if (OnMemLayerWrittenForTest) {
     OnMemLayerWrittenForTest(this);
   }
@@ -660,6 +659,11 @@ void TDurableManager::WriteMemLayer(TMemSlushLayer *old_mem_layer) {
       throw;
     }
   }  // release Mapping lock
+  /* Wake the merger only now that the mapping lists the new file. Woken before, it could lap,
+     find one file short of a generation's three, and wait for a push that never came: the
+     writer's push had already been spent. Since idle runners park (#764) the merger wakes fast
+     enough to win that race, and the fault-injection durable case hung in CI (#782). */
+  MergeSem.Push();
 }
 
 bool TDurableManager::ShouldLogDiskFullRetry(size_t prev) {
