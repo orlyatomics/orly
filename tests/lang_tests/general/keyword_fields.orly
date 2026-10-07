@@ -17,12 +17,14 @@
    limitations under the License. */
 
 fields is <{.id: int, .to: str, .from: int, .start: int, .after: int,
-            .if: bool, .true: bool, .int: int, .and: bool, .keys: str}>;
+            .if: bool, .true: bool, .int: int, .and: bool, .keys: str,
+            .where: bool}>;
 row = <{.id: 7, .to: "target", .from: 2, .start: 3, .after: 4,
-        .if: true, .true: false, .int: 5, .and: true, .keys: "record"}>;
-read_id = value.id where { value = given::(fields); };
-read_to = value.to where { value = given::(fields); };
-echo_row = value where { value = given::(fields); };
+        .if: true, .true: false, .int: 5, .and: true, .keys: "record",
+        .where: true}>;
+read_id = (value.id) where { value = given::(fields); };
+read_to = (value.to) where { value = given::(fields); };
+echo_row = (value) where { value = given::(fields); };
 
 test {
   id_field: row.id == 7;
@@ -35,6 +37,7 @@ test {
   int_field: row.int == 5;
   and_field: row.and and row.if;
   keys_field: row.keys == "record";
+  where_field: row.where == true;
   literal_access: <{.id: 8, .to: 9}>.id + <{.to: 9}>.to == 17;
   typed_id: read_id(.value: row) == 7;
   typed_to: read_to(.value: row) == "target";

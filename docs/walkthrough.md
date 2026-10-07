@@ -122,7 +122,7 @@ field access, record types and named call arguments:
 ```orly
 edge is <{.id: int, .to: str, .from: str, .start: int, .after: int}>;
 row = <{.id: 1, .to: "target", .from: "source", .start: 0, .after: 2}>;
-get_id = value.id where { value = given::(edge); };
+get_id = (value.id) where { value = given::(edge); };
 
 test {
   id_field: get_id(.value: row) == 1;
@@ -130,6 +130,9 @@ test {
   keyword: <{.if: true, .true: false}>.if;
 };
 ```
+
+The parentheses before `where` are required by scoped-expression syntax;
+they are not an escape for keyword field names.
 
 No quoting, escaping or renaming is needed for `.id`, `.to`, `.from`,
 `.start` or `.after`. Whitespace and comments between `.` and the name are
