@@ -40,13 +40,27 @@ namespace Orly {
     class TRepo;
     class TManager;
 
+    /* An in-memory data layer: an update list in sequence order, an entry list in (index id, key,
+       newest first) order, and skip-list express lanes over the entry list (#257).
+
+       One writer, many readers (#770). A layer is written by one thread at a time: Tetris or a
+       session appending to the repo's current layer under the repo's DataLock, or a merge or an
+       import filling a layer nobody else can see yet. Readers (the present walkers, the update
+       walker, SeekRun, anything holding a cursor) take no lock and walk the layer while the writer
+       inserts. Both lists use InvCon::OrderedList::TPublishedLinks and the express lanes are
+       atomics, so every link a reader follows is an acquire load paired with the writer's release
+       store, and an entry (with its update, keys and arena) is complete before any link to it is
+       published. A reader may miss an entry inserted behind it during its walk, never sees a
+       partial one. Entries and updates are removed only when the layer is deleted, after every
+       reader is gone (the repo's views pin the layers they read). Size is not published: it is the
+       writer's count, for the writer and for a layer that is no longer written. */
     class TMemoryLayer
         : public L0::TManager::TRepo::TDataLayer {
       NO_COPY(TMemoryLayer);
       public:
 
-      typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate, TSequenceNumber> TUpdateCollection;
-      typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate::TEntry, TUpdate::TEntry::TEntryKey> TEntryCollection;
+      typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate, TSequenceNumber, InvCon::OrderedList::TPublishedLinks> TUpdateCollection;
+      typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate::TEntry, TUpdate::TEntry::TEntryKey, InvCon::OrderedList::TPublishedLinks> TEntryCollection;
 
       TMemoryLayer(L0::TManager *manager);
 

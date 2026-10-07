@@ -60,6 +60,11 @@ on:
     - cron: '17 5 * * *'
   workflow_dispatch:
 
+# Only PR revisions share a group; every other run remains independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   todo-lint:
     name: TODO convention lint
@@ -1090,10 +1095,12 @@ jobs:
           orly/indy/context_xrepo.test
           orly/server/tetris_manager.test
           base/inv_con/atomic_ordered_list.test
+          base/inv_con/ordered_list.test
           base/inv_con/atomic_unordered_list.test
           base/latch.test
           orly/indy/repo.test
           orly/indy/transaction_base.test
+          orly/indy/memory_layer.test
           "
           CONTROL=base/tsan_control.test
           # Tests known to hit the 600 s timeout under TSan, each with its

@@ -354,6 +354,17 @@ namespace Orly {
           return false;
         }
 
+        /* How many disk layers does the mapping this view holds list? */
+        static size_t CountDiskLayers(const TView &view) {
+          size_t count = 0UL;
+          for (TDurableManager::TMapping::TEntryCollection::TCursor csr(view.GetMapping()->GetEntryCollection()); csr; ++csr) {
+            if (csr->GetLayer()->GetKind() == TDurableManager::TDurableLayer::DiskOrdered) {
+              ++count;
+            }
+          }
+          return count;
+        }
+
         /* Is this layer waiting in the removal queue? Nothing runs the layer cleaner in these
            tests, so a layer queued there stays until the manager goes. */
         static bool IsQueuedForRemoval(TDurableManager &manager, const TDurableManager::TMemSlushLayer *layer) {
@@ -445,6 +456,50 @@ FIXTURE(ViewDropsRefToLayerBeingMarked) {
       }
       EXPECT_TRUE(TAccess::IsQueuedForRemoval(durable_manager, layer));
     }
+    TDurableManager::OnMemLayerWrittenForTest = nullptr;
+  });
+}
+
+/* #782: the writer woke the merger before publishing the mapping that lists the file it had just
+   written. A merger that lapped in between found a generation one file short of the three it
+   merges and waited, and nothing woke it again: three files that should have merged never did
+   (the fault-injection durable case hung). The hook holds the writer in that window on every
+   flush. Now the wake comes after the mapping, so the three files merge into one. */
+FIXTURE(MergerSeesTheFileItWasWokenFor) {
+  using TAccess = Disk::TDurableManagerTestAccess;
+  RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 8, milliseconds(30000)));
+    Sim::TMemEngine mem_engine(&scheduler, 64, 16, 64, 1, 32, 1);
+    TReplicationStub rep_stub;
+    const Durable::TTtl ttl(600);
+    const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
+    TDurableManager durable_manager(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                                    100UL, milliseconds(0), milliseconds(0), milliseconds(10000), 20UL, true);
+    TDurableManager::OnMemLayerWrittenForTest = [&](TDurableManager *manager) {
+      if (manager == &durable_manager) {
+        /* Long enough for a woken merger to lap. */
+        std::this_thread::sleep_for(milliseconds(50));
+      }
+    };
+    for (size_t i = 0UL; i < 3UL; ++i) {
+      Durable::TSem sem;
+      durable_manager.Save(Durable::TId(TUuid::Twister), deadline, ttl, "save " + to_string(i), &sem);
+      sem.Pop();
+    }
+    const auto give_up = steady_clock::now() + seconds(10);
+    size_t disk_layers = 0UL;
+    for (;;) {
+      /* scope the view */ {
+        TAccess::TView view(&durable_manager);
+        disk_layers = TAccess::CountDiskLayers(view);
+      }
+      if (disk_layers == 1UL || steady_clock::now() > give_up) {
+        break;
+      }
+      std::this_thread::sleep_for(milliseconds(10));
+      Fiber::YieldSlow();
+    }
+    EXPECT_EQ(disk_layers, 1UL);
     TDurableManager::OnMemLayerWrittenForTest = nullptr;
   });
 }

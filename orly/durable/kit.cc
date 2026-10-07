@@ -177,12 +177,13 @@ void TObj::OnPtrAcquire() noexcept {
 }
 
 void TObj::OnPtrRelease() noexcept {
-  assert(PtrCount);
   bool async = false;
   TSem *sem = nullptr;
   unordered_set<TObj *> dependent_objs;
   /* extra */ {
     lock_guard<mutex> lock(Manager->Mutex);
+    /* Under the lock: another thread may be acquiring or releasing this object (#770). */
+    assert(PtrCount);
     --PtrCount;
     if (!PtrCount) {
       /* We're transitioning from open to closed.  We should not yet have a deadline but we should have a sem available. */

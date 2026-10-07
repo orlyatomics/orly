@@ -48,6 +48,12 @@ on:
           - ubuntu-24.04
           - ubuntu-24.04-arm
 
+# Keep pending dispatches instead of replacing the previous pending run.
+concurrency:
+  group: ab-bench-dispatches
+  cancel-in-progress: false
+  queue: max
+
 jobs:
   paired:
     name: shot ${{ matrix.shot }} (${{ inputs.runner || 'ubuntu-24.04' }})
@@ -55,6 +61,7 @@ jobs:
     timeout-minutes: 150
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         shot: ${{ fromJSON(inputs.shots || '[1]') }}
     steps:
