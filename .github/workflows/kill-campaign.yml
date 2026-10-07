@@ -1,0 +1,105 @@
+# Kill-and-recover campaign (#730): SIGKILL a disk-backed orlyi at random moments under
+# concurrent write load, restart it on the same loopback volume, and check every write against
+# a client-side ledger and the loss bound in docs/durability.md. tests/kill_campaign.py lists
+# the checks.
+#
+# The full campaign (40 kills by default) runs here on manual dispatch. The release job in
+# ci.yml runs a short one (3 kills) on every push and pull request, with its negative control.
+#
+# The negative control step reruns the campaign with NEGATIVE=rollback, which puts back an
+# older volume image before one restart, as a lost data file would look. It must fail on the
+# floor check, or the campaign can no longer see lost writes.
+name: kill-campaign
+
+on:
+  workflow_dispatch:
+    inputs:
+      kills:
+        description: 'Kills in the campaign'
+        required: false
+        default: '40'
+      seed:
+        description: 'Random seed for the kill times (empty: the clock; the log prints it)'
+        required: false
+        default: ''
+      signal:
+        description: 'KILL for the campaign; TERM to stop orlyi gracefully instead, for comparison'
+        required: false
+        default: 'KILL'
+        type: choice
+        options: ['KILL', 'TERM']
+      runner:
+        description: 'Runner'
+        required: false
+        default: 'ubuntu-24.04'
+        type: choice
+        options: ['ubuntu-24.04', 'ubuntu-24.04-arm']
+
+jobs:
+  campaign:
+    name: kill campaign (${{ inputs.kills }} x SIG${{ inputs.signal }}, ${{ inputs.runner }})
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
+            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          pip3 install --break-system-packages --quiet websocket-client
+
+      - name: Set up ccache
+        run: |
+          for c in gcc g++ cc c++; do
+            sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"
+          done
+          {
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_COMPRESS=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Restore ccache
+        # Restore-only, from the release job's store.
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-release-build-${{ github.sha }}
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-release-build-
+            orly-ccache-${{ runner.os }}-
+
+      - name: Build orlyi, orlyc and orly_dm (release)
+        run: |
+          make bootstrap
+          PATH="$PWD/tools:$PATH" tools/jhm -c release orly/server/orlyi orly/orlyc orly/indy/disk/util/orly_dm
+
+      - name: Kill campaign
+        env:
+          KILLS: ${{ inputs.kills }}
+          SEED: ${{ inputs.seed }}
+          SIGNAL: ${{ inputs.signal }}
+        run: ./tests/kill_campaign.sh 2>&1 | tee /tmp/kill-campaign.log; exit "${PIPESTATUS[0]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          grep '^KILL CAMPAIGN:' /tmp/kill-campaign.log >> "$GITHUB_STEP_SUMMARY" || echo "no summary line" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The campaign fails when a restart loses recovered writes (negative control)
+        if: inputs.signal == 'KILL'
+        run: |
+          if NEGATIVE=rollback KILLS=4 SEED=1 ./tests/kill_campaign.sh > /tmp/kill-control.log 2>&1; then
+            cat /tmp/kill-control.log
+            echo "CONTROL FAIL: the campaign passed with an older volume image put back"
+            exit 1
+          fi
+          if ! grep -q 'that a previous restart gave back are gone' /tmp/kill-control.log; then
+            cat /tmp/kill-control.log
+            echo "CONTROL FAIL: the campaign failed, but not on the floor check"
+            exit 1
+          fi
+          grep -E 'VIOLATION|^KILL CAMPAIGN' /tmp/kill-control.log | head -5
+          echo "control OK: the campaign catches writes lost after they were recovered"

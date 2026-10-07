@@ -7,7 +7,9 @@
 # Four jobs run on every push to master and every pull_request:
 #   1. debug-and-test     -- make debug + make test (188 binaries)
 #   2. release-build      -- jhm -c release direct + --help smoke on each binary,
-#                            plus the storage and merge unit tests in release (#666)
+#                            plus the storage and merge unit tests in release (#666),
+#                            the server smokes, and a 3-kill kill campaign (#730;
+#                            the full one is the kill-campaign workflow)
 #   3. lang-tests         -- make debug + python3 tools/lang_test.py
 #   4. examples           -- run each examples/* end-to-end with both
 #                            its Python and Go drivers (orlyc + orlyi + WS)
@@ -447,6 +449,31 @@ jobs:
           fi
           grep '^DISK FULL FAIL' /tmp/disk-full-control.log | head -3
           echo "control OK: the smoke fails without write admission"
+
+      # #730: SIGKILL orlyi under write load on a loopback volume, restart it, and check every
+      # write against the client's ledger and the loss bound in docs/durability.md. A short run;
+      # the kill-campaign workflow runs the full 40 kills on dispatch.
+      - name: Kill-and-recover campaign, short (#730)
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          KILLS=3 ./tests/kill_campaign.sh
+
+      # Negative control for the step above: putting back an older volume image before a
+      # restart, as a lost data file would look, must fail the campaign on its floor check.
+      - name: The kill campaign fails when recovered writes are lost
+        run: |
+          if NEGATIVE=rollback KILLS=4 SEED=1 ./tests/kill_campaign.sh > /tmp/kill-control.log 2>&1; then
+            cat /tmp/kill-control.log
+            echo "CONTROL FAIL: the campaign passed with an older volume image put back"
+            exit 1
+          fi
+          if ! grep -q 'that a previous restart gave back are gone' /tmp/kill-control.log; then
+            cat /tmp/kill-control.log
+            echo "CONTROL FAIL: the campaign failed, but not on the floor check"
+            exit 1
+          fi
+          grep -E 'VIOLATION|^KILL CAMPAIGN' /tmp/kill-control.log | head -5
+          echo "control OK: the campaign catches writes lost after they were recovered"
 
   restart-test:
     name: restart durability (tests/restart_test.sh)
