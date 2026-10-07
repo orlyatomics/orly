@@ -14,6 +14,7 @@ set -e
 cd "$(dirname "$0")/.."
 REPO_ROOT="$PWD"
 ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/debug}"
+INSTANCE="rt435_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
 WORK="$(mktemp -d)"
 LOOP=""
 SRV_PID=""
@@ -38,14 +39,15 @@ ORLY
 mkdir "$WORK/packages" && touch "$WORK/packages/__orly__" && cp "$WORK/kv.1.so" "$WORK/packages/"
 
 echo "[2/8] create loopback volume"
+echo "   instance: $INSTANCE"
 truncate -s 3G "$WORK/disk.img"
 LOOP="$(sudo losetup -fP --show "$WORK/disk.img")"
 sudo "$ORLY_OUT/orly/indy/disk/util/orly_dm" --create-volume --device-speed=fast \
-     --instance-name=restart_test --num-devices=1 "$(basename "$LOOP")"
+     --instance-name="$INSTANCE" --num-devices=1 "$(basename "$LOOP")"
 
 start_server() {  # $1 = create true|false, $2 = log tag
   sudo "$ORLY_OUT/orly/server/orlyi" \
-    --create="$1" --instance_name=restart_test --starting_state=SOLO \
+    --create="$1" --instance_name="$INSTANCE" --starting_state=SOLO \
     --port_number=19600 --slave_port_number=19601 --ws_port_number=19602 \
     --reporting_port_number=19603 --connection_backlog=10 \
     --package_dir="$WORK/packages" --max_parallel_frames=4000 \

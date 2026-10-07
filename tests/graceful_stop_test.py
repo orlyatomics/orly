@@ -37,6 +37,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(REPO_ROOT, 'clients', 'python'))
@@ -46,7 +47,6 @@ except ImportError as ex:
     sys.exit(f'graceful stop test: cannot start: {ex} (install websocket-client for the python3 that runs this)')
 
 PKG = 'graceful_stop'
-INSTANCE = 'graceful_stop_744'
 
 # One call is one write of writer w: its n-th key, its own `+=` counter and the shared `+=`
 # total, in one transaction.
@@ -143,6 +143,7 @@ class Server:
 
     def __init__(self, args, work):
         self.args, self.work = args, work
+        self.instance = f'gs744_{uuid.uuid4().hex[:16]}'
         self.proc = None
         self.loop = None
         self.image = os.path.join(work, 'disk.img')
@@ -161,7 +162,7 @@ class Server:
         subprocess.check_call(['truncate', '-s', f'{self.args.volume_gb}G', self.image])
         self.attach()
         subprocess.check_call([os.path.join(self.args.orly_out, 'orly/indy/disk/util/orly_dm'),
-                               '--create-volume', '--device-speed=fast', f'--instance-name={INSTANCE}',
+                               '--create-volume', '--device-speed=fast', f'--instance-name={self.instance}',
                                '--num-devices=1', os.path.basename(self.loop)],
                               stdout=subprocess.DEVNULL)
 
@@ -171,7 +172,7 @@ class Server:
         p = self.args.port
         cmd = self.args.orlyi_prefix.split() + [
             os.path.join(self.args.orly_out, 'orly/server/orlyi'),
-            f'--create={"true" if create else "false"}', f'--instance_name={INSTANCE}',
+            f'--create={"true" if create else "false"}', f'--instance_name={self.instance}',
             '--starting_state=SOLO', f'--port_number={p}', f'--slave_port_number={p + 1}',
             f'--ws_port_number={p + 2}', f'--reporting_port_number={p + 3}',
             '--connection_backlog=32', f'--package_dir={self.work}/packages',
@@ -260,7 +261,8 @@ def main():
     stop_times = []
     acked_total = 0
     try:
-        log(f'graceful stop test: stops={args.stops} deadline={args.deadline:g}s seed={args.seed} work={work}')
+        log(f'graceful stop test: stops={args.stops} deadline={args.deadline:g}s seed={args.seed} '
+            f'instance={srv.instance} work={work}')
         os.makedirs(f'{work}/packages')
         open(f'{work}/packages/__orly__', 'w').close()
         with open(f'{work}/{PKG}.orly', 'w') as f:

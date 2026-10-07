@@ -54,6 +54,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(REPO_ROOT, 'clients', 'python'))
@@ -63,7 +64,6 @@ except ImportError as ex:
     sys.exit(f'kill campaign: cannot start: {ex} (install websocket-client for the python3 that runs this)')
 
 PKG = 'kill_campaign'
-INSTANCE = 'kill_campaign_730'
 
 # (name, safe, shared, batch size, POV group, parent group, how it writes). Writers in one group
 # share its POV, which must then be shared. A parent group makes the POV a child of that group's
@@ -178,6 +178,7 @@ class Server:
 
     def __init__(self, args, work):
         self.args, self.work = args, work
+        self.instance = f'kc730_{uuid.uuid4().hex[:16]}'
         self.proc = None
         self.loop = None
         self.image = os.path.join(work, 'disk.img')
@@ -195,7 +196,7 @@ class Server:
         subprocess.check_call(['truncate', '-s', f'{self.args.volume_gb}G', self.image])
         self.attach()
         subprocess.check_call([os.path.join(self.args.orly_out, 'orly/indy/disk/util/orly_dm'),
-                               '--create-volume', '--device-speed=fast', f'--instance-name={INSTANCE}',
+                               '--create-volume', '--device-speed=fast', f'--instance-name={self.instance}',
                                '--num-devices=1', os.path.basename(self.loop)],
                               stdout=subprocess.DEVNULL)
 
@@ -204,7 +205,7 @@ class Server:
         self.logpath = os.path.join(self.work, f'orlyi-{self.runs:03d}.log')
         p = self.args.port
         cmd = [os.path.join(self.args.orly_out, 'orly/server/orlyi'),
-               f'--create={"true" if create else "false"}', f'--instance_name={INSTANCE}',
+               f'--create={"true" if create else "false"}', f'--instance_name={self.instance}',
                '--starting_state=SOLO', f'--port_number={p}', f'--slave_port_number={p + 1}',
                f'--ws_port_number={p + 2}', f'--reporting_port_number={p + 3}',
                '--connection_backlog=32', f'--package_dir={self.work}/packages',
@@ -326,7 +327,8 @@ def main():
     violations = []
     per_kill = []
     try:
-        log(f'kill campaign: kills={args.kills} signal={args.signal} seed={args.seed} negative={args.negative} work={work}')
+        log(f'kill campaign: kills={args.kills} signal={args.signal} seed={args.seed} '
+            f'negative={args.negative} instance={srv.instance} work={work}')
         os.makedirs(f'{work}/packages')
         open(f'{work}/packages/__orly__', 'w').close()
         subprocess.check_call([os.path.join(args.orly_out, 'orly/orlyc'), '--skip-tests', '-o', work,
