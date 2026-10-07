@@ -3,8 +3,9 @@
 # a client-side ledger and the loss bound in docs/durability.md. tests/kill_campaign.py lists
 # the checks.
 #
-# The full campaign (40 kills by default) runs here on manual dispatch. The release job in
-# ci.yml runs a short one (3 kills) on every push and pull request, with its negative control.
+# The full campaign (40 kills by default) runs here on manual dispatch, and on pull requests
+# that change the campaign itself. The release job in ci.yml runs a short one (3 kills) on every
+# push and pull request, with its negative control.
 #
 # The negative control step reruns the campaign with NEGATIVE=rollback, which puts back an
 # older volume image before one restart, as a lost data file would look. It must fail on the
@@ -12,6 +13,10 @@
 name: kill-campaign
 
 on:
+  pull_request:
+    paths:
+      - 'tests/kill_campaign.*'
+      - '.github/workflows/kill-campaign.yml'
   workflow_dispatch:
     inputs:
       kills:
@@ -37,8 +42,8 @@ on:
 
 jobs:
   campaign:
-    name: kill campaign (${{ inputs.kills }} x SIG${{ inputs.signal }}, ${{ inputs.runner }})
-    runs-on: ${{ inputs.runner }}
+    name: kill campaign (${{ inputs.kills || '40' }} x SIG${{ inputs.signal || 'KILL' }}, ${{ inputs.runner || 'ubuntu-24.04' }})
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
@@ -78,9 +83,9 @@ jobs:
 
       - name: Kill campaign
         env:
-          KILLS: ${{ inputs.kills }}
+          KILLS: ${{ inputs.kills || '40' }}
           SEED: ${{ inputs.seed }}
-          SIGNAL: ${{ inputs.signal }}
+          SIGNAL: ${{ inputs.signal || 'KILL' }}
         run: ./tests/kill_campaign.sh 2>&1 | tee /tmp/kill-campaign.log; exit "${PIPESTATUS[0]}"
 
       - name: Summary
@@ -89,7 +94,7 @@ jobs:
           grep '^KILL CAMPAIGN:' /tmp/kill-campaign.log >> "$GITHUB_STEP_SUMMARY" || echo "no summary line" >> "$GITHUB_STEP_SUMMARY"
 
       - name: The campaign fails when a restart loses recovered writes (negative control)
-        if: inputs.signal == 'KILL'
+        if: (inputs.signal || 'KILL') == 'KILL'
         run: |
           if NEGATIVE=rollback KILLS=4 SEED=1 ./tests/kill_campaign.sh > /tmp/kill-control.log 2>&1; then
             cat /tmp/kill-control.log

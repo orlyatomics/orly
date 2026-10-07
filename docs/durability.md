@@ -127,7 +127,7 @@ older volume image before one restart, which is how a lost data file would look,
 check must fail it.
 
 CI runs 3 kills and the negative control in the release job on every push and pull request; the
-`kill-campaign` workflow runs the full campaign on dispatch.
+`kill-campaign` workflow runs the full campaign on dispatch and on pull requests that change it.
 
 ## Measured
 
