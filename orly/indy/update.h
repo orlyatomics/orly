@@ -287,6 +287,15 @@ namespace Orly {
           return Refusal;
         }
 
+        /* After a refused TryAcquire (#765): arms the room watch (TPool::ArmRoomWake) of the
+           pool that refused, at the level that would have admitted this write. Returns false
+           if the watch was already armed at that level, so a caller that retries after arming
+           knows when a further retry can't help until the watch fires. */
+        bool ArmRoomWake() const;
+
+        /* Disarms both pools' room watches. */
+        static void DisarmRoomWakes();
+
         private:
 
         size_t NumUpdates = 0UL;

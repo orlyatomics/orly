@@ -55,6 +55,22 @@ bool TUpdate::TWriteAdmission::TryAcquire(size_t num_entries) {
   return true;
 }
 
+bool TUpdate::TWriteAdmission::ArmRoomWake() const {
+  Util::TPool &pool = EntryPoolRefused ? TEntry::Pool : Pool;
+  /* TryAdmit admits once in use + promised + claimed + asked <= Limit. */
+  const size_t level = Refusal.Limit > Refusal.Asked ? Refusal.Limit - Refusal.Asked : 0UL;
+  if (pool.GetRoomWakeLevel() == level) {
+    return false;
+  }
+  pool.ArmRoomWake(level);
+  return true;
+}
+
+void TUpdate::TWriteAdmission::DisarmRoomWakes() {
+  Pool.DisarmRoomWake();
+  TEntry::Pool.DisarmRoomWake();
+}
+
 TUpdate::TCopyClaim::~TCopyClaim() {
   Release();
 }

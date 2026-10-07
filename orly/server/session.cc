@@ -448,7 +448,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       context.ReleaseViews();
       ReserveBacklogRoom(backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
       /* Hold this write's room in the update pools, or refuse it, before it builds anything
-         there (#607). Released once the transaction below has committed. */
+         there (#607). Released once the transaction below has committed. A write that doesn't
+         fit waits a bounded time for the merges to make room (#765), holding no pool blocks, no
+         lock and, since the views went above, no memory the merges would free. */
       Indy::TUpdate::TWriteAdmission write_memory;
       server->CheckMemoryAdmission(write_memory, op_by_key.size() + deferred_entries.size());
       /* Nothing is committed until CommitAction, so running out of pool here (the merges can
@@ -715,7 +717,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       context.ReleaseViews();
       ReserveBacklogRoom(backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
       /* Hold this write's room in the update pools, or refuse it, before it builds anything
-         there (#607). Released once the transaction below has committed. */
+         there (#607). Released once the transaction below has committed. A write that doesn't
+         fit waits a bounded time for the merges to make room (#765), holding no pool blocks, no
+         lock and, since the views went above, no memory the merges would free. */
       Indy::TUpdate::TWriteAdmission write_memory;
       server->CheckMemoryAdmission(write_memory, op_by_key.size() + deferred_entries.size());
       /* Nothing is committed until CommitAction, so running out of pool here (the merges can
@@ -980,8 +984,10 @@ void TSession::RunFuncCommit(TServer *server,
           TMetaRecord::TEntry::TArgByName(),
           TMetaRecord::TEntry::TExpectedPredicateResults(predicate_results.begin(), predicate_results.end()),
           run_time, random_seed));
+  /* No wait at admission (#765): this still holds its context's views, which pin the memory
+     the merges would free. */
   Indy::TUpdate::TWriteAdmission write_memory;
-  server->CheckMemoryAdmission(write_memory, op_by_key.size());
+  server->CheckMemoryAdmission(write_memory, op_by_key.size(), false);
   /* Nothing is committed until CommitAction, so running out of pool here (the merges can
      take the reserve too) is a refusal, not a failed write (#607). */
   try {

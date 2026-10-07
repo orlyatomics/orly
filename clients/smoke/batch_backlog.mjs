@@ -60,13 +60,17 @@ await setup.install("sample", 1);
 const pov = await setup.newPov({ safe: true, shared: true });
 
 let batches = 0, refused = 0, stop = false, error = null, firstRefusal = null, firstAck = 0, lastAck = 0;
+/* Each accepted batch's round trip, in ms (#765: a batch may now wait at admission). */
+const latencies = [];
 const batch = (w, i) => Array.from({ length: BATCH }, (_, j) => ({ n: (w * 7919 + i * BATCH + j) % KEYS, x: i }));
 const writers = Array.from({ length: K }, async (_, w) => {
   const c = await connect(URL);
   await c.newSession();
   for (let i = 0; !stop; ++i) {
     try {
+      const sent = performance.now();
       await withTimeout(c.callBatch(pov, "sample", "write_val", batch(w, i)), STALL_S, "a batch");
+      latencies.push(performance.now() - sent);
       ++batches;
       lastAck = Date.now();
       firstAck ||= lastAck;
@@ -105,6 +109,17 @@ const secs = lastAck > firstAck ? (lastAck - firstAck) / 1000 : SECS;
 console.log(`METRIC batches_per_s ${(batches / secs).toFixed(1)}`);
 console.log(`METRIC refused_pct ${(100 * refused / Math.max(1, batches + refused)).toFixed(2)}`);
 console.log(`METRIC peak_entry_pool_pct ${max ? (100 * peak / max).toFixed(1) : 0}`);
+latencies.sort((a, b) => a - b);
+const pct = (q) => latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * q))] : 0;
+console.log(`METRIC batch_p50_ms ${pct(0.5).toFixed(1)}`);
+console.log(`METRIC batch_p99_ms ${pct(0.99).toFixed(1)}`);
+/* Memory admission's wait (#765), when the server has one. */
+const wt = line.match(/waited (\d+); wait timeouts (\d+); refused at stop \d+; longest wait (\d+) ms/);
+if (wt) {
+  console.log(`METRIC admission_waited ${wt[1]}`);
+  console.log(`METRIC admission_wait_timeouts ${wt[2]}`);
+  console.log(`METRIC admission_longest_wait_ms ${wt[3]}`);
+}
 if (bl) {
   console.log(`METRIC peak_backlog_entries ${bl[1]}`);
   console.log(`METRIC peak_backlog_updates ${bl[3]}`);

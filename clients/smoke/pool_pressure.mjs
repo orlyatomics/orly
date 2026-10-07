@@ -40,6 +40,8 @@ function pool(body, name) {
 
 async function phase(label, povFor) {
   let writes = 0, refused = 0, stop = false, peak = 0, first_write = 0, last_write = 0;
+  /* Each acknowledged write's round trip, in ms (#765: a write may now wait at admission). */
+  const latencies = [];
   const failures = [];
   const writer = async (w) => {
     const c = await connect(URL);
@@ -47,7 +49,9 @@ async function phase(label, povFor) {
     const pov = await povFor(c);
     for (let i = 0; !stop && writes < MAX_WRITES; ++i) {
       try {
+        const sent = performance.now();
         await c.call(pov, "sample", "write_val", { n: w * 10_000_000 + i, x: i });
+        latencies.push(performance.now() - sent);
         ++writes;
         last_write = Date.now();
         if (!first_write) first_write = last_write;
@@ -105,6 +109,9 @@ async function phase(label, povFor) {
   console.log(`METRIC ${metric}_writes_per_s ${(writes / elapsed).toFixed(1)}`);
   console.log(`METRIC ${metric}_peak_update_pool ${peak}`);
   console.log(`METRIC ${metric}_refused ${refused}`);
+  latencies.sort((a, b) => a - b);
+  const p99 = latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * 0.99))] : 0;
+  console.log(`METRIC ${metric}_p99_ms ${p99.toFixed(1)}`);
   if (failures.length) {
     console.error(`POOL PRESSURE FAIL (${label}):\n  ${failures.join("\n  ")}`);
     process.exit(1);
