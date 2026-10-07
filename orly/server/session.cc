@@ -319,8 +319,10 @@ void TSession::SetUserId(TServer */*server*/, const TUuid &user_id) {
 
 TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const TClosure &closure) {
   assert(Indy::Fiber::TRunner::LocalRunner);
-  size_t prev_assignment_count = std::atomic_fetch_add(&server->FastAssignmentCounter, 1UL);
-  Indy::Fiber::TSwitchToRunner RunnerSwitcher(server->FastRunnerVec[prev_assignment_count % server->FastRunnerVec.size()].get());
+  std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
+  if (auto *runner = server->NextFastRunner()) {
+    RunnerSwitcher.emplace(runner);
+  }
   TCore result_core;
   Base::TTimer timer;
   Base::TTimer call_timer;
@@ -562,8 +564,10 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     std::optional<TTracker> &tracker, const char *what) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   assert(!calls.empty());  // grammar guarantees N >= 1
-  size_t prev_assignment_count = std::atomic_fetch_add(&server->FastAssignmentCounter, 1UL);
-  Indy::Fiber::TSwitchToRunner RunnerSwitcher(server->FastRunnerVec[prev_assignment_count % server->FastRunnerVec.size()].get());
+  std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
+  if (auto *runner = server->NextFastRunner()) {
+    RunnerSwitcher.emplace(runner);
+  }
   Base::TTimer timer;
   Base::TTimer call_timer;
   bool had_effects = false;

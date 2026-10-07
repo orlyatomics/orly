@@ -282,7 +282,13 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::NumWsThreads, "num_ws_threads", Optional, "num_ws_threads\0",
-      "The number of threads to use to answer websocket requests."
+      "The number of websocket I/O threads. They read, parse and reply; statements run on the fast "
+      "runners and don't hold one while they execute (#761)."
+  );
+  Param(
+      &TCmd::MaxWsInFlight, "max_ws_in_flight", Optional, "max_ws_in_flight\0",
+      "The most websocket try, batch and multi statements running at once; more wait their turn "
+      "in arrival order (#761). 0, the default, picks max_parallel_frames / 8, at least 4."
   );
   Param(
       &TCmd::MaxRepoCacheSize, "max_repo_cache_size", Optional, "max_repo_cache_size\0",
@@ -534,6 +540,7 @@ TServer::TCmd::TCmd()
       NumMemMergeThreads(3),
       NumDiskMergeThreads(8),
       NumWsThreads(4),
+      MaxWsInFlight(0),
       MaxRepoCacheSize(10000),
       NumFiberFrames(1000UL),
       NumDiskEvents(10000UL),
@@ -1195,7 +1202,8 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
 
   /* Launch the websockets server. */
   Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber, cmd.BindAddress, cmd.AllowRemoteCompile,
-                    cmd.AuthToken.value_or(string())));
+                    cmd.AuthToken.value_or(string()),
+                    cmd.MaxWsInFlight ? cmd.MaxWsInFlight : std::max<size_t>(4, cmd.NumFiberFrames / 8)));
 
   } catch (const std::exception &ex) {
     /* We cannot unwind: several members' destructors (the durable manager,
@@ -1964,6 +1972,81 @@ TWs::TSessionPin *TServer::NewSession() {
   return new TSessionPin(this);
 }
 
+namespace {
+
+  /* A websocket statement on its own fiber (#761); see TServer::RunStatement().  Deletes itself
+     when the statement is done, as TConnectionRunnable does for the binary protocol. */
+  class TWsStatementRunnable final
+      : public Fiber::TRunnable {
+    NO_COPY(TWsStatementRunnable);
+    public:
+
+    using TFramePool = TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool;
+
+    TWsStatementRunnable(std::function<void ()> &&func, TFramePool *frame_pool)
+        : Func(std::move(func)), FramePool(frame_pool) {}
+
+    /* Give the statement back if it never ran (see TServer::RunStatement()). */
+    std::function<void ()> TakeFunc() {
+      return std::move(Func);
+    }
+
+    void Compute() {
+      try {
+        Func();
+      } catch (const std::exception &ex) {
+        /* The statement catches its own errors; this is a backstop. */
+        syslog(LOG_ERR, "ws statement: [%s] (#761)", ex.what());
+      } catch (...) {
+        syslog(LOG_ERR, "ws statement: unknown exception (#761)");
+      }
+      Func = nullptr;
+      /* The frame came from the pool of the thread that started us, which may not be this
+         one; FreeMyFrame() hands it back to that pool once this fiber has switched away. */
+      Fiber::FreeMyFrame(FramePool);
+      delete this;
+    }
+
+    private:
+
+    std::function<void ()> Func;
+
+    TFramePool *const FramePool;
+
+  };  // TWsStatementRunnable
+
+}  // namespace
+
+void TServer::RunStatement(std::function<void ()> &&work) {
+  assert(work);
+  /* The websocket I/O threads (and the fast runners, when a finished statement starts the next
+     one waiting) start these; an I/O thread gets its own frame pool the first time. */
+  Indy::Fiber::TJumpRunnable::EnsureLocalFramePool(FramePoolManager.get());
+  TWsStatementRunnable::TFramePool *frame_pool = Fiber::TFrame::LocalFramePool;
+  /* Throws (std::bad_alloc) with 'work' untouched when the frame pool is empty. */
+  auto *frame = frame_pool->Alloc();
+  TWsStatementRunnable *runnable = nullptr;
+  try {
+    runnable = new TWsStatementRunnable(std::move(work), frame_pool);
+  } catch (...) {
+    frame_pool->Free(frame);
+    throw;
+  }
+  /* The same fast runners, in the same rotation, that TSession::Try() and RunBatch() switch a
+     binary-protocol statement to; they see this one is already on one and stay
+     (TSession::TServer::NextFastRunner()). */
+  const size_t prev_assignment_count = std::atomic_fetch_add(&FastAssignmentCounter, 1UL);
+  try {
+    frame->Latch(FastRunnerVec[prev_assignment_count % FastRunnerVec.size()].get(), runnable,
+                 static_cast<Fiber::TRunnable::TFunc>(&TWsStatementRunnable::Compute));
+  } catch (...) {
+    work = runnable->TakeFunc();
+    delete runnable;
+    frame_pool->Free(frame);
+    throw;
+  }
+}
+
 TWs::TSessionPin *TServer::ResumeSession(const TUuid &id) {
   assert(DurableManager);
   return new TSessionPin(this, id);
@@ -2129,7 +2212,7 @@ bool TServer::ForEachIndex(const std::function<
 
 TServer::TSessionPin::TSessionPin(TServer *server) {
   assert(server);
-  server->RunWs(Indy::Fiber::TJumpRunnable([this, server] {
+  server->RunWs([this, server] {
       Conn = TConnection::New(
           server,
           server->DurableManager->New<TSession>(Base::TUuid::Twister, seconds(600)));
@@ -2137,7 +2220,7 @@ TServer::TSessionPin::TSessionPin(TServer *server) {
         /* WebSocket has no way to deliver notifications (#591). */
         Conn->GetSession()->SetQueuesNotifications(false);
       }
-  }));
+  });
   if (!Conn) {
     throw runtime_error("could not create session");
   }
@@ -2145,24 +2228,24 @@ TServer::TSessionPin::TSessionPin(TServer *server) {
 
 TServer::TSessionPin::TSessionPin(TServer *server, const TUuid &id) {
   assert(server);
-  server->RunWs(Indy::Fiber::TJumpRunnable([this, server, &id] {
+  server->RunWs([this, server, &id] {
       Conn = TConnection::New(server, server->DurableManager->Open<TSession>(id));
       if (Conn) {
         /* WebSocket has no way to deliver notifications (#591). */
         Conn->GetSession()->SetQueuesNotifications(false);
       }
-  }));
+  });
   if (!Conn) {
     throw runtime_error("could not resume session");
   }
 }
 
 void TServer::TSessionPin::BeginImport() const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::BeginImport, Conn.get())));
+  Conn->RunWs(bind(&TConnection::BeginImport, Conn.get()));
 }
 
 void TServer::TSessionPin::EndImport() const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::EndImport, Conn.get())));
+  Conn->RunWs(bind(&TConnection::EndImport, Conn.get()));
 }
 
 const Base::TUuid &TServer::TSessionPin::GetId() const {
@@ -2174,18 +2257,18 @@ void TServer::TSessionPin::Import(const string &file_pattern,
                                   int64_t num_load_threads,
                                   int64_t num_merge_threads,
                                   int64_t merge_simultaneous) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::ImportCoreVector,
+  Conn->RunWs(bind(&TConnection::ImportCoreVector,
                                               Conn.get(),
                                               cref(file_pattern),
                                               cref(pkg_name),
                                               num_load_threads,
                                               num_merge_threads,
-                                              merge_simultaneous)));
+                                              merge_simultaneous));
 }
 
 void TServer::TSessionPin::InstallPackage(
     const std::vector<std::string> &name, uint64_t version) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::InstallPackage, Conn.get(), cref(name), version)));
+  Conn->RunWs(bind(&TConnection::InstallPackage, Conn.get(), cref(name), version));
 }
 
 Base::TUuid TServer::TSessionPin::NewPov(
@@ -2195,70 +2278,70 @@ Base::TUuid TServer::TSessionPin::NewPov(
       ? (is_shared ? &TConnection::NewSafeSharedPov : &TConnection::NewSafePrivatePov)
       : (is_shared ? &TConnection::NewFastSharedPov : &TConnection::NewFastPrivatePov);
   TUuid new_pov_id;
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(
+  Conn->RunWs(
       [this, &parent_id, &ttl, func, &new_pov_id] {
         new_pov_id = (Conn.get()->*func)(parent_id, ttl);
       }
-  ));
+  );
   return new_pov_id;
 }
 
 void TServer::TSessionPin::PausePov(const Base::TUuid &pov_id) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::PausePov, Conn.get(), cref(pov_id))));
+  Conn->RunWs(bind(&TConnection::PausePov, Conn.get(), cref(pov_id)));
 }
 
 void TServer::TSessionPin::SetTtl(
     const Base::TUuid &durable_id, const std::chrono::seconds &ttl) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::SetTimeToLive, Conn.get(), cref(durable_id), cref(ttl))));
+  Conn->RunWs(bind(&TConnection::SetTimeToLive, Conn.get(), cref(durable_id), cref(ttl)));
 }
 
 void TServer::TSessionPin::SetUserId(const Base::TUuid &user_id) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::SetUserId, Conn.get(), cref(user_id))));
+  Conn->RunWs(bind(&TConnection::SetUserId, Conn.get(), cref(user_id)));
 }
 
 void TServer::TSessionPin::Tail() const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::TailGlobalPov, Conn.get())));
+  Conn->RunWs(bind(&TConnection::TailGlobalPov, Conn.get()));
 }
 
 TMethodResult TServer::TSessionPin::Try(const TMethodRequest &method_request) const {
   TMethodResult method_result;
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(
+  Conn->RunWs(
       [this, &method_request, &method_result] {
         method_result = Conn->Try(
             method_request.GetPovId(), method_request.GetPackage(), method_request.GetClosure());
       }
-  ));
+  );
   return move(method_result);
 }
 
 TMethodResult TServer::TSessionPin::TryBatch(
     const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const std::vector<TClosure> &closures) const {
   TMethodResult method_result;
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(
+  Conn->RunWs(
       [this, &pov_id, &fq_name, &closures, &method_result] {
         method_result = Conn->TryBatch(pov_id, fq_name, closures);
       }
-  ));
+  );
   return move(method_result);
 }
 
 std::vector<Var::TVar> TServer::TSessionPin::TryMulti(const Base::TUuid &pov_id, const std::vector<TBatchCall> &calls) const {
   std::vector<Var::TVar> results;
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(
+  Conn->RunWs(
       [this, &pov_id, &calls, &results] {
         results = Conn->TryMulti(pov_id, calls);
       }
-  ));
+  );
   return results;
 }
 
 void TServer::TSessionPin::UninstallPackage(
     const std::vector<std::string> &name, uint64_t version) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::UninstallPackage, Conn.get(), cref(name), version)));
+  Conn->RunWs(bind(&TConnection::UninstallPackage, Conn.get(), cref(name), version));
 }
 
 void TServer::TSessionPin::UnpausePov(const Base::TUuid &pov_id) const {
-  Conn->RunWs(Indy::Fiber::TJumpRunnable(bind(&TConnection::UnpausePov, Conn.get(), cref(pov_id))));
+  Conn->RunWs(bind(&TConnection::UnpausePov, Conn.get(), cref(pov_id)));
 }
 
 void TServer::TConnection::Run(TFd &fd) {

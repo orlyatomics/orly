@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -137,6 +138,20 @@ namespace Orly {
           virtual bool ForEachIndex(const std::function<
               bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const = 0;
 
+          /* Run a statement's work (a try, a batch or a multi; #761) somewhere other than the
+             websocket I/O thread that read it, and return without waiting for it.  The work calls
+             the session pin's methods, catches everything itself and reports its own completion,
+             so an implementation only has to run it once.  If this throws, the work has not run
+             and never will.
+
+             The server runs it on a fiber on its fast runners, so as many statements can be in
+             flight as admission allows (TWs::New's max_in_flight), not one per I/O thread.  This
+             default runs it on the calling thread before returning, which is what a session
+             manager whose pins don't need fiber context (the test server) wants. */
+          virtual void RunStatement(std::function<void ()> &&work) {
+            work();
+          }
+
           protected:
 
           /* Do-little. */
@@ -162,13 +177,23 @@ namespace Orly {
            A non-empty auth_token (#710) must be the first message on every
            connection, as {"auth": "<token>"}; anything else is answered with
            "status": "unauthorized" and the connection is closed, before any
-           statement runs.  Empty, connections are unchanged. */
+           statement runs.  Empty, connections are unchanged.
+
+           thread_count is the number of I/O threads.  They read, parse and
+           reply; try, batch and multi statements run through
+           TSessionManager::RunStatement() and don't hold an I/O thread while
+           they execute (#761).  At most max_in_flight of those run at once
+           (0: no limit); the rest wait in arrival order.  A connection has at
+           most one statement in flight, since its next message isn't read
+           until the reply to the last one is sent, so each session's
+           statements still run in order. */
         static TWs *New(
             TSessionManager *session_mngr, size_t thread_count,
             in_port_t port_number = 8080,
             const std::string &bind_address = "127.0.0.1",
             bool allow_remote_compile = false,
-            const std::string &auth_token = std::string());
+            const std::string &auth_token = std::string(),
+            size_t max_in_flight = 0);
 
         protected:
 
