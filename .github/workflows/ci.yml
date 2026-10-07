@@ -546,6 +546,7 @@ jobs:
       # engine.
       - name: Graceful stop under write load (#744)
         run: |
+          python3 -m unittest discover -s tests -p stop_instance_test.py
           pip3 install --break-system-packages --quiet websocket-client
           STOPS=4 ./tests/graceful_stop_test.sh
 

@@ -13,7 +13,9 @@
 #   ORLY_OUT     build tree (default ../out_orly/release); needs orlyi, orlyc, orly_dm
 #
 # Needs root for losetup and the /proc/partitions device scan, like restart_test.sh: it
-# re-runs itself under sudo. Ports 19900-19903. Prints one summary line starting
+# re-runs itself under sudo. Each run uses its own disk instance and detaches its loop device
+# at exit. Ports 19900-19903; pass --port=<base> with non-overlapping ranges for parallel runs.
+# Prints one summary line starting
 # "KILL CAMPAIGN:" and exits nonzero on any violation.
 set -e
 cd "$(dirname "$0")/.."

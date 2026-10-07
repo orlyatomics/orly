@@ -109,6 +109,15 @@ requires every acknowledged write back after each restart; CI runs it on every p
 request. `SIGNAL=TERM` runs the campaign the same way. Before #744 a graceful stop under load
 usually hung instead, and `docker stop`'s SIGKILL then made it a crash.
 
+The graceful-stop, kill-campaign and restart tests each use a unique disk instance per run,
+reuse it across that run's restarts, and detach their own loop device on exit. The Python
+drivers keep their work directories on violations or with `--keep`, but the retained images
+do not share instance names with later runs. For parallel runs of either Python driver, pass
+distinct `--port=<base>` values with non-overlapping four-port ranges; the restart test still
+uses ports 19600–19603.
+`python3 -m unittest discover -s tests -p stop_instance_test.py` checks instance isolation,
+restart reuse and owned-resource cleanup without root or a server build.
+
 ## Power loss
 
 A SIGKILL leaves the kernel's page cache alone, so the campaign doesn't test what a power cut

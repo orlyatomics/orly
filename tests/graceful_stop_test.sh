@@ -12,7 +12,9 @@
 #   EXTRA_ARGS     more orlyi flags (one named here replaces the default of the same name)
 #
 # Needs root for losetup and the /proc/partitions device scan, like restart_test.sh: it re-runs
-# itself under sudo. Ports 19940-19943. Prints one summary line starting "GRACEFUL STOP:" and
+# itself under sudo. Each run uses its own disk instance and detaches its loop device at exit.
+# Ports 19940-19943; pass --port=<base> with non-overlapping ranges for parallel runs.
+# Prints one summary line starting "GRACEFUL STOP:" and
 # exits nonzero on any violation.
 set -e
 cd "$(dirname "$0")/.."
