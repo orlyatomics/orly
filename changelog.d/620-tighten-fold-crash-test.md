@@ -1,1 +1,0 @@
-- **Changed**: the fault-injection harness's fold-merge crash test now requires the reopen to free every block, so the leak #620 fixed can't come back unnoticed (#620).
