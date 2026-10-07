@@ -10,6 +10,11 @@
 #      orly.ReadTooLarge in Python), reads under the budget to answer, and orlyi to stay up.
 #   3. Control: the same reads against an orlyi with the budget off (--read_budget_mb=0)
 #      succeed, so the refusals in step 2 are the budget's.
+#   4. Computed values (#729): against an orlyi with --read_budget_mb=$COMPUTED_MB, reads that
+#      build big lists or strings, or loop for billions of steps, from no rows at all are refused
+#      within seconds and before orlyi has grown by more than a few times the budget
+#      (read_budget_computed.py). Before #729 they were charged only once their result reached
+#      the arena, after orlyi had grown by gigabytes, and the loops were never refused.
 
 set -e
 
@@ -20,6 +25,7 @@ ORLYI="$ORLY_OUT/orly/server/orlyi"
 ORLYC="$ORLY_OUT/orly/orlyc"
 WS_PORT=19782
 export ROWS=30000 ROW_LIMIT=20000 BIG=400000
+COMPUTED_MB=16
 
 for bin in "$ORLYI" "$ORLYC"; do
   if [ ! -x "$bin" ]; then
@@ -29,14 +35,14 @@ for bin in "$ORLYI" "$ORLYC"; do
   fi
 done
 
-echo "[0/3] build clients/ts"
+echo "[0/4] build clients/ts"
 (cd "$REPO_ROOT/clients/ts" && npm install --silent && npx tsc)
 
 WORK="$(mktemp -d)"
 ORLYI_PID=
 trap 'test -n "$ORLYI_PID" && kill -9 $ORLYI_PID 2>/dev/null; rm -rf "$WORK"' EXIT
 
-echo "[1/3] compile read_budget.orly"
+echo "[1/4] compile read_budget.orly"
 (cd "$WORK" && "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/smoke/read_budget.orly")
 mkdir "$WORK/packages"
 touch "$WORK/packages/__orly__"
@@ -87,12 +93,26 @@ run_drivers() {
   fi
 }
 
-echo "[2/3] reads over $ROW_LIMIT rows or 1 MiB are refused as read_too_large"
+echo "[2/4] reads over $ROW_LIMIT rows or 1 MiB are refused as read_too_large"
 start_orlyi --read_budget_rows=$ROW_LIMIT --read_budget_mb=1
 BUDGETED=1 run_drivers
 stop_orlyi
 
-echo "[3/3] control: with the budget off the same reads succeed"
+echo "[3/4] control: with the budget off the same reads succeed"
 start_orlyi --read_budget_mb=0
 BUDGETED=0 run_drivers
+stop_orlyi
+
+echo "[4/4] computed values over $COMPUTED_MB MiB are refused while they are built"
+start_orlyi --read_budget_mb=$COMPUTED_MB
+ORLYI_PID=$ORLYI_PID BUDGET_MB=$COMPUTED_MB PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" \
+  python3 read_budget_computed.py || status=$?
+if ! kill -0 "$ORLYI_PID" 2>/dev/null; then
+  echo "READ BUDGET FAIL: orlyi died"
+  status=1
+fi
+if [ "$status" -ne 0 ]; then
+  echo "orlyi log tail:"
+  tail -20 "$WORK/orlyi.log"
+fi
 exit "$status"

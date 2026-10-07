@@ -20,6 +20,9 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
+
+#include <orly/rt/read_budget.h>
 
 namespace Orly {
 
@@ -28,5 +31,21 @@ namespace Orly {
   	std::string ToUpper (const std::string &str);
 
   	std::string ToLower (const std::string &str);
+
+    /* `lhs + rhs` for two strings, charged to the read budget (#729) as much as the shorter of
+       them: what an append grows a string by, without charging a carry copied on every step of
+       a reduce its whole length each time. */
+    inline std::string AddStr(const std::string &lhs, const std::string &rhs) {
+      ChargeReadBudget(0UL, std::min(lhs.size(), rhs.size()));
+      return lhs + rhs;
+    }
+
+    /* The same with an expiring lhs (a moved reduce carry, #697), appended to in place. Both
+       sides may be the same string (`start + start`), which append handles. */
+    inline std::string AddStr(std::string &&lhs, const std::string &rhs) {
+      ChargeReadBudget(0UL, std::min(lhs.size(), rhs.size()));
+      lhs += rhs;
+      return std::move(lhs);
+    }
   }
 }

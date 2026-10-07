@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <optional>
 #include <unordered_set>
 
 #include <base/chrono.h>
@@ -35,6 +36,7 @@
 #include <orly/indy/sequence_number.h>
 #include <orly/key_generator.h>
 #include <orly/package/rt.h>
+#include <orly/rt/read_budget.h>
 #include <orly/sabot/all.h>
 #include <orly/var/sabot_to_var.h>
 
@@ -189,12 +191,22 @@ namespace Orly {
       /* Bound the work and memory of what runs against this context (#694): at most max_rows
          rows (each key a cursor yields, and each point lookup), and at most max_arena_bytes in
          `arena`, which must be the arena this context allocates in. 0 means no limit. Once
-         either is passed, the next row throws TReadTooLarge (orly/server/read_too_large.h). */
-      void SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena);
+         either is passed, the next row throws TReadTooLarge (orly/server/read_too_large.h).
+         While the call runs (#729), the values it builds are also held to max_arena_bytes, and
+         the elements its sequences yield to max_steps: this installs that in-flight budget
+         (orly/rt/read_budget.h) on the running fiber until ClearReadBudget() or the context
+         goes, so call it on the fiber that will run the call. */
+      void SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena, size_t max_steps);
 
       /* Lift the budget, so the context can be used past it (to resolve a write's effects). */
       void ClearReadBudget() {
         MaxRows = MaxArenaBytes = Unlimited;
+        InFlightScope.reset();
+      }
+
+      /* The in-flight part of the budget (#729). */
+      const Rt::TReadBudget &GetInFlightBudget() const {
+        return InFlightBudget;
       }
 
       /* The rows charged so far. */
@@ -259,6 +271,11 @@ namespace Orly {
       size_t MaxRows = Unlimited;
       size_t MaxArenaBytes = Unlimited;
       const Atom::TSuprena *BudgetArena = nullptr;
+
+      /* The in-flight budget (#729), and its installation on the fiber running the call,
+         declared after it so that it is undone before the budget goes. */
+      Rt::TReadBudget InFlightBudget;
+      std::optional<Rt::TReadBudgetScope> InFlightScope;
 
       Base::TTimer PresentWalkConsTimer;
 

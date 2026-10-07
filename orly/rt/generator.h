@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <limits>
 #include <memory>
 
@@ -25,6 +26,7 @@
 #include <base/iter.h>
 #include <orly/rt/containers.h>
 #include <orly/rt/opt.h>
+#include <orly/rt/read_budget.h>
 #include <orly/rt/regex_splitter.h>
 #include <orly/rt/runtime_error.h>
 
@@ -54,6 +56,15 @@ namespace Orly {
          packages' emissions, to shave an allocation that no profile has ever
          surfaced. */
       virtual Base::TIterHolder<TItem> NewCursor() const = 0;
+
+      /* How many elements a cursor will yield, if that is known before it starts: -1 if not,
+         and InfiniteSize for a sequence that never ends. The read budget (#729) uses it to
+         refuse work too big for it before doing any. */
+      virtual int64_t GetSizeHint() const {
+        return -1;
+      }
+
+      static constexpr int64_t InfiniteSize = std::numeric_limits<int64_t>::max();
 
       protected:
       TGenerator() {}
@@ -281,6 +292,11 @@ namespace Orly {
         return ValGen;
       }
 
+      /* One element for each of the source's. */
+      virtual int64_t GetSizeHint() const override {
+        return ValGen->GetSizeHint();
+      }
+
       private:
       TMapGenerator(const TFunc &func, const TValGenPtr &val_gen) : ValGen(val_gen), Func(func) {}
 
@@ -430,6 +446,9 @@ namespace Orly {
           } else {
             Cur = static_cast<int64_t>(next);
           }
+          /* A range is where a loop with no rows comes from, so it is charged a step per
+             element (#729). */
+          ChargeReadBudget(1UL, 0UL);
 
           return *this;
         }
@@ -464,6 +483,24 @@ namespace Orly {
 
       bool HasEnd() const {
         return Limit.IsKnown();
+      }
+
+      virtual int64_t GetSizeHint() const override {
+        if (!HasEnd()) {
+          return InfiniteSize;
+        }
+        if (!Stride) {
+          return -1;
+        }
+        /* The elements are Start + k * Stride short of the limit, and the limit itself if it is
+           included and on the stride. Wide arithmetic, so no range can overflow it. */
+        const __int128 dist = (static_cast<__int128>(GetLimit()) - Start) * (Stride > 0 ? 1 : -1);
+        const __int128 step = Stride > 0 ? Stride : -static_cast<__int128>(Stride);
+        __int128 count = dist > 0 ? (dist + step - 1) / step : 0;
+        if (IncludeLimit && dist >= 0 && dist % step == 0) {
+          ++count;
+        }
+        return count > InfiniteSize ? InfiniteSize : static_cast<int64_t>(count);
       }
 
       private:
@@ -596,6 +633,8 @@ namespace Orly {
             throw TPastEndError(HERE);
           }
           ++Cur;
+          /* A step per element (#729): walking a list is a loop too. */
+          ChargeReadBudget(1UL, 0UL);
           return *this;
         }
 
@@ -607,6 +646,10 @@ namespace Orly {
 
       const TContainer &GetContainer() const {
         return Data;
+      }
+
+      virtual int64_t GetSizeHint() const override {
+        return static_cast<int64_t>(Data.size());
       }
 
       virtual Base::TIterHolder<const typename TContainer::value_type> NewCursor() const {
@@ -671,6 +714,7 @@ namespace Orly {
             throw TPastEndError(HERE);
           }
           ++Cur;
+          ChargeReadBudget(1UL, 0UL);
           UpdateCachedVal();
           return *this;
         }
@@ -694,6 +738,10 @@ namespace Orly {
 
       const std::vector<bool> &GetContainer() const {
         return Data;
+      }
+
+      virtual int64_t GetSizeHint() const override {
+        return static_cast<int64_t>(Data.size());
       }
 
       virtual Base::TIterHolder<const typename std::vector<bool>::value_type> NewCursor() const {
@@ -764,6 +812,7 @@ namespace Orly {
             throw TPastEndError(HERE);
           }
           ++Cur;
+          ChargeReadBudget(1UL, 0UL);
           UpdateCachedVal();
           return *this;
         }
@@ -787,6 +836,10 @@ namespace Orly {
 
       const TDict<TKey, TVal> &GetContainer() const {
         return Data;
+      }
+
+      virtual int64_t GetSizeHint() const override {
+        return static_cast<int64_t>(Data.size());
       }
 
       virtual Base::TIterHolder<const TTuple> NewCursor() const {
@@ -877,6 +930,16 @@ namespace Orly {
 
       int64_t GetCount() const {
         return Count;
+      }
+
+      /* The fewer of the count and the source's size; the count alone bounds an endless source. */
+      virtual int64_t GetSizeHint() const override {
+        const int64_t count = Count > 0 ? Count : 0;
+        const int64_t src = Generator->GetSizeHint();
+        if (src < 0) {
+          return -1;
+        }
+        return src < count ? src : count;
       }
 
       const TValGenPtr &GetGenerator() const {
@@ -970,6 +1033,15 @@ namespace Orly {
 
       int64_t GetCount() const {
         return Count;
+      }
+
+      virtual int64_t GetSizeHint() const override {
+        const int64_t src = Generator->GetSizeHint();
+        if (src < 0 || src == TGenerator<TRes>::InfiniteSize) {
+          return src;
+        }
+        const int64_t count = Count > 0 ? Count : 0;
+        return src > count ? src - count : 0;
       }
 
       const TValGenPtr &GetGenerator() const {
@@ -1080,6 +1152,20 @@ namespace Orly {
     template <typename TVal>
     auto MakeCursor(const typename TGenerator<TVal>::TPtr &generator) {
       return generator->NewCursor();
+    }
+
+    /* Refuse a walk of `gen` that would pass the read budget, before taking a step of it, when
+       its size is known up front (#729): a step per element, and `bytes_per_elem` of memory per
+       element for a walk that keeps them. */
+    template <typename TItem>
+    void CheckReadBudgetAheadFor(const typename TGenerator<TItem>::TPtr &gen, size_t bytes_per_elem) {
+      const int64_t hint = gen->GetSizeHint();
+      if (hint > 0) {
+        const size_t count = static_cast<size_t>(hint);
+        const size_t bytes = bytes_per_elem && count > std::numeric_limits<size_t>::max() / bytes_per_elem
+            ? std::numeric_limits<size_t>::max() : count * bytes_per_elem;
+        CheckReadBudgetAhead(count, bytes);
+      }
     }
 
     template <typename TVal>

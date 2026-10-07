@@ -113,6 +113,10 @@ namespace Orly {
         virtual size_t GetReadBudgetRows() const { return 0UL; }
         virtual size_t GetReadBudgetBytes() const { return 0UL; }
 
+        /* The most steps a method call's sequences may take while it runs (#729). 0 means no
+           limit. */
+        virtual size_t GetReadBudgetSteps() const { return 0UL; }
+
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
            periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator

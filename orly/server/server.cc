@@ -428,6 +428,13 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "rows (each key a range read visits, and each point read) is refused with a "
       "read_too_large error. Default: read_budget_mb / 256 bytes. 0 means no limit."
   );
+  Param(
+      &TCmd::ReadBudgetSteps, "read_budget_steps", Optional, "read_budget_steps\0",
+      "The per-read compute budget (issue #729): a method call whose sequences yield more than "
+      "this many elements while it runs (a range, or a list, set or dict walked as a sequence) "
+      "is refused with a read_too_large error, so a loop over no rows still ends. Default: one "
+      "per byte of read_budget_mb. 0 means no limit."
+  );
 
   /******** Object Pools ********/
 
@@ -567,6 +574,7 @@ TServer::TCmd::TCmd()
       AdmissionWaitMs(500UL),
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
+      ReadBudgetSteps(0UL),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -851,6 +859,11 @@ bool TServer::TCmd::ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsu
   if (!WasGiven("read_budget_rows")) {
     ReadBudgetRows = ReadBudgetMB * MiB / ReadBudgetBytesPerRow;
   }
+  /* A step (#729) costs nanoseconds, so one per byte of the memory budget is a few seconds of
+     work: 268,435,456 at 4 GiB, enough that no read that finishes today is refused. */
+  if (!WasGiven("read_budget_steps")) {
+    ReadBudgetSteps = ReadBudgetMB * MiB;
+  }
   std::ostringstream read_line;
   read_line << "read budget: ";
   if (ReadBudgetRows) {
@@ -858,13 +871,20 @@ bool TServer::TCmd::ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsu
   } else {
     read_line << "no row limit";
   }
-  read_line << " and ";
+  read_line << ", ";
   if (ReadBudgetMB) {
     read_line << ReadBudgetMB << " MiB";
   } else {
     read_line << "no memory limit";
   }
-  read_line << " per read" << (read_mb_given || WasGiven("read_budget_rows") ? "" : ", from the memory budget");
+  read_line << " and ";
+  if (ReadBudgetSteps) {
+    read_line << ReadBudgetSteps << " steps";
+  } else {
+    read_line << "no step limit";
+  }
+  read_line << " per read"
+            << (read_mb_given || WasGiven("read_budget_rows") || WasGiven("read_budget_steps") ? "" : ", from the memory budget");
   MemoryBudgetReport.emplace_back(LOG_INFO, read_line.str());
 
   /* The minimum working set. The merge reserve, a share of the Update and Update Entry pools

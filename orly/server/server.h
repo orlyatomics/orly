@@ -367,6 +367,10 @@ namespace Orly {
         size_t ReadBudgetMB;
         size_t ReadBudgetRows;
 
+        /* The most elements a method call's sequences may yield while it runs (#729). Derived
+           from ReadBudgetMB unless the command line gives it; 0 means no limit. */
+        size_t ReadBudgetSteps;
+
         /******** Object Pools ********/
 
         size_t DurableMappingPoolSize;
@@ -488,6 +492,10 @@ namespace Orly {
 
       size_t GetReadBudgetBytes() const override {
         return Cmd.ReadBudgetMB * 1024UL * 1024UL;
+      }
+
+      size_t GetReadBudgetSteps() const override {
+        return Cmd.ReadBudgetSteps;
       }
 
       bool IsMemoryAdmissionOn() const override {

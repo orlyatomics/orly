@@ -36,6 +36,8 @@ namespace Orly {
 
     template <typename TRes, typename TSrc>
     TRes Reduce(const typename TGenerator<TSrc>::TPtr &gen, const TReduceFunc<TRes, TSrc> &reduce_func, TRes start) {
+      /* A reduce over more elements than the read budget's steps is refused up front (#729). */
+      CheckReadBudgetAheadFor<TSrc>(gen, 0UL);
       //NOTE: start becomes res.
       for(auto it = gen->NewCursor(); it; ++it) {
         start = reduce_func(start, *it);
@@ -53,6 +55,8 @@ namespace Orly {
 
     template <typename TRes, typename TSrc>
     TRes Reduce(const typename TGenerator<TSrc>::TPtr &gen, const TMovingReduceFunc<TRes, TSrc> &reduce_func, TRes start) {
+      /* A reduce over more elements than the read budget's steps is refused up front (#729). */
+      CheckReadBudgetAheadFor<TSrc>(gen, 0UL);
       for(auto it = gen->NewCursor(); it; ++it) {
         start = reduce_func(std::move(start), *it);
       }
@@ -64,6 +68,8 @@ namespace Orly {
 
     template <typename TRes, typename TSrc>
     TRes FastReduce(const typename TGenerator<TSrc>::TPtr &gen, const TFastReduceFunc<TRes, TSrc> &reduce_func, TRes start) {
+      /* A reduce over more elements than the read budget's steps is refused up front (#729). */
+      CheckReadBudgetAheadFor<TSrc>(gen, 0UL);
       //NOTE: start becomes res.
       for(auto it = gen->NewCursor(); it; ++it) {
         reduce_func(start, *it);

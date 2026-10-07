@@ -28,7 +28,14 @@ TBinary::TBinary(const L0::TPackage *package, const Type::TType &ret_type, TOp o
 
 void TBinary::WriteExpr(TCppPrinter &out) const {
   switch (Op) {
-    case Add: Infix(out, '+');
+    case Add:
+      /* Joining two strings is charged to the read budget (#729). */
+      if (GetReturnType() == Type::TStr::Get() && Lhs->GetReturnType() == Type::TStr::Get() &&
+          Rhs->GetReturnType() == Type::TStr::Get()) {
+        Call(out, "Orly::Rt::AddStr");
+      } else {
+        Infix(out, '+');
+      }
       break;
     case And: Call(out, "And");
       break;
