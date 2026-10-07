@@ -52,7 +52,8 @@ FIXTURE(Assign_Record) {
   auto mutation = TMutation::New(TMutator::Assign, TVar(replacement));
   EXPECT_TRUE(mutation->IsFinal());
   mutation->Apply(val);
-  EXPECT_EQ(val, replacement.AsVar());
+  // EXPECT_EQ streams its operands, but dynamic records have no stream writer.
+  EXPECT_TRUE(val == replacement.AsVar());
 }
 
 FIXTURE(Augment_DeleteNew_Throws) {
