@@ -6,6 +6,9 @@
    session or to reconnect to an existing session.  The server replies (or, on error, hangs up), and the handshake is complete.  (The
    classes in Orly::Handshake, below, describe this process in more detail.)
 
+   A server started with a token (#710) needs one more step first: the client sends THandshake<TAuth> and the token, and the
+   server replies TAuth::TReply, before the session request.  Without a token neither side sends it, so the bytes are unchanged.
+
    After the handshake, the protocol becomes full-duplex, meaning that the client and server can request services from each other at
    any time.  Orly::ServerRpc and Orly::ClientRpc describe the individual entry points provided by the server and client, respectively.
    (See <rpc/rpc.h> for more information about the formats of RPC messages in general.)
@@ -237,6 +240,9 @@ namespace Orly {
           /* The session is already connected to another client. */
           AlreadyConnected = 'A',
 
+          /* The server requires a token (#710) and this connection did not present one; the server hangs up. */
+          Unauthorized = 'U',
+
           /* The reply object is uninitialzed. */
           Uninitialized = 'X'
 
@@ -276,6 +282,72 @@ namespace Orly {
 
     /* Sanity check. */
     static_assert(sizeof(THandshake<TOldSession>) == 27, "old session handshake is insane");
+
+    /* A request to authenticate with the server's shared secret (#710).  Sent only to a server started with a token, before
+       the request for a new or old session; THandshake<TAuth> is followed on the wire by the token's GetTokenSize() bytes.
+
+       A server with a token answers a session request that no accepted TAuth preceded by refusing it, then hangs up: a
+       TNewSession gets a reply with the nil session id (a real one is never nil) and a TOldSession gets
+       TReply::TResult::Unauthorized.  Health checks need no token.  A server WITHOUT a token treats TAuth as a bad request
+       kind and hangs up, as it would have before #710. */
+    class [[gnu::packed]] TAuth {
+      public:
+
+      /* The code used in the header. */
+      static const THeader::TRequestKind RequestKind = 'A';
+
+      /* The reply sent by the server. */
+      class [[gnu::packed]] TReply {
+        public:
+
+        /* The result of the request. */
+        enum class TResult : char {
+
+          /* The token matched; send the session request next. */
+          Accepted = 'A',
+
+          /* The token did not match; the server hangs up. */
+          Refused = 'R',
+
+          /* The reply object is uninitialzed. */
+          Uninitialized = 'X'
+
+        };  // TResult
+
+        /* Default-constructs a bad reply.  This is meant to be used as a read buffer and overwritten with a valid reply. */
+        TReply();
+
+        /* Constructs a reply with the given result. */
+        TReply(TResult result);
+
+        /* See TResult. */
+        TResult GetResult() const;
+
+        private:
+
+        /* See TResult. */
+        TResult Result;
+
+      };  // Orly::Handshake::TAuth::TReply
+
+      /* Default-constructs an empty request.  This is meant to be used as a read buffer. */
+      TAuth();
+
+      /* Constructs a request announcing a token of the given size. */
+      explicit TAuth(uint16_t token_size);
+
+      /* The number of token bytes that follow. */
+      uint16_t GetTokenSize() const;
+
+      private:
+
+      /* The token's size, in network byte order. */
+      uint16_t TokenSize;
+
+    };  // Orly::Handshake::TAuth
+
+    /* Sanity check. */
+    static_assert(sizeof(THandshake<TAuth>) == 13, "auth handshake is insane");
 
   }  // Orly::Handshake
 

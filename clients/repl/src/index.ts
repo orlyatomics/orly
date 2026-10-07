@@ -42,6 +42,7 @@ interface Config {
   orlyc: string[];
   pov?: string;
   shared: boolean;
+  tokenFile?: string;
 }
 
 const USAGE = `usage: orly-repl [options]
@@ -52,6 +53,8 @@ const USAGE = `usage: orly-repl [options]
   --orlyc <cmd>          orlyc command, may be multi-word (or ORLYC; default "orlyc")
   --pov <id>             join an existing pov instead of creating one
   --shared               create a shared pov (default: private, session-local)
+  --token-file <path>    a file holding the server's token, for a server started
+                         with one (or ORLY_AUTH_TOKEN_FILE, or ORLY_AUTH_TOKEN)
   --help                 this text
 `;
 
@@ -74,6 +77,7 @@ function parseArgs(argv: string[]): Config {
       case "--orlyc": cfg.orlyc = next().split(/\s+/); break;
       case "--pov": cfg.pov = next(); break;
       case "--shared": cfg.shared = true; break;
+      case "--token-file": cfg.tokenFile = next(); break;
       case "--help": case "-h":
         process.stdout.write(USAGE);
         process.exit(0);
@@ -238,7 +242,11 @@ commands:
 
 async function main(): Promise<void> {
   const cfg = parseArgs(process.argv.slice(2));
-  const client = await connect(cfg.url);
+  // Without --token-file, the driver reads ORLY_AUTH_TOKEN_FILE / ORLY_AUTH_TOKEN (#710).
+  const token = cfg.tokenFile
+    ? fs.readFileSync(cfg.tokenFile, "utf8").replace(/\r?\n$/, "")
+    : undefined;
+  const client = await connect(cfg.url, { token });
   await client.newSession();
   const pov = cfg.pov ?? (await client.newPov({ shared: cfg.shared, safe: true }));
   const pkg = new ReplPackage(cfg, client);

@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <string>
 
 #include <base/class_traits.h>
 #include <orly/server/ws.h>
@@ -37,7 +38,8 @@ namespace Orly {
          given port, and continuing up monotonically for the given number of
          probes.  If no port is available in the given range, throw. */
       explicit TWsTestServer(
-          in_port_t port_start = 8080, size_t probe_size = 1);
+          in_port_t port_start = 8080, size_t probe_size = 1,
+          const std::string &auth_token = std::string());
 
       /* Shutdown the server. */
       ~TWsTestServer();

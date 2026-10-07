@@ -20,6 +20,7 @@
 
 #include <memory>
 #include <optional>
+#include <system_error>
 
 #include <poll.h>
 #include <sys/socket.h>
@@ -29,6 +30,7 @@
 #include <base/io/binary_output_only_stream.h>
 #include <base/io/device.h>
 #include <base/io/recorder_and_player.h>
+#include <orly/auth.h>
 #include <orly/protocol.h>
 #include <base/util/io.h>
 
@@ -43,9 +45,11 @@ using namespace Orly;
 using namespace Orly::Client;
 using namespace Orly::Handshake;
 
-TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &session_id, const seconds &time_to_live)
+TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &session_id, const seconds &time_to_live,
+                 const std::optional<std::string> &auth_token)
     : Rpc::TContext(TProtocol::Protocol),
-      ServerAddress(server_address), SessionId(session_id), TimeToLive(time_to_live) {
+      ServerAddress(server_address), SessionId(session_id), TimeToLive(time_to_live),
+      AuthToken(auth_token ? auth_token : Orly::Auth::ClientTokenFromEnv()) {
   TFd fd;
   TFd::SocketPair(fd, InternalSocket, AF_UNIX, SOCK_STREAM);
   Device = make_shared<TDevice>(move(fd));
@@ -273,6 +277,27 @@ void TClient::IoMain() {
           try {
             TFd new_server_socket(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
             Connect(new_server_socket, ServerAddress);
+            if (AuthToken) {
+              /* Present the token first (#710). A server without a token hangs up on it, as on any request it
+                 doesn't know; then connect again and go on without one. */
+              THandshake<TAuth> handshake(TimeToLive, static_cast<uint16_t>(AuthToken->size()));
+              WriteExactly(new_server_socket, &handshake, sizeof(handshake));
+              WriteExactly(new_server_socket, AuthToken->data(), AuthToken->size());
+              TAuth::TReply reply;
+              bool answered;
+              try {
+                answered = TryReadExactly(new_server_socket, &reply, sizeof(reply));
+              } catch (const system_error &) {
+                /* It hung up with our token still unread, which resets the connection. */
+                answered = false;
+              }
+              if (!answered) {
+                new_server_socket = TFd(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+                Connect(new_server_socket, ServerAddress);
+              } else if (reply.GetResult() != TAuth::TReply::TResult::Accepted) {
+                throw runtime_error("unauthorized: the server refused this client's token");
+              }
+            }
             if (SessionId) {
               THandshake<TOldSession> handshake(TimeToLive, *SessionId);
               WriteExactly(new_server_socket, &handshake, sizeof(handshake));
@@ -291,6 +316,10 @@ void TClient::IoMain() {
                   err_msg = "session already connected";
                   break;
                 }
+                case TOldSession::TReply::TResult::Unauthorized: {
+                  err_msg = "unauthorized: the server requires a token (set ORLY_AUTH_TOKEN_FILE or ORLY_AUTH_TOKEN)";
+                  break;
+                }
                 DEFAULT_UNREACHABLE;
               }
             } else {
@@ -298,6 +327,10 @@ void TClient::IoMain() {
               WriteExactly(new_server_socket, &handshake, sizeof(handshake));
               TNewSession::TReply reply;
               ReadExactly(new_server_socket, &reply, sizeof(reply));
+              if (reply.GetSessionId() == TUuid::Null) {
+                /* A server with a token answers a session request without one with the nil id (#710). */
+                throw runtime_error("unauthorized: the server requires a token (set ORLY_AUTH_TOKEN_FILE or ORLY_AUTH_TOKEN)");
+              }
               SessionId = reply.GetSessionId();
               server_socket = move(new_server_socket);
             }

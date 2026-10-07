@@ -52,6 +52,7 @@ The consequences of that design (all pre-wired inside the docker image's `repl` 
 | `--orlyc` | `ORLYC` | `orlyc` | orlyc command (may be multi-word) |
 | `--pov <id>` | | | join an existing pov instead of creating one |
 | `--shared` | | private | create a shared pov (updates promote globally) |
+| `--token-file <path>` | `ORLY_AUTH_TOKEN_FILE`, or `ORLY_AUTH_TOKEN` | none | the server's token, for a server started with one (#710) |
 
 Commands at the prompt: `:help`, `:defs`, `:drop <name>`, `:src` (show the synthetic package source), `:pov`, `:quit`.
 

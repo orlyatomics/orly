@@ -102,6 +102,16 @@ export class RemoteCompileDisabledError extends OrlyError {
   }
 }
 
+/** Thrown by {@link connect} when the server requires a token and this client presented none, or
+ *  the wrong one (`"status": "unauthorized"`, #710). The server has closed the connection; no
+ *  statement ran. Not retryable as sent: fix the token. */
+export class UnauthorizedError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "UnauthorizedError";
+  }
+}
+
 /** Wrap a string to inject it into a statement as raw orlyscript, un-encoded. */
 export class Raw {
   constructor(public readonly text: string) {}
@@ -203,6 +213,8 @@ export class Client {
         ? new ReadTooLargeError(p.stmt, reply)
         : reply?.status === "remote_compile_disabled"
         ? new RemoteCompileDisabledError(p.stmt, reply)
+        : reply?.status === "unauthorized"
+        ? new UnauthorizedError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
       return;
     }
@@ -222,6 +234,25 @@ export class Client {
       this.pending.push({ stmt, resolve, reject });
       this.ws.send(stmt);
     });
+  }
+
+  /** Present the server's shared secret (#710): the first message, `{"auth": "<token>"}`.
+   *  {@link connect} calls this when given a token; the token never appears in an error. A server
+   *  with a token answers only `ok` or `unauthorized`. One started without a token answers with an
+   *  error status (it tries to parse the message as a statement) and the connection carries on
+   *  unauthenticated, so clients can get the token before the server starts requiring it. */
+  async authenticate(token: string): Promise<void> {
+    try {
+      await new Promise((resolve, reject) => {
+        this.pending.push({ stmt: "<auth>", resolve, reject });
+        this.ws.send(JSON.stringify({ auth: token }));
+      });
+    } catch (e) {
+      if (e instanceof OrlyError && !(e instanceof UnauthorizedError)) {
+        return;
+      }
+      throw e;
+    }
   }
 
   async sendString(stmt: string): Promise<string> {
@@ -313,6 +344,20 @@ async function resolveWebSocket(): Promise<new (url: string) => SocketLike> {
   return (mod.default ?? mod.WebSocket) as new (url: string) => SocketLike;
 }
 
+/** The token from the environment, in Node: `ORLY_AUTH_TOKEN`, or the contents of the file named
+ *  by `ORLY_AUTH_TOKEN_FILE` (less a trailing newline). `undefined` in a browser, or if neither
+ *  is set. */
+async function tokenFromEnv(): Promise<string | undefined> {
+  const env = (globalThis as any).process?.env;
+  if (!env) return undefined;
+  if (env.ORLY_AUTH_TOKEN_FILE) {
+    const spec = "node:fs"; // a variable, so this isomorphic build needs no Node typings
+    const fs: any = await import(spec);
+    return String(fs.readFileSync(env.ORLY_AUTH_TOKEN_FILE, "utf8")).replace(/\r?\n$/, "");
+  }
+  return env.ORLY_AUTH_TOKEN || undefined;
+}
+
 /**
  * Open a WebSocket to a running `orlyi` and resolve a {@link Client}.
  *
@@ -321,13 +366,19 @@ async function resolveWebSocket(): Promise<new (url: string) => SocketLike> {
  * up to `opts.retries` times with exponential backoff (`opts.backoffMs`,
  * doubling each attempt). The last error is re-thrown once retries are
  * exhausted; pass `retries: 0` to fail fast on the first attempt.
+ *
+ * `opts.token` is the server's shared secret (#710), presented before
+ * anything else. In Node it defaults to `ORLY_AUTH_TOKEN` or the file named by
+ * `ORLY_AUTH_TOKEN_FILE`; in a browser, pass it. A refused token rejects with
+ * {@link UnauthorizedError}, which is not retried.
  */
 export async function connect(
   url: string = DEFAULT_URL,
-  opts: { retries?: number; backoffMs?: number } = {},
+  opts: { retries?: number; backoffMs?: number; token?: string } = {},
 ): Promise<Client> {
   const retries = opts.retries ?? DEFAULT_RETRIES;
   let delay = opts.backoffMs ?? DEFAULT_BACKOFF_MS;
+  const token = opts.token ?? (await tokenFromEnv());
   const WS = await resolveWebSocket();
   for (let attempt = 0; ; attempt++) {
     try {
@@ -336,8 +387,18 @@ export async function connect(
         ws.addEventListener("open", () => resolve());
         ws.addEventListener("error", (ev: any) => reject(ev instanceof Error ? ev : new Error("orly: connect failed")));
       });
-      return new Client(ws);
+      const client = new Client(ws);
+      if (token !== undefined) {
+        try {
+          await client.authenticate(token);
+        } catch (e) {
+          client.close();
+          throw e;
+        }
+      }
+      return client;
     } catch (e) {
+      if (e instanceof UnauthorizedError) throw e;
       if (attempt >= retries) throw e;
       await new Promise<void>((r) => setTimeout(() => r(), delay));
       delay *= 2;

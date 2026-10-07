@@ -22,6 +22,10 @@ needed — register with your MCP client, pointing `ORLY_URL` at your server
 claude mcp add orly -e ORLY_URL=ws://127.0.0.1:8082/ -- npx -y orly-mcp
 ```
 
+If the server was started with a token (#710), also pass it:
+`-e ORLY_AUTH_TOKEN_FILE=/path/to/token` (a file holding it) or
+`-e ORLY_AUTH_TOKEN=<token>`.
+
 or in a JSON MCP config:
 
 ```json

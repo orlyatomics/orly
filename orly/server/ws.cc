@@ -19,6 +19,7 @@
 #include <orly/server/ws.h>
 
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -32,6 +33,7 @@
 
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/asio/strand.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
@@ -41,6 +43,7 @@
 #include <base/json.h>
 #include <base/tmp_copy_to_file.h>
 #include <base/tmp_dir_maker.h>
+#include <orly/auth.h>
 #include <orly/compiler.h>
 #include <orly/error.h>
 #include <orly/client/program/parse_stmt.h>
@@ -115,9 +118,11 @@ class TWsImpl final
   /* Starts up the server. */
   TWsImpl(
       TSessionManager *session_mngr, size_t thread_count,
-      in_port_t port_number, const std::string &bind_address, bool allow_remote_compile)
+      in_port_t port_number, const std::string &bind_address, bool allow_remote_compile,
+      const std::string &auth_token)
       : SessionManager(session_mngr),
         AllowRemoteCompile(allow_remote_compile),
+        AuthToken(auth_token),
         TmpDirMaker(MakeCompileTmpDir()),
         IoCtx(thread_count ? static_cast<int>(thread_count) : 1),
         Acceptor(IoCtx) {
@@ -138,11 +143,12 @@ class TWsImpl final
       const auto bound = Acceptor.local_endpoint();
       std::ostringstream strm;
       strm << bound;
-      syslog(LOG_INFO, "websocket listener bound to %s; remote compile %s",
-             strm.str().c_str(), allow_remote_compile ? "allowed" : "disabled");
+      syslog(LOG_INFO, "websocket listener bound to %s; remote compile %s%s",
+             strm.str().c_str(), allow_remote_compile ? "allowed" : "disabled",
+             auth_token.empty() ? "" : "; token required");
       /* LOG_ERR, not LOG_WARNING: the default log mask shows only errors, and an operator must
          see this one without asking for more. */
-      if (allow_remote_compile && !bound.address().is_loopback()) {
+      if (allow_remote_compile && auth_token.empty() && !bound.address().is_loopback()) {
         syslog(LOG_ERR,
                "WARNING: websocket listener on %s accepts compile from any client that reaches it; "
                "Orly has no authentication",
@@ -202,10 +208,24 @@ class TWsImpl final
 
     TConn(TWsImpl *ws, tcp::socket sock)
         : Ws(ws),
-          WsStream(beast::tcp_stream(std::move(sock))) {}
+          WsStream(beast::tcp_stream(std::move(sock))),
+          AuthTimer(WsStream.get_executor()),
+          Authenticated(ws->AuthToken.empty()) {}
 
     /* Perform the WS handshake then start the read loop. */
     void Run() {
+      if (!Authenticated) {
+        /* With a token (#710), a connection that hasn't authenticated in time is closed, so an
+           unauthenticated client can't hold a connection open. */
+        AuthTimer.expires_after(AuthDeadline);
+        AuthTimer.async_wait([self = shared_from_this()](beast::error_code ec) {
+          if (!ec && !self->Authenticated) {
+            beast::error_code ignored;
+            beast::get_lowest_layer(self->WsStream).socket().shutdown(tcp::socket::shutdown_both, ignored);
+            beast::get_lowest_layer(self->WsStream).socket().close(ignored);
+          }
+        });
+      }
       WsStream.async_accept(
           [self = shared_from_this()](beast::error_code ec) {
             if (ec) {
@@ -608,7 +628,9 @@ class TWsImpl final
     void OnMsg() {
       const string payload = beast::buffers_to_string(ReadBuf.data());
       TJson reply = TJson::Object;
-      try {
+      if (!Authenticated) {
+        Authenticate(payload, reply);
+      } else try {
         TJson result;
         ParseStmtStr(
             payload.c_str(),
@@ -660,13 +682,59 @@ class TWsImpl final
               return;
             }
             if (self->Exiting) {
+              /* A refused token (#710) closes with 1008 (policy violation), which a browser's
+                 close event shows. */
               self->WsStream.async_close(
-                  websocket::close_code::normal,
+                  self->Authenticated ? websocket::close_code::normal : websocket::close_code::policy_error,
                   [self2 = self](beast::error_code) { self2->Close(); });
               return;
             }
             self->DoRead();
           });
+    }
+
+    /* The first message on a connection to a server with a token (#710): {"auth": "<token>"}.
+       Accepted, the reply is "status": "ok" and statements follow. Anything else, or a different
+       token, is answered "status": "unauthorized" and the connection closes after the reply. The
+       token is never logged or echoed. */
+    void Authenticate(const string &payload, TJson &reply) {
+      bool presented = false, accepted = false;
+      try {
+        const TJson msg = TJson::Parse(payload);
+        if (msg.GetKind() == TJson::Object && msg.GetSize() == 1 && msg.Contains("auth") &&
+            msg["auth"].GetKind() == TJson::String) {
+          presented = true;
+          accepted = Orly::Auth::TokensEqual(msg["auth"].GetString(), Ws->AuthToken);
+        }
+      } catch (const exception &) {
+        /* Not JSON, so not an auth message. */
+      }
+      if (accepted) {
+        Authenticated = true;
+        AuthTimer.cancel();
+        reply["result"] = TJson();
+        reply["status"] = "ok";
+        return;
+      }
+      const string remote = RemoteAddress();
+      syslog(LOG_WARNING, "ws: refused a client from %s: %s", remote.c_str(), presented ? "wrong token" : "no token");
+      reply["result"] = presented
+          ? "unauthorized: wrong token"
+          : "unauthorized: this server requires a token; send {\"auth\": \"<token>\"} as the first message";
+      reply["status"] = "unauthorized";
+      Exiting = true;
+    }
+
+    /* The peer's address, for the log. */
+    string RemoteAddress() {
+      beast::error_code ec;
+      const auto endpoint = beast::get_lowest_layer(WsStream).socket().remote_endpoint(ec);
+      if (ec) {
+        return "(unknown)";
+      }
+      ostringstream strm;
+      strm << endpoint;
+      return strm.str();
     }
 
     void OnError(beast::error_code ec, const char *where) {
@@ -679,6 +747,7 @@ class TWsImpl final
        actual destruction happens when those handlers run (or are
        discarded when the io_context unwinds at shutdown). */
     void Close() {
+      AuthTimer.cancel();
       lock_guard<mutex> lock(Ws->Mutex);
       Ws->Conns.erase(shared_from_this());
     }
@@ -690,6 +759,15 @@ class TWsImpl final
     bool Exiting = false;
     unique_ptr<TSessionPin> Session;
 
+    /* How long a connection to a server with a token has to authenticate (#710). */
+    static constexpr std::chrono::seconds AuthDeadline{10};
+
+    /* Closes the connection if it hasn't authenticated by AuthDeadline. */
+    net::steady_timer AuthTimer;
+
+    /* True once the connection has presented the token, or from the start without one. */
+    bool Authenticated;
+
   };  // TWsImpl::TConn
 
   /* The session manager interface passed to us at construction time. */
@@ -697,6 +775,9 @@ class TWsImpl final
 
   /* Whether the compile statement is accepted (#705). */
   const bool AllowRemoteCompile;
+
+  /* The token every connection must present first (#710); empty, none is needed. */
+  const std::string AuthToken;
 
   /* Creates and destroys the tmp dir used by the compile stmt. */
   TTmpDirMaker TmpDirMaker;
@@ -750,6 +831,7 @@ void TWsImpl::DoAccept() {
 
 TWs *TWs::New(
     TSessionManager *session_mngr, size_t thread_count,
-    in_port_t port_number, const std::string &bind_address, bool allow_remote_compile) {
-  return new TWsImpl(session_mngr, thread_count, port_number, bind_address, allow_remote_compile);
+    in_port_t port_number, const std::string &bind_address, bool allow_remote_compile,
+    const std::string &auth_token) {
+  return new TWsImpl(session_mngr, thread_count, port_number, bind_address, allow_remote_compile, auth_token);
 }

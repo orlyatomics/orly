@@ -157,12 +157,18 @@ namespace Orly {
            The listener binds bind_address, an IPv4 or IPv6 literal; loopback
            by default, because the protocol has no authentication (#705).
            Unless allow_remote_compile is true, the `compile` statement is
-           refused with "status": "remote_compile_disabled". */
+           refused with "status": "remote_compile_disabled".
+
+           A non-empty auth_token (#710) must be the first message on every
+           connection, as {"auth": "<token>"}; anything else is answered with
+           "status": "unauthorized" and the connection is closed, before any
+           statement runs.  Empty, connections are unchanged. */
         static TWs *New(
             TSessionManager *session_mngr, size_t thread_count,
             in_port_t port_number = 8080,
             const std::string &bind_address = "127.0.0.1",
-            bool allow_remote_compile = false);
+            bool allow_remote_compile = false,
+            const std::string &auth_token = std::string());
 
         protected:
 

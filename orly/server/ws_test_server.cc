@@ -218,14 +218,14 @@ class TWsTestServer::TSessionManager
 
 };  // TSessionManager
 
-TWsTestServer::TWsTestServer(in_port_t port_start, size_t probe_size)
+TWsTestServer::TWsTestServer(in_port_t port_start, size_t probe_size, const std::string &auth_token)
     : SessionManager(nullptr), PortNumber(port_start), Ws(nullptr) {
   assert(probe_size);
   try {
     SessionManager = new TSessionManager;
     for (;;) {
       try {
-        Ws = TWs::New(SessionManager, 4, PortNumber);
+        Ws = TWs::New(SessionManager, 4, PortNumber, "127.0.0.1", false, auth_token);
         break;
       } catch (...) {
         --probe_size;

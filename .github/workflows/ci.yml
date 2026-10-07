@@ -378,6 +378,15 @@ jobs:
       - name: Listeners bind loopback and refuse remote compile by default
         run: bash clients/smoke/run-bind-defaults.sh
 
+      # #710: with a token (--auth_token_file and friends), WebSocket and binary
+      # clients without it, or with a wrong one, are refused with a typed status
+      # before any statement runs, the right one works, and a slave must present
+      # the replication token to join a master; with none, nothing changes. Two
+      # negative controls: the refusal checks must fail against an orlyi without
+      # the token, and a wrong-token slave must join a master without one.
+      - name: Shared-secret auth for clients and replication (#710)
+        run: bash clients/smoke/run-auth.sh
+
       # #626: writes to a paused POV, whose backlog never drains until it is
       # unpaused, must not wait for it: they go through (or are refused at the
       # memory reserve), reads carry on, and after the unpause a write is

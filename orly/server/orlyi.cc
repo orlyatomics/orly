@@ -19,6 +19,7 @@
 #include <functional>
 
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <thread>
 
@@ -121,6 +122,30 @@ static void RunTsanRacyControl() {
 }
 #endif
 
+/* Overwrites the values of --auth_token and --replication_token in argv once they are parsed, so
+   the secrets don't stay in /proc/<pid>/cmdline (#710). A listing taken before this still shows
+   them, which is why the docs point at the file and environment forms. */
+static void ScrubSecretArgs(int argc, char *argv[]) {
+  for (int i = 1; i < argc; ++i) {
+    const char *name = argv[i];
+    while (*name == '-') {
+      ++name;
+    }
+    for (const char *secret: {"auth_token", "replication_token"}) {
+      const size_t len = strlen(secret);
+      if (name == argv[i] || strncmp(name, secret, len) != 0) {
+        continue;
+      }
+      if (name[len] == '=') {
+        char *value = argv[i] + (name - argv[i]) + len + 1;
+        memset(value, '*', strlen(value));
+      } else if (name[len] == '\0' && i + 1 < argc) {
+        memset(argv[i + 1], '*', strlen(argv[i + 1]));
+      }
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
   // Make std::terminate calls produce more data / info for us.
   SetBacktraceOnTerminate();
@@ -128,6 +153,7 @@ int main(int argc, char *argv[]) {
   RunTsanRacyControl();
 #endif
   ::TCmd cmd(argc, argv);
+  ScrubSecretArgs(argc, argv);
   TLog log(cmd);
   if (cmd.Daemon) {
     auto pid = Server::Daemonize();

@@ -73,3 +73,10 @@ result memory, than the server's per-read budget rejects with
 range. A `compile` statement sent to a
 server started without `--allow_remote_compile` rejects with
 `RemoteCompileDisabledError`.
+
+A server started with a token (#710) refuses connections without it. Pass
+`connect(url, { token })`; in Node, `connect` otherwise reads `ORLY_AUTH_TOKEN`
+or the file named by `ORLY_AUTH_TOKEN_FILE`. A missing or wrong token rejects
+with `UnauthorizedError`, which `connect` doesn't retry. A client with a token
+also works against a server without one. A token in browser code is visible to
+anyone who loads the page.

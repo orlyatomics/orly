@@ -38,6 +38,7 @@
 #include <base/io/device.h>
 #include <orly/atom/core_vector.h>
 #include <orly/indy/disk/durable_manager.h>
+#include <orly/auth.h>
 #include <orly/protocol.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
@@ -160,6 +161,24 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       &TCmd::AllowRemoteCompile, "allow_remote_compile", Optional, "allow_remote_compile\0",
       "Accept the compile statement over websocket (default off). It builds the source it is sent with the system "
       "compiler and loads it into this process; refused, it replies \"status\": \"remote_compile_disabled\"."
+  );
+  Param(
+      &TCmd::AuthTokenFileFlag, "auth_token_file", Optional, "auth_token_file\0",
+      "A file holding the shared secret every client must present (#710; default none, no authentication). "
+      "Also ORLY_AUTH_TOKEN_FILE, or the token itself in ORLY_AUTH_TOKEN. 16 to 1024 printable ASCII characters."
+  );
+  Param(
+      &TCmd::AuthTokenFlag, "auth_token", Optional, "auth_token\0",
+      "The shared secret itself (#710). Prefer --auth_token_file or ORLY_AUTH_TOKEN: a flag shows in process listings."
+  );
+  Param(
+      &TCmd::ReplicationTokenFileFlag, "replication_token_file", Optional, "replication_token_file\0",
+      "A file holding the shared secret a slave must present to join this master, and that this server presents when "
+      "it joins one (#710). Also ORLY_REPLICATION_TOKEN_FILE or ORLY_REPLICATION_TOKEN. Default: the client token."
+  );
+  Param(
+      &TCmd::ReplicationTokenFlag, "replication_token", Optional, "replication_token\0",
+      "The replication secret itself (#710). Prefer --replication_token_file: a flag shows in process listings."
   );
   Param(
       &TCmd::ConnectionBacklog, "connection_backlog", Optional, "connection_backlog\0cb\0",
@@ -652,6 +671,20 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
       cb(string("--") + flag + ": " + ex.what());
       return false;
     }
+  }
+  /* Shared secrets (#710). Errors name the source, never the token. */
+  try {
+    AuthToken = Orly::Auth::ResolveToken(
+        AuthTokenFileFlag, AuthTokenFlag, "auth_token", Orly::Auth::TokenFileEnvVar, Orly::Auth::TokenEnvVar);
+    ReplicationToken = Orly::Auth::ResolveToken(
+        ReplicationTokenFileFlag, ReplicationTokenFlag, "replication_token",
+        Orly::Auth::ReplicationTokenFileEnvVar, Orly::Auth::ReplicationTokenEnvVar);
+  } catch (const exception &ex) {
+    cb(ex.what());
+    return false;
+  }
+  if (!ReplicationToken) {
+    ReplicationToken = AuthToken;
   }
   return ResolveMemoryDefaults(cb);
 }
@@ -1157,7 +1190,8 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   }
 
   /* Launch the websockets server. */
-  Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber, cmd.BindAddress, cmd.AllowRemoteCompile));
+  Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber, cmd.BindAddress, cmd.AllowRemoteCompile,
+                    cmd.AuthToken.value_or(string())));
 
   } catch (const std::exception &ex) {
     /* We cannot unwind: several members' destructors (the durable manager,
@@ -1209,6 +1243,22 @@ void TServer::Init() {
       RepoState = Orly::Indy::TManager::SyncSlave;
       starting_sock = TFd(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
       Connect(starting_sock, Cmd.AddressOfMaster);
+      if (Cmd.ReplicationToken) {
+        /* Present the replication token if the master asks for it (#710). Without a token,
+           nothing is read or written here, as before. */
+        const string master = AsStr(Cmd.AddressOfMaster);
+        try {
+          if (Orly::Auth::AnswerMaster(starting_sock, *Cmd.ReplicationToken)) {
+            syslog(LOG_INFO, "replication: master %s accepted this slave's replication token", master.c_str());
+          } else {
+            syslog(LOG_WARNING, "replication: master %s did not ask for a replication token; joining without one",
+                   master.c_str());
+          }
+        } catch (const exception &ex) {
+          syslog(LOG_ERR, "replication: cannot join master %s: %s", master.c_str(), ex.what());
+          throw;
+        }
+      }
     } else {
       throw runtime_error("Server must start as SOLO or SLAVE");
     }
@@ -1595,7 +1645,8 @@ void TServer::Init() {
         throw;
       }
       IfLt0(listen(sock, Cmd.ConnectionBacklog));
-      syslog(LOG_INFO, "%s listener bound to %s", who, DescribeBound(sock).c_str());
+      syslog(LOG_INFO, "%s listener bound to %s%s", who, DescribeBound(sock).c_str(),
+             Cmd.AuthToken ? "; token required" : "");
     };
 
     open_listening_socket(MainSocket, Cmd.PortNumber, "client");
@@ -3064,6 +3115,8 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
     client_address_str = strm.str();
   }
   shared_ptr<TConnection> connection;
+  /* With a token (#710), a session request must follow an accepted TAuth. */
+  bool authenticated = !Cmd.AuthToken;
   int try_count = 0;
   do {
     try {
@@ -3097,10 +3150,46 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
           WriteExactly(fd, &reply, sizeof(reply));
           return;
         }
+        case TAuth::RequestKind: {
+          if (!Cmd.AuthToken) {
+            /* Without a token TAuth is a bad request kind, as it was before #710. */
+            DEFINE_ERROR(error_t, invalid_argument, "bad request kind in header");
+            THROW_ERROR(error_t) << '\'' << header.GetRequestKind() << '\'';
+          }
+          TAuth request;
+          ReadExactly(fd, &request, sizeof(request));
+          const size_t token_size = request.GetTokenSize();
+          if (token_size > Orly::Auth::MaxTokenSize) {
+            syslog(LOG_WARNING, "server; refused a client from %s: its token is too long", client_address_str.c_str());
+            TAuth::TReply reply(TAuth::TReply::TResult::Refused);
+            WriteExactly(fd, &reply, sizeof(reply));
+            return;
+          }
+          string presented(token_size, '\0');
+          if (token_size) {
+            ReadExactly(fd, presented.data(), token_size);
+          }
+          const bool accepted = Orly::Auth::TokensEqual(presented, *Cmd.AuthToken);
+          TAuth::TReply reply(accepted ? TAuth::TReply::TResult::Accepted : TAuth::TReply::TResult::Refused);
+          WriteExactly(fd, &reply, sizeof(reply));
+          if (!accepted) {
+            syslog(LOG_WARNING, "server; refused a client from %s: wrong token", client_address_str.c_str());
+            return;
+          }
+          authenticated = true;
+          break;
+        }
         case TNewSession::RequestKind: {
           DEBUG_LOG("server; handshaking on new session");
           TNewSession request;
           ReadExactly(fd, &request, sizeof(request));
+          if (!authenticated) {
+            /* The nil session id is never a real one: it tells the client it needs a token. */
+            syslog(LOG_WARNING, "server; refused a client from %s: no token", client_address_str.c_str());
+            TNewSession::TReply reply(TUuid::Null);
+            WriteExactly(fd, &reply, sizeof(reply));
+            return;
+          }
           do {
             connection = TConnection::New(this, DurableManager->New<TSession>(Base::TUuid::Twister, header.GetTimeToLive()));
           } while (!connection);
@@ -3112,6 +3201,12 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
           DEBUG_LOG("server; handshaking on old session");
           TOldSession request;
           ReadExactly(fd, &request, sizeof(request));
+          if (!authenticated) {
+            syslog(LOG_WARNING, "server; refused a client from %s: no token", client_address_str.c_str());
+            TOldSession::TReply reply(TOldSession::TReply::TResult::Unauthorized);
+            WriteExactly(fd, &reply, sizeof(reply));
+            return;
+          }
           TOldSession::TReply::TResult result;
           try {
             auto session = DurableManager->Open<TSession>(request.GetSessionId());
@@ -3136,6 +3231,9 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
             }
             case TOldSession::TReply::TResult::Uninitialized: {
               cout << "Uninitialized" << endl;
+              break;
+            }
+            case TOldSession::TReply::TResult::Unauthorized: {
               break;
             }
           }
@@ -3262,7 +3360,8 @@ void TServer::WaitForSlave() {
       }
     }
     IfLt0(listen(listener, 4));
-    syslog(LOG_INFO, "replication listener bound to %s", DescribeBound(listener).c_str());
+    syslog(LOG_INFO, "replication listener bound to %s%s", DescribeBound(listener).c_str(),
+           Cmd.ReplicationToken ? "; token required" : "");
     /* Publish the listener under the lock Shutdown() takes before its
        shutdown(2): either Shutdown() sees the fd we are about to accept
        on, or we see ShutdownCalled and bail before blocking (#440). */ {
@@ -3274,8 +3373,32 @@ void TServer::WaitForSlave() {
       SlaveSocket = std::move(listener);
     }
     syslog(LOG_INFO, "waiting for slave to connect");
-    TFd slave_fd(accept(SlaveSocket, nullptr, nullptr));
-    syslog(LOG_INFO, "slave has connected");
+    TFd slave_fd;
+    for (;;) {
+      sockaddr_storage peer_storage{};
+      socklen_t peer_len = sizeof(peer_storage);
+      slave_fd = TFd(accept(SlaveSocket, reinterpret_cast<sockaddr *>(&peer_storage), &peer_len));
+      syslog(LOG_INFO, "slave has connected");
+      if (!Cmd.ReplicationToken) {
+        break;
+      }
+      /* With a replication token (#710), challenge the slave before anything else reaches it,
+         and keep listening for another one if it can't answer. */
+      const string peer = AsStr(TAddress(reinterpret_cast<const sockaddr &>(peer_storage)));
+      string why;
+      const auto verdict = Orly::Auth::ChallengeSlave(
+          slave_fd, *Cmd.ReplicationToken, Orly::Auth::ReplicationAnswerTimeout, why);
+      if (verdict == Orly::Auth::TJoinVerdict::Accepted) {
+        syslog(LOG_INFO, "replication: slave from %s presented the replication token", peer.c_str());
+        break;
+      }
+      syslog(LOG_ERR, "replication: refused a slave from %s: %s", peer.c_str(), why.c_str());
+      slave_fd.Reset();
+      if (ShutdownCalled) {
+        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        return;
+      }
+    }
     /* This listener's one accept is consumed: release the port now, so the
        WaitForSlave() that is re-armed when this slave disconnects and we
        demote back to solo can bind it again (#500). */ {
