@@ -398,6 +398,12 @@ jobs:
           packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
           version: 1.2
 
+      # Every group has a fresh runner; bind/auth also use the Python SDK.
+      - name: Install Python smoke dependencies
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          PYTHONPATH="$PWD/clients/python" python3 -c 'import orly'
+
       - name: Download this producer's release inputs
         uses: actions/download-artifact@v4
         with:
