@@ -214,6 +214,12 @@ namespace Orly {
 
         static const Base::TUuid DurableByIdFileId;
 
+        /* Test-only: called by the writer once a memory layer is on disk and its savers are
+           released, with no lock held, just before it marks the layer for delete and publishes a
+           mapping without it (#727). Empty, and never set, in production: one null check per
+           layer written. */
+        static std::function<void (TDurableManager *)> OnMemLayerWrittenForTest;
+
         private:
 
         /* Forward Declarations. */
@@ -643,7 +649,14 @@ namespace Orly {
 
           size_t RefCount;
 
-          bool MarkedForDelete;
+          /* Set by the writer (WriteMemLayer) and the merger (RunMerger), both under MappingLock,
+             and read by Decr() on whatever thread drops a reference. A view releases its memory
+             layer before it takes MappingLock (TView's destructor), so the flag is atomic (#727).
+             Its ordering is not what makes the removal correct: a layer is only marked while the
+             mapping being replaced still lists it, that entry holds a reference, and the entry
+             goes only under MappingLock, after the mark. So the Decr() that takes the count to
+             zero always happens after the mark, and sees it. See Decr(). */
+          std::atomic<bool> MarkedForDelete;
 
           bool MarkedTaken;
 
@@ -892,6 +905,9 @@ namespace Orly {
         friend class Util::TDiskEngine;
         friend class Sim::TFaultEngine;
 
+        /* Defined only by durable_manager.test.cc, to hold views and look at the removal queue. */
+        friend class TDurableManagerTestAccess;
+
       };  // TDurableManager
 
       /***************
@@ -977,7 +993,11 @@ namespace Orly {
 
       inline void TDurableManager::TDurableLayer::Decr() {
         size_t count = __sync_sub_and_fetch(&RefCount, 1U);
-        if (MarkedForDelete && count == 0) {
+        /* Only the last reference looks at the flag (#727). That one is ordered after the mark
+           (see MarkedForDelete), so a marked layer is always queued for removal. An earlier
+           reference, such as a view's, used to read the plain bool while the writer set it, which
+           was a data race though its answer went unused. */
+        if (count == 0 && GetMarkedForDelete()) {
           std::lock_guard<std::mutex> removal_lock(Manager->RemovalLock);
           RemovalMembership.Insert(&Manager->RemovalCollection);
         }
@@ -988,11 +1008,11 @@ namespace Orly {
       }
 
       inline bool TDurableManager::TDurableLayer::GetMarkedForDelete() const {
-        return MarkedForDelete;
+        return MarkedForDelete.load(std::memory_order_acquire);
       }
 
       inline void TDurableManager::TDurableLayer::MarkForDelete() {
-        MarkedForDelete = true;
+        MarkedForDelete.store(true, std::memory_order_release);
       }
 
       inline bool TDurableManager::TDurableLayer::GetMarkedTaken() const {
