@@ -62,6 +62,11 @@ on:
     - cron: '17 5 * * *'
   workflow_dispatch:
 
+# Only PR revisions share a group; every other run remains independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   todo-lint:
     name: TODO convention lint
