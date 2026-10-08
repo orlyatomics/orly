@@ -604,11 +604,17 @@ class TWsImpl final
           auto tail = dynamic_cast<const TObjMemberListTail *>(list->GetOptObjMemberListTail());
           list = tail ? tail->GetObjMemberList() : nullptr;
         }
+        const bool want_receipt = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
         /* Runs off the I/O thread (#761); see TStmtQueue. */
-        Conn->Deferred = [session = GetSharedSession(),
+        Conn->Deferred = [conn = Conn, want_receipt, session = GetSharedSession(),
                           request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
           auto result = std::make_shared<TMethodResult>(session->Try(*request));
-          return TStmtQueue::TFinish([result] { return ToJson(*result); });
+          return TStmtQueue::TFinish([conn, want_receipt, request, result] {
+            if (want_receipt) {
+              conn->Receipt = ToReceipt(request->GetPovId(), *result);
+            }
+            return ToJson(*result);
+          });
         };
       }
 
@@ -854,6 +860,38 @@ class TWsImpl final
         return Conn->Session;
       }
 
+      /* The options of a `try` (#750): `.receipt: true` asks for the reply to carry a receipt. */
+      static bool GetTryOptions(const TOptionList &options) {
+        bool receipt = false;
+        for (const auto &option: options) {
+          if (option.first != "receipt") {
+            throw invalid_argument("try: unknown option ." + option.first + "; the option is .receipt");
+          }
+          try {
+            receipt = Var::TVar::TDt<bool>::As(option.second);
+          } catch (const exception &) {
+            throw invalid_argument("try: .receipt must be a bool");
+          }
+        }
+        return receipt;
+      }
+
+      /* The receipt for a `try` that asked for one: where the write committed, or null for a call
+         that wrote nothing.  The version is the repo's sequence number for the update, increasing
+         with each commit to the POV.  "memory" is the honest level: the write is in the update pool,
+         not yet known to be on disk (see docs/durability.md). */
+      static TJson ToReceipt(const TUuid &pov_id, const TMethodResult &result) {
+        const auto &seq_num = result.GetCommitSequenceNumber();
+        if (!seq_num) {
+          return TJson();
+        }
+        TJson receipt = TJson::Object;
+        receipt["pov"] = AsStr(pov_id);
+        receipt["version"] = static_cast<uint64_t>(*seq_num);
+        receipt["durability"] = "memory";
+        return receipt;
+      }
+
       /* A method result as the reply's JSON. */
       static TJson ToJson(const TMethodResult &result) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -934,6 +972,7 @@ class TWsImpl final
       } else try {
         TJson result;
         Deferred = nullptr;
+        Receipt = TJson();
         ParseStmtStr(
             payload.c_str(),
             [this, &result](const TStmt *stmt) {
@@ -981,6 +1020,10 @@ class TWsImpl final
         }
         reply["result"] = finish();
         reply["status"] = "ok";
+        if (Receipt.GetKind() != TJson::Null) {
+          reply["receipt"] = std::move(Receipt);
+          Receipt = TJson();
+        }
       } catch (...) {
         SetErrorReply(reply);
       }
@@ -1080,6 +1123,10 @@ class TWsImpl final
 
     /* Set by the visitor to a statement that runs off the I/O thread (#761); see OnMsg(). */
     TStmtQueue::TWork Deferred;
+
+    /* Set, on the strand, by a deferred `try` that asked for a receipt (#750); Finish() puts it in
+       the reply. */
+    TJson Receipt;
 
     /* How long a connection to a server with a token has to authenticate (#710). */
     static constexpr std::chrono::seconds AuthDeadline{10};

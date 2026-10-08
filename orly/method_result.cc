@@ -49,6 +49,7 @@ void TMethodResult::Reset() {
   Arena.reset();
   Value = TCore();
   Tracker.reset();
+  CommitSequenceNumber.reset();
 }
 
 void TMethodResult::Write(TBinaryOutputStream &strm) const {

@@ -63,6 +63,16 @@ namespace Orly {
       return Value;
     }
 
+    /* The sequence number the repo gave the committed update, if this method committed one (#750).
+       Never serialized: it is for the server's reply, and a replica has its own numbering. */
+    const std::optional<uint64_t> &GetCommitSequenceNumber() const {
+      return CommitSequenceNumber;
+    }
+
+    void SetCommitSequenceNumber(const std::optional<uint64_t> &seq_num) {
+      CommitSequenceNumber = seq_num;
+    }
+
     /* If true, the value contained here is an error; otherwise, it is a normal return. */
     bool IsError() const {
       return Error;
@@ -90,6 +100,9 @@ namespace Orly {
 
     /* See accessor. */
     bool Error;
+
+    /* See accessor. */
+    std::optional<uint64_t> CommitSequenceNumber;
 
   };  // TMethodResult
 
