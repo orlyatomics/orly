@@ -1,0 +1,5 @@
+package #1;
+/* Keys for the insert-order smoke (#754): batches of new keys, in key order or at random, then
+   point reads of some of them. */
+put = ((true) effecting { new <['n', k]> <- k; }) where { k = given::(int); };
+get = (((*<['n', k]>::(int)) if *<['n', k]>::(int?) is known else -1)) where { k = given::(int); };

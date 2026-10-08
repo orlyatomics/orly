@@ -27,19 +27,6 @@ using namespace Orly::Indy;
 /* #257 skip-list seek accelerator helpers. */
 namespace {
 
-  /* Strict EntryCollection order: (IndexId asc, key asc, SeqNum desc). Both
-     entries are concrete (stored keys never carry free vars), so the key
-     comparison never throws. */
-  inline bool EntryBefore(const TUpdate::TEntry *a, const TUpdate::TEntry *b) {
-    if (a->GetIndexKey() < b->GetIndexKey()) {
-      return true;
-    }
-    if (b->GetIndexKey() < a->GetIndexKey()) {
-      return false;
-    }
-    return a->GetSequenceNumber() > b->GetSequenceNumber();
-  }
-
   /* Number of express lanes a node joins (0 .. SkipMaxLevel-1), geometric with
      p=1/2. Derived deterministically from the entry's index-key hash so no
      global RNG state is needed and the structure is reproducible. The key hash
@@ -71,43 +58,76 @@ TMemoryLayer::TMemoryLayer(L0::TManager *manager)
   for (auto &head : SkipHead) {
     head.store(nullptr, std::memory_order_relaxed);
   }
+  for (auto &tail : SkipTail) {
+    tail = nullptr;
+  }
 }
 
-void TMemoryLayer::SkipInsert(TUpdate::TEntry *entry) NO_THROW {
+bool TMemoryLayer::EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b) {
+  return a->GetEntryKey() > b->GetEntryKey();
+}
+
+void TMemoryLayer::LinkEntry(TUpdate::TEntry *entry) NO_THROW {
+  assert(entry->MemoryLayerMembership.TryGetCollection() != &EntryCollection);
+  ++Size;
   const size_t lanes = SkipHeight(entry->GetIndexKey().GetHash());
-  if (lanes == 0) {
-    /* Level-0 only -- already linked into EntryCollection by the caller. */
-    return;
-  }
   /* Single-writer per layer (DataLock / the merge thread), so the writer reads
-     its own structure with relaxed loads. Find the predecessor at each lane. */
+     its own structure with relaxed loads. update[li] is the entry's
+     predecessor on express lane li (null: the lane's head). */
   TUpdate::TEntry *update[TUpdate::TEntry::SkipMaxLevel];
-  const size_t cur_top = SkipListLevel.load(std::memory_order_relaxed);
-  TUpdate::TEntry *node = nullptr;
-  for (size_t li = cur_top; li-- > 0;) {
-    TUpdate::TEntry *next = node ? node->SkipFwd[li].load(std::memory_order_relaxed)
-                                 : SkipHead[li].load(std::memory_order_relaxed);
-    while (next && EntryBefore(next, entry)) {
-      node = next;
-      next = node->SkipFwd[li].load(std::memory_order_relaxed);
+  TUpdate::TEntry *pred = EntryCollection.TryGetLastMember();  // level-0 predecessor
+  if (!pred || !EntryAfter(pred, entry)) {
+    /* At or after the tail: append. Every lane's predecessor is its tail. */
+    for (size_t li = 0; li < lanes; ++li) {
+      update[li] = SkipTail[li];
     }
-    if (li < lanes) {
-      update[li] = node;
+  } else {
+    /* Out of order. Descend the lanes to the last entry that does not sort
+       after this one, as SeekRun does, then finish on level 0. The lanes are
+       sorted the same way as level 0, so the walk below is a step or two. */
+    const size_t cur_top = SkipListLevel.load(std::memory_order_relaxed);
+    TUpdate::TEntry *node = nullptr;
+    for (size_t li = cur_top; li-- > 0;) {
+      TUpdate::TEntry *next = node ? node->SkipFwd[li].load(std::memory_order_relaxed)
+                                   : SkipHead[li].load(std::memory_order_relaxed);
+      while (next && !EntryAfter(next, entry)) {
+        node = next;
+        next = node->SkipFwd[li].load(std::memory_order_relaxed);
+      }
+      if (li < lanes) {
+        update[li] = node;
+      }
     }
+    for (size_t li = cur_top; li < lanes; ++li) {
+      update[li] = nullptr;  // new top lanes start from the head
+    }
+    pred = node;
+    TUpdate::TEntry *next = node ? node->MemoryLayerMembership.TryGetNextMember()
+                                 : EntryCollection.TryGetFirstMember();
+    while (next && !EntryAfter(next, entry)) {
+      pred = next;
+      next = pred->MemoryLayerMembership.TryGetNextMember();
+    }
+    /* The tail sorts after the entry, so something does. */
+    assert(next);
   }
-  for (size_t li = cur_top; li < lanes; ++li) {
-    update[li] = nullptr;  // new top lanes start from the head
-  }
-  /* Link bottom-up with release stores: a concurrent reader that observes the
-     node on lane li (via an acquire load of the predecessor's forward pointer)
-     also observes the node's own forward pointer on that lane, and every lower
-     lane was already published -- so a descent always resolves. */
+  /* Level 0 first: it is the authoritative order readers finish on. */
+  entry->MemoryLayerMembership.InsertAfter(&EntryCollection, pred ? &pred->MemoryLayerMembership : nullptr);
+  /* Then the express lanes, bottom-up with release stores: a concurrent reader
+     that observes the node on lane li (via an acquire load of the
+     predecessor's forward pointer) also observes the node's own forward
+     pointer on that lane, and every lower lane was already published -- so a
+     descent always resolves. */
   for (size_t li = 0; li < lanes; ++li) {
     std::atomic<TUpdate::TEntry *> &pred_fwd = update[li] ? update[li]->SkipFwd[li] : SkipHead[li];
-    entry->SkipFwd[li].store(pred_fwd.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    TUpdate::TEntry *const succ = pred_fwd.load(std::memory_order_relaxed);
+    entry->SkipFwd[li].store(succ, std::memory_order_relaxed);
     pred_fwd.store(entry, std::memory_order_release);
+    if (!succ) {
+      SkipTail[li] = entry;
+    }
   }
-  if (lanes > cur_top) {
+  if (lanes > SkipListLevel.load(std::memory_order_relaxed)) {
     SkipListLevel.store(lanes, std::memory_order_release);
   }
 }
@@ -143,18 +163,14 @@ TMemoryLayer::~TMemoryLayer() {
 
 void TMemoryLayer::Insert(TUpdate *update) NO_THROW {
   for (TUpdate::TEntryCollection::TCursor csr(&update->EntryCollection/*, InvCon::TOrient::Rev*/); csr; ++csr) {
-    ++Size;
-    csr->MemoryLayerMembership.ReverseInsert(&EntryCollection);
-    SkipInsert(&*csr);  // level 0 (EntryCollection) first, then express lanes (#257)
+    LinkEntry(&*csr);
   }
   update->MemoryLayerMembership.ReverseInsert(&UpdateCollection);
 }
 
 void TMemoryLayer::ReverseInsert(TUpdate *update) NO_THROW {
   for (TUpdate::TEntryCollection::TCursor csr(&update->EntryCollection); csr; ++csr) {
-    ++Size;
-    csr->MemoryLayerMembership.ReverseInsert(&EntryCollection);
-    SkipInsert(&*csr);  // level 0 (EntryCollection) first, then express lanes (#257)
+    LinkEntry(&*csr);
   }
   update->MemoryLayerMembership.ReverseInsert(&UpdateCollection);
 }
@@ -421,7 +437,5 @@ void TMemoryLayer::ImporterAppendUpdate(TUpdate *update) {
 
 void TMemoryLayer::ImporterAppendEntry(TUpdate::TEntry *entry) {
   assert(entry);
-  ++Size;
-  entry->MemoryLayerMembership.ReverseInsert(&EntryCollection);
-  SkipInsert(entry);  // level 0 (EntryCollection) first, then express lanes (#257)
+  LinkEntry(entry);
 }

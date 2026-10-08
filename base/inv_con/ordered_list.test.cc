@@ -88,6 +88,10 @@ class TPlayer {
     TeamMembership.ReverseInsert(team->GetPlayerCollection());
   }
 
+  void InsertAfter(TTeam *team, TPlayer *prev) {
+    TeamMembership.InsertAfter(team->GetPlayerCollection(), prev ? prev->GetTeamMembership() : nullptr);
+  }
+
   void Remove() {
     TeamMembership.Remove();
   }
@@ -133,6 +137,41 @@ FIXTURE(Typical) {
   }
   EXPECT_FALSE(team.GetPlayerCollection()->TryGetFirstMember(106));
   EXPECT_FALSE(team.GetPlayerCollection()->TryGetLastMember (106));
+}
+
+/* InsertAfter links at the given place without searching: at the front, in the middle, at the
+   back, and moving a member that is already in a collection. */
+FIXTURE(InsertAfter) {
+  TTeam team;
+  TPlayer *p20 = new TPlayer(20);
+  p20->InsertAfter(&team, nullptr);
+  TPlayer *p10 = new TPlayer(10);
+  p10->InsertAfter(&team, nullptr);
+  TPlayer *p30 = new TPlayer(30);
+  p30->InsertAfter(&team, p20);
+  TPlayer *p25 = new TPlayer(25);
+  p25->InsertAfter(&team, p20);
+  auto numbers = [&team] {
+    std::vector<int> out;
+    for (TTeam::TPlayerCollection::TCursor csr(team.GetPlayerCollection()); csr; ++csr) {
+      out.push_back(csr->GetNumber());
+    }
+    std::vector<int> rev;
+    for (TTeam::TPlayerCollection::TCursor csr(team.GetPlayerCollection(), InvCon::Rev); csr; ++csr) {
+      rev.insert(rev.begin(), csr->GetNumber());
+    }
+    EXPECT_TRUE(out == rev);
+    return out;
+  };
+  EXPECT_TRUE(numbers() == std::vector<int>({ 10, 20, 25, 30 }));
+  EXPECT_EQ(team.GetPlayerCollection()->TryGetFirstMember(), p10);
+  EXPECT_EQ(team.GetPlayerCollection()->TryGetLastMember(), p30);
+  /* Already a member: it is unlinked from its old place first. */
+  p10->SetKey(40);
+  EXPECT_TRUE(numbers() == std::vector<int>({ 20, 25, 30, 40 }));
+  p10->InsertAfter(&team, p30);
+  EXPECT_TRUE(numbers() == std::vector<int>({ 20, 25, 30, 40 }));
+  EXPECT_EQ(team.GetPlayerCollection()->TryGetLastMember(), p10);
 }
 
 FIXTURE(GetCollector) {

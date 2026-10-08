@@ -176,6 +176,14 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
   TSuprena out_arena;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
 
+  /* The surviving entries, one update each, in the order the passes below
+     produce them. They go into out_layer only at the end, sorted by sequence
+     number: the layer's update list is ordered by sequence number and a
+     memory layer insert is cheapest in order (#754). A stable sort keeps
+     equal sequence numbers in production order, which is the order the
+     layer used to end up with. */
+  std::vector<std::unique_ptr<TUpdate>> out_updates;
+
   // 4. Per-index pass: read all entries, group by key, fold each
   //    group, emit surviving entries.
   for (const TUuid &index_id : index_ids) {
@@ -275,12 +283,21 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
           update->AddEntry(index_key, op_key, e.Mutator);
         }
         update->SetSequenceNumber(e.SeqNum);
-        out_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
+        out_updates.emplace_back(TUpdate::CopyUpdate(update.get(), state_alloc));
 
         ++NumKeys;
       }
     }
   }
+
+  std::stable_sort(out_updates.begin(), out_updates.end(),
+                   [](const std::unique_ptr<TUpdate> &a, const std::unique_ptr<TUpdate> &b) {
+                     return a->GetSequenceNumber() < b->GetSequenceNumber();
+                   });
+  for (auto &update : out_updates) {
+    out_layer.Insert(update.release());
+  }
+  out_updates.clear();
 
   // 5. Serialise the folded memory layer at dest_gen_id. Record the
   //    source's whole sequence range, not just that of the entries the fold

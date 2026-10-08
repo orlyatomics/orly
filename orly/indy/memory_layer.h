@@ -72,16 +72,19 @@ namespace Orly {
 
       inline TEntryCollection *GetEntryCollection() const;
 
-      /* Link a freshly-inserted entry into the skip-list accelerator (#257).
-         Called from the three EntryCollection insert sites, after the level-0
-         (EntryCollection) link, so a concurrent reader that sees an upper-lane
-         pointer can always resolve the node on level 0. No allocation -- the
-         per-level forward pointers live inside TEntry -- so this is safe on the
-         NO_THROW commit path. Single-writer per layer (DataLock / the merge
-         thread), so writer-writer races are excluded; reader safety rests on
-         level 0 being the authoritative EntryCollection (upper lanes are a
-         best-effort accelerator). */
-      void SkipInsert(TUpdate::TEntry *entry) NO_THROW;
+      /* Link an entry into EntryCollection (level 0) and the skip-list
+         accelerator (#257) in O(log n) whatever order keys arrive in (#754).
+         The position is the one OrderedList's ReverseInsert would pick, found
+         with the same comparison, so the order of level 0 is unchanged: an
+         entry that sorts at or after the tail is appended in O(1) (the lane
+         predecessors are the lane tails), anything else descends the express
+         lanes and finishes on level 0 a step or two from its place. Level 0 is
+         linked first and the lanes after it, bottom-up with release stores, so
+         a concurrent reader that sees an upper-lane pointer can always resolve
+         the node on level 0. No allocation -- the per-level forward pointers
+         live inside TEntry -- so this is safe on the NO_THROW commit path.
+         Single-writer per layer (DataLock / the merge thread). */
+      void LinkEntry(TUpdate::TEntry *entry) NO_THROW;
 
       /* Return an EntryCollection cursor positioned at the first entry whose
          index-key is >= key (the highest-SeqNum entry of key's run, or the
@@ -232,6 +235,14 @@ namespace Orly {
 
       inline virtual TKind GetKind() const;
 
+      /* True iff. entry a sorts strictly after entry b on level 0
+         (EntryCollection): (IndexId asc, key asc, SeqNum desc). This is the
+         very comparison OrderedList's ReverseInsert uses to place an entry, so
+         LinkEntry, which links an entry after the last one that does not sort
+         after it, puts it exactly where ReverseInsert would, ties included
+         (#754). Stored keys are concrete, so it never throws. */
+      static bool EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b);
+
       void ImporterAppendUpdate(TUpdate *update);
 
       void ImporterAppendEntry(TUpdate::TEntry *entry);
@@ -243,10 +254,16 @@ namespace Orly {
       /* Per-level head pointers for the skip-list accelerator over
          EntryCollection (#257). SkipHead[l] is the first entry present on
          express lane l (l >= 1; level 0 is EntryCollection itself). Written
-         only by SkipInsert (single-writer per layer); read with acquire by
+         only by LinkEntry (single-writer per layer); read with acquire by
          SeekRun. SkipListLevel is the current top occupied lane. */
       std::atomic<TUpdate::TEntry *> SkipHead[TUpdate::TEntry::SkipMaxLevel];
       std::atomic<size_t> SkipListLevel;
+
+      /* SkipTail[l] is the last entry on express lane l, or null while the
+         lane is empty: the lane predecessors of an entry appended at the end
+         of level 0, which makes an in-order insert O(1) (#754). The writer's
+         own bookkeeping; readers never look at it. */
+      TUpdate::TEntry *SkipTail[TUpdate::TEntry::SkipMaxLevel];
 
       size_t Size;
 
