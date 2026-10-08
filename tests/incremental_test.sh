@@ -103,4 +103,12 @@ leftovers="$(find "$out_dir" -name 'clean.*' ! -name 'clean.1.so' -type f)"
 [ -z "$leftovers" ] || fail "--transient-cc left intermediates: $leftovers"
 echo "PASS: only the .so remains"
 
+echo "--- 6: a relative -o is under the current directory (#820) ---"
+mkdir -p "$work_dir/rel"
+(cd "$work_dir" && "$ORLYC" --skip-tests -o rel clean.orly) || fail "relative -o compile"
+[ -e "$work_dir/rel/clean.1.so" ] || fail "relative -o did not write under the current directory"
+(cd "$work_dir/rel" && rm -f clean.* && "$ORLYC" --skip-tests -o . ../clean.orly) || fail "-o . compile"
+[ -e "$work_dir/rel/clean.1.so" ] || fail "-o . did not write into the current directory"
+echo "PASS: relative output directories resolve against the cwd"
+
 echo "OK: incremental compilation contract holds"

@@ -1,0 +1,1 @@
+- **Fixed**: `orlyc -o <dir>` with a relative directory (including `-o .`) wrote the package under `/<dir>`, not under the current directory, and exited 0. The output directory is now resolved against the current directory, as the source path already was, before it is used to compile and to load the package for its tests. `tests/incremental_test.sh` checks both forms (#820).
