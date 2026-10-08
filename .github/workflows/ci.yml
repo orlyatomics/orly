@@ -70,8 +70,26 @@ jobs:
     name: TODO convention lint
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+      scope: ${{ steps.scope.outputs.scope }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Test conservative change classification
+        run: python3 -B -m unittest discover -s tools/ci -p test_change_scope.py
+
+      - name: Classify tested PR merge
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TESTED_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 tools/ci/change_scope.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --tested "$TESTED_SHA"
 
       # Cheap, build-free gate: no bare /* TODO */ stubs, and every TODO
       # references a tracked issue as TODO(#nnn). See CONTRIBUTING.md and
@@ -97,6 +115,8 @@ jobs:
 
   debug-and-test:
     name: make debug + make test
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -155,6 +175,8 @@ jobs:
 
   arm64-build:
     name: aarch64 build (informational)
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     # Informational, NOT a merge gate: aarch64 has never been a supported
@@ -212,6 +234,8 @@ jobs:
 
   arm64-release:
     name: aarch64 release smoke
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     # The arm64-build job above builds DEBUG, and both aarch64 bugs so far
@@ -264,7 +288,9 @@ jobs:
         run: ccache --show-stats --verbose
 
   release-build:
-    name: jhm -c release
+    name: Release build and checks
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -588,8 +614,32 @@ jobs:
           pip3 install --break-system-packages --quiet websocket-client
           STOPS=4 ./tests/graceful_stop_test.sh
 
+  release:
+    name: jhm -c release
+    if: ${{ always() }}
+    needs: [todo-lint, release-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require release coverage or an explicitly classified docs-only PR
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCOPE_RESULT: ${{ needs.todo-lint.result }}
+          DOCS_ONLY: ${{ needs.todo-lint.outputs.docs_only }}
+          BUILD_RESULT: ${{ needs.release-build.result }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ] && [ "$SCOPE_RESULT" = success ] &&
+             [ "$DOCS_ONLY" = true ] && [ "$BUILD_RESULT" = skipped ]; then
+            echo "Allowlisted docs-only PR: native release coverage deliberately skipped."
+          elif [ "$BUILD_RESULT" != success ]; then
+            echo "::error::Required release coverage did not succeed: $BUILD_RESULT"
+            exit 1
+          fi
+
   restart-test:
     name: restart durability (tests/restart_test.sh)
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -633,6 +683,8 @@ jobs:
 
   lang-tests:
     name: lang_test.py
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -733,6 +785,8 @@ jobs:
 
   examples:
     name: examples/* end-to-end
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -928,6 +982,8 @@ jobs:
 
   prediction-market-e2e:
     name: prediction-market headless browser (Playwright)
+    needs: todo-lint
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -1068,6 +1124,7 @@ jobs:
 
   tsan:
     name: ThreadSanitizer
+    needs: todo-lint
     # GATING (issue #184): the curated concurrency set is clean under TSan, so
     # this job now FAILS if any un-suppressed ThreadSanitizer warning appears
     # (see the "fail on any race" check below). Provably-benign reports are
@@ -1076,7 +1133,7 @@ jobs:
     # latency low; the gate runs on push-to-master, the nightly schedule, and
     # manual dispatch (so a race that lands reds master immediately). Extending
     # the gate to pull_request events is a possible future tightening.
-    if: github.event_name != 'pull_request'
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -1266,12 +1323,13 @@ jobs:
 
   asan-smoke:
     name: AddressSanitizer smoke
+    needs: todo-lint
     # Smokes the #440 teardown paths: every orlyc run constructs, runs, and
     # fully destroys the server, so a handful of lang tests under ASan police
     # Shutdown()/~TServer for use-after-free and heap corruption. Sanitizer
     # builds are slow, so (like `tsan`) this skips pull_request events and
     # runs on push-to-master, the nightly schedule, and manual dispatch.
-    if: github.event_name != 'pull_request'
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
