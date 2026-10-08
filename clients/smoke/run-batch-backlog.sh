@@ -5,9 +5,13 @@
 # filled the Entry pool: merges and Tetris missed, and writers were refused.
 # With it capped in entries too, at most 1% of the batches may be refused (a
 # refused batch is retried; a loaded runner can refuse a few, #719), no pool
-# may miss, the Entry pool must stay under 60% full, and the POV's backlog must
-# never pass its cap (#721; the reporting port's Writer Backlog line). orlyi
-# must not abort.
+# may miss, no memory merge may roll back for want of pool space (orlyi's log must
+# have no "StepMergeMem out of pool space; merge rolled back" line), and the
+# POV's backlog must never pass its cap (#721; the reporting port's Writer
+# Backlog line). orlyi must not abort. The peak Entry pool use is a reported
+# METRIC, not a gate: merge copies may use the reserve by design, and a faster
+# engine runs the writers up to the admission line (#765, #771, #754, #763,
+# #801).
 # The smoke was calibrated when a WebSocket statement held one of orlyi's 4 I/O
 # threads, so at most 4 of the 8 writers' batches ran at once; --max_ws_in_flight=4
 # keeps that (#761). With all 8 running at once on a 4-core runner, the global
@@ -91,6 +95,12 @@ ABORT='aborting|StepMergeDisk \[|StepMergeMem caught error|StepTail \[|Fiber Run
 if grep -Eq "$ABORT" "$WORK/orlyi.log"; then
   echo "BATCH BACKLOG FAIL: orlyi logged an abort:"
   grep -E "$ABORT" "$WORK/orlyi.log" | head -3
+  status=1
+fi
+ROLLBACK='StepMergeMem out of pool space; merge rolled back'
+if grep -q "$ROLLBACK" "$WORK/orlyi.log"; then
+  echo "BATCH BACKLOG FAIL: a memory merge rolled back for want of pool space:"
+  grep "$ROLLBACK" "$WORK/orlyi.log" | head -3
   status=1
 fi
 if ! kill -0 "$ORLYI_PID" 2>/dev/null; then

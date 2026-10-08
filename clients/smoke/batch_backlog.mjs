@@ -19,11 +19,16 @@
  *   - no write failing other than by refusal, and at least MIN_BATCHES batches through;
  *   - at most MAX_REFUSED_PCT percent of the batches sent refused;
  *   - no Update or Update Entry pool miss (the reporting port's Memory Admission line);
- *   - peak Update Entry use, polled once a second, below MAX_PEAK_PCT percent of the pool;
  *   - the POV's backlog never past its cap, in entries or updates (#721; the reporting port's
  *     Writer Backlog line, which records the peak at every commit). The cap used to be checked
  *     after a write committed, and a writer that waited 5 s wrote anyway, so with K=8 the backlog
  *     reached 2-3 times its cap.
+ *
+ * The peak Update Entry use, polled once a second, is reported as a METRIC and is not a gate: a
+ * merge's copies may use the memory reserve by design, and a faster engine legitimately runs the
+ * writers up to the admission line (a master run peaked at 64%). The health signal for the pools
+ * is the merges' own log line, which run-batch-backlog.sh requires to be absent: no
+ * "StepMergeMem out of pool space; merge rolled back".
  *
  * It prints METRIC lines for tools/maint/ab_bench.py before it checks anything. */
 
@@ -38,7 +43,6 @@ const SECS = +(process.env.SECS ?? 20);
 const MIN_BATCHES = +(process.env.MIN_BATCHES ?? 200);
 const STALL_S = +(process.env.STALL_S ?? 20);
 const MAX_REFUSED_PCT = +(process.env.MAX_REFUSED_PCT ?? 1);
-const MAX_PEAK_PCT = +(process.env.MAX_PEAK_PCT ?? 60);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (msg) => { console.error(`BATCH BACKLOG FAIL: ${msg}`); process.exit(1); };
@@ -140,7 +144,7 @@ if (refused * 100 > MAX_REFUSED_PCT * (batches + refused)) {
 const misses = [...line.matchAll(/misses (\d+)/g)].map((m) => +m[1]);
 if (misses.length !== 2) failures.push(`couldn't read the pool misses from: ${line}`);
 else if (misses.some((n) => n > 0)) failures.push(`the merges or Tetris ran out of pool (misses ${misses.join(", ")})`);
-if (!max || peak * 100 >= MAX_PEAK_PCT * max) failures.push(`the Update Entry pool peaked at ${peak} of ${max}, ${MAX_PEAK_PCT}% or more`);
+if (!max) failures.push("couldn't read the Update Entry pool size from the reporting port");
 if (!bl) failures.push(`couldn't read the writer backlog from: ${backlogLine}`);
 else {
   if (+bl[1] > +bl[2]) failures.push(`the POV's backlog reached ${bl[1]} entries, past its cap of ${bl[2]}`);
