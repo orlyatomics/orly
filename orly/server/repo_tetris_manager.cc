@@ -18,6 +18,7 @@
 
 #include <orly/server/repo_tetris_manager.h>
 
+#include <sstream>
 #include <vector>
 
 #include <orly/notification/pov_failure.h>
@@ -70,6 +71,10 @@ TRepoTetrisManager::TPlayer::TPlayer(TRepoTetrisManager *repo_tetris_manager, co
 }
 
 TRepoTetrisManager::TPlayer::~TPlayer() {
+  /* Our last rounds may have left notifications undelivered (Main() stops calling Play() once
+     we have no children), and pins to drop. */
+  DeliverAccepted();
+  ReleaseSessionPins();
   assert(ChildByPovId.size() == 1UL);
   for (const auto &item: ChildByPovId) {
     delete item.second;
@@ -122,12 +127,9 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
     transaction->Pop(Repo);
     ++(Player->RepoTetrisManager->PushCount);
     ++(Player->RepoTetrisManager->PopCount);
+    /* The sessions hear about it once the round has committed (DeliverAccepted, #801). */
     for (const auto &item: FuncHolderByUpdateId) {
-      const auto &entry = MetaRecord.GetEntry(item.first);
-      auto session = Player->RepoTetrisManager->DurableManager->Open<TSession>(entry.GetSessionId());
-      if (session) {
-        session->InsertNotification(Notification::TUpdateProgress::New(Player->Repo->GetId(), item.first, Notification::TUpdateProgress::Accepted));
-      }
+      Player->RoundAccepted.emplace_back(MetaRecord.GetEntry(item.first).GetSessionId(), item.first);
     }
     Flush();
     /* The child's next update starts at the back of the queue (#660). */
@@ -362,14 +364,75 @@ void TRepoTetrisManager::TPlayer::OnPart(const TUuid &child_pov_id) {
 }
 
 void TRepoTetrisManager::TPlayer::OnPause() {
+  /* A pause can last a long time: don't hold sessions open through it. */
+  DeliverAccepted();
+  ReleaseSessionPins();
+}
+
+void TRepoTetrisManager::TPlayer::DeliverAccepted() noexcept {
+  if (TurnAccepted.empty()) {
+    return;
+  }
+  auto *durable_manager = RepoTetrisManager->DurableManager;
+  const TUuid parent_id = Repo->GetId();
+  for (const auto &[session_id, update_id] : TurnAccepted) {
+    try {
+      auto iter = SessionPins.find(session_id);
+      if (iter == SessionPins.end()) {
+        if (SessionPins.empty()) {
+          PinnedSince = steady_clock::now();
+        }
+        iter = SessionPins.emplace(session_id, durable_manager->Open<TSession>(session_id)).first;
+      }
+      if (iter->second) {
+        iter->second->InsertNotification(Notification::TUpdateProgress::New(parent_id, update_id, Notification::TUpdateProgress::Accepted));
+      }
+    } catch (const std::exception &ex) {
+      /* The promotion has committed either way; only its notification is lost. */
+      std::ostringstream strm;
+      strm << session_id;
+      syslog(LOG_ERR, "tetris: could not tell session [%s] about a promoted update: %s", strm.str().c_str(), ex.what());
+    }
+  }
+  TurnAccepted.clear();
+}
+
+void TRepoTetrisManager::TPlayer::ReleaseSessionPins() noexcept {
+  /* Each pin's TPtr releases in the erase; a closed session saves and waits for the save. */
+  while (!SessionPins.empty()) {
+    SessionPins.erase(SessionPins.begin());
+  }
+}
+
+void TRepoTetrisManager::TPlayer::Play() {
+  const auto start = steady_clock::now();
+  bool promoted = false;
+  try {
+    while (PlayRound()) {
+      promoted = true;
+      if (!KeepPlaying() || steady_clock::now() - start >= TurnBudget) {
+        break;
+      }
+    }
+  } catch (...) {
+    /* The rounds that committed before this one stay committed: tell their sessions. */
+    DeliverAccepted();
+    throw;
+  }
+  DeliverAccepted();
+  if (!promoted || SessionPins.size() > MaxSessionPins || steady_clock::now() - PinnedSince >= PinHoldLimit) {
+    ReleaseSessionPins();
+  }
 }
 
 void TRepoTetrisManager::TPlayer::OnUnpause() {
 }
 
-void TRepoTetrisManager::TPlayer::Play() {
+bool TRepoTetrisManager::TPlayer::PlayRound() {
   Base::TCPUTimer snapshot_timer, sort_timer, play_timer, commit_timer;
   Atom::TSuprena my_arena;
+  RoundAccepted.clear();
+  bool promoted = false;
   try {
     /* Snapshot every child that is ready to participate this round. Refresh takes each child's
        promotion hold on `snapshot_txn`; it carries no Push/Pop so it costs nothing to discard,
@@ -438,12 +501,18 @@ void TRepoTetrisManager::TPlayer::Play() {
             txn->Prepare();
             txn->CommitAction();
             promoted_commutative = true;
+            /* Applies the promotion. */
+            txn.reset();
+            TurnAccepted.insert(TurnAccepted.end(), RoundAccepted.begin(), RoundAccepted.end());
+            RoundAccepted.clear();
           }
-        }  // txn destroyed here -> AppendUpdate applies the promotion
+        }
       }
+      promoted = promoted_commutative;
       if (!promoted_commutative) {
         for (TChild *child: children) {
           if (!child->IsAssertionFree() && child->Play(snapshot_txn, context)) {
+            promoted = true;
             break;
           }
         }
@@ -453,6 +522,7 @@ void TRepoTetrisManager::TPlayer::Play() {
          promote (for now), but any number might fail due to age. */
       for (TChild *child: children) {
         if (child->Peek(snapshot_txn) && child->Play(snapshot_txn, context)) {
+          promoted = true;
           break;
         }
       }
@@ -460,15 +530,21 @@ void TRepoTetrisManager::TPlayer::Play() {
     play_timer.Stop();
     /* Commit the snapshot transaction (carries the at-most-one assertion-bearing
        promotion, if any; a no-op otherwise). */
+    commit_timer.Start();
     snapshot_txn->Prepare();
     snapshot_txn->CommitAction();
-    commit_timer.Start();
+    /* Applies the promotion, before the next round of this turn takes its snapshot. */
+    snapshot_txn.reset();
+    commit_timer.Stop();
+    TurnAccepted.insert(TurnAccepted.end(), RoundAccepted.begin(), RoundAccepted.end());
+    RoundAccepted.clear();
     ++(RepoTetrisManager->RoundCount);
   } catch (const std::bad_alloc &) {
     /* Out of pool space: TTetrisManager::TPlayer::Main logs it, rate-limited, and plays the
        round again (#607). Drop the children's peeked copies first, so that while it waits the
        player holds nothing the merges or another round could use; the next round peeks
-       again. */
+       again. This round's transaction never committed, so its promotions didn't happen. */
+    RoundAccepted.clear();
     {
       lock_guard<mutex> lock(Mutex);
       for (const auto &item: ChildByPovId) {
@@ -477,16 +553,17 @@ void TRepoTetrisManager::TPlayer::Play() {
     }
     throw;
   } catch (const std::exception &ex) {
+    RoundAccepted.clear();
     syslog(LOG_EMERG, "Tetris::TPlayer::Play error : %s", ex.what());
     throw;
   }
-  commit_timer.Stop();
 
   std::lock_guard<std::mutex> lock(RepoTetrisManager->TetrisTimerLock);
   RepoTetrisManager->TetrisSnapshotCPUTime.Push(ToSecondsDouble(snapshot_timer.GetTotal()));
   RepoTetrisManager->TetrisSortCPUTime.Push(ToSecondsDouble(sort_timer.GetTotal()));
   RepoTetrisManager->TetrisPlayCPUTime.Push(ToSecondsDouble(play_timer.GetTotal()));
   RepoTetrisManager->TetrisCommitCPUTime.Push(ToSecondsDouble(commit_timer.GetTotal()));
+  return promoted;
 }
 
 TTetrisManager::TPlayer *TRepoTetrisManager::NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master) {
