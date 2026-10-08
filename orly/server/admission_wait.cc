@@ -148,9 +148,11 @@ bool TAdmissionWait::ServeLocked(steady_clock::time_point &next_deadline) {
     TWaiter &head = *Queue.front();
     if (TryAdmitLocked(head)) {
       Queue.pop_front();
+      Waiting = Queue.size();
       Finish(head, Granted);
     } else if (now >= head.Deadline) {
       Queue.pop_front();
+      Waiting = Queue.size();
       ++TimedOut;
       Finish(head, Expired);
     } else {
