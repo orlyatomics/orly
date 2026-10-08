@@ -21,6 +21,7 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -325,13 +326,47 @@ namespace Orly {
         return value ? std::optional<TSequenceNumber>(value - 1UL) : std::optional<TSequenceNumber>();
       }
 
-      /* A child repo's update, which the parent assigned `parent_seq_num` when promoting it
-         (#750).  `parent_durable` is the parent's GetDurableSequenceNumber() now; it only lets the
-         record drop what it need no longer keep. */
-      void NotePromotion(TSequenceNumber own_seq_num, TSequenceNumber parent_seq_num, const std::optional<TSequenceNumber> &parent_durable) {
-        std::lock_guard<std::mutex> lock(PromotionMutex);
-        Promotions.emplace_back(own_seq_num, parent_seq_num);
-        DrainPromotions(parent_durable);
+      /* What a child repo records about its updates' promotions into its parent (#750).  It is
+         shared, so a promotion can be recorded after the repo itself has been deleted by it. */
+      class TPromotionLog {
+        public:
+
+        /* An update of the child's, which the parent assigned `parent_seq_num` when promoting it.
+           `parent_durable` is the parent's GetDurableSequenceNumber() now; it only lets the
+           record drop what it need no longer keep. */
+        void Note(TSequenceNumber own_seq_num, TSequenceNumber parent_seq_num, const std::optional<TSequenceNumber> &parent_durable) {
+          std::lock_guard<std::mutex> lock(Mutex);
+          Promotions.emplace_back(own_seq_num, parent_seq_num);
+          Drain(parent_durable);
+        }
+
+        std::optional<TSequenceNumber> GetDurable(const std::optional<TSequenceNumber> &parent_durable) {
+          std::lock_guard<std::mutex> lock(Mutex);
+          Drain(parent_durable);
+          return PromotedDurable;
+        }
+
+        private:
+
+        void Drain(const std::optional<TSequenceNumber> &parent_durable) {
+          while (parent_durable && !Promotions.empty() && Promotions.front().second <= *parent_durable) {
+            PromotedDurable = Promotions.front().first;
+            Promotions.pop_front();
+          }
+        }
+
+        /* Pairs of (own, parent) sequence numbers for promotions not yet known to be durable,
+           in order. */
+        std::deque<std::pair<TSequenceNumber, TSequenceNumber>> Promotions;
+
+        std::optional<TSequenceNumber> PromotedDurable;
+
+        std::mutex Mutex;
+
+      };  // TPromotionLog
+
+      const std::shared_ptr<TPromotionLog> &GetPromotionLog() const {
+        return PromotionLog;
       }
 
       /* The highest sequence number of this repo's own updates whose promotion into the parent is
@@ -339,9 +374,7 @@ namespace Orly {
          Only promotions this process made count, so after a restart it can fall short of the
          truth but never exceeds it. */
       std::optional<TSequenceNumber> GetPromotedDurableSequenceNumber(const std::optional<TSequenceNumber> &parent_durable) {
-        std::lock_guard<std::mutex> lock(PromotionMutex);
-        DrainPromotions(parent_durable);
-        return PromotedDurable;
+        return PromotionLog->GetDurable(parent_durable);
       }
 
       /* This repo's parent in the repo tree (mirrors the POV tree), or unset
@@ -866,20 +899,7 @@ namespace Orly {
 
       private:
 
-      void DrainPromotions(const std::optional<TSequenceNumber> &parent_durable) {
-        while (parent_durable && !Promotions.empty() && Promotions.front().second <= *parent_durable) {
-          PromotedDurable = Promotions.front().first;
-          Promotions.pop_front();
-        }
-      }
-
-      /* Pairs of (own, parent) sequence numbers for promotions not yet known to be durable,
-         in order. */
-      std::deque<std::pair<TSequenceNumber, TSequenceNumber>> Promotions;
-
-      std::optional<TSequenceNumber> PromotedDurable;
-
-      std::mutex PromotionMutex;
+      const std::shared_ptr<TPromotionLog> PromotionLog = std::make_shared<TPromotionLog>();
 
       /* One more than the durable sequence number, or 0 for none. */
       std::atomic<uint64_t> DurablePlusOne {0UL};

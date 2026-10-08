@@ -176,6 +176,10 @@ namespace Orly {
           std::optional<Indy::TSequenceNumber> PromotedOwnSeq;
           std::optional<Indy::TSequenceNumber> PromotedParentSeq;
 
+          /* Where to record it. The promotion can delete the child's repo, so FinishPromotion
+             can't go through Repo. */
+          std::shared_ptr<Indy::TRepo::TPromotionLog> PromotedLog;
+
           TMetaRecord MetaRecord;
 
           std::unordered_map<Base::TUuid, Package::TFuncHolder::TPtr> FuncHolderByUpdateId;

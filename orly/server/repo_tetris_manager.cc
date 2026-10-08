@@ -129,6 +129,7 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
     PromotedParentSeq.reset();
     if (Player->Repo->GetId() == TSession::GlobalPovId && PeekedSeq) {
       PromotedOwnSeq = PeekedSeq;
+      PromotedLog = Repo->GetPromotionLog();
       transaction->ReportCommitSequenceNumber(&PromotedParentSeq);
     }
     ++(Player->RepoTetrisManager->PushCount);
@@ -233,11 +234,12 @@ bool TRepoTetrisManager::TPlayer::TChild::SortsBefore(const TChild *lhs, const T
 }
 
 void TRepoTetrisManager::TPlayer::TChild::FinishPromotion() {
-  if (PromotedOwnSeq && PromotedParentSeq) {
-    Repo->NotePromotion(*PromotedOwnSeq, *PromotedParentSeq, Player->Repo->GetDurableSequenceNumber());
+  if (PromotedOwnSeq && PromotedParentSeq && PromotedLog) {
+    PromotedLog->Note(*PromotedOwnSeq, *PromotedParentSeq, Player->Repo->GetDurableSequenceNumber());
   }
   PromotedOwnSeq.reset();
   PromotedParentSeq.reset();
+  PromotedLog.reset();
 }
 
 void TRepoTetrisManager::TPlayer::TChild::Flush() {
