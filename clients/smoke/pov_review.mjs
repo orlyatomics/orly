@@ -109,29 +109,44 @@ async function waitFor(what, read, want, ms = 30_000) {
   return true;
 }
 
+/* A setup write the server refuses for want of pool room is retried: on a slow server (TSan)
+   the merges can lag the earlier scenarios' writes for a while, and the refusal clears once they
+   catch up.  Only the scenarios' writers, which test the refusal, stop at the first one. */
+async function retryRefused(write) {
+  const deadline = Date.now() + 60000;
+  for (;;) {
+    try {
+      return await write();
+    } catch (e) {
+      if (!(e instanceof InsufficientMemoryError) || Date.now() >= deadline) throw e;
+      await sleep(250);
+    }
+  }
+}
+
 /* Writes into `pov`: a fresh private child of the global POV (so the writes promote into it), or a
    paused shared parent (they stay there). */
 async function writeBase(pov, g) {
-  await c.callBatch(pov, PKG, "put", [0, 1, 2, 3, 4, 5].map((e) => ({ g, e, w: e * 10 })));
-  for (const [k, n] of [[0, 15], [1, 15], [2, 14]]) await c.call(pov, PKG, "set_count", { g, k, n });
+  await retryRefused(() => c.callBatch(pov, PKG, "put", [0, 1, 2, 3, 4, 5].map((e) => ({ g, e, w: e * 10 }))));
+  for (const [k, n] of [[0, 15], [1, 15], [2, 14]]) await retryRefused(() => c.call(pov, PKG, "set_count", { g, k, n }));
 }
 async function parentChanges(pov, g) {
-  await c.call(pov, PKG, "put", { g, e: 3, w: 3000 });
-  await c.call(pov, PKG, "put", { g, e: 5, w: 555 });
-  await c.call(pov, PKG, "put", { g, e: 200, w: 7 });
-  await c.call(pov, PKG, "bump", { g, k: 0, n: 10 });
+  await retryRefused(() => c.call(pov, PKG, "put", { g, e: 3, w: 3000 }));
+  await retryRefused(() => c.call(pov, PKG, "put", { g, e: 5, w: 555 }));
+  await retryRefused(() => c.call(pov, PKG, "put", { g, e: 200, w: 7 }));
+  await retryRefused(() => c.call(pov, PKG, "bump", { g, k: 0, n: 10 }));
 }
 async function povChanges(pov, g) {
-  await c.call(pov, PKG, "remove", { g, e: 4 });
-  await c.call(pov, PKG, "put", { g, e: 3, w: 333 });
-  await c.call(pov, PKG, "put", { g, e: 100, w: 0 });
-  await c.call(pov, PKG, "put", { g, e: 50, w: 5 });
-  await c.call(pov, PKG, "remove", { g, e: 50 });
-  await c.call(pov, PKG, "bump", { g, k: 0, n: 1 });
-  await c.call(pov, PKG, "bump", { g, k: 0, n: 2 });
-  await c.call(pov, PKG, "set_count", { g, k: 2, n: 100 });
-  await c.call(pov, PKG, "tag", { g, t: "b" });
-  await c.call(pov, PKG, "tag", { g, t: "a" });
+  await retryRefused(() => c.call(pov, PKG, "remove", { g, e: 4 }));
+  await retryRefused(() => c.call(pov, PKG, "put", { g, e: 3, w: 333 }));
+  await retryRefused(() => c.call(pov, PKG, "put", { g, e: 100, w: 0 }));
+  await retryRefused(() => c.call(pov, PKG, "put", { g, e: 50, w: 5 }));
+  await retryRefused(() => c.call(pov, PKG, "remove", { g, e: 50 }));
+  await retryRefused(() => c.call(pov, PKG, "bump", { g, k: 0, n: 1 }));
+  await retryRefused(() => c.call(pov, PKG, "bump", { g, k: 0, n: 2 }));
+  await retryRefused(() => c.call(pov, PKG, "set_count", { g, k: 2, n: 100 }));
+  await retryRefused(() => c.call(pov, PKG, "tag", { g, t: "b" }));
+  await retryRefused(() => c.call(pov, PKG, "tag", { g, t: "a" }));
 }
 /* P's diff, given counter 0 in the parent. */
 const expectedDiff = (g, c0) => [
