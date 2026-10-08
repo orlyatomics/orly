@@ -611,7 +611,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       for(auto &it: that->GetMembers()) {
         elems.push_back(make_pair(it.first, Build(Package, it.second, false)));
       }
-      Res = Interner.GetKeys(Package, that->GetType(), that->GetValueType(), move(elems));
+      /* The keyset-paging bound (#735); null for a plain `keys`. */
+      TInline::TPtr bound = that->GetBound() ? Build(Package, that->GetBound(), false) : TInline::TPtr();
+      Res = Interner.GetKeys(Package, that->GetType(), that->GetValueType(), move(elems), bound, that->GetBoundIsInclusive());
     }
     virtual void operator()(const Expr::TKnown *that) const { Unary(Package, TUnary::Known, that); }
     virtual void operator()(const Expr::TLengthOf *that) const { Unary(Package, TUnary::LengthOf, that); }

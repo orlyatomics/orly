@@ -1,0 +1,13 @@
+[
+  1,
+  [
+    [],
+    [
+      "Synth + Symbols"
+    ],
+    [
+      "TypeCheck",
+      "22:65-22:80 the `after` bound has type <[asc str,asc int,asc str]>, but this pattern's keys have type <[asc str,asc int,asc int]>; the bound must be a whole key of the same shape, such as the last key of the previous page"
+    ]
+  ]
+]

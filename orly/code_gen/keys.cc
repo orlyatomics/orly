@@ -29,10 +29,14 @@ using namespace Orly::CodeGen;
 TKeys::TKeys(const L0::TPackage *package,
              const Type::TType &ret_type,
              const Type::TType &val_type,
-             TAddrElems &&addr_elems)
+             TAddrElems &&addr_elems,
+             const TInline::TPtr &bound,
+             bool bound_is_inclusive)
     : TInline(package, ret_type),
       AddrElems(addr_elems),
-      ValType(val_type) {}
+      ValType(val_type),
+      Bound(bound),
+      BoundIsInclusive(bound_is_inclusive) {}
 
 void TKeys::WriteExpr(TCppPrinter &out) const {
 
@@ -103,5 +107,11 @@ void TKeys::WriteExpr(TCppPrinter &out) const {
               }
               out << "(" << it.second << ")";
             })
-    << "))";
+    << ")";
+  /* Keyset paging (#735): the bound key, then whether it is inclusive. An
+     unbounded `keys` emits exactly what it always did. */
+  if (Bound) {
+    out << ", " << Bound << ", " << (BoundIsInclusive ? "true" : "false");
+  }
+  out << ")";
 }

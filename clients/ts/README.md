@@ -38,6 +38,12 @@ await c.exit();
 transaction: every write lands or none does. It resolves to an array with one result
 per call.
 
+`pages(pov, pkg, method, args)` pages through a keyset-paging method (#735): one that takes a
+`last` cursor and returns `<{.rows: [...], .last: ...}>`. It is an async iterator over each
+page's rows, passing each page's `.last` back for the next, and stops at the first empty page
+(or, given `{ pageSize }`, at a shorter one). See
+[paging through keys](../../docs/walkthrough.md#paging-through-keys).
+
 `call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`.
 Argument values are encoded by `lit`:
 

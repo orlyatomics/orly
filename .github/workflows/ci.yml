@@ -1122,6 +1122,16 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 
+      # Keyset-paging smoke (#735): `keys ... after` pages 30000 edges once they are on disk. A
+      # page 18000 rows in must cost about what page 1 does, where `skip` costs many times more;
+      # a `skip` page past the 20000-row read budget is refused while the keyset page answers;
+      # rows written between pages land on the right side of the boundary; a reading private POV
+      # sees its parent as it is at each page; the TS, Python and Go page helpers walk every edge.
+      - name: client keyset-paging smoke (clients/smoke)
+        run: ORLY_OUT="$GITHUB_WORKSPACE/../out_orly/debug" REQUIRE_GO=1 bash run-keyset-paging.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
   tsan:
     name: ThreadSanitizer
     needs: todo-lint

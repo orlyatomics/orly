@@ -2,8 +2,9 @@
 
    Synth-layer node for `keys <[pattern]>` -- the index-walking
    expression. Holds the address-shaped key pattern plus the
-   dereferenced value type. Lowers to `Expr::TDbKeys`, which
-   code-gen turns into a `TKeys` runtime call.
+   dereferenced value type, and the optional keyset-paging bound
+   (`after <[..]>` / `from <[..]>`, #735). Lowers to `Expr::TKeys`,
+   which code-gen turns into a `TKeys` runtime call.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -135,6 +136,13 @@ namespace Orly {
       TType *ValueType;
 
       TMemberVec Members;
+
+      /* The keyset-paging bound (#735), or null when the walk starts at the
+         beginning of the pattern's range. */
+      TExpr *Bound = nullptr;
+
+      /* True for `from` (the bound itself is included), false for `after`. */
+      bool BoundIsInclusive = false;
 
     };  // TDbKeysExpr
 

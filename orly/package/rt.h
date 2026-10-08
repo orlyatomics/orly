@@ -96,11 +96,31 @@ namespace Orly {
         return std::make_shared<const TKeyGenerator<TRet>>(this, ctx, Sabot::State::TAny::TWrapper(Native::State::New(start, state_alloc)).get(), index_id);
       }
 
+      /* `keys (T) @ <[pattern]> after bound` / `from bound` (#735). */
+      template <typename TRet, typename... TArgs>
+      std::shared_ptr<const TKeyGenerator<TRet>> New(TContextBase &ctx, const Base::TUuid &index_id, const std::tuple<TArgs...> &start,
+                                                     const TRet &bound, bool bound_is_inclusive) {
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+        void *bound_alloc = static_cast<uint8_t *>(state_alloc) + Sabot::State::GetMaxStateSize();
+        return std::make_shared<const TKeyGenerator<TRet>>(
+            this,
+            [this](TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) {
+              return NewKeyCursor(context, from, to);
+            },
+            ctx,
+            Sabot::State::TAny::TWrapper(Native::State::New(start, state_alloc)).get(),
+            Sabot::State::TAny::TWrapper(Native::State::New(bound, bound_alloc)).get(),
+            bound_is_inclusive, index_id);
+      }
+
       /* Get the FluxCapacitor::TContext. Used by things like KeyGenerators and reading values out of the database. */
       virtual Orly::TContextBase &GetFlux() = 0;
 
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const = 0;
 
+      /* A walk from the whole key `from` to `to`, inclusive. `to` is either a
+         whole key or a pattern whose free members are its rightmost ones; for
+         a pattern the walk runs to the end of the pattern's range (#735). */
       virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) const = 0;
 
       /* Get the current session id. */

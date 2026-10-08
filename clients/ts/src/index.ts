@@ -491,6 +491,40 @@ export class Client {
     return this.send(`try {${pov}} [${parts.join(", ")}];`) as Promise<unknown[]>;
   }
 
+  /** Keyset paging (#735): call a paging method page after page, yielding each page's rows.
+   *
+   *  The method takes its arguments plus a cursor (named by `opts.cursor`, default `"last"`)
+   *  and returns `<{.rows: [...], .last: ...}>`: a page of rows, and the cursor to pass for the
+   *  page after it -- typically the last row's key, which the method gives to
+   *  `keys (T) @ <[...]> after <[...]>`. `args` carries the first page's cursor. The server
+   *  keeps no state between pages; each page reads the data as it is when that call runs.
+   *  Iteration stops at the first empty page, or, given `opts.pageSize`, at the first page
+   *  shorter than that. See docs/walkthrough.md for a paging method. */
+  async *pages(
+    pov: string,
+    pkg: string,
+    method: string,
+    args: Args,
+    opts: { cursor?: string; pageSize?: number } = {},
+  ): AsyncGenerator<unknown[], void, undefined> {
+    const cursor = opts.cursor ?? "last";
+    if (!(cursor in args)) {
+      throw new TypeError(`orly: pages needs the first page's cursor as args.${cursor}`);
+    }
+    let next: Args = { ...args };
+    for (;;) {
+      const page = (await this.call(pov, pkg, method, next)) as Record<string, unknown> | null;
+      if (page === null || typeof page !== "object" || !Array.isArray(page.rows) || !(cursor in page)) {
+        throw new TypeError(`orly: ${pkg} ${method} must return <{.rows: [...], .${cursor}: ...}> to be paged`);
+      }
+      const rows = page.rows as unknown[];
+      if (rows.length === 0) return;
+      yield rows;
+      if (opts.pageSize !== undefined && rows.length < opts.pageSize) return;
+      next = { ...next, [cursor]: page[cursor] };
+    }
+  }
+
   pause(pov: string): Promise<unknown> {
     return this.send(`pause {${pov}};`);
   }

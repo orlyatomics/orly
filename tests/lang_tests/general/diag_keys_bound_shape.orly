@@ -1,10 +1,9 @@
-/* <orly/lang_tests/general/diag_assign_type_mismatch.orly>
+/* <orly/lang_tests/general/diag_keys_bound_shape.orly>
 
-   Diagnostics pin (issue #314): a mutation assignment whose new value's
-   type does not match the stored value's type must say so, naming both
-   types -- not the generic "This expression is invalid." It passes when
-   compilation fails with the message its .state baseline pins
-   (lang_test: expect-compile-error).
+   Diagnostics pin (issue #735): a keyset-paging bound must be a whole key
+   of the pattern's shape. A bound of another shape is refused at compile
+   time with a message naming both types. It passes when compilation fails
+   with the message its .state baseline pins (lang_test: expect-compile-error).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -20,6 +19,4 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-store_wrong_type = ((true) effecting { x <- "nope"; }) where {
-  x = *<[0]>::(int);
-};
+wrong_element_type = keys (int) @ <['e', 1, free::(int)]> after <['e', 1, "x"]>;

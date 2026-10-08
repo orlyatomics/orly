@@ -348,6 +348,18 @@ exit;
   call's method and records every call's package and method under `<i>.$package` and
   `<i>.$method`, next to its args.
   - Clients: `call_many` (python), `CallMany` (go), `callMany` (ts).
+- **Paging** (#735) is not a protocol verb. A package method takes a
+  cursor argument and returns `<{.rows: [...], .last: <cursor>}>`, walking
+  `keys (T) @ <[...]> after <[...cursor]> take n` (see
+  [the walkthrough](walkthrough.md#paging-through-keys)), and the caller passes
+  `.last` back for the next page. The server holds nothing between pages, and
+  each page reads the data as it is when it runs. A private POV with no writes
+  is not a snapshot: each page sees its parent as the parent sees itself then,
+  unpromoted writes included (except a delete of a key an ancestor holds, until
+  it is promoted: #791). Clients: `pages` (python, ts) and `Pages` (go)
+  call such a method page after page; they stop at an empty page (or one
+  shorter than a given page size) and, since integers come back as floats,
+  send an integral cursor value back as an int.
 - **POV flavors**: `safe` vs unsafe (conflict guarantee), `shared` vs `private`
   (visibility), optional `parent`. Demos use `new safe shared pov;`.
 - **An `ok` is not a durability promise** (#730). It means the write committed,

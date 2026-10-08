@@ -38,6 +38,7 @@ prec func_and_member_prec;   /* function application; element and member access;
 prec highest_prec;
 
 acos_kwd          = '"acos"';
+after_kwd         = '"after"';
 ampersand         = '"&"' bitwise_and_prec left;
 and_kwd           = '"and"' logical_and_prec left;
 and_then_kwd      = '"and_then"' logical_and_prec left;
@@ -569,7 +570,7 @@ when_expr : expr -> open_paren expr close_paren when_kwd open_brace opt_when_arm
 
 effecting_expr : expr -> open_paren expr close_paren effecting_kwd stmt_block;
 
-db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr opt_db_keys_member_list close_addr;
+db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr opt_db_keys_member_list close_addr opt_db_keys_bound;
 
   opt_db_keys_member_list;
   no_db_keys_member_list : opt_db_keys_member_list -> empty;
@@ -582,6 +583,16 @@ db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr op
   db_keys_member;
   fixed_db_keys_member : db_keys_member -> opt_ordering expr;
   free_db_keys_member  : db_keys_member -> opt_ordering free_kwd colons open_paren type close_paren;
+
+  /* Keyset paging (#735): start the walk at a key instead of at the start of
+     the pattern's range. `after` is exclusive, `from` inclusive. The bound is
+     a whole address of the pattern's type -- typically the last key of the
+     previous page -- and binds as tightly as a unary operator, so
+     `keys (T) @ <[..]> after last take 10` takes from the bounded walk. */
+  opt_db_keys_bound;
+  no_db_keys_bound    : opt_db_keys_bound -> empty;
+  after_db_keys_bound : opt_db_keys_bound -> after_kwd expr prec unary_placeholder;
+  from_db_keys_bound  : opt_db_keys_bound -> from_kwd expr prec unary_placeholder;
 
 collated_by_expr : expr -> seq:expr collated_by_kwd reduce:expr having_kwd having:expr;
 

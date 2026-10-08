@@ -192,8 +192,6 @@ namespace Orly {
 
         mutable bool Cached;
 
-        mutable bool PassedMatch;
-
         mutable TItem Item;
 
       };  // TRangePresentWalker

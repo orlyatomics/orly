@@ -51,6 +51,13 @@ c.Exit()
 (250 ms, doubling), so a just-started or loaded `orlyi` doesn't flake startup;
 the last error is returned once the retries are exhausted.
 
+`Pages(pov, package, method, args, opts, fn)` pages through a keyset-paging method
+(#735): one that takes a `last` cursor and returns `<{.rows: [...], .last: ...}>`. It calls
+`fn` with each page's rows, passes each page's `.last` back for the next (integral numbers
+back as ints), and stops at the first empty page, at one shorter than `opts.PageSize`, or
+when `fn` returns `orly.ErrStopPages`. See
+[paging through keys](../../docs/walkthrough.md#paging-through-keys).
+
 `Call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`
 and returns the raw JSON result. Argument values are encoded by `orly.Lit`:
 

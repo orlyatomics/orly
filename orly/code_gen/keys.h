@@ -4,7 +4,9 @@
    `TAddrElems` (same `(TAddrDir, TInline)` shape as
    `TBasicCtor<TAddrContainer>`) plus the dereferenced value type
    and emits the runtime call that walks the index for matching
-   keys.
+   keys. With a keyset-paging bound (#735) the call also passes the
+   bound key and whether it is inclusive, and the runtime starts the
+   walk there.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -40,7 +42,9 @@ namespace Orly {
       TKeys(const L0::TPackage *package,
             const Type::TType &ret_type,
             const Type::TType &val_type,
-            TAddrElems &&addr_elems);
+            TAddrElems &&addr_elems,
+            const TInline::TPtr &bound,
+            bool bound_is_inclusive);
 
       void WriteExpr(TCppPrinter &out) const;
 
@@ -49,12 +53,20 @@ namespace Orly {
         for (const auto &iter : AddrElems) {
           AppendDependency(iter.second, dependency_set);
         }
+        if (Bound) {
+          AppendDependency(Bound, dependency_set);
+        }
       }
 
       private:
       TAddrElems AddrElems;
 
       Type::TType ValType;
+
+      /* The keyset-paging bound, or null for an unbounded walk. */
+      TInline::TPtr Bound;
+
+      bool BoundIsInclusive;
     };
 
   } // CodeGen

@@ -27,6 +27,12 @@ with orly.connect() as c:                 # opens the WebSocket
     c.exit()
 ```
 
+`pages(pov, package, method, args)` pages through a keyset-paging method (#735): one
+that takes a `last` cursor and returns `<{.rows: [...], .last: ...}>`. It yields each page's
+rows, passes each page's `.last` back for the next (integral floats back as ints), and stops
+at the first empty page (or, given `page_size`, at a shorter one). See
+[paging through keys](../../docs/walkthrough.md#paging-through-keys).
+
 `call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`.
 Argument values are encoded by `orly.lit`:
 

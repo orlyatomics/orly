@@ -1,9 +1,9 @@
 /* <orly/lang_tests/general/diag_mutable_type.orly>
 
    Diagnostics pin (issue #314): malformed `mutable` type expressions must
-   produce clean end-user errors, not compiler assertion failures. This test
-   is EXPECTED to fail compilation (tracked in .xfail); the .state baseline
-   pins the exact messages.
+   produce clean end-user errors, not compiler assertion failures. It passes
+   when compilation fails with the messages its .state baseline pins
+   (lang_test: expect-compile-error).
 
    Copyright 2010-2026 Atomic Kismet Company
 

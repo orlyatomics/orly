@@ -148,6 +148,7 @@ namespace Orly {
              hash for your key, then there's no way we'll find it in a binary search. */
           void Init(const TKey &from) {
             SearchKind = Match;
+            ResetHistory();
             if (IndexFile) {
               From = from;
               Cached = false;
@@ -163,11 +164,16 @@ namespace Orly {
             }
           }
 
-          /* Look for your key range. This can fall back to a binary search. This means we're NOT free. We've been given 2 fully defined keys. In case
+          /* Look for your key range. This can fall back to a binary search. `from` is a fully defined key; `to` is either one too or a pattern
+             whose free members are its rightmost ones, in which case the range runs to the end of the pattern's matches (#735). In case
              where the start of the range exists as a key in this particular file, we'll be able to hash to it and iterate from there. If it does not
              exist, we'll find the first key larger than the given start key using a binary search and iterate from there. */
           void Init(const TKey &from, const TKey &to) {
             SearchKind = Range;
+            ResetHistory();
+            /* Walkers are pooled (TLoaderObj), so clear what a previous walk left behind: when neither search below finds a
+               start, the walk must come up empty rather than resume wherever the last one stopped (#735). */
+            Valid = false;
             if (IndexFile) {
               From = from;
               To = to;
@@ -291,7 +297,9 @@ namespace Orly {
                   break;
                 }
                 case Range: {
-                  if (TKey(Item.Key, Item.KeyArena) > To) {
+                  /* A key unifying with To is in range (To may be a pattern, #735); otherwise it is past the range once it orders
+                     after To. */
+                  if (!UnifiesWithTo() && TKey(Item.Key, Item.KeyArena) > To) {
                     /* we're past the end of the range. */
                     Valid = false;
                     return;
@@ -305,6 +313,24 @@ namespace Orly {
               }
             }
             Valid = false;
+          }
+
+          /* True iff the current item's key unifies with To. */
+          bool UnifiesWithTo() const {
+            void *to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+            void *cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
+            return MatchPrefixState(
+                *Sabot::State::TAny::TWrapper(To.GetCore().NewState(To.GetArena(), to_state_alloc)),
+                *Sabot::State::TAny::TWrapper(Item.Key.NewState(Item.KeyArena, cur_state_alloc))) == Sabot::TMatchResult::Unifies;
+          }
+
+          /* Forget any history replay a previous walk left armed. Walkers are
+             pooled, and one abandoned part-way through a key's history (a
+             `take` that stopped early) would otherwise replay that key's
+             entries into the next walk's first item (#735). */
+          void ResetHistory() {
+            HistRemaining = 0UL;
+            HistCursor.reset();
           }
 
           /* #227 / #49: after yielding a current key that is a deferred

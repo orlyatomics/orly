@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -29,6 +30,8 @@
 #include <orly/atom/suprena.h>
 #include <orly/context_base.h>
 #include <orly/rt/generator.h>
+#include <orly/sabot/match_prefix_state.h>
+#include <orly/sabot/order_states.h>
 
 namespace Orly {
 
@@ -96,7 +99,7 @@ namespace Orly {
       using TVal = const TRet;
 
       explicit TCursor(const typename TKeyGenerator::TPtr &ptr)
-          : Iter(ptr->PackageContext->NewKeyCursor(&ptr->GetContext(), ptr->GetStart())),
+          : Iter(ptr->NewKeyCursor()),
             Ptr(ptr) {}
 
       TCursor(TCursor &&that) = default;
@@ -173,13 +176,68 @@ namespace Orly {
           Ctx(ctx),
           Start(index_id, Indy::TKey(Ctx.GetArena(), start)) {}
 
+    /* Opens the engine's range cursor over [from, to], where `to` may be a
+       pattern (see Package::TContext::NewKeyCursor). Passed in rather than
+       declared on L0::TPackageContext so that class's vtable -- which
+       packages compiled by an older orlyc were built against -- stays as
+       it was. */
+    using TRangeCursorFactory = std::function<Orly::TKeyCursor *(TContextBase *, const Indy::TIndexKey &, const Indy::TIndexKey &)>;
+
+    /* Keyset paging (#735): walk the keys matching `start` that come after
+       `bound` in index order (or at it, when inclusive). */
+    TKeyGenerator(L0::TPackageContext *package_context, TRangeCursorFactory new_range_cursor, TContextBase &ctx,
+                  const Sabot::State::TAny *start, const Sabot::State::TAny *bound, bool bound_is_inclusive,
+                  const Base::TUuid &index_id)
+        : PackageContext(package_context),
+          Ctx(ctx),
+          Start(index_id, Indy::TKey(Ctx.GetArena(), start)),
+          Bound(std::in_place, index_id, Indy::TKey(Ctx.GetArena(), bound)),
+          BoundIsInclusive(bound_is_inclusive),
+          NewRangeCursor(std::move(new_range_cursor)) {}
+
     private:
+
+    /* A cursor for one pass over the keys. Without a bound it walks the
+       pattern's whole range. With one it seeks to the bound with the range
+       cursor, so a page costs the rows it returns rather than every row
+       before it (#735). The pattern's free members are its rightmost ones,
+       so its matches are one contiguous run of the index: a bound inside
+       the run starts the walk at the bound; a bound below the run leaves
+       the whole run; a bound above it leaves nothing, which the range
+       cursor finds by stopping at its first key. */
+    Orly::TKeyCursor *NewKeyCursor() const {
+      if (!Bound) {
+        return PackageContext->NewKeyCursor(&Ctx, Start);
+      }
+      const Indy::TKey &pattern = Start.GetKey();
+      const Indy::TKey &bound = Bound->GetKey();
+      void *pattern_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+      void *bound_alloc = static_cast<uint8_t *>(pattern_alloc) + Sabot::State::GetMaxStateSize();
+      Sabot::State::TAny::TWrapper pattern_state(pattern.GetState(pattern_alloc));
+      Sabot::State::TAny::TWrapper bound_state(bound.GetState(bound_alloc));
+      if (Sabot::MatchPrefixState(*pattern_state, *bound_state) != Sabot::TMatchResult::Unifies &&
+          Atom::IsLt(Sabot::OrderStates(*bound_state, *pattern_state))) {
+        return PackageContext->NewKeyCursor(&Ctx, Start);
+      }
+      std::unique_ptr<Orly::TKeyCursor> csr(NewRangeCursor(&Ctx, *Bound, Start));
+      if (!BoundIsInclusive && *csr && **csr == bound) {
+        ++*csr;
+      }
+      return csr.release();
+    }
 
     L0::TPackageContext *PackageContext;
 
     TContextBase &Ctx;
 
     const Indy::TIndexKey Start;
+
+    /* The keyset-paging bound, if any. */
+    std::optional<Indy::TIndexKey> Bound;
+
+    bool BoundIsInclusive = false;
+
+    TRangeCursorFactory NewRangeCursor;
 
   };  // TKeyGenerator
 

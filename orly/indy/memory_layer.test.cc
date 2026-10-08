@@ -17,6 +17,7 @@
    limitations under the License. */
 
 #include <orly/indy/memory_layer.h>
+
 #include <orly/indy/update.h>
 
 #include <atomic>
@@ -377,6 +378,52 @@ FIXTURE(ConcurrentWalkInsert) {
   EXPECT_EQ(bad.load(), 0UL);
   EXPECT_EQ(missing.load(), 0UL);
   EXPECT_EQ(mem_layer.GetSize(), static_cast<size_t>(N));
+}
+
+/* The range walker (#735): it seeks to `from` and walks to `to`, which is
+   either a whole key or a pattern whose free members are its rightmost ones. */
+FIXTURE(RangeWalk) {
+  TMemoryLayer mem_layer(nullptr);
+  Base::TUuid idx_a(Base::TUuid::Twister);
+  Base::TUuid idx_b(Base::TUuid::Twister);
+  TSuprena arena;
+  TSequenceNumber seq_num = 0UL;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  /* Groups 0, 1 and 2, each holding the even values 0 through 18; idx_b
+     holds keys of group 1 too, which no walk of idx_a may surface. */ {
+    for (int64_t g = 0; g < 3; ++g) {
+      for (int64_t v = 0; v < 20; v += 2) {
+        Insert(mem_layer, ++seq_num, idx_a, g * 100 + v, g, v);
+      }
+    }
+    Insert(mem_layer, ++seq_num, idx_b, -1, int64_t(1), int64_t(5));
+  }
+  auto walk = [&](const TIndexKey &from, const TIndexKey &to) {
+    std::vector<int64_t> vals;
+    auto wp = mem_layer.NewPresentWalker(from, to);
+    for (auto &w = *wp; w; ++w) {
+      vals.push_back(Sabot::AsNative<int64_t>(*Sabot::State::TAny::TWrapper((*w).Op.NewState((*w).OpArena, state_alloc))));
+    }
+    return vals;
+  };
+  auto key = [&](const Base::TUuid &idx, int64_t g, int64_t v) {
+    return TIndexKey(idx, TKey(make_tuple(g, v), &arena, state_alloc));
+  };
+  const TIndexKey group_1(idx_a, TKey(make_tuple(int64_t(1), Native::TFree<int64_t>()), &arena, state_alloc));
+  /* From a stored key to the end of the pattern's range. */
+  EXPECT_TRUE(walk(key(idx_a, 1, 14), group_1) == (std::vector<int64_t>{114, 116, 118}));
+  /* From a key that is not stored: the walk starts at the next one. */
+  EXPECT_TRUE(walk(key(idx_a, 1, 13), group_1) == (std::vector<int64_t>{114, 116, 118}));
+  /* From past the range: nothing, and nothing of group 2. */
+  EXPECT_TRUE(walk(key(idx_a, 1, 99), group_1).empty());
+  /* Two whole keys: the range is inclusive at both ends and crosses groups. */
+  EXPECT_TRUE(walk(key(idx_a, 0, 16), key(idx_a, 1, 2)) == (std::vector<int64_t>{16, 18, 100, 102}));
+  /* Two whole keys, `from` not stored (the walker used to return nothing
+     unless the first key at or after `from` was `from` itself). */
+  EXPECT_TRUE(walk(key(idx_a, 0, 15), key(idx_a, 1, 0)) == (std::vector<int64_t>{16, 18, 100}));
+  /* Another index's keys never appear. */
+  EXPECT_TRUE(walk(key(idx_b, 1, 0), TIndexKey(idx_b, TKey(make_tuple(int64_t(1), Native::TFree<int64_t>()), &arena, state_alloc))) ==
+              (std::vector<int64_t>{-1}));
 }
 
 #if 0

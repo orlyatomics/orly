@@ -290,8 +290,11 @@ TMemoryLayer::TRangePresentWalker::TRangePresentWalker(const TMemoryLayer *layer
       Layer(layer),
       From(from),
       To(to),
-      Csr(Layer->GetEntryCollection()),
-      Valid(true), Cached(false), PassedMatch(false) {
+      /* Seek to the first entry at or after From through the skip list's
+         express lanes, as a point read does, instead of scanning the layer
+         from its head (#735). */
+      Csr(Layer->SeekRun(From)),
+      Valid(true), Cached(false) {
   assert(From.GetIndexId() == To.GetIndexId());
   Refresh();
 }
@@ -320,13 +323,9 @@ TMemoryLayer::TRangePresentWalker &TMemoryLayer::TRangePresentWalker::operator++
 
 void TMemoryLayer::TRangePresentWalker::Refresh() const {
   if (Valid && !Cached) {
-    void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize());
-    void *key_state_alloc_2 = alloca(Sabot::State::GetMaxStateSize());
-    void *key_state_alloc_3 = alloca(Sabot::State::GetMaxStateSize());
-    void *search_state_alloc = alloca(Sabot::State::GetMaxStateSize());
-    Sabot::State::TAny::TWrapper key_state(PassedMatch ?
-                                           To.GetKey().GetCore().NewState(To.GetKey().GetArena(), key_state_alloc) :
-                                           From.GetKey().GetCore().NewState(From.GetKey().GetArena(), key_state_alloc_2));
+    void *to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+    void *cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
+    Sabot::State::TAny::TWrapper to_state(To.GetKey().GetCore().NewState(To.GetKey().GetArena(), to_state_alloc));
     for (;Csr; ++Csr) {
       Cached = true;
       Atom::TComparison index_id_comp = Atom::CompareOrdered(From.GetIndexId(), Csr->GetIndexKey().GetIndexId());
@@ -336,25 +335,16 @@ void TMemoryLayer::TRangePresentWalker::Refresh() const {
           return;
         }
         case Atom::TComparison::Eq: {
-          Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), search_state_alloc));
-          Atom::TComparison comp = OrderStates(*cur_state, *key_state);
-          if (!PassedMatch) {
-            if (Atom::IsGe(comp)) {
-              PassedMatch = true;
-              Sabot::State::TAny::TWrapper to_state(To.GetKey().GetCore().NewState(To.GetKey().GetArena(), key_state_alloc_3));
-              Atom::TComparison comp = OrderStates(*cur_state, *key_state);
-              if (Atom::IsGt(comp)) {
-                Valid = false;
-                return;
-              }
-            } else {
-              continue;
-            }
-          } else {
-            if (Atom::IsGt(comp)) {
-              Valid = false;
-              return;
-            }
+          /* The seek in the constructor left Csr at or after From, so only
+             the upper end needs checking. To is either a whole key or a
+             pattern whose free members are its rightmost ones (#735); a key
+             unifying with To is in range either way, and otherwise the key
+             is past the range once it orders after To. */
+          Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), cur_state_alloc));
+          if (MatchPrefixState(*to_state, *cur_state) != Sabot::TMatchResult::Unifies &&
+              Atom::IsGt(OrderStates(*cur_state, *to_state))) {
+            Valid = false;
+            return;
           }
           Item.KeyArena = Csr->GetKey().GetArena();
           Item.OpArena = Csr->GetKey().GetArena();
