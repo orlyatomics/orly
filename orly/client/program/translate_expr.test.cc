@@ -26,6 +26,8 @@
 #include <orly/client/program/parse_stmt.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
+#include <orly/type/type_czar.h>
+#include <orly/var/sabot_to_var.h>
 #include <base/test/kit.h>
 
 using namespace std;
@@ -461,3 +463,30 @@ FIXTURE(Empty) {
   Check("print empty {int : real };", expected_3, &arena);
 }
 #endif
+
+static Orly::Type::TTypeCzar TypeCzar;
+
+static string DumpVariantVar(const char *str) {
+  ostringstream strm;
+  ParseExprStr(
+      str,
+      [&strm](const TExpr *expr) {
+        void *alloc = alloca(Sabot::State::GetMaxStateSize());
+        Sabot::State::TAny::TWrapper state(NewStateSabot(expr, alloc));
+        Var::TVar var;
+        state->Accept(Var::TToVarVisitor(var));
+        strm << var.GetType();
+      }
+  );
+  return strm.str();
+}
+
+FIXTURE(Variant) {
+  EXPECT_EQ(DumpState("<| A(int) | B |>.A(7)"), "record($which: 0, A: opt(7), B: unknown opt(record()))");
+  EXPECT_EQ(DumpState("<| A(int) | B |>.B()"), "record($which: 1, A: unknown opt(int64), B: opt(record()))");
+  EXPECT_EQ(DumpState("<| A(int) | B |>.B"), "record($which: 1, A: unknown opt(int64), B: opt(record()))");
+  EXPECT_EQ(DumpState("<| Z(str) | A(int) |>.Z('x')"), "record($which: 1, A: unknown opt(int64), Z: opt(\"x\"))");
+  EXPECT_EQ(DumpType("<| A(int) | B |>.A(7)"), "record($which: int64, A: opt(int64), B: opt(record()))");
+  EXPECT_EQ(DumpVariantVar("<| A(int) | B |>.A(7)"), "Orly::Rt::Variants::TVariantV2i1AO01B");
+  EXPECT_EQ(DumpVariantVar("<| A(int) | B |>.B"), "Orly::Rt::Variants::TVariantV2i1AO01B");
+}

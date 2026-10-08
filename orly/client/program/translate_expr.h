@@ -26,6 +26,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,31 @@ namespace Orly {
       Sabot::State::TAny *NewStateSabot(const TExpr *expr, void *alloc);
 
       Atom::TCore *TranslateExpr(Atom::TCore::TExtensibleArena *arena, void *core_alloc, const TExpr *expr);
+
+      /* The parts of a variant literal.  A variant travels as the fixed-shape record
+           <{ .$which: int, .Arm0: payload0?, .Arm1: payload1?, ... }>
+         with the arms in asciibetical order, `$which` indexing the active arm, and
+         only the active arm's optional known.  A unit arm's payload is <{}>. */
+      struct TVariantInfo {
+
+        struct TArm {
+          std::string Name;
+          /* Null for a unit arm. */
+          const TType *Type;
+        };  // TVariantInfo::TArm
+
+        TVariantInfo(const TVariantArmList *arm_list, const TFieldName *active, const TExpr *payload);
+
+        std::vector<TArm> Arms;
+
+        size_t Which;
+
+        /* Null for a unit arm. */
+        const TExpr *Payload;
+
+      };  // TVariantInfo
+
+      using TVariantInfoPtr = std::shared_ptr<const TVariantInfo>;
 
       namespace Type {
 
@@ -307,6 +333,103 @@ namespace Orly {
           std::vector<const TObjMember *> Members;
 
         };  // Type::TRecordExpr
+
+        class TEmptyRecord final
+            : public Sabot::Type::TRecord {
+          public:
+
+          using TPinBase = Sabot::Type::TRecord::TPin;
+
+          class TPin final
+              : public TPinBase {
+            public:
+
+            TPin(const TEmptyRecord *record);
+
+            virtual Sabot::Type::TAny *NewElem(size_t elem_idx, std::string &name, void *type_alloc) const override;
+
+            virtual Sabot::Type::TAny *NewElem(
+                size_t elem_idx, void *&out_field_name_sabot_state, void *field_name_state_alloc, void *type_alloc) const override;
+
+            virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *type_alloc) const override;
+
+          };  // TEmptyRecord::TPin
+
+          virtual size_t GetElemCount() const override;
+
+          virtual TPinBase *Pin(void *alloc) const override;
+
+        };  // Type::TEmptyRecord
+
+        /* The type of one arm's field: payload?  */
+        class TVariantArmType final
+            : public Sabot::Type::TOpt {
+          public:
+
+          using TPinBase = Sabot::Type::TOpt::TPin;
+
+          class TPin final
+              : public TPinBase {
+            public:
+
+            TPin(const TVariantArmType *arm);
+
+            virtual Sabot::Type::TAny *NewElem(void *type_alloc) const override;
+
+            private:
+
+            const TVariantArmType *Arm;
+
+          };  // TVariantArmType::TPin
+
+          TVariantArmType(const TVariantInfoPtr &info, size_t arm_idx);
+
+          virtual TPinBase *Pin(void *alloc) const override;
+
+          private:
+
+          TVariantInfoPtr Info;
+
+          size_t ArmIdx;
+
+        };  // Type::TVariantArmType
+
+        class TVariantRecord final
+            : public Sabot::Type::TRecord {
+          public:
+
+          using TPinBase = Sabot::Type::TRecord::TPin;
+
+          class TPin final
+              : public TPinBase {
+            public:
+
+            TPin(const TVariantRecord *record);
+
+            virtual Sabot::Type::TAny *NewElem(size_t elem_idx, std::string &name, void *type_alloc) const override;
+
+            virtual Sabot::Type::TAny *NewElem(
+                size_t elem_idx, void *&out_field_name_sabot_state, void *field_name_state_alloc, void *type_alloc) const override;
+
+            virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *type_alloc) const override;
+
+            private:
+
+            const TVariantRecord *Record;
+
+          };  // TVariantRecord::TPin
+
+          TVariantRecord(const TVariantInfoPtr &info);
+
+          virtual size_t GetElemCount() const override;
+
+          virtual TPinBase *Pin(void *alloc) const override;
+
+          private:
+
+          TVariantInfoPtr Info;
+
+        };  // Type::TVariantRecord
 
         class TTupleType final
             : public Sabot::Type::TTuple {
@@ -731,6 +854,119 @@ namespace Orly {
           std::vector<const TObjMember *> Members;
 
         };  // State::TObj
+
+        class TEmptyRecord final
+            : public Sabot::State::TRecord {
+          public:
+
+          using TPinBase = Sabot::State::TRecord::TPin;
+
+          class TPin final
+              : public TPinBase {
+            public:
+
+            TPin(const TEmptyRecord *record);
+
+            private:
+
+            virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override;
+
+          };  // TEmptyRecord::TPin
+
+          virtual size_t GetElemCount() const override;
+
+          virtual Sabot::Type::TRecord *GetRecordType(void *type_alloc) const override;
+
+          virtual TPinBase *Pin(void *alloc) const override;
+
+        };  // State::TEmptyRecord
+
+        class TVariantWhich final
+            : public Sabot::State::TInt64 {
+          public:
+
+          TVariantWhich(int64_t val);
+
+          virtual const int64_t &Get() const override;
+
+          virtual Sabot::Type::TInt64 *GetInt64Type(void *type_alloc) const override;
+
+          private:
+
+          int64_t Val;
+
+        };  // State::TVariantWhich
+
+        /* One arm's field: known (holding the payload) for the active arm, else unknown. */
+        class TVariantArm final
+            : public Sabot::State::TOpt {
+          public:
+
+          using TPinBase = Sabot::State::TOpt::TPin;
+
+          class TPin final
+              : public TPinBase {
+            public:
+
+            TPin(const TVariantArm *arm);
+
+            private:
+
+            virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override;
+
+            const TVariantArm *Arm;
+
+          };  // TVariantArm::TPin
+
+          TVariantArm(const TVariantInfoPtr &info, size_t arm_idx);
+
+          virtual size_t GetElemCount() const override;
+
+          virtual Sabot::Type::TOpt *GetOptType(void *type_alloc) const override;
+
+          virtual TPinBase *Pin(void *alloc) const override;
+
+          private:
+
+          TVariantInfoPtr Info;
+
+          size_t ArmIdx;
+
+        };  // State::TVariantArm
+
+        class TVariantObj final
+            : public Sabot::State::TRecord {
+          public:
+
+          using TPinBase = Sabot::State::TRecord::TPin;
+
+          class TPin final
+              : public TPinBase {
+            public:
+
+            TPin(const TVariantObj *obj);
+
+            private:
+
+            virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *state_alloc) const override;
+
+            const TVariantObj *Obj;
+
+          };  // TVariantObj::TPin
+
+          TVariantObj(const TVariantInfoPtr &info);
+
+          virtual size_t GetElemCount() const override;
+
+          virtual Sabot::Type::TRecord *GetRecordType(void *type_alloc) const override;
+
+          virtual TPinBase *Pin(void *alloc) const override;
+
+          private:
+
+          TVariantInfoPtr Info;
+
+        };  // State::TVariantObj
 
         class TAddr final
             : public Sabot::State::TTuple {

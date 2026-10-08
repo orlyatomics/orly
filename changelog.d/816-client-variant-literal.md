@@ -1,0 +1,1 @@
+- **Added**: the client statement grammar accepts variant literals, `<| A(int) | B |>.A(7)`, `.B()` and `.B`, so `try` arguments can be variants (#816)
