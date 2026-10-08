@@ -1,0 +1,1 @@
+- **Fixed**: `TAdmissionWait` woke a granted or timed-out waiter before updating its `Waiting` count, so a caller that returned from `Admit` could still see the waiter counted (a flaky `admission_wait.test` `WaitsForRoom` failure in CI). The count is now updated before the wake.
