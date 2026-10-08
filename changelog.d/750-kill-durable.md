@@ -1,0 +1,1 @@
+- **Added**: the kill campaign has a writer that writes with `.wait_durable_ms`, and it fails if any write that was acknowledged as durable is missing after a SIGKILL and restart. That is the contract of a durable acknowledgment (#750).
