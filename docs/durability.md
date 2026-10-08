@@ -88,25 +88,56 @@ turn in that backlog.
 
 ## A graceful stop
 
-SIGTERM or SIGINT (`TServer::Shutdown`) closes every client connection, waits for Tetris to
-promote every POV's backlog to the global POV, lets the release machinery settle for three periods
-of the slowest of `--replication_interval`, `--mem_interval` and `--durable_write_interval` (at
-least 100 ms each, so 300 ms by default), then writes every memory layer of the global POV to disk
-(#440, #744). So a graceful stop loses no acknowledged write, with two exceptions: a paused POV's
-backlog isn't waited for, and the wait for promotion is bounded at 30 s, after which `orlyi` logs
-`Tetris still promoting into [N] pov(s)` and the writes still unpromoted are lost, as the README's
-ephemeral-POV caveat says.
+SIGTERM or SIGINT (`TServer::Shutdown`) works in this order:
 
-**Time.** A stop takes as long as the backlog takes to promote (up to 30 s), plus the disk merge
-in flight when it starts, plus the flush (each of the repo flush and the durable flush is also
-bounded at 30 s). `orlyi` logs each step's time: `Tetris idle after`, `merge runners stopped
-after` and `flushed after`. A stop with no backlog takes about the 300 ms window; give
-`docker stop` (`--time`, 10 s by default) or your service manager enough grace for the backlog your
-writers can build up.
+1. **No new writes.** From the moment the stop begins `orlyi` commits no new write: a write
+   that hasn't committed yet is refused with `insufficient_memory` (over the binary protocol, an
+   error starting `insufficient memory`), which says the server is stopping. Nothing of it was
+   written, so a client retries it once the server is back. Then every client connection is
+   closed. So every write the server acknowledged is one the stop knows about (#769).
+2. **Promote.** It waits for Tetris to promote every POV's backlog to the global POV, for as
+   long as Tetris keeps promoting, up to `--stop_promote_budget_s` (default 300 s). Every 5 s it
+   logs how much is left (`Tetris still promoting into [N] pov(s) after Ns: [U] updates ([E]
+   entries) left to promote`). The wait ends early if Tetris promotes nothing for 30 s (or for
+   the whole budget, if that is shorter), so a promotion that can't make progress doesn't hold
+   the stop.
+3. **Settle and flush.** It lets the release machinery settle for three periods of the slowest
+   of `--replication_interval`, `--mem_interval` and `--durable_write_interval` (at least 100 ms
+   each, so 300 ms by default), then writes every memory layer of the global POV to disk (#440,
+   #744).
+
+So a graceful stop loses no acknowledged write, unless:
+
+- the promotion wait ran out (the budget, or 30 s without a promotion). `orlyi` then logs, at
+  `LOG_ERR`, `stopped waiting for Tetris ... [U] acknowledged updates ([E] entries) were never
+  promoted and WILL BE LOST`. One update is one transaction (a batch is one), so `U` is exactly
+  the number of acknowledged transactions the restart won't give back (it can include a write
+  that committed as the connections closed and never got its reply);
+- a POV is paused (or its Tetris join was deferred under memory pressure, #250): nothing
+  promotes its backlog, so it isn't waited for, and `orlyi` logs the same `WILL BE LOST` count
+  for it, as the README's ephemeral-POV caveat says.
+
+**Time.** A stop takes as long as the backlog takes to promote (up to the budget), plus the
+disk merge in flight when it starts, plus the flush (each of the repo flush and the durable flush
+is also bounded at 30 s). `orlyi` logs each step's time: `Tetris idle after` (with how many
+updates it promoted), `merge runners stopped after` and `flushed after`. A stop with no backlog
+takes about the 300 ms window.
+
+How long the promotion can take depends on how much the POVs may hold and how fast Tetris
+promotes. Each POV's backlog is capped at 1/32 of the Update pool in updates and of the Update
+Entry pool in entries (#721), so eight busy POVs on the default pools can hold about 25,000
+updates; Tetris promotes them at a few hundred to a few thousand a second depending on the
+machine and its load, so a stop under sustained write load can take a minute or more. The
+reporting port's `Writer Backlog` line shows what a stop would have to promote right now
+(`unpromoted U updates / E entries`). Give `docker stop` (`--time`, 10 s by default) or your
+service manager at least `--stop_promote_budget_s` of grace, or lower the budget and accept the
+logged loss: a SIGKILL during the wait is a crash, and loses the whole backlog.
 
 `tests/graceful_stop_test.sh` stops `orlyi` with SIGTERM under the campaign's write load and
 requires every acknowledged write back after each restart; CI runs it on every push and pull
-request. `SIGNAL=TERM` runs the campaign the same way. Before #744 a graceful stop under load
+request. Its last stop is a long-load stop: the writers write until the backlogs hold 75% of
+what the caps allow (or 30 s pass), whatever the clients' speed, so the stop has the most it can
+ever have to promote (#769). `SIGNAL=TERM` runs the campaign the same way. Before #744 a graceful stop under load
 usually hung instead, and `docker stop`'s SIGKILL then made it a crash.
 
 The graceful-stop, kill-campaign and restart tests each use a unique disk instance per run,

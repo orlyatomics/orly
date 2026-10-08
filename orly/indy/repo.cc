@@ -358,6 +358,9 @@ TRepo::TRepo(L0::TManager *manager,
     delete CurMemoryLayer;
     throw;
   }
+  /* #769: a backlog loaded from disk counts toward the unpromoted total. Only once nothing
+     above can throw: a constructor that throws runs no destructor to take it back out. */
+  RecountBacklog();
 }
 
 TRepo::~TRepo() {
@@ -379,6 +382,10 @@ TRepo::~TRepo() {
      from, and calling into the manager here would touch freed memory.
      Outside a sanctioned discard, that state is still a lifecycle bug. */
   assert(!InTetris || IsDiscardSanctioned());
+  /* #769: whatever backlog dies with us is no longer anyone's to promote. */
+  UnpromotedUpdates -= CountedBacklogUpdates;
+  UnpromotedEntries -= CountedBacklogEntries;
+  DroppedUpdates += CountedBacklogUpdates;
   /* #691: not marked for delete, so the file stays in the file map. */
   delete UnpublishedMergeDisk;
   delete CurMemoryLayer;
@@ -386,6 +393,24 @@ TRepo::~TRepo() {
 
 std::atomic<size_t> TRepo::PeakBacklogEntries {0UL};
 std::atomic<size_t> TRepo::PeakBacklogUpdates {0UL};
+std::atomic<size_t> TRepo::UnpromotedUpdates {0UL};
+std::atomic<size_t> TRepo::UnpromotedEntries {0UL};
+std::atomic<size_t> TRepo::PromotedUpdates {0UL};
+std::atomic<size_t> TRepo::DroppedUpdates {0UL};
+
+void TRepo::RecountBacklog() noexcept {
+  if (!ParentRepo) {
+    return;
+  }
+  const size_t updates = (LowestSeqNum && HighestSeqNum && *HighestSeqNum >= *LowestSeqNum)
+      ? static_cast<size_t>(*HighestSeqNum - *LowestSeqNum) + 1UL : 0UL;
+  const size_t entries = BacklogEntriesKnown ? BacklogEntries : 0UL;
+  /* Unsigned and modular, so adding the difference either way keeps the sum exact. */
+  UnpromotedUpdates += updates - CountedBacklogUpdates;
+  UnpromotedEntries += entries - CountedBacklogEntries;
+  CountedBacklogUpdates = updates;
+  CountedBacklogEntries = entries;
+}
 
 TRepo::TBacklogReservation::~TBacklogReservation() {
   if (!Reserved && !OversizedWaiting) {
@@ -499,6 +524,7 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
         return false;
       });
     }
+    RecountBacklog();
     if (was_empty) {
       EnqueueMergeMem();
     }
@@ -555,6 +581,11 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
       BacklogEntryCounts.clear();
       BacklogEntries = 0UL;
       BacklogEntriesKnown = true;
+    }
+    /* #769: before the Part below, so whoever sees no player left also sees the count drop. */
+    RecountBacklog();
+    ++PromotedUpdates;
+    if (!LowestSeqNum) {
       if (ParentRepo && InTetris) {
         Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
         InTetris = false;

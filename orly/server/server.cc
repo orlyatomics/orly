@@ -416,6 +416,15 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Default 500."
   );
   Param(
+      &TCmd::StopPromoteBudgetS, "stop_promote_budget_s", Optional, "stop_promote_budget_s\0",
+      "A graceful stop's wait for Tetris (issue #769): on SIGTERM or SIGINT, orlyi refuses new "
+      "writes and waits up to this many seconds for Tetris to promote every POV's acknowledged "
+      "writes to the global POV, which the stop then writes to disk. It stops waiting sooner "
+      "once nothing is left to promote, or once Tetris has promoted nothing for 30 s; whatever "
+      "is still unpromoted then is lost, and the log says how much. Give the service manager's "
+      "stop timeout (docker stop --time) at least this much. Default 300."
+  );
+  Param(
       &TCmd::ReadBudgetMB, "read_budget_mb", Optional, "read_budget_mb\0",
       "The per-read memory budget (issue #694): a method call that builds more than this many "
       "MiB of results is refused with a read_too_large error. Default: a sixteenth of the "
@@ -572,6 +581,7 @@ TServer::TCmd::TCmd()
       DiskReservePct(10UL),
       MemoryReservePct(25UL),
       AdmissionWaitMs(500UL),
+      StopPromoteBudgetS(300UL),
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
@@ -1809,18 +1819,93 @@ void TServer::Shutdown() {
      acknowledged write is only committed to its pov; under write load
      Tetris runs well behind, and whatever it promoted after the flush below
      stayed in the global pov's memory layer and was dropped at exit.
-     Bounded, like the flush: a pov whose promotion can't make progress must
-     not hold the stop hostage.  Paused povs are not waited for. */
+
+     How long (#769): for as long as Tetris keeps promoting, up to
+     --stop_promote_budget_s.  The wait used to be a fixed 30 s, and the povs'
+     backlogs are capped for memory (1/32 of the Update pool each, #721), not
+     for drain time: on a loaded box Tetris promotes a few hundred updates a
+     second, so a full set of backlogs took longer than 30 s and the stop
+     dropped acknowledged writes.  Nothing new arrives while we wait: the
+     connections are drained above, and RefuseWriteIfStopping() refuses any
+     write that would still commit.  The wait gives up early once Tetris has
+     promoted nothing for 30 s (a promotion that can't make progress must not
+     hold the stop hostage), and logs progress every 5 s, so a long stop is
+     visibly a working one.  Paused povs are not waited for: nothing promotes
+     them.  Whatever is still unpromoted when the wait ends is lost, and the
+     log says exactly how much. */
   if (TetrisManager) {
-    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    using namespace std::chrono;
+    const auto budget = seconds(Cmd.StopPromoteBudgetS);
+    const auto stall_limit = std::min<steady_clock::duration>(seconds(30), budget);
+    constexpr auto report_every = seconds(5);
+    const auto wait_start = steady_clock::now();
+    auto last_progress = wait_start, last_report = wait_start;
+    size_t promoted = TRepo::GetPromotedUpdates();
+    const size_t promoted_at_start = promoted;
+    const size_t unpromoted_at_start = TRepo::GetUnpromotedUpdates();
     size_t players = 0UL;
-    while ((players = TetrisManager->GetUnpausedPlayerCount()) > 0UL && std::chrono::steady_clock::now() < give_up) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    const char *gave_up = nullptr;
+    while ((players = TetrisManager->GetUnpausedPlayerCount()) > 0UL) {
+      const auto now = steady_clock::now();
+      if (const size_t now_promoted = TRepo::GetPromotedUpdates(); now_promoted != promoted) {
+        promoted = now_promoted;
+        last_progress = now;
+      }
+      if (now - wait_start >= budget) {
+        gave_up = "its budget (--stop_promote_budget_s) ran out";
+        break;
+      }
+      if (now - last_progress >= stall_limit) {
+        gave_up = "it promoted nothing";
+        break;
+      }
+      if (now - last_report >= report_every) {
+        last_report = now;
+        /* LOG_INFO, like the stop's other progress lines: --log_info alone masks LOG_WARNING. */
+        syslog(LOG_INFO,
+               "TServer::Shutdown(): Tetris still promoting into [%zu] pov(s) after %lds: [%zu] updates "
+               "([%zu] entries) left to promote, [%zu] promoted so far; waiting up to %zus (#769)",
+               players, static_cast<long>(duration_cast<seconds>(now - wait_start).count()),
+               TRepo::GetUnpromotedUpdates(), TRepo::GetUnpromotedEntries(), promoted - promoted_at_start,
+               static_cast<size_t>(Cmd.StopPromoteBudgetS));
+      }
+      std::this_thread::sleep_for(milliseconds(10));
     }
-    if (players) {
-      syslog(LOG_ERR, "TServer::Shutdown(): Tetris still promoting into [%zu] pov(s) after 30s; their unpromoted updates will be lost (#744)", players);
+    const long waited_ms = static_cast<long>(duration_cast<milliseconds>(steady_clock::now() - wait_start).count());
+    /* Giving up: stop Tetris promoting before counting, so the count below is exactly what is
+       lost, and the global pov's flush converges instead of chasing promotions until its own
+       30 s bound gives up too (each of those promotions was lost anyway: it reached the global
+       pov's memory after the flush). */
+    if (gave_up) {
+      if (!TetrisManager->HaltPromotion(seconds(10))) {
+        syslog(LOG_ERR, "TServer::Shutdown(): a Tetris round was still running 10 s after promotion was halted; "
+               "the loss counted below may be off by its promotions (#769)");
+      }
+      promoted = TRepo::GetPromotedUpdates();
+    }
+    /* What the stop will lose: every update still in a child repo's backlog, the paused povs'
+       included.  One update is one committed transaction (a batch is one), so this counts
+       every acknowledged write the restart won't give back, plus any write that committed
+       as the connections closed and never got its reply. */
+    const size_t lost_updates = TRepo::GetUnpromotedUpdates(), lost_entries = TRepo::GetUnpromotedEntries();
+    if (gave_up) {
+      syslog(LOG_ERR,
+             "TServer::Shutdown(): stopped waiting for Tetris after %ldms, still promoting into [%zu] pov(s), because %s "
+             "(%zu s with no promotion ends the wait), and halted promotion; [%zu] acknowledged updates ([%zu] entries) "
+             "were never promoted and WILL BE LOST; [%zu] were promoted during the wait, out of [%zu] (#769)",
+             waited_ms, players, gave_up, static_cast<size_t>(duration_cast<seconds>(stall_limit).count()),
+             lost_updates, lost_entries, promoted - promoted_at_start, unpromoted_at_start);
     } else {
-      syslog(LOG_INFO, "TServer::Shutdown(): Tetris idle after %ldms (#744)", ms_since_start());
+      syslog(LOG_INFO, "TServer::Shutdown(): Tetris idle after %ldms (waited %ldms, promoted [%zu] of [%zu]) (#744, #769)",
+             ms_since_start(), waited_ms, promoted - promoted_at_start, unpromoted_at_start);
+      if (lost_updates) {
+        syslog(LOG_ERR,
+               "TServer::Shutdown(): [%zu] acknowledged updates ([%zu] entries) wait in pov(s) Tetris isn't promoting "
+               "(paused, failed, or never joined under memory pressure, #250); they WILL BE LOST (#769)", lost_updates, lost_entries);
+      }
+    }
+    if (const size_t refused = StopRefusedWriteCount.load()) {
+      syslog(LOG_INFO, "TServer::Shutdown(): refused [%zu] write(s) that arrived after the stop began (#769)", refused);
     }
   }
   /* Let the in-flight update pipeline settle while ALL of the cadence
@@ -1896,8 +1981,18 @@ void TServer::Shutdown() {
      its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
      takes fiber locks. */
   Indy::Fiber::TJumpRunnable teardown_jumper([this] {
+    /* Counted across the delete: a child repo that only its Tetris player still held dies
+       with it, and takes its backlog out of the unpromoted count. */
+    const size_t dropped_before = TRepo::GetDroppedUpdates();
     delete TetrisManager;
     TetrisManager = nullptr;
+    /* Tetris is gone, so nothing more is promoted: whatever the povs still hold is lost now,
+       exactly this much (#769).  It is less than the count the wait above logged if Tetris
+       promoted more during the flush. */
+    if (const size_t lost = TRepo::GetUnpromotedUpdates() + (TRepo::GetDroppedUpdates() - dropped_before)) {
+      syslog(LOG_ERR, "TServer::Shutdown(): [%zu] acknowledged updates were never promoted to the global pov and "
+             "are lost (#769)", lost);
+    }
     /* Forget the Tetris runners: they are gone, but RepoManager.reset() below can still remove a
        disk layer's file, and TSafeRepo::RemoveFile visits every runner ForEachScheduler names. A
        fiber that switched to a dead runner never ran again, and shutdown hung forever (#648). */
@@ -2134,7 +2229,21 @@ void TServer::RefreshWriteAdmission(int64_t now_ns) {
   AdmissionCheckedAtNs = now_ns;
 }
 
+void TServer::RefuseWriteIfStopping() {
+  if (!ShutdownCalled.load()) {
+    return;
+  }
+  ++StopRefusedWriteCount;
+  /* Starts "insufficient memory" like #765's refusal of the writes Shutdown() finds waiting
+     for room: retryable, and nothing was written. */
+  throw TInsufficientMemory(
+      "insufficient memory: write refused; the server is stopping and commits no new writes; "
+      "nothing was written; retry once it is back");
+}
+
 void TServer::CheckWriteAdmission() {
+  /* A stopping server commits nothing new, so a stop knows every write it must keep (#769). */
+  RefuseWriteIfStopping();
   if (!Cmd.DiskReserveMb && !Cmd.DiskReservePct) {
     return;
   }
@@ -2167,6 +2276,9 @@ void TServer::CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const {
 }
 
 void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t num_entries, bool may_wait) {
+  /* Again here, the last check before the commit: a write can wait a while between
+     CheckWriteAdmission and this, for room in its POV's backlog (#769). */
+  RefuseWriteIfStopping();
   if (!Cmd.MemoryReservePct) {
     return;
   }
@@ -3792,7 +3904,11 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
      stopped draining. Before the Memory Admission line, which pollers read up to. */
   ss << "Writer Backlog = peak " << TRepo::GetPeakBacklogEntries() << " entries / cap " << GetWriterBacklogEntryCap()
      << "; peak " << TRepo::GetPeakBacklogUpdates() << " updates / cap " << GetWriterBacklogCap(Server->Cmd.TetrisBackpressureThreshold)
-     << "; stalled refusals " << GetStalledBacklogRefusals() << endl;
+     << "; stalled refusals " << GetStalledBacklogRefusals()
+     /* #769: every POV's backlog now, summed (what a stop would have to promote), and the
+        updates promoted since startup. */
+     << "; unpromoted " << TRepo::GetUnpromotedUpdates() << " updates / " << TRepo::GetUnpromotedEntries()
+     << " entries; promoted " << TRepo::GetPromotedUpdates() << endl;
   /* Memory admission (#607). */ {
     const auto &updates = TUpdate::GetUpdatePool(), &entries = TUpdate::GetEntryPool();
     ss << "Memory Admission = " << (!Server->Cmd.MemoryReservePct ? "off" : Server->RefusingWritesForMemory ? "refusing" : "accepting")

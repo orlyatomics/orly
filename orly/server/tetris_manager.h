@@ -27,6 +27,8 @@
 #include <unordered_set>
 
 #include <base/class_traits.h>
+#include <chrono>
+
 #include <base/event_semaphore.h>
 #include <base/scheduler.h>
 #include <base/uuid.h>
@@ -71,6 +73,14 @@ namespace Orly {
          for zero before its final flush, so acknowledged writes reach the global pov, and so
          disk (#744). */
       size_t GetUnpausedPlayerCount() const;
+
+      /* Stop promoting (#769): from now on no player starts a round, though the players stay
+         (StopAllPlayers still stops them).  Waits up to `timeout` for the rounds in flight to
+         finish, and returns false if one is still running then.  A graceful shutdown calls it
+         when it gives up waiting for the backlogs, so that what it counts as lost is exactly
+         what is lost, and the global pov's flush isn't chasing promotions.  Not on a fiber: it
+         blocks its thread. */
+      bool HaltPromotion(std::chrono::milliseconds timeout);
 
       protected:
 
@@ -275,6 +285,12 @@ namespace Orly {
          self-destructs; StopAllPlayers() spins this count down to zero so no player fiber can still
          be touching povs (or us) when our caller's destructor starts tearing them down (#280). */
       std::atomic<size_t> LivePlayerCount;
+
+      /* #769: see HaltPromotion.  A player counts itself in PlayingCount before it checks
+         Halted, and HaltPromotion sets Halted before it reads PlayingCount (both seq_cst), so
+         once HaltPromotion has seen the count at zero no round can start. */
+      std::atomic<bool> Halted {false};
+      std::atomic<size_t> PlayingCount {0UL};
 
       /* Covers 'IsMaster'.  Only ever taken under Mutex. */
       bool IsMaster;

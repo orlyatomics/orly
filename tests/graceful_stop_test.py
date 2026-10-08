@@ -20,8 +20,20 @@ Per stop it checks:
   counter    each writer's `+=` counter equals R, and the shared `+=` total equals the sum of R
 
 The writers use the same mix as the kill campaign: safe and fast POVs, shared and private,
-nested, single writes and batches. It ends with one summary line and exits nonzero on any
-violation. Needs root (losetup and the /proc/partitions scan, as tests/restart_test.sh); run it
+nested, single writes and batches.
+
+The last --long-stops stops (default 1) are long-load stops (#769): instead of a random 1.5-3 s,
+the load runs until the POVs' unpromoted backlogs, read from the reporting port, hold
+--fill (default 75%) of what the writer backlog caps let them hold, or --long-max-run seconds
+pass. That is the most a stop can ever have to promote, whatever the clients' speed; a stop
+used to give Tetris a fixed 30 s for it and drop the rest.
+
+Every stop may take --deadline seconds (default 360: orlyi's 300 s --stop_promote_budget_s plus
+the flush). orlyi now waits for Tetris for as long as it keeps promoting, and a full set of
+backlogs took ~90 s to drain in an arm64 Docker VM, so a stop that hangs is caught by orlyi's own
+30 s no-progress limit, which fails the acked check, rather than by a short deadline.
+
+It ends with one summary line and exits nonzero on any violation. Needs root (losetup and the /proc/partitions scan, as tests/restart_test.sh); run it
 through tests/graceful_stop_test.sh. It only ever signals the orlyi it started.
 """
 
@@ -81,6 +93,38 @@ LOG_BAD = re.compile(r'FATAL ERROR|TERMINATE|\[Durable Layer\] bad_alloc')
 
 def log(msg):
     print(msg, flush=True)
+
+
+def sample_backlog(port):
+    """The Writer Backlog line's caps and the unpromoted totals now (#769), from the reporting
+    port, or None if it doesn't answer within 5 s. The reporter keeps the connection open, so
+    read up to the Memory Admission line, which comes after the Writer Backlog one."""
+    body = ''
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+            sock.sendall(b'GET / HTTP/1.0\r\n\r\n')
+            while not re.search(r'^Memory Admission = .*\n', body, re.M):
+                b = sock.recv(65536)
+                if not b:
+                    break
+                body += b.decode(errors='replace')
+    except OSError:
+        return None
+    m = re.search(r'^Writer Backlog = peak \d+ entries / cap (\d+); peak \d+ updates / cap (\d+);.*'
+                  r'; unpromoted (\d+) updates / (\d+) entries; promoted (\d+)', body, re.M)
+    if not m:
+        return None
+    return {'entry_cap': int(m.group(1)), 'update_cap': int(m.group(2)), 'unpromoted': int(m.group(3)),
+            'unpromoted_entries': int(m.group(4)), 'promoted': int(m.group(5))}
+
+
+def backlog_capacity(entry_cap, update_cap):
+    """The most updates the writers' POVs can hold unpromoted under the writer backlog caps: per
+    POV, the update cap, or the entry cap over the POV's largest batch if that is lower."""
+    batch_by_group = {}
+    for _, _, _, batch, group, _ in WRITERS:
+        batch_by_group[group] = max(batch, batch_by_group.get(group, 1))
+    return sum(min(update_cap, entry_cap // b) for b in batch_by_group.values())
 
 
 class Writer:
@@ -234,8 +278,8 @@ class Server:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--stops', type=int, default=int(os.environ.get('STOPS') or 4))
-    ap.add_argument('--deadline', type=float, default=float(os.environ.get('DEADLINE') or 60),
-                    help='seconds a stop may take (default 60)')
+    ap.add_argument('--deadline', type=float, default=float(os.environ.get('DEADLINE') or 360),
+                    help='seconds a stop may take (default 360)')
     ap.add_argument('--seed', type=int, default=int(os.environ.get('SEED') or 0) or int(time.time()))
     ap.add_argument('--min-run', type=float, default=1.5, help='shortest load before a stop (s)')
     ap.add_argument('--max-run', type=float, default=3.0, help='longest load before a stop (s)')
@@ -244,6 +288,12 @@ def main():
                     help='command to run orlyi under, e.g. "setarch x86_64 -R" for a TSan build')
     ap.add_argument('--extra-args', default=os.environ.get('EXTRA_ARGS', ''),
                     help='more orlyi flags; one named here replaces the default of the same name')
+    ap.add_argument('--long-stops', type=int, default=int(os.environ.get('LONG_STOPS') or 1),
+                    help='how many of the stops, the last ones, are long-load stops (default 1)')
+    ap.add_argument('--fill', type=float, default=0.75,
+                    help='a long-load stop starts once the backlogs hold this share of what the caps allow')
+    ap.add_argument('--long-max-run', type=float, default=float(os.environ.get('LONG_MAX_RUN') or 30),
+                    help='longest load before a long-load stop, full backlogs or not (s, default 30)')
     ap.add_argument('--port', type=int, default=19940)
     ap.add_argument('--volume-gb', type=int, default=3)
     ap.add_argument('--update-pool-size', type=int, default=100000)
@@ -259,9 +309,11 @@ def main():
     url = f'ws://127.0.0.1:{args.port + 2}/'
     violations = []
     stop_times = []
+    long_times = []
     acked_total = 0
     try:
-        log(f'graceful stop test: stops={args.stops} deadline={args.deadline:g}s seed={args.seed} '
+        log(f'graceful stop test: stops={args.stops} deadline={args.deadline:g}s long_stops={args.long_stops} '
+            f'seed={args.seed} '
             f'instance={srv.instance} work={work}')
         os.makedirs(f'{work}/packages')
         open(f'{work}/packages/__orly__', 'w').close()
@@ -297,11 +349,34 @@ def main():
                 pov = povs.get(w.group) if w.shared else None
                 w.thread = threading.Thread(target=w.run, args=(url, pov, stopping), daemon=True)
                 w.thread.start()
-            run_for = rng.uniform(args.min_run, args.max_run)
-            time.sleep(run_for)
+            long_stop = k > args.stops - args.long_stops
+            fill = None
+            if not long_stop:
+                run_for = rng.uniform(args.min_run, args.max_run)
+                time.sleep(run_for)
+            else:
+                # Load until the backlogs are nearly as full as the caps allow (#769).
+                began = time.monotonic()
+                while True:
+                    time.sleep(0.25)
+                    run_for = time.monotonic() - began
+                    sample = sample_backlog(args.port + 3)
+                    if sample:
+                        capacity = backlog_capacity(sample['entry_cap'], sample['update_cap'])
+                        fill = (sample['unpromoted'], capacity)
+                        if sample['unpromoted'] >= args.fill * capacity:
+                            break
+                    if run_for >= args.long_max_run:
+                        break
+                if fill:
+                    log(f'stop {k}: long load: {fill[0]} updates unpromoted at the stop, '
+                        f'{100.0 * fill[0] / max(1, fill[1]):.0f}% of the {fill[1]} the backlog caps allow')
+                else:
+                    log(f'stop {k}: long load: the reporting port gave no Writer Backlog line')
             # Stop while the writers are still writing, as `docker stop` would.
             stopping.set()
-            took, rc = srv.stop(args.deadline)
+            deadline = args.deadline
+            took, rc = srv.stop(deadline)
             for w in writers:
                 w.thread.join(60)
             try:
@@ -311,7 +386,7 @@ def main():
             kv = []
             calls = sum(w.calls for w in writers)
             if took is None:
-                kv.append(f'orlyi was still running {args.deadline:g}s after SIGTERM (SIGKILLed)')
+                kv.append(f'orlyi was still running {deadline:g}s after SIGTERM (SIGKILLed)')
             else:
                 stop_times.append(took)
             text = srv.log_text()
@@ -363,8 +438,17 @@ def main():
                 if total != sum_r:
                     kv.append(f'shared `+=` total is {total} with {sum_r} keys in all')
             acked_total += calls
-            took_s = f'{took:.1f}s' if took is not None else f'>{args.deadline:g}s (hung)'
-            log(f'stop {k}: after {run_for:.1f}s of load, {calls} txns acknowledged; stop took {took_s}; '
+            took_s = f'{took:.1f}s' if took is not None else f'>{deadline:g}s (hung)'
+            if long_stop and took is not None:
+                long_times.append(took)
+            # The stop's own account of its Tetris wait (#769), and of any loss it foresaw.
+            promoted_line = re.search(r'Tetris idle after \d+ms \(waited \d+ms, promoted \[\d+\] of \[\d+\]\)', text)
+            lost_line = re.search(r'.*(WILL BE LOST|are lost \(#769\)|giving up with unflushed repos).*', text)
+            if lost_line:
+                kv.append(f'orlyi says it lost acknowledged writes: {lost_line.group(0).strip()[:300]}')
+            if promoted_line:
+                log(f'stop {k}: {promoted_line.group(0)}')
+            log(f'stop {k}: {"long load" if long_stop else "after"} {run_for:.1f}s of load, {calls} txns acknowledged; stop took {took_s}; '
                 f'keys {sum_r}; acknowledged writes lost {lost}' + ('' if not kv else f'; VIOLATIONS: {len(kv)}'))
             for v in kv:
                 log(f'  VIOLATION: {v}')
@@ -380,7 +464,8 @@ def main():
             log(f'work directory kept for the evidence: {work}')
     done = len(stop_times)
     log(f'GRACEFUL STOP: stops={args.stops} finished={done} '
-        f'max_stop_s={max(stop_times, default=0):.1f} acked_txns={acked_total} '
+        f'max_stop_s={max(stop_times, default=0):.1f} long_stops={len(long_times)} '
+        f'max_long_stop_s={max(long_times, default=0):.1f} acked_txns={acked_total} '
         f'violations={len(violations)} seed={args.seed}')
     sys.exit(1 if violations or done < args.stops else 0)
 

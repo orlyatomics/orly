@@ -235,7 +235,8 @@ class Server:
 
     def kill(self, sig=signal.SIGKILL):
         """Signal our orlyi and reap it. Returns (its exit status if it had already exited, whether
-        a SIGTERM failed to stop it within 120 s, so that it took a SIGKILL)."""
+        a SIGTERM failed to stop it within 360 s, so that it took a SIGKILL). 360 s is orlyi's
+        default --stop_promote_budget_s plus the flush (#769)."""
         if self.proc is None:
             return None, False
         early = self.proc.poll()
@@ -243,7 +244,7 @@ class Server:
         if early is None:
             os.kill(self.proc.pid, sig)
             try:
-                self.proc.wait(None if sig == signal.SIGKILL else 120)
+                self.proc.wait(None if sig == signal.SIGKILL else 360)
             except subprocess.TimeoutExpired:
                 hung = True
                 log(f'  stop hung: {capture_threads(self.proc.pid, os.path.join(self.work, f"stop-hang-{self.runs:03d}"))}')
@@ -491,7 +492,7 @@ def main():
             if wedged:
                 kv.append(wedged)
             if hung:
-                kv.append('orlyi was still running 120 s after SIGTERM')
+                kv.append('orlyi was still running 360 s after SIGTERM')
             for w in writers:
                 if w.thread.is_alive():
                     kv.append(f'{w.name}: writer still blocked 60s after the kill')

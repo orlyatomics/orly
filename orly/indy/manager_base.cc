@@ -407,7 +407,9 @@ void TManager::FlushMemMerges() {
   const auto give_up = steady_clock::now() + std::chrono::seconds(30);
   for (;;) {
     if (steady_clock::now() > give_up) {
-      syslog(LOG_WARNING, "TManager::FlushMemMerges: mem-merge queue still non-empty after 30s; giving up with unflushed repos");
+      /* LOG_ERR: what isn't flushed is lost at exit, and --log_info alone masks LOG_WARNING (#769). */
+      syslog(LOG_ERR, "TManager::FlushMemMerges: mem-merge queue still non-empty after 30s; giving up with unflushed repos, "
+             "whose unflushed updates are lost");
       break;
     }
     std::optional<Base::TUuid> repo_id;

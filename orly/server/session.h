@@ -87,6 +87,12 @@ namespace Orly {
            refused for lack of disk space (#590). Called only for writes. */
         virtual void CheckWriteAdmission() {}
 
+        /* Throws TInsufficientMemory once the server has begun a graceful stop (#769): from
+           then on it commits no new write, so every write it acknowledged is one the stop
+           waits for. CheckWriteAdmission and CheckMemoryAdmission call it too; a writer
+           waiting for room in its POV's backlog calls it on each turn. */
+        virtual void RefuseWriteIfStopping() {}
+
         /* Throws TInsufficientMemory (orly/server/insufficient_memory.h) if a write of
            num_entries entries would use the update pools' reserve (#607), or TWriteTooLarge
            (orly/server/write_too_large.h) if num_entries is more than half the Update Entry

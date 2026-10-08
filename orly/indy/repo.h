@@ -249,6 +249,32 @@ namespace Orly {
         return PeakBacklogUpdates.load();
       }
 
+      /* #769: the updates every child repo holds that Tetris hasn't promoted to its parent yet,
+         summed over all of them, and the entries those updates hold (as far as they are known,
+         see BacklogEntriesKnown). One update is one committed transaction, so this is what a
+         stop right now would lose: an update promoted from a POV made `from` another POV is
+         counted once, in whichever backlog holds it. A graceful stop logs it. */
+      static size_t GetUnpromotedUpdates() {
+        return UnpromotedUpdates.load();
+      }
+
+      static size_t GetUnpromotedEntries() {
+        return UnpromotedEntries.load();
+      }
+
+      /* #769: the updates popped from child repos' backlogs since startup, i.e. promoted one
+         level by a committed Tetris transaction. Only ever grows, so a graceful stop can tell
+         whether Tetris is still making progress. */
+      static size_t GetPromotedUpdates() {
+        return PromotedUpdates.load();
+      }
+
+      /* #769: the unpromoted updates that child repos took with them when they were destroyed
+         (an expired POV's, or the server's teardown), since startup. */
+      static size_t GetDroppedUpdates() {
+        return DroppedUpdates.load();
+      }
+
       /* The sequence number of the oldest unpopped update. */
       inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
 
@@ -772,6 +798,22 @@ namespace Orly {
       std::shared_ptr<TForkWatch> OwnForkWatch;
       mutable std::mutex OwnForkWatchLock;
 
+      /* #769: brings this repo's share of UnpromotedUpdates and UnpromotedEntries up to date
+         with its backlog. Call under DataLock (or before the repo is shared) after anything that
+         moves LowestSeqNum, HighestSeqNum or BacklogEntries. A root counts nothing: nothing
+         promotes it. */
+      void RecountBacklog() noexcept;
+
+      /* #769: this repo's share of the totals, as RecountBacklog last left it; under DataLock. */
+      size_t CountedBacklogUpdates = 0UL;
+      size_t CountedBacklogEntries = 0UL;
+
+      /* #769: see GetUnpromotedUpdates and GetPromotedUpdates. */
+      static std::atomic<size_t> UnpromotedUpdates;
+      static std::atomic<size_t> UnpromotedEntries;
+      static std::atomic<size_t> PromotedUpdates;
+      static std::atomic<size_t> DroppedUpdates;
+
       protected:
 
       /* Manager GC hook: visit the parent-repo pointer so it is kept reachable. */
@@ -1111,6 +1153,7 @@ namespace Orly {
       assert(next_id <= NextUpdate);
       NextUpdate = next_id;
       HighestSeqNum = next_id - 1;
+      RecountBacklog();
     }
 
     inline TSequenceNumber TRepo::UseSequenceNumbers(size_t num) {
@@ -1124,6 +1167,7 @@ namespace Orly {
       }
       /* The importer's updates bypass AppendUpdate (#628). */
       BacklogEntriesKnown = false;
+      RecountBacklog();
       return starting;
     }
 

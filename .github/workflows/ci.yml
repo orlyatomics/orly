@@ -626,11 +626,13 @@ jobs:
           echo "control OK: the campaign catches writes lost after they were recovered"
 
       # #744: SIGTERM orlyi under the campaign's write load, four times. Each stop must finish
-      # on its own within 60 s and exit cleanly, and every acknowledged write must come back
+      # on its own and exit cleanly, and every acknowledged write must come back
       # after the restart. Before #744 most of these stops hung (a disk merge waited on a fast
       # runner the teardown had blocked, and the layer cleaners stopped before the flush) and
       # lost acknowledged writes; that negative control was run by hand, since it needs the old
-      # engine.
+      # engine. The fourth stop is a long-load stop (#769): the writers write until the POVs'
+      # backlogs hold 75% of what the writer backlog caps allow (or 30 s pass). Each stop may
+      # take up to 360 s, since orlyi now waits for Tetris for as long as it keeps promoting.
       - name: Graceful stop under write load (#744)
         run: |
           python3 -m unittest discover -s tests -p stop_instance_test.py

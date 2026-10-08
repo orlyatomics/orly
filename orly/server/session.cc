@@ -146,8 +146,8 @@ static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRe
 
 /* #721: takes room in repo's backlog for a write of num_entries entries, waiting while the
    backlog drains, or throws TInsufficientMemory. See the comment above GetWriterBacklogCap. */
-static void ReserveBacklogRoom(Indy::TRepo::TBacklogReservation &room, const Indy::L0::TManager::TPtr<Indy::TRepo> &repo,
-    size_t backlog_threshold, size_t num_entries) {
+static void ReserveBacklogRoom(TSession::TServer *server, Indy::TRepo::TBacklogReservation &room,
+    const Indy::L0::TManager::TPtr<Indy::TRepo> &repo, size_t backlog_threshold, size_t num_entries) {
   if (!backlog_threshold) {
     return;
   }
@@ -157,6 +157,9 @@ static void ReserveBacklogRoom(Indy::TRepo::TBacklogReservation &room, const Ind
   size_t lowest_entries = std::numeric_limits<size_t>::max();
   auto backlog_deadline = steady_clock::now() + backlog_stall;
   while (!room.TryReserve(cap, entry_cap, num_entries)) {
+    /* A stop has begun: give up the wait now, refused, rather than hold the stop's connection
+       drain for up to the 5 s below (#769). */
+    server->RefuseWriteIfStopping();
     const Indy::TStatus status = repo->GetStatus();
     const size_t backlog = repo->GetMemBacklogDepth();
     const size_t entries = repo->GetMemBacklogEntries();
@@ -512,7 +515,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
          merges this wait is waiting for have replaced; held across the wait, they keep that
          memory from being freed. The results are already in the arena. */
       context.ReleaseViews();
-      ReserveBacklogRoom(backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
+      ReserveBacklogRoom(server, backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
       /* Hold this write's room in the update pools, or refuse it, before it builds anything
          there (#607). Released once the transaction below has committed. A write that doesn't
          fit waits a bounded time for the merges to make room (#765), holding no pool blocks, no
@@ -784,7 +787,7 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
          merges this wait is waiting for have replaced; held across the wait, they keep that
          memory from being freed. The results are already in the arena. */
       context.ReleaseViews();
-      ReserveBacklogRoom(backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
+      ReserveBacklogRoom(server, backlog_room, repo, server->GetWriteBackpressureThreshold(), op_by_key.size() + deferred_entries.size());
       /* Hold this write's room in the update pools, or refuse it, before it builds anything
          there (#607). Released once the transaction below has committed. A write that doesn't
          fit waits a bounded time for the merges to make room (#765), holding no pool blocks, no
