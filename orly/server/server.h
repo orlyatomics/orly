@@ -524,6 +524,8 @@ namespace Orly {
       /* Runs a websocket statement on a fiber on the fast runners, without waiting (#761). */
       virtual void RunStatement(std::function<void ()> &&work) override;
 
+      virtual void WaitAWhile() override;
+
       virtual bool ForEachIndex(const std::function<
           bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const final;
 
@@ -626,6 +628,10 @@ namespace Orly {
 
         TPovDiscard DiscardPov(const Base::TUuid &pov_id) {
           return Session->DiscardPov(Server, pov_id);
+        }
+
+        std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) {
+          return Session->GetDurableVersion(Server, pov_id);
         }
 
         TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) {
@@ -803,6 +809,7 @@ namespace Orly {
         virtual Base::TUuid NewReviewPov(bool, bool, const std::optional<Base::TUuid> &, TConflictMode) const override;
         virtual TPovDiff DiffPov(const Base::TUuid &, const TPovDiffOptions &) const override;
         virtual TPovDiscard DiscardPov(const Base::TUuid &) const override;
+        virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &) const override;
         virtual TPovPromote PromotePov(const Base::TUuid &, bool) const override;
         virtual TPovReview ReviewPov(const Base::TUuid &, uint64_t) const override;
 

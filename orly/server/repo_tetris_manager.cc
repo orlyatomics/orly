@@ -125,6 +125,14 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
     transaction->Push(Player->Repo, PeekedUpdate, std::nullopt, Repo->GetId());
     claim.Release();
     transaction->Pop(Repo);
+    Player->Promotion.reset();
+    if (Player->Repo->GetId() == TSession::GlobalPovId && PeekedSeq) {
+      Player->Promotion.emplace();
+      Player->Promotion->OwnSeq = *PeekedSeq;
+      Player->Promotion->Log = Repo->GetPromotionLog();
+      Player->Promotion->ParentDurable = Player->Repo->GetDurableCounter();
+      transaction->ReportCommitSequenceNumber(&Player->Promotion->ParentSeq);
+    }
     ++(Player->RepoTetrisManager->PushCount);
     ++(Player->RepoTetrisManager->PopCount);
     /* The sessions hear about it once the round has committed (DeliverAccepted, #801). */
@@ -202,6 +210,9 @@ bool TRepoTetrisManager::TPlayer::TChild::Peek(const unique_ptr<Indy::L1::TTrans
     return false;
   }
   PeekedUpdate = std::move(peeked);
+  /* The copy carries no sequence number.  Only this player pops the child, so its oldest unpopped
+     update is the one we copied. */
+  PeekedSeq = Repo->GetSequenceNumberStart();
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Sabot::ToNative(*Sabot::State::TAny::TWrapper(PeekedUpdate->GetMetadata().NewState(&PeekedUpdate->GetSuprena(), state_alloc)), MetaRecord);
   for (const auto &item: MetaRecord.GetEntryByUpdateId()) {
@@ -221,6 +232,13 @@ bool TRepoTetrisManager::TPlayer::TChild::SortsBefore(const TChild *lhs, const T
   assert(lhs);
   assert(rhs);
   return lhs->Age > rhs->Age;
+}
+
+void TRepoTetrisManager::TPlayer::FinishPromotion() {
+  if (Promotion && Promotion->ParentSeq) {
+    Promotion->Log->Note(Promotion->OwnSeq, *Promotion->ParentSeq, Indy::TRepo::ReadDurable(*Promotion->ParentDurable));
+  }
+  Promotion.reset();
 }
 
 void TRepoTetrisManager::TPlayer::TChild::Flush() {
@@ -503,6 +521,7 @@ bool TRepoTetrisManager::TPlayer::PlayRound() {
             promoted_commutative = true;
             /* Applies the promotion. */
             txn.reset();
+            FinishPromotion();
             TurnAccepted.insert(TurnAccepted.end(), RoundAccepted.begin(), RoundAccepted.end());
             RoundAccepted.clear();
           }
@@ -535,6 +554,7 @@ bool TRepoTetrisManager::TPlayer::PlayRound() {
     snapshot_txn->CommitAction();
     /* Applies the promotion, before the next round of this turn takes its snapshot. */
     snapshot_txn.reset();
+    FinishPromotion();
     commit_timer.Stop();
     TurnAccepted.insert(TurnAccepted.end(), RoundAccepted.begin(), RoundAccepted.end());
     RoundAccepted.clear();

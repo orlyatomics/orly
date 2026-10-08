@@ -2175,6 +2175,10 @@ namespace {
 
 }  // namespace
 
+void TServer::WaitAWhile() {
+  Indy::Fiber::YieldSlow();
+}
+
 void TServer::RunStatement(std::function<void ()> &&work) {
   assert(work);
   /* The websocket I/O threads (and the fast runners, when a finished statement starts the next
@@ -2559,6 +2563,14 @@ TPovDiscard TServer::TSessionPin::DiscardPov(const Base::TUuid &pov_id) const {
   TPovDiscard result;
   Conn->RunWs([this, &pov_id, &result] {
     result = Conn->DiscardPov(pov_id);
+  });
+  return result;
+}
+
+std::optional<uint64_t> TServer::TSessionPin::GetDurableVersion(const Base::TUuid &pov_id) const {
+  std::optional<uint64_t> result;
+  Conn->RunWs([this, &pov_id, &result] {
+    result = Conn->GetDurableVersion(pov_id);
   });
   return result;
 }

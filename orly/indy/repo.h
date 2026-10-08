@@ -21,6 +21,8 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -313,6 +315,79 @@ namespace Orly {
 
       /* The high-water mark set by SetReleasedUpTo / ReleaseUpdate. */
       inline TSequenceNumber GetReleasedUpTo() const;
+
+      /* The highest sequence number this process knows to be in a data file on disk, the file
+         entry included (#750): every update of this repo at or below it survives a crash. Unset
+         when none is yet, and always for a repo that never writes disk (a fast repo, or a safe
+         one that isn't the global POV's). Advances when a memory merge's file is on disk, and
+         starts, on a reload, at the highest sequence number of the files found. */
+      std::optional<TSequenceNumber> GetDurableSequenceNumber() const {
+        return ReadDurable(*DurablePlusOne);
+      }
+
+      /* The durable sequence number's storage, shared so that a promotion into this repo can read
+         it after the repo has been deleted (see TPromotionLog). */
+      using TDurableCounter = std::atomic<uint64_t>;
+
+      static std::optional<TSequenceNumber> ReadDurable(const TDurableCounter &counter) {
+        const uint64_t value = counter.load(std::memory_order_acquire);
+        return value ? std::optional<TSequenceNumber>(value - 1UL) : std::optional<TSequenceNumber>();
+      }
+
+      const std::shared_ptr<TDurableCounter> &GetDurableCounter() const {
+        return DurablePlusOne;
+      }
+
+      /* What a child repo records about its updates' promotions into its parent (#750).  It is
+         shared, so a promotion can be recorded after the repo itself has been deleted by it. */
+      class TPromotionLog {
+        public:
+
+        /* An update of the child's, which the parent assigned `parent_seq_num` when promoting it.
+           `parent_durable` is the parent's GetDurableSequenceNumber() now; it only lets the
+           record drop what it need no longer keep. */
+        void Note(TSequenceNumber own_seq_num, TSequenceNumber parent_seq_num, const std::optional<TSequenceNumber> &parent_durable) {
+          std::lock_guard<std::mutex> lock(Mutex);
+          Promotions.emplace_back(own_seq_num, parent_seq_num);
+          Drain(parent_durable);
+        }
+
+        std::optional<TSequenceNumber> GetDurable(const std::optional<TSequenceNumber> &parent_durable) {
+          std::lock_guard<std::mutex> lock(Mutex);
+          Drain(parent_durable);
+          return PromotedDurable;
+        }
+
+        private:
+
+        void Drain(const std::optional<TSequenceNumber> &parent_durable) {
+          while (parent_durable && !Promotions.empty() && Promotions.front().second <= *parent_durable) {
+            PromotedDurable = Promotions.front().first;
+            Promotions.pop_front();
+          }
+        }
+
+        /* Pairs of (own, parent) sequence numbers for promotions not yet known to be durable,
+           in order. */
+        std::deque<std::pair<TSequenceNumber, TSequenceNumber>> Promotions;
+
+        std::optional<TSequenceNumber> PromotedDurable;
+
+        std::mutex Mutex;
+
+      };  // TPromotionLog
+
+      const std::shared_ptr<TPromotionLog> &GetPromotionLog() const {
+        return PromotionLog;
+      }
+
+      /* The highest sequence number of this repo's own updates whose promotion into the parent is
+         known to be on disk, given the parent's durable sequence number, or unset if none is.
+         Only promotions this process made count, so after a restart it can fall short of the
+         truth but never exceeds it. */
+      std::optional<TSequenceNumber> GetPromotedDurableSequenceNumber(const std::optional<TSequenceNumber> &parent_durable) {
+        return PromotionLog->GetDurable(parent_durable);
+      }
 
       /* This repo's parent in the repo tree (mirrors the POV tree), or unset
          for the global root. */
@@ -828,7 +903,18 @@ namespace Orly {
          below it may be dropped on the next mem/disk merge. */
       TSequenceNumber ReleasedUpTo;
 
+      /* Raise the durable sequence number (see GetDurableSequenceNumber) to at least this. */
+      void NoteDurable(TSequenceNumber seq_num) {
+        uint64_t seen = DurablePlusOne->load(std::memory_order_relaxed);
+        while (seen < seq_num + 1UL && !DurablePlusOne->compare_exchange_weak(seen, seq_num + 1UL, std::memory_order_release)) {}
+      }
+
       private:
+
+      const std::shared_ptr<TPromotionLog> PromotionLog = std::make_shared<TPromotionLog>();
+
+      /* One more than the durable sequence number, or 0 for none. */
+      const std::shared_ptr<TDurableCounter> DurablePlusOne = std::make_shared<TDurableCounter>(0UL);
 
       /* Whether this repo is currently a registered child in its parent's Tetris
          merge. Gating Join on !InTetris makes it idempotent and lets a join that

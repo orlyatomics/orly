@@ -20,9 +20,11 @@ crash can take back. It is read from the code, and `tests/kill_campaign.sh` chec
   `--update_pool_size` transactions. There is no time bound: under sustained load the oldest
   write a kill took back was acknowledged up to a few seconds earlier (see
   [Measured](#measured)).
-- **No client can see when a write becomes durable.** The WebSocket protocol has no
-  notification for it, and reading a write back proves only that it committed. A write that a
-  restarted server gives back is on disk, and stays there.
+- **A client can see when a write becomes durable** (#750): a `try` with `<{.receipt: true}>`
+  returns the version it committed at, and `durable_version {pov};` returns the highest version
+  of that POV known to be on disk, once Tetris has promoted the write to the global POV and the
+  global POV's flush has synced it. A write that a restarted server gives back is on disk, and
+  stays there; the query itself restarts at `null` for a POV until it next promotes. `.wait_durable_ms: N` on the `try` waits for that, up to N ms.
 
 ## The path of a write
 

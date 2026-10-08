@@ -243,6 +243,13 @@ namespace Orly {
 
       TPovReview ReviewPov(TServer *server, const Base::TUuid &pov_id, uint64_t after);
 
+      /* The highest version of the POV known to be on disk (#750), in the numbering a write
+         receipt's version uses; unset if none is yet.  For a POV that promotes into the global
+         one, it is the highest version of its own whose promotion the global POV has written to
+         disk; for the global POV, its own highest durable version.  A POV several levels down
+         never has one. */
+      std::optional<uint64_t> GetDurableVersion(TServer *server, const Base::TUuid &pov_id);
+
       /* Insert the given notification into the pending set and return the sequence number that is assigned to it.
          If the session isn't queuing notifications (see SetQueuesNotifications()), delete the notification and
          return nullopt.  If this function fails, it will delete the notification before throwing. */

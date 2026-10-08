@@ -205,6 +205,10 @@ class TWsTestServer::TSessionManager
       virtual TUuid NewReviewPov(bool, bool, const std::optional<TUuid> &, TConflictMode) const override { return TUuid(TUuid::Best); }
       virtual TPovDiff DiffPov(const TUuid &, const TPovDiffOptions &) const override { return TPovDiff(); }
       virtual TPovDiscard DiscardPov(const TUuid &) const override { return TPovDiscard(); }
+      virtual std::optional<uint64_t> GetDurableVersion(const TUuid &pov_id) const override {
+        /* POV ...0002 is always durable up to any version a fake write gets (#750); the rest stay at 77. */
+        return pov_id == TUuid("00000000-0000-0000-0000-000000000002") ? 1000000UL : 77UL;
+      }
       virtual TPovPromote PromotePov(const TUuid &, bool) const override { return TPovPromote(); }
       virtual TPovReview ReviewPov(const TUuid &, uint64_t) const override { return TPovReview(); }
 

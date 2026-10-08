@@ -164,6 +164,9 @@ namespace Orly {
 
           std::shared_ptr<Indy::TUpdate> PeekedUpdate;
 
+          /* The sequence number PeekedUpdate had in the child's repo. */
+          std::optional<Indy::TSequenceNumber> PeekedSeq;
+
           TMetaRecord MetaRecord;
 
           std::unordered_map<Base::TUuid, Package::TFuncHolder::TPtr> FuncHolderByUpdateId;
@@ -225,6 +228,24 @@ namespace Orly {
            in the rounds of this turn that have committed.  A round's entries move to
            TurnAccepted only once its transaction has committed. */
         std::vector<std::pair<Base::TUuid, Base::TUuid>> RoundAccepted, TurnAccepted;
+
+        /* The one promotion into the global repo that a round makes, kept until FinishPromotion.
+           The promotion can delete the child and its repo, even the child's TChild, so it holds
+           what it needs itself rather than reaching through either (#750). */
+        struct TPromotion {
+          /* The child's sequence number for the update, and the one the global repo gave it once
+             its transaction applied. */
+          Indy::TSequenceNumber OwnSeq;
+          std::optional<Indy::TSequenceNumber> ParentSeq;
+          std::shared_ptr<Indy::TRepo::TPromotionLog> Log;
+          std::shared_ptr<Indy::TRepo::TDurableCounter> ParentDurable;
+        };
+
+        std::optional<TPromotion> Promotion;
+
+        /* Call once the transaction a round's promotion went through has been applied: records,
+           for the durable version (#750), the version the parent gave the promoted update. */
+        void FinishPromotion();
 
         /* See DeliverAccepted. Only ever touched by our own fiber. */
         std::unordered_map<Base::TUuid, Durable::TPtr<TSession>> SessionPins;

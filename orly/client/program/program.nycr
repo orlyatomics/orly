@@ -4,6 +4,7 @@
 
       new (safe|fast) (private|shared) pov (from {<id>}) (<{.conflicts: "report"}>) ;
       diff_pov|discard_pov|promote_pov|review_pov {<id>} (<{.option: val}>) ;
+      durable_version {<id>} ;
       ttl <id> = <time_diff> ;
       install <package> ;
       uninstall <package> ;
@@ -94,6 +95,7 @@ diff_pov_kwd      = '"diff_pov"';
 discard_pov_kwd   = '"discard_pov"';
 promote_pov_kwd   = '"promote_pov"';
 review_pov_kwd    = '"review_pov"';
+durable_version_kwd = '"durable_version"';
 
 unary_placeholder = '' unary_prec right;
 name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
@@ -196,6 +198,7 @@ diff_pov_stmt       : stmt -> diff_pov_kwd id_expr opt_options semi;
 discard_pov_stmt    : stmt -> discard_pov_kwd id_expr semi;
 promote_pov_stmt    : stmt -> promote_pov_kwd id_expr opt_options semi;
 review_pov_stmt     : stmt -> review_pov_kwd id_expr opt_options semi;
+durable_version_stmt : stmt -> durable_version_kwd id_expr semi;
 set_user_id_stmt    : stmt -> set_kwd user_id_kwd id_expr semi;
 set_ttl_stmt        : stmt -> set_kwd ttl_kwd id_expr to_kwd int_expr semi;
 try_stmt            : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name args:obj_expr opt_options semi;

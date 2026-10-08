@@ -19,7 +19,9 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <functional>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -97,6 +99,9 @@ namespace Orly {
                                            TConflictMode mode) const = 0;
           virtual TPovDiff DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) const = 0;
           virtual TPovDiscard DiscardPov(const Base::TUuid &pov_id) const = 0;
+
+          /* Override to answer the durable_version statement (#750). */
+          virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) const = 0;
           virtual TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) const = 0;
           virtual TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) const = 0;
 
@@ -159,6 +164,13 @@ namespace Orly {
              manager whose pins don't need fiber context (the test server) wants. */
           virtual void RunStatement(std::function<void ()> &&work) {
             work();
+          }
+
+          /* Give up the CPU for a moment from inside a statement that is waiting for something
+             (the durable wait of `try`, #750).  The server yields its fiber; this default,
+             for a statement on a plain thread, sleeps a millisecond. */
+          virtual void WaitAWhile() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
           }
 
           protected:

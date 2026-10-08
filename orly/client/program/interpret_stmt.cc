@@ -131,6 +131,9 @@ bool Orly::Client::Program::InterpretStmt(const TStmt *stmt, const shared_ptr<TC
     virtual void operator()(const TReviewPovStmt *that) const override {
       cout << ToJson(**Client->ReviewPov(ToUuid(that->GetIdExpr()), GetReviewOptions(TranslateOptions(that->GetOptOptions())))) << endl;
     }
+    virtual void operator()(const TDurableVersionStmt *) const override {
+      throw std::invalid_argument("durable_version: only the WebSocket protocol has it");
+    }
     // try
     virtual void operator()(const TTryStmt *that) const override {
       string tmp = that->GetPovId()->GetLexeme().GetText().substr(1, that->GetPovId()->GetLexeme().GetText().size() - 2);

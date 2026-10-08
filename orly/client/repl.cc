@@ -120,6 +120,9 @@ namespace {
     virtual void operator()(const TPromotePovStmt *) const override {
       Infos.push_back({"promote_pov", "promote_pov {pov_id};", "Promote a point of view's changes to its parent"});
     }
+    virtual void operator()(const TDurableVersionStmt *) const override {
+      Infos.push_back({"durable_version", "durable_version {pov_id};", "Show the highest version of the global point of view known to be on disk (WebSocket only)"});
+    }
     virtual void operator()(const TReviewPovStmt *) const override {
       Infos.push_back({"review_pov", "review_pov {pov_id};", "Show a point of view's promotion progress and conflicts"});
     }
@@ -184,7 +187,8 @@ namespace {
                    TDiffPovStmt,
                    TDiscardPovStmt,
                    TPromotePovStmt,
-                   TReviewPovStmt>(TGetInfo(result));
+                   TReviewPovStmt,
+                   TDurableVersionStmt>(TGetInfo(result));
       return result;
     }();
     return infos;
