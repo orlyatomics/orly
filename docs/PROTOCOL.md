@@ -319,7 +319,12 @@ exit;
   `<{}>`). Scalars, strings, records, sets, etc. are written as orlyscript
   literals; string values must be escaped for an orlyscript string literal: `\\` and
   `\"`, and control characters as `\n`, `\r`, `\t` or `\xNN` (the lexer refuses them raw).
-  The Python, Go, Zig and TypeScript clients do this for you.
+  Field names match `[_a-zA-Z][_a-zA-Z0-9]*`, including keywords after `.`
+  (`<{.id: 1, .to: "target", .try: true}>`). Client literal builders preserve
+  those names; they refuse invalid non-identifier names with a rename suggestion.
+  See [record field names and keywords](walkthrough.md#record-field-names-and-keywords)
+  for the reserved bare identifiers. The wire format is otherwise unchanged.
+  The Python, Go, Zig and TypeScript clients do the string escaping for you.
 - **Batched `try`** (`#253`) invokes **one** `(pkg, method)` against **N** argument
   records — a bracketed, comma-separated list (`[<{...}>, <{...}>, ...]`, at least
   one) — folding all N calls into a **single transaction**. It exists to amortize

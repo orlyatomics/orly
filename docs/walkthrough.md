@@ -113,6 +113,61 @@ its children, until the delete is promoted
 ([#791](https://github.com/orlyatomics/orly/issues/791)). For a fixed view,
 read every page in one call, or keep a version in the key and page over that.
 
+### Record field names and keywords
+
+Record field names match `[_a-zA-Z][_a-zA-Z0-9]*`. After the field dot, a
+keyword is a name, not an operator or type. This applies to record literals,
+field access, record types and named call arguments:
+
+```orly
+edge is <{.id: int, .to: str, .from: str, .start: int, .after: int}>;
+row = <{.id: 1, .to: "target", .from: "source", .start: 0, .after: 2}>;
+get_id = (value.id) where { value = given::(edge); };
+
+test {
+  id_field: get_id(.value: row) == 1;
+  target: row.to == "target";
+  keyword: <{.if: true, .true: false}>.if;
+};
+```
+
+The parentheses before `where` are required by scoped-expression syntax;
+they are not an escape for keyword field names.
+
+No quoting, escaping or renaming is needed for `.id`, `.to`, `.from`,
+`.start` or `.after`. Whitespace and comments between `.` and the name are
+allowed. Numeric tuple access (`tuple.0`) is unchanged.
+
+Keywords remain reserved for **bare identifiers**, such as function names,
+local bindings and variant arm declarations. Rename those identifiers, for
+example `entity_id` instead of `id`, or `start_index` instead of `start`.
+The package grammar's reserved words are:
+
+```text
+acos after and and_then as asc asin assert atan atan2 bool ceiling collated_by
+collected_by cos delete desc do effecting else else_if empty exists false
+floor free from given having id if in int is keys known length_of lhs log
+log10 log2 match mutable new not now or or_else package random_int
+real reduce replace reverse_of rhs session_id sin skip sorted_by
+split start str tan take test that time_diff time_obj time_pnt to_lower
+to_upper true union_map unknown user_id using when where while with xor
+```
+
+`to` is an ordinary identifier in package source today, but it is reserved by
+the separate client statement grammar. Its word tokens are:
+
+```text
+asc begin bool compile desc echo empty end exit false fast from get_source
+id image import install int list_packages list_schema new pause pov private
+real resume safe session set shared str tail time_diff time_pnt to true try
+ttl uninstall unknown unpause user_id xact
+```
+
+All of those words are also legal client record field names. The TypeScript,
+Python and Go literal builders emit identifier field names unchanged and
+reject invalid names (such as `first-name` or `1st`) locally with a rename
+suggestion. There is no quoted-field-name syntax.
+
 ## Compile to a `.so`
 
 `orlyc` produces a `.cc` then shells out to `g++` to build it into a shared library. Use the `--debug` flag during a first try — release-mode optimisations can mask things and aren't faster end-to-end on a single small package.

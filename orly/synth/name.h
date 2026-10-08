@@ -54,6 +54,10 @@ namespace Orly {
         SetLexeme(node);
       }
 
+      TName(const Package::Syntax::TFieldName *node) {
+        SetLexeme(node);
+      }
+
       /* Construct a name object from an arbitrary string and position-range. */
       TName(const std::string &name, const TPosRange &pos_range)
           : Lexeme(nullptr) {
@@ -190,7 +194,8 @@ namespace Orly {
 
       /* Point at the node's lexeme.
          If there's no node, point at the default lexeme. */
-      void SetLexeme(const TNode *node) {
+      template <typename TNameNode>
+      void SetLexeme(const TNameNode *node) {
         Lexeme = node ? &node->GetLexeme() : &DefaultLexeme;
         Text = &Lexeme->GetText();
         PosRange = &Lexeme->GetPosRange();

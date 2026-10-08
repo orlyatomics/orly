@@ -762,6 +762,9 @@ func litRecord(m map[string]any) (string, error) {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(m))
 	for _, k := range keys {
+		if !isFieldName(k) {
+			return "", fmt.Errorf("orly: invalid record field name %q; rename it to an identifier (letters, digits, underscore; no leading digit)", k)
+		}
 		ev, err := Lit(m[k])
 		if err != nil {
 			return "", err
@@ -769,6 +772,18 @@ func litRecord(m map[string]any) (string, error) {
 		parts = append(parts, "."+k+": "+ev)
 	}
 	return "<{" + strings.Join(parts, ", ") + "}>", nil
+}
+
+func isFieldName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, c := range name {
+		if c != '_' && !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(i > 0 && c >= '0' && c <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func litSeq(xs []any, open, close string) (string, error) {
