@@ -144,9 +144,14 @@ class TIndyTestServerCmd final : public Orly::Server::TServer::TCmd {
    largest need seen, and matches the floor orlyi enforces (#669). */
 static constexpr size_t TestServerFiberFrames = 64;
 
-/* The directory the package was written to, and the server installs from. */
+/* The directory the package was written to, and the server installs from. The path code roots a
+   relative directory at `/`, so it is resolved against the current directory here, as the source
+   path is (#820). */
 static std::string PackageDir(const TCompilerConfig &cmd) {
-  return cmd.OutputDir.size() > 0 ? cmd.OutputDir : Util::GetCwd();
+  if (cmd.OutputDir.empty()) {
+    return Util::GetCwd();
+  }
+  return cmd.OutputDir.front() == '/' ? cmd.OutputDir : Util::GetCwd() + '/' + cmd.OutputDir;
 }
 
 static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompilerConfig &cmd) {
@@ -293,7 +298,7 @@ int CompileCode(const TCompilerConfig &cmd) {
       Type::TTypeCzar type_czar;
       output = Compiler::Compile(
                    Base::TPath(src),
-                   cmd.OutputDir,
+                   PackageDir(cmd),
                    {.DebugCc = cmd.DebugOutput,
                     .MachineMode = cmd.MachineForm,
                     .SemanticOnly = cmd.SemanticOnly,
