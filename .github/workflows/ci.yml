@@ -113,6 +113,9 @@ jobs:
       - name: Test build-cache key policy
         run: python3 -m unittest discover -s .github/actions/build-cache -p 'test_cache_keys.py'
 
+      - name: Test release artifact integrity
+        run: python3 -m unittest discover -s tools/ci -p 'test_release_artifact.py'
+
   debug-and-test:
     name: make debug + make test
     needs: todo-lint
@@ -301,11 +304,15 @@ jobs:
         run: ccache --show-stats --verbose
 
   release-build:
-    name: Release build and checks
+    name: Release artifact build
     needs: todo-lint
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.todo-lint.result != 'success' || needs.todo-lint.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.bundle.outputs.sha256 }}
+      producer-attempt: ${{ steps.bundle.outputs.producer-attempt }}
     steps:
       - uses: actions/checkout@v6
 
@@ -354,23 +361,82 @@ jobs:
       - name: tools/jhm -c release
         run: PATH="$PWD/tools:$PATH" tools/jhm -c release
 
+      - name: Build storage and merge unit tests (release)
+        run: |
+          tests="orly/atom/kit2 orly/indy/key orly/indy/prefix_match orly/indy/repo orly/indy/disk/durable_manager orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
+          PATH="$PWD/tools:$PATH" tools/jhm -c release $(for t in $tests; do printf '%s.test ' "$t"; done)
+
+      - name: Bundle release smoke inputs
+        id: bundle
+        run: python3 tools/ci/release_artifact.py pack --archive .ci-release/release.tar.gz
+
+      - name: Upload release smoke inputs
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-release/release.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  release-smoke:
+    name: release smoke (${{ matrix.group }})
+    needs: release-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [resources, disk, durability]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+          version: 1.2
+
+      # Every group has a fresh runner; bind/auth also use the Python SDK.
+      - name: Install Python smoke dependencies
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          PYTHONPATH="$PWD/clients/python" python3 -c 'import orly'
+
+      - name: Download this producer's release inputs
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.release-build.outputs.artifact-id }}
+          merge-multiple: true
+          path: .ci-release
+
+      - name: Verify and restore release inputs
+        env:
+          ARCHIVE_SHA256: ${{ needs.release-build.outputs.sha256 }}
+          PRODUCER_ATTEMPT: ${{ needs.release-build.outputs.producer-attempt }}
+        run: |
+          python3 tools/ci/release_artifact.py unpack --archive .ci-release/release.tar.gz \
+            --sha256 "$ARCHIVE_SHA256" --producer-attempt "$PRODUCER_ATTEMPT"
+
       - name: Smoke each release binary with --help
+        if: matrix.group == 'resources'
         run: |
           ../out_orly/release/orly/client/orly_client --help | head -1
           ../out_orly/release/orly/orlyc --help | head -1
           # orlyi's --help prints a huge memory-tuning header first;
           # asserting non-empty output is enough for a smoke check.
-          ../out_orly/release/orly/server/orlyi --help > /tmp/orlyi-help.txt
-          test -s /tmp/orlyi-help.txt
+          ../out_orly/release/orly/server/orlyi --help > .ci-release/orlyi-help.txt
+          test -s .ci-release/orlyi-help.txt
 
       # #666: `make test` builds debug only, and a debug build zeroes memory that a release build
       # leaves as it found it. A merge then wrote equal keys as different ones in release alone,
       # and every debug test passed. So run the storage and merge unit tests on this release tree
       # too. Each runs to the end, so one failure doesn't hide another.
       - name: Storage and merge unit tests (release)
+        if: matrix.group == 'resources'
         run: |
           tests="orly/atom/kit2 orly/indy/key orly/indy/prefix_match orly/indy/repo orly/indy/disk/durable_manager orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
-          PATH="$PWD/tools:$PATH" tools/jhm -c release $(for t in $tests; do printf '%s.test ' "$t"; done)
           failed=""
           for t in $tests; do
             echo "::group::$t.test"
@@ -396,6 +462,7 @@ jobs:
       # build because that is what users run, and on this 4-core runner
       # because that topology reproduced the abort.
       - name: Concurrent writers survive a small Update pool
+        if: matrix.group == 'resources'
         run: bash clients/smoke/run-pool-pressure.sh
 
       # #764: on an idle server a one-key read hops between fiber runners
@@ -403,6 +470,7 @@ jobs:
       # ceiling is loose (reads take ~0.2 ms here): it catches a lost wakeup,
       # which waits out the park's 100 ms safety net, not a slowdown.
       - name: Reads on an idle server don't wait for parked runners
+        if: matrix.group == 'durability'
         run: MAX_P50_US=20000 bash clients/smoke/run-point-read.sh
 
       # #607: 8 writers of 200-write batches fill small update pools within
@@ -412,6 +480,7 @@ jobs:
       # filled until refused and unpaused, and the pools must drain: 8 POVs,
       # then 32 POVs with 32 writers (#660).
       - name: Full update pools refuse writes and keep serving reads
+        if: matrix.group == 'resources'
         run: bash clients/smoke/run-memory-full.sh
 
       # Negative control for the step above: the same smoke with memory
@@ -419,19 +488,20 @@ jobs:
       # (not because orlyi never came up). If it passes, the smoke can no
       # longer tell whether admission works.
       - name: The memory-full smoke fails with memory admission off
+        if: matrix.group == 'resources'
         run: |
-          if ADMISSION=off bash clients/smoke/run-memory-full.sh > /tmp/memory-full-control.log 2>&1; then
-            cat /tmp/memory-full-control.log
+          if ADMISSION=off bash clients/smoke/run-memory-full.sh > .ci-release/memory-full-control.log 2>&1; then
+            cat .ci-release/memory-full-control.log
             echo "CONTROL FAIL: the memory-full smoke passed with memory admission off"
             exit 1
           fi
-          if ! grep -q '^\[2/4\].*(admission off)' /tmp/memory-full-control.log \
-             || ! grep -q '^MEMORY FULL FAIL' /tmp/memory-full-control.log; then
-            cat /tmp/memory-full-control.log
+          if ! grep -q '^\[2/4\].*(admission off)' .ci-release/memory-full-control.log \
+             || ! grep -q '^MEMORY FULL FAIL' .ci-release/memory-full-control.log; then
+            cat .ci-release/memory-full-control.log
             echo "CONTROL FAIL: the smoke failed before its writers could test anything"
             exit 1
           fi
-          grep '^MEMORY FULL FAIL' /tmp/memory-full-control.log | head -3 | cut -c1-300
+          grep '^MEMORY FULL FAIL' .ci-release/memory-full-control.log | head -3 | cut -c1-300
           echo "control OK: the smoke fails without memory admission"
 
       # #687: a single batch with more entries than half the Update Entry
@@ -439,6 +509,7 @@ jobs:
       # write_too_large (WriteTooLargeError / orly.WriteTooLarge), and the same
       # rows split under the limit must land.
       - name: An oversized write is refused as write_too_large
+        if: matrix.group == 'resources'
         run: |
           pip3 install --break-system-packages --quiet websocket-client
           bash clients/smoke/run-write-too-large.sh
@@ -448,6 +519,7 @@ jobs:
       # (ReadTooLargeError / orly.ReadTooLarge), reads under it must answer,
       # and the same reads must succeed with the budget off.
       - name: An oversized read is refused as read_too_large
+        if: matrix.group == 'resources'
         run: |
           pip3 install --break-system-packages --quiet websocket-client
           bash clients/smoke/run-read-budget.sh
@@ -459,6 +531,7 @@ jobs:
       # answer (under 1% may be refused as insufficient_memory) and orlyi must
       # stay up. On master this config kills orlyi within a second.
       - name: Point reads over many disk layers survive a small frame pool
+        if: matrix.group == 'resources'
         run: bash clients/smoke/run-read-fanout.sh
 
       # #792: keys with a desc member (or a nested tuple holding one) before a
@@ -476,6 +549,7 @@ jobs:
       # compile over WebSocket is refused as remote_compile_disabled;
       # --bind_address=0.0.0.0 --allow_remote_compile opens both up.
       - name: Listeners bind loopback and refuse remote compile by default
+        if: matrix.group == 'disk'
         run: bash clients/smoke/run-bind-defaults.sh
 
       # #710: with a token (--auth_token_file and friends), WebSocket and binary
@@ -485,6 +559,7 @@ jobs:
       # negative controls: the refusal checks must fail against an orlyi without
       # the token, and a wrong-token slave must join a master without one.
       - name: Shared-secret auth for clients and replication (#710)
+        if: matrix.group == 'disk'
         run: bash clients/smoke/run-auth.sh
 
       # #626: writes to a paused POV, whose backlog never drains until it is
@@ -492,6 +567,7 @@ jobs:
       # memory reserve), reads carry on, and after the unpause a write is
       # accepted and reads back.
       - name: Writes to a paused POV don't hang
+        if: matrix.group == 'resources'
         run: bash clients/smoke/run-paused-pov.sh
 
       # #746: the POV review workflow. Diffs of safe and fast, shared and private POVs (also
@@ -535,6 +611,7 @@ jobs:
       # Entry pool's peak is reported, not gated: merge copies may use the
       # reserve by design.
       - name: Batched writes stay within their backlog cap
+        if: matrix.group == 'resources'
         run: bash clients/smoke/run-batch-backlog.sh
 
       # Negative control for the step above: with the writer backlog cap off
@@ -544,29 +621,31 @@ jobs:
       # control's batches were refused; now they wait, so the refused share
       # no longer tells whether the cap works, and the backlog peak does.
       - name: The batch-backlog smoke fails with the backlog cap off
+        if: matrix.group == 'resources'
         run: |
-          if EXTRA_ARGS=--tetris_backpressure_threshold=0 bash clients/smoke/run-batch-backlog.sh > /tmp/batch-backlog-control.log 2>&1; then
-            cat /tmp/batch-backlog-control.log
+          if EXTRA_ARGS=--tetris_backpressure_threshold=0 bash clients/smoke/run-batch-backlog.sh > .ci-release/batch-backlog-control.log 2>&1; then
+            cat .ci-release/batch-backlog-control.log
             echo "CONTROL FAIL: the batch-backlog smoke passed with the backlog cap off"
             exit 1
           fi
-          if ! grep -q 'batches of 200 in' /tmp/batch-backlog-control.log \
-             || ! grep -q '^BATCH BACKLOG FAIL' /tmp/batch-backlog-control.log; then
-            cat /tmp/batch-backlog-control.log
+          if ! grep -q 'batches of 200 in' .ci-release/batch-backlog-control.log \
+             || ! grep -q '^BATCH BACKLOG FAIL' .ci-release/batch-backlog-control.log; then
+            cat .ci-release/batch-backlog-control.log
             echo "CONTROL FAIL: the smoke failed before its writers could test anything"
             exit 1
           fi
-          if ! grep -q "^BATCH BACKLOG FAIL: the POV's backlog reached .* past its cap" /tmp/batch-backlog-control.log; then
-            cat /tmp/batch-backlog-control.log
+          if ! grep -q "^BATCH BACKLOG FAIL: the POV's backlog reached .* past its cap" .ci-release/batch-backlog-control.log; then
+            cat .ci-release/batch-backlog-control.log
             echo "CONTROL FAIL: the smoke failed, but not because the backlog passed its cap"
             exit 1
           fi
-          grep '^BATCH BACKLOG FAIL' /tmp/batch-backlog-control.log | head -4 | cut -c1-300
+          grep '^BATCH BACKLOG FAIL' .ci-release/batch-backlog-control.log | head -4 | cut -c1-300
           echo "control OK: the smoke fails without the backlog cap"
 
       # #590: fill a tiny mem-sim disk. Writes must come back refused with
       # insufficient_storage while reads, new sessions and orlyi itself carry on.
       - name: A full disk refuses writes and keeps serving reads
+        if: matrix.group == 'disk'
         run: bash clients/smoke/run-disk-full.sh
 
       # Negative control for the step above: the same smoke with write
@@ -574,19 +653,20 @@ jobs:
       # (not because orlyi never came up). If it passes, the smoke can no
       # longer tell whether admission works.
       - name: The disk-full smoke fails with write admission off
+        if: matrix.group == 'disk'
         run: |
-          if ADMISSION=off bash clients/smoke/run-disk-full.sh > /tmp/disk-full-control.log 2>&1; then
-            cat /tmp/disk-full-control.log
+          if ADMISSION=off bash clients/smoke/run-disk-full.sh > .ci-release/disk-full-control.log 2>&1; then
+            cat .ci-release/disk-full-control.log
             echo "CONTROL FAIL: the disk-full smoke passed with write admission off"
             exit 1
           fi
-          if ! grep -q '^\[3/3\].*(admission off)' /tmp/disk-full-control.log \
-             || ! grep -q '^DISK FULL FAIL' /tmp/disk-full-control.log; then
-            cat /tmp/disk-full-control.log
+          if ! grep -q '^\[3/3\].*(admission off)' .ci-release/disk-full-control.log \
+             || ! grep -q '^DISK FULL FAIL' .ci-release/disk-full-control.log; then
+            cat .ci-release/disk-full-control.log
             echo "CONTROL FAIL: the smoke failed before its writers could test anything"
             exit 1
           fi
-          grep '^DISK FULL FAIL' /tmp/disk-full-control.log | head -3
+          grep '^DISK FULL FAIL' .ci-release/disk-full-control.log | head -3
           echo "control OK: the smoke fails without write admission"
 
       # #761: WebSocket statements must not hold an I/O thread while they run. With one I/O
@@ -597,6 +677,7 @@ jobs:
       # statement in flight. Then the whole scale run at 1/3/16/64/256 sessions, point and
       # prefix reads, prints its METRIC lines for the log.
       - name: WebSocket reads scale with sessions, not I/O threads
+        if: matrix.group == 'durability'
         run: |
           GROUPS=200 KINDS=spin LEVELS=1,16 SECS=4 SPIN_N=2000000 SCALE_KIND=spin SCALE_CHECK=16:1.5 \
             EXTRA_ARGS=--num_ws_threads=1 bash clients/smoke/run-ws-scale.sh
@@ -606,27 +687,29 @@ jobs:
       # time (--max_ws_in_flight=1) must FAIL (1.03x under a 4-core topology), after its reads
       # ran. If it passes, the bound no longer tells whether statements run concurrently.
       - name: The WebSocket scale check fails with one statement in flight
+        if: matrix.group == 'durability'
         run: |
           if GROUPS=200 KINDS=spin LEVELS=1,16 SECS=4 SPIN_N=2000000 SCALE_KIND=spin SCALE_CHECK=16:1.5 \
                EXTRA_ARGS="--num_ws_threads=1 --max_ws_in_flight=1" \
-               bash clients/smoke/run-ws-scale.sh > /tmp/ws-scale-control.log 2>&1; then
-            cat /tmp/ws-scale-control.log
+               bash clients/smoke/run-ws-scale.sh > .ci-release/ws-scale-control.log 2>&1; then
+            cat .ci-release/ws-scale-control.log
             echo "CONTROL FAIL: the WebSocket scale check passed with one statement in flight"
             exit 1
           fi
-          if ! grep -q '^spin reads, 16 session' /tmp/ws-scale-control.log \
-             || ! grep -q '^WS SCALE FAIL: 16 sessions read only' /tmp/ws-scale-control.log; then
-            cat /tmp/ws-scale-control.log
+          if ! grep -q '^spin reads, 16 session' .ci-release/ws-scale-control.log \
+             || ! grep -q '^WS SCALE FAIL: 16 sessions read only' .ci-release/ws-scale-control.log; then
+            cat .ci-release/ws-scale-control.log
             echo "CONTROL FAIL: the smoke failed before its reads could test anything"
             exit 1
           fi
-          grep '^WS SCALE FAIL' /tmp/ws-scale-control.log
+          grep '^WS SCALE FAIL' .ci-release/ws-scale-control.log
           echo "control OK: the scale check fails with one statement in flight"
 
       # #730: SIGKILL orlyi under write load on a loopback volume, restart it, and check every
       # write against the client's ledger and the loss bound in docs/durability.md. A short run;
       # the kill-campaign workflow runs the full 40 kills on dispatch.
       - name: Kill-and-recover campaign, short (#730)
+        if: matrix.group == 'durability'
         run: |
           pip3 install --break-system-packages --quiet websocket-client
           KILLS=3 ./tests/kill_campaign.sh
@@ -634,18 +717,19 @@ jobs:
       # Negative control for the step above: putting back an older volume image before a
       # restart, as a lost data file would look, must fail the campaign on its floor check.
       - name: The kill campaign fails when recovered writes are lost
+        if: matrix.group == 'durability'
         run: |
-          if NEGATIVE=rollback KILLS=4 SEED=1 ./tests/kill_campaign.sh > /tmp/kill-control.log 2>&1; then
-            cat /tmp/kill-control.log
+          if NEGATIVE=rollback KILLS=4 SEED=1 ./tests/kill_campaign.sh > .ci-release/kill-control.log 2>&1; then
+            cat .ci-release/kill-control.log
             echo "CONTROL FAIL: the campaign passed with an older volume image put back"
             exit 1
           fi
-          if ! grep -q 'that a previous restart gave back are gone' /tmp/kill-control.log; then
-            cat /tmp/kill-control.log
+          if ! grep -q 'that a previous restart gave back are gone' .ci-release/kill-control.log; then
+            cat .ci-release/kill-control.log
             echo "CONTROL FAIL: the campaign failed, but not on the floor check"
             exit 1
           fi
-          grep -E 'VIOLATION|^KILL CAMPAIGN' /tmp/kill-control.log | head -5
+          grep -E 'VIOLATION|^KILL CAMPAIGN' .ci-release/kill-control.log | head -5
           echo "control OK: the campaign catches writes lost after they were recovered"
 
       # #744: SIGTERM orlyi under the campaign's write load, four times. Each stop must finish
@@ -657,6 +741,7 @@ jobs:
       # backlogs hold 75% of what the writer backlog caps allow (or 30 s pass). Each stop may
       # take up to 360 s, since orlyi now waits for Tetris for as long as it keeps promoting.
       - name: Graceful stop under write load (#744)
+        if: matrix.group == 'durability'
         run: |
           python3 -m unittest discover -s tests -p stop_instance_test.py
           pip3 install --break-system-packages --quiet websocket-client
@@ -665,7 +750,7 @@ jobs:
   release:
     name: jhm -c release
     if: ${{ always() }}
-    needs: [todo-lint, release-build]
+    needs: [todo-lint, release-build, release-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -675,12 +760,13 @@ jobs:
           SCOPE_RESULT: ${{ needs.todo-lint.result }}
           DOCS_ONLY: ${{ needs.todo-lint.outputs.docs_only }}
           BUILD_RESULT: ${{ needs.release-build.result }}
+          SMOKE_RESULT: ${{ needs.release-smoke.result }}
         run: |
           if [ "$EVENT_NAME" = pull_request ] && [ "$SCOPE_RESULT" = success ] &&
-             [ "$DOCS_ONLY" = true ] && [ "$BUILD_RESULT" = skipped ]; then
+             [ "$DOCS_ONLY" = true ] && [ "$BUILD_RESULT" = skipped ] && [ "$SMOKE_RESULT" = skipped ]; then
             echo "Allowlisted docs-only PR: native release coverage deliberately skipped."
-          elif [ "$BUILD_RESULT" != success ]; then
-            echo "::error::Required release coverage did not succeed: $BUILD_RESULT"
+          elif [ "$BUILD_RESULT" != success ] || [ "$SMOKE_RESULT" != success ]; then
+            echo "::error::Required release coverage did not succeed: build=$BUILD_RESULT; smoke groups=$SMOKE_RESULT"
             exit 1
           fi
 
