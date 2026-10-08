@@ -158,7 +158,7 @@ namespace Orly {
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
 
         /* TryLoad() takes this manager's own locks, so it is safe without Durable::TManager's
-           mutex (#680). */
+           mutex (#680), as Durable::TManager now calls it (#804). */
         virtual bool TryReadSaved(const Durable::TId &id, std::string &serialized_form_out) override {
           return TryLoad(id, serialized_form_out);
         }

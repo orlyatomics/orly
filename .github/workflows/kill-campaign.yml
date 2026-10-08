@@ -53,7 +53,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
-            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache
+            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache \
+            elfutils
           pip3 install --break-system-packages --quiet websocket-client
 
       - name: Set up ccache
@@ -88,6 +89,24 @@ jobs:
           SEED: ${{ inputs.seed }}
           SIGNAL: ${{ inputs.signal || 'KILL' }}
         run: ./tests/kill_campaign.sh 2>&1 | tee /tmp/kill-campaign.log; exit "${PIPESTATUS[0]}"
+
+      # A wedged restart (#804) or a hung SIGTERM stop leaves its threads' states and stacks in
+      # the campaign's work directory, which it keeps on any violation.
+      - name: Make the kept work directories readable
+        if: failure()
+        run: sudo chmod -R a+rX /tmp/kill730.* || true
+
+      - name: Upload thread dumps and server logs of a failed campaign
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kill-campaign-evidence
+          path: |
+            /tmp/kill730.*/wedge-*
+            /tmp/kill730.*/stop-hang-*
+            /tmp/kill730.*/orlyi-*.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Summary
         if: always()

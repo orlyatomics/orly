@@ -30,6 +30,11 @@ Per kill, for every writer it checks:
   open         the restart succeeds, and the #700 open check finds nothing worse than leaked
                blocks or a merge's leftover (nested) input
   ephemeral    a POV from before the kill is refused, not resurrected (#439)
+  live         the restarted server keeps acknowledging writes: a load of at least
+               --wedge-after seconds that acknowledges fewer than --wedge-min-txns transactions
+               is a wedge (#804). Before the kill, the driver saves every thread's state and
+               stacks of that orlyi (wedge-<k>/ in the work directory), so a SIGKILL run catches
+               it too, not only a SIGTERM stop that then hangs
 
 It ends with one summary line and exits nonzero on any violation.
 
@@ -42,6 +47,7 @@ tests/kill_campaign.sh. It only ever signals the orlyi it started.
 """
 
 import argparse
+import collections
 import os
 import random
 import re
@@ -52,6 +58,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import glob
 import threading
 import time
 import uuid
@@ -239,6 +246,7 @@ class Server:
                 self.proc.wait(None if sig == signal.SIGKILL else 120)
             except subprocess.TimeoutExpired:
                 hung = True
+                log(f'  stop hung: {capture_threads(self.proc.pid, os.path.join(self.work, f"stop-hang-{self.runs:03d}"))}')
                 os.kill(self.proc.pid, signal.SIGKILL)
         self.proc.wait()
         self.proc = None
@@ -301,6 +309,81 @@ def open_check(logpath):
     return None, leaked, nested
 
 
+def capture_threads(pid, out_dir):
+    """Save the state of every thread of our orlyi (pid) to out_dir: per thread its name, kernel
+    state, wait channel and syscall line (/proc/<pid>/task/*), then eu-stack's (or gdb's) stacks.
+    Checks /proc/<pid>/comm first, since orlyi rewrites its argv (so cmdline can't identify it).
+    Returns a one-line summary for the log."""
+    os.makedirs(out_dir, exist_ok=True)
+
+    def read(path):
+        try:
+            with open(path, errors='replace') as f:
+                return f.read().strip()
+        except OSError as ex:
+            return f'<{ex.strerror}>'
+
+    comm = read(f'/proc/{pid}/comm')
+    if comm != 'orlyi':
+        return f'pid {pid} is {comm!r}, not orlyi: nothing captured'
+    states = collections.Counter()
+    tasks = []
+    for task in sorted(glob.glob(f'/proc/{pid}/task/*'), key=lambda t: int(os.path.basename(t))):
+        stat = read(f'{task}/stat')
+        # The state is the field after the parenthesized name, which may itself hold spaces.
+        state = stat[stat.rfind(')') + 2:].split(' ', 1)[0] if ')' in stat else '?'
+        wchan = read(f'{task}/wchan')
+        states[(state, wchan)] += 1
+        tasks.append([os.path.basename(task), read(f'{task}/comm'), state, wchan, read(f'{task}/syscall')])
+    # A thread blocked locking a pthread mutex waits on the mutex's first word, and glibc keeps the
+    # owner's tid two words in (__owner, on x86-64 and aarch64 alike). Name that owner when it is
+    # one of our threads: a waiter whose owner is itself blocked on the same lock, or is a fiber
+    # runner that went on to other work, is a lock held across a fiber switch.
+    tids = {t[0] for t in tasks}
+    futex_nr = {'x86_64': '202', 'aarch64': '98'}.get(os.uname().machine)
+    owners = {}
+    try:
+        with open(f'/proc/{pid}/mem', 'rb', buffering=0) as mem:
+            for t in tasks:
+                call = t[4].split()
+                if len(call) > 1 and call[0] == futex_nr:
+                    addr = int(call[1], 16)
+                    if addr not in owners:
+                        try:
+                            mem.seek(addr + 8)
+                            owner = str(int.from_bytes(mem.read(4), 'little'))
+                        except (OSError, ValueError, OverflowError):
+                            owner = ''
+                        owners[addr] = owner if owner in tids else ''
+                    t.append(owners[addr])
+    except OSError:
+        pass
+    with open(os.path.join(out_dir, 'tasks.txt'), 'w') as f:
+        f.write('tid\tcomm\tstate\twchan\tsyscall\tmutex owner (if the futex is a pthread mutex)\n')
+        f.write('\n'.join('\t'.join(t + [''] * (6 - len(t))) for t in tasks) + '\n')
+    rows = tasks
+    # The unwinder stops the process for a moment, which can interrupt an epoll_wait and make
+    # orlyi abort on EINTR, so it goes last, after everything else is saved.
+    stacks = 'no eu-stack or gdb'
+    if shutil.which('eu-stack'):
+        cmd = ['eu-stack', '-i', '-p', str(pid)]
+    elif shutil.which('gdb'):
+        cmd = ['gdb', '-p', str(pid), '-batch', '-ex', 'thread apply all bt']
+    else:
+        cmd = None
+    if cmd:
+        try:
+            with open(os.path.join(out_dir, 'stacks.txt'), 'w') as f:
+                subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=120)
+            stacks = f'stacks by {cmd[0]}'
+        except (OSError, subprocess.TimeoutExpired) as ex:
+            stacks = f'{cmd[0]} failed: {ex}'
+    top = ', '.join(f'{n} {st}/{wc}' for (st, wc), n in states.most_common(6))
+    waiters = collections.Counter(t[5] for t in tasks if len(t) > 5 and t[5])
+    held = ''.join(f'; {n} thread(s) wait on a mutex thread {o} holds' for o, n in waiters.most_common(3))
+    return f'{len(rows)} threads ({top}){held}; {stacks}; saved in {out_dir}'
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--kills', type=int, default=int(os.environ.get('KILLS') or 40))
@@ -315,6 +398,10 @@ def main():
     ap.add_argument('--volume-gb', type=int, default=3)
     ap.add_argument('--update-pool-size', type=int, default=100000)
     ap.add_argument('--startup-timeout', type=int, default=300)
+    ap.add_argument('--wedge-min-txns', type=int, default=100,
+                    help='a load that acknowledges fewer transactions than this is a wedge (#804)')
+    ap.add_argument('--wedge-after', type=float, default=1.0,
+                    help='only loads at least this long (s) are checked for a wedge')
     ap.add_argument('--keep', action='store_true', help='keep the work directory')
     args = ap.parse_args()
     args.orly_out = os.path.abspath(args.orly_out)
@@ -374,6 +461,17 @@ def main():
             # just before it, plus whatever is acknowledged after that look.
             sampled_at = time.monotonic()
             sample = sample_report(args.port + 3)
+            # A restarted server that stops acknowledging writes (#804): save its threads before
+            # the kill, which would end the evidence.
+            acked_by_now = sum(1 for w in writers for t in list(w.txns) if t.acked_at is not None)
+            wedged = None
+            if run_for >= args.wedge_after and acked_by_now < args.wedge_min_txns and srv.proc.poll() is None:
+                refused_by_now = sum(w.refused for w in writers)
+                wedged = (f'wedged: only {acked_by_now} txns acknowledged in {run_for:.1f}s of load '
+                          f'({refused_by_now} refused), under the {args.wedge_min_txns} a live server '
+                          f'acknowledges (#804)')
+                log(f'kill {k}: WEDGE: {acked_by_now} txns acknowledged in {run_for:.1f}s; saving threads')
+                log(f'  {capture_threads(srv.proc.pid, os.path.join(work, f"wedge-{k:03d}"))}')
             killed.set()
             kill_at = time.monotonic()
             early, hung = srv.kill(signal.SIGTERM if args.signal == 'TERM' else signal.SIGKILL)
@@ -390,6 +488,8 @@ def main():
             first_ack = f'{min(firsts) * 1000:.0f} ms' if firsts else 'none'
             if early is not None:
                 kv.append(f'orlyi exited on its own ({early}) before the kill')
+            if wedged:
+                kv.append(wedged)
             if hung:
                 kv.append('orlyi was still running 120 s after SIGTERM')
             for w in writers:
