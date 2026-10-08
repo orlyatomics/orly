@@ -2,7 +2,7 @@
 
 How an application talks to a running `orlyi` over WebSocket. This is the path
 the `examples/` drivers use and the contract any client library (Python, Go,
-TypeScript, …) should implement. It is distinct from the lower-level packed
+TypeScript, Zig, …) should implement. It is distinct from the lower-level packed
 binary protocol in `orly/protocol.h` that the native C++ client
 (`orly/client/`) speaks.
 
@@ -125,7 +125,7 @@ replication token to join a master.
 refused as soon as the server requires one:
 
 1. Generate a token and give it to every client (`ORLY_AUTH_TOKEN_FILE` or
-   `ORLY_AUTH_TOKEN` for the Python, Go and TypeScript clients, the MCP server,
+   `ORLY_AUTH_TOKEN` for the Python, Go, Zig and TypeScript clients, the MCP server,
    the REPL and `orly_client`; or the clients' `token` option) and to every
    replica. Clients that have it keep working against the server as it is.
 2. Restart slaves with the token (or `--replication_token_file`), then the
@@ -303,7 +303,7 @@ exit;
   `<{}>`). Scalars, strings, records, sets, etc. are written as orlyscript
   literals; string values must be escaped for an orlyscript string literal: `\\` and
   `\"`, and control characters as `\n`, `\r`, `\t` or `\xNN` (the lexer refuses them raw).
-  The Python, Go and TypeScript clients do this for you.
+  The Python, Go, Zig and TypeScript clients do this for you.
 - **Batched `try`** (`#253`) invokes **one** `(pkg, method)` against **N** argument
   records — a bracketed, comma-separated list (`[<{...}>, <{...}>, ...]`, at least
   one) — folding all N calls into a **single transaction**. It exists to amortize

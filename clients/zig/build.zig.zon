@@ -1,0 +1,12 @@
+.{
+    .name = .orly,
+    .version = "0.1.0",
+    .fingerprint = 0xf5e56944b0ab0e27,
+    .minimum_zig_version = "0.17.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}

@@ -59,13 +59,13 @@ end-to-end examples, and the `todo-lint` and ThreadSanitizer gates.
 ## Releasing
 
 Releases are cut by a maintainer. Versions follow [`CHANGELOG.md`](CHANGELOG.md);
-the three npm packages and the Go client move together.
+the three npm packages, the Go client and the Zig client move together.
 
 1. Fold the changelog fragments (`python3 tools/fold_changelog.py`) and move
    `[Unreleased]` under the new version heading. Keep an empty `[Unreleased]`
    with its `### Fixed` subheading, or the next fold breaks.
 2. Bump `version` in `clients/ts`, `clients/mcp` and `clients/repl`
-   (`package.json`), and the `go get ...@vX.Y.Z` line in
+   (`package.json`), `.version` in `clients/zig/build.zig.zon`, and the `go get ...@vX.Y.Z` line in
    [`clients/go/README.md`](clients/go/README.md). Merge that as a PR.
 3. Tag `vX.Y.Z` on the merge commit and push it. `docker.yml` publishes the
    multi-arch image (`:vX.Y.Z` and `:latest`) on a `v*` tag; then
@@ -79,3 +79,9 @@ the three npm packages and the Go client move together.
    `git tag clients/go/vX.Y.Z <commit> && git push origin clients/go/vX.Y.Z`.
    Then check `go list -m github.com/orlyatomics/orly/clients/go@vX.Y.Z`
    resolves.
+6. Tag the Zig client the same way:
+   `git tag clients/zig/vX.Y.Z <commit> && git push origin clients/zig/vX.Y.Z`,
+   after setting `.version` in `clients/zig/build.zig.zon` to `X.Y.Z` (in the
+   step 2 PR). The tag only marks the commit; Zig's package manager fetches
+   whole repository roots, so users vendor `clients/zig` by path (see
+   [`clients/zig/README.md`](clients/zig/README.md)).

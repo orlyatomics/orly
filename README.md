@@ -81,7 +81,7 @@ query at an earlier version. The clearest showcase is a small
 clone"): N traders bet on one market *concurrently* — zero coordination, not a
 single bet lost — the implied prices are a read-time fold of the trade log, and
 the price history is time-travel. Build on it from **[Python](clients/python)**,
-**[Go](clients/go)**, or **[TypeScript](clients/ts)** (browser + Node), all
+**[Go](clients/go)**, **[Zig](clients/zig)**, or **[TypeScript](clients/ts)** (browser + Node), all
 speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 ## Features
@@ -373,7 +373,7 @@ All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./
 
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — the WebSocket + JSON client protocol an application uses to talk to a running `orlyi` (the path the `examples/` drivers use): connection, statements, and JSON marshaling.
 
-**Client libraries** implement that protocol so apps don't hand-roll it: [`clients/python`](clients/python) (`orly`), [`clients/go`](clients/go) (`orly`), and [`clients/ts`](clients/ts) ([`@orlyatomics/orly`](https://www.npmjs.com/package/@orlyatomics/orly) on npm — typed, browser + Node). The `examples/` drivers run on them. For AI-agent runtimes, [`clients/mcp`](clients/mcp) ([`orly-mcp`](https://www.npmjs.com/package/orly-mcp), `npx -y orly-mcp`) wraps the TS driver in an [MCP](https://modelcontextprotocol.io) server, so any MCP-speaking agent can use a running `orlyi` as conflict-free shared memory — N agents share a POV id and write concurrently with the engine as the merge ([#526](https://github.com/orlyatomics/orly/issues/526)).
+**Client libraries** implement that protocol so apps don't hand-roll it: [`clients/python`](clients/python) (`orly`), [`clients/go`](clients/go) (`orly`), [`clients/zig`](clients/zig) (`orly`), and [`clients/ts`](clients/ts) ([`@orlyatomics/orly`](https://www.npmjs.com/package/@orlyatomics/orly) on npm — typed, browser + Node). The `examples/` drivers run on them. For AI-agent runtimes, [`clients/mcp`](clients/mcp) ([`orly-mcp`](https://www.npmjs.com/package/orly-mcp), `npx -y orly-mcp`) wraps the TS driver in an [MCP](https://modelcontextprotocol.io) server, so any MCP-speaking agent can use a running `orlyi` as conflict-free shared memory — N agents share a POV id and write concurrently with the engine as the merge ([#526](https://github.com/orlyatomics/orly/issues/526)).
 
 **Interactive orlyscript** — [`clients/repl`](clients/repl) ([`orly-repl`](https://www.npmjs.com/package/orly-repl) on npm) is a REPL against a running `orlyi`: type an expression and see its value, define functions and call them, write through a POV and read back — no package files by hand. Each entry is compiled with `orlyc` into a synthetic package and installed behind the scenes ([#535](https://github.com/orlyatomics/orly/issues/535)).
 
