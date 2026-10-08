@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <limits>
 #include <memory>
 
 #include <base/class_traits.h>
@@ -370,27 +371,36 @@ namespace Orly {
 
       typedef std::shared_ptr<const TRangeGenerator> TPtr;
 
+      /* The stride is the distance from start to second, which can span more than INT64_MAX (from INT64_MIN
+         to INT64_MAX, say), so it is held and computed wide (#805). */
       static TPtr NewWithSecond(int64_t start, int64_t limit, bool include_limit, int64_t second) {
-        return TPtr(new TRangeGenerator(start, limit, second - start, include_limit));
+        return TPtr(new TRangeGenerator(start, limit, static_cast<TStride>(second) - start, include_limit));
       }
       static TPtr NewWithSecond(int64_t start, int64_t second) {
-        return TPtr(new TRangeGenerator(start, second - start));
+        return TPtr(new TRangeGenerator(start, static_cast<TStride>(second) - start));
       }
+      /* Compares, rather than subtracts, to pick the direction: limit - start overflows for a range that spans
+         more than INT64_MAX (#805). A range that starts at its limit steps down, as it always has. */
       static TPtr New(int64_t start, int64_t limit, bool include_limit) {
-        return TPtr(new TRangeGenerator(start, limit, limit - start > 0 ? 1 : -1, include_limit));
+        return TPtr(new TRangeGenerator(start, limit, limit > start ? 1 : -1, include_limit));
       }
       static TPtr New(int64_t start) {
         return TPtr(new TRangeGenerator(start, 1));
       }
 
+      /* A stride can be wider than an int64_t (#805). */
+      typedef __int128 TStride;
+
       class TCursor : public Base::TIter<const int64_t> {
         public:
-        TCursor(const TPtr &ptr) : Cur(ptr->GetStart()), Ptr(ptr) {}
-        TCursor(const TCursor &that) : Cur(that.Cur), Ptr(that.Ptr) {}
-        TCursor(TCursor &&that) : Cur(std::move(that.Cur)), Ptr(std::move(that.Ptr)) {}
+        TCursor(const TPtr &ptr) : Cur(ptr->GetStart()), Ptr(ptr), Done(false) {}
+        TCursor(const TCursor &that) : Cur(that.Cur), Ptr(that.Ptr), Done(that.Done) {}
+        TCursor(TCursor &&that) : Cur(std::move(that.Cur)), Ptr(std::move(that.Ptr)), Done(that.Done) {}
 
         operator bool() const {
-
+          if (Done) {
+            return false;
+          }
           if (Ptr->HasEnd()) {
             bool res = (Ptr->GetStride() > 0 ? Cur < Ptr->GetLimit() : Cur > Ptr->GetLimit());
             if(Ptr->GetIncludeLimit()) {
@@ -412,7 +422,14 @@ namespace Orly {
           if(!*this) {
             throw TPastEndError(HERE);
           }
-          Cur += Ptr->GetStride();
+          /* Step wide: the next element is past the limit, and past what an int64_t holds, when the step
+             leaves the int64_t range, so the range is done (#805). Before, the signed add overflowed there. */
+          const TStride next = static_cast<TStride>(Cur) + Ptr->GetStride();
+          if (next > std::numeric_limits<int64_t>::max() || next < std::numeric_limits<int64_t>::min()) {
+            Done = true;
+          } else {
+            Cur = static_cast<int64_t>(next);
+          }
 
           return *this;
         }
@@ -420,6 +437,7 @@ namespace Orly {
         private:
         int64_t Cur;
         TPtr Ptr;
+        bool Done;
       };
 
       virtual Base::TIterHolder<const int64_t> NewCursor() const {
@@ -430,7 +448,7 @@ namespace Orly {
         return Start;
       }
 
-      int64_t GetStride() const {
+      TStride GetStride() const {
         return Stride;
       }
 
@@ -451,16 +469,17 @@ namespace Orly {
       private:
       /* Builds a new range generator starting at start, ending at limit, and stepping with stride. Throws a runtime
          error if the stride is not in the direction from start to limit. */
-      TRangeGenerator(int64_t start, int64_t limit, int64_t stride, bool include_limit)
+      TRangeGenerator(int64_t start, int64_t limit, TStride stride, bool include_limit)
             : IncludeLimit(include_limit), Start(start), Stride(stride),  Limit(limit) {
-        if (limit - start > 0 ? stride < 0 : stride > 0) {
+        if (limit > start ? stride < 0 : stride > 0) {
           throw TSystemError(HERE, "Range stride must be in the direction from start to limit");
         }
       }
-      TRangeGenerator(int64_t start, int64_t stride) : IncludeLimit(true), Start(start), Stride(stride) {}
+      TRangeGenerator(int64_t start, TStride stride) : IncludeLimit(true), Start(start), Stride(stride) {}
 
       bool IncludeLimit;
-      int64_t Start, Stride;
+      int64_t Start;
+      TStride Stride;
       TOpt<int64_t> Limit;
     }; // TRangeGenerator
 
