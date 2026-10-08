@@ -1036,6 +1036,29 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 
+      # Zig client (#741): its unit tests, then the smoke against a live orlyi: the four new-POV
+      # flavours with and without a parent, pause/unpause, mixed and failing batches, paging, and
+      # the auth refusals (typed errors) against a token-enabled orlyi, with a control against one
+      # that has no token. Zig is pinned and checked against its published checksum.
+      - name: Install Zig
+        run: |
+          curl -fsSL -o /tmp/zig.tar.xz https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
+          echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  /tmp/zig.tar.xz" | sha256sum -c -
+          sudo mkdir -p /opt/zig
+          sudo tar -xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo /opt/zig >> "$GITHUB_PATH"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+
+      - name: Zig client unit tests (clients/zig)
+        run: zig build test --summary all
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/zig
+
+      - name: client Zig smoke (clients/smoke)
+        run: bash run-zig.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
   tsan:
     name: ThreadSanitizer
     # GATING (issue #184): the curated concurrency set is clean under TSan, so

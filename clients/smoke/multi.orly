@@ -11,3 +11,6 @@ write_name = (("named") effecting { new <['names', n]> <- s; } ) where {
   n = given::(int);
   s = given::(str);
 };
+/* A method with the paging shape (#735): a page of rows and the cursor for the
+   page after it. The Zig client's pages() smoke walks it. */
+page = (<{.rows: [last + 1, last + 2], .last: last + 2}>) where { last = given::(int); };
