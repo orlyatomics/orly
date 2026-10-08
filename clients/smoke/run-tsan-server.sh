@@ -121,6 +121,7 @@ run_smoke() {
     # only: the control just has to show a race is reported, and the step has a time limit.
     if [ "$SMOKE_RC" -eq 0 ] && [ "$tag" = smoke ]; then
       ORLY_URL="ws://127.0.0.1:$WS_PORT" ORLY_REPORT_PORT=$REPORT_PORT DISCARD_BATCHES=2 DISCARD_BATCH=100 \
+        WRITER_MAX=100 WRITER_SLEEP_MS=10 \
         timeout 600 node pov_review.mjs >> "$dir/smoke.log" 2>&1
       SMOKE_RC=$?
     fi
