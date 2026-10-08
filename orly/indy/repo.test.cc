@@ -1503,7 +1503,7 @@ FIXTURE(RangeCountsRespectReadBudgetsWithoutFoldingValues) {
         TSuprena ctx_arena;
         TContext context(repo, &ctx_arena);
         const auto bytes_before = ctx_arena.GetByteSize();
-        context.SetReadBudget(3, 1, &ctx_arena);
+        context.SetReadBudget(3, 1, &ctx_arena, 0);
         EXPECT_EQ(context.CountKeys(all), 3L);
         EXPECT_EQ(context.GetRowsWalked(), 3UL);
         EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
@@ -1522,7 +1522,7 @@ FIXTURE(RangeCountsRespectReadBudgetsWithoutFoldingValues) {
         TSuprena ctx_arena;
         TContext context(repo, &ctx_arena);
         TKey allocated(string(1024, 'y'), &ctx_arena, state);
-        context.SetReadBudget(0, 1, &ctx_arena);
+        context.SetReadBudget(0, 1, &ctx_arena, 0);
         auto over_bytes = [&]() { context.CountKeys(absent); };
         EXPECT_THROW_FUNC(Orly::Server::TReadTooLarge, over_bytes);
       }
