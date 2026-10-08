@@ -3,13 +3,15 @@
 # gives data back after a stop/restart, and that the installed-package
 # registry follows suit.
 #
-#   cycle 1: create volume, install kv, write keys, stop
-#   cycle 2: restart --create=false; package must auto-reinstall and the
-#            data must read back with NO client install; then upgrade to
+#   cycle 1: create volume, install kv and rec.1, write keys and records, stop
+#   cycle 2: restart --create=false; packages must auto-reinstall and the
+#            data must read back with NO client install; then upgrade rec to
+#            rec.2 and read rec.1's records through it (#797); upgrade to
 #            kv.2, check that uninstalling kv.1 is refused (#800), uninstall
 #            kv.2, stop
-#   cycle 3: restart; package must STAY uninstalled (clean error), neither
-#            version coming back (#800)
+#   cycle 3: restart; kv must STAY uninstalled (clean error), neither
+#            version coming back (#800), and rec.2 must come back as the
+#            installed version and still read the records (#797)
 #
 # Needs root for losetup and the /proc/partitions device scan; run under
 # sudo or on a CI runner with passwordless sudo.  Ports 19600-19603.
@@ -45,6 +47,27 @@ mkdir "$WORK/v2"
 sed 's/^package #1;/package #2;/' "$WORK/kv.orly" > "$WORK/v2/kv.orly"
 "$ORLY_OUT/orly/orlyc" --skip-tests -o "$WORK/v2" "$WORK/v2/kv.orly"
 cp "$WORK/v2/kv.2.so" "$WORK/packages/"
+# rec stores records; rec.2 is the same source at the next version. Upgrading
+# a package whose records are in use crashed orlyi on the next read (#797).
+for version in 1 2; do
+  mkdir "$WORK/rec$version"
+  sed "s/^package #1;/package #$version;/" > "$WORK/rec$version/rec.orly" <<'ORLY'
+package #1;
+v_t is <{.oid: str, .p: str}>;
+put = ((true) effecting {
+  new <['v', a, b]> <- <{.oid: b, .p: p}>;
+}) where {
+  a = given::(str);
+  b = given::(str);
+  p = given::(str);
+};
+rng = (*(keys (v_t) @ <['v', a, free::(str)]>)::(v_t) as [v_t]) where {
+  a = given::(str);
+};
+ORLY
+  "$ORLY_OUT/orly/orlyc" --skip-tests -o "$WORK/rec$version" "$WORK/rec$version/rec.orly"
+  cp "$WORK/rec$version/rec.$version.so" "$WORK/packages/"
+done
 
 echo "[2/8] create loopback volume"
 echo "   instance: $INSTANCE"
@@ -104,6 +127,15 @@ stop_server() {  # $1 = signal (INT or TERM), $2 = log tag
 
 client() { PYTHONPATH="$REPO_ROOT/clients/python" python3 -c "$1"; }
 
+# The records rec writes in cycle 1, and a check that rec reads exactly them.
+REC_CHECK="
+def check_records(c, pov, step):
+    got = sorted(c.call(pov, 'rec', 'rng', {'a': 'a0'}), key=lambda r: r['oid'])
+    want = [{'oid': f'b{j}', 'p': f'p{j}'} for j in range(0, 12, 3)]
+    assert got == want, f'{step}: rec read {got}, want {want}'
+    print(f'   {step}: rec records OK')
+"
+
 echo "[3/8] start fresh (create=true), install, write"
 start_server true run1
 # The pov id is captured for cycle 2: a pre-restart pov must be REFUSED
@@ -111,10 +143,14 @@ start_server true run1
 OLD_POV="$(client "
 import orly
 c = orly.connect('ws://127.0.0.1:19602/', timeout=10, recv_timeout=60)
-c.new_session(); c.install('kv', 1); pov = c.new_pov()
+c.new_session(); c.install('kv', 1); c.install('rec', 1); pov = c.new_pov()
 for n in range(1, 11):
     c.call(pov, 'kv', 'write_val', {'n': n, 'x': n * 100})
 assert c.call(pov, 'kv', 'read_val', {'n': 5}) == 500
+for j in range(12):
+    c.call(pov, 'rec', 'put', {'a': f'a{j % 3}', 'b': f'b{j}', 'p': f'p{j}'})
+$REC_CHECK
+check_records(c, pov, 'before the restart')
 print(pov)
 c.close()" | tail -1)"
 echo "   wrote 10 keys via pov $OLD_POV"
@@ -149,6 +185,10 @@ try:
 except orly.OrlyError as ex:
     assert 'ephemeral' in str(ex), f'wrong error for a pov under a dead pov: {ex}'
 print('   pov under the pre-restart pov refused cleanly (#671)')
+$REC_CHECK
+check_records(c, c.new_pov(), 'after the restart (rec.1 auto-reinstalled)')
+c.install('rec', 2)
+check_records(c, c.new_pov(), 'after upgrading to rec.2 (#797)')
 # Uninstall names the installed version (#800): with kv.2 installed over kv.1, uninstalling
 # kv.1 is refused and leaves kv.2 serving; and kv.1's record must not outlive the upgrade.
 c.install('kv', 2)
@@ -183,6 +223,8 @@ try:
 except orly.OrlyError as ex:
     assert 'non-installed' in str(ex), str(ex)
 print('   uninstall persisted OK')
+$REC_CHECK
+check_records(c, pov, 'after a restart with rec.2 installed')
 c.close()"
 stop_server INT run3
 

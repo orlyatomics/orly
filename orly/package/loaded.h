@@ -23,8 +23,10 @@
 #pragma once
 
 #include <functional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <base/piece.h>
 #include <base/thrower.h>
@@ -43,6 +45,17 @@ namespace Orly {
     DEFINE_ERROR(TDlError, std::runtime_error, "libdl error")
 
     DEFINE_ERROR(TLoaderError, std::runtime_error, "loader error");
+
+    /* The STB_GNU_UNIQUE members of Orly::Native::Record<...> that the ELF
+       shared object at `path` defines, as mangled names; empty if it defines
+       none or isn't a readable 64-bit ELF file.
+
+       A package compiled before #797 emitted its record registries this way,
+       so the dynamic linker bound one copy for every loaded package that
+       declares the same record type, and loading the second one corrupted the
+       first one's record descriptor. TLoaded refuses a package whose names
+       collide with one already loaded rather than let the next read crash. */
+    std::vector<std::string> GetUniqueRecordSymbols(const std::string &path);
 
     /* An actual dlopen()'d package. */
     class TLoaded : public std::enable_shared_from_this<TLoaded> {

@@ -1,7 +1,8 @@
 /* <orly/package/manager.test.cc>
 
    Unit test for <orly/package/manager.h>: the install/upgrade/uninstall
-   lifecycle rules and the lock-free reader design (#356).
+   lifecycle rules and the lock-free reader design (#356), and the loader's
+   handling of packages that share a record type (#797).
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -21,7 +22,9 @@
 
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -74,6 +77,29 @@ const string &SharedPkgDir() {
     return dir;
   }();
   return pkg_dir;
+}
+
+/* Compile `source` (a whole package) into pkg_dir as `name`. */
+void CompilePackage(const string &scratch, const string &pkg_dir, const string &name, const string &source) {
+  const string src_path = scratch + "/" + name + ".orly";
+  {
+    ofstream src(src_path);
+    src << source;
+  }
+  Compiler::Compile(TPath(src_path), Jhm::TTree(pkg_dir), {});
+}
+
+/* Build a shared object with g++ from `source`, at pkg_dir/<so_name>. */
+void BuildSo(const string &scratch, const string &pkg_dir, const string &so_name, const string &source) {
+  const string src_path = scratch + "/" + so_name + ".cc";
+  {
+    ofstream src(src_path);
+    src << source;
+  }
+  const string cmd = "g++ -std=c++23 -fPIC -shared -o '" + pkg_dir + "/" + so_name + "' '" + src_path + "'";
+  if (system(cmd.c_str()) != 0) {
+    throw runtime_error("failed: " + cmd);
+  }
 }
 
 }  // anonymous namespace
@@ -231,4 +257,90 @@ FIXTURE(ConcurrentReaders) {
   }
   EXPECT_TRUE(hits + misses > 0);
   EXPECT_EQ(manager.Get(name)->GetName().Version, 1U);
+}
+
+/* #797: every package used to export its record registry -- the static
+   members of Orly::Native::Record<T> -- as STB_GNU_UNIQUE symbols, so a
+   second package declaring the same record type (or the next version of the
+   same package) shared and corrupted the first one's, and the next read of
+   those records crashed orlyi. A freshly compiled package must keep its
+   record registry to itself. */
+FIXTURE(RecordRegistryIsPrivateToEachPackage) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = MakeScratch();
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  ofstream marker(pkg_dir + "/__orly__");
+  const string body =
+      "v_t is <{.oid: str, .p: str}>;\n"
+      "get = (<{.oid: \"o\", .p: \"p\"}>);\n";
+  CompilePackage(scratch, pkg_dir, "rec", "package #1;\n" + body);
+  CompilePackage(scratch, pkg_dir, "rec", "package #2;\n" + body);
+  CompilePackage(scratch, pkg_dir, "other", "package #1;\n" + body);
+  for (const char *so : {"rec.1.so", "rec.2.so", "other.1.so"}) {
+    const auto symbols = GetUniqueRecordSymbols(pkg_dir + "/" + so);
+    EXPECT_TRUE(symbols.empty());
+    for (const auto &symbol : symbols) {
+      cerr << so << " exports unique record symbol " << symbol << endl;
+    }
+  }
+
+  /* Both versions and the other package install side by side. */
+  TManager manager((Jhm::TTree(pkg_dir)));
+  manager.Install({{TName{{"rec"}}, 1}, {TName{{"other"}}, 1}});
+  manager.Install({{TName{{"rec"}}, 2}});
+  EXPECT_EQ(manager.Get(TName{{"rec"}})->GetName().Version, 2U);
+}
+
+/* A package compiled before the fix still exports its registry, and two such
+   packages declaring the same record type cannot be made safe once loaded
+   together. The loader must refuse the second one with an error instead of
+   loading it and crashing on the next read. Stand-ins built with g++ carry the
+   same kind of symbol a pre-#797 package did. */
+FIXTURE(LegacyRecordRegistryCollisionIsRefused) {
+  const string scratch = MakeScratch();
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  const string legacy =
+      "namespace Orly { namespace Rt { namespace Objects { struct TObjLegacy797 {}; } } }\n"
+      "namespace Orly { namespace Native {\n"
+      "  template <typename T> struct Record { static unsigned long ElemCount; };\n"
+      "  template <typename T> unsigned long Record<T>::ElemCount = 0;\n"
+      "} }\n"
+      "unsigned long *Use() { return &Orly::Native::Record<Orly::Rt::Objects::TObjLegacy797>::ElemCount; }\n";
+  BuildSo(scratch, pkg_dir, "legacya.1.so", legacy);
+  BuildSo(scratch, pkg_dir, "legacyb.1.so", legacy);
+  BuildSo(scratch, pkg_dir, "unrelated.1.so",
+          "namespace Orly { namespace Rt { namespace Objects { struct TObjOther797 {}; } } }\n"
+          "namespace Orly { namespace Native {\n"
+          "  template <typename T> struct Record { static unsigned long ElemCount; };\n"
+          "  template <typename T> unsigned long Record<T>::ElemCount = 0;\n"
+          "} }\n"
+          "unsigned long *Use() { return &Orly::Native::Record<Orly::Rt::Objects::TObjOther797>::ElemCount; }\n");
+  const auto symbols = GetUniqueRecordSymbols(pkg_dir + "/legacya.1.so");
+  EXPECT_EQ(symbols.size(), 1U);
+
+  /* The stand-ins aren't packages (no GetApiVersion), so even a load that
+     gets past the guard fails -- but after dlopen, which is the point at
+     which a real package's registry would be bound. */
+  const Jhm::TTree tree(pkg_dir);
+  auto load_error = [&tree](const char *name) -> string {
+    try {
+      TLoaded::Load(tree, TVersionedName{TName{{name}}, 1});
+    } catch (const TLoaderError &ex) {
+      return string("loader: ") + ex.what();
+    } catch (const exception &ex) {
+      return string("other: ") + ex.what();
+    }
+    return "loaded";
+  };
+  const string first = load_error("legacya");
+  EXPECT_TRUE(first.starts_with("other: "));
+  const string second = load_error("legacyb");
+  EXPECT_TRUE(second.starts_with("loader: "));
+  EXPECT_TRUE(second.find("#797") != string::npos);
+  EXPECT_TRUE(second.find("TObjLegacy797") != string::npos);
+  /* A different record type is no collision. */
+  EXPECT_TRUE(load_error("unrelated").starts_with("other: "));
+  cerr << "first: " << first << endl << "second: " << second << endl;
 }

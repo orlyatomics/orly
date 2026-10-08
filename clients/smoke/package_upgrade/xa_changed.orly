@@ -1,0 +1,5 @@
+package #3;
+v_t is <{.oid: str, .p: str, .q: int}>;
+rng = (*(keys (v_t) @ <['v', a, free::(str)]>)::(v_t) as [v_t]) where {
+  a = given::(str);
+};
