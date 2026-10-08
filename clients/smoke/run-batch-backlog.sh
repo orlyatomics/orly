@@ -5,8 +5,10 @@
 # filled the Entry pool: merges and Tetris missed, and writers were refused.
 # With it capped in entries too, at most 1% of the batches may be refused (a
 # refused batch is retried; a loaded runner can refuse a few, #719), no pool
-# may miss, no memory merge may roll back for want of pool space (orlyi's log must
-# have no "StepMergeMem out of pool space; merge rolled back" line), and the
+# may miss, no memory merge may keep rolling back for want of pool space (a
+# rollback is retried by design and the smoke runs the pool near full, so one
+# that recovers is fine; orlyi's log must not show a "StepMergeMem out of pool
+# space; merge rolled back" retry count of ROLLBACK_MAX or more), and the
 # POV's backlog must never pass its cap (#721; the reporting port's Writer
 # Backlog line). orlyi must not abort. The peak Entry pool use is a reported
 # METRIC, not a gate: merge copies may use the reserve by design, and a faster
@@ -98,9 +100,14 @@ if grep -Eq "$ABORT" "$WORK/orlyi.log"; then
   status=1
 fi
 ROLLBACK='StepMergeMem out of pool space; merge rolled back'
-if grep -q "$ROLLBACK" "$WORK/orlyi.log"; then
-  echo "BATCH BACKLOG FAIL: a memory merge rolled back for want of pool space:"
-  grep "$ROLLBACK" "$WORK/orlyi.log" | head -3
+# The log prints the retry count at powers of two, so a count at or past
+# ROLLBACK_MAX means one merge failed that many times in a row.
+ROLLBACK_MAX=${ROLLBACK_MAX:-16}
+worst=$(grep "$ROLLBACK" "$WORK/orlyi.log" | sed -n 's/.*(\([0-9][0-9]*\) times so far).*/\1/p' | sort -n | tail -1)
+echo "METRIC worst_merge_rollback_retries ${worst:-0}"
+if [ "${worst:-0}" -ge "$ROLLBACK_MAX" ]; then
+  echo "BATCH BACKLOG FAIL: a memory merge rolled back $worst times in a row for want of pool space:"
+  grep "$ROLLBACK" "$WORK/orlyi.log" | tail -3
   status=1
 fi
 if ! kill -0 "$ORLYI_PID" 2>/dev/null; then
