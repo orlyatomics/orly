@@ -53,6 +53,13 @@ namespace Orly {
     }; // TObjCtor
 
 
+    /* The base name (no extension) of the header generated for a record or variant type under
+       orly/rt/objects: its mangled name, which is also its C++ class suffix, while that fits in a
+       file name. The mangled name spells out every field name and nested type, so a nested type
+       outgrows the 255-byte limit (#815). Past a threshold the name is "H" and a 128-bit hash of the
+       mangled name in hex, which is just as stable: packages share these headers. */
+    std::string ObjHeaderName(const Type::TType &type);
+
     void GenObjHeader(const std::string &out_dir, const Type::TType &obj_type);
     void GenObjInclude(const Type::TType &obj, TCppPrinter &strm);
 
