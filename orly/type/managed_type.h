@@ -157,9 +157,11 @@ namespace Orly {
       public:
       typedef std::shared_ptr<const TFinal> TPtr;
 
+      /* The type czar owns the singleton for as long as types exist, so hand out an unowned
+         reference: no reference count to bump (#798). */
       static TType Get() {
         assert(Ptr);  // If this fails, you likely don't have an instance of TTypeCzar.
-        return (*Ptr)->AsType();
+        return TType::TImpl::Unowned(Ptr->get());
       }
 
       void Accept(const TType::TVisitor &visitor) const {

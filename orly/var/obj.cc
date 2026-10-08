@@ -32,7 +32,7 @@ size_t TObj::GetHash() const {
 }
 
 Type::TType TObj::GetType() const {
-  return Type::TObj::Get(TypeMap);
+  return ObjType;
 }
 
 void TObj::Write(std::ostream &) const {
@@ -118,6 +118,7 @@ TObj::TObj(const std::unordered_map<std::string, TVar> &that) : FieldsByName(tha
   for (auto iter = FieldsByName.begin(); iter != FieldsByName.end(); ++iter) {
     TypeMap[iter->first] = iter->second.GetType();
   }
+  ObjType = Type::TObj::Get(TypeMap);
   SetHash();
 }
 

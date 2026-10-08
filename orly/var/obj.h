@@ -132,6 +132,11 @@ namespace Orly {
 
       std::map<std::string, Type::TType> TypeMap;
 
+      /* Type::TObj::Get(TypeMap), interned once at construction. Interning takes a lock shared
+         by every record type in the process, and a record read used to intern its type two or
+         three times per value (#798). */
+      Type::TType ObjType;
+
       static const TVar DefaultVar;
 
       friend class TVar;
