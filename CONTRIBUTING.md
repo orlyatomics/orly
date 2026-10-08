@@ -19,6 +19,27 @@ python3 tools/lang_test.py -d tests/lang_tests   # Orlyscript language suite
 Run `lang_test.py` from the repo root; it shells out to `orlyc`, whose paths
 are repo-root-relative. Expect `156 passed / 2 xfail`.
 
+### Getting started on macOS (or any non-Linux machine)
+
+The engine uses Linux-only APIs (`epoll`, `eventfd`, `O_DIRECT`, loop-device
+volumes), so on a Mac it builds in a container. `./dev` does that for you; on
+Linux the same command builds natively.
+
+```sh
+./dev build                      # everything, debug
+./dev build orly/orlyc           # one target
+./dev test                       # the C++ unit tests
+./dev lang                       # the orlyscript language suite
+./dev sh                         # a shell in the build environment
+```
+
+You need Docker (Docker Desktop, OrbStack or Colima). The first run builds the
+toolchain image from [`docker/Dockerfile.dev`](docker/Dockerfile.dev) once. The
+source stays on your machine; object files and the compiler cache live in named
+volumes (`orly-dev-out`, `orly-dev-ccache`), so only the first build is cold.
+Set `ORLY_DEV_IMAGE` to use another image, or `ORLY_DEV_NATIVE=1` / `0` to force
+a native or containerised build.
+
 ## Comments and the TODO convention
 
 The 2014-era codebase attached an empty `/* TODO */` doc-stub to nearly every
