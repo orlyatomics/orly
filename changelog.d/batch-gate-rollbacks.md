@@ -1,0 +1,1 @@
+- **Changed**: the batch-backlog smoke now fails only when a memory merge rolls back `ROLLBACK_MAX` (16) or more times in a row for want of pool space, not on any rollback. A rollback is retried by design and the smoke runs the pool near full, so a single recovered one flaked master and several PRs; it reports `worst_merge_rollback_retries` as a metric.
