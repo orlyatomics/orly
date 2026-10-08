@@ -40,6 +40,25 @@ Argument values are encoded by `orly.lit`:
 | `{1, 2}` | `{1, 2}` (set) |
 | `orly.Lit("now()")` | `now()` (raw, un-encoded) |
 
+## Reviewing a POV's changes (#746)
+
+```python
+draft = c.new_pov(safe=False, shared=False, conflicts="refuse")
+c.pause(draft)                                         # hold its writes back
+c.call(draft, "mypkg", "put", {"k": 1, "v": 2})
+page = c.diff(draft, start=("edge",), stop=("tags",), limit=50)
+for changes in c.diff_pages(draft):                    # {key, kind, before, after, op?, delta?}
+    ...
+result = c.promote(draft)                              # "promoted", "refused", "blocked", ...
+if result["status"] != "promoted":
+    c.discard(draft)
+```
+
+`diff` lists what the POV changed relative to its parent (`added`, `changed`, `removed`, or
+`delta` for `+=`/`|=`); keys are lists or tuples, sent as key literals (`Addr`). A POV made with
+`conflicts` reports (`"report"`) or refuses (`"refuse"`) a promotion that overwrites a key its
+parent changed after the fork. See [docs/pov-review.md](../../docs/pov-review.md).
+
 ## Marshaling quirks (from the engine)
 
 Results come back via the engine's JSON marshaling, so:

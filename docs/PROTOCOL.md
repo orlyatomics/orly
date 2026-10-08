@@ -281,11 +281,15 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Install package | `install <pkg>.<version>;` | — |
 | Uninstall package | `uninstall <pkg>.<version>;` | — |
 | Compile package | `compile "<orlyscript source>";` | `{"name": ..., "version": ...}`; refused unless `--allow_remote_compile` |
-| New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}];` | POV id (string) |
+| New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}] [<{.conflicts: "report"\|"refuse"}>];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
 | Batch different methods | `try {<pov-id>} [<pkg1> <method1> <args1>, <pkg2> <method2> <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause {<id>};` / `unpause {<id>};` | `"paused"` / `"unpaused"` |
+| Diff a POV | `diff_pov {<id>} [<{.start: <[...]>, .stop: <[...]>, .after: <[...]>, .limit: n}>];` | `{"changes": [...], "next", "next_literal", "updates"}` |
+| Discard a POV's changes | `discard_pov {<id>};` | `{"discarded_updates", "discarded_entries"}` |
+| Promote a POV | `promote_pov {<id>} [<{.force: true}>];` | `{"status": "promoting"\|"refused", "pending", "mark", "conflicts"}` |
+| Review a POV | `review_pov {<id>} [<{.after: n}>];` | `{"conflict_mode", "status", "pending", "blocked", "blocked_on", "conflicts", ...}` |
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
 
@@ -350,6 +354,19 @@ exit;
   server restart, a `try` against a pre-restart POV id fails with a clean
   "povs are ephemeral" error — create a new POV and retry. (Sessions, by
   contrast, do survive: `resume session <id>;` works across a restart.)
+- **Reviewing a POV's changes** (#746): `diff_pov` lists what a POV changed relative to
+  its parent (its unpromoted writes: `added`, `changed`, `removed`, or for `+=`/`|=` a
+  `delta`), by key range and keyset-paged; `discard_pov` throws a private POV's changes
+  away; a POV made with `.conflicts` reports (or refuses) a promotion that overwrites a key
+  its parent changed after the fork; `promote_pov` and `review_pov` promote it and follow
+  the promotion. Options go in a record after the statement, not as keywords (so `.start`
+  and `.stop`, since `from` and `to` are keywords). The binary protocol has the same calls
+  (`NewReviewPov`, `DiffPov`, `DiscardPov`, `PromotePov`, `ReviewPov` in
+  `orly/protocol.h`). See [`pov-review.md`](pov-review.md).
+  - Clients: `diff`, `diff_pages`, `discard`, `request_promotion`, `review`, `promote` and
+    `new_pov(conflicts=...)` (python); `Diff`, `DiffAll`, `Discard`, `RequestPromotion`,
+    `Review`, `Promote` and `NewPovWith` (go); `diff`, `diffPages`, `discard`,
+    `requestPromotion`, `review`, `promote` and `newPov({conflicts})` (ts).
 - **Time-travel is not a protocol verb.** Historical / as-of reads are expressed
   *in orlyscript* — a package method that takes an `.as_of` argument (and/or a
   key-encoded version axis) and folds history in-engine. The protocol just calls

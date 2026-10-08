@@ -36,6 +36,7 @@
 #include <base/socket/address.h>
 #include <orly/closure.h>
 #include <orly/method_result.h>
+#include <orly/pov_review.h>
 
 namespace Orly {
 
@@ -70,6 +71,19 @@ namespace Orly {
       std::shared_ptr<Rpc::TFuture<void>> PausePov(const Base::TUuid &pov_id);
 
       std::shared_ptr<Rpc::TFuture<void>> UnpausePov(const Base::TUuid &pov_id);
+
+      /* The POV review workflow (#746); see <orly/protocol.h>. */
+      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewReviewPov(const std::optional<Base::TUuid> &parent_pov_id, bool is_safe, bool is_shared,
+                                                              TConflictMode conflicts,
+                                                              const std::chrono::seconds &ttl = std::chrono::seconds(600));
+
+      std::shared_ptr<Rpc::TFuture<TPovDiff>> DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options = TPovDiffOptions());
+
+      std::shared_ptr<Rpc::TFuture<TPovDiscard>> DiscardPov(const Base::TUuid &pov_id);
+
+      std::shared_ptr<Rpc::TFuture<TPovPromote>> PromotePov(const Base::TUuid &pov_id, bool force = false);
+
+      std::shared_ptr<Rpc::TFuture<TPovReview>> ReviewPov(const Base::TUuid &pov_id, uint64_t after = 0UL);
 
       std::shared_ptr<Rpc::TFuture<void>> SetUserId(const Base::TUuid &user_id);
 

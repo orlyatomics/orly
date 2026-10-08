@@ -64,6 +64,25 @@ and returns the raw JSON result. Argument values are encoded by `orly.Lit`:
 | `orly.Set{1, 2}` | `{1, 2}` (set) |
 | `orly.Raw("now()")` | `now()` (raw, un-encoded) |
 
+## Reviewing a POV's changes (#746)
+
+```go
+draft, _ := c.NewPovWith(orly.PovOptions{Conflicts: "refuse"})
+c.Send(fmt.Sprintf("pause {%s};", draft))              // hold its writes back
+c.Call(draft, "mypkg", "put", map[string]any{"k": 1, "v": 2})
+page, _ := c.Diff(draft, orly.DiffOptions{Start: orly.Addr{"edge"}, Stop: orly.Addr{"tags"}, Limit: 50})
+all, _ := c.DiffAll(draft, orly.DiffOptions{})        // []PovChange{Key, Kind, Before, After, Op, Delta}
+result, _ := c.Promote(draft, false, 30*time.Second)  // "promoted", "refused", "blocked", ...
+if result.Status != "promoted" {
+	c.Discard(draft)
+}
+```
+
+`Diff` lists what the POV changed relative to its parent (`added`, `changed`, `removed`, or
+`delta` for `+=`/`|=`). A POV made with `Conflicts` reports (`"report"`) or refuses (`"refuse"`) a
+promotion that overwrites a key its parent changed after the fork. See
+[docs/pov-review.md](../../docs/pov-review.md).
+
 ## Marshaling quirks (from the engine)
 
 Results come back via the engine's JSON marshaling, so:

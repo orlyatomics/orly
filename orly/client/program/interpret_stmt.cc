@@ -28,6 +28,7 @@
 #include <orly/atom/kit2.h>
 #include <orly/atom/suprena.h>
 #include <orly/client/program/translate_expr.h>
+#include <orly/client/program/translate_options.h>
 #include <orly/sabot/state_dumper.h>
 
 using namespace std;
@@ -88,7 +89,11 @@ bool Orly::Client::Program::InterpretStmt(const TStmt *stmt, const shared_ptr<TC
         parent_id = TUuid(tmp.c_str());
       }
       shared_ptr<Rpc::TFuture<TUuid>> pov_id;
-      if (is_safe) {
+      const TConflictMode mode = GetNewPovOptions(TranslateOptions(that->GetOptOptions()));
+      if (mode != TConflictMode::None) {
+        /* Tracks conflicts (#746). */
+        pov_id = Client->NewReviewPov(parent_id, is_safe, is_shared, mode);
+      } else if (is_safe) {
         if (is_shared) {
           pov_id = Client->NewSafeSharedPov(parent_id);
         } else {
@@ -112,6 +117,19 @@ bool Orly::Client::Program::InterpretStmt(const TStmt *stmt, const shared_ptr<TC
       } else {
         Client->UnpausePov(id)->Sync();
       }
+    }
+    // POV review (#746): print each result as the WebSocket protocol's JSON.
+    virtual void operator()(const TDiffPovStmt *that) const override {
+      cout << ToJson(**Client->DiffPov(ToUuid(that->GetIdExpr()), GetDiffOptions(TranslateOptions(that->GetOptOptions())))) << endl;
+    }
+    virtual void operator()(const TDiscardPovStmt *that) const override {
+      cout << ToJson(**Client->DiscardPov(ToUuid(that->GetIdExpr()))) << endl;
+    }
+    virtual void operator()(const TPromotePovStmt *that) const override {
+      cout << ToJson(**Client->PromotePov(ToUuid(that->GetIdExpr()), GetPromoteOptions(TranslateOptions(that->GetOptOptions())))) << endl;
+    }
+    virtual void operator()(const TReviewPovStmt *that) const override {
+      cout << ToJson(**Client->ReviewPov(ToUuid(that->GetIdExpr()), GetReviewOptions(TranslateOptions(that->GetOptOptions())))) << endl;
     }
     // try
     virtual void operator()(const TTryStmt *that) const override {
@@ -170,6 +188,10 @@ bool Orly::Client::Program::InterpretStmt(const TStmt *stmt, const shared_ptr<TC
       throw runtime_error("'list_schema' stmt is not implemented in this interface");
     }
     private:
+    static Base::TUuid ToUuid(const TIdExpr *id_expr) {
+      const string &text = id_expr->GetLexeme().GetText();
+      return Base::TUuid(text.substr(1, text.size() - 2).c_str());
+    }
     bool &Result;
     const shared_ptr<TClient> &Client;
   };

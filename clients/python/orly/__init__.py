@@ -31,7 +31,7 @@ import websocket  # the `websocket-client` package
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
            "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "RemoteCompileDisabled",
-           "Unauthorized", "Lit", "lit",
+           "Unauthorized", "Lit", "lit", "Addr",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -117,6 +117,23 @@ class Lit:
         self.raw = str(raw)
 
 
+class Addr:
+    """Wrap a sequence to encode it as an orlyscript address (key) literal
+    ``<[a, b, ...]>``: ``Addr(["edge", 1])`` -> ``<["edge", 1]>``."""
+
+    __slots__ = ("items",)
+
+    def __init__(self, items):
+        self.items = list(items)
+
+
+def _key_lit(key):
+    """A key for the POV review statements: a Lit or Addr as is, a list or tuple as an address."""
+    if isinstance(key, (Lit, Addr)):
+        return lit(key)
+    return lit(Addr(key))
+
+
 _SHORT_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
 
@@ -147,9 +164,12 @@ def lit(value):
     - ``dict`` -> a record ``<{.k: v, ...}>`` (empty: ``<{}>``)
     - ``list`` / ``tuple`` -> ``[a, b, ...]``
     - ``set`` / ``frozenset`` -> ``{a, b, ...}``
+    - ``Addr`` -> ``<[a, b, ...]>``
     """
     if isinstance(value, Lit):
         return value.raw
+    if isinstance(value, Addr):
+        return "<[" + ", ".join(lit(v) for v in value.items) + "]>"
     # bool before int: bool is a subclass of int in Python.
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -240,17 +260,106 @@ class Client:
     def uninstall(self, package, version):
         self.send(f"uninstall {package}.{int(version)};")
 
-    def new_pov(self, safe=True, shared=True, parent=None):
+    def new_pov(self, safe=True, shared=True, parent=None, conflicts=None):
         """Create a POV; returns its id. Defaults to ``new safe shared pov;``.
 
         ``safe=False`` makes a ``fast`` POV; ``parent`` is a POV id, and the
         new POV is created ``from`` it. The grammar has no default guarantee,
         so one of ``safe``/``fast`` is always spelled out (#580).
+
+        ``conflicts`` (``"report"`` or ``"refuse"``) tracks promotion conflicts
+        from this fork on (#746): see :meth:`promote`.
         """
         parts = ["new", "safe" if safe else "fast", "shared" if shared else "private", "pov"]
         if parent is not None:
             parts.append(f"from {{{parent}}}")
+        if conflicts not in (None, "none"):
+            parts.append(lit({"conflicts": conflicts}))
         return self.send(" ".join(parts) + ";")
+
+    # -- POV review (#746) ------------------------------------------------
+    def diff(self, pov, start=None, stop=None, after=None, limit=None):
+        """A page of what ``pov`` changed relative to its parent: its
+        unpromoted writes, key by key, in key order.
+
+        Returns ``{"changes": [...], "next": key or None, "next_literal": str
+        or None, "updates": n}``. Each change has ``key``, ``kind`` (``added``,
+        ``changed``, ``removed`` or ``delta``), ``before`` (the parent's value)
+        and ``after`` (the POV's), and for a ``delta``, ``op`` and ``delta``.
+        ``start`` (inclusive) and ``stop`` (exclusive) restrict the keys;
+        ``after`` is the previous page's ``next``; ``limit`` is the page size
+        (default 100). Keys are lists or tuples, sent as key literals.
+        """
+        options = []
+        if start is not None:
+            options.append(f".start: {_key_lit(start)}")
+        if stop is not None:
+            options.append(f".stop: {_key_lit(stop)}")
+        if after is not None:
+            options.append(f".after: {_key_lit(after)}")
+        if limit is not None:
+            options.append(f".limit: {int(limit)}")
+        suffix = f" <{{{', '.join(options)}}}>" if options else ""
+        return self.send(f"diff_pov {{{pov}}}{suffix};")
+
+    def diff_pages(self, pov, start=None, stop=None, limit=None):
+        """Every page of ``pov``'s diff, as lists of changes (keyset paging)."""
+        page = self.diff(pov, start=start, stop=stop, limit=limit)
+        while True:
+            if page["changes"]:
+                yield page["changes"]
+            if page["next_literal"] is None:
+                return
+            page = self.diff(pov, start=start, stop=stop, after=Lit(page["next_literal"]), limit=limit)
+
+    def discard(self, pov):
+        """Throw away ``pov``'s unpromoted changes (a private POV of this
+        session's), so it reads as its parent again. Returns
+        ``{"discarded_updates": n, "discarded_entries": n}``."""
+        return self.send(f"discard_pov {{{pov}}};")
+
+    def request_promotion(self, pov, force=False):
+        """Ask for ``pov``'s changes to be promoted (unpause it) and return at
+        once. In refusing mode it is tested first and stays as it was if any
+        change would conflict (``status`` ``"refused"``), unless ``force``."""
+        suffix = " <{.force: true}>" if force else ""
+        return self.send(f"promote_pov {{{pov}}}{suffix};")
+
+    def review(self, pov, after=0):
+        """``pov``'s promotion progress and the conflicts numbered after
+        ``after``."""
+        suffix = f" <{{.after: {int(after)}}}>" if after else ""
+        return self.send(f"review_pov {{{pov}}}{suffix};")
+
+    def promote(self, pov, force=False, timeout=30.0, poll=0.05):
+        """Promote ``pov``'s changes and wait until nothing is pending, or the
+        POV is blocked, failed or paused, or ``timeout`` seconds pass. Returns
+        ``{"status": ..., "pending": n, "conflicts": [...], "blocked_on":
+        [...]}`` with ``status`` one of ``promoted``, ``refused``, ``blocked``,
+        ``failed``, ``paused`` or ``timeout``, and the conflicts found during
+        this promotion."""
+        started = self.request_promotion(pov, force=force)
+        if started["status"] == "refused":
+            return {"status": "refused", "pending": started["pending"],
+                    "conflicts": started["conflicts"], "blocked_on": []}
+        deadline = _time.monotonic() + timeout
+        while True:
+            review = self.review(pov, after=int(started["mark"]))
+            if review["status"] == "failed":
+                status = "failed"
+            elif review["blocked"]:
+                status = "blocked"
+            elif review["pending"] == 0:
+                status = "promoted"
+            elif review["status"] == "paused":
+                status = "paused"
+            elif _time.monotonic() > deadline:
+                status = "timeout"
+            else:
+                _time.sleep(poll)
+                continue
+            return {"status": status, "pending": review["pending"],
+                    "conflicts": review["conflicts"], "blocked_on": review["blocked_on"]}
 
     # -- methods --------------------------------------------------------
     def call(self, pov, package, method, args=None):

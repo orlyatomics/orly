@@ -116,6 +116,27 @@ shared_ptr<Rpc::TFuture<void>> TClient::UnpausePov(const TUuid &pov_id) {
   return Write<void>(ServerRpc::UnpausePov, pov_id);
 }
 
+shared_ptr<Rpc::TFuture<TUuid>> TClient::NewReviewPov(const std::optional<TUuid> &parent_pov_id, bool is_safe, bool is_shared,
+                                                      TConflictMode conflicts, const std::chrono::seconds &ttl) {
+  return Write<TUuid>(ServerRpc::NewReviewPov, parent_pov_id, ttl, is_safe, is_shared, string(ToString(conflicts)));
+}
+
+shared_ptr<Rpc::TFuture<TPovDiff>> TClient::DiffPov(const TUuid &pov_id, const TPovDiffOptions &options) {
+  return Write<TPovDiff>(ServerRpc::DiffPov, pov_id, options.ToClosure());
+}
+
+shared_ptr<Rpc::TFuture<TPovDiscard>> TClient::DiscardPov(const TUuid &pov_id) {
+  return Write<TPovDiscard>(ServerRpc::DiscardPov, pov_id);
+}
+
+shared_ptr<Rpc::TFuture<TPovPromote>> TClient::PromotePov(const TUuid &pov_id, bool force) {
+  return Write<TPovPromote>(ServerRpc::PromotePov, pov_id, force);
+}
+
+shared_ptr<Rpc::TFuture<TPovReview>> TClient::ReviewPov(const TUuid &pov_id, uint64_t after) {
+  return Write<TPovReview>(ServerRpc::ReviewPov, pov_id, after);
+}
+
 shared_ptr<Rpc::TFuture<void>> TClient::SetUserId(const TUuid &user_id) {
   return Write<void>(ServerRpc::SetUserId, user_id);
 }

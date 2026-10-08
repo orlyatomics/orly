@@ -51,7 +51,8 @@ static bool FollowsStatusChange(const Orly::Indy::L0::TManager::TPtr<Orly::Indy:
   return start && *start == *follow_or_discard;
 }
 
-bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const std::optional<TSequenceNumber> &ensure_or_discard) {
+bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const std::optional<TSequenceNumber> &ensure_or_discard,
+                        const Base::TUuid &promoted_from) {
   Prepared = false;
   EnsureOrDiscard = EnsureOrDiscard || ensure_or_discard;
   TMutation *mutation = MutationCollection.TryGetFirstMember(repo->GetId());
@@ -62,7 +63,7 @@ bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<
 
   assert (!ensure_or_discard || (repo->GetNextSequenceNumber() >= *ensure_or_discard));
   if (!ensure_or_discard || (repo->GetNextSequenceNumber() == *ensure_or_discard)) {
-    new TPusher(this, repo, update);
+    new TPusher(this, repo, update, promoted_from);
     return true;
   } else if (ensure_or_discard && repo->GetNextSequenceNumber() < *ensure_or_discard) {
     syslog(LOG_ERR, "MAJOR ERROR: missing data! ensure_or_discard =[%ld] vs. GetNextSequenceNumber =[%ld]", *ensure_or_discard, repo->GetNextSequenceNumber());
@@ -697,8 +698,9 @@ TTransaction::TMutation::TMutation(TTransaction *transaction, const L0::TManager
 
 TTransaction::TMutation::~TMutation() NO_THROW {}
 
-TTransaction::TPusher::TPusher(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, const std::shared_ptr<TUpdate> &update)
-    : TMutation(transaction, repo) {
+TTransaction::TPusher::TPusher(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, const std::shared_ptr<TUpdate> &update,
+                               const Base::TUuid &promoted_from)
+    : TMutation(transaction, repo), PromotedFrom(promoted_from) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Update = new TUpdate(update.get(), state_alloc);
 }
@@ -713,7 +715,7 @@ TTransaction::TPusher::~TPusher() NO_THROW {
     assert(TransactionMembership.TryGetCollector());
     if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
       assert(MyMutation);
-      MyMutation->SetSequenceNumber(Repo->AppendUpdate(Update, MyMutation->GetNextUpdate()));
+      MyMutation->SetSequenceNumber(Repo->AppendUpdate(Update, MyMutation->GetNextUpdate(), PromotedFrom));
     } else {
       delete Update;
     }

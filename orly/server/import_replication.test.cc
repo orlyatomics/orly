@@ -1839,3 +1839,97 @@ FIXTURE(JoinSendsPovRecords) {
   pair.Slave->Kill();
   pair.Slave->Reap(seconds(60));
 }
+
+/* An int read out of a POV review result's value. */
+int64_t AsInt(const optional<Var::TVar> &var) {
+  return var ? Var::TVar::TDt<int64_t>::As(*var) : -1L;
+}
+
+/* #746: the POV review calls over the binary protocol, on a master with a live slave.  A safe
+   private pov that reports conflicts is paused and written; DiffPov lists its writes, whole and
+   paged; the parent changed one of the keys after the fork, so the promotion reports that
+   conflict, and the pov's writes reach the global pov.  A second pov is paused, written and
+   discarded: the slave applies the discard's pops to its paused copy of the pov (PopLowest used
+   to assert the repo was Normal), and after a failover that copy no longer holds the writes. */
+FIXTURE(PovReviewOverBinaryProtocol) {
+  Orly::Type::TTypeCzar type_czar;
+  if (!ifstream(GetOrlyiPath()).good()) {
+    throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
+  }
+  TLogTailDumper log_dumper;
+  const string scratch = NewSampleScratch();
+  TPairedServers servers(scratch, "pov_review", {}, log_dumper);
+  auto client = make_shared<TExerciseClient>(servers.MasterAddr());
+  auto writer = Answered(client->NewFastPrivatePov(std::nullopt), "NewFastPrivatePov (writer)");
+  EXPECT_TRUE(WriteValReplicated(client, **writer, 81L, 1L));
+  EXPECT_TRUE(WriteValReplicated(client, **writer, 82L, 2L));
+
+  /* Review. */
+  auto pov = Answered(client->NewReviewPov(std::nullopt, /* is_safe */ true, /* is_shared */ false, TConflictMode::Report), "NewReviewPov");
+  Answered(client->PausePov(**pov), "PausePov (review)")->Sync();
+  EXPECT_TRUE(WriteValReplicated(client, **writer, 81L, 100L));
+  WriteVal(client, **pov, 81L, 11L);
+  WriteVal(client, **pov, 83L, 33L);
+  auto diff = Answered(client->DiffPov(**pov), "DiffPov");
+  if (EXPECT_EQ((*diff)->Changes.size(), 2UL)) {
+    const auto &changes = (*diff)->Changes;
+    EXPECT_TRUE(changes[0].Kind == TPovChange::TKind::Changed);
+    EXPECT_EQ(AsInt(changes[0].Before), 100L);
+    EXPECT_EQ(AsInt(changes[0].After), 11L);
+    EXPECT_TRUE(changes[1].Kind == TPovChange::TKind::Added);
+    EXPECT_FALSE(changes[1].Before);
+    EXPECT_EQ(AsInt(changes[1].After), 33L);
+  }
+  EXPECT_EQ((*diff)->Updates, 2UL);
+  EXPECT_FALSE((*diff)->Next);
+  TPovDiffOptions options;
+  options.Limit = 1UL;
+  auto page = Answered(client->DiffPov(**pov, options), "DiffPov (page 1)");
+  EXPECT_EQ((*page)->Changes.size(), 1UL);
+  if (EXPECT_TRUE((*page)->Next)) {
+    options.After = (*page)->Next;
+    auto next = Answered(client->DiffPov(**pov, options), "DiffPov (page 2)");
+    if (EXPECT_EQ((*next)->Changes.size(), 1UL)) {
+      EXPECT_EQ(AsInt((*next)->Changes[0].After), 33L);
+    }
+    EXPECT_FALSE((*next)->Next);
+  }
+  auto review = Answered(client->ReviewPov(**pov), "ReviewPov");
+  EXPECT_TRUE((*review)->Mode == TConflictMode::Report);
+  EXPECT_EQ((*review)->Status, 'P');
+  EXPECT_EQ((*review)->Pending, 2UL);
+  auto promote = Answered(client->PromotePov(**pov), "PromotePov");
+  EXPECT_TRUE((*promote)->Status == TPovPromote::TStatus::Promoting);
+  EXPECT_EQ((*promote)->Pending, 2UL);
+  for (const auto give_up = steady_clock::now() + seconds(60);
+       (*Answered(client->ReviewPov(**pov), "ReviewPov (promoting)"))->Pending && steady_clock::now() < give_up;) {
+    this_thread::sleep_for(milliseconds(100));
+  }
+  review = Answered(client->ReviewPov(**pov, (*promote)->Mark), "ReviewPov (promoted)");
+  EXPECT_EQ((*review)->Pending, 0UL);
+  if (EXPECT_EQ((*review)->Conflicts.size(), 1UL)) {
+    EXPECT_EQ((*review)->Conflicts[0].Number, 1UL);
+    EXPECT_FALSE((*review)->Conflicts[0].IsDelete);
+  }
+
+  /* Discard. */
+  auto discarded_pov = Answered(client->NewSafePrivatePov(std::nullopt), "NewSafePrivatePov (discard)");
+  Answered(client->PausePov(**discarded_pov), "PausePov (discard)")->Sync();
+  EXPECT_TRUE(WriteValReplicated(client, **discarded_pov, 84L, 44L));
+  EXPECT_TRUE(ReadVal(client, **discarded_pov, 84L).IsKnown());
+  auto discard = Answered(client->DiscardPov(**discarded_pov), "DiscardPov");
+  EXPECT_EQ((*discard)->Updates, 1UL);
+  EXPECT_EQ((*discard)->Entries, 1UL);
+  EXPECT_FALSE(ReadVal(client, **discarded_pov, 84L).IsKnown());
+  /* The slave's copy: give the pops time to replicate, then fail over. */
+  this_thread::sleep_for(seconds(2));
+  EXPECT_TRUE(servers.Slave->IsAlive());
+  EXPECT_TRUE(servers.Master.IsAlive());
+  servers.Failover();
+  const Rt::TOpt<int64_t> promoted = ReadWithRetry(servers.SlaveAddr(), 81L, seconds(60));
+  EXPECT_TRUE(promoted.IsKnown() && promoted.GetVal() == 11L);
+  auto slave_client = make_shared<TExerciseClient>(servers.SlaveAddr());
+  EXPECT_FALSE(ReadVal(slave_client, **discarded_pov, 84L).IsKnown());
+  servers.Slave->Kill();
+  servers.Slave->Reap(seconds(60));
+}

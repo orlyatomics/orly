@@ -241,3 +241,37 @@ FIXTURE(AuthTokenRight) {
     EXPECT_EQ(replies[1], Base::TJson::Parse(R"({"status":"ok","result":"hello"})"));
   }
 }
+
+/* #746: the POV review statements parse, take their options as a record, and answer in their JSON
+   shapes (the test server's session fakes empty results).  `.from` can't name an option: `from` is
+   a keyword of the statement grammar, which is why the range options are `.start` and `.stop`. */
+FIXTURE(PovReviewStatements) {
+  TWsTestServer ws_test_server(8080, 100);
+  const string pov = "{00000000-0000-0000-0000-000000000001}";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      "new fast private pov <{.conflicts: \"refuse\"}>;",
+      "diff_pov " + pov + " <{.start: <['a', 1]>, .stop: <['b']>, .after: <['a', 2]>, .limit: 5}>;",
+      "discard_pov " + pov + ";",
+      "promote_pov " + pov + " <{.force: true}>;",
+      "review_pov " + pov + " <{.after: 3}>;",
+      "diff_pov " + pov + ";",
+      "diff_pov " + pov + " <{.from: <['a']>}>;",
+      "diff_pov " + pov + " <{.limit: 0}>;",
+      "new fast private pov <{.conflicts: \"maybe\"}>;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 10U)) {
+    for (size_t i = 0; i < 7; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("ok"));
+    }
+    EXPECT_EQ(replies[2]["result"]["changes"], Base::TJson(Base::TJson::Array));
+    EXPECT_EQ(replies[2]["result"]["next"], Base::TJson());
+    EXPECT_EQ(replies[3]["result"]["discarded_updates"], Base::TJson(0));
+    EXPECT_EQ(replies[4]["result"]["status"], Base::TJson("promoting"));
+    EXPECT_EQ(replies[5]["result"]["conflict_mode"], Base::TJson("none"));
+    for (size_t i = 7; i < 10; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+    }
+  }
+}

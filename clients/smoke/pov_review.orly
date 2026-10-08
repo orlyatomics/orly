@@ -1,0 +1,75 @@
+/* <clients/smoke/pov_review.orly>
+
+   Package for the POV review smoke (#746): edges of a group, written, overwritten and deleted,
+   plus `+=` counters and `|=` tag sets.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* Store (or overwrite) edge `e` of group `g`, weighing `w`. */
+put = ((true) effecting {
+  new <['edge', g, e]> <- w;
+}) where {
+  g = given::(int);
+  e = given::(int);
+  w = given::(int);
+};
+
+/* Delete edge `e` of group `g`. */
+remove = ((true) effecting {
+  delete (int) @ <['edge', g, e]>;
+}) where {
+  g = given::(int);
+  e = given::(int);
+};
+
+/* Edge `e`'s weight, or -1 if it doesn't exist. */
+get = (((*<['edge', g, e]>::(int)) if *<['edge', g, e]>::(int?) is known else -1)) where {
+  g = given::(int);
+  e = given::(int);
+};
+
+/* Add `n` to counter `k` of group `g`. */
+bump = ((true) effecting {
+  *<['count', g, k]>::(int) += n;
+}) where {
+  g = given::(int);
+  k = given::(int);
+  n = given::(int);
+};
+
+/* Set counter `k` of group `g` to `n`. */
+set_count = ((true) effecting {
+  new <['count', g, k]> <- n;
+}) where {
+  g = given::(int);
+  k = given::(int);
+  n = given::(int);
+};
+
+/* Counter `k` of group `g`, or -1 if it doesn't exist. */
+count = (((*<['count', g, k]>::(int)) if *<['count', g, k]>::(int?) is known else -1)) where {
+  g = given::(int);
+  k = given::(int);
+};
+
+/* Add tag `t` to the tag set of group `g`. */
+tag = ((true) effecting {
+  *<['tags', g]>::({str}) |= {t};
+}) where {
+  g = given::(int);
+  t = given::(str);
+};

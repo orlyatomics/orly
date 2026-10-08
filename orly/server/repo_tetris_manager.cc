@@ -84,6 +84,16 @@ TRepoTetrisManager::TPlayer::TChild::TChild(TPlayer *player, const TUuid &child_
 bool TRepoTetrisManager::TPlayer::TChild::Play(
     const unique_ptr<Indy::L1::TTransaction, function<void (Indy::L1::TTransaction *)>> &transaction, Indy::TContext &context) {
   assert(transaction);
+  /* A POV under review that refuses conflicts (#746): don't promote an update that would
+     overwrite or delete a key its parent chain changed after the fork.  The POV waits, blocked,
+     until it is forced, discarded or paused; that isn't an assertion failure, so it doesn't count
+     towards failing the POV. */
+  if (auto watch = Repo->GetOwnForkWatch(); watch && watch->GetMode() == Indy::TForkWatch::TMode::Refuse) {
+    const auto &start = Repo->GetSequenceNumberStart();
+    if (start && watch->ShouldBlock(*PeekedUpdate, *start)) {
+      return false;
+    }
+  }
   bool success = TestAssertions(context);
   if (success) {
     /* swap the metadata with just the session ids if we're pushing to global */
@@ -106,7 +116,8 @@ bool TRepoTetrisManager::TPlayer::TChild::Play(
     if (!claim.TryAcquire(1UL, num_entries)) {
       throw std::bad_alloc();
     }
-    transaction->Push(Player->Repo, PeekedUpdate);
+    /* Name the child, for the fork watches of the parent's chain (#746). */
+    transaction->Push(Player->Repo, PeekedUpdate, std::nullopt, Repo->GetId());
     claim.Release();
     transaction->Pop(Repo);
     ++(Player->RepoTetrisManager->PushCount);

@@ -197,6 +197,12 @@ class TWsTestServer::TSessionManager
       virtual std::vector<Var::TVar> TryMulti(const TUuid &pov_id, const vector<Server::TBatchCall> &calls) const override { return Session->TryMulti(pov_id, calls); }
       virtual void UninstallPackage(const vector<string> &name, uint64_t version) const override { Session->UninstallPackage(name, version); }
       virtual void UnpausePov(const TUuid &pov_id) const override { Session->UnpausePov(pov_id); }
+      /* Fakes: a random id, and empty results (#746). */
+      virtual TUuid NewReviewPov(bool, bool, const std::optional<TUuid> &, TConflictMode) const override { return TUuid(TUuid::Best); }
+      virtual TPovDiff DiffPov(const TUuid &, const TPovDiffOptions &) const override { return TPovDiff(); }
+      virtual TPovDiscard DiscardPov(const TUuid &) const override { return TPovDiscard(); }
+      virtual TPovPromote PromotePov(const TUuid &, bool) const override { return TPovPromote(); }
+      virtual TPovReview ReviewPov(const TUuid &, uint64_t) const override { return TPovReview(); }
 
       private:
 

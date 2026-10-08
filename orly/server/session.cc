@@ -265,6 +265,69 @@ TUuid TSession::NewSafeSharedPov(TServer *server, const std::optional<TUuid> &pa
   return NewPov(server, parent_pov_id, TPov::TAudience::Shared, TPov::TPolicy::Safe, time_to_live);
 }
 
+TUuid TSession::NewReviewPov(TServer *server, const std::optional<TUuid> &parent_pov_id, const seconds &time_to_live,
+                             bool is_safe, bool is_shared, TConflictMode mode) {
+  assert(server);
+  return NewPov(server, parent_pov_id, is_shared ? TPov::TAudience::Shared : TPov::TAudience::Private,
+                is_safe ? TPov::TPolicy::Safe : TPov::TPolicy::Fast, time_to_live, mode);
+}
+
+Indy::L0::TManager::TPtr<Indy::TRepo> TSession::OpenReviewRepo(TServer *server, const TUuid &pov_id, const char *what, bool must_be_ours) {
+  assert(server);
+  if (pov_id == GlobalPovId) {
+    ostringstream strm;
+    strm << what << ": the global POV has no parent";
+    throw invalid_argument(strm.str());
+  }
+  auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
+  if (must_be_ours && (pov->GetAudience() != TPov::TAudience::Private || pov->GetSessionId() != GetId())) {
+    /* A shared POV holds other sessions' writes too, and a private one belongs to the session
+       that made it. */
+    ostringstream strm;
+    strm << what << ": only the session that made a private POV may discard its changes";
+    throw invalid_argument(strm.str());
+  }
+  auto repo = pov->GetRepo(server);
+  AddPov(pov);
+  return repo;
+}
+
+TPovDiff TSession::DiffPov(TServer *server, const TUuid &pov_id, const TPovDiffOptions &options) {
+  /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
+  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
+  if (auto *runner = server->NextFastRunner()) {
+    runner_switcher.emplace(runner);
+  }
+  return Orly::Server::DiffPov(OpenReviewRepo(server, pov_id, "diff_pov"), options);
+}
+
+TPovDiscard TSession::DiscardPov(TServer *server, const TUuid &pov_id) {
+  /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
+  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
+  if (auto *runner = server->NextFastRunner()) {
+    runner_switcher.emplace(runner);
+  }
+  return Orly::Server::DiscardPov(server->GetRepoManager(), OpenReviewRepo(server, pov_id, "discard_pov", /* must_be_ours */ true));
+}
+
+TPovPromote TSession::PromotePov(TServer *server, const TUuid &pov_id, bool force) {
+  /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
+  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
+  if (auto *runner = server->NextFastRunner()) {
+    runner_switcher.emplace(runner);
+  }
+  return Orly::Server::PromotePov(server->GetRepoManager(), OpenReviewRepo(server, pov_id, "promote_pov"), force);
+}
+
+TPovReview TSession::ReviewPov(TServer *server, const TUuid &pov_id, uint64_t after) {
+  /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
+  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
+  if (auto *runner = server->NextFastRunner()) {
+    runner_switcher.emplace(runner);
+  }
+  return Orly::Server::ReviewPov(OpenReviewRepo(server, pov_id, "review_pov"), after);
+}
+
 void TSession::PausePov(TServer *server, const TUuid &pov_id) {
   assert(server);
   auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
@@ -1125,7 +1188,8 @@ void TSession::Cleanup() {
 }
 
 TUuid TSession::NewPov(
-    TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live) {
+    TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy, const seconds &time_to_live,
+    TConflictMode conflict_mode) {
   assert(server);
   auto durable_manager = server->GetDurableManager();
   TPov::TSharedParents shared_parents;
@@ -1134,7 +1198,8 @@ TUuid TSession::NewPov(
     shared_parents.push_back(*parent_pov_id);
   }
   auto pov = durable_manager->New<TPov>(TUuid::Twister, time_to_live, GetId(), audience, policy, shared_parents);
-  pov->GetRepo(server);
+  /* The fork (#746): conflicts are tracked from here, before anyone can write to the POV. */
+  WatchFork(pov->GetRepo(server), conflict_mode);
   Base::TUuid pov_id = pov->GetId();
   AddPov(std::move(pov));
   return pov_id;

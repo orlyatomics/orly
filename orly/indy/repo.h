@@ -31,6 +31,7 @@
 #include <orly/indy/disk/merge_data_file.h>
 #include <orly/indy/disk/present_walk_file.h>
 #include <orly/indy/disk/update_walk_file.h>
+#include <orly/indy/fork_watch.h>
 #include <orly/indy/manager_base.h>
 #include <orly/indy/memory_layer.h>
 #include <orly/indy/present_walker.h>
@@ -348,6 +349,21 @@ namespace Orly {
          only). Memory-only TFastRepo has nothing to tail. */
       virtual void StepTail(size_t block_slots_available) = 0;
 
+      /* Conflict tracking for a POV under review (#746; see <orly/indy/fork_watch.h>).
+
+         AddForkWatch registers `watch` on this repo, one of the watched POV's ancestors: from now
+         on every update this repo appends is shown to it.  The repo keeps only a weak pointer,
+         and forgets the watch once it has gone.
+
+         SetOwnForkWatch makes `watch` this repo's own, the one Tetris tests this repo's updates
+         against before it promotes them; the repo keeps it alive.  Set it once, before the repo
+         has any updates. */
+      void AddForkWatch(const std::shared_ptr<TForkWatch> &watch);
+
+      void SetOwnForkWatch(const std::shared_ptr<TForkWatch> &watch);
+
+      std::shared_ptr<TForkWatch> GetOwnForkWatch() const;
+
       protected:
 
       /* Construct a fresh, empty repo under `manager` (id, ttl, optional parent). */
@@ -373,11 +389,13 @@ namespace Orly {
          next sequence number, advance HighestSeqNum / set LowestSeqNum, insert
          into CurMemoryLayer, and join the parent's Tetris if not already in it.
          Returns the assigned sequence number. */
-      std::optional<TSequenceNumber> AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW;
+      std::optional<TSequenceNumber> AppendUpdate(TUpdate *update, TSequenceNumber &next_update,
+                                                  const Base::TUuid &promoted_from = Base::TUuid()) NO_THROW;
 
       /* Drop the oldest unpopped update by advancing LowestSeqNum (under
          DataLock); when the memtable drains, clears the bounds and Parts Tetris.
-         Returns the popped sequence number. */
+         Returns the popped sequence number.  A paused repo may be popped too: that is how a
+         discard throws its updates away (#746). */
       std::optional<TSequenceNumber> PopLowest(TSequenceNumber &next_update) NO_THROW;
 
       /* Reconstruct the single oldest-unpopped update (the one Tetris Peeks to
@@ -746,6 +764,13 @@ namespace Orly {
       /* #721: see GetPeakBacklogEntries. */
       static std::atomic<size_t> PeakBacklogEntries;
       static std::atomic<size_t> PeakBacklogUpdates;
+
+      /* #746: the fork watches registered on this repo (see AddForkWatch), under DataLock. */
+      std::vector<std::weak_ptr<TForkWatch>> ForkWatches;
+
+      /* #746: see SetOwnForkWatch, under OwnForkWatchLock. */
+      std::shared_ptr<TForkWatch> OwnForkWatch;
+      mutable std::mutex OwnForkWatchLock;
 
       protected:
 
