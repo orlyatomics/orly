@@ -19,6 +19,7 @@
 
 #include <orly/rt/generator.h>
 
+#include <cstdint>
 #include <memory>
 #include <unordered_set>
 #include <vector>
@@ -48,6 +49,86 @@ FIXTURE(Range) {
     EXPECT_EQ(expected--, *it);
   }
   EXPECT_EQ(expected, 0);
+}
+
+namespace {
+
+/* The first `max` elements of a range, however long it is. */
+std::vector<int64_t> Head(const TRangeGenerator::TPtr &range, size_t max = 1000) {
+  std::vector<int64_t> out;
+  for (auto it = MakeCursor(range); it && out.size() < max; ++it) {
+    out.push_back(*it);
+  }
+  return out;
+}
+
+}  // namespace
+
+/* Ranges at the ends of int64_t, including ones that span more than INT64_MAX (#805): limit - start used to
+   overflow in New and in the constructor. */
+FIXTURE(RangeAtInt64Extremes) {
+  using TVec = std::vector<int64_t>;
+  const int64_t lo = INT64_MIN, hi = INT64_MAX;
+
+  /* Spanning more than INT64_MAX: made with the right direction, and walked from either end. */
+  EXPECT_TRUE((Head(TRangeGenerator::New(lo, hi, false), 3) == TVec{lo, lo + 1, lo + 2}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(lo, hi, true), 3) == TVec{lo, lo + 1, lo + 2}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(hi, lo, false), 3) == TVec{hi, hi - 1, hi - 2}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(hi, lo, true), 3) == TVec{hi, hi - 1, hi - 2}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(-1, hi, false), 3) == TVec{-1, 0, 1}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(0, lo, false), 3) == TVec{0, -1, -2}));
+
+  /* The last elements, and stopping at the end of int64_t without stepping past it. */
+  EXPECT_TRUE((Head(TRangeGenerator::New(hi - 2, hi, true)) == TVec{hi - 2, hi - 1, hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(hi - 2, hi, false)) == TVec{hi - 2, hi - 1}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(lo + 2, lo, true)) == TVec{lo + 2, lo + 1, lo}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(lo + 2, lo, false)) == TVec{lo + 2, lo + 1}));
+  EXPECT_TRUE((Head(TRangeGenerator::New(hi - 1)) == TVec{hi - 1, hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(hi - 1, hi - 0)) == TVec{hi - 1, hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(lo + 1, lo)) == TVec{lo + 1, lo}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(hi - 4, hi, true, hi - 2)) == TVec{hi - 4, hi - 2, hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(hi - 4, hi, false, hi - 2)) == TVec{hi - 4, hi - 2}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(lo + 4, lo, true, lo + 2)) == TVec{lo + 4, lo + 2, lo}));
+
+  /* A stride that spans more than INT64_MAX: the second element is still the second given. */
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(lo, hi, true, hi)) == TVec{lo, hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(lo, hi, false, hi)) == TVec{lo}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(hi, lo, true, lo)) == TVec{hi, lo}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(hi, lo, false, lo)) == TVec{hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(lo, hi)) == TVec{lo, hi}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(hi, lo)) == TVec{hi, lo}));
+  EXPECT_TRUE((Head(TRangeGenerator::NewWithSecond(-1, hi, true, hi - 1)) == TVec{-1, hi - 1}));
+
+  /* Empty and one-element ranges. */
+  EXPECT_TRUE(Head(TRangeGenerator::New(5, 5, false)).empty());
+  EXPECT_TRUE((Head(TRangeGenerator::New(5, 5, true)) == TVec{5}));
+  EXPECT_TRUE(Head(TRangeGenerator::New(hi, hi, false)).empty());
+  EXPECT_TRUE((Head(TRangeGenerator::New(hi, hi, true)) == TVec{hi}));
+  EXPECT_TRUE(Head(TRangeGenerator::New(lo, lo, false)).empty());
+  EXPECT_TRUE((Head(TRangeGenerator::New(lo, lo, true)) == TVec{lo}));
+  EXPECT_TRUE(Head(TRangeGenerator::New(lo, lo + 1, false), 1) == TVec{lo});
+  EXPECT_TRUE(Head(TRangeGenerator::New(hi - 1, hi, false)) == TVec{hi - 1});
+
+  /* Reversed: a stride away from the limit is refused, whatever the span. */
+  EXPECT_THROW(TSystemError, []() { TRangeGenerator::NewWithSecond(0, hi, true, lo); });
+  EXPECT_THROW(TSystemError, []() { TRangeGenerator::NewWithSecond(0, lo, true, hi); });
+  EXPECT_THROW(TSystemError, []() { TRangeGenerator::NewWithSecond(lo + 1, hi, false, lo); });
+  EXPECT_THROW(TSystemError, []() { TRangeGenerator::NewWithSecond(hi - 1, lo, true, hi); });
+  /* ... and the other direction is not. */
+  TRangeGenerator::NewWithSecond(hi - 1, lo, true, hi - 2);
+
+  /* Reading past the end throws rather than wrapping. */
+  auto it = MakeCursor(TRangeGenerator::New(hi, hi, true));
+  EXPECT_TRUE(it);
+  ++it;
+  EXPECT_FALSE(it);
+  bool past_end = false;
+  try {
+    ++it;
+  } catch (const TPastEndError &) {
+    past_end = true;
+  }
+  EXPECT_TRUE(past_end);
 }
 
 FIXTURE(Stl) {
