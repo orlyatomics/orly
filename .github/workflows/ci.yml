@@ -283,6 +283,19 @@ jobs:
       - name: Release smoke (orlyc deadline, orlyi write loop)
         run: tools/maint/arm_release_smoke.sh 20
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # #798: reading record values must not get more expensive per call as sessions are added.
+      # Shared reference counts on singleton types made 8 sessions cost ~4x the CPU per call of
+      # one on a 16-core arm64 box. Here, on a 4-core arm runner, ab-bench measured master's recs
+      # CPU per call at 8 sessions at 1.4x its one-session cost in all 6 rounds (2 shots) and this
+      # fix's at 1.1x in all 6, so the bound sits between them. x86 runners can't tell the two
+      # apart (both ~1.5x there), which is why the gate is on arm. Prints METRIC lines too.
+      - name: Record reads keep their per-call cost as sessions are added
+        run: GROWTH_CHECK=8:1.25 LEVELS=1,4,8 SECS=4 bash clients/smoke/run-record-read-scale.sh
+
       - name: ccache stats
         if: always()
         run: ccache --show-stats --verbose
@@ -1262,6 +1275,7 @@ jobs:
           orly/indy/transaction_base.test
           orly/indy/memory_layer.test
           orly/indy/fork_watch.test
+          orly/type/impl.test
           "
           CONTROL=base/tsan_control.test
           # Tests known to hit the 600 s timeout under TSan, each with its

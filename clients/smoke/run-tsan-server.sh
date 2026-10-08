@@ -5,7 +5,8 @@
 # (memory_drain.mjs, the #607 scenario: paused POVs filled to the reserve, then
 # unpaused and drained) against an orlyi built with `jhm -c tsan`, then 16
 # WebSocket sessions reading at once through a 4-statement admission limit
-# (ws_scale.mjs, #761), then shuts it down with SIGINT, and counts the reports
+# (ws_scale.mjs, #761), then 8 sessions reading record values at once
+# (record_read_scale.mjs, #798), then shuts it down with SIGINT, and counts the reports
 # TSan wrote. A third pass runs the POV review smoke (pov_review.mjs, #746).
 #
 #   0. Build the orly TS client (clients/ts).
@@ -71,6 +72,9 @@ cp "$WORK/ws_scale.1.so" "$WORK/packages/"
 # The POV review smoke's package (#746), for the third pass.
 (cd "$WORK" && setarch "$ARCH" -R "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/smoke/pov_review.orly") || exit 1
 cp "$WORK/pov_review.1.so" "$WORK/packages/"
+# The record-read smoke's package (#798), for the fourth pass below.
+(cd "$WORK" && setarch "$ARCH" -R "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/smoke/record_read_scale.orly") || exit 1
+cp "$WORK/record_read_scale.1.so" "$WORK/packages/"
 
 # run_smoke <tag> [VAR=value...]: a fresh orlyi under TSan, the drain smoke
 # against it, then SIGINT. Sets SMOKE_RC, ALIVE (yes/no), EXIT_RC and REPORTS.
@@ -118,6 +122,14 @@ run_smoke() {
     if [ "$SMOKE_RC" -eq 0 ] && [ "$tag" = smoke ]; then
       ORLY_URL="ws://127.0.0.1:$WS_PORT" ORLY_REPORT_PORT=$REPORT_PORT DISCARD_BATCHES=2 DISCARD_BATCH=100 \
         timeout 600 node pov_review.mjs >> "$dir/smoke.log" 2>&1
+      SMOKE_RC=$?
+    fi
+    # Then 8 sessions reading the same record type at once (#798): the record decode and the
+    # type interning they share run on several threads.
+    if [ "$SMOKE_RC" -eq 0 ]; then
+      ORLY_URL="ws://127.0.0.1:$WS_PORT" ORLYI_PID=$ORLYI_PID CLK_TCK=$(getconf CLK_TCK) \
+        PREFIXES=200 LEVELS=1,8 SECS=3 WORKERS=2 \
+        timeout 300 node record_read_scale.mjs >> "$dir/smoke.log" 2>&1
       SMOKE_RC=$?
     fi
   else

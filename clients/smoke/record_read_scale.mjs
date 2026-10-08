@@ -5,18 +5,20 @@
  * WebSocket sessions (each its own connection, session and shared POV) send batches of BATCH
  * prefix reads back to back for SECS seconds. Every result is checked.
  *
- * Before #798, every field access on a record went through Native::Record<T>'s per-type
- * std::mutex, so sessions reading records serialized on that one lock: reading four records cost
- * ~4x the server CPU per call at 8 sessions that it cost at 1, while str values stayed nearly
- * flat.
+ * Before #798, turning record values into Vars and back copied singleton types (str, and the
+ * unknown type every default-constructed TType holds) many times per field, and each copy bumped
+ * one reference count shared by every thread, so sessions reading records on several cores
+ * bounced those cache lines between them: reading four records cost ~4x the server CPU per call
+ * at 8 sessions that it cost at 1 on a 16-core arm64 box, while str values stayed nearly flat.
  *
  * Prints, per kind and session count, calls per second and the server's CPU per call (from
  * /proc/ORLYI_PID/stat; CLK_TCK ticks per second) as METRIC lines for tools/maint/ab_bench.py:
  * rr_<kind>_cps_s<N> and rr_<kind>_cpu_us_s<N>, plus rr_<kind>_cpu_growth_s<N>, the CPU per call
  * at N sessions over the CPU per call at 1.
  *
- * GROWTH_CHECK=<n>:<x> fails the run unless recs CPU per call at n sessions is at most x times
- * its CPU per call at one session. */
+ * GROWTH_CHECK=<n>:<x> fails the run unless recs' CPU per call at n sessions is at most x times
+ * its CPU per call at LEVELS[0] sessions. (Measured against strs' growth instead, the check
+ * was noisier: on 4-core CI runners strs' own growth swings 0.7-1.4x between runs.) */
 
 import { readFileSync } from "node:fs";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
@@ -180,15 +182,15 @@ if (failures.length) {
 }
 if (GROWTH_CHECK) {
   const [n, x] = GROWTH_CHECK.split(":").map(Number);
-  const one = cpuPerCall["recs:1"], many = cpuPerCall[`recs:${n}`];
+  const one = cpuPerCall[`recs:${LEVELS[0]}`], many = cpuPerCall[`recs:${n}`];
   if (!(one > 0) || !(many > 0)) {
-    console.error(`RECORD READ SCALE FAIL: GROWTH_CHECK needs recs at 1 and ${n} sessions`);
+    console.error(`RECORD READ SCALE FAIL: GROWTH_CHECK needs recs at ${LEVELS[0]} and ${n} sessions`);
     process.exit(1);
   }
-  const ratio = many / one;
-  console.log(`recs CPU per call at ${n} sessions / at 1 session = ${ratio.toFixed(2)} (want <= ${x})`);
-  if (ratio > x) {
-    console.error(`RECORD READ SCALE FAIL: recs cost ${ratio.toFixed(2)}x the CPU per call at ${n} sessions`);
+  const growth = many / one;
+  console.log(`recs CPU per call at ${n} sessions / at ${LEVELS[0]} = ${growth.toFixed(2)} (want <= ${x})`);
+  if (growth > x) {
+    console.error(`RECORD READ SCALE FAIL: recs cost ${growth.toFixed(2)}x the CPU per call at ${n} sessions`);
     process.exit(1);
   }
 }
