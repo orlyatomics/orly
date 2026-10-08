@@ -1,0 +1,12 @@
+package #1;
+v_t is <{.oid: str, .p: str}>;
+put = ((true) effecting {
+  new <['v', a, b]> <- <{.oid: b, .p: p}>;
+}) where {
+  a = given::(str);
+  b = given::(str);
+  p = given::(str);
+};
+rng = (*(keys (v_t) @ <['v', a, free::(str)]>)::(v_t) as [v_t]) where {
+  a = given::(str);
+};

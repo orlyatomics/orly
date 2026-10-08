@@ -54,9 +54,23 @@ namespace Orly {
 
   namespace Native {
 
-    /* Using a class as a finite, generic namespace with private members. */
+    /* Using a class as a finite, generic namespace with private members.
+
+       Hidden visibility keeps this registry private to each shared object
+       (#797). Every package .so instantiates Record<T> for its generated
+       record types, and the class name of a generated type is derived only
+       from its field names and types, so two packages that declare the same
+       record type -- including two versions of one package -- instantiate
+       the same Record<T>. With default visibility g++ emits the static
+       members below as STB_GNU_UNIQUE, which the dynamic linker binds to one
+       copy across every dlopen()'d library, even under RTLD_LOCAL. The second
+       package's TElem singletons (distinct types, because each element's name
+       has internal linkage) then linked themselves onto the first package's
+       list and bumped its ElemCount after Elems had been sized, and the next
+       read of those records walked off the end of Elems. Hidden members are
+       bound inside their own .so, so each package keeps its own list. */
     template <typename TRec>
-    class Record {
+    class [[gnu::visibility("hidden")]] Record {
       NO_CONSTRUCTION(Record);
       public:
 
