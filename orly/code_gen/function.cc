@@ -213,8 +213,10 @@ void TFunction::WriteBody(TCppPrinter &out) const {
     WriteOrderedChildFuncs(ChildFuncs, out);
 
     CodeScope.WriteStart(out);
+    /* Write, not WriteExpr: a body that is also a local (the operand of an effecting expression,
+       say) must be named, not evaluated a second time (#818). */
     out << "return ";
-    Body->WriteExpr(out);
+    Body->Write(out);
     out << ';' << Eol;
   }
 
