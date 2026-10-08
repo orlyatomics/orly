@@ -685,12 +685,26 @@ class TWsImpl final
           auto list_tail = dynamic_cast<const TObjExprListTail *>(list->GetOptObjExprListTail());
           list = list_tail ? list_tail->GetObjExprList() : nullptr;
         }
+        const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
         /* Runs off the I/O thread (#761); see TStmtQueue. */
-        Conn->Deferred = [session = GetSharedSession(), pov_id,
+        Conn->Deferred = [conn = Conn, options, session_mngr = Conn->Ws->SessionManager, session = GetSharedSession(), pov_id,
                           fq_name = std::make_shared<const vector<string>>(std::move(fq_name)),
                           closures = std::make_shared<const std::vector<TClosure>>(std::move(closures))] {
           auto result = std::make_shared<TMethodResult>(session->TryBatch(pov_id, *fq_name, *closures));
-          return TStmtQueue::TFinish([result] { return ToJson(*result); });
+          const auto &seq_num = result->GetCommitSequenceNumber();
+          bool durable = false;
+          if (options.WaitDurableMs && seq_num) {
+            durable = WaitDurable(session_mngr, *session, pov_id, *seq_num, options.WaitDurableMs);
+          }
+          return TStmtQueue::TFinish([conn, options, durable, pov_id, result] {
+            if (options.Receipt) {
+              conn->Receipt = ToReceipt(pov_id, *result, durable);
+            }
+            if (options.WaitDurableMs && result->GetCommitSequenceNumber() && !durable) {
+              throw TDurableTimeout(options.WaitDurableMs);
+            }
+            return ToJson(*result);
+          });
         };
       }
 

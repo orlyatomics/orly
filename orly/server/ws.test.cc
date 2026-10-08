@@ -337,6 +337,33 @@ FIXTURE(TryWaitDurable) {
   }
 }
 
+/* The batch form takes the same options: a receipt, and a wait for durable (#750). */
+FIXTURE(TryBatchReceipt) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string call = "try {00000000-0000-0000-0000-000000000002} pkg/v1 f [<{}>, <{}>]";
+  const string slow = "try {00000000-0000-0000-0000-000000000001} pkg/v1 f [<{}>, <{}>]";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      call + ";",
+      call + " <{.receipt: true}>;",
+      call + " <{.wait_durable_ms: 1000}>;",
+      slow + " <{.wait_durable_ms: 30}>;",
+      call + " <{.nope: 1}>;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 6U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1].TryFind("receipt"), nullptr);
+    EXPECT_EQ(replies[2]["receipt"]["durability"], Base::TJson("memory"));
+    EXPECT_TRUE(replies[2]["receipt"]["version"].GetNumber() > 500);
+    EXPECT_EQ(replies[3]["receipt"]["durability"], Base::TJson("durable"));
+    EXPECT_EQ(replies[4]["status"], Base::TJson("durable_timeout"));
+    EXPECT_EQ(replies[4]["receipt"]["durability"], Base::TJson("memory"));
+    EXPECT_EQ(replies[5]["status"], Base::TJson("exception"));
+  }
+}
+
 /* The durable version of a POV is its own statement (#750). */
 FIXTURE(DurableVersion) {
   TWsTestServer ws_test_server(8080, 100);

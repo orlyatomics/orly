@@ -142,9 +142,12 @@ class TWsTestServer::TSessionManager
 
     /* Fake batch: same 98.6 marker regardless of N (#253). */
     TMethodResult TryBatch(const TUuid &/*pov_id*/, const vector<string> &/*fq_name*/, const vector<TClosure> &/*closures*/) {
+      static std::atomic<uint64_t> version(500);
       void *alloc = alloca(Sabot::State::GetMaxStateSize());
       TSuprena arena;
-      return TMethodResult(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
+      TMethodResult result(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
+      result.SetCommitSequenceNumber(++version);
+      return result;
     }
 
     /* Do-little. */
