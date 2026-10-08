@@ -226,6 +226,7 @@ namespace Orly {
       static std::vector<TTo> Do(const std::vector<TFrom> &from) {
         std::vector<TTo> to;
         for (auto elem : from) {
+          ChargeVectorGrowth(to, 1UL);
           to.push_back(CastAs<TTo, TFrom>::Do(elem));
         }
         return to;
@@ -238,8 +239,12 @@ namespace Orly {
       NO_CONSTRUCTION(CastAs);
 
       static std::vector<TTo> Do(const typename Rt::TGenerator<TFrom>::TPtr &val) {
+        /* The list is charged to the read budget as it grows, and refused before it starts when
+           the sequence's length is known and too much for it (#729). */
+        CheckReadBudgetAheadFor<TFrom>(val, sizeof(TTo));
         std::vector<TTo> to;
         for(auto cursor = val->NewCursor(); cursor; ++cursor) {
+          ChargeVectorGrowth(to, 1UL);
           to.push_back(CastAs<TTo, TFrom>::Do(*cursor));
         }
         return to;
@@ -276,9 +281,13 @@ namespace Orly {
       NO_CONSTRUCTION(CastAs);
 
       static TSet<TTo> Do(const typename Rt::TGenerator<TFrom>::TPtr &val) {
+        /* As for a list, above (#729); an element already in the set costs a node only briefly. */
+        CheckReadBudgetAheadFor<TFrom>(val, 0UL);
         TSet<TTo> to;
         for(auto cursor = val->NewCursor(); cursor; ++cursor) {
-          to.insert(CastAs<TTo, TFrom>::Do(*cursor));
+          if (to.insert(CastAs<TTo, TFrom>::Do(*cursor)).second) {
+            ChargeReadBudget(0UL, GetNodeSize<TTo>());
+          }
         }
         return to;
       }

@@ -65,11 +65,16 @@ void TContext::CheckViewsHeld() const {
   }
 }
 
-void TContext::SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena) {
+void TContext::SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena, size_t max_steps) {
   assert(arena || !max_arena_bytes);
   MaxRows = max_rows ? max_rows : Unlimited;
   MaxArenaBytes = max_arena_bytes ? max_arena_bytes : Unlimited;
   BudgetArena = arena;
+  InFlightScope.reset();
+  InFlightBudget.SetLimits(max_steps, max_arena_bytes);
+  if (max_steps || max_arena_bytes) {
+    InFlightScope.emplace(&InFlightBudget);
+  }
 }
 
 void TContext::CheckArenaBudget() const {

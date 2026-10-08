@@ -50,6 +50,7 @@ namespace Orly {
            is also just as efficient since we do 'insert with a hint'.*/
         auto iter = dict.find(key);
         if (iter == std::end(dict)) {
+          ChargeReadBudget(0UL, GetNodeSize<std::pair<const TKey, TCollect>>());  // #729
           dict.insert(iter, std::make_pair(key, val));
         } else {
           iter->second = collect(iter->second, val);

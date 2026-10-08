@@ -423,7 +423,8 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     Package::TContext::TEffects effects;
     /* Bound what the call may walk and build (#694). Lifted once it returns: resolving a
        write's effects and building its update are bounded by write admission instead. */
-    context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena);
+    context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena,
+        server->GetReadBudgetSteps());
     call_timer.Start();
     result_core = func->Call(indy_context, prog_args);
     call_timer.Stop();
@@ -669,7 +670,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     const std::string *func_method_name = nullptr;
     std::shared_ptr<const Package::TFuncHolder> func;
     /* One read budget for the whole batch, as for a single call in Try() (#694). */
-    context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena);
+    context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena,
+        server->GetReadBudgetSteps());
     call_timer.Start();
     for (const auto &call: calls) {
       const TClosure &closure = *call.Closure;

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <map>
 #include <set>
@@ -27,6 +28,7 @@
 
 #include <orly/rt/mutable.h>
 #include <orly/rt/opt.h>
+#include <orly/rt/read_budget.h>
 #include <base/util/stl.h>
 
 namespace Orly {
@@ -237,6 +239,10 @@ template <typename TKey, typename TVal>
 Orly::Rt::TDict<TKey, TVal> operator+(
       const Orly::Rt::TDict<TKey, TVal> &lhs,
       const Orly::Rt::TDict<TKey, TVal> &rhs) {
+  /* A copy is charged to the read budget (#729) as much as the smaller side: the larger was
+     charged when it was built, and a carry copied on every step of a reduce must not be charged
+     its whole size each time. */
+  Orly::Rt::ChargeReadBudget(0UL, std::min(lhs.size(), rhs.size()) * Orly::Rt::GetNodeSize<std::pair<const TKey, TVal>>());
   Orly::Rt::TDict<TKey, TVal> temp(lhs);
   // We do it this way to over-ride conflicts
   for (auto iter : rhs) {
@@ -263,6 +269,8 @@ Orly::Rt::TDict<TKey, TVal> operator-(
 /* Add : list + list */
 template <typename TVal>
 std::vector<TVal> operator+(const std::vector<TVal> &lhs, const std::vector<TVal> &rhs) {
+  /* See dict + dict, above (#729). */
+  Orly::Rt::ChargeReadBudget(0UL, std::min(lhs.size(), rhs.size()) * sizeof(TVal));
   std::vector<TVal> ret(lhs);
   ret.insert(ret.end(), rhs.begin(), rhs.end());
   return ret;
@@ -293,6 +301,8 @@ Orly::Rt::TSet<TVal> operator&(const Orly::Rt::TSet<TVal> &lhs, const Orly::Rt::
 /* Union : set | set */
 template <typename TVal>
 Orly::Rt::TSet<TVal> operator|(const Orly::Rt::TSet<TVal> &lhs, const Orly::Rt::TSet<TVal> &rhs) {
+  /* See dict + dict, above (#729). */
+  Orly::Rt::ChargeReadBudget(0UL, std::min(lhs.size(), rhs.size()) * Orly::Rt::GetNodeSize<TVal>());
   Orly::Rt::TSet<TVal> result(lhs);
   // We do it this way to over-ride conflicts
   for (auto elem : rhs) {
@@ -315,12 +325,15 @@ Orly::Rt::TDict<TKey, TVal> operator+(
   if (&lhs == &rhs) {
     return static_cast<const Orly::Rt::TDict<TKey, TVal> &>(lhs) + rhs;
   }
+  const size_t before = lhs.size();
   for (const auto &iter : rhs) {
     auto ret = lhs.insert(iter);
     if (!ret.second) {
       ret.first->second = iter.second;
     }
   }
+  /* What the carry grew by (#729). */
+  Orly::Rt::ChargeReadBudget(0UL, (lhs.size() - before) * Orly::Rt::GetNodeSize<std::pair<const TKey, TVal>>());
   return std::move(lhs);
 }
 
@@ -341,6 +354,8 @@ std::vector<TVal> operator+(std::vector<TVal> &&lhs, const std::vector<TVal> &rh
   if (&lhs == &rhs) {
     return static_cast<const std::vector<TVal> &>(lhs) + rhs;
   }
+  /* The carry's storage, charged as it grows (#729). */
+  Orly::Rt::ChargeVectorGrowth(lhs, rhs.size());
   lhs.insert(lhs.end(), rhs.begin(), rhs.end());
   return std::move(lhs);
 }
@@ -363,9 +378,12 @@ Orly::Rt::TSet<TVal> operator|(Orly::Rt::TSet<TVal> &&lhs, const Orly::Rt::TSet<
   if (&lhs == &rhs) {
     return std::move(lhs);
   }
+  const size_t before = lhs.size();
   for (const auto &elem : rhs) {
     lhs.insert(elem);
   }
+  /* What the carry grew by (#729). */
+  Orly::Rt::ChargeReadBudget(0UL, (lhs.size() - before) * Orly::Rt::GetNodeSize<TVal>());
   return std::move(lhs);
 }
 

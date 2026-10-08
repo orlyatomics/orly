@@ -9,5 +9,17 @@ read_val = (*<['values', n]>::(int?)) where { n = given::(int); };
 count_all = (keys (int) @ <['values', free::(int)]>) reduce start 0 + 1;
 /* Point reads in a loop, with no range at all: n of them. */
 sum_points = ([0..last] reduce start 0 + (*<['values', that]>::(int) if *<['values', that]>::(int?) is known else 0)) where { last = given::(int); };
-/* Builds a big result from no rows at all, for the memory limit. */
+/* Builds a big result from no rows at all, for the memory limit; with its length known up front,
+   it is refused before it starts (#729). */
 big_list = ([0..n] as [int]) where { n = given::(int); };
+/* Computed values from no rows at all (#729): each is charged to the read budget while it is
+   built, not only once it reaches the result. */
+/* A list whose length isn't known up front, so refused as it grows. */
+big_filtered = (([0..n] if that >= 0) as [int]) where { n = given::(int); };
+/* A string grown a fixed amount per step, in a moved reduce carry. */
+long_string = ([1..n] reduce start "" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") where { n = given::(int); };
+/* A string doubled n times: orlyc evaluates the call once, so this is n calls, 2^n bytes. */
+doubling = ((doubling(.n: n - 1) + doubling(.n: n - 1) if n > 0 else "x")) where { n = given::(int); };
+/* No memory at all, only steps: refused up front, and while it runs when the length is unknown. */
+spin = ([0..n] reduce start 0 + 1) where { n = given::(int); };
+spin_filtered = (([0..n] if that < 0) as [int]) where { n = given::(int); };

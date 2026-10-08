@@ -20,6 +20,7 @@
 #include <vector>
 
 #include <base/class_traits.h>
+#include <orly/rt/read_budget.h>
 
 namespace Orly {
   namespace Rt {
@@ -41,6 +42,9 @@ namespace Orly {
 
         // If we haven't read off the generator to the requested index, do it now.
         if(idx >= count_read) {
+          /* The values up to idx are made and kept, so they are charged to the read budget (#729)
+             before they are. */
+          ChargeReadBudget(idx - count_read + 1, (idx - count_read + 1) * sizeof(int64_t));
           CachedValues.reserve(idx);
           for(;idx >= count_read; ++count_read) {
             CachedValues.emplace_back(UniformIntDistribution(Prng));

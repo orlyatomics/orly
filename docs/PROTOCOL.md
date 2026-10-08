@@ -256,8 +256,16 @@ sent as one WebSocket text message. The server replies with one JSON message:
   startup (`read budget:`). A batch (`callMany`, `try {pov} [...]`) shares one
   budget across its calls. `--read_budget_mb=0` turns both limits off, unless
   `--read_budget_rows` is given as well; 0 turns either off on its own. Values
-  computed without reading any rows (`[0..n]`) count only once they are part
-  of the result. Over the binary protocol the refusal is an error whose message
+  computed without reading any rows (`[0..n] as [int]`) are charged while they
+  are built (#729): a list as it grows, a set or dict as it gains elements, and
+  two lists, sets, dicts or strings as they are joined, all against
+  `--read_budget_mb`; and each element a range, or a list, set or dict walked
+  as a sequence, yields is a step against `--read_budget_steps` (by default one
+  per byte of `--read_budget_mb`), so a loop that reads nothing and builds
+  nothing still ends. A list or loop whose length is known before it starts
+  (`[0..n]`, `take`) is refused before it starts if it can't fit. The message
+  says which limit was passed. `--read_budget_mb=0` on its own turns the steps
+  off too. Over the binary protocol the refusal is an error whose message
   starts with `read too large`.
 - `compile` on a server started without `--allow_remote_compile` replies
   `"status": "remote_compile_disabled"` (#705). It is a configuration answer,

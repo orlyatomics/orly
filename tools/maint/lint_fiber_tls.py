@@ -44,6 +44,10 @@ ALLOWED = {
         'client dispatch thread, plain std::thread, no fibers',
     ('orly/client/client.cc', 'DispatchSelfDestructed'):
         'definition of the flag above',
+    ('orly/rt/read_budget.cc', 'NoFrameBudget'):
+        'read budget (#729) of code running off any fiber, so it cannot change '
+        'threads; on a fiber the budget lives in TFrame::ReadBudget and this '
+        'is never touched',
 }
 
 COMMENTS = re.compile(r'//[^\n]*|/\*.*?\*/', re.S)

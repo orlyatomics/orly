@@ -103,6 +103,13 @@ namespace Orly {
 
 namespace Orly {
 
+  namespace Rt {
+
+    /* See <orly/rt/read_budget.h>. */
+    class TReadBudget;
+
+  }  // Rt
+
   namespace Indy {
 
     namespace Fiber {
@@ -845,6 +852,11 @@ namespace Orly {
         inline fiber_t &GetFiber() {
           return MyFiber;
         }
+
+        /* The read budget of the method call running on this frame, if any (#729). It lives
+           here rather than in a thread-local because the call may change threads; see
+           <orly/rt/read_budget.h>, which alone sets it. */
+        ::Orly::Rt::TReadBudget *ReadBudget = nullptr;
 
         /* Both fiber-safe: see TFiberSafeLocal (#554). */
         struct TLocalFrameTag;
