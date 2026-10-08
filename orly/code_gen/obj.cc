@@ -18,6 +18,8 @@
 
 #include <orly/code_gen/obj.h>
 
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
 
 #include <orly/code_gen/variant.h>
@@ -67,6 +69,26 @@ void WriteLessExpr(TCppPrinter &out, Type::TObjElems::const_iterator iter, const
   }
 }
 
+std::string Orly::CodeGen::ObjHeaderName(const Type::TType &type) {
+  /* Leaves room for the extension and the ".tmp.<pid>" suffix a header is first written under. */
+  static const size_t MaxMangledLength = 200;
+  const std::string mangled = type.GetMangledName();
+  if (mangled.size() <= MaxMangledLength) {
+    return mangled;
+  }
+  /* FNV-1a, 64 bits, from two offset bases. */
+  uint64_t hashes[2] = {0xcbf29ce484222325ull, 0x84222325cbf29ce4ull};
+  for (unsigned char c : mangled) {
+    for (uint64_t &hash : hashes) {
+      hash = (hash ^ c) * 0x100000001b3ull;
+    }
+  }
+  char hex[33];
+  snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(hashes[0]),
+           static_cast<unsigned long long>(hashes[1]));
+  return std::string("H") + hex;
+}
+
 void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &obj_type) {
 
   /* A variant type lands in the same collected-object set as records (see
@@ -86,7 +108,7 @@ void Orly::CodeGen::GenObjHeader(const std::string &out_dir, const Type::TType &
     }
   }
 
-  Base::TPath path(out_dir, obj_name, vector<string>{"h"});
+  Base::TPath path(out_dir, ObjHeaderName(obj_type), vector<string>{"h"});
   auto obj_class_name = "TObj" + obj_name;
   auto obj_core_type = obj_type.As<Type::TObj>();
   TCppPrinter out(AsStr(path));
@@ -483,6 +505,6 @@ void Orly::CodeGen::GenObjInclude(const Type::TType &obj_type, TCppPrinter &out)
   }
 
   assert(obj_type.Is<Type::TObj>());
-  out << "#include <orly/rt/objects/" << obj_type.GetMangledName() << ".h>" << Eol;
+  out << "#include <orly/rt/objects/" << ObjHeaderName(obj_type) << ".h>" << Eol;
 
 }

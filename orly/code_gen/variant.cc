@@ -89,7 +89,7 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
   }
 
   auto var_name = variant_type.GetMangledName();
-  Base::TPath path(out_dir, var_name, vector<string>{"h"});
+  Base::TPath path(out_dir, ObjHeaderName(variant_type), vector<string>{"h"});
   auto class_name = "TVariant" + var_name;
   auto core_type = variant_type.As<Type::TVariant>();
   const auto &elems = core_type->GetElems();
@@ -1319,7 +1319,7 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
      the existing "#include <...<mangled>.h>" convention still resolves. */
   if (!(member_type == primary)) {
     auto mem_name = member_type.GetMangledName();
-    Base::TPath path(out_dir, mem_name, vector<string>{"h"});
+    Base::TPath path(out_dir, ObjHeaderName(member_type), vector<string>{"h"});
     TCppPrinter out(AsStr(path));
     out << "/* <" << mem_name << ".h>" << Eol
         << Eol
@@ -1329,7 +1329,7 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
         << Eol
         << "#pragma once" << Eol
         << Eol
-        << "#include <orly/rt/objects/" << prim_name << ".h>" << Eol;
+        << "#include <orly/rt/objects/" << ObjHeaderName(primary) << ".h>" << Eol;
     return;
   }
 
@@ -1424,7 +1424,7 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
     return Base::AsStr(t);
   };
 
-  Base::TPath path(out_dir, prim_name, vector<string>{"h"});
+  Base::TPath path(out_dir, ObjHeaderName(primary), vector<string>{"h"});
   TCppPrinter out(AsStr(path));
   out << "/* <" << prim_name << ".h>" << Eol
       << Eol
@@ -2062,5 +2062,5 @@ void Orly::CodeGen::GenVariantInclude(const Type::TType &variant_type, TCppPrint
   /* Variant headers are emitted into the same out_dir as record headers
      (orly/rt/objects/) -- their 'V'-prefixed mangled names never collide
      with the 'O'-prefixed record names. */
-  out << "#include <orly/rt/objects/" << variant_type.GetMangledName() << ".h>" << Eol;
+  out << "#include <orly/rt/objects/" << ObjHeaderName(variant_type) << ".h>" << Eol;
 }

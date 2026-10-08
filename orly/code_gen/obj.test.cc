@@ -18,6 +18,11 @@
 
 #include <orly/code_gen/obj.h>
 
+#include <cstdlib>
+#include <string>
+
+#include <unistd.h>
+
 #include <orly/type.h>
 #include <orly/type/type_czar.h>
 
@@ -44,4 +49,34 @@ FIXTURE(GenObjHeader) {
   //An object with more interesting variable
   auto obj3 = TObj::Get({{"mutable", obj2}, {"irtual", TInt::Get()}, {"float", TInt::Get()}});
   GenObjHeader("/tmp/", obj3);
+}
+FIXTURE(ObjHeaderNameShortKeepsMangledName) {
+  TTypeCzar type_czar;
+  auto obj = TObj::Get({{"a", TInt::Get()}, {"b", TBool::Get()}});
+  EXPECT_EQ(ObjHeaderName(obj), obj.GetMangledName());
+}
+
+/* A nested type's mangled name outgrows a file name (#815). */
+FIXTURE(ObjHeaderNameLongIsHashed) {
+  TTypeCzar type_czar;
+  TObj::TElems elems;
+  for (int i = 0; i < 8; ++i) {
+    elems["field_with_a_fairly_long_name_" + std::to_string(i)] = TInt::Get();
+  }
+  auto obj = TObj::Get(elems);
+  EXPECT_GT(obj.GetMangledName().size(), size_t(255));
+  const std::string name = ObjHeaderName(obj);
+  EXPECT_EQ(name.size(), size_t(33));
+  EXPECT_EQ(name[0], 'H');
+  EXPECT_EQ(name, ObjHeaderName(obj));
+  elems["field_with_a_fairly_long_name_0"] = TBool::Get();
+  EXPECT_NE(name, ObjHeaderName(TObj::Get(elems)));
+
+  char dir[] = "/tmp/orly_obj_header_XXXXXX";
+  EXPECT_TRUE(mkdtemp(dir));
+  const std::string out_dir = std::string(dir) + "/";
+  GenObjHeader(out_dir, obj);
+  EXPECT_EQ(access((out_dir + name + ".h").c_str(), R_OK), 0);
+  unlink((out_dir + name + ".h").c_str());
+  rmdir(dir);
 }
