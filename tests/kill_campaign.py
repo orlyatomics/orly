@@ -76,7 +76,9 @@ PKG = 'kill_campaign'
 # share its POV, which must then be shared. A parent group makes the POV a child of that group's
 # POV, so its writes are promoted twice before they reach global. 'put' writes with the `put`
 # method; 'cond' with `put_cond`, whose value is an `if`, so Tetris replays each call before it
-# promotes the batch (#751); 'mixed' alternates the two in one call_many batch (#255).
+# promotes the batch (#751); 'mixed' alternates the two in one call_many batch (#255); 'durable'
+# writes with `.wait_durable_ms`, so its reply means the write is on disk, and every acknowledged
+# write must come back (#750).
 WRITERS = [
     ('safe-shared-single', True, True, 1, 'A', None, 'put'),
     ('safe-private-batch4', True, False, 4, 'B', None, 'put'),
@@ -88,6 +90,7 @@ WRITERS = [
     ('fast-nested-batch2', False, True, 2, 'G', 'C', 'put'),
     ('safe-shared-cond-batch3', True, True, 3, 'H', None, 'cond'),
     ('fast-private-mixed-batch2', False, False, 2, 'I', None, 'mixed'),
+    ('safe-shared-durable-single', True, True, 1, 'J', None, 'durable'),
 ]
 
 
@@ -144,6 +147,8 @@ class Writer:
                 try:
                     if self.how == 'mixed':
                         c.call_many(pov, [(PKG, 'put_cond' if i % 2 else 'put', a) for i, a in enumerate(args)])
+                    elif self.how == 'durable':
+                        c.send(f"try {{{pov}}} {PKG} put {orly.lit(args[0])} <{{.wait_durable_ms: 30000}}>;")
                     elif self.batch == 1:
                         c.call(pov, PKG, 'put_cond' if self.how == 'cond' else 'put', args[0])
                     else:
@@ -162,6 +167,9 @@ class Writer:
                     time.sleep(0.05)
                     continue
                 except Exception as ex:  # noqa: BLE001
+                    if isinstance(ex, orly.OrlyError) and 'durable timeout' in str(ex):
+                        # Committed, but not on disk within the wait: not acknowledged as durable.
+                        continue
                     # The kill closes the socket mid-call: this write stays in flight, and may or
                     # may not have committed. Anything else, before the kill, is a failure.
                     if not killed.is_set():
@@ -554,6 +562,9 @@ def main():
                     if r < w.floor:
                         kv.append(f'{w.name}: {w.floor - r} writes that a previous restart gave back are gone '
                                   f'(had 1..{w.floor}, now 1..{r})')
+                    if w.how == 'durable' and r < w.acked:
+                        kv.append(f'{w.name}: {w.acked - r} writes acknowledged as durable are gone '
+                                  f'(acknowledged up to {w.acked}, got back 1..{r})')
                     if r > w.sent:
                         kv.append(f'{w.name}: {r - w.sent} writes came back that were never sent (sent up to {w.sent})')
                     stale = [n for n, v in zip(ns, vals) if n < len(w.epoch_of) and v % 1000 != w.epoch_of[n]]
