@@ -77,6 +77,13 @@ namespace Orly {
            If there is no prepared action, do nothing. */
         void CommitAction() NO_THROW;
 
+        /* Ask that the sequence number the repo gives the pushed update be stored in *out when
+           the commit happens, i.e. when this object destructs.  *out must outlive this object.
+           With no pusher, or no commit, it is left untouched. */
+        void ReportCommitSequenceNumber(std::optional<TSequenceNumber> *out) NO_THROW {
+          CommitSequenceNumberOut = out;
+        }
+
         /* Discard the prepared action, if any. */
         void DiscardAction() NO_THROW;
 
@@ -454,6 +461,8 @@ namespace Orly {
         mutable TMutationCollection::TImpl MutationCollection;
 
         bool CommitFlag;
+
+        std::optional<TSequenceNumber> *CommitSequenceNumberOut = nullptr;
 
         bool ShouldReplicate;
 

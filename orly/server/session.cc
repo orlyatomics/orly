@@ -393,6 +393,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   Base::TTimer timer;
   Base::TTimer call_timer;
   bool had_effects = false;
+  std::optional<Indy::TSequenceNumber> commit_seq;
   std::optional<TTracker> tracker = std::optional<TTracker>();
   size_t walker_count = 0UL;
   TSuprena my_arena;
@@ -443,6 +444,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       /* Declared before the transaction so it outlives it (#721): see TBacklogReservation. */
       Indy::TRepo::TBacklogReservation backlog_room(&*repo);
       auto transaction = server->GetRepoManager()->NewTransaction();
+      transaction->ReportCommitSequenceNumber(&commit_seq);
       Indy::TUpdate::TOpByKey op_by_key;
       /* Deferred entries from #49 phase 2: defer-safe commutative
          mutations skip the read-modify-write and get registered with
@@ -574,7 +576,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     }
     TServer::TryWalkerCountCalc.Push(walker_count);
     TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
-    return TMethodResult(indy_context.GetArena(), result_core, tracker);
+    TMethodResult method_result(indy_context.GetArena(), result_core, tracker);
+    method_result.SetCommitSequenceNumber(commit_seq);
+    return method_result;
   } catch (const TInsufficientStorage &) {
     /* Not an error in the server: the server's admission log records the refusals (#590). */
     throw;

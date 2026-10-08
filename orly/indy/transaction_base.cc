@@ -715,7 +715,11 @@ TTransaction::TPusher::~TPusher() NO_THROW {
     assert(TransactionMembership.TryGetCollector());
     if (TransactionMembership.TryGetCollector()->GetCommitFlag()) {
       assert(MyMutation);
-      MyMutation->SetSequenceNumber(Repo->AppendUpdate(Update, MyMutation->GetNextUpdate(), PromotedFrom));
+      const std::optional<TSequenceNumber> seq_num = Repo->AppendUpdate(Update, MyMutation->GetNextUpdate(), PromotedFrom);
+      MyMutation->SetSequenceNumber(seq_num);
+      if (auto *out = TransactionMembership.TryGetCollector()->CommitSequenceNumberOut) {
+        *out = seq_num;
+      }
     } else {
       delete Update;
     }

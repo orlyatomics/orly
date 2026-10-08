@@ -18,6 +18,7 @@
 
 #include <orly/server/ws_test_server.h>
 
+#include <atomic>
 #include <cassert>
 #include <cstdlib>
 #include <memory>
@@ -124,11 +125,14 @@ class TWsTestServer::TSessionManager
     /* Do-little. */
     void Tail() const {}
 
-    /* We fake this by just always returning 98.6. */
+    /* We fake this by just always returning 98.6, as a write committed at the next version (#750). */
     TMethodResult Try(const TMethodRequest &/*method_request*/) {
+      static std::atomic<uint64_t> version(100);
       void *alloc = alloca(Sabot::State::GetMaxStateSize());
       TSuprena arena;
-      return TMethodResult(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
+      TMethodResult result(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
+      result.SetCommitSequenceNumber(++version);
+      return result;
     }
 
     /* Fake mixed batch: one 98.6 marker per call (#255). */

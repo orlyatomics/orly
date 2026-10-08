@@ -39,6 +39,7 @@
 #include <orly/server/ws_test_server.h>
 #include <base/fd.h>
 #include <base/test/kit.h>
+#include <orly/type/type_czar.h>
 
 using namespace std;
 using namespace Orly::Server;
@@ -273,5 +274,38 @@ FIXTURE(PovReviewStatements) {
     for (size_t i = 7; i < 10; ++i) {
       EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
     }
+  }
+}
+
+/* A `try` that asks for a receipt gets one, with a version that rises with each write; one that
+   doesn't gets the reply it always did (#750). */
+FIXTURE(TryReceipt) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string pov = "{00000000-0000-0000-0000-000000000001}";
+  const string call = "try " + pov + " pkg/v1 f <{}>";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      call + ";",
+      call + " <{.receipt: true}>;",
+      call + " <{.receipt: true}>;",
+      call + " <{.receipt: false}>;",
+      call + " <{.receipt: \"yes\"}>;",
+      call + " <{.durable: true}>;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 7U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1]["result"], Base::TJson(98.6));
+    EXPECT_EQ(replies[1].TryFind("receipt"), nullptr);
+    EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[2]["receipt"]["pov"], Base::TJson("00000000-0000-0000-0000-000000000001"));
+    EXPECT_EQ(replies[2]["receipt"]["durability"], Base::TJson("memory"));
+    EXPECT_EQ(replies[3]["status"], Base::TJson("ok"));
+    EXPECT_GT(replies[3]["receipt"]["version"].GetNumber(), replies[2]["receipt"]["version"].GetNumber());
+    EXPECT_EQ(replies[4]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[4].TryFind("receipt"), nullptr);
+    EXPECT_EQ(replies[5]["status"], Base::TJson("exception"));
+    EXPECT_EQ(replies[6]["status"], Base::TJson("exception"));
   }
 }

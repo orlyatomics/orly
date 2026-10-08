@@ -294,7 +294,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Uninstall package | `uninstall <pkg>.<version>;` (the installed version only; any other is refused, naming the installed one, #800) | — |
 | Compile package | `compile "<orlyscript source>";` | `{"name": ..., "version": ...}`; refused unless `--allow_remote_compile` |
 | New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}] [<{.conflicts: "report"\|"refuse"}>];` | POV id (string) |
-| Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |
+| Call a method | `try {<pov-id>} <pkg> <method> <args> [<{.receipt: true}>];` | method result (JSON, marshaled); see "Write receipts" |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
 | Batch different methods | `try {<pov-id>} [<pkg1> <method1> <args1>, <pkg2> <method2> <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause {<id>};` / `unpause {<id>};` | `"paused"` / `"unpaused"` |
@@ -304,6 +304,25 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Review a POV | `review_pov {<id>} [<{.after: n}>];` | `{"conflict_mode", "status", "pending", "blocked", "blocked_on", "conflicts", ...}` |
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
+
+### Write receipts (#750)
+
+`try {pov} pkg method <args> <{.receipt: true}>;` adds a top-level `receipt` to the reply
+when the call committed a write:
+
+```json
+{ "status": "ok", "result": true,
+  "receipt": { "pov": "<pov-id>", "version": 42, "durability": "memory" } }
+```
+
+- `version` is the sequence number the POV's repo gave the committed update. It rises with
+  each commit to that POV, so a client can order its own writes and name one later.
+- `durability` is `"memory"`: the write is acknowledged and held in the update pool, the
+  contract in [durability.md](durability.md). A receipt does not claim the write is on
+  disk, and there is no wait-for-durable or durable-version query yet.
+- A call that wrote nothing (a read) has no `receipt`, and without the option the reply is
+  unchanged. Any other option name, or a non-bool `.receipt`, is an error.
+- Not covered yet: the batch forms (`try ... [...]`).
 
 ### Typical lifecycle
 
