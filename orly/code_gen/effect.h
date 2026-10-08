@@ -33,6 +33,7 @@
 #include <orly/code_gen/cpp_printer.h>
 #include <orly/code_gen/package_base.h>
 #include <orly/code_gen/ptr.h>
+#include <orly/code_gen/scope.h>
 #include <orly/error.h>
 #include <orly/shared_enum.h>
 #include <orly/type/part.h>
@@ -182,15 +183,17 @@ namespace Orly {
       NO_COPY(TPredicatedBlock);
       public:
 
-      TPredicatedBlock(const TPtrC<TInline> &condition);
+      /* Each arm gets a scope of its own so that the locals its statements need (a mutated key,
+         say) are evaluated only when the arm runs (#817). */
+      TPredicatedBlock(const TPtrC<TInline> &condition, const std::shared_ptr<TIdScope> &id_scope);
 
-      TStmtBlock &GetStmts();
+      TCodeScope &GetScope();
 
       void Write(TCppPrinter &out) const;
 
       private:
       TPtrC<TInline> Condition;
-      TStmtBlock Stmts;
+      TCodeScope Scope;
     }; // TPredicatedBlock
 
     class TIf : public TStmt {
@@ -201,14 +204,14 @@ namespace Orly {
 
       TIf(const L0::TPackage *package, TPredicatedBlocks &&if_clauses);
 
-      void SetOptElseClause();
-      TStmtBlock &GetElseClause();
+      void SetOptElseClause(const std::shared_ptr<TIdScope> &id_scope);
+      TCodeScope &GetElseClause();
 
       void Write(TCppPrinter &out) const final;
 
       private:
       TPredicatedBlocks IfClauses;
-      std::unique_ptr<TStmtBlock> OptElseClause;
+      std::unique_ptr<TCodeScope> OptElseClause;
     }; // TIf
 
   } // CodeGen

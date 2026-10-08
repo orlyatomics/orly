@@ -259,17 +259,18 @@ void TStmtBlock::Write(TCppPrinter &out) const {
   }
 }
 
-TPredicatedBlock::TPredicatedBlock(const TPtrC<TInline> &condition) : Condition(condition) {}
+TPredicatedBlock::TPredicatedBlock(const TPtrC<TInline> &condition, const std::shared_ptr<TIdScope> &id_scope)
+    : Condition(condition), Scope(id_scope) {}
 
-TStmtBlock &TPredicatedBlock::GetStmts() {
-  return Stmts;
+TCodeScope &TPredicatedBlock::GetScope() {
+  return Scope;
 }
 
 void TPredicatedBlock::Write(TCppPrinter &out) const {
   out << "if (" << Condition << ") {" << Eol;
   /* indent */ {
     TIndent indent(out);
-    Stmts.Write(out);
+    Scope.WriteStart(out);
   }
   out << '}';
 }
@@ -278,12 +279,12 @@ TIf::TIf(const L0::TPackage *package, TPredicatedBlocks &&if_clauses)
     : TStmt(package),
       IfClauses(std::move(if_clauses)) {}
 
-void TIf::SetOptElseClause() {
+void TIf::SetOptElseClause(const std::shared_ptr<TIdScope> &id_scope) {
   assert(!OptElseClause);
-  OptElseClause = std::make_unique<TStmtBlock>();
+  OptElseClause = std::make_unique<TCodeScope>(id_scope);
 }
 
-TStmtBlock &TIf::GetElseClause() {
+TCodeScope &TIf::GetElseClause() {
   assert(OptElseClause);
   return *OptElseClause;
 }
@@ -300,7 +301,7 @@ void TIf::Write(TCppPrinter &out) const {
     out << " else {" << Eol;
     /* indent */ {
       TIndent indent(out);
-      OptElseClause->Write(out);
+      OptElseClause->WriteStart(out);
     }
     out << '}' << Eol;
   }
