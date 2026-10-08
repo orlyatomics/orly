@@ -19,7 +19,9 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <functional>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -162,6 +164,13 @@ namespace Orly {
              manager whose pins don't need fiber context (the test server) wants. */
           virtual void RunStatement(std::function<void ()> &&work) {
             work();
+          }
+
+          /* Give up the CPU for a moment from inside a statement that is waiting for something
+             (the durable wait of `try`, #750).  The server yields its fiber; this default,
+             for a statement on a plain thread, sleeps a millisecond. */
+          virtual void WaitAWhile() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
           }
 
           protected:

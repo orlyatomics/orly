@@ -2175,6 +2175,10 @@ namespace {
 
 }  // namespace
 
+void TServer::WaitAWhile() {
+  Indy::Fiber::YieldSlow();
+}
+
 void TServer::RunStatement(std::function<void ()> &&work) {
   assert(work);
   /* The websocket I/O threads (and the fast runners, when a finished statement starts the next

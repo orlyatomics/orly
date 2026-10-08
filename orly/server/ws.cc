@@ -96,6 +96,19 @@ namespace {
 
   };  // TRemoteCompileDisabled
 
+  /* A `try` asked to wait for durable (#750); the write committed but was not on disk in time.
+     Reported as "status": "durable_timeout", with the write's receipt. */
+  class TDurableTimeout
+      : public std::runtime_error {
+    public:
+
+    explicit TDurableTimeout(uint64_t wait_ms)
+        : std::runtime_error(
+              "durable timeout: the write was accepted but was not on disk within " + std::to_string(wait_ms) +
+              " ms; it is not lost, and the receipt names it; poll durable_version for its version") {}
+
+  };  // TDurableTimeout
+
   /* Fill in a reply's "result" and "status" for the exception being handled.  Call only from
      inside a catch block. */
   void SetErrorReply(TJson &reply) {
@@ -126,6 +139,10 @@ namespace {
          sent: the client must read less. */
       reply["result"] = ex.what();
       reply["status"] = "read_too_large";
+    } catch (const TDurableTimeout &ex) {
+      /* The write committed, but was not on disk in time (#750). The reply's receipt names it. */
+      reply["result"] = ex.what();
+      reply["status"] = "durable_timeout";
     } catch (const TRemoteCompileDisabled &ex) {
       /* `compile` on a server started without --allow_remote_compile (#705). */
       reply["result"] = ex.what();
@@ -620,14 +637,22 @@ class TWsImpl final
           auto tail = dynamic_cast<const TObjMemberListTail *>(list->GetOptObjMemberListTail());
           list = tail ? tail->GetObjMemberList() : nullptr;
         }
-        const bool want_receipt = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
+        const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
         /* Runs off the I/O thread (#761); see TStmtQueue. */
-        Conn->Deferred = [conn = Conn, want_receipt, session = GetSharedSession(),
+        Conn->Deferred = [conn = Conn, options, session_mngr = Conn->Ws->SessionManager, session = GetSharedSession(),
                           request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
           auto result = std::make_shared<TMethodResult>(session->Try(*request));
-          return TStmtQueue::TFinish([conn, want_receipt, request, result] {
-            if (want_receipt) {
-              conn->Receipt = ToReceipt(request->GetPovId(), *result);
+          const auto &seq_num = result->GetCommitSequenceNumber();
+          bool durable = false;
+          if (options.WaitDurableMs && seq_num) {
+            durable = WaitDurable(session_mngr, *session, request->GetPovId(), *seq_num, options.WaitDurableMs);
+          }
+          return TStmtQueue::TFinish([conn, options, durable, request, result] {
+            if (options.Receipt) {
+              conn->Receipt = ToReceipt(request->GetPovId(), *result, durable);
+            }
+            if (options.WaitDurableMs && result->GetCommitSequenceNumber() && !durable) {
+              throw TDurableTimeout(options.WaitDurableMs);
             }
             return ToJson(*result);
           });
@@ -876,27 +901,71 @@ class TWsImpl final
         return Conn->Session;
       }
 
-      /* The options of a `try` (#750): `.receipt: true` asks for the reply to carry a receipt. */
-      static bool GetTryOptions(const TOptionList &options) {
-        bool receipt = false;
+      /* The options of a `try` (#750): `.receipt: true` asks for the reply to carry a receipt;
+         `.wait_durable_ms: N` holds the reply, for at most N ms, until the write is on disk, and
+         implies the receipt. */
+      struct TTryOptions {
+        bool Receipt = false;
+        uint64_t WaitDurableMs = 0;
+      };
+
+      static TTryOptions GetTryOptions(const TOptionList &options) {
+        constexpr int64_t max_wait_ms = 60000;
+        TTryOptions result;
         for (const auto &option: options) {
-          if (option.first != "receipt") {
-            throw invalid_argument("try: unknown option ." + option.first + "; the option is .receipt");
-          }
-          try {
-            receipt = Var::TVar::TDt<bool>::As(option.second);
-          } catch (const exception &) {
-            throw invalid_argument("try: .receipt must be a bool");
+          if (option.first == "receipt") {
+            try {
+              result.Receipt = Var::TVar::TDt<bool>::As(option.second);
+            } catch (const exception &) {
+              throw invalid_argument("try: .receipt must be a bool");
+            }
+          } else if (option.first == "wait_durable_ms") {
+            int64_t ms;
+            try {
+              ms = Var::TVar::TDt<int64_t>::As(option.second);
+            } catch (const exception &) {
+              throw invalid_argument("try: .wait_durable_ms must be an int");
+            }
+            if (ms < 1 || ms > max_wait_ms) {
+              throw invalid_argument("try: .wait_durable_ms must be from 1 to 60000");
+            }
+            result.WaitDurableMs = static_cast<uint64_t>(ms);
+          } else {
+            throw invalid_argument("try: unknown option ." + option.first + "; the options are .receipt and .wait_durable_ms");
           }
         }
-        return receipt;
+        result.Receipt = result.Receipt || result.WaitDurableMs;
+        return result;
+      }
+
+      /* Yield until the POV's durable version reaches `version`, or `wait_ms` is up; true if it
+         did.  Runs in the statement's fiber, so it holds no thread.  The durable version is
+         looked up at most every few ms, as it opens the POV. */
+      static bool WaitDurable(TSessionManager *session_mngr, const TSessionPin &session, const TUuid &pov_id, uint64_t version, uint64_t wait_ms) {
+        using namespace std::chrono;
+        const auto deadline = steady_clock::now() + milliseconds(wait_ms);
+        auto next_look = steady_clock::now();
+        for (;;) {
+          const auto now = steady_clock::now();
+          if (now >= next_look) {
+            const auto durable = session.GetDurableVersion(pov_id);
+            if (durable && *durable >= version) {
+              return true;
+            }
+            next_look = now + milliseconds(2);
+          }
+          if (now >= deadline) {
+            return false;
+          }
+          session_mngr->WaitAWhile();
+        }
       }
 
       /* The receipt for a `try` that asked for one: where the write committed, or null for a call
          that wrote nothing.  The version is the repo's sequence number for the update, increasing
          with each commit to the POV.  "memory" is the honest level: the write is in the update pool,
          not yet known to be on disk (see docs/durability.md). */
-      static TJson ToReceipt(const TUuid &pov_id, const TMethodResult &result) {
+      static TJson ToReceipt(const TUuid &pov_id, const TMethodResult &result, bool durable) {
         const auto &seq_num = result.GetCommitSequenceNumber();
         if (!seq_num) {
           return TJson();
@@ -904,7 +973,7 @@ class TWsImpl final
         TJson receipt = TJson::Object;
         receipt["pov"] = AsStr(pov_id);
         receipt["version"] = static_cast<uint64_t>(*seq_num);
-        receipt["durability"] = "memory";
+        receipt["durability"] = durable ? "durable" : "memory";
         return receipt;
       }
 
@@ -1042,6 +1111,11 @@ class TWsImpl final
         }
       } catch (...) {
         SetErrorReply(reply);
+        /* A write that timed out waiting for disk still has a receipt: it was accepted. */
+        if (Receipt.GetKind() != TJson::Null) {
+          reply["receipt"] = std::move(Receipt);
+          Receipt = TJson();
+        }
       }
       SendReply(std::move(reply));
     }

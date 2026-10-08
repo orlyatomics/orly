@@ -320,10 +320,15 @@ when the call committed a write:
   each commit to that POV, so a client can order its own writes and name one later.
 - `durability` is `"memory"`: the write is acknowledged and held in the update pool, the
   contract in [durability.md](durability.md). A receipt does not claim the write is on
-  disk; `durable_version` (below) says when it is. There is no wait-for-durable yet.
+  disk; `durable_version` (below) says when it is. With `.wait_durable_ms` (below) it is
+  `"durable"` once the server saw the write on disk.
 - A call that wrote nothing (a read) has no `receipt`, and without the option the reply is
   unchanged. Any other option name, or a non-bool `.receipt`, is an error.
-- Not covered yet: the batch forms (`try ... [...]`), and waiting for durable.
+- `.wait_durable_ms: N` (an int, 1 to 60000; implies a receipt) holds the reply until the write is
+  durable. If it is not within N ms, the reply is `{"status": "durable_timeout", ...}` with
+  the receipt (`"durability": "memory"`). The write is committed either way; it is only not
+  yet known to be on disk. A POV with no durable version (nested under another child) times out.
+- Not covered yet: the batch forms (`try ... [...]`).
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
 version of the POV that this server knows to be in a data file on disk, in the numbering a

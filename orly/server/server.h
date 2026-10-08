@@ -524,6 +524,8 @@ namespace Orly {
       /* Runs a websocket statement on a fiber on the fast runners, without waiting (#761). */
       virtual void RunStatement(std::function<void ()> &&work) override;
 
+      virtual void WaitAWhile() override;
+
       virtual bool ForEachIndex(const std::function<
           bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const final;
 

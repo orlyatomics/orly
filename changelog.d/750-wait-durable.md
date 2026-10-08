@@ -1,0 +1,1 @@
+- **Added**: `try ... <{.wait_durable_ms: N}>` holds a write's reply until the write is on disk, or replies `durable_timeout` with the receipt (`"durability": "memory"`) after N ms. The reply's receipt says `"durable"` on success. The wait yields the fiber rather than holding a thread. Part of #750.

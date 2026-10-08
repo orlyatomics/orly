@@ -24,7 +24,7 @@ crash can take back. It is read from the code, and `tests/kill_campaign.sh` chec
   returns the version it committed at, and `durable_version {pov};` returns the highest version
   of that POV known to be on disk, once Tetris has promoted the write to the global POV and the
   global POV's flush has synced it. A write that a restarted server gives back is on disk, and
-  stays there; the query itself restarts at `null` for a POV until it next promotes.
+  stays there; the query itself restarts at `null` for a POV until it next promotes. `.wait_durable_ms: N` on the `try` waits for that, up to N ms.
 
 ## The path of a write
 

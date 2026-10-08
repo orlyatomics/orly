@@ -310,6 +310,33 @@ FIXTURE(TryReceipt) {
   }
 }
 
+/* `.wait_durable_ms` holds the reply until the write is durable, or gives a typed timeout whose
+   receipt still names the write (#750). */
+FIXTURE(TryWaitDurable) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string durable_call = "try {00000000-0000-0000-0000-000000000002} pkg/v1 f <{}>";
+  const string slow_call = "try {00000000-0000-0000-0000-000000000001} pkg/v1 f <{}>";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      durable_call + " <{.wait_durable_ms: 1000}>;",
+      slow_call + " <{.wait_durable_ms: 30}>;",
+      slow_call + " <{.wait_durable_ms: 0}>;",
+      slow_call + " <{.wait_durable_ms: \"soon\"}>;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 5U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1]["result"], Base::TJson(98.6));
+    EXPECT_EQ(replies[1]["receipt"]["durability"], Base::TJson("durable"));
+    EXPECT_EQ(replies[2]["status"], Base::TJson("durable_timeout"));
+    EXPECT_EQ(replies[2]["receipt"]["durability"], Base::TJson("memory"));
+    EXPECT_TRUE(replies[2]["receipt"]["version"].GetNumber() > 100);
+    EXPECT_EQ(replies[3]["status"], Base::TJson("exception"));
+    EXPECT_EQ(replies[4]["status"], Base::TJson("exception"));
+  }
+}
+
 /* The durable version of a POV is its own statement (#750). */
 FIXTURE(DurableVersion) {
   TWsTestServer ws_test_server(8080, 100);
