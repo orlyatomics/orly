@@ -302,6 +302,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Discard a POV's changes | `discard_pov {<id>};` | `{"discarded_updates", "discarded_entries"}` |
 | Promote a POV | `promote_pov {<id>} [<{.force: true}>];` | `{"status": "promoting"\|"refused", "pending", "mark", "conflicts"}` |
 | Review a POV | `review_pov {<id>} [<{.after: n}>];` | `{"conflict_mode", "status", "pending", "blocked", "blocked_on", "conflicts", ...}` |
+| Durable version | `durable_version {<pov-id>};` | `{"pov", "durable_version"}`; see "Write receipts" |
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
 
@@ -319,10 +320,22 @@ when the call committed a write:
   each commit to that POV, so a client can order its own writes and name one later.
 - `durability` is `"memory"`: the write is acknowledged and held in the update pool, the
   contract in [durability.md](durability.md). A receipt does not claim the write is on
-  disk, and there is no wait-for-durable or durable-version query yet.
+  disk; `durable_version` (below) says when it is. There is no wait-for-durable yet.
 - A call that wrote nothing (a read) has no `receipt`, and without the option the reply is
   unchanged. Any other option name, or a non-bool `.receipt`, is an error.
-- Not covered yet: the batch forms (`try ... [...]`).
+- Not covered yet: the batch forms (`try ... [...]`), and waiting for durable.
+
+`durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
+version of the POV that this server knows to be in a data file on disk, in the numbering a
+receipt's `version` uses. A write whose receipt `version` is at most it survives a crash, so a
+client can poll it to learn that a write became durable. It is `null` when no version is yet.
+Only the global POV (`C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3`) writes to disk. For a POV that
+promotes into it, the server records which global version each promoted update got, and the
+POV's durable version is the highest of its own versions whose global version is on disk. This
+is kept in memory: after a restart it is `null` again until the POV promotes another update,
+which can understate but never overstates. A POV that promotes into another child POV has none
+(`null`). For the global POV itself, it is the highest global version on disk, which after a
+restart starts at the highest version found on disk. An unknown POV is an error.
 
 ### Typical lifecycle
 

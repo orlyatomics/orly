@@ -309,3 +309,18 @@ FIXTURE(TryReceipt) {
     EXPECT_EQ(replies[6]["status"], Base::TJson("exception"));
   }
 }
+
+/* The durable version of a POV is its own statement (#750). */
+FIXTURE(DurableVersion) {
+  TWsTestServer ws_test_server(8080, 100);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      "durable_version {00000000-0000-0000-0000-000000000001};"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 2U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1]["result"]["pov"], Base::TJson("00000000-0000-0000-0000-000000000001"));
+    EXPECT_EQ(replies[1]["result"]["durable_version"], Base::TJson(77));
+  }
+}

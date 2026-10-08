@@ -2127,6 +2127,9 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
      effectively-infinite ttl for any real deadline). */
   TTtl repo_ttl = std::chrono::duration_cast<TTtl>(deadline - TDeadline::clock::now());
   TSafeRepo *safe_repo = new TSafeRepo(manager, repo_id, repo_ttl, parent_repo, lowest, highest, next_update, TStatus::Normal);
+  if (highest) {
+    safe_repo->NoteDurable(*highest);
+  }
   return safe_repo;
 }
 
@@ -2273,6 +2276,8 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
   out_num_keys = data_file.GetNumKeys();
   out_saved_low_seq = data_file.GetLowestSequence();
   out_saved_high_seq = data_file.GetHighestSequence();
+  /* TDataFile has synced the file and waited for its entry to be written. */
+  NoteDurable(out_saved_high_seq);
   return gen_id;
 }
 

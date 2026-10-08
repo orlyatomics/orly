@@ -97,6 +97,9 @@ namespace Orly {
                                            TConflictMode mode) const = 0;
           virtual TPovDiff DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) const = 0;
           virtual TPovDiscard DiscardPov(const Base::TUuid &pov_id) const = 0;
+
+          /* Override to answer the durable_version statement (#750). */
+          virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) const = 0;
           virtual TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) const = 0;
           virtual TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) const = 0;
 

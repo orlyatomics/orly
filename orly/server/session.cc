@@ -295,6 +295,21 @@ Indy::L0::TManager::TPtr<Indy::TRepo> TSession::OpenReviewRepo(TServer *server, 
   return repo;
 }
 
+std::optional<uint64_t> TSession::GetDurableVersion(TServer *server, const TUuid &pov_id) {
+  assert(server);
+  auto global_repo = server->GetRepoManager()->ForceGetRepo(GlobalPovId);
+  const auto global_durable = global_repo->GetDurableSequenceNumber();
+  if (pov_id == GlobalPovId) {
+    return global_durable;
+  }
+  auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
+  if (!pov) {
+    DEFINE_ERROR(error_t, runtime_error, "unknown pov_id");
+    THROW_ERROR(error_t) << pov_id;
+  }
+  return pov->GetRepo(server)->GetPromotedDurableSequenceNumber(global_durable);
+}
+
 TPovDiff TSession::DiffPov(TServer *server, const TUuid &pov_id, const TPovDiffOptions &options) {
   /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
   std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;

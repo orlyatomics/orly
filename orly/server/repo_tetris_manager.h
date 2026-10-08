@@ -145,6 +145,10 @@ namespace Orly {
           /* Drop the peeked update and what was parsed from it; the next Peek copies it again. */
           void Flush();
 
+          /* Call once the transaction a Play promoted on has been applied: records, for the
+             durable version (#750), the version the parent gave the promoted update. */
+          void FinishPromotion();
+
           private:
 
           bool TestAssertions(Indy::TContext &context) const;
@@ -163,6 +167,14 @@ namespace Orly {
           Indy::L0::TManager::TPtr<Indy::TRepo> Repo;
 
           std::shared_ptr<Indy::TUpdate> PeekedUpdate;
+
+          /* The sequence number PeekedUpdate had in the child's repo. */
+          std::optional<Indy::TSequenceNumber> PeekedSeq;
+
+          /* The last promotion into the global repo, until FinishPromotion: our own sequence number
+             for the update, and the one the global repo gave it once its transaction applied. */
+          std::optional<Indy::TSequenceNumber> PromotedOwnSeq;
+          std::optional<Indy::TSequenceNumber> PromotedParentSeq;
 
           TMetaRecord MetaRecord;
 

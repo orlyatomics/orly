@@ -579,6 +579,22 @@ class TWsImpl final
         };
       }
 
+      /* The highest version of the POV on disk (#750); null if none is.  Runs off the I/O thread
+         like the review statements: it opens the POV. */
+      virtual void operator()(const TDurableVersionStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        Conn->Deferred = [session = GetSharedSession(), pov_id] {
+          auto version = session->GetDurableVersion(pov_id);
+          return TStmtQueue::TFinish([pov_id, version] {
+            TJson result = TJson::Object;
+            result["pov"] = AsStr(pov_id);
+            result["durable_version"] = version ? TJson(static_cast<uint64_t>(*version)) : TJson();
+            return result;
+          });
+        };
+      }
+
       virtual void operator()(const TReviewPovStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());

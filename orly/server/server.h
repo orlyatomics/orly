@@ -628,6 +628,10 @@ namespace Orly {
           return Session->DiscardPov(Server, pov_id);
         }
 
+        std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) {
+          return Session->GetDurableVersion(Server, pov_id);
+        }
+
         TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) {
           return Session->PromotePov(Server, pov_id, force);
         }
@@ -803,6 +807,7 @@ namespace Orly {
         virtual Base::TUuid NewReviewPov(bool, bool, const std::optional<Base::TUuid> &, TConflictMode) const override;
         virtual TPovDiff DiffPov(const Base::TUuid &, const TPovDiffOptions &) const override;
         virtual TPovDiscard DiscardPov(const Base::TUuid &) const override;
+        virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &) const override;
         virtual TPovPromote PromotePov(const Base::TUuid &, bool) const override;
         virtual TPovReview ReviewPov(const Base::TUuid &, uint64_t) const override;
 

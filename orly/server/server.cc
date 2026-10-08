@@ -2563,6 +2563,14 @@ TPovDiscard TServer::TSessionPin::DiscardPov(const Base::TUuid &pov_id) const {
   return result;
 }
 
+std::optional<uint64_t> TServer::TSessionPin::GetDurableVersion(const Base::TUuid &pov_id) const {
+  std::optional<uint64_t> result;
+  Conn->RunWs([this, &pov_id, &result] {
+    result = Conn->GetDurableVersion(pov_id);
+  });
+  return result;
+}
+
 TPovPromote TServer::TSessionPin::PromotePov(const Base::TUuid &pov_id, bool force) const {
   TPovPromote result;
   Conn->RunWs([this, &pov_id, force, &result] {
