@@ -87,14 +87,10 @@ jobs:
         run: |
           for c in gcc g++ cc c++; do sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"; done
           { echo "CCACHE_DIR=$HOME/.ccache"; echo "CCACHE_MAXSIZE=4G"; echo "CCACHE_COMPRESS=1"; } >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: ./harness/orly/.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ runner.arch }}-release-build-none
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ runner.arch }}-release-build-
-            orly-ccache-${{ runner.os }}-release-build-
-            orly-ccache-${{ runner.os }}-
+          config: release
+          bootstrap: 'false'
 
       - name: Build A and B (release orlyi + orlyc)
         run: |

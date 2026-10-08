@@ -1,0 +1,73 @@
+name: Build cache
+description: Restore build-profile snapshots and save only from trusted master jobs
+inputs:
+  config:
+    description: jhm configuration
+    required: true
+  enabled:
+    description: Restore persisted compiler caches
+    default: 'true'
+  bootstrap:
+    description: Cache the two bootstrap seed executables
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Identify compiler and bootstrap inputs
+      shell: bash
+      env:
+        BUILD_CONFIG: ${{ inputs.config }}
+        CACHE_ENABLED: ${{ inputs.enabled }}
+        BOOTSTRAP_CACHE: ${{ inputs.bootstrap }}
+      run: |
+        python3 "$GITHUB_ACTION_PATH/cache_keys.py" \
+          --config "$BUILD_CONFIG" --enabled "$CACHE_ENABLED" --bootstrap "$BOOTSTRAP_CACHE"
+
+    - name: Restore compiler snapshot
+      if: inputs.enabled == 'true' && env.ORLY_CCACHE_WRITE != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: ~/.ccache
+        key: ${{ env.ORLY_CCACHE_KEY }}
+        restore-keys: ${{ env.ORLY_CCACHE_PREFIX }}-
+
+    - name: Restore and register trusted compiler writer
+      if: env.ORLY_CCACHE_WRITE == 'true'
+      uses: actions/cache@v5
+      with:
+        path: ~/.ccache
+        key: ${{ env.ORLY_CCACHE_KEY }}
+        restore-keys: ${{ env.ORLY_CCACHE_PREFIX }}-
+
+    - name: Restore exact bootstrap snapshot
+      id: bootstrap-read
+      if: env.ORLY_BOOTSTRAP_KEY != '' && env.ORLY_BOOTSTRAP_WRITE != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          ${{ github.workspace }}/tools/jhm
+          ${{ github.workspace }}/tools/make_dep_file
+        key: ${{ env.ORLY_BOOTSTRAP_KEY }}
+
+    - name: Restore and register trusted bootstrap writer
+      id: bootstrap-write
+      if: env.ORLY_BOOTSTRAP_WRITE == 'true'
+      uses: actions/cache@v5
+      with:
+        path: |
+          ${{ github.workspace }}/tools/jhm
+          ${{ github.workspace }}/tools/make_dep_file
+        key: ${{ env.ORLY_BOOTSTRAP_KEY }}
+
+    - name: Validate bootstrap snapshot and prepare jhm marker
+      if: env.ORLY_BOOTSTRAP_KEY != ''
+      shell: bash
+      run: |
+        if [[ ! -x tools/jhm || ! -x tools/make_dep_file ]]; then
+          rm -f tools/jhm tools/make_dep_file
+        fi
+        mkdir -p ../.jhm
+
+    - name: Reset compiler statistics
+      shell: bash
+      run: ccache --zero-stats

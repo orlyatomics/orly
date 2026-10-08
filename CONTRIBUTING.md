@@ -56,6 +56,21 @@ Keep a PR to one concern. CI (`.github/workflows/ci.yml`) must be green:
 build + unit tests, the release build, the Orlyscript language suite, the
 end-to-end examples, and the `todo-lint` and ThreadSanitizer gates.
 
+### CI build caches
+
+Compiler snapshots are separate for each OS, architecture, compiler identity
+and jhm configuration. Only successful master-push builds write: the debug,
+release, ASan and TSan producers on x64, and debug/release producers on ARM.
+Other CI jobs, pull requests and manual workflows restore only; there is no
+fallback across configurations or architectures.
+
+The bootstrap cache contains only `jhm` and `make_dep_file`, keyed by their
+complete compiler-reported source/header dependencies (including system
+headers), compiler/linker/runtime inputs and absolute source layout. It has
+no fallback key. `make bootstrap` still runs nycr generation. Normal nightly
+builds bypass both caches; sanitizers keep their compiler cache but rebuild
+bootstrap seeds. A new cache namespace starts cold and warms on master.
+
 ## Releasing
 
 Releases are cut by a maintainer. Versions follow [`CHANGELOG.md`](CHANGELOG.md);

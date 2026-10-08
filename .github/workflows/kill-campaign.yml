@@ -69,13 +69,9 @@ jobs:
 
       - name: Restore ccache
         # Restore-only, from the release job's store.
-        uses: actions/cache/restore@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-release-build-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-release-build-
-            orly-ccache-${{ runner.os }}-
+          config: release
 
       - name: Build orlyi, orlyc and orly_dm (release)
         run: |

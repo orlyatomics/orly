@@ -43,14 +43,12 @@
 #
 # Caching: apt packages and the ccache store are cached across runs. The
 # ~4.5 GB build-output tree is too large to persist in the 10 GB Actions
-# cache, so we cache ccache instead: jhm and orlyc both invoke g++/gcc by
-# bare name via execvp, so prepending /usr/lib/ccache to PATH routes every
-# compile through ccache. jhm still re-runs jobs (it decides by mtime, and
-# checkout resets mtimes), but each compile is a ccache hit -- which also
-# speeds lang_test, whose orlyc runs compile generated C++. To guard against
-# silent stale-cache bugs, a `schedule:` trigger runs the same jobs daily
-# with caching disabled; if the nightly ever diverges from the cached PR
-# runs, that's the signal to investigate.
+# cache, so we cache compiler results instead. Snapshots are isolated by
+# architecture, compiler identity and build configuration, with one successful
+# master-push writer per profile and restore-only consumers elsewhere. The
+# two bootstrap seed executables use exact dependency/compiler/layout keys;
+# nycr generation and the complete build still run. Scheduled normal builds
+# bypass both caches; sanitizers retain their compiler cache on schedules.
 name: ci
 
 on:
@@ -94,6 +92,9 @@ jobs:
       - name: Lint fiber thread-locals
         run: python3 tools/maint/lint_fiber_tls.py
 
+      - name: Test build-cache key policy
+        run: python3 -m unittest discover -s .github/actions/build-cache -p 'test_cache_keys.py'
+
   debug-and-test:
     name: make debug + make test
     runs-on: ubuntu-24.04
@@ -127,14 +128,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache ccache
-        if: github.event_name != 'schedule'
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: debug
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: make debug
         run: |
@@ -179,7 +176,18 @@ jobs:
           sudo apt-get install -y -qq \
             build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
             libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
-            bison flex valgrind
+            bison flex valgrind ccache
+
+      - name: Set up ccache
+        run: |
+          for c in gcc g++ cc c++; do sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"; done
+          { echo "CCACHE_DIR=$HOME/.ccache"; echo "CCACHE_MAXSIZE=1G"; echo "CCACHE_COMPRESS=1"; } >> "$GITHUB_ENV"
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          config: debug
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: Report toolchain and arch
         run: |
@@ -197,6 +205,10 @@ jobs:
 
       - name: make test
         run: make test
+
+      - name: ccache stats
+        if: always()
+        run: ccache --show-stats --verbose
 
   arm64-release:
     name: aarch64 release smoke
@@ -224,8 +236,19 @@ jobs:
           sudo apt-get install -y -qq \
             build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
             libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
-            bison flex valgrind
+            bison flex valgrind ccache
           pip3 install --break-system-packages websocket-client
+
+      - name: Set up ccache
+        run: |
+          for c in gcc g++ cc c++; do sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"; done
+          { echo "CCACHE_DIR=$HOME/.ccache"; echo "CCACHE_MAXSIZE=1G"; echo "CCACHE_COMPRESS=1"; } >> "$GITHUB_ENV"
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          config: release
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: jhm -c release orlyi + orlyc
         run: |
@@ -235,6 +258,10 @@ jobs:
 
       - name: Release smoke (orlyc deadline, orlyi write loop)
         run: tools/maint/arm_release_smoke.sh 20
+
+      - name: ccache stats
+        if: always()
+        run: ccache --show-stats --verbose
 
   release-build:
     name: jhm -c release
@@ -269,14 +296,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache ccache
-        if: github.event_name != 'schedule'
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: release
+          enabled: ${{ github.event_name != 'schedule' }}
 
       # Bootstrap first (same path make debug takes), then drive jhm
       # directly. `make release` works but its Makefile wrapper has a
@@ -590,14 +613,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache ccache
-        if: github.event_name != 'schedule'
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: debug
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: Install python websocket-client
         run: pip3 install --break-system-packages websocket-client
@@ -645,14 +664,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache ccache
-        if: github.event_name != 'schedule'
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: debug
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: make debug
         run: make debug
@@ -757,14 +772,10 @@ jobs:
           go-version: '1.22'
 
       - name: Cache ccache
-        if: github.event_name != 'schedule'
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: debug
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: make debug
         run: make debug
@@ -947,14 +958,10 @@ jobs:
           node-version: '20'
 
       - name: Cache ccache
-        if: github.event_name != 'schedule'
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: debug
+          enabled: ${{ github.event_name != 'schedule' }}
 
       - name: make debug
         run: make debug
@@ -1099,13 +1106,10 @@ jobs:
         # Cache on every trigger (including schedule): unlike the stale-cache
         # canary the other jobs run nightly, this job's value is the race
         # report, not cache-correctness, and a cold TSan build is expensive.
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: tsan
+          bootstrap: ${{ github.event_name != 'schedule' }}
 
       # ThreadSanitizer's shadow memory needs lower ASLR entropy than modern
       # kernels default to; otherwise libtsan aborts at startup with
@@ -1297,13 +1301,10 @@ jobs:
         # Cache on every trigger (like `tsan`): this job's value is the ASan
         # report, not cache-correctness, and a cold sanitizer build is
         # expensive.
-        uses: actions/cache@v5
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-${{ github.job }}-
-            orly-ccache-${{ runner.os }}-
+          config: asan
+          bootstrap: ${{ github.event_name != 'schedule' }}
 
       - name: Bootstrap jhm
         run: make bootstrap

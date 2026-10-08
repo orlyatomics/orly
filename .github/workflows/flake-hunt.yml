@@ -64,16 +64,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        # Restore-only: twelve parallel shots saving the same key would race,
-        # and the hunt adds nothing to the cache that the lang-tests job
-        # doesn't already save. Piggyback on that job's store.
-        uses: actions/cache/restore@v5
+        # Restore-only, from the trusted x64 debug writer.
+        uses: ./.github/actions/build-cache
         with:
-          path: ~/.ccache
-          key: orly-ccache-${{ runner.os }}-lang-tests-${{ github.sha }}
-          restore-keys: |
-            orly-ccache-${{ runner.os }}-lang-tests-
-            orly-ccache-${{ runner.os }}-
+          config: debug
 
       - name: make debug
         run: make debug
