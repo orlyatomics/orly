@@ -443,3 +443,32 @@ void Orly::Indy::Disk::ReportOpenCheck(const TOpenCheck &check) {
     throw TOpenCheckFailed(msg.str());
   }
 }
+
+std::string Orly::Indy::Disk::DescribeOpenCheck(const TOpenCheck &check, size_t max_blocks) {
+  ostringstream strm;
+  strm << "open check: " << check.NumFiles << " files, " << check.NumOwned << " blocks owned, " << check.NumHeld
+       << " held, in " << fixed << setprecision(3) << check.Seconds * 1000.0 << " ms\n";
+  for (const auto &line : check.Unreadable) {
+    strm << "unreadable: the block list of " << line << " can't be read\n";
+  }
+  if (!check.Leaked.empty()) {
+    strm << "leaked: " << check.Leaked.size() << " blocks held but owned by nothing: " << ListBlocks(check.Leaked, max_blocks)
+         << (check.MergeRunning ? " (a disk merge was running)" : "") << "\n";
+  }
+  for (const auto &[repo_id, problem] : check.SeqProblems) {
+    strm << "sequence range: repo " << repo_id << ": " << problem.Describe() << "\n";
+  }
+  if (!check.Unheld.empty()) {
+    strm << "unheld: " << check.Unheld.size() << " blocks owned by a live file but free or waiting for discard: "
+         << ListBlocks(check.Unheld, max_blocks) << "\n";
+  }
+  if (!check.OutOfRange.empty()) {
+    strm << "out of range: " << check.OutOfRange.size() << " blocks owned by the system block or the file service lie outside every volume: "
+         << ListBlocks(check.OutOfRange, max_blocks) << "\n";
+  }
+  if (!check.Shared.empty()) {
+    strm << "shared: " << check.Shared.size() << " blocks are owned twice: " << ListBlocks(check.Shared, max_blocks) << "\n";
+  }
+  strm << "RESULT: " << (check.IsClean() ? "ok" : check.IsSafe() ? "problems" : "UNSAFE") << "\n";
+  return strm.str();
+}

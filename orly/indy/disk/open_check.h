@@ -173,6 +173,11 @@ namespace Orly {
          TOpenCheckFailed when !check.IsSafe(). */
       void ReportOpenCheck(const TOpenCheck &check);
 
+      /* The same findings as plain text, one line per kind of problem, with up to 'max_blocks'
+         block numbers each, for --check_only to print (#748). Ends with "RESULT: ok", "RESULT:
+         problems" or "RESULT: UNSAFE". */
+      std::string DescribeOpenCheck(const TOpenCheck &check, size_t max_blocks = 16UL);
+
     }  // Disk
 
   }  // Indy

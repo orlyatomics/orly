@@ -31,7 +31,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[1/8] compile kv package"
+echo "[1/9] compile kv package"
 cat > "$WORK/kv.orly" <<'ORLY'
 package #1;
 read_val = (*<['values', n]>::(int?)) where { n = given::(int); };
@@ -69,7 +69,7 @@ ORLY
   cp "$WORK/rec$version/rec.$version.so" "$WORK/packages/"
 done
 
-echo "[2/8] create loopback volume"
+echo "[2/9] create loopback volume"
 echo "   instance: $INSTANCE"
 truncate -s 3G "$WORK/disk.img"
 LOOP="$(sudo losetup -fP --show "$WORK/disk.img")"
@@ -136,7 +136,7 @@ def check_records(c, pov, step):
     print(f'   {step}: rec records OK')
 "
 
-echo "[3/8] start fresh (create=true), install, write"
+echo "[3/9] start fresh (create=true), install, write"
 start_server true run1
 # The pov id is captured for cycle 2: a pre-restart pov must be REFUSED
 # after the restart, not silently resurrected as an empty shell (#439).
@@ -155,10 +155,10 @@ print(pov)
 c.close()" | tail -1)"
 echo "   wrote 10 keys via pov $OLD_POV"
 
-echo "[4/8] stop with SIGTERM, as docker stop does (#598; flush-on-shutdown, #440)"
+echo "[4/9] stop with SIGTERM, as docker stop does (#598; flush-on-shutdown, #440)"
 stop_server TERM run1
 
-echo "[5/8] restart (create=false): data + package must survive; old pov must be refused"
+echo "[5/9] restart (create=false): data + package must survive; old pov must be refused"
 RESTART_STARTED_AT="$(python3 -c 'import time; print(time.monotonic())')"
 export RESTART_STARTED_AT
 start_server false run2
@@ -213,10 +213,10 @@ if ! grep -q "TManager: removed the saved entry of repo \[$OLD_POV\]" "$WORK/orl
 fi
 echo "   pre-restart pov's saved-repo entry removed (#671)"
 
-echo "[6/8] stop"
+echo "[6/9] stop"
 stop_server INT run2
 
-echo "[7/8] restart: uninstall must have survived"
+echo "[7/9] restart: uninstall must have survived"
 start_server false run3
 client "
 import orly
@@ -233,4 +233,23 @@ check_records(c, pov, 'after a restart with rec.2 installed')
 c.close()"
 stop_server INT run3
 
-echo "[8/8] PASS: restart durability verified"
+echo "[8/9] offline check of the stopped store (--check_only, #748)"
+# Must read the store like a start would, print the open check's findings and exit without
+# serving: status 0 and "RESULT: ok" for a clean store, and nothing listening afterwards.
+rc=0
+sudo "$ORLY_OUT/orly/server/orlyi" \
+    --create=false --check_only --instance_name="$INSTANCE" --starting_state=SOLO \
+    --port_number=19600 --slave_port_number=19601 --ws_port_number=19602 \
+    --reporting_port_number=19603 --connection_backlog=10 \
+    --package_dir="$WORK/packages" --max_parallel_frames=4000 \
+    --page_cache_size=256 --block_cache_size=64 --do_fsync --no_realtime \
+    --log_info > "$WORK/check_only.out" 2> "$WORK/check_only.err" || rc=$?
+cat "$WORK/check_only.out"
+if [ "$rc" -ne 0 ] || ! grep -q '^RESULT: ok$' "$WORK/check_only.out"; then
+  echo "--check_only on a clean store did not report ok (exit $rc):"; tail -20 "$WORK/check_only.err"; exit 1
+fi
+if ss -tln 2>/dev/null | grep -q ':19600'; then
+  echo "--check_only left a server listening"; exit 1
+fi
+
+echo "[9/9] PASS: restart durability verified"
