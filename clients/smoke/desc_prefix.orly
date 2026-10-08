@@ -1,0 +1,17 @@
+/* Keys with a desc member before a free one, read back with a prefix pattern (#792); used by
+   run-desc-prefix.sh. Each family is read before and after its keys reach a disk file, where the
+   walker matches patterns with Atom::TCore::PrefixMatch. */
+package #1;
+
+/* <['d', desc g, e]>: the issue's shape. */
+put_d = ((true) effecting { new <['d', desc g, e]> <- e; }) where { g = given::(int); e = given::(int); };
+read_d = (keys (int) @ <['d', desc g, free::(int)]> as [<[str, desc int, int]>]) where { g = given::(int); };
+point_d = (*<['d', desc g, e]>::(int?)) where { g = given::(int); e = given::(int); };
+
+/* Mixed ascending and descending members, a desc str among them. */
+put_m = ((true) effecting { new <['m', desc s, g, desc g, e]> <- e; }) where { s = given::(str); g = given::(int); e = given::(int); };
+read_m = (keys (int) @ <['m', desc s, g, desc g, free::(int)]> as [<[str, desc str, int, desc int, int]>]) where { s = given::(str); g = given::(int); };
+
+/* A nested tuple member with a desc inside it. */
+put_t = ((true) effecting { new <['t', <[g, desc g]>, e]> <- e; }) where { g = given::(int); e = given::(int); };
+read_t = (keys (int) @ <['t', <[g, desc g]>, free::(int)]> as [<[str, <[int, desc int]>, int]>]) where { g = given::(int); };

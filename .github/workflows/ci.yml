@@ -356,7 +356,7 @@ jobs:
       # too. Each runs to the end, so one failure doesn't hide another.
       - name: Storage and merge unit tests (release)
         run: |
-          tests="orly/atom/kit2 orly/indy/key orly/indy/repo orly/indy/disk/durable_manager orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
+          tests="orly/atom/kit2 orly/indy/key orly/indy/prefix_match orly/indy/repo orly/indy/disk/durable_manager orly/indy/disk/merge_data_file orly/indy/disk/fold_data_file orly/indy/context_fold orly/indy/fault_injection"
           PATH="$PWD/tools:$PATH" tools/jhm -c release $(for t in $tests; do printf '%s.test ' "$t"; done)
           failed=""
           for t in $tests; do
@@ -447,6 +447,15 @@ jobs:
       # stay up. On master this config kills orlyi within a second.
       - name: Point reads over many disk layers survive a small frame pool
         run: bash clients/smoke/run-read-fanout.sh
+
+      # #792: keys with a desc member (or a nested tuple holding one) before a
+      # free member, read back with a prefix pattern from memory and again once
+      # the global repo is disk files only. Before the fix every such read from
+      # disk returned [] on the release build.
+      - name: Desc-key prefix reads return their keys from disk
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          ORLY_OUT="$PWD/../out_orly/release" bash clients/smoke/run-desc-prefix.sh
 
       # #705: with no bind flags, the client, WebSocket and reporting
       # listeners bind 127.0.0.1 (refused on this host's other address), the
@@ -1081,6 +1090,13 @@ jobs:
 
       - name: client mixed-batch smoke (clients/smoke)
         run: bash run-multi-batch.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
+      # #792: the same desc-key prefix smoke on the debug build, where the disk
+      # walker cross-checks every match against MatchPrefixState (it aborted).
+      - name: client desc-key prefix smoke (clients/smoke)
+        run: bash run-desc-prefix.sh
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 

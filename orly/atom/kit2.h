@@ -28,6 +28,7 @@
 #include <base/thrower.h>
 #include <orly/atom/comparison.h>
 #include <orly/native/all.h>
+#include <orly/sabot/match_prefix_state.h>
 #include <orly/sabot/match_prefix_type.h>
 #include <orly/sabot/order_states.h>
 #include <orly/sabot/state.h>
@@ -1283,10 +1284,26 @@ namespace Orly {
         if (lhs_core->Tycon != TTycon::Free) {
           Atom::TComparison comp;
           if (!lhs_core->TryQuickOrderComparison(this_arena, *rhs_core, that_arena, comp)) {
-            Sabot::State::TAny::TWrapper
-              lhs_state(NewState(this_arena, lhs_state_alloc)),
-              rhs_state(that_core.NewState(that_arena, rhs_state_alloc));
-            comp = Orly::Sabot::OrderStates(*lhs_state, *rhs_state);
+            /* No quick answer for this pair of members (a desc, a nested tuple, a vector, ...), so
+               compare the two members' states. Compare the members, not the whole tuples: the
+               pattern's later frees never order equal to the key's values, so comparing the whole
+               tuples said NoMatch for every key with such a member before a free (#792). */
+            /* Scoped: the reference match below reuses the state allocs. */ {
+              Sabot::State::TAny::TWrapper
+                lhs_state(lhs_core->NewState(this_arena, lhs_state_alloc)),
+                rhs_state(rhs_core->NewState(that_arena, rhs_state_alloc));
+              comp = Orly::Sabot::OrderStates(*lhs_state, *rhs_state);
+            }
+            if (Atom::IsNe(comp)) {
+              /* The members differ in order, but a free nested inside the pattern's member (as in
+                 <[<[1, free::(int)]>, 2]>) orders below every value and still unifies with it.
+                 Ordering can't tell those apart, so let the reference matcher decide. Without a
+                 nested free this runs once per walk, on the key that ends it. */
+              Sabot::State::TAny::TWrapper
+                lhs_tuple(NewState(this_arena, lhs_state_alloc)),
+                rhs_tuple(that_core.NewState(that_arena, rhs_state_alloc));
+              return Orly::Sabot::MatchPrefixState(*lhs_tuple, *rhs_tuple);
+            }
           }
           if (Atom::IsNe(comp)) {
             return Orly::Sabot::TMatchResult::NoMatch;
