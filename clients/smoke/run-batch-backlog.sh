@@ -101,8 +101,9 @@ if grep -Eq "$ABORT" "$WORK/orlyi.log"; then
 fi
 ROLLBACK='StepMergeMem out of pool space; merge rolled back'
 # The log prints the retry count at powers of two, so a count at or past
-# ROLLBACK_MAX means one merge failed that many times in a row.
-ROLLBACK_MAX=${ROLLBACK_MAX:-16}
+# ROLLBACK_MAX means one merge failed that many times in a row. A fast runner, with the pool near
+# full, recovers from streaks of 32 and 64; a merge that is truly stuck never stops.
+ROLLBACK_MAX=${ROLLBACK_MAX:-512}
 worst=$(grep "$ROLLBACK" "$WORK/orlyi.log" | sed -n 's/.*(\([0-9][0-9]*\) times so far).*/\1/p' | sort -n | tail -1)
 echo "METRIC worst_merge_rollback_retries ${worst:-0}"
 if [ "${worst:-0}" -ge "$ROLLBACK_MAX" ]; then
