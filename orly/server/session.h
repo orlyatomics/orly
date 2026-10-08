@@ -355,17 +355,6 @@ namespace Orly {
           const Base::TUuid &parent_pov_id,
           const Package::TTestBlock &test_block, bool verbose);
 
-      /* Seed a freshly-created test POV's sequence counter from 'parent_pov_id'
-         (or the global POV when unset) so sequence numbers increase
-         monotonically down the test POV chain. The point-read fold
-         (present_walker) resolves a key present at several chain levels by
-         sequence number; child repos otherwise start at 1, so a child's write
-         could not shadow an ancestor's older value and a subcase would read the
-         stale ancestor value. Compile-time tests are single-threaded, so no
-         lock is taken. */
-      void SeedTestPovSequence(TServer *server, const Base::TUuid &child_pov_id,
-          const std::optional<Base::TUuid> &parent_pov_id);
-
       /* Stream out. */
       virtual void Write(Io::TBinaryOutputStream &strm) const override;
 

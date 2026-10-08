@@ -90,9 +90,24 @@ namespace Orly {
            pre-#49-phase-2 in-tree code ever produced). */
         void ApplyDeferredFold();
 
+        /* The order in which the repo walkers' current items leave the heap (#791): key
+           ascending, then, for one key, the repo nearest the POV first (the lower WalkerVec
+           position; RepoTree runs from the POV's own repo up to global). A repo's own walker
+           already yields one key's entries newest first, and only one item per walker is in the
+           heap at a time, so this yields each key's entries newest first across the chain. It
+           must not compare sequence numbers across repos: each repo numbers its updates itself,
+           so an ancestor's old entry can carry a higher number than the POV's newer delete or
+           overwrite of the same key, and would then hide it until Tetris promoted it. */
+        struct TChainOrder {
+          bool operator()(const TItem &lhs, size_t lhs_pos, const TItem &rhs, size_t rhs_pos) const {
+            const Atom::TComparison comp = lhs.CompareKeys(rhs);
+            return Atom::IsLt(comp) || (Atom::IsEq(comp) && (lhs_pos < rhs_pos || (lhs_pos == rhs_pos && lhs.SequenceNumber >= rhs.SequenceNumber)));
+          }
+        };
+
         std::vector<std::shared_ptr<Indy::TPresentWalker>> WalkerVec;
 
-        Util::TMinHeap<Indy::TPresentWalker::TItem, size_t> MinHeap;
+        Util::TMinHeap<Indy::TPresentWalker::TItem, size_t, TChainOrder> MinHeap;
 
         bool Valid;
 

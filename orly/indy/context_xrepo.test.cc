@@ -61,6 +61,7 @@
 #include <orly/indy/repo.h>
 #include <orly/indy/transaction_base.h>
 #include <orly/rt/mutate.h>
+#include <orly/server/tetris_manager.h>
 #include <orly/var/sabot_to_var.h>
 
 #include <base/test/kit.h>
@@ -88,8 +89,8 @@ Orly::Indy::Util::TPool Disk::TDurableManager::TMemSlushLayer::TDurableEntry::Po
 Orly::Indy::Util::TPool L1::TTransaction::TMutation::Pool(max(max(sizeof(L1::TTransaction::TPusher), sizeof(L1::TTransaction::TPopper)), sizeof(L1::TTransaction::TStatusChanger)), "Transaction::TMutation", 100UL);
 Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transaction", 100UL);
 Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize);
-Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 100UL);
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 200UL);
+Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 500UL);
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 500UL);
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -337,4 +338,204 @@ FIXTURE(XRepoSnapshot3RepoLeading) {
     fin = true;
     cond.notify_one();
   });
+}
+
+/* A Tetris manager whose players never play, so a test can write to a child repo (a child's first
+   write joins its parent's player) and promote by hand. It is not the master, so each player
+   waits for permission to work until its last child parts, and then exits. */
+class TInertTetrisManager final
+    : public Orly::Server::TTetrisManager {
+  public:
+  TInertTetrisManager(TScheduler *scheduler, Fiber::TRunner::TRunnerCons &runner_cons,
+                      Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager)
+      : TTetrisManager(scheduler, runner_cons, frame_pool_manager, [](Fiber::TRunner *) {}, /* is_master */ false) {}
+  virtual ~TInertTetrisManager() {
+    StopAllPlayers();
+  }
+  virtual TPlayer *NewPlayer(const TUuid &, const TUuid &, bool is_paused, bool is_master) override {
+    return new TInertPlayer(this, is_paused, is_master);
+  }
+  private:
+  class TInertPlayer final
+      : public TPlayer {
+    public:
+    TInertPlayer(TTetrisManager *tetris_manager, bool is_paused, bool is_master)
+        : TPlayer(tetris_manager) {
+      Start(is_paused, is_master);
+    }
+    virtual void OnJoin(const TUuid &) override {}
+    virtual void OnPart(const TUuid &) override {}
+    virtual void OnPause() override {}
+    virtual void OnUnpause() override {}
+    virtual void Play() override {}
+  };
+};
+
+/* #791: a POV reads its own writes over its ancestors' entries for the same key, deletes
+   included, before Tetris promotes them.
+
+   Sequence numbers are per repo (sequence_number.h), so an ancestor's entry for a key can carry
+   a higher number than the child's newer delete or overwrite of it. The context's merge across
+   the repo chain must therefore prefer the repo nearest the POV for a key, not the higher
+   number. Here `root` holds keys (4, 0..5) and an int counter under (9, *), padded so its
+   numbers run well past the child's; `pov` (child of root) and `reader` (child of pov) read
+   through the chain while pov's writes are unpromoted, then after they are promoted. */
+FIXTURE(Issue791ChildDeleteMasksAncestor) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    TSuprena arena;
+    void *state = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> tetris_frames(10UL, 1024UL * 1024UL, nullptr);
+    TInertTetrisManager tetris(&scheduler, runner_cons, &tetris_frames);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    manager->SetTetrisManager(&tetris);
+    for (bool is_safe : {false, true}) {
+      const Base::TUuid idx_id(TUuid::Twister);
+      auto root = manager->GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, is_safe, true);
+      auto pov = manager->GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), root, is_safe, true);
+      auto reader = manager->GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), pov, is_safe, true);
+      const auto key = [&](int64_t g, int64_t e) {
+        return TIndexKey(idx_id, TKey(make_tuple(g, e), &arena, state));
+      };
+      const auto commit = [&](const TManager::TPtr<TRepo> &repo, const TIndexKey &k, const TKey &op, TMutator mutator) {
+        auto t = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(k, op, mutator);
+        t->Push(repo, update); t->Prepare(); t->CommitAction();
+      };
+      const auto put = [&](const TManager::TPtr<TRepo> &repo, int64_t g, int64_t e, int64_t v) {
+        commit(repo, key(g, e), TKey(v, &arena, state), TMutator::Assign);
+      };
+      const auto add = [&](const TManager::TPtr<TRepo> &repo, int64_t g, int64_t e, int64_t v) {
+        commit(repo, key(g, e), TKey(v, &arena, state), TMutator::Add);
+      };
+      const auto remove = [&](const TManager::TPtr<TRepo> &repo, int64_t g, int64_t e) {
+        commit(repo, key(g, e), TKey(Orly::Native::TTombstone::Tombstone, &arena, state), TMutator::Assign);
+      };
+      /* Move every unpromoted update from `from` to `to`, as Tetris would. */
+      const auto promote_all = [&](const TManager::TPtr<TRepo> &from, const TManager::TPtr<TRepo> &to) {
+        for (;;) {
+          {
+            TRepo::TView view(from);
+            if (!view.GetLower()) {
+              break;
+            }
+          }
+          auto t = manager->NewTransaction();
+          t->Pop(from); t->Push(to, t->Peek(from)); t->Prepare(); t->CommitAction();
+        }
+      };
+      /* The value at (g, e) through `repo`, or nullopt if the read finds nothing; checks that
+         Exists agrees. */
+      const auto read = [&](const TManager::TPtr<TRepo> &repo, int64_t g, int64_t e) -> std::string {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        const TKey got = context[key(g, e)];
+        const bool exists = context.Exists(key(g, e));
+        if (!got.GetArena()) {
+          EXPECT_FALSE(exists);
+          return "absent";
+        }
+        EXPECT_TRUE(exists);
+        void *sa = alloca(Sabot::State::GetMaxStateSize());
+        return std::to_string(Orly::Var::TVar::TDt<int64_t>::As(Orly::Var::ToVar(*Sabot::State::TAny::TWrapper(got.GetCore().NewState(got.GetArena(), sa)))));
+      };
+      /* The e's a key cursor yields, for the pattern (g, free) or the range [(g, lo), (g, hi)]. */
+      const auto walk = [&](TContext::TKeyCursor &csr) {
+        std::string out = "[";
+        for (; csr; ++csr) {
+          void *sa = alloca(Sabot::State::GetMaxStateSize());
+          const auto v = Orly::Var::TVar::TDt<std::tuple<int64_t, int64_t>>::As(
+              Orly::Var::ToVar(*Sabot::State::TAny::TWrapper((*csr).GetCore().NewState((*csr).GetArena(), sa))));
+          out += (out.size() > 1 ? "," : "") + std::to_string(std::get<1>(v));
+        }
+        return out + "]";
+      };
+      const auto keys = [&](const TManager::TPtr<TRepo> &repo, int64_t g) {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        TContext::TKeyCursor csr(&context, TIndexKey(idx_id, TKey(make_tuple(g, Orly::Native::TFree<int64_t>()), &arena, state)));
+        return walk(csr);
+      };
+      const auto range = [&](const TManager::TPtr<TRepo> &repo, int64_t g, int64_t lo, int64_t hi) {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        TContext::TKeyCursor csr(&context, key(g, lo), key(g, hi));
+        return walk(csr);
+      };
+
+      /* The ancestor's data, numbered well past anything the child will reach. */
+      for (int64_t e = 0; e < 6; ++e) {
+        put(root, 4, e, e * 10);
+      }
+      for (int64_t i = 0; i < 20; ++i) {
+        put(root, 8, i, i);
+      }
+      put(root, 9, 0, 10);  // counter: 10 + 5 = 15
+      add(root, 9, 0, 5);
+      put(root, 9, 1, 10);  // counter the pov will delete, then add to
+      add(root, 9, 1, 5);
+      add(root, 9, 2, 7);   // commutative-only history the pov will overwrite
+      add(root, 9, 2, 7);
+      EXPECT_EQ(keys(pov, 4), "[0,1,2,3,4,5]");
+
+      /* The pov's writes, unpromoted: delete an ancestor-held key, overwrite another, delete and
+         re-insert a third, insert and delete one of its own, and add to / delete / overwrite the
+         ancestor's counters. */
+      remove(pov, 4, 4);
+      put(pov, 4, 3, 333);
+      remove(pov, 4, 1);
+      put(pov, 4, 1, 111);
+      put(pov, 4, 100, 0);
+      put(pov, 4, 50, 5);
+      remove(pov, 4, 50);
+      add(pov, 9, 0, 1);
+      remove(pov, 9, 1);
+      add(pov, 9, 1, 2);
+      put(pov, 9, 2, 100);
+
+      for (const auto &through : {pov, reader}) {
+        EXPECT_EQ(read(through, 4, 4), "absent");
+        EXPECT_EQ(read(through, 4, 3), "333");
+        EXPECT_EQ(read(through, 4, 1), "111");
+        EXPECT_EQ(read(through, 4, 5), "50");
+        EXPECT_EQ(read(through, 4, 50), "absent");
+        EXPECT_EQ(keys(through, 4), "[0,1,2,3,5,100]");
+        /* The range starts at a key the pov holds: on a master before #793, a memory layer's
+           range walk whose first key in range lies past `from` yields nothing at all. */
+        EXPECT_EQ(range(through, 4, 3, 5), "[3,5]");
+        EXPECT_EQ(range(through, 4, 4, 4), "[]");
+        EXPECT_EQ(read(through, 9, 0), "16");
+        EXPECT_EQ(read(through, 9, 1), "2");
+        EXPECT_EQ(read(through, 9, 2), "100");
+      }
+      /* The ancestor alone is unchanged. */
+      EXPECT_EQ(read(root, 4, 4), "40");
+      EXPECT_EQ(read(root, 4, 3), "30");
+      EXPECT_EQ(keys(root, 4), "[0,1,2,3,4,5]");
+      EXPECT_EQ(range(root, 4, 3, 5), "[3,4,5]");
+      EXPECT_EQ(read(root, 9, 0), "15");
+      EXPECT_EQ(read(root, 9, 1), "15");
+      EXPECT_EQ(read(root, 9, 2), "14");
+
+      /* Once promoted, every level agrees. */
+      promote_all(pov, root);
+      for (const auto &through : {root, pov, reader}) {
+        EXPECT_EQ(read(through, 4, 4), "absent");
+        EXPECT_EQ(read(through, 4, 3), "333");
+        EXPECT_EQ(read(through, 4, 1), "111");
+        EXPECT_EQ(keys(through, 4), "[0,1,2,3,5,100]");
+        EXPECT_EQ(range(through, 4, 3, 5), "[3,5]");
+        EXPECT_EQ(read(through, 9, 0), "16");
+        EXPECT_EQ(read(through, 9, 1), "2");
+        EXPECT_EQ(read(through, 9, 2), "100");
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, /* extra_runners, for Tetris */ 1);
 }

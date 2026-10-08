@@ -22,6 +22,7 @@
 #pragma once
 
 #include <cassert>
+#include <type_traits>
 
 #include <orly/atom/kit2.h>
 #include <orly/indy/key.h>
@@ -63,7 +64,9 @@ namespace Orly {
 
         };  // TMinHeapElem
 
-        TMinHeap(size_t max_elem, const TComparator &comp = std::less<TVal>())
+        /* The comparator takes (lhs, rhs) or, to break ties by the elements' refs,
+           (lhs, lhs_ref, rhs, rhs_ref). */
+        TMinHeap(size_t max_elem, const TComparator &comp = TComparator())
             : MaxElem(max_elem), NumElem(0UL), Data(nullptr), Comp(comp) {
           Data = reinterpret_cast<TMinHeapElem *>(malloc(MaxElem *sizeof(TMinHeapElem)));
           if (!Data) {
@@ -87,7 +90,7 @@ namespace Orly {
           size_t i = NumElem;
           ++NumElem;
           new (Data + i) TMinHeapElem(val, ref);
-          while (i > 0 && Comp(*(Data[i].Val), *(Data[Parent(i)].Val))) {
+          while (i > 0 && Less(Data[i], Data[Parent(i)])) {
             std::swap(Data[i], Data[Parent(i)]);
             i = Parent(i);
           }
@@ -114,6 +117,14 @@ namespace Orly {
 
         private:
 
+        inline bool Less(const TMinHeapElem &lhs, const TMinHeapElem &rhs) const {
+          if constexpr (std::is_invocable_r_v<bool, const TComparator &, const TVal &, const TRef &, const TVal &, const TRef &>) {
+            return Comp(*lhs.Val, lhs.Ref, *rhs.Val, rhs.Ref);
+          } else {
+            return Comp(*lhs.Val, *rhs.Val);
+          }
+        }
+
         /* Return the offset of the parent of offset i. */
         inline size_t Parent(size_t i) const {
           assert(i > 0);
@@ -134,12 +145,12 @@ namespace Orly {
           const size_t left = Left(i);
           const size_t right = Right(i);
           size_t smallest;
-          if (left < NumElem && Comp(*(Data[left].Val), *(Data[i].Val))) {
+          if (left < NumElem && Less(Data[left], Data[i])) {
             smallest = left;
           } else {
             smallest = i;
           }
-          if (right < NumElem && Comp(*(Data[right].Val), *(Data[smallest].Val))) {
+          if (right < NumElem && Less(Data[right], Data[smallest])) {
             smallest = right;
           }
           if (smallest != i) {

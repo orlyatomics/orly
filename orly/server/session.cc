@@ -844,16 +844,6 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
   }
 }
 
-void TSession::SeedTestPovSequence(TServer *server, const Base::TUuid &child_pov_id,
-    const std::optional<Base::TUuid> &parent_pov_id) {
-  assert(server);
-  Indy::L0::TManager::TPtr<Indy::TRepo> parent_repo =
-      parent_pov_id ? server->GetDurableManager()->Open<TPov>(*parent_pov_id)->GetRepo(server)
-                    : server->GetGlobalRepo();
-  auto child = server->GetDurableManager()->Open<TPov>(child_pov_id);
-  child->GetRepo(server)->SetNextSequenceNumber(parent_repo->GetNextSequenceNumber());
-}
-
 bool TSession::RunTestSuite(TServer *server,
     const std::vector<std::string> &package_name,
     uint64_t /*package_version*/, bool verbose) {
@@ -878,7 +868,6 @@ bool TSession::RunTestSuite(TServer *server,
         Base::TUuid spov = NewFastSharedPov(server, std::optional<Base::TUuid>(), std::chrono::seconds(0));
         TTestPovDiscard discard_spov{this, server, spov};
         PausePov(server, spov);
-        SeedTestPovSequence(server, spov, std::optional<Base::TUuid>());
         if (test->WithBlock) {
           RunFuncCommit(server, package_name,
               [test](Package::TContext &ctx) {
@@ -1087,7 +1076,6 @@ bool TSession::RunTestBlock(TServer *server,
        of this iteration (#683; see RunTestSuite). */
     TTestPovDiscard discard_case_pov{this, server, case_pov};
     PausePov(server, case_pov);
-    SeedTestPovSequence(server, case_pov, parent_pov_id);
 
     if (verbose) {
       std::cout << test->Loc;
