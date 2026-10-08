@@ -1,0 +1,85 @@
+{
+  "id": "release-smokes-v1",
+  "runner": "ubuntu-24.04",
+  "rounds": 3,
+  "timeout_seconds": 600,
+  "workloads": [
+    {
+      "id": "pool-pressure",
+      "command": ["bash", "clients/smoke/run-pool-pressure.sh"],
+      "env": {"K": "8", "SECS": "30", "MAX_WRITES": "60000"},
+      "inputs": ["clients/smoke/run-pool-pressure.sh", "clients/smoke/pool_pressure.mjs", "clients/mcp/smoke/sample.orly"],
+      "headline": {
+        "shared_pov_writes_per_s": "higher",
+        "pov_per_writer_writes_per_s": "higher",
+        "shared_pov_p99_ms": "lower",
+        "pov_per_writer_p99_ms": "lower"
+      }
+    },
+    {
+      "id": "batch-backlog",
+      "command": ["bash", "clients/smoke/run-batch-backlog.sh"],
+      "env": {"K": "8", "BATCH": "200", "KEYS": "50000", "SECS": "20", "MIN_BATCHES": "200", "RESERVE_PCT": "25"},
+      "inputs": ["clients/smoke/run-batch-backlog.sh", "clients/smoke/batch_backlog.mjs", "clients/mcp/smoke/sample.orly"],
+      "headline": {
+        "batches_per_s": "higher",
+        "batch_p50_ms": "lower",
+        "batch_p99_ms": "lower"
+      }
+    },
+    {
+      "id": "read-fold",
+      "command": ["bash", "clients/smoke/run-read-fold.sh"],
+      "env": {"NKEYS": "200", "ROUNDS": "40", "PAUSE_MS": "250", "R": "4", "SECS": "20"},
+      "inputs": ["clients/smoke/run-read-fold.sh", "clients/smoke/read_fold.mjs", "clients/smoke/read_fold.orly"],
+      "headline": {"point_reads_per_s": "higher", "range_reads_per_s": "higher"}
+    },
+    {
+      "id": "ws-scale",
+      "command": ["bash", "clients/smoke/run-ws-scale.sh"],
+      "env": {"LEVELS": "1,4,16", "KINDS": "point,prefix", "SECS": "5", "GROUPS": "2000", "WORKERS": "4"},
+      "inputs": ["clients/smoke/run-ws-scale.sh", "clients/smoke/ws_scale.mjs", "clients/smoke/ws_scale.orly"],
+      "headline": {
+        "ws_point_rps_s1": "higher",
+        "ws_point_p50_ms_s1": "lower",
+        "ws_point_p99_ms_s1": "lower",
+        "ws_point_rps_s4": "higher",
+        "ws_point_p50_ms_s4": "lower",
+        "ws_point_p99_ms_s4": "lower",
+        "ws_point_rps_s16": "higher",
+        "ws_point_p50_ms_s16": "lower",
+        "ws_point_p99_ms_s16": "lower",
+        "ws_prefix_rps_s1": "higher",
+        "ws_prefix_p50_ms_s1": "lower",
+        "ws_prefix_p99_ms_s1": "lower",
+        "ws_prefix_rps_s4": "higher",
+        "ws_prefix_p50_ms_s4": "lower",
+        "ws_prefix_p99_ms_s4": "lower",
+        "ws_prefix_rps_s16": "higher",
+        "ws_prefix_p50_ms_s16": "lower",
+        "ws_prefix_p99_ms_s16": "lower"
+      }
+    },
+    {
+      "id": "grc20",
+      "command": ["bash", "bench/run-grc20.sh"],
+      "env": {"GRC_LEVELS": "1,4,16", "GRC_ENTITIES": "128", "GRC_REVISIONS": "4", "GRC_SECS": "5"},
+      "inputs": ["bench/run-grc20.sh", "bench/grc20.mjs", "examples/grc20-pov/grc20.orly"],
+      "headline": {
+        "ingest_events_per_s_c1": "higher",
+        "ingest_events_per_s_c4": "higher",
+        "ingest_events_per_s_c16": "higher",
+        "one_hop_per_s_c1": "higher",
+        "one_hop_per_s_c4": "higher",
+        "one_hop_per_s_c16": "higher"
+      }
+    },
+    {
+      "id": "restart",
+      "command": ["bash", "tests/restart_test.sh"],
+      "env": {"STARTUP_POLLS": "3000", "STARTUP_POLL_SECS": "0.1"},
+      "inputs": ["tests/restart_test.sh"],
+      "headline": {"restart_to_serving_s": "lower"}
+    }
+  ]
+}

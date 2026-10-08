@@ -125,7 +125,10 @@ the three npm packages, the Go client and the Zig client move together.
    [`clients/go/README.md`](clients/go/README.md). Merge that as a PR.
 3. Tag `vX.Y.Z` on the merge commit and push it. `docker.yml` publishes the
    multi-arch image (`:vX.Y.Z` and `:latest`) on a `v*` tag; then
-   `gh release create vX.Y.Z`.
+   `gh release create vX.Y.Z`. `release-benchmarks.yml` measures the release
+   and opens a results PR; check its noise-aware verdict and merge that data
+   before the next release. See [`docs/benchmarks.md`](docs/benchmarks.md) for
+   on-demand runs, dry-runs, and remaining coverage.
 4. Publish to npm from an interactive terminal: `tools/npm_publish.sh`
    (`--dry-run` first). Each publish needs an npm 2FA code. The script skips
    versions already on the registry and waits for the driver to resolve before

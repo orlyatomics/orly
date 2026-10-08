@@ -86,12 +86,12 @@ start_server() {  # $1 = create true|false, $2 = log tag
     --log_info \
     > "$WORK/orlyi-$2.log" 2>&1 &
   SRV_PID=$!
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "${STARTUP_POLLS:-60}"); do
     ss -tln 2>/dev/null | grep -q ':19600' && return 0
     if ! sudo kill -0 "$SRV_PID" 2>/dev/null; then
       echo "orlyi ($2) died during startup:"; tail -20 "$WORK/orlyi-$2.log"; exit 1
     fi
-    sleep 5
+    sleep "${STARTUP_POLL_SECS:-5}"
   done
   echo "orlyi ($2) never came up:"; tail -20 "$WORK/orlyi-$2.log"; exit 1
 }
@@ -159,14 +159,19 @@ echo "[4/8] stop with SIGTERM, as docker stop does (#598; flush-on-shutdown, #44
 stop_server TERM run1
 
 echo "[5/8] restart (create=false): data + package must survive; old pov must be refused"
+RESTART_STARTED_AT="$(python3 -c 'import time; print(time.monotonic())')"
+export RESTART_STARTED_AT
 start_server false run2
 client "
+import os
+import time
 import orly
 c = orly.connect('ws://127.0.0.1:19602/', timeout=10, recv_timeout=60)
 c.new_session(); pov = c.new_pov()
 vals = [c.call(pov, 'kv', 'read_val', {'n': n}) for n in range(1, 11)]
 assert vals == [n * 100 for n in range(1, 11)], f'data lost: {vals}'
 print('   data + auto-reinstalled package OK:', vals)
+print('METRIC restart_to_serving_s', time.monotonic() - float(os.environ['RESTART_STARTED_AT']))
 # Povs are ephemeral (#439): the pre-restart pov's durable record reloads,
 # but its un-promoted state is gone -- the server must say so instead of
 # minting an empty shell that reads through to global.

@@ -116,6 +116,12 @@ jobs:
       - name: Test release artifact integrity
         run: python3 -m unittest discover -s tools/ci -p 'test_release_artifact.py'
 
+      - name: Release benchmark reporting checks
+        run: |
+          python3 -m unittest discover -s tools/maint -p 'release_bench_test.py'
+          node --check bench/grc20.mjs
+          bash -n bench/run-grc20.sh tests/restart_test.sh
+
   debug-and-test:
     name: make debug + make test
     needs: todo-lint
@@ -1272,6 +1278,12 @@ jobs:
         run: ORLY_OUT="$GITHUB_WORKSPACE/../out_orly/debug" REQUIRE_GO=1 bash run-keyset-paging.sh
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
+
+      - name: GRC-20 benchmark fixture check
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          ORLY_OUT="$PWD/../out_orly/debug" GRC_ENTITIES=32 GRC_REVISIONS=2 \
+            GRC_LEVELS=1,4 GRC_SECS=1 bash bench/run-grc20.sh
 
   tsan:
     name: ThreadSanitizer

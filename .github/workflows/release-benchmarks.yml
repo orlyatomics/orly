@@ -1,0 +1,257 @@
+name: release-benchmarks
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to measure (empty measures the dispatch ref without publishing)'
+        required: false
+        default: ''
+      publish:
+        description: 'Open a results PR; requires a release tag'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-benchmarks-${{ inputs.version || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+      complete: ${{ steps.measure.outputs.complete }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: harness/orly
+          fetch-depth: 0
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          path: history/orly
+
+      - name: Resolve release and previous published measurement
+        id: plan
+        working-directory: harness/orly
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/release-benchmark-output"
+          version="$REQUESTED_VERSION"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="$GITHUB_REF_NAME"; fi
+          args=()
+          if [[ "$GITHUB_EVENT_NAME" == push || "$PUBLISH" == true ]]; then args+=(--publish); fi
+          python3 tools/maint/release_bench.py plan --version "$version" "${args[@]}" \
+            --history "$GITHUB_WORKSPACE/history/orly/bench/results" \
+            --output "$GITHUB_WORKSPACE/release-benchmark-output/plan.json" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.plan.outputs.commit }}
+          path: candidate/orly
+      - uses: actions/checkout@v6
+        if: steps.plan.outputs.baseline_commit != ''
+        with:
+          ref: ${{ steps.plan.outputs.baseline_commit }}
+          path: baseline/orly
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex python3-pip ccache
+          version: 1.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Python client dependency
+        run: pip3 install --break-system-packages --quiet websocket-client
+      - name: Set up ccache
+        run: |
+          for c in gcc g++ cc c++; do sudo ln -sf "$(command -v ccache)" "/usr/local/bin/$c"; done
+          { echo "CCACHE_DIR=$HOME/.ccache"; echo "CCACHE_MAXSIZE=4G"; echo "CCACHE_COMPRESS=1"; } >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.ccache
+          key: orly-ccache-${{ runner.os }}-${{ runner.arch }}-release-build-none
+          restore-keys: |
+            orly-ccache-${{ runner.os }}-${{ runner.arch }}-release-build-
+            orly-ccache-${{ runner.os }}-release-build-
+            orly-ccache-${{ runner.os }}-
+
+      - name: Build release binaries on the same runner
+        run: |
+          for arm in candidate baseline; do
+            if [ ! -d "$arm/orly" ]; then continue; fi
+            if ! (cd "$arm/orly" && make bootstrap version > /dev/null \
+                  && PATH="$PWD/tools:$PATH" tools/jhm -c release --worker-count 4 \
+                    orly/server/orlyi orly/orlyc orly/indy/disk/util/orly_dm) \
+                  > "release-benchmark-output/build-$arm.log" 2>&1; then
+              tail -40 "release-benchmark-output/build-$arm.log"
+              exit 1
+            fi
+          done
+
+      - name: Measure A/A noise and paired release changes
+        id: measure
+        working-directory: harness/orly
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          BASELINE_COMMIT: ${{ steps.plan.outputs.baseline_commit }}
+          BENCH_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -o pipefail
+          args=()
+          if [ -n "$BASELINE_COMMIT" ]; then args+=(--baseline-out "$GITHUB_WORKSPACE/baseline/out_orly/release"); fi
+          status=0
+          python3 tools/maint/release_bench.py collect \
+            --plan "$GITHUB_WORKSPACE/release-benchmark-output/plan.json" \
+            --out "$GITHUB_WORKSPACE/candidate/out_orly/release" "${args[@]}" \
+            --history "$GITHUB_WORKSPACE/history/orly/bench/results" \
+            --output-dir "$GITHUB_WORKSPACE/release-benchmark-output" \
+            | tee "$GITHUB_WORKSPACE/release-benchmark-output/report.txt" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          sed -n '/^### /,$p' "$GITHUB_WORKSPACE/release-benchmark-output/report.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$GITHUB_WORKSPACE/release-benchmark-output/$VERSION.json" ]; then
+            python3 - "$GITHUB_WORKSPACE/release-benchmark-output/$VERSION.json" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sys
+          with open(sys.argv[1]) as source:
+              print("complete=" + str(json.load(source)["complete"]).lower())
+          PY
+          fi
+
+      - name: Render preview
+        if: steps.measure.outputs.complete == 'true'
+        working-directory: harness/orly
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          preview="$GITHUB_WORKSPACE/release-benchmark-output/preview"
+          mkdir -p "$preview/bench/results" "$preview/docs"
+          shopt -s nullglob
+          for result in "$GITHUB_WORKSPACE/history/orly/bench/results/"*.json; do
+            cp "$result" "$preview/bench/results/"
+          done
+          cp docs/benchmarks.md "$preview/docs/"
+          if [[ "$VERSION" == dev-* ]]; then
+            python3 - "$GITHUB_WORKSPACE/release-benchmark-output/$VERSION.json" "$preview/docs/benchmarks.md" <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, "tools/maint")
+          from release_bench import render, history
+          records = history(Path(sys.argv[2]).parents[1] / "bench/results")
+          records.append(json.loads(Path(sys.argv[1]).read_text()))
+          render(records, sys.argv[2])
+          PY
+            cp "$GITHUB_WORKSPACE/release-benchmark-output/$VERSION.json" "$preview/bench/results/"
+          else
+            cp "$GITHUB_WORKSPACE/release-benchmark-output/$VERSION.json" "$preview/bench/results/"
+            python3 tools/maint/release_bench.py render --history "$preview/bench/results" --page "$preview/docs/benchmarks.md"
+          fi
+
+      - name: Upload measurements and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-benchmark-output
+          path: release-benchmark-output/
+          if-no-files-found: error
+
+      - name: Gate regressions and failed samples
+        if: always()
+        env:
+          STATUS: ${{ steps.measure.outputs.status }}
+        run: |
+          if [ "$STATUS" != 0 ]; then
+            echo "::error::Release benchmarks failed or could not compare; inspect the summary and raw logs."
+            exit 1
+          fi
+
+  publish:
+    needs: measure
+    if: >-
+      always() && needs.measure.outputs.complete == 'true' &&
+      (github.event_name == 'push' || inputs.publish)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-benchmark-output
+          path: .release-benchmark-output
+      - name: Commit results and open the publication PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.measure.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.measure.outputs.commit }}
+        run: |
+          python3 - "$VERSION" "$RELEASE_COMMIT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, "tools/maint")
+          from release_bench import version_key
+          version_key(sys.argv[1])
+          record = json.loads(Path(f".release-benchmark-output/{sys.argv[1]}.json").read_text())
+          assert record["complete"] and record["version"] == sys.argv[1] and record["commit"] == sys.argv[2]
+          PY
+          if [ -f "bench/results/$VERSION.json" ]; then
+            python3 - "bench/results/$VERSION.json" "$RELEASE_COMMIT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          if json.loads(Path(sys.argv[1]).read_text())["commit"] != sys.argv[2]:
+              raise SystemExit("published version refers to a different commit; refusing to overwrite it")
+          PY
+            echo "$VERSION already has published measurements; keeping the original shot."
+            exit 0
+          fi
+          branch="ohohoreilly/benchmarks-$VERSION"
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json url --jq '.[0].url // empty')
+            if [ -n "$existing" ]; then echo "Keeping existing measurements: $existing"; exit 0; fi
+            echo "::error::Results branch exists without an open PR; refusing to overwrite measurements."
+            exit 1
+          fi
+          git switch -c "$branch"
+          mkdir -p bench/results
+          cp ".release-benchmark-output/$VERSION.json" "bench/results/"
+          python3 tools/maint/release_bench.py render --history bench/results --page docs/benchmarks.md
+          git config user.name "Patrick O'Reilly"
+          git config user.email p@ovpl.co
+          git add -- "bench/results/$VERSION.json" docs/benchmarks.md
+          git commit -m "benchmarks: publish $VERSION measurements (#743)"
+          git push origin "HEAD:refs/heads/$branch"
+          python3 - "$VERSION" <<'PY'
+          import json, sys
+          from pathlib import Path
+          version = sys.argv[1]
+          record = json.loads(Path(f"bench/results/{version}.json").read_text())
+          Path(".release-benchmark-output/pr-body.md").write_text(
+              f"Release measurements for `{version}`.\n\n"
+              f"**Benchmark verdict: {record['status']}.**\n\n"
+              "The JSON includes raw samples, A/A noise, paired comparisons and runner details. "
+              "Merge to publish the tables and make this release available as the next baseline. "
+              "A regression is retained as evidence, not turned into a passing result.\n\n"
+              f"[Benchmark run]({record['run_url']})\n\n"
+              "## Merge danger\n"
+              "**Door:** two-way; data and Markdown only.\n"
+              "**Blast radius:** the public benchmark tables and the next release's comparison baseline.\n")
+          PY
+          gh pr create --repo "$GITHUB_REPOSITORY" --base master --head "$branch" \
+            --title "benchmarks: publish $VERSION measurements" \
+            --body-file .release-benchmark-output/pr-body.md
