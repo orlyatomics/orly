@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <functional>
 #include <map>
@@ -276,9 +277,18 @@ namespace Orly {
       /* Destroy all our objects on the way out. */
       virtual ~TManager();
 
+      /* LoadOutsideTheMutex: New() and Open() call CanLoad() and TryLoad() WITHOUT the
+         manager's mutex, so overrides must be safe to call from several threads at once.  They
+         may read the disk, and on a fiber a disk read parks the fiber until the read completes,
+         letting its runner thread run other fibers meanwhile.  Mutex is a std::mutex, owned by
+         a thread: when the parked fiber held it, the next fiber on that runner to New() or
+         Open() a durable blocked the runner's thread on a lock that thread already held, so the
+         parked fiber never resumed, and every other user of the manager queued up behind it.
+         After a restart, with nothing cached, that wedged the server (#804). */
+
       /* Override to search the disk for an object with the given id.
          If found, return true; else, return false.
-         Assume that the mutex has already been obtained. */
+         Called without the mutex: see LoadOutsideTheMutex. */
       virtual bool CanLoad(const TId &id) = 0;
 
       /* Override to erase from disk all objects which have a deadline <= the given time.
@@ -302,10 +312,15 @@ namespace Orly {
 
       /* Override to search the disk for an object with the given id.
          If found, return the object's blob (via out-parameter) and return true; else, ignore the out-parameter and return false.
-         Assume that the mutex has already been obtained. */
+         Called without the mutex: see LoadOutsideTheMutex. */
       virtual bool TryLoad(const TId &id, std::string &blob) = 0;
 
       private:
+
+      /* Share an object found in the openable set, taking it out of the closed set if it was
+         closed.  Assumes the mutex has already been obtained. */
+      template <typename TSomeObj>
+      TPtr<TSomeObj> Reopen(TObj *obj);
 
       /* Evict the given object from the set of openable objects, then destroy the object.
          NOTE 1: The object pointer passed to this function WILL BE BAD by the time this function returns.
@@ -326,8 +341,14 @@ namespace Orly {
       /* The maximum number of objects to keep in ClosedObjs. */
       size_t MaxCacheSize;
 
-      /* Covers OpenableObj, ClosedObjs, and all instances of TObj::PtrCount. */
+      /* Covers OpenableObjs, ClosedObjs, LeftCount, and all instances of TObj::PtrCount.
+         Never held across anything that can park a fiber: see LoadOutsideTheMutex. */
       std::mutex Mutex;
+
+      /* How many objects have left OpenableObjs (DestroyObj()).  New() and Open() look at the
+         disk store without the mutex; an object that left meanwhile was saved on its way out,
+         maybe after their look, so when this has moved they look again (#804). */
+      uint64_t LeftCount = 0;
 
       /* All the objects currently open as well as those which are closed but cached.
          These are objects which can be found by the Open() function.
@@ -590,87 +611,131 @@ namespace Orly {
 
     template <typename TSomeObj, typename... TArgs>
     TPtr<TSomeObj> TManager::New(const TId &id, const TTtl &ttl, TArgs &&... args) {
-      /* Lock the manager and create the requested slot among the openable objects.
-         If the slot already exists, throw. */
-      std::lock_guard<std::mutex> lock(Mutex);
-      auto iter = OpenableObjs.insert(std::pair<TId, TObj *>(id, nullptr)).first;
-      TObj *&openable_obj = iter->second;
-      if (openable_obj) {
-        THROW_ERROR(TAlreadyExists) << "in cache" << Base::EndOfPart << "id = " << id;
-      }
-      try {
-        /* If the disk store already has an object with the given id, throw. */
+      for (;;) {
+        /* Refuse an id already in the openable set, and note how many objects have left it so far. */
+        uint64_t left_before;
+        /* extra */ {
+          std::lock_guard<std::mutex> lock(Mutex);
+          auto iter = OpenableObjs.find(id);
+          if (iter != OpenableObjs.end() && iter->second) {
+            THROW_ERROR(TAlreadyExists) << "in cache" << Base::EndOfPart << "id = " << id;
+          }
+          left_before = LeftCount;
+        }
+        /* If the disk store already has an object with the given id, throw.  Without the mutex:
+           see LoadOutsideTheMutex. */
         if (CanLoad(id)) {
           THROW_ERROR(TAlreadyExists) << "on disk" << Base::EndOfPart << "id = " << id;
         }
-        /* Construct the new object and keep it in the openable set. */
-        TSomeObj *some_obj = new TSomeObj(this, id, ttl, std::forward<TArgs>(args)...);
-
-        if (ttl.count() > 0) {
-          /* save the object so it gets replicated if it has a non-zero ttl */ {
-            TDeadline deadline = TDeadline::clock::now() + ttl;
-            std::string blob;
-            /* extra */ {
-              auto recorder = std::make_shared<Io::TRecorder>();
-              Io::TBinaryOutputOnlyStream strm(recorder);
-              some_obj->Write(strm);
-              strm.Flush();
-              recorder->CopyOut(blob);
-            }
-            /* Fire-and-forget (null sem): this save exists so the new object replicates; the
-               durability barrier is the save-on-close in OnPtrRelease().  We used to pass a
-               stack sem and never wait on it, which only worked while Save() signalled before
-               returning -- with the sem now pushed after the disk write (#277), waiting here
-               would serialize every session creation on the flush cadence while holding the
-               manager mutex, and not waiting would be a use-after-free. */
-            Save(id, deadline, ttl, blob, nullptr);
-          }
+        /* Lock the manager and create the requested slot among the openable objects.
+           If the slot already exists, throw. */
+        std::lock_guard<std::mutex> lock(Mutex);
+        if (LeftCount != left_before) {
+          /* An object left the openable set while we looked, so it may have been this id, saved
+             on its way out after our look.  Look again. */
+          continue;
         }
+        auto iter = OpenableObjs.insert(std::pair<TId, TObj *>(id, nullptr)).first;
+        TObj *&openable_obj = iter->second;
+        if (openable_obj) {
+          THROW_ERROR(TAlreadyExists) << "in cache" << Base::EndOfPart << "id = " << id;
+        }
+        try {
+          /* Construct the new object and keep it in the openable set. */
+          TSomeObj *some_obj = new TSomeObj(this, id, ttl, std::forward<TArgs>(args)...);
 
-        openable_obj = some_obj;
-        return TPtr<TSomeObj>(some_obj, Orly::Durable::New);
-      } catch (...) {
-        /* We already had the object on disk or the object's constructor failed.
-           Either way, we need to dispose of the slot we made before continuing to handle the error. */
-        OpenableObjs.erase(iter);
-        throw;
+          if (ttl.count() > 0) {
+            /* save the object so it gets replicated if it has a non-zero ttl */ {
+              TDeadline deadline = TDeadline::clock::now() + ttl;
+              std::string blob;
+              /* extra */ {
+                auto recorder = std::make_shared<Io::TRecorder>();
+                Io::TBinaryOutputOnlyStream strm(recorder);
+                some_obj->Write(strm);
+                strm.Flush();
+                recorder->CopyOut(blob);
+              }
+              /* Fire-and-forget (null sem): this save exists so the new object replicates; the
+                 durability barrier is the save-on-close in OnPtrRelease().  We used to pass a
+                 stack sem and never wait on it, which only worked while Save() signalled before
+                 returning -- with the sem now pushed after the disk write (#277), waiting here
+                 would serialize every session creation on the flush cadence while holding the
+                 manager mutex, and not waiting would be a use-after-free. */
+              Save(id, deadline, ttl, blob, nullptr);
+            }
+          }
+
+          openable_obj = some_obj;
+          return TPtr<TSomeObj>(some_obj, Orly::Durable::New);
+        } catch (...) {
+          /* The object's constructor or its save failed.  Dispose of the slot we made before
+             continuing to handle the error. */
+          OpenableObjs.erase(iter);
+          throw;
+        }
       }
     }
 
     template <typename TSomeObj>
     TPtr<TSomeObj> TManager::Open(const TId &id) {
-      /* Lock the manager and find/create the requested slot among the openable objects. */
-      std::lock_guard<std::mutex> lock(Mutex);
-      auto iter = OpenableObjs.insert(std::pair<TId, TObj *>(id, nullptr)).first;
-      TObj *&openable_obj = iter->second;
-      if (openable_obj) {
-        /* We found an object with the given id. */
-        TPtr<TSomeObj> ptr(openable_obj, Orly::Durable::Old);
-        const auto &deadline = openable_obj->GetDeadline();
-        if (deadline) {
-          /* The object is being re-opened from a closed state, so remove it from the set of closed objects. */
-          size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, id));
-          assert(erased_from_closed == 1);
-          openable_obj->Deadline.reset();
+      for (;;) {
+        /* If the object is open, or closed but cached, share it.  Else note how many objects
+           have left the openable set so far. */
+        uint64_t left_before;
+        /* extra */ {
+          std::lock_guard<std::mutex> lock(Mutex);
+          auto iter = OpenableObjs.find(id);
+          if (iter != OpenableObjs.end() && iter->second) {
+            return Reopen<TSomeObj>(iter->second);
+          }
+          left_before = LeftCount;
         }
-        return ptr;
-      }
-      try {
-        /* Load the object from disk and keep it in the openable set. */
+        /* Load the object's saved form from the disk store.  Without the mutex: see
+           LoadOutsideTheMutex. */
         std::string blob;
-        if (!TryLoad(id, blob)) {
-          THROW_ERROR(TDoesntExist) << "id = " << id;
+        const bool found = TryLoad(id, blob);
+        std::lock_guard<std::mutex> lock(Mutex);
+        auto iter = OpenableObjs.insert(std::pair<TId, TObj *>(id, nullptr)).first;
+        TObj *&openable_obj = iter->second;
+        if (openable_obj) {
+          /* Another caller opened or created it while we loaded: share theirs. */
+          return Reopen<TSomeObj>(openable_obj);
         }
-        Io::TBinaryInputOnlyStream strm(std::make_shared<Io::TPlayer>(std::make_shared<Io::TRecorder>(blob)));
-        TSomeObj *some_obj = new TSomeObj(this, id, strm);
-        openable_obj = some_obj;
-        return TPtr<TSomeObj>(some_obj, Orly::Durable::New);
-      } catch (...) {
-        /* We could not find the object on disk or the object's constructor failed.
-           Either way, we need to dispose of the slot we made before continuing to handle the error. */
-        OpenableObjs.erase(iter);
-        throw;
+        if (LeftCount != left_before) {
+          /* An object left the openable set while we loaded, so it may have been this one, saved
+             on its way out after we read: what we read could be older.  Read again. */
+          OpenableObjs.erase(iter);
+          continue;
+        }
+        try {
+          if (!found) {
+            THROW_ERROR(TDoesntExist) << "id = " << id;
+          }
+          Io::TBinaryInputOnlyStream strm(std::make_shared<Io::TPlayer>(std::make_shared<Io::TRecorder>(blob)));
+          TSomeObj *some_obj = new TSomeObj(this, id, strm);
+          openable_obj = some_obj;
+          return TPtr<TSomeObj>(some_obj, Orly::Durable::New);
+        } catch (...) {
+          /* We could not find the object on disk or the object's constructor failed.
+             Either way, we need to dispose of the slot we made before continuing to handle the error. */
+          OpenableObjs.erase(iter);
+          throw;
+        }
       }
+    }
+
+    template <typename TSomeObj>
+    TPtr<TSomeObj> TManager::Reopen(TObj *obj) {
+      assert(obj);
+      TPtr<TSomeObj> ptr(obj, Orly::Durable::Old);
+      const auto &deadline = obj->GetDeadline();
+      if (deadline) {
+        /* The object is being re-opened from a closed state, so remove it from the set of closed objects. */
+        size_t erased_from_closed = ClosedObjs.erase(std::make_pair(*deadline, obj->GetId()));
+        assert(erased_from_closed == 1);
+        obj->Deadline.reset();
+      }
+      return ptr;
     }
 
     template <typename TSomeObj, typename TVisitor>

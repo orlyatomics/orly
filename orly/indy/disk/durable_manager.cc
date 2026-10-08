@@ -316,14 +316,8 @@ void TDurableManager::JoinLayerCleaner() {
 }
 
 bool TDurableManager::CanLoad(const Durable::TId &id) {
-  TSequenceNumber cur_max_seq_num = 0UL;
   std::string serialized_form_out;
-  TMapping::TView view(this);
-  view.GetCurLayer()->FindMax(cur_max_seq_num, id, serialized_form_out);
-  for (TMapping::TEntryCollection::TCursor csr(view.GetMapping()->GetEntryCollection()); csr; ++csr) {
-    csr->GetLayer()->FindMax(cur_max_seq_num, id, serialized_form_out);
-  }
-  return cur_max_seq_num > 0UL;
+  return TryLoad(id, serialized_form_out);
 }
 
 void TDurableManager::Delete(const Durable::TId &/*id*/, Durable::TSem */*sem*/) {
@@ -365,9 +359,16 @@ void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &dea
 }
 
 bool TDurableManager::TryLoad(const Durable::TId &id, std::string &serialized_form_out) {
+  /* Durable::TManager calls this (and CanLoad()) without its mutex, so a save can be adding to
+     the current memory layer while we look; Save() adds under DataLock, so look under it too.
+     Only the memory layer: the disk layers below can park this fiber on a read, which must not
+     happen under a std::mutex (#804), and nothing adds to them. */
   TSequenceNumber cur_max_seq_num = 0UL;
   TMapping::TView view(this);
-  view.GetCurLayer()->FindMax(cur_max_seq_num, id, serialized_form_out);
+  /* acquire data lock */ {
+    std::lock_guard<std::mutex> data_lock(DataLock);
+    view.GetCurLayer()->FindMax(cur_max_seq_num, id, serialized_form_out);
+  }  // release data lock
   for (TMapping::TEntryCollection::TCursor csr(view.GetMapping()->GetEntryCollection()); csr; ++csr) {
     csr->GetLayer()->FindMax(cur_max_seq_num, id, serialized_form_out);
   }

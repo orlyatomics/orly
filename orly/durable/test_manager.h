@@ -21,6 +21,10 @@
 
 #pragma once
 
+#include <functional>
+#include <mutex>
+#include <unordered_map>
+
 #include <orly/durable/kit.h>
 
 namespace Orly {
@@ -34,16 +38,30 @@ namespace Orly {
       TTestManager(size_t max_cache_size)
           : TManager(max_cache_size) {}
 
+      /* If set, CanLoad() and TryLoad() call this after their look, outside every lock, as a slow
+         disk read would end: a test can hold a load there (#804). */
+      std::function<void (const TId &)> AfterLoad;
+
       private:
 
+      /* TManager calls this and TryLoad() without its mutex (#804), so the map has a lock of its own. */
       virtual bool CanLoad(const TId &id) override {
-        return BlobById.find(id) != BlobById.end();
+        bool found;
+        /* extra */ {
+          std::lock_guard<std::mutex> lock(BlobMutex);
+          found = BlobById.find(id) != BlobById.end();
+        }
+        if (AfterLoad) {
+          AfterLoad(id);
+        }
+        return found;
       }
 
       virtual void RunLayerCleaner() override {}
 
       virtual void CleanDisk(const TDeadline &now, TSem *sem) override {
         assert(sem);
+        std::lock_guard<std::mutex> lock(BlobMutex);
         std::unordered_map<TId, std::pair<TDeadline, std::string>> temp;
         for (const auto &item: BlobById) {
           if (item.second.first > now) {
@@ -56,13 +74,17 @@ namespace Orly {
 
       virtual void Delete(const TId &id, TSem *sem) override {
         assert(sem);
+        std::lock_guard<std::mutex> lock(BlobMutex);
         auto erased_count = BlobById.erase(id);
         assert(erased_count == 1);
         sem->Push();
       }
 
       virtual void Save(const TId &id, const TDeadline &deadline, const TTtl &/*ttl*/, const std::string &blob, TSem *sem) override {
-        BlobById[id] = std::make_pair(deadline, blob);
+        /* extra */ {
+          std::lock_guard<std::mutex> lock(BlobMutex);
+          BlobById[id] = std::make_pair(deadline, blob);
+        }
         /* The in-memory map IS this manager's disk, so the save is "durable" the moment it's
            inserted; a null sem is a fire-and-forget save (see Save()'s contract in kit.h). */
         if (sem) {
@@ -71,15 +93,25 @@ namespace Orly {
       }
 
       virtual bool TryLoad(const TId &id, std::string &blob) override {
-        auto iter = BlobById.find(id);
-        bool success = (iter != BlobById.end());
-        if (success) {
-          blob = iter->second.second;
+        bool success;
+        /* extra */ {
+          std::lock_guard<std::mutex> lock(BlobMutex);
+          auto iter = BlobById.find(id);
+          success = (iter != BlobById.end());
+          if (success) {
+            blob = iter->second.second;
+          }
+        }
+        if (AfterLoad) {
+          AfterLoad(id);
         }
         return success;
       }
 
       private:
+
+      /* Covers BlobById. */
+      std::mutex BlobMutex;
 
       std::unordered_map<TId, std::pair<TDeadline, std::string>> BlobById;
 

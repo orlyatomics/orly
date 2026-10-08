@@ -19,7 +19,9 @@
 #include <orly/durable/kit.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <future>
 #include <thread>
 #include <vector>
 
@@ -75,6 +77,10 @@ class TFile final
 
   int GetVal() const {
     return Val;
+  }
+
+  void SetVal(int val) {
+    Val = val;
   }
 
   virtual void Write(TBinaryOutputStream &strm) const override {
@@ -241,4 +247,125 @@ FIXTURE(ThunderingHerdWithPartialCache) {
 
 FIXTURE(ThunderingHerdWithoutCache) {
   TestThunderingHerd(0, 5, 100, 1000);
+}
+
+/* Holds the first CanLoad() or TryLoad() of one id inside the test manager's AfterLoad hook until
+   Release(), as a disk read parks a fiber until it completes. */
+class TLoadGate final {
+  public:
+
+  TLoadGate(TTestManager &manager, const TId &id)
+      : Manager(manager), Id(id), Released(ReleasePromise.get_future().share()) {
+    Manager.AfterLoad = [this](const TId &loaded) {
+      if (loaded == Id && !Taken.exchange(true)) {
+        HeldPromise.set_value();
+        Released.wait();
+      }
+    };
+  }
+
+  ~TLoadGate() {
+    Release();
+    Manager.AfterLoad = nullptr;
+  }
+
+  /* Wait until a load of the id is being held. */
+  void WaitHeld() {
+    HeldPromise.get_future().wait();
+  }
+
+  void Release() {
+    if (!WasReleased.exchange(true)) {
+      ReleasePromise.set_value();
+    }
+  }
+
+  private:
+
+  TTestManager &Manager;
+
+  TId Id;
+
+  std::atomic<bool> Taken{false}, WasReleased{false};
+
+  std::promise<void> HeldPromise, ReleasePromise;
+
+  std::shared_future<void> Released;
+
+};
+
+/* While one Open() is loading (in a disk read, say), other callers can still open and create
+   durables.  The manager used to hold its std::mutex across the load; in a server, the load
+   parked its fiber, the next fiber on that runner thread blocked the thread on that same mutex,
+   and the server wedged (#804).  Here a held load would leave the others blocked on the mutex:
+   they get 10 s. */
+FIXTURE(OthersOpenAndCreateWhileOneLoads) {
+  TTestManager manager(0);
+  const TId held_id = manager.New<TFile>(TId::Twister, TTtl(999), 1)->GetId();
+  const TId other_id = manager.New<TFile>(TId::Twister, TTtl(999), 2)->GetId();
+  TLoadGate gate(manager, held_id);
+  auto held = async(launch::async, [&manager, &held_id] {
+    return manager.Open<TFile>(held_id)->GetVal();
+  });
+  gate.WaitHeld();
+  auto others = async(launch::async, [&manager, &other_id] {
+    int val = manager.Open<TFile>(other_id)->GetVal();
+    manager.New<TFile>(TId::Twister, TTtl(999), 3);
+    return val;
+  });
+  const bool others_done = (others.wait_for(chrono::seconds(10)) == future_status::ready);
+  gate.Release();
+  EXPECT_TRUE(others_done);
+  EXPECT_EQ(others.get(), 2);
+  EXPECT_EQ(held.get(), 1);
+}
+
+/* An Open() whose load raced a save of the same durable reads again rather than resurrect what it
+   read before the save.  The load reads the durable at 1; meanwhile another caller opens it, sets
+   it to 5 and closes it, which saves it and (with no cache) destroys it; then the load goes on. */
+FIXTURE(OpenReadsAgainAfterARacingSave) {
+  TTestManager manager(0);
+  const TId id = manager.New<TFile>(TId::Twister, TTtl(999), 1)->GetId();
+  TLoadGate gate(manager, id);
+  auto held = async(launch::async, [&manager, &id] {
+    return manager.Open<TFile>(id)->GetVal();
+  });
+  gate.WaitHeld();
+  auto writer = async(launch::async, [&manager, &id] {
+    auto file = manager.Open<TFile>(id);
+    file->SetVal(5);
+  });
+  const bool writer_done = (writer.wait_for(chrono::seconds(10)) == future_status::ready);
+  gate.Release();
+  EXPECT_TRUE(writer_done);
+  writer.get();
+  EXPECT_EQ(held.get(), 5);
+  EXPECT_EQ(manager.Open<TFile>(id)->GetVal(), 5);
+}
+
+/* The same race for New(): an id whose durable was saved while New() looked for it on disk is
+   refused, not created a second time. */
+FIXTURE(NewLooksAgainAfterARacingSave) {
+  TTestManager manager(0);
+  const TId id(TId::Twister);
+  TLoadGate gate(manager, id);
+  auto created = async(launch::async, [&manager, &id] {
+    try {
+      manager.New<TFile>(id, TTtl(999), 1);
+      return true;
+    } catch (const TAlreadyExists &) {
+      return false;
+    }
+  });
+  gate.WaitHeld();
+  /* New() looked and found nothing; now the id appears, and its durable is saved and destroyed. */
+  auto other = async(launch::async, [&manager, &id] {
+    manager.New<TFile>(id, TTtl(999), 2);
+  });
+  const bool other_done = (other.wait_for(chrono::seconds(10)) == future_status::ready);
+  gate.Release();
+  EXPECT_TRUE(other_done);
+  other.get();
+  EXPECT_FALSE(created.get());
+  EXPECT_EQ(manager.Open<TFile>(id)->GetVal(), 2);
 }

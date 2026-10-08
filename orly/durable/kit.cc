@@ -92,6 +92,7 @@ void TManager::DestroyObj(TObj *obj) noexcept {
   assert(obj);
   size_t erased_from_openable = OpenableObjs.erase(obj->GetId());
   assert(erased_from_openable == 1);
+  ++LeftCount;
   delete obj;
 }
 
