@@ -3292,9 +3292,20 @@ void TServer::InstallPackage(const vector<string> &package_name, uint64_t versio
       }
     }
   };
+  /* The version this install replaces, if any (#800). */
+  std::optional<uint64_t> replaced;
+  try {
+    replaced = PackageManager.Get(Package::TName{package_name})->GetName().Version;
+  } catch (const Package::TManager::TError &) {
+  }
   PackageManager.Install({{{package_name}, version}}, pre_install_cb);
-  /* Remember the install across restarts (#435). */
+  /* Remember the install across restarts (#435). An upgrade also clears the record of the version it
+     replaced: uninstall now takes the installed version only, so a record left behind for the old one
+     would bring it back on a restart after the new one is uninstalled (#800). */
   RepoManager->SaveInstalledPackage(package_name, version, true);
+  if (replaced && *replaced != version) {
+    RepoManager->SaveInstalledPackage(package_name, *replaced, false);
+  }
   ostringstream strm;
   for (const auto &name: package_name) {
     strm << '[' << name << ']';

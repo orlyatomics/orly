@@ -279,7 +279,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Set user id | `set user id <id>;` | — |
 | Set TTL | `set ttl <durable-id> <seconds>;` | — |
 | Install package | `install <pkg>.<version>;` | — |
-| Uninstall package | `uninstall <pkg>.<version>;` | — |
+| Uninstall package | `uninstall <pkg>.<version>;` (the installed version only; any other is refused, naming the installed one, #800) | — |
 | Compile package | `compile "<orlyscript source>";` | `{"name": ..., "version": ...}`; refused unless `--allow_remote_compile` |
 | New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}] [<{.conflicts: "report"\|"refuse"}>];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args>;` | method result (JSON, marshaled) |

@@ -41,6 +41,10 @@ namespace Orly {
 
       DEFINE_ERROR(TPackageDirError, std::runtime_error, "package dir error");
 
+      /* Uninstall named a version other than the one installed (#800). Nothing is uninstalled; the message names
+         the installed version. */
+      DEFINE_ERROR(TVersionNotInstalledError, TError, "package version not installed");
+
       typedef std::unordered_map<TName, TLoaded::TPtr> TInstalled;
       typedef std::unordered_set<TName> TNames;
       typedef std::unordered_set<TVersionedName> TVersionedNames;
@@ -75,7 +79,9 @@ namespace Orly {
 
       /* Uninstall a package. Simply removes it from the installed package set, which means when the last reference
          goes away, the package will be dlclosed. This is identical to Unload as packages can't have uninstallers at
-         the moment. */
+         the moment. Each package must be installed at exactly the version named: a package that isn't installed
+         throws TError, and one installed at another version throws TVersionNotInstalledError naming the installed
+         version (#800). Nothing is uninstalled unless every package in the set can be. */
       void Uninstall(const TVersionedNames &packages);
 
       /* Yield each installed package */

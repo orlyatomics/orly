@@ -5,8 +5,11 @@
 #
 #   cycle 1: create volume, install kv, write keys, stop
 #   cycle 2: restart --create=false; package must auto-reinstall and the
-#            data must read back with NO client install; then uninstall, stop
-#   cycle 3: restart; package must STAY uninstalled (clean error)
+#            data must read back with NO client install; then upgrade to
+#            kv.2, check that uninstalling kv.1 is refused (#800), uninstall
+#            kv.2, stop
+#   cycle 3: restart; package must STAY uninstalled (clean error), neither
+#            version coming back (#800)
 #
 # Needs root for losetup and the /proc/partitions device scan; run under
 # sudo or on a CI runner with passwordless sudo.  Ports 19600-19603.
@@ -37,6 +40,11 @@ write_val = ((true) effecting { new <['values', n]> <- x; } ) where {
 ORLY
 "$ORLY_OUT/orly/orlyc" --skip-tests -o "$WORK" "$WORK/kv.orly"
 mkdir "$WORK/packages" && touch "$WORK/packages/__orly__" && cp "$WORK/kv.1.so" "$WORK/packages/"
+# Version 2, the same package, for the uninstall-version checks in cycle 2 (#800).
+mkdir "$WORK/v2"
+sed 's/^package #1;/package #2;/' "$WORK/kv.orly" > "$WORK/v2/kv.orly"
+"$ORLY_OUT/orly/orlyc" --skip-tests -o "$WORK/v2" "$WORK/v2/kv.orly"
+cp "$WORK/v2/kv.2.so" "$WORK/packages/"
 
 echo "[2/8] create loopback volume"
 echo "   instance: $INSTANCE"
@@ -141,7 +149,17 @@ try:
 except orly.OrlyError as ex:
     assert 'ephemeral' in str(ex), f'wrong error for a pov under a dead pov: {ex}'
 print('   pov under the pre-restart pov refused cleanly (#671)')
-c.uninstall('kv', 1)
+# Uninstall names the installed version (#800): with kv.2 installed over kv.1, uninstalling
+# kv.1 is refused and leaves kv.2 serving; and kv.1's record must not outlive the upgrade.
+c.install('kv', 2)
+try:
+    c.uninstall('kv', 1)
+    raise SystemExit('uninstall kv.1 succeeded with kv.2 installed (#800)')
+except orly.OrlyError as ex:
+    assert 'version 2 is the one installed' in str(ex), f'wrong error for a mismatched uninstall: {ex}'
+assert c.call(pov, 'kv', 'read_val', {'n': 5}) == 500, 'kv.2 stopped serving after a refused uninstall'
+print('   uninstall of a version that is not installed refused cleanly (#800)')
+c.uninstall('kv', 2)
 c.close()"
 # The pre-restart pov's saved-repo entry in the system repo must go with the first repo creation
 # after the restart; nothing removed one before #671, so the system repo grew without bound.

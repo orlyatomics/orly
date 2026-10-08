@@ -121,7 +121,55 @@ FIXTURE(Lifecycle) {
   manager.YieldInstalled([&yielded](const TVersionedName &) { ++yielded; return true; });
   EXPECT_EQ(yielded, 1U);
 
-  /* Uninstall; Get throws again; a second uninstall throws. */
+  /* Uninstalling a version that isn't the installed one is refused with a typed error naming the installed
+     version, and the package stays installed (#800). */
+  string refusal;
+  caught = false;
+  try {
+    manager.Uninstall({{name, 1}});
+  } catch (const TManager::TVersionNotInstalledError &ex) {
+    caught = true;
+    refusal = ex.what();
+  }
+  EXPECT_TRUE(caught);
+  EXPECT_TRUE(refusal.find("version 2 is the one installed") != string::npos);
+  EXPECT_EQ(manager.Get(name)->GetName().Version, 2U);
+
+  /* So is a version newer than the installed one. */
+  caught = false;
+  try {
+    manager.Uninstall({{name, 3}});
+  } catch (const TManager::TVersionNotInstalledError &) {
+    caught = true;
+  }
+  EXPECT_TRUE(caught);
+  EXPECT_EQ(manager.Get(name)->GetName().Version, 2U);
+
+  /* A batch is all or nothing: a good entry isn't uninstalled when another one in the batch is refused. */
+  const TName other{{"other"}};
+  caught = false;
+  try {
+    manager.Uninstall({{name, 2}, {other, 1}});
+  } catch (const TManager::TError &) {
+    caught = true;
+  }
+  EXPECT_TRUE(caught);
+  EXPECT_EQ(manager.Get(name)->GetName().Version, 2U);
+
+  /* A package that isn't installed at all is still the plain TError, not the version one. */
+  caught = false;
+  bool wrong_type = false;
+  try {
+    manager.Uninstall({{other, 1}});
+  } catch (const TManager::TVersionNotInstalledError &) {
+    wrong_type = true;
+  } catch (const TManager::TError &) {
+    caught = true;
+  }
+  EXPECT_TRUE(caught);
+  EXPECT_FALSE(wrong_type);
+
+  /* Uninstall at the installed version; Get throws again; a second uninstall throws. */
   manager.Uninstall({{name, 2}});
   caught = false;
   try {
