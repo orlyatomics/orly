@@ -608,12 +608,12 @@ nothing else.
 
 ### 8.1 Versioned reads (#745)
 
-The #745 design makes a version a global sequence number, and a child POV's version a vector valid until its
-writes are promoted. The log records sequence numbers as assigned, and replay reassigns the same
-ones, so: a global version survives a restart (it already did); a durable child POV's vector
-survives a restart too, which #745 had ruled out because POVs were ephemeral. The vector still
-expires at promotion, as #745 says. The log's checkpoint is the home #745 needed for its per-repo
-metadata ([§9.2](#92-bundled-with-745)).
+The #745 design makes a version a global sequence number, and a child POV's version a vector valid
+until its writes are promoted. The log records sequence numbers as assigned, and replay reassigns
+the same ones, so: a global version survives a restart (it already did); a durable child POV's
+vector survives a restart too, which #745 had ruled out because POVs were ephemeral. The vector
+still expires at promotion, as #745 says. The log's checkpoint is the home #745 needed for its
+per-repo metadata ([§9.2](#92-bundled-with-745)).
 
 ### 8.2 Exactly-once (#733)
 
