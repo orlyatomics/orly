@@ -265,7 +265,16 @@ void TTetrisManager::TPlayer::Main() {
       } else if (ChildCount) {
         //DEBUG_LOG("tetris player %p: playing tetris; child_count = %ld", this, ChildCount);
         try {
-          Play();
+          /* Count ourselves in before looking at Halted (#769): see TTetrisManager::PlayingCount.
+             Counted out however the round ends, an escaping exception included. */
+          struct TPlaying {
+            std::atomic<size_t> &Count;
+            explicit TPlaying(std::atomic<size_t> &count) : Count(count) { ++Count; }
+            ~TPlaying() { --Count; }
+          } playing(TetrisManager->PlayingCount);
+          if (!TetrisManager->Halted.load()) {
+            Play();
+          }
         } catch (const std::bad_alloc &) {
           /* Out of pool space mid-round (#584). Nothing was committed: a
              transaction destroyed without CommitAction discards its pushes,
@@ -387,6 +396,18 @@ void TTetrisManager::StopAllPlayers() {
       std::this_thread::yield();
     }
   }
+}
+
+bool TTetrisManager::HaltPromotion(std::chrono::milliseconds timeout) {
+  Halted.store(true);
+  const auto give_up = std::chrono::steady_clock::now() + timeout;
+  while (PlayingCount.load()) {
+    if (std::chrono::steady_clock::now() >= give_up) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
 }
 
 size_t TTetrisManager::GetUnpausedPlayerCount() const {

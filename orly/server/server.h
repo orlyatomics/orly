@@ -360,6 +360,12 @@ namespace Orly {
            to free room, and is refused only then. 0 refuses at once, as before. */
         size_t AdmissionWaitMs;
 
+        /* A graceful stop's wait for Tetris (#769): the most seconds Shutdown() waits for Tetris
+           to promote every POV's backlog to the global POV before it flushes. The wait ends
+           sooner once the backlogs are promoted, or once Tetris has promoted nothing for 30 s
+           (or this budget, if less). Whatever is still unpromoted then is lost, and logged. */
+        size_t StopPromoteBudgetS;
+
         /* The per-read budget (#694): the most result memory, in MiB, and the most rows a
            method call may use or walk before it is refused with read_too_large. Unless the
            command line gives them, ResolveMemoryDefaults() derives them from the memory budget.
@@ -477,6 +483,9 @@ namespace Orly {
       /* See TSession::TServer. Throws TInsufficientStorage while disk space is below the
          reserve (#590). */
       void CheckWriteAdmission() override;
+
+      /* See TSession::TServer. Throws TInsufficientMemory once Shutdown() has begun (#769). */
+      void RefuseWriteIfStopping() override;
 
       /* See TSession::TServer. Throws TInsufficientMemory if the write's updates would dip into
          the update pools' reserve (#607), or TWriteTooLarge if it holds more entries than half the
@@ -968,6 +977,9 @@ namespace Orly {
          logging the transitions once). */
       std::atomic<size_t> MemoryRefusedWriteCount {0UL};
       std::atomic<bool> RefusingWritesForMemory {false};
+
+      /* Writes refused because a graceful stop had begun (#769). */
+      std::atomic<size_t> StopRefusedWriteCount {0UL};
 
       /* Memory admission's bounded wait (#765); null when admission or the wait is off. Closed
          first thing in Shutdown(), so no write is left parked in it. */
