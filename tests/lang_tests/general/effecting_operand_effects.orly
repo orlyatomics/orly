@@ -1,0 +1,57 @@
+/* <orly/lang_tests/general/effecting_operand_effects.orly>
+
+   The effects of the operand of an effecting expression are applied once (#818), not
+   once per way the operand is built.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+bump = ((true) effecting {
+  *<['c']>::(int) += 1;
+});
+
+put = ((bump) effecting {
+  *<['d']>::(int) += 1;
+});
+
+inner = ((true) effecting {
+  new <['k', k]> <- v;
+}) where {
+  k = given::(int);
+  v = given::(int);
+};
+
+put_new = ((inner(.k: k, .v: v)) effecting {
+  new <['other', k]> <- 1;
+}) where {
+  k = given::(int);
+  v = given::(int);
+};
+
+with {
+  <['c']> <- 0;
+  <['d']> <- 0;
+} test {
+  counted_once: put {
+    c_once: *<['c']>::(int) == 1;
+    d_once: *<['d']>::(int) == 1;
+  };
+};
+
+test {
+  new_in_operand: put_new(.k: 1, .v: 10) {
+    k_written: *<['k', 1]>::(int) == 10;
+    other_written: *<['other', 1]>::(int) == 1;
+  };
+};

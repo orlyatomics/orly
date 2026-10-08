@@ -1,0 +1,1 @@
+- **Fixed**: `(f(...)) effecting { ... }` applied the effects of `f` twice, so a `+=` in `f` double-counted and a `new` failed with "Conflicting updates to the same key". The function's return expression was written out again even when it had already been evaluated as a local; it now uses the local (#818).
