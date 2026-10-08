@@ -1,0 +1,59 @@
+/* <orly/lang_tests/general/effect_if_untaken_arm.orly>
+
+   An effect-block if/else only evaluates the arm it takes (#817): a mutation of an
+   existing key in the arm not taken must not fail when the key is absent.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+put = ((there) effecting {
+  if there {
+    *<['k', k]>::(int) <- v;
+  } else {
+    new <['k', k]> <- v;
+  }
+}) where {
+  there = *<['k', k]>::(int?) is known;
+  k = given::(int);
+  v = given::(int);
+};
+
+nested = ((true) effecting {
+  if first {
+    if second {
+      *<['n', k]>::(int) <- v;
+    } else {
+      new <['n', k]> <- v;
+    }
+  } else {
+    *<['m', k]>::(int) <- v;
+  }
+}) where {
+  first = k > 0;
+  second = *<['n', k]>::(int?) is known;
+  k = given::(int);
+  v = given::(int);
+};
+
+test {
+  t1: put(.k: 1, .v: 10) == false {
+    t2: *<['k', 1]>::(int) == 10;
+    t3: put(.k: 1, .v: 20) == true {
+      t4: *<['k', 1]>::(int) == 20;
+    };
+  };
+  t5: nested(.k: 1, .v: 5) {
+    t6: *<['n', 1]>::(int) == 5;
+  };
+};

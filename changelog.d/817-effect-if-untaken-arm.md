@@ -1,0 +1,1 @@
+- **Fixed**: an `if` / `else` statement in an effect block evaluated the keys of the arm it did not take, so `*<[...]>::(T) <- v` in the untaken arm failed the call with "Cannot de-reference Key ... which does not exist" when the key was absent. Each arm now evaluates its own keys only when it runs (#817).

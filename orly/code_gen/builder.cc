@@ -297,8 +297,8 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
         if(it->GetExpr()->GetType().Is<Type::TSeq>()) {
           throw TNotImplementedError(HERE, it->GetExpr()->GetPosRange(), "Sequences in effecting blocks");
         }
-        TPtr<TPredicatedBlock> pred_block(new TPredicatedBlock(BuildInline(Package, it->GetExpr(), false)));
-        TStmtCtx stmt_ctx(&pred_block->GetStmts());
+        TPtr<TPredicatedBlock> pred_block(new TPredicatedBlock(BuildInline(Package, it->GetExpr(), false), Context::GetScope()->GetIdScope()));
+        TScopeCtx scope_ctx(&pred_block->GetScope());
         Build(Package, it->GetStmtBlock());
         predicated_blocks.push_back(pred_block);
       }
@@ -306,8 +306,8 @@ void Build(const L0::TPackage *package, const Symbol::Stmt::TStmt::TPtr &stmt) {
 
       //Build the else clause, if necessary.
       if(that->GetOptElseClause()) {
-        if_->SetOptElseClause();
-        TStmtCtx stmt_ctx(&if_->GetElseClause());
+        if_->SetOptElseClause(Context::GetScope()->GetIdScope());
+        TScopeCtx scope_ctx(&if_->GetElseClause());
         Build(Package, that->GetOptElseClause()->GetStmtBlock());
       }
       Context::GetStmtBlock()->Add(if_);
