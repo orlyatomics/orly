@@ -1,0 +1,1 @@
+- **Added**: `docs/tour.md`, an engineering tour of Orly (conflict-free POVs and commutative merges, sanitizer gating, fault injection, the kill-and-recover campaign, admission and read budgets, releases), each point linked to its code, test or CI job, and linked from the README. This is the documentation half of #742; the C++23 modernisation half is not started (#742)
