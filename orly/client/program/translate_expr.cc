@@ -18,6 +18,9 @@
 
 #include <orly/client/program/translate_expr.h>
 
+#include <algorithm>
+#include <stdexcept>
+
 #include <base/chrono.h>
 #include <base/thrower.h>
 #include <base/zero.h>
@@ -44,6 +47,19 @@ void Orly::Client::Program::TranslatePathName(vector<string> &path_name, const T
     root = tail ? tail->GetNameList() : nullptr;
   } while (root);
 }
+
+namespace {
+
+  const char *WhichName = "$which";
+
+  Orly::Client::Program::TVariantInfoPtr NewVariantInfo(
+      const Orly::Client::Program::TVariantArmList *arm_list,
+      const Orly::Client::Program::TFieldName *active,
+      const Orly::Client::Program::TExpr *payload) {
+    return std::make_shared<const Orly::Client::Program::TVariantInfo>(arm_list, active, payload);
+  }
+
+}  // namespace
 
 Sabot::Type::TAny *Orly::Client::Program::NewTypeSabot(const TType *type, void *alloc) {
   class visitor_t final : public TType::TVisitor {
@@ -165,6 +181,15 @@ Sabot::Type::TAny *Orly::Client::Program::NewTypeSabot(const TExpr *expr, void *
     virtual void operator()(const TAddrExpr *that) const override {
       Result = new (Alloc) Type::TTupleExpr(that);
     }
+    virtual void operator()(const TVariantExpr *that) const override {
+      Result = new (Alloc) Type::TVariantRecord(NewVariantInfo(that->GetVariantArmList(), that->GetName(), that->GetExpr()));
+    }
+    virtual void operator()(const TUnitVariantExpr *that) const override {
+      Result = new (Alloc) Type::TVariantRecord(NewVariantInfo(that->GetVariantArmList(), that->GetName(), nullptr));
+    }
+    virtual void operator()(const TBareVariantExpr *that) const override {
+      Result = new (Alloc) Type::TVariantRecord(NewVariantInfo(that->GetVariantArmList(), that->GetName(), nullptr));
+    }
     virtual void operator()(const TParenExpr *that) const override {
       that->GetExpr()->Accept(*this);
     }
@@ -269,6 +294,15 @@ Sabot::State::TAny *Orly::Client::Program::NewStateSabot(const TExpr *expr, void
     }
     virtual void operator()(const TAddrExpr *that) const override {
       Result = new (Alloc) State::TAddr(that);
+    }
+    virtual void operator()(const TVariantExpr *that) const override {
+      Result = new (Alloc) State::TVariantObj(NewVariantInfo(that->GetVariantArmList(), that->GetName(), that->GetExpr()));
+    }
+    virtual void operator()(const TUnitVariantExpr *that) const override {
+      Result = new (Alloc) State::TVariantObj(NewVariantInfo(that->GetVariantArmList(), that->GetName(), nullptr));
+    }
+    virtual void operator()(const TBareVariantExpr *that) const override {
+      Result = new (Alloc) State::TVariantObj(NewVariantInfo(that->GetVariantArmList(), that->GetName(), nullptr));
     }
     virtual void operator()(const TParenExpr *that) const override {
       that->GetExpr()->Accept(*this);
@@ -835,5 +869,188 @@ Sabot::Type::TTuple *State::TAddr::GetTupleType(void *type_alloc) const {
 }
 
 State::TAddr::TPinBase *State::TAddr::Pin(void *alloc) const {
+  return new (alloc) TPin(this);
+}
+
+Orly::Client::Program::TVariantInfo::TVariantInfo(const TVariantArmList *arm_list, const TFieldName *active, const TExpr *payload)
+    : Which(0), Payload(payload) {
+  assert(arm_list);
+  assert(active);
+  while (arm_list) {
+    auto arm = arm_list->GetVariantArm();
+    auto with_payload = dynamic_cast<const TVariantPayload *>(arm->GetOptVariantPayload());
+    Arms.push_back({arm->GetName()->GetLexeme().GetText(), with_payload ? with_payload->GetType() : nullptr});
+    auto tail = dynamic_cast<const TVariantArmListTail *>(arm_list->GetOptVariantArmListTail());
+    arm_list = tail ? tail->GetVariantArmList() : nullptr;
+  }
+  sort(Arms.begin(), Arms.end(), [](const TArm &lhs, const TArm &rhs) { return lhs.Name < rhs.Name; });
+  for (size_t i = 1; i < Arms.size(); ++i) {
+    if (Arms[i].Name == Arms[i - 1].Name) {
+      DEFINE_ERROR(error_t, runtime_error, "duplicate variant arm");
+      THROW_ERROR(error_t) << active->GetLexeme().GetPosRange();
+    }
+  }
+  const string &name = active->GetLexeme().GetText();
+  auto iter = find_if(Arms.begin(), Arms.end(), [&name](const TArm &arm) { return arm.Name == name; });
+  if (iter == Arms.end()) {
+    DEFINE_ERROR(error_t, runtime_error, "variant has no such arm");
+    THROW_ERROR(error_t) << active->GetLexeme().GetPosRange();
+  }
+  Which = iter - Arms.begin();
+  if (payload && !iter->Type) {
+    DEFINE_ERROR(error_t, runtime_error, "unit variant arm takes no payload");
+    THROW_ERROR(error_t) << active->GetLexeme().GetPosRange();
+  }
+  if (!payload && iter->Type) {
+    DEFINE_ERROR(error_t, runtime_error, "variant arm needs a payload");
+    THROW_ERROR(error_t) << active->GetLexeme().GetPosRange();
+  }
+}
+
+Type::TEmptyRecord::TPin::TPin(const TEmptyRecord *record)
+    : TPinBase(record) {}
+
+Sabot::Type::TAny *Type::TEmptyRecord::TPin::NewElem(size_t, string &, void *) const {
+  throw out_of_range("empty record has no elements");
+}
+
+Sabot::Type::TAny *Type::TEmptyRecord::TPin::NewElem(size_t, void *&, void *, void *) const {
+  throw out_of_range("empty record has no elements");
+}
+
+Sabot::Type::TAny *Type::TEmptyRecord::TPin::NewElem(size_t, void *) const {
+  throw out_of_range("empty record has no elements");
+}
+
+size_t Type::TEmptyRecord::GetElemCount() const {
+  return 0;
+}
+
+Type::TEmptyRecord::TPinBase *Type::TEmptyRecord::Pin(void *alloc) const {
+  return new (alloc) TPin(this);
+}
+
+Type::TVariantArmType::TPin::TPin(const TVariantArmType *arm)
+    : Arm(arm) {}
+
+Sabot::Type::TAny *Type::TVariantArmType::TPin::NewElem(void *type_alloc) const {
+  const TType *type = Arm->Info->Arms[Arm->ArmIdx].Type;
+  return type ? NewTypeSabot(type, type_alloc) : new (type_alloc) TEmptyRecord();
+}
+
+Type::TVariantArmType::TVariantArmType(const TVariantInfoPtr &info, size_t arm_idx)
+    : Info(info), ArmIdx(arm_idx) {}
+
+Type::TVariantArmType::TPinBase *Type::TVariantArmType::Pin(void *alloc) const {
+  return new (alloc) TPin(this);
+}
+
+Type::TVariantRecord::TPin::TPin(const TVariantRecord *record)
+    : TPinBase(record), Record(record) {}
+
+Sabot::Type::TAny *Type::TVariantRecord::TPin::NewElem(size_t elem_idx, string &name, void *type_alloc) const {
+  if (elem_idx == 0) {
+    name = WhichName;
+    return new (type_alloc) Sabot::Type::TInt64();
+  }
+  name = Record->Info->Arms[elem_idx - 1].Name;
+  return new (type_alloc) TVariantArmType(Record->Info, elem_idx - 1);
+}
+
+Sabot::Type::TAny *Type::TVariantRecord::TPin::NewElem(size_t, void *&, void *, void *) const {
+  DEFINE_ERROR(error_t, runtime_error, "Type::TRecord::NewElem() with name via string sabot is not implmented for expression trees");
+  THROW_ERROR(error_t);
+}
+
+Sabot::Type::TAny *Type::TVariantRecord::TPin::NewElem(size_t, void *) const {
+  DEFINE_ERROR(error_t, runtime_error, "Type::TRecord::NewElem() without name is not implmented for expression trees");
+  THROW_ERROR(error_t);
+}
+
+Type::TVariantRecord::TVariantRecord(const TVariantInfoPtr &info)
+    : Info(info) {}
+
+size_t Type::TVariantRecord::GetElemCount() const {
+  return Info->Arms.size() + 1;
+}
+
+Type::TVariantRecord::TPinBase *Type::TVariantRecord::Pin(void *alloc) const {
+  return new (alloc) TPin(this);
+}
+
+State::TEmptyRecord::TPin::TPin(const TEmptyRecord *record)
+    : TPinBase(record) {}
+
+Sabot::State::TAny *State::TEmptyRecord::TPin::NewElemInRange(size_t, void *) const {
+  throw out_of_range("empty record has no elements");
+}
+
+size_t State::TEmptyRecord::GetElemCount() const {
+  return 0;
+}
+
+Sabot::Type::TRecord *State::TEmptyRecord::GetRecordType(void *type_alloc) const {
+  return new (type_alloc) Type::TEmptyRecord();
+}
+
+State::TEmptyRecord::TPinBase *State::TEmptyRecord::Pin(void *alloc) const {
+  return new (alloc) TPin(this);
+}
+
+State::TVariantWhich::TVariantWhich(int64_t val)
+    : Val(val) {}
+
+const int64_t &State::TVariantWhich::Get() const {
+  return Val;
+}
+
+Sabot::Type::TInt64 *State::TVariantWhich::GetInt64Type(void *type_alloc) const {
+  return new (type_alloc) Sabot::Type::TInt64();
+}
+
+State::TVariantArm::TPin::TPin(const TVariantArm *arm)
+    : TPinBase(arm), Arm(arm) {}
+
+Sabot::State::TAny *State::TVariantArm::TPin::NewElemInRange(size_t, void *state_alloc) const {
+  const TExpr *payload = Arm->Info->Payload;
+  return payload ? NewStateSabot(payload, state_alloc) : new (state_alloc) TEmptyRecord();
+}
+
+State::TVariantArm::TVariantArm(const TVariantInfoPtr &info, size_t arm_idx)
+    : Info(info), ArmIdx(arm_idx) {}
+
+size_t State::TVariantArm::GetElemCount() const {
+  return ArmIdx == Info->Which ? 1 : 0;
+}
+
+Sabot::Type::TOpt *State::TVariantArm::GetOptType(void *type_alloc) const {
+  return new (type_alloc) Type::TVariantArmType(Info, ArmIdx);
+}
+
+State::TVariantArm::TPinBase *State::TVariantArm::Pin(void *alloc) const {
+  return new (alloc) TPin(this);
+}
+
+State::TVariantObj::TPin::TPin(const TVariantObj *obj)
+    : TPinBase(obj), Obj(obj) {}
+
+Sabot::State::TAny *State::TVariantObj::TPin::NewElemInRange(size_t elem_idx, void *state_alloc) const {
+  return elem_idx == 0
+      ? static_cast<Sabot::State::TAny *>(new (state_alloc) TVariantWhich(static_cast<int64_t>(Obj->Info->Which)))
+      : new (state_alloc) TVariantArm(Obj->Info, elem_idx - 1);
+}
+
+State::TVariantObj::TVariantObj(const TVariantInfoPtr &info)
+    : Info(info) {}
+
+size_t State::TVariantObj::GetElemCount() const {
+  return Info->Arms.size() + 1;
+}
+
+Sabot::Type::TRecord *State::TVariantObj::GetRecordType(void *type_alloc) const {
+  return new (type_alloc) Type::TVariantRecord(Info);
+}
+
+State::TVariantObj::TPinBase *State::TVariantObj::Pin(void *alloc) const {
   return new (alloc) TPin(this);
 }

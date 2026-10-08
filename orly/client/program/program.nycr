@@ -43,6 +43,10 @@ close_bracket     = '"]"';
 open_obj          = '"<{"';
 close_obj         = '"}>"';
 
+open_variant      = '"<|"';
+close_variant     = '"|>"';
+bar               = '"|"';
+
 open_paren        = '"("';
 close_paren       = '")"';
 
@@ -336,6 +340,23 @@ obj_expr : expr -> open_obj opt_obj_member_list close_obj;  /* <{ .name : expr, 
   obj_member_list_tail    : opt_obj_member_list_tail -> comma obj_member_list;
 
   obj_member -> dot name:field_name colon expr;
+
+/* A variant literal, in the form orlyscript uses: <| A(int) | B |>.A(7), .B() or just .B for a unit arm. */
+variant_expr      : expr -> open_variant variant_arm_list close_variant dot name:field_name open_paren expr close_paren;
+unit_variant_expr : expr -> open_variant variant_arm_list close_variant dot name:field_name open_paren close_paren;
+bare_variant_expr : expr -> open_variant variant_arm_list close_variant dot name:field_name;
+
+  variant_arm_list -> variant_arm opt_variant_arm_list_tail;
+
+  opt_variant_arm_list_tail;
+  no_variant_arm_list_tail : opt_variant_arm_list_tail -> empty;
+  variant_arm_list_tail    : opt_variant_arm_list_tail -> bar variant_arm_list;
+
+  variant_arm -> name:field_name opt_variant_payload;
+
+  opt_variant_payload;
+  no_variant_payload : opt_variant_payload -> empty;
+  variant_payload    : opt_variant_payload -> open_paren type close_paren;
 
 /* A bracketed list of object literals -- the argument form of try_batch_stmt
    (one method, N arg records, folded into one transaction). Mirrors expr_list. */
