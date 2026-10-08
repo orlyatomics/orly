@@ -51,6 +51,24 @@ Argument values are encoded by `lit`:
 | `set([1, 2])` | `{1, 2}` (set) |
 | `raw("now()")` | `now()` (raw, un-encoded) |
 
+## Reviewing a POV's changes (#746)
+
+```ts
+const draft = await c.newPov({ safe: false, shared: false, conflicts: "refuse" });
+await c.pause(draft);                                  // hold its writes back
+await c.call(draft, "mypkg", "put", { k: 1, v: 2 });
+const page = await c.diff(draft, { start: ["edge"], stop: ["tags"], limit: 50 });
+for await (const changes of c.diffPages(draft)) { /* {key, kind, before, after, op?, delta?} */ }
+const result = await c.promote(draft);                 // "promoted", "refused", "blocked", ...
+if (result.status !== "promoted") await c.discard(draft);
+```
+
+`diff` lists what the POV changed relative to its parent (`added`, `changed`, `removed`, or
+`delta` for `+=`/`|=`); keys are arrays, sent as key literals (`addr([...])` builds one). A POV
+made with `conflicts` reports (`"report"`) or refuses (`"refuse"`) a promotion that overwrites a
+key its parent changed after the fork. See
+[docs/pov-review.md](../../docs/pov-review.md).
+
 ## Marshaling quirks (from the engine)
 
 Results come back via the engine's JSON marshaling, so:

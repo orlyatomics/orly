@@ -129,7 +129,103 @@ export class OrlySet {
 /** `set([1, 2])` -> the orlyscript set literal `{1, 2}`. */
 export const set = (items: Iterable<unknown>): OrlySet => new OrlySet(items);
 
+/** Encode its items as an orlyscript address (key) literal `<[a, b, ...]>`. */
+export class OrlyAddr {
+  readonly items: unknown[];
+  constructor(items: Iterable<unknown>) {
+    this.items = [...items];
+  }
+}
+/** `addr(["edge", 1])` -> the orlyscript key literal `<["edge", 1]>`. */
+export const addr = (items: Iterable<unknown>): OrlyAddr => new OrlyAddr(items);
+
 export type Args = Record<string, unknown>;
+
+// -- POV review (#746) ----------------------------------------------------
+
+/** How a POV treats conflicts: an overwrite or delete of a key its parent changed after the fork. */
+export type ConflictMode = "none" | "report" | "refuse";
+
+/** One key a POV changed relative to its parent. `before` is the parent's value and `after` the
+ *  POV's (null when absent); a `delta` is a run of one commutative operator (`op`: "add", "or",
+ *  "union", ...) that adds up to `delta`. */
+export interface PovChange {
+  key: unknown[];
+  kind: "added" | "changed" | "removed" | "delta";
+  before: unknown;
+  after: unknown;
+  op?: string;
+  delta?: unknown;
+}
+
+/** A page of a diff: `next` (and its exact orlyscript form, `next_literal`) is null on the last page. */
+export interface PovDiff {
+  changes: PovChange[];
+  next: unknown[] | null;
+  next_literal: string | null;
+  /** The POV's unpromoted updates the diff covers. */
+  updates: number;
+}
+
+/** A key range (`start` inclusive, `stop` exclusive), the previous page's `next`, and a page size
+ *  (default 100, at most 10,000). Keys are arrays, sent as key literals. */
+export interface DiffOptions {
+  start?: unknown[] | OrlyAddr | Raw;
+  stop?: unknown[] | OrlyAddr | Raw;
+  after?: unknown[] | OrlyAddr | Raw;
+  limit?: number;
+}
+
+export interface PovConflict {
+  /** Numbered from 1 in the order found; absent for a key the POV is blocked on. */
+  number?: number;
+  key: unknown[];
+  op: "put" | "delete";
+  /** Refusing mode: the parent changed the key between Tetris's test and the promotion. */
+  raced?: boolean;
+}
+
+export interface PovDiscard {
+  discarded_updates: number;
+  discarded_entries: number;
+}
+
+export interface PovPromote {
+  status: "promoting" | "refused";
+  pending: number;
+  /** The last conflict's number before this promotion; its conflicts are numbered after it. */
+  mark: number;
+  /** When refused: the keys that would conflict. */
+  conflicts: PovConflict[];
+}
+
+export interface PovReview {
+  conflict_mode: ConflictMode;
+  status: "normal" | "paused" | "failed";
+  pending: number;
+  pending_entries: number;
+  blocked: boolean;
+  blocked_on: PovConflict[];
+  conflicts: PovConflict[];
+  conflict_count: number;
+  changed_keys: number;
+  overflowed: boolean;
+}
+
+/** What {@link Client.promote} saw: "promoted" once nothing is pending; "refused" (nothing
+ *  changed); "blocked" (refusing mode: Tetris holds the POV back on `blocked_on`); "failed";
+ *  "paused" (someone paused it meanwhile); or "timeout". `conflicts` are those found during this
+ *  promotion. */
+export interface PromoteResult {
+  status: "promoted" | "refused" | "blocked" | "failed" | "paused" | "timeout";
+  pending: number;
+  conflicts: PovConflict[];
+  blocked_on: PovConflict[];
+}
+
+function keyLit(key: unknown[] | OrlyAddr | Raw): string {
+  return key instanceof Raw || key instanceof OrlyAddr ? lit(key) : lit(new OrlyAddr(key));
+}
 
 /**
  * Encode a JS value as an orlyscript literal:
@@ -139,11 +235,13 @@ export type Args = Record<string, unknown>;
  * - `string`         -> a quoted, escaped string literal
  * - array            -> `[a, b, ...]`
  * - `OrlySet`        -> `{a, b, ...}`
+ * - `OrlyAddr`       -> `<[a, b, ...]>`
  * - object           -> a record `<{.k: v, ...}>` (empty: `<{}>`)
  */
 export function lit(value: unknown): string {
   if (value instanceof Raw) return value.text;
   if (value instanceof OrlySet) return "{" + value.items.map(lit).join(", ") + "}";
+  if (value instanceof OrlyAddr) return "<[" + value.items.map(lit).join(", ") + "]>";
   if (value === null || value === undefined) {
     throw new TypeError("orly: cannot encode null/undefined as a literal");
   }
@@ -282,11 +380,79 @@ export class Client {
    *  `safe: false` makes a `fast` POV; `parent` is a POV id, and the new POV
    *  is created `from` it. The grammar has no default guarantee, so one of
    *  `safe`/`fast` is always spelled out (#580). */
-  newPov(opts: { safe?: boolean; shared?: boolean; parent?: string } = {}): Promise<string> {
-    const { safe = true, shared = true, parent } = opts;
+  newPov(opts: { safe?: boolean; shared?: boolean; parent?: string; conflicts?: ConflictMode } = {}): Promise<string> {
+    const { safe = true, shared = true, parent, conflicts } = opts;
     const parts = ["new", safe ? "safe" : "fast", shared ? "shared" : "private", "pov"];
     if (parent) parts.push(`from {${parent}}`);
+    /* `conflicts` tracks conflicts from the fork (#746); see promote(). */
+    if (conflicts && conflicts !== "none") parts.push(lit({ conflicts }));
     return this.sendString(parts.join(" ") + ";");
+  }
+
+  // -- POV review (#746) ------------------------------------------------
+  /** A page of what `pov` changed relative to its parent: its unpromoted writes, in key order. */
+  diff(pov: string, opts: DiffOptions = {}): Promise<PovDiff> {
+    const parts: string[] = [];
+    if (opts.start !== undefined) parts.push(`.start: ${keyLit(opts.start)}`);
+    if (opts.stop !== undefined) parts.push(`.stop: ${keyLit(opts.stop)}`);
+    if (opts.after !== undefined) parts.push(`.after: ${keyLit(opts.after)}`);
+    if (opts.limit !== undefined) parts.push(`.limit: ${lit(opts.limit)}`);
+    const options = parts.length ? ` <{${parts.join(", ")}}>` : "";
+    return this.send(`diff_pov {${pov}}${options};`) as Promise<PovDiff>;
+  }
+
+  /** Every page of `pov`'s diff, each page after the last page's `next` (keyset paging). */
+  async *diffPages(pov: string, opts: DiffOptions = {}): AsyncGenerator<PovChange[], void, undefined> {
+    let page = await this.diff(pov, opts);
+    for (;;) {
+      if (page.changes.length) yield page.changes;
+      if (page.next_literal === null) return;
+      page = await this.diff(pov, { ...opts, after: raw(page.next_literal) });
+    }
+  }
+
+  /** Throw away `pov`'s unpromoted changes (a private POV of this session's), so it reads as its
+   *  parent again. */
+  discard(pov: string): Promise<PovDiscard> {
+    return this.send(`discard_pov {${pov}};`) as Promise<PovDiscard>;
+  }
+
+  /** Ask for `pov`'s changes to be promoted (unpause it), and return at once. In refusing mode it
+   *  is tested first, and stays as it was if any change would conflict, unless `force`. */
+  requestPromotion(pov: string, opts: { force?: boolean } = {}): Promise<PovPromote> {
+    const options = opts.force ? " <{.force: true}>" : "";
+    return this.send(`promote_pov {${pov}}${options};`) as Promise<PovPromote>;
+  }
+
+  /** `pov`'s promotion progress, and the conflicts numbered after `after`. */
+  review(pov: string, opts: { after?: number } = {}): Promise<PovReview> {
+    const options = opts.after ? ` <{.after: ${lit(opts.after)}}>` : "";
+    return this.send(`review_pov {${pov}}${options};`) as Promise<PovReview>;
+  }
+
+  /** Promote `pov`'s changes and wait until nothing is pending, the POV is blocked, failed or
+   *  paused, or `timeoutMs` passes; resolves the conflicts found meanwhile. */
+  async promote(pov: string, opts: { force?: boolean; timeoutMs?: number; pollMs?: number } = {}): Promise<PromoteResult> {
+    const { timeoutMs = 30_000, pollMs = 50 } = opts;
+    const started = await this.requestPromotion(pov, { force: opts.force });
+    if (started.status === "refused") {
+      return { status: "refused", pending: started.pending, conflicts: started.conflicts, blocked_on: [] };
+    }
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const review = await this.review(pov, { after: started.mark });
+      const status: PromoteResult["status"] | null =
+        review.status === "failed" ? "failed"
+        : review.blocked ? "blocked"
+        : review.pending === 0 ? "promoted"
+        : review.status === "paused" ? "paused"
+        : Date.now() > deadline ? "timeout"
+        : null;
+      if (status) {
+        return { status, pending: review.pending, conflicts: review.conflicts, blocked_on: review.blocked_on };
+      }
+      await new Promise<void>((r) => setTimeout(() => r(), pollMs));
+    }
   }
 
   // -- methods ----------------------------------------------------------

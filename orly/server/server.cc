@@ -2379,6 +2379,49 @@ void TServer::TSessionPin::UnpausePov(const Base::TUuid &pov_id) const {
   Conn->RunWs(bind(&TConnection::UnpausePov, Conn.get(), cref(pov_id)));
 }
 
+Base::TUuid TServer::TSessionPin::NewReviewPov(
+    bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id, TConflictMode mode) const {
+  /* The ttl NewPov gives a WebSocket pov. */
+  const seconds ttl(600);
+  TUuid new_pov_id;
+  Conn->RunWs([this, &parent_id, &ttl, is_safe, is_shared, mode, &new_pov_id] {
+    new_pov_id = Conn->NewReviewPov(parent_id, ttl, is_safe, is_shared, mode);
+  });
+  return new_pov_id;
+}
+
+TPovDiff TServer::TSessionPin::DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) const {
+  TPovDiff result;
+  Conn->RunWs([this, &pov_id, &options, &result] {
+    result = Conn->DiffPov(pov_id, options);
+  });
+  return result;
+}
+
+TPovDiscard TServer::TSessionPin::DiscardPov(const Base::TUuid &pov_id) const {
+  TPovDiscard result;
+  Conn->RunWs([this, &pov_id, &result] {
+    result = Conn->DiscardPov(pov_id);
+  });
+  return result;
+}
+
+TPovPromote TServer::TSessionPin::PromotePov(const Base::TUuid &pov_id, bool force) const {
+  TPovPromote result;
+  Conn->RunWs([this, &pov_id, force, &result] {
+    result = Conn->PromotePov(pov_id, force);
+  });
+  return result;
+}
+
+TPovReview TServer::TSessionPin::ReviewPov(const Base::TUuid &pov_id, uint64_t after) const {
+  TPovReview result;
+  Conn->RunWs([this, &pov_id, after, &result] {
+    result = Conn->ReviewPov(pov_id, after);
+  });
+  return result;
+}
+
 void TServer::TConnection::Run(TFd &fd) {
   /* We use this visitor to push notifications. */
   class visitor_t : public Notification::Single::TComputer<void> {
@@ -2539,6 +2582,12 @@ TServer::TConnection::TProtocol::TProtocol() {
   Register<TConnection, void>(ServerRpc::EndImport, &TConnection::EndImport);
   Register<TConnection, string, string, string, int64_t, int64_t, int64_t>(ServerRpc::ImportCoreVector, &TConnection::ImportCoreVector);
   Register<TConnection, void>(ServerRpc::TailGlobalPov, &TConnection::TailGlobalPov);
+  /* #746 */
+  Register<TConnection, TUuid, std::optional<TUuid>, seconds, bool, bool, string>(ServerRpc::NewReviewPov, &TConnection::NewReviewPov);
+  Register<TConnection, TPovDiff, TUuid, TClosure>(ServerRpc::DiffPov, &TConnection::DiffPov);
+  Register<TConnection, TPovDiscard, TUuid>(ServerRpc::DiscardPov, &TConnection::DiscardPov);
+  Register<TConnection, TPovPromote, TUuid, bool>(ServerRpc::PromotePov, &TConnection::PromotePov);
+  Register<TConnection, TPovReview, TUuid, uint64_t>(ServerRpc::ReviewPov, &TConnection::ReviewPov);
 }
 
 TServer::TConnection::TConnection(TServer *server, const Durable::TPtr<TSession> &session)

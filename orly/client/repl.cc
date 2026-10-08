@@ -111,6 +111,18 @@ namespace {
     }
     virtual void operator()(const TImportStmt *) const override {}
     virtual void operator()(const TListSchemaStmt *) const override {}
+    virtual void operator()(const TDiffPovStmt *) const override {
+      Infos.push_back({"diff_pov", "diff_pov {pov_id};", "List what a point of view changed relative to its parent"});
+    }
+    virtual void operator()(const TDiscardPovStmt *) const override {
+      Infos.push_back({"discard_pov", "discard_pov {pov_id};", "Throw away a private point of view's unpromoted changes"});
+    }
+    virtual void operator()(const TPromotePovStmt *) const override {
+      Infos.push_back({"promote_pov", "promote_pov {pov_id};", "Promote a point of view's changes to its parent"});
+    }
+    virtual void operator()(const TReviewPovStmt *) const override {
+      Infos.push_back({"review_pov", "review_pov {pov_id};", "Show a point of view's promotion progress and conflicts"});
+    }
     private:
     std::vector<TInfo> &Infos;
   };  // TGetInfo
@@ -168,7 +180,11 @@ namespace {
                    TListPackageStmt,
                    TEndImportStmt,
                    TImportStmt,
-                   TListSchemaStmt>(TGetInfo(result));
+                   TListSchemaStmt,
+                   TDiffPovStmt,
+                   TDiscardPovStmt,
+                   TPromotePovStmt,
+                   TReviewPovStmt>(TGetInfo(result));
       return result;
     }();
     return infos;

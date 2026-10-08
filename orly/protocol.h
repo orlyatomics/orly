@@ -431,7 +431,37 @@ namespace Orly {
 
     /* TailGlobalPov() -> void
          Tail the global pov. */
-      TailGlobalPov = 1018;
+      TailGlobalPov = 1018,
+
+      /* The POV review workflow (#746; see <orly/server/pov_review.h> and docs/pov-review.md). */
+
+      /* NewReviewPov(std::optional<Base::TUuid> parent_pov_id, std::chrono::seconds time_to_live, bool is_safe, bool is_shared,
+                      std::string conflicts) -> Base::TUuid;
+         Create a new pov, as the NewXxxPov() calls do, that tracks conflicts from the moment it is made: conflicts is "none",
+         "report" (an update that overwrites or deletes a key its parent changed after the fork is promoted, and reported) or
+         "refuse" (it isn't promoted; the pov waits, blocked, until forced, discarded or paused). */
+      NewReviewPov = 1019,
+
+      /* DiffPov(Base::TUuid pov_id, TClosure options) -> Server::TPovDiff;
+         A page of the keys the pov changed relative to its parent, in key order: added, changed, removed, or for commutative
+         updates the delta.  options is a closure named "diff" whose arguments are the options: .start and .stop (a key range,
+         start inclusive, stop exclusive), .after (the previous page's next), .limit (the page size, default 100) and .since
+         (save points, #745: refused until versioned reads exist). */
+      DiffPov = 1020,
+
+      /* DiscardPov(Base::TUuid pov_id) -> Server::TPovDiscard;
+         Throw away a private pov's unpromoted changes, so it reads as its parent again, and free them.  Only the session that
+         made the pov may. */
+      DiscardPov = 1021,
+
+      /* PromotePov(Base::TUuid pov_id, bool force) -> Server::TPovPromote;
+         Unpause the pov so Tetris promotes its changes.  A pov that refuses conflicts is tested first, and stays as it was if
+         any of its changes would conflict, unless force. */
+      PromotePov = 1022,
+
+      /* ReviewPov(Base::TUuid pov_id, uint64_t after) -> Server::TPovReview;
+         The pov's promotion progress and the conflicts numbered after 'after'. */
+      ReviewPov = 1023;
 
   }  // Orly::ServerRpc
 

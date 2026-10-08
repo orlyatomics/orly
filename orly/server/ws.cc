@@ -52,6 +52,7 @@
 #include <orly/error.h>
 #include <orly/client/program/parse_stmt.h>
 #include <orly/client/program/translate_expr.h>
+#include <orly/client/program/translate_options.h>
 #include <orly/indy/key.h>
 #include <orly/orly.package.cst.h>
 #include <orly/server/insufficient_memory.h>
@@ -542,7 +543,50 @@ class TWsImpl final
         if (parent) {
           parent_id = Translate(parent->GetIdExpr());
         }
-        Result = AsStr(GetSession()->NewPov(is_safe, is_shared, parent_id));
+        const TConflictMode mode = GetNewPovOptions(TranslateOptions(stmt->GetOptOptions()));
+        Result = AsStr(mode == TConflictMode::None ? GetSession()->NewPov(is_safe, is_shared, parent_id)
+                                                   : GetSession()->NewReviewPov(is_safe, is_shared, parent_id, mode));
+      }
+
+      /* The POV review statements (#746).  They run off the I/O thread, as `try` does: a diff
+         reads, and a discard commits a transaction per update. */
+      virtual void operator()(const TDiffPovStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        auto options = std::make_shared<const TPovDiffOptions>(GetDiffOptions(TranslateOptions(stmt->GetOptOptions())));
+        Conn->Deferred = [session = GetSharedSession(), pov_id, options] {
+          auto result = std::make_shared<const TPovDiff>(session->DiffPov(pov_id, *options));
+          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+        };
+      }
+
+      virtual void operator()(const TDiscardPovStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        Conn->Deferred = [session = GetSharedSession(), pov_id] {
+          auto result = std::make_shared<const TPovDiscard>(session->DiscardPov(pov_id));
+          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+        };
+      }
+
+      virtual void operator()(const TPromotePovStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        const bool force = GetPromoteOptions(TranslateOptions(stmt->GetOptOptions()));
+        Conn->Deferred = [session = GetSharedSession(), pov_id, force] {
+          auto result = std::make_shared<const TPovPromote>(session->PromotePov(pov_id, force));
+          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+        };
+      }
+
+      virtual void operator()(const TReviewPovStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        const uint64_t after = GetReviewOptions(TranslateOptions(stmt->GetOptOptions()));
+        Conn->Deferred = [session = GetSharedSession(), pov_id, after] {
+          auto result = std::make_shared<const TPovReview>(session->ReviewPov(pov_id, after));
+          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+        };
       }
 
       virtual void operator()(const TTryStmt *stmt) const override {

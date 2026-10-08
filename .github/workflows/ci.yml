@@ -423,6 +423,14 @@ jobs:
       - name: Writes to a paused POV don't hang
         run: bash clients/smoke/run-paused-pov.sh
 
+      # #746: the POV review workflow. Diffs of safe and fast, shared and private POVs (also
+      # while the parent is written, by key range and paged), promotion conflicts reported and
+      # refused, Tetris holding a refusing POV back, and a discard freeing its writes.
+      - name: POV review (diff, discard, promotion conflicts)
+        run: |
+          pip3 install --break-system-packages --quiet websocket-client
+          bash clients/smoke/run-pov-review.sh
+
       # #628: 200-write batches on one POV with a 25% memory reserve. The
       # writer backlog cap counts entries, so at most 1% of the batches may be
       # refused (a refused batch is retried; a loaded runner refuses a few,
@@ -830,6 +838,13 @@ jobs:
         env:
           DEMO_SCALE: small
 
+      # POV review (#746): a draft diffed, its promotion refused over a
+      # conflict, discarded, redone and promoted, on the GRC-20 model.
+      - name: grc20-pov run-review.sh (python driver, reviewing a draft POV)
+        run: ../retry-on-ws-timeout.sh ./run-review.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: examples/grc20-pov
+
       # GRC-20 reference demo: each editor's op is one set-union into a
       # per-(entity, property) history set; reads replay the timestamp-
       # sorted log to reconstruct entity state (or any historical
@@ -1097,6 +1112,7 @@ jobs:
           orly/indy/repo.test
           orly/indy/transaction_base.test
           orly/indy/memory_layer.test
+          orly/indy/fork_watch.test
           "
           CONTROL=base/tsan_control.test
           # Tests known to hit the 600 s timeout under TSan, each with its
@@ -1197,7 +1213,7 @@ jobs:
         run: PATH="$PWD/tools:$PATH" tools/jhm -c tsan orly/server/orlyi orly/orlyc
 
       - name: orlyi smoke under TSan
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: ORLY_OUT="$PWD/../out_orly/tsan" LOG_DIR="$PWD/tsan-logs/server" bash clients/smoke/run-tsan-server.sh
 
       - name: Upload TSan reports

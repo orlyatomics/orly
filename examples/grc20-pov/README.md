@@ -38,6 +38,27 @@ display_as_of = ((op) when {                /* exhaustive match over the op kind
 
 `reduce`'s seed is a `Deleted` sentinel, so an empty (or fully-filtered) history resolves to "absent" for free, and `when` is checked for exhaustiveness at compile time. **Compare `demo.py`'s `reconstruct` to [the previous version](https://github.com/orlyatomics/orly/commits/master/examples/grc20-pov/demo.py): the latest-wins loop, the `event_key` tiebreaker, and `format_value` are all gone** — the driver enumerates entities and asks the engine `display_as_of`.
 
+## Reviewing an edit before it lands
+
+[`review.py`](review.py) (`./run-review.sh`) uses the POV review workflow ([#746](https://github.com/orlyatomics/orly/issues/746), [docs/pov-review.md](../../docs/pov-review.md)) on this model. An editor drafts changes in a private POV made with `<{.conflicts: "refuse"}>` and paused, while another source keeps publishing. `diff_pov` shows the draft as GRC-20 sees it: an edit to a property that already has history is a `delta` (the union of the new events), and the first event of a property is an `added` history, or `changed` when the other source created that property meanwhile:
+
+```
+--- the draft, against the published graph: 4 change(s) over 6 unpromoted update(s)
+  delta    hist/plato/name  (union of 1 item(s))
+  changed  hist/plato/school  (1 event(s) -> 1 event(s))
+  added    hist/plato/student_of  (absent -> 1 event(s))
+  delta    props/plato  (union of 3 item(s))
+--- promote: refused; would conflict on hist/plato/school
+--- discard: 6 update(s), 6 entries thrown away
+--- the redone draft: 4 change(s) over 6 unpromoted update(s)
+  ...
+  delta    hist/plato/school  (union of 1 item(s))
+--- promote: promoted, 0 conflict(s)
+--- published: plato.name = 'Plato of Athens', plato.school = 'Platonism' (2 events, both sources)
+```
+
+Unions never conflict, but creating a history overwrites one, so the promotion is refused and names the key. The editor discards the draft, which reads as the published graph again, redoes the edits on top (now all unions), and promotes cleanly: both sources' events for Plato's school are kept.
+
 ## Run it
 
 ```sh

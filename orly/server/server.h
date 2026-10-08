@@ -583,6 +583,38 @@ namespace Orly {
           Session->UnpausePov(Server, pov_id);
         }
 
+        /* See <orly/protocol.h> (#746). */
+        Base::TUuid NewReviewPov(const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live,
+                                 bool is_safe, bool is_shared, const std::string &conflicts) {
+          return Session->NewReviewPov(Server, parent_pov_id, time_to_live, is_safe, is_shared, ParseConflictMode(conflicts));
+        }
+
+        TPovDiff DiffPov(const Base::TUuid &pov_id, const TClosure &options) {
+          return Session->DiffPov(Server, pov_id, TPovDiffOptions::FromClosure(options));
+        }
+
+        /* The WebSocket protocol's forms of the two above. */
+        Base::TUuid NewReviewPov(const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live,
+                                 bool is_safe, bool is_shared, TConflictMode mode) {
+          return Session->NewReviewPov(Server, parent_pov_id, time_to_live, is_safe, is_shared, mode);
+        }
+
+        TPovDiff DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) {
+          return Session->DiffPov(Server, pov_id, options);
+        }
+
+        TPovDiscard DiscardPov(const Base::TUuid &pov_id) {
+          return Session->DiscardPov(Server, pov_id);
+        }
+
+        TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) {
+          return Session->PromotePov(Server, pov_id, force);
+        }
+
+        TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) {
+          return Session->ReviewPov(Server, pov_id, after);
+        }
+
         /* See <orly/protocol.h>. */
         void UninstallPackage(const std::vector<std::string> &package_name, uint64_t version) {
           Server->UninstallPackage(package_name, version);
@@ -747,6 +779,11 @@ namespace Orly {
         virtual std::vector<Var::TVar> TryMulti(const Base::TUuid &, const std::vector<TBatchCall> &) const override;
         virtual void UninstallPackage(const std::vector<std::string> &, uint64_t) const override;
         virtual void UnpausePov(const Base::TUuid &) const override;
+        virtual Base::TUuid NewReviewPov(bool, bool, const std::optional<Base::TUuid> &, TConflictMode) const override;
+        virtual TPovDiff DiffPov(const Base::TUuid &, const TPovDiffOptions &) const override;
+        virtual TPovDiscard DiscardPov(const Base::TUuid &) const override;
+        virtual TPovPromote PromotePov(const Base::TUuid &, bool) const override;
+        virtual TPovReview ReviewPov(const Base::TUuid &, uint64_t) const override;
 
         private:
 

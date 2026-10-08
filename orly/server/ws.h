@@ -28,6 +28,7 @@
 #include <base/class_traits.h>
 #include <optional>
 #include <base/uuid.h>
+#include <orly/pov_review.h>
 #include <orly/method_request.h>
 #include <orly/method_result.h>
 #include <orly/package/manager.h>
@@ -90,6 +91,14 @@ namespace Orly {
 
           /* Override to perform the request. */
           virtual TMethodResult Try(const TMethodRequest &method_request) const = 0;
+
+          /* Override to perform the POV review requests (#746; see <orly/pov_review.h>). */
+          virtual Base::TUuid NewReviewPov(bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id,
+                                           TConflictMode mode) const = 0;
+          virtual TPovDiff DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) const = 0;
+          virtual TPovDiscard DiscardPov(const Base::TUuid &pov_id) const = 0;
+          virtual TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) const = 0;
+          virtual TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) const = 0;
 
           /* Override to perform a batch request: one method against N argument
              records, folded into a single transaction (#253). Returns a

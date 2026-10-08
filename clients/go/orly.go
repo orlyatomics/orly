@@ -257,6 +257,265 @@ func (c *Client) Uninstall(pkg string, version int) error {
 // NewPov creates a "new safe shared pov;" and returns its id.
 func (c *Client) NewPov() (string, error) { return c.SendString("new safe shared pov;") }
 
+// PovOptions says what NewPovWith makes: a safe or fast, shared or private POV,
+// under Parent (a POV id; empty for the global POV), and how it treats
+// promotion conflicts (#746): "" or "none", "report" or "refuse".
+type PovOptions struct {
+	Safe      bool
+	Shared    bool
+	Parent    string
+	Conflicts string
+}
+
+// NewPovWith creates a POV as o says and returns its id.
+func (c *Client) NewPovWith(o PovOptions) (string, error) {
+	parts := []string{"new", "fast", "private", "pov"}
+	if o.Safe {
+		parts[1] = "safe"
+	}
+	if o.Shared {
+		parts[2] = "shared"
+	}
+	if o.Parent != "" {
+		parts = append(parts, fmt.Sprintf("from {%s}", o.Parent))
+	}
+	if o.Conflicts != "" && o.Conflicts != "none" {
+		parts = append(parts, fmt.Sprintf("<{.conflicts: %s}>", quote(o.Conflicts)))
+	}
+	return c.SendString(strings.Join(parts, " ") + ";")
+}
+
+// Count is a count in a POV review result. The protocol sends every number as
+// a JSON float, which Count accepts.
+type Count int64
+
+// UnmarshalJSON accepts 3 and 3.0.
+func (n *Count) UnmarshalJSON(b []byte) error {
+	var f float64
+	if err := json.Unmarshal(b, &f); err != nil {
+		return err
+	}
+	*n = Count(f)
+	return nil
+}
+
+// PovChange is one key a POV changed relative to its parent (#746). Kind is
+// "added", "changed", "removed" or "delta"; Before is the parent's value and
+// After the POV's (nil when absent); a delta is a run of one commutative
+// operator, Op ("add", "or", "union", ...), adding up to Delta. Values are
+// decoded JSON.
+type PovChange struct {
+	Key    []any  `json:"key"`
+	Kind   string `json:"kind"`
+	Before any    `json:"before"`
+	After  any    `json:"after"`
+	Op     string `json:"op,omitempty"`
+	Delta  any    `json:"delta,omitempty"`
+}
+
+// PovDiff is a page of a diff. Next (and its exact orlyscript form,
+// NextLiteral) is nil on the last page.
+type PovDiff struct {
+	Changes     []PovChange `json:"changes"`
+	Next        []any       `json:"next"`
+	NextLiteral *string     `json:"next_literal"`
+	Updates     Count       `json:"updates"`
+}
+
+// DiffOptions restrict a diff to keys from Start (inclusive) to Stop
+// (exclusive), after After (the previous page's Next, or Raw(NextLiteral)),
+// with at most Limit changes a page (0: the server's default, 100). Keys are
+// Addr values, or Raw literals.
+type DiffOptions struct {
+	Start, Stop, After any
+	Limit              int
+}
+
+// PovConflict is a key a POV's update overwrote ("put") or deleted ("delete")
+// after its parent changed it. Number counts them from 1 (0 for a key the POV
+// is blocked on); Raced marks one, in refusing mode, that the parent changed
+// between Tetris's test and the promotion.
+type PovConflict struct {
+	Number Count  `json:"number"`
+	Key    []any  `json:"key"`
+	Op     string `json:"op"`
+	Raced  bool   `json:"raced"`
+}
+
+// PovDiscard is what Discard threw away.
+type PovDiscard struct {
+	Updates Count `json:"discarded_updates"`
+	Entries Count `json:"discarded_entries"`
+}
+
+// PovPromote is what RequestPromotion did: Status "promoting" or "refused"
+// (with the would-be Conflicts). Mark is the number of the last conflict
+// before it.
+type PovPromote struct {
+	Status    string        `json:"status"`
+	Pending   Count         `json:"pending"`
+	Mark      Count         `json:"mark"`
+	Conflicts []PovConflict `json:"conflicts"`
+}
+
+// PovReview is a POV's promotion progress and conflicts.
+type PovReview struct {
+	ConflictMode   string        `json:"conflict_mode"`
+	Status         string        `json:"status"`
+	Pending        Count         `json:"pending"`
+	PendingEntries Count         `json:"pending_entries"`
+	Blocked        bool          `json:"blocked"`
+	BlockedOn      []PovConflict `json:"blocked_on"`
+	Conflicts      []PovConflict `json:"conflicts"`
+	ConflictCount  Count         `json:"conflict_count"`
+	ChangedKeys    Count         `json:"changed_keys"`
+	Overflowed     bool          `json:"overflowed"`
+}
+
+// PromoteResult is what Promote saw: Status "promoted" (nothing pending),
+// "refused", "blocked", "failed", "paused" or "timeout", and the conflicts
+// found during the promotion.
+type PromoteResult struct {
+	Status    string
+	Pending   Count
+	Conflicts []PovConflict
+	BlockedOn []PovConflict
+}
+
+func (c *Client) sendInto(stmt string, out any) error {
+	raw, err := c.Send(stmt)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, out)
+}
+
+func keyLit(k any) (string, error) {
+	switch x := k.(type) {
+	case Raw, Addr:
+		return Lit(x)
+	case []any:
+		return Lit(Addr(x))
+	default:
+		return "", fmt.Errorf("orly: a key must be an Addr, a []any or a Raw literal, not %T", k)
+	}
+}
+
+// Diff returns a page of what pov changed relative to its parent: its
+// unpromoted writes, key by key, in key order (#746).
+func (c *Client) Diff(pov string, o DiffOptions) (PovDiff, error) {
+	var parts []string
+	for _, opt := range []struct {
+		name string
+		key  any
+	}{{"start", o.Start}, {"stop", o.Stop}, {"after", o.After}} {
+		if opt.key == nil {
+			continue
+		}
+		l, err := keyLit(opt.key)
+		if err != nil {
+			return PovDiff{}, err
+		}
+		parts = append(parts, "."+opt.name+": "+l)
+	}
+	if o.Limit > 0 {
+		parts = append(parts, fmt.Sprintf(".limit: %d", o.Limit))
+	}
+	suffix := ""
+	if len(parts) > 0 {
+		suffix = " <{" + strings.Join(parts, ", ") + "}>"
+	}
+	var d PovDiff
+	err := c.sendInto(fmt.Sprintf("diff_pov {%s}%s;", pov, suffix), &d)
+	return d, err
+}
+
+// DiffAll returns every change of pov's diff, page after page (keyset paging).
+func (c *Client) DiffAll(pov string, o DiffOptions) ([]PovChange, error) {
+	var all []PovChange
+	for {
+		page, err := c.Diff(pov, o)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page.Changes...)
+		if page.NextLiteral == nil {
+			return all, nil
+		}
+		o.After = Raw(*page.NextLiteral)
+	}
+}
+
+// Discard throws away pov's unpromoted changes (a private POV of this
+// session's), so it reads as its parent again (#746).
+func (c *Client) Discard(pov string) (PovDiscard, error) {
+	var d PovDiscard
+	err := c.sendInto(fmt.Sprintf("discard_pov {%s};", pov), &d)
+	return d, err
+}
+
+// RequestPromotion asks for pov's changes to be promoted (unpauses it) and
+// returns at once. In refusing mode it is tested first, and stays as it was if
+// any change would conflict, unless force.
+func (c *Client) RequestPromotion(pov string, force bool) (PovPromote, error) {
+	suffix := ""
+	if force {
+		suffix = " <{.force: true}>"
+	}
+	var p PovPromote
+	err := c.sendInto(fmt.Sprintf("promote_pov {%s}%s;", pov, suffix), &p)
+	return p, err
+}
+
+// Review returns pov's promotion progress and the conflicts numbered after
+// after.
+func (c *Client) Review(pov string, after int64) (PovReview, error) {
+	suffix := ""
+	if after > 0 {
+		suffix = fmt.Sprintf(" <{.after: %d}>", after)
+	}
+	var r PovReview
+	err := c.sendInto(fmt.Sprintf("review_pov {%s}%s;", pov, suffix), &r)
+	return r, err
+}
+
+// Promote promotes pov's changes and waits until nothing is pending, the POV
+// is blocked, failed or paused, or timeout passes; it returns the conflicts
+// found meanwhile.
+func (c *Client) Promote(pov string, force bool, timeout time.Duration) (PromoteResult, error) {
+	started, err := c.RequestPromotion(pov, force)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	if started.Status == "refused" {
+		return PromoteResult{Status: "refused", Pending: started.Pending, Conflicts: started.Conflicts}, nil
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		r, err := c.Review(pov, int64(started.Mark))
+		if err != nil {
+			return PromoteResult{}, err
+		}
+		status := ""
+		switch {
+		case r.Status == "failed":
+			status = "failed"
+		case r.Blocked:
+			status = "blocked"
+		case r.Pending == 0:
+			status = "promoted"
+		case r.Status == "paused":
+			status = "paused"
+		case time.Now().After(deadline):
+			status = "timeout"
+		}
+		if status != "" {
+			return PromoteResult{Status: status, Pending: r.Pending, Conflicts: r.Conflicts, BlockedOn: r.BlockedOn}, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // Call invokes package.method on pov with a record of args, i.e.
 // "try {pov} pkg method <{.k: v, ...}>;". Pass nil args for no arguments.
 func (c *Client) Call(pov, pkg, method string, args map[string]any) (json.RawMessage, error) {
@@ -330,6 +589,9 @@ type Raw string
 // Set encodes its elements as an orlyscript set literal {a, b, ...}.
 type Set []any
 
+// Addr encodes its elements as an orlyscript address (key) literal <[a, b, ...]>.
+type Addr []any
+
 // Lit encodes a Go value as an orlyscript literal:
 //
 //	Raw            -> verbatim
@@ -340,6 +602,7 @@ type Set []any
 //	map[string]any -> record <{.k: v, ...}> (keys sorted; records are by-name)
 //	[]any          -> list [a, b, ...]
 //	Set            -> set {a, b, ...}
+//	Addr           -> key <[a, b, ...]>
 func Lit(v any) (string, error) {
 	switch x := v.(type) {
 	case Raw:
@@ -367,6 +630,8 @@ func Lit(v any) (string, error) {
 		return litSeq(x, "[", "]")
 	case Set:
 		return litSeq([]any(x), "{", "}")
+	case Addr:
+		return litSeq([]any(x), "<[", "]>")
 	default:
 		return "", fmt.Errorf("orly: cannot encode %T as an orlyscript literal: %v", v, v)
 	}

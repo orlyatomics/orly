@@ -438,7 +438,23 @@ bool TRepo::TBacklogReservation::TryReserve(size_t update_cap, size_t entry_cap,
   return true;
 }
 
-std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update) NO_THROW {
+void TRepo::AddForkWatch(const std::shared_ptr<TForkWatch> &watch) {
+  assert(watch);
+  std::lock_guard<std::mutex> lock(DataLock);
+  ForkWatches.push_back(watch);
+}
+
+void TRepo::SetOwnForkWatch(const std::shared_ptr<TForkWatch> &watch) {
+  std::lock_guard<std::mutex> lock(OwnForkWatchLock);
+  OwnForkWatch = watch;
+}
+
+std::shared_ptr<TForkWatch> TRepo::GetOwnForkWatch() const {
+  std::lock_guard<std::mutex> lock(OwnForkWatchLock);
+  return OwnForkWatch;
+}
+
+std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update, const Base::TUuid &promoted_from) NO_THROW {
   std::optional<TSequenceNumber> new_seq;
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
@@ -471,6 +487,18 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
         BacklogEntriesKnown = false;
       }
     }
+    /* #746: show the update to the fork watches of the POVs under review below us, under
+       DataLock, so each sees our changes in our order.  Forget the watches that have gone. */
+    if (!ForkWatches.empty()) {
+      std::erase_if(ForkWatches, [update, &promoted_from](const std::weak_ptr<TForkWatch> &weak) {
+        auto watch = weak.lock();
+        if (!watch) {
+          return true;
+        }
+        watch->OnAppend(*update, promoted_from);
+        return false;
+      });
+    }
     if (was_empty) {
       EnqueueMergeMem();
     }
@@ -502,7 +530,9 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
 }
 
 std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_THROW {
-  assert(Status == Normal);
+  /* Tetris pops a Normal repo; a discard pops a paused one, which has left its parent's Tetris
+     (#746). */
+  assert(Status != Failed);
   assert(LowestSeqNum);
   assert(HighestSeqNum);
   std::optional<TSequenceNumber> popped_seq;
@@ -525,8 +555,7 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
       BacklogEntryCounts.clear();
       BacklogEntries = 0UL;
       BacklogEntriesKnown = true;
-      if (ParentRepo) {
-        assert(InTetris);
+      if (ParentRepo && InTetris) {
         Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
         InTetris = false;
       }

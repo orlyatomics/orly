@@ -2,7 +2,8 @@
 
    Grammar for Orly client shell.
 
-      new (safe|fast) (private|shared) pov (from {<id>}) ;
+      new (safe|fast) (private|shared) pov (from {<id>}) (<{.conflicts: "report"}>) ;
+      diff_pov|discard_pov|promote_pov|review_pov {<id>} (<{.option: val}>) ;
       ttl <id> = <time_diff> ;
       install <package> ;
       uninstall <package> ;
@@ -85,6 +86,10 @@ compile_kwd       = '"compile"';
 list_package_kwd  = '"list_packages"';
 get_source_kwd    = '"get_source"';
 list_schema_kwd   = '"list_schema"';
+diff_pov_kwd      = '"diff_pov"';
+discard_pov_kwd   = '"discard_pov"';
+promote_pov_kwd   = '"promote_pov"';
+review_pov_kwd    = '"review_pov"';
 
 unary_placeholder = '' unary_prec right;
 name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
@@ -113,6 +118,12 @@ opt_parent;
 no_parent : opt_parent -> empty;
 parent    : opt_parent -> from_kwd id_expr;
 
+/* Options as a record, so a new option needs no new keyword (#746):
+   new ... pov ... <{.conflicts: "report"}>;  diff_pov {id} <{.limit: 50}>; */
+opt_options;
+no_options : opt_options -> empty;
+options    : opt_options -> obj_expr;
+
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     TOP-LEVEL
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -128,8 +139,12 @@ end_import_stmt     : stmt -> end_kwd import_kwd semi;
 import_stmt         : stmt -> import_kwd file:str_expr pkg_name:str_expr load_threads:int_expr merge_threads:int_expr merge_sim:int_expr semi;
 install_stmt        : stmt -> install_kwd package_name semi;
 uninstall_stmt      : stmt -> uninstall_kwd package_name semi;
-pov_cons_stmt       : stmt -> new_kwd pov_guarantee pov_kind pov_kwd opt_parent semi;
+pov_cons_stmt       : stmt -> new_kwd pov_guarantee pov_kind pov_kwd opt_parent opt_options semi;
 pov_status_stmt     : stmt -> status_kind id_expr semi;
+diff_pov_stmt       : stmt -> diff_pov_kwd id_expr opt_options semi;
+discard_pov_stmt    : stmt -> discard_pov_kwd id_expr semi;
+promote_pov_stmt    : stmt -> promote_pov_kwd id_expr opt_options semi;
+review_pov_stmt     : stmt -> review_pov_kwd id_expr opt_options semi;
 set_user_id_stmt    : stmt -> set_kwd user_id_kwd id_expr semi;
 set_ttl_stmt        : stmt -> set_kwd ttl_kwd id_expr to_kwd int_expr semi;
 try_stmt            : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name args:obj_expr semi;

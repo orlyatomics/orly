@@ -42,6 +42,7 @@
 #include <orly/package/manager.h>
 #include <orly/server/batch_call.h>
 #include <orly/server/pov.h>
+#include <orly/server/pov_review.h>
 #include <orly/var.h>
 
 namespace Orly {
@@ -217,6 +218,21 @@ namespace Orly {
       /* See <orly/protocol.h>. */
       void PausePov(TServer *server, const Base::TUuid &pov_id);
 
+      /* The POV review workflow (#746; see <orly/server/pov_review.h> and <orly/protocol.h>).
+
+         NewReviewPov makes a POV like the New*Pov calls above, tracking conflicts as `mode` says
+         from the moment it is made.  DiscardPov is for a private POV of this session's only. */
+      Base::TUuid NewReviewPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live,
+                               bool is_safe, bool is_shared, TConflictMode mode);
+
+      TPovDiff DiffPov(TServer *server, const Base::TUuid &pov_id, const TPovDiffOptions &options);
+
+      TPovDiscard DiscardPov(TServer *server, const Base::TUuid &pov_id);
+
+      TPovPromote PromotePov(TServer *server, const Base::TUuid &pov_id, bool force);
+
+      TPovReview ReviewPov(TServer *server, const Base::TUuid &pov_id, uint64_t after);
+
       /* Insert the given notification into the pending set and return the sequence number that is assigned to it.
          If the session isn't queuing notifications (see SetQueuesNotifications()), delete the notification and
          return nullopt.  If this function fails, it will delete the notification before throwing. */
@@ -353,7 +369,12 @@ namespace Orly {
 
       Base::TUuid NewPov(
           TServer *server, const std::optional<Base::TUuid> &parent_pov_id, TPov::TAudience audience, TPov::TPolicy policy,
-          const std::chrono::seconds &time_to_live);
+          const std::chrono::seconds &time_to_live, TConflictMode conflict_mode = TConflictMode::None);
+
+      /* The repo of the POV the review calls name, which must have a parent; keeps the POV open
+         for as long as we are. */
+      Indy::L0::TManager::TPtr<Indy::TRepo> OpenReviewRepo(TServer *server, const Base::TUuid &pov_id, const char *what,
+                                                            bool must_be_ours = false);
 
       /* See base class. */
       virtual bool ForEachDependentPtr(const std::function<bool (Durable::TAnyPtr &)> &cb) noexcept override;

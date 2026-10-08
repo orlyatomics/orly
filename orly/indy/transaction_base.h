@@ -41,9 +41,12 @@ namespace Orly {
 
         typedef InvCon::UnorderedList::TMembership<TTransaction, TManager> TManagerMembership;
 
+        /* promoted_from names the repo Tetris is promoting `update` from, if it is, for the fork
+           watches of the repo it lands in (#746); the zero id otherwise. */
         bool Push(const L0::TManager::TPtr<TRepo> &repo,
                   const std::shared_ptr<TUpdate> &update,
-                  const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>());
+                  const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>(),
+                  const Base::TUuid &promoted_from = Base::TUuid());
 
         bool Pop(const L0::TManager::TPtr<TRepo> &repo,
                  const std::optional<TSequenceNumber> &ensure_or_discard = std::optional<TSequenceNumber>());
@@ -357,7 +360,8 @@ namespace Orly {
           NO_COPY(TPusher);
           public:
 
-          TPusher(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, const std::shared_ptr<TUpdate> &update);
+          TPusher(TTransaction *transaction, const L0::TManager::TPtr<TRepo> &repo, const std::shared_ptr<TUpdate> &update,
+                  const Base::TUuid &promoted_from);
 
           virtual ~TPusher() NO_THROW;
 
@@ -366,6 +370,9 @@ namespace Orly {
           private:
 
           TUpdate *Update;
+
+          /* See TTransaction::Push. */
+          Base::TUuid PromotedFrom;
 
           friend class TTransaction;
 

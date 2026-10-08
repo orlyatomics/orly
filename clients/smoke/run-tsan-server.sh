@@ -6,7 +6,7 @@
 # unpaused and drained) against an orlyi built with `jhm -c tsan`, then 16
 # WebSocket sessions reading at once through a 4-statement admission limit
 # (ws_scale.mjs, #761), then shuts it down with SIGINT, and counts the reports
-# TSan wrote.
+# TSan wrote. A third pass runs the POV review smoke (pov_review.mjs, #746).
 #
 #   0. Build the orly TS client (clients/ts).
 #   1. Compile clients/mcp/smoke/sample.orly with the TSan orlyc.
@@ -68,6 +68,9 @@ cp "$WORK/sample.1.so" "$WORK/packages/"
 # The WebSocket concurrency smoke's package (#761), for the second pass below.
 (cd "$WORK" && setarch "$ARCH" -R "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/smoke/ws_scale.orly") || exit 1
 cp "$WORK/ws_scale.1.so" "$WORK/packages/"
+# The POV review smoke's package (#746), for the third pass.
+(cd "$WORK" && setarch "$ARCH" -R "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/smoke/pov_review.orly") || exit 1
+cp "$WORK/pov_review.1.so" "$WORK/packages/"
 
 # run_smoke <tag> [VAR=value...]: a fresh orlyi under TSan, the drain smoke
 # against it, then SIGINT. Sets SMOKE_RC, ALIVE (yes/no), EXIT_RC and REPORTS.
@@ -106,6 +109,15 @@ run_smoke() {
     if [ "$SMOKE_RC" -eq 0 ]; then
       ORLY_URL="ws://127.0.0.1:$WS_PORT" GROUPS=200 LEVELS=1,16 SECS=3 WORKERS=2 \
         timeout 300 node ws_scale.mjs >> "$dir/smoke.log" 2>&1
+      SMOKE_RC=$?
+    fi
+    # Then the POV review workflow (#746): fork watches appended to by every chain repo while
+    # Tetris tests them, diffs read beside promotions, and a discard's pops on a paused POV. This
+    # server's pools cap a paused POV at 312 entries, so the discard writes 200. The gate run
+    # only: the control just has to show a race is reported, and the step has a time limit.
+    if [ "$SMOKE_RC" -eq 0 ] && [ "$tag" = smoke ]; then
+      ORLY_URL="ws://127.0.0.1:$WS_PORT" ORLY_REPORT_PORT=$REPORT_PORT DISCARD_BATCHES=2 DISCARD_BATCH=100 \
+        timeout 600 node pov_review.mjs >> "$dir/smoke.log" 2>&1
       SMOKE_RC=$?
     fi
   else
