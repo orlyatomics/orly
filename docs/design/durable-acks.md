@@ -45,17 +45,19 @@ cost. Fast POVs keep memory-speed acknowledgments with a stated loss bound.
   sent no flush to the device at all. With another writer streaming to the same disk, the sync rose
   to **20 ms p50, 126 ms p99** in the VM and to **9.4 ms p90** on the runner: tail latency comes
   from the device, not the design.
-- An `orlyi` prototype that logs each write's record after commit and parks the writer's fiber
-  until its group is synced (scratch branch, never pushed): one writer's commit went from **p50
-  0.40–0.51 ms to 0.76–1.05 ms** (p99 3.2–3.5 → 4.8–5.6 ms), about one sync, in the VM. On the
-  CI x86 runner today's single-writer commit is p50 0.28 ms, p99 2.4 ms; the prototype's run there
-  is queued ([§10.3](#103-end-to-end-today-vs-the-prototype-in-orlyi)).
+- An `orlyi` prototype that logs each write's record after commit and parks the writer's fiber until
+  its group is synced (scratch branch, never pushed): one writer's commit went from **p50 0.40–0.51
+  ms to 0.76–1.05 ms** (p99 3.2–3.5 → 4.8–5.6 ms), about one sync, in the VM, and from **p50
+  0.30–0.31 ms to 0.55–0.57 ms** (p99 1.0–1.4 → 3.5 ms) on a CI x86 runner
+  ([§10.3](#103-end-to-end-today-vs-the-prototype-in-orlyi)). The prototype has no seal; the seal
+  adds about one more sync ([§5.3](#53-payload-then-seal)).
 - With 8 and 64 writers today's throughput in the VM is not set by the commit path: writers outrun
   promotion and spend their time in the backlog cap and admission refusals (p99 170–440 ms at 64
-  writers). The prototype's wait paced the writers and their throughput went **up**, from
-  550–1,000 to 1,000–5,000 writes/s. I don't count that as a win (it is the box, not the log), but
-  it does mean the log is not the bottleneck: the standalone log sustained 28,000–35,000 commits/s
-  at 64 writers in the VM, and 115,000–119,000 on the CI runner.
+  writers). The prototype's wait paced the writers and their throughput went **up**, from 550–1,000
+  to 1,000–5,000 writes/s (on a CI runner, from 1,650–2,300 to 1,900–4,200). I don't count that as a
+  win (it is the box, not the log), but it does mean the log is not the bottleneck: the standalone
+  log sustained 28,000–35,000 commits/s at 64 writers in the VM, and 115,000–119,000 on the CI
+  runner.
 
 ### The decisions to make
 
@@ -112,8 +114,8 @@ From the issue and its review comments:
 
 | Target | Status |
 |---|---|
-| Safe-POV commit p99 within ~1–2 syncs of today's | met in the VM at 1 writer (+1.5–2.2 ms p99, ≈ 1–2 syncs). On the CI runner today's p99 is 2.4 ms and a sealed group's p99 is 0.45–0.68 ms, so it should hold there too; the prototype's CI run is queued |
-| Throughput at 64 writers within ~10% of today's | met in the VM, where the log isn't the bottleneck. On the CI runner the log alone sustains 70,000–119,000 commits/s at 64 writers, against today's 2,400 writes/s end to end |
+| Safe-POV commit p99 within ~1–2 syncs of today's | met at 1 writer, without the seal: +1.5–2.2 ms at p99 in the VM (a VM sync's p99 is 3.3–7.8 ms) and +2.1–2.5 ms on a CI x86 runner whose disk's sync I didn't measure (its commit p90 rose to ~3 ms, about one sync) |
+| Throughput at 64 writers within ~10% of today's | met in the VM and on CI: at 64 writers the prototype did 1,900–5,000 writes/s against today's 550–820 (VM) and 1,650–1,950 (CI); the log alone sustains 70,000–119,000 commits/s on a CI runner |
 | Zero acknowledged safe writes lost, kill campaign and a simulated storage-fault campaign | the stage 2 gate ([§8.8](#88-proof-fault-harness-and-kill-campaign)) |
 | Bounded restart time at any log size | bounded by design (ring size, checkpoint); replay rate is a stage 1 measurement ([§8.6](#86-restart-time)) |
 
@@ -450,12 +452,13 @@ its session pin: in the WebSocket path that is the statement runner (`TStmtQueue
 `FAKE_NPROC=4` in the VM) the server wedged: the log was idle, the writers never got their replies,
 and a durable manager runner spun at 100% CPU. Moving the wait to the statement runner made it
 rarer, not impossible: in the VM with 4 runners, one of three runs still stalled at 64 writers
-(after 1 and 8 writers on the same server). I didn't find the cause. It may be the #804 class (a
-fiber that parks while holding the durable manager's `std::mutex`, so the next fiber on its runner
-blocks the thread; fixed by PR #806, not merged yet): parking more fibers for longer makes that
-window likelier, and each round of writers creates new sessions and POVs. Stage 2 must recheck on
-top of #806, on the 4-runner topology, before the wait ships. A transaction whose mutations touch no
-safe repo isn't logged and gets no LSN.
+(after 1 and 8 writers on the same server). On the 4-vCPU CI runners, six servers with the log
+(three per depth) went through 1, 8 and 64 writers each without a stall. I didn't find the cause. It
+may be the #804 class (a fiber that parks while holding the durable manager's `std::mutex`, so the
+next fiber on its runner blocks the thread; fixed by PR #806, not merged yet): parking more fibers
+for longer makes that window likelier, and each round of writers creates new sessions and POVs.
+Stage 2 must recheck on top of #806, on the 4-runner topology, before the wait ships. A transaction
+whose mutations touch no safe repo isn't logged and gets no LSN.
 
 ### 5.6 Checkpoints, truncation and recycling
 
@@ -671,7 +674,8 @@ under heavy load is then bounded by the flush, not by Tetris's promotion rate.
 
 - Today: **210–220 ms** from start to the WebSocket port after a SIGKILL, for a near-empty store and
   for one with 16–19 data files after 36 s of load (release `orlyi`, loop volume, the VM); **1.15 s**
-  on the CI x86 runner with 11 data files (one run).
+  on a CI x86 (v7) runner with 11 data files, and **1.42 s** on CI x86 (v5) with 19–32 (three
+  runs).
 - Added: scanning the log from the checkpoint's head (bounded by the ring size: 256 MiB at
   sequential read speed is a fraction of a second on any SSD) and replaying it. The unretired part
   of the log is the writes that aren't in a data file yet, which is bounded by the Update pool, the
@@ -818,10 +822,16 @@ All numbers are from a scratch branch and a scratch tool, never pushed. Each row
   on files in the VM's overlay file system (virtio disk). **Busy:** other builds and test runs were
   using it the whole time (load average 8–16), so its numbers are noisy; each figure is
   a range over 2–3 repetitions.
-- **CI x86:** a GitHub `ubuntu-24.04` runner: Azure `Standard_D4ads_v7`, AMD EPYC 9V45, 4 vCPUs,
-  16 GB, kernel 6.17 (azure); the root file system is on a 150 GB "MSFT NVMe Accelerator v1.0"
-  disk, and the loop devices are files on it. One runner per run, nothing else on it.
-- **CI arm64:** a GitHub `ubuntu-24.04-arm` runner; its run is queued (§10.5).
+- **CI x86:** GitHub `ubuntu-24.04` runners, 4 vCPUs, 16 GB, kernel 6.17 (azure), one runner per
+  run with nothing else on it. They are not all the same machine, so each CI row says which:
+  - **CI x86 (v7):** Azure `Standard_D4ads_v7`, AMD EPYC 9V45; the root file system (and the loop
+    devices' backing files) on a 150 GB "MSFT NVMe Accelerator v1.0". Sync latency and the log
+    alone (§10.1, §10.2), and one run of today's `orlyi`.
+  - **CI x86 (v5):** Azure `Standard_D4ads_v5`, AMD EPYC 9V74; the root file system on a 150 GB
+    "Virtual Disk" (`sda`). Today's `orlyi` against the prototype (§10.3). I didn't measure its
+    sync latency.
+- **CI arm64:** a GitHub `ubuntu-24.04-arm` runner; its run was still queued when this was
+  written (§10.5).
 - **Host SSD:** the same M3 Max, macOS 27, native.
 
 ### 10.1 Sync latency
@@ -838,13 +848,13 @@ One 4 KiB `O_DIRECT` write then the sync, 2,000 times, at consecutive offsets of
 | VM | preallocated file | fsync | 522 | 3,529 |
 | VM | appended file | fdatasync | 683 | 4,069 |
 | VM, **busy disk** | loop device | fsync + BLKFLSBUF | 19,814 | 126,339 |
-| CI x86 | loop device | fsync + BLKFLSBUF | 235–265 | 309–413 |
-| CI x86 | loop device | fsync | 103–105 | 242–249 |
-| CI x86 | loop device | fdatasync | 105–106 | 240–257 |
-| CI x86 | preallocated file | fdatasync | 0 (no flush sent) | 0 |
-| CI x86 | preallocated file | fsync | 0 | 118–120 |
-| CI x86 | appended file | fdatasync | 111–113 | 143–173 |
-| CI x86, **busy disk** | loop device | fsync + BLKFLSBUF | 434–437 (p90 9,357–9,378) | 9,555–9,618 |
+| CI x86 (v7) | loop device | fsync + BLKFLSBUF | 235–265 | 309–413 |
+| CI x86 (v7) | loop device | fsync | 103–105 | 242–249 |
+| CI x86 (v7) | loop device | fdatasync | 105–106 | 240–257 |
+| CI x86 (v7) | preallocated file | fdatasync | 0 (no flush sent) | 0 |
+| CI x86 (v7) | preallocated file | fsync | 0 | 118–120 |
+| CI x86 (v7) | appended file | fdatasync | 111–113 | 143–173 |
+| CI x86 (v7), **busy disk** | loop device | fsync + BLKFLSBUF | 434–437 (p90 9,357–9,378) | 9,555–9,618 |
 | Host SSD (macOS) | file | `fsync` (no device flush on macOS) | 28 | 308 |
 | Host SSD (macOS) | file | `F_BARRIERFSYNC` | 209 | 1,226 |
 | Host SSD (macOS) | file | `F_FULLFSYNC` (device cache flush) | 5,071 | 7,239 |
@@ -892,21 +902,21 @@ repetitions:
 | VM | 1 / 8 / 64 | no sync at all (ceiling) | 20,564 / 97,582 / 180,039 | 40 / 70 / 300 | 193 / 351 / 1,700 |
 | VM, busy disk | 8 | one / two in flight | 376 / 303 | 21,129 / 24,248 | 52,202 / 60,821 |
 | VM, busy disk | 64 | one / two in flight | 2,094 / 1,729 | 28,528 / 35,188 | 61,093 / 75,751 |
-| CI x86 | 1 | one in flight, no seal | 3,211–5,673 | 149–313 | 294–452 |
-| CI x86 | 1 | two in flight, no seal | 4,646–5,948 | 147–161 | 288–387 |
-| CI x86 | 1 | seal in a second sync | 2,490–3,162 | 282–287 | 438–682 |
-| CI x86 | 1 | seal on the next group | 2,594–2,966 | 303–310 | 454–674 |
-| CI x86 | 8 | one in flight, no seal | 16,067–19,766 | 286–297 | 489–657 |
-| CI x86 | 8 | two in flight, no seal | 30,774–33,236 | 213–233 | 427–487 |
-| CI x86 | 8 | seal in a second sync | 15,876–16,450 | 447–485 | 773–818 |
-| CI x86 | 8 | seal on the next group | 17,659–18,714 | 419–442 | 625–677 |
-| CI x86 | 64 | one in flight, no seal | 66,352–78,648 | 576–624 | 773–908 |
-| CI x86 | 64 | two in flight, no seal | 115,582–119,130 | 533–551 | 873–893 |
-| CI x86 | 64 | seal in a second sync | 72,681–74,480 | 878–920 | 1,117–1,176 |
-| CI x86 | 64 | seal on the next group | 69,704–75,234 | 842–880 | 1,234–1,774 |
-| CI x86 | 1 / 8 / 64 | no sync at all (ceiling) | 22,262–23,308 / 117,004–120,492 / 227,630–240,961 | 42–44 / 65–67 / 241–271 | 54–57 / 114–123 / 514–600 |
-| CI x86, busy disk | 8 | one / two in flight / seal on next | 909–942 / 1,324–1,390 / 702–716 | 8,862–9,384 / 9,343–9,399 / 10,070–10,076 | 10,191–10,212 / 11,099–19,108 / 19,851–19,985 |
-| CI x86, busy disk | 64 | one / two in flight / seal on next | 6,597–7,466 / 8,847–8,911 / 5,639–5,721 | 9,810–9,940 / 9,540–9,588 / 10,069–10,088 | 19,272–19,841 / 19,277–19,308 / 19,870–19,903 |
+| CI x86 (v7) | 1 | one in flight, no seal | 3,211–5,673 | 149–313 | 294–452 |
+| CI x86 (v7) | 1 | two in flight, no seal | 4,646–5,948 | 147–161 | 288–387 |
+| CI x86 (v7) | 1 | seal in a second sync | 2,490–3,162 | 282–287 | 438–682 |
+| CI x86 (v7) | 1 | seal on the next group | 2,594–2,966 | 303–310 | 454–674 |
+| CI x86 (v7) | 8 | one in flight, no seal | 16,067–19,766 | 286–297 | 489–657 |
+| CI x86 (v7) | 8 | two in flight, no seal | 30,774–33,236 | 213–233 | 427–487 |
+| CI x86 (v7) | 8 | seal in a second sync | 15,876–16,450 | 447–485 | 773–818 |
+| CI x86 (v7) | 8 | seal on the next group | 17,659–18,714 | 419–442 | 625–677 |
+| CI x86 (v7) | 64 | one in flight, no seal | 66,352–78,648 | 576–624 | 773–908 |
+| CI x86 (v7) | 64 | two in flight, no seal | 115,582–119,130 | 533–551 | 873–893 |
+| CI x86 (v7) | 64 | seal in a second sync | 72,681–74,480 | 878–920 | 1,117–1,176 |
+| CI x86 (v7) | 64 | seal on the next group | 69,704–75,234 | 842–880 | 1,234–1,774 |
+| CI x86 (v7) | 1 / 8 / 64 | no sync at all (ceiling) | 22,262–23,308 / 117,004–120,492 / 227,630–240,961 | 42–44 / 65–67 / 241–271 | 54–57 / 114–123 / 514–600 |
+| CI x86 (v7), busy disk | 8 | one / two in flight / seal on next | 909–942 / 1,324–1,390 / 702–716 | 8,862–9,384 / 9,343–9,399 / 10,070–10,076 | 10,191–10,212 / 11,099–19,108 / 19,851–19,985 |
+| CI x86 (v7), busy disk | 64 | one / two in flight / seal on next | 6,597–7,466 / 8,847–8,911 / 5,639–5,721 | 9,810–9,940 / 9,540–9,588 / 10,069–10,088 | 19,272–19,841 / 19,277–19,308 / 19,870–19,903 |
 
 - Group commit works as intended. On the runner, 64 writers sustained 115,000–119,000 commits/s
   with two groups in flight on syncs of about 0.25 ms; in the VM, 28,000–35,000 on syncs of about
@@ -938,9 +948,10 @@ a fresh server per configuration, running 1, 8 and 64 writers in turn. Writes/s 
 | VM | 1 | 1,547–1,839 /s; p50 0.40–0.51, p99 3.2–3.5 | 695–763; p50 1.01–1.05, p99 5.0–5.6 | 787–915; p50 0.76–0.97, p99 4.8–5.4 | 1,131–1,666; p50 0.20–0.51 |
 | VM | 8 | 635–1,011; p50 7.5–9.1, p99 15.7–44.2 | 994–4,481; p50 1.2–6.7, p99 6.4–30.5 | 1,988–4,200; p50 1.5–2.7, p99 5.7–21.7 | 917–1,296; p50 5.5–8.1 |
 | VM | 64 | 554–818; p50 1.1–1.4, p99 167–439; ~1,200 refused | 2,052–4,999; p99 27–302 | 3,223–4,634; p99 86–116 | 572–1,281; p99 122–418 |
-| CI x86 | 1 | 2,959; p50 0.28, p99 2.4 | queued | queued | queued |
-| CI x86 | 8 | 2,486; p50 2.4, p99 12.4 | queued | queued | queued |
-| CI x86 | 64 | 2,401; p50 13.6, p99 50.2; 512 refused | queued | queued | queued |
+| CI x86 (v5) | 1 | 2,890–2,930; p50 0.30–0.31, p99 1.0–1.4 | 987–1,136; p50 0.56–0.65, p99 3.5–3.8 | 1,060–1,303; p50 0.55–0.57, p99 3.5 | 2,220–2,273; p50 0.38 |
+| CI x86 (v5) | 8 | 2,218–2,322; p50 2.8–3.0, p99 10.6–11.7 | 2,983–4,243; p50 1.5–2.2, p99 7.3–8.6 | 3,038–4,177; p50 1.6–2.2, p99 8.1–8.3 | 1,101–2,389; p50 2.8–6.2 |
+| CI x86 (v5) | 64 | 1,656–1,953; p50 14.8–21.6, p99 78–94; 283–512 refused | 1,869–2,444; p99 65–92 | 1,886–3,196; p99 50–100 | 1,090–2,379; p99 76–167 |
+| CI x86 (v7) | 1 / 8 / 64 | 2,959 / 2,486 / 2,401 (one run); p50 0.28 / 2.4 / 13.6 | — | — | — |
 
 - **One writer:** the log adds 0.4–0.6 ms at p50 and 1.5–2.2 ms at p99, about one VM sync, which is
   the target ("within one or two syncs"). One writer's throughput halves, because each of its writes
@@ -953,9 +964,14 @@ a fresh server per configuration, running 1, 8 and 64 writers in turn. Writes/s 
   today, so the difference is the pacing, not the code path. I don't propose relying on this; it
   says the target "within 10% at 64 writers" is met here because the log isn't what limits
   throughput.
-- **On the CI runner** (one run of today's binary), throughput is flat at 2,400–3,000 writes/s from 1
-  to 64 writers while p50 rises from 0.28 to 13.6 ms: not commit-bound there either, and far below
-  the 70,000–119,000 commits/s the log alone sustains on the same runner.
+- **On the CI runners** the picture is the same, less extreme. One writer's commit gains 0.25 ms at
+  p50 (0.30 → 0.55–0.57 ms) and 2.1–2.5 ms at p99, and its throughput falls 55–64%. Its p90 went
+  from 0.37 ms to about 3 ms in most runs, so a sync on that runner's "Virtual Disk" is probably
+  around 2.5–3 ms at the tail. At 8 writers the prototype did 3,000–4,200 writes/s against today's
+  2,200–2,300, and at 64, 1,900–3,200 against 1,650–1,950: today's throughput is flat from 1 to 64
+  writers (2,900 → 1,650–1,950) while p50 rises to 15–22 ms, so here too the commit isn't what
+  limits it. The 4-vCPU runners never stalled with the wait moved to the statement runner (six
+  servers with the log, each through 1, 8 and 64 writers).
 - **One shared safe POV** (all writers in one POV; 2 repetitions): today 1,552–1,570/s at one writer,
   388–585/s at 8 (p99 162–200 ms) and 41–250/s at 64 (p50 95–895 ms); with the log, 2,669–3,598/s
   at 8 (p99 6–9 ms) and 154–3,485/s at 64. 64 writers in one POV are pathological with or without
@@ -967,23 +983,25 @@ a fresh server per configuration, running 1, 8 and 64 writers in turn. Writes/s 
 |---|---|---:|---:|---:|---:|
 | VM | quiet | 0.40–0.51 ms | 0.76–1.05 ms | 0.44–0.96 ms | ~50–90% |
 | VM | busy | (no sync) | ~20 ms (estimated: sync p50 + today's commit) | 19.8 ms | ~98% |
-| CI x86 | quiet | 0.28 ms | not yet measured (estimate: 0.55–0.6 ms) | 0.24–0.27 ms (`flsbuf`), 0.10 ms (`fdatasync`) | ~20–50% (estimate) |
+| CI x86 (v5) | quiet | 0.30–0.31 ms | 0.55–0.57 ms | not measured on this machine | ~45% (the added 0.25 ms) |
+| CI x86 (v7) | quiet | 0.28 ms | (not run) | 0.24–0.27 ms (`flsbuf`), 0.10 ms (`fdatasync`) | |
 
-On a quiet disk in the VM the sync is most of a safe commit; on the runner, where a sync is about
-0.1–0.3 ms, it is an estimated quarter to half. Either way group commit, not code, is what keeps
+On a quiet disk in the VM the sync is most of a safe commit; on the CI runner the added wait was
+under half of it at p50, and most of it at p99. Either way group commit, not code, is what keeps
 throughput up. On a busy disk the device's queue is everything: the design can't fix that, only
 isolate the log from it.
 
 ### 10.5 Reproducing
 
 The tool and scripts ran in the VM, and on CI through the `ab-bench` workflow's `command` input
-(both arms built at master; only arm A ran the measurements). Run ids: `37734164894` (CI x86: sync
-latency and the log alone); `37741976751` (CI x86: today's commit latency; its prototype runs used
-the wait inside `Try` and wedged, [§5.5](#55-where-the-append-happens), and the run was cancelled);
-queued behind other benchmarks: `37750619523` (CI x86, the prototype with the wait moved) and
-`37750623484` (CI arm64, everything). `gcbench` (`lat` and `group`), the `orlyi` prototype patch,
-the commit benchmark client and the CI driver will be attached to the stage 1 PR, where they belong
-next to the real implementation's benchmark.
+(both arms built at master; only arm A ran the measurements). Run ids: `37734164894` (CI x86 v7:
+sync latency and the log alone); `37741976751` (CI x86 v7: today's commit latency; its prototype
+runs used the wait inside `Try` and wedged, [§5.5](#55-where-the-append-happens), and the run was
+cancelled); `37750619523` (CI x86 v5: today against the prototype with the wait moved);
+`37750623484` (CI arm64, everything; still queued behind other benchmarks when this was written).
+`gcbench` (`lat` and `group`), the `orlyi` prototype patch, the commit benchmark client and the CI
+driver will be attached to the stage 1 PR, where they belong next to the real implementation's
+benchmark.
 
 ## 11. Staged plan
 
