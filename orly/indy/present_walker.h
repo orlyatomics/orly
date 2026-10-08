@@ -45,7 +45,16 @@ namespace Orly {
         /* Do-little. */
         TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr), Mutator(TMutator::Assign), UpdateId() {}
 
+        /* Key-ascending, then newest (highest sequence number) first. Sequence numbers are per
+           repo, so this orders items from one repo only; the context's merge across a repo chain
+           orders same-key items by repo instead (TContext::TPresentWalker::TChainOrder, #791). */
         bool operator<(const TItem &that) const {
+          const Atom::TComparison comp = CompareKeys(that);
+          return Atom::IsLt(comp) || (Atom::IsEq(comp) && SequenceNumber >= that.SequenceNumber);
+        }
+
+        /* The order of this item's key against that one's. */
+        Atom::TComparison CompareKeys(const TItem &that) const {
           Atom::TComparison comp;
           if (KeyArena && that.KeyArena && Key.TryQuickOrderComparison(KeyArena, that.Key, that.KeyArena, comp)) {
           } else {
@@ -54,7 +63,7 @@ namespace Orly {
             comp = Sabot::OrderStates(*Sabot::State::TAny::TWrapper(Key.NewState(KeyArena, lhs_state_alloc)),
                                       *Sabot::State::TAny::TWrapper(that.Key.NewState(that.KeyArena, rhs_state_alloc)));
           }
-          return Atom::IsLt(comp) || (Atom::IsEq(comp) && SequenceNumber >= that.SequenceNumber);
+          return comp;
         }
 
         /* The sequence number of the update which contained the key-op pair. */

@@ -1,0 +1,82 @@
+/* <clients/smoke/pov_own_writes.orly>
+
+   Package for the POV read-your-own-writes smoke (#791): edges of a group,
+   written, overwritten and deleted, plus `+=` counters.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* Store (or overwrite) edge `e` of group `g`, weighing `w`. */
+put = ((true) effecting {
+  new <['edge', g, e]> <- w;
+}) where {
+  g = given::(int);
+  e = given::(int);
+  w = given::(int);
+};
+
+/* Delete edge `e` of group `g`. */
+remove = ((true) effecting {
+  delete (int) @ <['edge', g, e]>;
+}) where {
+  g = given::(int);
+  e = given::(int);
+};
+
+/* Every edge of group `g`, in key order. */
+all = (keys (int) @ <['edge', g, free::(int)]> as [<[str, int, int]>]) where {
+  g = given::(int);
+};
+
+/* True iff edge `e` of group `g` exists. */
+has = (*<['edge', g, e]>::(int?) is known) where {
+  g = given::(int);
+  e = given::(int);
+};
+
+/* Edge `e`'s weight, or -1 if it doesn't exist. */
+get = (((*<['edge', g, e]>::(int)) if *<['edge', g, e]>::(int?) is known else -1)) where {
+  g = given::(int);
+  e = given::(int);
+};
+
+/* Add `n` to counter `k`. */
+bump = ((true) effecting {
+  *<['count', k]>::(int) += n;
+}) where {
+  k = given::(int);
+  n = given::(int);
+};
+
+/* Set counter `k` to `n`. */
+set_count = ((true) effecting {
+  new <['count', k]> <- n;
+}) where {
+  k = given::(int);
+  n = given::(int);
+};
+
+/* Delete counter `k`. */
+reset = ((true) effecting {
+  delete (int) @ <['count', k]>;
+}) where {
+  k = given::(int);
+};
+
+/* Counter `k`, or -1 if it doesn't exist. */
+count = (((*<['count', k]>::(int)) if *<['count', k]>::(int?) is known else -1)) where {
+  k = given::(int);
+};
