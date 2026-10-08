@@ -132,6 +132,12 @@ void TManager::Uninstall(const TVersionedNames &packages) {
     if(installed_it == installed.end()) {
       THROW_ERROR(TManager::TError) << "Cannot uninstall package '" << package << "' because it is not installed";
     }
+    const uint64_t installed_version = installed_it->second->GetName().Version;
+    if (installed_version != package.Version) {
+      THROW_ERROR(TManager::TVersionNotInstalledError)
+          << "Cannot uninstall package '" << package << "' because version " << installed_version
+          << " is the one installed";
+    }
     installed.erase(installed_it);
   }
 

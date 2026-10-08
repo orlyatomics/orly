@@ -35,7 +35,7 @@ orly> *<['k', 1]>::(int);
 
 ## How it works
 
-There is no eval statement in the wire protocol, so the REPL drives the same loop a package author would, invisibly: every entry is folded into a synthetic package (`repl_<pid>`), compiled with `orlyc`, copied into the server's package directory, and installed at the next version number (a newer install re-points the unversioned name; old versions are deliberately never uninstalled, since uninstalling any version unregisters the whole name). Expressions are wrapped as a generated nullary method and called against the session's POV. Compile errors print the orlyc/g++ diagnostics and leave your definitions untouched.
+There is no eval statement in the wire protocol, so the REPL drives the same loop a package author would, invisibly: every entry is folded into a synthetic package (`repl_<pid>`), compiled with `orlyc`, copied into the server's package directory, and installed at the next version number (a newer install re-points the unversioned name; old versions are deliberately never uninstalled: only the installed version can be uninstalled, and that unregisters the whole name). Expressions are wrapped as a generated nullary method and called against the session's POV. Compile errors print the orlyc/g++ diagnostics and leave your definitions untouched.
 
 The consequences of that design (all pre-wired inside the docker image's `repl` mode):
 
