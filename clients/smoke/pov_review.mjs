@@ -23,6 +23,12 @@ import { connect, InsufficientMemoryError } from "../ts/dist/index.js";
 
 const PKG = "pov_review";
 const REPORT_PORT = +process.env.ORLY_REPORT_PORT;
+/* The writes racing each diff, per scenario, and the pause between them. Each scenario's paused
+   parent keeps its writes until the run ends, so a server with small update pools (TSan) asks for
+   fewer, spread over the same time: the default 500 writes of 3 updates took the whole Update pool
+   by the fifth scenario and refused the next one's setup writes. */
+const WRITER_MAX = +(process.env.WRITER_MAX ?? 500);
+const WRITER_SLEEP_MS = +(process.env.WRITER_SLEEP_MS ?? 2);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 let failures = 0;
@@ -200,9 +206,9 @@ for (const parentKind of ["global", "paused shared pov"]) {
       let written = 0;
       const writerPov = parentKind === "global" ? await w.newPov({ safe: false, shared: false }) : parent;
       const writer = (async () => {
-        /* At most 500 writes: a paused parent keeps them all, and refuses them once its backlog is
-           full (a small server, as under TSan). */
-        for (let i = 0; writing && i < 500; ++i) {
+        /* At most WRITER_MAX writes: a paused parent keeps them all, and refuses them once its
+           backlog is full (a small server, as under TSan). */
+        for (let i = 0; writing && i < WRITER_MAX; ++i) {
           try {
             await w.callMany(writerPov, [
             [PKG, "put", { g, e: 1000 + i, w: i }],
@@ -214,7 +220,7 @@ for (const parentKind of ["global", "paused shared pov"]) {
             break;
           }
           ++written;
-          await sleep(2);
+          await sleep(WRITER_SLEEP_MS);
         }
       })();
       for (let i = 0; i < 20; ++i) {
