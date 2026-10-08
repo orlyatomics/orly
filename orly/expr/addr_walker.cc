@@ -279,6 +279,9 @@ class expr_visitor_t
         virtual void operator()(const Type::TStr *)       const {/* DO NOTHING */}
         virtual void operator()(const Type::TTimeDiff *)  const {/* DO NOTHING */}
         virtual void operator()(const Type::TTimePnt *)   const {/* DO NOTHING */}
+        /* A variant value isn't an address (#814). The base class throws for it, as it does for
+           TSelfRef and TGroupRef, which never surface as an expression's type. */
+        virtual void operator()(const Type::TVariant *)   const {/* DO NOTHING */}
         private:
         bool &ShouldInsert;
       };

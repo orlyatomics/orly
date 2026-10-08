@@ -1,0 +1,24 @@
+[
+  0,
+  [
+    [],
+    [
+      "Synth + Symbols"
+    ],
+    [
+      "TypeCheck"
+    ],
+    [
+      "Code Gen"
+    ],
+    [
+      "Compiling C++"
+    ],
+    [
+      "Running tests"
+    ],
+    [
+      "Tests done"
+    ]
+  ]
+]

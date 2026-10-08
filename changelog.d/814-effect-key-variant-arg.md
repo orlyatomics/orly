@@ -1,0 +1,1 @@
+- **Fixed**: `orlyc` stopped with the internal error "This shouldn't happen" in code generation when a key in an effect block called a function with a variant-typed argument (`new <['k', num(.v: v)]> <- 1;`). The effect walker's check for whether a name is an address had no case for variant types. A variant value is not an address, so it now does nothing (#814).
