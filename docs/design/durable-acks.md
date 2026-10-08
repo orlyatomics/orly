@@ -450,9 +450,12 @@ its session pin: in the WebSocket path that is the statement runner (`TStmtQueue
 `FAKE_NPROC=4` in the VM) the server wedged: the log was idle, the writers never got their replies,
 and a durable manager runner spun at 100% CPU. Moving the wait to the statement runner made it
 rarer, not impossible: in the VM with 4 runners, one of three runs still stalled at 64 writers
-(after 1 and 8 writers on the same server). I didn't find the cause; stage 2 must, on the 4-runner
-topology, before the wait ships. A transaction whose mutations touch no safe repo isn't logged and
-gets no LSN.
+(after 1 and 8 writers on the same server). I didn't find the cause. It may be the #804 class (a
+fiber that parks while holding the durable manager's `std::mutex`, so the next fiber on its runner
+blocks the thread; fixed by PR #806, not merged yet): parking more fibers for longer makes that
+window likelier, and each round of writers creates new sessions and POVs. Stage 2 must recheck on
+top of #806, on the 4-runner topology, before the wait ships. A transaction whose mutations touch no
+safe repo isn't logged and gets no LSN.
 
 ### 5.6 Checkpoints, truncation and recycling
 
@@ -986,13 +989,14 @@ next to the real implementation's benchmark.
 
 Each stage is its own PR with its own tests.
 
-0. **Prerequisites (two-way).** #769 (PR #802) and #796 merged. The fault device's new modes
-   (Misdirect, LostWrite, WriteErrAfter, SyncErrAfter, BitFlip) with their own tests. The kill
-   campaign's power-loss layer (`dm-log-writes` on the runners, or the user-space fallback) and its
-   `nosync` / `early_ack` negative controls, proven against today's code: a power-loss campaign on
-   today's master must lose acknowledged writes and say so. Check what 0.2.x does with an
+0. **Prerequisites (two-way).** #769 (PR #802), #804 (PR #806) and #796 merged. The fault device's
+   new modes (Misdirect, LostWrite, WriteErrAfter, SyncErrAfter, BitFlip) with their own tests. The
+   kill campaign's power-loss layer (`dm-log-writes` on the runners, or the user-space fallback) and
+   its `nosync` / `early_ack` negative controls, proven against today's code: a power-loss campaign
+   on today's master must lose acknowledged writes and say so. Check what 0.2.x does with an
    unrecognised device and with a nonzero format slot (decides magic number vs slot). The NVMe
    measurement (decision 8).
+
 1. **The log as a library (two-way).** `TWal`: ring on a block range, leader and syncers on OS
    threads, groups, checksums, chain, piggybacked seal, scan/verify/classify, checkpoints,
    copy-forward. Fault-harness `Wal` case at every edge, a seeded log simulator (optional), and the
