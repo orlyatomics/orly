@@ -145,10 +145,6 @@ namespace Orly {
           /* Drop the peeked update and what was parsed from it; the next Peek copies it again. */
           void Flush();
 
-          /* Call once the transaction a Play promoted on has been applied: records, for the
-             durable version (#750), the version the parent gave the promoted update. */
-          void FinishPromotion();
-
           private:
 
           bool TestAssertions(Indy::TContext &context) const;
@@ -170,15 +166,6 @@ namespace Orly {
 
           /* The sequence number PeekedUpdate had in the child's repo. */
           std::optional<Indy::TSequenceNumber> PeekedSeq;
-
-          /* The last promotion into the global repo, until FinishPromotion: our own sequence number
-             for the update, and the one the global repo gave it once its transaction applied. */
-          std::optional<Indy::TSequenceNumber> PromotedOwnSeq;
-          std::optional<Indy::TSequenceNumber> PromotedParentSeq;
-
-          /* Where to record it. The promotion can delete the child's repo, so FinishPromotion
-             can't go through Repo. */
-          std::shared_ptr<Indy::TRepo::TPromotionLog> PromotedLog;
 
           TMetaRecord MetaRecord;
 
@@ -241,6 +228,24 @@ namespace Orly {
            in the rounds of this turn that have committed.  A round's entries move to
            TurnAccepted only once its transaction has committed. */
         std::vector<std::pair<Base::TUuid, Base::TUuid>> RoundAccepted, TurnAccepted;
+
+        /* The one promotion into the global repo that a round makes, kept until FinishPromotion.
+           The promotion can delete the child and its repo, even the child's TChild, so it holds
+           what it needs itself rather than reaching through either (#750). */
+        struct TPromotion {
+          /* The child's sequence number for the update, and the one the global repo gave it once
+             its transaction applied. */
+          Indy::TSequenceNumber OwnSeq;
+          std::optional<Indy::TSequenceNumber> ParentSeq;
+          std::shared_ptr<Indy::TRepo::TPromotionLog> Log;
+          std::shared_ptr<Indy::TRepo::TDurableCounter> ParentDurable;
+        };
+
+        std::optional<TPromotion> Promotion;
+
+        /* Call once the transaction a round's promotion went through has been applied: records,
+           for the durable version (#750), the version the parent gave the promoted update. */
+        void FinishPromotion();
 
         /* See DeliverAccepted. Only ever touched by our own fiber. */
         std::unordered_map<Base::TUuid, Durable::TPtr<TSession>> SessionPins;

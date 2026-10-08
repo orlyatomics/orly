@@ -322,8 +322,20 @@ namespace Orly {
          one that isn't the global POV's). Advances when a memory merge's file is on disk, and
          starts, on a reload, at the highest sequence number of the files found. */
       std::optional<TSequenceNumber> GetDurableSequenceNumber() const {
-        const uint64_t value = DurablePlusOne.load(std::memory_order_acquire);
+        return ReadDurable(*DurablePlusOne);
+      }
+
+      /* The durable sequence number's storage, shared so that a promotion into this repo can read
+         it after the repo has been deleted (see TPromotionLog). */
+      using TDurableCounter = std::atomic<uint64_t>;
+
+      static std::optional<TSequenceNumber> ReadDurable(const TDurableCounter &counter) {
+        const uint64_t value = counter.load(std::memory_order_acquire);
         return value ? std::optional<TSequenceNumber>(value - 1UL) : std::optional<TSequenceNumber>();
+      }
+
+      const std::shared_ptr<TDurableCounter> &GetDurableCounter() const {
+        return DurablePlusOne;
       }
 
       /* What a child repo records about its updates' promotions into its parent (#750).  It is
@@ -893,8 +905,8 @@ namespace Orly {
 
       /* Raise the durable sequence number (see GetDurableSequenceNumber) to at least this. */
       void NoteDurable(TSequenceNumber seq_num) {
-        uint64_t seen = DurablePlusOne.load(std::memory_order_relaxed);
-        while (seen < seq_num + 1UL && !DurablePlusOne.compare_exchange_weak(seen, seq_num + 1UL, std::memory_order_release)) {}
+        uint64_t seen = DurablePlusOne->load(std::memory_order_relaxed);
+        while (seen < seq_num + 1UL && !DurablePlusOne->compare_exchange_weak(seen, seq_num + 1UL, std::memory_order_release)) {}
       }
 
       private:
@@ -902,7 +914,7 @@ namespace Orly {
       const std::shared_ptr<TPromotionLog> PromotionLog = std::make_shared<TPromotionLog>();
 
       /* One more than the durable sequence number, or 0 for none. */
-      std::atomic<uint64_t> DurablePlusOne {0UL};
+      const std::shared_ptr<TDurableCounter> DurablePlusOne = std::make_shared<TDurableCounter>(0UL);
 
       /* Whether this repo is currently a registered child in its parent's Tetris
          merge. Gating Join on !InTetris makes it idempotent and lets a join that
