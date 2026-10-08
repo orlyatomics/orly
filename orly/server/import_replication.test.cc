@@ -1840,6 +1840,61 @@ FIXTURE(JoinSendsPovRecords) {
   pair.Slave->Reap(seconds(60));
 }
 
+/* A binary-protocol client that records the Accepted notifications it gets: an update of its
+   session's promoted into a parent pov (#801). */
+class TAcceptClient final
+    : public TClient {
+  public:
+
+  explicit TAcceptClient(const TAddress &addr, const std::optional<Base::TUuid> &session_id = std::nullopt)
+      : TClient(addr, session_id, seconds(600)) {}
+
+  /* write_val(n, x); the update's tracking id. */
+  Base::TUuid Write(const Base::TUuid &pov_id, int64_t n, int64_t x) {
+    auto result = Answered(Try(pov_id, { "sample" }, TClosure(string("write_val"), string("n"), n, string("x"), x)), "write_val Try");
+    const std::optional<TTracker> tracker = (*result)->GetTracker();
+    if (!tracker) {
+      throw runtime_error("write_val returned no tracker");
+    }
+    return tracker->Id;
+  }
+
+  /* How many of `ids` have been accepted into `repo_id`, waiting up to `deadline` for all of them. */
+  size_t WaitForAccepted(const Base::TUuid &repo_id, const vector<Base::TUuid> &ids, seconds deadline) {
+    std::unique_lock<std::mutex> lock(Mutex);
+    auto count = [&] {
+      size_t n = 0;
+      for (const auto &id : ids) {
+        n += Accepted.count(make_pair(id, repo_id));
+      }
+      return n;
+    };
+    Cond.wait_for(lock, deadline, [&] { return count() == ids.size(); });
+    return count();
+  }
+
+  private:
+
+  virtual void OnPovFailed(const Base::TUuid &/*repo_id*/) override {}
+
+  virtual void OnUpdateAccepted(const Base::TUuid &repo_id, const Base::TUuid &tracking_id) override {
+    std::lock_guard<std::mutex> lock(Mutex);
+    Accepted.insert(make_pair(tracking_id, repo_id));
+    Cond.notify_all();
+  }
+
+  virtual void OnUpdateReplicated(const Base::TUuid &/*repo_id*/, const Base::TUuid &/*tracking_id*/) override {}
+
+  virtual void OnUpdateDurable(const Base::TUuid &/*repo_id*/, const Base::TUuid &/*tracking_id*/) override {}
+
+  virtual void OnUpdateSemiDurable(const Base::TUuid &/*repo_id*/, const Base::TUuid &/*tracking_id*/) override {}
+
+  std::set<std::pair<Base::TUuid, Base::TUuid>> Accepted;
+  std::mutex Mutex;
+  std::condition_variable Cond;
+
+};  // TAcceptClient
+
 /* An int read out of a POV review result's value. */
 int64_t AsInt(const optional<Var::TVar> &var) {
   return var ? Var::TVar::TDt<int64_t>::As(*var) : -1L;
@@ -1932,4 +1987,73 @@ FIXTURE(PovReviewOverBinaryProtocol) {
   EXPECT_FALSE(ReadVal(slave_client, **discarded_pov, 84L).IsKnown());
   servers.Slave->Kill();
   servers.Slave->Reap(seconds(60));
+}
+
+/* #801: Tetris tells a session about each of its promoted updates once the promotion has
+   committed, at the end of the player's turn, through a pin on the session that it keeps while it
+   promotes and drops once it has nothing left to promote (which saves a closed session).  Each
+   promotion used to open and drop the session itself; for a closed session that meant a durable
+   save, waited for on the Tetris thread, per promotion.  Every Accepted notification must still
+   arrive: to a connected client as its updates are promoted, and to a client that went away
+   while they were, once it resumes its session. */
+FIXTURE(TetrisAcceptedReachSessions) {
+  Orly::Type::TTypeCzar type_czar;
+  if (!ifstream(GetOrlyiPath()).good()) {
+    throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
+  }
+  TLogTailDumper log_dumper;
+  const string scratch = NewSampleScratch();
+  const in_port_t port = ProbeFreePort();
+  const string log = scratch + "/solo.log";
+  log_dumper.Add(log);
+  TChildServer solo(MakeServerArgs(GetOrlyiPath(), "accepted_801", scratch + "/packages", port, ProbeFreePort(), "SOLO", 0), log);
+  if (!WaitForPort(port, seconds(240))) {
+    throw runtime_error("server never came up; see " + log);
+  }
+  const TAddress addr(TAddress::IPv4Loopback, port);
+  Answered(make_shared<TExerciseClient>(addr)->InstallPackage({ "sample" }, 1), "InstallPackage")->Sync();
+
+  /* Connected: every write's promotion is reported to the writer. */
+  /* extra */ {
+    auto client = make_shared<TAcceptClient>(addr);
+    const Base::TUuid pov_id = **Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov (connected)");
+    vector<Base::TUuid> ids;
+    for (int64_t n = 1000; n < 1100; ++n) {
+      ids.push_back(client->Write(pov_id, n, n));
+    }
+    const size_t got = client->WaitForAccepted(GlobalPovId, ids, seconds(60));
+    cout << "connected client: " << got << " of " << ids.size() << " promotions reported" << endl;
+    EXPECT_EQ(got, ids.size());
+  }
+
+  /* Away: the writer fills a paused pov and goes; another client unpauses it, Tetris promotes
+     the backlog with the writer's session closed, and the writer resumes its session. */
+  Base::TUuid session_id, pov_id;
+  vector<Base::TUuid> ids;
+  /* extra */ {
+    auto writer = make_shared<TAcceptClient>(addr);
+    pov_id = **Answered(writer->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov (away)");
+    Answered(writer->PausePov(pov_id), "PausePov")->Sync();
+    for (int64_t n = 2000; n < 2300; ++n) {
+      ids.push_back(writer->Write(pov_id, n, n));
+    }
+    session_id = *writer->GetSessionId();
+  }
+  /* extra */ {
+    auto other = make_shared<TExerciseClient>(addr);
+    Answered(other->UnpausePov(pov_id), "UnpausePov")->Sync();
+  }
+  Rt::TOpt<int64_t> last = ReadWithRetry(addr, 2299L, seconds(120));
+  EXPECT_TRUE(last.IsKnown() && last.GetVal() == 2299L);
+  auto resumed = make_shared<TAcceptClient>(addr, session_id);
+  /* A client connects only once it has something to send. */
+  Answered(resumed->Echo("resume"), "Echo (resume)")->Sync();
+  const size_t got = resumed->WaitForAccepted(GlobalPovId, ids, seconds(60));
+  cout << "resumed client: " << got << " of " << ids.size() << " promotions reported" << endl;
+  EXPECT_EQ(got, ids.size());
+  EXPECT_FALSE(LogContains(log, "could not tell session"));
+  EXPECT_TRUE(solo.IsAlive());
+  resumed.reset();
+  solo.Kill();
+  solo.Reap(seconds(60));
 }

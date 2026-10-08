@@ -19,10 +19,13 @@
 #pragma once
 
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/thrower.h>
@@ -179,11 +182,53 @@ namespace Orly {
         /* See TRepoTetrisManager::TPlayer. */
         virtual void OnUnpause() override;
 
-        /* See TRepoTetrisManager::TPlayer. */
+        /* See TRepoTetrisManager::TPlayer.  Plays rounds, one after another, for up to TurnBudget
+           (#801): until a round promotes nothing, the budget runs out, or KeepPlaying() is false.
+           Each round is exactly what one call used to be: its own snapshot of the children, its
+           own context on the parent, its own transactions, committed before the next round
+           starts, so every assertion is tested against the parent as the rounds before it left
+           it.  What the turn saves is the yield between rounds, and a durable round trip per
+           promotion (see DeliverAccepted). */
         virtual void Play() override;
+
+        /* One round, as above.  True iff it promoted something. */
+        bool PlayRound();
+
+        /* Tells the sessions whose updates this turn promoted (#801).  Each promotion used to open
+           its session in the durable manager and drop it again at once, inside the round.  A
+           session whose client has gone is closed, so that drop saved it to the durable store, and
+           waited for the save on an OS semaphore, blocking the Tetris runner's thread: ~6 ms per
+           promotion on a disk-backed server, 93% of a round.  Now a round only records what it
+           promoted, once its transaction has committed, and the turn hands each session its
+           notifications through a pin it keeps (SessionPins), so a session is opened once, and
+           saved once when the pin goes, not once per promotion.  Never throws: the promotions it
+           reports have committed; a session that can't be opened gets no notification. */
+        void DeliverAccepted() noexcept;
+
+        /* Drops every session pin.  A closed session is saved, and its lease starts, as each one
+           goes.  Never throws. */
+        void ReleaseSessionPins() noexcept;
+
+        /* How long one Play() may run rounds before it lets Main() yield the runner. */
+        static constexpr std::chrono::milliseconds TurnBudget{5};
+
+        /* Pins are dropped when a turn promotes nothing, when the player pauses or dies, when
+           there are more than MaxSessionPins of them, and after PinHoldLimit, so a closed session
+           whose updates are promoted for a long time is still saved that often. */
+        static constexpr std::chrono::milliseconds PinHoldLimit{1000};
+        static constexpr size_t MaxSessionPins = 1024UL;
 
         /* Our manager.  Never null. */
         TRepoTetrisManager *RepoTetrisManager;
+
+        /* (session id, update id) for each update promoted in the round being played, and
+           in the rounds of this turn that have committed.  A round's entries move to
+           TurnAccepted only once its transaction has committed. */
+        std::vector<std::pair<Base::TUuid, Base::TUuid>> RoundAccepted, TurnAccepted;
+
+        /* See DeliverAccepted. Only ever touched by our own fiber. */
+        std::unordered_map<Base::TUuid, Durable::TPtr<TSession>> SessionPins;
+        std::chrono::steady_clock::time_point PinnedSince;
 
         /* The repo which backs up this parent pov. */
         Indy::L0::TManager::TPtr<Indy::TRepo> Repo;

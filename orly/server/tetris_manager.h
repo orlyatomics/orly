@@ -147,11 +147,20 @@ namespace Orly {
         /* Override to play tetris.  This function will be called repeatedly as long as we have children or
            until we are told to stop, so play as efficiently as possible.  This function runs in its own thread,
            separate from the threads which call OnJoin() and OnPart(), so use proper syncrhonization around any
-           data structures shared between these functions. */
+           data structures shared between these functions.  Main() yields the runner after every call (#584), so a
+           call that does a lot should stop after a few milliseconds, and as soon as KeepPlaying() is false. */
         virtual void Play() = 0;
 
         /* Call this in the constructor of your derived player in order to launch the job which will play tetris. */
         void Start(bool is_paused, bool is_master);
+
+        /* True while Main() would call Play() again at once: we still have a child, and no pause
+           is waiting to be acknowledged.  Play() may make more than one promotion per call (#801);
+           between them it checks this, so a pause, a stop, or the last child parting ends the
+           call as promptly as the end of a round used to. */
+        bool KeepPlaying() const {
+          return ChildCount.load() && !Paused.load();
+        }
 
         private:
 

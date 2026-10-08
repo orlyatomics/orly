@@ -1,0 +1,28 @@
+package #1;
+/* Tetris drain smoke (#801); see run-tetris-drain.sh. */
+
+/* One plain write: a key of its own, the POV's own `+=` counter and the shared `+=` total. */
+put = ((true) effecting {
+  new <['k', p, n]> <- n;
+  *<['c', p]>::(int) += 1;
+  *<['t']>::(int) += 1;
+}) where {
+  p = given::(int);
+  n = given::(int);
+};
+
+/* Claim the shared owner key if nobody has. Its `if` records a predicate result, so Tetris
+   replays it against the parent at promotion: once one claim has been promoted, every other
+   claim made before it no longer holds, and its POV fails. */
+claim = (((true) effecting { new <['owner']> <- p; } if *<['owner']>::(int?) is unknown else false)) where {
+  p = given::(int);
+};
+
+/* A guarded `+=`: its `if` is replayed too, and holds for every call once <['b']> exists. */
+bump = (((true) effecting { *<['b']>::(int) += 1; } if *<['b']>::(int?) is known else false));
+seed = ((true) effecting { new <['b']> <- 0; });
+bumps = ((*<['b']>::(int)) if *<['b']>::(int?) is known else -1);
+
+count_of = (((*<['c', p]>::(int)) if *<['c', p]>::(int?) is known else 0)) where { p = given::(int); };
+total = ((*<['t']>::(int)) if *<['t']>::(int?) is known else 0);
+owner = (*<['owner']>::(int?));

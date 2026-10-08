@@ -113,7 +113,7 @@ enough times in a row (see §3).
 `orly/server/tetris_manager.test.cc`.
 
 Each shared/global POV has a `TPlayer`; each child POV that feeds it is a
-`TChild`. The player runs a round (`TRepoTetrisManager::TPlayer::Play`) whenever
+`TChild`. The player runs a round (`TRepoTetrisManager::TPlayer::PlayRound`) whenever
 children have work:
 
 1. **Snapshot.** Each ready child is `Refresh`ed: it `Peek`s its **next** update
@@ -129,10 +129,27 @@ children have work:
    compares the fresh predicate results to the recorded ones. If they match, the
    update **promotes**: `transaction->Push(parent_repo, update)` +
    `transaction->Pop(child_repo)` (so the parent assigns it a new sequence
-   number) and the session gets an `Accepted` notification. **At most one**
+   number). **At most one**
    assertion-bearing update promotes per round (the others retry next round,
    against the now-mutated parent). If an update's assertion fails **10 rounds in
    a row** (`FailureCount >= 10`), its repo is `Fail()`ed.
+4. **Commit.** The round's transaction commits before anything else happens, so the
+   next round's snapshot and context see this round's promotion.
+
+**Turns (#801).** One call to `TPlayer::Play` (a turn) plays rounds back to back
+for up to 5 ms, stopping early once a round promotes nothing or a pause, stop or
+the last child's parting is pending (`KeepPlaying`). Then `Main` yields the Tetris
+runner (`YieldSlow`, #584). Each round is still its own snapshot, context and
+transaction, so a turn promotes exactly what the same number of separate rounds
+would. At the end of the turn the sessions whose updates were promoted get their
+`Accepted` notifications, after the commits. The player keeps each such session
+open (a pin) while it is promoting and drops the pins once a turn promotes nothing,
+it pauses or stops, or a second has passed. Before #801 each promotion opened and
+dropped its session itself, and dropping a closed session (its client gone, as
+during a graceful stop) saved it to the durable store and waited for the save on
+the Tetris thread: 93% of a promotion's time on a disk-backed server (6–8 ms in
+an arm64 VM, 1.3 ms on an x86 runner), so a full set of backlogs took minutes to
+drain.
 
 **Conflict resolution without locks** falls out of the assertion + ordering:
 when two updates touch the same key, the first to promote mutates the parent, so
