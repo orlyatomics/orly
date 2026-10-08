@@ -1,0 +1,16 @@
+# Development toolchain image used by ./dev on machines that are not Linux with
+# gcc 13 (macOS, mostly). It holds only the toolchain; ./dev mounts the source.
+#
+#   docker build -t orly-dev -f docker/Dockerfile.dev docker/
+
+FROM ubuntu:24.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev \
+      libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind \
+      ccache python3 python3-websocket nodejs git \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH=/usr/lib/ccache:$PATH CCACHE_DIR=/ccache CCACHE_MAXSIZE=5G CCACHE_COMPRESS=1
+
+CMD ["bash"]

@@ -1,0 +1,86 @@
+#!/bin/sh
+# One command to build and test Orly on any machine.
+#
+#   ./dev build [jhm args]    build (default: everything, debug)
+#   ./dev test [jhm args]     build and run the unit tests (jhm --test)
+#   ./dev lang [args]         run the orlyscript language tests
+#   ./dev sh [cmd ...]        a shell (or a command) in the build environment
+#
+# On Linux this runs natively. Anywhere else (macOS) it runs the same commands in
+# the dev image (docker/Dockerfile.dev) with the source mounted and warm build
+# and ccache volumes. The engine itself is Linux-only, so a container is the
+# way to build it on a Mac. See "Getting started" in CONTRIBUTING.md.
+#
+# Environment:
+#   ORLY_DEV_IMAGE   image to use (default: orly-dev, built from docker/Dockerfile.dev on first use)
+#   ORLY_DEV_NATIVE  set to 1 to force a native build, 0 to force the container
+
+set -eu
+
+cd "$(dirname "$0")"
+root=$(pwd)
+image=${ORLY_DEV_IMAGE:-orly-dev}
+
+usage() {
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+cmd=${1:-build}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  -h|--help|help) usage 0 ;;
+  build|test|lang|sh) ;;
+  *) echo "dev: unknown command '$cmd'" >&2; usage 2 >&2 ;;
+esac
+
+native=${ORLY_DEV_NATIVE:-}
+if [ -z "$native" ]; then
+  if [ "$(uname -s)" = Linux ]; then native=1; else native=0; fi
+fi
+
+# What to run, in a shell that has tools/ on PATH.
+run_steps() {
+  case "$cmd" in
+    build) echo 'make bootstrap version >/dev/null && jhm "$@"' ;;
+    test)  echo 'make bootstrap version >/dev/null && jhm --test "$@"' ;;
+    lang)  echo 'make bootstrap version >/dev/null && jhm orly/orlyc orly/server/orlyi && python3 tools/lang_test.py -d tests/lang_tests "$@"' ;;
+    sh)    echo 'if [ $# -gt 0 ]; then "$@"; else exec bash; fi' ;;
+  esac
+}
+steps=$(run_steps)
+
+if [ "$native" = 1 ]; then
+  # jhm keeps its state and output next to the source root, in ../.jhm and ../out_orly.
+  mkdir -p "$root/../.jhm"
+  PATH="$root/tools:$PATH" exec sh -c "$steps" dev "$@"
+fi
+
+command -v docker >/dev/null 2>&1 || {
+  echo "dev: docker is required to build Orly on this machine (the engine is Linux-only)." >&2
+  echo "     Install Docker Desktop, OrbStack or Colima, then run ./dev again." >&2
+  exit 1
+}
+
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  if [ "$image" != orly-dev ]; then
+    docker pull "$image"
+  else
+    echo "dev: building the dev image (once)..." >&2
+    docker build -t orly-dev -f docker/Dockerfile.dev docker/
+  fi
+fi
+
+tty=
+[ -t 0 ] && [ -t 1 ] && tty=-it
+
+# Named volumes keep objects and the compiler cache between runs, so only the
+# first build is cold. The source stays on the host.
+exec docker run --rm $tty \
+  -v "$root":/work/orly \
+  -v orly-dev-out:/work/out_orly \
+  -v orly-dev-jhm:/work/.jhm \
+  -v orly-dev-ccache:/ccache \
+  -w /work/orly \
+  -e PATH="/work/orly/tools:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  "$image" sh -c "$steps" dev "$@"
