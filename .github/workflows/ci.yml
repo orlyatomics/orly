@@ -846,6 +846,17 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: examples/grc20-pov
 
+      # Claims model (#747): claim-level provenance, evidence, time
+      # qualifiers and honest answers over the same corpus. Compiling
+      # claims.orly runs its inline tests; the driver loads the corpus from
+      # two concurrent sessions in mixed batches, walks every read shape
+      # (point read, neighbours, keyset range page, cross-source listings)
+      # and checks each result.
+      - name: grc20-pov run-claims.sh (python driver, claims + honest answers)
+        run: ../retry-on-ws-timeout.sh ./run-claims.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: examples/grc20-pov
+
       # Collaborative text CRDT (Logoot): two editors stream inserts/deletes
       # into one shared POV with no coordination; each character is one
       # set-union with a dense position id, and the visible text is the

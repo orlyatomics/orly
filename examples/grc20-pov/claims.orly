@@ -1,0 +1,724 @@
+/* <examples/grc20-pov/claims.orly>
+
+   Claims, not triples: a knowledge graph that remembers who said what.
+
+   `grc20.orly` (next to this file) stores a property as an event log and
+   replays it to one current value. Real knowledge graphs need more than
+   that. Sources disagree, some know that a value exists without knowing
+   it, some are trusted by one reader and not by another, and every
+   statement should be traceable to the evidence behind it. This package
+   models those needs directly:
+
+   - **Claim-level provenance.** A statement is a *claim*: (entity,
+     property, value) plus the source that asserted it. The source is part
+     of the key, so two sources asserting the same value are two claims,
+     each with its own qualifiers and evidence.
+   - **Qualifiers and evidence on a claim.** Each claim carries a
+     confidence and a time qualifier (`period_t`). Citations are a set
+     attached to that one claim.
+   - **Disagreement.** Reads group the selected claims into *positions*
+     (one per distinct value) and return every position side by side.
+   - **Honest answers.** `answer_t` tells apart "nobody claimed this",
+     "only sources you didn't select claimed this", "the value is known to
+     exist but not known", "the selected sources agree" and "they
+     conflict".
+   - **Identity by id.** Every key starts from an entity id. Names are
+     claims like any other; a name lookup returns candidate ids, and two
+     entities that share a name stay two entities.
+
+   ## Schema
+
+     <['claim', entity, property, source]>::(claim_t)       the claim
+     <['cite',  entity, property, source]>::({cite_t})      its evidence
+     <['out',   entity, property, target, source]>::(edge_t)  a relation claim
+     <['in',    target, property, entity, source]>::(edge_t)  ... its reverse
+     <['seen',  entity, source]>::(bool)                    who describes whom
+     <['prop',  property, entity, source]>::(bool)          who claims p of whom
+     <['num',   property, n, entity, source]>::(bool)       Number claims, by value
+     <['name',  text, entity, source]>::(bool)              name claims, by text
+
+   The claim and link keys are the truth. The last four are indexes the
+   write methods maintain with `or= true`: commutative, so concurrent
+   sessions and batched calls can set the same row without conflicting
+   (#151). A source may revise its claim, which leaves its old `num` /
+   `name` row behind, so reads that use those two indexes check each row
+   against the claim before returning it.
+
+   ## Methods
+
+     writes:  assert_claim, assert_link (typed); assert_text, assert_number,
+              assert_unknown, link (flat arguments, for clients); cite
+     reads:   claims, answer, answer_at, describe, neighbours,
+              neighbours_at, range_page, catalogue, disputes, named, label
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+package #1;
+
+/* ---------- types ---------- */
+
+/* A claimed value. `Unknown` is a claim that a value exists without
+   saying what it is ("born in some year nobody recorded"), which is not
+   the same as making no claim at all. */
+value_t is <| Text(str) | Number(int) | Unknown |>;
+
+/* The time qualifier: when the claim holds. Years are signed (-399 is
+   399 BC). */
+period_t is <| Always | Since(int) | Until(int) | Between(<{.since: int, .until: int}>) |>;
+
+/* What a source asserts about one (entity, property). */
+claim_t is <{.value: value_t, .confidence: int, .period: period_t}>;
+
+/* What a source asserts about one (entity, property, target) link. */
+edge_t is <{.confidence: int, .period: period_t}>;
+
+/* One piece of evidence for a claim. */
+cite_t is <{.work: str, .locator: str}>;
+
+/* A claim as reads return it: with its source and its evidence. */
+claim_view_t is <{.source: str, .value: value_t, .confidence: int, .period: period_t, .evidence: {cite_t}}>;
+
+/* One value and the selected sources that assert it. */
+position_t is <{.value: value_t, .sources: {str}}>;
+
+/* The honest answer to "what is property p of entity e?". */
+answer_t is <|
+  NoClaim |                       /* no source claims anything             */
+  NotSelected({str}) |            /* only these unselected sources do      */
+  UnknownValue({str}) |           /* these selected sources: a value exists,
+                                     but they don't know it               */
+  Agreed(position_t) |            /* selected sources agree on one value   */
+  Conflict([position_t])          /* ... or don't: every position, sorted  */
+|>;
+
+/* One link of a one-hop neighbourhood. */
+link_t is <{.direction: str, .property: str, .other: str, .sources: {str}}>;
+
+/* ---------- small helpers ---------- */
+
+/* Does the time qualifier hold in `year`? */
+holds_at = ((period) when {
+  Always:     true;
+  Since(y):   year >= y;
+  Until(y):   year <= y;
+  Between(r): year >= r.since and year <= r.until;
+}) where {
+  period = given::(period_t);
+  year   = given::(int);
+};
+
+is_number = ((value) when {
+  Text:      false;
+  Number:    true;
+  Unknown:   false;
+}) where {
+  value = given::(value_t);
+};
+
+number_or_zero = ((value) when {
+  Text:      0;
+  Number(n): n;
+  Unknown:   0;
+}) where {
+  value = given::(value_t);
+};
+
+is_text = ((value) when {
+  Text:    true;
+  Number:  false;
+  Unknown: false;
+}) where {
+  value = given::(value_t);
+};
+
+text_or_empty = ((value) when {
+  Text(s): s;
+  Number:  "";
+  Unknown: "";
+}) where {
+  value = given::(value_t);
+};
+
+is_unknown = ((value) when {
+  Text:    false;
+  Number:  false;
+  Unknown: true;
+}) where {
+  value = given::(value_t);
+};
+
+is_conflict = ((answer) when {
+  NoClaim:      false;
+  NotSelected:  false;
+  UnknownValue: false;
+  Agreed:       false;
+  Conflict:     true;
+}) where {
+  answer = given::(answer_t);
+};
+
+/* ---------- writes ---------- */
+
+/* A source asserts a value for (entity, property), with a confidence
+   (0-100) and a time qualifier. A source holds one claim per (entity,
+   property): asserting again revises it in place (whole-record `<-`).
+   Returns true when it replaced an earlier claim from the same source.
+   Another source's claim on the same (entity, property) is never touched. */
+/* The index statements appear in both arms. An `if` inside one effect
+   block can't hold the upsert yet (#817), and wrapping the arms in an outer
+   effect block would apply their effects twice (#818). */
+assert_claim = (((true) effecting {
+  *<['claim', entity, property, source]>::(claim_t) <- c;
+  *<['seen', entity, source]>::(bool) or= true;
+  *<['prop', property, entity, source]>::(bool) or= true;
+  if numeric {
+    *<['num', property, n, entity, source]>::(bool) or= true;
+  }
+  if naming {
+    *<['name', name, entity, source]>::(bool) or= true;
+  }
+} if *<['claim', entity, property, source]>::(claim_t?) is known else (false) effecting {
+  new <['claim', entity, property, source]> <- c;
+  *<['seen', entity, source]>::(bool) or= true;
+  *<['prop', property, entity, source]>::(bool) or= true;
+  if numeric {
+    *<['num', property, n, entity, source]>::(bool) or= true;
+  }
+  if naming {
+    *<['name', name, entity, source]>::(bool) or= true;
+  }
+})) where {
+  c          = <{.value: value, .confidence: confidence, .period: period}>;
+  /* Index inputs are computed here, not inside the effect block: a key
+     that calls a function on a variant-typed name doesn't compile yet
+     (#814). */
+  numeric    = is_number(.value: value);
+  n          = number_or_zero(.value: value);
+  naming     = property == "name" and is_text(.value: value);
+  name       = text_or_empty(.value: value);
+  source     = given::(str);
+  entity     = given::(str);
+  property   = given::(str);
+  value      = given::(value_t);
+  confidence = given::(int);
+  period     = given::(period_t);
+};
+
+/* Attach evidence to one source's claim. Evidence accumulates (`|=`), so
+   several citations can back one claim. Returns false, and writes
+   nothing, when that source has no claim on (entity, property): evidence
+   always belongs to a specific claim. */
+cite = (((true) effecting {
+  *<['cite', entity, property, source]>::({cite_t}) |= {c};
+} if *<['claim', entity, property, source]>::(claim_t?) is known else false)) where {
+  c        = <{.work: work, .locator: locator}>;
+  source   = given::(str);
+  entity   = given::(str);
+  property = given::(str);
+  work     = given::(str);
+  locator  = given::(str);
+};
+
+/* A source asserts a relation entity -property-> target, qualified like a
+   claim. Links are many-valued (a source can name several teachers), so
+   the target is part of the key. Writes the reverse row too, so incoming
+   links are a range read. Returns true when it replaced the same source's
+   earlier claim of this link. */
+assert_link = (((true) effecting {
+  *<['out', entity, property, target, source]>::(edge_t) <- e;
+  *<['in', target, property, entity, source]>::(edge_t) <- e;
+  *<['seen', entity, source]>::(bool) or= true;
+  *<['seen', target, source]>::(bool) or= true;
+} if *<['out', entity, property, target, source]>::(edge_t?) is known else (false) effecting {
+  new <['out', entity, property, target, source]> <- e;
+  new <['in', target, property, entity, source]> <- e;
+  *<['seen', entity, source]>::(bool) or= true;
+  *<['seen', target, source]>::(bool) or= true;
+})) where {
+  e          = <{.confidence: confidence, .period: period}>;
+  source     = given::(str);
+  entity     = given::(str);
+  property   = given::(str);
+  target     = given::(str);
+  confidence = given::(int);
+  period     = given::(period_t);
+};
+
+/* ---------- the same writes, for clients ---------- */
+
+/* A client can't send a variant as an argument yet (#816), so these take
+   flat arguments and build the typed value here. The time qualifier comes
+   as two optional years: neither is Always, one is Since or Until, both is
+   Between. From Python: `-387?` for a year, `unknown int` for none. */
+period_of = ((since) when {
+  Known(y): ((until) when {
+    Known(z): period_t.Between(<{.since: y, .until: z}>);
+    Unknown:  period_t.Since(y);
+  });
+  Unknown: ((until) when {
+    Known(z): period_t.Until(z);
+    Unknown:  period_t.Always();
+  });
+}) where {
+  since = given::(int?);
+  until = given::(int?);
+};
+
+assert_text = (assert_claim(.source: source, .entity: entity, .property: property,
+                            .value: value_t.Text(text), .confidence: confidence,
+                            .period: period_of(.since: since, .until: until))) where {
+  source     = given::(str);
+  entity     = given::(str);
+  property   = given::(str);
+  text       = given::(str);
+  confidence = given::(int);
+  since      = given::(int?);
+  until      = given::(int?);
+};
+
+assert_number = (assert_claim(.source: source, .entity: entity, .property: property,
+                              .value: value_t.Number(n), .confidence: confidence,
+                              .period: period_of(.since: since, .until: until))) where {
+  source     = given::(str);
+  entity     = given::(str);
+  property   = given::(str);
+  n          = given::(int);
+  confidence = given::(int);
+  since      = given::(int?);
+  until      = given::(int?);
+};
+
+/* "This has a value, and I don't know it." */
+assert_unknown = (assert_claim(.source: source, .entity: entity, .property: property,
+                               .value: value_t.Unknown(), .confidence: confidence,
+                               .period: period_of(.since: since, .until: until))) where {
+  source     = given::(str);
+  entity     = given::(str);
+  property   = given::(str);
+  confidence = given::(int);
+  since      = given::(int?);
+  until      = given::(int?);
+};
+
+link = (assert_link(.source: source, .entity: entity, .property: property, .target: target,
+                    .confidence: confidence, .period: period_of(.since: since, .until: until))) where {
+  source     = given::(str);
+  entity     = given::(str);
+  property   = given::(str);
+  target     = given::(str);
+  confidence = given::(int);
+  since      = given::(int?);
+  until      = given::(int?);
+};
+
+/* ---------- reading claims ---------- */
+
+evidence_of = (((*<['cite', entity, property, source]>::({cite_t})) if *<['cite', entity, property, source]>::({cite_t}?) is known else (empty {cite_t}))) where {
+  entity   = given::(str);
+  property = given::(str);
+  source   = given::(str);
+};
+
+/* The claim under one `<['claim', e, p, s]>` key, as reads return it. */
+view_of = (<{.source: k.3, .value: c.value, .confidence: c.confidence, .period: c.period,
+             .evidence: evidence_of(.entity: k.1, .property: k.2, .source: k.3)}>) where {
+  c = *k::(claim_t);
+  k = given::(<[str, str, str, str]>);
+};
+
+/* Every source's claim on (entity, property), side by side, ordered by
+   source. No trust filter: this is the raw cross-source record. */
+claims = ((keys (claim_t) @ <['claim', entity, property, free::(str)]>)
+          reduce (start empty [claim_view_t]) + [view_of(.k: that)]) where {
+  entity   = given::(str);
+  property = given::(str);
+};
+
+/* The selected sources that assert `value`, as one position. */
+position = (<{.value: value, .sources: (**selected if that.value == value) union_map {that.source}}>) where {
+  value    = given::(value_t);
+  selected = given::([claim_view_t]);
+};
+
+/* Turn a list of claims into an honest answer for the readers who trust
+   `trusted`. In order: no claims at all; claims, but none from a trusted
+   source; trusted claims that only say "unknown"; one known value; more
+   than one. An `Unknown` claim next to a known value doesn't conflict with
+   it (it says a value exists, and one does), so it drops out there. */
+decide = ((answer_t.NoClaim() if length_of all == 0 else
+          (answer_t.NotSelected(**all union_map {that.source}) if length_of selected == 0 else
+          (answer_t.UnknownValue(**selected union_map {that.source}) if length_of definite == 0 else
+          (answer_t.Agreed(position(.value: top, .selected: definite)) if length_of values == 1 else
+           answer_t.Conflict(position(.value: **values, .selected: definite) as [position_t])))))) where {
+  all      = given::([claim_view_t]);
+  trusted  = given::({str});
+  selected = (**all if that.source in trusted) as [claim_view_t];
+  definite = (**selected if not is_unknown(.value: that.value)) as [claim_view_t];
+  values   = **definite union_map {that.value};
+  top      = (**definite reduce (start value_t.Unknown() if false else that.value));
+};
+
+/* What is `property` of `entity`, according to the `trusted` sources? */
+answer = (decide(.all: claims(.entity: entity, .property: property), .trusted: trusted)) where {
+  entity   = given::(str);
+  property = given::(str);
+  trusted  = given::({str});
+};
+
+/* The same, counting only claims whose time qualifier holds in `year`. A
+   claim that doesn't hold then is left out, as if it weren't made. */
+answer_at = (decide(.all: (**claims(.entity: entity, .property: property) if holds_at(.period: that.period, .year: year)) as [claim_view_t],
+                    .trusted: trusted)) where {
+  entity   = given::(str);
+  property = given::(str);
+  trusted  = given::({str});
+  year     = given::(int);
+};
+
+/* ---------- read shapes ---------- */
+
+/* Display name for an entity: the agreed `name`, else its id. Never the
+   other way round -- a name never resolves to an id here. */
+label = ((answer(.entity: entity, .property: "name", .trusted: trusted)) when {
+  NoClaim:      entity;
+  NotSelected:  entity;
+  UnknownValue: entity;
+  Agreed(p):    (text_or_empty(.value: p.value) if is_text(.value: p.value) else entity);
+  Conflict:     entity;
+}) where {
+  entity  = given::(str);
+  trusted = given::({str});
+};
+
+fact = (<{.property: property, .answer: answer(.entity: entity, .property: property, .trusted: trusted)}>) where {
+  entity   = given::(str);
+  property = given::(str);
+  trusted  = given::({str});
+};
+
+/* Point read by id: every property any source claims of `entity`, each
+   with its honest answer for the `trusted` sources, plus every source
+   that describes it. An id no source has used reads as empty, not as an
+   error. */
+describe = (<{.entity: entity,
+            .described_by: (keys (bool) @ <['seen', entity, free::(str)]>) union_map {that.2},
+            .facts: fact(.entity: entity, .property: **props, .trusted: trusted) as [<{.property: str, .answer: answer_t}>]}>) where {
+  props   = (keys (claim_t) @ <['claim', entity, free::(str), free::(str)]>) union_map {that.2};
+  entity  = given::(str);
+  trusted = given::({str});
+};
+
+/* One-hop neighbours of `entity`, both directions, from the `trusted`
+   sources only, grouped per (direction, property, other end) with the
+   sources that assert each link. `.unselected` counts the link claims
+   left out because their source isn't trusted, so a reader can tell
+   "no links" from "no links you trust". `year` filters by the links' time
+   qualifiers; pass `any_year` for all of them. */
+any_year = 9223372036854775807;
+
+link_rows = ((((keys (edge_t) @ <[dir, entity, free::(str), free::(str), free::(str)]>)
+              if that.4 in trusted and (year == any_year or holds_at(.period: (*that::(edge_t)).period, .year: year)))
+             collated_by start (empty {str}) | {that.4} having <[that.2, that.3]>) as [<[<[str, str]>, {str}]>]) where {
+  dir     = given::(str);
+  entity  = given::(str);
+  trusted = given::({str});
+  year    = given::(int);
+};
+
+to_link = (<{.direction: dir, .property: (row.0).0, .other: (row.0).1, .sources: row.1}>) where {
+  dir = given::(str);
+  row = given::(<[<[str, str]>, {str}]>);
+};
+
+unselected_links = (((keys (edge_t) @ <['out', entity, free::(str), free::(str), free::(str)]> if not (that.4 in trusted)) reduce start 0 + 1)
+                  + ((keys (edge_t) @ <['in', entity, free::(str), free::(str), free::(str)]> if not (that.4 in trusted)) reduce start 0 + 1)) where {
+  entity  = given::(str);
+  trusted = given::({str});
+};
+
+neighbours_at = (<{.links: (to_link(.dir: "out", .row: **link_rows(.dir: "out", .entity: entity, .trusted: trusted, .year: year)) as [link_t])
+                         + (to_link(.dir: "in",  .row: **link_rows(.dir: "in",  .entity: entity, .trusted: trusted, .year: year)) as [link_t]),
+                   .unselected: unselected_links(.entity: entity, .trusted: trusted)}>) where {
+  entity  = given::(str);
+  trusted = given::({str});
+  year    = given::(int);
+};
+
+neighbours = (neighbours_at(.entity: entity, .trusted: trusted, .year: any_year)) where {
+  entity  = given::(str);
+  trusted = given::({str});
+};
+
+/* Range page over a numeric property: every trusted claim with a value in
+   [lo, hi], ordered by (value, entity, source), `limit` rows after the
+   cursor (`after_n`, `after_entity`, `after_source`) -- the last row of
+   the previous page. Start with (lo, "", ""). Rows are claims, so two
+   sources claiming the same year are two rows. Rows whose claim has since
+   been revised are skipped.
+
+   Keyset, not offset: the cursor is a key, so a page never re-reads the
+   rows before it in the result and stays correct while writes land. Today
+   the walk still starts at the property's first index row and filters up
+   to the cursor; with `keys ... after <key>` (#735, PR #793) the cursor
+   becomes the walk's starting point and deep pages cost what page one
+   does. */
+num_row = (<{.n: k.2, .entity: k.3, .source: k.4}>) where {
+  k = given::(<[str, str, int, str, str]>);
+};
+
+claim_still_says = (((*<['claim', entity, property, source]>::(claim_t)).value == value_t.Number(n)
+                     if *<['claim', entity, property, source]>::(claim_t?) is known else false)) where {
+  property = given::(str);
+  n        = given::(int);
+  entity   = given::(str);
+  source   = given::(str);
+};
+
+range_page = (num_row(.k: rows) as [<{.n: int, .entity: str, .source: str}>]) where {
+  rows = ((keys (bool) @ <['num', property, free::(int), free::(str), free::(str)]>
+           if (that.2 >= lo and <[that.2, that.3, that.4]> > <[after_n, after_entity, after_source]>
+               and that.4 in trusted
+               and claim_still_says(.property: property, .n: that.2, .entity: that.3, .source: that.4)))
+          while that.2 <= hi) take limit;
+  property     = given::(str);
+  lo           = given::(int);
+  hi           = given::(int);
+  after_n      = given::(int);
+  after_entity = given::(str);
+  after_source = given::(str);
+  limit        = given::(int);
+  trusted      = given::({str});
+};
+
+/* Cross-source listing: every entity any source describes, with all the
+   sources that describe it and its label for the `trusted` sources. */
+entry = (<{.entity: row.0, .sources: row.1, .label: label(.entity: row.0, .trusted: trusted)}>) where {
+  row     = given::(<[str, {str}]>);
+  trusted = given::({str});
+};
+
+catalogue = (entry(.row: ((keys (bool) @ <['seen', free::(str), free::(str)]>)
+                            collated_by start (empty {str}) | {that.2} having that.1),
+                   .trusted: trusted) as [<{.entity: str, .sources: {str}, .label: str}>]) where {
+  trusted = given::({str});
+};
+
+/* Cross-source listing: every entity on which the `trusted` sources
+   disagree about `property`, with each position. */
+dispute = (<{.entity: entity, .answer: answer(.entity: entity, .property: property, .trusted: trusted)}>) where {
+  entity   = given::(str);
+  property = given::(str);
+  trusted  = given::({str});
+};
+
+disputes = ((dispute(.entity: **subjects, .property: property, .trusted: trusted) if is_conflict(.answer: that.answer))
+            as [<{.entity: str, .answer: answer_t}>]) where {
+  subjects = (keys (bool) @ <['prop', property, free::(str), free::(str)]>) union_map {that.2};
+  property = given::(str);
+  trusted  = given::({str});
+};
+
+/* Name lookup returns candidate ids with the sources naming them -- it
+   does not merge them. Two entities named "Aristotle" are two rows. */
+named_row = (<{.entity: row.0, .sources: row.1}>) where {
+  row = given::(<[str, {str}]>);
+};
+
+named = (named_row(.row: ((keys (bool) @ <['name', text, free::(str), free::(str)]>)
+                          if (*<['claim', that.2, "name", that.3]>::(claim_t)).value == value_t.Text(text))
+                         collated_by start (empty {str}) | {that.3} having that.2)
+         as [<{.entity: str, .sources: {str}}>]) where {
+  text = given::(str);
+};
+
+/* ---------- inline tests ---------- */
+
+/* A small fixture: three sources on Socrates and Plato. */
+with {
+  <['claim', 'socrates', 'born', 'wiki']> <- <{.value: value_t.Number(-470), .confidence: 90, .period: period_t.Always()}>;
+  <['claim', 'socrates', 'born', 'sep']>  <- <{.value: value_t.Number(-470), .confidence: 95, .period: period_t.Always()}>;
+  <['claim', 'socrates', 'born', 'blog']> <- <{.value: value_t.Number(-469), .confidence: 30, .period: period_t.Always()}>;
+  <['claim', 'socrates', 'wife', 'wiki']> <- <{.value: value_t.Text("Xanthippe"), .confidence: 90, .period: period_t.Always()}>;
+  <['claim', 'socrates', 'name', 'wiki']> <- <{.value: value_t.Text("Socrates"), .confidence: 99, .period: period_t.Always()}>;
+  <['claim', 'socrates', 'father', 'sep']> <- <{.value: value_t.Unknown(), .confidence: 50, .period: period_t.Always()}>;
+  <['claim', 'socrates', 'school', 'blog']> <- <{.value: value_t.Text("Stoicism"), .confidence: 10, .period: period_t.Always()}>;
+  <['cite', 'socrates', 'born', 'sep']> <- {<{.work: "Diogenes Laertius, Lives", .locator: "II.44"}>};
+} test {
+  /* Two sources asserting the same value are two claims, side by side. */
+  f1: length_of claims(.entity: "socrates", .property: "born") == 3;
+  f2: (**claims(.entity: "socrates", .property: "born") union_map {that.source}) == {"wiki", "sep", "blog"};
+
+  /* Trusted sources that agree: one position backed by two claims. */
+  f3: (answer(.entity: "socrates", .property: "born", .trusted: {"wiki", "sep"})) when {
+        NoClaim: false; NotSelected: false; UnknownValue: false; Conflict: false;
+        Agreed(p): p == <{.value: value_t.Number(-470), .sources: {"wiki", "sep"}}>;
+      };
+
+  /* The evidence travels with the specific claim it backs. */
+  f4: (**claims(.entity: "socrates", .property: "born") if that.source == "sep") as [claim_view_t]
+        == [<{.source: "sep", .value: value_t.Number(-470), .confidence: 95, .period: period_t.Always(),
+              .evidence: {<{.work: "Diogenes Laertius, Lives", .locator: "II.44"}>}}>];
+  f5: ((**claims(.entity: "socrates", .property: "born") if that.source == "wiki") as [claim_view_t])[0].evidence == empty {cite_t};
+
+  /* Trusting the blog too surfaces the disagreement, both positions. */
+  f6: (answer(.entity: "socrates", .property: "born", .trusted: {"wiki", "sep", "blog"})) when {
+        NoClaim: false; NotSelected: false; UnknownValue: false; Agreed: false;
+        Conflict(ps): ps == [<{.value: value_t.Number(-470), .sources: {"wiki", "sep"}}>,
+                             <{.value: value_t.Number(-469), .sources: {"blog"}}>];
+      };
+
+  /* The four honest non-answers. */
+  f7: answer(.entity: "socrates", .property: "died", .trusted: {"wiki"}) == answer_t.NoClaim();
+  f8: answer(.entity: "socrates", .property: "school", .trusted: {"wiki", "sep"}) == answer_t.NotSelected({"blog"});
+  f9: answer(.entity: "socrates", .property: "father", .trusted: {"sep"}) == answer_t.UnknownValue({"sep"});
+  f10: answer(.entity: "plato", .property: "born", .trusted: {"wiki"}) == answer_t.NoClaim();
+
+  /* Point read by id. */
+  f11: describe(.entity: "socrates", .trusted: {"wiki"}).facts[0].property == "born";
+  f12: length_of (describe(.entity: "socrates", .trusted: {"wiki"}).facts) == 5;
+  f13: length_of (describe(.entity: "nobody", .trusted: {"wiki"}).facts) == 0;
+
+  f14: label(.entity: "socrates", .trusted: {"wiki"}) == "Socrates";
+  f15: label(.entity: "socrates", .trusted: {"sep"}) == "socrates";
+};
+
+/* Writes: provenance, revision, evidence, indexes. */
+test {
+  w1: assert_claim(.source: "wiki", .entity: "plato", .property: "born", .value: value_t.Number(-428),
+                   .confidence: 80, .period: period_t.Always()) == false {
+    w2: assert_claim(.source: "sep", .entity: "plato", .property: "born", .value: value_t.Number(-427),
+                     .confidence: 85, .period: period_t.Always()) == false {
+      /* Real scholarly disagreement stays visible. */
+      w3: is_conflict(.answer: answer(.entity: "plato", .property: "born", .trusted: {"wiki", "sep"}));
+      w4: disputes(.property: "born", .trusted: {"wiki", "sep"})[0].entity == "plato";
+      w5: length_of disputes(.property: "born", .trusted: {"wiki"}) == 0;
+
+      /* Range page: rows are claims, ordered by (value, entity, source). */
+      w6: range_page(.property: "born", .lo: -500, .hi: -300, .after_n: -500, .after_entity: "", .after_source: "",
+                     .limit: 10, .trusted: {"wiki", "sep"})
+            == [<{.n: -428, .entity: "plato", .source: "wiki"}>, <{.n: -427, .entity: "plato", .source: "sep"}>];
+      w7: range_page(.property: "born", .lo: -500, .hi: -300, .after_n: -500, .after_entity: "", .after_source: "",
+                     .limit: 1, .trusted: {"wiki", "sep"})
+            == [<{.n: -428, .entity: "plato", .source: "wiki"}>];
+      w8: range_page(.property: "born", .lo: -500, .hi: -300, .after_n: -428, .after_entity: "plato", .after_source: "wiki",
+                     .limit: 1, .trusted: {"wiki", "sep"})
+            == [<{.n: -427, .entity: "plato", .source: "sep"}>];
+      w9: range_page(.property: "born", .lo: -500, .hi: -428, .after_n: -500, .after_entity: "", .after_source: "",
+                     .limit: 10, .trusted: {"wiki", "sep"})
+            == [<{.n: -428, .entity: "plato", .source: "wiki"}>];
+
+      /* A source revises its claim: replaced in place, the other source's
+         claim untouched, and the stale index row no longer matches. */
+      w10: assert_claim(.source: "sep", .entity: "plato", .property: "born", .value: value_t.Number(-428),
+                        .confidence: 90, .period: period_t.Always()) == true {
+        w11: (answer(.entity: "plato", .property: "born", .trusted: {"wiki", "sep"})) when {
+               NoClaim: false; NotSelected: false; UnknownValue: false; Conflict: false;
+               Agreed(p): p == <{.value: value_t.Number(-428), .sources: {"wiki", "sep"}}>;
+             };
+        w12: range_page(.property: "born", .lo: -500, .hi: -300, .after_n: -500, .after_entity: "", .after_source: "",
+                        .limit: 10, .trusted: {"wiki", "sep"})
+               == [<{.n: -428, .entity: "plato", .source: "sep"}>, <{.n: -428, .entity: "plato", .source: "wiki"}>];
+      };
+
+      /* Evidence attaches to one claim, and only to a claim that exists. */
+      w13: cite(.source: "sep", .entity: "plato", .property: "born", .work: "Diogenes Laertius, Lives", .locator: "III.2") == true {
+        w14: ((**claims(.entity: "plato", .property: "born") if that.source == "sep") as [claim_view_t])[0].evidence
+               == {<{.work: "Diogenes Laertius, Lives", .locator: "III.2"}>};
+        w15: ((**claims(.entity: "plato", .property: "born") if that.source == "wiki") as [claim_view_t])[0].evidence
+               == empty {cite_t};
+      };
+      w16: cite(.source: "blog", .entity: "plato", .property: "born", .work: "x", .locator: "y") == false;
+    };
+  };
+
+  /* Identity by id: two entities share a name and stay two entities. */
+  w17: assert_claim(.source: "wiki", .entity: "aristotle", .property: "name", .value: value_t.Text("Aristotle"),
+                    .confidence: 99, .period: period_t.Always()) == false {
+    w18: assert_claim(.source: "wiki", .entity: "aristotle-of-cyrene", .property: "name", .value: value_t.Text("Aristotle"),
+                      .confidence: 70, .period: period_t.Always()) == false {
+      w19: named(.text: "Aristotle") == [<{.entity: "aristotle", .sources: {"wiki"}}>, <{.entity: "aristotle-of-cyrene", .sources: {"wiki"}}>];
+      w20: length_of catalogue(.trusted: {"wiki"}) == 2;
+      w21: catalogue(.trusted: {"wiki"})[1] == <{.entity: "aristotle-of-cyrene", .sources: {"wiki"}, .label: "Aristotle"}>;
+    };
+  };
+
+  /* Links: both directions, grouped per link, trust-filtered, timed. */
+  w22: assert_link(.source: "wiki", .entity: "plato", .property: "student_of", .target: "socrates",
+                   .confidence: 95, .period: period_t.Always()) == false {
+    w23: assert_link(.source: "sep", .entity: "plato", .property: "student_of", .target: "socrates",
+                     .confidence: 95, .period: period_t.Always()) == false {
+      w24: assert_link(.source: "wiki", .entity: "plato", .property: "head_of", .target: "academy",
+                       .confidence: 90, .period: period_t.Between(<{.since: -387, .until: -348}>)) == false {
+        w25: assert_link(.source: "blog", .entity: "plato", .property: "student_of", .target: "pythagoras",
+                         .confidence: 10, .period: period_t.Always()) == false {
+          w26: neighbours(.entity: "plato", .trusted: {"wiki", "sep"})
+                 == <{.links: [<{.direction: "out", .property: "head_of", .other: "academy", .sources: {"wiki"}}>,
+                               <{.direction: "out", .property: "student_of", .other: "socrates", .sources: {"sep", "wiki"}}>],
+                      .unselected: 1}>;
+          w27: neighbours(.entity: "socrates", .trusted: {"wiki", "sep"}).links
+                 == [<{.direction: "in", .property: "student_of", .other: "plato", .sources: {"sep", "wiki"}}>];
+          w28: length_of (neighbours_at(.entity: "academy", .trusted: {"wiki"}, .year: -350).links) == 1;
+          w29: length_of (neighbours_at(.entity: "academy", .trusted: {"wiki"}, .year: -340).links) == 0;
+          w30: assert_link(.source: "wiki", .entity: "plato", .property: "student_of", .target: "socrates",
+                           .confidence: 99, .period: period_t.Always()) == true;
+        };
+      };
+    };
+  };
+
+  /* Time qualifiers on claims: answers as of a year. */
+  w31: assert_claim(.source: "wiki", .entity: "academy", .property: "scholarch", .value: value_t.Text("Plato"),
+                    .confidence: 90, .period: period_t.Between(<{.since: -387, .until: -348}>)) == false {
+    w32: assert_claim(.source: "sep", .entity: "academy", .property: "scholarch", .value: value_t.Text("Speusippus"),
+                      .confidence: 90, .period: period_t.Between(<{.since: -347, .until: -339}>)) == false {
+      w33: is_conflict(.answer: answer(.entity: "academy", .property: "scholarch", .trusted: {"wiki", "sep"}));
+      w34: (answer_at(.entity: "academy", .property: "scholarch", .trusted: {"wiki", "sep"}, .year: -350)) when {
+             NoClaim: false; NotSelected: false; UnknownValue: false; Conflict: false;
+             Agreed(p): p.value == value_t.Text("Plato");
+           };
+      w35: answer_at(.entity: "academy", .property: "scholarch", .trusted: {"wiki", "sep"}, .year: -300) == answer_t.NoClaim();
+    };
+  };
+
+  /* Time qualifier semantics. */
+  w36: holds_at(.period: period_t.Since(-347), .year: -347);
+  w37: not holds_at(.period: period_t.Until(-348), .year: -347);
+  w38: holds_at(.period: period_t.Always(), .year: 2026);
+
+  /* The client-facing wrappers build the same typed claims. */
+  w39: period_of(.since: unknown int, .until: unknown int) == period_t.Always();
+  w40: period_of(.since: -347 as int?, .until: unknown int) == period_t.Since(-347);
+  w41: period_of(.since: unknown int, .until: -348 as int?) == period_t.Until(-348);
+  w42: period_of(.since: -387 as int?, .until: -348 as int?) == period_t.Between(<{.since: -387, .until: -348}>);
+  w43: assert_number(.source: "wiki", .entity: "zeno", .property: "born", .n: -490, .confidence: 60,
+                     .since: unknown int, .until: unknown int) == false {
+    w44: assert_unknown(.source: "sep", .entity: "zeno", .property: "died", .confidence: 40,
+                        .since: unknown int, .until: unknown int) == false {
+      w45: assert_text(.source: "wiki", .entity: "zeno", .property: "name", .text: "Zeno of Elea", .confidence: 99,
+                       .since: unknown int, .until: unknown int) == false {
+        w46: link(.source: "wiki", .entity: "zeno", .property: "student_of", .target: "parmenides", .confidence: 80,
+                  .since: unknown int, .until: -450 as int?) == false {
+          w47: claims(.entity: "zeno", .property: "born")
+                 == [<{.source: "wiki", .value: value_t.Number(-490), .confidence: 60, .period: period_t.Always(),
+                       .evidence: empty {cite_t}}>];
+          w48: answer(.entity: "zeno", .property: "died", .trusted: {"sep"}) == answer_t.UnknownValue({"sep"});
+          w49: label(.entity: "zeno", .trusted: {"wiki"}) == "Zeno of Elea";
+          w50: length_of (neighbours_at(.entity: "zeno", .trusted: {"wiki"}, .year: -460).links) == 1;
+          w51: length_of (neighbours_at(.entity: "zeno", .trusted: {"wiki"}, .year: -440).links) == 0;
+        };
+      };
+    };
+  };
+};
