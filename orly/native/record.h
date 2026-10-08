@@ -19,6 +19,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -84,9 +85,9 @@ namespace Orly {
         if (elem_idx >= ElemCount) {
           throw Sabot::TIdxTooBig();
         }
-        TAnyElem::CollectElems();
-        field_name = std::string(Elems[elem_idx]->GetName());
-        return Elems[elem_idx]->ConsType(type_alloc);
+        TAnyElem *const *elems = TAnyElem::CollectElems();
+        field_name = std::string(elems[elem_idx]->GetName());
+        return elems[elem_idx]->ConsType(type_alloc);
       }
 
       /* Provides access to an element. */
@@ -94,9 +95,9 @@ namespace Orly {
         if (elem_idx >= ElemCount) {
           throw Sabot::TIdxTooBig();
         }
-        TAnyElem::CollectElems();
-        out_field_name_state = Native::State::New(Elems[elem_idx]->GetName(), field_name_state_alloc);
-        return Elems[elem_idx]->ConsType(type_alloc);
+        TAnyElem *const *elems = TAnyElem::CollectElems();
+        out_field_name_state = Native::State::New(elems[elem_idx]->GetName(), field_name_state_alloc);
+        return elems[elem_idx]->ConsType(type_alloc);
       }
 
       /* Provides access to an element. */
@@ -104,8 +105,7 @@ namespace Orly {
         if (elem_idx >= ElemCount) {
           throw Sabot::TIdxTooBig();
         }
-        TAnyElem::CollectElems();
-        return Elems[elem_idx]->ConsType(type_alloc);
+        return TAnyElem::CollectElems()[elem_idx]->ConsType(type_alloc);
       }
 
       /* The number of elements in the record. */
@@ -135,16 +135,24 @@ namespace Orly {
 
         virtual void SetVal(TRec &rec, const TAnyState &state) const = 0;
 
-        /* Collect all the elements of the record type into a sorted array.
-           If we've already done so for this record type, then this function does nothing. */
-        static void CollectElems() {
+        /* Collect all the elements of the record type into a sorted array, once, and return it.
+
+           Every field of every record read or written comes through here, from every thread, so
+           once the array exists this takes no lock: it was a std::mutex per record type, and
+           sessions reading the same record type at once queued on it (#798). */
+        static TAnyElem *const *CollectElems() {
+          TAnyElem **elems = Elems.load(std::memory_order_acquire);
+          if (elems) {
+            return elems;
+          }
           std::lock_guard<std::mutex> lock(Mutex);
-          if (!Elems) {
+          elems = Elems.load(std::memory_order_relaxed);
+          if (!elems) {
             /* Copy the pointers to the elements from the linked list into an array. */
-            Elems = new TAnyElem*[ElemCount];
+            elems = new TAnyElem*[ElemCount];
             TAnyElem
-                **csr   = Elems,
-                **limit = Elems + ElemCount;
+                **csr   = elems,
+                **limit = elems + ElemCount;
             for (auto elem = FirstElem; elem; elem = elem->NextElem) {
               assert(csr < limit);
               *csr++ = elem;
@@ -152,14 +160,16 @@ namespace Orly {
             assert(csr == limit);
             /* Sort the array by element name. */
             std::sort(
-                Elems, limit,
+                elems, limit,
                 [](const TAnyElem *lhs, const TAnyElem *rhs) {
                   assert(lhs);
                   assert(rhs);
                   return strcmp(lhs->GetName(), rhs->GetName()) < 0;
                 }
             );
+            Elems.store(elems, std::memory_order_release);
           }
+          return elems;
         }
 
         protected:
@@ -183,9 +193,9 @@ namespace Orly {
       };  // Record<TRec>::TAnyElem
 
       static const TAnyElem *TryGetElem(const char *name) {
-        TAnyElem::CollectElems();
+        TAnyElem *const *elems = TAnyElem::CollectElems();
         for (size_t elem_idx = 0; elem_idx < ElemCount; ++elem_idx) {
-          const TAnyElem *elem = Elems[elem_idx];
+          const TAnyElem *elem = elems[elem_idx];
           if (strcmp(elem->GetName(), name) == 0) {
             return elem;
           }
@@ -249,8 +259,7 @@ namespace Orly {
 
         /* See TArrayOfSingleStates<TElems...>. */
         virtual TAny *NewElem(size_t elem_idx, void *state_alloc) const override {
-          TAnyElem::CollectElems();
-          return Elems[elem_idx]->NewStateSabot(Rec, state_alloc);
+          return TAnyElem::CollectElems()[elem_idx]->NewStateSabot(Rec, state_alloc);
         }
 
         private:
@@ -263,11 +272,11 @@ namespace Orly {
       /* The number of elements in TAnyElem's linked list. */
       static size_t ElemCount;
 
-      /* Used by CollectElems() to covers the construction of Elems and SabotElems. */
+      /* Serializes CollectElems() building Elems the first time. */
       static std::mutex Mutex;
 
       /* A sorted array of all the elements in our record.  This is null until the first time TAnyElem::CollectElems() is called. */
-      static TAnyElem **Elems;
+      static std::atomic<TAnyElem **> Elems;
 
       /* size of TState */
       friend class Orly::Sabot::TSizeChecker;
@@ -288,7 +297,7 @@ namespace Orly {
 
     /* See declaration. */
     template <typename TRec>
-    typename Record<TRec>::TAnyElem **Record<TRec>::Elems = nullptr;
+    std::atomic<typename Record<TRec>::TAnyElem **> Record<TRec>::Elems = nullptr;
 
     /* See declaration. */
     template <typename TRec>

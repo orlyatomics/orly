@@ -1,0 +1,24 @@
+package #1;
+/* Record-read concurrency smoke (#798): the same prefix read returning str values and
+   returning record values, so the cost of decoding records can be compared with strings as
+   more sessions read at once. */
+
+r_t is <{.oid: str, .ent: str, .ty: str, .src: str, .dst: str, .s: str}>;
+
+put = ((true) effecting {
+  new <['s', a, b]> <- "0123456789abcdef0123456789abcdef";
+  new <['r', a, b]> <- <{.oid: b, .ent: "0123456789abcdef0123456789abcdef", .ty: "0123456789abcdef0123456789abcdef", .src: a, .dst: "0123456789abcdef0123456789abcdef", .s: "0123456789abcdef0123456789abcdef"}>;
+}) where {
+  a = given::(str);
+  b = given::(str);
+};
+
+/* The str values under one prefix. */
+strs = (*(keys (str) @ <['s', a, free::(str)]>)::(str) as [str]) where {
+  a = given::(str);
+};
+
+/* The record values under one prefix. */
+recs = (*(keys (r_t) @ <['r', a, free::(str)]>)::(r_t) as [r_t]) where {
+  a = given::(str);
+};

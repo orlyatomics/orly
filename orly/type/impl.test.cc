@@ -20,6 +20,9 @@
 
 #include <orly/type/type_czar.h>
 
+#include <thread>
+#include <vector>
+
 #include <base/test/kit.h>
 
 using namespace std;
@@ -77,6 +80,42 @@ FIXTURE(Typical) {
 
 }
 
+
+/* Singletons hand out references that don't share ownership (#798). Those must still be the
+   same type as an owning reference made from the impl, hash the same, key interned types the
+   same, and stand for the unknown type in a default-constructed or moved-from TType. */
+FIXTURE(SingletonsAreUnowned) {
+  TTypeCzar type_czar;
+  TType str = TStr::Get();
+  TType owned = str.As<TStr>()->AsType();
+  EXPECT_EQ(str, owned);
+  EXPECT_EQ(str.GetHash(), owned.GetHash());
+  EXPECT_EQ(TOpt::Get(str), TOpt::Get(owned));
+  EXPECT_EQ(TObj::Get({{"a", str}}), TObj::Get({{"a", owned}}));
+  EXPECT_TRUE(str);
+  TType unknown;
+  EXPECT_FALSE(unknown);
+  EXPECT_EQ(unknown, TUnknown::Get());
+  TType moved(std::move(str));
+  EXPECT_EQ(moved, owned);
+  EXPECT_FALSE(str);
+  /* Copies made and dropped on several threads at once; TSan checks there's nothing shared
+     to race on. */
+  vector<thread> threads;
+  for (int t = 0; t < 4; ++t) {
+    threads.emplace_back([&owned] {
+      for (int i = 0; i < 10000; ++i) {
+        TType a = TStr::Get(), b = TInt::Get(), c;
+        if (a != owned || b == a || c) {
+          abort();
+        }
+      }
+    });
+  }
+  for (auto &th: threads) {
+    th.join();
+  }
+}
 
 FIXTURE(Mangling) {
   TTypeCzar type_czar;

@@ -79,6 +79,17 @@ namespace Orly {
 
         protected:
 
+        /* A type that refers to impl without sharing ownership of it, for impls that outlive
+           every use of them (the singletons, which the type czar owns). Copying and destroying
+           such a type touches no reference count. A shared reference count is one cache line
+           written by every thread that copies the type, and the singletons (str, int, the
+           unknown type every default-constructed TType holds, ...) are copied all the time:
+           decoding records on several threads at once spent most of its CPU bouncing those
+           counts between cores (#798). */
+        static TType Unowned(const TImpl *impl) {
+          return TType(std::shared_ptr<const TImpl>(std::shared_ptr<const TImpl>(), impl));
+        }
+
         TImpl() {}
 
         virtual ~TImpl() {}
