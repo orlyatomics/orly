@@ -328,7 +328,7 @@ when the call committed a write:
   durable. If it is not within N ms, the reply is `{"status": "durable_timeout", ...}` with
   the receipt (`"durability": "memory"`). The write is committed either way; it is only not
   yet known to be on disk. A POV with no durable version (nested under another child) times out.
-- Not covered yet: the batch forms (`try ... [...]`).
+- The batch form `try ... [...] <{...}>` takes the same options. The mixed form (`try_multi`) is not covered yet.
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
 version of the POV that this server knows to be in a data file on disk, in the numbering a

@@ -1,0 +1,1 @@
+- **Added**: the batch form of `try` (`try ... [...]`) takes the same `<{.receipt, .wait_durable_ms}>` options as a single `try`. The mixed multi-call form is not covered yet. Part of #750.
