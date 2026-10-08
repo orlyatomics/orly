@@ -229,11 +229,15 @@ FIXTURE(ShutdownDrainFlushesAndReleases) {
     /* manager scope */ {
       TDurableManager durable_manager(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
                                       100UL,
-                                      milliseconds(60000) /* write delay: never flushes on its own */,
+                                      milliseconds(60000) /* write delay (unused since #576) */,
                                       milliseconds(60000), milliseconds(60000), 20UL, true);
       durable_manager.Save(id, deadline, ttl, blob, &sem);
-      EXPECT_FALSE(sem.GetFd().IsReadable(0));
-      /* Destroy with the save still in the memory layer. */
+      /* Destroy, usually with the save still in the memory layer. This used to assert that the
+         sem had not fired yet, but the writer flushes as soon as a save signals it (#576), so
+         that was a race against it -- the #551 race in SemFiresOnlyAfterFlush. It held while an
+         idle writer polled with 10 us sleeps; once idle runners park and wake at once (#764),
+         and the waker no longer holds the sem's spin lock across the wake (#772), the writer
+         can flush first. Either way the save must end up released and on disk. */
     }
     /* The drain released the saver... */
     EXPECT_TRUE(sem.GetFd().IsReadable(0));
