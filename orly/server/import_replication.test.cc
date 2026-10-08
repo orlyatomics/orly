@@ -2046,6 +2046,8 @@ FIXTURE(TetrisAcceptedReachSessions) {
   Rt::TOpt<int64_t> last = ReadWithRetry(addr, 2299L, seconds(120));
   EXPECT_TRUE(last.IsKnown() && last.GetVal() == 2299L);
   auto resumed = make_shared<TAcceptClient>(addr, session_id);
+  /* A client connects only once it has something to send. */
+  Answered(resumed->Echo("resume"), "Echo (resume)")->Sync();
   const size_t got = resumed->WaitForAccepted(GlobalPovId, ids, seconds(60));
   cout << "resumed client: " << got << " of " << ids.size() << " promotions reported" << endl;
   EXPECT_EQ(got, ids.size());
