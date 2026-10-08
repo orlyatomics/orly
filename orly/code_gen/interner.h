@@ -219,7 +219,7 @@ namespace Orly {
          which is exactly the CSE case (#301). */
       TStorage<TIfElse, const L0::TPackage *, Type::TType, Expr::TExpr::TPtr, TInline::TPtr, Expr::TExpr::TPtr> IfElseInterner;
       TStorage<TBasicCtor<TListContainer>, const L0::TPackage *, Type::TType, TListContainer> ListInterner;
-      TStorage<TKeys, const L0::TPackage *, Type::TType, Type::TType, TKeys::TAddrElems, TInline::TPtr, bool> KeysInterner;
+      TStorage<TKeys, const L0::TPackage *, Type::TType, Type::TType, TKeys::TAddrElems, TInline::TPtr, bool, bool> KeysInterner;
       TStorage<TLiteral, const L0::TPackage *, Var::TVar> LiteralInterner;
       TStorage<TObjCtor, const L0::TPackage *, Type::TType, TObjCtor::TArgs> ObjCtorInterner;
       TStorage<TObjMember, const L0::TPackage *, Type::TType, TInline::TPtr, std::string> ObjMemberInterner;

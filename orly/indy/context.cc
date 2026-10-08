@@ -18,6 +18,7 @@
 
 #include <orly/indy/context.h>
 
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -134,9 +135,38 @@ bool TContext::Exists(const Indy::TIndexKey &key) {
   return static_cast<bool>(walker);
 }
 
-TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &key, bool exact_point)
+int64_t TContext::CountKeys(const Indy::TIndexKey &pattern) {
+  ++WalkerCount;
+  TPresentWalker walker(this, RepoTree, pattern, /* exact_point */ false, /* keys_only */ true);
+  return CountKeys(walker);
+}
+
+int64_t TContext::CountKeys(const Indy::TIndexKey &from, const Indy::TIndexKey &to) {
+  if (from.GetIndexId() != to.GetIndexId()) {
+    throw std::invalid_argument("key range endpoints must belong to one index");
+  }
+  ++WalkerCount;
+  TPresentWalker walker(this, RepoTree, from, to, /* keys_only */ true);
+  return CountKeys(walker);
+}
+
+int64_t TContext::CountKeys(TPresentWalker &walker) {
+  CheckArenaBudget();
+  int64_t count = 0;
+  for (; walker; ++walker) {
+    if (count == std::numeric_limits<int64_t>::max()) {
+      throw std::overflow_error("key count exceeds int range");
+    }
+    ++count;
+  }
+  return count;
+}
+
+TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &key,
+                                        bool exact_point, bool keys_only)
     : MinHeap(repo_tree.size()),
       Valid(false),
+      KeysOnly(keys_only),
       FoldArena(ctx->GetArena()),
       FoldDedupProbes(&ctx->FoldDedupProbes),
       Context(ctx) {
@@ -162,9 +192,11 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
   ctx->PresentWalkConsTimer.Stop();
 }
 
-TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &from, const TIndexKey &to)
+TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &from,
+                                        const TIndexKey &to, bool keys_only)
     : MinHeap(repo_tree.size()),
       Valid(false),
+      KeysOnly(keys_only),
       FoldArena(ctx->GetArena()),
       FoldDedupProbes(&ctx->FoldDedupProbes),
       Context(ctx) {
@@ -212,7 +244,7 @@ void TContext::TPresentWalker::Refresh() {
          commutative mutator, fold older same-mutator entries (and the
          eventual Assign base) into a single resolved value before
          returning. No-op when the anchor is an Assign. */
-      if (Var::IsDeferSafeCommutative(Item.Mutator)) {
+      if (Var::IsDeferSafeCommutative(Item.Mutator) && !KeysOnly) {
         ApplyDeferredFold();
       }
       /* One row for the read budget (#694). */

@@ -40,6 +40,7 @@
    limitations under the License. */
 
 #include <orly/indy/context.h>
+#include <cstdlib>
 #include <optional>
 
 #include <base/scheduler.h>
@@ -47,6 +48,7 @@
 #include <orly/indy/fiber/fiber_test_runner.h>
 #include <orly/indy/repo.h>
 #include <orly/indy/transaction_base.h>
+#include <orly/rt/reduce.h>
 
 #include <base/test/kit.h>
 
@@ -88,7 +90,11 @@ Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize);
 
 /* Room for HotKeyFoldDedupIsLinear's 4,000 unmerged writes. */
 Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 5000UL);
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 5000UL);
+static const size_t CountBenchRows = [] {
+  const char *rows = std::getenv("ORLY_COUNT_BENCH_ROWS");
+  return rows ? std::stoull(rows) : 0UL;
+}();
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 5000UL + 2UL * CountBenchRows);
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -557,6 +563,85 @@ FIXTURE(HotKeyFoldDedupIsLinear) {
     EXPECT_LE(at_w, static_cast<size_t>(2 * w));
     EXPECT_LE(at_8w, static_cast<size_t>(2 * 8 * w));
 
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Opt-in measurements; normal test runs do not build the large data set. */
+FIXTURE(RangeCountBenchmark) {
+  if (!CountBenchRows) {
+    return;
+  }
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    auto repo = manager->OpenOrCreate(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+    const Base::TUuid index_id(TUuid::Twister);
+    auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+    for (size_t i = 0; i < CountBenchRows; ++i) {
+      update->AddEntry(TIndexKey(index_id, TKey(make_tuple(1L, static_cast<int64_t>(i)), &arena, state_alloc)),
+                       TKey(static_cast<int64_t>(i), &arena, state_alloc));
+    }
+    {
+      auto transaction = manager->NewTransaction();
+      transaction->Push(repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+    const auto pattern = make_tuple(1L, Orly::Native::TFree<int64_t>());
+    const TIndexKey point(index_id, TKey(make_tuple(1L, static_cast<int64_t>(CountBenchRows - 1)), &arena, state_alloc));
+    for (bool via_reduce : {false, true}) {
+      for (int run = 0; run < 7; ++run) {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        Orly::Indy::TIndyContext package_context({}, Base::TUuid(TUuid::Twister), context, &ctx_arena, &scheduler, {}, {});
+        auto keys = package_context.New<std::tuple<int64_t, int64_t>>(context, index_id, pattern);
+        const Orly::Rt::TMovingReduceFunc<int64_t, std::tuple<int64_t, int64_t>> increment =
+            [](int64_t carry, const std::tuple<int64_t, int64_t> &) { return carry + 1; };
+        const auto begin = std::chrono::steady_clock::now();
+        int64_t count = 0;
+        if (via_reduce) {
+          count = Orly::Rt::Reduce<int64_t, std::tuple<int64_t, int64_t>>(keys, increment, 0L);
+        } else {
+          for (auto cursor = keys->NewCursor(); cursor; ++cursor) {
+            ++count;
+          }
+        }
+        const auto end = std::chrono::steady_clock::now();
+        EXPECT_EQ(count, static_cast<int64_t>(CountBenchRows));
+        std::printf("RangeCountBenchmark rows=%zu run=%d %s_us=%ld\n", CountBenchRows, run,
+                    via_reduce ? "keys_reduce" : "keys_cursor",
+                    static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()));
+      }
+    }
+    for (int run = 0; run < 7; ++run) {
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      Orly::Indy::TIndyContext package_context({}, Base::TUuid(TUuid::Twister), context, &ctx_arena, &scheduler, {}, {});
+      const auto begin = std::chrono::steady_clock::now();
+      const int64_t count = package_context.CountKeys(context, index_id, pattern);
+      const auto end = std::chrono::steady_clock::now();
+      EXPECT_EQ(count, static_cast<int64_t>(CountBenchRows));
+      std::printf("RangeCountBenchmark rows=%zu run=%d key_only_us=%ld\n", CountBenchRows, run,
+                  static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()));
+    }
+    for (int run = 0; run < 7; ++run) {
+      TSuprena ctx_arena;
+      TContext context(repo, &ctx_arena);
+      const auto begin = std::chrono::steady_clock::now();
+      for (int i = 0; i < 10000; ++i) {
+        EXPECT_EQ(context[point], TKey(static_cast<int64_t>(CountBenchRows - 1), &arena, state_alloc));
+      }
+      const auto end = std::chrono::steady_clock::now();
+      std::printf("RangeCountBenchmark rows=%zu run=%d point_reads_us=%ld\n", CountBenchRows, run,
+                  static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()));
+    }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

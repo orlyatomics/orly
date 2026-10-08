@@ -19,6 +19,7 @@
 #include <orly/code_gen/keys.h>
 
 #include <base/split.h>
+#include <orly/type/int.h>
 #include <orly/type/seq.h>
 #include <orly/type/unwrap.h>
 
@@ -27,23 +28,29 @@ using namespace Orly;
 using namespace Orly::CodeGen;
 
 TKeys::TKeys(const L0::TPackage *package,
-             const Type::TType &ret_type,
+             const Type::TType &seq_type,
              const Type::TType &val_type,
              TAddrElems &&addr_elems,
              const TInline::TPtr &bound,
-             bool bound_is_inclusive)
-    : TInline(package, ret_type),
-      AddrElems(addr_elems),
+             bool bound_is_inclusive,
+             bool count_only)
+    : TInline(package, count_only ? Type::TInt::Get() : seq_type),
+      AddrElems(std::move(addr_elems)),
       ValType(val_type),
+      AddrType(Type::UnwrapSequence(seq_type)),
       Bound(bound),
-      BoundIsInclusive(bound_is_inclusive) {}
+      BoundIsInclusive(bound_is_inclusive),
+      CountOnly(count_only) {}
 
 void TKeys::WriteExpr(TCppPrinter &out) const {
 
-  out << "ctx.New<" << Type::UnwrapSequence(GetReturnType()) << ">(ctx.GetFlux(), ";
+  if (CountOnly) {
+    out << "ctx.CountKeys(ctx.GetFlux(), ";
+  } else {
+    out << "ctx.New<" << AddrType << ">(ctx.GetFlux(), ";
+  }
   /* this is where we put the index id */ {
-    Type::TType addr_type = Type::UnwrapSequence(GetReturnType());
-    const Base::TUuid &index_id = Package->GetIndexIdFor(addr_type, ValType);
+    const Base::TUuid &index_id = Package->GetIndexIdFor(AddrType, ValType);
     char uuid[37];
     index_id.FormatUnderscore(uuid);
     out << Package->GetName() << "::My" << uuid << " ,";
@@ -110,7 +117,7 @@ void TKeys::WriteExpr(TCppPrinter &out) const {
     << ")";
   /* Keyset paging (#735): the bound key, then whether it is inclusive. An
      unbounded `keys` emits exactly what it always did. */
-  if (Bound) {
+  if (Bound && !CountOnly) {
     out << ", " << Bound << ", " << (BoundIsInclusive ? "true" : "false");
   }
   out << ")";

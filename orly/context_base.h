@@ -23,11 +23,29 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <orly/atom/kit2.h>
 #include <orly/indy/key.h>
 #include <orly/var/sabot_to_var.h>
 
 namespace Orly {
+
+  class TContextBase;
+
+  /* Optional key-only counting, separate from the existing context interfaces. */
+  class TKeyCountContext {
+    NO_COPY(TKeyCountContext);
+    public:
+
+    virtual ~TKeyCountContext() = default;
+
+    virtual bool TryCountKeys(TContextBase &context, const Indy::TIndexKey &pattern, int64_t &count) = 0;
+
+    protected:
+
+    TKeyCountContext() = default;
+  };
 
   class TContextBase {
     NO_COPY(TContextBase);

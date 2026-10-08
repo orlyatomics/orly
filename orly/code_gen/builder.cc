@@ -89,6 +89,24 @@ static bool StartRunsOncePerCall(const Expr::TReduce *reduce) {
   return found;
 }
 
+static bool IsIntLiteral(const Expr::TExpr::TPtr &expr, int64_t value) {
+  const auto *literal = dynamic_cast<const Expr::TLiteral *>(expr.get());
+  return literal && literal->GetType().Is<Type::TInt>() && literal->GetVal() == Var::TVar(value);
+}
+
+/* Only the direct, literal count pattern: no skipped predicates, initialisers or maps. */
+static const Expr::TKeys *CountKeysSource(const Expr::TReduce *reduce) {
+  const auto *keys = dynamic_cast<const Expr::TKeys *>(reduce->GetLhs().get());
+  const auto *sum = dynamic_cast<const Expr::TAdd *>(reduce->GetRhs().get());
+  if (!keys || keys->GetBound() || !keys->GetAddrType().Is<Type::TAddr>() || !sum ||
+      !IsIntLiteral(reduce->GetStart()->GetExpr(), 0)) {
+    return nullptr;
+  }
+  const auto *start = reduce->GetStart().get();
+  return ((sum->GetLhs().get() == start && IsIntLiteral(sum->GetRhs(), 1)) ||
+          (sum->GetRhs().get() == start && IsIntLiteral(sum->GetLhs(), 1))) ? keys : nullptr;
+}
+
 bool IsCoreSeq(const Expr::TExpr::TPtr &expr) {
   class TVisitor : public Expr::TExpr::TVisitor {
     public:
@@ -613,7 +631,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       }
       /* The keyset-paging bound (#735); null for a plain `keys`. */
       TInline::TPtr bound = that->GetBound() ? Build(Package, that->GetBound(), false) : TInline::TPtr();
-      Res = Interner.GetKeys(Package, that->GetType(), that->GetValueType(), move(elems), bound, that->GetBoundIsInclusive());
+      Res = Interner.GetKeys(Package, that->GetType(), that->GetValueType(), move(elems), bound, that->GetBoundIsInclusive(), false);
     }
     virtual void operator()(const Expr::TKnown *that) const { Unary(Package, TUnary::Known, that); }
     virtual void operator()(const Expr::TLengthOf *that) const { Unary(Package, TUnary::LengthOf, that); }
@@ -677,6 +695,14 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
     }
     virtual void operator()(const Expr::TRead *that) const { Unary(Package, TUnary::Read, that); }
     virtual void operator()(const Expr::TReduce *that) const {
+      if (const auto *keys = CountKeysSource(that)) {
+        TKeys::TAddrElems elems;
+        for (const auto &member : keys->GetMembers()) {
+          elems.emplace_back(member.first, Build(Package, member.second, false));
+        }
+        Res = Interner.GetKeys(Package, keys->GetType(), keys->GetValueType(), move(elems), TInline::TPtr(), false, true);
+        return;
+      }
       // Build function
       TImplicitFunc::TPtr func = TImplicitFunc::New(Package, TImplicitFunc::TCause::Reduce, that->GetRhs()->GetType(),
           {{"carry", that->GetStart()->GetType()}, {"that", that->GetThatType()}}, that->GetRhs(), true);

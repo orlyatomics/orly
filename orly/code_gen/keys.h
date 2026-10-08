@@ -40,11 +40,12 @@ namespace Orly {
       typedef std::shared_ptr<const TKeys> TPtr;
 
       TKeys(const L0::TPackage *package,
-            const Type::TType &ret_type,
+            const Type::TType &seq_type,
             const Type::TType &val_type,
             TAddrElems &&addr_elems,
             const TInline::TPtr &bound,
-            bool bound_is_inclusive);
+            bool bound_is_inclusive,
+            bool count_only);
 
       void WriteExpr(TCppPrinter &out) const;
 
@@ -67,6 +68,10 @@ namespace Orly {
       TInline::TPtr Bound;
 
       bool BoundIsInclusive;
+
+      Type::TType AddrType;
+
+      bool CountOnly;
     };
 
   } // CodeGen
