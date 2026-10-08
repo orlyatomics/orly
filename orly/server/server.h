@@ -306,6 +306,10 @@ namespace Orly {
         /* Whether to check the store's block accounting and sequence ranges at open (#700). */
         bool OpenCheck;
 
+        /* Open the store, run the open check, print its findings to stdout and exit without
+           serving (#748). */
+        bool CheckOnly;
+
         /* Whether the global pov's disk merges drop superseded versions (#592). */
         bool PruneMergeHistory;
 

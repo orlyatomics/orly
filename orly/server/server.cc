@@ -343,6 +343,14 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Turn on / off support for the tail statement, which drops superseded versions from the global pov's oldest disk file."
   );
   Param(
+      &TCmd::CheckOnly, "check_only", Optional, "check_only\0",
+      "Offline integrity check of a stopped store (#748): open it as a normal start would, run the open check "
+      "(see --open_check), print what it found to stdout and exit without serving. Exit status 0 if the store is "
+      "clean, 1 if there are problems that would not stop it opening (leaked blocks, overlapping sequence ranges), "
+      "2 if it is unsafe or could not be opened. Needs an existing disk store: not with --create or --mem_sim. "
+      "Opening replays the file service's append log, so run it only against a store no orlyi is using."
+  );
+  Param(
       &TCmd::OpenCheck, "open_check", Optional, "open_check\0",
       "Turn on / off the consistency check of a reopened store (#700): every block held must belong to exactly "
       "one file, base image or append log, and each repo's files must have disjoint sequence ranges. Leaked "
@@ -570,6 +578,7 @@ TServer::TCmd::TCmd()
       ReportingPortNumber(19388),
       AllowTailing(true),
       OpenCheck(true),
+      CheckOnly(false),
       PruneMergeHistory(true),
       AllowFileSync(true),
       NoRealtime(false),
@@ -1522,7 +1531,11 @@ void TServer::Init() {
        overlap is logged; a block a live file owns that is free, or owned twice, refuses the
        open, since the next file allocated could be written over it. A mem-sim store is always
        new, so it has nothing to check. */
-    if (!Cmd.Create && !Cmd.MemorySim && Cmd.OpenCheck) {
+    if (Cmd.CheckOnly && (Cmd.Create || Cmd.MemorySim)) {
+      cerr << "--check_only needs an existing disk store: not with --create or --mem_sim" << endl;
+      std::_Exit(2);
+    }
+    if (!Cmd.Create && !Cmd.MemorySim && (Cmd.OpenCheck || Cmd.CheckOnly)) {
       Indy::Disk::TOpenCheck check;
       std::exception_ptr check_error;
       Indy::Fiber::TJumpRunnable check_jumper([this, &check, &check_error] {
@@ -1534,7 +1547,19 @@ void TServer::Init() {
       });
       check_jumper(FramePoolManager.get(), &BGFastRunner);
       if (check_error) {
+        if (Cmd.CheckOnly) {
+          try {
+            std::rethrow_exception(check_error);
+          } catch (const std::exception &ex) {
+            cout << "open check: could not run: " << ex.what() << "\nRESULT: UNSAFE" << endl;
+          }
+          std::_Exit(2);
+        }
         std::rethrow_exception(check_error);
+      }
+      if (Cmd.CheckOnly) {
+        cout << Indy::Disk::DescribeOpenCheck(check) << flush;
+        std::_Exit(check.IsClean() ? 0 : check.IsSafe() ? 1 : 2);
       }
       Indy::Disk::ReportOpenCheck(check);
     }

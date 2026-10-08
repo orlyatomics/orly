@@ -30,6 +30,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <base/scheduler.h>
@@ -298,6 +299,9 @@ FIXTURE(CleanStorePasses) {
     /* Two images, one append log block, and 19 blocks of files. */
     EXPECT_EQ(check.NumOwned, 22UL);
     EXPECT_EQ(check.NumHeld, 22UL);
+    const string text = DescribeOpenCheck(check);
+    EXPECT_TRUE(text.find("RESULT: ok\n") != string::npos);
+    EXPECT_TRUE(text.find("10 files") != string::npos);
     ReportOpenCheck(check);
   });
 }
@@ -323,6 +327,9 @@ FIXTURE(LeakedBlocksAreReportedNotFatal) {
     EXPECT_FALSE(check.IsClean());
     EXPECT_EQ(check.NumFiles, 9UL);
     (void)layout;
+    const string text = DescribeOpenCheck(check);
+    EXPECT_TRUE(text.find("leaked: 1 blocks held but owned by nothing: " + to_string(stray)) != string::npos);
+    EXPECT_TRUE(text.find("RESULT: problems\n") != string::npos);
     ReportOpenCheck(check);
   });
 }
@@ -391,6 +398,9 @@ FIXTURE(SharedBlockIsFatal) {
   };
   RunReopen(CleanSpecs(), corruption, [&shared](const TOpenCheck &check, const TLayout &) {
     EXPECT_TRUE(check.Shared == vector<size_t>{shared});
+    const string text = DescribeOpenCheck(check);
+    EXPECT_TRUE(text.find("shared: 1 blocks are owned twice: " + to_string(shared)) != string::npos);
+    EXPECT_TRUE(text.find("RESULT: UNSAFE\n") != string::npos);
     const auto report = [&check]() { ReportOpenCheck(check); };
     EXPECT_THROW_FUNC(TOpenCheckFailed, report);
   });
