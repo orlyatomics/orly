@@ -427,6 +427,8 @@ namespace Orly {
 
         };  // TMergeSortedByIdFile
 
+        public:
+
         class TSortedInFile
             : public TInFile {
           NO_COPY(TSortedInFile);
@@ -488,6 +490,8 @@ namespace Orly {
           static const size_t LocalCacheSize = 64;
 
         };  // TSortedInFile
+
+        private:
 
         class TMapping {
           NO_COPY(TMapping);

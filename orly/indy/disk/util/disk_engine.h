@@ -19,6 +19,7 @@
 #include <orly/indy/disk/util/disk_util.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/file_service.h>
+#include <orly/indy/disk/integrity_scrub.h>
 #include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/read_file.h>
 
@@ -306,6 +307,16 @@ namespace Orly {
                 [this](const Base::TUuid &file_uid, const TFileObj &file, const std::function<void (const TBlockRange &)> &cb) {
                   ForEachFileBlockRange(file.Kind, file_uid, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
                 });
+          }
+
+          /* The integrity audit (#748): block accounting, sequence ranges, file decoding,
+             and key ordering checks. Must run on a fiber. */
+          TScrubReport RunIntegrityScrub(const TScrubOptions &options = {},
+                                         const std::function<void()> &yield_cb = nullptr) const {
+            return Disk::RunIntegrityScrub(VolMan, FileService.get(), PageCache.get(), {SystemBlockId},
+                [this](const Base::TUuid &file_uid, const TFileObj &file, const std::function<void (const TBlockRange &)> &cb) {
+                  ForEachFileBlockRange(file.Kind, file_uid, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
+                }, options, yield_cb);
           }
 
           Util::TEngine *GetEngine() const {

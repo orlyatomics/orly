@@ -344,11 +344,21 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::CheckOnly, "check_only", Optional, "check_only\0",
-      "Offline integrity check of a stopped store (#748): open it as a normal start would, run the open check "
-      "(see --open_check), print what it found to stdout and exit without serving. Exit status 0 if the store is "
-      "clean, 1 if there are problems that would not stop it opening (leaked blocks, overlapping sequence ranges), "
-      "2 if it is unsafe or could not be opened. Needs an existing disk store: not with --create or --mem_sim. "
-      "Opening replays the file service's append log, so run it only against a store no orlyi is using."
+      "Offline integrity scrub of a stopped store (#748): open it as a normal start would, run the full integrity "
+      "scrub (block accounting, sequence ranges, file decodes, and key ordering), print what it found to stdout and "
+      "exit without serving. Exit status 0 if the store is clean, 1 if there are problems that would not stop it "
+      "opening (leaked blocks, overlapping sequence ranges), 2 if it is unsafe or could not be opened. Needs an "
+      "existing disk store: not with --create or --mem_sim. Opening replays the file service's append log, so run "
+      "it only against a store no orlyi is using."
+  );
+  Param(
+      &TCmd::ScrubInterval, "scrub_interval", Optional, "scrub_interval\0",
+      "Interval in seconds between periodic background integrity scrubs of a serving store (#748). "
+      "0 disables periodic scrubbing (scrubs can still be triggered on demand via the reporting port)."
+  );
+  Param(
+      &TCmd::ScrubYieldEveryNKeys, "scrub_yield_every_n_keys", Optional, "scrub_yield_every_n_keys\0",
+      "Number of keys scrubbed between fiber yields during background integrity scrub (#748)."
   );
   Param(
       &TCmd::OpenCheck, "open_check", Optional, "open_check\0",
@@ -579,6 +589,8 @@ TServer::TCmd::TCmd()
       AllowTailing(true),
       OpenCheck(true),
       CheckOnly(false),
+      ScrubInterval(0UL),
+      ScrubYieldEveryNKeys(256UL),
       PruneMergeHistory(true),
       AllowFileSync(true),
       NoRealtime(false),
@@ -1525,17 +1537,38 @@ void TServer::Init() {
       });
     }
 
+    /* Offline integrity scrub of a stopped store (#748). */
+    if (Cmd.CheckOnly && (Cmd.Create || Cmd.MemorySim)) {
+      cerr << "--check_only needs an existing disk store: not with --create or --mem_sim" << endl;
+      std::_Exit(2);
+    }
+    if (Cmd.CheckOnly) {
+      Indy::Disk::TScrubReport report;
+      std::exception_ptr scrub_error;
+      try {
+        report = RunIntegrityScrubSync(Indy::Disk::RealTime);
+      } catch (...) {
+        scrub_error = std::current_exception();
+      }
+      if (scrub_error) {
+        try {
+          std::rethrow_exception(scrub_error);
+        } catch (const std::exception &ex) {
+          cout << "integrity scrub: could not run: " << ex.what() << "\nRESULT: UNSAFE" << endl;
+        }
+        std::_Exit(2);
+      }
+      cout << report.Describe() << flush;
+      std::_Exit(report.IsClean() ? 0 : report.IsSafe() ? 1 : 2);
+    }
+
     /* Check the reopened store's block accounting and sequence ranges (#700), now that the
        system and global repos have reloaded and dropped any merge leftovers, and before
        anything writes. Every build runs it; see <orly/indy/disk/open_check.h>. A leak or an
        overlap is logged; a block a live file owns that is free, or owned twice, refuses the
        open, since the next file allocated could be written over it. A mem-sim store is always
        new, so it has nothing to check. */
-    if (Cmd.CheckOnly && (Cmd.Create || Cmd.MemorySim)) {
-      cerr << "--check_only needs an existing disk store: not with --create or --mem_sim" << endl;
-      std::_Exit(2);
-    }
-    if (!Cmd.Create && !Cmd.MemorySim && (Cmd.OpenCheck || Cmd.CheckOnly)) {
+    if (!Cmd.Create && !Cmd.MemorySim && Cmd.OpenCheck) {
       Indy::Disk::TOpenCheck check;
       std::exception_ptr check_error;
       Indy::Fiber::TJumpRunnable check_jumper([this, &check, &check_error] {
@@ -1547,19 +1580,7 @@ void TServer::Init() {
       });
       check_jumper(FramePoolManager.get(), &BGFastRunner);
       if (check_error) {
-        if (Cmd.CheckOnly) {
-          try {
-            std::rethrow_exception(check_error);
-          } catch (const std::exception &ex) {
-            cout << "open check: could not run: " << ex.what() << "\nRESULT: UNSAFE" << endl;
-          }
-          std::_Exit(2);
-        }
         std::rethrow_exception(check_error);
-      }
-      if (Cmd.CheckOnly) {
-        cout << Indy::Disk::DescribeOpenCheck(check) << flush;
-        std::_Exit(check.IsClean() ? 0 : check.IsSafe() ? 1 : 2);
       }
       Indy::Disk::ReportOpenCheck(check);
     }
@@ -1734,6 +1755,9 @@ void TServer::Init() {
     ScheduleHostJob(bind(&TServer::AcceptClientConnections, this));
 
     HousekeeperHandle = Scheduler->ScheduleCancelable(bind(&TServer::CleanHouse, this));
+    if (Cmd.ScrubInterval > 0 && !Cmd.MemorySim) {
+      ScrubHandle = Scheduler->ScheduleCancelable(bind(&TServer::PeriodicScrub, this));
+    }
     Reporter = make_unique<TIndyReporter>(this, Scheduler, Cmd.BindAddress, Cmd.ReportingPortNumber);
     /* Sets the data floor before the first write does (#590). */
     if (Cmd.DiskReserveMb || Cmd.DiskReservePct) {
@@ -1968,6 +1992,10 @@ void TServer::Shutdown() {
      far) -- there is nothing to join. */
   if (HousekeeperHandle && !Scheduler->Cancel(HousekeeperHandle)) {
     HousekeeperExited.Pop();
+  }
+  ScrubWakeCond.notify_all();
+  if (ScrubHandle && !Scheduler->Cancel(ScrubHandle)) {
+    ScrubExited.Pop();
   }
   /* Stop the merge loops first: the flush below must be the only drainer
      of the merge queue, or a live merger mid-step could re-enqueue a
@@ -2855,6 +2883,99 @@ void TServer::CleanHouse() {
     DurableManager->Clean();
     //DEBUG_LOG("housecleaner: done cleaning");
   }
+}
+
+bool TServer::TriggerIntegrityScrub() {
+  if (Cmd.MemorySim || !DiskEngine || ShutdownCalled) {
+    return false;
+  }
+  bool expected = false;
+  if (!ScrubRunning.compare_exchange_strong(expected, true)) {
+    return false;
+  }
+  try {
+    Scheduler->Schedule([this] {
+      RunIntegrityScrubJob();
+    });
+    return true;
+  } catch (...) {
+    ScrubRunning = false;
+    throw;
+  }
+}
+
+void TServer::RunIntegrityScrubJob() {
+  if (ShutdownCalled || Cmd.MemorySim || !DiskEngine) {
+    ScrubRunning = false;
+    return;
+  }
+  try {
+    RunIntegrityScrubSync(Indy::Disk::Low);
+  } catch (const std::exception &ex) {
+    syslog(LOG_ERR, "integrity scrub: background scrub failed: %s", ex.what());
+  } catch (...) {
+    syslog(LOG_ERR, "integrity scrub: background scrub failed with unknown exception");
+  }
+  ScrubRunning = false;
+}
+
+void TServer::PeriodicScrub() {
+  syslog(LOG_INFO, "TServer::PeriodicScrub() begin");
+  Base::TPushOnExit exit_latch(ScrubExited);
+  for (;;) {
+    {
+      std::unique_lock<std::mutex> lock(ScrubWakeMutex);
+      ScrubWakeCond.wait_for(lock, std::chrono::seconds(Cmd.ScrubInterval), [this] {
+        return ShutdownCalled.load();
+      });
+    }
+    if (ShutdownCalled) {
+      syslog(LOG_INFO, "TServer::PeriodicScrub shutting down (#748)");
+      return;
+    }
+    bool expected = false;
+    if (ScrubRunning.compare_exchange_strong(expected, true)) {
+      RunIntegrityScrubJob();
+    }
+  }
+}
+
+Indy::Disk::TScrubReport TServer::RunIntegrityScrubSync(Indy::Disk::DiskPriority priority) {
+  Indy::Disk::TScrubOptions options;
+  options.Priority = priority;
+  options.YieldEveryNKeys = Cmd.ScrubYieldEveryNKeys;
+
+  Indy::Disk::TScrubReport report;
+  if (!DiskEngine) {
+    return report;
+  }
+
+  auto run_scrub = [&]() {
+    report = DiskEngine->RunIntegrityScrub(options);
+    report.Report();
+    std::lock_guard<std::mutex> lock(ScrubReportMutex);
+    LastScrubReport = report;
+    ++TotalScrubsCompleted;
+  };
+
+  if (Indy::Fiber::TRunner::LocalRunner == &BGFastRunner) {
+    run_scrub();
+  } else {
+    std::exception_ptr err;
+    Indy::Fiber::TJumpRunnable jumper([&] {
+      try {
+        run_scrub();
+      } catch (...) {
+        err = std::current_exception();
+      }
+    });
+    jumper(FramePoolManager.get(), &BGFastRunner);
+    if (err) {
+      std::rethrow_exception(err);
+    }
+  }
+
+  return report;
 }
 
 string TServer::Echo(const string &msg) {
@@ -3884,20 +4005,43 @@ void TIndyReporter::Stop() {
 void TIndyReporter::ServeClient(TFd &fd) {
   char buf[8192];
   for (;;) {
-    IfLt0(read(fd, buf, 8192));
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    IfLt0(n);
+    if (n == 0) {
+      break;
+    }
+    buf[n] = '\0';
+    string req(buf, n);
+    bool is_scrub_req = (req.compare(0, 11, "POST /scrub") == 0 ||
+                         req.compare(0, 10, "GET /scrub") == 0);
+    stringstream body;
+    if (is_scrub_req) {
+      bool started = const_cast<TServer *>(Server)->TriggerIntegrityScrub();
+      if (started) {
+        body << "Integrity scrub started" << endl;
+      } else if (Server->ScrubRunning.load()) {
+        body << "Integrity scrub already running" << endl;
+      } else {
+        body << "Integrity scrub not available" << endl;
+      }
+    } else {
+      AddReport(body);
+    }
     stringstream ss;
     ss << "HTTP/1.1 200 OK" << endl;
-    stringstream report;
-    AddReport(report);
     ss << "Connection: close" << endl;
-    ss << "Content-Length: " << report.str().size() << endl << endl;
-    ss << report.str();
-    std::streamsize num_read = ss.readsome(buf, 8192);
-    while (num_read > 0) {
-      IfLt0(write(fd, buf, num_read));
-      num_read = ss.readsome(buf, 8192);
+    ss << "Content-Length: " << body.str().size() << endl << endl;
+    ss << body.str();
+    string resp = ss.str();
+    const char *p = resp.data();
+    size_t remaining = resp.size();
+    while (remaining > 0) {
+      ssize_t written = write(fd, p, remaining);
+      IfLt0(written);
+      p += written;
+      remaining -= written;
     }
-    int ret = read(fd, buf, 8192);
+    int ret = read(fd, buf, sizeof(buf));
     IfLt0(ret);
     if (!ret) {
       break;
@@ -3933,6 +4077,32 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
     size_t disk_layers, mem_layers;
     Server->CountGlobalLayers(disk_layers, mem_layers);
     ss << "Global Layers = disk " << disk_layers << "; memory " << mem_layers << endl;
+  }
+  /* Integrity Scrub (#748) */ {
+    ss << "Integrity Scrub = ";
+    if (Server->Cmd.MemorySim) {
+      ss << "disabled (mem_sim)" << endl;
+    } else {
+      if (Server->ScrubRunning.load()) {
+        ss << "running; ";
+      }
+      std::lock_guard<std::mutex> lock(Server->ScrubReportMutex);
+      if (Server->LastScrubReport) {
+        const auto &rep = *Server->LastScrubReport;
+        ss << (rep.IsClean() ? "clean" : rep.IsSafe() ? "problems" : "unsafe")
+           << "; files " << rep.NumFiles
+           << " (data " << rep.NumDataFiles << ", durable " << rep.NumDurableFiles << ")"
+           << "; keys " << rep.NumKeysScrubbed
+           << "; durable entries " << rep.NumDurableEntriesScrubbed
+           << "; blocks " << rep.NumBlocksScrubbed
+           << "; problems " << rep.Problems.size()
+           << "; completed " << Server->TotalScrubsCompleted.load()
+           << "; last duration " << std::fixed << std::setprecision(3) << (rep.Seconds * 1000.0) << " ms" << endl;
+      } else {
+        ss << (Server->ScrubRunning.load() ? "in progress (no prior report)" : "idle (no prior report)")
+           << "; completed " << Server->TotalScrubsCompleted.load() << endl;
+      }
+    }
   }
   /* Lines the system log daemon had no room for; stderr kept them (#641). */
   ss << "Syslog Dropped = " << Base::TLog::GetDroppedCount() << endl;
