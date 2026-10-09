@@ -247,6 +247,14 @@ namespace Orly {
             return FileService.get();
           }
 
+          TFaultDevice *GetDevice(size_t index = 0) const {
+            return Devices.at(index).get();
+          }
+
+          size_t GetNumDevices() const {
+            return Devices.size();
+          }
+
           TFaultImage GetDurableImage() const {
             TFaultImage image;
             for (const auto &device : Devices) {

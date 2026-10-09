@@ -1,6 +1,7 @@
 /* <orly/indy/disk/sim/fault_device.h>
 
-   A test-only memory device that can fail an I/O or lose power (#608).
+   A test-only memory device that can fail an I/O, lose power, or inject storage
+   faults (#608, #755).
 
    `TFaultPlan` is shared by every device of one engine. Each I/O a device serves counts as one
    operation of its kind (Read, ReadV, Write, Sync) while the plan is armed. A plan can:
@@ -20,6 +21,14 @@
      probability (a torn write, at sector granularity). Then the plan's power-loss callback runs;
      the harness saves the frozen images and _exit()s, the way a crash ends a process, and opens
      a new engine over them (see fault_engine.h).
+
+   - simulate storage faults on the Nth operation (#755):
+     - LostWrite: the Nth write reports success but drops the data (unwritten to media).
+     - WriteErrAfter: the Nth write reaches media and marks sectors dirty, then reports Error
+       (or aborts if abort_on_error).
+     - SyncErrAfter: the Nth sync flushes dirty sectors to Durable, then throws std::system_error(EIO).
+     - Misdirect: the Nth write lands at an alternate offset or delta.
+     - BitFlip: flips a bit in Durable or Live to simulate latent sector corruption or bit rot.
 
    Nothing here is linked into a server: only tests include it.
 
@@ -101,6 +110,7 @@ namespace Orly {
             size_t N;
             bool AbortOnError;
             std::string Where;
+            std::string Action = "Fail";
           };
 
           TFaultPlan() = default;
@@ -134,6 +144,49 @@ namespace Orly {
             Tear = tear;
             Seed = seed;
             OnPowerLoss = on_power_loss;
+          }
+
+          /* Drop the nth Write (from 1): report Success but do not modify media or mark dirty. */
+          void LostWriteNth(size_t n) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            LostWriteAt = n;
+          }
+
+          /* Write the nth Write to media and mark dirty, then report Error (or abort if abort_on_error). */
+          void WriteErrAfterNth(size_t n, TOnAbortOnError on_abort_on_error = TOnAbortOnError::Report) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            WriteErrAfterAt = n;
+            WriteErrAfterOnAbortOnError = on_abort_on_error;
+          }
+
+          /* Flush dirty sectors to Durable at the nth Sync, then throw std::system_error(EIO). */
+          void SyncErrAfterNth(size_t n) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            SyncErrAfterAt = n;
+          }
+
+          /* Direct the nth Write to alternate_offset instead of its requested offset. */
+          void MisdirectNth(size_t n, Util::TOffset alternate_offset) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            MisdirectAt = n;
+            MisdirectOffset = alternate_offset;
+            MisdirectDelta = 0;
+          }
+
+          /* Direct the nth Write to (offset + delta) instead of offset. */
+          void MisdirectNthDelta(size_t n, int64_t delta) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            MisdirectAt = n;
+            MisdirectOffset = std::nullopt;
+            MisdirectDelta = delta;
+          }
+
+          /* Flip a bit in Durable at the nth Sync after flushing dirty sectors. */
+          void BitFlipAtSync(size_t n, size_t byte_offset, uint8_t bit = 0) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            BitFlipAt = n;
+            BitFlipByteOffset = byte_offset;
+            BitFlipBit = bit;
           }
 
           /* Runs when a fault fires, before a TOnAbortOnError::Abort abort(). */
@@ -172,7 +225,15 @@ namespace Orly {
 
           private:
 
-          enum class TSyncAction { Normal, Fail, PowerLoss, PoweredOff };
+          enum class TWriteAction { Normal, Fail, LostWrite, WriteErrAfter, Misdirect };
+
+          struct TWriteDecision {
+            TWriteAction Action = TWriteAction::Normal;
+            Util::TOffset Offset = 0UL;
+            bool DoAbort = false;
+          };
+
+          enum class TSyncAction { Normal, Fail, PowerLoss, PoweredOff, SyncErrAfter, BitFlip };
 
           static unsigned GetIndex(unsigned kind) {
             switch (kind) {
@@ -183,7 +244,7 @@ namespace Orly {
             }
           }
 
-          /* Count a Read/ReadV/Write; true if it must fail. abort()s here, as the controller would,
+          /* Count a Read/ReadV; true if it must fail. abort()s here, as the controller would,
              under TOnAbortOnError::Abort. */
           bool ShouldFail(unsigned kind, bool abort_on_error, const Base::TCodeLocation &code_location) {
             std::function<void (const TInjected &)> on_inject;
@@ -209,7 +270,7 @@ namespace Orly {
               }
               std::ostringstream where;
               where << code_location;
-              injected = TInjected{kind, count, abort_on_error, where.str()};
+              injected = TInjected{kind, count, abort_on_error, where.str(), "Fail"};
               Injected = injected;
               on_inject = OnInject;
               do_abort = abort_on_error && OnAbortOnError == TOnAbortOnError::Abort;
@@ -221,6 +282,70 @@ namespace Orly {
               abort();
             }
             return true;
+          }
+
+          /* Evaluates a Write: whether to fail, drop (LostWrite), fail after write (WriteErrAfter),
+             misdirect to another offset, or proceed normally. */
+          TWriteDecision OnWrite(const Base::TCodeLocation &code_location, Util::TOffset offset, bool abort_on_error) {
+            std::function<void (const TInjected &)> on_inject;
+            TInjected injected;
+            TWriteDecision decision{TWriteAction::Normal, offset, false};
+            /* acquire Mutex */ {
+              std::lock_guard<std::mutex> lock(Mutex);
+              if (!Armed) {
+                return decision;
+              }
+              const size_t n = ++Counts[GetIndex(Write)];
+              if (Injected) {
+                return decision;
+              }
+              std::ostringstream where;
+              where << code_location;
+
+              if (FailKinds & Write) {
+                size_t count = 0UL;
+                for (unsigned i = 0U; i < 4U; ++i) {
+                  if (FailKinds & (1U << i)) {
+                    count += Counts[i];
+                  }
+                }
+                if (count == FailAt) {
+                  decision.Action = TWriteAction::Fail;
+                  decision.DoAbort = abort_on_error && OnAbortOnError == TOnAbortOnError::Abort;
+                  injected = TInjected{Write, count, abort_on_error, where.str(), "Fail"};
+                  Injected = injected;
+                  on_inject = OnInject;
+                }
+              } else if (LostWriteAt && *LostWriteAt == n) {
+                decision.Action = TWriteAction::LostWrite;
+                injected = TInjected{Write, n, abort_on_error, where.str(), "LostWrite"};
+                Injected = injected;
+                on_inject = OnInject;
+              } else if (WriteErrAfterAt && *WriteErrAfterAt == n) {
+                decision.Action = TWriteAction::WriteErrAfter;
+                decision.DoAbort = abort_on_error && WriteErrAfterOnAbortOnError == TOnAbortOnError::Abort;
+                injected = TInjected{Write, n, abort_on_error, where.str(), "WriteErrAfter"};
+                Injected = injected;
+                on_inject = OnInject;
+              } else if (MisdirectAt && *MisdirectAt == n) {
+                decision.Action = TWriteAction::Misdirect;
+                if (MisdirectOffset) {
+                  decision.Offset = *MisdirectOffset;
+                } else {
+                  decision.Offset = static_cast<Util::TOffset>(static_cast<int64_t>(offset) + MisdirectDelta);
+                }
+                injected = TInjected{Write, n, abort_on_error, where.str(), "Misdirect"};
+                Injected = injected;
+                on_inject = OnInject;
+              }
+            }  // release Mutex
+            if (on_inject) {
+              on_inject(injected);
+            }
+            if (decision.DoAbort) {
+              abort();
+            }
+            return decision;
           }
 
           /* Runs OnInject for an injected Sync failure, outside Mutex. */
@@ -257,9 +382,17 @@ namespace Orly {
                 }
               }
               if (count == FailAt) {
-                Injected = TInjected{Sync, count, false, "Sync"};
+                Injected = TInjected{Sync, count, false, "Sync", "Fail"};
                 return TSyncAction::Fail;
               }
+            }
+            if (SyncErrAfterAt && *SyncErrAfterAt == n && !Injected) {
+              Injected = TInjected{Sync, n, false, "Sync", "SyncErrAfter"};
+              return TSyncAction::SyncErrAfter;
+            }
+            if (BitFlipAt && *BitFlipAt == n && !Injected) {
+              Injected = TInjected{Sync, n, false, "Sync", "BitFlip"};
+              return TSyncAction::BitFlip;
             }
             return TSyncAction::Normal;
           }
@@ -267,6 +400,9 @@ namespace Orly {
           /* Freezes every device's Durable image, then runs OnPowerLoss. Defined below
              TFaultDevice. */
           inline void PowerLoss();
+
+          /* Performs bit flip on registered devices. Defined below TFaultDevice. */
+          inline void PerformBitFlip();
 
           void AddDevice(TFaultDevice *device) {
             std::lock_guard<std::mutex> lock(Mutex);
@@ -295,6 +431,26 @@ namespace Orly {
           double Tear = 0.0;
 
           uint64_t Seed = 0UL;
+
+          std::optional<size_t> LostWriteAt;
+
+          std::optional<size_t> WriteErrAfterAt;
+
+          TOnAbortOnError WriteErrAfterOnAbortOnError = TOnAbortOnError::Report;
+
+          std::optional<size_t> MisdirectAt;
+
+          std::optional<Util::TOffset> MisdirectOffset;
+
+          int64_t MisdirectDelta = 0;
+
+          std::optional<size_t> SyncErrAfterAt;
+
+          std::optional<size_t> BitFlipAt;
+
+          std::optional<size_t> BitFlipByteOffset;
+
+          uint8_t BitFlipBit = 0U;
 
           std::function<void ()> OnPowerLoss;
 
@@ -350,6 +506,22 @@ namespace Orly {
           std::vector<char> GetLiveImage() const {
             std::lock_guard<std::mutex> lock(Mutex);
             return std::vector<char>(Live.get(), Live.get() + NumBytes);
+          }
+
+          /* Flip one bit in Durable (e.g. to simulate latent sector corruption or bit rot). */
+          void FlipDurableBit(size_t byte_offset, uint8_t bit = 0) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            if (byte_offset < Durable.size()) {
+              Durable[byte_offset] ^= static_cast<char>(1U << (bit & 7U));
+            }
+          }
+
+          /* Flip one bit in Live. */
+          void FlipLiveBit(size_t byte_offset, uint8_t bit = 0) {
+            std::lock_guard<std::mutex> lock(Mutex);
+            if (byte_offset < NumBytes) {
+              Live.get()[byte_offset] ^= static_cast<char>(1U << (bit & 7U));
+            }
           }
 
           virtual void Write(const Base::TCodeLocation &code_location, Util::TBufKind buf_kind, uint8_t /*util_src*/, void *buf, const Util::TOffset offset,
@@ -431,6 +603,33 @@ namespace Orly {
               case TFaultPlan::TSyncAction::PoweredOff: {
                 break;
               }
+              case TFaultPlan::TSyncAction::SyncErrAfter: {
+                {
+                  std::lock_guard<std::mutex> lock(Mutex);
+                  for (size_t sector = 0UL; sector < Dirty.size(); ++sector) {
+                    if (Dirty[sector]) {
+                      memcpy(Durable.data() + sector * Util::PhysicalSectorSize, Live.get() + sector * Util::PhysicalSectorSize, Util::PhysicalSectorSize);
+                      Dirty[sector] = false;
+                    }
+                  }
+                }
+                Plan->NotifyInjected();
+                throw std::system_error(EIO, std::system_category(), "fsync (injected after sync)");
+              }
+              case TFaultPlan::TSyncAction::BitFlip: {
+                {
+                  std::lock_guard<std::mutex> lock(Mutex);
+                  for (size_t sector = 0UL; sector < Dirty.size(); ++sector) {
+                    if (Dirty[sector]) {
+                      memcpy(Durable.data() + sector * Util::PhysicalSectorSize, Live.get() + sector * Util::PhysicalSectorSize, Util::PhysicalSectorSize);
+                      Dirty[sector] = false;
+                    }
+                  }
+                }
+                Plan->PerformBitFlip();
+                Plan->NotifyInjected();
+                break;
+              }
             }
           }
 
@@ -454,16 +653,49 @@ namespace Orly {
 
           TDiskResult DoWrite(const Base::TCodeLocation &code_location, Util::TBufKind buf_kind, void *buf, const Util::TOffset offset,
                               long long nbytes, bool abort_on_error) {
-            if (Plan->ShouldFail(TFaultPlan::Write, abort_on_error, code_location)) {
-              /* Whatever reached the media of a failed write is unknown; leave it unwritten. */
-              return Error;
-            }
-            ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
-            std::lock_guard<std::mutex> lock(Mutex);
-            assert(offset + nbytes <= NumBytes);
-            memcpy(Live.get() + offset, buf, nbytes);
-            for (size_t sector = offset / Util::PhysicalSectorSize; sector < (offset + nbytes + Util::PhysicalSectorSize - 1) / Util::PhysicalSectorSize; ++sector) {
-              Dirty[sector] = true;
+            const auto decision = Plan->OnWrite(code_location, offset, abort_on_error);
+            switch (decision.Action) {
+              case TFaultPlan::TWriteAction::Fail: {
+                return Error;
+              }
+              case TFaultPlan::TWriteAction::LostWrite: {
+                /* Dropped: report success without touching media. */
+                return Success;
+              }
+              case TFaultPlan::TWriteAction::WriteErrAfter: {
+                ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
+                std::lock_guard<std::mutex> lock(Mutex);
+                assert(offset + nbytes <= NumBytes);
+                memcpy(Live.get() + offset, buf, nbytes);
+                for (size_t sector = offset / Util::PhysicalSectorSize; sector < (offset + nbytes + Util::PhysicalSectorSize - 1) / Util::PhysicalSectorSize; ++sector) {
+                  Dirty[sector] = true;
+                }
+                return Error;
+              }
+              case TFaultPlan::TWriteAction::Misdirect: {
+                Util::TOffset target_offset = decision.Offset;
+                if (target_offset + nbytes > NumBytes && NumBytes >= static_cast<size_t>(nbytes)) {
+                  target_offset = target_offset % (NumBytes - nbytes + 1);
+                }
+                ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
+                std::lock_guard<std::mutex> lock(Mutex);
+                assert(target_offset + nbytes <= NumBytes);
+                memcpy(Live.get() + target_offset, buf, nbytes);
+                for (size_t sector = target_offset / Util::PhysicalSectorSize; sector < (target_offset + nbytes + Util::PhysicalSectorSize - 1) / Util::PhysicalSectorSize; ++sector) {
+                  Dirty[sector] = true;
+                }
+                return Success;
+              }
+              case TFaultPlan::TWriteAction::Normal: {
+                ApplyCorruptionCheck(buf_kind, buf, offset, nbytes);
+                std::lock_guard<std::mutex> lock(Mutex);
+                assert(offset + nbytes <= NumBytes);
+                memcpy(Live.get() + offset, buf, nbytes);
+                for (size_t sector = offset / Util::PhysicalSectorSize; sector < (offset + nbytes + Util::PhysicalSectorSize - 1) / Util::PhysicalSectorSize; ++sector) {
+                  Dirty[sector] = true;
+                }
+                return Success;
+              }
             }
             return Success;
           }
@@ -561,6 +793,15 @@ namespace Orly {
           }  // release Mutex
           if (on_power_loss) {
             on_power_loss();
+          }
+        }
+
+        inline void TFaultPlan::PerformBitFlip() {
+          std::lock_guard<std::mutex> lock(Mutex);
+          if (BitFlipByteOffset) {
+            for (TFaultDevice *device : Devices) {
+              device->FlipDurableBit(*BitFlipByteOffset, BitFlipBit);
+            }
           }
         }
 
