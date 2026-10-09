@@ -1,0 +1,1 @@
+- **Added**: storage fault modes to `TFaultPlan` and `TFaultDevice` (`LostWrite`, `WriteErrAfter`, `SyncErrAfter`, `Misdirect`, and `BitFlip`) along with a dedicated unit test suite covering every mode (#755). Enables testing corruption and crash recovery under the two-way durable-acks storage fault model.
