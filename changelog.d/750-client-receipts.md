@@ -1,0 +1,1 @@
+- **Added**: write receipts, durability wait options (`wait_durable_ms`), and durable version queries (`durable_version`) exposed across all client libraries (Python, TypeScript, Go, Zig). Part of #750.

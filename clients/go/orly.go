@@ -86,14 +86,57 @@ var ErrRemoteCompileDisabled = errors.New("orly: remote compile disabled")
 // statement ran. Not retryable as sent: fix the token. Test with errors.Is.
 var ErrUnauthorized = errors.New("orly: unauthorized")
 
+// ErrDurableTimeout is wrapped by the error a write gets when it asked to
+// wait for durable (WaitDurableMs) but timed out before the write reached
+// disk ("status": "durable_timeout", #750). The write was accepted and is
+// held in memory. Test with errors.Is.
+var ErrDurableTimeout = errors.New("orly: durable timeout")
+
+// DurableTimeoutError is returned when a write timed out waiting for disk.
+// It wraps ErrDurableTimeout and carries the write's Receipt.
+type DurableTimeoutError struct {
+	Statement string
+	Reply     json.RawMessage
+	Receipt   *Receipt
+}
+
+func (e *DurableTimeoutError) Error() string {
+	return fmt.Sprintf("orly: %s -> %s: %v", e.Statement, e.Reply, ErrDurableTimeout)
+}
+
+func (e *DurableTimeoutError) Unwrap() error {
+	return ErrDurableTimeout
+}
+
+// Receipt is a write receipt returned by the server when a call committed a
+// write (#750). Version rises with each commit to the POV; Durability is
+// "memory" (acknowledged in the update pool) or "durable" (known to be in a
+// data file on disk).
+type Receipt struct {
+	Pov        string `json:"pov"`
+	Version    uint64 `json:"version"`
+	Durability string `json:"durability"`
+}
+
+// CallOpts specifies options for Call and CallBatch (#750).
+type CallOpts struct {
+	// Receipt requests a write receipt in the reply.
+	Receipt bool
+	// WaitDurableMs holds the reply until the write is on disk, up to this many
+	// milliseconds (1 to 60000). Implies Receipt.
+	WaitDurableMs int
+}
+
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
-	conn *websocket.Conn
+	conn        *websocket.Conn
+	LastReceipt *Receipt
 }
 
 type reply struct {
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
+	Status  string          `json:"status"`
+	Result  json.RawMessage `json:"result"`
+	Receipt *Receipt        `json:"receipt,omitempty"`
 }
 
 // Connect dials a running orlyi at DefaultURL.
@@ -203,6 +246,7 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	if err := json.Unmarshal(msg, &r); err != nil {
 		return nil, fmt.Errorf("orly: parse reply to %q: %w (raw: %s)", stmt, err, msg)
 	}
+	c.LastReceipt = r.Receipt
 	if r.Status == "insufficient_storage" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrInsufficientStorage)
 	}
@@ -217,6 +261,13 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	}
 	if r.Status == "remote_compile_disabled" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrRemoteCompileDisabled)
+	}
+	if r.Status == "durable_timeout" {
+		return nil, &DurableTimeoutError{
+			Statement: stmt,
+			Reply:     msg,
+			Receipt:   r.Receipt,
+		}
 	}
 	if r.Status == "unauthorized" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrUnauthorized)
@@ -517,14 +568,47 @@ func (c *Client) Promote(pov string, force bool, timeout time.Duration) (Promote
 	}
 }
 
+func formatTryOptions(opts CallOpts) string {
+	var parts []string
+	if opts.Receipt {
+		parts = append(parts, ".receipt: true")
+	}
+	if opts.WaitDurableMs > 0 {
+		parts = append(parts, fmt.Sprintf(".wait_durable_ms: %d", opts.WaitDurableMs))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " <{" + strings.Join(parts, ", ") + "}>"
+}
+
 // Call invokes package.method on pov with a record of args, i.e.
 // "try {pov} pkg method <{.k: v, ...}>;". Pass nil args for no arguments.
 func (c *Client) Call(pov, pkg, method string, args map[string]any) (json.RawMessage, error) {
+	return c.CallWithOpts(pov, pkg, method, args, CallOpts{})
+}
+
+// CallWithOpts invokes package.method on pov with options (Receipt, WaitDurableMs) (#750).
+func (c *Client) CallWithOpts(pov, pkg, method string, args map[string]any, opts CallOpts) (json.RawMessage, error) {
 	lit, err := litRecord(args)
 	if err != nil {
 		return nil, err
 	}
-	return c.Send(fmt.Sprintf("try {%s} %s %s %s;", pov, pkg, method, lit))
+	return c.Send(fmt.Sprintf("try {%s} %s %s %s%s;", pov, pkg, method, lit, formatTryOptions(opts)))
+}
+
+// CallWithReceipt invokes package.method on pov, requests a write receipt, and returns it (#750).
+func (c *Client) CallWithReceipt(pov, pkg, method string, args map[string]any, opts CallOpts) (json.RawMessage, *Receipt, error) {
+	opts.Receipt = true
+	raw, err := c.CallWithOpts(pov, pkg, method, args, opts)
+	if err != nil {
+		var dte *DurableTimeoutError
+		if errors.As(err, &dte) {
+			return nil, dte.Receipt, err
+		}
+		return nil, nil, err
+	}
+	return raw, c.LastReceipt, nil
 }
 
 // CallBatch invokes pkg method on pov once per record in argsList, folding all N
@@ -535,6 +619,11 @@ func (c *Client) Call(pov, pkg, method string, args map[string]any) (json.RawMes
 // (no read-your-writes within a batch) -- a write-coalescing primitive for
 // commutative fan-in / bulk load.
 func (c *Client) CallBatch(pov, pkg, method string, argsList []map[string]any) (json.RawMessage, error) {
+	return c.CallBatchWithOpts(pov, pkg, method, argsList, CallOpts{})
+}
+
+// CallBatchWithOpts invokes pkg method on pov once per record in argsList with options (#750).
+func (c *Client) CallBatchWithOpts(pov, pkg, method string, argsList []map[string]any, opts CallOpts) (json.RawMessage, error) {
 	if len(argsList) == 0 {
 		return nil, fmt.Errorf("CallBatch requires at least one argument record")
 	}
@@ -546,7 +635,21 @@ func (c *Client) CallBatch(pov, pkg, method string, argsList []map[string]any) (
 		}
 		recs = append(recs, r)
 	}
-	return c.Send(fmt.Sprintf("try {%s} %s %s [%s];", pov, pkg, method, strings.Join(recs, ", ")))
+	return c.Send(fmt.Sprintf("try {%s} %s %s [%s]%s;", pov, pkg, method, strings.Join(recs, ", "), formatTryOptions(opts)))
+}
+
+// CallBatchWithReceipt invokes pkg method on pov once per record in argsList, requests a receipt, and returns it (#750).
+func (c *Client) CallBatchWithReceipt(pov, pkg, method string, argsList []map[string]any, opts CallOpts) (json.RawMessage, *Receipt, error) {
+	opts.Receipt = true
+	raw, err := c.CallBatchWithOpts(pov, pkg, method, argsList, opts)
+	if err != nil {
+		var dte *DurableTimeoutError
+		if errors.As(err, &dte) {
+			return nil, dte.Receipt, err
+		}
+		return nil, nil, err
+	}
+	return raw, c.LastReceipt, nil
 }
 
 // Call is one element of a CallMany batch: a method of a package and its
@@ -691,6 +794,23 @@ func numbersToLitValues(v any) any {
 	default:
 		return v
 	}
+}
+
+// DurableVersion returns the highest version of pov known to be on disk, or
+// nil if no version is durable yet (#750).
+func (c *Client) DurableVersion(pov string) (*uint64, error) {
+	raw, err := c.Send(fmt.Sprintf("durable_version {%s};", pov))
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Pov            string  `json:"pov"`
+		DurableVersion *uint64 `json:"durable_version"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("orly: parse durable_version result: %w", err)
+	}
+	return res.DurableVersion, nil
 }
 
 // Exit ends the session.

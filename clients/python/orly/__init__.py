@@ -32,7 +32,7 @@ import websocket  # the `websocket-client` package
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
            "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "RemoteCompileDisabled",
-           "Unauthorized", "Lit", "lit", "Addr",
+           "DurableTimeout", "Unauthorized", "Lit", "lit", "Addr",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -96,6 +96,17 @@ class RemoteCompileDisabled(OrlyError):
     """Raised when a ``compile`` statement reaches a server started without
     ``--allow_remote_compile`` (``"status": "remote_compile_disabled"``,
     #705). Compile packages with ``orlyc`` and install them instead."""
+
+
+class DurableTimeout(OrlyError):
+    """Raised when a write asked to wait for durable (``wait_durable_ms``)
+    committed but was not yet on disk when the timeout expired
+    (``"status": "durable_timeout"``, #750). The write was accepted and is
+    held in memory; its receipt is available on ``self.receipt``."""
+
+    @property
+    def receipt(self):
+        return self.reply.get("receipt")
 
 
 class Unauthorized(OrlyError):
@@ -209,18 +220,30 @@ def _integral_floats_to_ints(value):
     return value
 
 
+def _try_options(receipt=False, wait_durable_ms=None):
+    """Build the trailing options record for a try statement (#750)."""
+    opts = []
+    if receipt:
+        opts.append(".receipt: true")
+    if wait_durable_ms is not None:
+        opts.append(f".wait_durable_ms: {int(wait_durable_ms)}")
+    return f" <{{{', '.join(opts)}}}>" if opts else ""
+
+
 class Client:
     """A connection to a running ``orlyi`` (one WebSocket, one session)."""
 
     def __init__(self, ws):
         self.ws = ws
         self.session_id = None
+        self.last_receipt = None
 
     # -- core ------------------------------------------------------------
     def send(self, statement):
         """Send one statement; return its ``result``, or raise ``OrlyError``."""
         self.ws.send(statement)
         reply = _json.loads(self.ws.recv())
+        self.last_receipt = reply.get("receipt")
         status = reply.get("status")
         if status == "insufficient_storage":
             raise InsufficientStorage(statement, reply)
@@ -232,6 +255,8 @@ class Client:
             raise ReadTooLarge(statement, reply)
         if status == "remote_compile_disabled":
             raise RemoteCompileDisabled(statement, reply)
+        if status == "durable_timeout":
+            raise DurableTimeout(statement, reply)
         if status == "unauthorized":
             raise Unauthorized(statement, reply)
         if status != "ok":
@@ -383,15 +408,20 @@ class Client:
                     "conflicts": review["conflicts"], "blocked_on": review["blocked_on"]}
 
     # -- methods --------------------------------------------------------
-    def call(self, pov, package, method, args=None):
+    def call(self, pov, package, method, args=None, *, receipt=False, wait_durable_ms=None):
         """Call ``package method`` on ``pov`` with a record of ``args``.
 
         Builds ``try {<pov>} <package> <method> <{.k: v, ...}>;``. ``args`` is a
         dict (or None for no args); values are encoded via :func:`lit`.
-        """
-        return self.send(f"try {{{pov}}} {package} {method} {lit(args or {})};")
 
-    def call_batch(self, pov, package, method, args_list):
+        ``receipt=True`` requests a write receipt and returns ``(result, receipt)``;
+        ``wait_durable_ms`` holds the reply until the write is on disk (#750).
+        """
+        options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms)
+        result = self.send(f"try {{{pov}}} {package} {method} {lit(args or {})}{options};")
+        return (result, self.last_receipt) if receipt else result
+
+    def call_batch(self, pov, package, method, args_list, *, receipt=False, wait_durable_ms=None):
         """Call ``package method`` on ``pov`` once per record in ``args_list``,
         folding all N calls into a **single transaction** (#253).
 
@@ -400,11 +430,16 @@ class Client:
         write-coalescing primitive for commutative fan-in / bulk load: every call
         runs against the same pre-batch snapshot (no read-your-writes within a
         batch) and the batch is all-or-nothing (one bad record rejects the set).
+
+        ``receipt=True`` requests a write receipt and returns ``(results, receipt)``;
+        ``wait_durable_ms`` holds the reply until the write is on disk (#750).
         """
         if not args_list:
             raise ValueError("call_batch requires at least one argument record")
         records = lit([dict(a or {}) for a in args_list])
-        return self.send(f"try {{{pov}}} {package} {method} {records};")
+        options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms)
+        result = self.send(f"try {{{pov}}} {package} {method} {records}{options};")
+        return (result, self.last_receipt) if receipt else result
 
     def call_many(self, pov, calls):
         """Run several different methods on ``pov`` as **one transaction** (#255).
@@ -464,6 +499,18 @@ class Client:
 
     def unpause(self, pov):
         return self.send(f"unpause {{{pov}}};")
+
+    def durable_version(self, pov):
+        """The highest version of ``pov`` known to be on disk, or None.
+
+        Runs ``durable_version {<pov>};`` (#750). A write whose receipt version is
+        at most this version has survived to disk.
+        """
+        reply = self.send(f"durable_version {{{pov}}};")
+        if isinstance(reply, dict):
+            v = reply.get("durable_version")
+            return int(v) if v is not None else None
+        return None
 
     # -- teardown -------------------------------------------------------
     def exit(self):

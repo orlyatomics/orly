@@ -33,6 +33,18 @@ pub const literal = @import("literal.zig");
 pub const raw = literal.raw;
 pub const set = literal.set;
 pub const Value = literal.Value;
+pub const CallOpts = literal.CallOpts;
+
+pub const Durability = enum {
+    memory,
+    durable,
+};
+
+pub const Receipt = struct {
+    pov: Id,
+    version: u64,
+    durability: Durability,
+};
 
 /// The WebSocket endpoint a local `orlyi` listens on.
 pub const default_url = "ws://127.0.0.1:8082/";
@@ -56,6 +68,9 @@ pub const Error = error{
     /// `"status": "remote_compile_disabled"`: a compile statement sent to a
     /// server started without `--allow_remote_compile`. Compile with `orlyc`.
     RemoteCompileDisabled,
+    /// `"status": "durable_timeout"`: the write was accepted but was not on
+    /// disk within the wait limit (#750). The write is not lost.
+    DurableTimeout,
     /// `"status": "unauthorized"`: the server requires a token and this client
     /// presented none, or the wrong one. The server closes the connection.
     Unauthorized,
@@ -133,6 +148,8 @@ pub const Client = struct {
     max_message: usize,
     /// The raw text of the last reply that was an error (empty if none yet).
     err_reply: std.ArrayList(u8) = .empty,
+    /// The receipt of the last statement, if it committed a write (#750).
+    last_receipt: ?Receipt = null,
 
     /// Connects, retrying with exponential backoff, and presents the token if
     /// there is one. The client lives on the heap (its reader and writer point
@@ -241,7 +258,7 @@ pub const Client = struct {
         return self.err_reply.items;
     }
 
-    const Reply = struct { status: []const u8, result: []const u8 };
+    const Reply = struct { status: []const u8, result: []const u8, receipt: ?Receipt = null };
 
     fn exchange(self: *Client, text: []const u8) Error!Reply {
         var mask: [4]u8 = undefined;
@@ -263,6 +280,7 @@ pub const Client = struct {
     /// the typed error for a refusal. The slice is valid until the next call.
     pub fn send(self: *Client, statement: []const u8) Error![]const u8 {
         const reply = try self.exchange(statement);
+        self.last_receipt = reply.receipt;
         if (std.mem.eql(u8, reply.status, "ok")) return reply.result;
         try self.keepError(reply);
         return statusError(reply.status);
@@ -316,11 +334,27 @@ pub const Client = struct {
         return idFrom(result) orelse error.BadReply;
     }
 
+    /// `try {pov} pkg method <args> [<opts>];` with `args` a struct (or a `Value`
+    /// record). Pass `.{}` for no arguments.
+    pub fn callWithOpts(self: *Client, pov: []const u8, pkg: []const u8, method: []const u8, args: anytype, opts: CallOpts) Error![]const u8 {
+        self.begin();
+        try literal.writeCallWithOpts(self.gpa, &self.stmt, pov, pkg, method, args, opts);
+        return self.sendBuilt();
+    }
+
     /// `try {pov} pkg method <{...}>;` with `args` a struct (or a `Value`
     /// record). Pass `.{}` for no arguments.
     pub fn call(self: *Client, pov: []const u8, pkg: []const u8, method: []const u8, args: anytype) Error![]const u8 {
+        return self.callWithOpts(pov, pkg, method, args, .{});
+    }
+
+    /// One method, N argument records, folded into one transaction (#253):
+    /// `try {pov} pkg method [<{...}>, ...] [<opts>];`. Returns a JSON array of the N
+    /// results, in order. All or nothing: one bad record rejects the set, and
+    /// every call reads the same pre-batch snapshot.
+    pub fn callBatchWithOpts(self: *Client, pov: []const u8, pkg: []const u8, method: []const u8, args_list: anytype, opts: CallOpts) Error![]const u8 {
         self.begin();
-        try literal.writeCall(self.gpa, &self.stmt, pov, pkg, method, args);
+        try literal.writeBatchWithOpts(self.gpa, &self.stmt, pov, pkg, method, args_list, opts);
         return self.sendBuilt();
     }
 
@@ -329,9 +363,7 @@ pub const Client = struct {
     /// results, in order. All or nothing: one bad record rejects the set, and
     /// every call reads the same pre-batch snapshot.
     pub fn callBatch(self: *Client, pov: []const u8, pkg: []const u8, method: []const u8, args_list: anytype) Error![]const u8 {
-        self.begin();
-        try literal.writeBatch(self.gpa, &self.stmt, pov, pkg, method, args_list);
-        return self.sendBuilt();
+        return self.callBatchWithOpts(pov, pkg, method, args_list, .{});
     }
 
     /// Several different methods as one transaction (#255): `calls` is a slice
@@ -355,6 +387,15 @@ pub const Client = struct {
         self.begin();
         try literal.print(self.gpa, &self.stmt, "unpause {{{s}}};", .{pov});
         return self.sendBuilt();
+    }
+
+    /// The highest version of `pov` known to be on disk, or null.
+    /// Runs `durable_version {pov};` (#750).
+    pub fn durableVersion(self: *Client, pov: []const u8) Error!?u64 {
+        self.begin();
+        try literal.print(self.gpa, &self.stmt, "durable_version {{{s}}};", .{pov});
+        const result = try self.sendBuilt();
+        return parseDurableVersion(result);
     }
 
     /// `exit;` ends the session.
@@ -556,14 +597,15 @@ fn statusError(status: []const u8) Error {
         .{ "write_too_large", error.WriteTooLarge },
         .{ "read_too_large", error.ReadTooLarge },
         .{ "remote_compile_disabled", error.RemoteCompileDisabled },
+        .{ "durable_timeout", error.DurableTimeout },
         .{ "unauthorized", error.Unauthorized },
     };
     inline for (map) |m| if (std.mem.eql(u8, status, m[0])) return m[1];
     return error.ServerError;
 }
 
-/// Splits `{"status": "...", "result": <json>}` into the status and the raw
-/// text of the result (empty if the reply has none).
+/// Splits `{"status": "...", "result": <json>}` into the status, the raw
+/// text of the result, and any write receipt.
 fn parseReply(json: []const u8) Error!Client.Reply {
     var buf: [4096]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buf);
@@ -572,6 +614,7 @@ fn parseReply(json: []const u8) Error!Client.Reply {
     if ((scanner.next() catch return error.BadReply) != .object_begin) return error.BadReply;
     var status: ?[]const u8 = null;
     var result: []const u8 = "";
+    var receipt_str: ?[]const u8 = null;
     while (true) {
         const key = switch (scanner.next() catch return error.BadReply) {
             .string => |s| s,
@@ -580,6 +623,7 @@ fn parseReply(json: []const u8) Error!Client.Reply {
         };
         const is_status = std.mem.eql(u8, key, "status");
         const is_result = std.mem.eql(u8, key, "result");
+        const is_receipt = std.mem.eql(u8, key, "receipt");
         const start = scanner.cursor;
         if (is_status) {
             switch (scanner.next() catch return error.BadReply) {
@@ -590,18 +634,108 @@ fn parseReply(json: []const u8) Error!Client.Reply {
             scanner.skipValue() catch return error.BadReply;
         }
         if (is_result) result = std.mem.trim(u8, json[start..scanner.cursor], ": \t\r\n");
+        if (is_receipt) receipt_str = std.mem.trim(u8, json[start..scanner.cursor], ": \t\r\n");
     }
-    return .{ .status = status orelse return error.BadReply, .result = result };
+    const receipt = if (receipt_str) |rs| parseReceipt(rs) else null;
+    return .{ .status = status orelse return error.BadReply, .result = result, .receipt = receipt };
+}
+
+fn idFromRaw(inner: []const u8) ?Id {
+    if (inner.len > 64 or std.mem.indexOfScalar(u8, inner, '\\') != null) return null;
+    var id: Id = .{ .len = @intCast(inner.len) };
+    @memcpy(id.buf[0..inner.len], inner);
+    return id;
+}
+
+fn parseReceipt(json: []const u8) ?Receipt {
+    if (json.len == 0 or std.mem.eql(u8, json, "null")) return null;
+    var buf: [1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
+    var scanner = std.json.Scanner.initCompleteInput(fba.allocator(), json);
+    defer scanner.deinit();
+    if ((scanner.next() catch return null) != .object_begin) return null;
+    var pov: ?Id = null;
+    var version: ?u64 = null;
+    var durability: ?Durability = null;
+    while (true) {
+        const key = switch (scanner.next() catch return null) {
+            .string => |s| s,
+            .object_end => break,
+            else => return null,
+        };
+        if (std.mem.eql(u8, key, "pov")) {
+            switch (scanner.next() catch return null) {
+                .string => |s| pov = idFromRaw(s),
+                else => return null,
+            }
+        } else if (std.mem.eql(u8, key, "version")) {
+            switch (scanner.next() catch return null) {
+                .number => |n| {
+                    version = std.fmt.parseInt(u64, n, 10) catch blk: {
+                        if (std.fmt.parseFloat(f64, n)) |f| {
+                            break :blk @intFromFloat(f);
+                        } else |_| return null;
+                    };
+                },
+                else => return null,
+            }
+        } else if (std.mem.eql(u8, key, "durability")) {
+            switch (scanner.next() catch return null) {
+                .string => |s| {
+                    if (std.mem.eql(u8, s, "memory")) {
+                        durability = .memory;
+                    } else if (std.mem.eql(u8, s, "durable")) {
+                        durability = .durable;
+                    } else {
+                        return null;
+                    }
+                },
+                else => return null,
+            }
+        } else {
+            scanner.skipValue() catch return null;
+        }
+    }
+    if (pov != null and version != null and durability != null) {
+        return .{ .pov = pov.?, .version = version.?, .durability = durability.? };
+    }
+    return null;
+}
+
+fn parseDurableVersion(json: []const u8) ?u64 {
+    var buf: [1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
+    var scanner = std.json.Scanner.initCompleteInput(fba.allocator(), json);
+    defer scanner.deinit();
+    if ((scanner.next() catch return null) != .object_begin) return null;
+    while (true) {
+        const key = switch (scanner.next() catch return null) {
+            .string => |s| s,
+            .object_end => break,
+            else => return null,
+        };
+        if (std.mem.eql(u8, key, "durable_version")) {
+            return switch (scanner.next() catch return null) {
+                .number => |n| std.fmt.parseInt(u64, n, 10) catch blk: {
+                    if (std.fmt.parseFloat(f64, n)) |f| {
+                        break :blk @intFromFloat(f);
+                    } else |_| break :blk null;
+                },
+                .null => null,
+                else => null,
+            };
+        } else {
+            scanner.skipValue() catch return null;
+        }
+    }
+    return null;
 }
 
 /// The string inside a JSON string result, as an Id (ids hold no escapes).
 fn idFrom(result: []const u8) ?Id {
     if (result.len < 2 or result[0] != '"' or result[result.len - 1] != '"') return null;
     const inner = result[1 .. result.len - 1];
-    if (inner.len > 64 or std.mem.indexOfScalar(u8, inner, '\\') != null) return null;
-    var id: Id = .{ .len = @intCast(inner.len) };
-    @memcpy(id.buf[0..inner.len], inner);
-    return id;
+    return idFromRaw(inner);
 }
 
 test {
@@ -629,7 +763,32 @@ test "each refusal has its own error" {
     try std.testing.expectEqual(error.ReadTooLarge, statusError("read_too_large"));
     try std.testing.expectEqual(error.Unauthorized, statusError("unauthorized"));
     try std.testing.expectEqual(error.RemoteCompileDisabled, statusError("remote_compile_disabled"));
+    try std.testing.expectEqual(error.DurableTimeout, statusError("durable_timeout"));
     try std.testing.expectEqual(error.ServerError, statusError("source_error"));
+}
+
+test "receipts parsing" {
+    const r = try parseReply("{\"status\": \"ok\", \"result\": true, \"receipt\": {\"pov\": \"p-1\", \"version\": 42, \"durability\": \"memory\"}}");
+    try std.testing.expectEqualStrings("ok", r.status);
+    const rcpt = r.receipt.?;
+    try std.testing.expectEqualStrings("p-1", rcpt.pov.slice());
+    try std.testing.expectEqual(@as(u64, 42), rcpt.version);
+    try std.testing.expectEqual(Durability.memory, rcpt.durability);
+
+    const d = try parseReply("{\"status\": \"ok\", \"result\": 1, \"receipt\": {\"pov\": \"p-2\", \"version\": 100, \"durability\": \"durable\"}}");
+    try std.testing.expectEqual(Durability.durable, d.receipt.?.durability);
+
+    const timeout = try parseReply("{\"status\": \"durable_timeout\", \"result\": \"timed out\", \"receipt\": {\"pov\": \"p-1\", \"version\": 42, \"durability\": \"memory\"}}");
+    try std.testing.expectEqualStrings("durable_timeout", timeout.status);
+    try std.testing.expectEqual(@as(u64, 42), timeout.receipt.?.version);
+}
+
+test "durable version parsing" {
+    const v1 = parseDurableVersion("{\"pov\": \"p1\", \"durable_version\": 55}");
+    try std.testing.expectEqual(@as(?u64, 55), v1);
+
+    const v2 = parseDurableVersion("{\"pov\": \"p2\", \"durable_version\": null}");
+    try std.testing.expectEqual(@as(?u64, null), v2);
 }
 
 test "urls" {

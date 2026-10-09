@@ -200,20 +200,53 @@ fn writeValue(gpa: Allocator, out: *List, v: Value) Error!void {
     }
 }
 
-/// `try {pov} pkg method <args>;`
-pub fn writeCall(gpa: Allocator, out: *List, pov: []const u8, pkg: []const u8, method: []const u8, args: anytype) Error!void {
+pub const CallOpts = struct {
+    receipt: bool = false,
+    wait_durable_ms: ?u64 = null,
+};
+
+pub fn writeCallOpts(gpa: Allocator, out: *List, opts: CallOpts) Allocator.Error!void {
+    if (!opts.receipt and opts.wait_durable_ms == null) return;
+    try out.appendSlice(gpa, " <{");
+    var first = true;
+    if (opts.receipt) {
+        try out.appendSlice(gpa, ".receipt: true");
+        first = false;
+    }
+    if (opts.wait_durable_ms) |ms| {
+        if (!first) try out.appendSlice(gpa, ", ");
+        try print(gpa, out, ".wait_durable_ms: {d}", .{ms});
+    }
+    try out.appendSlice(gpa, "}>");
+}
+
+/// `try {pov} pkg method <args> [<opts>];`
+pub fn writeCallWithOpts(gpa: Allocator, out: *List, pov: []const u8, pkg: []const u8, method: []const u8, args: anytype, opts: CallOpts) Error!void {
     try print(gpa, out, "try {{{s}}} {s} {s} ", .{ pov, pkg, method });
     try write(gpa, out, args);
+    try writeCallOpts(gpa, out, opts);
+    try out.append(gpa, ';');
+}
+
+/// `try {pov} pkg method <args>;`
+pub fn writeCall(gpa: Allocator, out: *List, pov: []const u8, pkg: []const u8, method: []const u8, args: anytype) Error!void {
+    return writeCallWithOpts(gpa, out, pov, pkg, method, args, .{});
+}
+
+/// `try {pov} pkg method [args1, args2, ...] [<opts>];` -- `args_list` is a slice,
+/// array or tuple of argument records, at least one.
+pub fn writeBatchWithOpts(gpa: Allocator, out: *List, pov: []const u8, pkg: []const u8, method: []const u8, args_list: anytype, opts: CallOpts) Error!void {
+    if (lenOf(args_list) == 0) return error.NotEncodable;
+    try print(gpa, out, "try {{{s}}} {s} {s} ", .{ pov, pkg, method });
+    try writeSeq(gpa, out, '[', ']', args_list);
+    try writeCallOpts(gpa, out, opts);
     try out.append(gpa, ';');
 }
 
 /// `try {pov} pkg method [args1, args2, ...];` -- `args_list` is a slice,
 /// array or tuple of argument records, at least one.
 pub fn writeBatch(gpa: Allocator, out: *List, pov: []const u8, pkg: []const u8, method: []const u8, args_list: anytype) Error!void {
-    if (lenOf(args_list) == 0) return error.NotEncodable;
-    try print(gpa, out, "try {{{s}}} {s} {s} ", .{ pov, pkg, method });
-    try writeSeq(gpa, out, '[', ']', args_list);
-    try out.append(gpa, ';');
+    return writeBatchWithOpts(gpa, out, pov, pkg, method, args_list, .{});
 }
 
 /// `try {pov} [pkg1 method1 args1, pkg2 method2 args2, ...];` -- `calls` is a
@@ -328,6 +361,18 @@ test "statements" {
         "try {p} [multi write_val <{.n: 1, .x: 10}>, multi write_name <{.n: 1, .s: \"alpha\"}>];",
         out.items,
     );
+
+    out.clearRetainingCapacity();
+    try writeCallWithOpts(gpa, &out, "pov-1", "pkg", "fn", .{ .k = 1 }, .{ .receipt = true });
+    try std.testing.expectEqualStrings("try {pov-1} pkg fn <{.k: 1}> <{.receipt: true}>;", out.items);
+
+    out.clearRetainingCapacity();
+    try writeCallWithOpts(gpa, &out, "pov-1", "pkg", "fn", .{ .k = 1 }, .{ .receipt = true, .wait_durable_ms = 1000 });
+    try std.testing.expectEqualStrings("try {pov-1} pkg fn <{.k: 1}> <{.receipt: true, .wait_durable_ms: 1000}>;", out.items);
+
+    out.clearRetainingCapacity();
+    try writeBatchWithOpts(gpa, &out, "p", "m", "w", recs, .{ .wait_durable_ms = 500 });
+    try std.testing.expectEqualStrings("try {p} m w [<{.n: 1, .x: 2}>, <{.n: 3, .x: 4}>] <{.wait_durable_ms: 500}>;", out.items);
 
     const empty: []const u8 = &.{};
     try std.testing.expectError(error.NotEncodable, writeBatch(gpa, &out, "p", "m", "w", empty));

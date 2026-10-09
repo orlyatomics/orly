@@ -102,6 +102,39 @@ export class RemoteCompileDisabledError extends OrlyError {
   }
 }
 
+/** A write receipt returned by the server when a call committed a write (#750). */
+export interface Receipt {
+  pov: string;
+  version: number;
+  durability: "memory" | "durable";
+}
+
+/** Options for `call` and `callBatch` (#750). */
+export interface CallOptions {
+  receipt?: boolean;
+  waitDurableMs?: number;
+}
+
+export interface CallResult<T = unknown> {
+  result: T;
+  receipt?: Receipt;
+}
+
+/** Thrown when a write asked to wait for durable (`waitDurableMs`) committed but was
+ *  not yet on disk when the timeout expired (`"status": "durable_timeout"`, #750). The
+ *  write was accepted and is held in memory; its receipt is available on `receipt`. */
+export class DurableTimeoutError extends OrlyError {
+  public readonly receipt?: Receipt;
+
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "DurableTimeoutError";
+    if (reply && typeof reply === "object" && "receipt" in reply) {
+      this.receipt = (reply as { receipt?: Receipt }).receipt;
+    }
+  }
+}
+
 /** Thrown by {@link connect} when the server requires a token and this client presented none, or
  *  the wrong one (`"status": "unauthorized"`, #710). The server has closed the connection; no
  *  statement ran. Not retryable as sent: fix the token. */
@@ -285,6 +318,13 @@ function quote(s: string): string {
   return '"' + escaped + '"';
 }
 
+function formatTryOptions(opts: CallOptions): string {
+  const parts: string[] = [];
+  if (opts.receipt) parts.push(".receipt: true");
+  if (opts.waitDurableMs !== undefined) parts.push(`.wait_durable_ms: ${Math.floor(opts.waitDurableMs)}`);
+  return parts.length ? ` <{${parts.join(", ")}}>` : "";
+}
+
 /** The minimal browser-WebSocket surface this client relies on. */
 interface SocketLike {
   send(data: string): void;
@@ -296,6 +336,7 @@ interface SocketLike {
 /** A connection to a running `orlyi` (one WebSocket, one session). */
 export class Client {
   private pending: Array<{ stmt: string; resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+  public lastReceipt?: Receipt;
 
   constructor(private readonly ws: SocketLike) {
     ws.addEventListener("message", (ev: any) => this.onMessage(ev));
@@ -315,6 +356,11 @@ export class Client {
       p.reject(e);
       return;
     }
+    if (reply != null && typeof reply === "object" && "receipt" in reply) {
+      this.lastReceipt = reply.receipt as Receipt | undefined;
+    } else {
+      this.lastReceipt = undefined;
+    }
     if (reply == null || reply.status !== "ok") {
       p.reject(reply?.status === "insufficient_storage"
         ? new InsufficientStorageError(p.stmt, reply)
@@ -326,6 +372,8 @@ export class Client {
         ? new ReadTooLargeError(p.stmt, reply)
         : reply?.status === "remote_compile_disabled"
         ? new RemoteCompileDisabledError(p.stmt, reply)
+        : reply?.status === "durable_timeout"
+        ? new DurableTimeoutError(p.stmt, reply)
         : reply?.status === "unauthorized"
         ? new UnauthorizedError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
@@ -462,9 +510,18 @@ export class Client {
   }
 
   // -- methods ----------------------------------------------------------
-  /** Call `package method` on `pov`: `try {pov} package method <{.k: v}>;`. */
-  call(pov: string, pkg: string, method: string, args: Args = {}): Promise<unknown> {
-    return this.send(`try {${pov}} ${pkg} ${method} ${lit(args)};`);
+  /** Call `package method` on `pov`: `try {pov} package method <{.k: v}>;`.
+   *  `opts.receipt: true` requests a write receipt and resolves `{ result, receipt }`;
+   *  `opts.waitDurableMs` holds the reply until the write is on disk (#750). */
+  call<T = unknown>(pov: string, pkg: string, method: string, args: Args, opts: CallOptions & { receipt: true }): Promise<CallResult<T>>;
+  call<T = unknown>(pov: string, pkg: string, method: string, args?: Args, opts?: CallOptions): Promise<T>;
+  async call(pov: string, pkg: string, method: string, args: Args = {}, opts: CallOptions = {}): Promise<unknown> {
+    const options = formatTryOptions(opts);
+    const result = await this.send(`try {${pov}} ${pkg} ${method} ${lit(args)}${options};`);
+    if (opts.receipt) {
+      return { result, receipt: this.lastReceipt };
+    }
+    return result;
   }
 
   /**
@@ -476,12 +533,22 @@ export class Client {
    * write-coalescing primitive for commutative fan-in / bulk load: the batch is
    * all-or-nothing (one bad record rejects the set) and every call runs against
    * the same pre-batch snapshot (no read-your-writes within a batch).
+   *
+   * `opts.receipt: true` requests a write receipt and resolves `{ result, receipt }`;
+   * `opts.waitDurableMs` holds the reply until the write is on disk (#750).
    */
-  callBatch(pov: string, pkg: string, method: string, argsList: Args[]): Promise<unknown> {
+  callBatch<T = unknown>(pov: string, pkg: string, method: string, argsList: Args[], opts: CallOptions & { receipt: true }): Promise<CallResult<T[]>>;
+  callBatch<T = unknown>(pov: string, pkg: string, method: string, argsList: Args[], opts?: CallOptions): Promise<T[]>;
+  async callBatch(pov: string, pkg: string, method: string, argsList: Args[], opts: CallOptions = {}): Promise<unknown> {
     if (argsList.length === 0) {
       throw new TypeError("orly: callBatch requires at least one argument record");
     }
-    return this.send(`try {${pov}} ${pkg} ${method} ${lit(argsList)};`);
+    const options = formatTryOptions(opts);
+    const result = await this.send(`try {${pov}} ${pkg} ${method} ${lit(argsList)}${options};`);
+    if (opts.receipt) {
+      return { result, receipt: this.lastReceipt };
+    }
+    return result;
   }
 
   /** Run several different methods on `pov` as one transaction (#255). Each call is
@@ -536,6 +603,13 @@ export class Client {
   }
   unpause(pov: string): Promise<unknown> {
     return this.send(`unpause {${pov}};`);
+  }
+
+  /** The highest version of `pov` known to be on disk, or null.
+   *  Runs `durable_version {pov};` (#750). */
+  async durableVersion(pov: string): Promise<number | null> {
+    const res = (await this.send(`durable_version {${pov}};`)) as { pov: string; durable_version: number | null } | null;
+    return res?.durable_version ?? null;
   }
 
   // -- teardown ---------------------------------------------------------
