@@ -39,6 +39,7 @@
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/indy/disk/file_service.h>
 #include <orly/indy/disk/in_file.h>
+#include <orly/indy/disk/integrity_scrub.h>
 #include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/sim/fault_device.h>
@@ -299,6 +300,17 @@ namespace Orly {
                 [this](const Base::TUuid &/*file_uid*/, const TFileObj &file, const std::function<void (const Util::TBlockRange &)> &cb) {
                   ForEachFileBlockRange(file.Kind, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
                 });
+          }
+
+          /* The integrity audit (#748): block accounting, sequence ranges, file decoding,
+             and key ordering checks. Must run on a fiber. */
+          Disk::TScrubReport RunIntegrityScrub(const Disk::TScrubOptions &options = {},
+                                               const std::function<void()> &yield_cb = nullptr) const {
+            assert(!CustomFileInit);
+            return Disk::RunIntegrityScrub(VolMan.get(), FileService.get(), PageCache.get(), {SystemBlockId},
+                [this](const Base::TUuid &/*file_uid*/, const TFileObj &file, const std::function<void (const Util::TBlockRange &)> &cb) {
+                  ForEachFileBlockRange(file.Kind, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
+                }, options, yield_cb);
           }
 
           /* Every block range of a file, read from its metadata, as TDiskEngine's startup walk

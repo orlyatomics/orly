@@ -999,7 +999,9 @@ FIXTURE(Issue636PauseMidRound) {
           ++bad_totals;
         }
         SetPaused(manager.get(), child, false);
-        if (!WaitFor([&] { return !child->GetMemBacklogDepth(); }, 10s)) {
+        if (!WaitFor([&] {
+          return !child->GetMemBacklogDepth() && tetris.PromotionCount == static_cast<size_t>(key);
+        }, 10s)) {
           ++stuck;
           break;
         }

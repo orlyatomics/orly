@@ -310,6 +310,12 @@ namespace Orly {
            serving (#748). */
         bool CheckOnly;
 
+        /* Interval in seconds between background integrity scrubs (#748). 0 = disabled. */
+        size_t ScrubInterval;
+
+        /* Number of keys between fiber yields in the background scrub (#748). */
+        size_t ScrubYieldEveryNKeys;
+
         /* Whether the global pov's disk merges drop superseded versions (#592). */
         bool PruneMergeHistory;
 
@@ -543,6 +549,13 @@ namespace Orly {
       void Shutdown();
 
       bool RunPackageTests(const std::vector<std::string> &package_name, uint64_t version, bool verbose);
+
+      /* Trigger an online integrity scrub in the background (#748). Returns true if started,
+         false if already running or not serving from disk. */
+      bool TriggerIntegrityScrub();
+
+      /* Run an integrity scrub synchronously on the current thread/fiber (#748). */
+      Indy::Disk::TScrubReport RunIntegrityScrubSync(Indy::Disk::DiskPriority priority = Indy::Disk::Low);
 
       private:
       /* A live connection to a client. */
@@ -1125,6 +1138,19 @@ namespace Orly {
 
       /* The thread on which WsRunner runs. */
       std::thread WsThread;
+
+      /* Integrity Scrub (#748) */
+      std::atomic<bool> ScrubRunning{false};
+      mutable std::mutex ScrubReportMutex;
+      std::optional<Indy::Disk::TScrubReport> LastScrubReport;
+      std::atomic<size_t> TotalScrubsCompleted{0UL};
+      std::mutex ScrubWakeMutex;
+      std::condition_variable ScrubWakeCond;
+      Base::TScheduler::TJobHandle ScrubHandle;
+      Base::TEventSemaphore ScrubExited;
+
+      void RunIntegrityScrubJob();
+      void PeriodicScrub();
 
       friend class TIndyReporter;
 
