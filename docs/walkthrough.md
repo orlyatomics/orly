@@ -305,12 +305,21 @@ existing behavior. In particular, a filter on a stored value must read that
 value. `length_of` still measures containers and strings; it is not a new
 sequence-count operator.
 
-This is still a scan, linear in the keys and versions visited. It charges each
-visible key to `--read_budget_rows`, like an ordinary range read, and observes
-the same memory budget and POV snapshot. It does not yet skip whole files:
-persisted key counts include tombstones, and keys can overlap across files and
-POVs, so simply adding those counts would be wrong. No disk format changes are
-needed for this key-only path.
+Where only one disk file holds the keys up to the next key of any other layer
+or POV, the count does not read them one by one: it takes their number from
+the file's sorted key index by rank and subtracts the tombstones among them.
+Each file remembers the tombstone count of every 2048-key block once a count
+has read it, so the first count over a file reads its keys about once and a
+repeated count reads little more than the blocks at the ends of each stretch.
+On a 10-million-key repo, counting every key took about 4 s by walking; it
+now takes about 220 ms the first time and well under a millisecond after
+that. Keys that several files, the memtable or a child POV hold, a file only
+partly inside the POV's snapshot, and a key pattern with a descending,
+optional or nested member are still counted by walking, so a count is fastest
+over data that disk merges have settled. Either way the count charges each
+visible key to `--read_budget_rows`, like an ordinary range read, refuses at
+the same row, and observes the same memory budget and POV snapshot. No disk
+format changes are needed.
 
 For a frequently displayed total over a large range, consider a maintained
 counter instead. Change the row and its counter in the same `effecting` method,

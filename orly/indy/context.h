@@ -192,6 +192,17 @@ namespace Orly {
 
       int64_t CountKeys(const Indy::TIndexKey &from, const Indy::TIndexKey &to);
 
+      /* Whether a count may pass over a stretch of a disk file by rank instead of walking its
+         keys (#749). On unless turned off; tests turn it off to compare with the walk. */
+      void SetRankCounts(bool on) {
+        RankCounts = on;
+      }
+
+      /* The keys this context has counted by rank, without reading each one (#749). */
+      size_t GetRowsCountedByRank() const {
+        return RowsCountedByRank;
+      }
+
       inline size_t GetWalkerCount() const {
         return WalkerCount;
       }
@@ -289,6 +300,15 @@ namespace Orly {
 
       int64_t CountKeys(TPresentWalker &walker);
 
+      /* The count CountKeys would return, passing over by rank each stretch of keys that only
+         one disk file holds (#749); or nothing, leaving the count to the walk, when nothing
+         here could be ranked. `to` is null for the pattern form. */
+      std::optional<int64_t> TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to);
+
+      /* Count n rows against the budget at once, refusing exactly when charging them one at a
+         time would have. */
+      void ChargeRows(size_t n);
+
       static constexpr size_t Unlimited = static_cast<size_t>(-1);
 
       /* Throws TReadTooLarge, saying which limit was passed. */
@@ -310,6 +330,10 @@ namespace Orly {
       /* See GetFoldDedupProbes(). Not atomic: a context is read by one
          fiber at a time. */
       size_t FoldDedupProbes = 0;
+
+      /* See SetRankCounts() and GetRowsCountedByRank(). */
+      bool RankCounts = true;
+      size_t RowsCountedByRank = 0UL;
 
       friend class TIndyContext;
 

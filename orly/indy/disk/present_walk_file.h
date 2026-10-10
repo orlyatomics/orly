@@ -28,6 +28,7 @@
 
 #include <base/class_traits.h>
 #include <orly/indy/disk/read_file.h>
+#include <orly/indy/disk/tombstone_counts.h>
 #include <orly/indy/present_walker.h>
 #include <orly/sabot/all.h>
 
@@ -149,6 +150,7 @@ namespace Orly {
           void Init(const TKey &from) {
             SearchKind = Match;
             ResetHistory();
+            EndRank = NoRank;
             if (IndexFile) {
               From = from;
               Cached = false;
@@ -171,6 +173,7 @@ namespace Orly {
           void Init(const TKey &from, const TKey &to) {
             SearchKind = Range;
             ResetHistory();
+            EndRank = NoRank;
             /* Walkers are pooled (TLoaderObj), so clear what a previous walk left behind: when neither search below finds a
                start, the walk must come up empty rather than resume wherever the last one stopped (#735). */
             Valid = false;
@@ -220,15 +223,156 @@ namespace Orly {
             return *this;
           }
 
+          /* What follows lets a count pass over a stretch of this file without reading each key (#749). A key's rank is its
+             place in the file's sorted array of current keys for the index. The walk's current key is always a current entry
+             when these are called, never a replayed history entry. */
+
+          /* The current keys the file holds for the index. */
+          size_t GetNumRanks() const {
+            return IndexFile ? IndexFile->GetNumCurKeys() : 0UL;
+          }
+
+          /* Move to the next current key, passing over the rest of this key's entries (its history). */
+          void NextKey() {
+            assert(Valid);
+            ResetHistory();
+            Cached = false;
+            Refresh();
+          }
+
+          /* Pass over the current key and every later one in the walk's range that orders before `bound` (every later one
+             when `bound` is null), and return how many keys that was and how many of them were tombstones. `bound` must order
+             after the current key. The walk then stands on the first key not passed over, if any. */
+          std::pair<size_t, size_t> SkipBelow(const TItem *bound, const TTombstoneCounts &counts) {
+            assert(Valid);
+            assert(counts.GetNumKeys() == GetNumRanks());
+            const size_t rank = GetRank();
+            const size_t end = GetEndRank(rank);
+            const size_t target = bound ? LowerBound(*bound, rank + 1UL, end) : end;
+            const size_t tombstones = counts.Count(rank, target, [this](size_t begin, size_t limit) { return CountTombstones(begin, limit); });
+            ResetHistory();
+            if (target < end) {
+              Stream.GoTo(IndexFile->GetByteOffsetOfKeyIndex() + (target * TData::KeyEntrySize));
+              Cached = false;
+              Refresh();
+            } else {
+              Valid = false;
+            }
+            return {target - rank, tombstones};
+          }
+
           private:
+
+          /* Where a key stands against the walk's range: before it (a Match walk passes over such keys), in it, or past it. */
+          enum class TPlace { Before, In, Past };
+
+          /* Marks EndRank as not found yet. */
+          static constexpr size_t NoRank = static_cast<size_t>(-1);
+
+          TPlace Place(const Atom::TCore &key) const {
+            switch (SearchKind) {
+              case Match: {
+                Sabot::TMatchResult res = From.GetCore().PrefixMatch(From.GetArena(), key, IndexArena.get());
+                #ifndef NDEBUG
+                void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+                void *search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
+                Sabot::State::TAny::TWrapper key_state(From.GetCore().NewState(From.GetArena(), key_state_alloc));
+                Sabot::State::TAny::TWrapper cur_state(key.NewState(IndexArena.get(), search_state_alloc));
+                assert(res == MatchPrefixState(*key_state, *cur_state));
+                #endif
+                switch (res) {
+                  case Sabot::TMatchResult::Unifies: {
+                    /* we found a match. */
+                    return TPlace::In;
+                  }
+                  case Sabot::TMatchResult::NoMatch: {
+                    /* we're past our specific value, or in the case of a free the possible range of entries that we can unify with */
+                    return TPlace::Past;
+                  }
+                  case Sabot::TMatchResult::PrefixMatch: {
+                    /* keep iterating till we find a unify. */
+                    return (TKey(From.GetCore(), From.GetArena()) < TKey(key, IndexArena.get())) ? TPlace::Past : TPlace::Before;
+                  }
+                }
+                break;
+              }
+              case Range: {
+                /* A key unifying with To is in range (To may be a pattern, #735); otherwise it is past the range once it orders
+                   after To. */
+                return (!UnifiesWithTo(key) && TKey(key, IndexArena.get()) > To) ? TPlace::Past : TPlace::In;
+              }
+            }
+            assert(false);
+            return TPlace::Past;
+          }
+
+          /* The rank of the current key. */
+          size_t GetRank() const {
+            const size_t offset = Stream.GetOffset() - IndexFile->GetByteOffsetOfKeyIndex();
+            assert(offset >= TData::KeyEntrySize && offset % TData::KeyEntrySize == 0UL);
+            return (offset / TData::KeyEntrySize) - 1UL;
+          }
+
+          /* The key of the given rank. */
+          Atom::TCore GetKeyAt(size_t rank) const {
+            assert(rank < GetNumRanks());
+            Atom::TCore core;
+            IndexStream.GoTo(IndexFile->GetByteOffsetOfKeyIndex() + (rank * TData::KeyEntrySize) + sizeof(TSequenceNumber));
+            IndexStream.Read(&core, sizeof(core));
+            return core;
+          }
+
+          /* The rank of the first key past the walk's range, given the current key's. No key in the range comes after one past
+             it: a count ranks only a pattern of defined members followed by free ones, whose matches are one run of the index. */
+          size_t GetEndRank(size_t rank) const {
+            if (EndRank == NoRank) {
+              size_t lo = rank + 1UL, hi = GetNumRanks();
+              while (lo < hi) {
+                const size_t mid = lo + ((hi - lo) / 2UL);
+                if (Place(GetKeyAt(mid)) == TPlace::Past) {
+                  hi = mid;
+                } else {
+                  lo = mid + 1UL;
+                }
+              }
+              EndRank = lo;
+            }
+            assert(EndRank > rank);
+            return EndRank;
+          }
+
+          /* The first rank in [lo, hi) whose key does not order before `bound`, or hi. */
+          size_t LowerBound(const TItem &bound, size_t lo, size_t hi) const {
+            TItem probe;
+            probe.KeyArena = IndexArena.get();
+            while (lo < hi) {
+              const size_t mid = lo + ((hi - lo) / 2UL);
+              probe.Key = GetKeyAt(mid);
+              if (Atom::IsLt(probe.CompareKeys(bound))) {
+                lo = mid + 1UL;
+              } else {
+                hi = mid;
+              }
+            }
+            return lo;
+          }
+
+          /* The tombstones among the current keys of rank [begin, limit), by reading them. */
+          size_t CountTombstones(size_t begin, size_t limit) const {
+            typename TMyReadFile::TIndexFile::TKeyItem entry;
+            static_assert(sizeof(entry) == TData::KeyEntrySize, "a current key entry is read whole");
+            size_t count = 0UL;
+            IndexStream.GoTo(IndexFile->GetByteOffsetOfKeyIndex() + (begin * TData::KeyEntrySize));
+            for (size_t rank = begin; rank < limit; ++rank) {
+              IndexStream.Read(&entry, sizeof(entry));
+              count += entry.Value.IsTombstone() ? 1UL : 0UL;
+            }
+            return count;
+          }
 
           void Refresh() const {
             assert (!Cached);
             assert(Valid);
-            #ifndef NDEBUG
-            void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
-            void *search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
-            #endif
             /* #227 / #49: replay the current key's history increments (set up
                on the previous current-key yield) before advancing to the next
                current key, so the fold sees every commutative increment. */
@@ -264,50 +408,16 @@ namespace Orly {
               Stream.Read(&Item.Mutator, sizeof(TMutator));
               Stream.Skip(sizeof(uint64_t) - sizeof(TMutator));
               Cached = true;
-              switch (SearchKind) {
-                case Match: {
-                  #ifndef NDEBUG
-                  Sabot::State::TAny::TWrapper key_state(From.GetCore().NewState(From.GetArena(), key_state_alloc));
-                  Sabot::State::TAny::TWrapper cur_state(Item.Key.NewState(Item.KeyArena, search_state_alloc));
-                  #endif
-                  Sabot::TMatchResult res = From.GetCore().PrefixMatch(From.GetArena(), Item.Key, Item.KeyArena);
-                  assert(res == MatchPrefixState(*key_state, *cur_state));
-                  switch (res) {
-                    case Sabot::TMatchResult::Unifies: {
-                      /* we found a match. */
-                      ArmHistory(num_hist_keys, offset_of_hist_keys);
-                      return;
-                      break;
-                    }
-                    case Sabot::TMatchResult::NoMatch: {
-                      /* we're past our specific value, or in the case of a free the possible range of entries that we can unify with */
-                      Valid = false;
-                      return;
-                      break;
-                    }
-                    case Sabot::TMatchResult::PrefixMatch: {
-                      /* keep iterating till we find a unify. */
-                      if (TKey(From.GetCore(), From.GetArena()) < TKey(Item.Key, Item.KeyArena)) {
-                        Valid = false;
-                        return;
-                      }
-                      break;
-                    }
-                  }
-                  break;
+              switch (Place(Item.Key)) {
+                case TPlace::In: {
+                  ArmHistory(num_hist_keys, offset_of_hist_keys);
+                  return;
                 }
-                case Range: {
-                  /* A key unifying with To is in range (To may be a pattern, #735); otherwise it is past the range once it orders
-                     after To. */
-                  if (!UnifiesWithTo() && TKey(Item.Key, Item.KeyArena) > To) {
-                    /* we're past the end of the range. */
-                    Valid = false;
-                    return;
-                  } else {
-                    /* we're still in the valid range. */
-                    ArmHistory(num_hist_keys, offset_of_hist_keys);
-                    return;
-                  }
+                case TPlace::Past: {
+                  Valid = false;
+                  return;
+                }
+                case TPlace::Before: {
                   break;
                 }
               }
@@ -315,13 +425,13 @@ namespace Orly {
             Valid = false;
           }
 
-          /* True iff the current item's key unifies with To. */
-          bool UnifiesWithTo() const {
+          /* True iff the key (in the index arena) unifies with To. */
+          bool UnifiesWithTo(const Atom::TCore &key) const {
             void *to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
             void *cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
             return MatchPrefixState(
                 *Sabot::State::TAny::TWrapper(To.GetCore().NewState(To.GetArena(), to_state_alloc)),
-                *Sabot::State::TAny::TWrapper(Item.Key.NewState(Item.KeyArena, cur_state_alloc))) == Sabot::TMatchResult::Unifies;
+                *Sabot::State::TAny::TWrapper(key.NewState(IndexArena.get(), cur_state_alloc))) == Sabot::TMatchResult::Unifies;
           }
 
           /* Forget any history replay a previous walk left armed. Walkers are
@@ -380,6 +490,9 @@ namespace Orly {
              to disk reads back as only its single current increment. */
           mutable std::unique_ptr<typename TMyReadFile::TIndexFile::THistoryKeyCursor> HistCursor;
           mutable size_t HistRemaining = 0UL;
+
+          /* The rank of the first key past the walk's range, once a count has needed it; NoRank until then (#749). */
+          mutable size_t EndRank = NoRank;
 
           TLoaderObj *LoaderObj;
 
@@ -505,6 +618,19 @@ namespace Orly {
         inline virtual TPresentWalker &operator++() {
           ++(*File);
           return *this;
+        }
+
+        /* See TPresentWalkFile (#749). */
+        size_t GetNumRanks() const {
+          return File->GetNumRanks();
+        }
+
+        void NextKey() {
+          File->NextKey();
+        }
+
+        std::pair<size_t, size_t> SkipBelow(const TItem *bound, const TTombstoneCounts &counts) {
+          return File->SkipBelow(bound, counts);
         }
 
         private:

@@ -24,7 +24,11 @@
 
 #include <orly/indy/repo.h>
 
+#include <chrono>
+#include <cstdlib>
+#include <functional>
 #include <optional>
+#include <random>
 #include <set>
 #include <thread>
 
@@ -69,7 +73,17 @@ Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transa
 Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize, 2000UL);
 
 Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 10000UL);
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 20000UL);
+/* RangeCountDiskBenchmark (opt-in) writes its rows in updates of up to CountBenchChunk entries.
+   Nothing here frees a flushed memory layer, so the pool holds every row, plus a chunk of slack
+   for the merges. */
+static const size_t CountBenchRows = [] {
+  const char *rows = std::getenv("ORLY_COUNT_BENCH_ROWS");
+  return rows ? std::stoull(rows) : 0UL;
+}();
+static const size_t CountBenchChunk = std::min<size_t>(CountBenchRows, 250000UL);
+/* RangeCountsByRankMatchTheWalk writes every key of its group once, and about as many again. */
+static constexpr size_t RankCountKeys = 6000UL;
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 20000UL + (2UL * RankCountKeys) + CountBenchRows + CountBenchChunk);
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -217,6 +231,310 @@ class TMyManager
 
   std::mutex ReplicationQueueLock;
 };
+
+/* Opt-in measurements of counts over keys that live in disk files (#749); normal test runs do
+   not build the data set. Writes ORLY_COUNT_BENCH_ROWS keys <[1, i]> in chunks, flushes each
+   chunk to its own file, merges the files, then times key-only counts. Run 0 of each kind is
+   the first count after the files were written. It sits here, ahead of the fixtures that
+   exhaust the shared pools on purpose. */
+FIXTURE(RangeCountDiskBenchmark) {
+  if (!CountBenchRows) {
+    return;
+  }
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TSuprena arena;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    /* Room for the files and one merge's output. */
+    const size_t num_mb = std::max<size_t>(256UL, CountBenchRows * 600UL / 1000000UL + 256UL);
+    Disk::Sim::TMemEngine engine(&scheduler, num_mb, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      auto repo = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto *stepped = dynamic_cast<TSteppedSafeRepo *>(repo.Get());
+      const Base::TUuid index_id(TUuid::Twister);
+      const auto key = [&](int64_t n) { return TIndexKey(index_id, TKey(make_tuple(1L, n), &arena, state)); };
+      const auto load_begin = std::chrono::steady_clock::now();
+      for (size_t base = 0; base < CountBenchRows; base += CountBenchChunk) {
+        TSuprena update_arena;
+        /* The update lands in the repo when the transaction goes away. */ {
+          auto transaction = manager.NewTransaction();
+          auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&update_arena), TKey(Base::TUuid(TUuid::Twister), &update_arena, state));
+          for (size_t i = base; i < std::min(CountBenchRows, base + CountBenchChunk); ++i) {
+            update->AddEntry(TIndexKey(index_id, TKey(make_tuple(1L, static_cast<int64_t>(i)), &update_arena, state)),
+                             TKey(static_cast<int64_t>(i), &update_arena, state));
+          }
+          transaction->Push(repo, update);
+          transaction->Prepare();
+          transaction->CommitAction();
+        }
+        stepped->StepMergeMem();
+      }
+      const auto flush_end = std::chrono::steady_clock::now();
+      /* count */ {
+        size_t d = 0UL, m = 0UL;
+        Orly::Indy::TRepo::TView view(stepped);
+        view.CountLayers(d, m);
+        std::printf("RangeCountDiskBenchmark rows=%zu after_flush disk_layers=%zu mem_layers=%zu\n", CountBenchRows, d, m);
+      }
+      for (int i = 0; i < 64; ++i) {
+        stepped->StepMergeDisk(256UL);
+      }
+      const auto merge_end = std::chrono::steady_clock::now();
+      size_t disk_layers = 0UL, mem_layers = 0UL;
+      /* count */ {
+        Orly::Indy::TRepo::TView view(stepped);
+        view.CountLayers(disk_layers, mem_layers);
+      }
+      std::printf("RangeCountDiskBenchmark rows=%zu disk_layers=%zu mem_layers=%zu flush_ms=%ld merge_ms=%ld\n", CountBenchRows, disk_layers, mem_layers,
+                  static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(flush_end - load_begin).count()),
+                  static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(merge_end - flush_end).count()));
+      const TIndexKey all(index_id, TKey(make_tuple(1L, Orly::Native::TFree<int64_t>()), &arena, state));
+      const auto rows = static_cast<int64_t>(CountBenchRows);
+      const int64_t small = std::min<int64_t>(rows, 100L);
+      const auto time_count = [&](const char *label, int run, int64_t expected, const std::function<int64_t (TContext &)> &count) {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        const auto begin = std::chrono::steady_clock::now();
+        const int64_t got = count(context);
+        const auto end = std::chrono::steady_clock::now();
+        EXPECT_EQ(got, expected);
+        std::printf("RangeCountDiskBenchmark rows=%zu run=%d %s_us=%ld\n", CountBenchRows, run, label,
+                    static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()));
+      };
+      for (int run = 0; run < 7; ++run) {
+        time_count("pattern_all", run, rows, [&](TContext &context) { return context.CountKeys(all); });
+      }
+      for (int run = 0; run < 7; ++run) {
+        time_count("range_half", run, rows / 2, [&](TContext &context) { return context.CountKeys(key(rows / 4), key(rows / 4 + rows / 2 - 1)); });
+      }
+      for (int run = 0; run < 7; ++run) {
+        time_count("range_100", run, small, [&](TContext &context) { return context.CountKeys(key(rows / 2 - small / 2), key(rows / 2 - small / 2 + small - 1)); });
+      }
+      for (int run = 0; run < 7; ++run) {
+        TSuprena ctx_arena;
+        TContext context(repo, &ctx_arena);
+        const auto point = key(rows - 1);
+        const auto begin = std::chrono::steady_clock::now();
+        for (int i = 0; i < 10000; ++i) {
+          EXPECT_TRUE(context.Exists(point));
+        }
+        const auto end = std::chrono::steady_clock::now();
+        std::printf("RangeCountDiskBenchmark rows=%zu run=%d point_reads_us=%ld\n", CountBenchRows, run,
+                    static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()));
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #749: a count passes over by rank each stretch of keys only one disk file holds. Build a root
+   with several disk files (a base file, overwrites, tombstones, `+=` entries, and one merge) plus
+   memory, and a paused child with its own file and memory, then check over random ranges and
+   patterns, from the child, from the root, and from a context pinned before the later writes,
+   that the count by rank equals the walk and the cursor, and that a read budget refuses it in
+   the same place with the same rows charged. */
+FIXTURE(RangeCountsByRankMatchTheWalk) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TSuprena arena;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      const Base::TUuid index_id(TUuid::Twister);
+      auto root = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto child = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), root, true);
+      /* Keep the child's updates unpromoted; this fixture has no Tetris service. */ {
+        auto transaction = manager.NewTransaction();
+        transaction->Pause(child);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      /* Keys <[g, n]>: group 1 holds most of them, groups 0 and 2 a few on either side. */
+      constexpr int64_t Keys = static_cast<int64_t>(RankCountKeys);
+      const auto key = [&](int64_t g, int64_t n) { return TIndexKey(index_id, TKey(make_tuple(g, n), &arena, state)); };
+      const auto group = [&](int64_t g) { return TIndexKey(index_id, TKey(make_tuple(g, Orly::Native::TFree<int64_t>()), &arena, state)); };
+      std::mt19937_64 rng(749);
+      enum class TOp { Assign, Tombstone, Add };
+      /* One update of the given ops on distinct keys of group 1. */
+      const auto commit = [&](const L0::TManager::TPtr<TRepo> &repo, const vector<pair<int64_t, TOp>> &ops) {
+        TSuprena update_arena;
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&update_arena), TKey(Base::TUuid(TUuid::Twister), &update_arena, state));
+        for (const auto &[n, op] : ops) {
+          const TIndexKey index_key(index_id, TKey(make_tuple(1L, n), &update_arena, state));
+          switch (op) {
+            case TOp::Assign: update->AddEntry(index_key, TKey(n, &update_arena, state)); break;
+            case TOp::Tombstone: update->AddEntry(index_key, TKey(Orly::Native::TTombstone::Tombstone, &update_arena, state)); break;
+            case TOp::Add: update->AddEntry(index_key, TKey(1L, &update_arena, state), TMutator::Add); break;
+          }
+        }
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      const auto random_ops = [&](size_t count) {
+        std::set<int64_t> picked;
+        std::uniform_int_distribution<int64_t> pick(0L, Keys - 1L);
+        while (picked.size() < count) {
+          picked.insert(pick(rng));
+        }
+        vector<pair<int64_t, TOp>> ops;
+        std::uniform_int_distribution<int> kind(0, 9);
+        for (int64_t n : picked) {
+          const int k = kind(rng);
+          ops.emplace_back(n, k < 5 ? TOp::Assign : k < 8 ? TOp::Tombstone : TOp::Add);
+        }
+        return ops;
+      };
+      const auto flush = [&](const L0::TManager::TPtr<TRepo> &repo) {
+        dynamic_cast<TSteppedSafeRepo *>(repo.Get())->StepMergeMem();
+      };
+      /* The base file: every key of group 1, but every seventh a tombstone, and a few keys of groups 0 and 2. */ {
+        vector<pair<int64_t, TOp>> ops;
+        for (int64_t n = 0; n < Keys; ++n) {
+          ops.emplace_back(n, n % 7 == 3 ? TOp::Tombstone : TOp::Assign);
+        }
+        commit(root, ops);
+        TSuprena update_arena;
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&update_arena), TKey(Base::TUuid(TUuid::Twister), &update_arena, state));
+        for (int64_t g : {0L, 2L}) {
+          for (int64_t n = 0; n < 50; ++n) {
+            update->AddEntry(TIndexKey(index_id, TKey(make_tuple(g, n * 100L), &update_arena, state)), TKey(n, &update_arena, state));
+          }
+        }
+        transaction->Push(root, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+        flush(root);
+      }
+      for (int round = 0; round < 2; ++round) {
+        commit(root, random_ops(300));
+        flush(root);
+      }
+      /* A context pinned here keeps these files, and must not count by rank a file written after it. */
+      TSuprena pinned_arena;
+      TContext pinned(child, &pinned_arena);
+      for (int round = 0; round < 2; ++round) {
+        commit(root, random_ops(300));
+        flush(root);
+      }
+      for (int i = 0; i < 8; ++i) {
+        dynamic_cast<TSteppedSafeRepo *>(root.Get())->StepMergeDisk(256UL);
+      }
+      commit(root, random_ops(200));
+      commit(child, random_ops(300));
+      flush(child);
+      commit(child, random_ops(200));
+      /* One query: a pattern, or a range from `from` to `to`. */
+      struct TQuery {
+        TIndexKey From;
+        std::optional<TIndexKey> To;
+      };
+      std::uniform_int_distribution<int64_t> point(-5L, Keys + 5L);
+      std::uniform_int_distribution<int> shape(0, 9);
+      const auto random_query = [&]() -> TQuery {
+        const int s = shape(rng);
+        if (s < 5) {
+          int64_t a = point(rng), b = point(rng);
+          if (a > b) {
+            std::swap(a, b);
+          }
+          return {key(1L, a), key(1L, b)};
+        }
+        switch (s) {
+          case 5: return {group(1L), std::nullopt};
+          case 6: return {key(1L, point(rng)), std::nullopt};
+          case 7: return {key(0L, point(rng) % 5000L), key(2L, point(rng) % 5000L)};
+          case 8: return {group(3L), std::nullopt};
+          default: return {key(1L, point(rng)), group(1L)};
+        }
+      };
+      const auto count = [&](TContext &context, const TQuery &query) {
+        return query.To ? context.CountKeys(query.From, *query.To) : context.CountKeys(query.From);
+      };
+      const auto count_cursor = [&](TContext &context, const TQuery &query) {
+        unique_ptr<TContext::TKeyCursor> csr(query.To ? new TContext::TKeyCursor(&context, query.From, *query.To) : new TContext::TKeyCursor(&context, query.From));
+        int64_t n = 0;
+        for (; *csr; ++*csr) {
+          ++n;
+        }
+        return n;
+      };
+      size_t ranked = 0UL;
+      const auto check = [&](TContext &context, const TQuery &query) {
+        context.SetRankCounts(false);
+        const int64_t walked = count(context, query);
+        context.SetRankCounts(true);
+        const size_t before = context.GetRowsCountedByRank();
+        const int64_t by_rank = count(context, query);
+        ranked += context.GetRowsCountedByRank() - before;
+        EXPECT_EQ(by_rank, walked);
+        EXPECT_EQ(by_rank, count_cursor(context, query));
+        return walked;
+      };
+      for (int i = 0; i < 300; ++i) {
+        const TQuery query = random_query();
+        TSuprena child_arena, root_arena;
+        TContext child_context(child, &child_arena), root_context(root, &root_arena);
+        check(child_context, query);
+        check(root_context, query);
+        check(pinned, query);
+      }
+      /* Every key of group 1 sits in some file most of whose stretches no other layer touches. */
+      EXPECT_GT(ranked, 10000UL);
+      /* Each count gives up at the same row either way. */
+      for (int i = 0; i < 100; ++i) {
+        const TQuery query = random_query();
+        for (const auto *repo : {&child, &root}) {
+          size_t expected;
+          /* expected */ {
+            TSuprena ctx_arena;
+            TContext context(*repo, &ctx_arena);
+            context.SetRankCounts(false);
+            expected = static_cast<size_t>(count(context, query));
+          }
+          const size_t max_rows = std::uniform_int_distribution<size_t>(1UL, expected + 2UL)(rng);
+          const auto attempt = [&](bool by_rank) {
+            TSuprena ctx_arena;
+            TContext context(*repo, &ctx_arena);
+            context.SetRankCounts(by_rank);
+            context.SetReadBudget(max_rows, 0, nullptr, 0);
+            int64_t got = -1;
+            try {
+              got = count(context, query);
+            } catch (const Orly::Server::TReadTooLarge &) {}
+            return make_pair(got, context.GetRowsWalked());
+          };
+          const auto walked = attempt(false), by_rank = attempt(true);
+          EXPECT_EQ(by_rank.first, walked.first);
+          EXPECT_EQ(by_rank.second, walked.second);
+          EXPECT_EQ(walked.first < 0, max_rows < expected);
+        }
+      }
+      /* A context whose views were released refuses to count either way. */ {
+        TSuprena ctx_arena;
+        TContext context(child, &ctx_arena);
+        context.ReleaseViews();
+        auto count_after_release = [&]() { context.CountKeys(group(1L)); };
+        EXPECT_THROW_FUNC(logic_error, count_after_release);
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
 
 /* #592: overwrite the same keys round after round on a root safe repo, merge its disk files,
    and check that:
