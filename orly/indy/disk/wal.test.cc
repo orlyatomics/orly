@@ -477,3 +477,50 @@ FIXTURE(PovRecordRoundTrip) {
     EXPECT_EQ(id, expected_shared[i]);
   }
 }
+
+FIXTURE(NegativeControlNoSync) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  config.NoSync = true;
+
+  {
+    TWal wal(&device, config);
+    for (size_t i = 0; i < 5; ++i) {
+      std::string data = "nosync_record_" + std::to_string(i);
+      const uint64_t lsn = wal.AppendAndWait(TWalRecordType::Txn, data.data(), data.size());
+      EXPECT_EQ(lsn, i + 1);
+    }
+    EXPECT_GE(wal.GetDurableLsn(), 5UL);
+  }
+}
+
+FIXTURE(NegativeControlEarlyAck) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  config.EarlyAck = true;
+
+  {
+    TWal wal(&device, config);
+    for (size_t i = 0; i < 5; ++i) {
+      std::string data = "earlyack_record_" + std::to_string(i);
+      const uint64_t lsn = wal.AppendAndWait(TWalRecordType::Txn, data.data(), data.size());
+      EXPECT_EQ(lsn, i + 1);
+    }
+    EXPECT_GE(wal.GetDurableLsn(), 5UL);
+  }
+}
+

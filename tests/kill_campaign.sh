@@ -34,7 +34,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # root's python3 doesn't see a user-level pip install, so hand it the directory this user's
   # python3 imports websocket-client from.
   PY_PATH="$(python3 -c 'import os, websocket; print(os.path.dirname(os.path.dirname(websocket.__file__)))')"
-  exec sudo --preserve-env=KILLS,SEED,NEGATIVE,SIGNAL ORLY_OUT="$ORLY_OUT" PYTHONPATH="$PY_PATH" \
+  exec sudo --preserve-env=KILLS,SEED,NEGATIVE,SIGNAL,MODE ORLY_OUT="$ORLY_OUT" PYTHONPATH="$PY_PATH" \
     python3 tests/kill_campaign.py "$@"
 fi
 ORLY_OUT="$ORLY_OUT" exec python3 tests/kill_campaign.py "$@"

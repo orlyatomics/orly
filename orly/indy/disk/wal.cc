@@ -338,6 +338,15 @@ void TWal::LeaderMain() {
     }
 
     SyncerCv.notify_one();
+
+    if (Config.EarlyAck) {
+      if (!is_seal_only) {
+        HighestSyncedLsn = std::max(HighestSyncedLsn, last_lsn);
+      }
+      HighestSealedLsn = std::max(HighestSealedLsn, last_lsn);
+      DurableLsn = HighestSealedLsn;
+      DurableCv.notify_all();
+    }
   }
 }
 
@@ -359,10 +368,12 @@ void TWal::SyncerMain() {
     lock.unlock();
 
     bool sync_threw = false;
-    try {
-      Device->Sync();
-    } catch (const std::exception &/*ex*/) {
-      sync_threw = true;
+    if (!Config.NoSync) {
+      try {
+        Device->Sync();
+      } catch (const std::exception &/*ex*/) {
+        sync_threw = true;
+      }
     }
 
     lock.lock();
@@ -444,7 +455,9 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
     throw TWalIoError("Failed to write checkpoint slot");
   }
 
-  Device->Sync();
+  if (!Config.NoSync) {
+    Device->Sync();
+  }
 
   lock.lock();
   HeadLsn = head_lsn;

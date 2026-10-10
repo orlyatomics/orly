@@ -318,10 +318,9 @@ when the call committed a write:
 
 - `version` is the sequence number the POV's repo gave the committed update. It rises with
   each commit to that POV, so a client can order its own writes and name one later.
-- `durability` is `"memory"`: the write is acknowledged and held in the update pool, the
-  contract in [durability.md](durability.md). A receipt does not claim the write is on
-  disk; `durable_version` (below) says when it is. With `.wait_durable_ms` (below) it is
-  `"durable"` once the server saw the write on disk.
+- `durability` is `"durable"` for safe POVs (persisted to the write-ahead log before reply, #755)
+  or `"memory"` for fast POVs (committed to the update pool in RAM, per [durability.md](durability.md)).
+  On fast POVs, `.wait_durable_ms` (below) waits until promotion and disk merge persist the write.
 - A call that wrote nothing (a read) has no `receipt`, and without the option the reply is
   unchanged. Any other option name, or a non-bool `.receipt`, is an error.
 - `.wait_durable_ms: N` (an int, 1 to 60000; implies a receipt) holds the reply until the write is

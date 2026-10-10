@@ -534,12 +534,22 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
 
   Param(
       &TCmd::DurableAcks, "durable_acks", Optional, "durable_acks\0",
-      "Controls durable acknowledgments via write-ahead log (#755). \"false\" (default) or \"experimental\"."
+      "Controls durable acknowledgments via write-ahead log (#755). \"local\"/\"true\" (default on disk), \"false\"."
   );
 
   Param(
       &TCmd::WalMB, "wal_mb", Optional, "wal_mb\0",
       "Size of the write-ahead log ring in megabytes (#755). Default 256."
+  );
+
+  Param(
+      &TCmd::WalNoSync, "wal_no_sync", Optional, "wal_no_sync\0",
+      "Test-only negative control: skip WAL sync while still acknowledging (#755)."
+  );
+
+  Param(
+      &TCmd::WalEarlyAck, "wal_early_ack", Optional, "wal_early_ack\0",
+      "Test-only negative control: acknowledge before WAL group syncs (#755)."
   );
 
 }
@@ -619,8 +629,10 @@ TServer::TCmd::TCmd()
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
-      DurableAcks("false"),
+      DurableAcks("local"),
       WalMB(256),
+      WalNoSync(false),
+      WalEarlyAck(false),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -755,13 +767,17 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
   if (!ReplicationToken) {
     ReplicationToken = AuthToken;
   }
-  if (DurableAcks != "false" && DurableAcks != "experimental") {
-    cb("--durable_acks must be 'false' or 'experimental'");
+  if (DurableAcks != "false" && DurableAcks != "true" && DurableAcks != "local" &&
+      DurableAcks != "experimental" && DurableAcks != "memory") {
+    cb("--durable_acks must be 'local', 'true', or 'false'");
     return false;
   }
-  if (DurableAcks == "experimental" && MemorySim) {
-    cb("--durable_acks=experimental is not supported with --mem_sim");
-    return false;
+  if (MemorySim) {
+    if (DurableAcks == "experimental") {
+      cb("--durable_acks=experimental is not supported with --mem_sim");
+      return false;
+    }
+    DurableAcks = "false";
   }
   return ResolveMemoryDefaults(cb);
 }
@@ -1430,7 +1446,7 @@ void TServer::Init() {
           Cmd.FileServiceAppendLogMB,
           Cmd.Create,
           Cmd.NoRealtime,
-          Cmd.DurableAcks == "experimental",
+          Cmd.IsDurableAcksEnabled(),
           Cmd.WalMB);
       engine_ptr = DiskEngine->GetEngine();
     }
@@ -1656,6 +1672,8 @@ void TServer::Init() {
       memset(raw_inst, 0, sizeof(raw_inst));
       memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));
       wal_config.StoreId = Base::TUuid(raw_inst);
+      wal_config.NoSync = Cmd.WalNoSync;
+      wal_config.EarlyAck = Cmd.WalEarlyAck;
 
       auto *persistent_dev = DiskEngine->GetPersistentDevice();
       assert(persistent_dev);
@@ -1728,14 +1746,16 @@ void TServer::Init() {
       });
       wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
 
-      /* Step 8: Instantiate Wal and write initial checkpoint */
-      uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
-      uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
-      uint32_t current_lap = scan_result.LastValidLap;
+      if (Cmd.IsDurableAcksEnabled()) {
+        /* Step 8: Instantiate Wal and write initial checkpoint */
+        uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
+        uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
+        uint32_t current_lap = scan_result.LastValidLap;
 
-      Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap);
-      Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
-      RepoManager->SetWal(Wal.get());
+        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap);
+        Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+        RepoManager->SetWal(Wal.get());
+      }
     }
     /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
       ScheduleRunnerHost(&DurableLayerCleanerRunner);

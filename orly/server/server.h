@@ -388,11 +388,19 @@ namespace Orly {
            from ReadBudgetMB unless the command line gives it; 0 means no limit. */
         size_t ReadBudgetSteps;
 
-        /* Durable acknowledgments via write-ahead log (#755). "false" (default) or "experimental". */
-        std::string DurableAcks = "false";
+        /* Durable acknowledgments via write-ahead log (#755). "local" / "true" (default), "false". */
+        std::string DurableAcks = "local";
 
         /* Size of the WAL ring in megabytes (#755). Default 256. */
         size_t WalMB = 256;
+
+        /* Test-only negative controls (#755). */
+        bool WalNoSync = false;
+        bool WalEarlyAck = false;
+
+        bool IsDurableAcksEnabled() const {
+          return DurableAcks == "local" || DurableAcks == "true" || DurableAcks == "experimental";
+        }
 
         /******** Object Pools ********/
 

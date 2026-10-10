@@ -24,6 +24,7 @@
 #include <base/cmd.h>
 #include <base/log.h>
 #include <orly/indy/disk/util/disk_util.h>
+#include <orly/indy/disk/wal.h>
 
 using namespace std;
 using namespace chrono;
@@ -41,6 +42,7 @@ class TCmd final
   TCmd()
       : ZeroSuperBlock(false),
         List(false),
+        DowngradeFormat(false),
         CreateVolume(false),
         InstanceName(""),
         VolumeKind("stripe"),
@@ -60,6 +62,9 @@ class TCmd final
 
   /* If true, then list all the devices. */
   bool List;
+
+  /* If true, downgrade a format version 1 volume to format version 0. */
+  bool DowngradeFormat;
 
   /* If true, then create a new volume. */
   bool CreateVolume;
@@ -90,6 +95,10 @@ class TCmd final
       Param(
           &TCmd::List, "list", Optional, "list\0l\0",
           "List all the devices on this system."
+      );
+      Param(
+          &TCmd::DowngradeFormat, "downgrade-format", Optional, "downgrade-format\0downgrade_format\0",
+          "Downgrade format version 1 volume to format version 0 (refuses if WAL holds uncheckpointed records)."
       );
       Param(
           &TCmd::CreateVolume, "create-volume", Optional, "create-volume\0cb\0",
@@ -267,5 +276,61 @@ int main(int argc, char *argv[]) {
       throw std::runtime_error("device speed must be (fast | slow)");
     }
     disk_util.CreateVolume(cmd.InstanceName, cmd.NumDevicesInVolume, cmd.DeviceSet, strategy, cmd.ReplicationFactor, cmd.StripeSizeKB, speed, false /* fsync */);
+  } else if (cmd.DowngradeFormat) {
+    if (cmd.DeviceSet.empty()) {
+      cerr << "--downgrade-format requires at least one device specified with --dev" << endl;
+      return EXIT_FAILURE;
+    }
+    for (const auto &device : cmd.DeviceSet) {
+      string path_to_device = "/dev/" + device;
+      TDeviceUtil::TOrlyDevice dev_info;
+      if (!TDeviceUtil::ProbeDevice(path_to_device.c_str(), dev_info)) {
+        cerr << "Could not probe device " << path_to_device << endl;
+        return EXIT_FAILURE;
+      }
+      if (dev_info.FormatVersion == 0UL) {
+        cout << path_to_device << " is already format version 0." << endl;
+        continue;
+      }
+      if (dev_info.FormatVersion > 1UL) {
+        cerr << "Unsupported format version " << dev_info.FormatVersion << " on " << path_to_device << endl;
+        return EXIT_FAILURE;
+      }
+      auto dev = std::make_unique<TPersistentDevice>(&controller, path_to_device.c_str(), device.c_str(),
+                                                     dev_info.LogicalBlockSize, dev_info.PhysicalBlockSize,
+                                                     dev_info.NumLogicalBlockExposed, false, false);
+      TWal::TConfig wal_config;
+      wal_config.BaseOffset = dev_info.WalStartBlock * dev_info.PhysicalBlockSize;
+      wal_config.CapacityBytes = dev_info.WalNumBlocks * dev_info.PhysicalBlockSize;
+      wal_config.CheckpointSlot0Offset = dev_info.WalCheckpoint0Block * dev_info.PhysicalBlockSize;
+      wal_config.CheckpointSlot1Offset = dev_info.WalCheckpoint1Block * dev_info.PhysicalBlockSize;
+      uuid_t raw_inst;
+      memset(raw_inst, 0, sizeof(raw_inst));
+      memcpy(raw_inst, dev_info.VolumeId.InstanceName, std::min(sizeof(raw_inst), strlen(dev_info.VolumeId.InstanceName)));
+      wal_config.StoreId = Base::TUuid(raw_inst);
+
+      uint64_t start_lsn = 1UL;
+      uint64_t start_group = 1UL;
+      uint32_t start_lap = 1U;
+      auto cp_opt = TWal::ReadNewestCheckpoint(dev.get(), wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
+      if (cp_opt) {
+        start_lsn = cp_opt->HeadLsn;
+        start_group = cp_opt->CheckpointNum + 1UL;
+      }
+      auto scan_res = TWal::Scan(dev.get(), wal_config, start_group, start_lsn, start_lap);
+      if (scan_res.Status != TScanStatus::Empty && !scan_res.Records.empty()) {
+        cerr << "Refusing to downgrade " << path_to_device << ": WAL contains " << scan_res.Records.size()
+             << " uncheckpointed records; start the server and shut down cleanly or drain POVs first." << endl;
+        return EXIT_FAILURE;
+      }
+      dev_info.FormatVersion = 0UL;
+      dev_info.WalStartBlock = 0UL;
+      dev_info.WalNumBlocks = 0UL;
+      dev_info.WalCheckpoint0Block = 0UL;
+      dev_info.WalCheckpoint1Block = 0UL;
+      TDeviceUtil::ModifyDevice(path_to_device.c_str(), dev_info);
+      cout << "Successfully downgraded " << path_to_device << " to format version 0." << endl;
+    }
+    return EXIT_SUCCESS;
   }
 }
