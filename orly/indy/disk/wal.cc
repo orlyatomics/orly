@@ -127,7 +127,7 @@ static bool SyncDeviceRead(Util::TDevice *device, const Base::TCodeLocation &loc
   return state->Ok;
 }
 
-TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum)
+TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum, uint64_t head_lsn)
     : Device(device),
       Config(config),
       NextLsn(start_lsn > 0 ? start_lsn - 1 : 0),
@@ -138,7 +138,7 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
       HighestSyncedLsn(NextLsn),
       HighestSealedLsn(NextLsn),
       DurableLsn(NextLsn),
-      HeadLsn(start_lsn),
+      HeadLsn(head_lsn > 0UL ? head_lsn : start_lsn),
       Stopping(false),
       Failed(false) {
   assert(Device != nullptr);

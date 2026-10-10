@@ -164,7 +164,15 @@ namespace Orly {
             class TUpdate {
               public:
 
-              typedef std::vector<std::pair<TIndexKey, Atom::TCore>> TOpByKey;
+              struct TOpEntry {
+                TIndexKey IndexKey;
+                Atom::TCore Op;
+                TMutator Mutator;
+                TOpEntry(const TIndexKey &key, const Atom::TCore &op, TMutator mutator = TMutator::Assign)
+                    : IndexKey(key), Op(op), Mutator(mutator) {}
+              };
+
+              typedef std::vector<TOpEntry> TOpByKey;
 
               TUpdate();
 

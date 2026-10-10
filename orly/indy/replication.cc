@@ -132,9 +132,10 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
         TransactionBuilder.PushState(cur_update.GetId().NewState(cur_update.GetSuprena().get(), state_alloc)); /* id */
         TransactionBuilder.Push(cur_update.GetOpByKey().size()); /* number of index -> key -> val pairs */
         for (const auto &cur_op_by_key : cur_update.GetOpByKey()) {
-          TransactionBuilder.Push(cur_op_by_key.first.GetIndexId()); /* index id */
-          TransactionBuilder.PushState(cur_op_by_key.first.GetKey().GetCore().NewState(cur_update.GetSuprena().get(), state_alloc)); /* key */
-          TransactionBuilder.PushState(cur_op_by_key.second.NewState(cur_update.GetSuprena().get(), state_alloc)); /* val */
+          TransactionBuilder.Push(cur_op_by_key.IndexKey.GetIndexId()); /* index id */
+          TransactionBuilder.PushState(cur_op_by_key.IndexKey.GetKey().GetCore().NewState(cur_update.GetSuprena().get(), state_alloc)); /* key */
+          TransactionBuilder.PushState(cur_op_by_key.Op.NewState(cur_update.GetSuprena().get(), state_alloc)); /* val */
+          TransactionBuilder.Push(static_cast<uint32_t>(cur_op_by_key.Mutator)); /* mutator */
         }
         break;
       }

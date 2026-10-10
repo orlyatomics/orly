@@ -1695,7 +1695,7 @@ void TServer::Init() {
     RepoManager->SetTetrisManager(TetrisManager);
 
     /* Initialize and recover Write-Ahead Log (WAL) (#755). */
-    if (DiskEngine && DiskEngine->HasWal()) {
+    if (DiskEngine && DiskEngine->HasWal() && Cmd.IsDurableAcksEnabled()) {
       TetrisManager->HaltPromotion(std::chrono::milliseconds(0));
       Indy::Disk::TWal::TConfig wal_config;
       wal_config.BaseOffset = (DiskEngine->GetWalStartBlock() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
@@ -1791,13 +1791,14 @@ void TServer::Init() {
       if (Cmd.IsDurableAcksEnabled()) {
         /* Step 8: Instantiate Wal and write initial checkpoint */
         uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
+        uint64_t head_lsn = start_lsn;
         uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
         uint32_t current_lap = scan_result.LastValidLap;
 
-        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum);
-        Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn);
+        Wal->Checkpoint(head_lsn, GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
         RepoManager->SetWal(Wal.get());
-        syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld, group %ld, ring offset %ld", next_lsn, next_group, scan_result.NextRingOffset);
+        syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld), group %ld, ring offset %ld", next_lsn, head_lsn, next_group, scan_result.NextRingOffset);
       }
       TetrisManager->ResumePromotion();
     }
