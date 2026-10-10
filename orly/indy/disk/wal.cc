@@ -76,6 +76,60 @@ static inline size_t AlignToWal(size_t bytes) {
   return (bytes + WalAlignment - 1UL) & ~(WalAlignment - 1UL);
 }
 
+static void EnsureLocalEventPool() {
+  if (DiskUtil::TDiskController::TEvent::DiskEventPoolManager && !DiskUtil::TDiskController::TEvent::LocalEventPool) {
+    DiskUtil::TDiskController::TEvent::LocalEventPool = new Base::TThreadLocalGlobalPoolManager<DiskUtil::TDiskController::TEvent>::TThreadLocalPool(DiskUtil::TDiskController::TEvent::DiskEventPoolManager.get());
+  }
+}
+
+static bool SyncDeviceWrite(Util::TDevice *device, const Base::TCodeLocation &loc,
+                            void *buf, Util::TOffset offset, size_t size) {
+  EnsureLocalEventPool();
+  std::mutex m;
+  std::condition_variable cv;
+  bool done = false;
+  bool ok = false;
+
+  device->Write(loc, DiskUtil::FullPage, 0, buf, offset, size,
+                DiskPriority::RealTime, false, offset,
+                [&m, &cv, &done, &ok](TDiskResult res, const char */*err*/) {
+                  {
+                    std::lock_guard<std::mutex> lk(m);
+                    ok = (res == Success);
+                    done = true;
+                  }
+                  cv.notify_one();
+                });
+
+  std::unique_lock<std::mutex> lk(m);
+  cv.wait(lk, [&done] { return done; });
+  return ok;
+}
+
+static bool SyncDeviceRead(Util::TDevice *device, const Base::TCodeLocation &loc,
+                           void *buf, Util::TOffset offset, size_t size) {
+  EnsureLocalEventPool();
+  std::mutex m;
+  std::condition_variable cv;
+  bool done = false;
+  bool ok = false;
+
+  device->Read(loc, DiskUtil::FullPage, 0, buf, offset, size,
+               DiskPriority::RealTime, false,
+               [&m, &cv, &done, &ok](TDiskResult res, const char */*err*/) {
+                 {
+                   std::lock_guard<std::mutex> lk(m);
+                   ok = (res == Success);
+                   done = true;
+                 }
+                 cv.notify_one();
+               });
+
+  std::unique_lock<std::mutex> lk(m);
+  cv.wait(lk, [&done] { return done; });
+  return ok;
+}
+
 TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap)
     : Device(device),
       Config(config),
@@ -322,12 +376,7 @@ void TWal::LeaderMain() {
 
     lock.unlock();
 
-    bool write_ok = false;
-    Device->Write(HERE, DiskUtil::FullPage, 0, buf_ptr, Config.BaseOffset + group_offset, group_size,
-                  DiskPriority::RealTime, false, Config.BaseOffset + group_offset,
-                  [&write_ok](TDiskResult res, const char */*err*/) {
-                    write_ok = (res == Success);
-                  });
+    const bool write_ok = SyncDeviceWrite(Device, HERE, buf_ptr, Config.BaseOffset + group_offset, group_size);
 
     lock.lock();
     if (!write_ok) {
@@ -347,6 +396,10 @@ void TWal::LeaderMain() {
       DurableLsn = HighestSealedLsn;
       DurableCv.notify_all();
     }
+  }
+  if (DiskUtil::TDiskController::TEvent::LocalEventPool) {
+    delete DiskUtil::TDiskController::TEvent::LocalEventPool;
+    DiskUtil::TDiskController::TEvent::LocalEventPool = nullptr;
   }
 }
 
@@ -443,12 +496,7 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
 
   lock.unlock();
 
-  bool write_ok = false;
-  Device->Write(HERE, DiskUtil::FullPage, 0, buf.get(), target_slot, total_bytes,
-                DiskPriority::RealTime, false, target_slot,
-                [&write_ok](TDiskResult res, const char */*err*/) {
-                  write_ok = (res == Success);
-                });
+  const bool write_ok = SyncDeviceWrite(Device, HERE, buf.get(), target_slot, total_bytes);
   if (!write_ok) {
     lock.lock();
     Failed = true;
@@ -476,12 +524,7 @@ std::vector<uint64_t> TWal::CopyForward(const std::vector<std::pair<TWalRecordTy
 std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Util::TOffset slot0, Util::TOffset slot1, const Base::TUuid &store_id) {
   auto read_slot = [device, &store_id](Util::TOffset offset) -> std::optional<TCheckpoint> {
     auto buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
-    bool read_ok = false;
-    device->Read(HERE, DiskUtil::FullPage, 0, buf.get(), offset, WalAlignment,
-                 DiskPriority::RealTime, false,
-                 [&read_ok](TDiskResult res, const char */*err*/) {
-                   read_ok = (res == Success);
-                 });
+    const bool read_ok = SyncDeviceRead(device, HERE, buf.get(), offset, WalAlignment);
     if (!read_ok) {
       return std::nullopt;
     }
@@ -495,12 +538,7 @@ std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Uti
     if (hdr->PayloadLen > 0) {
       const size_t total_size = AlignToWal(sizeof(TCheckpointHeader) + hdr->PayloadLen);
       auto full_buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), total_size);
-      bool full_read_ok = false;
-      device->Read(HERE, DiskUtil::FullPage, 0, full_buf.get(), offset, total_size,
-                   DiskPriority::RealTime, false,
-                   [&full_read_ok](TDiskResult res, const char */*err*/) {
-                     full_read_ok = (res == Success);
-                   });
+      const bool full_read_ok = SyncDeviceRead(device, HERE, full_buf.get(), offset, total_size);
       if (!full_read_ok) {
         return std::nullopt;
       }
@@ -550,12 +588,7 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
     }
 
     auto page_buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
-    bool read_ok = false;
-    device->Read(HERE, DiskUtil::FullPage, 0, page_buf.get(), config.BaseOffset + ring_offset, WalAlignment,
-                 DiskPriority::RealTime, false,
-                 [&read_ok](TDiskResult res, const char */*err*/) {
-                   read_ok = (res == Success);
-                 });
+    const bool read_ok = SyncDeviceRead(device, HERE, page_buf.get(), config.BaseOffset + ring_offset, WalAlignment);
 
     if (!read_ok) {
       result.Status = TScanStatus::TornTail;
@@ -571,12 +604,7 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
       /* Not a group header. Check if the ring wrapped to offset 0 */
       if (ring_offset > 0) {
         auto wrap_buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
-        bool wrap_read_ok = false;
-        device->Read(HERE, DiskUtil::FullPage, 0, wrap_buf.get(), config.BaseOffset, WalAlignment,
-                     DiskPriority::RealTime, false,
-                     [&wrap_read_ok](TDiskResult res, const char */*err*/) {
-                       wrap_read_ok = (res == Success);
-                     });
+        const bool wrap_read_ok = SyncDeviceRead(device, HERE, wrap_buf.get(), config.BaseOffset, WalAlignment);
         if (wrap_read_ok) {
           const TGroupHeader *wrap_hdr = reinterpret_cast<const TGroupHeader *>(wrap_buf.get());
           if (memcmp(wrap_hdr->Magic, "ORLYWAL1", 8) == 0 &&
@@ -625,12 +653,7 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
           continue;
         }
         auto check_page = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
-        bool check_ok = false;
-        device->Read(HERE, DiskUtil::FullPage, 0, check_page.get(), config.BaseOffset + check_offset, WalAlignment,
-                     DiskPriority::RealTime, false,
-                     [&check_ok](TDiskResult res, const char */*err*/) {
-                       check_ok = (res == Success);
-                     });
+        const bool check_ok = SyncDeviceRead(device, HERE, check_page.get(), config.BaseOffset + check_offset, WalAlignment);
         if (!check_ok) {
           continue;
         }
@@ -663,12 +686,7 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
     /* Valid header! Now read entire group if larger than 4 KiB */
     const size_t group_size = AlignToWal(sizeof(TGroupHeader) + hdr->PayloadLen);
     auto full_buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), group_size);
-    bool full_read_ok = false;
-    device->Read(HERE, DiskUtil::FullPage, 0, full_buf.get(), config.BaseOffset + ring_offset, group_size,
-                 DiskPriority::RealTime, false,
-                 [&full_read_ok](TDiskResult res, const char */*err*/) {
-                   full_read_ok = (res == Success);
-                 });
+    const bool full_read_ok = SyncDeviceRead(device, HERE, full_buf.get(), config.BaseOffset + ring_offset, group_size);
 
     if (!full_read_ok) {
       result.Status = TScanStatus::TornTail;
@@ -690,12 +708,7 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
             continue;
           }
           auto check_page = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
-          bool check_ok = false;
-          device->Read(HERE, DiskUtil::FullPage, 0, check_page.get(), config.BaseOffset + check_offset, WalAlignment,
-                       DiskPriority::RealTime, false,
-                       [&check_ok](TDiskResult res, const char */*err*/) {
-                         check_ok = (res == Success);
-                       });
+          const bool check_ok = SyncDeviceRead(device, HERE, check_page.get(), config.BaseOffset + check_offset, WalAlignment);
           if (check_ok) {
             const TGroupHeader *later_hdr = reinterpret_cast<const TGroupHeader *>(check_page.get());
             if (memcmp(later_hdr->Magic, "ORLYWAL1", 8) == 0 &&

@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <thread>
 
 #include <base/booster.h>
 #include <base/cmd.h>
@@ -296,9 +297,14 @@ int main(int argc, char *argv[]) {
         cerr << "Unsupported format version " << dev_info.FormatVersion << " on " << path_to_device << endl;
         return EXIT_FAILURE;
       }
+      TDiskController::TEvent::InitializeDiskEventPoolManager(64UL);
+      TDiskController controller;
       auto dev = std::make_unique<TPersistentDevice>(&controller, path_to_device.c_str(), device.c_str(),
                                                      dev_info.LogicalBlockSize, dev_info.PhysicalBlockSize,
                                                      dev_info.NumLogicalBlockExposed, false, false);
+      std::thread runner_thread([&controller, dev_ptr = dev.get()] {
+        controller.QueueRunner(std::vector<TPersistentDevice *>{dev_ptr}, true, 0);
+      });
       TWal::TConfig wal_config;
       wal_config.BaseOffset = dev_info.WalStartBlock * dev_info.PhysicalBlockSize;
       wal_config.CapacityBytes = dev_info.WalNumBlocks * dev_info.PhysicalBlockSize;
@@ -318,6 +324,14 @@ int main(int argc, char *argv[]) {
         start_group = cp_opt->CheckpointNum + 1UL;
       }
       auto scan_res = TWal::Scan(dev.get(), wal_config, start_group, start_lsn, start_lap);
+      controller.ShutDown();
+      runner_thread.join();
+      dev.reset();
+      if (TDiskController::TEvent::LocalEventPool) {
+        delete TDiskController::TEvent::LocalEventPool;
+        TDiskController::TEvent::LocalEventPool = nullptr;
+      }
+      TDiskController::TEvent::FinalizeDiskEventPoolManager();
       if (scan_res.Status != TScanStatus::Empty && !scan_res.Records.empty()) {
         cerr << "Refusing to downgrade " << path_to_device << ": WAL contains " << scan_res.Records.size()
              << " uncheckpointed records; start the server and shut down cleanly or drain POVs first." << endl;
