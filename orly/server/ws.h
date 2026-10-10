@@ -39,6 +39,16 @@
 
 namespace Orly {
 
+  namespace Indy {
+
+    namespace Disk {
+
+      class TWal;
+
+    }  // Disk
+
+  }  // Indy
+
   namespace Server {
 
      /* An interface to a websocket server.  We use an interface-only definition
@@ -172,6 +182,9 @@ namespace Orly {
           virtual void WaitAWhile() {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
           }
+
+          /* Write-ahead log for durable acknowledgments (#755). Null when disabled or in memory simulation. */
+          virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
 
           protected:
 

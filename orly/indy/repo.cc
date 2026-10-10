@@ -28,6 +28,7 @@
 #include <base/debug_log.h>
 #include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/util/hash_util.h>
+#include <orly/indy/disk/wal.h>
 
 using namespace std;
 using namespace Base;
@@ -910,12 +911,20 @@ void TRepo::StepMergeMem() {
                 size_t num_keys = 0U;
                 TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
                 TDiskLayerSlot disk_slot;
+                /* Write-ahead rule (#755, §4.1): ensure the WAL is durable through the
+                   highest appended LSN before writing this data file to disk. */
+                if (auto *wal = Manager->GetWal()) {
+                  wal->WaitForDurable(wal->GetLastAppendedLsn());
+                }
                 size_t gen_id = write_file(src, saved_low_seq, saved_high_seq, num_keys);
                 {
                   std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                   Manager->MergeMemAverageKeysCalc.Push(num_keys);
                 }
                 new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
+                if (auto *wal = Manager->GetWal()) {
+                  wal->Checkpoint(wal->GetHeadLsn(), saved_high_seq);
+                }
                 delete new_mem;
                 new_mem = nullptr;
               } else {

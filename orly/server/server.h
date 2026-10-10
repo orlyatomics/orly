@@ -42,6 +42,7 @@
 #include <orly/indy/disk/indy_util_reporter.h>
 #include <orly/indy/disk/sim/mem_engine.h>
 #include <orly/indy/disk/util/disk_engine.h>
+#include <orly/indy/disk/wal.h>
 #include <orly/indy/fiber/fiber.h>
 #include <orly/indy/fiber/jump_runnable.h>
 #include <orly/notification/all.h>
@@ -387,6 +388,12 @@ namespace Orly {
            from ReadBudgetMB unless the command line gives it; 0 means no limit. */
         size_t ReadBudgetSteps;
 
+        /* Durable acknowledgments via write-ahead log (#755). "false" (default) or "experimental". */
+        std::string DurableAcks = "false";
+
+        /* Size of the WAL ring in megabytes (#755). Default 256. */
+        size_t WalMB = 256;
+
         /******** Object Pools ********/
 
         size_t DurableMappingPoolSize;
@@ -519,6 +526,10 @@ namespace Orly {
 
       bool IsMemoryAdmissionOn() const override {
         return Cmd.MemoryReservePct != 0UL;
+      }
+
+      Indy::Disk::TWal *GetWal() const override {
+        return Wal.get();
       }
 
       /* Called when the websockets server wishes to create a new session. */
@@ -1135,6 +1146,9 @@ namespace Orly {
 
       /* The websockets server object */
       std::unique_ptr<TWs> Ws;
+
+      /* Write-ahead log for durable acknowledgments (#755). */
+      std::unique_ptr<Indy::Disk::TWal> Wal;
 
       /* The thread on which WsRunner runs. */
       std::thread WsThread;

@@ -29,6 +29,9 @@ namespace Orly {
     /* Forward Delcarations. */
     class TTransactionReplication;
     class TReplicationStreamer;
+    namespace Disk {
+      class TWal;
+    }
 
     namespace L1 {
 
@@ -82,6 +85,12 @@ namespace Orly {
            With no pusher, or no commit, it is left untouched. */
         void ReportCommitSequenceNumber(std::optional<TSequenceNumber> *out) NO_THROW {
           CommitSequenceNumberOut = out;
+        }
+
+        /* Ask that the LSN assigned to this transaction by the WAL be stored in *out when
+           the commit happens. *out must outlive this object. (#755) */
+        void ReportCommitLsn(std::optional<uint64_t> *out) NO_THROW {
+          CommitLsnOut = out;
         }
 
         /* Discard the prepared action, if any. */
@@ -463,6 +472,8 @@ namespace Orly {
         bool CommitFlag;
 
         std::optional<TSequenceNumber> *CommitSequenceNumberOut = nullptr;
+        std::optional<uint64_t> *CommitLsnOut = nullptr;
+        bool TouchesSafeRepo = false;
 
         bool ShouldReplicate;
 
@@ -520,7 +531,12 @@ namespace Orly {
 
         virtual void DeleteTransactionReplication(TTransactionReplication *transaction_replication) NO_THROW = 0;
 
+        virtual Disk::TWal *GetWal() const NO_THROW override { return Wal; }
+        void SetWal(Disk::TWal *wal) NO_THROW { Wal = wal; }
+
         private:
+
+        Disk::TWal *Wal = nullptr;
 
         void OnCloseTransaction(TTransaction *transaction);
 

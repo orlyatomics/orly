@@ -22,7 +22,11 @@
 #include <thread>
 
 #include <base/debug_log.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
+#include <orly/indy/disk/wal.h>
 #include <orly/indy/fiber/fiber.h>
+#include <orly/indy/replication.h>
 
 using namespace std;
 using namespace Base;
@@ -310,6 +314,7 @@ void TTransaction::Prepare() {
     }
   }
   Replica.Reset();
+  TouchesSafeRepo = false;
   size_t num_push = 0UL;
   std::vector<std::pair<Base::TUuid, TSequenceNumber>> release_set;
   for (TMutationCollection::TCursor csr(&MutationCollection); csr; ++csr) {
@@ -319,6 +324,7 @@ void TTransaction::Prepare() {
         pusher->MyMutation = Replica.Push(pusher->GetRepoId(), pusher->Update);
 
         if (pusher->Repo->IsSafeRepo()) {
+          TouchesSafeRepo = true;
           ++num_push;
           TTransactionCompletion *transaction_completion = TransactionCompletion;
           auto func = [transaction_completion](TUpdate::TPersistenceNotification::TResult result) {
@@ -341,6 +347,9 @@ void TTransaction::Prepare() {
       }
       case TMutation::Popper : {
         const TPopper *popper = dynamic_cast<TPopper *>(&*csr);
+        if (popper->Repo->IsSafeRepo()) {
+          TouchesSafeRepo = true;
+        }
         switch (popper->State) {
           case TPopper::Peek : {
             /* Do nothing */
@@ -362,6 +371,9 @@ void TTransaction::Prepare() {
       }
       case TMutation::StatusChanger : {
         const TStatusChanger *status_changer = dynamic_cast<TStatusChanger *>(&*csr);
+        if (status_changer->Repo->IsSafeRepo()) {
+          TouchesSafeRepo = true;
+        }
         switch (status_changer->Status) {
           case Normal : {
             status_changer->MyMutation = Replica.UnPause(status_changer->GetRepoId(), status_changer->Repo->GetSequenceNumberStart());
@@ -496,6 +508,26 @@ TTransaction::~TTransaction() NO_THROW {
     }
 
     if (CommitFlag) {
+      if (Manager->GetWal() && TouchesSafeRepo) {
+        try {
+          TReplicationStreamer streamer;
+          streamer.PushTransaction(Replica);
+          auto recorder = std::make_shared<Io::TRecorder>();
+          /* serialize */ {
+            Io::TBinaryOutputOnlyStream strm(recorder);
+            streamer.Write(strm);
+            strm.Flush();
+          }
+          std::string wire;
+          recorder->CopyOut(wire);
+          const uint64_t lsn = Manager->GetWal()->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
+          if (CommitLsnOut) {
+            *CommitLsnOut = lsn;
+          }
+        } catch (const std::exception &ex) {
+          syslog(LOG_ERR, "~TTransaction: WAL append failed: %s", ex.what());
+        }
+      }
       if (ShouldReplicate) {
         Manager->Enqueue(TransactionReplication, std::move(Replica));
       } else {

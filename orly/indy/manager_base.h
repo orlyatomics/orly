@@ -54,6 +54,9 @@ namespace Orly {
     /* Forward Declarations. */
     class TMemoryLayer;
     class TDiskLayer;
+    namespace Disk {
+      class TWal;
+    }
 
     /* Forward Declarations. */
     class TManager;
@@ -670,6 +673,7 @@ namespace Orly {
         typedef InvCon::UnorderedList::TCollection<TManager, TRepo::TDataLayer> TRemovalCollection;
 
         inline Disk::Util::TEngine *GetEngine() const;
+        virtual Disk::TWal *GetWal() const NO_THROW { return nullptr; }
 
         inline size_t GetTempFileConsolThresh() const;
 

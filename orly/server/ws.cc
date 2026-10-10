@@ -55,6 +55,7 @@
 #include <orly/client/program/translate_options.h>
 #include <orly/indy/key.h>
 #include <orly/orly.package.cst.h>
+#include <orly/indy/disk/wal.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
 #include <orly/server/read_too_large.h>
@@ -109,6 +110,17 @@ namespace {
 
   };  // TDurableTimeout
 
+  /* A safe write was attempted or waited on, but the WAL has failed (#755).
+     Reported as "status": "durability_unknown". */
+  class TDurabilityUnknown
+      : public std::runtime_error {
+    public:
+
+    explicit TDurabilityUnknown(const std::string &msg = "durability unknown: WAL failure")
+        : std::runtime_error(msg) {}
+
+  };  // TDurabilityUnknown
+
   /* Fill in a reply's "result" and "status" for the exception being handled.  Call only from
      inside a catch block. */
   void SetErrorReply(TJson &reply) {
@@ -143,6 +155,10 @@ namespace {
       /* The write committed, but was not on disk in time (#750). The reply's receipt names it. */
       reply["result"] = ex.what();
       reply["status"] = "durable_timeout";
+    } catch (const TDurabilityUnknown &ex) {
+      /* The WAL failed: durability status unknown (#755). */
+      reply["result"] = ex.what();
+      reply["status"] = "durability_unknown";
     } catch (const TRemoteCompileDisabled &ex) {
       /* `compile` on a server started without --allow_remote_compile (#705). */
       reply["result"] = ex.what();
@@ -643,8 +659,19 @@ class TWsImpl final
                           request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
           auto result = std::make_shared<TMethodResult>(session->Try(*request));
           const auto &seq_num = result->GetCommitSequenceNumber();
+          const auto &commit_lsn = result->GetCommitLsn();
           bool durable = false;
-          if (options.WaitDurableMs && seq_num) {
+          if (commit_lsn && session_mngr && session_mngr->GetWal()) {
+            auto *wal = session_mngr->GetWal();
+            if (wal->IsFailed()) {
+              throw TDurabilityUnknown("durability unknown: WAL has failed");
+            }
+            uint64_t wait_ms = options.WaitDurableMs ? options.WaitDurableMs : 5000UL;
+            durable = wal->WaitForDurable(*commit_lsn, std::chrono::milliseconds(wait_ms));
+            if (wal->IsFailed()) {
+              throw TDurabilityUnknown("durability unknown: WAL has failed");
+            }
+          } else if (options.WaitDurableMs && seq_num) {
             durable = WaitDurable(session_mngr, *session, request->GetPovId(), *seq_num, options.WaitDurableMs);
           }
           return TStmtQueue::TFinish([conn, options, durable, request, result] {
@@ -692,8 +719,19 @@ class TWsImpl final
                           closures = std::make_shared<const std::vector<TClosure>>(std::move(closures))] {
           auto result = std::make_shared<TMethodResult>(session->TryBatch(pov_id, *fq_name, *closures));
           const auto &seq_num = result->GetCommitSequenceNumber();
+          const auto &commit_lsn = result->GetCommitLsn();
           bool durable = false;
-          if (options.WaitDurableMs && seq_num) {
+          if (commit_lsn && session_mngr && session_mngr->GetWal()) {
+            auto *wal = session_mngr->GetWal();
+            if (wal->IsFailed()) {
+              throw TDurabilityUnknown("durability unknown: WAL has failed");
+            }
+            uint64_t wait_ms = options.WaitDurableMs ? options.WaitDurableMs : 5000UL;
+            durable = wal->WaitForDurable(*commit_lsn, std::chrono::milliseconds(wait_ms));
+            if (wal->IsFailed()) {
+              throw TDurabilityUnknown("durability unknown: WAL has failed");
+            }
+          } else if (options.WaitDurableMs && seq_num) {
             durable = WaitDurable(session_mngr, *session, pov_id, *seq_num, options.WaitDurableMs);
           }
           return TStmtQueue::TFinish([conn, options, durable, pov_id, result] {

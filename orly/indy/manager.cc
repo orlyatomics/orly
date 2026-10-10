@@ -1311,7 +1311,7 @@ static void LogStatusChange(const char *what, const Base::TUuid &repo_id, TSeque
   syslog(LOG_INFO, "Slave %s %s of repo [%s] at seq [%ld]", applied ? "applying" : "discarding", what, strm.str().c_str(), seq_num);
 }
 
-size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
+size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator iter = core_vec.begin();
@@ -1324,7 +1324,7 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
   Base::TUuid index_id;
   for (; iter != end; ++iter) {
     Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), num_mutations_in_transaction);
-    auto apply_transaction = Manager->NewTransaction();
+    auto apply_transaction = NewTransaction();
     ++num_applied;
     for (size_t m_num = 0; m_num < num_mutations_in_transaction; ++m_num) {
       ++iter;
@@ -1339,7 +1339,7 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
          so the next mutation past 1 failed the sequence check below (an assert in debug, "missing
          data" in release), and a pov kept for a failover read through no parent (#671).  A
          skipped mutation still reaches whatever it was promoted into: that's its own mutation. */
-      auto repo = Manager->TryGetLiveRepo(repo_id);
+      auto repo = TryGetLiveRepo(repo_id);
       switch (action) {
         case TTransactionAction::Push : {
           //std::cout << "Apply transaction PUSH [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
@@ -1414,6 +1414,10 @@ size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &c
     apply_transaction->CommitAction();
   }
   return num_applied;
+}
+
+size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
+  return Manager->ApplyCoreVectorTransactions(core_vec, arena);
 }
 
 void TManager::TSlave::TransitionToSlave() {

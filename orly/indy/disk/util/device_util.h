@@ -104,6 +104,11 @@ namespace Orly {
           static constexpr uint64_t PhysicalBlockSizePos = LogicalBlockSizePos + 1UL;
           static constexpr uint64_t NumLogicalBlockExposedPos = PhysicalBlockSizePos + 1UL;
           static constexpr uint64_t MinDiscardBlocksPos = NumLogicalBlockExposedPos + 1UL;
+          static constexpr uint64_t FormatVersionPos = MinDiscardBlocksPos + 1UL;
+          static constexpr uint64_t WalStartBlockPos = FormatVersionPos + 1UL;
+          static constexpr uint64_t WalNumBlocksPos = WalStartBlockPos + 1UL;
+          static constexpr uint64_t WalCheckpoint0BlockPos = WalNumBlocksPos + 1UL;
+          static constexpr uint64_t WalCheckpoint1BlockPos = WalCheckpoint0BlockPos + 1UL;
 
           struct TOrlyDevice {
             TVolumeId VolumeId;
@@ -119,6 +124,11 @@ namespace Orly {
             uint64_t PhysicalBlockSize;
             uint64_t NumLogicalBlockExposed;
             uint64_t MinDiscardBlocks;
+            uint64_t FormatVersion = 0UL;
+            uint64_t WalStartBlock = 0UL;
+            uint64_t WalNumBlocks = 0UL;
+            uint64_t WalCheckpoint0Block = 0UL;
+            uint64_t WalCheckpoint1Block = 0UL;
           };
 
           static bool ProbeDevice(const char *path, TOrlyDevice &out_device);
