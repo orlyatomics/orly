@@ -16,10 +16,17 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
+#include <memory>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
+#include <base/uuid.h>
+#include <orly/indy/disk/tombstone_counts.h>
 #include <orly/indy/manager_base.h>
 #include <orly/indy/update.h>
 
@@ -64,7 +71,21 @@ namespace Orly {
 
       virtual void ClearLocalCaches() override;
 
+      /* The tombstone counts of this file's num_keys current keys in the index, made on first
+         use and shared by every count that passes over the file, on any runner, for the file's
+         life (#749). Reads nothing from disk: the counts fill in as counts read the file. */
+      std::shared_ptr<const Disk::TTombstoneCounts> GetTombstoneCounts(const Base::TUuid &index_id, size_t num_keys) const;
+
       private:
+
+      /* The tombstone counts by index. Made on first use, so a file no count passes over pays
+         one pointer for it. */
+      struct TTombstoneCache {
+        std::mutex Mutex;
+        std::vector<std::pair<Base::TUuid, std::shared_ptr<const Disk::TTombstoneCounts>>> ByIndex;
+      };
+
+      mutable std::atomic<TTombstoneCache *> TombstoneCache = nullptr;
 
       L0::TManager::TRepo *Repo;
 

@@ -126,6 +126,16 @@ namespace Orly {
         /* The mapping's disk layers and memory layers (#701). */
         inline void CountLayers(size_t &disk_layers, size_t &mem_layers) const;
 
+        /* Call cb with each layer a walk of this view reads: the mapping's, then the memtable
+           (#749). */
+        template <typename TCb>
+        void ForEachLayer(const TCb &cb) const {
+          for (TMapping::TEntryCollection::TCursor mapping_csr(Mapping->GetEntryCollection()); mapping_csr; ++mapping_csr) {
+            cb(static_cast<const TDataLayer *>(mapping_csr->GetLayer()));
+          }
+          cb(static_cast<const TDataLayer *>(CurrentMemoryLayer));
+        }
+
         /* The repo's NextUpdate as of the snapshot. */
         inline TSequenceNumber GetNextId() const {
           return NextId;

@@ -18,10 +18,14 @@
 
 #include <orly/indy/context.h>
 
+#include <alloca.h>
+#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 
+#include <orly/indy/disk_layer.h>
+#include <orly/indy/util/min_heap.h>
 #include <orly/server/read_too_large.h>
 
 #include <orly/rt/mutate.h>
@@ -137,6 +141,9 @@ bool TContext::Exists(const Indy::TIndexKey &key) {
 
 int64_t TContext::CountKeys(const Indy::TIndexKey &pattern) {
   ++WalkerCount;
+  if (const auto count = TryCountByRank(pattern, nullptr)) {
+    return *count;
+  }
   TPresentWalker walker(this, RepoTree, pattern, /* exact_point */ false, /* keys_only */ true);
   return CountKeys(walker);
 }
@@ -146,6 +153,9 @@ int64_t TContext::CountKeys(const Indy::TIndexKey &from, const Indy::TIndexKey &
     throw std::invalid_argument("key range endpoints must belong to one index");
   }
   ++WalkerCount;
+  if (const auto count = TryCountByRank(from, &to)) {
+    return *count;
+  }
   TPresentWalker walker(this, RepoTree, from, to, /* keys_only */ true);
   return CountKeys(walker);
 }
@@ -158,6 +168,196 @@ int64_t TContext::CountKeys(TPresentWalker &walker) {
       throw std::overflow_error("key count exceeds int range");
     }
     ++count;
+  }
+  return count;
+}
+
+void TContext::ChargeRows(size_t n) {
+  if (!n) {
+    return;
+  }
+  if (MaxRows != Unlimited && n > MaxRows - std::min(RowsWalked, MaxRows)) [[unlikely]] {
+    /* One at a time, the walk would have stopped on the first row past the limit. */
+    RowsWalked = std::max(RowsWalked + 1UL, MaxRows + 1UL);
+    OnOverBudget();
+  }
+  RowsWalked += n;
+  if (MaxArenaBytes != Unlimited && BudgetArena->GetByteSize() > MaxArenaBytes) [[unlikely]] {
+    OnOverBudget();
+  }
+}
+
+namespace {
+
+  /* True iff the key is a tuple of defined members of scalar type followed only by free ones,
+     so the keys of one index it matches (all of one arity) are one run of the index's order. */
+  bool IsRankable(const Indy::TKey &key) {
+    const Atom::TCore &core = key.GetCore();
+    if (!core.IsTuple()) {
+      return false;
+    }
+    const Atom::TCore::TOffset *const off = core.TryGetOffset();
+    const uint32_t *const elem_count = core.TryGetElemCount();
+    if (!off || !elem_count) {
+      return false;
+    }
+    void *pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin));
+    Atom::TCore::TArena::TFinalPin::TWrapper pin(key.GetArena()->Pin(*off, sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * *elem_count), pin_alloc));
+    const Atom::TCore *member, *limit;
+    pin->GetNote()->Get(member, limit);
+    bool free_seen = false;
+    for (; member < limit; ++member) {
+      if (member->IsFree()) {
+        free_seen = true;
+      } else if (free_seen || member->TryGetElemCount()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /* True iff every entry of the layer lies inside the view's window, so the repo's walk would
+     filter none of them out. */
+  bool IsWhollyVisible(const Indy::L0::TManager::TRepo::TDataLayer *layer, const TRepo::TView &view) {
+    return layer->GetLowestSeq() >= *view.GetLower() && layer->GetHighestSeq() <= *view.GetUpper();
+  }
+
+}  // namespace
+
+std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to) {
+  CheckViewsHeld();
+  if (!RankCounts || !IsRankable(to ? to->GetKey() : from.GetKey())) {
+    return std::nullopt;
+  }
+  using TDataLayer = Indy::L0::TManager::TRepo::TDataLayer;
+  /* Leave the count to the walk unless some disk file can be ranked, so a count over memory
+     layers alone costs nothing more than before. */
+  bool any_ranked = false;
+  for (const auto &[repo, view] : RepoTree) {
+    if (view->GetLower() && view->GetUpper()) {
+      view->ForEachLayer([&](const TDataLayer *layer) {
+        any_ranked = any_ranked || (layer->GetKind() == TDataLayer::Disk && IsWhollyVisible(layer, *view));
+      });
+    }
+  }
+  if (!any_ranked) {
+    return std::nullopt;
+  }
+  CheckArenaBudget();
+  /* The same walkers the repos' walks would build, one per layer of each repo, merged here in
+     one heap rather than a heap per repo. A key's first entry in the merge decides whether it
+     counts, just as in TPresentWalker: the repo nearest the POV first, then, within a repo,
+     the newest. */
+  struct TSource {
+    std::unique_ptr<Indy::TPresentWalker> Walker;
+    /* The walker as a disk file walker when its whole file is visible, so it can be ranked. */
+    Disk::TPresentWalkFileWrapper *File = nullptr;
+    const TDiskLayer *Layer = nullptr;
+    std::shared_ptr<const Disk::TTombstoneCounts> Counts;
+    size_t RepoPos;
+    /* The repo's window. A walker that can't be ranked skips the entries outside it, as the
+       repo's walk does. */
+    TSequenceNumber Lower, Upper;
+  };
+  std::vector<TSource> sources;
+  for (size_t repo_pos = 0UL; repo_pos < RepoTree.size(); ++repo_pos) {
+    const auto &view = RepoTree[repo_pos].second;
+    if (!view->GetLower() || !view->GetUpper()) {
+      continue;
+    }
+    const auto add = [&](const TDataLayer *layer) {
+      TSource source;
+      source.Walker = to ? layer->NewPresentWalker(from, *to) : layer->NewPresentWalker(from, /* exact_point */ false);
+      if (layer->GetKind() == TDataLayer::Disk && IsWhollyVisible(layer, *view)) {
+        source.File = dynamic_cast<Disk::TPresentWalkFileWrapper *>(source.Walker.get());
+        source.Layer = static_cast<const TDiskLayer *>(layer);
+      }
+      source.RepoPos = repo_pos;
+      source.Lower = *view->GetLower();
+      source.Upper = *view->GetUpper();
+      sources.push_back(std::move(source));
+    };
+    view->ForEachLayer(add);
+  }
+  const auto settle = [](TSource &source) {
+    if (!source.File) {
+      for (Indy::TPresentWalker &walker = *source.Walker;
+           walker && ((*walker).SequenceNumber < source.Lower || (*walker).SequenceNumber > source.Upper); ++walker) {}
+    }
+  };
+  struct TOrder {
+    const std::vector<TSource> *Sources;
+    bool operator()(const Indy::TPresentWalker::TItem &lhs, size_t lhs_pos, const Indy::TPresentWalker::TItem &rhs, size_t rhs_pos) const {
+      const Atom::TComparison comp = lhs.CompareKeys(rhs);
+      if (!Atom::IsEq(comp)) {
+        return Atom::IsLt(comp);
+      }
+      const size_t lhs_repo = (*Sources)[lhs_pos].RepoPos, rhs_repo = (*Sources)[rhs_pos].RepoPos;
+      return lhs_repo < rhs_repo || (lhs_repo == rhs_repo && lhs.SequenceNumber >= rhs.SequenceNumber);
+    }
+  };
+  Util::TMinHeap<Indy::TPresentWalker::TItem, size_t, TOrder> heap(sources.size() + 1UL, TOrder{&sources});
+  for (size_t pos = 0UL; pos < sources.size(); ++pos) {
+    settle(sources[pos]);
+    if (*sources[pos].Walker) {
+      heap.Insert(**sources[pos].Walker, pos);
+    }
+  }
+  int64_t count = 0;
+  const auto add_to_count = [&](size_t n) {
+    ChargeRows(n);
+    if (n > static_cast<size_t>(std::numeric_limits<int64_t>::max() - count)) {
+      throw std::overflow_error("key count exceeds int range");
+    }
+    count += static_cast<int64_t>(n);
+  };
+  std::vector<size_t> holders;
+  while (heap) {
+    size_t pos;
+    const Indy::TPresentWalker::TItem top = heap.Pop(pos);
+    TSource &source = sources[pos];
+    size_t next_pos;
+    const bool alone = !heap || !Atom::IsEq(heap.Peek(next_pos).CompareKeys(top));
+    if (alone && source.File) {
+      /* No other layer of any repo holds a key from this one up to the next key in the merge,
+         so this file alone decides every key in that stretch. */
+      if (!source.Counts) {
+        source.Counts = source.Layer->GetTombstoneCounts(from.GetIndexId(), source.File->GetNumRanks());
+      }
+      const auto [keys, tombstones] = source.File->SkipBelow(heap ? &heap.Peek(next_pos) : nullptr, *source.Counts);
+      assert(tombstones <= keys);
+      RowsCountedByRank += keys - tombstones;
+      add_to_count(keys - tombstones);
+      if (*source.Walker) {
+        heap.Insert(**source.Walker, pos);
+      }
+      continue;
+    }
+    /* The key's first entry decides it. Move every layer holding it past it. */
+    if (!top.Op.IsTombstone()) {
+      add_to_count(1UL);
+    }
+    holders.clear();
+    holders.push_back(pos);
+    while (heap && Atom::IsEq(heap.Peek(next_pos).CompareKeys(top))) {
+      heap.Pop(next_pos);
+      holders.push_back(next_pos);
+    }
+    for (size_t holder : holders) {
+      TSource &held = sources[holder];
+      Indy::TPresentWalker &walker = *held.Walker;
+      if (held.File) {
+        held.File->NextKey();
+      } else {
+        do {
+          ++walker;
+        } while (walker && Atom::IsEq((*walker).CompareKeys(top)));
+        settle(held);
+      }
+      if (walker) {
+        heap.Insert(*walker, holder);
+      }
+    }
   }
   return count;
 }

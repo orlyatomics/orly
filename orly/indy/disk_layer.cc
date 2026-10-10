@@ -20,9 +20,14 @@
 
 #include <syslog.h>
 
+#include <orly/indy/memory_layer.h>
+
 using namespace std;
 using namespace Base;
 using namespace Orly::Indy;
+
+/* Data layers of both kinds share one pool, whose blocks most callers size for a memory layer. */
+static_assert(sizeof(TDiskLayer) <= sizeof(TMemoryLayer), "a disk layer must fit a data layer pool block");
 
 TDiskLayer::TDiskLayer(L0::TManager *manager,
                        L0::TManager::TRepo *repo,
@@ -40,6 +45,7 @@ TDiskLayer::TDiskLayer(L0::TManager *manager,
 }
 
 TDiskLayer::~TDiskLayer() {
+  delete TombstoneCache.load(memory_order_acquire);
   if (GetMarkedForDelete()) {
     assert(Repo->IsSafeRepo());
     try {
@@ -68,6 +74,26 @@ void TDiskLayer::ClearLocalCaches() {
     Repo->ClearLocalFileCaches(GenId);
     CachesCleared = true;
   }
+}
+
+shared_ptr<const Disk::TTombstoneCounts> TDiskLayer::GetTombstoneCounts(const TUuid &index_id, size_t num_keys) const {
+  TTombstoneCache *cache = TombstoneCache.load(memory_order_acquire);
+  if (!cache) {
+    auto made = make_unique<TTombstoneCache>();
+    if (TombstoneCache.compare_exchange_strong(cache, made.get(), memory_order_acq_rel)) {
+      cache = made.release();
+    }
+  }
+  /* Held only to find or add an entry; nothing here waits on disk or yields the fiber. */
+  lock_guard<mutex> lock(cache->Mutex);
+  for (const auto &[id, counts] : cache->ByIndex) {
+    if (id == index_id) {
+      assert(counts->GetNumKeys() == num_keys);
+      return counts;
+    }
+  }
+  cache->ByIndex.emplace_back(index_id, make_shared<const Disk::TTombstoneCounts>(num_keys));
+  return cache->ByIndex.back().second;
 }
 
 unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &from,
