@@ -465,6 +465,9 @@ namespace Orly {
 
       std::shared_ptr<TForkWatch> GetOwnForkWatch() const;
 
+      /* Join parent's Tetris merge if we have unpromoted updates and are not already in Tetris (#755). */
+      void JoinTetris();
+
       protected:
 
       /* Construct a fresh, empty repo under `manager` (id, ttl, optional parent). */

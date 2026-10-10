@@ -149,8 +149,10 @@ void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, 
     }
   }
   if (ParentRepo && !InTetris) {
-    Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-    InTetris = true;
+    if (auto *tm = Manager->GetTetrisManager()) {
+      tm->Join((*ParentRepo)->GetId(), GetId());
+      InTetris = true;
+    }
   }
   if (total_layers >= 3) {
     EnqueueMergeDisk();
@@ -480,6 +482,20 @@ std::shared_ptr<TForkWatch> TRepo::GetOwnForkWatch() const {
   return OwnForkWatch;
 }
 
+void TRepo::JoinTetris() {
+  std::lock_guard<std::mutex> lock(DataLock);
+  if (LowestSeqNum && ParentRepo && Status == Normal && !InTetris) {
+    if (auto *tm = Manager->GetTetrisManager()) {
+      try {
+        tm->Join((*ParentRepo)->GetId(), GetId());
+        InTetris = true;
+      } catch (const std::exception &ex) {
+        syslog(LOG_ERR, "JoinTetris: deferred Tetris join under memory pressure: %s", ex.what());
+      }
+    }
+  }
+}
+
 std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update, const Base::TUuid &promoted_from) NO_THROW {
   std::optional<TSequenceNumber> new_seq;
   /* acquire Data lock */ {
@@ -545,11 +561,13 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
        un-promoted updates and re-joins after PopLowest drains and Parts it --
        and additionally retries a previously-failed join. */
     if (ParentRepo && Status == Normal && !InTetris) {
-      try {
-        Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-        InTetris = true;
-      } catch (const std::exception &ex) {
-        syslog(LOG_ERR, "AppendUpdate: deferred Tetris join under memory pressure: %s", ex.what());
+      if (auto *tm = Manager->GetTetrisManager()) {
+        try {
+          tm->Join((*ParentRepo)->GetId(), GetId());
+          InTetris = true;
+        } catch (const std::exception &ex) {
+          syslog(LOG_ERR, "AppendUpdate: deferred Tetris join under memory pressure: %s", ex.what());
+        }
       }
     }
   }  // release Data lock
@@ -588,7 +606,9 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
     ++PromotedUpdates;
     if (!LowestSeqNum) {
       if (ParentRepo && InTetris) {
-        Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          tm->Part((*ParentRepo)->GetId(), GetId());
+        }
         InTetris = false;
       }
     }
@@ -672,25 +692,31 @@ std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumb
       if (LowestSeqNum && ParentRepo && !InTetris) {
         /* As in AppendUpdate (#250): Join may allocate, and we're on the NO_THROW commit path.
            On failure stay out of Tetris; the next AppendUpdate retries the join. */
-        try {
-          Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-          InTetris = true;
-        } catch (const std::exception &ex) {
-          syslog(LOG_ERR, "ChangeStatus: deferred Tetris join under memory pressure: %s", ex.what());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          try {
+            tm->Join((*ParentRepo)->GetId(), GetId());
+            InTetris = true;
+          } catch (const std::exception &ex) {
+            syslog(LOG_ERR, "ChangeStatus: deferred Tetris join under memory pressure: %s", ex.what());
+          }
         }
       }
       break;
     }
     case Paused : {
       if (ParentRepo && InTetris) {
-        Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          tm->Part((*ParentRepo)->GetId(), GetId());
+        }
         InTetris = false;
       }
       break;
     }
     case Failed : {
       if (ParentRepo && InTetris) {
-        Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          tm->Part((*ParentRepo)->GetId(), GetId());
+        }
         InTetris = false;
       }
       break;

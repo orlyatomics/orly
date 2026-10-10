@@ -1661,8 +1661,42 @@ void TServer::Init() {
                                                                     Cmd.TempFileConsolidationThreshold,
                                                                     Cmd.Create);
     RepoManager->SetDurableManager(DurableManager);
+    /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
+      ScheduleRunnerHost(&DurableLayerCleanerRunner);
+      Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
+      try {
+        frame->Latch(&DurableLayerCleanerRunner, DurableManager.get(), static_cast<Fiber::TRunnable::TFunc>(&Durable::TManager::RunLayerCleaner));
+      } catch (...) {
+        Fiber::TFrame::LocalFramePool->Free(frame);
+        throw;
+      }
+      //Scheduler->Schedule(bind(&Durable::TManager::RunLayerCleaner, DurableManager.get()));
+    }
+
+    auto tetris_runner_setup_cb = [this](Indy::Fiber::TRunner *runner) {
+      ForEachSchedCallbackExtraSet.insert(runner);
+      using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
+                                                                        Orly::Indy::Disk::Util::LogicalBlockSize,
+                                                                        Orly::Indy::Disk::Util::PhysicalBlockSize,
+                                                                        Orly::Indy::Disk::Util::CheckedPage, true>;
+      if (!Cmd.MemorySim) {
+        /* if this is a disk based engine, allocate event pools */
+        if (!Disk::Util::TDiskController::TEvent::LocalEventPool) {
+          Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
+        }
+      }
+      assert(!TLocalReadFileCache::Cache);
+      TLocalReadFileCache::Cache = new TLocalReadFileCache();
+      assert(!Disk::TLocalWalkerCache::Cache);
+      Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
+    };
+
+    TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
+    RepoManager->SetTetrisManager(TetrisManager);
+
     /* Initialize and recover Write-Ahead Log (WAL) (#755). */
     if (DiskEngine && DiskEngine->HasWal()) {
+      TetrisManager->HaltPromotion(std::chrono::milliseconds(0));
       Indy::Disk::TWal::TConfig wal_config;
       wal_config.BaseOffset = (DiskEngine->GetWalStartBlock() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
       wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
@@ -1692,6 +1726,7 @@ void TServer::Init() {
         throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
       }
 
+      std::vector<Base::TUuid> restored_povs;
       Indy::Fiber::TJumpRunnable wal_recovery_jumper([&] {
         /* Step 6: Restore safe POVs from POV records */
         for (const auto &rec : scan_result.Records) {
@@ -1727,6 +1762,7 @@ void TServer::Init() {
             } catch (...) {
               DurableManager->New<TPov>(pov_id, pov_ttl, session_id, static_cast<TPov::TAudience>(aud_c), static_cast<TPov::TPolicy>(pol_c), shared_parents);
             }
+            restored_povs.push_back(pov_id);
           }
         }
 
@@ -1745,6 +1781,13 @@ void TServer::Init() {
       });
       wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
 
+      for (const auto &p_id : restored_povs) {
+        auto repo = RepoManager->TryGetLiveRepo(p_id);
+        if (repo) {
+          repo->JoinTetris();
+        }
+      }
+
       if (Cmd.IsDurableAcksEnabled()) {
         /* Step 8: Instantiate Wal and write initial checkpoint */
         uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
@@ -1756,39 +1799,8 @@ void TServer::Init() {
         RepoManager->SetWal(Wal.get());
         syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld, group %ld, ring offset %ld", next_lsn, next_group, scan_result.NextRingOffset);
       }
+      TetrisManager->ResumePromotion();
     }
-    /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
-      ScheduleRunnerHost(&DurableLayerCleanerRunner);
-      Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
-      try {
-        frame->Latch(&DurableLayerCleanerRunner, DurableManager.get(), static_cast<Fiber::TRunnable::TFunc>(&Durable::TManager::RunLayerCleaner));
-      } catch (...) {
-        Fiber::TFrame::LocalFramePool->Free(frame);
-        throw;
-      }
-      //Scheduler->Schedule(bind(&Durable::TManager::RunLayerCleaner, DurableManager.get()));
-    }
-
-    auto tetris_runner_setup_cb = [this](Indy::Fiber::TRunner *runner) {
-      ForEachSchedCallbackExtraSet.insert(runner);
-      using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
-                                                                        Orly::Indy::Disk::Util::LogicalBlockSize,
-                                                                        Orly::Indy::Disk::Util::PhysicalBlockSize,
-                                                                        Orly::Indy::Disk::Util::CheckedPage, true>;
-      if (!Cmd.MemorySim) {
-        /* if this is a disk based engine, allocate event pools */
-        if (!Disk::Util::TDiskController::TEvent::LocalEventPool) {
-          Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
-        }
-      }
-      assert(!TLocalReadFileCache::Cache);
-      TLocalReadFileCache::Cache = new TLocalReadFileCache();
-      assert(!Disk::TLocalWalkerCache::Cache);
-      Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
-    };
-
-    TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
-    RepoManager->SetTetrisManager(TetrisManager);
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
         ScheduleRunnerHost(&RunReplicationQueueRunner);
