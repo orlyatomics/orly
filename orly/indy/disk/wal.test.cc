@@ -23,6 +23,9 @@
 #include <thread>
 #include <vector>
 
+#include <base/io/binary_input_only_stream.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <base/test/kit.h>
 #include <orly/indy/disk/sim/fault_device.h>
 
@@ -395,4 +398,82 @@ FIXTURE(StandaloneBenchmarkReplayRate) {
   const double replay_records_sec = (elapsed_us > 0) ? (record_count * 1000000.0 / elapsed_us) : 0.0;
   std::cout << "Replay scan benchmark: " << record_count << " records in "
             << elapsed_us << " us (" << static_cast<size_t>(replay_records_sec) << " rec/s)" << std::endl;
+}
+
+FIXTURE(PovRecordRoundTrip) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  const Base::TUuid expected_pov_id("11111111-2222-3333-4444-555555555555");
+  const Base::TUuid expected_session_id("66666666-7777-8888-9999-000000000000");
+  const bool expected_has_parent = true;
+  const Base::TUuid expected_parent_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+  const char expected_aud = 'u';
+  const char expected_pol = 's';
+  const int64_t expected_ttl_sec = 3600;
+  const std::vector<Base::TUuid> expected_shared = {
+    Base::TUuid("12121212-3434-5656-7878-909090909090"),
+    Base::TUuid("abababab-cdcd-efef-abab-cdcdcdefefef")
+  };
+
+  {
+    TWal wal(&device, config);
+
+    auto recorder = std::make_shared<Io::TRecorder>();
+    {
+      Io::TBinaryOutputOnlyStream strm(recorder);
+      strm << expected_pov_id << expected_session_id << expected_has_parent << expected_parent_id
+           << expected_aud << expected_pol << expected_ttl_sec << expected_shared.size();
+      for (const auto &id : expected_shared) {
+        strm << id;
+      }
+      strm.Flush();
+    }
+    std::string wire;
+    recorder->CopyOut(wire);
+
+    wal.AppendAndWait(TWalRecordType::Pov, wire.data(), wire.size());
+    wal.Flush();
+  }
+
+  auto scan_res = TWal::Scan(&device, config);
+  EXPECT_EQ(scan_res.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan_res.Records.size(), 1UL);
+  EXPECT_EQ(scan_res.Records[0].Type, TWalRecordType::Pov);
+
+  std::string str(scan_res.Records[0].Body.data(), scan_res.Records[0].Body.size());
+  auto recorder = std::make_shared<Io::TRecorder>(str);
+  auto player = std::make_shared<Io::TPlayer>(recorder);
+  Io::TBinaryInputOnlyStream strm(player);
+
+  Base::TUuid actual_pov_id, actual_session_id, actual_parent_id;
+  bool actual_has_parent;
+  char actual_aud, actual_pol;
+  int64_t actual_ttl_sec;
+  size_t actual_num_parents;
+
+  strm >> actual_pov_id >> actual_session_id >> actual_has_parent >> actual_parent_id
+       >> actual_aud >> actual_pol >> actual_ttl_sec >> actual_num_parents;
+
+  EXPECT_EQ(actual_pov_id, expected_pov_id);
+  EXPECT_EQ(actual_session_id, expected_session_id);
+  EXPECT_EQ(actual_has_parent, expected_has_parent);
+  EXPECT_EQ(actual_parent_id, expected_parent_id);
+  EXPECT_EQ(actual_aud, expected_aud);
+  EXPECT_EQ(actual_pol, expected_pol);
+  EXPECT_EQ(actual_ttl_sec, expected_ttl_sec);
+  EXPECT_EQ(actual_num_parents, expected_shared.size());
+
+  for (size_t i = 0; i < actual_num_parents; ++i) {
+    Base::TUuid id;
+    strm >> id;
+    EXPECT_EQ(id, expected_shared[i]);
+  }
 }

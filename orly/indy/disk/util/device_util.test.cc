@@ -17,6 +17,7 @@
 #include <orly/indy/disk/util/device_util.h>
 
 #include <base/test/kit.h>
+#include <base/tmp_file.h>
 
 using namespace Orly::Indy::Disk::Util;
 
@@ -37,4 +38,41 @@ FIXTURE(GetPathToPartitionInfo) {
   EXPECT_EQ(TDeviceUtil::GetPathToPartitionInfo("sdb6"), "/sys/block/sdb/sdb6/");
   EXPECT_EQ(TDeviceUtil::GetPathToPartitionInfo("sde0"), "/sys/block/sde/sde0/");
   EXPECT_EQ(TDeviceUtil::GetPathToPartitionInfo("sdaz19"), "/sys/block/sdaz/sdaz19/");
+}
+
+FIXTURE(SuperBlockWalFields) {
+  Base::TTmpFile tmp_file;
+  EXPECT_EQ(ftruncate(tmp_file.GetFd(), TDeviceUtil::BlockSize * 2), 0);
+  TDeviceUtil::TOrlyDevice dev_write;
+  dev_write.VolumeId.Id = 42UL;
+  strncpy(dev_write.VolumeId.InstanceName, "test_inst", MaxInstanceNameSize);
+  dev_write.VolumeDeviceNumber = 1UL;
+  dev_write.NumDevicesInVolume = 1UL;
+  dev_write.LogicalExtentStart = 0UL;
+  dev_write.LogicalExtentSize = 1000UL;
+  dev_write.VolumeStrategy = 0UL;
+  dev_write.VolumeSpeed = 0UL;
+  dev_write.ReplicationFactor = 1UL;
+  dev_write.StripeSizeKB = 64UL;
+  dev_write.LogicalBlockSize = 4096UL;
+  dev_write.PhysicalBlockSize = 65536UL;
+  dev_write.NumLogicalBlockExposed = 1000UL;
+  dev_write.MinDiscardBlocks = 1UL;
+  dev_write.FormatVersion = 1UL;
+  dev_write.WalStartBlock = 10UL;
+  dev_write.WalNumBlocks = 4096UL;
+  dev_write.WalCheckpoint0Block = 4106UL;
+  dev_write.WalCheckpoint1Block = 4107UL;
+
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+
+  TDeviceUtil::TOrlyDevice dev_read;
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.FormatVersion, 1UL);
+  EXPECT_EQ(dev_read.WalStartBlock, 10UL);
+  EXPECT_EQ(dev_read.WalNumBlocks, 4096UL);
+  EXPECT_EQ(dev_read.WalCheckpoint0Block, 4106UL);
+  EXPECT_EQ(dev_read.WalCheckpoint1Block, 4107UL);
+  EXPECT_EQ(dev_read.VolumeId.Id, 42UL);
+  EXPECT_EQ(std::string(dev_read.VolumeId.InstanceName), "test_inst");
 }

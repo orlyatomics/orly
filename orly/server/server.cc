@@ -36,8 +36,11 @@
 #include <base/io/binary_input_only_stream.h>
 #include <base/io/binary_io_stream.h>
 #include <base/io/device.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/atom/core_vector.h>
 #include <orly/indy/disk/durable_manager.h>
+#include <orly/indy/disk/wal.h>
+#include <orly/indy/replication.h>
 #include <orly/auth.h>
 #include <orly/protocol.h>
 #include <orly/server/insufficient_memory.h>
@@ -529,6 +532,16 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "minimum working set."
   );
 
+  Param(
+      &TCmd::DurableAcks, "durable_acks", Optional, "durable_acks\0",
+      "Controls durable acknowledgments via write-ahead log (#755). \"false\" (default) or \"experimental\"."
+  );
+
+  Param(
+      &TCmd::WalMB, "wal_mb", Optional, "wal_mb\0",
+      "Size of the write-ahead log ring in megabytes (#755). Default 256."
+  );
+
 }
 
 class TIndexIdReader
@@ -606,6 +619,8 @@ TServer::TCmd::TCmd()
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
+      DurableAcks("false"),
+      WalMB(256),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -739,6 +754,14 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
   }
   if (!ReplicationToken) {
     ReplicationToken = AuthToken;
+  }
+  if (DurableAcks != "false" && DurableAcks != "experimental") {
+    cb("--durable_acks must be 'false' or 'experimental'");
+    return false;
+  }
+  if (DurableAcks == "experimental" && MemorySim) {
+    cb("--durable_acks=experimental is not supported with --mem_sim");
+    return false;
   }
   return ResolveMemoryDefaults(cb);
 }
@@ -1406,7 +1429,9 @@ void TServer::Init() {
           8 /* num block lru */,
           Cmd.FileServiceAppendLogMB,
           Cmd.Create,
-          Cmd.NoRealtime);
+          Cmd.NoRealtime,
+          Cmd.DurableAcks == "experimental",
+          Cmd.WalMB);
       engine_ptr = DiskEngine->GetEngine();
     }
     assert(engine_ptr);
@@ -1620,6 +1645,98 @@ void TServer::Init() {
                                                                     Cmd.TempFileConsolidationThreshold,
                                                                     Cmd.Create);
     RepoManager->SetDurableManager(DurableManager);
+    /* Initialize and recover Write-Ahead Log (WAL) (#755). */
+    if (DiskEngine && DiskEngine->HasWal()) {
+      Indy::Disk::TWal::TConfig wal_config;
+      wal_config.BaseOffset = DiskEngine->GetWalStartBlock() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot0Offset = DiskEngine->GetWalCheckpoint0Block() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot1Offset = DiskEngine->GetWalCheckpoint1Block() * Indy::Disk::Util::PhysicalBlockSize;
+      uuid_t raw_inst;
+      memset(raw_inst, 0, sizeof(raw_inst));
+      memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));
+      wal_config.StoreId = Base::TUuid(raw_inst);
+
+      auto *persistent_dev = DiskEngine->GetPersistentDevice();
+      assert(persistent_dev);
+
+      uint64_t start_lsn = 1UL;
+      uint64_t start_group = 1UL;
+      uint32_t start_lap = 1U;
+
+      auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
+      if (cp_opt) {
+        start_lsn = cp_opt->HeadLsn;
+        start_group = cp_opt->CheckpointNum + 1UL;
+      }
+
+      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap);
+      if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
+        throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
+      }
+
+      Indy::Fiber::TJumpRunnable wal_recovery_jumper([&] {
+        /* Step 6: Restore safe POVs from POV records */
+        for (const auto &rec : scan_result.Records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Pov) {
+            std::string str(rec.Body.data(), rec.Body.size());
+            auto recorder = std::make_shared<Io::TRecorder>(str);
+            auto player = std::make_shared<Io::TPlayer>(recorder);
+            Io::TBinaryInputOnlyStream strm(player);
+            Base::TUuid pov_id, session_id;
+            bool has_parent;
+            Base::TUuid parent_id;
+            char aud_c, pol_c;
+            int64_t ttl_sec;
+            size_t num_parents;
+            strm >> pov_id >> session_id >> has_parent >> parent_id >> aud_c >> pol_c >> ttl_sec >> num_parents;
+            TPov::TSharedParents shared_parents;
+            shared_parents.reserve(num_parents);
+            for (size_t i = 0; i < num_parents; ++i) {
+              Base::TUuid p_id;
+              strm >> p_id;
+              shared_parents.push_back(p_id);
+            }
+            std::optional<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
+            if (shared_parents.empty()) {
+              parent_repo = GlobalRepo;
+            } else {
+              parent_repo = RepoManager->TryGetLiveRepo(shared_parents.back());
+            }
+            auto pov_ttl = std::chrono::seconds(ttl_sec);
+            RepoManager->GetRepo(pov_id, pov_ttl, parent_repo, pol_c == static_cast<char>(TPov::TPolicy::Safe), true);
+            try {
+              DurableManager->Open<TPov>(pov_id);
+            } catch (...) {
+              DurableManager->New<TPov>(pov_id, pov_ttl, session_id, static_cast<TPov::TAudience>(aud_c), static_cast<TPov::TPolicy>(pol_c), shared_parents);
+            }
+          }
+        }
+
+        /* Step 7: Replay transactions through slave apply path */
+        for (const auto &rec : scan_result.Records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
+            Indy::TReplicationStreamer streamer;
+            std::string str(rec.Body.data(), rec.Body.size());
+            auto recorder = std::make_shared<Io::TRecorder>(str);
+            auto player = std::make_shared<Io::TPlayer>(recorder);
+            Io::TBinaryInputOnlyStream strm(player);
+            streamer.Read(strm);
+            RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena());
+          }
+        }
+      });
+      wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
+
+      /* Step 8: Instantiate Wal and write initial checkpoint */
+      uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
+      uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
+      uint32_t current_lap = scan_result.LastValidLap;
+
+      Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap);
+      Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+      RepoManager->SetWal(Wal.get());
+    }
     /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
       ScheduleRunnerHost(&DurableLayerCleanerRunner);
       Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
@@ -1882,7 +1999,7 @@ void TServer::Shutdown() {
      visibly a working one.  Paused povs are not waited for: nothing promotes
      them.  Whatever is still unpromoted when the wait ends is lost, and the
      log says exactly how much. */
-  if (TetrisManager) {
+  if (TetrisManager && !Wal) {
     using namespace std::chrono;
     const auto budget = seconds(Cmd.StopPromoteBudgetS);
     const auto stall_limit = std::min<steady_clock::duration>(seconds(30), budget);
@@ -2019,6 +2136,10 @@ void TServer::Shutdown() {
        precede StopAllPlayers. */
     RepoManager->FlushMemMerges();
     DurableManager->Flush();
+    if (Wal) {
+      Wal->Flush();
+      Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+    }
   });
   flush_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
   syslog(LOG_INFO, "TServer::Shutdown(): flushed after %ldms (#744)", ms_since_start());
@@ -2060,6 +2181,7 @@ void TServer::Shutdown() {
     DurableManager.reset();
     GlobalRepo.Reset();
     RepoManager.reset();
+    Wal.reset();
   });
   teardown_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
   /* Stop the engine-level services that would otherwise wedge the

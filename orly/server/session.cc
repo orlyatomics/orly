@@ -32,7 +32,10 @@
 #include <orly/server/write_too_large.h>
 #include <orly/server/meta_record.h>
 #include <orly/var/mutation.h>
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <base/util/time.h>
+#include <orly/indy/disk/wal.h>
 
 using namespace std;
 using namespace chrono;
@@ -409,6 +412,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
   Base::TTimer call_timer;
   bool had_effects = false;
   std::optional<Indy::TSequenceNumber> commit_seq;
+  std::optional<uint64_t> commit_lsn;
   std::optional<TTracker> tracker = std::optional<TTracker>();
   size_t walker_count = 0UL;
   TSuprena my_arena;
@@ -460,6 +464,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       Indy::TRepo::TBacklogReservation backlog_room(&*repo);
       auto transaction = server->GetRepoManager()->NewTransaction();
       transaction->ReportCommitSequenceNumber(&commit_seq);
+      transaction->ReportCommitLsn(&commit_lsn);
       Indy::TUpdate::TOpByKey op_by_key;
       /* Deferred entries from #49 phase 2: defer-safe commutative
          mutations skip the read-modify-write and get registered with
@@ -593,6 +598,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
     TMethodResult method_result(indy_context.GetArena(), result_core, tracker);
     method_result.SetCommitSequenceNumber(commit_seq);
+    method_result.SetCommitLsn(commit_lsn);
     return method_result;
   } catch (const TInsufficientStorage &) {
     /* Not an error in the server: the server's admission log records the refusals (#590). */
@@ -627,7 +633,9 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
     calls.push_back(TCallView{&fq_name, &closure});
   }
   std::optional<TTracker> tracker;
-  std::vector<Var::TVar> results = RunBatch(server, pov_id, calls, tracker, "TryBatch");
+  std::optional<uint64_t> commit_seq;
+  std::optional<uint64_t> commit_lsn;
+  std::vector<Var::TVar> results = RunBatch(server, pov_id, calls, tracker, "TryBatch", &commit_seq, &commit_lsn);
   // Aggregate the N per-call results into one list-typed core (one entry per
   // call, in order); the ws marshal renders it as a JSON array. Every call ran
   // the same method, so the results share a type.
@@ -635,7 +643,10 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Var::TVar list_var = Var::TVar::List(results, results.front().GetType());
   TCore list_core(&arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, list_var)).get());
-  return TMethodResult(&arena, list_core, tracker);
+  TMethodResult result(&arena, list_core, tracker);
+  result.SetCommitSequenceNumber(commit_seq);
+  result.SetCommitLsn(commit_lsn);
+  return result;
 }
 
 std::vector<Var::TVar> TSession::TryMulti(TServer *server, const TUuid &pov_id, const vector<TBatchCall> &calls) {
@@ -649,7 +660,9 @@ std::vector<Var::TVar> TSession::TryMulti(TServer *server, const TUuid &pov_id, 
 }
 
 vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const vector<TCallView> &calls,
-    std::optional<TTracker> &tracker, const char *what) {
+    std::optional<TTracker> &tracker, const char *what,
+    std::optional<uint64_t> *commit_seq_out,
+    std::optional<uint64_t> *commit_lsn_out) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   assert(!calls.empty());  // grammar guarantees N >= 1
   std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
@@ -723,7 +736,11 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       RefuseWriteToStalledBacklog(repo, server->GetWriteBackpressureThreshold());
       /* Declared before the transaction so it outlives it (#721): see TBacklogReservation. */
       Indy::TRepo::TBacklogReservation backlog_room(&*repo);
+      std::optional<Indy::TSequenceNumber> commit_seq;
+      std::optional<uint64_t> commit_lsn;
       auto transaction = server->GetRepoManager()->NewTransaction();
+      transaction->ReportCommitSequenceNumber(&commit_seq);
+      transaction->ReportCommitLsn(&commit_lsn);
       Indy::TUpdate::TOpByKey op_by_key;
       /* Identical deferred-entry fold to Try() (#49/#232): defer-safe commutative
          mutations skip the read and emit RHS + mutator directly; everything else
@@ -831,6 +848,12 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       }
       transaction->Prepare();
       transaction->CommitAction();
+      if (commit_seq_out) {
+        *commit_seq_out = commit_seq;
+      }
+      if (commit_lsn_out) {
+        *commit_lsn_out = commit_lsn;
+      }
     }
     /* Write backpressure on the pools (#584), applied once per batch (one transaction). */
     if (had_effects) {
@@ -1213,6 +1236,26 @@ TUuid TSession::NewPov(
   /* The fork (#746): conflicts are tracked from here, before anyone can write to the POV. */
   WatchFork(pov->GetRepo(server), conflict_mode);
   Base::TUuid pov_id = pov->GetId();
+  if (policy == TPov::TPolicy::Safe && server->GetWal()) {
+    auto recorder = std::make_shared<Io::TRecorder>();
+    /* serialize */ {
+      Io::TBinaryOutputOnlyStream strm(recorder);
+      const bool has_parent = parent_pov_id.has_value();
+      const Base::TUuid parent_id = has_parent ? *parent_pov_id : Base::TUuid::Null;
+      const char aud = static_cast<char>(audience);
+      const char pol = static_cast<char>(policy);
+      const int64_t ttl_sec = time_to_live.count();
+      const size_t num_parents = shared_parents.size();
+      strm << pov_id << GetId() << has_parent << parent_id << aud << pol << ttl_sec << num_parents;
+      for (const auto &p_id : shared_parents) {
+        strm << p_id;
+      }
+      strm.Flush();
+    }
+    std::string wire;
+    recorder->CopyOut(wire);
+    server->GetWal()->AppendAndWait(Indy::Disk::TWalRecordType::Pov, wire.data(), wire.size());
+  }
   AddPov(std::move(pov));
   return pov_id;
 }

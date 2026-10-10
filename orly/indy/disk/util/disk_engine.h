@@ -53,7 +53,9 @@ namespace Orly {
                       size_t num_block_lru,
                       size_t append_log_mb,
                       bool create = false,
-                      bool no_realtime = false)
+                      bool no_realtime = false,
+                      bool durable_acks = false,
+                      size_t wal_mb = 256)
             : Scheduler(scheduler),
               SystemBlockId(0UL),
               FileAppendLogBlocks((append_log_mb * 1024 * 1024) / Util::PhysicalBlockSize) {
@@ -200,6 +202,38 @@ namespace Orly {
                                     TCacheInstr::NoCache,
                                     trigger);
               trigger.Wait();
+              if (durable_acks) {
+                const size_t wal_blocks = (wal_mb * 1024 * 1024) / Util::PhysicalBlockSize;
+                Util::TBlockRange wal_range;
+                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, wal_blocks, [&](const TBlockRange &range) {
+                  wal_range = range;
+                });
+                if (unlikely(wal_range.second != wal_blocks)) {
+                  throw std::runtime_error("not enough blocks allocated for WAL ring");
+                }
+                WalStartBlock = wal_range.first;
+                WalNumBlocks = wal_range.second;
+                TBlockRange cp0_range, cp1_range;
+                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+                  cp0_range = range;
+                });
+                assert(cp0_range.second == 1UL);
+                WalCheckpoint0Block = cp0_range.first;
+                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+                  cp1_range = range;
+                });
+                assert(cp1_range.second == 1UL);
+                WalCheckpoint1Block = cp1_range.first;
+                FormatVersion = 1UL;
+                for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
+                  entry.second.FormatVersion = FormatVersion;
+                  entry.second.WalStartBlock = WalStartBlock;
+                  entry.second.WalNumBlocks = WalNumBlocks;
+                  entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
+                  entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                  TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
+                }
+              }
             } else {
               TCompletionTrigger trigger;
               VolMan->ReadBlock(HERE, CheckedBlock, Source::System, buf_block->GetData(), SystemBlockId, RealTime, trigger);
@@ -218,6 +252,22 @@ namespace Orly {
               for (size_t i = 0; i < FileAppendLogBlocks; ++i) {
                 AppendLogBlockVec.push_back(buf[3 + i]);
                 VolMan->MarkBlockRangeUsed(TBlockRange(buf[3 + i], 1UL)); /* mark append log blocks */
+              }
+              if (!DiskUtil->GetOrlyDeviceMap().empty()) {
+                const auto &dev_info = DiskUtil->GetOrlyDeviceMap().begin()->second;
+                FormatVersion = dev_info.FormatVersion;
+                WalStartBlock = dev_info.WalStartBlock;
+                WalNumBlocks = dev_info.WalNumBlocks;
+                WalCheckpoint0Block = dev_info.WalCheckpoint0Block;
+                WalCheckpoint1Block = dev_info.WalCheckpoint1Block;
+              }
+              if (durable_acks && FormatVersion == 0UL) {
+                throw std::runtime_error("--durable_acks=experimental refuses to upgrade an existing store (format version 0)");
+              }
+              if (FormatVersion == 1UL) {
+                VolMan->MarkBlockRangeUsed(TBlockRange(WalStartBlock, WalNumBlocks));
+                VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint0Block, 1UL));
+                VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint1Block, 1UL));
               }
             }
             TFileService::TFileInitCb file_init_cb = [this](TFileObj::TKind file_kind,
@@ -300,10 +350,23 @@ namespace Orly {
             }
           }
 
+          /* The blocks owned by the engine outside the file service (system block, WAL, checkpoints). */
+          std::vector<size_t> GetEngineBlocks() const {
+            std::vector<size_t> blocks = {SystemBlockId};
+            if (FormatVersion == 1UL && WalNumBlocks > 0) {
+              blocks.push_back(WalCheckpoint0Block);
+              blocks.push_back(WalCheckpoint1Block);
+              for (size_t i = 0; i < WalNumBlocks; ++i) {
+                blocks.push_back(WalStartBlock + i);
+              }
+            }
+            return blocks;
+          }
+
           /* The open-time consistency check (#700): see <orly/indy/disk/open_check.h>. Must run on
              a fiber. */
           TOpenCheck CheckOpenConsistency() const {
-            return Disk::CheckOpenConsistency(VolMan, FileService.get(), {SystemBlockId},
+            return Disk::CheckOpenConsistency(VolMan, FileService.get(), GetEngineBlocks(),
                 [this](const Base::TUuid &file_uid, const TFileObj &file, const std::function<void (const TBlockRange &)> &cb) {
                   ForEachFileBlockRange(file.Kind, file_uid, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
                 });
@@ -313,10 +376,23 @@ namespace Orly {
              and key ordering checks. Must run on a fiber. */
           TScrubReport RunIntegrityScrub(const TScrubOptions &options = {},
                                          const std::function<void()> &yield_cb = nullptr) const {
-            return Disk::RunIntegrityScrub(VolMan, FileService.get(), PageCache.get(), {SystemBlockId},
+            return Disk::RunIntegrityScrub(VolMan, FileService.get(), PageCache.get(), GetEngineBlocks(),
                 [this](const Base::TUuid &file_uid, const TFileObj &file, const std::function<void (const TBlockRange &)> &cb) {
                   ForEachFileBlockRange(file.Kind, file_uid, file.GenId, file.StartingBlockId, file.StartingBlockOffset, file.FileSize, cb);
                 }, options, yield_cb);
+          }
+
+          uint64_t GetFormatVersion() const { return FormatVersion; }
+          uint64_t GetWalStartBlock() const { return WalStartBlock; }
+          uint64_t GetWalNumBlocks() const { return WalNumBlocks; }
+          uint64_t GetWalCheckpoint0Block() const { return WalCheckpoint0Block; }
+          uint64_t GetWalCheckpoint1Block() const { return WalCheckpoint1Block; }
+          bool HasWal() const { return FormatVersion == 1UL && WalNumBlocks > 0; }
+          TPersistentDevice *GetPersistentDevice() const {
+            if (!DiskUtil->GetPersistentDeviceSet().empty()) {
+              return dynamic_cast<TPersistentDevice *>(DiskUtil->GetPersistentDeviceSet().begin()->get());
+            }
+            return nullptr;
           }
 
           Util::TEngine *GetEngine() const {
@@ -391,6 +467,11 @@ namespace Orly {
           std::unique_ptr<TDiskUtil> DiskUtil;
 
           size_t SystemBlockId;
+          uint64_t FormatVersion = 0UL;
+          uint64_t WalStartBlock = 0UL;
+          uint64_t WalNumBlocks = 0UL;
+          uint64_t WalCheckpoint0Block = 0UL;
+          uint64_t WalCheckpoint1Block = 0UL;
 
           std::unique_ptr<TFileService> FileService;
           size_t FileAppendLogBlocks;

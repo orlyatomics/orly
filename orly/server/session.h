@@ -47,6 +47,16 @@
 
 namespace Orly {
 
+  namespace Indy {
+
+    namespace Disk {
+
+      class TWal;
+
+    }  // Disk
+
+  }  // Indy
+
   namespace Server {
 
     /* The writer backpressure's cap on one POV's backlog (#584, #628; see session.cc): in
@@ -78,6 +88,9 @@ namespace Orly {
         virtual const Package::TManager &GetPackageManager() const = 0;
 
         virtual Base::TScheduler *GetScheduler() const = 0;
+
+        /* Write-ahead log for durable acknowledgments (#755). Null when disabled or in memory simulation. */
+        virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
 
         /* Write-backpressure high-watermark (#234); 0 disables. The accept path
            in Try() yields until a writer's POV child drains below this. */
@@ -317,7 +330,9 @@ namespace Orly {
         const TClosure *Closure;
       };
       std::vector<Var::TVar> RunBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<TCallView> &calls,
-                                      std::optional<TTracker> &tracker, const char *what);
+                                      std::optional<TTracker> &tracker, const char *what,
+                                      std::optional<uint64_t> *commit_seq_out = nullptr,
+                                      std::optional<uint64_t> *commit_lsn_out = nullptr);
 
       /* Add the given pov to the collection of povs we'll keep open.  (Private again since the
          memcache frontend -- the one outside caller -- was removed.) */

@@ -52,6 +52,11 @@ bool TDeviceUtil::ProbeDevice(const char *path, TOrlyDevice &out_device) {
     out_device.PhysicalBlockSize = buf.get()[PhysicalBlockSizePos];
     out_device.NumLogicalBlockExposed = buf.get()[NumLogicalBlockExposedPos];
     out_device.MinDiscardBlocks = buf.get()[MinDiscardBlocksPos];
+    out_device.FormatVersion = buf.get()[FormatVersionPos];
+    out_device.WalStartBlock = buf.get()[WalStartBlockPos];
+    out_device.WalNumBlocks = buf.get()[WalNumBlocksPos];
+    out_device.WalCheckpoint0Block = buf.get()[WalCheckpoint0BlockPos];
+    out_device.WalCheckpoint1Block = buf.get()[WalCheckpoint1BlockPos];
   } catch (const std::exception &ex) {
     return false;
   }
@@ -77,6 +82,11 @@ void TDeviceUtil::ModifyDevice(const char *path, TOrlyDevice &new_device_info) {
     buf.get()[PhysicalBlockSizePos] = new_device_info.PhysicalBlockSize;
     buf.get()[NumLogicalBlockExposedPos] = new_device_info.NumLogicalBlockExposed;
     buf.get()[MinDiscardBlocksPos] = new_device_info.MinDiscardBlocks;
+    buf.get()[FormatVersionPos] = new_device_info.FormatVersion;
+    buf.get()[WalStartBlockPos] = new_device_info.WalStartBlock;
+    buf.get()[WalNumBlocksPos] = new_device_info.WalNumBlocks;
+    buf.get()[WalCheckpoint0BlockPos] = new_device_info.WalCheckpoint0Block;
+    buf.get()[WalCheckpoint1BlockPos] = new_device_info.WalCheckpoint1Block;
     buf.get()[NumDataElem] = Base::Murmur(buf.get(), NumDataElem, 0UL);
     IfLt0(pwrite(fd, buf.get(), BlockSize, 0UL));
     fsync(fd);

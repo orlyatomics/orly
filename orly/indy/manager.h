@@ -516,6 +516,9 @@ namespace Orly {
       /* The (package name, version) pairs currently recorded as installed. */
       std::vector<std::pair<std::vector<std::string>, uint64_t>> GetInstalledPackages();
 
+      /* Replay core vector transactions (used by slave apply and WAL recovery, #755). */
+      size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena);
+
       void OnSlaveJoin(const Base::TFd &fd);
 
       /* After a restart, note every saved-repo entry the system repo brought back, so the next

@@ -73,6 +73,15 @@ namespace Orly {
       CommitSequenceNumber = seq_num;
     }
 
+    /* The log sequence number assigned to this transaction by the WAL (#755). */
+    const std::optional<uint64_t> &GetCommitLsn() const {
+      return CommitLsn;
+    }
+
+    void SetCommitLsn(const std::optional<uint64_t> &lsn) {
+      CommitLsn = lsn;
+    }
+
     /* If true, the value contained here is an error; otherwise, it is a normal return. */
     bool IsError() const {
       return Error;
@@ -103,6 +112,9 @@ namespace Orly {
 
     /* See accessor. */
     std::optional<uint64_t> CommitSequenceNumber;
+
+    /* See accessor. */
+    std::optional<uint64_t> CommitLsn;
 
   };  // TMethodResult
 

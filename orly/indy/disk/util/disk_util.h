@@ -58,6 +58,14 @@ namespace Orly {
             return PersistentDeviceSet;
           }
 
+          inline const std::unordered_map<std::string, TDeviceUtil::TOrlyDevice> &GetOrlyDeviceMap() const {
+            return OrlyDeviceMap;
+          }
+
+          inline std::unordered_map<std::string, TDeviceUtil::TOrlyDevice> &GetOrlyDeviceMap() {
+            return OrlyDeviceMap;
+          }
+
           private:
 
           Base::TScheduler *Scheduler;
