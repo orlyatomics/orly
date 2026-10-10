@@ -1664,10 +1664,10 @@ void TServer::Init() {
     /* Initialize and recover Write-Ahead Log (WAL) (#755). */
     if (DiskEngine && DiskEngine->HasWal()) {
       Indy::Disk::TWal::TConfig wal_config;
-      wal_config.BaseOffset = DiskEngine->GetWalStartBlock() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.BaseOffset = (DiskEngine->GetWalStartBlock() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
       wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CheckpointSlot0Offset = DiskEngine->GetWalCheckpoint0Block() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CheckpointSlot1Offset = DiskEngine->GetWalCheckpoint1Block() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot0Offset = (DiskEngine->GetWalCheckpoint0Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot1Offset = (DiskEngine->GetWalCheckpoint1Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
       uuid_t raw_inst;
       memset(raw_inst, 0, sizeof(raw_inst));
       memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));

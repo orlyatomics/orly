@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <base/mem_aligned_ptr.h>
+#include <base/util/error.h>
 #include <orly/indy/disk/util/disk_util.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/file_service.h>
@@ -226,24 +228,19 @@ namespace Orly {
                 WalCheckpoint1Block = cp1_range.first;
                 FormatVersion = 1UL;
 
-                /* Zero checkpoint blocks and first WAL block, and flush (§8.7) */
-                memset(buf_block->GetData(), 0, PhysicalBlockSize);
-                TCompletionTrigger trig0;
-                VolMan->WriteAndFlush(HERE, CheckedBlock, Source::System, buf_block->GetData(), WalCheckpoint0Block * PhysicalBlockSize, PhysicalBlockSize, RealTime, TCacheInstr::NoCache, trig0);
-                trig0.Wait();
-                TCompletionTrigger trig1;
-                VolMan->WriteAndFlush(HERE, CheckedBlock, Source::System, buf_block->GetData(), WalCheckpoint1Block * PhysicalBlockSize, PhysicalBlockSize, RealTime, TCacheInstr::NoCache, trig1);
-                trig1.Wait();
-                TCompletionTrigger trig2;
-                VolMan->WriteAndFlush(HERE, CheckedBlock, Source::System, buf_block->GetData(), WalStartBlock * PhysicalBlockSize, PhysicalBlockSize, RealTime, TCacheInstr::NoCache, trig2);
-                trig2.Wait();
-
+                /* Zero checkpoint blocks and first WAL block on physical media, and flush (§8.7) */
                 for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
                   entry.second.FormatVersion = FormatVersion;
                   entry.second.WalStartBlock = WalStartBlock;
                   entry.second.WalNumBlocks = WalNumBlocks;
                   entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
                   entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                  Base::TFd fd = open(entry.first.c_str(), O_RDWR);
+                  auto zero_buf = Base::MemAlignedAllocZeroInitialized<char>(PhysicalBlockSize, PhysicalBlockSize);
+                  ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint0Block + 1UL) * PhysicalBlockSize));
+                  ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint1Block + 1UL) * PhysicalBlockSize));
+                  ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalStartBlock + 1UL) * PhysicalBlockSize));
+                  fsync(fd);
                   TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
                 }
               }
@@ -334,24 +331,19 @@ namespace Orly {
               WalCheckpoint1Block = cp1_range.first;
               FormatVersion = 1UL;
 
-              /* Zero the checkpoint blocks and first WAL block, and flush (§8.7) */
-              memset(buf_block->GetData(), 0, PhysicalBlockSize);
-              TCompletionTrigger trig0;
-              VolMan->WriteAndFlush(HERE, CheckedBlock, Source::System, buf_block->GetData(), WalCheckpoint0Block * PhysicalBlockSize, PhysicalBlockSize, RealTime, TCacheInstr::NoCache, trig0);
-              trig0.Wait();
-              TCompletionTrigger trig1;
-              VolMan->WriteAndFlush(HERE, CheckedBlock, Source::System, buf_block->GetData(), WalCheckpoint1Block * PhysicalBlockSize, PhysicalBlockSize, RealTime, TCacheInstr::NoCache, trig1);
-              trig1.Wait();
-              TCompletionTrigger trig2;
-              VolMan->WriteAndFlush(HERE, CheckedBlock, Source::System, buf_block->GetData(), WalStartBlock * PhysicalBlockSize, PhysicalBlockSize, RealTime, TCacheInstr::NoCache, trig2);
-              trig2.Wait();
-
+              /* Zero checkpoint blocks and first WAL block on physical media, and flush (§8.7) */
               for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
                 entry.second.FormatVersion = FormatVersion;
                 entry.second.WalStartBlock = WalStartBlock;
                 entry.second.WalNumBlocks = WalNumBlocks;
                 entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
                 entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                Base::TFd fd = open(entry.first.c_str(), O_RDWR);
+                auto zero_buf = Base::MemAlignedAllocZeroInitialized<char>(PhysicalBlockSize, PhysicalBlockSize);
+                ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint0Block + 1UL) * PhysicalBlockSize));
+                ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint1Block + 1UL) * PhysicalBlockSize));
+                ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalStartBlock + 1UL) * PhysicalBlockSize));
+                fsync(fd);
                 TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
               }
               syslog(LOG_INFO, "upgraded store to format version 1: WAL [%lu, %lu], checkpoints [%lu, %lu]",

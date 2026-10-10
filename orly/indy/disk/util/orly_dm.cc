@@ -306,10 +306,10 @@ int main(int argc, char *argv[]) {
         controller.QueueRunner(std::vector<TPersistentDevice *>{dev_ptr}, true, 0);
       });
       TWal::TConfig wal_config;
-      wal_config.BaseOffset = dev_info.WalStartBlock * dev_info.PhysicalBlockSize;
+      wal_config.BaseOffset = (dev_info.WalStartBlock + 1UL) * dev_info.PhysicalBlockSize;
       wal_config.CapacityBytes = dev_info.WalNumBlocks * dev_info.PhysicalBlockSize;
-      wal_config.CheckpointSlot0Offset = dev_info.WalCheckpoint0Block * dev_info.PhysicalBlockSize;
-      wal_config.CheckpointSlot1Offset = dev_info.WalCheckpoint1Block * dev_info.PhysicalBlockSize;
+      wal_config.CheckpointSlot0Offset = (dev_info.WalCheckpoint0Block + 1UL) * dev_info.PhysicalBlockSize;
+      wal_config.CheckpointSlot1Offset = (dev_info.WalCheckpoint1Block + 1UL) * dev_info.PhysicalBlockSize;
       uuid_t raw_inst;
       memset(raw_inst, 0, sizeof(raw_inst));
       memcpy(raw_inst, dev_info.VolumeId.InstanceName, std::min(sizeof(raw_inst), strlen(dev_info.VolumeId.InstanceName)));
