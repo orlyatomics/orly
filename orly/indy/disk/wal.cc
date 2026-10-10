@@ -82,52 +82,49 @@ static void EnsureLocalEventPool() {
   }
 }
 
+struct TDeviceWaitState {
+  std::mutex Mutex;
+  std::condition_variable Cv;
+  bool Done = false;
+  bool Ok = false;
+};
+
 static bool SyncDeviceWrite(Util::TDevice *device, const Base::TCodeLocation &loc,
                             void *buf, Util::TOffset offset, size_t size) {
   EnsureLocalEventPool();
-  std::mutex m;
-  std::condition_variable cv;
-  bool done = false;
-  bool ok = false;
+  auto state = std::make_shared<TDeviceWaitState>();
 
   device->Write(loc, DiskUtil::FullPage, 0, buf, offset, size,
                 DiskPriority::RealTime, false, offset,
-                [&m, &cv, &done, &ok](TDiskResult res, const char */*err*/) {
-                  {
-                    std::lock_guard<std::mutex> lk(m);
-                    ok = (res == Success);
-                    done = true;
-                  }
-                  cv.notify_one();
+                [state](TDiskResult res, const char */*err*/) {
+                  std::lock_guard<std::mutex> lk(state->Mutex);
+                  state->Ok = (res == Success);
+                  state->Done = true;
+                  state->Cv.notify_one();
                 });
 
-  std::unique_lock<std::mutex> lk(m);
-  cv.wait(lk, [&done] { return done; });
-  return ok;
+  std::unique_lock<std::mutex> lk(state->Mutex);
+  state->Cv.wait(lk, [&state] { return state->Done; });
+  return state->Ok;
 }
 
 static bool SyncDeviceRead(Util::TDevice *device, const Base::TCodeLocation &loc,
                            void *buf, Util::TOffset offset, size_t size) {
   EnsureLocalEventPool();
-  std::mutex m;
-  std::condition_variable cv;
-  bool done = false;
-  bool ok = false;
+  auto state = std::make_shared<TDeviceWaitState>();
 
   device->Read(loc, DiskUtil::FullPage, 0, buf, offset, size,
                DiskPriority::RealTime, false,
-               [&m, &cv, &done, &ok](TDiskResult res, const char */*err*/) {
-                 {
-                   std::lock_guard<std::mutex> lk(m);
-                   ok = (res == Success);
-                   done = true;
-                 }
-                 cv.notify_one();
+               [state](TDiskResult res, const char */*err*/) {
+                 std::lock_guard<std::mutex> lk(state->Mutex);
+                 state->Ok = (res == Success);
+                 state->Done = true;
+                 state->Cv.notify_one();
                });
 
-  std::unique_lock<std::mutex> lk(m);
-  cv.wait(lk, [&done] { return done; });
-  return ok;
+  std::unique_lock<std::mutex> lk(state->Mutex);
+  state->Cv.wait(lk, [&state] { return state->Done; });
+  return state->Ok;
 }
 
 TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum)
@@ -139,8 +136,8 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
       CurrentRingOffset(start_ring_offset),
       PreviousGroupChecksum(previous_checksum),
       HighestSyncedLsn(NextLsn),
-      HighestSealedLsn(0UL),
-      DurableLsn(0UL),
+      HighestSealedLsn(NextLsn),
+      DurableLsn(NextLsn),
       HeadLsn(start_lsn),
       Stopping(false),
       Failed(false) {

@@ -22,6 +22,9 @@
 #include <cstring>
 #include <iostream>
 #include <thread>
+#include <csignal>
+#include <unistd.h>
+#include <execinfo.h>
 
 #include <base/backtrace.h>
 #include <base/debug_log.h>
@@ -146,9 +149,24 @@ static void ScrubSecretArgs(int argc, char *argv[]) {
   }
 }
 
+static void CrashHandler(int sig) {
+  void *frames[64];
+  int frame_count = backtrace(frames, 64);
+  const char *msg = "\n*** CRASH SIGNAL RECEIVED ***\n";
+  write(STDERR_FILENO, msg, strlen(msg));
+  backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
 int main(int argc, char *argv[]) {
   // Make std::terminate calls produce more data / info for us.
   SetBacktraceOnTerminate();
+  signal(SIGSEGV, CrashHandler);
+  signal(SIGABRT, CrashHandler);
+  signal(SIGBUS, CrashHandler);
+  signal(SIGILL, CrashHandler);
+  signal(SIGFPE, CrashHandler);
 #if defined(__SANITIZE_THREAD__)
   RunTsanRacyControl();
 #endif

@@ -1754,6 +1754,7 @@ void TServer::Init() {
         Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum);
         Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
         RepoManager->SetWal(Wal.get());
+        syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld, group %ld, ring offset %ld", next_lsn, next_group, scan_result.NextRingOffset);
       }
     }
     /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
