@@ -1685,7 +1685,6 @@ void TServer::Init() {
       auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
-        start_group = cp_opt->CheckpointNum + 1UL;
       }
 
       auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap);
@@ -1733,7 +1732,7 @@ void TServer::Init() {
 
         /* Step 7: Replay transactions through slave apply path */
         for (const auto &rec : scan_result.Records) {
-          if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn && rec.Lsn >= start_lsn) {
             Indy::TReplicationStreamer streamer;
             std::string str(rec.Body.data(), rec.Body.size());
             auto recorder = std::make_shared<Io::TRecorder>(str);
@@ -1752,7 +1751,7 @@ void TServer::Init() {
         uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
         uint32_t current_lap = scan_result.LastValidLap;
 
-        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap);
+        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum);
         Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
         RepoManager->SetWal(Wal.get());
       }

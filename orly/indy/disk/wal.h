@@ -180,6 +180,8 @@ namespace Orly {
         uint64_t LastValidLsn = 0UL;
         uint64_t LastValidGroupNum = 0UL;
         uint32_t LastValidLap = 1U;
+        uint64_t NextRingOffset = 0UL;
+        uint64_t LastGroupChecksum = 0UL;
         uint64_t StoppedAtGroupNum = 0UL;
         uint64_t DamagedLsnStart = 0UL;
         uint64_t DamagedLsnEnd = 0UL;
@@ -226,7 +228,7 @@ namespace Orly {
           bool EarlyAck = false;     // Test-only negative control: acknowledge before group sync (#755)
         };
 
-        TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn = 1UL, uint64_t start_group_num = 1UL, uint32_t start_lap = 1U);
+        TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn = 1UL, uint64_t start_group_num = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL, uint64_t previous_checksum = 0UL);
         ~TWal();
 
         /* Append a record. Returns assigned LSN. Thread-safe. */

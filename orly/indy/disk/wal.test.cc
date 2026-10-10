@@ -221,6 +221,59 @@ FIXTURE(CheckpointAndHeadAdvance) {
   EXPECT_EQ(payload_str, "checkpoint_metadata_2");
 }
 
+FIXTURE(ReopenAndAppendAcrossSessions) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  /* Session 1: write 5 records and checkpoint */
+  {
+    TWal wal(&device, config);
+    for (size_t i = 1; i <= 5; ++i) {
+      std::string s = "s1_" + std::to_string(i);
+      wal.AppendAndWait(TWalRecordType::Txn, s.data(), s.size());
+    }
+    wal.Flush();
+    wal.Checkpoint(1UL, 50UL);
+  }
+
+  /* Scan session 1 */
+  auto scan1 = TWal::Scan(&device, config);
+  EXPECT_EQ(scan1.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan1.Records.size(), 5UL);
+  EXPECT_EQ(scan1.LastValidLsn, 5UL);
+  EXPECT_GT(scan1.NextRingOffset, 0UL);
+  EXPECT_NE(scan1.LastGroupChecksum, 0UL);
+
+  /* Session 2: reopen WAL at scan1.NextRingOffset and append 5 more records */
+  {
+    const uint64_t next_lsn = scan1.LastValidLsn + 1UL;
+    const uint64_t next_group = scan1.LastValidGroupNum + 1UL;
+    TWal wal(&device, config, next_lsn, next_group, scan1.LastValidLap, scan1.NextRingOffset, scan1.LastGroupChecksum);
+    for (size_t i = 6; i <= 10; ++i) {
+      std::string s = "s2_" + std::to_string(i);
+      wal.AppendAndWait(TWalRecordType::Txn, s.data(), s.size());
+    }
+    wal.Flush();
+  }
+
+  /* Scan session 2 */
+  auto scan2 = TWal::Scan(&device, config);
+  EXPECT_EQ(scan2.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan2.Records.size(), 10UL);
+  EXPECT_EQ(scan2.LastValidLsn, 10UL);
+  EXPECT_GT(scan2.LastValidGroupNum, scan1.LastValidGroupNum);
+  for (size_t i = 0; i < 10; ++i) {
+    EXPECT_EQ(scan2.Records[i].Lsn, i + 1);
+  }
+}
+
 FIXTURE(CopyForward) {
   TFaultPlan plan;
   TFaultDevice device(&plan, WalTestBlocks);

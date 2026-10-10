@@ -321,7 +321,6 @@ int main(int argc, char *argv[]) {
       auto cp_opt = TWal::ReadNewestCheckpoint(dev.get(), wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
-        start_group = cp_opt->CheckpointNum + 1UL;
       }
       auto scan_res = TWal::Scan(dev.get(), wal_config, start_group, start_lsn, start_lap);
       controller.ShutDown();
@@ -332,9 +331,15 @@ int main(int argc, char *argv[]) {
         TDiskController::TEvent::LocalEventPool = nullptr;
       }
       TDiskController::TEvent::FinalizeDiskEventPoolManager();
-      if (scan_res.Status != TScanStatus::Empty && !scan_res.Records.empty()) {
-        cerr << "Refusing to downgrade " << path_to_device << ": WAL contains " << scan_res.Records.size()
-             << " uncheckpointed records; start the server and shut down cleanly or drain POVs first." << endl;
+      bool has_uncheckpointed = false;
+      for (const auto &rec : scan_res.Records) {
+        if (rec.Lsn >= start_lsn) {
+          has_uncheckpointed = true;
+          break;
+        }
+      }
+      if (has_uncheckpointed) {
+        cerr << "Refusing to downgrade " << path_to_device << ": WAL contains uncheckpointed records; start the server and shut down cleanly or drain POVs first." << endl;
         return EXIT_FAILURE;
       }
       dev_info.FormatVersion = 0UL;

@@ -130,14 +130,14 @@ static bool SyncDeviceRead(Util::TDevice *device, const Base::TCodeLocation &loc
   return ok;
 }
 
-TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap)
+TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum)
     : Device(device),
       Config(config),
       NextLsn(start_lsn > 0 ? start_lsn - 1 : 0),
       NextGroupNum(start_group_num > 0 ? start_group_num - 1 : 0),
       CurrentLap(start_lap),
-      CurrentRingOffset(0UL),
-      PreviousGroupChecksum(0UL),
+      CurrentRingOffset(start_ring_offset),
+      PreviousGroupChecksum(previous_checksum),
       HighestSyncedLsn(NextLsn),
       HighestSealedLsn(0UL),
       DurableLsn(0UL),
@@ -786,6 +786,15 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
     expected_chain = hdr->HeaderChecksum;
     expected_group = hdr->GroupNum + 1UL;
     ring_offset += group_size;
+  }
+  if (result.LastValidGroupNum > 0) {
+    if (ring_offset >= config.CapacityBytes) {
+      result.NextRingOffset = 0UL;
+      result.LastValidLap = expected_lap;
+    } else {
+      result.NextRingOffset = ring_offset;
+    }
+    result.LastGroupChecksum = expected_chain;
   }
 
   return result;
