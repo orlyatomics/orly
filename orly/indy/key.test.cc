@@ -68,13 +68,13 @@ class TOrderedTestArena final
 
   private:
 
-  virtual void ReleaseNote(const TCore::TNote *, TCore::TOffset, void *, void *, void *) override {}
+  void ReleaseNote(const TCore::TNote *, TCore::TOffset, void *, void *, void *) override {}
 
-  virtual const TCore::TNote *TryAcquireNote(TCore::TOffset offset, void *&, void *&, void *&) override {
+  const TCore::TNote *TryAcquireNote(TCore::TOffset offset, void *&, void *&, void *&) override {
     return offset < Bytes.size() * sizeof(uint64_t) ? reinterpret_cast<const TCore::TNote *>(reinterpret_cast<const uint8_t *>(Bytes.data()) + offset) : nullptr;
   }
 
-  virtual const TCore::TNote *TryAcquireNote(TCore::TOffset offset, size_t, void *&data1, void *&data2, void *&data3) override {
+  const TCore::TNote *TryAcquireNote(TCore::TOffset offset, size_t, void *&data1, void *&data2, void *&data3) override {
     return TryAcquireNote(offset, data1, data2, data3);
   }
 
@@ -132,3 +132,40 @@ FIXTURE(DuplicateNoteInOrderedArena) {
   EXPECT_TRUE(TKey::Compare(one, &arena, one_again, &arena) == Atom::TComparison::Lt);
   EXPECT_TRUE(TKey::Compare(one, &arena, two, &arena) == Atom::TComparison::Lt);
 }
+
+FIXTURE(IndexKey) {
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  const TUuid id1(TUuid::Twister);
+  const TUuid id2(TUuid::Twister);
+  const TUuid lower_id = std::min(id1, id2);
+  const TUuid higher_id = std::max(id1, id2);
+
+  const TKey key1(10L, &arena, state_alloc);
+  const TKey key2(20L, &arena, state_alloc);
+
+  const TIndexKey ik_default;
+  EXPECT_EQ(ik_default.GetIndexId(), TUuid{});
+
+  const TIndexKey ik_a1(lower_id, key1);
+  const TIndexKey ik_a1_copy(lower_id, key1);
+  const TIndexKey ik_a2(lower_id, key2);
+  const TIndexKey ik_b1(higher_id, key1);
+
+  EXPECT_EQ(ik_a1.GetIndexId(), lower_id);
+  EXPECT_EQ(ik_a1.GetKey(), key1);
+  EXPECT_EQ(ik_a1.GetHash(), lower_id.GetHash() ^ key1.GetHash());
+
+  EXPECT_TRUE(ik_a1 == ik_a1_copy);
+  EXPECT_FALSE(ik_a1 != ik_a1_copy);
+  EXPECT_FALSE(ik_a1 < ik_a1_copy);
+
+  EXPECT_FALSE(ik_a1 == ik_a2);
+  EXPECT_TRUE(ik_a1 != ik_a2);
+  EXPECT_TRUE(ik_a1 < ik_a2);
+  EXPECT_FALSE(ik_a2 < ik_a1);
+
+  EXPECT_TRUE(ik_a1 < ik_b1);
+  EXPECT_FALSE(ik_b1 < ik_a1);
+}
+

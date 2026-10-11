@@ -30,70 +30,70 @@ namespace Orly {
     class TKey {
       public:
 
-      explicit inline TKey(Atom::TCore::TArena *arena = nullptr);
+      explicit TKey(Atom::TCore::TArena *arena = nullptr);
 
-      explicit inline TKey(const Atom::TCore &core, Atom::TCore::TArena *arena = nullptr);
+      explicit TKey(const Atom::TCore &core, Atom::TCore::TArena *arena = nullptr);
 
-      inline TKey(const TKey &that);
+      TKey(const TKey &that) = default;
 
-      inline TKey(TKey &&that);
+      TKey(TKey &&that) noexcept = default;
 
       template <typename TVal>
-      inline TKey(const TVal &val, Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc);
+      TKey(const TVal &val, Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc);
 
       /* Copy from the given key into my arena */
-      inline TKey(Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc, const TKey &that);
+      TKey(Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc, const TKey &that);
 
       /* Construct from sabot. */
-      inline TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *state);
+      TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *state);
 
       /* Concat tuples */
-      inline TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *lhs, const Sabot::State::TAny *rhs);
+      TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *lhs, const Sabot::State::TAny *rhs);
 
-      inline TKey &operator=(TKey &&that);
+      TKey &operator=(const TKey &that) = default;
 
-      inline TKey &operator=(const TKey &that);
+      TKey &operator=(TKey &&that) noexcept = default;
 
-      inline bool operator==(const TKey &that) const;
+      [[nodiscard]] bool operator==(const TKey &that) const;
 
-      inline bool operator!=(const TKey &that) const;
+      [[nodiscard]] bool operator!=(const TKey &that) const;
 
-      inline bool operator<(const TKey &that) const;
+      [[nodiscard]] bool operator<(const TKey &that) const;
 
-      inline bool operator<=(const TKey &that) const;
+      [[nodiscard]] bool operator<=(const TKey &that) const;
 
-      inline bool operator>(const TKey &that) const;
+      [[nodiscard]] bool operator>(const TKey &that) const;
 
-      inline bool operator>=(const TKey &that) const;
+      [[nodiscard]] bool operator>=(const TKey &that) const;
 
-      inline Atom::TComparison Compare(const TKey &that) const;
+      [[nodiscard]] Atom::TComparison Compare(const TKey &that) const;
 
-      inline void Dump(std::ostream &strm) const;
+      void Dump(std::ostream &strm) const;
 
-      inline Atom::TCore::TArena *GetArena() const;
+      [[nodiscard]] Atom::TCore::TArena *GetArena() const noexcept;
 
-      inline const Atom::TCore &GetCore() const;
+      [[nodiscard]] const Atom::TCore &GetCore() const noexcept;
 
-      inline Atom::TCore &GetCore();
+      [[nodiscard]] Atom::TCore &GetCore() noexcept;
 
-      inline Sabot::State::TAny *GetState(void *state_alloc) const;
+      [[nodiscard]] Sabot::State::TAny *GetState(void *state_alloc) const;
 
-      inline size_t GetHash() const;
+      [[nodiscard]] size_t GetHash() const;
 
-      static inline bool EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+      [[nodiscard]] static bool EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      static inline bool TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+      [[nodiscard]] static bool TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      static inline bool NeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+      [[nodiscard]] static bool NeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      static inline bool TupleNeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+      [[nodiscard]] static bool TupleNeEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
-      static inline Atom::TComparison Compare(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+      [[nodiscard]] static Atom::TComparison Compare(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
       /* The number of times an equality test above has found two cores in one ordered arena at
          different offsets with equal hashes, and so compared their values in full (#674). Without
          duplicate notes, only a hash collision gets there. */
-      static inline size_t GetNumSameArenaFallbacks();
+      [[nodiscard]] static size_t GetNumSameArenaFallbacks() noexcept;
 
       private:
 
@@ -101,71 +101,56 @@ namespace Orly {
          comparison goes by offset, and a release merge from before #666 could write two copies of
          one note there (#674), so when one arena's offsets differ, compare the values in full.
          Ordering is left to Compare(), which still goes by offset. */
-      static inline bool HaveEqualValues(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
+      [[nodiscard]] static bool HaveEqualValues(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
       /* See accessor. */
       static inline std::atomic<size_t> NumSameArenaFallbacks{0UL};
 
-      Atom::TCore::TArena *Arena;
+      Atom::TCore::TArena *Arena = nullptr;
 
       Atom::TCore Core;
 
-      mutable bool HashIsCached;
-      mutable size_t CachedHash;
+      mutable bool HashIsCached = false;
+      mutable size_t CachedHash = 0UL;
 
     };  // TKey
 
     class TIndexKey {
       public:
 
-      TIndexKey() {}
+      TIndexKey() = default;
 
       TIndexKey(const Base::TUuid &index_id, const TKey &key)
           : IndexId(index_id),
             Key(key) {}
 
-      inline const Base::TUuid &GetIndexId() const {
+      [[nodiscard]] const Base::TUuid &GetIndexId() const noexcept {
         return IndexId;
       }
 
-      inline const TKey &GetKey() const {
+      [[nodiscard]] const TKey &GetKey() const noexcept {
         return Key;
       }
 
-      inline TKey &GetKey() {
+      [[nodiscard]] TKey &GetKey() noexcept {
         return Key;
       }
 
-      inline size_t GetHash() const {
+      [[nodiscard]] size_t GetHash() const {
         return IndexId.GetHash() ^ Key.GetHash();
       }
 
-      bool operator<(const TIndexKey &that) const {
-        Atom::TComparison comp = Atom::CompareOrdered(IndexId, that.IndexId);
-        switch (comp) {
-          case Atom::TComparison::Lt: {
-            return true;
-          }
-          case Atom::TComparison::Eq: {
-            return Key < that.Key;
-          }
-          case Atom::TComparison::Gt: {
-            return false;
-          }
-          case Atom::TComparison::Ne: {
-            throw std::logic_error("CompareOrdered should not return Ne");
-          }
+      [[nodiscard]] bool operator<(const TIndexKey &that) const {
+        if (IndexId < that.IndexId) {
+          return true;
         }
-        throw;
+        if (that.IndexId < IndexId) {
+          return false;
+        }
+        return Key < that.Key;
       }
 
-      bool operator==(const TIndexKey &that) const {
-        return IndexId == that.IndexId && Key == that.Key;
-      }
-
-      bool operator!=(const TIndexKey &that) const {
-        return IndexId != that.IndexId || Key != that.Key;
-      }
+      [[nodiscard]] bool operator==(const TIndexKey &that) const = default;
 
       private:
 
@@ -190,8 +175,8 @@ namespace std {
   /* A standard hasher for Orly::Indy::TKey. */
   template <>
   struct hash<Orly::Indy::TKey> {
-    typedef size_t result_type;
-    typedef Orly::Indy::TKey argument_type;
+    using result_type = size_t;
+    using argument_type = Orly::Indy::TKey;
     size_t operator()(const Orly::Indy::TKey &that) const {
       return that.GetHash();
     }
@@ -200,8 +185,8 @@ namespace std {
   /* A standard hasher for Orly::Indy::TIndexKey. */
   template <>
   struct hash<Orly::Indy::TIndexKey> {
-    typedef size_t result_type;
-    typedef Orly::Indy::TIndexKey argument_type;
+    using result_type = size_t;
+    using argument_type = Orly::Indy::TIndexKey;
     size_t operator()(const Orly::Indy::TIndexKey &that) const {
       return that.GetHash();
     }
@@ -216,15 +201,11 @@ namespace Orly {
     /* Inline */
 
     inline TKey::TKey(Atom::TCore::TArena *arena)
-        : Arena(arena),
-          HashIsCached(false),
-          CachedHash(0UL) {}
+        : Arena(arena) {}
 
     inline TKey::TKey(const Atom::TCore &core, Atom::TCore::TArena *arena)
         : Arena(arena),
-          Core(core),
-          HashIsCached(false),
-          CachedHash(0UL) {}
+          Core(core) {}
 
     template <>
     inline TKey::TKey(const Atom::TCore &/*that*/, Atom::TCore::TExtensibleArena */*fast_arena*/, void */*state_alloc*/) = delete;
@@ -232,46 +213,18 @@ namespace Orly {
     template <typename TVal>
     inline TKey::TKey(const TVal &val, Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc)
         : Arena(Base::AssertTrue(fast_arena)),
-          Core(val, fast_arena, state_alloc),
-          HashIsCached(false),
-          CachedHash(0UL) {}
+          Core(val, fast_arena, state_alloc) {}
 
     inline TKey::TKey(Atom::TCore::TExtensibleArena *fast_arena, void *state_alloc, const TKey &that)
         : Arena(Base::AssertTrue(fast_arena)),
-          Core(fast_arena, state_alloc, that.Arena, that.Core),
-          HashIsCached(false),
-          CachedHash(0UL) {}
+          Core(fast_arena, state_alloc, that.Arena, that.Core) {}
 
     inline TKey::TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *state)
-        : Arena(Base::AssertTrue(fast_arena)), Core(fast_arena, state),
-          HashIsCached(false),
-          CachedHash(0UL) {}
+        : Arena(Base::AssertTrue(fast_arena)), Core(fast_arena, state) {}
 
     inline TKey::TKey(Atom::TCore::TExtensibleArena *fast_arena, const Sabot::State::TAny *lhs, const Sabot::State::TAny *rhs)
         : Arena(Base::AssertTrue(fast_arena)),
-          Core(fast_arena, lhs, rhs),
-          HashIsCached(false),
-          CachedHash(0UL) {}
-
-    inline TKey::TKey(const TKey &that) : Arena(that.Arena), Core(that.Core), HashIsCached(that.HashIsCached), CachedHash(that.CachedHash) {}
-
-    inline TKey::TKey(TKey &&that) : Arena(that.Arena), Core(that.Core), HashIsCached(that.HashIsCached), CachedHash(that.CachedHash) {}
-
-    inline TKey &TKey::operator=(const TKey &that) {
-      Arena = that.Arena;
-      Core = that.Core;
-      HashIsCached = that.HashIsCached;
-      CachedHash = that.CachedHash;
-      return *this;
-    }
-
-    inline TKey &TKey::operator=(TKey &&that) {
-      std::swap(Arena, that.Arena);
-      std::swap(Core, that.Core);
-      std::swap(HashIsCached, that.HashIsCached);
-      std::swap(CachedHash, that.CachedHash);
-      return *this;
-    }
+          Core(fast_arena, lhs, rhs) {}
 
     inline bool TKey::HaveEqualValues(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena) {
       Atom::TComparison comp;
@@ -289,7 +242,7 @@ namespace Orly {
                                            *Sabot::State::TAny::TWrapper(rhs.NewState(rhs_arena, rhs_state_alloc))));
     }
 
-    inline size_t TKey::GetNumSameArenaFallbacks() {
+    inline size_t TKey::GetNumSameArenaFallbacks() noexcept {
       return NumSameArenaFallbacks.load(std::memory_order_relaxed);
     }
 
@@ -361,15 +314,15 @@ namespace Orly {
       Sabot::State::TAny::TWrapper(GetState(state_alloc))->Accept(Sabot::TStateDumper(strm));
     }
 
-    inline Atom::TCore::TArena *TKey::GetArena() const {
+    inline Atom::TCore::TArena *TKey::GetArena() const noexcept {
       return Arena;
     }
 
-    inline const Atom::TCore &TKey::GetCore() const {
+    inline const Atom::TCore &TKey::GetCore() const noexcept {
       return Core;
     }
 
-    inline Atom::TCore &TKey::GetCore() {
+    inline Atom::TCore &TKey::GetCore() noexcept {
       return Core;
     }
 
