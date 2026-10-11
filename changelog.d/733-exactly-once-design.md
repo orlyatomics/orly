@@ -1,0 +1,1 @@
+- **Added**: design addendum for optional exactly-once writes (#733): the reserved `$op_id` and `$op_outcome` keys, the table and its checkpoint encoding, UUIDv7 expiry (`operation_expired`), `operation_id_reused`, the result size cap, and what a fast POV promises (`docs/design/durable-acks.md` section 8.2.1).
