@@ -34,7 +34,7 @@ namespace {
      entries under one update sharing a single SeqNum -- seeding on SeqNum would
      give every entry in a batch the same height and collapse the express
      lanes. */
-  inline size_t SkipHeight(size_t key_hash) {
+  [[nodiscard]] inline size_t SkipHeight(size_t key_hash) noexcept {
     uint64_t h = static_cast<uint64_t>(key_hash) * 0x9E3779B97F4A7C15ULL;
     h ^= h >> 30;
     h *= 0xBF58476D1CE4E5B9ULL;
@@ -52,9 +52,7 @@ namespace {
 TMemoryLayer::TMemoryLayer(L0::TManager *manager)
     : TDataLayer(manager),
       UpdateCollection(this),
-      EntryCollection(this),
-      SkipListLevel(0UL),
-      Size(0UL) {
+      EntryCollection(this) {
   for (auto &head : SkipHead) {
     head.store(nullptr, std::memory_order_relaxed);
   }
@@ -63,7 +61,7 @@ TMemoryLayer::TMemoryLayer(L0::TManager *manager)
   }
 }
 
-bool TMemoryLayer::EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b) {
+bool TMemoryLayer::EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b) noexcept {
   return a->GetEntryKey() > b->GetEntryKey();
 }
 
@@ -195,9 +193,6 @@ TMemoryLayer::TMatchPresentWalker::TMatchPresentWalker(const TMemoryLayer *layer
       Layer(layer),
       Key(key),
       Csr(Layer->GetEntryCollection()),
-      Valid(true),
-      Cached(false),
-      PassedMatch(false),
       ExactPoint(exact_point) {
   if (ExactPoint) {
     /* Fully-bound point read (operator[]/Exists): jump straight to key's run
@@ -215,9 +210,7 @@ TMemoryLayer::TMatchPresentWalker::TMatchPresentWalker(const TMemoryLayer *layer
   Refresh();
 }
 
-TMemoryLayer::TMatchPresentWalker::~TMatchPresentWalker() {}
-
-inline TMemoryLayer::TMatchPresentWalker::operator bool() const {
+TMemoryLayer::TMatchPresentWalker::operator bool() const {
   Refresh();
   return Valid;
 }
@@ -228,7 +221,7 @@ const TPresentWalker::TItem &TMemoryLayer::TMatchPresentWalker::operator*() cons
   return Item;
 }
 
-inline TMemoryLayer::TMatchPresentWalker &TMemoryLayer::TMatchPresentWalker::operator++() {
+TMemoryLayer::TMatchPresentWalker &TMemoryLayer::TMatchPresentWalker::operator++() {
   Cached = false;
   ++Csr;
   Refresh();
@@ -240,58 +233,48 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
     void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
     void *search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
     Sabot::State::TAny::TWrapper key_state(Key.GetKey().GetCore().NewState(Key.GetKey().GetArena(), key_state_alloc));
-    for (;Csr; ++Csr) {
+    for (; Csr; ++Csr) {
       Cached = true;
-      Atom::TComparison index_id_comp = Atom::CompareOrdered(Key.GetIndexId(), Csr->GetIndexKey().GetIndexId());
-      switch (index_id_comp) {
-        case Atom::TComparison::Lt: {
-          Valid = false;
-          return;
-        }
-        case Atom::TComparison::Eq: {
-          Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), search_state_alloc));
-          Sabot::TMatchResult result = MatchPrefixState(*key_state, *cur_state);
-          switch (result) {
-            case Sabot::TMatchResult::NoMatch: {
-              if (PassedMatch) {
-                Valid = false;
-                return;
-              }
-              break;
-            }
-            case Sabot::TMatchResult::PrefixMatch: {
-              break;
-            }
-            case Sabot::TMatchResult::Unifies: {
-              PassedMatch = true;
-              Item.KeyArena = Csr->GetKey().GetArena();
-              Item.OpArena = Csr->GetKey().GetArena();
-              Item.Key = Csr->GetKey().GetCore();
-              Item.Op = Csr->GetOp();
-              Item.SequenceNumber = Csr->GetSequenceNumber();
-              Item.Mutator = Csr->GetMutator();
-              /* Logical update id -- the per-transaction TUuid set in
-                 session.cc. Survives Tetris renumbering across repos,
-                 used by the context-walker fold to dedup duplicates
-                 that exist briefly in both child + parent repos during
-                 a Tetris push/pop window. */ {
-                void *id_state_alloc = alloca(Sabot::State::GetMaxStateSize());
-                const TUpdate *update_ptr = Csr->GetUpdate();
-                Sabot::ToNative(
-                    *Sabot::State::TAny::TWrapper(update_ptr->GetId().NewState(&update_ptr->GetSuprena(), id_state_alloc)),
-                    Item.UpdateId);
-              }
+      const auto &csr_index_id = Csr->GetIndexKey().GetIndexId();
+      if (Key.GetIndexId() < csr_index_id) {
+        Valid = false;
+        return;
+      }
+      if (Key.GetIndexId() == csr_index_id) {
+        Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), search_state_alloc));
+        Sabot::TMatchResult result = MatchPrefixState(*key_state, *cur_state);
+        switch (result) {
+          case Sabot::TMatchResult::NoMatch: {
+            if (PassedMatch) {
+              Valid = false;
               return;
-              break;
             }
+            break;
           }
-          break;
-        }
-        case Atom::TComparison::Gt: {
-          break;
-        }
-        case Atom::TComparison::Ne: {
-          throw;
+          case Sabot::TMatchResult::PrefixMatch: {
+            break;
+          }
+          case Sabot::TMatchResult::Unifies: {
+            PassedMatch = true;
+            Item.KeyArena = Csr->GetKey().GetArena();
+            Item.OpArena = Csr->GetKey().GetArena();
+            Item.Key = Csr->GetKey().GetCore();
+            Item.Op = Csr->GetOp();
+            Item.SequenceNumber = Csr->GetSequenceNumber();
+            Item.Mutator = Csr->GetMutator();
+            /* Logical update id -- the per-transaction TUuid set in
+               session.cc. Survives Tetris renumbering across repos,
+               used by the context-walker fold to dedup duplicates
+               that exist briefly in both child + parent repos during
+               a Tetris push/pop window. */ {
+              void *id_state_alloc = alloca(Sabot::State::GetMaxStateSize());
+              const TUpdate *update_ptr = Csr->GetUpdate();
+              Sabot::ToNative(
+                  *Sabot::State::TAny::TWrapper(update_ptr->GetId().NewState(&update_ptr->GetSuprena(), id_state_alloc)),
+                  Item.UpdateId);
+            }
+            return;
+          }
         }
       }
     }
@@ -309,13 +292,10 @@ TMemoryLayer::TRangePresentWalker::TRangePresentWalker(const TMemoryLayer *layer
       /* Seek to the first entry at or after From through the skip list's
          express lanes, as a point read does, instead of scanning the layer
          from its head (#735). */
-      Csr(Layer->SeekRun(From)),
-      Valid(true), Cached(false) {
+      Csr(Layer->SeekRun(From)) {
   assert(From.GetIndexId() == To.GetIndexId());
   Refresh();
 }
-
-TMemoryLayer::TRangePresentWalker::~TRangePresentWalker() {}
 
 TMemoryLayer::TRangePresentWalker::operator bool() const {
   Refresh();
@@ -342,60 +322,49 @@ void TMemoryLayer::TRangePresentWalker::Refresh() const {
     void *to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
     void *cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
     Sabot::State::TAny::TWrapper to_state(To.GetKey().GetCore().NewState(To.GetKey().GetArena(), to_state_alloc));
-    for (;Csr; ++Csr) {
+    for (; Csr; ++Csr) {
       Cached = true;
-      Atom::TComparison index_id_comp = Atom::CompareOrdered(From.GetIndexId(), Csr->GetIndexKey().GetIndexId());
-      switch (index_id_comp) {
-        case Atom::TComparison::Lt: {
+      const auto &csr_index_id = Csr->GetIndexKey().GetIndexId();
+      if (From.GetIndexId() < csr_index_id) {
+        Valid = false;
+        return;
+      }
+      if (From.GetIndexId() == csr_index_id) {
+        /* The seek in the constructor left Csr at or after From, so only
+           the upper end needs checking. To is either a whole key or a
+           pattern whose free members are its rightmost ones (#735); a key
+           unifying with To is in range either way, and otherwise the key
+           is past the range once it orders after To. */
+        Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), cur_state_alloc));
+        if (MatchPrefixState(*to_state, *cur_state) != Sabot::TMatchResult::Unifies &&
+            Atom::IsGt(OrderStates(*cur_state, *to_state))) {
           Valid = false;
           return;
         }
-        case Atom::TComparison::Eq: {
-          /* The seek in the constructor left Csr at or after From, so only
-             the upper end needs checking. To is either a whole key or a
-             pattern whose free members are its rightmost ones (#735); a key
-             unifying with To is in range either way, and otherwise the key
-             is past the range once it orders after To. */
-          Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), cur_state_alloc));
-          if (MatchPrefixState(*to_state, *cur_state) != Sabot::TMatchResult::Unifies &&
-              Atom::IsGt(OrderStates(*cur_state, *to_state))) {
-            Valid = false;
-            return;
-          }
-          Item.KeyArena = Csr->GetKey().GetArena();
-          Item.OpArena = Csr->GetKey().GetArena();
-          Item.Key = Csr->GetKey().GetCore();
-          Item.Op = Csr->GetOp();
-          Item.SequenceNumber = Csr->GetSequenceNumber();
-          Item.Mutator = Csr->GetMutator();
-          /* See TMatchPresentWalker; same plumbing for the Tetris-window dedup. */ {
-            void *id_state_alloc = alloca(Sabot::State::GetMaxStateSize());
-            const TUpdate *update_ptr = Csr->GetUpdate();
-            Sabot::ToNative(
-                *Sabot::State::TAny::TWrapper(update_ptr->GetId().NewState(&update_ptr->GetSuprena(), id_state_alloc)),
-                Item.UpdateId);
-          }
-          return;
+        Item.KeyArena = Csr->GetKey().GetArena();
+        Item.OpArena = Csr->GetKey().GetArena();
+        Item.Key = Csr->GetKey().GetCore();
+        Item.Op = Csr->GetOp();
+        Item.SequenceNumber = Csr->GetSequenceNumber();
+        Item.Mutator = Csr->GetMutator();
+        /* See TMatchPresentWalker; same plumbing for the Tetris-window dedup. */ {
+          void *id_state_alloc = alloca(Sabot::State::GetMaxStateSize());
+          const TUpdate *update_ptr = Csr->GetUpdate();
+          Sabot::ToNative(
+              *Sabot::State::TAny::TWrapper(update_ptr->GetId().NewState(&update_ptr->GetSuprena(), id_state_alloc)),
+              Item.UpdateId);
         }
-        case Atom::TComparison::Gt: {
-          break;
-        }
-        case Atom::TComparison::Ne: {
-          throw;
-        }
+        return;
       }
     }
     Valid = false;
   }
 }
 
-
 TMemoryLayer::TUpdateWalker::TUpdateWalker(const TMemoryLayer *layer, TSequenceNumber from)
-    : Layer(layer), From(from), Csr(Layer->GetUpdateCollection()), Valid(false) {
+    : Layer(layer), From(from), Csr(Layer->GetUpdateCollection()) {
   Refresh();
 }
-
-TMemoryLayer::TUpdateWalker::~TUpdateWalker() {}
 
 TMemoryLayer::TUpdateWalker::operator bool() const {
   return Valid;

@@ -59,18 +59,18 @@ namespace Orly {
       NO_COPY(TMemoryLayer);
       public:
 
-      typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate, TSequenceNumber, InvCon::OrderedList::TPublishedLinks> TUpdateCollection;
-      typedef InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate::TEntry, TUpdate::TEntry::TEntryKey, InvCon::OrderedList::TPublishedLinks> TEntryCollection;
+      using TUpdateCollection = InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate, TSequenceNumber, InvCon::OrderedList::TPublishedLinks>;
+      using TEntryCollection = InvCon::OrderedList::TCollection<TMemoryLayer, TUpdate::TEntry, TUpdate::TEntry::TEntryKey, InvCon::OrderedList::TPublishedLinks>;
 
-      TMemoryLayer(L0::TManager *manager);
+      explicit TMemoryLayer(L0::TManager *manager);
 
-      virtual ~TMemoryLayer();
+      ~TMemoryLayer() override;
 
       void Insert(TUpdate *update) NO_THROW;
 
       void ReverseInsert(TUpdate *update) NO_THROW;
 
-      inline TEntryCollection *GetEntryCollection() const;
+      [[nodiscard]] inline TEntryCollection *GetEntryCollection() const noexcept;
 
       /* Link an entry into EntryCollection (level 0) and the skip-list
          accelerator (#257) in O(log n) whatever order keys arrive in (#754).
@@ -93,24 +93,26 @@ namespace Orly {
          (EntryCollection). MUST be called only with a fully-bound concrete key
          -- the ordering comparison throws on a free-vs-concrete state (see
          TMatchPresentWalker's exact-point guard). */
-      TEntryCollection::TCursor SeekRun(const TIndexKey &key) const;
+      [[nodiscard]] TEntryCollection::TCursor SeekRun(const TIndexKey &key) const;
 
-      inline TUpdateCollection *GetUpdateCollection() const;
+      [[nodiscard]] inline TUpdateCollection *GetUpdateCollection() const noexcept;
 
-      inline bool IsEmpty() const;
+      [[nodiscard]] inline bool IsEmpty() const noexcept;
 
-      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
-                                                                     const TIndexKey &to) const override;
+      std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
+                                                             const TIndexKey &to) const override;
 
-      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
+      std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
-      virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
+      std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
 
-      inline virtual size_t GetSize() const override;
+      [[nodiscard]] inline TKind GetKind() const noexcept override;
 
-      inline virtual TSequenceNumber GetLowestSeq() const override;
+      [[nodiscard]] inline size_t GetSize() const noexcept override;
 
-      inline virtual TSequenceNumber GetHighestSeq() const override;
+      [[nodiscard]] inline TSequenceNumber GetLowestSeq() const noexcept override;
+
+      [[nodiscard]] inline TSequenceNumber GetHighestSeq() const noexcept override;
 
       private:
 
@@ -120,19 +122,19 @@ namespace Orly {
         public:
 
         TMatchPresentWalker(const TMemoryLayer *layer,
-                       const TIndexKey &key,
-                       bool exact_point);
+                            const TIndexKey &key,
+                            bool exact_point);
 
-        virtual ~TMatchPresentWalker();
+        ~TMatchPresentWalker() override = default;
 
         /* True iff. we have an item. */
-        virtual operator bool() const;
+        [[nodiscard]] explicit operator bool() const override;
 
         /* The current item. */
-        virtual const TItem &operator*() const;
+        [[nodiscard]] const TItem &operator*() const override;
 
         /* Walk to the next item, if any. */
-        virtual TMatchPresentWalker &operator++();
+        TMatchPresentWalker &operator++() override;
 
         private:
 
@@ -144,11 +146,11 @@ namespace Orly {
 
         mutable TMemoryLayer::TEntryCollection::TCursor Csr;
 
-        mutable bool Valid;
+        mutable bool Valid = true;
 
-        mutable bool Cached;
+        mutable bool Cached = false;
 
-        mutable bool PassedMatch;
+        mutable bool PassedMatch = false;
 
         /* When true, the search key is a fully-bound point read (from
            operator[]/Exists) and the ctor may seek via the secondary index
@@ -165,19 +167,19 @@ namespace Orly {
         public:
 
         TRangePresentWalker(const TMemoryLayer *layer,
-                       const TIndexKey &from,
-                       const TIndexKey &to);
+                            const TIndexKey &from,
+                            const TIndexKey &to);
 
-        virtual ~TRangePresentWalker();
+        ~TRangePresentWalker() override = default;
 
         /* True iff. we have an item. */
-        virtual operator bool() const;
+        [[nodiscard]] explicit operator bool() const override;
 
         /* The current item. */
-        virtual const TItem &operator*() const;
+        [[nodiscard]] const TItem &operator*() const override;
 
         /* Walk to the next item, if any. */
-        virtual TRangePresentWalker &operator++();
+        TRangePresentWalker &operator++() override;
 
         private:
 
@@ -191,9 +193,9 @@ namespace Orly {
 
         mutable TMemoryLayer::TEntryCollection::TCursor Csr;
 
-        mutable bool Valid;
+        mutable bool Valid = true;
 
-        mutable bool Cached;
+        mutable bool Cached = false;
 
         mutable TItem Item;
 
@@ -206,16 +208,16 @@ namespace Orly {
 
         TUpdateWalker(const TMemoryLayer *layer, TSequenceNumber from);
 
-        virtual ~TUpdateWalker();
+        ~TUpdateWalker() override = default;
 
         /* True iff. we have an item. */
-        virtual operator bool() const;
+        [[nodiscard]] explicit operator bool() const override;
 
         /* The current item. */
-        virtual const Indy::TUpdateWalker::TItem &operator*() const;
+        [[nodiscard]] const Indy::TUpdateWalker::TItem &operator*() const override;
 
         /* Walk to the next item, if any. */
-        virtual TUpdateWalker &operator++();
+        TUpdateWalker &operator++() override;
 
         private:
 
@@ -227,13 +229,11 @@ namespace Orly {
 
         TMemoryLayer::TUpdateCollection::TCursor Csr;
 
-        bool Valid;
+        bool Valid = false;
 
         mutable TItem Item;
 
       };  // TUpdateWalker
-
-      inline virtual TKind GetKind() const;
 
       /* True iff. entry a sorts strictly after entry b on level 0
          (EntryCollection): (IndexId asc, key asc, SeqNum desc). This is the
@@ -241,7 +241,7 @@ namespace Orly {
          LinkEntry, which links an entry after the last one that does not sort
          after it, puts it exactly where ReverseInsert would, ties included
          (#754). Stored keys are concrete, so it never throws. */
-      static bool EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b);
+      [[nodiscard]] static bool EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b) noexcept;
 
       void ImporterAppendUpdate(TUpdate *update);
 
@@ -257,15 +257,15 @@ namespace Orly {
          only by LinkEntry (single-writer per layer); read with acquire by
          SeekRun. SkipListLevel is the current top occupied lane. */
       std::atomic<TUpdate::TEntry *> SkipHead[TUpdate::TEntry::SkipMaxLevel];
-      std::atomic<size_t> SkipListLevel;
+      std::atomic<size_t> SkipListLevel = 0UL;
 
       /* SkipTail[l] is the last entry on express lane l, or null while the
          lane is empty: the lane predecessors of an entry appended at the end
          of level 0, which makes an in-order insert O(1) (#754). The writer's
          own bookkeeping; readers never look at it. */
-      TUpdate::TEntry *SkipTail[TUpdate::TEntry::SkipMaxLevel];
+      TUpdate::TEntry *SkipTail[TUpdate::TEntry::SkipMaxLevel] = {};
 
-      size_t Size;
+      size_t Size = 0UL;
 
       friend class Orly::Server::TServer;
       friend class Orly::Indy::TRepo;
@@ -273,32 +273,32 @@ namespace Orly {
 
     };  // TMemoryLayer
 
-    inline TMemoryLayer::TEntryCollection *TMemoryLayer::GetEntryCollection() const {
+    inline TMemoryLayer::TEntryCollection *TMemoryLayer::GetEntryCollection() const noexcept {
       return &EntryCollection;
     }
 
-    inline TMemoryLayer::TUpdateCollection *TMemoryLayer::GetUpdateCollection() const {
+    inline TMemoryLayer::TUpdateCollection *TMemoryLayer::GetUpdateCollection() const noexcept {
       return &UpdateCollection;
     }
 
-    inline bool TMemoryLayer::IsEmpty() const {
+    inline bool TMemoryLayer::IsEmpty() const noexcept {
       return UpdateCollection.TryGetFirstMember() == nullptr;
     }
 
-    inline L0::TManager::TRepo::TDataLayer::TKind TMemoryLayer::GetKind() const {
+    inline L0::TManager::TRepo::TDataLayer::TKind TMemoryLayer::GetKind() const noexcept {
       return L0::TManager::TRepo::TDataLayer::Mem;
     }
 
-    inline size_t TMemoryLayer::GetSize() const {
+    inline size_t TMemoryLayer::GetSize() const noexcept {
       return Size;
     }
 
-    inline TSequenceNumber TMemoryLayer::GetLowestSeq() const {
+    inline TSequenceNumber TMemoryLayer::GetLowestSeq() const noexcept {
       assert(Size);
       return UpdateCollection.TryGetFirstMember()->GetSequenceNumber();
     }
 
-    inline TSequenceNumber TMemoryLayer::GetHighestSeq() const {
+    inline TSequenceNumber TMemoryLayer::GetHighestSeq() const noexcept {
       assert(Size);
       return UpdateCollection.TryGetLastMember()->GetSequenceNumber();
     }
