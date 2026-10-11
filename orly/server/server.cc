@@ -550,7 +550,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
 
   Param(
       &TCmd::OperationRetentionCount, "operation_retention_count", Optional, "operation_retention_count\0",
-      "How many completed writes the exactly-once table keeps per POV (#733). Default 512. 0 turns the table off, so an operation id is accepted and ignored; that is for testing."
+      "How many completed writes the exactly-once table keeps, across all POVs (#733). Default 4096. 0 turns the table off, so an operation id is accepted and ignored; that is for testing."
   );
 
   Param(
@@ -559,8 +559,8 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
 
   Param(
-      &TCmd::OperationResultBytes, "operation_result_bytes", Optional, "operation_result_bytes\0",
-      "The largest encoded result the exactly-once table keeps (#733); a retry of a write with a bigger one is told operation_outcome_too_large. Default 256, at most 8192."
+      &TCmd::OperationOutcomeBytes, "operation_outcome_bytes", Optional, "operation_outcome_bytes\0",
+      "The largest encoded outcome the exactly-once table keeps for a write (#733); a retry of a write with a bigger one is told outcome_too_large. Default 256, at most 8192."
   );
 
   Param(
@@ -652,9 +652,9 @@ TServer::TCmd::TCmd()
       ReadBudgetSteps(0UL),
       DurableAcks("local"),
       WalMB(256),
-      OperationRetentionCount(512),
+      OperationRetentionCount(4096),
       OperationRetentionSeconds(3600),
-      OperationResultBytes(256),
+      OperationOutcomeBytes(256),
       WalNoSync(false),
       WalEarlyAck(false),
       DurableMappingPoolSize(1000UL),
@@ -1244,7 +1244,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     TOperationTable::TConfig config;
     config.RetentionCount = Cmd.OperationRetentionCount;
     config.RetentionAge = std::chrono::seconds(Cmd.OperationRetentionSeconds);
-    config.ResultBytes = std::min<size_t>(Cmd.OperationResultBytes, 8192UL);
+    config.ResultBytes = std::min<size_t>(Cmd.OperationOutcomeBytes, 8192UL);
     OperationTable = std::make_unique<TOperationTable>(config);
   }
   /* Point reads build their per-layer walkers on fibers; keep half the frames for everything
@@ -1771,6 +1771,7 @@ void TServer::Init() {
       wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
       wal_config.CheckpointSlot0Offset = (DiskEngine->GetWalCheckpoint0Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
       wal_config.CheckpointSlot1Offset = (DiskEngine->GetWalCheckpoint1Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlotBytes = DiskEngine->GetWalCheckpointBlocks() * Indy::Disk::Util::PhysicalBlockSize;
       uuid_t raw_inst;
       memset(raw_inst, 0, sizeof(raw_inst));
       memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));
@@ -1787,7 +1788,7 @@ void TServer::Init() {
       uint64_t start_ring_offset = 0UL;
       uint64_t start_chain = 0UL;
 
-      auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
+      auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId, wal_config.CheckpointSlotBytes);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
         if (cp_opt->HeadGroupNum > 0) {
@@ -1936,7 +1937,12 @@ void TServer::Init() {
       auto head_loc = scan_result.FindGroupForLsn(head_lsn);
       Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain, scan_result.GroupLocations);
       RepoManager->SetWal(Wal.get());
-      retention->SetCheckpointPayload([this](uint64_t head_lsn) { return OperationTable ? OperationTable->Snapshot(head_lsn) : std::string(); });
+      /* The table may take the slot less its header, keeping 16 KiB for sections other than its own. If it
+         is bigger, it drops its oldest entries and their ids answer operation_expired. */
+      const size_t snapshot_budget = Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) > 16UL * 1024UL
+          ? Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) - 16UL * 1024UL
+          : Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) / 2UL;
+      retention->SetCheckpointPayload([this, snapshot_budget](uint64_t head_lsn) { return OperationTable ? OperationTable->Snapshot(head_lsn, snapshot_budget) : std::string(); });
       retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
       syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld, %ld povs restored), group %ld, ring offset %ld", next_lsn, retention->ComputeHead(), restored_povs.size(), next_group, scan_result.NextRingOffset);
       WalCheckpointer = std::thread([this, retention] {

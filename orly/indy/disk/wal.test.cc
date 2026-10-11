@@ -19,6 +19,7 @@
 #include <orly/indy/disk/wal.h>
 
 #include <chrono>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -322,6 +323,42 @@ FIXTURE(CheckpointAndHeadAdvance) {
   EXPECT_EQ(cp->GlobalFlushedSeq, 200UL);
   std::string payload_str(cp->Payload.begin(), cp->Payload.end());
   EXPECT_EQ(payload_str, "checkpoint_metadata_2");
+}
+
+/* A checkpoint slot longer than one page carries a payload that long, and a payload that doesn't fit
+   the slot is refused rather than written over the next one. */
+FIXTURE(CheckpointSlotLength) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlotBytes = 6UL * WalAlignment;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + config.CheckpointSlotBytes;
+  config.StoreId = TestStoreId;
+
+  const size_t max_payload = TWal::MaxCheckpointPayload(config.CheckpointSlotBytes);
+  EXPECT_EQ(max_payload, config.CheckpointSlotBytes - 116UL);
+  std::string big(20000, 'x');
+  big[0] = 'a';
+  big[19999] = 'z';
+  {
+    TWal wal(&device, config);
+    wal.AppendAndWait(TWalRecordType::Txn, "item", 4UL);
+    wal.Checkpoint(1UL, 100UL, big.data(), big.size());
+    std::string too_big(max_payload + 1UL, 'y');
+    auto write = [&] { wal.Checkpoint(1UL, 100UL, too_big.data(), too_big.size()); };
+    EXPECT_THROW_FUNC(std::length_error, write);
+  }
+  auto cp = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId, config.CheckpointSlotBytes);
+  EXPECT_TRUE(cp.has_value());
+  EXPECT_EQ(cp->CheckpointNum, 1UL);
+  EXPECT_EQ(std::string(cp->Payload.begin(), cp->Payload.end()), big);
+  /* A reader that knows a shorter slot treats the longer checkpoint as unreadable. */
+  auto shorter = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId, 2UL * WalAlignment);
+  EXPECT_FALSE(shorter.has_value());
 }
 
 FIXTURE(ReopenAndAppendAcrossSessions) {

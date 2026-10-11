@@ -57,6 +57,7 @@ bool TDeviceUtil::ProbeDevice(const char *path, TOrlyDevice &out_device) {
     out_device.WalNumBlocks = buf.get()[WalNumBlocksPos];
     out_device.WalCheckpoint0Block = buf.get()[WalCheckpoint0BlockPos];
     out_device.WalCheckpoint1Block = buf.get()[WalCheckpoint1BlockPos];
+    out_device.WalCheckpointBlocks = buf.get()[WalCheckpointBlocksPos];
   } catch (const std::exception &ex) {
     return false;
   }
@@ -87,6 +88,7 @@ void TDeviceUtil::ModifyDevice(const char *path, TOrlyDevice &new_device_info) {
     buf.get()[WalNumBlocksPos] = new_device_info.WalNumBlocks;
     buf.get()[WalCheckpoint0BlockPos] = new_device_info.WalCheckpoint0Block;
     buf.get()[WalCheckpoint1BlockPos] = new_device_info.WalCheckpoint1Block;
+    buf.get()[WalCheckpointBlocksPos] = new_device_info.WalCheckpointBlocks;
     buf.get()[NumDataElem] = Base::Murmur(buf.get(), NumDataElem, 0UL);
     IfLt0(pwrite(fd, buf.get(), BlockSize, 0UL));
     fsync(fd);

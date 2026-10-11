@@ -21,15 +21,14 @@
 #include <algorithm>
 #include <cstring>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 
 #include <base/io/binary_input_only_stream.h>
 #include <base/io/binary_output_only_stream.h>
 #include <base/io/recorder_and_player.h>
 #include <orly/atom/suprena.h>
+#include <orly/indy/disk/wal.h>
 #include <orly/server/operation_error.h>
-#include <orly/var/jsonify.h>
 #include <orly/var/new_sabot.h>
 
 using namespace std;
@@ -111,13 +110,10 @@ namespace {
     return out;
   }
 
-  /* FNV-1a. */
-  void Mix(uint64_t &hash, const string &str) {
-    for (unsigned char c: str) {
-      hash = (hash ^ c) * 0x100000001b3ULL;
-    }
-    /* The separator that keeps "ab","c" apart from "a","bc". */
-    hash = (hash ^ 0xff) * 0x100000001b3ULL;
+  /* A length and then the bytes, so "ab","c" stays apart from "a","bc". */
+  void PutBytes(string &out, const string &bytes) {
+    Put<uint32_t>(out, static_cast<uint32_t>(bytes.size()));
+    out += bytes;
   }
 
 }  // namespace
@@ -169,12 +165,10 @@ void TOperationTable::Complete(const TUuid &pov_id, const TUuid &op_id, TOutcome
   lock_guard<mutex> lock(Mutex);
   auto &table = TableByPov[pov_id];
   auto &slot = table.SlotByOp[op_id];
-  if (!slot.IsDone) {
-    ++table.DoneCount;
-  }
   slot.IsDone = true;
   slot.Outcome = std::move(outcome);
-  Prune(table);
+  Done.emplace(GetTimestampMs(op_id), pov_id, op_id);
+  Prune();
 }
 
 void TOperationTable::Release(const TUuid &pov_id, const TUuid &op_id) noexcept {
@@ -221,7 +215,7 @@ string TOperationTable::Snapshot(uint64_t head_lsn, size_t budget) {
   /* Trim the oldest until it fits, raising the watermark of the POV each came from, so what was
      trimmed is refused after a restart and never run a second time. A POV header is 28 bytes. */
   sort(items.begin(), items.end(), [](const TItem &lhs, const TItem &rhs) { return lhs.Ts < rhs.Ts; });
-  size_t total = 6;
+  size_t total = 12;  /* the tag, the section count and the section's header */
   set<TUuid> povs;
   for (const auto &item: items) {
     total += item.Bytes.size();
@@ -245,18 +239,24 @@ string TOperationTable::Snapshot(uint64_t head_lsn, size_t budget) {
   for (const auto &item: watermark_by_pov) {
     items_by_pov[item.first];
   }
-  string out;
-  Put<uint16_t>(out, PayloadVersion);
-  Put<uint32_t>(out, static_cast<uint32_t>(items_by_pov.size()));
+  string body;
+  Put<uint32_t>(body, static_cast<uint32_t>(items_by_pov.size()));
   for (const auto &pov: items_by_pov) {
-    PutUuid(out, pov.first);
+    PutUuid(body, pov.first);
     auto watermark = watermark_by_pov.find(pov.first);
-    Put<uint64_t>(out, watermark == watermark_by_pov.end() ? 0UL : watermark->second);
-    Put<uint32_t>(out, static_cast<uint32_t>(pov.second.size()));
+    Put<uint64_t>(body, watermark == watermark_by_pov.end() ? 0UL : watermark->second);
+    Put<uint32_t>(body, static_cast<uint32_t>(pov.second.size()));
     for (const auto *item: pov.second) {
-      out += item->Bytes;
+      body += item->Bytes;
     }
   }
+  string out;
+  Put<uint16_t>(out, PayloadVersion);
+  Put<uint16_t>(out, 1);
+  Put<uint16_t>(out, OperationsSection);
+  Put<uint16_t>(out, SectionRequired);
+  Put<uint32_t>(out, static_cast<uint32_t>(body.size()));
+  out += body;
   return out;
 }
 
@@ -267,6 +267,23 @@ void TOperationTable::Load(const string &payload) {
     throw runtime_error("the checkpoint's operation table has version " + to_string(version) +
         ", which this server does not know");
   }
+  const auto section_count = reader.Get<uint16_t>();
+  for (uint16_t s = 0; s < section_count; ++s) {
+    const auto type = reader.Get<uint16_t>();
+    const auto flags = reader.Get<uint16_t>();
+    const auto len = reader.Get<uint32_t>();
+    string body = reader.GetBytes(len);
+    if (type == OperationsSection) {
+      LoadOperations(body);
+    } else if (flags & SectionRequired) {
+      throw runtime_error("the checkpoint has a required section of type " + to_string(type) +
+          ", which this server does not know");
+    }
+  }
+}
+
+void TOperationTable::LoadOperations(const string &body) {
+  TReader reader(body);
   const auto pov_count = reader.Get<uint32_t>();
   for (uint32_t p = 0; p < pov_count; ++p) {
     const TUuid pov_id = reader.GetUuid();
@@ -296,11 +313,7 @@ void TOperationTable::Load(const string &payload) {
 
 size_t TOperationTable::GetCount() const {
   lock_guard<mutex> lock(Mutex);
-  size_t count = 0;
-  for (const auto &pov: TableByPov) {
-    count += pov.second.DoneCount;
-  }
-  return count;
+  return Done.size();
 }
 
 uint64_t TOperationTable::NowMs() const {
@@ -311,48 +324,52 @@ uint64_t TOperationTable::NowMs() const {
       chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count());
 }
 
-void TOperationTable::Prune(TPovTable &table) {
+void TOperationTable::Prune() {
   const uint64_t now = NowMs();
   const uint64_t age_ms = static_cast<uint64_t>(Config.RetentionAge.count()) * 1000UL;
   const uint64_t cutoff = now > age_ms ? now - age_ms : 0UL;
-  for (auto iter = table.SlotByOp.begin(); iter != table.SlotByOp.end();) {
-    if (!iter->second.IsDone) {
-      ++iter;
-      continue;
-    }
-    const uint64_t ts = GetTimestampMs(iter->first);
-    if (table.DoneCount <= Config.RetentionCount && ts >= cutoff) {
+  while (!Done.empty()) {
+    const auto iter = Done.begin();
+    const uint64_t ts = get<0>(*iter);
+    if (Done.size() <= Config.RetentionCount && ts >= cutoff) {
       break;
     }
-    table.ExpiredBeforeMs = max(table.ExpiredBeforeMs, ts);
-    --table.DoneCount;
-    iter = table.SlotByOp.erase(iter);
+    /* Only the POV that owned the entry stops answering for ids that old. */
+    auto pov_iter = TableByPov.find(get<1>(*iter));
+    if (pov_iter != TableByPov.end()) {
+      pov_iter->second.SlotByOp.erase(get<2>(*iter));
+      pov_iter->second.ExpiredBeforeMs = max(pov_iter->second.ExpiredBeforeMs, ts);
+    }
+    Done.erase(iter);
   }
 }
 
 uint64_t Orly::Server::HashCalls(const vector<TMetaRecord::TEntry::TCall> &calls) {
-  uint64_t hash = 0xcbf29ce484222325ULL;
+  string bytes;
+  Put<uint32_t>(bytes, static_cast<uint32_t>(calls.size()));
   for (const auto &call: calls) {
+    Put<uint32_t>(bytes, static_cast<uint32_t>(call.PackageFqName.size()));
     for (const auto &part: call.PackageFqName) {
-      Mix(hash, part);
+      PutBytes(bytes, part);
     }
-    Mix(hash, call.MethodName);
+    PutBytes(bytes, call.MethodName);
+    uint32_t arg_count = 0;
+    for (const auto &arg: call.ArgByName) {
+      if (arg.first != TMetaRecord::TEntry::OpIdKey && arg.first != TMetaRecord::TEntry::OpOutcomeKey) {
+        ++arg_count;
+      }
+    }
+    Put<uint32_t>(bytes, arg_count);
+    /* The map is ordered by name, bytewise. */
     for (const auto &arg: call.ArgByName) {
       if (arg.first == TMetaRecord::TEntry::OpIdKey || arg.first == TMetaRecord::TEntry::OpOutcomeKey) {
         continue;
       }
-      ostringstream text;
-      try {
-        Var::Jsonify(text, arg.second);
-      } catch (const exception &) {
-        /* A value Jsonify can't render still hashes by its name. */
-      }
-      Mix(hash, arg.first);
-      Mix(hash, text.str());
+      PutBytes(bytes, arg.first);
+      PutBytes(bytes, EncodeResult(arg.second));
     }
-    Mix(hash, string());
   }
-  return hash;
+  return Indy::Disk::ComputeChecksum64(bytes.data(), bytes.size());
 }
 
 string Orly::Server::EncodeResult(const Var::TVar &result) {

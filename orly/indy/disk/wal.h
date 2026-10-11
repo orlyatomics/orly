@@ -256,6 +256,9 @@ namespace Orly {
           size_t CapacityBytes = 1024UL * 1024UL; // 1 MiB ring
           Util::TOffset CheckpointSlot0Offset = 0UL;
           Util::TOffset CheckpointSlot1Offset = 4096UL;
+          /* The length of each checkpoint slot in bytes, which bounds header plus payload.  Zero means
+             the slots are not bounded (tests that lay them out by hand). */
+          size_t CheckpointSlotBytes = 0UL;
           Base::TUuid StoreId = Base::TUuid::Null;
           size_t MaxInFlightGroups = 2UL;
           bool AutoSealOnQuiet = true;
@@ -287,6 +290,12 @@ namespace Orly {
         /* Flush all pending records through durable sync and seal. */
         void Flush();
 
+        /* The most payload a checkpoint can carry: the slot length less the header.  A server sizes its
+           snapshots to this. */
+        static size_t MaxCheckpointPayload(size_t slot_bytes) {
+          return slot_bytes > sizeof(TCheckpointHeader) ? slot_bytes - sizeof(TCheckpointHeader) : 0UL;
+        }
+
         /* Write a checkpoint to the inactive checkpoint slot, naming head_lsn as the oldest record
            recovery still needs.  The head never moves back.  Checkpoints are serialised, and the
            leader never overwrites a group at or after the head that the newest synced checkpoint
@@ -313,7 +322,7 @@ namespace Orly {
 
         /* Static recovery scanners */
         static TScanResult Scan(Util::TDevice *device, const TConfig &config, uint64_t start_group_num = 1UL, uint64_t start_lsn = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL, uint64_t start_chain = 0UL);
-        static std::optional<TCheckpoint> ReadNewestCheckpoint(Util::TDevice *device, Util::TOffset slot0, Util::TOffset slot1, const Base::TUuid &store_id);
+        static std::optional<TCheckpoint> ReadNewestCheckpoint(Util::TDevice *device, Util::TOffset slot0, Util::TOffset slot1, const Base::TUuid &store_id, size_t slot_bytes = 0UL);
 
         private:
 

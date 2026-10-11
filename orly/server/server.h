@@ -396,11 +396,11 @@ namespace Orly {
         /* Size of the WAL ring in megabytes (#755). Default 256. */
         size_t WalMB = 256;
 
-        /* The exactly-once table (#733): how many completed writes it keeps per POV, how old, by
-           the operation id's own time, one may be, and the largest result it keeps. */
-        size_t OperationRetentionCount = 512;
+        /* The exactly-once table (#733): how many completed writes it keeps across all POVs, how old,
+           by the operation id's own time, one may be, and the largest outcome it keeps. */
+        size_t OperationRetentionCount = 4096;
         size_t OperationRetentionSeconds = 3600;
-        size_t OperationResultBytes = 256;
+        size_t OperationOutcomeBytes = 256;
 
         /* Test-only negative controls (#755). */
         bool WalNoSync = false;

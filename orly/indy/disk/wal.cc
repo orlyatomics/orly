@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <stdexcept>
+#include <string>
 #include <iostream>
 
 #include <syslog.h>
@@ -568,13 +570,16 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
 
   /* Alternate slots.  The first checkpoint of this instance goes opposite the newest on disk. */
   if (!LastCheckpointNum) {
-    auto newest_cp = ReadNewestCheckpoint(Device, Config.CheckpointSlot0Offset, Config.CheckpointSlot1Offset, Config.StoreId);
+    auto newest_cp = ReadNewestCheckpoint(Device, Config.CheckpointSlot0Offset, Config.CheckpointSlot1Offset, Config.StoreId, Config.CheckpointSlotBytes);
     LastCheckpointNum = newest_cp ? newest_cp->CheckpointNum : 0UL;
   }
   const uint64_t next_cp_num = *LastCheckpointNum + 1UL;
   const Util::TOffset target_slot = (next_cp_num % 2 == 1) ? Config.CheckpointSlot0Offset : Config.CheckpointSlot1Offset;
 
   const size_t total_bytes = AlignToWal(sizeof(TCheckpointHeader) + payload_len);
+  if (Config.CheckpointSlotBytes && total_bytes > Config.CheckpointSlotBytes) {
+    throw std::length_error("checkpoint payload of " + std::to_string(payload_len) + " bytes does not fit a checkpoint slot of " + std::to_string(Config.CheckpointSlotBytes) + " bytes");
+  }
   auto buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), total_bytes);
 
   TCheckpointHeader header;
@@ -645,8 +650,8 @@ std::vector<uint64_t> TWal::CopyForward(const std::vector<std::pair<TWalRecordTy
   return new_lsns;
 }
 
-std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Util::TOffset slot0, Util::TOffset slot1, const Base::TUuid &store_id) {
-  auto read_slot = [device, &store_id](Util::TOffset offset) -> std::optional<TCheckpoint> {
+std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Util::TOffset slot0, Util::TOffset slot1, const Base::TUuid &store_id, size_t slot_bytes) {
+  auto read_slot = [device, &store_id, slot_bytes](Util::TOffset offset) -> std::optional<TCheckpoint> {
     auto buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
     const bool read_ok = SyncDeviceRead(device, HERE, buf.get(), offset, WalAlignment);
     if (!read_ok) {
@@ -661,6 +666,9 @@ std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Uti
     }
     if (hdr->PayloadLen > 0) {
       const size_t total_size = AlignToWal(sizeof(TCheckpointHeader) + hdr->PayloadLen);
+      if (slot_bytes && total_size > slot_bytes) {
+        return std::nullopt;
+      }
       auto full_buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), total_size);
       const bool full_read_ok = SyncDeviceRead(device, HERE, full_buf.get(), offset, total_size);
       if (!full_read_ok) {

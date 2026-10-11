@@ -361,12 +361,13 @@ try {<pov-id>} mypkg bump <{.n: 1}> <{.op_id: "0194a2b4-7c00-7000-8000-000000000
   Over the binary protocol a call's id rides as the closure argument `$op_id` (a str); the first
   call's, for a batch. Errors there arrive as ordinary exceptions whose messages start with the
   status name.
-- A saved result is kept up to `--operation_result_bytes` (default 256, at most 8192) encoded. If a
+- A saved outcome is kept up to `--operation_outcome_bytes` (default 256, at most 8192) encoded. If a
   write's result is larger, the first try still returns it in full, but a retry cannot, and replies
   `"status": "outcome_too_large"` with the write's `"version"`. The write applied and is not repeated;
   read the data if the result is needed.
-- The server remembers the newest `--operation_retention_count` ids per POV (default 512) that are
-  no older than `--operation_retention_seconds` (default 3600). A retry of an id it has forgotten, or
+- The server remembers the newest `--operation_retention_count` ids (default 4096, across all POVs)
+  that are no older than `--operation_retention_seconds` (default 3600): whichever of the two runs
+  out first ends an id's window. A retry of an id it has forgotten, or
   one older than anything it remembers, replies `"status": "operation_expired"`. Whether the first
   try applied is then unknown; read the data to find out. Retry within the window, which is hours
   long, and a client that reconnects promptly is nowhere near it.

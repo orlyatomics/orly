@@ -63,6 +63,7 @@ FIXTURE(SuperBlockWalFields) {
   dev_write.WalNumBlocks = 4096UL;
   dev_write.WalCheckpoint0Block = 4106UL;
   dev_write.WalCheckpoint1Block = 4107UL;
+  dev_write.WalCheckpointBlocks = 16UL;
 
   TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
 
@@ -73,6 +74,7 @@ FIXTURE(SuperBlockWalFields) {
   EXPECT_EQ(dev_read.WalNumBlocks, 4096UL);
   EXPECT_EQ(dev_read.WalCheckpoint0Block, 4106UL);
   EXPECT_EQ(dev_read.WalCheckpoint1Block, 4107UL);
+  EXPECT_EQ(dev_read.WalCheckpointBlocks, 16UL);
   EXPECT_EQ(dev_read.VolumeId.Id, 42UL);
   EXPECT_EQ(std::string(dev_read.VolumeId.InstanceName), "test_inst");
 }
@@ -115,6 +117,7 @@ FIXTURE(FormatVersionUpgradeAndDowngrade) {
   dev_write.WalNumBlocks = 0UL;
   dev_write.WalCheckpoint0Block = 0UL;
   dev_write.WalCheckpoint1Block = 0UL;
+  dev_write.WalCheckpointBlocks = 0UL;
   TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
 
   EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));

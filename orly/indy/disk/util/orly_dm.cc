@@ -310,6 +310,7 @@ int main(int argc, char *argv[]) {
       wal_config.CapacityBytes = dev_info.WalNumBlocks * dev_info.PhysicalBlockSize;
       wal_config.CheckpointSlot0Offset = (dev_info.WalCheckpoint0Block + 1UL) * dev_info.PhysicalBlockSize;
       wal_config.CheckpointSlot1Offset = (dev_info.WalCheckpoint1Block + 1UL) * dev_info.PhysicalBlockSize;
+      wal_config.CheckpointSlotBytes = (dev_info.WalCheckpointBlocks ? dev_info.WalCheckpointBlocks : 1UL) * dev_info.PhysicalBlockSize;
       uuid_t raw_inst;
       memset(raw_inst, 0, sizeof(raw_inst));
       memcpy(raw_inst, dev_info.VolumeId.InstanceName, std::min(sizeof(raw_inst), strlen(dev_info.VolumeId.InstanceName)));
@@ -320,7 +321,7 @@ int main(int argc, char *argv[]) {
       uint32_t start_lap = 1U;
       uint64_t start_ring_offset = 0UL;
       uint64_t start_chain = 0UL;
-      auto cp_opt = TWal::ReadNewestCheckpoint(dev.get(), wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
+      auto cp_opt = TWal::ReadNewestCheckpoint(dev.get(), wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId, wal_config.CheckpointSlotBytes);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
         if (cp_opt->HeadGroupNum > 0) {
@@ -355,6 +356,7 @@ int main(int argc, char *argv[]) {
       dev_info.WalNumBlocks = 0UL;
       dev_info.WalCheckpoint0Block = 0UL;
       dev_info.WalCheckpoint1Block = 0UL;
+      dev_info.WalCheckpointBlocks = 0UL;
       TDeviceUtil::ModifyDevice(path_to_device.c_str(), dev_info);
       cout << "Successfully downgraded " << path_to_device << " to format version 0." << endl;
     }

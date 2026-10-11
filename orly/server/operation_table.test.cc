@@ -38,7 +38,7 @@ Type::TTypeCzar TypeCzar;
 /* The table's idea of now, which a test moves. */
 static uint64_t Now = 10'000'000UL;
 
-static TOperationTable::TConfig MakeConfig(size_t count = 512, size_t seconds = 3600, size_t result_bytes = 256) {
+static TOperationTable::TConfig MakeConfig(size_t count = 4096, size_t seconds = 3600, size_t result_bytes = 256) {
   TOperationTable::TConfig config;
   config.RetentionCount = count;
   config.RetentionAge = chrono::seconds(seconds);
@@ -156,6 +156,30 @@ FIXTURE(ExpiredByCount) {
   EXPECT_THROW_FUNC(TOperationExpired, older);
 }
 
+/* The count is for the whole table, not per POV: the oldest entry anywhere goes first, and only
+   its own POV's watermark rises. */
+FIXTURE(CountIsGlobal) {
+  Now = 10'000'000UL;
+  TOperationTable table(MakeConfig(3));
+  auto a = MakeId(Now - 4000UL), b = MakeId(Now - 3000UL), c = MakeId(Now - 2000UL), d = MakeId(Now - 1000UL);
+  table.Reserve(Pov, a, 1);
+  table.Complete(Pov, a, MakeOutcome(1, 1, true, 1));
+  table.Reserve(OtherPov, b, 1);
+  table.Complete(OtherPov, b, MakeOutcome(2, 2, true, 1));
+  table.Reserve(OtherPov, c, 1);
+  table.Complete(OtherPov, c, MakeOutcome(3, 3, true, 1));
+  EXPECT_EQ(table.GetCount(), 3UL);
+  table.Reserve(OtherPov, d, 1);
+  table.Complete(OtherPov, d, MakeOutcome(4, 4, true, 1));
+  EXPECT_EQ(table.GetCount(), 3UL);
+  /* a, the oldest, belonged to Pov: it is refused, and Pov's watermark is the only one that rose. */
+  auto dropped = [&] { table.Reserve(Pov, a, 1); };
+  EXPECT_THROW_FUNC(TOperationExpired, dropped);
+  EXPECT_FALSE(table.Reserve(OtherPov, b, 1).IsNew);
+  /* An id for OtherPov between a and b is still new there: its watermark did not move. */
+  EXPECT_TRUE(table.Reserve(OtherPov, MakeId(Now - 3500UL), 1).IsNew);
+}
+
 /* Only a version 7 UUID carries a time. */
 FIXTURE(NotVersion7) {
   TOperationTable table(MakeConfig());
@@ -206,7 +230,7 @@ FIXTURE(SnapshotTrim) {
     table.Reserve(Pov, ids.back(), i);
     table.Complete(Pov, ids.back(), MakeOutcome(i + 1, 1, true, i));
   }
-  const size_t budget = 6 + 28 + 5 * (16 + 8 + 1 + 2 + 1 + 8);
+  const size_t budget = 12 + 28 + 5 * (16 + 8 + 1 + 2 + 1 + 8);
   auto payload = table.Snapshot(100, budget);
   EXPECT_TRUE(payload.size() <= budget);
   TOperationTable loaded(MakeConfig());
@@ -236,6 +260,30 @@ FIXTURE(BadPayload) {
   string cut("\x01\x00\x01\x00\x00\x00", 6);
   auto truncated = [&] { table.Load(cut); };
   EXPECT_THROW_FUNC(runtime_error, truncated);
+}
+
+/* A reader skips a section it doesn't know if it isn't required, and refuses the store if it is. */
+FIXTURE(Sections) {
+  Now = 10'000'000UL;
+  TOperationTable table(MakeConfig());
+  auto id = MakeId(Now - 1000UL);
+  table.Reserve(Pov, id, 11);
+  table.Complete(Pov, id, MakeOutcome(5, 10, true, 11));
+  auto payload = table.Snapshot(15);
+  /* Bump the section count to 2 and append a section of type 77 with 3 bytes. */
+  string with_optional = payload;
+  with_optional[2] = 2;
+  with_optional += string("\x4d\x00\x00\x00\x03\x00\x00\x00" "abc", 11);
+  TOperationTable loaded(MakeConfig());
+  loaded.Load(with_optional);
+  EXPECT_EQ(loaded.GetCount(), 1UL);
+  EXPECT_FALSE(loaded.Reserve(Pov, id, 11).IsNew);
+  string with_required = payload;
+  with_required[2] = 2;
+  with_required += string("\x4d\x00\x01\x00\x03\x00\x00\x00" "abc", 11);
+  TOperationTable refusing(MakeConfig());
+  auto load = [&] { refusing.Load(with_required); };
+  EXPECT_THROW_FUNC(runtime_error, load);
 }
 
 /* A result round-trips through the bytes the table keeps. */

@@ -102,8 +102,10 @@ A SIGKILL, process crash, or power loss:
 
 A write that carries an operation id (`.op_id`, #733) is applied at most once however often it is
 sent, so a client that lost its connection mid-write can send it again. The server keeps each id's
-result in a table, per POV: the newest 512 ids no older than an hour (`--operation_retention_count`,
-`--operation_retention_seconds`), each with a result of up to 256 bytes (`--operation_result_bytes`).
+result in a table: the newest 4096 ids across all POVs (`--operation_retention_count`) that are no
+older than an hour (`--operation_retention_seconds`), whichever limit runs out first, each with a
+result of up to 256 bytes (`--operation_outcome_bytes`). The checkpoint slots are 1 MiB each in a
+new store, which holds the table at its default size.
 
 - **Safe POVs with the log on:** the id and the result are part of the write's WAL record, and the
   table is part of every checkpoint, so a retry after a SIGKILL and restart finds the write if the

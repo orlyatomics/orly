@@ -33,7 +33,9 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -51,16 +53,25 @@ namespace Orly {
       NO_COPY(TOperationTable);
       public:
 
-      /* The version tag that starts a checkpoint payload (#733). */
+      /* The tag that starts a checkpoint payload (#733), then a u16 section count, then the sections.
+         A section is a u16 type, a u16 flags, a u32 length and that many bytes. */
       static constexpr uint16_t PayloadVersion = 1;
 
-      /* The most a snapshot may take: a checkpoint slot is one 64 KiB block, less the header. */
-      static constexpr size_t SnapshotBudgetBytes = 60000;
+      /* The section that holds this table. */
+      static constexpr uint16_t OperationsSection = 1;
+
+      /* A section flag: a reader that doesn't know the type must refuse the store, not skip it. */
+      static constexpr uint16_t SectionRequired = 1;
+
+      /* What a snapshot may take when the caller names no budget: the default 1 MiB checkpoint slot
+         less its 116-byte header, and 16 KiB kept for other sections. The server passes its own. */
+      static constexpr size_t SnapshotBudgetBytes = 1024UL * 1024UL - 116UL - 16UL * 1024UL;
 
       struct TConfig {
 
-        /* The most completed entries kept per POV. */
-        size_t RetentionCount = 512;
+        /* The most completed entries kept, across every POV. The oldest goes first, and only its own
+           POV's watermark rises. */
+        size_t RetentionCount = 4096;
 
         /* How old, by the id's own timestamp, an entry may be before it is dropped and the id
            refused. */
@@ -139,8 +150,9 @@ namespace Orly {
          at least the tag. */
       std::string Snapshot(uint64_t head_lsn, size_t budget = SnapshotBudgetBytes);
 
-      /* Load a snapshot. Throws std::runtime_error if its version tag isn't known or it is cut
-         short. */
+      /* Load a snapshot. Throws std::runtime_error if its version tag isn't known, it is cut short,
+         or it holds a section marked required that this server doesn't know. An unknown section
+         that isn't required is skipped. */
       void Load(const std::string &payload);
 
       /* The number of completed entries, for tests and stats. */
@@ -161,14 +173,16 @@ namespace Orly {
         /* Ids at or below this are refused: an entry they could have named was dropped. */
         uint64_t ExpiredBeforeMs = 0;
 
-        size_t DoneCount = 0;
-
       };  // TPovTable
 
       uint64_t NowMs() const;
 
-      /* Requires Mutex. */
-      void Prune(TPovTable &table);
+      /* Requires Mutex. Drops completed entries, oldest first, while there are more than the count
+         or the oldest is past the age. */
+      void Prune();
+
+      /* Reads the body of the operations section. */
+      void LoadOperations(const std::string &body);
 
       const TConfig Config;
 
@@ -176,11 +190,16 @@ namespace Orly {
 
       std::unordered_map<Base::TUuid, TPovTable> TableByPov;
 
+      /* The completed entries, oldest first: (time in the id, POV id, operation id). */
+      std::set<std::tuple<uint64_t, Base::TUuid, Base::TUuid>> Done;
+
     };  // TOperationTable
 
-    /* A hash of what a request asked for: its calls' packages, methods and args, without the
-       reserved keys, so the same request hashes the same on the retry and when read back from a
-       replayed record. It is only there to catch an id used for two requests by mistake. */
+    /* A hash of what a request asked for, to catch an id used for two requests by mistake. It is
+       ComputeChecksum64 over a canonical binary encoding, so it doesn't change when a value's text
+       form does, which matters because it is stored in the checkpoint. The encoding is in
+       docs/design/durable-acks.md section 8.2.1; the same function hashes the live request and the
+       replayed record. */
     uint64_t HashCalls(const std::vector<TMetaRecord::TEntry::TCall> &calls);
 
     /* A method result as the bytes the table keeps, with no tracker. */
