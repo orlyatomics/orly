@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cassert>
 #include <functional>
+#include <thread>
 
 #include <base/class_traits.h>
 #include <base/no_default_case.h>
@@ -29,6 +30,57 @@ namespace InvCon {
 
   /* Classes for maintaining an atomic invasive, unordered, double-linked list. */
   namespace AtomicUnorderedList {
+
+    /* Spin-lock helpers for the classes below.
+
+       Every lock in this list is a std::atomic_flag that waiters spin on.  Insert()
+       and Remove() avoid deadlock by retreating: take one lock, *try* the next, and
+       on failure release the first and start over.  Without a pause, the retreating
+       thread re-takes the lock it just released before a waiter can see it free,
+       because the re-take hits in its own cache.  Meanwhile the waiter is the one
+       holding the lock the retreating thread needs, so neither makes progress.  Two
+       merge runners removing adjacent LRU entries in the page cache spun that way
+       until a graceful stop gave up on them (#875). */
+    namespace Spin {
+
+      /* Tell the core we are in a spin-wait loop. */
+      inline void Relax() {
+        #if defined(__x86_64__) || defined(__i386__)
+        __builtin_ia32_pause();
+        #elif defined(__aarch64__)
+        asm volatile("yield" ::: "memory");
+        #endif
+      }
+
+      /* Spin until we hold the given lock.  While it is held, wait with plain loads, so
+         waiters don't keep pulling the cache line away from the holder. */
+      inline void Acquire(std::atomic_flag &lock) {
+        while (lock.test_and_set(std::memory_order_acquire)) {
+          while (lock.test(std::memory_order_relaxed)) {
+            Relax();
+          }
+        }
+      }
+
+      /* After this many doublings (1024 pauses), Retreat() yields instead. */
+      inline constexpr unsigned MaxRetreatDoublings = 10;
+
+      /* Call after releasing our locks because a try failed, before taking them again.
+         Gives the thread we lost to time to take the locks we released.  The pause
+         doubles on each attempt, then becomes a yield, in case that thread has been
+         descheduled. */
+      inline void Retreat(unsigned &attempt) {
+        if (attempt < MaxRetreatDoublings) {
+          for (unsigned i = 0; i < (1U << attempt); ++i) {
+            Relax();
+          }
+          ++attempt;
+        } else {
+          std::this_thread::yield();
+        }
+      }
+
+    }  // Spin
 
     /* Forward declarations of base classes. */
     template <typename TCollector, typename TMember>
@@ -64,11 +116,11 @@ namespace InvCon {
       void ForEach(const std::function<bool (const TMember &)> &cb) {
         bool keep_going = true;
         TTypedMembership *prev_membership = 0;
-        while (FirstLock.test_and_set(std::memory_order_acquire)) {/* acquire list first lock */}
+        Spin::Acquire(FirstLock);  // acquire list first lock
         TTypedMembership *next_membership = FirstMembership;
         while (next_membership && keep_going) {
           keep_going = cb(*next_membership->GetMember());
-          while (next_membership->NextLock.test_and_set(std::memory_order_acquire)) {/* acquire next lock */}
+          Spin::Acquire(next_membership->NextLock);  // acquire next lock
           if (prev_membership) {
             prev_membership->NextLock.clear(std::memory_order_release);  // release prev
             prev_membership = next_membership;
@@ -89,11 +141,11 @@ namespace InvCon {
       void ForEach(const std::function<bool (const TMember &, TVal &...)> &cb, TVal &...out_param) {
         bool keep_going = true;
         TTypedMembership *prev_membership = 0;
-        while (FirstLock.test_and_set(std::memory_order_acquire)) {/* acquire list first lock */}
+        Spin::Acquire(FirstLock);  // acquire list first lock
         TTypedMembership *next_membership = FirstMembership;
         while (next_membership && keep_going) {
           keep_going = cb(*next_membership->GetMember(), out_param...);
-          while (next_membership->NextLock.test_and_set(std::memory_order_acquire)) {/* acquire next lock */}
+          Spin::Acquire(next_membership->NextLock);  // acquire next lock
           if (prev_membership) {
             prev_membership->NextLock.clear(std::memory_order_release);  // release prev
             prev_membership = next_membership;
@@ -230,11 +282,13 @@ namespace InvCon {
            It is a shared linkage field, mutated under LastLock by FixupLinkage,
            and reading it before we hold any lock is a data race (the value would
            only be a speculative hint and is re-read under lock below anyway). */
+        unsigned attempt = 0;
         for (;;) {
-          while (collection->LastLock.test_and_set(std::memory_order_acquire)) {/* acquire last lock */}
+          Spin::Acquire(collection->LastLock);  // acquire last lock
           if (collection->LastMembership) {
             if (collection->LastMembership->NextLock.test_and_set(std::memory_order_acquire)) {  /* try acquire prev's next lock */
               collection->LastLock.clear(std::memory_order_release);  // release last lock
+              Spin::Retreat(attempt);
               continue;
             } else {
               break;
@@ -242,6 +296,7 @@ namespace InvCon {
           } else {
             if (collection->FirstLock.test_and_set(std::memory_order_acquire)) {  /* try acquire first lock */
               collection->LastLock.clear(std::memory_order_release);  // release last lock
+              Spin::Retreat(attempt);
               continue;
             } else {
               break;
@@ -271,11 +326,13 @@ namespace InvCon {
            NextMembership/PrevMembership fields, which a neighbor's FixupLinkage
            may concurrently write under lock; reading them before we hold any
            lock is a data race.  The values are re-read under lock below. */
+        unsigned attempt = 0;
         for (;;) {
-          while (PrevLock.test_and_set(std::memory_order_acquire)) {/* acquire prev lock */}
+          Spin::Acquire(PrevLock);  // acquire prev lock
           if (PrevMembership) {
             if (PrevMembership->NextLock.test_and_set(std::memory_order_acquire)) {  /* acquire prev's next lock */
               PrevLock.clear(std::memory_order_release);  // release prev
+              Spin::Retreat(attempt);
               continue;
             } else {
               break;
@@ -283,17 +340,18 @@ namespace InvCon {
           } else {
             if (Collection->FirstLock.test_and_set(std::memory_order_acquire)) {  /* acquire list first lock */
               PrevLock.clear(std::memory_order_release);  // release prev
+              Spin::Retreat(attempt);
               continue;
             } else {
               break;
             }
           }
         }
-        while (NextLock.test_and_set(std::memory_order_acquire)) {/* acquire next lock */}
+        Spin::Acquire(NextLock);  // acquire next lock
         if (NextMembership) {
-          while (NextMembership->PrevLock.test_and_set(std::memory_order_acquire)) {/* acquire next's prev lock */}
+          Spin::Acquire(NextMembership->PrevLock);  // acquire next's prev lock
         } else {
-          while (Collection->LastLock.test_and_set(std::memory_order_acquire)) {/* acquire list last lock */}
+          Spin::Acquire(Collection->LastLock);  // acquire list last lock
         }
         FixupLinkage(NextMembership, PrevMembership);
         if (NextMembership) {
