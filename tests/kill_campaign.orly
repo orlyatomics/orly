@@ -27,7 +27,7 @@ put_cond = ((true) effecting {
    the key as it was, and only the two `+=` counters can tell that it ran twice. That is what the
    exactly-once table is there to prevent. */
 put_once = ((true) effecting {
-  <['w', w, n]> <- n * 1000 + e;
+  *<['w', w, n]>::(int) <- n * 1000 + e;
   *<['c', w]>::(int) += 1;
   *<['t']>::(int) += 1;
 }) where {
