@@ -36,6 +36,12 @@ TWalRetention::TWalRetention(L1::TManager *manager)
 }
 
 void TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vector<TPop> &pops) {
+  /* LSNs start at 1; a pin at 0 would hold the head before the ring's first group for good. */
+  assert(lsn);
+  if (!lsn) {
+    syslog(LOG_ERR, "TWalRetention: refusing to pin LSN 0");
+    return;
+  }
   /* A promotion pops updates out of a child and pushes them into its parent in one record.  The
      child's own records are what rebuild the child, so whatever the child needed for them, the
      parent now needs for its copy, until that copy reaches a data file. */
@@ -99,10 +105,11 @@ void TWalRetention::EndReplay() {
 
 bool TWalRetention::NoteReplayedTxn(const vector<TPush> &pushes, const vector<TPop> &pops) {
   lock_guard<mutex> lock(Mutex);
-  if (!Replaying) {
+  /* Before the first replayed record (while recovery restores povs) a transaction comes from no
+     record at all, so there is nothing to pin it to. */
+  if (!Replaying || !ReplayLsn) {
     return false;
   }
-  assert(ReplayLsn);
   PinTxn(ReplayLsn, pushes, pops);
   return true;
 }

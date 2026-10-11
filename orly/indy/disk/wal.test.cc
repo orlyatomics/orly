@@ -693,14 +693,16 @@ FIXTURE(RingWrapAndCheckpointHeadScan) {
 
   /* Session 1: write 12 records with AppendAndWait.
      With AutoSealOnQuiet, each record + seal is 2 groups = 24 groups.
-     Wraps the 8-group ring multiple times across 3 laps, overwriting earlier laps. */
+     Wraps the 8-group ring across 3 laps.  The ring never overwrites a group past the
+     checkpointed head, so the head follows each record up to record 9 and then stays there:
+     records 10-12 fill the rest of the lap behind it. */
   {
     TWal wal(&device, config);
     for (size_t i = 1; i <= 12; ++i) {
       std::string data = "wrap_rec_" + std::to_string(i);
       wal.AppendAndWait(TWalRecordType::Txn, data.data(), data.size());
-      if (i == 9) {
-        wal.Checkpoint(9UL, 90UL);
+      if (i <= 9) {
+        wal.Checkpoint(i, i * 10UL);
       }
     }
     wal.Flush();

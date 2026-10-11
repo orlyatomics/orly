@@ -1853,6 +1853,9 @@ void TServer::Init() {
       if (head_lsn > next_lsn) {
         head_lsn = next_lsn;
       }
+      /* LSNs start at 1, and TWal takes a head of 0 for none: it would start the head at the next
+         LSN and give up every record the replay just pinned, restored povs' among them. */
+      assert(head_lsn > 0UL);
       auto head_loc = scan_result.FindGroupForLsn(head_lsn);
       Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain, scan_result.GroupLocations);
       RepoManager->SetWal(Wal.get());
