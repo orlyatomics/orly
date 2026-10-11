@@ -52,6 +52,8 @@
 #include <orly/server/write_too_large.h>
 #include <orly/server/memory_budget.h>
 #include <orly/sabot/to_native.h>
+#include <orly/var/str.h>
+#include <orly/var/util.h>
 #include <base/strm/fd.h>
 #include <base/strm/bin/in.h>
 #include <base/strm/bin/out.h>

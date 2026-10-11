@@ -34,6 +34,8 @@
 #include <orly/server/operation_error.h>
 #include <orly/server/operation_table.h>
 #include <orly/var/mutation.h>
+#include <orly/var/str.h>
+#include <orly/var/util.h>
 #include <base/io/binary_output_only_stream.h>
 #include <base/io/recorder_and_player.h>
 #include <base/util/time.h>
