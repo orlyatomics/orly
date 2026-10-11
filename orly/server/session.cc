@@ -36,6 +36,7 @@
 #include <base/io/recorder_and_player.h>
 #include <base/util/time.h>
 #include <orly/indy/disk/wal.h>
+#include <orly/indy/wal_retention.h>
 
 using namespace std;
 using namespace chrono;
@@ -1256,7 +1257,15 @@ TUuid TSession::NewPov(
     }
     std::string wire;
     recorder->CopyOut(wire);
-    server->GetWal()->AppendAndWait(Indy::Disk::TWalRecordType::Pov, wire.data(), wire.size());
+    /* The WAL keeps the record, which is how recovery rebuilds the pov, for as long as the pov
+       lives (#755). */
+    auto *repo_manager = server->GetRepoManager();
+    Indy::TWalRetention *retention = repo_manager ? repo_manager->GetWalRetention() : nullptr;
+    if (retention) {
+      server->GetWal()->WaitForDurable(retention->AppendPov(pov_id, wire));
+    } else {
+      server->GetWal()->AppendAndWait(Indy::Disk::TWalRecordType::Pov, wire.data(), wire.size());
+    }
   }
   AddPov(std::move(pov));
   return pov_id;

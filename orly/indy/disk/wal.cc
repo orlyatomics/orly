@@ -19,7 +19,10 @@
 #include <orly/indy/disk/wal.h>
 
 #include <algorithm>
+#include <atomic>
 #include <iostream>
+
+#include <syslog.h>
 
 namespace Orly {
 
@@ -127,7 +130,8 @@ static bool SyncDeviceRead(Util::TDevice *device, const Base::TCodeLocation &loc
   return state->Ok;
 }
 
-TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum, uint64_t head_lsn, uint64_t head_group_num, uint32_t head_lap, uint64_t head_ring_offset, uint64_t head_chain)
+TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum, uint64_t head_lsn, uint64_t head_group_num, uint32_t head_lap, uint64_t head_ring_offset, uint64_t head_chain,
+           const std::vector<TGroupLocation> &retained_groups)
     : Device(device),
       Config(config),
       NextLsn(start_lsn > 0 ? start_lsn - 1 : 0),
@@ -140,15 +144,41 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
       DurableLsn(NextLsn),
       HeadLsn(head_lsn > 0UL ? head_lsn : start_lsn),
       HeadGroupNum(head_group_num > 0UL ? head_group_num : (start_group_num > 0UL ? start_group_num : 1UL)),
-      HeadLap(head_lap > 0U ? head_lap : start_lap),
-      HeadRingOffset(head_ring_offset),
-      HeadChain(head_chain > 0UL ? head_chain : previous_checksum),
+      HeadLap(head_group_num > 0UL ? head_lap : start_lap),
+      HeadRingOffset(head_group_num > 0UL ? head_ring_offset : start_ring_offset),
+      HeadChain(head_group_num > 0UL ? head_chain : previous_checksum),
+      CheckpointedHeadLap(HeadLap),
+      CheckpointedHeadRingOffset(HeadRingOffset),
       Stopping(false),
       Failed(false) {
   assert(Device != nullptr);
   assert(Config.CapacityBytes >= WalAlignment);
   assert(Config.CapacityBytes % WalAlignment == 0);
   assert(Config.BaseOffset % WalAlignment == 0);
+
+  /* The groups recovery found from the head on are still needed until a checkpoint retires them.
+     Without them a checkpoint after a restart would name the write position as the head and the
+     next scan would skip every record before it.  A seal-only group carries no LSN of its own: it
+     retires with the records before it. */
+  uint64_t last_lsn_so_far = (HeadLsn > 0UL) ? HeadLsn - 1UL : 0UL;
+  for (const auto &loc : retained_groups) {
+    TGroupSummary summary;
+    summary.GroupNum = loc.GroupNum;
+    summary.FirstLsn = loc.FirstLsn;
+    summary.LastLsn = (loc.FirstLsn > 0UL) ? loc.LastLsn : last_lsn_so_far;
+    summary.Lap = loc.Lap;
+    summary.Offset = loc.Offset;
+    summary.Chain = loc.Chain;
+    last_lsn_so_far = std::max(last_lsn_so_far, summary.LastLsn);
+    ActiveGroups.push_back(summary);
+  }
+  /* Each group's header checksum is the next one's chain; the last one's is where we go on from. */
+  for (size_t i = 0; i + 1 < ActiveGroups.size(); ++i) {
+    ActiveGroups[i].HeaderChecksum = ActiveGroups[i + 1].Chain;
+  }
+  if (!ActiveGroups.empty()) {
+    ActiveGroups.back().HeaderChecksum = previous_checksum;
+  }
 
   LeaderThread = std::thread(&TWal::LeaderMain, this);
   SyncerThread = std::thread(&TWal::SyncerMain, this);
@@ -183,6 +213,10 @@ uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_
   }
   if (Stopping) {
     throw TWalIoError("WAL is stopping");
+  }
+  /* A group bigger than the ring could never be written: the leader would wait for room forever. */
+  if (AlignToWal(sizeof(TGroupHeader) + sizeof(TRecordHeader) + size) > Config.CapacityBytes) {
+    throw TWalIoError("WAL record of " + std::to_string(size) + " bytes is bigger than the ring");
   }
 
   const uint64_t lsn = ++NextLsn;
@@ -317,16 +351,49 @@ void TWal::LeaderMain() {
       }
     }
 
+    const size_t unpadded_size = sizeof(TGroupHeader) + payload_bytes;
+    const size_t group_size = AlignToWal(unpadded_size);
+
+    /* Allocate ring position, but never over the head the newest synced checkpoint names: recovery
+       scans from there, so everything from it to the write position is still needed (§5.6).  When
+       the ring is full we wait for a checkpoint to move the head on.  The wait comes before the
+       group takes its number, so a checkpoint taken meanwhile names this group's number and
+       position as the head when nothing older is left. */
+    const auto fits = [this, group_size] {
+      uint32_t lap = CurrentLap;
+      size_t offset = CurrentRingOffset;
+      if (offset + group_size > Config.CapacityBytes) {
+        ++lap;
+        offset = 0UL;
+      }
+      if (lap == CheckpointedHeadLap) {
+        return true;
+      }
+      return lap == CheckpointedHeadLap + 1U && offset + group_size <= CheckpointedHeadRingOffset;
+    };
+    if (!fits()) {
+      static std::atomic<size_t> ring_full_waits(0UL);
+      const size_t n = ++ring_full_waits;
+      if ((n & (n - 1UL)) == 0UL) {
+        syslog(LOG_WARNING, "WAL: ring full up to the checkpointed head (lap %u offset %ld); waiting for a checkpoint (%ld times so far)",
+               CheckpointedHeadLap, CheckpointedHeadRingOffset, n);
+      }
+      LeaderCv.wait(lock, [this, &fits] { return Stopping || Failed || fits(); });
+      if (!fits()) {
+        /* Stopping or failed with the ring full: these records can't be written, so they never
+           become durable.  Fail so anyone waiting on them hears about it. */
+        Failed = true;
+        DurableCv.notify_all();
+        SyncerCv.notify_all();
+        break;
+      }
+    }
     const uint64_t group_num = ++NextGroupNum;
     const uint64_t first_lsn = batch.empty() ? 0UL : batch.front().Lsn;
     const uint64_t sealed_through = HighestSyncedLsn;
     const uint64_t last_lsn = batch.empty() ? sealed_through : batch.back().Lsn;
     const bool is_seal_only = batch.empty();
 
-    const size_t unpadded_size = sizeof(TGroupHeader) + payload_bytes;
-    const size_t group_size = AlignToWal(unpadded_size);
-
-    /* Allocate ring position */
     if (CurrentRingOffset + group_size > Config.CapacityBytes) {
       ++CurrentLap;
       CurrentRingOffset = 0UL;
@@ -373,7 +440,8 @@ void TWal::LeaderMain() {
     summary.Chain = header.Chain;
     ActiveGroups.push_back(summary);
 
-    /* Write to device while holding no lock or release lock during I/O */
+    /* The syncer may only sync a group once its write has completed, so it joins InFlightGroups
+       after the write. */
     TInFlightGroup in_flight;
     in_flight.GroupNum = group_num;
     in_flight.FirstLsn = first_lsn;
@@ -383,7 +451,6 @@ void TWal::LeaderMain() {
     in_flight.Offset = group_offset;
     in_flight.Size = group_size;
     in_flight.IsSealOnly = is_seal_only;
-    InFlightGroups.push_back(in_flight);
 
     lock.unlock();
 
@@ -397,6 +464,7 @@ void TWal::LeaderMain() {
       break;
     }
 
+    InFlightGroups.push_back(in_flight);
     SyncerCv.notify_one();
 
     if (Config.EarlyAck) {
@@ -427,7 +495,8 @@ void TWal::SyncerMain() {
       break;
     }
 
-    TInFlightGroup group = InFlightGroups.front();
+    /* Every group in the list has been written, so one sync covers them all. */
+    const size_t num_synced = InFlightGroups.size();
 
     lock.unlock();
 
@@ -449,12 +518,14 @@ void TWal::SyncerMain() {
       break;
     }
 
-    InFlightGroups.pop_front();
-
-    if (!group.IsSealOnly) {
-      HighestSyncedLsn = std::max(HighestSyncedLsn, group.LastLsn);
+    for (size_t i = 0; i < num_synced; ++i) {
+      const TInFlightGroup &group = InFlightGroups.front();
+      if (!group.IsSealOnly) {
+        HighestSyncedLsn = std::max(HighestSyncedLsn, group.LastLsn);
+      }
+      HighestSealedLsn = std::max(HighestSealedLsn, group.SealedThrough);
+      InFlightGroups.pop_front();
     }
-    HighestSealedLsn = std::max(HighestSealedLsn, group.SealedThrough);
     DurableLsn = HighestSealedLsn;
 
     DurableCv.notify_all();
@@ -463,14 +534,15 @@ void TWal::SyncerMain() {
 }
 
 void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void *payload, size_t payload_len) {
+  std::lock_guard<std::mutex> checkpoint_lock(CheckpointMutex);
   std::unique_lock<std::mutex> lock(Mutex);
   if (Failed) {
     throw TWalIoError("WAL is in failed state");
   }
 
-  HeadLsn = std::max(HeadLsn, head_lsn);
-  while (!ActiveGroups.empty() && ActiveGroups.front().LastLsn > 0 && ActiveGroups.front().LastLsn < HeadLsn) {
-    HeadChain = ActiveGroups.front().HeaderChecksum;
+  /* The head is the oldest record recovery still needs; it never moves back, nor past the next LSN. */
+  HeadLsn = std::min(std::max(HeadLsn, head_lsn), NextLsn + 1UL);
+  while (!ActiveGroups.empty() && ActiveGroups.front().LastLsn < HeadLsn) {
     ActiveGroups.pop_front();
   }
   if (!ActiveGroups.empty()) {
@@ -479,31 +551,28 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
     HeadRingOffset = ActiveGroups.front().Offset;
     HeadChain = ActiveGroups.front().Chain;
   } else {
+    /* Every written group is retired: the head is the next group, wherever the leader puts it. */
     HeadGroupNum = NextGroupNum + 1;
     HeadLap = CurrentLap;
     HeadRingOffset = CurrentRingOffset;
     HeadChain = PreviousGroupChecksum;
   }
 
-  uint64_t cur_head_lsn = HeadLsn;
-  uint64_t cur_head_group = HeadGroupNum;
-  uint32_t cur_head_lap = HeadLap;
-  uint64_t cur_head_offset = HeadRingOffset;
-  uint64_t cur_head_chain = HeadChain;
-  uint64_t cur_durable_lsn = DurableLsn;
-
-  /* Identify newest valid checkpoint on disk to determine inactive slot */
+  const uint64_t cur_head_lsn = HeadLsn;
+  const uint64_t cur_head_group = HeadGroupNum;
+  const uint32_t cur_head_lap = HeadLap;
+  const uint64_t cur_head_offset = HeadRingOffset;
+  const uint64_t cur_head_chain = HeadChain;
+  const uint64_t cur_durable_lsn = DurableLsn;
   lock.unlock();
-  auto newest_cp = ReadNewestCheckpoint(Device, Config.CheckpointSlot0Offset, Config.CheckpointSlot1Offset, Config.StoreId);
-  lock.lock();
 
-  uint64_t next_cp_num = 1UL;
-  Util::TOffset target_slot = Config.CheckpointSlot0Offset;
-  if (newest_cp.has_value()) {
-    next_cp_num = newest_cp->CheckpointNum + 1UL;
-    /* If newest came from slot 0, use slot 1; otherwise use slot 0 */
-    target_slot = (newest_cp->CheckpointNum % 2 == 1) ? Config.CheckpointSlot1Offset : Config.CheckpointSlot0Offset;
+  /* Alternate slots.  The first checkpoint of this instance goes opposite the newest on disk. */
+  if (!LastCheckpointNum) {
+    auto newest_cp = ReadNewestCheckpoint(Device, Config.CheckpointSlot0Offset, Config.CheckpointSlot1Offset, Config.StoreId);
+    LastCheckpointNum = newest_cp ? newest_cp->CheckpointNum : 0UL;
   }
+  const uint64_t next_cp_num = *LastCheckpointNum + 1UL;
+  const Util::TOffset target_slot = (next_cp_num % 2 == 1) ? Config.CheckpointSlot0Offset : Config.CheckpointSlot1Offset;
 
   const size_t total_bytes = AlignToWal(sizeof(TCheckpointHeader) + payload_len);
   auto buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), total_bytes);
@@ -534,18 +603,36 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
   header.HeaderChecksum = ComputeChecksum64(&header, CheckpointHeaderChecksumCoveredBytes);
   memcpy(buf.get(), &header, sizeof(TCheckpointHeader));
 
-  lock.unlock();
-
-  const bool write_ok = SyncDeviceWrite(Device, HERE, buf.get(), target_slot, total_bytes);
-  if (!write_ok) {
-    lock.lock();
+  bool ok = SyncDeviceWrite(Device, HERE, buf.get(), target_slot, total_bytes);
+  if (ok && !Config.NoSync) {
+    try {
+      Device->Sync();
+    } catch (const std::exception &/*ex*/) {
+      ok = false;
+    }
+  }
+  lock.lock();
+  if (!ok) {
     Failed = true;
+    DurableCv.notify_all();
+    LeaderCv.notify_all();
     throw TWalIoError("Failed to write checkpoint slot");
   }
+  LastCheckpointNum = next_cp_num;
+  /* Recovery now scans from the new head, so the leader may reuse the ring up to it. */
+  CheckpointedHeadLap = cur_head_lap;
+  CheckpointedHeadRingOffset = cur_head_offset;
+  LeaderCv.notify_all();
+}
 
-  if (!Config.NoSync) {
-    Device->Sync();
+size_t TWal::GetRingBytesBehind(uint64_t lsn) const {
+  std::lock_guard<std::mutex> lock(Mutex);
+  for (const auto &group : ActiveGroups) {
+    if (group.FirstLsn > 0UL && group.FirstLsn <= lsn && lsn <= group.LastLsn) {
+      return static_cast<size_t>(CurrentLap - group.Lap) * Config.CapacityBytes + CurrentRingOffset - group.Offset;
+    }
   }
+  return 0UL;
 }
 
 std::vector<uint64_t> TWal::CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records) {

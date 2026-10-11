@@ -264,7 +264,12 @@ namespace Orly {
           bool EarlyAck = false;     // Test-only negative control: acknowledge before group sync (#755)
         };
 
-        TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn = 1UL, uint64_t start_group_num = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL, uint64_t previous_checksum = 0UL, uint64_t head_lsn = 0UL, uint64_t head_group_num = 0UL, uint32_t head_lap = 0U, uint64_t head_ring_offset = 0UL, uint64_t head_chain = 0UL);
+        /* The head arguments name the oldest record recovery still needs and where its group starts,
+           as the newest checkpoint recorded them; retained_groups are the groups a recovery scan found
+           from there on (TScanResult::GroupLocations), so a later checkpoint can name their positions
+           and the leader won't overwrite them. */
+        TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn = 1UL, uint64_t start_group_num = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL, uint64_t previous_checksum = 0UL, uint64_t head_lsn = 0UL, uint64_t head_group_num = 0UL, uint32_t head_lap = 0U, uint64_t head_ring_offset = 0UL, uint64_t head_chain = 0UL,
+             const std::vector<TGroupLocation> &retained_groups = std::vector<TGroupLocation>());
         ~TWal();
 
         /* Append a record. Returns assigned LSN. Thread-safe. */
@@ -282,8 +287,18 @@ namespace Orly {
         /* Flush all pending records through durable sync and seal. */
         void Flush();
 
-        /* Write a checkpoint to the inactive checkpoint slot. */
+        /* Write a checkpoint to the inactive checkpoint slot, naming head_lsn as the oldest record
+           recovery still needs.  The head never moves back.  Checkpoints are serialised, and the
+           leader never overwrites a group at or after the head that the newest synced checkpoint
+           names: when the ring is full up to it, appends wait for a checkpoint to move it. */
         void Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void *payload = nullptr, size_t payload_len = 0UL);
+
+        /* How far, in ring bytes, the write position is past the start of the group holding lsn, or
+           0 if lsn is no longer in the ring (or not yet written). */
+        size_t GetRingBytesBehind(uint64_t lsn) const;
+
+        /* The ring's size in bytes. */
+        size_t GetCapacityBytes() const { return Config.CapacityBytes; }
 
         /* Copy-forward unpromoted records near the head. Returns assigned new LSNs. */
         std::vector<uint64_t> CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records);
@@ -356,6 +371,15 @@ namespace Orly {
         uint32_t HeadLap;
         uint64_t HeadRingOffset;
         uint64_t HeadChain;
+
+        /* The head position the newest synced checkpoint names: what recovery would scan from now,
+           so the leader must not overwrite it (§5.6). */
+        uint32_t CheckpointedHeadLap;
+        uint64_t CheckpointedHeadRingOffset;
+
+        /* Serialises Checkpoint(), so two callers never pick the same slot. */
+        std::mutex CheckpointMutex;
+        std::optional<uint64_t> LastCheckpointNum;
 
         bool Stopping;
         bool Failed;

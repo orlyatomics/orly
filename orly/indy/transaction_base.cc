@@ -25,6 +25,7 @@
 #include <base/io/binary_output_only_stream.h>
 #include <base/io/recorder_and_player.h>
 #include <orly/indy/disk/wal.h>
+#include <orly/indy/wal_retention.h>
 #include <orly/indy/fiber/fiber.h>
 #include <orly/indy/replication.h>
 
@@ -315,6 +316,8 @@ void TTransaction::Prepare() {
   }
   Replica.Reset();
   TouchesSafeRepo = false;
+  SafePushes.clear();
+  SafePops.clear();
   size_t num_push = 0UL;
   std::vector<std::pair<Base::TUuid, TSequenceNumber>> release_set;
   for (TMutationCollection::TCursor csr(&MutationCollection); csr; ++csr) {
@@ -326,6 +329,9 @@ void TTransaction::Prepare() {
         if (pusher->Repo->IsSafeRepo()) {
           TouchesSafeRepo = true;
           ++num_push;
+          /* No parent: a data file of the repo's own is where the update ends up. */
+          const auto &parent = pusher->Repo->GetParentRepo();
+          SafePushes.emplace_back(pusher->MyMutation, !(parent && *parent));
           TTransactionCompletion *transaction_completion = TransactionCompletion;
           auto func = [transaction_completion](TUpdate::TPersistenceNotification::TResult result) {
             switch (result) {
@@ -360,6 +366,9 @@ void TTransaction::Prepare() {
             popper->MyMutation = Replica.Pop(popper->GetRepoId(), popper->Repo->GetSequenceNumberStart());
             assert(popper->MyMutation->GetSequenceNumber());
             release_set.push_back(make_pair(popper->GetRepoId(), *(popper->MyMutation->GetSequenceNumber())));
+            if (popper->Repo->IsSafeRepo()) {
+              SafePops.emplace_back(popper->GetRepoId(), *(popper->MyMutation->GetSequenceNumber()));
+            }
             break;
           }
           case TPopper::Fail : {
@@ -508,21 +517,42 @@ TTransaction::~TTransaction() NO_THROW {
     }
 
     if (CommitFlag) {
-      if (Manager->GetWal() && TouchesSafeRepo) {
+      /* The WAL record, and what the WAL must keep for recovery to rebuild these updates (#755). */
+      TWalRetention *retention = TouchesSafeRepo ? Manager->GetWalRetention() : nullptr;
+      if (retention) {
         try {
-          TReplicationStreamer streamer;
-          streamer.PushTransaction(Replica);
-          auto recorder = std::make_shared<Io::TRecorder>();
-          /* serialize */ {
-            Io::TBinaryOutputOnlyStream strm(recorder);
-            streamer.Write(strm);
-            strm.Flush();
+          std::vector<TWalRetention::TPush> pushes;
+          pushes.reserve(SafePushes.size());
+          for (const auto &push : SafePushes) {
+            /* A push the repo refused has no sequence number; it isn't there to rebuild. */
+            if (push.first->GetSequenceNumber()) {
+              pushes.push_back(TWalRetention::TPush{push.first->GetRepoId(), *push.first->GetSequenceNumber(), push.second});
+            }
           }
-          std::string wire;
-          recorder->CopyOut(wire);
-          const uint64_t lsn = Manager->GetWal()->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
-          if (CommitLsnOut) {
-            *CommitLsnOut = lsn;
+          std::vector<TWalRetention::TPop> pops;
+          pops.reserve(SafePops.size());
+          for (const auto &pop : SafePops) {
+            pops.push_back(TWalRetention::TPop{pop.first, pop.second});
+          }
+          if (Manager->GetWal()) {
+            TReplicationStreamer streamer;
+            streamer.PushTransaction(Replica);
+            auto recorder = std::make_shared<Io::TRecorder>();
+            /* serialize */ {
+              Io::TBinaryOutputOnlyStream strm(recorder);
+              streamer.Write(strm);
+              strm.Flush();
+            }
+            std::string wire;
+            recorder->CopyOut(wire);
+            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops);
+            if (CommitLsnOut) {
+              *CommitLsnOut = lsn;
+            }
+          } else {
+            /* Recovery replaying the WAL, before there is one to append to: pin the record being
+               replayed.  Does nothing otherwise. */
+            retention->NoteReplayedTxn(pushes, pops);
           }
         } catch (const std::exception &ex) {
           syslog(LOG_ERR, "~TTransaction: WAL append failed: %s", ex.what());
@@ -881,7 +911,8 @@ TManager::TManager(Disk::Util::TEngine *engine,
                    create_new),
       TransactionCollection(this),
       TransactionCompletionCollection(this),
-      OnCloseTransactionCb(std::bind(&TManager::OnCloseTransaction, this, std::placeholders::_1)) {}
+      OnCloseTransactionCb(std::bind(&TManager::OnCloseTransaction, this, std::placeholders::_1)),
+      WalRetention(std::make_unique<TWalRetention>(this)) {}
 
 TManager::~TManager() {}
 

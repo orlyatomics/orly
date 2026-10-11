@@ -54,6 +54,7 @@ namespace Orly {
     /* Forward Declarations. */
     class TMemoryLayer;
     class TDiskLayer;
+    class TWalRetention;
     namespace Disk {
       class TWal;
     }
@@ -674,6 +675,7 @@ namespace Orly {
 
         inline Disk::Util::TEngine *GetEngine() const;
         virtual Disk::TWal *GetWal() const NO_THROW { return nullptr; }
+        virtual TWalRetention *GetWalRetention() const NO_THROW { return nullptr; }
 
         inline size_t GetTempFileConsolThresh() const;
 

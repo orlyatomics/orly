@@ -173,11 +173,114 @@ FIXTURE(RingWrapAcrossLaps) {
 
     for (size_t i = 0; i < num_records; ++i) {
       std::string payload(2000, 'X'); // Large enough to make 4 KiB group
-      wal.AppendAndWait(TWalRecordType::Txn, payload.data(), payload.size());
+      const uint64_t lsn = wal.AppendAndWait(TWalRecordType::Txn, payload.data(), payload.size());
+      /* Nothing needs the record once it's durable here, so retire it: the ring can't lap a head. */
+      wal.Checkpoint(lsn + 1UL, 0UL);
     }
 
     wal.Flush();
     EXPECT_GT(wal.GetLap(), 1U); // Must have wrapped at least once
+  }
+}
+
+/* The leader never overwrites a group recovery still needs (#755): with the ring full up to the
+   checkpointed head, an append waits until a checkpoint moves the head on. */
+FIXTURE(RingFullWaitsForCheckpoint) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, 512UL);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 32UL * 1024UL; // 8 groups of 4 KiB
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  const std::string payload(2000, 'X');
+  TWal wal(&device, config);
+  /* Nothing is ever retired, so within a lap the leader runs into the head (lap 1, offset 0). */
+  uint64_t blocked = 0UL;
+  for (size_t i = 0; i < 64 && !blocked; ++i) {
+    const uint64_t lsn = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
+    if (!wal.WaitForDurable(lsn, std::chrono::milliseconds(300))) {
+      blocked = lsn;
+    }
+  }
+  EXPECT_GT(blocked, 1UL);
+  EXPECT_EQ(wal.GetLap(), 1U);
+
+  /* Nothing recovery needs was overwritten: every durable record is still there from LSN 1. */
+  const auto scan = TWal::Scan(&device, config);
+  EXPECT_EQ(scan.Status, TScanStatus::Clean);
+  EXPECT_GE(scan.Records.size(), blocked - 1UL);
+  for (size_t i = 0; i < scan.Records.size(); ++i) {
+    EXPECT_EQ(scan.Records[i].Lsn, i + 1UL);
+  }
+
+  /* Retiring everything before it lets the waiting record through, into lap 2. */
+  wal.Checkpoint(blocked, 0UL);
+  EXPECT_TRUE(wal.WaitForDurable(blocked, std::chrono::milliseconds(5000)));
+  const auto cp = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId);
+  EXPECT_TRUE(cp.has_value());
+  EXPECT_EQ(cp->HeadLsn, blocked);
+  const auto after = TWal::Scan(&device, config, cp->HeadGroupNum, cp->HeadLsn, cp->HeadLap, cp->HeadRingOffset, cp->HeadChain);
+  EXPECT_EQ(after.Status, TScanStatus::Clean);
+  EXPECT_FALSE(after.Records.empty());
+  if (!after.Records.empty()) {
+    EXPECT_EQ(after.Records.front().Lsn, blocked);
+  }
+  EXPECT_EQ(wal.GetLap(), 2U);
+}
+
+/* After a restart the groups recovery scanned are still needed: a checkpoint must keep naming the
+   oldest of them as the head, not the write position, or the next recovery skips their records (#755). */
+FIXTURE(ReopenKeepsRetainedGroupsAtHead) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  {
+    TWal wal(&device, config);
+    for (size_t i = 1; i <= 5; ++i) {
+      const std::string s = "r" + std::to_string(i);
+      wal.AppendAndWait(TWalRecordType::Txn, s.data(), s.size());
+    }
+    wal.Checkpoint(3UL, 0UL);
+  }
+
+  for (int restart = 0; restart < 2; ++restart) {
+    const auto cp = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId);
+    EXPECT_TRUE(cp.has_value());
+    EXPECT_EQ(cp->HeadLsn, 3UL);
+    const auto scan = TWal::Scan(&device, config, cp->HeadGroupNum, cp->HeadLsn, cp->HeadLap, cp->HeadRingOffset, cp->HeadChain);
+    EXPECT_EQ(scan.Status, TScanStatus::Clean);
+    EXPECT_FALSE(scan.Records.empty());
+    if (!scan.Records.empty()) {
+      EXPECT_EQ(scan.Records.front().Lsn, 3UL);
+    }
+    const auto head = scan.FindGroupForLsn(cp->HeadLsn);
+    TWal wal(&device, config, scan.LastValidLsn + 1UL, scan.LastValidGroupNum + 1UL, scan.LastValidLap, scan.NextRingOffset, scan.LastGroupChecksum,
+             cp->HeadLsn, head.GroupNum, head.Lap, head.Offset, head.Chain, scan.GroupLocations);
+    const std::string s = "after" + std::to_string(restart);
+    wal.AppendAndWait(TWalRecordType::Txn, s.data(), s.size());
+    /* The head hasn't moved: the checkpoint must still name the group holding LSN 3. */
+    wal.Checkpoint(3UL, 0UL);
+  }
+
+  const auto cp = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId);
+  EXPECT_TRUE(cp.has_value());
+  const auto scan = TWal::Scan(&device, config, cp->HeadGroupNum, cp->HeadLsn, cp->HeadLap, cp->HeadRingOffset, cp->HeadChain);
+  EXPECT_EQ(scan.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan.Records.size(), 5UL); // 3, 4, 5 and one from each restart
+  if (!scan.Records.empty()) {
+    EXPECT_EQ(scan.Records.front().Lsn, 3UL);
+    EXPECT_EQ(scan.Records.back().Lsn, 7UL);
   }
 }
 

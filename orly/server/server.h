@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include <base/class_traits.h>
@@ -1157,6 +1158,12 @@ namespace Orly {
 
       /* Write-ahead log for durable acknowledgments (#755). */
       std::unique_ptr<Indy::Disk::TWal> Wal;
+
+      /* Writes a WAL checkpoint whenever a root's data file lets the head move (#755). */
+      std::thread WalCheckpointer;
+
+      /* Stop and join WalCheckpointer, if it was started. */
+      void StopWalCheckpointer();
 
       /* The thread on which WsRunner runs. */
       std::thread WsThread;

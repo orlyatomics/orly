@@ -484,6 +484,12 @@ whose mutations touch no safe repo isn't logged and gets no LSN.
   sequence numbers, so replay applies them with `ensure_or_discard` like any other), then the next
   checkpoint moves the head past the originals. The cost per POV is bounded by the #721 backlog cap.
   Without it, one paused POV could stop the whole log.
+
+  *As built (#846):* retention is tracked as pins in `orly/indy/wal_retention.h` rather than in the
+  checkpoint body: each safe push pins its record until a root's data file holds the update (a
+  promotion carries the child's pin to the parent's copy), and each live safe POV pins its `POV`
+  record. The `POV` record is copied forward at half the ring; an unpromoted backlog is not, so a
+  paused safe POV stalls writes once the ring is full instead of losing them.
 - **Truncation is logical.** Nothing is erased; the head moves in a checkpoint, and the lap number
   rejects old groups when the ring wraps. SQLite's WAL resets with new salt values for the same
   purpose and bounds its size by checkpointing every `wal_autocheckpoint` pages while readers carry

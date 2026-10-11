@@ -44,6 +44,11 @@ crash can take back. It is read from the code, and `tests/kill_campaign.sh` chec
 4. **Promotion and flush.** Tetris (`orly/server/repo_tetris_manager.cc`) asynchronously moves the
    POV's backlog to the global POV, and the global POV flushes memory layers to immutable data files.
    Checkpointing moves the WAL head forward, truncating retired log records as writes reach data files.
+   The head is the oldest record recovery still needs (`orly/indy/wal_retention.h`): one that pushed
+   an update not yet in a root's data file, or the `Pov` record of a live safe POV. A root writes a
+   data file only after the records behind its updates are durable (the write-ahead rule), and a
+   checkpoint follows each such flush. A long-lived safe POV's `Pov` record is copied forward once it
+   is half the ring behind, so it doesn't hold the head.
 5. **Restart & Recovery.** On restart, `orlyi` reads the superblock and newest checkpoint, scans the
    WAL, validates checksums and hash chains, restores safe POVs, and replays uncheckpointed
    transactions through the core apply path.
@@ -57,6 +62,14 @@ crash can take back. It is read from the code, and `tests/kill_campaign.sh` chec
    which flushes to disk during scheduled memory merges.
 4. **Restart.** Fast POVs are ephemeral (#439): any unpromoted writes in their backlogs are lost,
    and the POV id is refused after restart.
+
+### Known limit: a safe POV that never promotes
+
+An update that stays unpromoted in a safe POV (a paused POV, or one Tetris can't promote) holds the
+WAL head at its record. The rest of the ring keeps filling; once it is full, durable commits wait
+for room rather than overwrite a record recovery needs. Nothing acknowledged is lost, but writes
+stall until the POV promotes or closes. Copying an unpromoted backlog forward
+([design §5.6](design/durable-acks.md#56-checkpoints-truncation-and-recycling)) is not built yet.
 
 ## Safe and fast POVs
 

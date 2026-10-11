@@ -1311,6 +1311,14 @@ static void LogStatusChange(const char *what, const Base::TUuid &repo_id, TSeque
   syslog(LOG_INFO, "Slave %s %s of repo [%s] at seq [%ld]", applied ? "applying" : "discarding", what, strm.str().c_str(), seq_num);
 }
 
+void TManager::SeedNumberingFromReplay(const Base::TUuid &repo_id) {
+  ReplaySeeds.insert(repo_id);
+}
+
+void TManager::ClearReplaySeeds() {
+  ReplaySeeds.clear();
+}
+
 size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -1364,6 +1372,11 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
             entries.emplace_back(TIndexKey(index_id, TKey(key_core, arena)), TKey(val_core, arena), static_cast<TMutator>(mutator_raw));
           }
           //std::cout << "Push\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
+          if (repo && !ReplaySeeds.empty() && ReplaySeeds.erase(repo_id)) {
+            /* A restored pov's first replayed update (see SeedNumberingFromReplay). */
+            repo->SetNextSequenceNumber(seq_num);
+            repo->SetReleasedUpTo(seq_num > 0UL ? seq_num - 1UL : 0UL);
+          }
           if (repo) {
             auto update = TUpdate::NewUpdate({}, TKey(meta_core, arena), TKey(id_core, arena));
             for (const auto &entry : entries) {

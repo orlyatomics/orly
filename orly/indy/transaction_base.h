@@ -16,7 +16,10 @@
 
 #pragma once
 
+#include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include <orly/indy/manager_base.h>
 #include <orly/indy/repo.h>
@@ -29,6 +32,7 @@ namespace Orly {
     /* Forward Delcarations. */
     class TTransactionReplication;
     class TReplicationStreamer;
+    class TWalRetention;
     namespace Disk {
       class TWal;
     }
@@ -491,6 +495,12 @@ namespace Orly {
 
         TReplica Replica;
 
+        /* What this transaction commits to safe repos, for the WAL's retention (#755): each push's
+           replica mutation (its sequence number is set when the push lands) and whether its repo
+           is a root, and each pop's repo and sequence number.  Filled by Prepare. */
+        std::vector<std::pair<TReplica::TMutation *, bool>> SafePushes;
+        std::vector<std::pair<Base::TUuid, TSequenceNumber>> SafePops;
+
         TTransactionReplication *TransactionReplication;
 
         TTransactionCompletion *TransactionCompletion;
@@ -511,6 +521,9 @@ namespace Orly {
         typedef InvCon::UnorderedList::TCollection<TManager, TTransaction::TTransactionCompletion> TTransactionCompletionCollection;
 
         std::unique_ptr<TTransaction, std::function<void (TTransaction *)>> NewTransaction(bool should_replicate = true);
+
+        /* Decides how far the WAL's head may advance (#755). */
+        virtual TWalRetention *GetWalRetention() const NO_THROW override { return WalRetention.get(); }
 
         protected:
 
@@ -556,8 +569,13 @@ namespace Orly {
 
         std::function<void (TTransaction *)> OnCloseTransactionCb;
 
+        const std::unique_ptr<TWalRetention> WalRetention;
+
         /* access to Enqueue */
         friend class TTransaction;
+
+        /* access to GetReplicationQueueLock and IsLiveRepo */
+        friend class Orly::Indy::TWalRetention;
 
       };  // TManager
 
