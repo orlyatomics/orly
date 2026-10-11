@@ -23,11 +23,11 @@ put_cond = ((true) effecting {
   n = given::(int);
   e = given::(int);
 };
-/* The same write, for the retry writer (#733): the key is assigned, so a second run of it leaves
-   the key as it was, and only the two `+=` counters can tell that it ran twice. That is what the
-   exactly-once table is there to prevent. */
+/* The same write, for the retry writer (#733). The key is created with `new`, so a second run of
+   it, which is what the exactly-once table is there to prevent, fails instead of passing quietly;
+   the `+=` counters are what the driver's counter check reads. */
 put_once = ((true) effecting {
-  *<['w', w, n]>::(int) <- n * 1000 + e;
+  new <['w', w, n]> <- n * 1000 + e;
   *<['c', w]>::(int) += 1;
   *<['t']>::(int) += 1;
 }) where {
