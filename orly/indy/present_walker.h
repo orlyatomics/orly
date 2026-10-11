@@ -43,18 +43,18 @@ namespace Orly {
         public:
 
         /* Do-little. */
-        TItem() : SequenceNumber(0UL), KeyArena(nullptr), OpArena(nullptr), Mutator(TMutator::Assign), UpdateId() {}
+        TItem() = default;
 
         /* Key-ascending, then newest (highest sequence number) first. Sequence numbers are per
            repo, so this orders items from one repo only; the context's merge across a repo chain
            orders same-key items by repo instead (TContext::TPresentWalker::TChainOrder, #791). */
-        bool operator<(const TItem &that) const {
+        [[nodiscard]] bool operator<(const TItem &that) const {
           const Atom::TComparison comp = CompareKeys(that);
           return Atom::IsLt(comp) || (Atom::IsEq(comp) && SequenceNumber >= that.SequenceNumber);
         }
 
         /* The order of this item's key against that one's. */
-        Atom::TComparison CompareKeys(const TItem &that) const {
+        [[nodiscard]] Atom::TComparison CompareKeys(const TItem &that) const {
           Atom::TComparison comp;
           if (KeyArena && that.KeyArena && Key.TryQuickOrderComparison(KeyArena, that.Key, that.KeyArena, comp)) {
           } else {
@@ -67,7 +67,7 @@ namespace Orly {
         }
 
         /* The sequence number of the update which contained the key-op pair. */
-        TSequenceNumber SequenceNumber;
+        TSequenceNumber SequenceNumber = 0UL;
 
         /* The key being operated on. */
         Atom::TCore Key;
@@ -76,10 +76,10 @@ namespace Orly {
         Atom::TCore Op;
 
         /* The arena to look the key core up in. */
-        Atom::TCore::TArena *KeyArena;
+        Atom::TCore::TArena *KeyArena = nullptr;
 
         /* The arena to look the op core up in. */
-        Atom::TCore::TArena *OpArena;
+        Atom::TCore::TArena *OpArena = nullptr;
 
         /* The mutator that produced Op. For TMutator::Assign (every
            in-tree entry pre-#49-phase-2), Op is the resolved value of
@@ -87,7 +87,7 @@ namespace Orly {
            ...), Op is the RHS of that mutation and the context-level
            walker (orly/indy/context.cc) folds same-mutator runs to
            produce the actual resolved value. */
-        TMutator Mutator;
+        TMutator Mutator = TMutator::Assign;
 
         /* Logical update id (the per-transaction TUuid from session.cc's
            TUpdate::NewUpdate(...)). Same logical update committed to a
@@ -104,15 +104,15 @@ namespace Orly {
       };  // TItem
 
       /* True iff. we have an item. */
-      virtual operator bool() const = 0;
+      [[nodiscard]] virtual explicit operator bool() const = 0;
 
       /* The current item. */
-      virtual const TItem &operator*() const = 0;
+      [[nodiscard]] virtual const TItem &operator*() const = 0;
 
       /* Walk to the next item, if any. */
       virtual TPresentWalker &operator++() = 0;
 
-      virtual ~TPresentWalker() {}
+      virtual ~TPresentWalker() = default;
 
       protected:
 
@@ -122,7 +122,7 @@ namespace Orly {
       };
 
       /* Prepare to walk. */
-      TPresentWalker(TSearchKind search_kind) : SearchKind(search_kind) {}
+      explicit TPresentWalker(TSearchKind search_kind) : SearchKind(search_kind) {}
 
       TSearchKind SearchKind;
 
