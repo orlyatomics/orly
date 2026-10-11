@@ -706,9 +706,12 @@ def main():
         if srv.proc is not None:
             srv.kill()
         srv.detach()
-        if not args.keep and not violations:
+        # An exception that ends the campaign (a server error the campaign doesn't expect) keeps
+        # the server logs too: a pool that runs out names itself there.
+        failed = bool(violations) or sys.exc_info()[0] is not None
+        if not args.keep and not failed:
             shutil.rmtree(work, ignore_errors=True)
-        elif violations:
+        elif failed:
             log(f'work directory kept for the evidence: {work}')
     done = [p for p in per_kill if p is not None]
     lost = [p[0] for p in done]
