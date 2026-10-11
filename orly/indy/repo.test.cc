@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <optional>
 #include <random>
 #include <set>
@@ -41,6 +42,7 @@
 #include <orly/indy/fiber/fiber_test_runner.h>
 #include <orly/indy/transaction_base.h>
 #include <orly/server/read_too_large.h>
+#include <orly/server/version_unavailable.h>
 
 #include <base/test/kit.h>
 
@@ -712,16 +714,58 @@ class TRootRepoFixture {
     return TIndexKey(IdxId, TKey(make_tuple(key), &Arena, State));
   }
 
-  void Commit(const vector<tuple<int64_t, int64_t, TMutator>> &entries) {
-    auto transaction = Manager->NewTransaction();
-    auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&Arena), TKey(Base::TUuid(TUuid::Twister), &Arena, State));
-    for (const auto &[key, val, mut] : entries) {
-      update->AddEntry(IndexKey(key), TKey(val, &Arena, State), mut);
+  /* Commits the entries as one update and returns its sequence number. */
+  TSequenceNumber Commit(const vector<tuple<int64_t, int64_t, TMutator>> &entries) {
+    return CommitWith([&](TUpdate *update) {
+      for (const auto &[key, val, mut] : entries) {
+        update->AddEntry(IndexKey(key), TKey(val, &Arena, State), mut);
+      }
+    });
+  }
+
+  /* Commits a delete of `key` and returns its sequence number. */
+  TSequenceNumber CommitDelete(int64_t key) {
+    return CommitWith([&](TUpdate *update) {
+      update->AddEntry(IndexKey(key), TKey(Orly::Native::TTombstone::Tombstone, &Arena, State));
+    });
+  }
+
+  /* Reads `key` as of version `at` (#745): its value, or unset if it isn't there. */
+  std::optional<TKey> ReadAt(int64_t key, TSequenceNumber at) {
+    TSuprena ctx_arena;
+    TContext context(Repo, &ctx_arena, at);
+    if (!context.Exists(IndexKey(key))) {
+      return std::nullopt;
     }
-    transaction->Push(Repo, update);
-    transaction->Prepare();
-    transaction->CommitAction();
-    ++NumCommits;
+    return TKey(&Arena, State, context[IndexKey(key)]);
+  }
+
+  /* The keys in [lo, hi] as of version `at`, by a range walk (#745). */
+  vector<TKey> KeysAt(int64_t lo, int64_t hi, TSequenceNumber at) {
+    TSuprena ctx_arena;
+    TContext context(Repo, &ctx_arena, at);
+    vector<TKey> keys;
+    for (TContext::TKeyCursor csr(&context, IndexKey(lo), IndexKey(hi)); csr; ++csr) {
+      keys.emplace_back(&Arena, State, *csr);
+    }
+    return keys;
+  }
+
+  /* The key as a range walk yields it. */
+  TKey KeyOf(int64_t key) {
+    return TKey(make_tuple(key), &Arena, State);
+  }
+
+  TSequenceNumber GetHistoryHorizon() const {
+    return Stepped->GetHistoryHorizon();
+  }
+
+  /* The disk and memory layers of the repo's current view. */
+  pair<size_t, size_t> CountLayersByKind() {
+    Orly::Indy::TRepo::TView view(Stepped);
+    size_t disk = 0UL, mem = 0UL;
+    view.CountLayers(disk, mem);
+    return {disk, mem};
   }
 
   void Flush() {
@@ -772,6 +816,23 @@ class TRootRepoFixture {
   }
 
   private:
+
+  template <typename TFill>
+  TSequenceNumber CommitWith(const TFill &fill) {
+    std::optional<TSequenceNumber> seq;
+    /* The transaction commits, and reports the sequence number, as it goes out of scope. */ {
+      auto transaction = Manager->NewTransaction();
+      transaction->ReportCommitSequenceNumber(&seq);
+      auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&Arena), TKey(Base::TUuid(TUuid::Twister), &Arena, State));
+      fill(update.get());
+      transaction->Push(Repo, update);
+      transaction->Prepare();
+      transaction->CommitAction();
+    }
+    ++NumCommits;
+    assert(seq);
+    return *seq;
+  }
 
   vector<uint8_t> StateBuf;
 
@@ -1877,6 +1938,194 @@ FIXTURE(RangeCountsRespectReadBudgetsWithoutFoldingValues) {
         auto over_bytes = [&]() { context.CountKeys(absent); };
         EXPECT_THROW_FUNC(Orly::Server::TReadTooLarge, over_bytes);
       }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745: reads at a version, checked against a model of every write. Each scenario commits a random run of
+   assigns, deletes and `+=` over a few keys, one hot key written by every commit so its history runs deep, flushing a
+   disk file per round and merging the files twice. After each round it reads every version the repo will answer,
+   by point and by range, and compares it with the model; a version below the history horizon, or past the newest,
+   must be refused. With history kept (no pruning, merges left unfolded) the horizon must stay 0, so every version
+   back to the first is read out of merged disk files. */
+namespace {
+
+  struct TReadAtScenario {
+    bool Prune;
+    bool Unfolded;
+    uint32_t Seed;
+  };
+
+  struct TReadAtStats {
+    /* (version, key) reads whose value differs from the key's newest: each read history out of a disk file. */
+    size_t PastValues = 0UL;
+    size_t Mismatches = 0UL;
+    size_t Refusals = 0UL;
+    size_t MaxDiskLayers = 0UL;
+    size_t DiskLayersAfterMerges = 0UL;
+    TSequenceNumber Horizon = 0UL;
+  };
+
+  TReadAtStats RunReadAtScenario(const TReadAtScenario &scenario) {
+    constexpr int64_t num_keys = 8L, hot_key = 0L;
+    constexpr size_t num_rounds = 6UL, commits_per_round = 12UL;
+    TReadAtStats stats;
+    TRootRepoFixture root(scenario.Prune);
+    if (scenario.Unfolded) {
+      root.KeepMergesUnfolded();
+    }
+    mt19937 rng(scenario.Seed);
+    /* The model: the state after each commit, by the commit's sequence number. */
+    map<int64_t, int64_t> state;
+    map<TSequenceNumber, map<int64_t, int64_t>> history;
+    const auto expected_at = [&](TSequenceNumber at) -> const map<int64_t, int64_t> & {
+      static const map<int64_t, int64_t> empty;
+      auto iter = history.upper_bound(at);
+      return iter == history.begin() ? empty : prev(iter)->second;
+    };
+    const auto write = [&](int64_t key) {
+      const uint32_t roll = rng() % 10U;
+      const auto found = state.find(key);
+      if (found != state.end() && roll < 2U) {
+        state.erase(found);
+        return root.CommitDelete(key);
+      }
+      if (found != state.end() && roll < 6U) {
+        const int64_t delta = static_cast<int64_t>(rng() % 9U) + 1L;
+        found->second += delta;
+        return root.Commit({{key, delta, TMutator::Add}});
+      }
+      const int64_t val = static_cast<int64_t>(rng() % 1000U);
+      state[key] = val;
+      return root.Commit({{key, val, TMutator::Assign}});
+    };
+    const auto check = [&]() {
+      stats.Horizon = root.GetHistoryHorizon();
+      const TSequenceNumber newest = history.empty() ? 0UL : history.rbegin()->first;
+      const auto &now = expected_at(newest);
+      for (TSequenceNumber at = stats.Horizon; at <= newest; ++at) {
+        const auto &expected = expected_at(at);
+        vector<TKey> expected_keys;
+        for (int64_t key = 0L; key < num_keys; ++key) {
+          const auto found = expected.find(key);
+          const auto actual = root.ReadAt(key, at);
+          bool ok;
+          if (found == expected.end()) {
+            ok = !actual;
+          } else {
+            expected_keys.push_back(root.KeyOf(key));
+            ok = actual && *actual == root.Int(found->second);
+            const auto cur = now.find(key);
+            if (ok && (cur == now.end() || cur->second != found->second)) {
+              ++stats.PastValues;
+            }
+          }
+          if (!ok && stats.Mismatches++ < 10UL) {
+            cerr << "seed " << scenario.Seed << ": key " << key << " at " << at << " expected "
+                 << (found == expected.end() ? string("nothing") : to_string(found->second)) << ", got "
+                 ; if (actual) { cerr << *actual; } else { cerr << "nothing"; } cerr << " (prune " << scenario.Prune << ", unfolded " << scenario.Unfolded << ")" << endl;
+          }
+        }
+        if (root.KeysAt(0L, num_keys - 1L, at) != expected_keys && stats.Mismatches++ < 10UL) {
+          cerr << "seed " << scenario.Seed << ": range at " << at << " differs" << endl;
+        }
+      }
+      /* The negative controls: below the horizon, and past the newest. */
+      const auto refused = [&](TSequenceNumber at) {
+        try {
+          root.ReadAt(hot_key, at);
+        } catch (const Orly::Server::TVersionUnavailable &ex) {
+          return ex.GetRequested() == at && ex.GetOldest() == stats.Horizon && ex.GetNewest() == newest;
+        }
+        return false;
+      };
+      if (stats.Horizon) {
+        stats.Refusals += refused(stats.Horizon - 1UL) ? 1UL : 0UL;
+        stats.Refusals += refused(0UL) ? 1UL : 0UL;
+      }
+      stats.Refusals += refused(newest + 1UL) ? 1UL : 0UL;
+    };
+    size_t expected_refusals = 0UL;
+    for (size_t round = 0UL; round < num_rounds; ++round) {
+      for (size_t i = 0UL; i < commits_per_round; ++i) {
+        history[write(hot_key)] = state;
+        const int64_t key = 1L + static_cast<int64_t>(rng() % static_cast<uint32_t>(num_keys - 1L));
+        history[write(key)] = state;
+      }
+      root.Flush();
+      const auto [disk, mem] = root.CountLayersByKind();
+      EXPECT_EQ(mem, 0UL);
+      stats.MaxDiskLayers = max(stats.MaxDiskLayers, disk);
+      if (round == 2UL || round == num_rounds - 1UL) {
+        root.MergeDisk(8UL);
+      }
+      check();
+      expected_refusals += stats.Horizon ? 3UL : 1UL;
+    }
+    stats.DiskLayersAfterMerges = root.CountLayersByKind().first;
+    /* And with the newest writes still in memory, over the merged files. */
+    for (size_t i = 0UL; i < 4UL; ++i) {
+      history[write(hot_key)] = state;
+    }
+    check();
+    expected_refusals += stats.Horizon ? 3UL : 1UL;
+    EXPECT_EQ(stats.Refusals, expected_refusals);
+    return stats;
+  }
+
+}  // namespace
+
+FIXTURE(ReadAtVersionMatchesModel) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    for (uint32_t seed : {1U, 2U, 3U}) {
+      /* History kept: no merge drops any, so every version reads, out of merged files. */ {
+        const auto stats = RunReadAtScenario({.Prune = false, .Unfolded = true, .Seed = seed});
+        EXPECT_EQ(stats.Mismatches, 0UL);
+        EXPECT_EQ(stats.Horizon, 0UL);
+        EXPECT_GT(stats.PastValues, 0UL);
+        EXPECT_GE(stats.MaxDiskLayers, 3UL);
+        EXPECT_LT(stats.DiskLayersAfterMerges, stats.MaxDiskLayers);
+      }
+      /* Folded merges: the fold drops the `+=` history it folds, so the horizon rises past it. */ {
+        const auto stats = RunReadAtScenario({.Prune = false, .Unfolded = false, .Seed = seed});
+        EXPECT_EQ(stats.Mismatches, 0UL);
+        EXPECT_GT(stats.Horizon, 0UL);
+        EXPECT_LT(stats.DiskLayersAfterMerges, stats.MaxDiskLayers);
+      }
+      /* Pruning merges, unfolded: each key keeps only its newest entry. */ {
+        const auto stats = RunReadAtScenario({.Prune = true, .Unfolded = true, .Seed = seed});
+        EXPECT_EQ(stats.Mismatches, 0UL);
+        EXPECT_GT(stats.Horizon, 0UL);
+        EXPECT_LT(stats.DiskLayersAfterMerges, stats.MaxDiskLayers);
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745: a key whose whole history is newer than the version is not there, in a file that holds older keys. */
+FIXTURE(ReadAtVersionBeforeAKeyExists) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(false);
+      root.KeepMergesUnfolded();
+      const TSequenceNumber first = root.Commit({{1L, 10L, TMutator::Assign}});
+      const TSequenceNumber second = root.Commit({{2L, 20L, TMutator::Assign}});
+      root.Commit({{2L, 21L, TMutator::Assign}});
+      root.Flush();
+      EXPECT_FALSE(root.ReadAt(2L, first));
+      EXPECT_TRUE(root.ReadAt(1L, first) == root.Int(10L));
+      EXPECT_TRUE(root.ReadAt(2L, second) == root.Int(20L));
+      EXPECT_EQ(root.KeysAt(0L, 9L, first).size(), 1UL);
+      EXPECT_EQ(root.KeysAt(0L, 9L, second).size(), 2UL);
+      EXPECT_EQ(root.KeysAt(0L, 9L, 0UL).size(), 0UL);
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

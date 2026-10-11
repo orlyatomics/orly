@@ -276,6 +276,18 @@ TRepo::TView::TView(TRepo *repo, TDataLockHeld)
   Snapshot();
 }
 
+TRepo::TView::TView(TRepo *repo, std::optional<TSequenceNumber> at)
+    : Repo(repo), At(at) {
+  assert(Repo);
+  /* acquire Data lock */ {
+    std::lock_guard<std::mutex> lock(Repo->DataLock);
+    Snapshot();
+  }  // release DataLayer lock
+  if (At && UpperBound && *UpperBound > *At) {
+    UpperBound = *At;
+  }
+}
+
 void TRepo::TView::Snapshot() {
   Mapping = Repo->AcquireCurrentMapping();
   CurrentMemoryLayer = Repo->CurMemoryLayer;
@@ -283,6 +295,7 @@ void TRepo::TView::Snapshot() {
   CurrentMemoryLayer->Incr();
   LowerBound = Repo->LowestSeqNum;
   UpperBound = Repo->HighestSeqNum;
+  Newest = UpperBound;
   NextId = Repo->NextUpdate;
 }
 
@@ -1327,12 +1340,21 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       IgnoreTombstone(ignore_tombstone) {
   if (View->GetLower() && View->GetUpper()) {
     size_t pos = 0UL;
-    for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr, ++pos) {
-      WalkerVec.emplace_back(mapping_csr->GetLayer()->NewPresentWalker(From, To));
+    for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
+      const TDataLayer *layer = mapping_csr->GetLayer();
+      if (!Reads(layer)) {
+        continue;
+      }
+      /* Reading at a version (#745), a disk file seeks each key's entry as of the version; the window filter drops
+         a memory layer's newer entries. */
+      WalkerVec.emplace_back(View->GetAt() && layer->GetKind() == TDataLayer::Disk
+          ? static_cast<const TDiskLayer *>(layer)->NewPresentWalkerAt(From, To, *View->GetAt())
+          : layer->NewPresentWalker(From, To));
       Indy::TPresentWalker &walker = *WalkerVec.back();
       if (walker) {
         MinHeap.Insert(*walker, pos);
       }
+      ++pos;
     }
     assert(View->GetCurMem());
     WalkerVec.emplace_back(View->GetCurMem()->NewPresentWalker(From, To));
@@ -1367,7 +1389,9 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
     vector<TDataLayer *> layers;
     layers.reserve(View->GetNumEntries());
     for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
-      layers.push_back(mapping_csr->GetLayer());
+      if (Reads(mapping_csr->GetLayer())) {
+        layers.push_back(mapping_csr->GetLayer());
+      }
     }
     WalkerVec.resize(layers.size());
     const size_t num_tasks = min(layers.size(), MaxPrepFibers);
@@ -1421,8 +1445,15 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
 
 void TRepo::TPresentWalker::BuildLayerWalkers(const vector<TDataLayer *> &layers, size_t task, size_t stride) {
   for (size_t i = task; i < layers.size(); i += stride) {
-    WalkerVec[i] = layers[i]->NewPresentWalker(From, ExactPoint);
+    /* See the range ctor (#745). */
+    WalkerVec[i] = View->GetAt() && layers[i]->GetKind() == TDataLayer::Disk
+        ? static_cast<const TDiskLayer *>(layers[i])->NewPresentWalkerAt(From, *View->GetAt())
+        : layers[i]->NewPresentWalker(From, ExactPoint);
   }
+}
+
+bool TRepo::TPresentWalker::Reads(const TDataLayer *layer) const {
+  return !View->GetAt() || layer->GetKind() != TDataLayer::Disk || layer->GetLowestSeq() <= *View->GetAt();
 }
 
 TRepo::TUpdateWalker::TUpdateWalker(const unique_ptr<TView> &view,
@@ -2016,6 +2047,8 @@ size_t TSafeRepo::AddSyncedFileToRepo(size_t starting_block_id,
     Manager->GetEngine()->InsertFile(GetId(), TFileObj::TKind::DataFile, gen_id, starting_block_id, starting_block_offset, file_length, num_keys, low_saved, high_saved, trigger);
     trigger.Wait();
   }
+  /* A synced file may be the output of a merge that dropped history, and nothing here says whether it was (#745). */
+  RaiseHistoryHorizon(high_saved);
   AddFileToRepo(gen_id, low_saved, high_saved, num_keys);
   return gen_id;
 }
@@ -2159,6 +2192,9 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
   TSafeRepo *safe_repo = new TSafeRepo(manager, repo_id, repo_ttl, parent_repo, lowest, highest, next_update, TStatus::Normal);
   if (highest) {
     safe_repo->NoteDurable(*highest);
+    /* The files found may be merges that dropped history, and nothing records which were, so only the newest
+       version is known to be whole (#745). */
+    safe_repo->RaiseHistoryHorizon(*highest);
   }
   return safe_repo;
 }
@@ -2206,6 +2242,11 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
     out_saved_high_seq = merge_data_file.GetHighestSequence();
+    /* A pruning merge keeps only each key's newest entry, so versions below its newest are gone (#745). The caller
+       publishes the file after this returns. */
+    if (my_can_tail) {
+      RaiseHistoryHorizon(out_saved_high_seq);
+    }
     return intermediate_gen_id;
   }
   /* Phase B (#55): fold same-mutator commutative runs in the just-merged
@@ -2225,6 +2266,9 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
     out_saved_high_seq = merge_data_file.GetHighestSequence();
+    if (my_can_tail) {
+      RaiseHistoryHorizon(out_saved_high_seq);
+    }
     return intermediate_gen_id;
   };
   /* #858: so the fold claims all of that before it allocates any of it, and leaves the pools'
@@ -2260,6 +2304,9 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   }
   /* Reclaim the intermediate file's blocks. */
   RemoveFile(intermediate_gen_id, false);
+  /* The fold leaves each key one entry, its value as of the newest version merged, so older versions are gone
+     (#745). The caller publishes the file after this returns. */
+  RaiseHistoryHorizon(out_saved_high_seq);
   return final_gen_id;
 }
 
@@ -2345,15 +2392,17 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
 
 std::unique_ptr<Orly::Indy::TPresentWalker> TSafeRepo::NewPresentWalkerFile(size_t gen_id,
                                                                             const TIndexKey &index_from,
-                                                                            const TIndexKey &index_to) const {
+                                                                            const TIndexKey &index_to,
+                                                                            std::optional<TSequenceNumber> at) const {
   return make_unique<Disk::TPresentWalkFileWrapper>(
-      Manager->GetEngine(), GetId(), gen_id, index_from.GetIndexId(), index_from.GetKey(), index_to.GetKey());
+      Manager->GetEngine(), GetId(), gen_id, index_from.GetIndexId(), index_from.GetKey(), index_to.GetKey(), at);
 }
 
 std::unique_ptr<Orly::Indy::TPresentWalker> TSafeRepo::NewPresentWalkerFile(size_t gen_id,
-                                                                            const TIndexKey &index_key) const {
+                                                                            const TIndexKey &index_key,
+                                                                            std::optional<TSequenceNumber> at) const {
   return make_unique<Disk::TPresentWalkFileWrapper>(
-      Manager->GetEngine(), GetId(), gen_id, index_key.GetIndexId(), index_key.GetKey());
+      Manager->GetEngine(), GetId(), gen_id, index_key.GetIndexId(), index_key.GetKey(), at);
 }
 
 std::unique_ptr<Orly::Indy::TUpdateWalker> TSafeRepo::NewUpdateWalkerFile(size_t gen_id, TSequenceNumber from) const {

@@ -109,6 +109,10 @@ namespace Orly {
            re-lock the non-recursive DataLock. */
         TView(TRepo *repo, TDataLockHeld);
 
+        /* A view of the repo as of sequence number `at` (#745), or of now when unset. The upper bound is clamped to
+           `at`, so walkers drop every newer entry, and disk walkers seek each key's newest entry at or below it. */
+        TView(TRepo *repo, std::optional<TSequenceNumber> at);
+
         /* Releases (Decr) the pinned mapping and memtable under MappingLock. */
         ~TView();
 
@@ -145,8 +149,18 @@ namespace Orly {
            if the repo was empty -- walkers bail when either bound is unset. */
         const std::optional<TSequenceNumber> &GetLower() const;
 
-        /* Newest in-window sequence number (HighestSeqNum at snapshot). */
+        /* Newest in-window sequence number (HighestSeqNum at snapshot, clamped to the version read at, if any). */
         const std::optional<TSequenceNumber> &GetUpper() const;
+
+        /* The version this view reads at, or unset for a read of now (#745). */
+        const std::optional<TSequenceNumber> &GetAt() const {
+          return At;
+        }
+
+        /* HighestSeqNum at snapshot, never clamped: the newest version there is to read (#745). */
+        const std::optional<TSequenceNumber> &GetNewest() const {
+          return Newest;
+        }
 
         private:
 
@@ -171,6 +185,11 @@ namespace Orly {
 
         /* Snapshot of NextUpdate. */
         TSequenceNumber NextId;
+
+        /* See GetAt and GetNewest. */
+        std::optional<TSequenceNumber> At;
+
+        std::optional<TSequenceNumber> Newest;
 
       };  // TView
 
@@ -333,6 +352,21 @@ namespace Orly {
          starts, on a reload, at the highest sequence number of the files found. */
       std::optional<TSequenceNumber> GetDurableSequenceNumber() const {
         return ReadDurable(*DurablePlusOne);
+      }
+
+      /* The oldest version a read at a version may ask for (#745): every version below it may be missing entries,
+         because a merge that pruned or folded history has covered it, or because this process loaded its files from
+         disk and cannot tell which were. 0 while no history has been dropped. */
+      TSequenceNumber GetHistoryHorizon() const {
+        return HistoryHorizon.load();
+      }
+
+      /* Moves the horizon up to `seq`, if it is below it: history below `seq` may be gone, but the state as of `seq`
+         is whole (a fold of everything up to it is that state). Call it before publishing whatever drops the history,
+         so a reader whose view has the new layers sees the new horizon too. */
+      void RaiseHistoryHorizon(TSequenceNumber seq) {
+        TSequenceNumber cur = HistoryHorizon.load();
+        while (cur < seq && !HistoryHorizon.compare_exchange_weak(cur, seq)) {}
       }
 
       /* The durable sequence number's storage, shared so that a promotion into this repo can read
@@ -584,6 +618,9 @@ namespace Orly {
       /* The live memtable that AppendUpdate inserts into. */
       TMemoryLayer *CurMemoryLayer;
 
+      /* See GetHistoryHorizon. */
+      std::atomic<TSequenceNumber> HistoryHorizon{0UL};
+
       /* #590: how many merges of each kind in a row have failed for lack of disk space (or, for
          disk merges, pool space: #627). A failed merge hands its inputs back and retries after a
          backoff that doubles with the streak; a merge that succeeds ends the streak. */
@@ -651,6 +688,10 @@ namespace Orly {
            their WalkerVec slots. Run by a prep fiber, or inline by the ctor for
            a task that couldn't get a frame. */
         void BuildLayerWalkers(const std::vector<TDataLayer *> &layers, size_t task, size_t stride);
+
+        /* True iff a walk of the view reads `layer`: one whose every entry is newer than the version the view reads at
+           cannot contribute and is passed over (#745). */
+        bool Reads(const TDataLayer *layer) const;
 
         /* A fiber task that builds some layers' sub-walkers (see
            BuildLayerWalkers) on a frame from the local frame pool, and signals
@@ -1131,11 +1172,13 @@ namespace Orly {
       /* Open a present-walker over a single on-disk generation file (range). */
       virtual std::unique_ptr<Orly::Indy::TPresentWalker> NewPresentWalkerFile(size_t /*gen_id*/,
                                                                                const TIndexKey &/*from*/,
-                                                                               const TIndexKey &/*to*/) const override;
+                                                                               const TIndexKey &/*to*/,
+                                                                               std::optional<TSequenceNumber> /*at*/ = std::nullopt) const override;
 
       /* Open a present-walker over a single on-disk generation file (single key). */
       virtual std::unique_ptr<Orly::Indy::TPresentWalker> NewPresentWalkerFile(size_t /*gen_id*/,
-                                                                               const TIndexKey &/*key*/) const override;
+                                                                               const TIndexKey &/*key*/,
+                                                                               std::optional<TSequenceNumber> /*at*/ = std::nullopt) const override;
 
       /* Open an update-walker over a single on-disk generation file. */
       virtual std::unique_ptr<Orly::Indy::TUpdateWalker> NewUpdateWalkerFile(size_t /*gen_id*/, TSequenceNumber /*from*/) const override;

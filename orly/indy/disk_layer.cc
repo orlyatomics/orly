@@ -105,6 +105,14 @@ unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &key, bo
   return Repo->NewPresentWalkerFile(GenId, key);
 }
 
+unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalkerAt(const TIndexKey &from, const TIndexKey &to, TSequenceNumber at) const {
+  return Repo->NewPresentWalkerFile(GenId, from, to, at);
+}
+
+unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalkerAt(const TIndexKey &key, TSequenceNumber at) const {
+  return Repo->NewPresentWalkerFile(GenId, key, at);
+}
+
 unique_ptr<TUpdateWalker> TDiskLayer::NewUpdateWalker(TSequenceNumber from) const {
   return Repo->NewUpdateWalkerFile(GenId, from);
 }

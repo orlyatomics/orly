@@ -178,7 +178,16 @@ namespace Orly {
 
       };  // TKeyCursor
 
-      TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena);
+      /* With `at`, the context reads the repo as of that version (#745): only a repo with no parent (the global POV's)
+         can be read so, and a version older than the repo's history horizon or newer than its newest commit throws
+         Server::TVersionUnavailable. */
+      TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena,
+               std::optional<TSequenceNumber> at = std::nullopt);
+
+      /* The version this context reads at, or unset for a read of now (#745). */
+      const std::optional<TSequenceNumber> &GetAt() const noexcept {
+        return At;
+      }
 
       ~TContext() override;
 
@@ -333,6 +342,9 @@ namespace Orly {
 
       /* See SetRankCounts() and GetRowsCountedByRank(). */
       bool RankCounts = true;
+
+      /* See GetAt(). */
+      std::optional<TSequenceNumber> At;
       size_t RowsCountedByRank = 0UL;
 
       friend class TIndyContext;

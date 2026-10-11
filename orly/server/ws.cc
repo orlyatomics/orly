@@ -60,6 +60,7 @@
 #include <orly/server/insufficient_storage.h>
 #include <orly/server/operation_error.h>
 #include <orly/server/read_too_large.h>
+#include <orly/server/version_unavailable.h>
 #include <orly/server/write_too_large.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
@@ -169,6 +170,18 @@ namespace {
       reply["result"] = ex.what();
       reply["status"] = "outcome_too_large";
       reply["version"] = static_cast<uint64_t>(ex.GetVersion());
+    } catch (const Orly::Server::TVersionUnavailable &ex) {
+      /* A read at a version the server can't answer exactly (#745): older than the history merges have kept, or not
+         committed yet. The bounds say which versions it can. */
+      reply["result"] = ex.what();
+      reply["status"] = "version_unavailable";
+      reply["requested"] = ex.GetRequested();
+      reply["oldest"] = ex.GetOldest();
+      reply["newest"] = ex.GetNewest();
+    } catch (const Orly::Server::TVersionReadOnly &ex) {
+      /* A call read at a version tried to write (#745). Nothing was written. */
+      reply["result"] = ex.what();
+      reply["status"] = "version_read_only";
     } catch (const TDurableTimeout &ex) {
       /* The write committed, but was not on disk in time (#750). The reply's receipt names it. */
       reply["result"] = ex.what();
@@ -675,6 +688,9 @@ class TWsImpl final
         if (options.OpId) {
           AddOpId(closure, *options.OpId);
         }
+        if (options.At) {
+          AddAt(closure, *options.At);
+        }
         /* Runs off the I/O thread (#761); see TStmtQueue. */
         Conn->Deferred = [conn = Conn, options, session_mngr = Conn->Ws->SessionManager, session = GetSharedSession(),
                           request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
@@ -699,6 +715,8 @@ class TWsImpl final
             if (options.Receipt) {
               conn->Receipt = ToReceipt(request->GetPovId(), *result, durable);
             }
+            /* The version the call read at, echoed so a client can tell the reply's state from a newer one (#745). */
+            conn->ReadVersion = options.At;
             if (options.WaitDurableMs && result->GetCommitSequenceNumber() && !durable) {
               throw TDurableTimeout(options.WaitDurableMs);
             }
@@ -734,6 +752,9 @@ class TWsImpl final
           list = list_tail ? list_tail->GetObjExprList() : nullptr;
         }
         const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
+        if (options.At) {
+          throw invalid_argument("try_batch: .at is not supported; read at a version with a single try");
+        }
         if (options.OpId) {
           /* The batch is one request; the id rides on its first call. */
           AddOpId(closures.front(), *options.OpId);
@@ -981,12 +1002,21 @@ class TWsImpl final
       /* The options of a `try` (#750): `.receipt: true` asks for the reply to carry a receipt;
          `.wait_durable_ms: N` holds the reply, for at most N ms, until the write is on disk, and
          implies the receipt. `.op_id: "<uuid>"` names the write, so sending it again returns the
-         first answer rather than writing twice (#733). */
+         first answer rather than writing twice (#733). `.at: V` runs the call against the global POV as it was at
+         version V, and refuses it if it writes (#745). */
       struct TTryOptions {
         bool Receipt = false;
         uint64_t WaitDurableMs = 0;
         std::optional<std::string> OpId;
+        std::optional<uint64_t> At;
       };
+
+      /* Likewise, the version to read at (#745). */
+      static void AddAt(TClosure &closure, uint64_t at) {
+        void *alloc = alloca(SabotStateSize);
+        TWrapper state(Native::State::New(static_cast<int64_t>(at), alloc));
+        closure.AddArgBySabot("$at", state);
+      }
 
       /* The operation id goes to the session as a reserved argument, which it takes back out
          (#733). */
@@ -1023,9 +1053,23 @@ class TWsImpl final
             } catch (const exception &) {
               throw invalid_argument("try: .op_id must be a str");
             }
+          } else if (name == "at") {
+            int64_t at;
+            try {
+              at = Var::TVar::TDt<int64_t>::As(value);
+            } catch (const exception &) {
+              throw invalid_argument("try: .at must be an int");
+            }
+            if (at < 0) {
+              throw invalid_argument("try: .at must not be negative");
+            }
+            result.At = static_cast<uint64_t>(at);
           } else {
-            throw invalid_argument("try: unknown option ." + name + "; the options are .receipt, .wait_durable_ms and .op_id");
+            throw invalid_argument("try: unknown option ." + name + "; the options are .receipt, .wait_durable_ms, .op_id and .at");
           }
+        }
+        if (result.At && (result.OpId || result.Receipt || result.WaitDurableMs)) {
+          throw invalid_argument("try: .at reads a past version, so it does not take .op_id, .receipt or .wait_durable_ms");
         }
         result.Receipt = result.Receipt || result.WaitDurableMs;
         return result;
@@ -1151,6 +1195,7 @@ class TWsImpl final
         TJson result;
         Deferred = nullptr;
         Receipt = TJson();
+        ReadVersion.reset();
         ParseStmtStr(
             payload.c_str(),
             [this, &result](const TStmt *stmt) {
@@ -1202,7 +1247,12 @@ class TWsImpl final
           reply["receipt"] = std::move(Receipt);
           Receipt = TJson();
         }
+        if (ReadVersion) {
+          reply["version"] = *ReadVersion;
+          ReadVersion.reset();
+        }
       } catch (...) {
+        ReadVersion.reset();
         SetErrorReply(reply);
         /* A write that timed out waiting for disk still has a receipt: it was accepted. */
         if (Receipt.GetKind() != TJson::Null) {
@@ -1310,6 +1360,9 @@ class TWsImpl final
     /* Set, on the strand, by a deferred `try` that asked for a receipt (#750); Finish() puts it in
        the reply. */
     TJson Receipt;
+
+    /* The version a `try .at` read at, for its reply (#745). */
+    std::optional<uint64_t> ReadVersion;
 
     /* How long a connection to a server with a token has to authenticate (#710). */
     static constexpr std::chrono::seconds AuthDeadline{10};

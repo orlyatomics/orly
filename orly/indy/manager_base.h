@@ -606,12 +606,15 @@ namespace Orly {
                                    size_t &out_num_keys,
                                    TSequenceNumber release_up_to);
 
+          /* `at`, when set, reads the file as of that sequence number (#745). */
           virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerFile(size_t gen_id,
                                                                              const TIndexKey &from,
-                                                                             const TIndexKey &to) const;
+                                                                             const TIndexKey &to,
+                                                                             std::optional<TSequenceNumber> at = std::nullopt) const;
 
           virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerFile(size_t gen_id,
-                                                                             const TIndexKey &key) const;
+                                                                             const TIndexKey &key,
+                                                                             std::optional<TSequenceNumber> at = std::nullopt) const;
 
           virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalkerFile(size_t gen_id, TSequenceNumber from) const;
 

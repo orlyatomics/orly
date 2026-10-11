@@ -28,6 +28,10 @@
 #include <vector>
 
 #include <orly/atom/suprena.h>
+#include <orly/server/version_unavailable.h>
+#include <orly/var/int.h>
+#include <orly/var/sabot_to_var.h>
+#include <orly/var/util.h>
 #include <base/signal/handler_installer.h>
 #include <base/signal/masker.h>
 #include <base/signal/set.h>
@@ -125,10 +129,18 @@ class TWsTestServer::TSessionManager
     /* Do-little. */
     void Tail() const {}
 
-    /* We fake this by just always returning 98.6, as a write committed at the next version (#750). */
-    TMethodResult Try(const TMethodRequest &/*method_request*/) {
+    /* We fake this by just always returning 98.6, as a write committed at the next version (#750). A read at a
+       version (#745) past 1000 is refused as not committed yet, with the oldest readable 10. */
+    TMethodResult Try(const TMethodRequest &method_request) {
       static std::atomic<uint64_t> version(100);
       void *alloc = alloca(Sabot::State::GetMaxStateSize());
+      const auto &closure = method_request.GetClosure();
+      if (const auto at = closure.GetCoreByName().find("$at"); at != closure.GetCoreByName().end()) {
+        const auto var = Var::ToVar(*Sabot::State::TAny::TWrapper(at->second.NewState(closure.GetArena().get(), alloc)));
+        if (const auto *val = var.TryAs<Var::TInt>(); val && val->GetVal() > 1000) {
+          throw TVersionUnavailable(static_cast<uint64_t>(val->GetVal()), 10UL, 1000UL);
+        }
+      }
       TSuprena arena;
       TMethodResult result(&arena, TCore(98.6, &arena, alloc), std::optional<TTracker>());
       result.SetCommitSequenceNumber(++version);
