@@ -992,27 +992,25 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
       Atom::TSuprena arena;
       for (auto iter : context.UpdateVec) {
         /* Split entries by mutator: Assign-tagged go through the TUpdate
-           TOpByKey ctor (existing semantics); non-Assign entries get
-           registered via update->AddEntry(...,mutator) so the deferred
+           TOpByKey ctor (existing semantics); non-Assign entries go in as
+           `more`, each under its own mutator, so the deferred
            commutative info survives the slave-replay path. Mirrors the
            fix in TRepo::GetLowestUpdate (PR #52) for the Tetris peek
            path. Without this, the slave reconstructs deferred {Add, n}
            entries as Assign(n) and silently loses updates on
            concurrent writes that landed on the master (#54). */
         TUpdate::TOpByKey op_by_key;
+        std::vector<TUpdate::TNewEntry> more;
         for (auto entry : iter.EntryVec) {
           if (entry.Mutator == TMutator::Assign) {
             op_by_key[entry.IndexKey] = TKey(entry.Op, context.Suprena.get());
+          } else {
+            more.emplace_back(entry.IndexKey, TKey(entry.Op, context.Suprena.get()), entry.Mutator);
           }
           ++num_entry_inserted;
         }
-        TUpdate *update = new TUpdate(op_by_key, TKey(iter.Metadata, context.Suprena.get()), TKey(iter.Id, context.Suprena.get()), lhs_state_alloc);
+        TUpdate *update = new TUpdate(op_by_key, TKey(iter.Metadata, context.Suprena.get()), TKey(iter.Id, context.Suprena.get()), lhs_state_alloc, more);
         update->SetSequenceNumber(iter.SequenceNumber);
-        for (auto entry : iter.EntryVec) {
-          if (entry.Mutator != TMutator::Assign) {
-            update->AddEntry(entry.IndexKey, TKey(entry.Op, context.Suprena.get()), entry.Mutator);
-          }
-        }
         mem_layer->ImporterAppendUpdate(update);
       }
       /* sort and fix the mem_layer */ {
@@ -1385,10 +1383,7 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
             repo->SetReleasedUpTo(seq_num > 0UL ? seq_num - 1UL : 0UL);
           }
           if (repo) {
-            auto update = TUpdate::NewUpdate({}, TKey(meta_core, arena), TKey(id_core, arena));
-            for (const auto &entry : entries) {
-              update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
-            }
+            auto update = TUpdate::NewUpdate({}, entries, TKey(meta_core, arena), TKey(id_core, arena));
             apply_transaction->Push(repo, update, seq_num);
           } else {
             LogGoneRepo("push", repo_id, seq_num);

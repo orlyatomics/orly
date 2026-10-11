@@ -18,6 +18,10 @@
 
 #include <atomic>
 #include <cassert>
+#include <map>
+#include <memory>
+#include <tuple>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
@@ -60,6 +64,9 @@ namespace Orly {
       class TEntry;
 
       using TOpByKey = std::map<TIndexKey, TKey>;
+
+      /* An entry that carries its own mutator: index key, op, mutator. */
+      using TNewEntry = std::tuple<TIndexKey, TKey, TMutator>;
 
       using TEntryCollection = InvCon::OrderedList::TCollection<TUpdate, TEntry, TKey>;
 
@@ -229,6 +236,12 @@ namespace Orly {
 
       static std::shared_ptr<TUpdate> NewUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id);
 
+      /* An update holding op_by_key's entries, each tagged Assign, and more's, each under its own
+         mutator. Build an update's entries all at once, through here, rather than adding them one
+         by one afterwards: here they go in in key order, which costs O(N log N) where adding them
+         in any other order can cost O(N^2) (#879). */
+      static std::shared_ptr<TUpdate> NewUpdate(const TOpByKey &op_by_key, const std::vector<TNewEntry> &more, const TKey &metadata, const TKey &id);
+
       static std::shared_ptr<TUpdate> ReconstructUpdate(TSequenceNumber seq_num);
 
       static TUpdate *CopyUpdate(TUpdate *that, void *state_alloc);
@@ -350,7 +363,7 @@ namespace Orly {
 
       protected:
 
-      TUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, void *state_alloc);
+      TUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, void *state_alloc, const std::vector<TNewEntry> &more = {});
 
       explicit TUpdate(const TUpdate *that, void *state_alloc);
 

@@ -650,15 +650,18 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
   if (walker) {
     const TUpdateWalker::TItem &item = *walker;
     /* Split entries by mutator: Assign-tagged entries go through the
-       TOpByKey ctor (existing semantics); non-Assign entries go through
-       AddEntry post-construction so the mutator is preserved. This is
+       TOpByKey ctor (existing semantics); non-Assign entries go in as
+       `more`, each under its own mutator, so the mutator is preserved. This is
        the #49 phase-2 plumbing on the Tetris-merge / GetLowestUpdate
        path -- without it, deferred Add entries get rebuilt as Assigns
        and concurrent `+= n` loses updates again. */
     TUpdate::TOpByKey op_by_key;
+    std::vector<TUpdate::TNewEntry> more;
     for (const auto &iter : item.EntryVec) {
       if (iter.Mutator == TMutator::Assign) {
         op_by_key.insert(make_pair(iter.IndexKey, TKey(iter.Op, item.MainArena)));
+      } else {
+        more.emplace_back(iter.IndexKey, TKey(iter.Op, item.MainArena), iter.Mutator);
       }
     }
     /* Claim the copy before making it (#607; see TPool::TryClaim). */
@@ -666,13 +669,7 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
     if (!claim.TryAcquire(1UL, item.EntryVec.size())) {
       throw std::bad_alloc();
     }
-    auto update = TUpdate::NewUpdate(op_by_key, TKey(item.Metadata, item.MainArena), TKey(item.Id, item.MainArena));
-    for (const auto &iter : item.EntryVec) {
-      if (iter.Mutator != TMutator::Assign) {
-        update->AddEntry(iter.IndexKey, TKey(iter.Op, item.MainArena), iter.Mutator);
-      }
-    }
-    return update;
+    return TUpdate::NewUpdate(op_by_key, more, TKey(item.Metadata, item.MainArena), TKey(item.Id, item.MainArena));
   }
   return nullptr;
 }
