@@ -46,35 +46,35 @@ namespace Orly {
                  TSequenceNumber lowest_seq,
                  TSequenceNumber highest_seq);
 
-      virtual ~TDiskLayer();
+      ~TDiskLayer() override;
 
-      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
-                                                                     const TIndexKey &to) const override;
+      std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &from,
+                                                             const TIndexKey &to) const override;
 
       /* exact_point is ignored: disk layers already seek via TIndexManager
          (hashed), so there is no head-scan to avoid (#257). */
-      virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
+      std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
-      virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
+      std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
 
-      inline virtual TKind GetKind() const override;
+      [[nodiscard]] TKind GetKind() const noexcept override;
 
-      inline size_t GetGenId() const;
+      [[nodiscard]] size_t GetGenId() const noexcept;
 
-      inline size_t GetNumKeys() const;
+      [[nodiscard]] size_t GetNumKeys() const noexcept;
 
-      inline virtual size_t GetSize() const override;
+      [[nodiscard]] size_t GetSize() const noexcept override;
 
-      inline virtual TSequenceNumber GetLowestSeq() const override;
+      [[nodiscard]] TSequenceNumber GetLowestSeq() const noexcept override;
 
-      inline virtual TSequenceNumber GetHighestSeq() const override;
+      [[nodiscard]] TSequenceNumber GetHighestSeq() const noexcept override;
 
-      virtual void ClearLocalCaches() override;
+      void ClearLocalCaches() override;
 
       /* The tombstone counts of this file's num_keys current keys in the index, made on first
          use and shared by every count that passes over the file, on any runner, for the file's
          life (#749). Reads nothing from disk: the counts fill in as counts read the file. */
-      std::shared_ptr<const Disk::TTombstoneCounts> GetTombstoneCounts(const Base::TUuid &index_id, size_t num_keys) const;
+      [[nodiscard]] std::shared_ptr<const Disk::TTombstoneCounts> GetTombstoneCounts(const Base::TUuid &index_id, size_t num_keys) const;
 
       private:
 
@@ -101,27 +101,27 @@ namespace Orly {
 
     };  // TDiskLayer
 
-    inline L0::TManager::TRepo::TDataLayer::TKind TDiskLayer::GetKind() const {
+    inline L0::TManager::TRepo::TDataLayer::TKind TDiskLayer::GetKind() const noexcept {
       return L0::TManager::TRepo::TDataLayer::Disk;
     }
 
-    inline size_t TDiskLayer::GetGenId() const {
+    inline size_t TDiskLayer::GetGenId() const noexcept {
       return GenId;
     }
 
-    inline size_t TDiskLayer::GetNumKeys() const {
+    inline size_t TDiskLayer::GetNumKeys() const noexcept {
       return NumKeys;
     }
 
-    inline size_t TDiskLayer::GetSize() const {
+    inline size_t TDiskLayer::GetSize() const noexcept {
       return NumKeys;
     }
 
-    inline TSequenceNumber TDiskLayer::GetLowestSeq() const {
+    inline TSequenceNumber TDiskLayer::GetLowestSeq() const noexcept {
       return LowestSeq;
     }
 
-    inline TSequenceNumber TDiskLayer::GetHighestSeq() const {
+    inline TSequenceNumber TDiskLayer::GetHighestSeq() const noexcept {
       return HighestSeq;
     }
 
