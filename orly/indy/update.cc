@@ -116,6 +116,11 @@ shared_ptr<TUpdate> TUpdate::NewUpdate(const TOpByKey &op_by_key, const TKey &me
   return std::shared_ptr<TUpdate>(new TUpdate(op_by_key, metadata, id, state_alloc));
 }
 
+shared_ptr<TUpdate> TUpdate::NewUpdate(const TOpByKey &op_by_key, const vector<TNewEntry> &more, const TKey &metadata, const TKey &id) {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  return std::shared_ptr<TUpdate>(new TUpdate(op_by_key, metadata, id, state_alloc, more));
+}
+
 shared_ptr<TUpdate> TUpdate::ReconstructUpdate(TSequenceNumber seq_num) {
   return std::shared_ptr<TUpdate>(new TUpdate(seq_num));
 }
@@ -178,14 +183,35 @@ TUpdate::TEntry::TEntry(TUpdate *update, const TIndexKey &index_key, const TKey 
   IndexKey.GetKey().GetCore().TrySetStoredHash(GetKey().GetHash());
 }
 
-TUpdate::TUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, void *state_alloc)
+TUpdate::TUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id, void *state_alloc, const vector<TNewEntry> &more)
     : EntryCollection(this),
       MemoryLayerMembership(this, 0UL),
       Metadata(&Suprena, Sabot::State::TAny::TWrapper(metadata.GetCore().NewState(metadata.GetArena(), state_alloc))),
       Id(&Suprena, Sabot::State::TAny::TWrapper(id.GetCore().NewState(id.GetArena(), state_alloc))) {
+  /* EntryCollection is ordered by key alone, and each entry finds its place walking back from
+     the tail, so entries added in key order each append in O(1). op_by_key is ordered by index
+     id first, so across several indexes its order isn't key order, and in that order each entry
+     can walk back past most of those already in: O(N^2) for an update spanning several indexes
+     (#879). So sort them all by key first. The sort is stable, so entries with equal keys (in
+     different indexes) keep the order they'd have been linked in: op_by_key's, then more's. */
+  struct TPending {
+    const TIndexKey *IndexKey;
+    const TKey *Op;
+    TMutator Mutator;
+  };
+  vector<TPending> pending;
+  pending.reserve(op_by_key.size() + more.size());
+  for (const auto &[index_key, op_key] : op_by_key) {
+    pending.push_back({ &index_key, &op_key, TMutator::Assign });
+  }
+  for (const auto &[index_key, op_key, mutator] : more) {
+    pending.push_back({ &index_key, &op_key, mutator });
+  }
+  std::ranges::stable_sort(pending, [](const TKey &lhs, const TKey &rhs) { return lhs < rhs; },
+                           [](const TPending &entry) -> const TKey & { return entry.IndexKey->GetKey(); });
   try {
-    for (const auto &[index_key, op_key] : op_by_key) {
-      new TEntry(this, index_key, op_key, state_alloc);
+    for (const auto &entry : pending) {
+      new TEntry(this, *entry.IndexKey, *entry.Op, state_alloc, entry.Mutator);
     }
   } catch (...) {
     EntryCollection.DeleteEachMember();

@@ -599,6 +599,93 @@ FIXTURE(InsertOrderScaling) {
   std::cout << "  " << (batches - 1) * batch << "\t\t\t" << ms[0].back() << "\t\t" << ms[1].back() << std::endl;
 }
 
+/* #879: an update builds its entries in key order. Its EntryCollection is ordered by key alone,
+   and each entry finds its place walking back from the tail; TOpByKey iterates by index id
+   first, so an update spanning several indexes, linked in that order, walked back over most of
+   its own entries, O(N^2). Print-only: time NewUpdate against linking the same entries one by
+   one in TOpByKey order (what it used to do), over 1, 4 and 8 indexes. "disjoint" gives each
+   index its own key range (as a write touching several key shapes does), in an order unrelated
+   to the index ids; "interleaved" draws every index's keys from one range. Both builds must
+   hold the same keys in the same order. */
+FIXTURE(UpdateBuildScaling) {
+  std::mt19937_64 rng(878);
+  constexpr int64_t num_entries = 4096;
+  std::cout << "  indexes  layout        one by one ms   NewUpdate ms" << std::endl;
+  for (int64_t num_indexes : { 1, 4, 8 }) {
+    for (bool disjoint : { true, false }) {
+      if (num_indexes == 1 && !disjoint) {
+        continue;
+      }
+      vector<Base::TUuid> idx_ids;
+      vector<int64_t> prefix;
+      for (int64_t i = 0; i < num_indexes; ++i) {
+        idx_ids.emplace_back(Base::TUuid::Twister);
+        prefix.push_back(disjoint ? i : 0);
+      }
+      std::ranges::shuffle(prefix, rng);
+      Atom::TSuprena arena;
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      TUpdate::TOpByKey op_by_key;
+      while (static_cast<int64_t>(op_by_key.size()) < num_entries) {
+        const auto i = static_cast<size_t>(rng() % static_cast<uint64_t>(num_indexes));
+        op_by_key.emplace(TIndexKey(idx_ids[i], TKey(make_tuple(prefix[i], static_cast<int64_t>(rng() >> 4)), &arena, state_alloc)),
+                          TKey(int64_t(1), &arena, state_alloc));
+      }
+      const TKey meta(&arena), id(Base::TUuid(Base::TUuid::Best), &arena, state_alloc);
+      auto start = std::chrono::steady_clock::now();
+      auto one_by_one = TUpdate::NewUpdate({}, meta, id);
+      for (const auto &[index_key, op] : op_by_key) {
+        one_by_one->AddEntry(index_key, op);
+      }
+      const double one_by_one_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      start = std::chrono::steady_clock::now();
+      auto built = TUpdate::NewUpdate(op_by_key, meta, id);
+      const double built_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      TUpdate::TEntryCollection::TCursor a(one_by_one->GetEntryCollection()), b(built->GetEntryCollection());
+      int64_t count = 0;
+      for (; a && b; ++a, ++b, ++count) {
+        EXPECT_TRUE(a->GetIndexKey() == b->GetIndexKey());
+      }
+      EXPECT_FALSE(a || b);
+      EXPECT_EQ(count, num_entries);
+      std::cout << "  " << num_indexes << "\t   " << (disjoint ? "disjoint   " : "interleaved") << "   " << one_by_one_ms << "\t   " << built_ms
+                << std::endl;
+    }
+  }
+}
+
+/* #879: NewUpdate with entries that carry their own mutators. Each entry keeps its op and
+   mutator, the collection comes out in key order, and entries with equal keys (in different
+   indexes) keep the order they were given in, op_by_key's before more's, which is where linking
+   them one by one would have put them. */
+FIXTURE(UpdateBuildKeepsMutatorsAndTies) {
+  Atom::TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  const Base::TUuid idx_a(Base::TUuid::Twister), idx_b(Base::TUuid::Twister), idx_c(Base::TUuid::Twister);
+  auto key = [&](const Base::TUuid &idx, int64_t k) { return TIndexKey(idx, TKey(make_tuple(k), &arena, state_alloc)); };
+  auto op = [&](int64_t v) { return TKey(v, &arena, state_alloc); };
+  TUpdate::TOpByKey op_by_key{ { key(idx_a, 5), op(50) }, { key(idx_a, 2), op(20) }, { key(idx_b, 5), op(51) }, { key(idx_b, 1), op(10) } };
+  vector<TUpdate::TNewEntry> more{ { key(idx_c, 5), op(52), TMutator::Add }, { key(idx_c, 3), op(30), TMutator::Add } };
+  auto update = TUpdate::NewUpdate(op_by_key, more, TKey(&arena), TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc));
+  /* The idx_a/idx_b tie at 5 keeps op_by_key's order, which is by index id. */
+  const bool a_first = idx_a < idx_b;
+  const vector<std::tuple<int64_t, int64_t, TMutator>> expected{ { 1, 10, TMutator::Assign },
+                                                                  { 2, 20, TMutator::Assign },
+                                                                  { 3, 30, TMutator::Add },
+                                                                  { 5, a_first ? 50 : 51, TMutator::Assign },
+                                                                  { 5, a_first ? 51 : 50, TMutator::Assign },
+                                                                  { 5, 52, TMutator::Add } };
+  vector<std::tuple<int64_t, int64_t, TMutator>> actual;
+  for (TUpdate::TEntryCollection::TCursor csr(update->GetEntryCollection()); csr; ++csr) {
+    std::tuple<int64_t> k;
+    int64_t v;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(csr->GetKey().GetState(state_alloc)), k);
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(csr->GetOp().NewState(&csr->GetSuprena(), state_alloc)), v);
+    actual.emplace_back(std::get<0>(k), v, csr->GetMutator());
+  }
+  EXPECT_TRUE(actual == expected);
+}
+
 #if 0
 FIXTURE(Range) {
   TMemoryLayer layer(nullptr);
