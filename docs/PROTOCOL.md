@@ -312,6 +312,10 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
 
+A POV's TTL (`set ttl`) is an idle lease: it starts counting when the last client lets go of
+the POV. Server downtime doesn't count against a POV's TTL: a POV restored by WAL recovery gets
+its full TTL from the moment recovery completes.
+
 ### Write receipts (#750)
 
 `try {pov} pkg method <args> <{.receipt: true}>;` adds a top-level `receipt` to the reply

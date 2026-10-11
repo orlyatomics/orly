@@ -1877,6 +1877,9 @@ void TServer::Init() {
               syslog(LOG_WARNING, "WAL recovery: not restoring pov %s; its parent has no Pov record", Base::AsStr(pov_id).c_str());
               continue;
             }
+            /* Downtime doesn't count against a pov's TTL: a restored pov gets its full TTL from the
+               moment recovery completes.  A TTL is an idle lease (its deadline is set when the last
+               pointer closes), and the Pov record holds no deadline to resume from anyway (#858). */
             auto pov_ttl = std::chrono::seconds(pov.TtlSec);
             RepoManager->GetRepo(pov_id, pov_ttl, parent_repo, pov.Policy == static_cast<char>(TPov::TPolicy::Safe), true);
             try {
