@@ -95,9 +95,9 @@ namespace Orly {
         NO_COPY(TView);
         public:
 
-        TView(const L0::TManager::TPtr<TRepo> &repo);
+        explicit TView(const L0::TManager::TPtr<TRepo> &repo);
 
-        TView(TRepo *repo);
+        explicit TView(TRepo *repo);
 
         /* Tag selecting the snapshot ctor below. */
         struct TDataLockHeld final {};
@@ -117,18 +117,18 @@ namespace Orly {
         ~TView();
 
         /* The pinned snapshot of the live memtable. */
-        const TMemoryLayer *GetCurMem() const;
+        [[nodiscard]] const TMemoryLayer *GetCurMem() const noexcept;
 
         /* The pinned snapshot of the disk-layer set; iterate its entry
            collection to get one TDataLayer per disk file. */
-        const TMapping *GetMapping() const;
+        [[nodiscard]] const TMapping *GetMapping() const noexcept;
 
         /* Count of mapping entries (disk layers); used to size the walker merge
            structures (+1 for the memtable). */
-        inline size_t GetNumEntries() const;
+        [[nodiscard]] inline size_t GetNumEntries() const noexcept;
 
         /* The mapping's disk layers and memory layers (#701). */
-        inline void CountLayers(size_t &disk_layers, size_t &mem_layers) const;
+        inline void CountLayers(size_t &disk_layers, size_t &mem_layers) const noexcept;
 
         /* Call cb with each layer a walk of this view reads: the mapping's, then the memtable
            (#749). */
@@ -141,24 +141,24 @@ namespace Orly {
         }
 
         /* The repo's NextUpdate as of the snapshot. */
-        inline TSequenceNumber GetNextId() const {
+        [[nodiscard]] inline TSequenceNumber GetNextId() const noexcept {
           return NextId;
         }
 
         /* Oldest in-window sequence number (LowestSeqNum at snapshot), or unset
            if the repo was empty -- walkers bail when either bound is unset. */
-        const std::optional<TSequenceNumber> &GetLower() const;
+        [[nodiscard]] const std::optional<TSequenceNumber> &GetLower() const noexcept;
 
         /* Newest in-window sequence number (HighestSeqNum at snapshot, clamped to the version read at, if any). */
-        const std::optional<TSequenceNumber> &GetUpper() const;
+        [[nodiscard]] const std::optional<TSequenceNumber> &GetUpper() const noexcept;
 
         /* The version this view reads at, or unset for a read of now (#745). */
-        const std::optional<TSequenceNumber> &GetAt() const {
+        [[nodiscard]] const std::optional<TSequenceNumber> &GetAt() const noexcept {
           return At;
         }
 
         /* HighestSeqNum at snapshot, never clamped: the newest version there is to read (#745). */
-        const std::optional<TSequenceNumber> &GetNewest() const {
+        [[nodiscard]] const std::optional<TSequenceNumber> &GetNewest() const noexcept {
           return Newest;
         }
 
@@ -169,13 +169,13 @@ namespace Orly {
         void Snapshot();
 
         /* The repo this is a snapshot of. */
-        TRepo *Repo;
+        TRepo *Repo = nullptr;
 
         /* Pinned (Incr'd) live memtable at snapshot time. */
-        TMemoryLayer *CurrentMemoryLayer;
+        TMemoryLayer *CurrentMemoryLayer = nullptr;
 
         /* Pinned (Incr'd) disk-layer set at snapshot time. */
-        TMapping *Mapping;
+        TMapping *Mapping = nullptr;
 
         /* Snapshot of LowestSeqNum / HighestSeqNum -- the sequence-number
            window the walkers filter each item against. */
@@ -184,7 +184,7 @@ namespace Orly {
         std::optional<TSequenceNumber> UpperBound;
 
         /* Snapshot of NextUpdate. */
-        TSequenceNumber NextId;
+        TSequenceNumber NextId = 0UL;
 
         /* See GetAt and GetNewest. */
         std::optional<TSequenceNumber> At;
@@ -202,19 +202,19 @@ namespace Orly {
          (HighestSeqNum - LowestSeqNum + 1), or 0 if empty / bounds unset. This
          is the global-merge backlog depth for a Tetris child; read under
          DataLock. Used by write backpressure (#234) to pace accept to promote. */
-      inline size_t GetMemBacklogDepth();
+      [[nodiscard]] inline size_t GetMemBacklogDepth();
 
       /* True if Tetris is promoting this repo's memtable backlog to its parent, so the backlog
          drains: the repo has a parent and is in the parent's Tetris. False for a root, and for a
          paused or failed repo, which leaves its parent's Tetris and keeps its backlog until it
          is unpaused (#626). */
-      inline bool IsBacklogDraining();
+      [[nodiscard]] inline bool IsBacklogDraining();
 
       /* How many entries the un-promoted updates of GetMemBacklogDepth hold (#628). A batch is
          one update with an entry per write, and the memory merge copies entries, so this is the
          cost the writer backpressure caps. 0 for a root (nothing promotes it) and while the count
          is unknown (see BacklogEntriesKnown). */
-      inline size_t GetMemBacklogEntries();
+      [[nodiscard]] inline size_t GetMemBacklogEntries();
 
       /* A writer's room in this repo's backlog, held from before it commits until after its
          update is in the backlog (#721). The writer backpressure used to check the backlog cap
@@ -240,9 +240,9 @@ namespace Orly {
            alone gets room once the backlog holds no entries; while it waits, smaller writes
            get none, so they can't keep the backlog from ever emptying. Returns false, and holds
            nothing new, if there is no room. */
-        bool TryReserve(size_t update_cap, size_t entry_cap, size_t num_entries);
+        [[nodiscard]] bool TryReserve(size_t update_cap, size_t entry_cap, size_t num_entries);
 
-        bool IsReserved() const {
+        [[nodiscard]] bool IsReserved() const noexcept {
           return Reserved;
         }
 
@@ -251,13 +251,13 @@ namespace Orly {
            join to its parent's Tetris was deferred under memory pressure, which only its next
            AppendUpdate retries (#250). A paused or failed repo is not undrainable here; its
            caller refuses writes to it. */
-        bool IsUndrainable() const {
+        [[nodiscard]] bool IsUndrainable() const noexcept {
           return Undrainable;
         }
 
         private:
 
-        TRepo *Repo;
+        TRepo *Repo = nullptr;
 
         size_t NumEntries = 0UL;
 
@@ -272,11 +272,11 @@ namespace Orly {
 
       /* The most entries and updates any child repo's backlog has held since startup, after
          an AppendUpdate (#721), for the reporting port. */
-      static size_t GetPeakBacklogEntries() {
+      [[nodiscard]] static size_t GetPeakBacklogEntries() noexcept {
         return PeakBacklogEntries.load();
       }
 
-      static size_t GetPeakBacklogUpdates() {
+      [[nodiscard]] static size_t GetPeakBacklogUpdates() noexcept {
         return PeakBacklogUpdates.load();
       }
 
@@ -285,44 +285,44 @@ namespace Orly {
          see BacklogEntriesKnown). One update is one committed transaction, so this is what a
          stop right now would lose: an update promoted from a POV made `from` another POV is
          counted once, in whichever backlog holds it. A graceful stop logs it. */
-      static size_t GetUnpromotedUpdates() {
+      [[nodiscard]] static size_t GetUnpromotedUpdates() noexcept {
         return UnpromotedUpdates.load();
       }
 
-      static size_t GetUnpromotedEntries() {
+      [[nodiscard]] static size_t GetUnpromotedEntries() noexcept {
         return UnpromotedEntries.load();
       }
 
       /* #769: the updates popped from child repos' backlogs since startup, i.e. promoted one
          level by a committed Tetris transaction. Only ever grows, so a graceful stop can tell
          whether Tetris is still making progress. */
-      static size_t GetPromotedUpdates() {
+      [[nodiscard]] static size_t GetPromotedUpdates() noexcept {
         return PromotedUpdates.load();
       }
 
       /* #769: the unpromoted updates that child repos took with them when they were destroyed
          (an expired POV's, or the server's teardown), since startup. */
-      static size_t GetDroppedUpdates() {
+      [[nodiscard]] static size_t GetDroppedUpdates() noexcept {
         return DroppedUpdates.load();
       }
 
       /* The sequence number of the oldest unpopped update. */
-      inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const;
+      [[nodiscard]] inline const std::optional<TSequenceNumber> &GetSequenceNumberStart() const noexcept;
 
       /* The sequence number of the newest update.
          This is also the total number of updates ever pushed to this repo. */
-      inline const std::optional<TSequenceNumber> &GetSequenceNumberLimit() const;
+      [[nodiscard]] inline const std::optional<TSequenceNumber> &GetSequenceNumberLimit() const noexcept;
 
       /* The sequence number the next update pushed here will take (= NextUpdate). */
-      inline TSequenceNumber GetNextSequenceNumber() const;
+      [[nodiscard]] inline TSequenceNumber GetNextSequenceNumber() const noexcept;
 
       /* Force the NextUpdate counter. Used to seed a fresh child/test repo's
          numbering from its parent so reads fold in the right order. */
-      inline void SetNextSequenceNumber(TSequenceNumber next_id);
+      inline void SetNextSequenceNumber(TSequenceNumber next_id) noexcept;
 
       /* Set the high-water mark of updates already promoted to the parent
          (entries at or below this may be dropped on the next mem/disk merge). */
-      inline void SetReleasedUpTo(TSequenceNumber released_up_to);
+      inline void SetReleasedUpTo(TSequenceNumber released_up_to) noexcept;
 
       /* Drop the self-pin (MakeDirty) that a write takes until its update is released.  For a
          paused repo whose writes will never be promoted -- a compile-time test pov being thrown
@@ -343,21 +343,21 @@ namespace Orly {
       inline void ReleaseUnusedSequenceNumbers(TSequenceNumber next_id);
 
       /* The high-water mark set by SetReleasedUpTo / ReleaseUpdate. */
-      inline TSequenceNumber GetReleasedUpTo() const;
+      [[nodiscard]] inline TSequenceNumber GetReleasedUpTo() const noexcept;
 
       /* The highest sequence number this process knows to be in a data file on disk, the file
          entry included (#750): every update of this repo at or below it survives a crash. Unset
          when none is yet, and always for a repo that never writes disk (a fast repo, or a safe
          one that isn't the global POV's). Advances when a memory merge's file is on disk, and
          starts, on a reload, at the highest sequence number of the files found. */
-      std::optional<TSequenceNumber> GetDurableSequenceNumber() const {
+      [[nodiscard]] std::optional<TSequenceNumber> GetDurableSequenceNumber() const noexcept {
         return ReadDurable(*DurablePlusOne);
       }
 
       /* The oldest version a read at a version may ask for (#745): every version below it may be missing entries,
          because a merge that pruned or folded history has covered it, or because this process loaded its files from
          disk and cannot tell which were. 0 while no history has been dropped. */
-      TSequenceNumber GetHistoryHorizon() const {
+      [[nodiscard]] TSequenceNumber GetHistoryHorizon() const noexcept {
         return HistoryHorizon.load();
       }
 
@@ -373,12 +373,12 @@ namespace Orly {
          it after the repo has been deleted (see TPromotionLog). */
       using TDurableCounter = std::atomic<uint64_t>;
 
-      static std::optional<TSequenceNumber> ReadDurable(const TDurableCounter &counter) {
+      [[nodiscard]] static std::optional<TSequenceNumber> ReadDurable(const TDurableCounter &counter) noexcept {
         const uint64_t value = counter.load(std::memory_order_acquire);
-        return value ? std::optional<TSequenceNumber>(value - 1UL) : std::optional<TSequenceNumber>();
+        return value ? std::optional<TSequenceNumber>(value - 1UL) : std::nullopt;
       }
 
-      const std::shared_ptr<TDurableCounter> &GetDurableCounter() const {
+      [[nodiscard]] const std::shared_ptr<TDurableCounter> &GetDurableCounter() const noexcept {
         return DurablePlusOne;
       }
 
@@ -396,7 +396,7 @@ namespace Orly {
           Drain(parent_durable);
         }
 
-        std::optional<TSequenceNumber> GetDurable(const std::optional<TSequenceNumber> &parent_durable) {
+        [[nodiscard]] std::optional<TSequenceNumber> GetDurable(const std::optional<TSequenceNumber> &parent_durable) {
           std::lock_guard<std::mutex> lock(Mutex);
           Drain(parent_durable);
           return PromotedDurable;
@@ -421,7 +421,7 @@ namespace Orly {
 
       };  // TPromotionLog
 
-      const std::shared_ptr<TPromotionLog> &GetPromotionLog() const {
+      [[nodiscard]] const std::shared_ptr<TPromotionLog> &GetPromotionLog() const noexcept {
         return PromotionLog;
       }
 
@@ -429,13 +429,13 @@ namespace Orly {
          known to be on disk, given the parent's durable sequence number, or unset if none is.
          Only promotions this process made count, so after a restart it can fall short of the
          truth but never exceeds it. */
-      std::optional<TSequenceNumber> GetPromotedDurableSequenceNumber(const std::optional<TSequenceNumber> &parent_durable) {
+      [[nodiscard]] std::optional<TSequenceNumber> GetPromotedDurableSequenceNumber(const std::optional<TSequenceNumber> &parent_durable) {
         return PromotionLog->GetDurable(parent_durable);
       }
 
       /* This repo's parent in the repo tree (mirrors the POV tree), or unset
          for the global root. */
-      virtual inline const TParentRepo &GetParentRepo() const;
+      [[nodiscard]] virtual inline const TParentRepo &GetParentRepo() const noexcept;
 
       /* Ingest an already-prepared memtable as a new data layer. A safe repo
          first flushes it to a disk file (wrapped as a TDiskLayer); a fast repo
@@ -507,7 +507,7 @@ namespace Orly {
 
       void SetOwnForkWatch(const std::shared_ptr<TForkWatch> &watch);
 
-      std::shared_ptr<TForkWatch> GetOwnForkWatch() const;
+      [[nodiscard]] std::shared_ptr<TForkWatch> GetOwnForkWatch() const;
 
       /* Join parent's Tetris merge if we have unpromoted updates and are not already in Tetris (#755). */
       void JoinTetris();
@@ -531,34 +531,34 @@ namespace Orly {
             TSequenceNumber next_update,
             TStatus status);
 
-      virtual ~TRepo();
+      ~TRepo() override;
 
       /* Push an update into the memtable (under DataLock): stamp it with the
          next sequence number, advance HighestSeqNum / set LowestSeqNum, insert
          into CurMemoryLayer, and join the parent's Tetris if not already in it.
          Returns the assigned sequence number. */
       std::optional<TSequenceNumber> AppendUpdate(TUpdate *update, TSequenceNumber &next_update,
-                                                  const Base::TUuid &promoted_from = Base::TUuid()) NO_THROW;
+                                                  const Base::TUuid &promoted_from = Base::TUuid()) noexcept;
 
       /* Drop the oldest unpopped update by advancing LowestSeqNum (under
          DataLock); when the memtable drains, clears the bounds and Parts Tetris.
          Returns the popped sequence number.  A paused repo may be popped too: that is how a
          discard throws its updates away (#746). */
-      std::optional<TSequenceNumber> PopLowest(TSequenceNumber &next_update) NO_THROW;
+      std::optional<TSequenceNumber> PopLowest(TSequenceNumber &next_update) noexcept;
 
       /* Reconstruct the single oldest-unpopped update (the one Tetris Peeks to
          promote to the parent). Holds DataLock across the whole walk (#237). */
-      std::shared_ptr<TUpdate> GetLowestUpdate();
+      [[nodiscard]] std::shared_ptr<TUpdate> GetLowestUpdate();
 
       /* Flip the repo's status (Normal / Paused / Failed) and join or Part the
          parent's Tetris accordingly. */
-      std::optional<TSequenceNumber> ChangeStatus(TStatus, TSequenceNumber &next_update) NO_THROW;
+      std::optional<TSequenceNumber> ChangeStatus(TStatus, TSequenceNumber &next_update) noexcept;
 
       /* Mem-merge step: seal CurMemoryLayer into the mapping and start a fresh
          one, then consolidate the trailing memtables. The parentless safe root
          flushes the result to a new disk file; child / fast repos keep it in
          memory, dropping entries already released to the parent. */
-      virtual void StepMergeMem() override;
+      void StepMergeMem() override;
 
       /* Disk-merge step: compact adjacent same-generation disk files. Only
          TSafeRepo has disk files; TFastRepo asserts it is never called. */
@@ -574,13 +574,13 @@ namespace Orly {
          nothing (taken-ness only removes candidates), and every state change that could make a
          pair mergeable again is a mapping install whose site re-runs this gate, so skipping the
          enqueue can never strand a mergeable mapping. */
-      bool HasDiskMergeCandidate(TMapping *mapping) const;
+      [[nodiscard]] bool HasDiskMergeCandidate(TMapping *mapping) const;
 
       /* Copy-on-write a new data layer into the mapping; returns the layer count. */
       size_t AddMapping(TDataLayer *layer);
 
       /* Pin (Incr) the current mapping so a reader can hold it across a walk. */
-      TMapping *AcquireCurrentMapping();
+      [[nodiscard]] TMapping *AcquireCurrentMapping();
 
       /* Unpin (Decr) a mapping acquired via AcquireCurrentMapping. */
       void ReleaseMapping(TMapping *mapping);
@@ -665,16 +665,16 @@ namespace Orly {
                        bool ignore_tombstone,
                        bool exact_point);
 
-        inline virtual ~TPresentWalker() {}
+        ~TPresentWalker() override = default;
 
         /* True iff. we have an item. */
-        inline virtual operator bool() const;
+        [[nodiscard]] explicit operator bool() const noexcept override;
 
         /* The current item. */
-        inline virtual const TItem &operator*() const;
+        [[nodiscard]] const TItem &operator*() const noexcept override;
 
         /* Walk to the next item, if any. */
-        inline virtual TPresentWalker &operator++();
+        TPresentWalker &operator++() override;
 
         private:
 
@@ -691,7 +691,7 @@ namespace Orly {
 
         /* True iff a walk of the view reads `layer`: one whose every entry is newer than the version the view reads at
            cannot contribute and is passed over (#745). */
-        bool Reads(const TDataLayer *layer) const;
+        [[nodiscard]] bool Reads(const TDataLayer *layer) const noexcept;
 
         /* A fiber task that builds some layers' sub-walkers (see
            BuildLayerWalkers) on a frame from the local frame pool, and signals
@@ -712,8 +712,7 @@ namespace Orly {
             throw std::logic_error("Moving TRunnablePrep is not allowed. This means you did not pre-allocate enough space to hold them.");
           }
 
-          virtual ~TRunnablePrep() {
-          }
+          virtual ~TRunnablePrep() = default;
 
           /* Take a frame and start this task on it, adding it to the barrier.
              False if the frame pool is empty: nothing was started, and the
@@ -745,7 +744,7 @@ namespace Orly {
           }
 
           /* The exception the build threw, if any. */
-          const std::exception_ptr &GetError() const {
+          [[nodiscard]] const std::exception_ptr &GetError() const noexcept {
             return Error;
           }
 
@@ -818,7 +817,7 @@ namespace Orly {
         Util::TMinHeap<TItem, size_t> MinHeap;
 
         /* True while the heap still has items to yield. */
-        bool Valid;
+        bool Valid = false;
 
         /* The current item (lazily refreshed; mutable for the const accessors). */
         mutable TItem Item;
@@ -848,16 +847,16 @@ namespace Orly {
                       TSequenceNumber from,
                       const std::optional<TSequenceNumber> &to);
 
-        virtual ~TUpdateWalker();
+        ~TUpdateWalker() override;
 
         /* True iff. we have an item. */
-        virtual operator bool() const;
+        [[nodiscard]] explicit operator bool() const noexcept override;
 
         /* The current item. */
-        virtual const Indy::TUpdateWalker::TItem &operator*() const;
+        [[nodiscard]] const Indy::TUpdateWalker::TItem &operator*() const override;
 
         /* Walk to the next item, if any. */
-        virtual TUpdateWalker &operator++();
+        TUpdateWalker &operator++() override;
 
         private:
 
@@ -875,12 +874,12 @@ namespace Orly {
         std::unordered_map<const TDataLayer *, std::pair<std::unique_ptr<Indy::TUpdateWalker>, size_t>> WalkerMap;
 
         /* Orders the per-layer sub-walkers by lowest current sequence number,
-           backed by the SorterAlloc element array. */
+            backed by the SorterAlloc element array. */
         Util::TMergeSorter<TSequenceNumber, const TDataLayer *> MergeSorter;
         Util::TMergeSorter<TSequenceNumber, const TDataLayer *>::TMergeElement *SorterAlloc;
 
         /* True while the sorter still has updates to yield. */
-        bool Valid;
+        bool Valid = false;
 
         /* The current update (mutable for the const accessors). */
         mutable TItem Item;
@@ -946,7 +945,7 @@ namespace Orly {
       protected:
 
       /* Manager GC hook: visit the parent-repo pointer so it is kept reachable. */
-      virtual bool ForEachDependentPtr(const std::function<bool (L0::TManager::TAnyPtr &)> &cb) noexcept override {
+      bool ForEachDependentPtr(const std::function<bool (L0::TManager::TAnyPtr &)> &cb) noexcept override {
         if (ParentRepo) {
           cb(*ParentRepo);
         }
@@ -997,15 +996,15 @@ namespace Orly {
          commits, and a round that peeks later sees the pause (or, once it has committed, no
          longer has the repo as a child).  Plain atomics, not a lock: the hold is taken with
          the player's mutex held, and the pause's commit takes that mutex (Part -> OnPart). */
-      inline bool TryHoldForPromotion() NO_THROW;
+      [[nodiscard]] inline bool TryHoldForPromotion() noexcept;
 
-      inline void ReleasePromotionHold() NO_THROW;
+      inline void ReleasePromotionHold() noexcept;
 
-      inline void BeginPause() NO_THROW;
+      inline void BeginPause() noexcept;
 
-      inline bool IsHeldForPromotion() const NO_THROW;
+      [[nodiscard]] inline bool IsHeldForPromotion() const noexcept;
 
-      inline void EndPause() NO_THROW;
+      inline void EndPause() noexcept;
 
       /* Promotion holds currently taken, and pauses registered (see above). */
       std::atomic<size_t> PromotionHoldCount;
@@ -1040,26 +1039,26 @@ namespace Orly {
                 TSequenceNumber next_update,
                 TStatus status);
 
-      virtual ~TFastRepo();
+      ~TFastRepo() override;
 
       private:
 
       /* false -- a fast repo is memory-only. */
-      virtual bool IsSafeRepo() const override;
+      [[nodiscard]] bool IsSafeRepo() const noexcept override;
 
       /* Unreachable: a fast repo has no disk files. Asserts false. */
-      virtual void StepMergeDisk(size_t block_slots_available) override;
+      void StepMergeDisk(size_t block_slots_available) override;
 
       /* Unreachable: a fast repo has no disk tail. Asserts false. */
-      virtual void StepTail(size_t block_slots_available) override;
+      void StepTail(size_t block_slots_available) override;
 
       /* Unreachable: a fast repo cannot host synced files. Throws. */
-      virtual size_t AddSyncedFileToRepo(size_t starting_block_id,
-                                         size_t starting_block_offset,
-                                         size_t file_length,
-                                         TSequenceNumber low_saved,
-                                         TSequenceNumber high_saved,
-                                         size_t num_keys) override;
+      size_t AddSyncedFileToRepo(size_t starting_block_id,
+                                 size_t starting_block_offset,
+                                 size_t file_length,
+                                 TSequenceNumber low_saved,
+                                 TSequenceNumber high_saved,
+                                 size_t num_keys) override;
 
     };  // TFastRepo
 
@@ -1087,14 +1086,14 @@ namespace Orly {
                 TSequenceNumber next_update,
                 TStatus status);
 
-      virtual ~TSafeRepo();
+      ~TSafeRepo() override;
 
       /* Compact adjacent same-generation disk files into one new file. At the root, the
          merge also drops superseded versions (#592). */
-      virtual void StepMergeDisk(size_t block_slots_available) override;
+      void StepMergeDisk(size_t block_slots_available) override;
 
       /* Trim the oldest disk generation below the release horizon (root only). */
-      virtual void StepTail(size_t block_slots_available) override;
+      void StepTail(size_t block_slots_available) override;
 
       /* Rebuild a TSafeRepo from its on-disk generation files (static factory). */
       static TSafeRepo *ReConstructFromDisk(L0::TManager *manager,
@@ -1104,7 +1103,7 @@ namespace Orly {
       protected:
 
       /* Allocate the next monotonic generation id (++NextGenId). */
-      inline size_t GetNextGenId();
+      [[nodiscard]] inline size_t GetNextGenId() noexcept;
 
       /* Test only. When false, MergeFiles keeps a merge's output unfolded, `+=` history and all,
          so a test can read a TMergeDataFile back directly (#666). Nothing else serves one. */
@@ -1113,7 +1112,7 @@ namespace Orly {
       private:
 
       /* true -- a safe repo is disk-backed. */
-      virtual bool IsSafeRepo() const override;
+      [[nodiscard]] bool IsSafeRepo() const noexcept override;
 
       /* Merge the given disk generations into one new file. Two-phase: a raw
          merge, then a commutative fold (TFoldDataFile) if any non-Assign entries
@@ -1122,16 +1121,16 @@ namespace Orly {
          root. The callers check their own flags: --allow_tailing for StepTail,
          --prune_merge_history for StepMergeDisk. release_up_to plays no part in
          either. Returns the new generation id. */
-      virtual size_t MergeFiles(const std::vector<size_t> &gen_id_vec,
-                                Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
-                                size_t max_block_cache_read_slots_allowed,
-                                size_t temp_file_consol_thresh,
-                                TSequenceNumber &out_saved_low_seq,
-                                TSequenceNumber &out_saved_high_seq,
-                                size_t &out_num_keys,
-                                TSequenceNumber release_up_to,
-                                bool can_tail,
-                                bool can_tail_tombstone) override;
+      size_t MergeFiles(const std::vector<size_t> &gen_id_vec,
+                        Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
+                        size_t max_block_cache_read_slots_allowed,
+                        size_t temp_file_consol_thresh,
+                        TSequenceNumber &out_saved_low_seq,
+                        TSequenceNumber &out_saved_high_seq,
+                        size_t &out_num_keys,
+                        TSequenceNumber release_up_to,
+                        bool can_tail,
+                        bool can_tail_tombstone) override;
 
       /* Make the mapping with merged_layer in place of input_layers current, and mark the inputs
          for delete (#627). The inputs must be taken and in the current mapping. If an allocation
@@ -1146,42 +1145,42 @@ namespace Orly {
 
       /* Reclaim a generation file's blocks, first dropping its per-scheduler
          caches on every runner unless the caller already has. */
-      virtual void RemoveFile(size_t gen_id, bool caches_cleared) override;
+      void RemoveFile(size_t gen_id, bool caches_cleared) override;
 
       /* Drop the calling runner's cached readers/walkers for a file. */
-      virtual void ClearLocalFileCaches(size_t gen_id) override;
+      void ClearLocalFileCaches(size_t gen_id) override;
 
       /* Serialize a memtable to a new on-disk generation file; returns its
          generation id (and, by reference, its saved sequence range / key count). */
-      virtual size_t WriteFile(TMemoryLayer *memory_layer,
-                               Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
-                               TSequenceNumber &out_saved_low_seq,
-                               TSequenceNumber &out_saved_high_seq,
-                               size_t &out_num_keys,
-                               TSequenceNumber release_up_to) override;
+      size_t WriteFile(TMemoryLayer *memory_layer,
+                       Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
+                       TSequenceNumber &out_saved_low_seq,
+                       TSequenceNumber &out_saved_high_seq,
+                       size_t &out_num_keys,
+                       TSequenceNumber release_up_to) override;
 
       /* Register a replication-synced file: allocate a gen_id, hand the blocks to
          the disk engine, then AddFileToRepo it. */
-      virtual size_t AddSyncedFileToRepo(size_t starting_block_id,
-                                         size_t starting_block_offset,
-                                         size_t file_length,
-                                         TSequenceNumber low_saved,
-                                         TSequenceNumber high_saved,
-                                         size_t num_keys) override;
+      size_t AddSyncedFileToRepo(size_t starting_block_id,
+                                 size_t starting_block_offset,
+                                 size_t file_length,
+                                 TSequenceNumber low_saved,
+                                 TSequenceNumber high_saved,
+                                 size_t num_keys) override;
 
       /* Open a present-walker over a single on-disk generation file (range). */
-      virtual std::unique_ptr<Orly::Indy::TPresentWalker> NewPresentWalkerFile(size_t /*gen_id*/,
-                                                                               const TIndexKey &/*from*/,
-                                                                               const TIndexKey &/*to*/,
-                                                                               std::optional<TSequenceNumber> /*at*/ = std::nullopt) const override;
+      std::unique_ptr<Orly::Indy::TPresentWalker> NewPresentWalkerFile(size_t /*gen_id*/,
+                                                                       const TIndexKey &/*from*/,
+                                                                       const TIndexKey &/*to*/,
+                                                                       std::optional<TSequenceNumber> /*at*/ = std::nullopt) const override;
 
       /* Open a present-walker over a single on-disk generation file (single key). */
-      virtual std::unique_ptr<Orly::Indy::TPresentWalker> NewPresentWalkerFile(size_t /*gen_id*/,
-                                                                               const TIndexKey &/*key*/,
-                                                                               std::optional<TSequenceNumber> /*at*/ = std::nullopt) const override;
+      std::unique_ptr<Orly::Indy::TPresentWalker> NewPresentWalkerFile(size_t /*gen_id*/,
+                                                                       const TIndexKey &/*key*/,
+                                                                       std::optional<TSequenceNumber> /*at*/ = std::nullopt) const override;
 
       /* Open an update-walker over a single on-disk generation file. */
-      virtual std::unique_ptr<Orly::Indy::TUpdateWalker> NewUpdateWalkerFile(size_t /*gen_id*/, TSequenceNumber /*from*/) const override;
+      std::unique_ptr<Orly::Indy::TUpdateWalker> NewUpdateWalkerFile(size_t /*gen_id*/, TSequenceNumber /*from*/) const override;
 
       /* The monotonic generation-id counter (seeded from the highest existing
          file generation at construction). */
@@ -1196,13 +1195,13 @@ namespace Orly {
       *** inline ***
       *************/
 
-    inline size_t TRepo::TView::GetNumEntries() const {
+    inline size_t TRepo::TView::GetNumEntries() const noexcept {
       size_t count = 0UL;
       for (TMapping::TEntryCollection::TCursor mapping_csr(Mapping->GetEntryCollection()); mapping_csr; ++mapping_csr, ++count) {}
       return count;
     }
 
-    inline void TRepo::TView::CountLayers(size_t &disk_layers, size_t &mem_layers) const {
+    inline void TRepo::TView::CountLayers(size_t &disk_layers, size_t &mem_layers) const noexcept {
       disk_layers = 0UL;
       mem_layers = 0UL;
       for (TMapping::TEntryCollection::TCursor mapping_csr(Mapping->GetEntryCollection()); mapping_csr; ++mapping_csr) {
@@ -1219,7 +1218,7 @@ namespace Orly {
       next_seq_num = NextUpdate;
     }
 
-    inline bool TRepo::TryHoldForPromotion() NO_THROW {
+    inline bool TRepo::TryHoldForPromotion() noexcept {
       /* Dekker-style with BeginPause/IsHeldForPromotion, so both sides are seq_cst: either we
          see the pause and back out, or the pause sees our hold and waits for it. */
       if (PauseCount.load()) {
@@ -1233,20 +1232,20 @@ namespace Orly {
       return true;
     }
 
-    inline void TRepo::ReleasePromotionHold() NO_THROW {
+    inline void TRepo::ReleasePromotionHold() noexcept {
       assert(PromotionHoldCount.load());
       --PromotionHoldCount;
     }
 
-    inline void TRepo::BeginPause() NO_THROW {
+    inline void TRepo::BeginPause() noexcept {
       ++PauseCount;
     }
 
-    inline bool TRepo::IsHeldForPromotion() const NO_THROW {
+    inline bool TRepo::IsHeldForPromotion() const noexcept {
       return PromotionHoldCount.load() != 0UL;
     }
 
-    inline void TRepo::EndPause() NO_THROW {
+    inline void TRepo::EndPause() noexcept {
       assert(PauseCount.load());
       --PauseCount;
     }
@@ -1269,23 +1268,23 @@ namespace Orly {
       return BacklogEntriesKnown ? BacklogEntries : 0UL;
     }
 
-    inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const {
+    inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberStart() const noexcept {
       return LowestSeqNum;
     }
 
-    inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberLimit() const {
+    inline const std::optional<TSequenceNumber> &TRepo::GetSequenceNumberLimit() const noexcept {
       return HighestSeqNum;
     }
 
-    inline TSequenceNumber TRepo::GetNextSequenceNumber() const {
+    inline TSequenceNumber TRepo::GetNextSequenceNumber() const noexcept {
       return NextUpdate;
     }
 
-    inline void TRepo::SetNextSequenceNumber(TSequenceNumber next_id) {
+    inline void TRepo::SetNextSequenceNumber(TSequenceNumber next_id) noexcept {
       NextUpdate = next_id;
     }
 
-    inline void TRepo::SetReleasedUpTo(TSequenceNumber released_up_to) {
+    inline void TRepo::SetReleasedUpTo(TSequenceNumber released_up_to) noexcept {
       ReleasedUpTo = released_up_to;
     }
 
@@ -1313,19 +1312,19 @@ namespace Orly {
       return starting;
     }
 
-    inline TSequenceNumber TRepo::GetReleasedUpTo() const {
+    inline TSequenceNumber TRepo::GetReleasedUpTo() const noexcept {
       return ReleasedUpTo;
     }
 
-    inline const TRepo::TParentRepo &TRepo::GetParentRepo() const {
+    inline const TRepo::TParentRepo &TRepo::GetParentRepo() const noexcept {
       return ParentRepo;
     }
 
-    inline TRepo::TPresentWalker::operator bool() const {
+    inline TRepo::TPresentWalker::operator bool() const noexcept {
       return Valid;
     }
 
-    inline const TPresentWalker::TItem &TRepo::TPresentWalker::operator*() const {
+    inline const TPresentWalker::TItem &TRepo::TPresentWalker::operator*() const noexcept {
       assert(Valid);
       return Item;
     }
@@ -1400,7 +1399,7 @@ namespace Orly {
       }
     }
 
-    inline size_t TSafeRepo::GetNextGenId() {
+    inline size_t TSafeRepo::GetNextGenId() noexcept {
       return ++NextGenId;
     }
 
