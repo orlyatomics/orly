@@ -2697,6 +2697,17 @@ void TServer::CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const {
   }
 }
 
+void TServer::GetGlobalWriteVolume(size_t &flush_bytes, size_t &merge_bytes, size_t &logical_bytes) const {
+  flush_bytes = 0UL;
+  merge_bytes = 0UL;
+  logical_bytes = 0UL;
+  if (GlobalRepo) {
+    flush_bytes = GlobalRepo->GetFlushBytes();
+    merge_bytes = GlobalRepo->GetMergeBytes();
+    logical_bytes = GlobalRepo->GetLogicalBytes();
+  }
+}
+
 void TServer::CheckMemoryAdmission(TUpdate::TWriteAdmission &admission, size_t num_entries, bool may_wait) {
   /* Again here, the last check before the commit: a write can wait a while between
      CheckWriteAdmission and this, for room in its POV's backlog (#769). */
@@ -4442,6 +4453,13 @@ void TIndyReporter::AddReport(std::stringstream &ss) const {
     size_t disk_layers, mem_layers;
     Server->CountGlobalLayers(disk_layers, mem_layers);
     ss << "Global Layers = disk " << disk_layers << "; memory " << mem_layers << endl;
+  }
+  /* Write amplification counters (#857). */ {
+    size_t flush_bytes, merge_bytes, logical_bytes;
+    Server->GetGlobalWriteVolume(flush_bytes, merge_bytes, logical_bytes);
+    ss << "Global Write Volume = flush " << flush_bytes
+       << "; merge " << merge_bytes
+       << "; logical " << logical_bytes << endl;
   }
   /* Integrity Scrub (#748) */ {
     ss << "Integrity Scrub = ";

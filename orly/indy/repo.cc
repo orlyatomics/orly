@@ -527,6 +527,8 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
     bool was_empty = CurMemoryLayer->IsEmpty();
     const size_t size_before = CurMemoryLayer->GetSize();
     CurMemoryLayer->Insert(update);
+    /* #857: count the update's logical bytes (key plus value bytes). */
+    AddLogicalBytes(update->ComputeLogicalBytes());
     /* #628: count the update's entries for the writer backpressure. Only a child's backlog is
        ever popped, so a root doesn't keep counts. */
     if (ParentRepo && BacklogEntriesKnown) {
@@ -2247,6 +2249,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     if (my_can_tail) {
       RaiseHistoryHorizon(out_saved_high_seq);
     }
+    /* #857: count bytes written to disk in this merge. */
+    AddMergeBytes(merge_data_file.GetFileLength());
     return intermediate_gen_id;
   }
   /* Phase B (#55): fold same-mutator commutative runs in the just-merged
@@ -2269,6 +2273,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     if (my_can_tail) {
       RaiseHistoryHorizon(out_saved_high_seq);
     }
+    /* #857: count bytes written to disk in this merge. */
+    AddMergeBytes(merge_data_file.GetFileLength());
     return intermediate_gen_id;
   };
   /* #858: so the fold claims all of that before it allocates any of it, and leaves the pools'
@@ -2282,11 +2288,13 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     return keep_unfolded();
   }
   size_t final_gen_id = GetNextGenId();
+  size_t fold_file_length = 0UL;
   try {
     TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh, &fold_claim);
     out_num_keys = fold_data_file.GetNumKeys();
     out_saved_low_seq = fold_data_file.GetLowestSequence();
     out_saved_high_seq = fold_data_file.GetHighestSequence();
+    fold_file_length = fold_data_file.GetFileLength();
   } catch (const std::bad_alloc &) {
     /* The claim should prevent this, but a key count can be short of what the fold emits. The
        fold's own output freed itself (TDataFile, before the file map has it). */
@@ -2307,6 +2315,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   /* The fold leaves each key one entry, its value as of the newest version merged, so older versions are gone
      (#745). The caller publishes the file after this returns. */
   RaiseHistoryHorizon(out_saved_high_seq);
+  /* #857: count bytes written to disk in this merge (Phase A intermediate + Phase B final). */
+  AddMergeBytes(merge_data_file.GetFileLength() + fold_file_length);
   return final_gen_id;
 }
 
@@ -2382,6 +2392,8 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
   out_num_keys = data_file.GetNumKeys();
   out_saved_low_seq = data_file.GetLowestSequence();
   out_saved_high_seq = data_file.GetHighestSequence();
+  /* #857: count bytes written to disk in this memtable flush. */
+  AddFlushBytes(data_file.GetFileLength());
   /* TDataFile has synced the file and waited for its entry to be written. */
   NoteDurable(out_saved_high_seq);
   if (retention) {

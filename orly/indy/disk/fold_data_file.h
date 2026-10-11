@@ -100,11 +100,16 @@ namespace Orly {
           return HighestSeq;
         }
 
+        [[nodiscard]] inline size_t GetFileLength() const noexcept {
+          return FileLength;
+        }
+
         private:
 
         size_t NumKeys;
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
+        size_t FileLength = 0UL;
 
       };  // TFoldDataFile
 

@@ -79,6 +79,10 @@ namespace Orly {
           return HighestSeq;
         }
 
+        [[nodiscard]] inline size_t GetFileLength() const noexcept {
+          return FileLength;
+        }
+
         /* Test only. When true, a merge writes every input's copy of an equal note into its output
            arena, as release merges did before #666 whenever the copies' unused header bits held
            different garbage. A test sets it to build such a file (#674). Nothing else does. */
@@ -90,6 +94,7 @@ namespace Orly {
         size_t NumNonAssignEntries = 0UL;
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
+        size_t FileLength = 0UL;
 
       };  // TMergeDataFile
 

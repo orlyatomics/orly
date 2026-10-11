@@ -1051,6 +1051,9 @@ namespace Orly {
       /* The global repo's disk files and memory layers, for the reporter (#701). */
       void CountGlobalLayers(size_t &disk_layers, size_t &mem_layers) const;
 
+      /* Query global repo write volume counters (flush, merge, logical; #857). */
+      void GetGlobalWriteVolume(size_t &flush_bytes, size_t &merge_bytes, size_t &logical_bytes) const;
+
       Orly::Indy::L0::TManager::TPtr<Indy::TRepo> GlobalRepo;
 
       /* Written by StateChangeCb, read by RPC handlers (BeginImport's solo

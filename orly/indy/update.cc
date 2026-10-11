@@ -228,3 +228,11 @@ TUpdate::TUpdate(TSequenceNumber seq_num)
 TUpdate::~TUpdate() {
   EntryCollection.DeleteEachMember();
 }
+
+size_t TUpdate::ComputeLogicalBytes() const noexcept {
+  size_t count = 0UL;
+  for (TEntryCollection::TCursor csr(&EntryCollection); csr; ++csr) {
+    ++count;
+  }
+  return count * (sizeof(Atom::TCore) + sizeof(Atom::TCore)) + Suprena.GetByteSize();
+}

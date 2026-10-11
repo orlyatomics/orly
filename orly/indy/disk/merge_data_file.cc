@@ -2126,6 +2126,10 @@ class TMergeDataFileImpl {
     return HighestSeq;
   }
 
+  inline size_t GetFileLength() const noexcept {
+    return FileLength;
+  }
+
   private:
 
   class TSortedKey {
@@ -2883,12 +2887,14 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
+      FileLength = merge_file.GetFileLength();
     } else {
       TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
+      FileLength = merge_file.GetFileLength();
     }
   } else {
     TMergeDataFileImpl<false, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
@@ -2896,6 +2902,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
     NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
     LowestSeq = merge_file.GetLowestSequence();
     HighestSeq = merge_file.GetHighestSequence();
+    FileLength = merge_file.GetFileLength();
     assert(!can_tail_tombstone);
   }
 }
