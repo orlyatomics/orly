@@ -1981,7 +1981,7 @@ void TServer::Init() {
         });
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
-        ScheduleRunnerHost(&RunReplicationQueueRunner);
+        ScheduleRunnerHost(&RunReplicationQueueRunner, true);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RunReplicationQueueRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunReplicationQueue));
@@ -1992,7 +1992,7 @@ void TServer::Init() {
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicationQueue, RepoManager.get()));
       }
       /* Execute Job from master / slave */ {
-        ScheduleRunnerHost(&RunReplicationWorkRunner);
+        ScheduleRunnerHost(&RunReplicationWorkRunner, true);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RunReplicationWorkRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunReplicationWork));
@@ -2003,7 +2003,7 @@ void TServer::Init() {
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicationWork, RepoManager.get()));
       }
       /* Dequeue from replication queue and transmit to slave if necessary */ {
-        ScheduleRunnerHost(&RunReplicateTransactionRunner);
+        ScheduleRunnerHost(&RunReplicateTransactionRunner, true);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
           frame->Latch(&RunReplicateTransactionRunner, static_cast<Orly::Indy::L0::TManager *>(RepoManager.get()), static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::L0::TManager::RunReplicateTransaction));
@@ -2102,13 +2102,14 @@ void TServer::Init() {
   InitCond.notify_all();
 }
 
-void TServer::ScheduleRunnerHost(Fiber::TRunner *runner) {
+void TServer::ScheduleRunnerHost(Fiber::TRunner *runner, bool disk_event_pool) {
   assert(runner);
-  ScheduleHostJob([this, runner] {
-    /* The fibers these runners host can write to disk: the replication reader writes a slave's
-       synced data files as it deserializes them (TFileSync::Read), and a disk write takes its
-       event from the thread's own pool.  Without one, a disk-backed slave crashed on join (#866). */
-    if (!Cmd.MemorySim) {
+  ScheduleHostJob([this, runner, disk_event_pool] {
+    /* The replication fibers can write to disk: the reader writes a slave's synced data files as
+       it deserializes them (TFileSync::Read), and a disk write takes its event from the thread's
+       own pool.  Without one, a disk-backed slave crashed on join (#866).  The merge and cleaner
+       fibers allocate their own pool and assert the thread has none, so they don't ask for one. */
+    if (disk_event_pool && !Cmd.MemorySim) {
       Fiber::TJumpRunnable::EnsureLocalDiskEventPool();
     }
     Fiber::LaunchSlowFiberSched(runner, FramePoolManager.get());

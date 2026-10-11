@@ -978,8 +978,10 @@ namespace Orly {
       void WaitForSlave();
 
       /* Schedule a job that hosts the given runner's scheduler loop
-         (Fiber::LaunchSlowFiberSched) through ScheduleHostJob, below. */
-      void ScheduleRunnerHost(Indy::Fiber::TRunner *runner);
+         (Fiber::LaunchSlowFiberSched) through ScheduleHostJob, below.  With
+         disk_event_pool, a disk-backed server also gives that thread a disk
+         event pool; leave it off for fibers that allocate their own. */
+      void ScheduleRunnerHost(Indy::Fiber::TRunner *runner, bool disk_event_pool = false);
 
       /* Schedule a long-lived job that touches this server, tracked for
          cancel-or-join at Shutdown(): the job pushes RunnerHostExited on
