@@ -2105,6 +2105,12 @@ void TServer::Init() {
 void TServer::ScheduleRunnerHost(Fiber::TRunner *runner) {
   assert(runner);
   ScheduleHostJob([this, runner] {
+    /* The fibers these runners host can write to disk: the replication reader writes a slave's
+       synced data files as it deserializes them (TFileSync::Read), and a disk write takes its
+       event from the thread's own pool.  Without one, a disk-backed slave crashed on join (#866). */
+    if (!Cmd.MemorySim) {
+      Fiber::TJumpRunnable::EnsureLocalDiskEventPool();
+    }
     Fiber::LaunchSlowFiberSched(runner, FramePoolManager.get());
   });
 }
