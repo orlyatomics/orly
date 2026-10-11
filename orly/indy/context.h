@@ -53,11 +53,11 @@ namespace Orly {
       class TKeyCursor;
       struct TKeyCursorCollector;
 
-      typedef InvCon::UnorderedList::TCollection<TKeyCursorCollector, TKeyCursor> TKeyCursorCollection;
+      using TKeyCursorCollection = InvCon::UnorderedList::TCollection<TKeyCursorCollector, TKeyCursor>;
 
       private:
 
-      typedef std::vector<std::pair<Indy::L0::TManager::TPtr<TRepo>, std::unique_ptr<TRepo::TView>>> TRepoTree;
+      using TRepoTree = std::vector<std::pair<Indy::L0::TManager::TPtr<TRepo>, std::unique_ptr<TRepo::TView>>>;
 
       class TPresentWalker {
         NO_COPY(TPresentWalker);
@@ -76,11 +76,11 @@ namespace Orly {
 
         ~TPresentWalker();
 
-        inline operator bool() const;
+        [[nodiscard]] operator bool() const noexcept;
 
-        inline const TItem &operator*() const;
+        [[nodiscard]] const TItem &operator*() const noexcept;
 
-        inline TPresentWalker &operator++();
+        TPresentWalker &operator++();
 
         private:
 
@@ -101,7 +101,7 @@ namespace Orly {
            so an ancestor's old entry can carry a higher number than the POV's newer delete or
            overwrite of the same key, and would then hide it until Tetris promoted it. */
         struct TChainOrder {
-          bool operator()(const TItem &lhs, size_t lhs_pos, const TItem &rhs, size_t rhs_pos) const {
+          [[nodiscard]] bool operator()(const TItem &lhs, size_t lhs_pos, const TItem &rhs, size_t rhs_pos) const noexcept {
             const Atom::TComparison comp = lhs.CompareKeys(rhs);
             return Atom::IsLt(comp) || (Atom::IsEq(comp) && (lhs_pos < rhs_pos || (lhs_pos == rhs_pos && lhs.SequenceNumber >= rhs.SequenceNumber)));
           }
@@ -111,7 +111,7 @@ namespace Orly {
 
         Util::TMinHeap<Indy::TPresentWalker::TItem, size_t, TChainOrder> MinHeap;
 
-        bool Valid;
+        bool Valid = false;
 
         /* Counts need visibility and tombstones, but never resolved values. */
         const bool KeysOnly;
@@ -120,13 +120,13 @@ namespace Orly {
 
         /* Arena that owns folded Op TCores. Borrowed from the enclosing
            TContext, so the folded TCore outlives the walker. */
-        Atom::TCore::TExtensibleArena *FoldArena;
+        Atom::TCore::TExtensibleArena *FoldArena = nullptr;
 
         /* The enclosing TContext's FoldDedupProbes. */
-        size_t *FoldDedupProbes;
+        size_t *FoldDedupProbes = nullptr;
 
         /* The context whose read budget each row is charged to (#694). */
-        TContext *Context;
+        TContext *Context = nullptr;
 
       };  // TPresentWalker
 
@@ -137,23 +137,23 @@ namespace Orly {
         NO_COPY(TKeyCursor);
         public:
 
-        typedef InvCon::UnorderedList::TMembership<TKeyCursor, TKeyCursorCollector> TContextMembership;
+        using TContextMembership = InvCon::UnorderedList::TMembership<TKeyCursor, TKeyCursorCollector>;
 
         TKeyCursor(TContext *context, const Indy::TIndexKey &pattern);
 
         TKeyCursor(TContext *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to);
 
-        virtual ~TKeyCursor();
+        ~TKeyCursor() override;
 
-        virtual operator bool() const override;
+        [[nodiscard]] operator bool() const override;
 
-        virtual const Indy::TKey &operator*() const override;
+        [[nodiscard]] const Indy::TKey &operator*() const override;
 
-        virtual const Indy::TKey *operator->() const override;
+        [[nodiscard]] const Indy::TKey *operator->() const override;
 
-        virtual TKeyCursor &operator++() override;
+        TKeyCursor &operator++() override;
 
-        const TContext::TPresentWalker::TItem &GetVal() const;
+        [[nodiscard]] const TContext::TPresentWalker::TItem &GetVal() const noexcept;
 
         private:
 
@@ -163,9 +163,9 @@ namespace Orly {
 
         Indy::TIndexKey To;
 
-        mutable bool Valid;
+        mutable bool Valid = true;
 
-        mutable bool Cached;
+        mutable bool Cached = false;
 
         mutable TPresentWalker Csr;
 
@@ -174,36 +174,36 @@ namespace Orly {
         mutable TContextMembership::TImpl ContextMembership;
 
         /* The context this cursor walks, which counts its open cursors (#722). */
-        TContext *Owner;
+        TContext *Owner = nullptr;
 
       };  // TKeyCursor
 
       TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena);
 
-      virtual ~TContext();
+      ~TContext() override;
 
-      virtual Indy::TKey operator[](const Indy::TIndexKey &key) override;
+      [[nodiscard]] Indy::TKey operator[](const Indy::TIndexKey &key) override;
 
-      virtual bool Exists(const Indy::TIndexKey &key) override;
+      [[nodiscard]] bool Exists(const Indy::TIndexKey &key) override;
 
       /* Count visible keys without decoding or folding their values. Uses the same views
          and read budget as a key cursor. Range endpoints are inclusive and use one index. */
-      int64_t CountKeys(const Indy::TIndexKey &pattern);
+      [[nodiscard]] int64_t CountKeys(const Indy::TIndexKey &pattern);
 
-      int64_t CountKeys(const Indy::TIndexKey &from, const Indy::TIndexKey &to);
+      [[nodiscard]] int64_t CountKeys(const Indy::TIndexKey &from, const Indy::TIndexKey &to);
 
       /* Whether a count may pass over a stretch of a disk file by rank instead of walking its
          keys (#749). On unless turned off; tests turn it off to compare with the walk. */
-      void SetRankCounts(bool on) {
+      void SetRankCounts(bool on) noexcept {
         RankCounts = on;
       }
 
       /* The keys this context has counted by rank, without reading each one (#749). */
-      size_t GetRowsCountedByRank() const {
+      [[nodiscard]] size_t GetRowsCountedByRank() const noexcept {
         return RowsCountedByRank;
       }
 
-      inline size_t GetWalkerCount() const {
+      [[nodiscard]] size_t GetWalkerCount() const noexcept {
         return WalkerCount;
       }
 
@@ -221,7 +221,7 @@ namespace Orly {
       void ReleaseViews();
 
       /* True once ReleaseViews has run. */
-      inline bool HasReleasedViews() const {
+      [[nodiscard]] bool HasReleasedViews() const noexcept {
         return ViewsReleased;
       }
 
@@ -236,18 +236,18 @@ namespace Orly {
       void SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena, size_t max_steps);
 
       /* Lift the budget, so the context can be used past it (to resolve a write's effects). */
-      void ClearReadBudget() {
+      void ClearReadBudget() noexcept {
         MaxRows = MaxArenaBytes = Unlimited;
         InFlightScope.reset();
       }
 
       /* The in-flight part of the budget (#729). */
-      const Rt::TReadBudget &GetInFlightBudget() const {
+      [[nodiscard]] const Rt::TReadBudget &GetInFlightBudget() const noexcept {
         return InFlightBudget;
       }
 
       /* The rows charged so far. */
-      size_t GetRowsWalked() const {
+      [[nodiscard]] size_t GetRowsWalked() const noexcept {
         return RowsWalked;
       }
 
@@ -263,14 +263,14 @@ namespace Orly {
          result is built in the arena after its last row. */
       void CheckArenaBudget() const;
 
-      const Base::TTimer &GetPresentWalkConsTimer() const {
+      [[nodiscard]] const Base::TTimer &GetPresentWalkConsTimer() const noexcept {
         return PresentWalkConsTimer;
       }
 
       /* The work the read-time fold's dedup has done in this context: the
          UpdateIds it has hashed plus the ones it has compared. Tests use it
          to check that dedup stays linear in the entries folded (#696). */
-      inline size_t GetFoldDedupProbes() const {
+      [[nodiscard]] size_t GetFoldDedupProbes() const noexcept {
         return FoldDedupProbes;
       }
 
@@ -287,7 +287,7 @@ namespace Orly {
 
       TRepoTree RepoTree;
 
-      size_t WalkerCount;
+      size_t WalkerCount = 0UL;
 
       /* See ReleaseViews(). */
       bool ViewsReleased = false;
@@ -355,7 +355,7 @@ namespace Orly {
           Rt::TOpt<uint64_t> seed)
           : Orly::Package::TContext(user_id, session_id, arena, scheduler, now, seed), DataContext(context) {}
 
-      virtual Orly::TContextBase &GetFlux() override{
+      [[nodiscard]] Orly::TContextBase &GetFlux() override {
         return DataContext;
       }
 
@@ -367,27 +367,13 @@ namespace Orly {
         return false;
       }
 
-      virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const override {
-        auto data_context = dynamic_cast<Indy::TContext *>(context);
-
-        /*
-        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        std::cout << "NewKeyCursor(";
-        pattern.GetState(state_alloc)->Accept(Sabot::TStateDumper(std::cout));
-        std::cout << ")" << std::endl;
-        */
+      [[nodiscard]] TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &pattern) const override {
+        auto *data_context = dynamic_cast<Indy::TContext *>(context);
         return new Indy::TContext::TKeyCursor(data_context, pattern);
       }
 
-      virtual TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) const override {
-        auto data_context = dynamic_cast<Indy::TContext *>(context);
-
-        /*
-        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        std::cout << "NewKeyCursor(";
-        pattern.GetState(state_alloc)->Accept(Sabot::TStateDumper(std::cout));
-        std::cout << ")" << std::endl;
-        */
+      [[nodiscard]] TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) const override {
+        auto *data_context = dynamic_cast<Indy::TContext *>(context);
         return new Indy::TContext::TKeyCursor(data_context, from, to);
       }
 
@@ -401,11 +387,11 @@ namespace Orly {
       ***** inline ******
       ******************/
 
-    inline TContext::TPresentWalker::operator bool() const {
+    inline TContext::TPresentWalker::operator bool() const noexcept {
       return Valid;
     }
 
-    inline const TContext::TPresentWalker::TItem &TContext::TPresentWalker::operator*() const {
+    inline const TContext::TPresentWalker::TItem &TContext::TPresentWalker::operator*() const noexcept {
       assert(Valid);
       return Item;
     }
