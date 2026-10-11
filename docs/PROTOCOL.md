@@ -213,7 +213,10 @@ sent as one WebSocket text message. The server replies with one JSON message:
   (default 25%) for the merges and refuses any write that would use it. Such a
   write first waits, in arrival order, up to `--admission_wait_ms` (default 500)
   for the merges to free room, and is refused only if none comes (#765), so a
-  reply can take that much longer under pressure. Only writes are refused: reads, new sessions and new POVs keep working. Nothing was
+  reply can take that much longer under pressure. Only writes are refused: reads, new sessions and new POVs keep working. (A new
+  POV doesn't go through this admission, but making it writes one update; if the
+  Update pool is entirely full, the new POV gets `insufficient_memory` too, and
+  can be retried in the same way, #858.) Nothing was
   written, so the write can be retried; writes are accepted again once the merges
   have freed the pools, usually within seconds. Large batches reach the limit
   sooner, because a batch is held as one update with an entry per write.

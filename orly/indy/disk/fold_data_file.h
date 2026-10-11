@@ -55,6 +55,7 @@
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/util/volume_manager.h>
 #include <orly/indy/sequence_number.h>
+#include <orly/indy/update.h>
 
 namespace Orly {
 
@@ -66,7 +67,12 @@ namespace Orly {
          (file_uuid, source_gen_id), folds same-mutator commutative
          runs, writes a new data file at (file_uuid, dest_gen_id).
          The source file is not modified or removed -- the caller
-         (TSafeRepo::MergeFiles) is responsible for the cleanup. */
+         (TSafeRepo::MergeFiles) is responsible for the cleanup.
+
+         The fold holds an update and an entry for every key it emits until
+         it writes the file. 'claim', if given, is the caller's claim on the
+         update pools for them (#858); the fold gives it back one update and
+         one entry at a time, as it allocates them. */
       class TFoldDataFile {
         NO_COPY(TFoldDataFile);
         public:
@@ -77,7 +83,8 @@ namespace Orly {
                       size_t source_gen_id,
                       size_t dest_gen_id,
                       DiskPriority priority,
-                      size_t temp_file_consol_thresh);
+                      size_t temp_file_consol_thresh,
+                      Indy::TUpdate::TCopyClaim *claim = nullptr);
 
         inline size_t GetNumKeys() const {
           return NumKeys;

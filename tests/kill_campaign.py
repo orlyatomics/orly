@@ -148,7 +148,18 @@ class Writer:
             c = orly.connect(url, timeout=10, recv_timeout=120, retries=3)
             c.new_session()
             if pov is None:
-                pov = c.new_pov(safe=self.safe, shared=self.shared)
+                # A new POV can be refused, typed and retryable, if the Update pool is full
+                # (docs/PROTOCOL.md, #858). Nothing was created: try again.
+                deadline = time.time() + 30
+                while True:
+                    try:
+                        pov = c.new_pov(safe=self.safe, shared=self.shared)
+                        break
+                    except orly.InsufficientMemory:
+                        if killed.is_set() or time.time() > deadline:
+                            raise
+                        self.refused += 1
+                        time.sleep(0.05)
         except Exception as ex:  # noqa: BLE001
             if not killed.is_set():
                 self.error = f'setup: {ex}'

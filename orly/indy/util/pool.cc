@@ -148,12 +148,13 @@ void TPool::ReleaseAdmitted(size_t num_blocks) {
   }
 }
 
-bool TPool::TryClaim(size_t num_blocks) {
+bool TPool::TryClaim(size_t num_blocks, bool keep_reserve) {
   if (!num_blocks) {
     return true;
   }
   std::lock_guard<std::mutex> lock(Mutex);
-  if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > MaxBlocks) {
+  const size_t limit = keep_reserve ? MaxBlocks - std::min(MaxBlocks, Reserve.load()) : MaxBlocks;
+  if (NumBlocksUsed + NumBlocksAdmitted + NumBlocksClaimed + num_blocks > limit) {
     return false;
   }
   NumBlocksClaimed += num_blocks;

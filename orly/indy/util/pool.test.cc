@@ -189,6 +189,31 @@ FIXTURE(WritersCountClaims) {
   pool.ReleaseAdmitted(25UL);
 }
 
+/* An optional copy (the disk merge's fold, #858) claims only what leaves the reserve free: the
+   reserve is for the copies that free the pool, and the writers' refusals start at its edge. */
+FIXTURE(ClaimCanKeepTheReserve) {
+  TPool pool(sizeof(void *), "test", 100UL);
+  pool.SetReserve(25UL);
+  vector<void *> blocks;
+  for (size_t i = 0; i < 50UL; ++i) {
+    blocks.push_back(pool.Alloc(sizeof(void *)));
+  }
+  EXPECT_FALSE(pool.TryClaim(26UL, true));
+  EXPECT_EQ(pool.GetNumBlocksClaimed(), 0UL);
+  EXPECT_TRUE(pool.TryClaim(25UL, true));
+  EXPECT_FALSE(pool.TryClaim(1UL, true));
+  /* a copy that frees the pool may still use the reserve */
+  EXPECT_TRUE(pool.TryClaim(25UL));
+  pool.ReleaseClaim(50UL);
+  /* with no reserve, the limit is the pool */
+  pool.SetReserve(0UL);
+  EXPECT_TRUE(pool.TryClaim(50UL, true));
+  pool.ReleaseClaim(50UL);
+  for (void *block : blocks) {
+    pool.Free(block);
+  }
+}
+
 static size_t RoomCalls = 0UL;
 
 static void CountRoomCall() {

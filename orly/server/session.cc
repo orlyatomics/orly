@@ -107,6 +107,16 @@ size_t Orly::Server::GetStalledBacklogRefusals() {
   return StalledBacklogRefusals.load();
 }
 
+/* #858: the refusal of a new POV that found the Update pool full. */
+[[noreturn]] static void ThrowNewPovOutOfMemory() {
+  const auto &updates = Indy::TUpdate::GetUpdatePool(), &entries = Indy::TUpdate::GetEntryPool();
+  std::ostringstream msg;
+  msg << "insufficient memory: new POV refused; the update pools are full (Update "
+      << updates.GetNumBlocksUsed() << " / " << updates.GetMaxBlocks() << ", Update Entry "
+      << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks() << " in use); nothing was created, so it can be retried";
+  throw TInsufficientMemory(msg.str());
+}
+
 /* #626: the refusal of a write to a paused or failed POV whose backlog is full. */
 [[noreturn]] static void ThrowFullStalledBacklog(Indy::TStatus status, size_t backlog, size_t entries, size_t cap, size_t entry_cap) {
   std::ostringstream msg;
@@ -1446,6 +1456,15 @@ TUuid TSession::NewPov(
     shared_parents.push_back(*parent_pov_id);
   }
   auto pov = durable_manager->New<TPov>(TUuid::Twister, time_to_live, GetId(), audience, policy, shared_parents);
+  /* Making the POV's repo records it in the System repo, with an update from the Update pool.
+     Memory admission (#607) doesn't apply to new POVs, but that allocation can still miss when
+     the pool is full: refuse with the retryable insufficient_memory rather than a bare bad_alloc
+     (#858). Nothing has been written, and the POV never reaches the session. */
+  try {
+    pov->GetRepo(server);
+  } catch (const std::bad_alloc &) {
+    ThrowNewPovOutOfMemory();
+  }
   /* The fork (#746): conflicts are tracked from here, before anyone can write to the POV. */
   WatchFork(pov->GetRepo(server), conflict_mode);
   Base::TUuid pov_id = pov->GetId();
