@@ -399,6 +399,10 @@ receipt's `version` uses:
 try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
 ```
 
+- The keyword form `try {pov} at V mypkg get <{.n: 1}>;` is the same call: it lowers to `.at: V`, and
+  everything below holds for both. Giving both `at V` and `.at` in one call is refused as an exception,
+  and `at` is reserved after the POV id, so a package can't be named `at` there (`.at` as a field name
+  is unaffected).
 - `.at: V` (an int, not negative) runs the call against the global POV with every write after
   version V left out: point reads, `keys` ranges and `+=` folds all see the state as of V. The
   reply is the usual one plus `"version": V`. A call without `.at` is exactly what it was before,
@@ -407,7 +411,7 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
 - Read only. A call read at a version that tries to write replies `"status": "version_read_only"`
   and writes nothing.
 - `.at` does not combine with `.op_id`, `.receipt` or `.wait_durable_ms`, and the batch and mixed
-  forms refuse it; each is an exception.
+  forms refuse it (the keyword form included); each is an exception.
 - A version the server can't answer exactly replies `"status": "version_unavailable"` with
   `"requested"`, `"oldest"` and `"newest"`: the versions from `oldest` to `newest` are the ones it
   can read now. A version past `newest` is not committed yet. A version below `oldest` is older

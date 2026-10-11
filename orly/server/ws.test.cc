@@ -415,3 +415,38 @@ FIXTURE(TryAt) {
     }
   }
 }
+
+/* `try {pov} at V ...` is the keyword spelling of `.at: V` (#745): it lowers to the same option, so both forms reply
+   alike, and it is refused wherever `.at` is. Giving both is refused. `.at` stays a legal field name. */
+FIXTURE(TryAtKeyword) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string pov = "try {00000000-0000-0000-0000-000000000001}";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      pov + " pkg/v1 f <{}> <{.at: 42}>;",
+      pov + " at 42 pkg/v1 f <{}>;",
+      pov + " at 5000 pkg/v1 f <{}>;",
+      pov + " at -1 pkg/v1 f <{}>;",
+      pov + " at 42 pkg/v1 f <{}> <{.at: 42}>;",
+      pov + " at 42 pkg/v1 f <{}> <{.at: 7}>;",
+      pov + " at 42 pkg/v1 f <{}> <{.receipt: true}>;",
+      pov + " at 42 pkg/v1 f <{}> <{.op_id: \"read-1\"}>;",
+      pov + " at 42 pkg/v1 f <{}> <{.wait_durable_ms: 100}>;",
+      pov + " at 42 pkg/v1 f [<{}>, <{}>];",
+      pov + " at 42 [pkg/v1 f <{}>, pkg/v1 f <{}>];"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 12U)) {
+    /* Both forms give the same reply. */
+    EXPECT_EQ(replies[2], replies[1]);
+    EXPECT_EQ(replies[2]["version"], Base::TJson(42));
+    EXPECT_EQ(replies[3]["status"], Base::TJson("version_unavailable"));
+    EXPECT_EQ(replies[3]["requested"], Base::TJson(5000));
+    /* Refused wherever .at is, and when both are given, with no version in the reply. */
+    for (size_t i = 4; i < 12; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+      EXPECT_EQ(replies[i].TryFind("version"), nullptr);
+    }
+  }
+}

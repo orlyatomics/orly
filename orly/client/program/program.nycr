@@ -96,6 +96,7 @@ discard_pov_kwd   = '"discard_pov"';
 promote_pov_kwd   = '"promote_pov"';
 review_pov_kwd    = '"review_pov"';
 durable_version_kwd = '"durable_version"';
+at_kwd            = '"at"';
 
 unary_placeholder = '' unary_prec right;
 name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
@@ -108,6 +109,7 @@ field_name;
   unknown_kwd_field_name : field_name -> name:unknown_kwd;
   try_kwd_field_name : field_name -> name:try_kwd;
   new_kwd_field_name : field_name -> name:new_kwd;
+  at_kwd_field_name : field_name -> name:at_kwd;
   safe_kwd_field_name : field_name -> name:safe_kwd;
   fast_kwd_field_name : field_name -> name:fast_kwd;
   set_kwd_field_name : field_name -> name:set_kwd;
@@ -177,6 +179,11 @@ opt_options;
 no_options : opt_options -> empty;
 options    : opt_options -> obj_expr;
 
+/* `try {pov} at V ...` reads at version V, the keyword spelling of the `.at` option (#745). */
+opt_at;
+no_at      : opt_at -> empty;
+at_version : opt_at -> at_kwd int_expr;
+
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     TOP-LEVEL
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -201,9 +208,9 @@ review_pov_stmt     : stmt -> review_pov_kwd id_expr opt_options semi;
 durable_version_stmt : stmt -> durable_version_kwd id_expr semi;
 set_user_id_stmt    : stmt -> set_kwd user_id_kwd id_expr semi;
 set_ttl_stmt        : stmt -> set_kwd ttl_kwd id_expr to_kwd int_expr semi;
-try_stmt            : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name args:obj_expr opt_options semi;
-try_batch_stmt      : stmt -> try_kwd pov_id:id_expr package:name_list method_name:name open_bracket obj_expr_list close_bracket opt_options semi;
-try_multi_stmt      : stmt -> try_kwd pov_id:id_expr open_bracket batch_call_list close_bracket semi;
+try_stmt            : stmt -> try_kwd pov_id:id_expr opt_at package:name_list method_name:name args:obj_expr opt_options semi;
+try_batch_stmt      : stmt -> try_kwd pov_id:id_expr opt_at package:name_list method_name:name open_bracket obj_expr_list close_bracket opt_options semi;
+try_multi_stmt      : stmt -> try_kwd pov_id:id_expr opt_at open_bracket batch_call_list close_bracket semi;
 echo_stmt           : stmt -> echo_kwd expr semi;
 tail_stmt           : stmt -> tail_kwd semi;
 new_session_stmt    : stmt -> new_kwd session_kwd semi;
