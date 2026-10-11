@@ -200,10 +200,11 @@ FIXTURE(CountIsGlobal) {
   EXPECT_TRUE(table.Reserve(OtherPov, MakeId(Now - 3500UL), 1).IsNew);
 }
 
-/* Only a version 7 UUID carries a time. */
+/* Only a version 7 UUID carries a time.  Random stamps version 4; Twister's bits are all random,
+   so one in sixteen of its ids reads as version 7. */
 FIXTURE(NotVersion7) {
   TOperationTable table(MakeConfig());
-  auto call = [&] { table.Reserve(Pov, TUuid(TUuid::Twister), 1); };
+  auto call = [&] { table.Reserve(Pov, TUuid(TUuid::Random), 1); };
   EXPECT_THROW_FUNC(invalid_argument, call);
 }
 
