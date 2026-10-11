@@ -71,6 +71,24 @@ python3 tools/maint/lint_todos.py --base origin/master   # only your new TODOs
 Doc-stub cleanup tooling lives in
 [`tools/maint/strip_todo_stubs.py`](tools/maint/strip_todo_stubs.py).
 
+## C++ style and modernisation
+
+Orly is built with C++23 (`-std=c++23`). The original 2014-era codebase is being
+gradually modernised as touched files are edited, with an emphasis on clarity and
+safety rather than churn for its own sake:
+
+- **Prefer modern vocabulary types**: `std::string_view`, `std::span`, `std::optional`,
+  and `std::expected` over raw pointer+length pairs, out-parameters, or sentinel values.
+- **Modern syntax**: In-class default member initialisers, scoped lambdas instead of
+  `std::bind` and `<functional>` placeholders, range-based algorithms (`std::ranges`),
+  and `[[nodiscard]]` on fallible operations or pure inspectors.
+- **Strong typing**: Scoped enums (`enum class`) over raw untyped enums.
+- **Zero behaviour changes**: Modernisation PRs should be strictly mechanical or
+  clarifying, keeping the blast radius small and reviewable. Do not rewrite working
+  subsystems or introduce style-only churn across unaffected files.
+- **Keep sanitizers green**: All changes must pass AddressSanitizer (ASan) and
+  ThreadSanitizer (TSan) suites without warnings or regressions.
+
 ## Pull requests
 
 Keep a PR to one concern. CI (`.github/workflows/ci.yml`) must be green:
