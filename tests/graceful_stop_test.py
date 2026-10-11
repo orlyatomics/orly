@@ -12,7 +12,8 @@ Durable Layer pool ran dry, the writer fiber died of the bad_alloc, and orlyi hu
 Per stop it checks:
 
   deadline   orlyi exits within --deadline seconds of the SIGTERM, with status 0, after logging
-             "TServer::Shutdown() complete"
+             "TServer::Shutdown() complete". If it misses the deadline, the job log gets its
+             threads' stacks and how far its teardown got before it is SIGKILLed
   clean      the log has no fiber that died of an exception ("FATAL ERROR"), no TERMINATE, and
              no Durable Layer pool miss
   acked      every write acknowledged before the stop comes back after the restart
@@ -57,6 +58,7 @@ try:
     import orly  # noqa: E402
 except ImportError as ex:
     sys.exit(f'graceful stop test: cannot start: {ex} (install websocket-client for the python3 that runs this)')
+from kill_campaign import capture_threads  # noqa: E402
 
 PKG = 'graceful_stop'
 
@@ -193,6 +195,7 @@ class Server:
         self.image = os.path.join(work, 'disk.img')
         self.runs = 0
         self.logpath = None
+        self.hang_dir = None
 
     def attach(self):
         self.loop = subprocess.check_output(['losetup', '-fP', '--show', self.image], text=True).strip()
@@ -244,7 +247,8 @@ class Server:
 
     def stop(self, deadline):
         """SIGTERM our orlyi and wait up to 'deadline' seconds. Returns (seconds it took or None
-        if it was still running, its exit status). A server still running is SIGKILLed."""
+        if it was still running, its exit status). A server still running has its threads
+        captured (see hang_report), then is SIGKILLed."""
         if self.proc is None:
             return None, None
         signalled = time.monotonic()
@@ -257,6 +261,8 @@ class Server:
                 took = time.monotonic() - signalled
             except subprocess.TimeoutExpired:
                 took = None
+                self.hang_dir = os.path.join(self.work, f'stop-hang-{self.runs:03d}')
+                log(f'  stop hung: {capture_threads(self.proc.pid, self.hang_dir)}')
                 os.kill(self.proc.pid, signal.SIGKILL)
         rc = self.proc.wait()
         self.proc = None
@@ -273,6 +279,22 @@ class Server:
     def log_text(self):
         with open(self.logpath, errors='replace') as f:
             return f.read()
+
+    def hang_report(self):
+        """What a hung stop left, for the job log: the work directory goes with the runner. The
+        teardown's own progress (its "TServer::Shutdown()" lines say which step it reached), the
+        log's tail, then the stacks capture_threads saved."""
+        text = self.log_text()
+        steps = [line for line in text.splitlines() if 'Shutdown()' in line]
+        parts = ['--- orlyi teardown progress', *(steps or ['(no Shutdown() lines)']),
+                 '--- orlyi log, last 40 lines', self.tail(40).rstrip()]
+        for name in ('tasks.txt', 'stacks.txt'):
+            try:
+                with open(os.path.join(self.hang_dir, name), errors='replace') as f:
+                    parts += [f'--- {name}', f.read().rstrip()]
+            except OSError:
+                pass
+        return '\n'.join(parts)
 
 
 def main():
@@ -387,6 +409,7 @@ def main():
             calls = sum(w.calls for w in writers)
             if took is None:
                 kv.append(f'orlyi was still running {deadline:g}s after SIGTERM (SIGKILLed)')
+                log(srv.hang_report())
             else:
                 stop_times.append(took)
             text = srv.log_text()
