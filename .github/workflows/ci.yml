@@ -749,9 +749,9 @@ jobs:
             echo "CONTROL FAIL: the campaign passed with the exactly-once table off"
             exit 1
           fi
-          if ! grep -q 'counter is' .ci-release/kill-retry-control.log; then
+          if ! grep -qE 'counter is|ran again when resent' .ci-release/kill-retry-control.log; then
             cat .ci-release/kill-retry-control.log
-            echo "CONTROL FAIL: the campaign failed, but not on the counter check"
+            echo "CONTROL FAIL: the campaign failed, but not because a resent write ran again"
             exit 1
           fi
           grep -E 'VIOLATION|^KILL CAMPAIGN' .ci-release/kill-retry-control.log | head -5

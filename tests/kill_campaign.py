@@ -47,8 +47,9 @@ kill after that) it puts back the volume image saved at the kill before last, wh
 or unsynced data file would look. The floor check must catch it, and CI requires that run to fail.
 
 --negative=noretry is the second: the server runs with --operation_retention_count=0, which turns the
-exactly-once table off, so the resent write runs again and the counter check must catch it. CI
-requires that run to fail too.
+exactly-once table off, so a resent write runs again. The write in flight at the kill may never have
+applied, so the retry writer also resends its last acknowledged write, which did: run again, its
+`new` fails, or its `+=` counts twice and the counter check sees it. CI requires that run to fail too.
 
 Needs root (losetup and the /proc/partitions scan, as tests/restart_test.sh); run it through
 tests/kill_campaign.sh. It only ever signals the orlyi it started.
@@ -132,13 +133,12 @@ class Writer:
         self.first_ack = None     # when this epoch's first write was acknowledged
         self.thread = None
         self.last_op = None       # (operation id, args) of the last write a 'retry' writer sent
+        self.last_acked_op = None # the same, for the last one acknowledged
 
-    def resend(self, url, pov):
-        """Send the last write again, with the same operation id, as a client does that never saw
-        its reply. It must not apply twice."""
-        if self.last_op is None:
-            return
-        op_id, args = self.last_op
+    def resend(self, url, pov, op):
+        """Send a write again, with the same operation id, as a client does that never saw its
+        reply. It must not apply twice."""
+        op_id, args = op
         with orly.connect(url, timeout=10, recv_timeout=120) as c:
             c.new_session()
             c.call(pov, PKG, 'put_once', args, op_id=op_id, op_retries=0)
@@ -207,6 +207,8 @@ class Writer:
                 if self.first_ack is None:
                     self.first_ack = txn.acked_at
                 self.acked = end
+                if self.how == 'retry':
+                    self.last_acked_op = self.last_op
         finally:
             try:
                 c.close()
@@ -581,12 +583,26 @@ def main():
                 c.new_session()
                 rpov = c.new_pov(safe=False, shared=False)
                 # Operation ids (#733): the retry writer's last write goes again, and must not apply twice.
+                # The noretry control also resends the last acknowledged write, which certainly applied,
+                # so the control does not depend on the write in flight at the kill having landed.
                 for w in writers:
-                    if w.how == 'retry':
+                    if w.how != 'retry':
+                        continue
+                    ops = []
+                    if args.negative == 'noretry' and w.last_acked_op is not None:
+                        ops.append(w.last_acked_op)
+                    if w.last_op is not None and w.last_op not in ops:
+                        ops.append(w.last_op)
+                    for op in ops:
                         try:
-                            w.resend(url, povs[w.group])
+                            w.resend(url, povs[w.group], op)
                         except Exception as ex:  # noqa: BLE001
-                            kv.append(f'{w.name}: resending its last write failed: {ex}')
+                            if (op is w.last_acked_op and isinstance(ex, orly.OrlyError) and not isinstance(
+                                    ex, (orly.OperationExpired, orly.OperationIdReused, orly.OperationInFlight))):
+                                # The server ran it again (the table would have returned its reply).
+                                kv.append(f'{w.name}: its last acknowledged write ran again when resent: {ex}')
+                            else:
+                                kv.append(f'{w.name}: resending its last write failed: {ex}')
                 total = int(c.call(rpov, PKG, 'total'))
                 if args.mode == 'durable':
                     old_pov = povs['A']
