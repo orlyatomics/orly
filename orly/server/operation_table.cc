@@ -215,7 +215,7 @@ string TOperationTable::Snapshot(uint64_t head_lsn, size_t budget) {
   /* Trim the oldest until it fits, raising the watermark of the POV each came from, so what was
      trimmed is refused after a restart and never run a second time. A POV header is 28 bytes. */
   sort(items.begin(), items.end(), [](const TItem &lhs, const TItem &rhs) { return lhs.Ts < rhs.Ts; });
-  size_t total = 12;  /* the tag, the section count and the section's header */
+  size_t total = 16;  /* the 12-byte payload and section header, and the 4-byte POV count */
   set<TUuid> povs;
   for (const auto &item: items) {
     total += item.Bytes.size();

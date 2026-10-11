@@ -230,7 +230,7 @@ FIXTURE(SnapshotTrim) {
     table.Reserve(Pov, ids.back(), i);
     table.Complete(Pov, ids.back(), MakeOutcome(i + 1, 1, true, i));
   }
-  const size_t budget = 12 + 28 + 5 * (16 + 8 + 1 + 2 + 1 + 8);
+  const size_t budget = 16 + 28 + 5 * (16 + 8 + 1 + 2 + 1 + 8);
   auto payload = table.Snapshot(100, budget);
   EXPECT_TRUE(payload.size() <= budget);
   TOperationTable loaded(MakeConfig());
