@@ -219,7 +219,7 @@ namespace {
        the caller holds anything of ours. */
     void Submit(TWork &&work, TDone &&done) {
       /* lock */ {
-        std::unique_lock<std::mutex> lock(Mutex);
+        std::unique_lock lock(Mutex);
         if (Stopping) {
           lock.unlock();
           done(TFinish(), std::make_exception_ptr(std::runtime_error("server shutting down")));
@@ -242,15 +242,15 @@ namespace {
     void Stop() {
       std::deque<std::pair<TWork, TDone>> refused;
       /* lock */ {
-        std::lock_guard<std::mutex> lock(Mutex);
+        std::lock_guard lock(Mutex);
         Stopping = true;
         refused.swap(Waiting);
       }
-      for (auto &item: refused) {
-        item.second(TFinish(), std::make_exception_ptr(std::runtime_error("server shutting down")));
+      for (auto &[work, done] : refused) {
+        done(TFinish(), std::make_exception_ptr(std::runtime_error("server shutting down")));
       }
       refused.clear();
-      std::unique_lock<std::mutex> lock(Mutex);
+      std::unique_lock lock(Mutex);
       while (InFlight) {
         if (Idle.wait_for(lock, std::chrono::seconds(10)) == std::cv_status::timeout && InFlight) {
           syslog(LOG_WARNING, "ws: shutdown waiting for [%zu] statement(s) in flight (#761)", InFlight);
@@ -296,7 +296,7 @@ namespace {
              give up its slot. With nothing else in flight, nothing would start it again: refuse
              it, typed and retryable. A fresh exception, as below. */
           {
-            std::lock_guard<std::mutex> lock(Mutex);
+            std::lock_guard lock(Mutex);
             if (!Stopping && InFlight > 1) {
               Waiting.emplace_front(std::move(work_for_retry), std::move(*shared_done));
               --InFlight;
@@ -316,7 +316,7 @@ namespace {
           (*shared_done)(TFinish(), std::make_exception_ptr(std::runtime_error("could not start the statement")));
         }
         /* That slot is free again; give it to the next waiting statement, if any. */
-        std::lock_guard<std::mutex> lock(Mutex);
+        std::lock_guard lock(Mutex);
         if (Stopping || Waiting.empty()) {
           --InFlight;
           Idle.notify_all();
@@ -333,7 +333,7 @@ namespace {
       TWork work;
       TDone done;
       /* lock */ {
-        std::lock_guard<std::mutex> lock(Mutex);
+        std::lock_guard lock(Mutex);
         if (Stopping || Waiting.empty()) {
           --InFlight;
           Idle.notify_all();
@@ -379,7 +379,7 @@ namespace {
    racing a live orlyi) and cross-user runs (a root-invoked orlyi leaves a
    root-owned dir that aborts every later non-root ws.test at teardown),
    #444. */
-static std::string MakeCompileTmpDir() {
+[[nodiscard]] static std::string MakeCompileTmpDir() {
   std::string path = Util::MakePath({ P_tmpdir }, { "orly_ws_compile.XXXXXX" });
   if (!mkdtemp(path.data())) {
     throw std::system_error(errno, std::generic_category(), "mkdtemp for ws compile dir");
@@ -472,7 +472,7 @@ class TWsImpl final
         t.join();
       }
     }
-    lock_guard<mutex> lock(Mutex);
+    lock_guard lock(Mutex);
     Conns.clear();
   }
 
@@ -529,17 +529,17 @@ class TWsImpl final
       TStmtVisitor(TConn *conn, TJson &result)
           : Conn(conn), Result(result) {}
 
-      virtual void operator()(const TEchoStmt *stmt) const override {
+      void operator()(const TEchoStmt *stmt) const override {
         assert(stmt);
         void *alloc = alloca(SabotStateSize);
         Result = Var::ToJson(Var::ToVar(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc))));
       }
 
-      virtual void operator()(const TExitStmt *) const override {
+      void operator()(const TExitStmt *) const override {
         Conn->Exiting = true;
       }
 
-      virtual void operator()(const TNewSessionStmt *) const override {
+      void operator()(const TNewSessionStmt *) const override {
         if (Conn->Session) {
           throw invalid_argument("session already established");
         }
@@ -547,7 +547,7 @@ class TWsImpl final
         Result = AsStr(Conn->Session->GetId());
       }
 
-      virtual void operator()(const TResumeSessionStmt *stmt) const override {
+      void operator()(const TResumeSessionStmt *stmt) const override {
         assert(stmt);
         if (Conn->Session) {
           throw invalid_argument("session already established");
@@ -556,20 +556,20 @@ class TWsImpl final
         Result = AsStr(Conn->Session->GetId());
       }
 
-      virtual void operator()(const TSetUserIdStmt *stmt) const override {
+      void operator()(const TSetUserIdStmt *stmt) const override {
         assert(stmt);
         TUuid user_id = Translate(stmt->GetIdExpr());
         GetSession()->SetUserId(user_id);
       }
 
-      virtual void operator()(const TSetTtlStmt *stmt) const override {
+      void operator()(const TSetTtlStmt *stmt) const override {
         assert(stmt);
         TUuid durable_id = Translate(stmt->GetIdExpr());
         chrono::seconds ttl(stmt->GetIntExpr()->GetLexeme().AsInt());
         GetSession()->SetTtl(durable_id, ttl);
       }
 
-      virtual void operator()(const TInstallStmt *stmt) const override {
+      void operator()(const TInstallStmt *stmt) const override {
         assert(stmt);
         vector<string> package_name;
         uint64_t version;
@@ -577,7 +577,7 @@ class TWsImpl final
         GetSession()->InstallPackage(package_name, version);
       }
 
-      virtual void operator()(const TUninstallStmt *stmt) const override {
+      void operator()(const TUninstallStmt *stmt) const override {
         assert(stmt);
         vector<string> package_name;
         uint64_t version;
@@ -585,7 +585,7 @@ class TWsImpl final
         GetSession()->UninstallPackage(package_name, version);
       }
 
-      virtual void operator()(const TPovConsStmt *stmt) const override {
+      void operator()(const TPovConsStmt *stmt) const override {
         assert(stmt);
         bool is_safe = dynamic_cast<const TSafeGuarantee *>(stmt->GetPovGuarantee()) != nullptr;
         bool is_shared = dynamic_cast<const TSharedKind *>(stmt->GetPovKind()) != nullptr;
@@ -601,7 +601,7 @@ class TWsImpl final
 
       /* The POV review statements (#746).  They run off the I/O thread, as `try` does: a diff
          reads, and a discard commits a transaction per update. */
-      virtual void operator()(const TDiffPovStmt *stmt) const override {
+      void operator()(const TDiffPovStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());
         auto options = std::make_shared<const TPovDiffOptions>(GetDiffOptions(TranslateOptions(stmt->GetOptOptions())));
@@ -611,7 +611,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TDiscardPovStmt *stmt) const override {
+      void operator()(const TDiscardPovStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());
         Conn->Deferred = [session = GetSharedSession(), pov_id] {
@@ -620,7 +620,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TPromotePovStmt *stmt) const override {
+      void operator()(const TPromotePovStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());
         const bool force = GetPromoteOptions(TranslateOptions(stmt->GetOptOptions()));
@@ -632,7 +632,7 @@ class TWsImpl final
 
       /* The highest version of the POV on disk (#750); null if none is.  Runs off the I/O thread
          like the review statements: it opens the POV. */
-      virtual void operator()(const TDurableVersionStmt *stmt) const override {
+      void operator()(const TDurableVersionStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());
         Conn->Deferred = [session = GetSharedSession(), pov_id] {
@@ -646,7 +646,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TReviewPovStmt *stmt) const override {
+      void operator()(const TReviewPovStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());
         const uint64_t after = GetReviewOptions(TranslateOptions(stmt->GetOptOptions()));
@@ -656,7 +656,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TTryStmt *stmt) const override {
+      void operator()(const TTryStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
         vector<string> fq_name;
@@ -707,7 +707,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TTryBatchStmt *stmt) const override {
+      void operator()(const TTryBatchStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
         vector<string> fq_name;
@@ -771,7 +771,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TTryMultiStmt *stmt) const override {
+      void operator()(const TTryMultiStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
         void *alloc = alloca(SabotStateSize);
@@ -811,7 +811,7 @@ class TWsImpl final
         };
       }
 
-      virtual void operator()(const TPovStatusStmt *stmt) const override {
+      void operator()(const TPovStatusStmt *stmt) const override {
         assert(stmt);
         bool is_pause = dynamic_cast<const TPauseKind *>(stmt->GetStatusKind()) != nullptr;
         TUuid pov_id = Translate(stmt->GetIdExpr());
@@ -824,19 +824,19 @@ class TWsImpl final
         }
       }
 
-      virtual void operator()(const TTailStmt *) const override {
+      void operator()(const TTailStmt *) const override {
         GetSession()->Tail();
       }
 
-      virtual void operator()(const TBeginImportStmt *) const override {
+      void operator()(const TBeginImportStmt *) const override {
         GetSession()->BeginImport();
       }
 
-      virtual void operator()(const TEndImportStmt *) const override {
+      void operator()(const TEndImportStmt *) const override {
         GetSession()->EndImport();
       }
 
-      virtual void operator()(const TImportStmt *stmt) const override {
+      void operator()(const TImportStmt *stmt) const override {
         assert(stmt);
         string path = Translate(stmt->GetFile());
         int64_t
@@ -846,7 +846,7 @@ class TWsImpl final
         GetSession()->Import(path, Translate(stmt->GetPkgName()), load_threads, merge_threads, merge_sim);
       }
 
-      virtual void operator()(const TCompileStmt *stmt) const override {
+      void operator()(const TCompileStmt *stmt) const override {
         assert(stmt);
         if (!Conn->Ws->AllowRemoteCompile) {
           throw TRemoteCompileDisabled();
@@ -868,7 +868,7 @@ class TWsImpl final
         }
       }
 
-      virtual void operator()(const TListPackageStmt *) const override {
+      void operator()(const TListPackageStmt *) const override {
         TJson::TArray packages;
         auto &package_manager = Conn->Ws->SessionManager->GetPackageManager();
         package_manager.YieldInstalled([&packages, &package_manager](const Package::TVersionedName &versioned_name) {
@@ -883,15 +883,15 @@ class TWsImpl final
               TJson::TObject func_info;
               /* params */ {
                 TJson::TObject parameters;
-                for (const auto &param: func->GetParameters()) {
+                for (const auto &[param_name, param_type] : func->GetParameters()) {
                   /* The orly-syntax type name IS the JSON representation of
                      a type (a plain string); rendering it once is not a
                      round-trip, and a structured type encoding would change
                      the wire contract for no consumer that wants it (#377's
                      round-trip half is fixed in Var::ToJson). */
                   ostringstream oss;
-                  Orly::Type::Orlyify(oss, param.second);
-                  parameters[param.first] = oss.str();
+                  Orly::Type::Orlyify(oss, param_type);
+                  parameters[param_name] = oss.str();
                 }
 
                 func_info["parameters"] = TJson(move(parameters));
@@ -915,7 +915,7 @@ class TWsImpl final
         Result["packages"] = TJson(move(packages));
       }
 
-      virtual void operator()(const TGetSourceStmt *stmt) const override {
+      void operator()(const TGetSourceStmt *stmt) const override {
         assert(stmt);
         vector<string> package_name;
         TranslatePathName(package_name, stmt->GetNameList());
@@ -945,12 +945,12 @@ class TWsImpl final
         }
       }
 
-      virtual void operator()(const TListSchemaStmt *stmt) const override {
+      void operator()(const TListSchemaStmt *stmt) const override {
         assert(stmt);
         Result = TJson::Object;
         Conn->Ws->SessionManager->ForEachIndex([this](const std::string &pkg,
-                                                  const std::string &key,
-                                                  const std::string &val) {
+                                                   const std::string &key,
+                                                   const std::string &val) {
           if (!Result.Contains(pkg)) {
             Result[pkg] = TJson::Object;
           }
@@ -966,12 +966,12 @@ class TWsImpl final
       using TStateDumper = Orly::Sabot::TStateDumper;
       using TWrapper = Orly::Sabot::State::TAny::TWrapper;
 
-      TSessionPin *GetSession() const {
+      [[nodiscard]] TSessionPin *GetSession() const {
         return GetSharedSession().get();
       }
 
       /* For a statement that runs after this visitor is gone (#761). */
-      const std::shared_ptr<TSessionPin> &GetSharedSession() const {
+      [[nodiscard]] const std::shared_ptr<TSessionPin> &GetSharedSession() const {
         if (!Conn->Session) {
           throw invalid_argument("session not yet established");
         }
@@ -996,20 +996,20 @@ class TWsImpl final
         closure.AddArgBySabot("$op_id", state);
       }
 
-      static TTryOptions GetTryOptions(const TOptionList &options) {
+      [[nodiscard]] static TTryOptions GetTryOptions(const TOptionList &options) {
         constexpr int64_t max_wait_ms = 60000;
         TTryOptions result;
-        for (const auto &option: options) {
-          if (option.first == "receipt") {
+        for (const auto &[name, value] : options) {
+          if (name == "receipt") {
             try {
-              result.Receipt = Var::TVar::TDt<bool>::As(option.second);
+              result.Receipt = Var::TVar::TDt<bool>::As(value);
             } catch (const exception &) {
               throw invalid_argument("try: .receipt must be a bool");
             }
-          } else if (option.first == "wait_durable_ms") {
+          } else if (name == "wait_durable_ms") {
             int64_t ms;
             try {
-              ms = Var::TVar::TDt<int64_t>::As(option.second);
+              ms = Var::TVar::TDt<int64_t>::As(value);
             } catch (const exception &) {
               throw invalid_argument("try: .wait_durable_ms must be an int");
             }
@@ -1017,14 +1017,14 @@ class TWsImpl final
               throw invalid_argument("try: .wait_durable_ms must be from 1 to 60000");
             }
             result.WaitDurableMs = static_cast<uint64_t>(ms);
-          } else if (option.first == "op_id") {
+          } else if (name == "op_id") {
             try {
-              result.OpId = Var::TVar::TDt<std::string>::As(option.second);
+              result.OpId = Var::TVar::TDt<std::string>::As(value);
             } catch (const exception &) {
               throw invalid_argument("try: .op_id must be a str");
             }
           } else {
-            throw invalid_argument("try: unknown option ." + option.first + "; the options are .receipt, .wait_durable_ms and .op_id");
+            throw invalid_argument("try: unknown option ." + name + "; the options are .receipt, .wait_durable_ms and .op_id");
           }
         }
         result.Receipt = result.Receipt || result.WaitDurableMs;
@@ -1034,7 +1034,7 @@ class TWsImpl final
       /* Yield until the POV's durable version reaches `version`, or `wait_ms` is up; true if it
          did.  Runs in the statement's fiber, so it holds no thread.  The durable version is
          looked up at most every few ms, as it opens the POV. */
-      static bool WaitDurable(TSessionManager *session_mngr, const TSessionPin &session, const TUuid &pov_id, uint64_t version, uint64_t wait_ms) {
+      [[nodiscard]] static bool WaitDurable(TSessionManager *session_mngr, const TSessionPin &session, const TUuid &pov_id, uint64_t version, uint64_t wait_ms) {
         using namespace std::chrono;
         const auto deadline = steady_clock::now() + milliseconds(wait_ms);
         auto next_look = steady_clock::now();
@@ -1058,7 +1058,7 @@ class TWsImpl final
          that wrote nothing.  The version is the repo's sequence number for the update, increasing
          with each commit to the POV.  "memory" is the honest level: the write is in the update pool,
          not yet known to be on disk (see docs/durability.md). */
-      static TJson ToReceipt(const TUuid &pov_id, const TMethodResult &result, bool durable) {
+      [[nodiscard]] static TJson ToReceipt(const TUuid &pov_id, const TMethodResult &result, bool durable) {
         const auto &seq_num = result.GetCommitSequenceNumber();
         if (!seq_num) {
           return TJson();
@@ -1071,37 +1071,37 @@ class TWsImpl final
       }
 
       /* A method result as the reply's JSON. */
-      static TJson ToJson(const TMethodResult &result) {
+      [[nodiscard]] static TJson ToJson(const TMethodResult &result) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
         return Var::ToJson(
             Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
       }
 
-      static TUuid Translate(const TIdExpr *id_expr) {
+      [[nodiscard]] static TUuid Translate(const TIdExpr *id_expr) {
         assert(id_expr);
         return TUuid(id_expr->GetLexeme().GetText().substr(1, id_expr->GetLexeme().GetText().size() - 2).c_str());
       }
 
-      static int64_t Translate(const TIntExpr *int_expr) {
+      [[nodiscard]] static int64_t Translate(const TIntExpr *int_expr) {
         assert(int_expr);
         return int_expr->GetLexeme().AsInt();
       }
 
-      static string Translate(const TStrExpr *str_expr) {
+      [[nodiscard]] static string Translate(const TStrExpr *str_expr) {
         assert(str_expr);
         struct visitor_t final : public TStrExpr::TVisitor {
           string &Result;
           visitor_t(string &result) : Result(result) {}
-          virtual void operator()(const TDoubleQuotedRawStrExpr *that) const override {
+          void operator()(const TDoubleQuotedRawStrExpr *that) const override {
             Result = that->GetLexeme().AsDoubleQuotedRawString();
           }
-          virtual void operator()(const TDoubleQuotedStrExpr *that) const override {
+          void operator()(const TDoubleQuotedStrExpr *that) const override {
             Result = that->GetLexeme().AsDoubleQuotedString();
           }
-          virtual void operator()(const TSingleQuotedRawStrExpr *that) const override {
+          void operator()(const TSingleQuotedRawStrExpr *that) const override {
             Result = that->GetLexeme().AsSingleQuotedRawString();
           }
-          virtual void operator()(const TSingleQuotedStrExpr *that) const override {
+          void operator()(const TSingleQuotedStrExpr *that) const override {
             Result = that->GetLexeme().AsSingleQuotedString();
           }
         };
@@ -1269,7 +1269,7 @@ class TWsImpl final
     }
 
     /* The peer's address, for the log. */
-    string RemoteAddress() {
+    [[nodiscard]] string RemoteAddress() {
       beast::error_code ec;
       const auto endpoint = beast::get_lowest_layer(WsStream).socket().remote_endpoint(ec);
       if (ec) {
@@ -1291,7 +1291,7 @@ class TWsImpl final
        discarded when the io_context unwinds at shutdown). */
     void Close() {
       AuthTimer.cancel();
-      lock_guard<mutex> lock(Ws->Mutex);
+      lock_guard lock(Ws->Mutex);
       Ws->Conns.erase(shared_from_this());
     }
 
@@ -1369,7 +1369,7 @@ void TWsImpl::DoAccept() {
             sock.set_option(tcp::no_delay(true));
             auto conn = make_shared<TConn>(this, std::move(sock));
             {
-              lock_guard<mutex> lock(Mutex);
+              lock_guard lock(Mutex);
               Conns.insert(conn);
             }
             conn->Run();

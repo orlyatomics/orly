@@ -67,7 +67,7 @@ namespace Orly {
           public:
 
           /* Do-little. */
-          virtual ~TSessionPin() {}
+          virtual ~TSessionPin() = default;
 
           /* Override to perform the request. */
           virtual void BeginImport() const = 0;
@@ -76,7 +76,7 @@ namespace Orly {
           virtual void EndImport() const = 0;
 
           /* The id used to resume the session later. */
-          virtual const Base::TUuid &GetId() const = 0;
+          [[nodiscard]] virtual const Base::TUuid &GetId() const = 0;
 
           /* Override to perform the request. */
           virtual void Import(
@@ -87,7 +87,7 @@ namespace Orly {
           virtual void InstallPackage(const std::vector<std::string> &name, uint64_t version) const = 0;
 
           /* Override to perform the request. */
-          virtual Base::TUuid NewPov(bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id) const = 0;
+          [[nodiscard]] virtual Base::TUuid NewPov(bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id) const = 0;
 
           /* Override to perform the request. */
           virtual void PausePov(const Base::TUuid &pov_id) const = 0;
@@ -102,30 +102,30 @@ namespace Orly {
           virtual void Tail() const = 0;
 
           /* Override to perform the request. */
-          virtual TMethodResult Try(const TMethodRequest &method_request) const = 0;
+          [[nodiscard]] virtual TMethodResult Try(const TMethodRequest &method_request) const = 0;
 
           /* Override to perform the POV review requests (#746; see <orly/pov_review.h>). */
-          virtual Base::TUuid NewReviewPov(bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id,
-                                           TConflictMode mode) const = 0;
-          virtual TPovDiff DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) const = 0;
-          virtual TPovDiscard DiscardPov(const Base::TUuid &pov_id) const = 0;
+          [[nodiscard]] virtual Base::TUuid NewReviewPov(bool is_safe, bool is_shared, const std::optional<Base::TUuid> &parent_id,
+                                                         TConflictMode mode) const = 0;
+          [[nodiscard]] virtual TPovDiff DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options) const = 0;
+          [[nodiscard]] virtual TPovDiscard DiscardPov(const Base::TUuid &pov_id) const = 0;
 
           /* Override to answer the durable_version statement (#750). */
-          virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) const = 0;
-          virtual TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) const = 0;
-          virtual TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) const = 0;
+          [[nodiscard]] virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) const = 0;
+          [[nodiscard]] virtual TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) const = 0;
+          [[nodiscard]] virtual TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) const = 0;
 
           /* Override to perform a batch request: one method against N argument
              records, folded into a single transaction (#253). Returns a
              list-typed result with one entry per call, in statement order. */
-          virtual TMethodResult TryBatch(
+          [[nodiscard]] virtual TMethodResult TryBatch(
               const Base::TUuid &pov_id, const std::vector<std::string> &fq_name,
               const std::vector<TClosure> &closures) const = 0;
 
           /* Override to perform a mixed batch: N calls, each naming its own package and
              method, folded into a single transaction (#255). Returns one result per call,
              in statement order; they may differ in type. */
-          virtual std::vector<Var::TVar> TryMulti(
+          [[nodiscard]] virtual std::vector<Var::TVar> TryMulti(
               const Base::TUuid &pov_id, const std::vector<Server::TBatchCall> &calls) const = 0;
 
           /* Override to perform the request. */
@@ -137,7 +137,7 @@ namespace Orly {
           protected:
 
           /* Do-little. */
-          TSessionPin() {}
+          TSessionPin() = default;
 
         };  // TWs::TSessionPin
 
@@ -151,13 +151,13 @@ namespace Orly {
           using TSessionPin = TWs::TSessionPin;
 
           /* Get the package manager. Useful for things like iterating over all installed packages. */
-          virtual const Package::TManager &GetPackageManager() const = 0;
+          [[nodiscard]] virtual const Package::TManager &GetPackageManager() const = 0;
 
           /* Called when the connection wishes to create a new session. */
-          virtual TSessionPin *NewSession() = 0;
+          [[nodiscard]] virtual TSessionPin *NewSession() = 0;
 
           /* Called when the connection wishes to resume an old session. */
-          virtual TSessionPin *ResumeSession(const Base::TUuid &id) = 0;
+          [[nodiscard]] virtual TSessionPin *ResumeSession(const Base::TUuid &id) = 0;
 
           virtual bool ForEachIndex(const std::function<
               bool(const std::string &pkg, const std::string &key_type, const std::string &val_type)> &cb) const = 0;
@@ -184,20 +184,20 @@ namespace Orly {
           }
 
           /* Write-ahead log for durable acknowledgments (#755). Null when disabled or in memory simulation. */
-          virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
+          [[nodiscard]] virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
 
           protected:
 
           /* Do-little. */
-          TSessionManager() {}
+          TSessionManager() = default;
 
           /* Do-little. */
-          virtual ~TSessionManager() {}
+          virtual ~TSessionManager() = default;
 
         };  // TWs::TSessionManager
 
         /* Shut down the server. */
-        virtual ~TWs() {}
+        virtual ~TWs() = default;
 
         /* Use this factory to construct an instance of this class.
            The server will be open for business by the time this function
@@ -221,7 +221,7 @@ namespace Orly {
            most one statement in flight, since its next message isn't read
            until the reply to the last one is sent, so each session's
            statements still run in order. */
-        static TWs *New(
+        [[nodiscard]] static TWs *New(
             TSessionManager *session_mngr, size_t thread_count,
             in_port_t port_number = 8080,
             const std::string &bind_address = "127.0.0.1",
@@ -232,7 +232,7 @@ namespace Orly {
         protected:
 
         /* Start up the server. */
-        TWs() {}
+        TWs() = default;
 
     };  // TWs
 
