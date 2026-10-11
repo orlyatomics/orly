@@ -47,18 +47,7 @@ using namespace Orly;
 
 class TCompilerConfig : public Base::TCmd {
   public:
-  TCompilerConfig(int argc, char **argv)
-      : DebugOutput(false),
-        InfoReport(false),
-        MachineForm(false),
-        OutputDir(Util::GetCwd()),
-        SemanticOnly(false),
-        ShowCompilerLocations(false),
-        SkipTests(false),
-        SyntaxOnly(false),
-        TransientCc(false),
-        VerboseTests(false) {
-
+  TCompilerConfig(int argc, char **argv) {
     Parse(argc, argv, TMeta());
   }
 
@@ -82,7 +71,7 @@ class TCompilerConfig : public Base::TCmd {
     }
 
     private:
-    virtual void WriteAfterDesc(std::ostream &strm) const {
+    void WriteAfterDesc(std::ostream &strm) const override {
       strm << "Build: " << ORLY_BUILD_VERSION << endl
            << endl
            << "Copyright Atomic Kismet Company" << endl
@@ -91,23 +80,19 @@ class TCompilerConfig : public Base::TCmd {
 
   };  // TMeta
 
-  virtual TCmd::TMeta *NewMeta() const {
-    return new TMeta();
-  }
-
   public:
   //NOTE: These should really be private w/ accessors but I'm going for quick right now, not pretty.
-  bool DebugOutput;
-  bool InfoReport;
-  bool MachineForm;
-  std::string OutputDir;
-  bool SemanticOnly;
-  bool ShowCompilerLocations;
+  bool DebugOutput = false;
+  bool InfoReport = false;
+  bool MachineForm = false;
+  std::string OutputDir = Util::GetCwd();
+  bool SemanticOnly = false;
+  bool ShowCompilerLocations = false;
   std::string Source;
-  bool SkipTests;
-  bool SyntaxOnly;
-  bool TransientCc;
-  bool VerboseTests;
+  bool SkipTests = false;
+  bool SyntaxOnly = false;
+  bool TransientCc = false;
+  bool VerboseTests = false;
 };
 
 /* Run the freshly-compiled package's test{} blocks on an in-process indy
@@ -120,7 +105,7 @@ class TCompilerConfig : public Base::TCmd {
    and tweak fields directly. */
 class TIndyTestServerCmd final : public Orly::Server::TServer::TCmd {
   public:
-  TIndyTestServerCmd() : Orly::Server::TServer::TCmd() {}
+  TIndyTestServerCmd() = default;
 };
 
 /* The fiber frames the embedded server gets (#678). Each frame's 1 MiB stack
@@ -147,14 +132,14 @@ static constexpr size_t TestServerFiberFrames = 64;
 /* The directory the package was written to, and the server installs from. The path code roots a
    relative directory at `/`, so it is resolved against the current directory here, as the source
    path is (#820). */
-static std::string PackageDir(const TCompilerConfig &cmd) {
+[[nodiscard]] static std::string PackageDir(const TCompilerConfig &cmd) {
   if (cmd.OutputDir.empty()) {
     return Util::GetCwd();
   }
-  return cmd.OutputDir.front() == '/' ? cmd.OutputDir : Util::GetCwd() + '/' + cmd.OutputDir;
+  return cmd.OutputDir.starts_with('/') ? cmd.OutputDir : Util::GetCwd() + '/' + cmd.OutputDir;
 }
 
-static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompilerConfig &cmd) {
+[[nodiscard]] static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompilerConfig &cmd) {
   int result_code = EXIT_FAILURE;
   /* The server's fiber machinery (transactions, the engine) must run inside a
      scheduler/fiber context -- the same context RunUntilCtrlC gives its main
@@ -280,10 +265,10 @@ static bool RunTestsOnIndy(const Package::TVersionedName &output, const TCompile
   return result_code == EXIT_SUCCESS;
 }
 
-int CompileCode(const TCompilerConfig &cmd) {
+[[nodiscard]] int CompileCode(const TCompilerConfig &cmd) {
 
   string src = cmd.Source;
-  if(src.front() != '/') {
+  if (!src.starts_with('/')) {
     src = Util::GetCwd() + '/' + src;
   }
 
@@ -353,7 +338,7 @@ int CompileCode(const TCompilerConfig &cmd) {
 }
 
 int main(int argc, char **argv) {
-  TCompilerConfig config(argc, argv);
+  const TCompilerConfig config(argc, argv);
 
   return CompileCode(config);
 }
