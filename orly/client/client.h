@@ -48,62 +48,62 @@ namespace Orly {
       NO_COPY(TClient);
       public:
 
-      virtual ~TClient();
+      ~TClient() override;
 
-      std::shared_ptr<Rpc::TFuture<std::string>> Echo(const std::string &msg);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<std::string>> Echo(const std::string &msg);
 
-      std::shared_ptr<Rpc::TFuture<void>> InstallPackage(const std::vector<std::string> &package_name, uint64_t version);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> InstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      std::shared_ptr<Rpc::TFuture<void>> UnInstallPackage(const std::vector<std::string> &package_name, uint64_t version);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> UnInstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastPrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastPrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                    const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafePrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafePrivatePov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                    const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewFastSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                   const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafeSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewSafeSharedPov(const std::optional<Base::TUuid> &parent_pov_id,
                                                                   const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      std::shared_ptr<Rpc::TFuture<void>> PausePov(const Base::TUuid &pov_id);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> PausePov(const Base::TUuid &pov_id);
 
-      std::shared_ptr<Rpc::TFuture<void>> UnpausePov(const Base::TUuid &pov_id);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> UnpausePov(const Base::TUuid &pov_id);
 
       /* The POV review workflow (#746); see <orly/protocol.h>. */
-      std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewReviewPov(const std::optional<Base::TUuid> &parent_pov_id, bool is_safe, bool is_shared,
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<Base::TUuid>> NewReviewPov(const std::optional<Base::TUuid> &parent_pov_id, bool is_safe, bool is_shared,
                                                               TConflictMode conflicts,
                                                               const std::chrono::seconds &ttl = std::chrono::seconds(600));
 
-      std::shared_ptr<Rpc::TFuture<TPovDiff>> DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options = TPovDiffOptions());
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<TPovDiff>> DiffPov(const Base::TUuid &pov_id, const TPovDiffOptions &options = TPovDiffOptions());
 
-      std::shared_ptr<Rpc::TFuture<TPovDiscard>> DiscardPov(const Base::TUuid &pov_id);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<TPovDiscard>> DiscardPov(const Base::TUuid &pov_id);
 
-      std::shared_ptr<Rpc::TFuture<TPovPromote>> PromotePov(const Base::TUuid &pov_id, bool force = false);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<TPovPromote>> PromotePov(const Base::TUuid &pov_id, bool force = false);
 
-      std::shared_ptr<Rpc::TFuture<TPovReview>> ReviewPov(const Base::TUuid &pov_id, uint64_t after = 0UL);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<TPovReview>> ReviewPov(const Base::TUuid &pov_id, uint64_t after = 0UL);
 
-      std::shared_ptr<Rpc::TFuture<void>> SetUserId(const Base::TUuid &user_id);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> SetUserId(const Base::TUuid &user_id);
 
-      std::shared_ptr<Rpc::TFuture<void>> SetTimeToLive(const Base::TUuid &durable_id, const std::chrono::seconds &time_to_live);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> SetTimeToLive(const Base::TUuid &durable_id, const std::chrono::seconds &time_to_live);
 
-      std::shared_ptr<Rpc::TFuture<TMethodResult>> Try(const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<TMethodResult>> Try(const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
 
-      std::shared_ptr<Rpc::TFuture<void>> BeginImport();
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> BeginImport();
 
-      std::shared_ptr<Rpc::TFuture<void>> EndImport();
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> EndImport();
 
-      std::shared_ptr<Rpc::TFuture<void>> TailGlobalPov();
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<void>> TailGlobalPov();
 
-      std::shared_ptr<Rpc::TFuture<std::string>> ImportCoreVector(const std::string &file_pattern, const std::string &pkg_name, int64_t num_load_threads, int64_t num_merge_threads, int64_t merge_simultaneous);
+      [[nodiscard]] std::shared_ptr<Rpc::TFuture<std::string>> ImportCoreVector(const std::string &file_pattern, const std::string &pkg_name, int64_t num_load_threads, int64_t num_merge_threads, int64_t merge_simultaneous);
 
-      const std::optional<Base::TUuid> &GetSessionId() const {
+      [[nodiscard]] const std::optional<Base::TUuid> &GetSessionId() const {
         return SessionId;
       }
 
-      const std::chrono::seconds &GetTimeToLive() const {
+      [[nodiscard]] const std::chrono::seconds &GetTimeToLive() const {
         return TimeToLive;
       }
 
@@ -148,7 +148,7 @@ namespace Orly {
 
       std::optional<Base::TUuid> SessionId;
 
-      std::chrono::seconds TimeToLive;
+      std::chrono::seconds TimeToLive = std::chrono::seconds(600);
 
       /* The shared secret presented before each session request (#710), if any. */
       std::optional<std::string> AuthToken;
