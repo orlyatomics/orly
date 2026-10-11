@@ -534,12 +534,22 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
 
   Param(
       &TCmd::DurableAcks, "durable_acks", Optional, "durable_acks\0",
-      "Controls durable acknowledgments via write-ahead log (#755). \"false\" (default) or \"experimental\"."
+      "Controls durable acknowledgments via write-ahead log (#755). \"local\"/\"true\" (default on disk), \"false\"."
   );
 
   Param(
       &TCmd::WalMB, "wal_mb", Optional, "wal_mb\0",
       "Size of the write-ahead log ring in megabytes (#755). Default 256."
+  );
+
+  Param(
+      &TCmd::WalNoSync, "wal_no_sync", Optional, "wal_no_sync\0",
+      "Test-only negative control: skip WAL sync while still acknowledging (#755)."
+  );
+
+  Param(
+      &TCmd::WalEarlyAck, "wal_early_ack", Optional, "wal_early_ack\0",
+      "Test-only negative control: acknowledge before WAL group syncs (#755)."
   );
 
 }
@@ -619,8 +629,10 @@ TServer::TCmd::TCmd()
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
-      DurableAcks("false"),
+      DurableAcks("local"),
       WalMB(256),
+      WalNoSync(false),
+      WalEarlyAck(false),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -755,13 +767,17 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
   if (!ReplicationToken) {
     ReplicationToken = AuthToken;
   }
-  if (DurableAcks != "false" && DurableAcks != "experimental") {
-    cb("--durable_acks must be 'false' or 'experimental'");
+  if (DurableAcks != "false" && DurableAcks != "true" && DurableAcks != "local" &&
+      DurableAcks != "experimental" && DurableAcks != "memory") {
+    cb("--durable_acks must be 'local', 'true', or 'false'");
     return false;
   }
-  if (DurableAcks == "experimental" && MemorySim) {
-    cb("--durable_acks=experimental is not supported with --mem_sim");
-    return false;
+  if (MemorySim) {
+    if (DurableAcks == "experimental") {
+      cb("--durable_acks=experimental is not supported with --mem_sim");
+      return false;
+    }
+    DurableAcks = "false";
   }
   return ResolveMemoryDefaults(cb);
 }
@@ -1430,7 +1446,7 @@ void TServer::Init() {
           Cmd.FileServiceAppendLogMB,
           Cmd.Create,
           Cmd.NoRealtime,
-          Cmd.DurableAcks == "experimental",
+          Cmd.IsDurableAcksEnabled(),
           Cmd.WalMB);
       engine_ptr = DiskEngine->GetEngine();
     }
@@ -1645,17 +1661,53 @@ void TServer::Init() {
                                                                     Cmd.TempFileConsolidationThreshold,
                                                                     Cmd.Create);
     RepoManager->SetDurableManager(DurableManager);
+    /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
+      ScheduleRunnerHost(&DurableLayerCleanerRunner);
+      Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
+      try {
+        frame->Latch(&DurableLayerCleanerRunner, DurableManager.get(), static_cast<Fiber::TRunnable::TFunc>(&Durable::TManager::RunLayerCleaner));
+      } catch (...) {
+        Fiber::TFrame::LocalFramePool->Free(frame);
+        throw;
+      }
+      //Scheduler->Schedule(bind(&Durable::TManager::RunLayerCleaner, DurableManager.get()));
+    }
+
+    auto tetris_runner_setup_cb = [this](Indy::Fiber::TRunner *runner) {
+      ForEachSchedCallbackExtraSet.insert(runner);
+      using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
+                                                                        Orly::Indy::Disk::Util::LogicalBlockSize,
+                                                                        Orly::Indy::Disk::Util::PhysicalBlockSize,
+                                                                        Orly::Indy::Disk::Util::CheckedPage, true>;
+      if (!Cmd.MemorySim) {
+        /* if this is a disk based engine, allocate event pools */
+        if (!Disk::Util::TDiskController::TEvent::LocalEventPool) {
+          Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
+        }
+      }
+      assert(!TLocalReadFileCache::Cache);
+      TLocalReadFileCache::Cache = new TLocalReadFileCache();
+      assert(!Disk::TLocalWalkerCache::Cache);
+      Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
+    };
+
+    TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
+    RepoManager->SetTetrisManager(TetrisManager);
+
     /* Initialize and recover Write-Ahead Log (WAL) (#755). */
-    if (DiskEngine && DiskEngine->HasWal()) {
+    if (DiskEngine && DiskEngine->HasWal() && Cmd.IsDurableAcksEnabled()) {
+      TetrisManager->HaltPromotion(std::chrono::milliseconds(0));
       Indy::Disk::TWal::TConfig wal_config;
-      wal_config.BaseOffset = DiskEngine->GetWalStartBlock() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.BaseOffset = (DiskEngine->GetWalStartBlock() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
       wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CheckpointSlot0Offset = DiskEngine->GetWalCheckpoint0Block() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CheckpointSlot1Offset = DiskEngine->GetWalCheckpoint1Block() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot0Offset = (DiskEngine->GetWalCheckpoint0Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot1Offset = (DiskEngine->GetWalCheckpoint1Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
       uuid_t raw_inst;
       memset(raw_inst, 0, sizeof(raw_inst));
       memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));
       wal_config.StoreId = Base::TUuid(raw_inst);
+      wal_config.NoSync = Cmd.WalNoSync;
+      wal_config.EarlyAck = Cmd.WalEarlyAck;
 
       auto *persistent_dev = DiskEngine->GetPersistentDevice();
       assert(persistent_dev);
@@ -1663,18 +1715,26 @@ void TServer::Init() {
       uint64_t start_lsn = 1UL;
       uint64_t start_group = 1UL;
       uint32_t start_lap = 1U;
+      uint64_t start_ring_offset = 0UL;
+      uint64_t start_chain = 0UL;
 
       auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
-        start_group = cp_opt->CheckpointNum + 1UL;
+        if (cp_opt->HeadGroupNum > 0) {
+          start_group = cp_opt->HeadGroupNum;
+          start_lap = cp_opt->HeadLap;
+          start_ring_offset = cp_opt->HeadRingOffset;
+          start_chain = cp_opt->HeadChain;
+        }
       }
 
-      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap);
+      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap, start_ring_offset, start_chain);
       if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
         throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
       }
 
+      std::vector<Base::TUuid> restored_povs;
       Indy::Fiber::TJumpRunnable wal_recovery_jumper([&] {
         /* Step 6: Restore safe POVs from POV records */
         for (const auto &rec : scan_result.Records) {
@@ -1710,12 +1770,13 @@ void TServer::Init() {
             } catch (...) {
               DurableManager->New<TPov>(pov_id, pov_ttl, session_id, static_cast<TPov::TAudience>(aud_c), static_cast<TPov::TPolicy>(pol_c), shared_parents);
             }
+            restored_povs.push_back(pov_id);
           }
         }
 
         /* Step 7: Replay transactions through slave apply path */
         for (const auto &rec : scan_result.Records) {
-          if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn && rec.Lsn >= start_lsn) {
             Indy::TReplicationStreamer streamer;
             std::string str(rec.Body.data(), rec.Body.size());
             auto recorder = std::make_shared<Io::TRecorder>(str);
@@ -1728,47 +1789,56 @@ void TServer::Init() {
       });
       wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
 
-      /* Step 8: Instantiate Wal and write initial checkpoint */
-      uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
-      uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
-      uint32_t current_lap = scan_result.LastValidLap;
-
-      Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap);
-      Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
-      RepoManager->SetWal(Wal.get());
-    }
-    /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
-      ScheduleRunnerHost(&DurableLayerCleanerRunner);
-      Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
-      try {
-        frame->Latch(&DurableLayerCleanerRunner, DurableManager.get(), static_cast<Fiber::TRunnable::TFunc>(&Durable::TManager::RunLayerCleaner));
-      } catch (...) {
-        Fiber::TFrame::LocalFramePool->Free(frame);
-        throw;
-      }
-      //Scheduler->Schedule(bind(&Durable::TManager::RunLayerCleaner, DurableManager.get()));
-    }
-
-    auto tetris_runner_setup_cb = [this](Indy::Fiber::TRunner *runner) {
-      ForEachSchedCallbackExtraSet.insert(runner);
-      using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
-                                                                        Orly::Indy::Disk::Util::LogicalBlockSize,
-                                                                        Orly::Indy::Disk::Util::PhysicalBlockSize,
-                                                                        Orly::Indy::Disk::Util::CheckedPage, true>;
-      if (!Cmd.MemorySim) {
-        /* if this is a disk based engine, allocate event pools */
-        if (!Disk::Util::TDiskController::TEvent::LocalEventPool) {
-          Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
+      for (const auto &p_id : restored_povs) {
+        auto repo = RepoManager->TryGetLiveRepo(p_id);
+        if (repo) {
+          repo->JoinTetris();
         }
       }
-      assert(!TLocalReadFileCache::Cache);
-      TLocalReadFileCache::Cache = new TLocalReadFileCache();
-      assert(!Disk::TLocalWalkerCache::Cache);
-      Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
-    };
 
-    TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
-    RepoManager->SetTetrisManager(TetrisManager);
+      if (Cmd.IsDurableAcksEnabled()) {
+        /* Step 8: Instantiate Wal and write initial checkpoint */
+        uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
+        uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
+        uint32_t current_lap = scan_result.LastValidLap;
+
+        bool has_unpromoted_writes = false;
+        if (GlobalRepo->GetSequenceNumberStart().has_value()) {
+          has_unpromoted_writes = true;
+        }
+        for (const auto &p_id : restored_povs) {
+          auto repo = RepoManager->TryGetLiveRepo(p_id);
+          if (repo && repo->GetSequenceNumberStart().has_value()) {
+            has_unpromoted_writes = true;
+            break;
+          }
+        }
+
+        uint64_t min_unpromoted_lsn = 0UL;
+        for (const auto &rec : scan_result.Records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn && rec.Lsn >= start_lsn) {
+            if (min_unpromoted_lsn == 0UL || rec.Lsn < min_unpromoted_lsn) {
+              min_unpromoted_lsn = rec.Lsn;
+            }
+          }
+        }
+
+        uint64_t head_lsn = start_lsn;
+        if (!has_unpromoted_writes) {
+          head_lsn = next_lsn;
+        } else if (min_unpromoted_lsn > 0) {
+          head_lsn = min_unpromoted_lsn;
+        }
+
+        auto head_loc = scan_result.FindGroupForLsn(head_lsn);
+
+        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain);
+        Wal->Checkpoint(head_lsn, GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+        RepoManager->SetWal(Wal.get());
+        syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld), group %ld, ring offset %ld", next_lsn, head_lsn, next_group, scan_result.NextRingOffset);
+      }
+      TetrisManager->ResumePromotion();
+    }
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
         ScheduleRunnerHost(&RunReplicationQueueRunner);

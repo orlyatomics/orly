@@ -138,12 +138,12 @@ def check_records(c, pov, step):
 
 echo "[3/9] start fresh (create=true), install, write"
 start_server true run1
-# The pov id is captured for cycle 2: a pre-restart pov must be REFUSED
-# after the restart, not silently resurrected as an empty shell (#439).
+# The fast pov id is captured for cycle 2: a pre-restart fast pov must be REFUSED
+# after the restart, not silently resurrected as an empty shell (#439, #755).
 OLD_POV="$(client "
 import orly
 c = orly.connect('ws://127.0.0.1:19602/', timeout=10, recv_timeout=60)
-c.new_session(); c.install('kv', 1); c.install('rec', 1); pov = c.new_pov()
+c.new_session(); c.install('kv', 1); c.install('rec', 1); pov = c.new_pov(safe=False)
 for n in range(1, 11):
     c.call(pov, 'kv', 'write_val', {'n': n, 'x': n * 100})
 assert c.call(pov, 'kv', 'read_val', {'n': 5}) == 500

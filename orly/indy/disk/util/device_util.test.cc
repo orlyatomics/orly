@@ -76,3 +76,61 @@ FIXTURE(SuperBlockWalFields) {
   EXPECT_EQ(dev_read.VolumeId.Id, 42UL);
   EXPECT_EQ(std::string(dev_read.VolumeId.InstanceName), "test_inst");
 }
+
+FIXTURE(FormatVersionUpgradeAndDowngrade) {
+  Base::TTmpFile tmp_file;
+  EXPECT_EQ(ftruncate(tmp_file.GetFd(), TDeviceUtil::BlockSize * 2), 0);
+
+  /* Start as format version 0 */
+  TDeviceUtil::TOrlyDevice dev_write;
+  dev_write.VolumeId.Id = 99UL;
+  strncpy(dev_write.VolumeId.InstanceName, "v0_inst", MaxInstanceNameSize);
+  dev_write.FormatVersion = 0UL;
+  dev_write.WalStartBlock = 0UL;
+  dev_write.WalNumBlocks = 0UL;
+
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+
+  TDeviceUtil::TOrlyDevice dev_read;
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.FormatVersion, 0UL);
+  EXPECT_EQ(dev_read.WalNumBlocks, 0UL);
+
+  /* Upgrade to format version 1 */
+  dev_write.FormatVersion = 1UL;
+  dev_write.WalStartBlock = 100UL;
+  dev_write.WalNumBlocks = 2048UL;
+  dev_write.WalCheckpoint0Block = 2148UL;
+  dev_write.WalCheckpoint1Block = 2149UL;
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.FormatVersion, 1UL);
+  EXPECT_EQ(dev_read.WalStartBlock, 100UL);
+  EXPECT_EQ(dev_read.WalNumBlocks, 2048UL);
+
+  /* Downgrade back to format version 0 */
+  dev_write.FormatVersion = 0UL;
+  dev_write.WalStartBlock = 0UL;
+  dev_write.WalNumBlocks = 0UL;
+  dev_write.WalCheckpoint0Block = 0UL;
+  dev_write.WalCheckpoint1Block = 0UL;
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.FormatVersion, 0UL);
+  EXPECT_EQ(dev_read.WalNumBlocks, 0UL);
+}
+
+FIXTURE(FormatVersionFuture) {
+  Base::TTmpFile tmp_file;
+  EXPECT_EQ(ftruncate(tmp_file.GetFd(), TDeviceUtil::BlockSize * 2), 0);
+
+  TDeviceUtil::TOrlyDevice dev_write;
+  dev_write.FormatVersion = 2UL; // Future format version
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+
+  TDeviceUtil::TOrlyDevice dev_read;
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.FormatVersion, 2UL);
+}

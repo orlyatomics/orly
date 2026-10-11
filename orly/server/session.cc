@@ -576,6 +576,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       }
       transaction->Prepare();
       transaction->CommitAction();
+      transaction.reset();
     }
     /* Write backpressure on the pools (#584), with memory admission off. The backlog cap was
        held before the commit (#721). See ApplyWriteBackpressure. */
@@ -848,6 +849,7 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       }
       transaction->Prepare();
       transaction->CommitAction();
+      transaction.reset();
       if (commit_seq_out) {
         *commit_seq_out = commit_seq;
       }

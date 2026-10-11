@@ -221,6 +221,59 @@ FIXTURE(CheckpointAndHeadAdvance) {
   EXPECT_EQ(payload_str, "checkpoint_metadata_2");
 }
 
+FIXTURE(ReopenAndAppendAcrossSessions) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  /* Session 1: write 5 records and checkpoint */
+  {
+    TWal wal(&device, config);
+    for (size_t i = 1; i <= 5; ++i) {
+      std::string s = "s1_" + std::to_string(i);
+      wal.AppendAndWait(TWalRecordType::Txn, s.data(), s.size());
+    }
+    wal.Flush();
+    wal.Checkpoint(1UL, 50UL);
+  }
+
+  /* Scan session 1 */
+  auto scan1 = TWal::Scan(&device, config);
+  EXPECT_EQ(scan1.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan1.Records.size(), 5UL);
+  EXPECT_EQ(scan1.LastValidLsn, 5UL);
+  EXPECT_GT(scan1.NextRingOffset, 0UL);
+  EXPECT_NE(scan1.LastGroupChecksum, 0UL);
+
+  /* Session 2: reopen WAL at scan1.NextRingOffset and append 5 more records */
+  {
+    const uint64_t next_lsn = scan1.LastValidLsn + 1UL;
+    const uint64_t next_group = scan1.LastValidGroupNum + 1UL;
+    TWal wal(&device, config, next_lsn, next_group, scan1.LastValidLap, scan1.NextRingOffset, scan1.LastGroupChecksum);
+    for (size_t i = 6; i <= 10; ++i) {
+      std::string s = "s2_" + std::to_string(i);
+      wal.AppendAndWait(TWalRecordType::Txn, s.data(), s.size());
+    }
+    wal.Flush();
+  }
+
+  /* Scan session 2 */
+  auto scan2 = TWal::Scan(&device, config);
+  EXPECT_EQ(scan2.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan2.Records.size(), 10UL);
+  EXPECT_EQ(scan2.LastValidLsn, 10UL);
+  EXPECT_GT(scan2.LastValidGroupNum, scan1.LastValidGroupNum);
+  for (size_t i = 0; i < 10; ++i) {
+    EXPECT_EQ(scan2.Records[i].Lsn, i + 1);
+  }
+}
+
 FIXTURE(CopyForward) {
   TFaultPlan plan;
   TFaultDevice device(&plan, WalTestBlocks);
@@ -477,3 +530,96 @@ FIXTURE(PovRecordRoundTrip) {
     EXPECT_EQ(id, expected_shared[i]);
   }
 }
+
+FIXTURE(NegativeControlNoSync) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  config.NoSync = true;
+
+  {
+    TWal wal(&device, config);
+    for (size_t i = 0; i < 5; ++i) {
+      std::string data = "nosync_record_" + std::to_string(i);
+      const uint64_t lsn = wal.AppendAndWait(TWalRecordType::Txn, data.data(), data.size());
+      EXPECT_EQ(lsn, i + 1);
+    }
+    EXPECT_GE(wal.GetDurableLsn(), 5UL);
+  }
+}
+
+FIXTURE(NegativeControlEarlyAck) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  config.EarlyAck = true;
+
+  {
+    TWal wal(&device, config);
+    for (size_t i = 0; i < 5; ++i) {
+      std::string data = "earlyack_record_" + std::to_string(i);
+      const uint64_t lsn = wal.AppendAndWait(TWalRecordType::Txn, data.data(), data.size());
+      EXPECT_EQ(lsn, i + 1);
+    }
+    EXPECT_GE(wal.GetDurableLsn(), 5UL);
+  }
+}
+
+FIXTURE(RingWrapAndCheckpointHeadScan) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 32UL * 1024UL;  // 8 groups of 4 KiB
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  /* Session 1: write 12 records with AppendAndWait.
+     With AutoSealOnQuiet, each record + seal is 2 groups = 24 groups.
+     Wraps the 8-group ring multiple times across 3 laps, overwriting earlier laps. */
+  {
+    TWal wal(&device, config);
+    for (size_t i = 1; i <= 12; ++i) {
+      std::string data = "wrap_rec_" + std::to_string(i);
+      wal.AppendAndWait(TWalRecordType::Txn, data.data(), data.size());
+      if (i == 9) {
+        wal.Checkpoint(9UL, 90UL);
+      }
+    }
+    wal.Flush();
+  }
+
+  /* Read checkpoint from Session 1 */
+  auto cp = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId);
+  EXPECT_TRUE(cp.has_value());
+  EXPECT_EQ(cp->HeadLsn, 9UL);
+  EXPECT_EQ(cp->HeadLap, 3U);
+  EXPECT_EQ(cp->HeadGroupNum, 17UL);
+  EXPECT_EQ(cp->HeadRingOffset, 0UL);
+  EXPECT_NE(cp->HeadChain, 0UL);
+
+  /* Scan starting from checkpoint head location */
+  auto scan_res = TWal::Scan(&device, config, cp->HeadGroupNum, cp->HeadLsn, cp->HeadLap, cp->HeadRingOffset, cp->HeadChain);
+  EXPECT_EQ(scan_res.Status, TScanStatus::Clean);
+  EXPECT_EQ(scan_res.Records.size(), 4UL);  // records 9, 10, 11, 12
+  EXPECT_EQ(scan_res.LastValidLsn, 12UL);
+  EXPECT_EQ(scan_res.LastValidGroupNum, 24UL);
+  EXPECT_EQ(scan_res.LastValidLap, 4U);
+  EXPECT_EQ(scan_res.NextRingOffset, 0UL);
+}
+
+

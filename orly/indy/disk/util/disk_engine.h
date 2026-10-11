@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <base/mem_aligned_ptr.h>
+#include <base/util/error.h>
 #include <orly/indy/disk/util/disk_util.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/file_service.h>
@@ -225,12 +227,20 @@ namespace Orly {
                 assert(cp1_range.second == 1UL);
                 WalCheckpoint1Block = cp1_range.first;
                 FormatVersion = 1UL;
+
+                /* Zero checkpoint blocks and first WAL block on physical media, and flush (§8.7) */
                 for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
                   entry.second.FormatVersion = FormatVersion;
                   entry.second.WalStartBlock = WalStartBlock;
                   entry.second.WalNumBlocks = WalNumBlocks;
                   entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
                   entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                  Base::TFd fd = open(entry.first.c_str(), O_RDWR);
+                  auto zero_buf = Base::MemAlignedAllocZeroInitialized<char>(PhysicalBlockSize, PhysicalBlockSize);
+                  ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint0Block + 1UL) * PhysicalBlockSize));
+                  ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint1Block + 1UL) * PhysicalBlockSize));
+                  ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalStartBlock + 1UL) * PhysicalBlockSize));
+                  fsync(fd);
                   TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
                 }
               }
@@ -261,8 +271,8 @@ namespace Orly {
                 WalCheckpoint0Block = dev_info.WalCheckpoint0Block;
                 WalCheckpoint1Block = dev_info.WalCheckpoint1Block;
               }
-              if (durable_acks && FormatVersion == 0UL) {
-                throw std::runtime_error("--durable_acks=experimental refuses to upgrade an existing store (format version 0)");
+              if (FormatVersion > 1UL) {
+                throw std::runtime_error("unsupported store format version " + std::to_string(FormatVersion) + ": this binary supports format versions up to 1");
               }
               if (FormatVersion == 1UL) {
                 VolMan->MarkBlockRangeUsed(TBlockRange(WalStartBlock, WalNumBlocks));
@@ -291,6 +301,54 @@ namespace Orly {
                                                          AppendLogBlockVec,
                                                          file_init_cb,
                                                          create);
+
+            /* Auto-upgrade format version 0 stores when durable_acks is enabled (#755 Stage 3). */
+            if (!create && durable_acks && FormatVersion == 0UL) {
+              const size_t wal_blocks = (wal_mb * 1024 * 1024) / Util::PhysicalBlockSize;
+              Util::TBlockRange wal_range;
+              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, wal_blocks, [&](const TBlockRange &range) {
+                wal_range = range;
+              });
+              if (unlikely(wal_range.second != wal_blocks)) {
+                throw std::runtime_error("cannot upgrade store to format version 1: unable to allocate contiguous WAL range of " + std::to_string(wal_mb) + " MB from free space; start with --durable_acks=false to open as version 0");
+              }
+              TBlockRange cp0_range, cp1_range;
+              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+                cp0_range = range;
+              });
+              if (unlikely(cp0_range.second != 1UL)) {
+                throw std::runtime_error("cannot upgrade store to format version 1: unable to allocate checkpoint block 0; start with --durable_acks=false to open as version 0");
+              }
+              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+                cp1_range = range;
+              });
+              if (unlikely(cp1_range.second != 1UL)) {
+                throw std::runtime_error("cannot upgrade store to format version 1: unable to allocate checkpoint block 1; start with --durable_acks=false to open as version 0");
+              }
+              WalStartBlock = wal_range.first;
+              WalNumBlocks = wal_range.second;
+              WalCheckpoint0Block = cp0_range.first;
+              WalCheckpoint1Block = cp1_range.first;
+              FormatVersion = 1UL;
+
+              /* Zero checkpoint blocks and first WAL block on physical media, and flush (§8.7) */
+              for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
+                entry.second.FormatVersion = FormatVersion;
+                entry.second.WalStartBlock = WalStartBlock;
+                entry.second.WalNumBlocks = WalNumBlocks;
+                entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
+                entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                Base::TFd fd = open(entry.first.c_str(), O_RDWR);
+                auto zero_buf = Base::MemAlignedAllocZeroInitialized<char>(PhysicalBlockSize, PhysicalBlockSize);
+                ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint0Block + 1UL) * PhysicalBlockSize));
+                ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint1Block + 1UL) * PhysicalBlockSize));
+                ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalStartBlock + 1UL) * PhysicalBlockSize));
+                fsync(fd);
+                TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
+              }
+              syslog(LOG_INFO, "upgraded store to format version 1: WAL [%lu, %lu], checkpoints [%lu, %lu]",
+                     WalStartBlock, WalNumBlocks, WalCheckpoint0Block, WalCheckpoint1Block);
+            }
 
             Engine =
                 std::make_unique<Util::TEngine>(VolMan, PageCache.get(), BlockCache.get(), FileService.get(), true);

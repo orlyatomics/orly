@@ -128,7 +128,7 @@ namespace Orly {
 
       static_assert(sizeof(TRecordHeader) == 20, "TRecordHeader size must be 20 bytes");
 
-      /* Alternating checkpoint header (80 bytes, packed) */
+      /* Alternating checkpoint header (packed) */
       struct TCheckpointHeader {
         char Magic[8];             // "ORLYCHK1"
         uint16_t FormatVersion;    // 1
@@ -138,15 +138,20 @@ namespace Orly {
         uint64_t HeadLsn;          // Oldest unretired LSN
         uint64_t DurableLsn;       // Highest durable LSN
         uint64_t GlobalFlushedSeq; // Highest flushed sequence of global POV
-        uint32_t PayloadLen;       // Additional checkpoint payload bytes
+        uint64_t HeadGroupNum;     // Group number of oldest unretired group
+        uint32_t HeadLap;          // Lap of oldest unretired group
         uint32_t Reserved2;        // 0
+        uint64_t HeadRingOffset;   // Byte ring offset of oldest unretired group
+        uint64_t HeadChain;        // Checksum of group preceding the head group
+        uint32_t PayloadLen;       // Additional checkpoint payload bytes
+        uint32_t Reserved3;        // 0
         uint64_t PayloadChecksum;  // Checksum of payload bytes
-        uint64_t HeaderChecksum;   // Checksum of preceding 72 bytes
+        uint64_t HeaderChecksum;   // Checksum of preceding covered bytes
       };
 
-      static_assert(sizeof(TCheckpointHeader) == 84, "TCheckpointHeader size must be 84 bytes");
+      static_assert(sizeof(TCheckpointHeader) == 116, "TCheckpointHeader size must be 116 bytes");
       static constexpr size_t CheckpointHeaderChecksumCoveredBytes = offsetof(TCheckpointHeader, HeaderChecksum);
-      static_assert(CheckpointHeaderChecksumCoveredBytes == 76, "TCheckpointHeader checksum covers 76 bytes");
+      static_assert(CheckpointHeaderChecksumCoveredBytes == 108, "TCheckpointHeader checksum covers 108 bytes");
       #pragma pack(pop)
 
       /* Checkpoint data snapshot */
@@ -155,6 +160,10 @@ namespace Orly {
         uint64_t HeadLsn = 0UL;
         uint64_t DurableLsn = 0UL;
         uint64_t GlobalFlushedSeq = 0UL;
+        uint64_t HeadGroupNum = 0UL;
+        uint32_t HeadLap = 1U;
+        uint64_t HeadRingOffset = 0UL;
+        uint64_t HeadChain = 0UL;
         std::vector<char> Payload;
       };
 
@@ -175,16 +184,45 @@ namespace Orly {
         Empty                 // Log is empty
       };
 
+      struct TGroupLocation {
+        uint64_t GroupNum = 0UL;
+        uint32_t Lap = 1U;
+        uint64_t Offset = 0UL;
+        uint64_t Chain = 0UL;
+        uint64_t FirstLsn = 0UL;
+        uint64_t LastLsn = 0UL;
+      };
+
       struct TScanResult {
         TScanStatus Status = TScanStatus::Empty;
         uint64_t LastValidLsn = 0UL;
         uint64_t LastValidGroupNum = 0UL;
         uint32_t LastValidLap = 1U;
+        uint64_t NextRingOffset = 0UL;
+        uint64_t LastGroupChecksum = 0UL;
+        uint64_t StartGroupNum = 1UL;
         uint64_t StoppedAtGroupNum = 0UL;
         uint64_t DamagedLsnStart = 0UL;
         uint64_t DamagedLsnEnd = 0UL;
         std::string ProblemDescription;
         std::vector<TScannedRecord> Records;
+        std::vector<TGroupLocation> GroupLocations;
+
+        TGroupLocation FindGroupForLsn(uint64_t lsn) const {
+          for (const auto &loc : GroupLocations) {
+            if (loc.LastLsn >= lsn) {
+              return loc;
+            }
+          }
+          TGroupLocation tail;
+          tail.GroupNum = (LastValidGroupNum > 0) ? (LastValidGroupNum + 1UL) : StartGroupNum;
+          tail.Lap = LastValidLap;
+          tail.Offset = NextRingOffset;
+          tail.Chain = LastGroupChecksum;
+          tail.FirstLsn = (LastValidLsn > 0) ? (LastValidLsn + 1UL) : 1UL;
+          tail.LastLsn = tail.FirstLsn;
+          return tail;
+        }
       };
 
       inline std::ostream &operator<<(std::ostream &strm, TWalRecordType type) {
@@ -222,9 +260,11 @@ namespace Orly {
           size_t MaxInFlightGroups = 2UL;
           bool AutoSealOnQuiet = true;
           std::chrono::microseconds QuietInterval = std::chrono::microseconds(500);
+          bool NoSync = false;       // Test-only negative control: skip device sync while acknowledging (#755)
+          bool EarlyAck = false;     // Test-only negative control: acknowledge before group sync (#755)
         };
 
-        TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn = 1UL, uint64_t start_group_num = 1UL, uint32_t start_lap = 1U);
+        TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn = 1UL, uint64_t start_group_num = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL, uint64_t previous_checksum = 0UL, uint64_t head_lsn = 0UL, uint64_t head_group_num = 0UL, uint32_t head_lap = 0U, uint64_t head_ring_offset = 0UL, uint64_t head_chain = 0UL);
         ~TWal();
 
         /* Append a record. Returns assigned LSN. Thread-safe. */
@@ -257,7 +297,7 @@ namespace Orly {
         uint64_t GetGroupNum() const;
 
         /* Static recovery scanners */
-        static TScanResult Scan(Util::TDevice *device, const TConfig &config, uint64_t start_group_num = 1UL, uint64_t start_lsn = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL);
+        static TScanResult Scan(Util::TDevice *device, const TConfig &config, uint64_t start_group_num = 1UL, uint64_t start_lsn = 1UL, uint32_t start_lap = 1U, uint64_t start_ring_offset = 0UL, uint64_t start_chain = 0UL);
         static std::optional<TCheckpoint> ReadNewestCheckpoint(Util::TDevice *device, Util::TOffset slot0, Util::TOffset slot1, const Base::TUuid &store_id);
 
         private:
@@ -278,6 +318,16 @@ namespace Orly {
           size_t Offset = 0UL;
           size_t Size = 0UL;
           bool IsSealOnly = false;
+        };
+
+        struct TGroupSummary {
+          uint64_t GroupNum = 0UL;
+          uint64_t FirstLsn = 0UL;
+          uint64_t LastLsn = 0UL;
+          uint32_t Lap = 1U;
+          size_t Offset = 0UL;
+          uint64_t HeaderChecksum = 0UL;
+          uint64_t Chain = 0UL;
         };
 
         void LeaderMain();
@@ -302,12 +352,17 @@ namespace Orly {
         uint64_t HighestSealedLsn;
         uint64_t DurableLsn;
         uint64_t HeadLsn;
+        uint64_t HeadGroupNum;
+        uint32_t HeadLap;
+        uint64_t HeadRingOffset;
+        uint64_t HeadChain;
 
         bool Stopping;
         bool Failed;
 
         std::deque<TPendingRecord> PendingRecords;
         std::deque<TInFlightGroup> InFlightGroups;
+        std::deque<TGroupSummary> ActiveGroups;
 
         std::thread LeaderThread;
         std::thread SyncerThread;

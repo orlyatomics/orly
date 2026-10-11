@@ -228,6 +228,12 @@ class Server:
                '--do_fsync', '--no_realtime', '--log_info',
                f'--update_pool_size={self.args.update_pool_size}',
                f'--update_entry_pool_size={self.args.update_pool_size * 2}']
+        if getattr(self.args, 'mode', 'durable') == 'durable':
+            cmd.append('--durable_acks=local')
+            if self.args.negative == 'nosync':
+                cmd.append('--wal_no_sync')
+            elif self.args.negative == 'early_ack':
+                cmd.append('--wal_early_ack')
         self.log = open(self.logpath, 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + self.args.startup_timeout
@@ -401,7 +407,9 @@ def main():
     ap.add_argument('--max-run', type=float, default=6.0, help='longest load before a kill (s)')
     ap.add_argument('--signal', choices=['KILL', 'TERM'], default=os.environ.get('SIGNAL', 'KILL'),
                     help='KILL (the campaign) or TERM (a graceful stop, for comparison: same checks)')
-    ap.add_argument('--negative', choices=['none', 'rollback'], default=os.environ.get('NEGATIVE', 'none'))
+    ap.add_argument('--mode', choices=['bound', 'durable'], default=os.environ.get('MODE', 'durable'),
+                    help='bound (legacy bound) or durable (zero acknowledged safe writes lost across kills)')
+    ap.add_argument('--negative', choices=['none', 'rollback', 'nosync', 'early_ack'], default=os.environ.get('NEGATIVE', 'none'))
     ap.add_argument('--orly-out', default=os.environ.get('ORLY_OUT', os.path.join(REPO_ROOT, '../out_orly/release')))
     ap.add_argument('--port', type=int, default=19900)
     ap.add_argument('--volume-gb', type=int, default=3)
@@ -424,12 +432,12 @@ def main():
     per_kill = []
     try:
         log(f'kill campaign: kills={args.kills} signal={args.signal} seed={args.seed} '
-            f'negative={args.negative} instance={srv.instance} work={work}')
+            f'mode={args.mode} negative={args.negative} instance={srv.instance} work={work}')
         os.makedirs(f'{work}/packages')
         open(f'{work}/packages/__orly__', 'w').close()
         subprocess.check_call([os.path.join(args.orly_out, 'orly/orlyc'), '--skip-tests', '-o', work,
                                os.path.join(REPO_ROOT, 'tests/kill_campaign.orly')], cwd=work,
-                              stdout=subprocess.DEVNULL)
+                               stdout=subprocess.DEVNULL)
         shutil.copy(f'{work}/{PKG}.1.so', f'{work}/packages/')
         srv.create_volume()
         err = srv.start(create=True)
@@ -441,19 +449,28 @@ def main():
         writers = [Writer(i, spec) for i, spec in enumerate(WRITERS)]
         snapshots = {}
         old_sessions = []
+        povs = {}
         for k in range(1, args.kills + 1):
             epoch = k
-            # Fresh POVs each epoch: POVs don't survive a restart (#439).
             setup = orly.connect(url, timeout=10, recv_timeout=120)
             setup.new_session()
             old_sessions.append(setup.session_id)
-            povs = {}
-            for w in writers:
-                if w.shared and w.group not in povs and w.parent is None:
-                    povs[w.group] = setup.new_pov(safe=w.safe, shared=True)
-            for w in writers:
-                if w.parent is not None and w.group not in povs:
-                    povs[w.group] = setup.new_pov(safe=w.safe, shared=True, parent=povs[w.parent])
+            if args.mode != 'durable' or k == 1:
+                povs = {}
+                for w in writers:
+                    if w.shared and w.group not in povs and w.parent is None:
+                        povs[w.group] = setup.new_pov(safe=w.safe, shared=True)
+                for w in writers:
+                    if w.parent is not None and w.group not in povs:
+                        povs[w.group] = setup.new_pov(safe=w.safe, shared=True, parent=povs[w.parent])
+            else:
+                # In durable mode, safe POVs survive restart (#755)! Fast POVs are ephemeral (#439).
+                for w in writers:
+                    if not w.safe and w.shared and w.parent is None:
+                        povs[w.group] = setup.new_pov(safe=False, shared=True)
+                for w in writers:
+                    if not w.safe and w.parent is not None:
+                        povs[w.group] = setup.new_pov(safe=False, shared=True, parent=povs[w.parent])
             killed = threading.Event()
             started_at = time.monotonic()
             for w in writers:
@@ -507,12 +524,15 @@ def main():
                 if w.error:
                     kv.append(f'{w.name}: {w.error}')
             srv.detach()
-            if args.negative == 'rollback':
+            if args.negative in ('rollback', 'nosync', 'early_ack'):
                 snapshots[k] = f'{work}/snap-{k}.img'
                 subprocess.check_call(['cp', '--sparse=always', srv.image, snapshots[k]])
-                if k >= 3 and k % 2 == 1:
+                if args.negative == 'rollback' and k >= 3 and k % 2 == 1:
                     log(f'  NEGATIVE CONTROL: putting back the volume image from kill {k - 2}')
                     subprocess.check_call(['cp', '--sparse=always', snapshots[k - 2], srv.image])
+                elif args.negative in ('nosync', 'early_ack') and k >= 3 and k % 2 == 1:
+                    log(f'  NEGATIVE CONTROL: dropping unsynced writes to simulate power loss (putting back snap-{k - 1})')
+                    subprocess.check_call(['cp', '--sparse=always', snapshots[k - 1], srv.image])
             srv.attach()
             err = srv.start(create=False)
             if err:
@@ -531,15 +551,30 @@ def main():
                 c.new_session()
                 rpov = c.new_pov(safe=False, shared=False)
                 total = int(c.call(rpov, PKG, 'total'))
-                old_pov = povs['A']
-                try:
-                    c.call(old_pov, PKG, 'count_of', {'w': 0})
-                    kv.append(f'pre-restart POV {old_pov} was resurrected (#439)')
-                except orly.OrlyError as ex:
-                    # 'ephemeral' when its record reloaded (#439); 'doesn't exist' when the record
-                    # itself was newer than what reached disk. Either way it is refused.
-                    if 'ephemeral' not in str(ex) and "doesn't exist" not in str(ex):
-                        kv.append(f'pre-restart POV refused with the wrong error: {ex}')
+                if args.mode == 'durable':
+                    old_pov = povs['A']
+                    try:
+                        c.call(old_pov, PKG, 'count_of', {'w': 0})
+                    except orly.OrlyError as ex:
+                        kv.append(f'safe pre-restart POV {old_pov} failed to survive: {ex}')
+                    if 'C' in povs:
+                        fast_pov = povs['C']
+                        try:
+                            c.call(fast_pov, PKG, 'count_of', {'w': 0})
+                            kv.append(f'fast pre-restart POV {fast_pov} was resurrected (#439)')
+                        except orly.OrlyError as ex:
+                            if 'ephemeral' not in str(ex) and "doesn't exist" not in str(ex):
+                                kv.append(f'fast pre-restart POV refused with the wrong error: {ex}')
+                else:
+                    old_pov = povs['A']
+                    try:
+                        c.call(old_pov, PKG, 'count_of', {'w': 0})
+                        kv.append(f'pre-restart POV {old_pov} was resurrected (#439)')
+                    except orly.OrlyError as ex:
+                        # 'ephemeral' when its record reloaded (#439); 'doesn't exist' when the record
+                        # itself was newer than what reached disk. Either way it is refused.
+                        if 'ephemeral' not in str(ex) and "doesn't exist" not in str(ex):
+                            kv.append(f'pre-restart POV refused with the wrong error: {ex}')
                 resumed = 0
                 for sid in old_sessions[-3:]:
                     try:
@@ -562,7 +597,7 @@ def main():
                     if r < w.floor:
                         kv.append(f'{w.name}: {w.floor - r} writes that a previous restart gave back are gone '
                                   f'(had 1..{w.floor}, now 1..{r})')
-                    if w.how == 'durable' and r < w.acked:
+                    if (w.how == 'durable' or (args.mode == 'durable' and w.safe)) and r < w.acked:
                         kv.append(f'{w.name}: {w.acked - r} writes acknowledged as durable are gone '
                                   f'(acknowledged up to {w.acked}, got back 1..{r})')
                     if r > w.sent:
