@@ -1320,7 +1320,7 @@ void TManager::ClearReplaySeeds() {
 }
 
 size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena,
-                                              const TPushCallback &on_push) {
+                                              const TPushCallback &on_push, const THeadHold *head_hold) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator iter = core_vec.begin();
@@ -1444,6 +1444,20 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
     if (on_push && !has_pop) {
       apply_transaction->ReportCommitLsn(&lsn);
     }
+    /* Taken before the append, so the record is at or past it, and let go only after on_push. */
+    struct THeld {
+      ~THeld() {
+        if (HeadHold) {
+          HeadHold->Release(Token);
+        }
+      }
+      const THeadHold *HeadHold = nullptr;
+      uint64_t Token = 0UL;
+    } held;
+    if (head_hold && on_push && !has_pop && !pushed.empty()) {
+      held.Token = head_hold->Hold();
+      held.HeadHold = head_hold;
+    }
     apply_transaction->Prepare();
     apply_transaction->CommitAction();
     apply_transaction.reset();
@@ -1457,7 +1471,8 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
 }
 
 size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
-  return Manager->ApplyCoreVectorTransactions(core_vec, arena, Manager->ReplicatedPushCb);
+  return Manager->ApplyCoreVectorTransactions(core_vec, arena, Manager->ReplicatedPushCb,
+                                              Manager->ReplicatedHeadHold.Hold ? &Manager->ReplicatedHeadHold : nullptr);
 }
 
 void TManager::TSlave::TransitionToSlave() {

@@ -6,8 +6,8 @@ instead of running again.
   1. A disk-backed master (--durable_acks=local) writes key 1 into a safe shared POV with
      operation id A, before any slave has joined.
   2. A slave joins. The master writes key 2 with operation id B, which replicates to the slave.
-     The slave runs --mem_sim: a disk-backed slave crashes as it syncs its first data file (#866).
-     Only the master needs the log, which is what puts the ids in its records.
+     Both servers are disk-backed with the log: the master's records carry the ids, and the
+     slave logs what it applies and holds its checkpoint head until each id is in its table (#866).
   3. The master is SIGKILLed and the slave promotes.
   4. On the promoted slave:
        read     keys 1 and 2 are there, and the writer's `+=` counter is 2
@@ -166,7 +166,7 @@ def main():
         sys.exit('failover_retry_test.py needs root (losetup); run tests/failover_retry_test.sh')
     work = tempfile.mkdtemp(prefix='failover862.')
     master = Server(args, work, 'master', args.port)
-    slave = Server(args, work, 'slave', args.port + 10, mem_sim=True)
+    slave = Server(args, work, 'slave', args.port + 10)
     failures = []
     finished = False
 

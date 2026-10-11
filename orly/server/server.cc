@@ -1979,6 +1979,17 @@ void TServer::Init() {
                Atom::TCore::TArena *arena, uint64_t lsn) {
           RestoreOperation(repo_id, seq_num, meta_core, arena, lsn);
         });
+    /* Until RestoreOperation has its entry, nothing else keeps a checkpoint from passing the
+       record (#866). With no log there is no head to hold. */
+    RepoManager->SetReplicatedHeadHold(Indy::TManager::THeadHold{
+        [this]() -> uint64_t {
+          return (OperationTable && Wal) ? OperationTable->HoldHead(Wal->GetLastAppendedLsn() + 1UL) : 0UL;
+        },
+        [this](uint64_t token) {
+          if (token) {
+            OperationTable->ReleaseHead(token);
+          }
+        }});
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
         ScheduleRunnerHost(&RunReplicationQueueRunner, true);
