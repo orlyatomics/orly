@@ -75,18 +75,27 @@ TUpdate::TCopyClaim::~TCopyClaim() {
   Release();
 }
 
-bool TUpdate::TCopyClaim::TryAcquire(size_t num_updates, size_t num_entries) {
+bool TUpdate::TCopyClaim::TryAcquire(size_t num_updates, size_t num_entries, bool keep_reserve) {
   assert(!NumUpdates && !NumEntries);
-  if (!Pool.TryClaim(num_updates)) {
+  if (!Pool.TryClaim(num_updates, keep_reserve)) {
     return false;
   }
-  if (!TEntry::Pool.TryClaim(num_entries)) {
+  if (!TEntry::Pool.TryClaim(num_entries, keep_reserve)) {
     Pool.ReleaseClaim(num_updates);
     return false;
   }
   NumUpdates = num_updates;
   NumEntries = num_entries;
   return true;
+}
+
+void TUpdate::TCopyClaim::ReleaseSome(size_t num_updates, size_t num_entries) {
+  num_updates = std::min(num_updates, NumUpdates);
+  num_entries = std::min(num_entries, NumEntries);
+  Pool.ReleaseClaim(num_updates);
+  TEntry::Pool.ReleaseClaim(num_entries);
+  NumUpdates -= num_updates;
+  NumEntries -= num_entries;
 }
 
 void TUpdate::TCopyClaim::Release() {

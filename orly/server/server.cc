@@ -433,7 +433,8 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Memory admission (issue #607): keep this percent of the Update and Update Entry pools "
       "for the merges and Tetris promotions that free them, and refuse writes, with an "
       "insufficient_memory error, before they would use it. Reads, new sessions and new POVs "
-      "are never refused. 0 turns memory admission off. Default 25."
+      "are not refused (a new POV only if the Update pool is entirely full, #858). 0 turns "
+      "memory admission off. Default 25."
   );
   Param(
       &TCmd::AdmissionWaitMs, "admission_wait_ms", Optional, "admission_wait_ms\0",
@@ -1876,6 +1877,9 @@ void TServer::Init() {
               syslog(LOG_WARNING, "WAL recovery: not restoring pov %s; its parent has no Pov record", Base::AsStr(pov_id).c_str());
               continue;
             }
+            /* Downtime doesn't count against a pov's TTL: a restored pov gets its full TTL from the
+               moment recovery completes.  A TTL is an idle lease (its deadline is set when the last
+               pointer closes), and the Pov record holds no deadline to resume from anyway (#858). */
             auto pov_ttl = std::chrono::seconds(pov.TtlSec);
             RepoManager->GetRepo(pov_id, pov_ttl, parent_repo, pov.Policy == static_cast<char>(TPov::TPolicy::Safe), true);
             try {

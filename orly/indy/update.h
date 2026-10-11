@@ -320,7 +320,12 @@ namespace Orly {
 
         ~TCopyClaim();
 
-        bool TryAcquire(size_t num_updates, size_t num_entries);
+        /* keep_reserve: see TPool::TryClaim. */
+        bool TryAcquire(size_t num_updates, size_t num_entries, bool keep_reserve = false);
+
+        /* Gives back part of the claim, for blocks the copy has now allocated (they count as in
+           use from here). Never more than is held. */
+        void ReleaseSome(size_t num_updates, size_t num_entries);
 
         void Release();
 

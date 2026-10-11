@@ -156,7 +156,8 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                              size_t source_gen_id,
                              size_t dest_gen_id,
                              DiskPriority priority,
-                             size_t temp_file_consol_thresh)
+                             size_t temp_file_consol_thresh,
+                             Indy::TUpdate::TCopyClaim *claim)
     : NumKeys(0UL),
       LowestSeq(0UL),
       HighestSeq(0UL) {
@@ -284,6 +285,10 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
         }
         update->SetSequenceNumber(e.SeqNum);
         out_updates.emplace_back(TUpdate::CopyUpdate(update.get(), state_alloc));
+        /* The copy is in use now, so it no longer needs its share of the claim. */
+        if (claim) {
+          claim->ReleaseSome(1UL, 1UL);
+        }
 
         ++NumKeys;
       }

@@ -104,8 +104,12 @@ namespace Orly {
            copies never each hold part of what they need while both wait for the rest. A copy
            that is refused waits holding nothing. Writers count claims too (TryAdmit). Blocks a
            claimant has already allocated count twice until it releases its claim, which errs
-           towards refusing. */
-        bool TryClaim(size_t num_blocks);
+           towards refusing.
+
+           With keep_reserve, the claim must also leave the reserve free, as a write must. That
+           is for a copy that is only an optimisation (the disk merge's fold, #858), which must
+           not take the room kept for the copies that free the pool. */
+        bool TryClaim(size_t num_blocks, bool keep_reserve = false);
 
         void ReleaseClaim(size_t num_blocks);
 

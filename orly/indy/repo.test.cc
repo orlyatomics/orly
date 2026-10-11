@@ -1253,6 +1253,39 @@ FIXTURE(DiskMergeWithUpdatePoolFull) {
   });
 }
 
+/* #858: the fold claims its blocks before it allocates any. A fold too big for the room left
+   used to take every free block before it failed, and whatever else wanted one meanwhile (a new
+   POV's System repo write, after a restart) got a bare bad_alloc. Here the pool has room for a
+   few updates but not for the fold's twelve: the fold must not start, so nothing misses. */
+FIXTURE(DiskMergeFoldClaimsBeforeAllocating) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TDiskMergePoolFixture fixture;
+      EXPECT_EQ(fixture.CountLayers(), 2UL);
+      {
+        TPoolHog hog([] { return TUpdate::operator new(sizeof(TUpdate)); },
+                     [](void *ptr) { TUpdate::operator delete(ptr, sizeof(TUpdate)); });
+        EXPECT_GT(hog.GetSize(), 4UL);
+        hog.Give(4UL);
+        const size_t misses = TUpdate::GetUpdatePool().GetNumMisses();
+        fixture.Root.MergeDisk(4UL);
+        EXPECT_EQ(TUpdate::GetUpdatePool().GetNumMisses(), misses);
+        EXPECT_EQ(TUpdate::GetUpdatePool().GetNumBlocksClaimed(), 0UL);
+      }
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      fixture.AddFile();
+      fixture.Root.MergeDisk(4UL);
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* The merged file's disk layer comes from the Data Layer pool. */
 FIXTURE(DiskMergeWithDataLayerPoolFull) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
