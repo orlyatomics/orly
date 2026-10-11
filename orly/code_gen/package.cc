@@ -46,7 +46,6 @@
 using namespace Base;
 using namespace Jhm;
 using namespace std;
-using namespace std::placeholders;
 using namespace Orly;
 using namespace Orly::CodeGen;
 using namespace Util;
@@ -56,9 +55,9 @@ void ForEachExprInTestBlock(const function<void (const Expr::TExpr::TPtr &expr)>
   assert(cb);
   assert(block);
 
-  for(auto &test: block->GetTestCases()) {
+  for (const auto &test : block->GetTestCases()) {
     cb(test->GetExpr());
-    if(test->GetOptTestCaseBlock()) {
+    if (test->GetOptTestCaseBlock()) {
       ForEachExprInTestBlock(cb, test->GetOptTestCaseBlock());
     }
   }
@@ -66,9 +65,9 @@ void ForEachExprInTestBlock(const function<void (const Expr::TExpr::TPtr &expr)>
 
 void GetAddrsInTestBlock(const Symbol::Test::TTestCaseBlock::TPtr &block,
                          unordered_set<pair<Type::TType, Type::TType>> &addr_set) {
-  for(auto &test: block->GetTestCases()) {
+  for (const auto &test : block->GetTestCases()) {
     Expr::DatabaseAddrsInExpr(test->GetExpr(), addr_set);
-    if(test->GetOptTestCaseBlock()) {
+    if (test->GetOptTestCaseBlock()) {
       GetAddrsInTestBlock(test->GetOptTestCaseBlock(), addr_set);
     }
   }
@@ -91,7 +90,7 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
         Type::CollectObjects(expr->GetType(), Objects);
         const Expr::TWhere *where = expr->TryAs<Expr::TWhere>();
         if(where) {
-          for(auto &it: where->GetFunctions()) {
+          for (const auto &it : where->GetFunctions()) {
             collect_objects(it->GetExpr());
           }
         }
@@ -99,13 +98,13 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
     },true);
   };
 
-  for(auto &func: package->GetFunctions()) {
+  for (const auto &func : package->GetFunctions()) {
     collect_objects(func->GetExpr());
   }
 
-  for(auto &test: package->GetTests()) {
-    if(test->GetOptWithClause()) {
-      for(auto &new_stmt: test->GetOptWithClause()->GetNewStmts()) {
+  for (const auto &test : package->GetTests()) {
+    if (test->GetOptWithClause()) {
+      for (const auto &new_stmt : test->GetOptWithClause()->GetNewStmts()) {
         collect_objects(new_stmt->GetLhs()->GetExpr());
         collect_objects(new_stmt->GetRhs()->GetExpr());
       }
@@ -115,13 +114,13 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
 
   /* Get the addrs that are used in the expressions */
   unordered_set<pair<Type::TType, Type::TType>> addr_set;
-  for(auto &func: package->GetFunctions()) {
+  for (const auto &func : package->GetFunctions()) {
     Expr::DatabaseAddrsInExpr(func->GetExpr(), addr_set);
   }
-  for(auto &test: package->GetTests()) {
+  for (const auto &test : package->GetTests()) {
     /* With clause */
-    if(test->GetOptWithClause()) {
-      for(auto &new_stmt: test->GetOptWithClause()->GetNewStmts()) {
+    if (test->GetOptWithClause()) {
+      for (const auto &new_stmt : test->GetOptWithClause()->GetNewStmts()) {
         Expr::DatabaseAddrsFromNewStmt(new_stmt.get(), addr_set);
       }
     }
@@ -129,12 +128,12 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
     GetAddrsInTestBlock(test->GetTestCaseBlock(), addr_set);
   }
   /* Assign each addr in the addr_set a Uuid and add it to a map */
-  for(auto &addr: addr_set) {
+  for (const auto &addr : addr_set) {
     Base::TUuid uuid (TUuid::TimeAndMAC);
     /* Don't include sequence of address */
     if (!addr.first.Is<Type::TSeq>()) {
-      AddrMap.insert(std::make_pair(uuid, addr));
-      ReverseAddrMap.insert(std::make_pair(addr, uuid));
+      AddrMap.emplace(uuid, addr);
+      ReverseAddrMap.emplace(addr, uuid);
     }
   }
 
@@ -142,31 +141,30 @@ TPackage::TPackage(const Symbol::TPackage::TPtr &package) : L0::TPackage(package
 
   assert(package);
   //Build all the function declarations
-  for(auto &func: package->GetFunctions()) {
+  for (const auto &func : package->GetFunctions()) {
     Exports.insert(TExportFunc::New(this, func));
     /* An imported value (#171) calls into another package; record it so its
        header is included (WriteImportIncludes) and it is linked (WriteLink). */
-    if(auto import_func = dynamic_cast<const Symbol::TImportFunction *>(func.get())) {
+    if (auto import_func = dynamic_cast<const Symbol::TImportFunction *>(func.get())) {
       NeededPackages.insert(import_func->GetPackageName());
     }
   }
 
   //Build the definitions
-  for(auto &func: Exports) {
+  for (const auto &func : Exports) {
     func->Build();
   }
 
   TId<TIdKind::Test>::TGen TestIdGen;
 
-  for(auto &test: package->GetTests()) {
-    assert(&test); // To keep GCC from warning about unused variables.
+  for (const auto &test : package->GetTests()) {
     Tests.push_back(std::make_unique<TTest>(this, test, TestIdGen));
   }
 }
 
-TPackage::~TPackage() {}
+TPackage::~TPackage() = default;
 
-void TPackage::Emit(const Jhm::TTree &out_dir) const {;
+void TPackage::Emit(const Jhm::TTree &out_dir) const {
 
   /* Emit the following files:
 
@@ -206,10 +204,10 @@ void TPackage::Emit(const Jhm::TTree &out_dir) const {;
     func(out, rel_path);
   };
 
-  emit_code(bind(&TPackage::WriteHeader, this, _1, _2), {"h"});
-  emit_code(bind(&TPackage::WriteCc, this, _1, _2), {"cc"});
-  emit_code(bind(&TPackage::WriteLink, this, _1, _2), {"link","cc"});
-  emit_code(bind(&TPackage::WriteSignatures, this, _1, _2), {"orly", "sig"});
+  emit_code([this](TCppPrinter &out, const TRelPath &path) { WriteHeader(out, path); }, {"h"});
+  emit_code([this](TCppPrinter &out, const TRelPath &path) { WriteCc(out, path); }, {"cc"});
+  emit_code([this](TCppPrinter &out, const TRelPath &path) { WriteLink(out, path); }, {"link", "cc"});
+  emit_code([this](TCppPrinter &out, const TRelPath &path) { WriteSignatures(out, path); }, {"orly", "sig"});
 }
 
 void TPackage::EmitObjectHeaders(const std::string &out_dir, std::unordered_set<Type::TType> &emitted) const {
@@ -254,11 +252,11 @@ void TPackage::WriteHeader(TCppPrinter &out, const TRelPath &path) const {
   out << "extern const Orly::Package::TInfo PackageInfo;" << Eol
       << Eol;
 
-  for (const auto &addr : AddrMap) {
+  for (const auto &[addr_uuid, types] : AddrMap) {
     char uuid[37];
-    addr.first.FormatUnderscore(uuid);
+    addr_uuid.FormatUnderscore(uuid);
     out << "extern Base::TUuid My" << uuid;
-    addr.first.Format(uuid);
+    addr_uuid.Format(uuid);
     out << ';' << Eol;
   }
 
@@ -365,11 +363,11 @@ void TPackage::WriteCc(TCppPrinter &out, const TRelPath &rel_path) const {
   //Inside the namespace of the package
   TOrlyNamespacePrinter ns_printer(Symbol->GetName(), out);
 
-  for (const auto &addr : AddrMap) {
+  for (const auto &[addr_uuid, types] : AddrMap) {
     char uuid[37];
-    addr.first.FormatUnderscore(uuid);
+    addr_uuid.FormatUnderscore(uuid);
     out << "Base::TUuid My" << uuid;
-    addr.first.Format(uuid);
+    addr_uuid.Format(uuid);
     out << "(\"" << uuid << "\");" << Eol;
   }
 
@@ -471,13 +469,13 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                   : public Type::TType::TVisitor {
                   public:
 
-                  t_addr_printer(TCppPrinter &out)
+                  explicit t_addr_printer(TCppPrinter &out)
                     : Out(out) {}
 
-                  virtual void operator()(const Type::TAddr     *that) const {
+                  void operator()(const Type::TAddr     *that) const override {
                     bool is_sequence = false;
-                    for (auto member : that->GetElems()) {
-                      is_sequence |= member.second.Is<Type::TSeq>();
+                    for (const auto &[dir, type] : that->GetElems()) {
+                      is_sequence |= type.Is<Type::TSeq>();
                     }
 
                     if (is_sequence) {
@@ -488,12 +486,13 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                       << "Orly::Type::TAddr::Get(std::vector<std::pair<Orly::TAddrDir, Orly::Type::TType>> {\n"
                       << Join(that->GetElems(),
                               ", \n",
-                              [this](TCppPrinter &out, const std::pair<TAddrDir, Type::TType> &elem) {
+                              [this](TCppPrinter &out, const auto &elem) {
+                                const auto &[dir, type] = elem;
                                 out << "          std::make_pair<Orly::TAddrDir, Orly::Type::TType>(" <<
-                                    ((elem.first == Orly::TAddrDir::Asc) ?
+                                    ((dir == Orly::TAddrDir::Asc) ?
                                       "Orly::TAddrDir::Asc, " :
                                       "Orly::TAddrDir::Desc, ");
-                                elem.second.Accept(*this);
+                                type.Accept(*this);
                                 out << ")";
                               })
                       << "})";
@@ -502,41 +501,42 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                       /* Close off the extra open paren introduced to make a sequence*/
                       Out << ")";
                     }
-                  };
-                  virtual void operator()(const Type::TAny      *) const { Out << "Orly::Type::TAny::Get()"; };
-                  virtual void operator()(const Type::TBool     *) const { Out << "Orly::Type::TBool::Get()"; };
-                  virtual void operator()(const Type::TDict     *that) const {
+                  }
+                  void operator()(const Type::TAny      *) const override { Out << "Orly::Type::TAny::Get()"; }
+                  void operator()(const Type::TBool     *) const override { Out << "Orly::Type::TBool::Get()"; }
+                  void operator()(const Type::TDict     *that) const override {
                     Out << "Orly::Type::TDict::Get(";
                     that->GetKey().Accept(*this);
                     Out << ", ";
                     that->GetVal().Accept(*this);
                     Out << ")";
-                  };
-                  virtual void operator()(const Type::TErr      *) const {};
-                  virtual void operator()(const Type::TFunc     *) const {};
-                  virtual void operator()(const Type::TId       *) const { Out << "Orly::Type::TId::Get()"; };
-                  virtual void operator()(const Type::TInt      *) const { Out << "Orly::Type::TInt::Get()"; };
-                  virtual void operator()(const Type::TList     *that) const {
+                  }
+                  void operator()(const Type::TErr      *) const override {}
+                  void operator()(const Type::TFunc     *) const override {}
+                  void operator()(const Type::TId       *) const override { Out << "Orly::Type::TId::Get()"; }
+                  void operator()(const Type::TInt      *) const override { Out << "Orly::Type::TInt::Get()"; }
+                  void operator()(const Type::TList     *that) const override {
                     Out << "Orly::Type::TList::Get(";
                     that->GetElem().Accept(*this);
                     Out << ")";
-                  };
-                  virtual void operator()(const Type::TMutable  *that) const { that->GetSrcAtAddr().Accept(*this); };
-                  virtual void operator()(const Type::TObj      *that) const {
+                  }
+                  void operator()(const Type::TMutable  *that) const override { that->GetSrcAtAddr().Accept(*this); }
+                  void operator()(const Type::TObj      *that) const override {
                     Out
                       << "Orly::Type::TObj::Get(std::map<std::string, Orly::Type::TType> {"
                       << Join(that->GetElems(),
                               ", ",
-                              [this](TCppPrinter &out, const std::pair<string, Type::TType> &elem) {
+                              [this](TCppPrinter &out, const auto &elem) {
+                                const auto &[name, type] = elem;
                                 out << "{"
-                                    << "\"" << elem.first << "\""
+                                    << "\"" << name << "\""
                                     << ",";
-                                elem.second.Accept(*this);
+                                type.Accept(*this);
                                 out << "}";
                               })
                       << "})";
-                  };
-                  virtual void operator()(const Type::TVariant  *that) const {
+                  }
+                  void operator()(const Type::TVariant  *that) const override {
                     /* A mutual-group member (its arms carry TGroupRef, #116) is
                        stored as its inlined de Bruijn form (orly/type/new_sabot.cc
                        does the same), so describe the link the same way -- the
@@ -549,55 +549,57 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                       << "Orly::Type::TVariant::Get(std::map<std::string, Orly::Type::TType> {"
                       << Join(that->GetElems(),
                               ", ",
-                              [this](TCppPrinter &out, const std::pair<string, Type::TType> &elem) {
+                              [this](TCppPrinter &out, const auto &elem) {
+                                const auto &[name, type] = elem;
                                 out << "{"
-                                    << "\"" << elem.first << "\""
+                                    << "\"" << name << "\""
                                     << ",";
-                                elem.second.Accept(*this);
+                                type.Accept(*this);
                                 out << "}";
                               })
                       << "})";
-                  };
-                  virtual void operator()(const Type::TSelfRef  *that) const {
+                  }
+                  void operator()(const Type::TSelfRef  *that) const override {
                     /* The recursion point of a stored recursive variant
                        (#115): reconstruct the de Bruijn self-reference so the
                        enclosing TVariant::Get re-interns the recursive type. */
                     Out << "Orly::Type::TSelfRef::Get(" << that->GetDepth() << ")";
-                  };
-                  virtual void operator()(const Type::TOpt      *that) const {
+                  }
+                  void operator()(const Type::TOpt      *that) const override {
                     Out << "Orly::Type::TOpt::Get(";
                     that->GetElem().Accept(*this);
                     Out << ")";
-                  };
-                  virtual void operator()(const Type::TReal     *) const { Out << "Orly::Type::TReal::Get()"; };
-                  virtual void operator()(const Type::TSeq      *that) const {
+                  }
+                  void operator()(const Type::TReal     *) const override { Out << "Orly::Type::TReal::Get()"; }
+                  void operator()(const Type::TSeq      *that) const override {
                     Out << "Orly::Type::TSeq::Get(";
                     that->GetElem().Accept(*this);
                     Out << ")";
-                  };
-                  virtual void operator()(const Type::TSet      *that) const {
+                  }
+                  void operator()(const Type::TSet      *that) const override {
                     Out << "Orly::Type::TSet::Get(";
                     that->GetElem().Accept(*this);
                     Out << ")";
-                  };
-                  virtual void operator()(const Type::TStr      *) const { Out << "Orly::Type::TStr::Get()"; };
-                  virtual void operator()(const Type::TTimeDiff *) const { Out << "Orly::Type::TTimeDiff::Get()"; };
-                  virtual void operator()(const Type::TTimePnt  *) const { Out << "Orly::Type::TTimePnt::Get()"; };
+                  }
+                  void operator()(const Type::TStr      *) const override { Out << "Orly::Type::TStr::Get()"; }
+                  void operator()(const Type::TTimeDiff *) const override { Out << "Orly::Type::TTimeDiff::Get()"; }
+                  void operator()(const Type::TTimePnt  *) const override { Out << "Orly::Type::TTimePnt::Get()"; }
 
                   private:
                   TCppPrinter &Out;
                 };
                 /* Keys */
                 char uuid[37];
-                pair.first.Format(uuid);
+                const auto &[uuid_key, types] = pair;
+                uuid_key.Format(uuid);
                 out << "    { Base::TUuid(\"" << uuid << "\"), \n";
                 /* Value*/
                 out << "      std::make_pair<Orly::Type::TType, Orly::Type::TType>(" << Eol;
                 out << "        ";
-                pair.second.first.Accept(t_addr_printer(out));
+                types.first.Accept(t_addr_printer(out));
                 out << "," << Eol;
                 out << "        ";
-                pair.second.second.Accept(t_addr_printer(out));
+                types.second.Accept(t_addr_printer(out));
                 out << ") }";
               })
       << "}" << Eol;
@@ -615,14 +617,14 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
 }
 
 void TPackage::WriteSignatures(TCppPrinter &out, const TRelPath &) const {
-  for(auto &it: Exports) {
+  for (auto &it: Exports) {
     out << it->GetName() << " is ";
     Type::Orlyify(out.GetOstream(), it->GetType());
     out << ";" << Eol;
   }
 }
 
-void WritePackageInclude(const Package::TName &name, TCppPrinter &out) {
+static void WritePackageInclude(const Package::TName &name, TCppPrinter &out) {
   out << "#include \"" << Join(name.Name, '/') << ".h\"" << Eol;
 }
 
@@ -631,10 +633,10 @@ void TPackage::WriteInclude(TCppPrinter &out) const {
 }
 
 void TPackage::WriteImportIncludes(TCppPrinter &out) const {
-  if(!NeededPackages.empty()) {
+  if (!NeededPackages.empty()) {
     out << Eol;
   }
-  for(auto &it: NeededPackages) {
+  for (auto &it: NeededPackages) {
     WritePackageInclude(it, out);
   }
 }
