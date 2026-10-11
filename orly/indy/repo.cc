@@ -307,19 +307,19 @@ TRepo::TView::~TView() {
   Mapping->Decr();
 }
 
-const TMemoryLayer *TRepo::TView::GetCurMem() const {
+const TMemoryLayer *TRepo::TView::GetCurMem() const noexcept {
   return CurrentMemoryLayer;
 }
 
-const TRepo::TMapping *TRepo::TView::GetMapping() const {
+const TRepo::TMapping *TRepo::TView::GetMapping() const noexcept {
   return Mapping;
 }
 
-const std::optional<TSequenceNumber> &TRepo::TView::GetLower() const {
+const std::optional<TSequenceNumber> &TRepo::TView::GetLower() const noexcept {
   return LowerBound;
 }
 
-const std::optional<TSequenceNumber> &TRepo::TView::GetUpper() const {
+const std::optional<TSequenceNumber> &TRepo::TView::GetUpper() const noexcept {
   return UpperBound;
 }
 
@@ -510,7 +510,7 @@ void TRepo::JoinTetris() {
   }
 }
 
-std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update, const Base::TUuid &promoted_from) NO_THROW {
+std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update, const Base::TUuid &promoted_from) noexcept {
   std::optional<TSequenceNumber> new_seq;
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
@@ -588,7 +588,7 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
   return new_seq;
 }
 
-std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO_THROW {
+std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) noexcept {
   /* Tetris pops a Normal repo; a discard pops a paused one, which has left its parent's Tetris
      (#746). */
   assert(Status != Failed);
@@ -677,7 +677,7 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
   return nullptr;
 }
 
-std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumber &next_update) NO_THROW {
+std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumber &next_update) noexcept {
   switch (Status) {
     case Normal : {
       assert(status != Normal);  // you probably meant to unpause something. if it's not already paused you may have forgotten your pause!
@@ -1452,7 +1452,7 @@ void TRepo::TPresentWalker::BuildLayerWalkers(const vector<TDataLayer *> &layers
   }
 }
 
-bool TRepo::TPresentWalker::Reads(const TDataLayer *layer) const {
+bool TRepo::TPresentWalker::Reads(const TDataLayer *layer) const noexcept {
   return !View->GetAt() || layer->GetKind() != TDataLayer::Disk || layer->GetLowestSeq() <= *View->GetAt();
 }
 
@@ -1507,7 +1507,7 @@ TRepo::TUpdateWalker::~TUpdateWalker() {
   free(SorterAlloc);
 }
 
-TRepo::TUpdateWalker::operator bool() const {
+TRepo::TUpdateWalker::operator bool() const noexcept {
   return Valid;
 }
 
@@ -1627,7 +1627,7 @@ TFastRepo::~TFastRepo() {
   PreDtor();
 }
 
-bool TFastRepo::IsSafeRepo() const {
+bool TFastRepo::IsSafeRepo() const noexcept {
   return false;
 }
 
@@ -2199,7 +2199,7 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
   return safe_repo;
 }
 
-bool TSafeRepo::IsSafeRepo() const {
+bool TSafeRepo::IsSafeRepo() const noexcept {
   return true;
 }
 
