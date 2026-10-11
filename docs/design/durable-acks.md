@@ -659,11 +659,33 @@ is refused (#439), so a retry on it fails with the usual `unknown pov_id` error;
 is *exactly once relative to what survives*: for a safe POV that is every acknowledged write.
 
 **Table.** Key: (POV id, operation id). Value: (commit sequence number, status, outcome, request
-hash). The hash is the 64-bit checksum the log already uses (`ComputeChecksum64`) over the canonical
-encoding of the request's calls (package, method, args, with `$op*` keys excluded); it catches a
-client that reuses an id by mistake, which is all it is for. So recovery recomputes it from the replayed
-record and the table needs no extra stored field. The table is per POV, because a session can end
-and a retry can come from another connection, and ids aren't globally unique.
+hash). The hash catches a client that reuses an id by mistake, which is all it is for. It is stored
+in the checkpoint, so it must not change when the server does: it is computed from a canonical
+binary encoding, not from any text form of a value (see *Request hash* below). The table is per POV
+in its keys, because a session can end and a retry can come from another connection, and ids aren't
+globally unique; its size limits are for the whole table.
+
+**Request hash.** `ComputeChecksum64(bytes, length, seed = 0)`, the checksum the log already uses
+(Murmur based), over `bytes`, which are built as follows. All integers are little endian.
+`bytes(x)` means a `u32` byte length, then the bytes.
+
+```
+request  = u32 call_count, call*
+call     = u32 package_part_count, bytes(part)*      -- the package's name parts, in order
+           bytes(method_name)
+           u32 arg_count, arg*                       -- args without any key that starts with "$op"
+arg      = bytes(name), bytes(value)                 -- in ascending bytewise order of name
+value    = the argument's TVar as a TMethodResult in the binary protocol's stream encoding
+           (an atom core over a suprena, written with TBinaryOutputOnlyStream; no tracker)
+```
+
+A single call is a request of one call; a batch is its calls in order. The two reserved keys
+(`$op_id`, `$op_outcome`) never take part, so the hash is the same whether or not they are present.
+The live request and the replay of its recorded entry call the same function on the same calls
+(`GetCalls()`, which strips the reserved keys), so they agree. The hash does not depend on how a
+value is printed, so changing a value's text form can't make a retry after an upgrade look like a
+different request (`operation_id_reused`). Changing this encoding would, so it changes only with a
+new checkpoint section type.
 
 **Request states.** A request carrying an id is reserved before the method runs:
 
@@ -680,36 +702,59 @@ and a retry can come from another connection, and ids aren't globally unique.
   nothing, so the same id may be retried and runs fresh.
 
 **Outcome and size cap.** The saved outcome is the encoded result if it is at most
-`--operation_result_bytes` (default 256 bytes). Over the cap, `$op_outcome` is the marker str
-`"$too_large"`, and a retry gets the commit sequence number and the typed status
+`--operation_outcome_bytes` (default 256 bytes, at most 8192). Over the cap, the meta record has no
+`$op_outcome` at all, and a retry gets the commit sequence number and the typed status
 `outcome_too_large` instead of the result. The write itself is still applied exactly once, and the
 caller can read the effect at that version.
 
 **Retention and expiry.** Ids must be UUIDv7: the 48-bit big-endian millisecond timestamp in the
-first bytes is the id's age. Any other id is refused as an invalid argument. The table keeps at most
-`--operation_retention_count` entries (default 512) younger than `--operation_retention_seconds`
-(default 3600). Evicting an entry raises its POV's *expired-before* watermark to that id's
-timestamp. A request whose id is at or below the watermark, or older than the age bound at arrival,
-is refused with `operation_expired` and nothing applied, instead of running a second time because
-the table forgot the first. A client that retries inside the window is always answered; a client
-that waits longer is told so. The watermark is kept per POV, in the table's snapshot.
+first bytes is the id's age. Any other id is refused as an invalid argument. The table keeps
+completed entries **server-wide**: at most `--operation_retention_count` (default 4096; 0 turns the
+table off, for the kill campaign's negative control) that are younger than
+`--operation_retention_seconds` (default 3600). An id's window is whichever of the count and the age
+limit runs out first: the entry is dropped when newer ones push it past the count, or when it
+grows too old, whichever comes first. The oldest entry anywhere is dropped first, and dropping it
+raises only the *expired-before* watermark of the POV that owned it, to that id's timestamp, so
+one busy POV does not make another POV's ids expire any sooner than its own retention says. A
+request whose id is at or below its POV's watermark, or older than the age bound at arrival, is
+refused with `operation_expired` and nothing applied, instead of running a second time because the
+table forgot the first. A client that retries inside the window is always answered; a client that
+waits longer is told so. The watermark is kept per POV, in the table's snapshot.
 
 **Checkpoint payload.** The checkpoint's payload (already carried by `TCheckpointHeader`, empty so
-far) holds the snapshot, beginning with a `u16` payload version tag, `1`. All integers are little
-endian. After the tag: a `u32` POV count; per POV the 16-byte POV id, the `u64` expired-before
-watermark (ms), a `u32` entry count, and per entry the 16-byte operation id, the `u64` sequence
-number, the `u8` status, a `u16`-prefixed outcome (the `TVar` in its existing wire encoding; the
-marker is a `str`), and the `u64` request hash. A reader that sees a tag it doesn't know refuses
-the store with the format error, as it does for the header's format version. The snapshot holds the
-entries whose records are below the checkpoint's head (the ones recovery will not replay); newer
-ones come back from the replayed records.
+far) is a list of sections, so later features add a section instead of a new payload version. All
+integers are little endian.
 
-A checkpoint slot is one 64 KiB block, which bounds the payload at about 64 KiB less the 116-byte
-header. The snapshot is therefore trimmed to a budget of 60,000 bytes, oldest first, advancing the
+```
+payload  = u16 tag (1), u16 section_count, section*
+section  = u16 type, u16 flags, u32 length, length bytes
+flags    = bit 0: required; other bits are zero and ignored
+```
+
+A reader skips a section whose type it doesn't know if bit 0 is clear, and refuses the store with
+the format error if it is set; it refuses a tag it doesn't know likewise, as it does for the
+header's format version. A section may not be larger than the payload that holds it. Sections
+appear at most once each, in any order.
+
+Type 1 is the operation table, and is required: a server that does not know the table cannot
+answer a retry, so it must not open a store that holds one. Its bytes are a `u32` POV count; per POV
+the 16-byte POV id, the `u64` expired-before watermark (ms), a `u32` entry count, and per entry the
+16-byte operation id, the `u64` sequence number, the `u8` status (0 = has a result, 1 = none), a
+`u16`-prefixed outcome (the encoded `TMethodResult`, as above), and the `u64` request hash. The
+snapshot holds the entries whose records are below the checkpoint's head (the ones recovery will
+not replay); newer ones come back from the replayed records. #745's metadata, when it lands, is its
+own section with its own type number, so it needs no new tag.
+
+**Checkpoint slot size.** A checkpoint slot is a run of blocks whose length is recorded in the
+system block next to the log range (`WalCheckpoint0Block`, `WalCheckpoint1Block` and a new
+`WalCheckpointBlocks`), chosen when the store is created: 1 MiB per slot by default, 16 blocks.
+The log reads the length from there instead of assuming one block. A store written before the
+field existed reads as zero, which means one 64 KiB block as before. The snapshot's budget is the
+slot's bytes less the 116-byte header, with 16 KiB kept for other sections; for a 1 MiB slot
+that is about 1,032,000 bytes, which holds the default 4096 entries with the default outcome cap
+many times over (an entry is 35 bytes plus its outcome). If it is exceeded all the same, for
+instance in an old store with one block, the snapshot is trimmed oldest first, advancing the
 watermarks as it trims, so a trimmed id is answered `operation_expired` and never silently re-run.
-With the default result cap this holds the default count in the usual case, where outcomes are a few
-bytes. Enlarging the slot is a format change that is cheaper to make before v0.3.0 and is not
-needed for correctness.
 
 **Recovery.** The table is seeded from the newest checkpoint's payload, then each replayed `Txn`
 record whose entry carries `$op_id` adds its (POV, op id) → (sequence number, outcome) entry.
