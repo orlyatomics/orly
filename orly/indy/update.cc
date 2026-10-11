@@ -25,10 +25,10 @@ using namespace Base;
 using namespace Orly::Atom;
 using namespace Orly::Indy;
 
-TUpdate::TPersistenceNotification::TPersistenceNotification(const std::function<void (TResult)> &cb)
-    : Cb(cb) {}
+TUpdate::TPersistenceNotification::TPersistenceNotification(std::function<void (TResult)> cb)
+    : Cb(std::move(cb)) {}
 
-TUpdate::TPersistenceNotification::~TPersistenceNotification() {}
+TUpdate::TPersistenceNotification::~TPersistenceNotification() = default;
 
 TUpdate::TWriteAdmission::~TWriteAdmission() {
   if (NumUpdates) {
@@ -134,47 +134,29 @@ bool TUpdate::TEntry::TEntryKey::operator==(const TUpdate::TEntry::TEntryKey &th
 }
 
 bool TUpdate::TEntry::TEntryKey::operator!=(const TUpdate::TEntry::TEntryKey &that) const {
-  return Entry->GetSequenceNumber() != that.Entry->GetSequenceNumber() || Entry->IndexKey != that.Entry->IndexKey;
+  return !(*this == that);
 }
 
 bool TUpdate::TEntry::TEntryKey::operator<=(const TUpdate::TEntry::TEntryKey &that) const {
-  TComparison comp = Atom::CompareOrdered(Entry->IndexKey.GetIndexId(), that.Entry->IndexKey.GetIndexId());
-  switch (comp) {
-    case Atom::TComparison::Lt: {
-      return true;
-    }
-    case Atom::TComparison::Eq: {
-      comp = Entry->GetKey().Compare(that.Entry->GetKey());
-      return Atom::IsLt(comp) || (IsEq(comp) && (Entry->GetSequenceNumber() >= that.Entry->GetSequenceNumber()));
-    }
-    case Atom::TComparison::Gt: {
-      return false;
-    }
-    case Atom::TComparison::Ne: {
-      throw std::logic_error("CompareOrdered should not return Ne");
-    }
+  if (Entry->IndexKey.GetIndexId() < that.Entry->IndexKey.GetIndexId()) {
+    return true;
   }
-  throw;
+  if (that.Entry->IndexKey.GetIndexId() < Entry->IndexKey.GetIndexId()) {
+    return false;
+  }
+  const auto comp = Entry->GetKey().Compare(that.Entry->GetKey());
+  return Atom::IsLt(comp) || (IsEq(comp) && (Entry->GetSequenceNumber() >= that.Entry->GetSequenceNumber()));
 }
 
 bool TUpdate::TEntry::TEntryKey::operator>(const TUpdate::TEntry::TEntryKey &that) const {
-  TComparison comp = Atom::CompareOrdered(Entry->IndexKey.GetIndexId(), that.Entry->IndexKey.GetIndexId());
-  switch (comp) {
-    case Atom::TComparison::Lt: {
-      return false;
-    }
-    case Atom::TComparison::Eq: {
-      comp = Entry->GetKey().Compare(that.Entry->GetKey());
-      return Atom::IsGt(comp) || (IsEq(comp) && (Entry->GetSequenceNumber() < that.Entry->GetSequenceNumber()));
-    }
-    case Atom::TComparison::Gt: {
-      return true;
-    }
-    case Atom::TComparison::Ne: {
-      throw std::logic_error("CompareOrdered should not return Ne");
-    }
+  if (Entry->IndexKey.GetIndexId() < that.Entry->IndexKey.GetIndexId()) {
+    return false;
   }
-  throw;
+  if (that.Entry->IndexKey.GetIndexId() < Entry->IndexKey.GetIndexId()) {
+    return true;
+  }
+  const auto comp = Entry->GetKey().Compare(that.Entry->GetKey());
+  return Atom::IsGt(comp) || (IsEq(comp) && (Entry->GetSequenceNumber() < that.Entry->GetSequenceNumber()));
 }
 
 TUpdate::TEntry::TEntryKey::TEntryKey(const TEntry *entry)
@@ -202,8 +184,8 @@ TUpdate::TUpdate(const TOpByKey &op_by_key, const TKey &metadata, const TKey &id
       Metadata(&Suprena, Sabot::State::TAny::TWrapper(metadata.GetCore().NewState(metadata.GetArena(), state_alloc))),
       Id(&Suprena, Sabot::State::TAny::TWrapper(id.GetCore().NewState(id.GetArena(), state_alloc))) {
   try {
-    for (auto iter : op_by_key) {
-      new TEntry(this, iter.first, iter.second, state_alloc);
+    for (const auto &[index_key, op_key] : op_by_key) {
+      new TEntry(this, index_key, op_key, state_alloc);
     }
   } catch (...) {
     EntryCollection.DeleteEachMember();

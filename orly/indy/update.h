@@ -59,9 +59,9 @@ namespace Orly {
       /* Forward Declarations. */
       class TEntry;
 
-      typedef std::map<TIndexKey, TKey> TOpByKey;
+      using TOpByKey = std::map<TIndexKey, TKey>;
 
-      typedef InvCon::OrderedList::TCollection<TUpdate, TEntry, TKey> TEntryCollection;
+      using TEntryCollection = InvCon::OrderedList::TCollection<TUpdate, TEntry, TKey>;
 
       ~TUpdate();
 
@@ -74,11 +74,11 @@ namespace Orly {
           Failed
         };
 
-        TPersistenceNotification(const std::function<void (TResult)> &cb);
+        explicit TPersistenceNotification(std::function<void (TResult)> cb);
 
         ~TPersistenceNotification();
 
-        inline void Call(TUpdate::TPersistenceNotification::TResult result);
+        inline void Call(TPersistenceNotification::TResult result);
 
         private:
 
@@ -97,11 +97,11 @@ namespace Orly {
            TMemoryLayer::LinkEntry / SeekRun. */
         static constexpr size_t SkipMaxLevel = 16;
 
-        inline const TKey &GetKey() const;
+        [[nodiscard]] inline const TKey &GetKey() const noexcept;
 
-        inline const TIndexKey &GetIndexKey() const;
+        [[nodiscard]] inline const TIndexKey &GetIndexKey() const noexcept;
 
-        inline const Atom::TCore &GetOp() const;
+        [[nodiscard]] inline const Atom::TCore &GetOp() const noexcept;
 
         /* The mutator used to produce Op. For assignments (the historical
            default and current observable behavior for all in-tree code
@@ -114,17 +114,17 @@ namespace Orly {
            Phase 1 of #49 added this field but every in-tree write site
            still passes Assign by default, so observable behavior is
            unchanged until phase 2 (session.cc emits the real mutator). */
-        inline TMutator GetMutator() const;
+        [[nodiscard]] inline TMutator GetMutator() const noexcept;
 
-        inline TSequenceNumber GetSequenceNumber() const;
+        [[nodiscard]] inline TSequenceNumber GetSequenceNumber() const;
 
-        inline const Atom::TCore &GetMetadata() const;
+        [[nodiscard]] inline const Atom::TCore &GetMetadata() const;
 
-        inline const Atom::TCore &GetId() const;
+        [[nodiscard]] inline const Atom::TCore &GetId() const;
 
-        inline Atom::TSuprena &GetSuprena() const;
+        [[nodiscard]] inline Atom::TSuprena &GetSuprena() const;
 
-        inline const TUpdate *GetUpdate() const;
+        [[nodiscard]] inline const TUpdate *GetUpdate() const noexcept;
 
         static void *operator new(size_t size) {
           return Pool.Alloc(size);
@@ -139,25 +139,25 @@ namespace Orly {
         class TEntryKey {
           public:
 
-          TEntryKey(const TEntry *entry);
+          explicit TEntryKey(const TEntry *entry);
 
-          bool operator==(const TEntryKey &that) const;
+          [[nodiscard]] bool operator==(const TEntryKey &that) const;
 
-          bool operator!=(const TEntryKey &that) const;
+          [[nodiscard]] bool operator!=(const TEntryKey &that) const;
 
-          bool operator<=(const TEntryKey &that) const;
+          [[nodiscard]] bool operator<=(const TEntryKey &that) const;
 
-          bool operator>(const TEntryKey &that) const;
+          [[nodiscard]] bool operator>(const TEntryKey &that) const;
 
           private:
 
-          const TEntry *Entry;
+          const TEntry *Entry = nullptr;
 
-        };  // TKey
+        };  // TEntryKey
 
-        typedef InvCon::OrderedList::TMembership<TEntry, TUpdate, TKey> TUpdateMembership;
+        using TUpdateMembership = InvCon::OrderedList::TMembership<TEntry, TUpdate, TKey>;
         /* Published links: a memory layer is read while it is written (see TMemoryLayer). */
-        typedef InvCon::OrderedList::TMembership<TEntry, TMemoryLayer, TEntryKey, InvCon::OrderedList::TPublishedLinks> TMemoryLayerMembership;
+        using TMemoryLayerMembership = InvCon::OrderedList::TMembership<TEntry, TMemoryLayer, TEntryKey, InvCon::OrderedList::TPublishedLinks>;
 
         /* Construct an entry. The mutator defaults to TMutator::Assign,
            which is the historical / current behavior for every in-tree
@@ -166,7 +166,7 @@ namespace Orly {
         TEntry(TUpdate *update, const TIndexKey &key, const TKey &op, void *state_alloc,
                TMutator mutator = TMutator::Assign);
 
-        inline const TEntryKey &GetEntryKey() const;
+        [[nodiscard]] inline const TEntryKey &GetEntryKey() const noexcept;
 
         TIndexKey IndexKey;
 
@@ -188,7 +188,7 @@ namespace Orly {
 
         /* See GetMutator(). Defaults to TMutator::Assign for every
            in-tree write path until phase 2 of #49 lands. */
-        TMutator Mutator;
+        TMutator Mutator = TMutator::Assign;
 
         static Util::TPool Pool;
 
@@ -200,17 +200,17 @@ namespace Orly {
 
       };  // TEntry
 
-      inline TSequenceNumber GetSequenceNumber() const;
+      [[nodiscard]] inline TSequenceNumber GetSequenceNumber() const;
 
-      inline const Atom::TCore &GetId() const;
+      [[nodiscard]] inline const Atom::TCore &GetId() const noexcept;
 
-      inline const Atom::TCore &GetMetadata() const;
+      [[nodiscard]] inline const Atom::TCore &GetMetadata() const noexcept;
 
-      inline Atom::TSuprena &GetSuprena() const;
+      [[nodiscard]] inline Atom::TSuprena &GetSuprena() const noexcept;
 
-      inline TEntryCollection *GetEntryCollection() const;
+      [[nodiscard]] inline TEntryCollection *GetEntryCollection() const noexcept;
 
-      inline const std::shared_ptr<TPersistenceNotification> &GetPersistenceNotification() const;
+      [[nodiscard]] inline const std::shared_ptr<TPersistenceNotification> &GetPersistenceNotification() const noexcept;
 
       inline void SetSequenceNumber(TSequenceNumber seq_num);
 
@@ -251,15 +251,15 @@ namespace Orly {
         TEntry::Pool.Init(num_obj);
       }
 
-      static inline double GetUpdatePoolUsedPct() {
+      [[nodiscard]] static inline double GetUpdatePoolUsedPct() {
         return static_cast<double>(Pool.GetNumBlocksUsed()) / Pool.GetMaxBlocks();
       }
 
-      static inline size_t GetUpdatePoolMaxBlocks() {
+      [[nodiscard]] static inline size_t GetUpdatePoolMaxBlocks() noexcept {
         return Pool.GetMaxBlocks();
       }
 
-      static inline double GetUpdateEntryPoolUsedPct() {
+      [[nodiscard]] static inline double GetUpdateEntryPoolUsedPct() {
         return static_cast<double>(TEntry::Pool.GetNumBlocksUsed()) / TEntry::Pool.GetMaxBlocks();
       }
 
@@ -276,15 +276,15 @@ namespace Orly {
 
         ~TWriteAdmission();
 
-        bool TryAcquire(size_t num_entries);
+        [[nodiscard]] bool TryAcquire(size_t num_entries);
 
         /* After a refused TryAcquire (#719): the pool that refused (the Update Entry pool, or
            else the Update pool), and the counts it compared. */
-        bool WasEntryPoolRefused() const {
+        [[nodiscard]] bool WasEntryPoolRefused() const noexcept {
           return EntryPoolRefused;
         }
 
-        const Util::TPool::TRefusal &GetRefusal() const {
+        [[nodiscard]] const Util::TPool::TRefusal &GetRefusal() const noexcept {
           return Refusal;
         }
 
@@ -292,7 +292,7 @@ namespace Orly {
            pool that refused, at the level that would have admitted this write. Returns false
            if the watch was already armed at that level, so a caller that retries after arming
            knows when a further retry can't help until the watch fires. */
-        bool ArmRoomWake() const;
+        [[nodiscard]] bool ArmRoomWake() const;
 
         /* Disarms both pools' room watches. */
         static void DisarmRoomWakes();
@@ -321,7 +321,7 @@ namespace Orly {
         ~TCopyClaim();
 
         /* keep_reserve: see TPool::TryClaim. */
-        bool TryAcquire(size_t num_updates, size_t num_entries, bool keep_reserve = false);
+        [[nodiscard]] bool TryAcquire(size_t num_updates, size_t num_entries, bool keep_reserve = false);
 
         /* Gives back part of the claim, for blocks the copy has now allocated (they count as in
            use from here). Never more than is held. */
@@ -340,11 +340,11 @@ namespace Orly {
       /* Sets both pools' reserves to pct percent of their size (#607); 0 turns refusals off. */
       static void SetPoolReservePct(size_t pct);
 
-      static inline const Util::TPool &GetUpdatePool() {
+      [[nodiscard]] static inline const Util::TPool &GetUpdatePool() noexcept {
         return Pool;
       }
 
-      static inline const Util::TPool &GetEntryPool() {
+      [[nodiscard]] static inline const Util::TPool &GetEntryPool() noexcept {
         return TEntry::Pool;
       }
 
@@ -362,7 +362,7 @@ namespace Orly {
       private:
 
       /* Published links: a memory layer is read while it is written (see TMemoryLayer). */
-      typedef InvCon::OrderedList::TMembership<TUpdate, TMemoryLayer, TSequenceNumber, InvCon::OrderedList::TPublishedLinks> TMemoryLayerMembership;
+      using TMemoryLayerMembership = InvCon::OrderedList::TMembership<TUpdate, TMemoryLayer, TSequenceNumber, InvCon::OrderedList::TPublishedLinks>;
 
       mutable Atom::TSuprena Suprena;
 
@@ -386,7 +386,7 @@ namespace Orly {
 
     };  // TUpdate
 
-    inline void TUpdate::TPersistenceNotification::Call(TUpdate::TPersistenceNotification::TResult result) {
+    inline void TUpdate::TPersistenceNotification::Call(TPersistenceNotification::TResult result) {
       Cb(result);
     }
 
@@ -394,15 +394,15 @@ namespace Orly {
       return MemoryLayerMembership.GetKey();
     }
 
-    inline const Atom::TCore &TUpdate::GetId() const {
+    inline const Atom::TCore &TUpdate::GetId() const noexcept {
       return Id;
     }
 
-    inline const Atom::TCore &TUpdate::GetMetadata() const {
+    inline const Atom::TCore &TUpdate::GetMetadata() const noexcept {
       return Metadata;
     }
 
-    inline Atom::TSuprena &TUpdate::GetSuprena() const {
+    inline Atom::TSuprena &TUpdate::GetSuprena() const noexcept {
       return Suprena;
     }
 
@@ -434,19 +434,19 @@ namespace Orly {
       return new TEntry(this, index_key, op, state_alloc, mutator);
     }
 
-    inline const TKey &TUpdate::TEntry::GetKey() const {
+    inline const TKey &TUpdate::TEntry::GetKey() const noexcept {
       return IndexKey.GetKey();
     }
 
-    inline const TIndexKey &TUpdate::TEntry::GetIndexKey() const {
+    inline const TIndexKey &TUpdate::TEntry::GetIndexKey() const noexcept {
       return IndexKey;
     }
 
-    inline const Atom::TCore &TUpdate::TEntry::GetOp() const {
+    inline const Atom::TCore &TUpdate::TEntry::GetOp() const noexcept {
       return Op;
     }
 
-    inline TMutator TUpdate::TEntry::GetMutator() const {
+    inline TMutator TUpdate::TEntry::GetMutator() const noexcept {
       return Mutator;
     }
 
@@ -470,20 +470,20 @@ namespace Orly {
       return UpdateMembership.TryGetCollector()->Suprena;
     }
 
-    inline const TUpdate *TUpdate::TEntry::GetUpdate() const {
+    inline const TUpdate *TUpdate::TEntry::GetUpdate() const noexcept {
       assert(UpdateMembership.TryGetCollector());
       return UpdateMembership.TryGetCollector();
     }
 
-    inline const TUpdate::TEntry::TEntryKey &TUpdate::TEntry::GetEntryKey() const {
+    inline const TUpdate::TEntry::TEntryKey &TUpdate::TEntry::GetEntryKey() const noexcept {
       return MemoryLayerMembership.GetKey();
     }
 
-    inline TUpdate::TEntryCollection *TUpdate::GetEntryCollection() const {
+    inline TUpdate::TEntryCollection *TUpdate::GetEntryCollection() const noexcept {
       return &EntryCollection;
     }
 
-    inline const std::shared_ptr<TUpdate::TPersistenceNotification> &TUpdate::GetPersistenceNotification() const {
+    inline const std::shared_ptr<TUpdate::TPersistenceNotification> &TUpdate::GetPersistenceNotification() const noexcept {
       return PersistenceNotification;
     }
 

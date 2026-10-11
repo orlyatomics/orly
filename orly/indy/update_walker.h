@@ -24,8 +24,11 @@
 
 #pragma once
 
+#include <vector>
+
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
+#include <orly/indy/key.h>
 #include <orly/indy/sequence_number.h>
 #include <orly/shared_enum.h>
 
@@ -40,7 +43,7 @@ namespace Orly {
       class TItem {
         public:
 
-        TSequenceNumber SequenceNumber;
+        TSequenceNumber SequenceNumber = 0UL;
 
         Atom::TCore Metadata;
 
@@ -55,32 +58,32 @@ namespace Orly {
         struct TEntry {
           TIndexKey IndexKey;
           Atom::TCore Op;
-          TMutator Mutator;
-          TEntry() : Mutator(TMutator::Assign) {}
+          TMutator Mutator = TMutator::Assign;
+          TEntry() = default;
           TEntry(const TIndexKey &k, const Atom::TCore &op) : IndexKey(k), Op(op), Mutator(TMutator::Assign) {}
           TEntry(const TIndexKey &k, const Atom::TCore &op, TMutator m) : IndexKey(k), Op(op), Mutator(m) {}
         };
         std::vector<TEntry> EntryVec;
 
-        Atom::TCore::TArena *MainArena;
+        Atom::TCore::TArena *MainArena = nullptr;
 
       };  // TItem
 
       /* True iff. we have an item. */
-      virtual operator bool() const = 0;
+      [[nodiscard]] virtual explicit operator bool() const = 0;
 
       /* The current item. */
-      virtual const TItem &operator*() const = 0;
+      [[nodiscard]] virtual const TItem &operator*() const = 0;
 
       /* Walk to the next item, if any. */
       virtual TUpdateWalker &operator++() = 0;
 
-      virtual ~TUpdateWalker() {}
+      virtual ~TUpdateWalker() = default;
 
       protected:
 
       /* Prepare to walk. */
-      TUpdateWalker() {}
+      TUpdateWalker() = default;
 
     };  // TUpdateWalker
 
