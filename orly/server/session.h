@@ -357,6 +357,10 @@ namespace Orly {
          write completed it. */
       static void FinishOperation(std::optional<TOperation> &op) noexcept;
 
+      /* Just before a persistent write commits: tell the table, so a checkpoint's head can't pass
+         its WAL record before CompleteOperation (#861). */
+      static void BeginOperationCommit(TServer *server, const TOperation &op);
+
       /* The write committed: record its outcome. */
       static void CompleteOperation(TOperation &op, const std::optional<Indy::TSequenceNumber> &commit_seq,
                                     const std::optional<uint64_t> &commit_lsn);

@@ -270,6 +270,10 @@ void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
     lock_guard<mutex> lock(Mutex);
     head = ComputeHeadLocked(wal);
   }
+  /* After the head, so a record appended since is at or past what the floor returns. */
+  if (HeadFloor) {
+    head = min(head, HeadFloor());
+  }
   if (!force && LastCheckpointHead && *LastCheckpointHead == head) {
     return;
   }
@@ -284,6 +288,10 @@ void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
 
 void TWalRetention::SetCheckpointPayload(TPayloadProvider provider) {
   PayloadProvider = std::move(provider);
+}
+
+void TWalRetention::SetHeadFloor(std::function<uint64_t ()> floor) {
+  HeadFloor = std::move(floor);
 }
 
 bool TWalRetention::WaitForWork(chrono::milliseconds timeout) {

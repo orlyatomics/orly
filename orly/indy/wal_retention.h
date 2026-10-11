@@ -124,6 +124,11 @@ namespace Orly {
       using TPayloadProvider = std::function<std::string (uint64_t head_lsn)>;
       void SetCheckpointPayload(TPayloadProvider provider);
 
+      /* A ceiling on the head a checkpoint is taken at, asked for each checkpoint: the head is the
+         lower of the pins and this. For state the pins don't cover, which the checkpoint payload
+         won't hold either (#861). Set once, before the first Checkpoint. */
+      void SetHeadFloor(std::function<uint64_t ()> floor);
+
       /* For the checkpointer thread: wait up to `timeout` for a flush to make a checkpoint worth
          taking.  False once Stop() is called. */
       bool WaitForWork(std::chrono::milliseconds timeout);
@@ -178,6 +183,8 @@ namespace Orly {
 
       /* Serialises Checkpoint(). */
       std::mutex CheckpointMutex;
+
+      std::function<uint64_t ()> HeadFloor;
 
       std::optional<uint64_t> LastCheckpointHead;
 
