@@ -326,6 +326,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                       dest_gen_id, temp_file_consol_thresh, 0U, priority, source_range);
   LowestSeq = data_file.GetLowestSequence();
   HighestSeq = data_file.GetHighestSequence();
+  FileLength = data_file.GetFileLength();
 }
 
 }}}  // namespace Orly::Indy::Disk

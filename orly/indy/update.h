@@ -212,6 +212,9 @@ namespace Orly {
 
       [[nodiscard]] inline const std::shared_ptr<TPersistenceNotification> &GetPersistenceNotification() const noexcept;
 
+      /* The logical payload bytes in this update's entries (key + value cores, plus arena notes; #857). */
+      [[nodiscard]] size_t ComputeLogicalBytes() const noexcept;
+
       inline void SetSequenceNumber(TSequenceNumber seq_num);
 
       inline void SetMetadata(const TKey &metadata);

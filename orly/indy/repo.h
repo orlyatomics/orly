@@ -369,6 +369,33 @@ namespace Orly {
         while (cur < seq && !HistoryHorizon.compare_exchange_weak(cur, seq)) {}
       }
 
+      /* Cumulative bytes written in memtable flushes (#857). */
+      [[nodiscard]] size_t GetFlushBytes() const noexcept {
+        return FlushBytes.load(std::memory_order_relaxed);
+      }
+
+      /* Cumulative bytes written in disk merges (#857). */
+      [[nodiscard]] size_t GetMergeBytes() const noexcept {
+        return MergeBytes.load(std::memory_order_relaxed);
+      }
+
+      /* Cumulative logical bytes (key + value bytes of promoted updates, #857). */
+      [[nodiscard]] size_t GetLogicalBytes() const noexcept {
+        return LogicalBytes.load(std::memory_order_relaxed);
+      }
+
+      void AddFlushBytes(size_t bytes) noexcept {
+        FlushBytes.fetch_add(bytes, std::memory_order_relaxed);
+      }
+
+      void AddMergeBytes(size_t bytes) noexcept {
+        MergeBytes.fetch_add(bytes, std::memory_order_relaxed);
+      }
+
+      void AddLogicalBytes(size_t bytes) noexcept {
+        LogicalBytes.fetch_add(bytes, std::memory_order_relaxed);
+      }
+
       /* The durable sequence number's storage, shared so that a promotion into this repo can read
          it after the repo has been deleted (see TPromotionLog). */
       using TDurableCounter = std::atomic<uint64_t>;
@@ -620,6 +647,15 @@ namespace Orly {
 
       /* See GetHistoryHorizon. */
       std::atomic<TSequenceNumber> HistoryHorizon{0UL};
+
+      /* Cumulative bytes written in memtable flushes (#857). */
+      std::atomic<size_t> FlushBytes{0UL};
+
+      /* Cumulative bytes written in disk merges (#857). */
+      std::atomic<size_t> MergeBytes{0UL};
+
+      /* Cumulative logical bytes (key + value bytes of promoted updates, #857). */
+      std::atomic<size_t> LogicalBytes{0UL};
 
       /* #590: how many merges of each kind in a row have failed for lack of disk space (or, for
          disk merges, pool space: #627). A failed merge hands its inputs back and retries after a

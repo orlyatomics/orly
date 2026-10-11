@@ -203,6 +203,10 @@ namespace Orly {
           return HighestSeq;
         }
 
+        [[nodiscard]] inline size_t GetFileLength() const noexcept {
+          return FileLength;
+        }
+
         private:
 
         Util::TEngine *Engine;
