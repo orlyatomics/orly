@@ -92,18 +92,18 @@ using namespace Util;
    by refusing writes before they allocate, so the wait would only make every write that lands
    past half full sit out its 5 s. Measured with a 25% reserve, it held writers to one batch per
    5 s each, and reads on the same runners took as long. */
-size_t Orly::Server::GetWriterBacklogCap(size_t backlog_threshold) {
+size_t Orly::Server::GetWriterBacklogCap(size_t backlog_threshold) noexcept {
   return std::min(backlog_threshold, std::max<size_t>(Indy::TUpdate::GetUpdatePoolMaxBlocks() / 32, 1));
 }
 
 /* #628: a POV's backlog is capped in entries too, at 1/32 of the Update Entry pool. */
-size_t Orly::Server::GetWriterBacklogEntryCap() {
+size_t Orly::Server::GetWriterBacklogEntryCap() noexcept {
   return std::max<size_t>(Indy::TUpdate::GetEntryPool().GetMaxBlocks() / 32, 1);
 }
 
 static std::atomic<size_t> StalledBacklogRefusals {0UL};
 
-size_t Orly::Server::GetStalledBacklogRefusals() {
+size_t Orly::Server::GetStalledBacklogRefusals() noexcept {
   return StalledBacklogRefusals.load();
 }
 
@@ -214,7 +214,7 @@ static void ApplyWriteBackpressure(bool wait_for_pools) {
    commit-time wall clock: replay can't observe the difference (a replayed
    predicate that reads `now` implies the original did, forcing the Known
    path), and the durable record shouldn't claim a sentinel date (#494). */
-static Base::Chrono::TTimePnt GetRunTime(const Rt::TOpt<Base::Chrono::TTimePnt> &opt_now) {
+[[nodiscard]] static Base::Chrono::TTimePnt GetRunTime(const Rt::TOpt<Base::Chrono::TTimePnt> &opt_now) noexcept {
   return opt_now.IsKnown() ? opt_now.GetVal() : Base::Chrono::Now();
 }
 
@@ -242,9 +242,9 @@ TMethodResult TSession::DoInPast(
 }
 
 bool TSession::ForEachNotification(const function<bool (uint32_t, const TNotification *)> &cb) const {
-  lock_guard<mutex> lock(NotificationMutex);
-  for (const auto &item: NotificationBySeqNumber) {
-    if (!cb(item.first, item.second)) {
+  lock_guard lock(NotificationMutex);
+  for (const auto &[seq, notification] : NotificationBySeqNumber) {
+    if (!cb(seq, notification)) {
       return false;
     }
   }
@@ -252,7 +252,7 @@ bool TSession::ForEachNotification(const function<bool (uint32_t, const TNotific
 }
 
 const TNotification *TSession::GetFirstNotification(uint32_t &seq_number) {
-  lock_guard<mutex> lock(NotificationMutex);
+  lock_guard lock(NotificationMutex);
   assert(!NotificationBySeqNumber.empty());
   auto iter = NotificationBySeqNumber.begin();
   seq_number = iter->first;
@@ -358,7 +358,7 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
   assert(server);
   auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
   auto repo = pov->GetRepo(server);
-  std::unique_ptr<Indy::L1::TTransaction, std::function<void (Indy::L1::TTransaction *)>> transaction = server->GetRepoManager()->NewTransaction();
+  auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->Pause(repo);
   transaction->Prepare();
   transaction->CommitAction();
@@ -366,14 +366,14 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
 }
 
 std::optional<uint32_t> TSession::InsertNotification(TNotification *notification) {
-  lock_guard<mutex> lock(NotificationMutex);
+  lock_guard lock(NotificationMutex);
   if (!QueuesNotifications) {
     delete notification;
     return std::nullopt;
   }
   uint32_t result = NextSeqNumber++;
   try {
-    NotificationBySeqNumber.insert(make_pair(result, notification));
+    NotificationBySeqNumber.emplace(result, notification);
     NotificationSem.Push();
   } catch (...) {
     --NextSeqNumber;
@@ -384,7 +384,7 @@ std::optional<uint32_t> TSession::InsertNotification(TNotification *notification
 }
 
 void TSession::RemoveNotification(uint32_t seq_number) {
-  lock_guard<mutex> lock(NotificationMutex);
+  lock_guard lock(NotificationMutex);
   auto iter = NotificationBySeqNumber.find(seq_number);
   assert(iter != NotificationBySeqNumber.end());
   delete iter->second;
@@ -451,15 +451,15 @@ namespace {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
     std::vector<TMetaRecord::TEntry::TCall> recorded;
     recorded.reserve(calls.size());
-    for (const auto &call: calls) {
-      auto arena = call.second->GetArena().get();
-      TMetaRecord::TEntry::TCall one{*call.first, call.second->GetMethodName(), {}};
-      for (const auto &item: call.second->GetCoreByName()) {
-        if (item.first == OpIdName) {
+    for (const auto &[fq_name, closure]: calls) {
+      auto arena = closure->GetArena().get();
+      TMetaRecord::TEntry::TCall one{*fq_name, closure->GetMethodName(), {}};
+      for (const auto &[name, core]: closure->GetCoreByName()) {
+        if (name == OpIdName) {
           continue;
         }
-        one.ArgByName.insert(make_pair(
-            item.first, Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(arena, state_alloc)))));
+        one.ArgByName.emplace(
+            name, Var::ToVar(*Sabot::State::TAny::TWrapper(core.NewState(arena, state_alloc))));
       }
       recorded.push_back(std::move(one));
     }
@@ -479,9 +479,9 @@ namespace {
                         const Var::TVar &result) {
     std::ostringstream text;
     text << op_id;
-    args.insert(make_pair(OpIdName, Var::TVar(text.str())));
+    args.emplace(OpIdName, Var::TVar(text.str()));
     if (bytes) {
-      args.insert(make_pair(std::string(TMetaRecord::TEntry::OpOutcomeKey), result));
+      args.emplace(std::string(TMetaRecord::TEntry::OpOutcomeKey), result);
     }
   }
 
@@ -574,7 +574,7 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
   bool had_effects = false;
   std::optional<Indy::TSequenceNumber> commit_seq;
   std::optional<uint64_t> commit_lsn;
-  std::optional<TTracker> tracker = std::optional<TTracker>();
+  std::optional<TTracker> tracker;
   size_t walker_count = 0UL;
   TSuprena my_arena;
   try {
@@ -583,11 +583,11 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize() * 2);
     void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
     auto arena = closure.GetArena().get();
-    for (const auto &item: closure.GetCoreByName()) {
-      if (item.first == OpIdName) {
+    for (const auto &[name, core]: closure.GetCoreByName()) {
+      if (name == OpIdName) {
         continue;
       }
-      prog_args.insert(make_pair(item.first, Indy::TKey(item.second, arena)));
+      prog_args.emplace(name, Indy::TKey(core, arena));
     }
     // Open the pov and its repo and prepare the data and package contexts.
     auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
@@ -638,13 +638,12 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
          them, instead of both resolving against a stale read and
          producing a lost update. */
       std::vector<std::tuple<Indy::TIndexKey, Indy::TKey, TMutator>> deferred_entries;
-      for (const auto &item: effects) {
-        auto key = item.first;
+      for (const auto &[key, mutation]: effects) {
         /* Defer-safe path: single TMutation with a commutative+associative
            mutator. Skip the read entirely; emit RHS + mutator directly.
            Anything else (Assign, Delete, partial changes, non-commutative
            mutators) falls through to the existing resolve-to-value path. */
-        if (auto *mut = dynamic_cast<const Var::TMutation *>(item.second.get())) {
+        if (auto *mut = dynamic_cast<const Var::TMutation *>(mutation.get())) {
           if (Var::IsDeferSafeCommutative(mut->GetMutator())) {
             deferred_entries.emplace_back(
                 key,
@@ -654,11 +653,11 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
           }
         }
         Var::TVar val;
-        if (!item.second->IsDelete()) {
-          if (!item.second->IsFinal()) {
+        if (!mutation->IsDelete()) {
+          if (!mutation->IsFinal()) {
             val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
           }
-          item.second->Apply(val);
+          mutation->Apply(val);
           op_by_key[key] =
               Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, val)).get());
         }
@@ -672,12 +671,12 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
       const auto &predicate_results = indy_context.GetPredicateResults();
       TMetaRecord::TEntry::TArgByName meta_args_by_name;
       auto closure_arena = closure.GetArena().get();
-      for (const auto &item: closure.GetCoreByName()) {
-        if (item.first == OpIdName) {
+      for (const auto &[name, core]: closure.GetCoreByName()) {
+        if (name == OpIdName) {
           continue;
         }
-        auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)));
-        meta_args_by_name.insert(make_pair(item.first, arg));
+        auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(core.NewState(closure_arena, state_alloc_1)));
+        meta_args_by_name.emplace(name, std::move(arg));
       }
       if (op) {
         /* The result is kept for a retry, and in a safe POV's meta record for recovery (#733). */
@@ -742,8 +741,8 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
                           [](const auto &entry) -> const Indy::TKey & {
                             return std::get<0>(entry).GetKey();
                           });
-        for (auto &entry : deferred_entries) {
-          update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+        for (const auto &[key, val, mutator] : deferred_entries) {
+          update->AddEntry(key, val, mutator);
         }
         transaction->Push(repo, update);
       } catch (const std::bad_alloc &) {
@@ -912,11 +911,11 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       }
       Package::TArgMap prog_args;
       auto arena = closure.GetArena().get();
-      for (const auto &item: closure.GetCoreByName()) {
-        if (item.first == OpIdName) {
+      for (const auto &[name, core]: closure.GetCoreByName()) {
+        if (name == OpIdName) {
           continue;
         }
-        prog_args.insert(make_pair(item.first, Indy::TKey(item.second, arena)));
+        prog_args.emplace(name, Indy::TKey(core, arena));
       }
       TCore call_core = func->Call(indy_context, prog_args);
       results.push_back(Var::ToVar(*Sabot::State::TAny::TWrapper(
@@ -945,9 +944,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
          resolves against the snapshot into op_by_key. The effect set here spans
          all N calls, already Augment-merged per key by AddEffect. */
       std::vector<std::tuple<Indy::TIndexKey, Indy::TKey, TMutator>> deferred_entries;
-      for (const auto &item: effects) {
-        auto key = item.first;
-        if (auto *mut = dynamic_cast<const Var::TMutation *>(item.second.get())) {
+      for (const auto &[key, mutation]: effects) {
+        if (auto *mut = dynamic_cast<const Var::TMutation *>(mutation.get())) {
           if (Var::IsDeferSafeCommutative(mut->GetMutator())) {
             deferred_entries.emplace_back(
                 key,
@@ -957,11 +955,11 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
           }
         }
         Var::TVar val;
-        if (!item.second->IsDelete()) {
-          if (!item.second->IsFinal()) {
+        if (!mutation->IsDelete()) {
+          if (!mutation->IsFinal()) {
             val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
           }
-          item.second->Apply(val);
+          mutation->Apply(val);
           op_by_key[key] =
               Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, val)).get());
         }
@@ -983,12 +981,12 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
         const TClosure &closure = *call.Closure;
         auto closure_arena = closure.GetArena().get();
         TMetaRecord::TEntry::TCall recorded{*call.FqName, closure.GetMethodName(), {}};
-        for (const auto &item: closure.GetCoreByName()) {
-          if (item.first == OpIdName) {
+        for (const auto &[name, core]: closure.GetCoreByName()) {
+          if (name == OpIdName) {
             continue;
           }
-          recorded.ArgByName.insert(make_pair(
-              item.first, Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)))));
+          recorded.ArgByName.emplace(
+              name, Var::ToVar(*Sabot::State::TAny::TWrapper(core.NewState(closure_arena, state_alloc_1))));
         }
         recorded_calls.push_back(std::move(recorded));
       }
@@ -1047,8 +1045,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
                           [](const auto &entry) -> const Indy::TKey & {
                             return std::get<0>(entry).GetKey();
                           });
-        for (auto &entry : deferred_entries) {
-          update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+        for (const auto &[key, val, mutator] : deferred_entries) {
+          update->AddEntry(key, val, mutator);
         }
         transaction->Push(repo, update);
       } catch (const std::bad_alloc &) {
@@ -1141,7 +1139,7 @@ bool TSession::RunTestSuite(TServer *server,
 }
 
 TNotification *TSession::TryGetNotification(uint32_t seq_number) const {
-  lock_guard<mutex> lock(NotificationMutex);
+  lock_guard lock(NotificationMutex);
   auto iter = NotificationBySeqNumber.find(seq_number);
   return (iter != NotificationBySeqNumber.end()) ? iter->second : nullptr;
 }
@@ -1164,7 +1162,7 @@ void TSession::UnpausePov(TServer *server, const TUuid &pov_id) {
 const TUuid TSession::GlobalPovId = Orly::Indy::GlobalPovId;
 
 TSession::TSession(Durable::TManager *manager, const Base::TUuid &id, const Durable::TTtl &ttl)
-    : TObj(manager, id, ttl), NextSeqNumber(1) {}
+    : TObj(manager, id, ttl) {}
 
 TSession::TSession(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm)
     : TObj(manager, id, strm) {
@@ -1248,15 +1246,14 @@ void TSession::RunFuncCommit(TServer *server,
   Indy::TUpdate::TOpByKey op_by_key;
   void *state_alloc_1 = alloca(Sabot::State::GetMaxStateSize() * 2);
   void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
-  for (const auto &item: effects) {
-    Indy::TIndexKey key = item.first;
-    if (item.second->IsDelete()) {
+  for (const auto &[key, mutation]: effects) {
+    if (mutation->IsDelete()) {
       op_by_key[key] =
           Indy::TKey(Native::TTombstone::Tombstone, &my_arena, state_alloc_2);
       continue;
     }
     Var::TVar val;
-    if (!item.second->IsFinal()) {
+    if (!mutation->IsFinal()) {
       if (context.Exists(key)) {
         /* Base present (possibly only as a commutative contribution in an
            ancestor test POV, which the read folds): resolve the change against
@@ -1264,7 +1261,7 @@ void TSession::RunFuncCommit(TServer *server,
            following a different op on the same key across the chain -- come out
            right. */
         val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
-      } else if (auto *mut = dynamic_cast<const Var::TMutation *>(item.second.get());
+      } else if (auto *mut = dynamic_cast<const Var::TMutation *>(mutation.get());
                  mut && Var::IsDeferSafeCommutative(mut->GetMutator())) {
         /* Absent key + a defer-safe commutative op (`+=`, `*=`, `|=`, min/max):
            bare-commutative upsert from the monoid identity (#151). For these
@@ -1279,7 +1276,7 @@ void TSession::RunFuncCommit(TServer *server,
         val = Var::ToVar(*Sabot::State::TAny::TWrapper(context[key].GetState(state_alloc_1)));
       }
     }
-    item.second->Apply(val);
+    mutation->Apply(val);
     op_by_key[key] =
         Indy::TKey(&my_arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc_2, val)).get());
   }
@@ -1337,7 +1334,7 @@ bool TSession::RunTestBlock(TServer *server,
 
     if (verbose) {
       std::cout << test->Loc;
-      if (test->Name.size() > 0) {
+      if (!test->Name.empty()) {
         std::cout << ' ' << test->Name;
       }
       std::cout << " executing...";
@@ -1365,7 +1362,7 @@ bool TSession::RunTestBlock(TServer *server,
       }
       if (!verbose) {
         std::cout << test->Loc;
-        if (test->Name.size()) {
+        if (!test->Name.empty()) {
           std::cout << ' ' << test->Name;
         }
       }
@@ -1374,7 +1371,7 @@ bool TSession::RunTestBlock(TServer *server,
       passed = false;
       if (!verbose) {
         std::cout << test->Loc;
-        if (test->Name.size()) {
+        if (!test->Name.empty()) {
           std::cout << ' ' << test->Name;
         }
       }
@@ -1392,8 +1389,8 @@ void TSession::AddPov(const Durable::TPtr<TPov> &pov) {
   /* Copy the pointer before taking PovMutex, and drop the copy (if unused) after releasing it:
      both take the durable manager's Mutex, which comes first in the lock order (see Povs). */
   Durable::TPtr<TPov> copy = pov;
-  std::lock_guard<std::mutex> lock(PovMutex);
-  if (find(Povs.begin(), Povs.end(), copy) == Povs.end()) {
+  std::lock_guard lock(PovMutex);
+  if (std::ranges::find(Povs, copy) == Povs.end()) {
     Povs.push_back(std::move(copy));
   }
 }
@@ -1402,8 +1399,8 @@ void TSession::DiscardTestPov(TServer *server, const Base::TUuid &pov_id) noexce
   assert(server);
   Durable::TPtr<TPov> discarded;
   /* extra */ {
-    std::lock_guard<std::mutex> lock(PovMutex);
-    auto iter = find_if(Povs.begin(), Povs.end(),
+    std::lock_guard lock(PovMutex);
+    auto iter = std::ranges::find_if(Povs,
         [&pov_id](const Durable::TPtr<TPov> &pov) { return pov->GetId() == pov_id; });
     if (iter == Povs.end()) {
       return;
@@ -1420,18 +1417,18 @@ void TSession::DiscardTestPov(TServer *server, const Base::TUuid &pov_id) noexce
 }
 
 void TSession::Write(Io::TBinaryOutputStream &strm) const {
-  lock_guard<mutex> lock(NotificationMutex);
+  lock_guard lock(NotificationMutex);
   TObj::Write(strm);
   strm << UserId << NextSeqNumber << NotificationBySeqNumber.size();
-  for (const auto &item: NotificationBySeqNumber) {
-    strm << item.first;
-    Notification::Write(strm, item.second);
+  for (const auto &[seq, notification] : NotificationBySeqNumber) {
+    strm << seq;
+    Notification::Write(strm, notification);
   }
 }
 
 void TSession::Cleanup() {
-  for (const auto &item: NotificationBySeqNumber) {
-    delete item.second;
+  for (const auto &[seq, notification] : NotificationBySeqNumber) {
+    delete notification;
   }
 }
 
@@ -1482,7 +1479,7 @@ TUuid TSession::NewPov(
 }
 
 bool TSession::ForEachDependentPtr(const function<bool (Durable::TAnyPtr &)> &cb) noexcept {
-  std::lock_guard<std::mutex> lock(PovMutex);
+  std::lock_guard lock(PovMutex);
   for (auto &pov: Povs) {
     if (!cb(pov)) {
       return false;

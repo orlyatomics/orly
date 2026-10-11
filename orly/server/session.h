@@ -61,12 +61,12 @@ namespace Orly {
 
     /* The writer backpressure's cap on one POV's backlog (#584, #628; see session.cc): in
        updates, given the --tetris_backpressure_threshold, and in entries. */
-    size_t GetWriterBacklogCap(size_t backlog_threshold);
-    size_t GetWriterBacklogEntryCap();
+    [[nodiscard]] size_t GetWriterBacklogCap(size_t backlog_threshold) noexcept;
+    [[nodiscard]] size_t GetWriterBacklogEntryCap() noexcept;
 
     /* How many writes were refused because their POV's backlog was full and stopped draining
        (#721), for the reporting port. */
-    size_t GetStalledBacklogRefusals();
+    [[nodiscard]] size_t GetStalledBacklogRefusals() noexcept;
 
     class TOperationTable;
 
@@ -83,24 +83,24 @@ namespace Orly {
           : public TPov::TServer {
         public:
 
-        virtual ~TServer() {}
+        ~TServer() override = default;
 
-        virtual const std::shared_ptr<Durable::TManager> &GetDurableManager() const = 0;
+        [[nodiscard]] virtual const std::shared_ptr<Durable::TManager> &GetDurableManager() const = 0;
 
-        virtual const Package::TManager &GetPackageManager() const = 0;
+        [[nodiscard]] virtual const Package::TManager &GetPackageManager() const = 0;
 
-        virtual Base::TScheduler *GetScheduler() const = 0;
+        [[nodiscard]] virtual Base::TScheduler *GetScheduler() const = 0;
 
         /* Write-ahead log for durable acknowledgments (#755). Null when disabled or in memory simulation. */
-        virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
+        [[nodiscard]] virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
 
         /* The exactly-once table (#733), or null if this server keeps none, in which case a
            write that carries an operation id is refused. */
-        virtual TOperationTable *GetOperationTable() { return nullptr; }
+        [[nodiscard]] virtual TOperationTable *GetOperationTable() { return nullptr; }
 
         /* Write-backpressure high-watermark (#234); 0 disables. The accept path
            in Try() yields until a writer's POV child drains below this. */
-        virtual size_t GetWriteBackpressureThreshold() const = 0;
+        [[nodiscard]] virtual size_t GetWriteBackpressureThreshold() const = 0;
 
         /* Throws TInsufficientStorage (orly/server/insufficient_storage.h) if a write must be
            refused for lack of disk space (#590). Called only for writes. */
@@ -130,17 +130,17 @@ namespace Orly {
         virtual void RefuseWriteOutOfMemory() {}
 
         /* True if writes are refused before they would use the update pools' reserve (#607). */
-        virtual bool IsMemoryAdmissionOn() const { return false; }
+        [[nodiscard]] virtual bool IsMemoryAdmissionOn() const { return false; }
 
         /* The per-read budget (#694): the most rows a method call may walk and the most bytes it
            may build in its arena before it is refused with TReadTooLarge
            (orly/server/read_too_large.h). 0 means no limit. */
-        virtual size_t GetReadBudgetRows() const { return 0UL; }
-        virtual size_t GetReadBudgetBytes() const { return 0UL; }
+        [[nodiscard]] virtual size_t GetReadBudgetRows() const { return 0UL; }
+        [[nodiscard]] virtual size_t GetReadBudgetBytes() const { return 0UL; }
 
         /* The most steps a method call's sequences may take while it runs (#729). 0 means no
            limit. */
-        virtual size_t GetReadBudgetSteps() const { return 0UL; }
+        [[nodiscard]] virtual size_t GetReadBudgetSteps() const { return 0UL; }
 
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
@@ -166,12 +166,12 @@ namespace Orly {
 
         protected:
 
-        TServer(size_t num_runners) : RunnerCons(num_runners), SlowAssignmentCounter(0UL), FastAssignmentCounter(0UL) {}
+        TServer(size_t num_runners) : RunnerCons(num_runners) {}
 
         /* The fast runner a statement should switch to, or null to stay where it is: a
            websocket statement already runs on a fast runner (#761), and a second hop would only
            add a cross-runner handoff each way.  Anything else takes the next in rotation. */
-        Indy::Fiber::TRunner *NextFastRunner() {
+        [[nodiscard]] Indy::Fiber::TRunner *NextFastRunner() noexcept {
           Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
           for (const auto &runner: FastRunnerVec) {
             if (runner.get() == local) {
@@ -183,17 +183,17 @@ namespace Orly {
         }
 
         void InitalizeFramePoolManager(size_t num_frames, size_t frame_stack_size, Indy::Fiber::TRunner *runner) {
-          FramePoolManager = std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>>(
-            new Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>(num_frames, frame_stack_size, runner));
+          FramePoolManager = std::make_unique<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>>(
+            num_frames, frame_stack_size, runner);
         }
 
         Indy::Fiber::TRunner::TRunnerCons RunnerCons;
         std::vector<std::unique_ptr<Indy::Fiber::TRunner>> SlowRunnerVec;
         std::vector<std::unique_ptr<std::thread>> SlowRunnerThreadVec;
-        std::atomic<size_t> SlowAssignmentCounter;
+        std::atomic<size_t> SlowAssignmentCounter{0UL};
         std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>> FramePoolManager;
         std::vector<std::unique_ptr<Indy::Fiber::TRunner>> FastRunnerVec;
-        std::atomic<size_t> FastAssignmentCounter;
+        std::atomic<size_t> FastAssignmentCounter{0UL};
         std::vector<std::unique_ptr<std::thread>> FastRunnerThreadVec;
 
         friend class TSession;
@@ -204,45 +204,45 @@ namespace Orly {
       DEFINE_ERROR(TStubbed, std::logic_error, "the RPC entry point is not yet implemented");
 
       /* See <orly/protocol.h>. */
-      TMethodResult DoInPast(
+      [[nodiscard]] TMethodResult DoInPast(
           TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure,
           const Base::TUuid &tracking_id);
 
       /* Call back for each pending notification, in order of increasing sequence number. */
       bool ForEachNotification(const std::function<bool (uint32_t, const TNotification *)> &cb) const;
 
-      const TNotification *GetFirstNotification(uint32_t &seq_number);
+      [[nodiscard]] const TNotification *GetFirstNotification(uint32_t &seq_number);
 
-      virtual const char *GetKind() const noexcept override {
+      [[nodiscard]] const char *GetKind() const noexcept override {
         return "Session";
       }
 
       /* The number of pending notifications. */
-      size_t GetNotificationCount() const {
-        std::lock_guard<std::mutex> lock(NotificationMutex);
+      [[nodiscard]] size_t GetNotificationCount() const {
+        std::lock_guard lock(NotificationMutex);
         return NotificationBySeqNumber.size();
       }
 
-      const Base::TEventSemaphore &GetNotificationSem() const {
+      [[nodiscard]] const Base::TEventSemaphore &GetNotificationSem() const noexcept {
         return NotificationSem;
       }
 
       /* The id of the user who owns this session.  If the session is anonymous, this is unknown. */
-      const std::optional<Base::TUuid> &GetUserId() const {
+      [[nodiscard]] const std::optional<Base::TUuid> &GetUserId() const noexcept {
         return UserId;
       }
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewFastPrivatePov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      [[nodiscard]] Base::TUuid NewFastPrivatePov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewFastSharedPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      [[nodiscard]] Base::TUuid NewFastSharedPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewSafePrivatePov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      [[nodiscard]] Base::TUuid NewSafePrivatePov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
-      Base::TUuid NewSafeSharedPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
+      [[nodiscard]] Base::TUuid NewSafeSharedPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live);
 
       /* See <orly/protocol.h>. */
       void PausePov(TServer *server, const Base::TUuid &pov_id);
@@ -251,23 +251,23 @@ namespace Orly {
 
          NewReviewPov makes a POV like the New*Pov calls above, tracking conflicts as `mode` says
          from the moment it is made.  DiscardPov is for a private POV of this session's only. */
-      Base::TUuid NewReviewPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live,
-                               bool is_safe, bool is_shared, TConflictMode mode);
+      [[nodiscard]] Base::TUuid NewReviewPov(TServer *server, const std::optional<Base::TUuid> &parent_pov_id, const std::chrono::seconds &time_to_live,
+                                             bool is_safe, bool is_shared, TConflictMode mode);
 
-      TPovDiff DiffPov(TServer *server, const Base::TUuid &pov_id, const TPovDiffOptions &options);
+      [[nodiscard]] TPovDiff DiffPov(TServer *server, const Base::TUuid &pov_id, const TPovDiffOptions &options);
 
-      TPovDiscard DiscardPov(TServer *server, const Base::TUuid &pov_id);
+      [[nodiscard]] TPovDiscard DiscardPov(TServer *server, const Base::TUuid &pov_id);
 
-      TPovPromote PromotePov(TServer *server, const Base::TUuid &pov_id, bool force);
+      [[nodiscard]] TPovPromote PromotePov(TServer *server, const Base::TUuid &pov_id, bool force);
 
-      TPovReview ReviewPov(TServer *server, const Base::TUuid &pov_id, uint64_t after);
+      [[nodiscard]] TPovReview ReviewPov(TServer *server, const Base::TUuid &pov_id, uint64_t after);
 
       /* The highest version of the POV known to be on disk (#750), in the numbering a write
          receipt's version uses; unset if none is yet.  For a POV that promotes into the global
          one, it is the highest version of its own whose promotion the global POV has written to
          disk; for the global POV, its own highest durable version.  A POV several levels down
          never has one. */
-      std::optional<uint64_t> GetDurableVersion(TServer *server, const Base::TUuid &pov_id);
+      [[nodiscard]] std::optional<uint64_t> GetDurableVersion(TServer *server, const Base::TUuid &pov_id);
 
       /* Insert the given notification into the pending set and return the sequence number that is assigned to it.
          If the session isn't queuing notifications (see SetQueuesNotifications()), delete the notification and
@@ -286,7 +286,7 @@ namespace Orly {
          session loaded from the durable store queues, so a binary client that reconnects still finds what
          arrived while it was away.  Notifications already queued are kept either way. */
       void SetQueuesNotifications(bool queues) {
-        std::lock_guard<std::mutex> lock(NotificationMutex);
+        std::lock_guard lock(NotificationMutex);
         QueuesNotifications = queues;
       }
 
@@ -297,28 +297,28 @@ namespace Orly {
       void SetUserId(TServer *server, const Base::TUuid &user_id);
 
       /* See <orly/protocol.h>. */
-      TMethodResult Try(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
+      [[nodiscard]] TMethodResult Try(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
 
       /* Batched write (#253): invoke one method (resolved once) against each of
          the given argument closures, accumulating every call's effects into a
          single transaction committed once. Returns a list-typed result with one
          entry per call, in order. All-or-nothing: a throw in any call aborts the
          whole batch before commit. */
-      TMethodResult TryBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const std::vector<TClosure> &closures);
+      [[nodiscard]] TMethodResult TryBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const std::vector<TClosure> &closures);
 
       /* Mixed batched write (#255): like TryBatch, but each call names its own package and
          method. Returns one result per call, in order; they may differ in type, so they come
          back as separate values rather than one list. All-or-nothing, as TryBatch. */
-      std::vector<Var::TVar> TryMulti(TServer *server, const Base::TUuid &pov_id, const std::vector<TBatchCall> &calls);
+      [[nodiscard]] std::vector<Var::TVar> TryMulti(TServer *server, const Base::TUuid &pov_id, const std::vector<TBatchCall> &calls);
 
       /* See <orly/protocol.h>. */
-      bool RunTestSuite(TServer *server, const std::vector<std::string> &package_name, uint64_t package_version, bool verbose);
+      [[nodiscard]] bool RunTestSuite(TServer *server, const std::vector<std::string> &package_name, uint64_t package_version, bool verbose);
 
       /* Return the notification with the given sequence number.  If there is no such notification, return null. */
-      TNotification *TryGetNotification(uint32_t seq_number) const;
+      [[nodiscard]] TNotification *TryGetNotification(uint32_t seq_number) const;
 
       /* See <orly/protocol.h>. */
-      TMethodResult TryTracked(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
+      [[nodiscard]] TMethodResult TryTracked(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name, const TClosure &closure);
 
       /* See <orly/protocol.h>. */
       void UnpausePov(TServer *server, const Base::TUuid &pov_id);
@@ -386,7 +386,7 @@ namespace Orly {
       TSession(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm);
 
       /* Calls Cleanup(). */
-      virtual ~TSession();
+      ~TSession() override;
 
       /* Run a test func against the POV represented by 'pov_id' and commit any
          effects it produces directly into that POV's repo. The compile-time
@@ -411,7 +411,7 @@ namespace Orly {
           const Package::TTestBlock &test_block, bool verbose);
 
       /* Stream out. */
-      virtual void Write(Io::TBinaryOutputStream &strm) const override;
+      void Write(Io::TBinaryOutputStream &strm) const override;
 
       void Cleanup();
 
@@ -425,13 +425,13 @@ namespace Orly {
                                                             bool must_be_ours = false);
 
       /* See base class. */
-      virtual bool ForEachDependentPtr(const std::function<bool (Durable::TAnyPtr &)> &cb) noexcept override;
+      bool ForEachDependentPtr(const std::function<bool (Durable::TAnyPtr &)> &cb) noexcept override;
 
       /* See accessor. */
-      std::optional<Base::TUuid> UserId;
+      std::optional<Base::TUuid> UserId{};
 
       /* The sequence number to assign to the next notification. */
-      uint32_t NextSeqNumber;
+      uint32_t NextSeqNumber = 1;
 
       /* The queue of pending notifications. */
       std::map<uint32_t, TNotification *> NotificationBySeqNumber;
