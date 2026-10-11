@@ -46,6 +46,22 @@ Argument values are encoded by `orly.lit`:
 | `{1, 2}` | `{1, 2}` (set) |
 | `orly.Lit("now()")` | `now()` (raw, un-encoded) |
 
+## Writing exactly once (#733)
+
+A dropped connection leaves a write's outcome unknown, so the client never resends one on its own.
+Give a write an operation id and the server applies it at most once, so the client can resend it
+safely: it reconnects, resumes the session, and sends the same statement again, up to `op_retries`
+times (default 3), also backing off when the server says the first try is still running.
+
+```python
+op = orly.new_op_id()   # a UUIDv7: one per logical write
+c.call(pov, "bank", "deposit", {"acct": 7, "cents": 500}, op_id=op)
+c.call_batch(pov, "bank", "deposit", rows, op_id=op)   # a batch takes one id for the whole batch
+```
+
+`OperationExpired`, `OperationIdReused` and `OutcomeTooLarge` (with `.version`) are the server's
+refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
+
 ## Reviewing a POV's changes (#746)
 
 ```python

@@ -53,6 +53,7 @@
 #include <orly/package/manager.h>
 #include <orly/server/admission_wait.h>
 #include <orly/server/insufficient_memory.h>
+#include <orly/server/operation_table.h>
 #include <orly/server/repo_tetris_manager.h>
 #include <orly/server/session.h>
 #include <orly/server/ws.h>
@@ -395,6 +396,12 @@ namespace Orly {
         /* Size of the WAL ring in megabytes (#755). Default 256. */
         size_t WalMB = 256;
 
+        /* The exactly-once table (#733): how many completed writes it keeps across all POVs, how old,
+           by the operation id's own time, one may be, and the largest outcome it keeps. */
+        size_t OperationRetentionCount = 4096;
+        size_t OperationRetentionSeconds = 3600;
+        size_t OperationOutcomeBytes = 256;
+
         /* Test-only negative controls (#755). */
         bool WalNoSync = false;
         bool WalEarlyAck = false;
@@ -539,6 +546,10 @@ namespace Orly {
 
       Indy::Disk::TWal *GetWal() const override {
         return Wal.get();
+      }
+
+      TOperationTable *GetOperationTable() override {
+        return OperationTable.get();
       }
 
       /* Called when the websockets server wishes to create a new session. */
@@ -1158,6 +1169,13 @@ namespace Orly {
 
       /* Write-ahead log for durable acknowledgments (#755). */
       std::unique_ptr<Indy::Disk::TWal> Wal;
+
+      /* What a retry with an operation id is told about the original (#733). */
+      std::unique_ptr<TOperationTable> OperationTable;
+
+      /* Recovery (#733): put back the operations a replayed record holds. */
+      void RestoreOperation(const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
+                            Atom::TCore::TArena *arena, uint64_t lsn);
 
       /* Writes a WAL checkpoint whenever a root's data file lets the head move (#755). */
       std::thread WalCheckpointer;

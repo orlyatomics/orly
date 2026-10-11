@@ -273,8 +273,17 @@ void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
   if (!force && LastCheckpointHead && *LastCheckpointHead == head) {
     return;
   }
-  wal->Checkpoint(head, global_flushed_seq);
+  if (PayloadProvider) {
+    const std::string payload = PayloadProvider(head);
+    wal->Checkpoint(head, global_flushed_seq, payload.data(), payload.size());
+  } else {
+    wal->Checkpoint(head, global_flushed_seq);
+  }
   LastCheckpointHead = head;
+}
+
+void TWalRetention::SetCheckpointPayload(TPayloadProvider provider) {
+  PayloadProvider = std::move(provider);
 }
 
 bool TWalRetention::WaitForWork(chrono::milliseconds timeout) {

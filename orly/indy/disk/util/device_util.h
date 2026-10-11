@@ -109,6 +109,9 @@ namespace Orly {
           static constexpr uint64_t WalNumBlocksPos = WalStartBlockPos + 1UL;
           static constexpr uint64_t WalCheckpoint0BlockPos = WalNumBlocksPos + 1UL;
           static constexpr uint64_t WalCheckpoint1BlockPos = WalCheckpoint0BlockPos + 1UL;
+          /* The length of each checkpoint slot in blocks.  Zero (a store written before the field
+             existed) means one block. */
+          static constexpr uint64_t WalCheckpointBlocksPos = WalCheckpoint1BlockPos + 1UL;
 
           struct TOrlyDevice {
             TVolumeId VolumeId;
@@ -129,6 +132,7 @@ namespace Orly {
             uint64_t WalNumBlocks = 0UL;
             uint64_t WalCheckpoint0Block = 0UL;
             uint64_t WalCheckpoint1Block = 0UL;
+            uint64_t WalCheckpointBlocks = 0UL;
           };
 
           static bool ProbeDevice(const char *path, TOrlyDevice &out_device);

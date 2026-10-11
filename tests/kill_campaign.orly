@@ -23,6 +23,18 @@ put_cond = ((true) effecting {
   n = given::(int);
   e = given::(int);
 };
+/* The same write, for the retry writer (#733). The key is created with `new`, so a second run of
+   it, which is what the exactly-once table is there to prevent, fails instead of passing quietly;
+   the `+=` counters are what the driver's counter check reads. */
+put_once = ((true) effecting {
+  new <['w', w, n]> <- n * 1000 + e;
+  *<['c', w]>::(int) += 1;
+  *<['t']>::(int) += 1;
+}) where {
+  w = given::(int);
+  n = given::(int);
+  e = given::(int);
+};
 /* Every value writer w has, in key order (n ascending). */
 vals_of = (*(keys (int) @ <['w', w, free::(int)]>)::(int) as [int]) where { w = given::(int); };
 /* Writer w's `+=` counter: one per write it has. */

@@ -68,6 +68,8 @@ namespace Orly {
        (#721), for the reporting port. */
     size_t GetStalledBacklogRefusals();
 
+    class TOperationTable;
+
     /* An open session. */
     class TSession final
         : public Durable::TObj {
@@ -91,6 +93,10 @@ namespace Orly {
 
         /* Write-ahead log for durable acknowledgments (#755). Null when disabled or in memory simulation. */
         virtual Indy::Disk::TWal *GetWal() const { return nullptr; }
+
+        /* The exactly-once table (#733), or null if this server keeps none, in which case a
+           write that carries an operation id is refused. */
+        virtual TOperationTable *GetOperationTable() { return nullptr; }
 
         /* Write-backpressure high-watermark (#234); 0 disables. The accept path
            in Try() yields until a writer's POV child drains below this. */
@@ -329,10 +335,31 @@ namespace Orly {
         const std::vector<std::string> *FqName;
         const TClosure *Closure;
       };
+      struct TOperation;
       std::vector<Var::TVar> RunBatch(TServer *server, const Base::TUuid &pov_id, const std::vector<TCallView> &calls,
                                       std::optional<TTracker> &tracker, const char *what,
                                       std::optional<uint64_t> *commit_seq_out = nullptr,
-                                      std::optional<uint64_t> *commit_lsn_out = nullptr);
+                                      std::optional<uint64_t> *commit_lsn_out = nullptr,
+                                      TOperation *op = nullptr);
+
+      /* The body of Try. 'op' is the request's operation (#733), or null if it carries no id. */
+      TMethodResult TryCore(TServer *server, const Base::TUuid &pov_id, const std::vector<std::string> &fq_name,
+                            const TClosure &closure, TOperation *op);
+
+      /* If the first call carries an operation id (#733), reserve it. Returns the first answer
+         if it is a retry; otherwise leaves 'op' set, if there was an id, and the caller must run
+         the request and then FinishOperation. Throws the errors of TOperationTable::Reserve. */
+      std::optional<TMethodResult> BeginOperation(TServer *server, const Base::TUuid &pov_id,
+                                                  const std::vector<TCallView> &calls,
+                                                  std::optional<TOperation> &op);
+
+      /* Called once the request has ended, by return or by throw: drops the reservation if no
+         write completed it. */
+      static void FinishOperation(std::optional<TOperation> &op) noexcept;
+
+      /* The write committed: record its outcome. */
+      static void CompleteOperation(TOperation &op, const std::optional<Indy::TSequenceNumber> &commit_seq,
+                                    const std::optional<uint64_t> &commit_lsn);
 
       /* Add the given pov to the collection of povs we'll keep open.  (Private again since the
          memcache frontend -- the one outside caller -- was removed.) */

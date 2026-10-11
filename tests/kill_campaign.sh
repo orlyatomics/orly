@@ -9,6 +9,9 @@
 #   NEGATIVE=rollback
 #                negative control: put back an older volume image before some restarts,
 #                as a lost data file would look. The run must FAIL.
+#   NEGATIVE=noretry
+#                negative control for operation ids (#733): the exactly-once table is off, so a
+#                write sent again runs again. The run must FAIL, on the counter check.
 #   SIGNAL=TERM  stop orlyi gracefully instead of killing it, with the same checks, to compare
 #   ORLY_OUT     build tree (default ../out_orly/release); needs orlyi, orlyc, orly_dm
 #

@@ -58,6 +58,7 @@
 #include <orly/indy/disk/wal.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/operation_error.h>
 #include <orly/server/read_too_large.h>
 #include <orly/server/write_too_large.h>
 #include <orly/sabot/state_dumper.h>
@@ -151,6 +152,23 @@ namespace {
          sent: the client must read less. */
       reply["result"] = ex.what();
       reply["status"] = "read_too_large";
+    } catch (const Orly::Server::TOperationExpired &ex) {
+      /* The operation id is older than the server keeps (#733). Not retryable with the same id. */
+      reply["result"] = ex.what();
+      reply["status"] = "operation_expired";
+    } catch (const Orly::Server::TOperationIdReused &ex) {
+      /* The operation id names a different request (#733). A client bug. */
+      reply["result"] = ex.what();
+      reply["status"] = "operation_id_reused";
+    } catch (const Orly::Server::TOperationInFlight &ex) {
+      /* The same request is still running under this id (#733). Retryable after a short wait. */
+      reply["result"] = ex.what();
+      reply["status"] = "operation_in_flight";
+    } catch (const Orly::Server::TOutcomeTooLarge &ex) {
+      /* The write ran once, but its result was too big to keep (#733); the version says where. */
+      reply["result"] = ex.what();
+      reply["status"] = "outcome_too_large";
+      reply["version"] = static_cast<uint64_t>(ex.GetVersion());
     } catch (const TDurableTimeout &ex) {
       /* The write committed, but was not on disk in time (#750). The reply's receipt names it. */
       reply["result"] = ex.what();
@@ -654,6 +672,9 @@ class TWsImpl final
           list = tail ? tail->GetObjMemberList() : nullptr;
         }
         const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
+        if (options.OpId) {
+          AddOpId(closure, *options.OpId);
+        }
         /* Runs off the I/O thread (#761); see TStmtQueue. */
         Conn->Deferred = [conn = Conn, options, session_mngr = Conn->Ws->SessionManager, session = GetSharedSession(),
                           request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
@@ -713,6 +734,10 @@ class TWsImpl final
           list = list_tail ? list_tail->GetObjExprList() : nullptr;
         }
         const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
+        if (options.OpId) {
+          /* The batch is one request; the id rides on its first call. */
+          AddOpId(closures.front(), *options.OpId);
+        }
         /* Runs off the I/O thread (#761); see TStmtQueue. */
         Conn->Deferred = [conn = Conn, options, session_mngr = Conn->Ws->SessionManager, session = GetSharedSession(), pov_id,
                           fq_name = std::make_shared<const vector<string>>(std::move(fq_name)),
@@ -955,11 +980,21 @@ class TWsImpl final
 
       /* The options of a `try` (#750): `.receipt: true` asks for the reply to carry a receipt;
          `.wait_durable_ms: N` holds the reply, for at most N ms, until the write is on disk, and
-         implies the receipt. */
+         implies the receipt. `.op_id: "<uuid>"` names the write, so sending it again returns the
+         first answer rather than writing twice (#733). */
       struct TTryOptions {
         bool Receipt = false;
         uint64_t WaitDurableMs = 0;
+        std::optional<std::string> OpId;
       };
+
+      /* The operation id goes to the session as a reserved argument, which it takes back out
+         (#733). */
+      static void AddOpId(TClosure &closure, const string &op_id) {
+        void *alloc = alloca(SabotStateSize);
+        TWrapper state(Native::State::New(op_id, alloc));
+        closure.AddArgBySabot("$op_id", state);
+      }
 
       static TTryOptions GetTryOptions(const TOptionList &options) {
         constexpr int64_t max_wait_ms = 60000;
@@ -982,8 +1017,14 @@ class TWsImpl final
               throw invalid_argument("try: .wait_durable_ms must be from 1 to 60000");
             }
             result.WaitDurableMs = static_cast<uint64_t>(ms);
+          } else if (option.first == "op_id") {
+            try {
+              result.OpId = Var::TVar::TDt<std::string>::As(option.second);
+            } catch (const exception &) {
+              throw invalid_argument("try: .op_id must be a str");
+            }
           } else {
-            throw invalid_argument("try: unknown option ." + option.first + "; the options are .receipt and .wait_durable_ms");
+            throw invalid_argument("try: unknown option ." + option.first + "; the options are .receipt, .wait_durable_ms and .op_id");
           }
         }
         result.Receipt = result.Receipt || result.WaitDurableMs;

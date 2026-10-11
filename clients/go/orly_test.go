@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -218,5 +219,94 @@ func TestDurableVersion(t *testing.T) {
 	}
 	if queriedPov != "p2" {
 		t.Fatalf("queriedPov: %q", queriedPov)
+	}
+}
+
+func TestOpIDOption(t *testing.T) {
+	const id = "0194a2b4-7c00-7000-8000-000000000001"
+	if got := formatTryOptions(CallOpts{OpID: id}); got != ` <{.op_id: "`+id+`"}>` {
+		t.Fatalf("want op_id, got %q", got)
+	}
+	if got := formatTryOptions(CallOpts{OpID: id, Receipt: true}); got != ` <{.op_id: "`+id+`", .receipt: true}>` {
+		t.Fatalf("want op_id then receipt, got %q", got)
+	}
+	a, b := NewOpID(), NewOpID()
+	if a == b || len(a) != 36 || a[14] != '7' || !strings.ContainsRune("89ab", rune(a[19])) {
+		t.Fatalf("not a v7 uuid, or not fresh: %q %q", a, b)
+	}
+}
+
+func TestOperationStatuses(t *testing.T) {
+	for status, want := range map[string]error{
+		"operation_expired":   ErrOperationExpired,
+		"operation_id_reused": ErrOperationIDReused,
+		"operation_in_flight": ErrOperationInFlight,
+		"outcome_too_large":   ErrOutcomeTooLarge,
+	} {
+		server, client := newTestServer(t, func(stmt string) string {
+			return `{"status": "` + status + `", "result": "x", "version": 7}`
+		})
+		_, err := client.CallWithOpts("p1", "pkg", "fn", nil, CallOpts{OpID: NewOpID(), OpRetries: -1})
+		if !errors.Is(err, want) {
+			t.Fatalf("%s: got %v", status, err)
+		}
+		var otl *OutcomeTooLargeError
+		if status == "outcome_too_large" && (!errors.As(err, &otl) || otl.Version != 7) {
+			t.Fatalf("no version: %v", err)
+		}
+		client.Close()
+		server.Close()
+	}
+}
+
+// A connection that drops is redialled and the write resent with the same id, but only
+// when there is an id.
+func TestOpIDResendsAfterDrop(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	drops := 1
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			seen = append(seen, string(msg))
+			drop := strings.HasPrefix(string(msg), "try") && drops > 0
+			if drop {
+				drops--
+			}
+			mu.Unlock()
+			if drop {
+				return // no reply: the connection just closes
+			}
+			conn.WriteMessage(websocket.TextMessage, []byte(`{"status": "ok", "result": "done"}`))
+		}
+	}))
+	defer s.Close()
+	c, err := ConnectURL("ws" + strings.TrimPrefix(s.URL, "http"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.sessionID = "s1"
+	raw, err := c.CallWithOpts("p1", "pkg", "fn", nil, CallOpts{OpID: NewOpID()})
+	if err != nil || string(raw) != `"done"` {
+		t.Fatalf("with an id: %s, %v", raw, err)
+	}
+	mu.Lock()
+	if len(seen) != 3 || seen[0] != seen[2] || seen[1] != "resume session {s1};" {
+		t.Fatalf("seen: %q", seen)
+	}
+	drops = 1
+	mu.Unlock()
+	if _, err := c.Call("p1", "pkg", "fn", nil); err == nil {
+		t.Fatalf("without an id the drop must surface")
 	}
 }

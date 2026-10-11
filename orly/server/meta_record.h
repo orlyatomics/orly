@@ -27,6 +27,7 @@
 #include <cassert>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -77,6 +78,13 @@ namespace Orly {
            of calls, so a batch of calls without args still records how many there were. '$' can't
            appear in an argument name. */
         static TArgByName EncodeBatch(const std::vector<TCall> &calls);
+
+        /* The keys that record an operation id and its saved outcome in ArgByName (#733), next to
+           "$calls". Only a write that carried an id has them, so one without is recorded exactly
+           as before. "$op_outcome" is the call's result; it is left out when the result was over
+           the size cap. GetCalls() never returns either: they are not arguments of any call. */
+        static constexpr std::string_view OpIdKey = "$op_id";
+        static constexpr std::string_view OpOutcomeKey = "$op_outcome";
 
         /* The calls this entry records, in the order they ran, each with its own package, method
            and args. Tetris replays them in this order, on one context, to test the entry's

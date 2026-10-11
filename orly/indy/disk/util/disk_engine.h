@@ -216,15 +216,20 @@ namespace Orly {
                 WalStartBlock = wal_range.first;
                 WalNumBlocks = wal_range.second;
                 TBlockRange cp0_range, cp1_range;
-                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+                WalCheckpointBlocks = DefaultWalCheckpointBlocks();
+                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, WalCheckpointBlocks, [&](const TBlockRange &range) {
                   cp0_range = range;
                 });
-                assert(cp0_range.second == 1UL);
+                if (unlikely(cp0_range.second != WalCheckpointBlocks)) {
+                  throw std::runtime_error("not enough blocks allocated for WAL checkpoint slot 0");
+                }
                 WalCheckpoint0Block = cp0_range.first;
-                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+                VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, WalCheckpointBlocks, [&](const TBlockRange &range) {
                   cp1_range = range;
                 });
-                assert(cp1_range.second == 1UL);
+                if (unlikely(cp1_range.second != WalCheckpointBlocks)) {
+                  throw std::runtime_error("not enough blocks allocated for WAL checkpoint slot 1");
+                }
                 WalCheckpoint1Block = cp1_range.first;
                 FormatVersion = 1UL;
 
@@ -235,6 +240,7 @@ namespace Orly {
                   entry.second.WalNumBlocks = WalNumBlocks;
                   entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
                   entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                  entry.second.WalCheckpointBlocks = WalCheckpointBlocks;
                   Base::TFd fd = open(entry.first.c_str(), O_RDWR);
                   auto zero_buf = Base::MemAlignedAllocZeroInitialized<char>(PhysicalBlockSize, PhysicalBlockSize);
                   ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint0Block + 1UL) * PhysicalBlockSize));
@@ -270,14 +276,15 @@ namespace Orly {
                 WalNumBlocks = dev_info.WalNumBlocks;
                 WalCheckpoint0Block = dev_info.WalCheckpoint0Block;
                 WalCheckpoint1Block = dev_info.WalCheckpoint1Block;
+                WalCheckpointBlocks = dev_info.WalCheckpointBlocks ? dev_info.WalCheckpointBlocks : 1UL;
               }
               if (FormatVersion > 1UL) {
                 throw std::runtime_error("unsupported store format version " + std::to_string(FormatVersion) + ": this binary supports format versions up to 1");
               }
               if (FormatVersion == 1UL) {
                 VolMan->MarkBlockRangeUsed(TBlockRange(WalStartBlock, WalNumBlocks));
-                VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint0Block, 1UL));
-                VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint1Block, 1UL));
+                VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint0Block, WalCheckpointBlocks));
+                VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint1Block, WalCheckpointBlocks));
               }
             }
             TFileService::TFileInitCb file_init_cb = [this](TFileObj::TKind file_kind,
@@ -313,22 +320,24 @@ namespace Orly {
                 throw std::runtime_error("cannot upgrade store to format version 1: unable to allocate contiguous WAL range of " + std::to_string(wal_mb) + " MB from free space; start with --durable_acks=false to open as version 0");
               }
               TBlockRange cp0_range, cp1_range;
-              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+              const size_t cp_blocks = DefaultWalCheckpointBlocks();
+              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, cp_blocks, [&](const TBlockRange &range) {
                 cp0_range = range;
               });
-              if (unlikely(cp0_range.second != 1UL)) {
+              if (unlikely(cp0_range.second != cp_blocks)) {
                 throw std::runtime_error("cannot upgrade store to format version 1: unable to allocate checkpoint block 0; start with --durable_acks=false to open as version 0");
               }
-              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, 1UL, [&](const TBlockRange &range) {
+              VolMan->TryAllocateSequentialBlocks(Util::TVolume::TDesc::TStorageSpeed::Fast, cp_blocks, [&](const TBlockRange &range) {
                 cp1_range = range;
               });
-              if (unlikely(cp1_range.second != 1UL)) {
+              if (unlikely(cp1_range.second != cp_blocks)) {
                 throw std::runtime_error("cannot upgrade store to format version 1: unable to allocate checkpoint block 1; start with --durable_acks=false to open as version 0");
               }
               WalStartBlock = wal_range.first;
               WalNumBlocks = wal_range.second;
               WalCheckpoint0Block = cp0_range.first;
               WalCheckpoint1Block = cp1_range.first;
+              WalCheckpointBlocks = cp_blocks;
               FormatVersion = 1UL;
 
               /* Zero checkpoint blocks and first WAL block on physical media, and flush (§8.7) */
@@ -338,6 +347,7 @@ namespace Orly {
                 entry.second.WalNumBlocks = WalNumBlocks;
                 entry.second.WalCheckpoint0Block = WalCheckpoint0Block;
                 entry.second.WalCheckpoint1Block = WalCheckpoint1Block;
+                entry.second.WalCheckpointBlocks = WalCheckpointBlocks;
                 Base::TFd fd = open(entry.first.c_str(), O_RDWR);
                 auto zero_buf = Base::MemAlignedAllocZeroInitialized<char>(PhysicalBlockSize, PhysicalBlockSize);
                 ::Util::IfLt0(pwrite(fd, zero_buf.get(), PhysicalBlockSize, (WalCheckpoint0Block + 1UL) * PhysicalBlockSize));
@@ -412,8 +422,10 @@ namespace Orly {
           std::vector<size_t> GetEngineBlocks() const {
             std::vector<size_t> blocks = {SystemBlockId};
             if (FormatVersion == 1UL && WalNumBlocks > 0) {
-              blocks.push_back(WalCheckpoint0Block);
-              blocks.push_back(WalCheckpoint1Block);
+              for (size_t i = 0; i < WalCheckpointBlocks; ++i) {
+                blocks.push_back(WalCheckpoint0Block + i);
+                blocks.push_back(WalCheckpoint1Block + i);
+              }
               for (size_t i = 0; i < WalNumBlocks; ++i) {
                 blocks.push_back(WalStartBlock + i);
               }
@@ -445,6 +457,10 @@ namespace Orly {
           uint64_t GetWalNumBlocks() const { return WalNumBlocks; }
           uint64_t GetWalCheckpoint0Block() const { return WalCheckpoint0Block; }
           uint64_t GetWalCheckpoint1Block() const { return WalCheckpoint1Block; }
+          /* The length of each checkpoint slot in blocks. */
+          uint64_t GetWalCheckpointBlocks() const { return WalCheckpointBlocks; }
+          /* The size a new store gives each checkpoint slot: 1 MiB, in blocks. */
+          static constexpr size_t DefaultWalCheckpointBlocks() { return (1024UL * 1024UL) / Util::PhysicalBlockSize; }
           bool HasWal() const { return FormatVersion == 1UL && WalNumBlocks > 0; }
           TPersistentDevice *GetPersistentDevice() const {
             if (!DiskUtil->GetPersistentDeviceSet().empty()) {
@@ -530,6 +546,7 @@ namespace Orly {
           uint64_t WalNumBlocks = 0UL;
           uint64_t WalCheckpoint0Block = 0UL;
           uint64_t WalCheckpoint1Block = 0UL;
+          uint64_t WalCheckpointBlocks = 1UL;
 
           std::unique_ptr<TFileService> FileService;
           size_t FileAppendLogBlocks;

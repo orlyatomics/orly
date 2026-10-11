@@ -23,6 +23,8 @@
 package orly
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +47,10 @@ const DefaultURL = "ws://127.0.0.1:8082/"
 const (
 	DefaultRetries = 5
 	defaultBackoff = 250 * time.Millisecond
+	// DefaultOpRetries is how many times a write that carries an operation id
+	// (CallOpts.OpID) is resent when the connection drops or the server says the
+	// first try is still running (#733).
+	DefaultOpRetries = 3
 )
 
 // ErrInsufficientStorage is wrapped by the error a write gets when the server
@@ -86,6 +92,68 @@ var ErrRemoteCompileDisabled = errors.New("orly: remote compile disabled")
 // statement ran. Not retryable as sent: fix the token. Test with errors.Is.
 var ErrUnauthorized = errors.New("orly: unauthorized")
 
+// ErrOperationExpired is wrapped by the error a write gets when its operation
+// id is older than the server remembers ("status": "operation_expired", #733).
+// Whether the first try applied is unknown; read the data to find out. Test with
+// errors.Is.
+var ErrOperationExpired = errors.New("orly: operation expired")
+
+// ErrOperationIDReused is wrapped by the error a write gets when its operation
+// id was already used for a different write ("status": "operation_id_reused",
+// #733). Not retryable: use a new id. Test with errors.Is.
+var ErrOperationIDReused = errors.New("orly: operation id reused")
+
+// ErrOperationInFlight is wrapped by the error a write gets when the write with
+// its operation id is still running ("status": "operation_in_flight", #733).
+// Retry after a moment. Test with errors.Is.
+var ErrOperationInFlight = errors.New("orly: operation in flight")
+
+// ErrOutcomeTooLarge is wrapped by OutcomeTooLargeError: a retried write had
+// already applied, but its result is too big to have been kept
+// ("status": "outcome_too_large", #733). The write is done and is not repeated.
+var ErrOutcomeTooLarge = errors.New("orly: outcome too large")
+
+// OutcomeTooLargeError carries the version the write committed at.
+type OutcomeTooLargeError struct {
+	Statement string
+	Reply     json.RawMessage
+	Version   uint64
+}
+
+func (e *OutcomeTooLargeError) Error() string {
+	return fmt.Sprintf("orly: %s -> %s: %v", e.Statement, e.Reply, ErrOutcomeTooLarge)
+}
+
+func (e *OutcomeTooLargeError) Unwrap() error {
+	return ErrOutcomeTooLarge
+}
+
+// connError is a failed write or read on the connection itself, as opposed to
+// an error status the server answered with. Only the former is worth resending
+// a write for.
+type connError struct{ err error }
+
+func (e *connError) Error() string { return e.err.Error() }
+func (e *connError) Unwrap() error { return e.err }
+
+// NewOpID returns a fresh operation id (#733): a UUIDv7 in canonical text form.
+// Time ordered, which is what lets the server forget old ids by age.
+func NewOpID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err)
+	}
+	ms := uint64(time.Now().UnixMilli())
+	for i := 5; i >= 0; i-- {
+		b[i] = byte(ms)
+		ms >>= 8
+	}
+	b[6] = b[6]&0x0f | 0x70
+	b[8] = b[8]&0x3f | 0x80
+	h := hex.EncodeToString(b[:])
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
 // ErrDurableTimeout is wrapped by the error a write gets when it asked to
 // wait for durable (WaitDurableMs) but timed out before the write reached
 // disk ("status": "durable_timeout", #750). The write was accepted and is
@@ -125,18 +193,31 @@ type CallOpts struct {
 	// WaitDurableMs holds the reply until the write is on disk, up to this many
 	// milliseconds (1 to 60000). Implies Receipt.
 	WaitDurableMs int
+	// OpID makes the write apply at most once (#733); see NewOpID. If the
+	// connection drops, the call is reconnected (the session resumed) and resent
+	// with the same id, up to OpRetries times, and the server answers a retry of a
+	// write that already applied with its saved result. Without an id nothing is
+	// resent.
+	OpID string
+	// OpRetries is how many times an OpID write is resent: 0 means
+	// DefaultOpRetries, a negative number means none.
+	OpRetries int
 }
 
 // Client is a connection to a running orlyi (one WebSocket, one session).
 type Client struct {
 	conn        *websocket.Conn
 	LastReceipt *Receipt
+
+	url, token string // how to dial again, for resending an OpID write
+	sessionID  string
 }
 
 type reply struct {
 	Status  string          `json:"status"`
 	Result  json.RawMessage `json:"result"`
 	Receipt *Receipt        `json:"receipt,omitempty"`
+	Version uint64          `json:"version,omitempty"`
 }
 
 // Connect dials a running orlyi at DefaultURL.
@@ -185,7 +266,7 @@ func ConnectURLWithToken(url, token string) (*Client, error) {
 		var conn *websocket.Conn
 		conn, _, err = websocket.DefaultDialer.Dial(url, nil)
 		if err == nil {
-			c := &Client{conn: conn}
+			c := &Client{conn: conn, url: url, token: token}
 			if token == "" {
 				return c, nil
 			}
@@ -236,11 +317,11 @@ func (c *Client) Close() error { return c.conn.Close() }
 // the reply status is not "ok".
 func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	if err := c.conn.WriteMessage(websocket.TextMessage, []byte(stmt)); err != nil {
-		return nil, fmt.Errorf("orly: write %q: %w", stmt, err)
+		return nil, &connError{fmt.Errorf("orly: write %q: %w", stmt, err)}
 	}
 	_, msg, err := c.conn.ReadMessage()
 	if err != nil {
-		return nil, fmt.Errorf("orly: read after %q: %w", stmt, err)
+		return nil, &connError{fmt.Errorf("orly: read after %q: %w", stmt, err)}
 	}
 	var r reply
 	if err := json.Unmarshal(msg, &r); err != nil {
@@ -272,10 +353,71 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	if r.Status == "unauthorized" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrUnauthorized)
 	}
+	if r.Status == "operation_expired" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrOperationExpired)
+	}
+	if r.Status == "operation_id_reused" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrOperationIDReused)
+	}
+	if r.Status == "operation_in_flight" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrOperationInFlight)
+	}
+	if r.Status == "outcome_too_large" {
+		return nil, &OutcomeTooLargeError{Statement: stmt, Reply: msg, Version: r.Version}
+	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)
 	}
 	return r.Result, nil
+}
+
+// sendOp sends a write. Without an operation id it is Send: a dropped
+// connection is the caller's problem, since resending could apply the write
+// twice. With one, the server applies the id at most once, so a dropped
+// connection is replaced (and the session resumed) and the same statement
+// resent, up to opts.OpRetries times (#733).
+func (c *Client) sendOp(stmt string, opts CallOpts) (json.RawMessage, error) {
+	if opts.OpID == "" || c.url == "" {
+		return c.Send(stmt)
+	}
+	retries := opts.OpRetries
+	if retries == 0 {
+		retries = DefaultOpRetries
+	}
+	delay := defaultBackoff
+	for attempt := 0; ; attempt++ {
+		raw, err := c.Send(stmt)
+		if err == nil || attempt >= retries {
+			return raw, err
+		}
+		var ce *connError
+		switch {
+		case errors.Is(err, ErrOperationInFlight):
+			time.Sleep(delay)
+			delay *= 2
+		case errors.As(err, &ce):
+			if err := c.redial(); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, err
+		}
+	}
+}
+
+// redial replaces a dropped connection with a new one to the same url and
+// token, and resumes the session.
+func (c *Client) redial() error {
+	c.conn.Close()
+	fresh, err := ConnectURLWithToken(c.url, c.token)
+	if err != nil {
+		return err
+	}
+	c.conn = fresh.conn
+	if c.sessionID != "" {
+		_, err = c.Send(fmt.Sprintf("resume session {%s};", c.sessionID))
+	}
+	return err
 }
 
 // SendString sends a statement whose result is a JSON string and returns it.
@@ -292,7 +434,13 @@ func (c *Client) SendString(stmt string) (string, error) {
 }
 
 // NewSession opens a session and returns its id.
-func (c *Client) NewSession() (string, error) { return c.SendString("new session;") }
+func (c *Client) NewSession() (string, error) {
+	id, err := c.SendString("new session;")
+	if err == nil {
+		c.sessionID = id
+	}
+	return id, err
+}
 
 // Install installs a package version.
 func (c *Client) Install(pkg string, version int) error {
@@ -570,6 +718,9 @@ func (c *Client) Promote(pov string, force bool, timeout time.Duration) (Promote
 
 func formatTryOptions(opts CallOpts) string {
 	var parts []string
+	if opts.OpID != "" {
+		parts = append(parts, ".op_id: "+quote(opts.OpID))
+	}
 	if opts.Receipt {
 		parts = append(parts, ".receipt: true")
 	}
@@ -588,13 +739,13 @@ func (c *Client) Call(pov, pkg, method string, args map[string]any) (json.RawMes
 	return c.CallWithOpts(pov, pkg, method, args, CallOpts{})
 }
 
-// CallWithOpts invokes package.method on pov with options (Receipt, WaitDurableMs) (#750).
+// CallWithOpts invokes package.method on pov with options (Receipt, WaitDurableMs, OpID) (#750, #733).
 func (c *Client) CallWithOpts(pov, pkg, method string, args map[string]any, opts CallOpts) (json.RawMessage, error) {
 	lit, err := litRecord(args)
 	if err != nil {
 		return nil, err
 	}
-	return c.Send(fmt.Sprintf("try {%s} %s %s %s%s;", pov, pkg, method, lit, formatTryOptions(opts)))
+	return c.sendOp(fmt.Sprintf("try {%s} %s %s %s%s;", pov, pkg, method, lit, formatTryOptions(opts)), opts)
 }
 
 // CallWithReceipt invokes package.method on pov, requests a write receipt, and returns it (#750).
@@ -635,7 +786,7 @@ func (c *Client) CallBatchWithOpts(pov, pkg, method string, argsList []map[strin
 		}
 		recs = append(recs, r)
 	}
-	return c.Send(fmt.Sprintf("try {%s} %s %s [%s]%s;", pov, pkg, method, strings.Join(recs, ", "), formatTryOptions(opts)))
+	return c.sendOp(fmt.Sprintf("try {%s} %s %s [%s]%s;", pov, pkg, method, strings.Join(recs, ", "), formatTryOptions(opts)), opts)
 }
 
 // CallBatchWithReceipt invokes pkg method on pov once per record in argsList, requests a receipt, and returns it (#750).

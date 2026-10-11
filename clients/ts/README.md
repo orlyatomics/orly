@@ -57,6 +57,22 @@ Argument values are encoded by `lit`:
 | `set([1, 2])` | `{1, 2}` (set) |
 | `raw("now()")` | `now()` (raw, un-encoded) |
 
+## Writing exactly once (#733)
+
+A dropped connection leaves a write's outcome unknown, so the client never resends one on its own.
+Give a write an operation id and the server applies it at most once, so the client can resend it
+safely: it reconnects, resumes the session, and sends the same statement again, up to `opRetries`
+times (default 3), also backing off when the server says the first try is still running.
+
+```ts
+const opId = newOpId(); // a UUIDv7: one per logical write
+await client.call(pov, "bank", "deposit", { acct: 7, cents: 500 }, { opId });
+await client.callBatch(pov, "bank", "deposit", rows, { opId }); // one id for the whole batch
+```
+
+`OperationExpiredError`, `OperationIdReusedError` and `OutcomeTooLargeError` (with `.version`) are the
+server's refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
+
 ## Reviewing a POV's changes (#746)
 
 ```ts

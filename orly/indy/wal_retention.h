@@ -40,6 +40,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -117,6 +118,12 @@ namespace Orly {
          the head.  Skipped when the head hasn't moved, unless forced.  Throws on a WAL failure. */
       void Checkpoint(uint64_t global_flushed_seq, bool force = false);
 
+      /* What a checkpoint carries as its payload, given the head it is taken at (#733): the state
+         that the records before the head held and recovery will no longer replay. Set once, before
+         the first Checkpoint. */
+      using TPayloadProvider = std::function<std::string (uint64_t head_lsn)>;
+      void SetCheckpointPayload(TPayloadProvider provider);
+
       /* For the checkpointer thread: wait up to `timeout` for a flush to make a checkpoint worth
          taking.  False once Stop() is called. */
       bool WaitForWork(std::chrono::milliseconds timeout);
@@ -173,6 +180,8 @@ namespace Orly {
       std::mutex CheckpointMutex;
 
       std::optional<uint64_t> LastCheckpointHead;
+
+      TPayloadProvider PayloadProvider;
 
       /* For WaitForWork(). */
       std::mutex WorkMutex;

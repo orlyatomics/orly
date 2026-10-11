@@ -52,8 +52,12 @@ substitute `node /path/to/orly/clients/mcp/dist/index.js` for `npx -y orly-mcp`.
 | `orly_call_batch` | N calls of one method folded into a single atomic transaction ([#253](https://github.com/orlyatomics/orly/issues/253)). |
 | `orly_install_package` | Install a compiled package by name/version (its `.so` must be in orlyi's package dir). |
 
-One Orly session per server process, lazily connected, reconnecting once on a
-dropped connection (povs live in the engine and survive the reconnect).
+One Orly session per server process, lazily connected. A dropped connection is
+reconnected on the next call, and povs live in the engine and survive it. A call
+is only sent again after a drop if it carries an operation id (#733): pass `op_id`
+(a UUIDv7) or `exactly_once: true` to `orly_call` / `orly_call_batch`, and the
+server applies the write at most once however often it is sent. Without one, the
+failure is returned, since the first try may have applied.
 
 ## Argument encoding
 

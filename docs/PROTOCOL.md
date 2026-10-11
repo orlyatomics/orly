@@ -279,6 +279,9 @@ sent as one WebSocket text message. The server replies with one JSON message:
   first message wasn't `{"auth": "<token>"}` with the right one. The server
   closes the connection after this reply; nothing else on it ran. Not
   retryable as sent: fix the token. See "Shared secret" above.
+- `operation_expired`, `operation_id_reused`, `operation_in_flight` and
+  `outcome_too_large` (#733) answer a write that carries an operation id. See
+  "Exactly-once writes" below for what each means and which can be retried.
 
 ## Statements
 
@@ -294,7 +297,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Uninstall package | `uninstall <pkg>.<version>;` (the installed version only; any other is refused, naming the installed one, #800) | — |
 | Compile package | `compile "<orlyscript source>";` | `{"name": ..., "version": ...}`; refused unless `--allow_remote_compile` |
 | New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}] [<{.conflicts: "report"\|"refuse"}>];` | POV id (string) |
-| Call a method | `try {<pov-id>} <pkg> <method> <args> [<{.receipt: true}>];` | method result (JSON, marshaled); see "Write receipts" |
+| Call a method | `try {<pov-id>} <pkg> <method> <args> [<{.receipt: true}>];` | method result (JSON, marshaled); see "Write receipts" and "Exactly-once writes" |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
 | Batch different methods | `try {<pov-id>} [<pkg1> <method1> <args1>, <pkg2> <method2> <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause {<id>};` / `unpause {<id>};` | `"paused"` / `"unpaused"` |
@@ -328,6 +331,52 @@ when the call committed a write:
   the receipt (`"durability": "memory"`). The write is committed either way; it is only not
   yet known to be on disk. A POV with no durable version (nested under another child) times out.
 - The batch form `try ... [...] <{...}>` takes the same options. The mixed form (`try_multi`) is not covered yet.
+
+### Exactly-once writes (#733)
+
+A client that loses a connection mid-write does not know whether the write applied, and resending
+it could apply it twice. A write can carry an **operation id** to make the resend safe: the server
+applies each id at most once and answers a retry with the first try's result.
+
+```
+try {<pov-id>} mypkg bump <{.n: 1}> <{.op_id: "0194a2b4-7c00-7000-8000-000000000001"}>;
+```
+
+- `.op_id` (a string) is a UUIDv7 in its canonical text form. It must be a version 7 UUID (the
+  server uses its timestamp to age ids out), and the client makes a fresh one per logical write and
+  reuses it only to retry that same write. A write without `.op_id` is exactly what it was before:
+  nothing is recorded, nothing is resent.
+- The first try runs as usual. A retry (same POV, same id, same request) does not run again: the
+  reply is the saved result, with the saved `receipt` if one was asked for, and `.wait_durable_ms`
+  waits for the original write's disk sync, not a new one.
+- Ids are scoped to a POV. The same id on another POV is a different operation.
+- A retry must be the same request: the same package, method and arguments (the server compares a
+  hash of them). A different request under a used id replies `"status": "operation_id_reused"`.
+  Not retryable: use a new id.
+- A retry that arrives while the first try is still running replies `"status": "operation_in_flight"`.
+  Retry after a moment.
+- The batch form `try ... [...] <{.op_id: ...}>` takes the id for the whole batch: it applies once,
+  as one transaction, and a retry returns the whole array. The mixed form (`try_multi`) is **not
+  covered**: `try {pov} [pkg method args, ...] <{.op_id: ...}>` is refused as `invalid_argument`.
+  Over the binary protocol a call's id rides as the closure argument `$op_id` (a str); the first
+  call's, for a batch. Errors there arrive as ordinary exceptions whose messages start with the
+  status name.
+- A saved outcome is kept up to `--operation_outcome_bytes` (default 256, at most 8192) encoded. If a
+  write's result is larger, the first try still returns it in full, but a retry cannot, and replies
+  `"status": "outcome_too_large"` with the write's `"version"`. The write applied and is not repeated;
+  read the data if the result is needed.
+- The server remembers the newest `--operation_retention_count` ids (default 4096, across all POVs)
+  that are no older than `--operation_retention_seconds` (default 3600): whichever of the two runs
+  out first ends an id's window. A retry of an id it has forgotten, or
+  one older than anything it remembers, replies `"status": "operation_expired"`. Whether the first
+  try applied is then unknown; read the data to find out. Retry within the window, which is hours
+  long, and a client that reconnects promptly is nowhere near it.
+- On a **safe POV** with the write-ahead log on (`--durable_acks`), the id and a result that fits are
+  written into the write's WAL record, so a retry is answered correctly after a crash and restart:
+  recovery rebuilds the table from the checkpoint and the log. On a fast POV, or without the log,
+  the table is in memory only: it covers a dropped connection, not a restart (a fast POV does not
+  survive one at all).
+- A read (a call that wrote nothing) with an id works but is not remembered: its retry runs again.
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
 version of the POV that this server knows to be in a data file on disk, in the numbering a
@@ -455,7 +504,9 @@ exit;
    wrong". `write_too_large` and `read_too_large` mean the opposite: never
    retry them as sent; split the write, or read less. `remote_compile_disabled`
    means the server doesn't take `compile` at all, and `unauthorized` that the
-   connection's token was missing or wrong.
+   connection's token was missing or wrong. For a write with an operation id,
+   `operation_in_flight` means "retry shortly", and `operation_expired`,
+   `operation_id_reused` and `outcome_too_large` mean do not resend as is.
 
 ## Toward a client SDK
 

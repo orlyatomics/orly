@@ -124,3 +124,19 @@ jobs:
           fi
           grep -E 'VIOLATION|^KILL CAMPAIGN' /tmp/kill-control.log | head -5
           echo "control OK: the campaign catches writes lost after they were recovered"
+
+      - name: The campaign fails when a resent write applies twice (negative control)
+        if: (inputs.signal || 'KILL') == 'KILL'
+        run: |
+          if NEGATIVE=noretry KILLS=3 SEED=1 ./tests/kill_campaign.sh > /tmp/kill-retry-control.log 2>&1; then
+            cat /tmp/kill-retry-control.log
+            echo "CONTROL FAIL: the campaign passed with the exactly-once table off"
+            exit 1
+          fi
+          if ! grep -q 'counter is' /tmp/kill-retry-control.log; then
+            cat /tmp/kill-retry-control.log
+            echo "CONTROL FAIL: the campaign failed, but not on the counter check"
+            exit 1
+          fi
+          grep -E 'VIOLATION|^KILL CAMPAIGN' /tmp/kill-retry-control.log | head -5
+          echo "control OK: the campaign catches a write applied twice"

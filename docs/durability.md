@@ -96,6 +96,30 @@ A SIGKILL, process crash, or power loss:
     or not at all.
   - **Size bound:** Loss is bounded by `--update_pool_size` transactions plus writes in flight.
   - **Counter integrity:** Each `+=` is applied exactly once, and shared totals match the sum of surviving keys.
+    A write sent again with the same operation id applies once too (see below).
+
+## Retrying a write exactly once
+
+A write that carries an operation id (`.op_id`, #733) is applied at most once however often it is
+sent, so a client that lost its connection mid-write can send it again. The server keeps each id's
+result in a table: the newest 4096 ids across all POVs (`--operation_retention_count`) that are no
+older than an hour (`--operation_retention_seconds`), whichever limit runs out first, each with a
+result of up to 256 bytes (`--operation_outcome_bytes`). The checkpoint slots are 1 MiB each in a
+new store, which holds the table at its default size.
+
+- **Safe POVs with the log on:** the id and the result are part of the write's WAL record, and the
+  table is part of every checkpoint, so a retry after a SIGKILL and restart finds the write if the
+  write survived, and runs it if it did not. Which of the two is the same answer the client would
+  have got by reading the store: a write acknowledged as durable is always found.
+- **Fast POVs, or no log:** the table is in memory. It covers a dropped connection but not a
+  restart, and a fast POV does not survive one.
+- An id the table has forgotten (aged out, or pushed out by newer ones) is refused as
+  `operation_expired` rather than run again.
+
+`tests/kill_campaign.sh` checks it: its `retry` writer sends its last write again after every
+restart, and the `counter` check fails if the `+=` ran twice. `NEGATIVE=noretry` turns the table
+off and CI requires that run to fail. See `docs/PROTOCOL.md`, "Exactly-once writes", and
+`docs/design/durable-acks.md` section 8.2.1.
 
 ## Store format and compatibility
 
