@@ -16,13 +16,15 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-#include <functional>
-
+#include <array>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
+#include <span>
+#include <string_view>
 #include <thread>
-#include <csignal>
 #include <unistd.h>
 #include <execinfo.h>
 
@@ -34,7 +36,6 @@
 
 using namespace std;
 using namespace chrono;
-using namespace placeholders;
 using namespace Base;
 using namespace Orly::Server;
 
@@ -44,8 +45,7 @@ class TCmd final
   public:
 
   /* Construct with defaults. */
-  TCmd()
-      : MinWorkerCount(50), MaxWorkerCount(50000), IdleWorkerTimeout(30000), Daemon(false) {}
+  TCmd() = default;
 
   /* Construct from argc/argv. */
   TCmd(int argc, char *argv[])
@@ -57,10 +57,12 @@ class TCmd final
   }
 
   /* Parameters for the scheduler policy. */
-  size_t MinWorkerCount, MaxWorkerCount, IdleWorkerTimeout;
+  size_t MinWorkerCount = 50;
+  size_t MaxWorkerCount = 50000;
+  size_t IdleWorkerTimeout = 30000;
 
   /* If true, then run as a daemon. */
-  bool Daemon;
+  bool Daemon = false;
 
   private:
 
@@ -94,10 +96,11 @@ class TCmd final
 
 };  // TCmd
 
-static void LaunchServer(TScheduler *scheduler, const ::TCmd &cmd, shared_ptr<TServer> &server) {
+[[nodiscard]] static shared_ptr<TServer> LaunchServer(TScheduler *scheduler, const ::TCmd &cmd) {
   DEBUG_LOG("main: constructing server");
-  server = make_shared<TServer>(scheduler, cmd);
+  auto server = make_shared<TServer>(scheduler, cmd);
   DEBUG_LOG("main: server constructed");
+  return server;
 }
 
 #if defined(__SANITIZE_THREAD__)
@@ -128,33 +131,41 @@ static void RunTsanRacyControl() {
 /* Overwrites the values of --auth_token and --replication_token in argv once they are parsed, so
    the secrets don't stay in /proc/<pid>/cmdline (#710). A listing taken before this still shows
    them, which is why the docs point at the file and environment forms. */
-static void ScrubSecretArgs(int argc, char *argv[]) {
-  for (int i = 1; i < argc; ++i) {
-    const char *name = argv[i];
-    while (*name == '-') {
-      ++name;
+static void ScrubSecretArgs(std::span<char *> args) {
+  constexpr std::array<std::string_view, 2> Secrets{"auth_token", "replication_token"};
+  for (size_t i = 1; i < args.size(); ++i) {
+    if (!args[i]) {
+      continue;
     }
-    for (const char *secret: {"auth_token", "replication_token"}) {
-      const size_t len = strlen(secret);
-      if (name == argv[i] || strncmp(name, secret, len) != 0) {
+    std::string_view arg(args[i]);
+    size_t dash_count = 0;
+    while (dash_count < arg.size() && arg[dash_count] == '-') {
+      ++dash_count;
+    }
+    if (dash_count == 0) {
+      continue;
+    }
+    const std::string_view name = arg.substr(dash_count);
+    for (const auto secret : Secrets) {
+      if (!name.starts_with(secret)) {
         continue;
       }
-      if (name[len] == '=') {
-        char *value = argv[i] + (name - argv[i]) + len + 1;
+      if (name.size() > secret.size() && name[secret.size()] == '=') {
+        char *value = args[i] + dash_count + secret.size() + 1;
         memset(value, '*', strlen(value));
-      } else if (name[len] == '\0' && i + 1 < argc) {
-        memset(argv[i + 1], '*', strlen(argv[i + 1]));
+      } else if (name.size() == secret.size() && i + 1 < args.size() && args[i + 1]) {
+        memset(args[i + 1], '*', strlen(args[i + 1]));
       }
     }
   }
 }
 
 static void CrashHandler(int sig) {
-  void *frames[64];
-  int frame_count = backtrace(frames, 64);
-  const char *msg = "\n*** CRASH SIGNAL RECEIVED ***\n";
-  write(STDERR_FILENO, msg, strlen(msg));
-  backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+  std::array<void *, 64> frames;
+  const int frame_count = backtrace(frames.data(), static_cast<int>(frames.size()));
+  constexpr std::string_view msg = "\n*** CRASH SIGNAL RECEIVED ***\n";
+  write(STDERR_FILENO, msg.data(), msg.size());
+  backtrace_symbols_fd(frames.data(), frame_count, STDERR_FILENO);
   signal(sig, SIG_DFL);
   raise(sig);
 }
@@ -171,7 +182,7 @@ int main(int argc, char *argv[]) {
   RunTsanRacyControl();
 #endif
   ::TCmd cmd(argc, argv);
-  ScrubSecretArgs(argc, argv);
+  ScrubSecretArgs(std::span(argv, static_cast<size_t>(argc)));
   TLog log(cmd);
   if (cmd.Daemon) {
     auto pid = Server::Daemonize();
@@ -182,7 +193,9 @@ int main(int argc, char *argv[]) {
   }
   std::shared_ptr<TServer> server = nullptr;
   TScheduler::TPolicy(cmd.MinWorkerCount, cmd.MaxWorkerCount, milliseconds(cmd.IdleWorkerTimeout), false).RunUntilCtrlC(
-      bind(LaunchServer, _1, cref(cmd), ref(server)),
+      [&cmd, &server](TScheduler *scheduler) {
+        server = LaunchServer(scheduler, cmd);
+      },
       /* Orderly shutdown on ctrl-c (#440): stop serving, tear down the
          fiber-entangled managers on a fiber, stop and join the server's
          threads.  Destruction stays deferred (docs/teardown-design.md). */

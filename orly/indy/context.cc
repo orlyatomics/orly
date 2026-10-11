@@ -40,13 +40,13 @@ using namespace Orly::Indy;
 auto KeyCursorCollector = Fiber::MakeFiberLocal<TContext::TKeyCursorCollector>();
 
 TContext::TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena)
-    : TContextBase(arena), WalkerCount(0UL) {
+    : TContextBase(arena) {
   assert(KeyCursorCollector->KeyCursorCollection.IsEmpty());
   Indy::L0::TManager::TPtr<L0::TManager::TRepo> cur_repo = private_repo;
-  RepoTree.push_back(make_pair(private_repo, make_unique<TRepo::TView>(private_repo)));
-  for (;cur_repo->GetParentRepo(); cur_repo = *cur_repo->GetParentRepo()) {
+  RepoTree.emplace_back(private_repo, std::make_unique<TRepo::TView>(private_repo));
+  for (; cur_repo->GetParentRepo(); cur_repo = *cur_repo->GetParentRepo()) {
     Indy::L0::TManager::TPtr<Indy::TRepo> parent = *cur_repo->GetParentRepo();
-    RepoTree.push_back(make_pair(parent, make_unique<TRepo::TView>(parent)));
+    RepoTree.emplace_back(parent, std::make_unique<TRepo::TView>(parent));
   }
 }
 
@@ -365,7 +365,6 @@ std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, con
 TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &key,
                                         bool exact_point, bool keys_only)
     : MinHeap(repo_tree.size()),
-      Valid(false),
       KeysOnly(keys_only),
       FoldArena(ctx->GetArena()),
       FoldDedupProbes(&ctx->FoldDedupProbes),
@@ -374,11 +373,8 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
   assert(Fiber::TFrame::LocalFramePool);
   size_t pos = 0;
   ctx->PresentWalkConsTimer.Start();
-  //printf("TPresentWalker()\n");
-  for (const auto &iter : repo_tree) {
-    //printf("TPresentWalker() push back repo walker\n");
-    WalkerVec.emplace_back(iter.first->NewPresentWalker(iter.second, key, /* ignore_tombstone */ false, exact_point));
-    //Indy::TPresentWalker &walker = *WalkerVec.back();
+  for (const auto &[repo, view] : repo_tree) {
+    WalkerVec.emplace_back(repo->NewPresentWalker(view, key, /* ignore_tombstone */ false, exact_point));
   }
   for (auto &walker_ptr : WalkerVec) {
     Indy::TPresentWalker &walker = *walker_ptr;
@@ -395,7 +391,6 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
 TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tree, const TIndexKey &from,
                                         const TIndexKey &to, bool keys_only)
     : MinHeap(repo_tree.size()),
-      Valid(false),
       KeysOnly(keys_only),
       FoldArena(ctx->GetArena()),
       FoldDedupProbes(&ctx->FoldDedupProbes),
@@ -403,8 +398,8 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
   ctx->CheckViewsHeld();
   ctx->PresentWalkConsTimer.Start();
   size_t pos = 0;
-  for (const auto &iter : repo_tree) {
-    WalkerVec.emplace_back(iter.first->NewPresentWalker(iter.second, from, to, false));
+  for (const auto &[repo, view] : repo_tree) {
+    WalkerVec.emplace_back(repo->NewPresentWalker(view, from, to, false));
     Indy::TPresentWalker &walker = *WalkerVec.back();
     if (walker) {
       MinHeap.Insert(*walker, pos);
@@ -416,7 +411,7 @@ TContext::TPresentWalker::TPresentWalker(TContext *ctx, const TRepoTree &repo_tr
   ctx->PresentWalkConsTimer.Stop();
 }
 
-TContext::TPresentWalker::~TPresentWalker() {}
+TContext::TPresentWalker::~TPresentWalker() = default;
 
 void TContext::TPresentWalker::Refresh() {
   bool done = false;
@@ -567,8 +562,6 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
 TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &pattern)
     : Orly::TKeyCursor(context->Arena),
       Key(pattern),
-      Valid(true),
-      Cached(false),
       Csr(context, context->RepoTree, Key),
       ContextMembership(this),
       Owner(context) {
@@ -580,8 +573,6 @@ TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &from,
     : Orly::TKeyCursor(context->Arena),
       Key(from),
       To(to),
-      Valid(true),
-      Cached(false),
       Csr(context, context->RepoTree, Key, To),
       ContextMembership(this),
       Owner(context) {
@@ -623,7 +614,7 @@ TContext::TKeyCursor &TContext::TKeyCursor::operator++() {
   return *this;
 }
 
-const TContext::TPresentWalker::TItem &TContext::TKeyCursor::GetVal() const {
+const TContext::TPresentWalker::TItem &TContext::TKeyCursor::GetVal() const noexcept {
   assert(Valid);
   assert(Csr);
   return *Csr;

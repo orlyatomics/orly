@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <vector>
 
 #include <base/uuid.h>
@@ -36,15 +37,15 @@ namespace Orly {
       class TServer {
         public:
 
-        virtual ~TServer() {}
+        virtual ~TServer() = default;
 
-        virtual const Indy::L0::TManager::TPtr<Indy::TRepo> &GetGlobalRepo() const = 0;
+        [[nodiscard]] virtual const Indy::L0::TManager::TPtr<Indy::TRepo> &GetGlobalRepo() const = 0;
 
-        virtual Orly::Indy::TManager *GetRepoManager() const = 0;
+        [[nodiscard]] virtual Orly::Indy::TManager *GetRepoManager() const = 0;
 
         protected:
 
-        TServer() {}
+        TServer() = default;
 
       };  // TServer
 
@@ -77,29 +78,29 @@ namespace Orly {
       };  // TPov::TPolicy
 
       /* See TPov::TAudience. */
-      TAudience GetAudience() const {
+      [[nodiscard]] TAudience GetAudience() const noexcept {
         return Audience;
       }
 
-      virtual const char *GetKind() const noexcept override {
+      [[nodiscard]] const char *GetKind() const noexcept override {
         return "Pov";
       }
 
       /* See TPov::TPolicy. */
-      TPolicy GetPolicy() const {
+      [[nodiscard]] TPolicy GetPolicy() const noexcept {
         return Policy;
       }
 
       /* The repo which backs up this pov. */
-      const Indy::L0::TManager::TPtr<Indy::TRepo> &GetRepo(const TServer *server) const;
+      [[nodiscard]] const Indy::L0::TManager::TPtr<Indy::TRepo> &GetRepo(const TServer *server) const;
 
       /* The id of the session which created this pov. */
-      const Base::TUuid &GetSessionId() const {
+      [[nodiscard]] const Base::TUuid &GetSessionId() const noexcept {
         return SessionId;
       }
 
       /* See TSharedParents. */
-      const TSharedParents &GetSharedParents() const {
+      [[nodiscard]] const TSharedParents &GetSharedParents() const noexcept {
         return SharedParents;
       }
 
@@ -118,25 +119,25 @@ namespace Orly {
       TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm);
 
       /* Do-little. */
-      virtual ~TPov();
+      ~TPov() override;
 
       /* See TDurable. */
-      virtual void Write(Io::TBinaryOutputStream &strm) const override;
+      void Write(Io::TBinaryOutputStream &strm) const override;
 
       /* See accessor. */
-      Base::TUuid SessionId;
+      Base::TUuid SessionId{};
 
       /* See TPov::TAudience. */
-      TAudience Audience;
+      TAudience Audience{TAudience::Private};
 
       /* See TPov::TPolicy. */
-      TPolicy Policy;
+      TPolicy Policy{TPolicy::Safe};
 
       /* See TSharedParents. */
-      TSharedParents SharedParents;
+      TSharedParents SharedParents{};
 
       /* The repo which backs up this pov. */
-      mutable Indy::L0::TManager::TPtr<Indy::TRepo> Repo;
+      mutable Indy::L0::TManager::TPtr<Indy::TRepo> Repo{};
       mutable std::mutex RepoLock;
 
       /* True iff this object came back from a durable disk layer (the
@@ -146,7 +147,7 @@ namespace Orly {
          so creating here would silently resurrect the pov as an empty
          shell, swallowing every update tetris had not yet promoted at
          shutdown (#439). */
-      const bool Reloaded;
+      const bool Reloaded{false};
 
       /* For access to constructors/destructor. */
       friend class Durable::TManager;
