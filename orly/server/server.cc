@@ -47,6 +47,8 @@
 #include <orly/protocol.h>
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
+#include <orly/server/meta_record.h>
+#include <orly/server/operation_table.h>
 #include <orly/server/write_too_large.h>
 #include <orly/server/memory_budget.h>
 #include <orly/sabot/to_native.h>
@@ -545,6 +547,21 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
 
   Param(
+      &TCmd::OperationRetentionCount, "operation_retention_count", Optional, "operation_retention_count\0",
+      "How many completed writes the exactly-once table keeps per POV (#733). Default 512. 0 turns the table off, so an operation id is accepted and ignored; that is for testing."
+  );
+
+  Param(
+      &TCmd::OperationRetentionSeconds, "operation_retention_seconds", Optional, "operation_retention_seconds\0",
+      "How old, by its operation id's own time, a completed write may be before the exactly-once table drops it and refuses the id (#733). Default 3600."
+  );
+
+  Param(
+      &TCmd::OperationResultBytes, "operation_result_bytes", Optional, "operation_result_bytes\0",
+      "The largest encoded result the exactly-once table keeps (#733); a retry of a write with a bigger one is told operation_outcome_too_large. Default 256, at most 8192."
+  );
+
+  Param(
       &TCmd::WalNoSync, "wal_no_sync", Optional, "wal_no_sync\0",
       "Test-only negative control: skip WAL sync while still acknowledging (#755)."
   );
@@ -633,6 +650,9 @@ TServer::TCmd::TCmd()
       ReadBudgetSteps(0UL),
       DurableAcks("local"),
       WalMB(256),
+      OperationRetentionCount(512),
+      OperationRetentionSeconds(3600),
+      OperationResultBytes(256),
       WalNoSync(false),
       WalEarlyAck(false),
       DurableMappingPoolSize(1000UL),
@@ -1140,6 +1160,42 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
   syslog(LOG_INFO, "%s", resolved.str().c_str());
 }
 
+void TServer::RestoreOperation(const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
+                                Atom::TCore::TArena *arena, uint64_t lsn) {
+  if (!OperationTable) {
+    return;
+  }
+  try {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TMetaRecord record;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(meta_core.NewState(arena, state_alloc)), record);
+    for (const auto &item: record.GetEntryByUpdateId()) {
+      const auto &entry = item.second;
+      auto id_iter = entry.GetArgByName().find(std::string(TMetaRecord::TEntry::OpIdKey));
+      if (id_iter == entry.GetArgByName().end()) {
+        continue;
+      }
+      auto *id_str = id_iter->second.TryAs<Var::TStr>();
+      if (!id_str || !Base::TUuid::IsValidUuid(id_str->GetVal().c_str())) {
+        continue;
+      }
+      TOperationTable::TOutcome outcome;
+      outcome.SequenceNumber = seq_num;
+      outcome.Lsn = lsn;
+      outcome.Persistent = true;
+      outcome.Hash = HashCalls(entry.GetCalls());
+      auto outcome_iter = entry.GetArgByName().find(std::string(TMetaRecord::TEntry::OpOutcomeKey));
+      if (outcome_iter != entry.GetArgByName().end()) {
+        outcome.Result = EncodeResult(outcome_iter->second);
+      }
+      OperationTable->Restore(repo_id, Base::TUuid(id_str->GetVal().c_str()), std::move(outcome));
+    }
+  } catch (const std::exception &ex) {
+    /* A record with no metadata, or metadata that isn't a record, has no operation to restore. */
+    syslog(LOG_DEBUG, "WAL recovery: no operation read from a record: %s", ex.what());
+  }
+}
+
 TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     : TSession::TServer(cmd.SlowCoreVec.size() +
                         cmd.FastCoreVec.size() +
@@ -1180,6 +1236,15 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     syslog(level, "%s", line.c_str());
   }
   InitalizeFramePoolManager(Cmd.NumFiberFrames, StackSize, &BGFastRunner);
+  /* the exactly-once table (#733). A retention count of 0 leaves it out, which makes an operation id
+     do nothing: the kill campaign uses that as its negative control. */
+  if (Cmd.OperationRetentionCount) {
+    TOperationTable::TConfig config;
+    config.RetentionCount = Cmd.OperationRetentionCount;
+    config.RetentionAge = std::chrono::seconds(Cmd.OperationRetentionSeconds);
+    config.ResultBytes = std::min<size_t>(Cmd.OperationResultBytes, 8192UL);
+    OperationTable = std::make_unique<TOperationTable>(config);
+  }
   /* Point reads build their per-layer walkers on fibers; keep half the frames for everything
      else, so reads over many disk layers can't take every frame a statement needs to start
      (#762). */
@@ -1731,6 +1796,11 @@ void TServer::Init() {
         }
       }
 
+      /* The exactly-once outcomes the records before the head held (#733). */
+      if (OperationTable && cp_opt && !cp_opt->Payload.empty()) {
+        OperationTable->Load(std::string(cp_opt->Payload.begin(), cp_opt->Payload.end()));
+      }
+
       auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap, start_ring_offset, start_chain);
       if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
         throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
@@ -1829,7 +1899,12 @@ void TServer::Init() {
             Io::TBinaryInputOnlyStream strm(player);
             streamer.Read(strm);
             retention->SetReplayLsn(rec.Lsn);
-            RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena());
+            const uint64_t rec_lsn = rec.Lsn;
+            RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena(),
+                [this, rec_lsn](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
+                                Atom::TCore::TArena *arena) {
+                  RestoreOperation(repo_id, seq_num, meta_core, arena, rec_lsn);
+                });
           }
         }
         retention->EndReplay();
@@ -1859,6 +1934,7 @@ void TServer::Init() {
       auto head_loc = scan_result.FindGroupForLsn(head_lsn);
       Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain, scan_result.GroupLocations);
       RepoManager->SetWal(Wal.get());
+      retention->SetCheckpointPayload([this](uint64_t head_lsn) { return OperationTable ? OperationTable->Snapshot(head_lsn) : std::string(); });
       retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
       syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld, %ld povs restored), group %ld, ring offset %ld", next_lsn, retention->ComputeHead(), restored_povs.size(), next_group, scan_result.NextRingOffset);
       WalCheckpointer = std::thread([this, retention] {

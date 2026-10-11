@@ -738,6 +738,24 @@ jobs:
           grep -E 'VIOLATION|^KILL CAMPAIGN' .ci-release/kill-control.log | head -5
           echo "control OK: the campaign catches writes lost after they were recovered"
 
+      # Negative control for operation ids (#733): with the exactly-once table off, the write the
+      # campaign sends again after a restart applies twice, and the counter check must fail.
+      - name: The kill campaign fails when a resent write applies twice
+        if: matrix.group == 'durability'
+        run: |
+          if NEGATIVE=noretry KILLS=3 SEED=1 ./tests/kill_campaign.sh > .ci-release/kill-retry-control.log 2>&1; then
+            cat .ci-release/kill-retry-control.log
+            echo "CONTROL FAIL: the campaign passed with the exactly-once table off"
+            exit 1
+          fi
+          if ! grep -q 'counter is' .ci-release/kill-retry-control.log; then
+            cat .ci-release/kill-retry-control.log
+            echo "CONTROL FAIL: the campaign failed, but not on the counter check"
+            exit 1
+          fi
+          grep -E 'VIOLATION|^KILL CAMPAIGN' .ci-release/kill-retry-control.log | head -5
+          echo "control OK: the campaign catches a write applied twice"
+
       # #744: SIGTERM orlyi under the campaign's write load, four times. Each stop must finish
       # on its own and exit cleanly, and every acknowledged write must come back
       # after the restart. Before #744 most of these stops hung (a disk merge waited on a fast
@@ -969,7 +987,7 @@ jobs:
         run: |
           npm --prefix clients/ts ci --ignore-scripts --no-audit --no-fund
           npm --prefix clients/ts run build
-          node --test clients/ts/literals.test.mjs
+          node --test clients/ts/literals.test.mjs clients/ts/operations.test.mjs
           PYTHONPATH=clients/python python3 -m unittest discover -s clients/python/tests
           (cd clients/go && go test ./...)
 

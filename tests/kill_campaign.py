@@ -36,11 +36,19 @@ Per kill, for every writer it checks:
                stacks of that orlyi (wedge-<k>/ in the work directory), so a SIGKILL run catches
                it too, not only a SIGTERM stop that then hangs
 
+  retry        a write that carries an operation id (#733), sent again after the restart with the
+               same id, applies once: the 'retry' writer resends its last write, acknowledged or
+               in flight, before the readback, and the `counter` check sees any `+=` run twice
+
 It ends with one summary line and exits nonzero on any violation.
 
 --negative=rollback is the negative control: before the restart after kill 3 (and every second
 kill after that) it puts back the volume image saved at the kill before last, which is how a lost
 or unsynced data file would look. The floor check must catch it, and CI requires that run to fail.
+
+--negative=noretry is the second: the server runs with --operation_retention_count=0, which turns the
+exactly-once table off, so the resent write runs again and the counter check must catch it. CI
+requires that run to fail too.
 
 Needs root (losetup and the /proc/partitions scan, as tests/restart_test.sh); run it through
 tests/kill_campaign.sh. It only ever signals the orlyi it started.
@@ -78,7 +86,9 @@ PKG = 'kill_campaign'
 # method; 'cond' with `put_cond`, whose value is an `if`, so Tetris replays each call before it
 # promotes the batch (#751); 'mixed' alternates the two in one call_many batch (#255); 'durable'
 # writes with `.wait_durable_ms`, so its reply means the write is on disk, and every acknowledged
-# write must come back (#750).
+# write must come back (#750); 'retry' writes `put_once` with an operation id per write (#733) and,
+# after each restart, sends its last write again with the same id (durable mode only: it needs its
+# POV to survive the restart).
 WRITERS = [
     ('safe-shared-single', True, True, 1, 'A', None, 'put'),
     ('safe-private-batch4', True, False, 4, 'B', None, 'put'),
@@ -91,6 +101,7 @@ WRITERS = [
     ('safe-shared-cond-batch3', True, True, 3, 'H', None, 'cond'),
     ('fast-private-mixed-batch2', False, False, 2, 'I', None, 'mixed'),
     ('safe-shared-durable-single', True, True, 1, 'J', None, 'durable'),
+    ('safe-shared-retry-single', True, True, 1, 'K', None, 'retry'),
 ]
 
 
@@ -120,6 +131,17 @@ class Writer:
         self.refused = 0          # writes refused as insufficient_memory/storage this epoch
         self.first_ack = None     # when this epoch's first write was acknowledged
         self.thread = None
+        self.last_op = None       # (operation id, args) of the last write a 'retry' writer sent
+
+    def resend(self, url, pov):
+        """Send the last write again, with the same operation id, as a client does that never saw
+        its reply. It must not apply twice."""
+        if self.last_op is None:
+            return
+        op_id, args = self.last_op
+        with orly.connect(url, timeout=10, recv_timeout=120) as c:
+            c.new_session()
+            c.call(pov, PKG, 'put_once', args, op_id=op_id, op_retries=0)
 
     def run(self, url, pov, epoch, killed):
         try:
@@ -145,7 +167,10 @@ class Writer:
                 self.sent = end
                 args = [{'w': self.idx, 'n': n, 'e': epoch} for n in range(start, end + 1)]
                 try:
-                    if self.how == 'mixed':
+                    if self.how == 'retry':
+                        self.last_op = (orly.new_op_id(), args[0])
+                        c.call(pov, PKG, 'put_once', args[0], op_id=self.last_op[0], op_retries=0)
+                    elif self.how == 'mixed':
                         c.call_many(pov, [(PKG, 'put_cond' if i % 2 else 'put', a) for i, a in enumerate(args)])
                     elif self.how == 'durable':
                         c.send(f"try {{{pov}}} {PKG} put {orly.lit(args[0])} <{{.wait_durable_ms: 30000}}>;")
@@ -161,6 +186,7 @@ class Writer:
                         return
                     # Refused, nothing written (docs/PROTOCOL.md): take it back and retry.
                     self.txns.pop()
+                    self.last_op = None
                     self.sent = start - 1
                     self.epoch_of[start:end + 1] = prior
                     self.refused += 1
@@ -235,6 +261,8 @@ class Server:
                 cmd.append('--wal_no_sync')
             elif negative == 'early_ack':
                 cmd.append('--wal_early_ack')
+            elif negative == 'noretry':
+                cmd.append('--operation_retention_count=0')
         self.log = open(self.logpath, 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + self.args.startup_timeout
@@ -410,7 +438,7 @@ def main():
                     help='KILL (the campaign) or TERM (a graceful stop, for comparison: same checks)')
     ap.add_argument('--mode', choices=['bound', 'durable'], default=os.environ.get('MODE', 'durable'),
                     help='bound (legacy bound) or durable (zero acknowledged safe writes lost across kills)')
-    ap.add_argument('--negative', choices=['none', 'rollback', 'nosync', 'early_ack'], default=os.environ.get('NEGATIVE', 'none'))
+    ap.add_argument('--negative', choices=['none', 'rollback', 'nosync', 'early_ack', 'noretry'], default=os.environ.get('NEGATIVE', 'none'))
     ap.add_argument('--orly-out', default=os.environ.get('ORLY_OUT', os.path.join(REPO_ROOT, '../out_orly/release')))
     ap.add_argument('--port', type=int, default=19900)
     ap.add_argument('--volume-gb', type=int, default=3)
@@ -447,7 +475,8 @@ def main():
         with orly.connect(url, timeout=10, recv_timeout=120) as c:
             c.new_session()
             c.install(PKG, 1)
-        writers = [Writer(i, spec) for i, spec in enumerate(WRITERS)]
+        writers = [Writer(i, spec) for i, spec in enumerate(WRITERS)
+                   if args.mode == 'durable' or spec[-1] != 'retry']
         snapshots = {}
         old_sessions = []
         povs = {}
@@ -551,6 +580,13 @@ def main():
             with orly.connect(url, timeout=10, recv_timeout=300) as c:
                 c.new_session()
                 rpov = c.new_pov(safe=False, shared=False)
+                # Operation ids (#733): the retry writer's last write goes again, and must not apply twice.
+                for w in writers:
+                    if w.how == 'retry':
+                        try:
+                            w.resend(url, povs[w.group])
+                        except Exception as ex:  # noqa: BLE001
+                            kv.append(f'{w.name}: resending its last write failed: {ex}')
                 total = int(c.call(rpov, PKG, 'total'))
                 if args.mode == 'durable':
                     old_pov = povs['A']

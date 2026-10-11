@@ -26,13 +26,15 @@ import json as _json
 import os as _os
 import re as _re
 import time as _time
+import uuid as _uuid
 
 import websocket  # the `websocket-client` package
 
 __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
            "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "RemoteCompileDisabled",
-           "DurableTimeout", "Unauthorized", "Lit", "lit", "Addr",
+           "DurableTimeout", "OperationExpired", "OperationIdReused", "OperationInFlight",
+           "OutcomeTooLarge", "Unauthorized", "Lit", "lit", "Addr", "new_op_id",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -53,6 +55,9 @@ DEFAULT_RECV_TIMEOUT_S = 120
 # that window with exponential backoff: DEFAULT_BACKOFF_S, doubling each time.
 DEFAULT_RETRIES = 5
 DEFAULT_BACKOFF_S = 0.25
+# A write sent with an operation id (op_id=) is resent this many times when the
+# connection drops or the server says the first try is still running (#733).
+DEFAULT_OP_RETRIES = 3
 
 
 class OrlyError(RuntimeError):
@@ -107,6 +112,32 @@ class DurableTimeout(OrlyError):
     @property
     def receipt(self):
         return self.reply.get("receipt")
+
+
+class OperationExpired(OrlyError):
+    """Raised when a write's operation id is older than the server remembers
+    (``"status": "operation_expired"``, #733). Whether the first try applied is
+    unknown; read the data to find out."""
+
+
+class OperationIdReused(OrlyError):
+    """Raised when an operation id was already used for a *different* write
+    (``"status": "operation_id_reused"``, #733). Not retryable: use a new id."""
+
+
+class OperationInFlight(OrlyError):
+    """Raised when the write with this operation id is still running
+    (``"status": "operation_in_flight"``, #733). Retry after a moment."""
+
+
+class OutcomeTooLarge(OrlyError):
+    """Raised when a retried write had already applied, but its result is too
+    big to have been kept (``"status": "outcome_too_large"``, #733). The write
+    is done and not repeated; ``self.version`` is the version it committed at."""
+
+    @property
+    def version(self):
+        return self.reply.get("version")
 
 
 class Unauthorized(OrlyError):
@@ -220,9 +251,20 @@ def _integral_floats_to_ints(value):
     return value
 
 
-def _try_options(receipt=False, wait_durable_ms=None):
-    """Build the trailing options record for a try statement (#750)."""
+def new_op_id():
+    """A fresh operation id (#733): a UUIDv7 in its canonical text form. Time
+    ordered, which is what lets the server forget old ids by age."""
+    ms = int(_time.time() * 1000)
+    rand = int.from_bytes(_os.urandom(10), "big")
+    value = (ms << 80) | (0x7 << 76) | (((rand >> 62) & 0xFFF) << 64) | (0x2 << 62) | (rand & ((1 << 62) - 1))
+    return str(_uuid.UUID(int=value))
+
+
+def _try_options(receipt=False, wait_durable_ms=None, op_id=None):
+    """Build the trailing options record for a try statement (#750, #733)."""
     opts = []
+    if op_id is not None:
+        opts.append(f".op_id: {lit(str(op_id))}")
     if receipt:
         opts.append(".receipt: true")
     if wait_durable_ms is not None:
@@ -237,6 +279,7 @@ class Client:
         self.ws = ws
         self.session_id = None
         self.last_receipt = None
+        self._reconnect = None  # connect()'s arguments, for resending an op_id write
 
     # -- core ------------------------------------------------------------
     def send(self, statement):
@@ -259,9 +302,46 @@ class Client:
             raise DurableTimeout(statement, reply)
         if status == "unauthorized":
             raise Unauthorized(statement, reply)
+        if status == "operation_expired":
+            raise OperationExpired(statement, reply)
+        if status == "operation_id_reused":
+            raise OperationIdReused(statement, reply)
+        if status == "operation_in_flight":
+            raise OperationInFlight(statement, reply)
+        if status == "outcome_too_large":
+            raise OutcomeTooLarge(statement, reply)
         if status != "ok":
             raise OrlyError(statement, reply)
         return reply.get("result")
+
+    def _send_op(self, statement, op_id, op_retries):
+        """Send a write that carries an operation id. Without one, this is
+        :meth:`send`: a dropped connection is the caller's problem, since resending
+        could apply the write twice. With one, the server applies the id at most
+        once, so a dropped connection is reconnected (and the session resumed) and
+        the same statement resent, up to ``op_retries`` times (#733)."""
+        if op_id is None or not self._reconnect:
+            return self.send(statement)
+        delay = DEFAULT_BACKOFF_S
+        for attempt in range(op_retries + 1):
+            try:
+                return self.send(statement)
+            except OperationInFlight:
+                if attempt == op_retries:
+                    raise
+            except (websocket.WebSocketException, OSError):
+                if attempt == op_retries:
+                    raise
+                try:
+                    self.ws.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                fresh = connect(**self._reconnect)
+                self.ws = fresh.ws
+                if self.session_id is not None:
+                    self.resume_session(self.session_id)
+            _time.sleep(delay)
+            delay *= 2
 
     def authenticate(self, token):
         """Present the server's shared secret (#710): the first message,
@@ -408,7 +488,8 @@ class Client:
                     "conflicts": review["conflicts"], "blocked_on": review["blocked_on"]}
 
     # -- methods --------------------------------------------------------
-    def call(self, pov, package, method, args=None, *, receipt=False, wait_durable_ms=None):
+    def call(self, pov, package, method, args=None, *, receipt=False, wait_durable_ms=None,
+             op_id=None, op_retries=DEFAULT_OP_RETRIES):
         """Call ``package method`` on ``pov`` with a record of ``args``.
 
         Builds ``try {<pov>} <package> <method> <{.k: v, ...}>;``. ``args`` is a
@@ -416,12 +497,19 @@ class Client:
 
         ``receipt=True`` requests a write receipt and returns ``(result, receipt)``;
         ``wait_durable_ms`` holds the reply until the write is on disk (#750).
+
+        ``op_id`` (see :func:`new_op_id`) makes the write apply at most once: if the
+        connection drops, the call is resent with the same id, up to ``op_retries``
+        times, and the server answers a retry of a write that already applied with
+        its saved result instead of running it again (#733). Without ``op_id``
+        nothing is resent.
         """
-        options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms)
-        result = self.send(f"try {{{pov}}} {package} {method} {lit(args or {})}{options};")
+        options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms, op_id=op_id)
+        result = self._send_op(f"try {{{pov}}} {package} {method} {lit(args or {})}{options};", op_id, op_retries)
         return (result, self.last_receipt) if receipt else result
 
-    def call_batch(self, pov, package, method, args_list, *, receipt=False, wait_durable_ms=None):
+    def call_batch(self, pov, package, method, args_list, *, receipt=False, wait_durable_ms=None,
+                   op_id=None, op_retries=DEFAULT_OP_RETRIES):
         """Call ``package method`` on ``pov`` once per record in ``args_list``,
         folding all N calls into a **single transaction** (#253).
 
@@ -433,12 +521,14 @@ class Client:
 
         ``receipt=True`` requests a write receipt and returns ``(results, receipt)``;
         ``wait_durable_ms`` holds the reply until the write is on disk (#750).
+        ``op_id`` and ``op_retries`` are as for :meth:`call`: the whole batch applies at most
+        once (#733).
         """
         if not args_list:
             raise ValueError("call_batch requires at least one argument record")
         records = lit([dict(a or {}) for a in args_list])
-        options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms)
-        result = self.send(f"try {{{pov}}} {package} {method} {records}{options};")
+        options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms, op_id=op_id)
+        result = self._send_op(f"try {{{pov}}} {package} {method} {records}{options};", op_id, op_retries)
         return (result, self.last_receipt) if receipt else result
 
     def call_many(self, pov, calls):
@@ -573,6 +663,8 @@ def connect(url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT_S,
             # Decouple the per-call recv timeout from the connect timeout.
             ws.settimeout(recv_timeout)
             client = Client(ws)
+            client._reconnect = {"url": url, "timeout": timeout, "recv_timeout": recv_timeout,
+                                 "retries": retries, "backoff": backoff, "token": token}
             if token is not None:
                 try:
                     client.authenticate(token)

@@ -1319,7 +1319,8 @@ void TManager::ClearReplaySeeds() {
   ReplaySeeds.clear();
 }
 
-size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
+size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena,
+                                              const TPushCallback &on_push) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator iter = core_vec.begin();
@@ -1334,6 +1335,9 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
     Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), num_mutations_in_transaction);
     auto apply_transaction = NewTransaction();
     ++num_applied;
+    /* The pushes of this transaction, held until we know it doesn't pop (see TPushCallback). */
+    std::vector<std::tuple<Base::TUuid, TSequenceNumber, const TCore *>> pushed;
+    bool has_pop = false;
     for (size_t m_num = 0; m_num < num_mutations_in_transaction; ++m_num) {
       ++iter;
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), action);
@@ -1372,6 +1376,9 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
             entries.emplace_back(TIndexKey(index_id, TKey(key_core, arena)), TKey(val_core, arena), static_cast<TMutator>(mutator_raw));
           }
           //std::cout << "Push\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
+          if (on_push) {
+            pushed.emplace_back(repo_id, seq_num, &meta_core);
+          }
           if (repo && !ReplaySeeds.empty() && ReplaySeeds.erase(repo_id)) {
             /* A restored pov's first replayed update (see SeedNumberingFromReplay). */
             repo->SetNextSequenceNumber(seq_num);
@@ -1391,6 +1398,7 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
         case TTransactionAction::Pop : {
           //std::cout << "Apply transaction POP [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
           //std::cout << "Pop\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
+          has_pop = true;
           if (repo) {
             apply_transaction->Pop(repo, seq_num);
           } else {
@@ -1433,6 +1441,11 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
     }
     apply_transaction->Prepare();
     apply_transaction->CommitAction();
+    if (on_push && !has_pop) {
+      for (const auto &push: pushed) {
+        on_push(std::get<0>(push), std::get<1>(push), *std::get<2>(push), arena);
+      }
+    }
   }
   return num_applied;
 }

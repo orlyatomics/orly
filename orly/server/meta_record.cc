@@ -133,11 +133,14 @@ vector<TMetaRecord::TEntry::TCall> TMetaRecord::TEntry::GetCalls() const {
     }
   }
   if (!is_batch) {
-    return {TCall{PackageFqName, MethodName, ArgByName}};
+    TCall call{PackageFqName, MethodName, ArgByName};
+    call.ArgByName.erase(string(OpIdKey));
+    call.ArgByName.erase(string(OpOutcomeKey));
+    return {std::move(call)};
   }
   vector<TCall> calls(count, TCall{PackageFqName, MethodName, TArgByName()});
   for (const auto &item: ArgByName) {
-    if (item.first == CallsKey) {
+    if (item.first == CallsKey || item.first == OpIdKey || item.first == OpOutcomeKey) {
       continue;
     }
     size_t index;

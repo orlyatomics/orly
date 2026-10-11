@@ -31,6 +31,8 @@
 #include <orly/server/read_too_large.h>
 #include <orly/server/write_too_large.h>
 #include <orly/server/meta_record.h>
+#include <orly/server/operation_error.h>
+#include <orly/server/operation_table.h>
 #include <orly/var/mutation.h>
 #include <base/io/binary_output_only_stream.h>
 #include <base/io/recorder_and_player.h>
@@ -402,7 +404,163 @@ void TSession::SetUserId(TServer */*server*/, const TUuid &user_id) {
   UserId = user_id;
 }
 
+/* A request that carries an operation id (#733), from reserving the id to completing it. */
+struct TSession::TOperation {
+
+  TOperationTable *Table = nullptr;
+
+  Base::TUuid PovId, OpId;
+
+  /* True if the write goes in its meta record, and so survives a restart. */
+  bool Persistent = false;
+
+  /* See HashCalls. */
+  uint64_t Hash = 0;
+
+  /* The encoded result, if it fits the cap. */
+  std::optional<std::string> Result;
+
+  /* True once Complete has been called, so FinishOperation has nothing to release. */
+  bool IsComplete = false;
+
+};  // TSession::TOperation
+
+namespace {
+
+  const std::string OpIdName(TMetaRecord::TEntry::OpIdKey);
+
+  /* The operation id a closure carries as its reserved argument, as text, or none. */
+  std::optional<std::string> FindOpId(const TClosure &closure) {
+    auto iter = closure.GetCoreByName().find(OpIdName);
+    if (iter == closure.GetCoreByName().end()) {
+      return std::nullopt;
+    }
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    auto var = Var::ToVar(*Sabot::State::TAny::TWrapper(iter->second.NewState(closure.GetArena().get(), state_alloc)));
+    auto *str = var.TryAs<Var::TStr>();
+    if (!str) {
+      throw std::invalid_argument("the operation id must be a str");
+    }
+    return str->GetVal();
+  }
+
+  /* The calls as a meta record names them, without the reserved argument. */
+  std::vector<TMetaRecord::TEntry::TCall> RecordCalls(const std::vector<std::pair<const std::vector<std::string> *, const TClosure *>> &calls) {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    std::vector<TMetaRecord::TEntry::TCall> recorded;
+    recorded.reserve(calls.size());
+    for (const auto &call: calls) {
+      auto arena = call.second->GetArena().get();
+      TMetaRecord::TEntry::TCall one{*call.first, call.second->GetMethodName(), {}};
+      for (const auto &item: call.second->GetCoreByName()) {
+        if (item.first == OpIdName) {
+          continue;
+        }
+        one.ArgByName.insert(make_pair(
+            item.first, Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(arena, state_alloc)))));
+      }
+      recorded.push_back(std::move(one));
+    }
+    return recorded;
+  }
+
+  /* Encode the result for the table and, if it fits, remember it on the operation. */
+  void SetOperationResult(const TOperationTable &table, std::optional<std::string> &slot, const Var::TVar &result) {
+    auto bytes = EncodeResult(result);
+    if (bytes.size() <= table.GetConfig().ResultBytes) {
+      slot = std::move(bytes);
+    }
+  }
+
+  /* Add what a persistent operation records in its meta record: its id and, if it fit, its result. */
+  void AddOperationArgs(TMetaRecord::TEntry::TArgByName &args, const TUuid &op_id, const std::optional<std::string> &bytes,
+                        const Var::TVar &result) {
+    std::ostringstream text;
+    text << op_id;
+    args.insert(make_pair(OpIdName, Var::TVar(text.str())));
+    if (bytes) {
+      args.insert(make_pair(std::string(TMetaRecord::TEntry::OpOutcomeKey), result));
+    }
+  }
+
+}  // namespace
+
+std::optional<TMethodResult> TSession::BeginOperation(TServer *server, const TUuid &pov_id,
+    const std::vector<TCallView> &calls, std::optional<TOperation> &op) {
+  auto text = FindOpId(*calls.front().Closure);
+  if (!text) {
+    return std::nullopt;
+  }
+  auto *table = server->GetOperationTable();
+  if (!table) {
+    /* --operation_retention_count=0: the id is accepted and does nothing. */
+    return std::nullopt;
+  }
+  if (!TUuid::IsValidUuid(text->c_str())) {
+    throw std::invalid_argument("the operation id must be a UUID");
+  }
+  TUuid op_id(text->c_str());
+  std::vector<std::pair<const std::vector<std::string> *, const TClosure *>> views;
+  views.reserve(calls.size());
+  for (const auto &call: calls) {
+    views.emplace_back(call.FqName, call.Closure);
+  }
+  const uint64_t hash = HashCalls(RecordCalls(views));
+  auto reservation = table->Reserve(pov_id, op_id, hash);
+  if (!reservation.IsNew) {
+    const auto &outcome = reservation.Outcome;
+    if (!outcome.Result) {
+      throw TOutcomeTooLarge("the write ran, but its result was too large to keep", outcome.SequenceNumber);
+    }
+    TMethodResult result = DecodeResult(*outcome.Result);
+    result.SetCommitSequenceNumber(outcome.SequenceNumber);
+    result.SetCommitLsn(outcome.Lsn ? std::optional<uint64_t>(outcome.Lsn) : std::nullopt);
+    return result;
+  }
+  op.emplace();
+  op->Table = table;
+  op->PovId = pov_id;
+  op->OpId = op_id;
+  op->Hash = hash;
+  auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
+  op->Persistent = pov && pov->GetPolicy() == TPov::TPolicy::Safe && server->GetWal();
+  return std::nullopt;
+}
+
+void TSession::FinishOperation(std::optional<TOperation> &op) noexcept {
+  if (op && !op->IsComplete) {
+    op->Table->Release(op->PovId, op->OpId);
+  }
+}
+
+void TSession::CompleteOperation(TOperation &op, const std::optional<Indy::TSequenceNumber> &commit_seq,
+    const std::optional<uint64_t> &commit_lsn) {
+  TOperationTable::TOutcome outcome;
+  outcome.SequenceNumber = commit_seq.value_or(0);
+  outcome.Lsn = commit_lsn.value_or(0);
+  outcome.Persistent = op.Persistent;
+  outcome.Result = op.Result;
+  outcome.Hash = op.Hash;
+  op.Table->Complete(op.PovId, op.OpId, std::move(outcome));
+  op.IsComplete = true;
+}
+
 TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const TClosure &closure) {
+  std::optional<TOperation> op;
+  if (auto hit = BeginOperation(server, pov_id, {TCallView{&fq_name, &closure}}, op)) {
+    return std::move(*hit);
+  }
+  try {
+    auto result = TryCore(server, pov_id, fq_name, closure, op ? &*op : nullptr);
+    FinishOperation(op);
+    return result;
+  } catch (...) {
+    FinishOperation(op);
+    throw;
+  }
+}
+
+TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const TClosure &closure, TOperation *op) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
   if (auto *runner = server->NextFastRunner()) {
@@ -424,6 +582,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
     void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
     auto arena = closure.GetArena().get();
     for (const auto &item: closure.GetCoreByName()) {
+      if (item.first == OpIdName) {
+        continue;
+      }
       prog_args.insert(make_pair(item.first, Indy::TKey(item.second, arena)));
     }
     // Open the pov and its repo and prepare the data and package contexts.
@@ -510,8 +671,20 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       TMetaRecord::TEntry::TArgByName meta_args_by_name;
       auto closure_arena = closure.GetArena().get();
       for (const auto &item: closure.GetCoreByName()) {
+        if (item.first == OpIdName) {
+          continue;
+        }
         auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)));
         meta_args_by_name.insert(make_pair(item.first, arg));
+      }
+      if (op) {
+        /* The result is kept for a retry, and in a safe POV's meta record for recovery (#733). */
+        auto result_var = Var::ToVar(*Sabot::State::TAny::TWrapper(
+            Indy::TKey(result_core, indy_context.GetArena()).GetState(state_alloc_1)));
+        SetOperationResult(*op->Table, op->Result, result_var);
+        if (op->Persistent) {
+          AddOperationArgs(meta_args_by_name, op->OpId, op->Result, result_var);
+        }
       }
 
       //NOTE: Could do these inline, but this is less fugly to write out because they are so long.
@@ -578,6 +751,9 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
       transaction->Prepare();
       transaction->CommitAction();
       transaction.reset();
+      if (op) {
+        CompleteOperation(*op, commit_seq, commit_lsn);
+      }
     }
     /* Write backpressure on the pools (#584), with memory admission off. The backlog cap was
        held before the commit (#721). See ApplyWriteBackpressure. */
@@ -634,10 +810,21 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
   for (const auto &closure: closures) {
     calls.push_back(TCallView{&fq_name, &closure});
   }
+  std::optional<TOperation> op;
+  if (auto hit = BeginOperation(server, pov_id, calls, op)) {
+    return std::move(*hit);
+  }
   std::optional<TTracker> tracker;
   std::optional<uint64_t> commit_seq;
   std::optional<uint64_t> commit_lsn;
-  std::vector<Var::TVar> results = RunBatch(server, pov_id, calls, tracker, "TryBatch", &commit_seq, &commit_lsn);
+  std::vector<Var::TVar> results;
+  try {
+    results = RunBatch(server, pov_id, calls, tracker, "TryBatch", &commit_seq, &commit_lsn, op ? &*op : nullptr);
+  } catch (...) {
+    FinishOperation(op);
+    throw;
+  }
+  FinishOperation(op);
   // Aggregate the N per-call results into one list-typed core (one entry per
   // call, in order); the ws marshal renders it as a JSON array. Every call ran
   // the same method, so the results share a type.
@@ -655,6 +842,9 @@ std::vector<Var::TVar> TSession::TryMulti(TServer *server, const TUuid &pov_id, 
   std::vector<TCallView> views;
   views.reserve(calls.size());
   for (const auto &call: calls) {
+    if (call.Closure.GetCoreByName().contains(OpIdName)) {
+      throw std::invalid_argument("try_multi does not take an operation id");
+    }
     views.push_back(TCallView{&call.FqName, &call.Closure});
   }
   std::optional<TTracker> tracker;
@@ -664,7 +854,8 @@ std::vector<Var::TVar> TSession::TryMulti(TServer *server, const TUuid &pov_id, 
 vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const vector<TCallView> &calls,
     std::optional<TTracker> &tracker, const char *what,
     std::optional<uint64_t> *commit_seq_out,
-    std::optional<uint64_t> *commit_lsn_out) {
+    std::optional<uint64_t> *commit_lsn_out,
+    TOperation *op) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   assert(!calls.empty());  // grammar guarantees N >= 1
   std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
@@ -720,6 +911,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       Package::TArgMap prog_args;
       auto arena = closure.GetArena().get();
       for (const auto &item: closure.GetCoreByName()) {
+        if (item.first == OpIdName) {
+          continue;
+        }
         prog_args.insert(make_pair(item.first, Indy::TKey(item.second, arena)));
       }
       TCore call_core = func->Call(indy_context, prog_args);
@@ -788,12 +982,23 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
         auto closure_arena = closure.GetArena().get();
         TMetaRecord::TEntry::TCall recorded{*call.FqName, closure.GetMethodName(), {}};
         for (const auto &item: closure.GetCoreByName()) {
+          if (item.first == OpIdName) {
+            continue;
+          }
           recorded.ArgByName.insert(make_pair(
               item.first, Var::ToVar(*Sabot::State::TAny::TWrapper(item.second.NewState(closure_arena, state_alloc_1)))));
         }
         recorded_calls.push_back(std::move(recorded));
       }
       TMetaRecord::TEntry::TArgByName meta_args_by_name = TMetaRecord::TEntry::EncodeBatch(recorded_calls);
+      if (op) {
+        /* As in Try(): the batch's list of results is what a retry gets back (#733). */
+        auto list_var = Var::TVar::List(results, results.front().GetType());
+        SetOperationResult(*op->Table, op->Result, list_var);
+        if (op->Persistent) {
+          AddOperationArgs(meta_args_by_name, op->OpId, op->Result, list_var);
+        }
+      }
 
       uint64_t random_seed = 0;
       if(indy_context.GetOptRandomSeed().IsKnown()) {
@@ -851,6 +1056,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       transaction->Prepare();
       transaction->CommitAction();
       transaction.reset();
+      if (op) {
+        CompleteOperation(*op, commit_seq, commit_lsn);
+      }
       if (commit_seq_out) {
         *commit_seq_out = commit_seq;
       }

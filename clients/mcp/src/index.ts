@@ -27,7 +27,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { connect, Client, OrlyError, set, raw, DEFAULT_URL, Args } from "orly";
+import { connect, Client, OrlyError, set, raw, newOpId, DEFAULT_URL, Args } from "orly";
 
 const URL = process.env.ORLY_URL ?? DEFAULT_URL;
 
@@ -50,18 +50,45 @@ async function getClient(): Promise<Client> {
 }
 
 /** Run `fn` against the client; on a connection-shaped failure (anything but
-    an `OrlyError`, which means the server answered), reconnect once and
-    retry. A reconnect makes a fresh session, so povs made by `orly_new_pov`
-    survive (they live in the engine), but session-scoped state does not. */
-async function withClient<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+    an `OrlyError`, which means the server answered), drop the connection so the
+    next call makes a fresh one, and, if `resend` is set, run `fn` once more on it.
+    A reconnect makes a fresh session, so povs made by `orly_new_pov` survive (they
+    live in the engine), but session-scoped state does not. `resend` is only for
+    calls that are safe to run twice: a write carries an operation id (#733), which
+    makes the server apply it at most once. Without one the failure is thrown, since
+    the first try may have applied. */
+async function withClient<T>(fn: (c: Client) => Promise<T>, resend = true): Promise<T> {
   try {
     return await fn(await getClient());
   } catch (e) {
     if (e instanceof OrlyError) throw e;
     cached = null;
+    if (!resend) throw e;
     return await fn(await getClient());
   }
 }
+
+/** The operation id for a write: the caller's `op_id`, or a fresh one if `exactly_once`. */
+const opIdOf = (op_id: string | undefined, exactly_once: boolean | undefined): string | undefined =>
+  op_id ?? (exactly_once ? newOpId() : undefined);
+
+const opIdSchema = {
+  op_id: z
+    .string()
+    .optional()
+    .describe(
+      "optional operation id (a UUIDv7) that makes this write apply AT MOST ONCE: if the " +
+        "connection drops, resend with the SAME id and the server answers with the saved result " +
+        "instead of writing again. Mint one per logical write and reuse it on every retry.",
+    ),
+  exactly_once: z
+    .boolean()
+    .optional()
+    .describe(
+      "shorthand: mint an operation id for this call, so the server's own reconnect-and-resend is " +
+        "safe. It cannot protect a retry the agent makes in a later call; for that pass op_id.",
+    ),
+};
 
 // -- argument decoding: JSON escape objects -> driver literal types -------
 
@@ -160,10 +187,15 @@ server.registerTool(
       package: z.string().describe("installed package name"),
       method: z.string().describe("method (function) name in the package"),
       args: z.record(z.unknown()).optional().describe("named arguments for the method"),
+      ...opIdSchema,
     },
   },
-  guard(async ({ pov, package: pkg, method, args }) => {
-    const result = await withClient((c) => c.call(pov, pkg, method, decodeArgs(args)));
+  guard(async ({ pov, package: pkg, method, args, op_id, exactly_once }) => {
+    const opId = opIdOf(op_id, exactly_once);
+    const result = await withClient(
+      (c) => c.call(pov, pkg, method, decodeArgs(args), opId === undefined ? {} : { opId }),
+      opId !== undefined,
+    );
     return ok(result);
   }),
 );
@@ -185,11 +217,14 @@ server.registerTool(
         .array(z.record(z.unknown()))
         .min(1)
         .describe("one named-argument record per call"),
+      ...opIdSchema,
     },
   },
-  guard(async ({ pov, package: pkg, method, args_list }) => {
-    const result = await withClient((c) =>
-      c.callBatch(pov, pkg, method, args_list.map(decodeArgs)),
+  guard(async ({ pov, package: pkg, method, args_list, op_id, exactly_once }) => {
+    const opId = opIdOf(op_id, exactly_once);
+    const result = await withClient(
+      (c) => c.callBatch(pov, pkg, method, args_list.map(decodeArgs), opId === undefined ? {} : { opId }),
+      opId !== undefined,
     );
     return ok(result);
   }),

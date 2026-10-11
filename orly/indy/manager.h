@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -517,8 +518,15 @@ namespace Orly {
       /* The (package name, version) pairs currently recorded as installed. */
       std::vector<std::pair<std::vector<std::string>, uint64_t>> GetInstalledPackages();
 
-      /* Replay core vector transactions (used by slave apply and WAL recovery, #755). */
-      size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena);
+      /* Replay core vector transactions (used by slave apply and WAL recovery, #755).
+
+         If 'on_push' is given, it is called with the meta core of each push in a transaction that
+         has no pop, and the repo it was pushed to, so recovery can read what the record says
+         (#733). A transaction that pops is a promotion, which pushes records already seen. */
+      using TPushCallback = std::function<void (const Base::TUuid &repo_id, TSequenceNumber seq_num,
+                                                const Atom::TCore &meta_core, Atom::TCore::TArena *arena)>;
+      size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena,
+                                         const TPushCallback &on_push = TPushCallback());
 
       /* WAL recovery (#755).  The WAL keeps a restored pov's updates only from the oldest one not
          yet in the global pov, so the first of them replayed says where the repo's numbering

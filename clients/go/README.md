@@ -71,6 +71,21 @@ and returns the raw JSON result. Argument values are encoded by `orly.Lit`:
 | `orly.Set{1, 2}` | `{1, 2}` (set) |
 | `orly.Raw("now()")` | `now()` (raw, un-encoded) |
 
+## Writing exactly once (#733)
+
+A dropped connection leaves a write's outcome unknown, so the client never resends one on its own.
+Give a write an operation id and the server applies it at most once, so the client can resend it
+safely: it redials, resumes the session, and sends the same statement again, up to `OpRetries`
+times (default `DefaultOpRetries`, 3), also backing off when the server says the first try is still
+running.
+
+```go
+raw, err := c.CallWithOpts(pov, "bank", "deposit", args, orly.CallOpts{OpID: orly.NewOpID()})
+```
+
+`ErrOperationExpired`, `ErrOperationIDReused` and `*OutcomeTooLargeError` (with `.Version`) are the
+server's refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
+
 ## Reviewing a POV's changes (#746)
 
 ```go

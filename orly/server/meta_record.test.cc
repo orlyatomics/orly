@@ -150,3 +150,22 @@ FIXTURE(Malformed) {
   auto read_bad_count = [&] { bad_count.GetCalls(); };
   EXPECT_THROW_FUNC(runtime_error, read_bad_count);
 }
+
+/* The reserved operation keys (#733) are not arguments: GetCalls() never returns them, for a single
+   call or a batch, so replay and the request hash see exactly what the client sent. */
+FIXTURE(OperationKeys) {
+  TEntry::TArgByName args{{"k", Var::TVar(string("a"))}, {"x", Var::TVar(int64_t(9))}};
+  TEntry::TArgByName keyed = args;
+  keyed.insert({string(TEntry::OpIdKey), Var::TVar(string("0194a2b4-7c00-7000-8000-000000000001"))});
+  keyed.insert({string(TEntry::OpOutcomeKey), Var::TVar(int64_t(5))});
+  vector<TCall> want{TCall{Pkg, "put_ci", args}};
+  EXPECT_TRUE(SameCalls(Reread(Pkg, "put_ci", std::move(keyed)).GetCalls(), want));
+  vector<TCall> calls;
+  for (size_t i = 0; i < 3; ++i) {
+    calls.push_back(TCall{Pkg, "put_ci", {{"k", Var::TVar("k" + to_string(i))}}});
+  }
+  auto batch = TEntry::EncodeBatch(calls);
+  batch.insert({string(TEntry::OpIdKey), Var::TVar(string("0194a2b4-7c00-7000-8000-000000000002"))});
+  batch.insert({string(TEntry::OpOutcomeKey), Var::TVar(string("done"))});
+  EXPECT_TRUE(SameCalls(Reread(Pkg, "put_ci", std::move(batch)).GetCalls(), calls));
+}

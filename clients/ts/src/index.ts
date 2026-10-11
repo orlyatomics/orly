@@ -38,6 +38,9 @@ declare function setTimeout(handler: () => void, ms: number): unknown;
 // window with exponential backoff: DEFAULT_BACKOFF_MS, doubling each attempt.
 export const DEFAULT_RETRIES = 5;
 export const DEFAULT_BACKOFF_MS = 250;
+// A write sent with an operation id (`opId`) is resent this many times when the connection drops
+// or the server says the first try is still running (#733).
+export const DEFAULT_OP_RETRIES = 3;
 
 /** Thrown when the server replies with a non-`ok` status. */
 export class OrlyError extends Error {
@@ -102,6 +105,67 @@ export class RemoteCompileDisabledError extends OrlyError {
   }
 }
 
+/** Thrown when a write's operation id is older than the server remembers
+ *  (`"status": "operation_expired"`, #733). Whether the first try applied is unknown; read the
+ *  data to find out. */
+export class OperationExpiredError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "OperationExpiredError";
+  }
+}
+
+/** Thrown when an operation id was already used for a different write
+ *  (`"status": "operation_id_reused"`, #733). Not retryable: use a new id. */
+export class OperationIdReusedError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "OperationIdReusedError";
+  }
+}
+
+/** Thrown when the write with this operation id is still running
+ *  (`"status": "operation_in_flight"`, #733). Retry after a moment. */
+export class OperationInFlightError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "OperationInFlightError";
+  }
+}
+
+/** Thrown when a retried write had already applied, but its result is too big to have been kept
+ *  (`"status": "outcome_too_large"`, #733). The write is done and is not repeated; `version` is
+ *  the version it committed at. */
+export class OutcomeTooLargeError extends OrlyError {
+  public readonly version?: number;
+
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "OutcomeTooLargeError";
+    if (reply && typeof reply === "object" && "version" in reply) {
+      this.version = (reply as { version?: number }).version;
+    }
+  }
+}
+
+/** A fresh operation id (#733): a UUIDv7 in canonical text form. Time ordered, which is what lets
+ *  the server forget old ids by age. */
+export function newOpId(): string {
+  const bytes = new Uint8Array(16);
+  const crypto = (globalThis as any).crypto;
+  if (crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  let ms = Date.now();
+  for (let i = 5; i >= 0; i--) {
+    bytes[i] = ms % 256;
+    ms = Math.floor(ms / 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x70;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 /** A write receipt returned by the server when a call committed a write (#750). */
 export interface Receipt {
   pov: string;
@@ -113,6 +177,12 @@ export interface Receipt {
 export interface CallOptions {
   receipt?: boolean;
   waitDurableMs?: number;
+  /** Makes the write apply at most once (#733); see {@link newOpId}. If the connection drops, the
+   *  call is reconnected and resent with the same id, up to `opRetries` times (default 3), and the
+   *  server answers a retry of a write that already applied with its saved result. Without an id
+   *  nothing is resent. */
+  opId?: string;
+  opRetries?: number;
 }
 
 export interface CallResult<T = unknown> {
@@ -320,6 +390,7 @@ function quote(s: string): string {
 
 function formatTryOptions(opts: CallOptions): string {
   const parts: string[] = [];
+  if (opts.opId !== undefined) parts.push(`.op_id: ${lit(opts.opId)}`);
   if (opts.receipt) parts.push(".receipt: true");
   if (opts.waitDurableMs !== undefined) parts.push(`.wait_durable_ms: ${Math.floor(opts.waitDurableMs)}`);
   return parts.length ? ` <{${parts.join(", ")}}>` : "";
@@ -337,10 +408,21 @@ interface SocketLike {
 export class Client {
   private pending: Array<{ stmt: string; resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
   public lastReceipt?: Receipt;
+  private sessionId?: string;
+  /** Set by {@link connect}: opens and authenticates a replacement socket, for resending an `opId` write. */
+  public reconnect?: () => Promise<SocketLike>;
 
-  constructor(private readonly ws: SocketLike) {
-    ws.addEventListener("message", (ev: any) => this.onMessage(ev));
-    const fail = (ev: any) => this.failAll(ev);
+  constructor(private ws: SocketLike) {
+    this.attach(ws);
+  }
+
+  private attach(ws: SocketLike): void {
+    ws.addEventListener("message", (ev: any) => {
+      if (ws === this.ws) this.onMessage(ev);
+    });
+    const fail = (ev: any) => {
+      if (ws === this.ws) this.failAll(ev);
+    };
     ws.addEventListener("error", fail);
     ws.addEventListener("close", fail);
   }
@@ -376,6 +458,14 @@ export class Client {
         ? new DurableTimeoutError(p.stmt, reply)
         : reply?.status === "unauthorized"
         ? new UnauthorizedError(p.stmt, reply)
+        : reply?.status === "operation_expired"
+        ? new OperationExpiredError(p.stmt, reply)
+        : reply?.status === "operation_id_reused"
+        ? new OperationIdReusedError(p.stmt, reply)
+        : reply?.status === "operation_in_flight"
+        ? new OperationInFlightError(p.stmt, reply)
+        : reply?.status === "outcome_too_large"
+        ? new OutcomeTooLargeError(p.stmt, reply)
         : new OrlyError(p.stmt, reply));
       return;
     }
@@ -420,9 +510,44 @@ export class Client {
     return (await this.send(stmt)) as string;
   }
 
+  /** Send a write. Without `opts.opId` this is {@link send}: a dropped connection is the caller's
+   *  problem, since resending could apply the write twice. With one, the server applies the id at
+   *  most once, so a dropped connection is replaced (and the session resumed) and the same
+   *  statement resent, up to `opts.opRetries` times (#733). */
+  private async sendOp(stmt: string, opts: CallOptions): Promise<unknown> {
+    if (opts.opId === undefined || !this.reconnect) return this.send(stmt);
+    const retries = opts.opRetries ?? DEFAULT_OP_RETRIES;
+    let delay = DEFAULT_BACKOFF_MS;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.send(stmt);
+      } catch (e) {
+        if (attempt >= retries) throw e;
+        if (e instanceof OperationInFlightError) {
+          // the first try is still running: ask again shortly
+        } else if (e instanceof OrlyError) {
+          throw e;
+        } else {
+          try {
+            this.ws.close();
+          } catch {
+            // already gone
+          }
+          this.ws = await this.reconnect();
+          this.attach(this.ws);
+          if (this.sessionId !== undefined) await this.send(`resume session {${this.sessionId}};`);
+          continue;
+        }
+        await new Promise<void>((r) => setTimeout(() => r(), delay));
+        delay *= 2;
+      }
+    }
+  }
+
   // -- session / package lifecycle --------------------------------------
-  newSession(): Promise<string> {
-    return this.sendString("new session;");
+  async newSession(): Promise<string> {
+    this.sessionId = await this.sendString("new session;");
+    return this.sessionId;
   }
   install(pkg: string, version: number): Promise<unknown> {
     return this.send(`install ${pkg}.${version};`);
@@ -512,12 +637,13 @@ export class Client {
   // -- methods ----------------------------------------------------------
   /** Call `package method` on `pov`: `try {pov} package method <{.k: v}>;`.
    *  `opts.receipt: true` requests a write receipt and resolves `{ result, receipt }`;
-   *  `opts.waitDurableMs` holds the reply until the write is on disk (#750). */
+   *  `opts.waitDurableMs` holds the reply until the write is on disk (#750).
+   *  `opts.opId` makes the write apply at most once, and resends it if the connection drops (#733). */
   call<T = unknown>(pov: string, pkg: string, method: string, args: Args, opts: CallOptions & { receipt: true }): Promise<CallResult<T>>;
   call<T = unknown>(pov: string, pkg: string, method: string, args?: Args, opts?: CallOptions): Promise<T>;
   async call(pov: string, pkg: string, method: string, args: Args = {}, opts: CallOptions = {}): Promise<unknown> {
     const options = formatTryOptions(opts);
-    const result = await this.send(`try {${pov}} ${pkg} ${method} ${lit(args)}${options};`);
+    const result = await this.sendOp(`try {${pov}} ${pkg} ${method} ${lit(args)}${options};`, opts);
     if (opts.receipt) {
       return { result, receipt: this.lastReceipt };
     }
@@ -536,6 +662,7 @@ export class Client {
    *
    * `opts.receipt: true` requests a write receipt and resolves `{ result, receipt }`;
    * `opts.waitDurableMs` holds the reply until the write is on disk (#750).
+   * `opts.opId` and `opts.opRetries` are as for {@link call}: the whole batch applies at most once (#733).
    */
   callBatch<T = unknown>(pov: string, pkg: string, method: string, argsList: Args[], opts: CallOptions & { receipt: true }): Promise<CallResult<T[]>>;
   callBatch<T = unknown>(pov: string, pkg: string, method: string, argsList: Args[], opts?: CallOptions): Promise<T[]>;
@@ -544,7 +671,7 @@ export class Client {
       throw new TypeError("orly: callBatch requires at least one argument record");
     }
     const options = formatTryOptions(opts);
-    const result = await this.send(`try {${pov}} ${pkg} ${method} ${lit(argsList)}${options};`);
+    const result = await this.sendOp(`try {${pov}} ${pkg} ${method} ${lit(argsList)}${options};`, opts);
     if (opts.receipt) {
       return { result, receipt: this.lastReceipt };
     }
@@ -623,6 +750,24 @@ export class Client {
   close(): void {
     this.ws.close();
   }
+
+  /** The socket, for a client that is taking it over (see `reconnect`). */
+  takeSocket(): SocketLike {
+    return this.ws;
+  }
+}
+
+async function openWithRetries(open: () => Promise<Client>, retries: number, backoffMs: number): Promise<Client> {
+  let delay = backoffMs;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await open();
+    } catch (e) {
+      if (e instanceof UnauthorizedError || attempt >= retries) throw e;
+      await new Promise<void>((r) => setTimeout(() => r(), delay));
+      delay *= 2;
+    }
+  }
 }
 
 /** Resolve a WebSocket constructor: the global one (browser) or `ws` (Node). */
@@ -669,22 +814,29 @@ export async function connect(
   let delay = opts.backoffMs ?? DEFAULT_BACKOFF_MS;
   const token = opts.token ?? (await tokenFromEnv());
   const WS = await resolveWebSocket();
+  const open = async (): Promise<Client> => {
+    const ws = new WS(url);
+    await new Promise<void>((resolve, reject) => {
+      ws.addEventListener("open", () => resolve());
+      ws.addEventListener("error", (ev: any) => reject(ev instanceof Error ? ev : new Error("orly: connect failed")));
+    });
+    const client = new Client(ws);
+    if (token !== undefined) {
+      try {
+        await client.authenticate(token);
+      } catch (e) {
+        client.close();
+        throw e;
+      }
+    }
+    return client;
+  };
   for (let attempt = 0; ; attempt++) {
     try {
-      const ws = new WS(url);
-      await new Promise<void>((resolve, reject) => {
-        ws.addEventListener("open", () => resolve());
-        ws.addEventListener("error", (ev: any) => reject(ev instanceof Error ? ev : new Error("orly: connect failed")));
-      });
-      const client = new Client(ws);
-      if (token !== undefined) {
-        try {
-          await client.authenticate(token);
-        } catch (e) {
-          client.close();
-          throw e;
-        }
-      }
+      const client = await open();
+      // A replacement for a dropped socket, for resending a write that carries an opId (#733):
+      // the same url and token. Its listeners are attached by the client that takes it over.
+      client.reconnect = async () => (await openWithRetries(open, retries, opts.backoffMs ?? DEFAULT_BACKOFF_MS)).takeSocket();
       return client;
     } catch (e) {
       if (e instanceof UnauthorizedError) throw e;
