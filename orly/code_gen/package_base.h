@@ -45,28 +45,28 @@ namespace Orly {
         NO_COPY(TPackage);
         public:
 
-        typedef std::unordered_map<Base::TUuid, std::pair<Orly::Type::TType, Orly::Type::TType>> TAddrMap;
-        typedef std::unordered_map<std::pair<Orly::Type::TType, Orly::Type::TType>, Base::TUuid> TRevAddrMap;
+        using TAddrMap = std::unordered_map<Base::TUuid, std::pair<Orly::Type::TType, Orly::Type::TType>>;
+        using TRevAddrMap = std::unordered_map<std::pair<Orly::Type::TType, Orly::Type::TType>, Base::TUuid>;
 
-        virtual ~TPackage() {}
+        virtual ~TPackage() = default;
 
-        inline const Base::TUuid &GetIndexIdFor(const Type::TType &addr, const Type::TType &val) const {
+        [[nodiscard]] inline const Base::TUuid &GetIndexIdFor(const Type::TType &addr, const Type::TType &val) const {
           auto pos = ReverseAddrMap.find(
               std::make_pair(Type::UnwrapSequence(addr),
                              Type::UnwrapOptional(Type::UnwrapMutable(val))));
-          assert(pos!= ReverseAddrMap.end());
+          assert(pos != ReverseAddrMap.end());
           return pos->second;
         }
 
-        inline const TAddrMap &GetAddrMap() const {
+        [[nodiscard]] inline const TAddrMap &GetAddrMap() const noexcept {
           return AddrMap;
         }
 
-        inline const TRevAddrMap &GetReverseAddrMap() const {
+        [[nodiscard]] inline const TRevAddrMap &GetReverseAddrMap() const noexcept {
           return ReverseAddrMap;
         }
 
-        inline const Package::TName &GetName() const {
+        [[nodiscard]] inline const Package::TName &GetName() const {
           assert(Symbol);
           return Symbol->GetName();
         }
@@ -77,17 +77,17 @@ namespace Orly {
            Registration happens from TSymbolFunc's constructor, which only
            holds a const package pointer -- hence mutable. */
         void RegisterSymbolFunc(const Symbol::TFunction *symbol, TSymbolFunc *func) const {
-          SymbolFuncs.insert(std::make_pair(symbol, func));
+          SymbolFuncs.emplace(symbol, func);
         }
 
-        TSymbolFunc *TryFindSymbolFunc(const Symbol::TFunction *symbol) const {
+        [[nodiscard]] TSymbolFunc *TryFindSymbolFunc(const Symbol::TFunction *symbol) const {
           auto res = SymbolFuncs.find(symbol);
           return res != SymbolFuncs.end() ? res->second : nullptr;
         }
 
         protected:
 
-        TPackage(const Symbol::TPackage::TPtr &package) : Symbol(package) {}
+        explicit TPackage(const Symbol::TPackage::TPtr &package) : Symbol(package) {}
 
         Symbol::TPackage::TPtr Symbol;
 

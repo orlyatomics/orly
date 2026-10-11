@@ -40,14 +40,14 @@ namespace Orly {
       NO_COPY(TPackage);
 
       public:
-      typedef std::unordered_set<Type::TType> TTypes;
-      typedef std::unordered_set<TExportFunc::TPtr> TExports;
+      using TTypes = std::unordered_set<Type::TType>;
+      using TExports = std::unordered_set<TExportFunc::TPtr>;
 
       //NOTE: We only make this a vector so that our output is more "stable". Also, hashing test containers would be a little annoying.
-      typedef std::vector<std::unique_ptr<TTest>> TTests;
+      using TTests = std::vector<std::unique_ptr<TTest>>;
 
-      TPackage(const Symbol::TPackage::TPtr &package);
-      virtual ~TPackage();
+      explicit TPackage(const Symbol::TPackage::TPtr &package);
+      ~TPackage() override;
 
       void Emit(const Jhm::TTree &out_dir) const;
       /* `emitted` is the compile walk's already-emitted set (#312): object
