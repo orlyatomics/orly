@@ -40,7 +40,7 @@ namespace Orly {
 
     virtual ~TKeyCountContext() = default;
 
-    virtual bool TryCountKeys(TContextBase &context, const Indy::TIndexKey &pattern, int64_t &count) = 0;
+    [[nodiscard]] virtual bool TryCountKeys(TContextBase &context, const Indy::TIndexKey &pattern, int64_t &count) = 0;
 
     protected:
 
@@ -51,22 +51,22 @@ namespace Orly {
     NO_COPY(TContextBase);
     public:
 
-    virtual ~TContextBase() {}
+    virtual ~TContextBase() = default;
 
-    virtual Indy::TKey operator[](const Indy::TIndexKey &key) = 0;
+    [[nodiscard]] virtual Indy::TKey operator[](const Indy::TIndexKey &key) = 0;
 
-    virtual bool Exists(const Indy::TIndexKey &key) = 0;
+    [[nodiscard]] virtual bool Exists(const Indy::TIndexKey &key) = 0;
 
-    inline Atom::TCore::TExtensibleArena *GetArena() const {
+    [[nodiscard]] Atom::TCore::TExtensibleArena *GetArena() const noexcept {
       return Arena;
     }
 
     protected:
 
-    TContextBase(Atom::TCore::TExtensibleArena *arena)
+    explicit TContextBase(Atom::TCore::TExtensibleArena *arena)
         : Arena(arena) {}
 
-    Atom::TCore::TExtensibleArena *Arena;
+    Atom::TCore::TExtensibleArena *Arena = nullptr;
 
     private:
 
