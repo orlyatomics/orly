@@ -318,11 +318,19 @@ int main(int argc, char *argv[]) {
       uint64_t start_lsn = 1UL;
       uint64_t start_group = 1UL;
       uint32_t start_lap = 1U;
+      uint64_t start_ring_offset = 0UL;
+      uint64_t start_chain = 0UL;
       auto cp_opt = TWal::ReadNewestCheckpoint(dev.get(), wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
+        if (cp_opt->HeadGroupNum > 0) {
+          start_group = cp_opt->HeadGroupNum;
+          start_lap = cp_opt->HeadLap;
+          start_ring_offset = cp_opt->HeadRingOffset;
+          start_chain = cp_opt->HeadChain;
+        }
       }
-      auto scan_res = TWal::Scan(dev.get(), wal_config, start_group, start_lsn, start_lap);
+      auto scan_res = TWal::Scan(dev.get(), wal_config, start_group, start_lsn, start_lap, start_ring_offset, start_chain);
       controller.ShutDown();
       runner_thread.join();
       dev.reset();

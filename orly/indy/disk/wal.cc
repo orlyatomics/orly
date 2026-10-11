@@ -127,7 +127,7 @@ static bool SyncDeviceRead(Util::TDevice *device, const Base::TCodeLocation &loc
   return state->Ok;
 }
 
-TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum, uint64_t head_lsn)
+TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uint64_t start_group_num, uint32_t start_lap, uint64_t start_ring_offset, uint64_t previous_checksum, uint64_t head_lsn, uint64_t head_group_num, uint32_t head_lap, uint64_t head_ring_offset, uint64_t head_chain)
     : Device(device),
       Config(config),
       NextLsn(start_lsn > 0 ? start_lsn - 1 : 0),
@@ -139,6 +139,10 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
       HighestSealedLsn(NextLsn),
       DurableLsn(NextLsn),
       HeadLsn(head_lsn > 0UL ? head_lsn : start_lsn),
+      HeadGroupNum(head_group_num > 0UL ? head_group_num : (start_group_num > 0UL ? start_group_num : 1UL)),
+      HeadLap(head_lap > 0U ? head_lap : start_lap),
+      HeadRingOffset(head_ring_offset),
+      HeadChain(head_chain > 0UL ? head_chain : previous_checksum),
       Stopping(false),
       Failed(false) {
   assert(Device != nullptr);
@@ -315,8 +319,8 @@ void TWal::LeaderMain() {
 
     const uint64_t group_num = ++NextGroupNum;
     const uint64_t first_lsn = batch.empty() ? 0UL : batch.front().Lsn;
-    const uint64_t last_lsn = batch.empty() ? 0UL : batch.back().Lsn;
     const uint64_t sealed_through = HighestSyncedLsn;
+    const uint64_t last_lsn = batch.empty() ? sealed_through : batch.back().Lsn;
     const bool is_seal_only = batch.empty();
 
     const size_t unpadded_size = sizeof(TGroupHeader) + payload_bytes;
@@ -358,6 +362,16 @@ void TWal::LeaderMain() {
     memcpy(buf_ptr, &header, sizeof(TGroupHeader));
 
     PreviousGroupChecksum = header.HeaderChecksum;
+
+    TGroupSummary summary;
+    summary.GroupNum = group_num;
+    summary.FirstLsn = first_lsn;
+    summary.LastLsn = last_lsn;
+    summary.Lap = CurrentLap;
+    summary.Offset = group_offset;
+    summary.HeaderChecksum = header.HeaderChecksum;
+    summary.Chain = header.Chain;
+    ActiveGroups.push_back(summary);
 
     /* Write to device while holding no lock or release lock during I/O */
     TInFlightGroup in_flight;
@@ -454,6 +468,30 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
     throw TWalIoError("WAL is in failed state");
   }
 
+  HeadLsn = std::max(HeadLsn, head_lsn);
+  while (!ActiveGroups.empty() && ActiveGroups.front().LastLsn > 0 && ActiveGroups.front().LastLsn < HeadLsn) {
+    HeadChain = ActiveGroups.front().HeaderChecksum;
+    ActiveGroups.pop_front();
+  }
+  if (!ActiveGroups.empty()) {
+    HeadGroupNum = ActiveGroups.front().GroupNum;
+    HeadLap = ActiveGroups.front().Lap;
+    HeadRingOffset = ActiveGroups.front().Offset;
+    HeadChain = ActiveGroups.front().Chain;
+  } else {
+    HeadGroupNum = NextGroupNum + 1;
+    HeadLap = CurrentLap;
+    HeadRingOffset = CurrentRingOffset;
+    HeadChain = PreviousGroupChecksum;
+  }
+
+  uint64_t cur_head_lsn = HeadLsn;
+  uint64_t cur_head_group = HeadGroupNum;
+  uint32_t cur_head_lap = HeadLap;
+  uint64_t cur_head_offset = HeadRingOffset;
+  uint64_t cur_head_chain = HeadChain;
+  uint64_t cur_durable_lsn = DurableLsn;
+
   /* Identify newest valid checkpoint on disk to determine inactive slot */
   lock.unlock();
   auto newest_cp = ReadNewestCheckpoint(Device, Config.CheckpointSlot0Offset, Config.CheckpointSlot1Offset, Config.StoreId);
@@ -476,11 +514,16 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
   header.Reserved = 0;
   header.StoreId = Config.StoreId;
   header.CheckpointNum = next_cp_num;
-  header.HeadLsn = head_lsn;
-  header.DurableLsn = DurableLsn;
+  header.HeadLsn = cur_head_lsn;
+  header.DurableLsn = cur_durable_lsn;
   header.GlobalFlushedSeq = global_flushed_seq;
-  header.PayloadLen = static_cast<uint32_t>(payload_len);
+  header.HeadGroupNum = cur_head_group;
+  header.HeadLap = cur_head_lap;
   header.Reserved2 = 0;
+  header.HeadRingOffset = cur_head_offset;
+  header.HeadChain = cur_head_chain;
+  header.PayloadLen = static_cast<uint32_t>(payload_len);
+  header.Reserved3 = 0;
 
   if (payload && payload_len > 0) {
     memcpy(buf.get() + sizeof(TCheckpointHeader), payload, payload_len);
@@ -503,9 +546,6 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
   if (!Config.NoSync) {
     Device->Sync();
   }
-
-  lock.lock();
-  HeadLsn = head_lsn;
 }
 
 std::vector<uint64_t> TWal::CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records) {
@@ -547,6 +587,10 @@ std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Uti
       cp.HeadLsn = hdr->HeadLsn;
       cp.DurableLsn = hdr->DurableLsn;
       cp.GlobalFlushedSeq = hdr->GlobalFlushedSeq;
+      cp.HeadGroupNum = hdr->HeadGroupNum;
+      cp.HeadLap = hdr->HeadLap;
+      cp.HeadRingOffset = hdr->HeadRingOffset;
+      cp.HeadChain = hdr->HeadChain;
       cp.Payload.assign(full_buf.get() + sizeof(TCheckpointHeader), full_buf.get() + sizeof(TCheckpointHeader) + hdr->PayloadLen);
       return cp;
     }
@@ -555,6 +599,10 @@ std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Uti
     cp.HeadLsn = hdr->HeadLsn;
     cp.DurableLsn = hdr->DurableLsn;
     cp.GlobalFlushedSeq = hdr->GlobalFlushedSeq;
+    cp.HeadGroupNum = hdr->HeadGroupNum;
+    cp.HeadLap = hdr->HeadLap;
+    cp.HeadRingOffset = hdr->HeadRingOffset;
+    cp.HeadChain = hdr->HeadChain;
     return cp;
   };
 
@@ -567,14 +615,17 @@ std::optional<TCheckpoint> TWal::ReadNewestCheckpoint(Util::TDevice *device, Uti
   return cp0 ? cp0 : cp1;
 }
 
-TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t start_group_num, uint64_t start_lsn, uint32_t start_lap, uint64_t start_ring_offset) {
+TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t start_group_num, uint64_t start_lsn, uint32_t start_lap, uint64_t start_ring_offset, uint64_t start_chain) {
   TScanResult result;
   result.Status = TScanStatus::Clean;
   result.LastValidLap = start_lap;
+  result.NextRingOffset = start_ring_offset;
+  result.LastGroupChecksum = start_chain;
+  result.StartGroupNum = start_group_num;
 
   uint64_t expected_group = start_group_num;
   uint32_t expected_lap = start_lap;
-  uint64_t expected_chain = 0UL;
+  uint64_t expected_chain = start_chain;
   size_t ring_offset = start_ring_offset;
 
   while (true) {
@@ -596,9 +647,11 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
 
     const TGroupHeader *hdr = reinterpret_cast<const TGroupHeader *>(page_buf.get());
 
-    /* Check magic */
-    if (memcmp(hdr->Magic, "ORLYWAL1", 8) != 0) {
-      /* Not a group header. Check if the ring wrapped to offset 0 */
+    /* Check magic and whether header belongs to current or future epoch */
+    if (memcmp(hdr->Magic, "ORLYWAL1", 8) != 0 ||
+        (hdr->Lap < expected_lap) ||
+        (hdr->Lap == expected_lap && hdr->GroupNum < expected_group)) {
+      /* Not a current group header. Check if the ring wrapped to offset 0 */
       if (ring_offset > 0) {
         auto wrap_buf = Base::MemAlignedAllocZeroInitialized<char>(getpagesize(), WalAlignment);
         const bool wrap_read_ok = SyncDeviceRead(device, HERE, wrap_buf.get(), config.BaseOffset, WalAlignment);
@@ -619,7 +672,7 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
 
       /* Clean end of log / unwritten tail */
       if (expected_group == start_group_num) {
-        result.Status = TScanStatus::Empty;
+        result.Status = (start_group_num == 1) ? TScanStatus::Empty : TScanStatus::Clean;
       } else {
         result.Status = TScanStatus::Clean;
       }
@@ -659,7 +712,10 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
             later_hdr->FormatVersion == WalFormatVersion &&
             later_hdr->StoreId == config.StoreId &&
             later_hdr->HeaderChecksum == ComputeChecksum64(later_hdr, GroupHeaderChecksumCoveredBytes)) {
-          if (later_hdr->GroupNum > expected_group && later_hdr->SealedThrough >= expected_lsn) {
+          if (later_hdr->GroupNum > expected_group &&
+              later_hdr->Lap >= expected_lap &&
+              later_hdr->Lap <= expected_lap + 1 &&
+              later_hdr->SealedThrough >= expected_lsn) {
             sealed_by_later = true;
             later_sealed_through = later_hdr->SealedThrough;
             break;
@@ -712,7 +768,10 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
                 later_hdr->FormatVersion == WalFormatVersion &&
                 later_hdr->StoreId == config.StoreId &&
                 later_hdr->HeaderChecksum == ComputeChecksum64(later_hdr, GroupHeaderChecksumCoveredBytes)) {
-              if (later_hdr->GroupNum > expected_group && later_hdr->SealedThrough >= expected_lsn) {
+              if (later_hdr->GroupNum > expected_group &&
+                  later_hdr->Lap >= expected_lap &&
+                  later_hdr->Lap <= expected_lap + 1 &&
+                  later_hdr->SealedThrough >= expected_lsn) {
                 sealed_by_later = true;
                 later_sealed_through = later_hdr->SealedThrough;
                 break;
@@ -776,9 +835,12 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
     /* Group successfully verified! */
     result.LastValidGroupNum = hdr->GroupNum;
     result.LastValidLap = hdr->Lap;
+    const uint64_t last_lsn = (hdr->RecordCount > 0) ? (hdr->FirstLsn + hdr->RecordCount - 1UL) : hdr->FirstLsn;
     if (hdr->RecordCount > 0) {
-      result.LastValidLsn = hdr->FirstLsn + hdr->RecordCount - 1UL;
+      result.LastValidLsn = last_lsn;
     }
+
+    result.GroupLocations.push_back({hdr->GroupNum, hdr->Lap, ring_offset, hdr->Chain, hdr->FirstLsn, last_lsn});
 
     expected_chain = hdr->HeaderChecksum;
     expected_group = hdr->GroupNum + 1UL;
@@ -787,9 +849,10 @@ TScanResult TWal::Scan(Util::TDevice *device, const TConfig &config, uint64_t st
   if (result.LastValidGroupNum > 0) {
     if (ring_offset >= config.CapacityBytes) {
       result.NextRingOffset = 0UL;
-      result.LastValidLap = expected_lap;
+      result.LastValidLap = expected_lap + 1;
     } else {
       result.NextRingOffset = ring_offset;
+      result.LastValidLap = expected_lap;
     }
     result.LastGroupChecksum = expected_chain;
   }

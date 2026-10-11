@@ -1715,13 +1715,21 @@ void TServer::Init() {
       uint64_t start_lsn = 1UL;
       uint64_t start_group = 1UL;
       uint32_t start_lap = 1U;
+      uint64_t start_ring_offset = 0UL;
+      uint64_t start_chain = 0UL;
 
       auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
       if (cp_opt) {
         start_lsn = cp_opt->HeadLsn;
+        if (cp_opt->HeadGroupNum > 0) {
+          start_group = cp_opt->HeadGroupNum;
+          start_lap = cp_opt->HeadLap;
+          start_ring_offset = cp_opt->HeadRingOffset;
+          start_chain = cp_opt->HeadChain;
+        }
       }
 
-      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap);
+      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap, start_ring_offset, start_chain);
       if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
         throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
       }
@@ -1791,11 +1799,40 @@ void TServer::Init() {
       if (Cmd.IsDurableAcksEnabled()) {
         /* Step 8: Instantiate Wal and write initial checkpoint */
         uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
-        uint64_t head_lsn = start_lsn;
         uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
         uint32_t current_lap = scan_result.LastValidLap;
 
-        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn);
+        bool has_unpromoted_writes = false;
+        if (GlobalRepo->GetSequenceNumberStart().has_value()) {
+          has_unpromoted_writes = true;
+        }
+        for (const auto &p_id : restored_povs) {
+          auto repo = RepoManager->TryGetLiveRepo(p_id);
+          if (repo && repo->GetSequenceNumberStart().has_value()) {
+            has_unpromoted_writes = true;
+            break;
+          }
+        }
+
+        uint64_t min_unpromoted_lsn = 0UL;
+        for (const auto &rec : scan_result.Records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn && rec.Lsn >= start_lsn) {
+            if (min_unpromoted_lsn == 0UL || rec.Lsn < min_unpromoted_lsn) {
+              min_unpromoted_lsn = rec.Lsn;
+            }
+          }
+        }
+
+        uint64_t head_lsn = start_lsn;
+        if (!has_unpromoted_writes) {
+          head_lsn = next_lsn;
+        } else if (min_unpromoted_lsn > 0) {
+          head_lsn = min_unpromoted_lsn;
+        }
+
+        auto head_loc = scan_result.FindGroupForLsn(head_lsn);
+
+        Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain);
         Wal->Checkpoint(head_lsn, GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
         RepoManager->SetWal(Wal.get());
         syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld), group %ld, ring offset %ld", next_lsn, head_lsn, next_group, scan_result.NextRingOffset);
