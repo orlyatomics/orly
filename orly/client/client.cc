@@ -18,8 +18,10 @@
 
 #include <orly/client/client.h>
 
+#include <array>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <system_error>
 
 #include <poll.h>
@@ -54,8 +56,8 @@ TClient::TClient(const TAddress &server_address, const std::optional<TUuid> &ses
   TFd::SocketPair(fd, InternalSocket, AF_UNIX, SOCK_STREAM);
   Device = make_shared<TDevice>(move(fd));
   BinaryIoStream = make_shared<TBinaryIoStream>(Device);
-  DispatchThread = thread(&TClient::DispatchMain, this);
-  IoThread = thread(&TClient::IoMain, this);
+  DispatchThread = thread([this] { DispatchMain(); });
+  IoThread = thread([this] { IoMain(); });
 }
 
 thread_local bool TClient::DispatchSelfDestructed = false;
@@ -169,13 +171,12 @@ shared_ptr<Rpc::TFuture<string>> TClient::ImportCoreVector(const string &file_pa
 void TClient::DispatchMain() {
   try {
     /* Loop until we get the destruction semaphore, handling messages from the server. */
-    pollfd polls[2];
-    polls[0].events = POLLIN;
-    polls[0].fd = Destructing.GetFd();
-    polls[1].events = POLLIN;
-    polls[1].fd = Device->GetFd();
+    std::array<pollfd, 2> polls{{
+      { .fd = Destructing.GetFd(), .events = POLLIN, .revents = 0 },
+      { .fd = Device->GetFd(), .events = POLLIN, .revents = 0 },
+    }};
     for (;;) {
-      IfLt0(poll(polls, 2, -1));
+      IfLt0(poll(polls.data(), static_cast<nfds_t>(polls.size()), -1));
       if (polls[0].revents) {
         /* We're destructing. */
         break;
@@ -245,14 +246,13 @@ void TClient::IoMain() {
        thread has an exception exit (a server push racing ~TClient, #503) that skips it.
        Without a direct destruction wake-up, ~TClient's IoThread.join() parks forever --
        the #537 CI wedge. */
-    pollfd polls[3];
-    for (size_t i = 0; i < 3; ++i) {
-      polls[i].events = POLLIN;
-    }
-    polls[0].fd = Destructing.GetFd();
-    polls[1].fd = InternalSocket;
+    std::array<pollfd, 3> polls{{
+      { .fd = Destructing.GetFd(), .events = POLLIN, .revents = 0 },
+      { .fd = InternalSocket, .events = POLLIN, .revents = 0 },
+      { .fd = -1, .events = POLLIN, .revents = 0 },
+    }};
     TFd server_socket;
-    char buf[4096];
+    std::array<char, 4096> buf;
     /* Loop here until this client object is being destroyed. */
     for (;;) {
       /* Decide which events will wake us. */
@@ -268,7 +268,7 @@ void TClient::IoMain() {
         fd_count = 2;
       }
       /* Wait for something to happen... */
-      IfLt0(poll(polls, fd_count, -1));
+      IfLt0(poll(polls.data(), fd_count, -1));
       /* ... and now it has. */
       if (polls[0].revents) {
         /* We're destructing.  Close our end of the internal pipe on the way out: a
@@ -281,7 +281,7 @@ void TClient::IoMain() {
         /* The internal pipe has awakened us. */
         size_t size;
         try {
-          size = ReadAtMost(InternalSocket, buf, sizeof(buf));
+          size = ReadAtMost(InternalSocket, buf.data(), buf.size());
         } catch (...) {
           size = 0;
         }
@@ -366,7 +366,7 @@ void TClient::IoMain() {
         if (server_socket.IsOpen()) {
           /* Relay the data from the internal pipe to the server. */
           try {
-            WriteExactly(server_socket, buf, size);
+            WriteExactly(server_socket, buf.data(), size);
           } catch (const exception &ex) {
             /* We couldn't write.  Close the socket and report the error. */
             server_socket.Reset();
@@ -375,17 +375,15 @@ void TClient::IoMain() {
         } else if (buf[0] == RequestIntroducer) {
           /* We're not connected to the server and the client is trying to send a request.
              Synthesize an error for him instead. */
-          const char intro[] = "could not connect to server; ";
-          const size_t intro_size = sizeof(intro) - 1;
-          size_t
-              msg_size = min(err_msg.size(), sizeof(buf) - (1 + sizeof(TRequestId) + sizeof(size_t) + intro_size)),
-              nbo_size = SwapEnds(intro_size + msg_size);
+          constexpr std::string_view intro = "could not connect to server; ";
+          const size_t msg_size = min(err_msg.size(), buf.size() - (1 + sizeof(TRequestId) + sizeof(size_t) + intro.size()));
+          const size_t nbo_size = SwapEnds(intro.size() + msg_size);
           buf[0] = ErrorResultIntroducer;
-          memcpy(buf + 1 + sizeof(TRequestId), &nbo_size, sizeof(size_t));
-          memcpy(buf + 1 + sizeof(TRequestId) + sizeof(size_t), intro, intro_size);
-          memcpy(buf + 1 + sizeof(TRequestId) + sizeof(size_t) + intro_size, err_msg.data(), msg_size);
+          memcpy(buf.data() + 1 + sizeof(TRequestId), &nbo_size, sizeof(size_t));
+          memcpy(buf.data() + 1 + sizeof(TRequestId) + sizeof(size_t), intro.data(), intro.size());
+          memcpy(buf.data() + 1 + sizeof(TRequestId) + sizeof(size_t) + intro.size(), err_msg.data(), msg_size);
           try {
-            WriteExactly(InternalSocket, buf, 1 + sizeof(TRequestId) + sizeof(size_t) + intro_size + msg_size);
+            WriteExactly(InternalSocket, buf.data(), 1 + sizeof(TRequestId) + sizeof(size_t) + intro.size() + msg_size);
           } catch (...) {
             /* The internal pipe has closed, so it's time to leave. */
             InternalSocket.Reset();
@@ -401,14 +399,14 @@ void TClient::IoMain() {
         /* The server has awakened us. */
         size_t size;
         try {
-          size = ReadAtMost(server_socket, buf, sizeof(buf));
+          size = ReadAtMost(server_socket, buf.data(), buf.size());
         } catch (...) {
           size = 0;
         }
         if (size) {
           /* Relay the data from the server to the internal pipe. */
           try {
-            WriteExactly(InternalSocket, buf, size);
+            WriteExactly(InternalSocket, buf.data(), size);
           } catch (...) {
             /* The internal pipe has closed, so it's time to leave. */
             InternalSocket.Reset();
