@@ -20,6 +20,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <unordered_set>
 
 #include <orly/atom/core_vector.h>
 #include <orly/atom/core_vector_builder.h>
@@ -519,6 +520,14 @@ namespace Orly {
       /* Replay core vector transactions (used by slave apply and WAL recovery, #755). */
       size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena);
 
+      /* WAL recovery (#755).  The WAL keeps a restored pov's updates only from the oldest one not
+         yet in the global pov, so the first of them replayed says where the repo's numbering
+         resumes: the next push ApplyCoreVectorTransactions makes into a seeded repo sets its
+         numbering, rather than being discarded or refused as out of sequence.  Recovery only;
+         ClearReplaySeeds forgets the repos replay never pushed to. */
+      void SeedNumberingFromReplay(const Base::TUuid &repo_id);
+      void ClearReplaySeeds();
+
       void OnSlaveJoin(const Base::TFd &fd);
 
       /* After a restart, note every saved-repo entry the system repo brought back, so the next
@@ -579,6 +588,9 @@ namespace Orly {
 
       TReplicationQueue ReplicationQueue;
       std::mutex ReplicationLock;
+
+      /* See SeedNumberingFromReplay.  Only recovery touches it, before replication starts. */
+      std::unordered_set<Base::TUuid> ReplaySeeds;
 
       Base::TFd ReplicationQueueEpollFd;
       std::mutex ReplicationQueueEpollLock;

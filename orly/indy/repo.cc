@@ -29,6 +29,7 @@
 #include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/util/hash_util.h>
 #include <orly/indy/disk/wal.h>
+#include <orly/indy/wal_retention.h>
 
 using namespace std;
 using namespace Base;
@@ -149,8 +150,10 @@ void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, 
     }
   }
   if (ParentRepo && !InTetris) {
-    Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-    InTetris = true;
+    if (auto *tm = Manager->GetTetrisManager()) {
+      tm->Join((*ParentRepo)->GetId(), GetId());
+      InTetris = true;
+    }
   }
   if (total_layers >= 3) {
     EnqueueMergeDisk();
@@ -480,6 +483,20 @@ std::shared_ptr<TForkWatch> TRepo::GetOwnForkWatch() const {
   return OwnForkWatch;
 }
 
+void TRepo::JoinTetris() {
+  std::lock_guard<std::mutex> lock(DataLock);
+  if (LowestSeqNum && ParentRepo && Status == Normal && !InTetris) {
+    if (auto *tm = Manager->GetTetrisManager()) {
+      try {
+        tm->Join((*ParentRepo)->GetId(), GetId());
+        InTetris = true;
+      } catch (const std::exception &ex) {
+        syslog(LOG_ERR, "JoinTetris: deferred Tetris join under memory pressure: %s", ex.what());
+      }
+    }
+  }
+}
+
 std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update, const Base::TUuid &promoted_from) NO_THROW {
   std::optional<TSequenceNumber> new_seq;
   /* acquire Data lock */ {
@@ -545,11 +562,13 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
        un-promoted updates and re-joins after PopLowest drains and Parts it --
        and additionally retries a previously-failed join. */
     if (ParentRepo && Status == Normal && !InTetris) {
-      try {
-        Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-        InTetris = true;
-      } catch (const std::exception &ex) {
-        syslog(LOG_ERR, "AppendUpdate: deferred Tetris join under memory pressure: %s", ex.what());
+      if (auto *tm = Manager->GetTetrisManager()) {
+        try {
+          tm->Join((*ParentRepo)->GetId(), GetId());
+          InTetris = true;
+        } catch (const std::exception &ex) {
+          syslog(LOG_ERR, "AppendUpdate: deferred Tetris join under memory pressure: %s", ex.what());
+        }
       }
     }
   }  // release Data lock
@@ -588,7 +607,9 @@ std::optional<TSequenceNumber> TRepo::PopLowest(TSequenceNumber &next_update) NO
     ++PromotedUpdates;
     if (!LowestSeqNum) {
       if (ParentRepo && InTetris) {
-        Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          tm->Part((*ParentRepo)->GetId(), GetId());
+        }
         InTetris = false;
       }
     }
@@ -672,25 +693,31 @@ std::optional<TSequenceNumber> TRepo::ChangeStatus(TStatus status, TSequenceNumb
       if (LowestSeqNum && ParentRepo && !InTetris) {
         /* As in AppendUpdate (#250): Join may allocate, and we're on the NO_THROW commit path.
            On failure stay out of Tetris; the next AppendUpdate retries the join. */
-        try {
-          Manager->GetTetrisManager()->Join((*ParentRepo)->GetId(), GetId());
-          InTetris = true;
-        } catch (const std::exception &ex) {
-          syslog(LOG_ERR, "ChangeStatus: deferred Tetris join under memory pressure: %s", ex.what());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          try {
+            tm->Join((*ParentRepo)->GetId(), GetId());
+            InTetris = true;
+          } catch (const std::exception &ex) {
+            syslog(LOG_ERR, "ChangeStatus: deferred Tetris join under memory pressure: %s", ex.what());
+          }
         }
       }
       break;
     }
     case Paused : {
       if (ParentRepo && InTetris) {
-        Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          tm->Part((*ParentRepo)->GetId(), GetId());
+        }
         InTetris = false;
       }
       break;
     }
     case Failed : {
       if (ParentRepo && InTetris) {
-        Manager->GetTetrisManager()->Part((*ParentRepo)->GetId(), GetId());
+        if (auto *tm = Manager->GetTetrisManager()) {
+          tm->Part((*ParentRepo)->GetId(), GetId());
+        }
         InTetris = false;
       }
       break;
@@ -911,20 +938,14 @@ void TRepo::StepMergeMem() {
                 size_t num_keys = 0U;
                 TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
                 TDiskLayerSlot disk_slot;
-                /* Write-ahead rule (#755, §4.1): ensure the WAL is durable through the
-                   highest appended LSN before writing this data file to disk. */
-                if (auto *wal = Manager->GetWal()) {
-                  wal->WaitForDurable(wal->GetLastAppendedLsn());
-                }
+                /* WriteFile keeps the WAL's write-ahead rule and releases what the WAL kept for
+                   these updates (#755). */
                 size_t gen_id = write_file(src, saved_low_seq, saved_high_seq, num_keys);
                 {
                   std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                   Manager->MergeMemAverageKeysCalc.Push(num_keys);
                 }
                 new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
-                if (auto *wal = Manager->GetWal()) {
-                  wal->Checkpoint(wal->GetHeadLsn(), saved_high_seq);
-                }
                 delete new_mem;
                 new_mem = nullptr;
               } else {
@@ -2280,6 +2301,21 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
                             TSequenceNumber &out_saved_high_seq,
                             size_t &out_num_keys,
                             TSequenceNumber release_up_to) {
+  /* A root's data file is where its updates end up, so the WAL can let go of what it kept for
+     them once the file is durable.  But the file mustn't get there first: a transaction that also
+     wrote to a child pov, which only the WAL rebuilds, would come back half applied (#755). */
+  const auto &parent = GetParentRepo();
+  TWalRetention *retention = (parent && *parent) ? nullptr : Manager->GetWalRetention();
+  if (retention && memory_layer->IsEmpty()) {
+    retention = nullptr;
+  }
+  /* The layer's own bounds, not Size-checked GetLowestSeq(): an update with no entries still
+     has a record holding the head. */
+  const TSequenceNumber layer_low_seq = retention ? memory_layer->GetUpdateCollection()->TryGetFirstMember()->GetSequenceNumber() : 0UL;
+  const TSequenceNumber layer_high_seq = retention ? memory_layer->GetUpdateCollection()->TryGetLastMember()->GetSequenceNumber() : 0UL;
+  if (retention) {
+    retention->WaitWriteAhead(GetId(), layer_high_seq);
+  }
   size_t gen_id = GetNextGenId();
   TDataFile data_file(Manager->GetEngine(), storage_speed, memory_layer, GetId(), gen_id, Manager->GetTempFileConsolThresh(), release_up_to, Medium/*, !static_cast<bool>(GetParentRepo())*/);
   out_num_keys = data_file.GetNumKeys();
@@ -2287,6 +2323,9 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
   out_saved_high_seq = data_file.GetHighestSequence();
   /* TDataFile has synced the file and waited for its entry to be written. */
   NoteDurable(out_saved_high_seq);
+  if (retention) {
+    retention->OnRootFlushed(GetId(), layer_low_seq, layer_high_seq);
+  }
   return gen_id;
 }
 

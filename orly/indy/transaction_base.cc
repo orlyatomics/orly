@@ -25,6 +25,7 @@
 #include <base/io/binary_output_only_stream.h>
 #include <base/io/recorder_and_player.h>
 #include <orly/indy/disk/wal.h>
+#include <orly/indy/wal_retention.h>
 #include <orly/indy/fiber/fiber.h>
 #include <orly/indy/replication.h>
 
@@ -315,6 +316,8 @@ void TTransaction::Prepare() {
   }
   Replica.Reset();
   TouchesSafeRepo = false;
+  SafePushes.clear();
+  SafePops.clear();
   size_t num_push = 0UL;
   std::vector<std::pair<Base::TUuid, TSequenceNumber>> release_set;
   for (TMutationCollection::TCursor csr(&MutationCollection); csr; ++csr) {
@@ -326,6 +329,9 @@ void TTransaction::Prepare() {
         if (pusher->Repo->IsSafeRepo()) {
           TouchesSafeRepo = true;
           ++num_push;
+          /* No parent: a data file of the repo's own is where the update ends up. */
+          const auto &parent = pusher->Repo->GetParentRepo();
+          SafePushes.emplace_back(pusher->MyMutation, !(parent && *parent));
           TTransactionCompletion *transaction_completion = TransactionCompletion;
           auto func = [transaction_completion](TUpdate::TPersistenceNotification::TResult result) {
             switch (result) {
@@ -360,6 +366,9 @@ void TTransaction::Prepare() {
             popper->MyMutation = Replica.Pop(popper->GetRepoId(), popper->Repo->GetSequenceNumberStart());
             assert(popper->MyMutation->GetSequenceNumber());
             release_set.push_back(make_pair(popper->GetRepoId(), *(popper->MyMutation->GetSequenceNumber())));
+            if (popper->Repo->IsSafeRepo()) {
+              SafePops.emplace_back(popper->GetRepoId(), *(popper->MyMutation->GetSequenceNumber()));
+            }
             break;
           }
           case TPopper::Fail : {
@@ -508,21 +517,42 @@ TTransaction::~TTransaction() NO_THROW {
     }
 
     if (CommitFlag) {
-      if (Manager->GetWal() && TouchesSafeRepo) {
+      /* The WAL record, and what the WAL must keep for recovery to rebuild these updates (#755). */
+      TWalRetention *retention = TouchesSafeRepo ? Manager->GetWalRetention() : nullptr;
+      if (retention) {
         try {
-          TReplicationStreamer streamer;
-          streamer.PushTransaction(Replica);
-          auto recorder = std::make_shared<Io::TRecorder>();
-          /* serialize */ {
-            Io::TBinaryOutputOnlyStream strm(recorder);
-            streamer.Write(strm);
-            strm.Flush();
+          std::vector<TWalRetention::TPush> pushes;
+          pushes.reserve(SafePushes.size());
+          for (const auto &push : SafePushes) {
+            /* A push the repo refused has no sequence number; it isn't there to rebuild. */
+            if (push.first->GetSequenceNumber()) {
+              pushes.push_back(TWalRetention::TPush{push.first->GetRepoId(), *push.first->GetSequenceNumber(), push.second});
+            }
           }
-          std::string wire;
-          recorder->CopyOut(wire);
-          const uint64_t lsn = Manager->GetWal()->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
-          if (CommitLsnOut) {
-            *CommitLsnOut = lsn;
+          std::vector<TWalRetention::TPop> pops;
+          pops.reserve(SafePops.size());
+          for (const auto &pop : SafePops) {
+            pops.push_back(TWalRetention::TPop{pop.first, pop.second});
+          }
+          if (Manager->GetWal()) {
+            TReplicationStreamer streamer;
+            streamer.PushTransaction(Replica);
+            auto recorder = std::make_shared<Io::TRecorder>();
+            /* serialize */ {
+              Io::TBinaryOutputOnlyStream strm(recorder);
+              streamer.Write(strm);
+              strm.Flush();
+            }
+            std::string wire;
+            recorder->CopyOut(wire);
+            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops);
+            if (CommitLsnOut) {
+              *CommitLsnOut = lsn;
+            }
+          } else {
+            /* Recovery replaying the WAL, before there is one to append to: pin the record being
+               replayed.  Does nothing otherwise. */
+            retention->NoteReplayedTxn(pushes, pops);
           }
         } catch (const std::exception &ex) {
           syslog(LOG_ERR, "~TTransaction: WAL append failed: %s", ex.what());
@@ -574,8 +604,9 @@ TTransaction::TReplica::TMutation::TUpdate::TUpdate(const TUpdate &that)
   Metadata = TCore(Suprena.get(), state_alloc, that.Suprena.get(), that.Metadata);
   Id = TCore(Suprena.get(), state_alloc, that.Suprena.get(), that.Id);
   for (const auto &op_by_key : that.OpByKey) {
-    OpByKey.push_back(make_pair(TIndexKey(op_by_key.first.GetIndexId(), TKey(TCore(Suprena.get(), state_alloc, that.Suprena.get(), op_by_key.first.GetKey().GetCore()), Suprena.get())),
-                                TCore(Suprena.get(), state_alloc, that.Suprena.get(), op_by_key.second)));
+    OpByKey.emplace_back(TIndexKey(op_by_key.IndexKey.GetIndexId(), TKey(TCore(Suprena.get(), state_alloc, that.Suprena.get(), op_by_key.IndexKey.GetKey().GetCore()), Suprena.get())),
+                         TCore(Suprena.get(), state_alloc, that.Suprena.get(), op_by_key.Op),
+                         op_by_key.Mutator);
   }
 }
 
@@ -585,8 +616,9 @@ TTransaction::TReplica::TMutation::TUpdate::TUpdate(const Orly::Indy::TUpdate *t
   Metadata = TCore(Suprena.get(), state_alloc, &that->GetSuprena(), that->GetMetadata());
   Id = TCore(Suprena.get(), state_alloc, &that->GetSuprena(), that->GetId());
   for (Orly::Indy::TUpdate::TEntryCollection::TCursor csr(that->GetEntryCollection()); csr; ++csr) {
-    OpByKey.push_back(make_pair(TIndexKey(csr->GetIndexKey().GetIndexId(), TKey(TCore(Suprena.get(), state_alloc, &csr->GetSuprena(), csr->GetKey().GetCore()), Suprena.get())),
-                                TCore(Suprena.get(), state_alloc, &csr->GetSuprena(), csr->GetOp())));
+    OpByKey.emplace_back(TIndexKey(csr->GetIndexKey().GetIndexId(), TKey(TCore(Suprena.get(), state_alloc, &csr->GetSuprena(), csr->GetKey().GetCore()), Suprena.get())),
+                         TCore(Suprena.get(), state_alloc, &csr->GetSuprena(), csr->GetOp()),
+                         csr->GetMutator());
   }
 }
 
@@ -610,11 +642,10 @@ void TTransaction::TReplica::TMutation::TUpdate::Write(Io::TBinaryOutputStream &
       << OpByKey.size();  // (size_t) num pairs of key = op
   //cout << "Streaming [" << TKey(Metadata, Suprena.get()) << "][" << TKey(Id, Suprena.get()) << "][" << OpByKey.size() << "]" << endl;
   for (const auto &op_by_key : OpByKey) {
-    const auto &key = op_by_key.first;
-    const auto &op = op_by_key.second;
-    strm << op_by_key.first.GetIndexId()   // (Base::TUuid) index_id
-        << TCore(key.GetKey().GetCore(), remap)  // (Atom::TCore) key
-        << TCore(op, remap);  // (Atom::TCore) op
+    strm << op_by_key.IndexKey.GetIndexId()   // (Base::TUuid) index_id
+        << TCore(op_by_key.IndexKey.GetKey().GetCore(), remap)  // (Atom::TCore) key
+        << TCore(op_by_key.Op, remap)  // (Atom::TCore) op
+        << static_cast<uint8_t>(op_by_key.Mutator);  // (uint8_t) mutator
   }
 }
 
@@ -635,13 +666,15 @@ void TTransaction::TReplica::TMutation::TUpdate::Read(Io::TBinaryInputStream &st
     DEBUG_LOG("Exception in TTransaction::TReplica::TMutation::TUpdate::Read [%s] trying to reserve [%ld]", ex.what(), num_op_by_key);
     throw;
   }
+  uint8_t temp_mutator_raw;
   for (size_t i = 0; i < num_op_by_key; ++i) {
     strm >> temp_index_id  // (Base::TUuid) index_id
         >> temp_key  // (Atom::TCore) key
-        >> temp_op;  // (Atom::TCore) op
+        >> temp_op   // (Atom::TCore) op
+        >> temp_mutator_raw;  // (uint8_t) mutator
     temp_key.Remap(remap);
     temp_op.Remap(remap);
-    OpByKey.push_back(make_pair(TIndexKey(temp_index_id, TKey(temp_key, Suprena.get())), temp_op));
+    OpByKey.emplace_back(TIndexKey(temp_index_id, TKey(temp_key, Suprena.get())), temp_op, static_cast<TMutator>(temp_mutator_raw));
   }
 }
 
@@ -878,7 +911,8 @@ TManager::TManager(Disk::Util::TEngine *engine,
                    create_new),
       TransactionCollection(this),
       TransactionCompletionCollection(this),
-      OnCloseTransactionCb(std::bind(&TManager::OnCloseTransaction, this, std::placeholders::_1)) {}
+      OnCloseTransactionCb(std::bind(&TManager::OnCloseTransaction, this, std::placeholders::_1)),
+      WalRetention(std::make_unique<TWalRetention>(this)) {}
 
 TManager::~TManager() {}
 

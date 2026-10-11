@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include <base/class_traits.h>
@@ -388,11 +389,19 @@ namespace Orly {
            from ReadBudgetMB unless the command line gives it; 0 means no limit. */
         size_t ReadBudgetSteps;
 
-        /* Durable acknowledgments via write-ahead log (#755). "false" (default) or "experimental". */
-        std::string DurableAcks = "false";
+        /* Durable acknowledgments via write-ahead log (#755). "local" / "true" (default), "false". */
+        std::string DurableAcks = "local";
 
         /* Size of the WAL ring in megabytes (#755). Default 256. */
         size_t WalMB = 256;
+
+        /* Test-only negative controls (#755). */
+        bool WalNoSync = false;
+        bool WalEarlyAck = false;
+
+        bool IsDurableAcksEnabled() const {
+          return DurableAcks == "local" || DurableAcks == "true" || DurableAcks == "experimental";
+        }
 
         /******** Object Pools ********/
 
@@ -1149,6 +1158,12 @@ namespace Orly {
 
       /* Write-ahead log for durable acknowledgments (#755). */
       std::unique_ptr<Indy::Disk::TWal> Wal;
+
+      /* Writes a WAL checkpoint whenever a root's data file lets the head move (#755). */
+      std::thread WalCheckpointer;
+
+      /* Stop and join WalCheckpointer, if it was started. */
+      void StopWalCheckpointer();
 
       /* The thread on which WsRunner runs. */
       std::thread WsThread;

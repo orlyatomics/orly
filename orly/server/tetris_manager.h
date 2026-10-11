@@ -82,6 +82,11 @@ namespace Orly {
          blocks its thread. */
       bool HaltPromotion(std::chrono::milliseconds timeout);
 
+      /* Resume promoting after HaltPromotion (#755). */
+      void ResumePromotion() {
+        Halted.store(false);
+      }
+
       protected:
 
       /* The base class for all players of the tetris. */

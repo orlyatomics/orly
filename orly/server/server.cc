@@ -24,6 +24,7 @@
 #include <cstring>
 #include <optional>
 #include <sstream>
+#include <unordered_set>
 #include <arpa/inet.h>
 #include <poll.h>
 #include <sys/syscall.h>
@@ -41,6 +42,7 @@
 #include <orly/indy/disk/durable_manager.h>
 #include <orly/indy/disk/wal.h>
 #include <orly/indy/replication.h>
+#include <orly/indy/wal_retention.h>
 #include <orly/auth.h>
 #include <orly/protocol.h>
 #include <orly/server/insufficient_memory.h>
@@ -534,12 +536,22 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
 
   Param(
       &TCmd::DurableAcks, "durable_acks", Optional, "durable_acks\0",
-      "Controls durable acknowledgments via write-ahead log (#755). \"false\" (default) or \"experimental\"."
+      "Controls durable acknowledgments via write-ahead log (#755). \"local\"/\"true\" (default on disk), \"false\"."
   );
 
   Param(
       &TCmd::WalMB, "wal_mb", Optional, "wal_mb\0",
       "Size of the write-ahead log ring in megabytes (#755). Default 256."
+  );
+
+  Param(
+      &TCmd::WalNoSync, "wal_no_sync", Optional, "wal_no_sync\0",
+      "Test-only negative control: skip WAL sync while still acknowledging (#755)."
+  );
+
+  Param(
+      &TCmd::WalEarlyAck, "wal_early_ack", Optional, "wal_early_ack\0",
+      "Test-only negative control: acknowledge before WAL group syncs (#755)."
   );
 
 }
@@ -619,8 +631,10 @@ TServer::TCmd::TCmd()
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
-      DurableAcks("false"),
+      DurableAcks("local"),
       WalMB(256),
+      WalNoSync(false),
+      WalEarlyAck(false),
       DurableMappingPoolSize(1000UL),
       DurableMappingEntryPoolSize(10000UL),
       DurableLayerPoolSize(2000UL),
@@ -755,13 +769,17 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
   if (!ReplicationToken) {
     ReplicationToken = AuthToken;
   }
-  if (DurableAcks != "false" && DurableAcks != "experimental") {
-    cb("--durable_acks must be 'false' or 'experimental'");
+  if (DurableAcks != "false" && DurableAcks != "true" && DurableAcks != "local" &&
+      DurableAcks != "experimental" && DurableAcks != "memory") {
+    cb("--durable_acks must be 'local', 'true', or 'false'");
     return false;
   }
-  if (DurableAcks == "experimental" && MemorySim) {
-    cb("--durable_acks=experimental is not supported with --mem_sim");
-    return false;
+  if (MemorySim) {
+    if (DurableAcks == "experimental") {
+      cb("--durable_acks=experimental is not supported with --mem_sim");
+      return false;
+    }
+    DurableAcks = "false";
   }
   return ResolveMemoryDefaults(cb);
 }
@@ -1430,7 +1448,7 @@ void TServer::Init() {
           Cmd.FileServiceAppendLogMB,
           Cmd.Create,
           Cmd.NoRealtime,
-          Cmd.DurableAcks == "experimental",
+          Cmd.IsDurableAcksEnabled(),
           Cmd.WalMB);
       engine_ptr = DiskEngine->GetEngine();
     }
@@ -1645,98 +1663,6 @@ void TServer::Init() {
                                                                     Cmd.TempFileConsolidationThreshold,
                                                                     Cmd.Create);
     RepoManager->SetDurableManager(DurableManager);
-    /* Initialize and recover Write-Ahead Log (WAL) (#755). */
-    if (DiskEngine && DiskEngine->HasWal()) {
-      Indy::Disk::TWal::TConfig wal_config;
-      wal_config.BaseOffset = DiskEngine->GetWalStartBlock() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CheckpointSlot0Offset = DiskEngine->GetWalCheckpoint0Block() * Indy::Disk::Util::PhysicalBlockSize;
-      wal_config.CheckpointSlot1Offset = DiskEngine->GetWalCheckpoint1Block() * Indy::Disk::Util::PhysicalBlockSize;
-      uuid_t raw_inst;
-      memset(raw_inst, 0, sizeof(raw_inst));
-      memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));
-      wal_config.StoreId = Base::TUuid(raw_inst);
-
-      auto *persistent_dev = DiskEngine->GetPersistentDevice();
-      assert(persistent_dev);
-
-      uint64_t start_lsn = 1UL;
-      uint64_t start_group = 1UL;
-      uint32_t start_lap = 1U;
-
-      auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
-      if (cp_opt) {
-        start_lsn = cp_opt->HeadLsn;
-        start_group = cp_opt->CheckpointNum + 1UL;
-      }
-
-      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap);
-      if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
-        throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
-      }
-
-      Indy::Fiber::TJumpRunnable wal_recovery_jumper([&] {
-        /* Step 6: Restore safe POVs from POV records */
-        for (const auto &rec : scan_result.Records) {
-          if (rec.Type == Indy::Disk::TWalRecordType::Pov) {
-            std::string str(rec.Body.data(), rec.Body.size());
-            auto recorder = std::make_shared<Io::TRecorder>(str);
-            auto player = std::make_shared<Io::TPlayer>(recorder);
-            Io::TBinaryInputOnlyStream strm(player);
-            Base::TUuid pov_id, session_id;
-            bool has_parent;
-            Base::TUuid parent_id;
-            char aud_c, pol_c;
-            int64_t ttl_sec;
-            size_t num_parents;
-            strm >> pov_id >> session_id >> has_parent >> parent_id >> aud_c >> pol_c >> ttl_sec >> num_parents;
-            TPov::TSharedParents shared_parents;
-            shared_parents.reserve(num_parents);
-            for (size_t i = 0; i < num_parents; ++i) {
-              Base::TUuid p_id;
-              strm >> p_id;
-              shared_parents.push_back(p_id);
-            }
-            std::optional<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
-            if (shared_parents.empty()) {
-              parent_repo = GlobalRepo;
-            } else {
-              parent_repo = RepoManager->TryGetLiveRepo(shared_parents.back());
-            }
-            auto pov_ttl = std::chrono::seconds(ttl_sec);
-            RepoManager->GetRepo(pov_id, pov_ttl, parent_repo, pol_c == static_cast<char>(TPov::TPolicy::Safe), true);
-            try {
-              DurableManager->Open<TPov>(pov_id);
-            } catch (...) {
-              DurableManager->New<TPov>(pov_id, pov_ttl, session_id, static_cast<TPov::TAudience>(aud_c), static_cast<TPov::TPolicy>(pol_c), shared_parents);
-            }
-          }
-        }
-
-        /* Step 7: Replay transactions through slave apply path */
-        for (const auto &rec : scan_result.Records) {
-          if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
-            Indy::TReplicationStreamer streamer;
-            std::string str(rec.Body.data(), rec.Body.size());
-            auto recorder = std::make_shared<Io::TRecorder>(str);
-            auto player = std::make_shared<Io::TPlayer>(recorder);
-            Io::TBinaryInputOnlyStream strm(player);
-            streamer.Read(strm);
-            RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena());
-          }
-        }
-      });
-      wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
-
-      /* Step 8: Instantiate Wal and write initial checkpoint */
-      uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
-      uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
-      uint32_t current_lap = scan_result.LastValidLap;
-
-      Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap);
-      Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
-      RepoManager->SetWal(Wal.get());
-    }
     /* Remove Durable TDurableLayer(s) that are no longer relevant */ {
       ScheduleRunnerHost(&DurableLayerCleanerRunner);
       Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
@@ -1769,6 +1695,187 @@ void TServer::Init() {
 
     TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
     RepoManager->SetTetrisManager(TetrisManager);
+
+    /* Initialize and recover Write-Ahead Log (WAL) (#755). */
+    if (DiskEngine && DiskEngine->HasWal() && Cmd.IsDurableAcksEnabled()) {
+      TetrisManager->HaltPromotion(std::chrono::milliseconds(0));
+      Indy::Disk::TWal::TConfig wal_config;
+      wal_config.BaseOffset = (DiskEngine->GetWalStartBlock() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CapacityBytes = DiskEngine->GetWalNumBlocks() * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot0Offset = (DiskEngine->GetWalCheckpoint0Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
+      wal_config.CheckpointSlot1Offset = (DiskEngine->GetWalCheckpoint1Block() + 1UL) * Indy::Disk::Util::PhysicalBlockSize;
+      uuid_t raw_inst;
+      memset(raw_inst, 0, sizeof(raw_inst));
+      memcpy(raw_inst, Cmd.InstanceName.data(), std::min(sizeof(raw_inst), Cmd.InstanceName.size()));
+      wal_config.StoreId = Base::TUuid(raw_inst);
+      wal_config.NoSync = Cmd.WalNoSync;
+      wal_config.EarlyAck = Cmd.WalEarlyAck;
+
+      auto *persistent_dev = DiskEngine->GetPersistentDevice();
+      assert(persistent_dev);
+
+      uint64_t start_lsn = 1UL;
+      uint64_t start_group = 1UL;
+      uint32_t start_lap = 1U;
+      uint64_t start_ring_offset = 0UL;
+      uint64_t start_chain = 0UL;
+
+      auto cp_opt = Indy::Disk::TWal::ReadNewestCheckpoint(persistent_dev, wal_config.CheckpointSlot0Offset, wal_config.CheckpointSlot1Offset, wal_config.StoreId);
+      if (cp_opt) {
+        start_lsn = cp_opt->HeadLsn;
+        if (cp_opt->HeadGroupNum > 0) {
+          start_group = cp_opt->HeadGroupNum;
+          start_lap = cp_opt->HeadLap;
+          start_ring_offset = cp_opt->HeadRingOffset;
+          start_chain = cp_opt->HeadChain;
+        }
+      }
+
+      auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap, start_ring_offset, start_chain);
+      if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
+        throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
+      }
+
+      Indy::TWalRetention *retention = RepoManager->GetWalRetention();
+      assert(retention);
+      std::vector<Base::TUuid> restored_povs;
+      Indy::Fiber::TJumpRunnable wal_recovery_jumper([&] {
+        retention->BeginReplay();
+        /* Step 6: Restore safe POVs from POV records.  A pov copied forward has more than one
+           record; the newest is the one its pin is on.  A pov's parents must exist before it does,
+           and a copied record can come after a child's, so restore in dependency order. */
+        struct TPovRecord {
+          uint64_t Lsn = 0UL;
+          std::string Body;
+          Base::TUuid SessionId;
+          char Audience = 0, Policy = 0;
+          int64_t TtlSec = 0;
+          TPov::TSharedParents SharedParents;
+        };
+        std::unordered_map<Base::TUuid, TPovRecord> pov_records;
+        for (const auto &rec : scan_result.Records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Pov && rec.Lsn >= start_lsn) {
+            std::string str(rec.Body.data(), rec.Body.size());
+            auto recorder = std::make_shared<Io::TRecorder>(str);
+            auto player = std::make_shared<Io::TPlayer>(recorder);
+            Io::TBinaryInputOnlyStream strm(player);
+            Base::TUuid pov_id, session_id;
+            bool has_parent;
+            Base::TUuid parent_id;
+            char aud_c, pol_c;
+            int64_t ttl_sec;
+            size_t num_parents;
+            strm >> pov_id >> session_id >> has_parent >> parent_id >> aud_c >> pol_c >> ttl_sec >> num_parents;
+            TPov::TSharedParents shared_parents;
+            shared_parents.reserve(num_parents);
+            for (size_t i = 0; i < num_parents; ++i) {
+              Base::TUuid p_id;
+              strm >> p_id;
+              shared_parents.push_back(p_id);
+            }
+            auto &slot = pov_records[pov_id];
+            if (slot.Lsn < rec.Lsn) {
+              slot = TPovRecord{rec.Lsn, std::move(str), session_id, aud_c, pol_c, ttl_sec, std::move(shared_parents)};
+            }
+          }
+        }
+        std::unordered_set<Base::TUuid> restored;
+        for (bool progress = true; progress && restored.size() < pov_records.size();) {
+          progress = false;
+          for (const auto &item : pov_records) {
+            const Base::TUuid &pov_id = item.first;
+            const TPovRecord &pov = item.second;
+            if (restored.count(pov_id)) {
+              continue;
+            }
+            std::optional<Indy::L0::TManager::TPtr<Indy::L0::TManager::TRepo>> parent_repo;
+            if (pov.SharedParents.empty()) {
+              parent_repo = GlobalRepo;
+            } else if (restored.count(pov.SharedParents.back())) {
+              parent_repo = RepoManager->TryGetLiveRepo(pov.SharedParents.back());
+            } else if (pov_records.count(pov.SharedParents.back())) {
+              /* Its parent comes back later in this pass or the next. */
+              continue;
+            } else {
+              /* Its parent's record is gone, so the parent was closed, and so was this pov. */
+              restored.insert(pov_id);
+              progress = true;
+              syslog(LOG_WARNING, "WAL recovery: not restoring pov %s; its parent has no Pov record", Base::AsStr(pov_id).c_str());
+              continue;
+            }
+            auto pov_ttl = std::chrono::seconds(pov.TtlSec);
+            RepoManager->GetRepo(pov_id, pov_ttl, parent_repo, pov.Policy == static_cast<char>(TPov::TPolicy::Safe), true);
+            try {
+              DurableManager->Open<TPov>(pov_id);
+            } catch (...) {
+              DurableManager->New<TPov>(pov_id, pov_ttl, pov.SessionId, static_cast<TPov::TAudience>(pov.Audience), static_cast<TPov::TPolicy>(pov.Policy), pov.SharedParents);
+            }
+            retention->NoteRestoredPov(pov_id, pov.Lsn, pov.Body);
+            RepoManager->SeedNumberingFromReplay(pov_id);
+            restored.insert(pov_id);
+            restored_povs.push_back(pov_id);
+            progress = true;
+          }
+        }
+
+        /* Step 7: Replay transactions through slave apply path.  Each one pins the record it came
+           from, as a live transaction pins the record it appends. */
+        for (const auto &rec : scan_result.Records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn && rec.Lsn >= start_lsn) {
+            Indy::TReplicationStreamer streamer;
+            std::string str(rec.Body.data(), rec.Body.size());
+            auto recorder = std::make_shared<Io::TRecorder>(str);
+            auto player = std::make_shared<Io::TPlayer>(recorder);
+            Io::TBinaryInputOnlyStream strm(player);
+            streamer.Read(strm);
+            retention->SetReplayLsn(rec.Lsn);
+            RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena());
+          }
+        }
+        retention->EndReplay();
+        RepoManager->ClearReplaySeeds();
+      });
+      wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
+
+      for (const auto &p_id : restored_povs) {
+        auto repo = RepoManager->TryGetLiveRepo(p_id);
+        if (repo) {
+          repo->JoinTetris();
+        }
+      }
+
+      /* Step 8: Instantiate Wal and write initial checkpoint.  The head is the oldest record the
+         replay left pinned: an update not yet in a root's data file, or a live pov's record. */
+      uint64_t next_lsn = (scan_result.LastValidLsn > 0) ? (scan_result.LastValidLsn + 1UL) : start_lsn;
+      uint64_t next_group = (scan_result.LastValidGroupNum > 0) ? (scan_result.LastValidGroupNum + 1UL) : start_group;
+      uint32_t current_lap = scan_result.LastValidLap;
+      uint64_t head_lsn = retention->ComputeHead();
+      if (head_lsn > next_lsn) {
+        head_lsn = next_lsn;
+      }
+      /* LSNs start at 1, and TWal takes a head of 0 for none: it would start the head at the next
+         LSN and give up every record the replay just pinned, restored povs' among them. */
+      assert(head_lsn > 0UL);
+      auto head_loc = scan_result.FindGroupForLsn(head_lsn);
+      Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain, scan_result.GroupLocations);
+      RepoManager->SetWal(Wal.get());
+      retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
+      syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld, %ld povs restored), group %ld, ring offset %ld", next_lsn, retention->ComputeHead(), restored_povs.size(), next_group, scan_result.NextRingOffset);
+      WalCheckpointer = std::thread([this, retention] {
+        while (retention->WaitForWork(std::chrono::milliseconds(1000))) {
+          try {
+            retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+          } catch (const std::exception &ex) {
+            static std::atomic<int64_t> last_log{0};
+            const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (now - last_log.exchange(now) >= 10) {
+              syslog(LOG_ERR, "WAL checkpoint failed: %s", ex.what());
+            }
+          }
+        }
+      });
+      TetrisManager->ResumePromotion();
+    }
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
         ScheduleRunnerHost(&RunReplicationQueueRunner);
@@ -2126,6 +2233,7 @@ void TServer::Shutdown() {
      any thread. */
   RepoManager->StopMergeRunners();
   syslog(LOG_INFO, "TServer::Shutdown(): merge runners stopped after %ldms (#744)", ms_since_start());
+  StopWalCheckpointer();
   /* Flush on a fiber, while every runner is still alive. */
   Indy::Fiber::TJumpRunnable flush_jumper([this] {
     /* Flush-on-shutdown (#440): merge every dirty repo memory layer out to
@@ -2138,7 +2246,13 @@ void TServer::Shutdown() {
     DurableManager->Flush();
     if (Wal) {
       Wal->Flush();
-      Wal->Checkpoint(Wal->GetHeadLsn(), GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
+      /* The flush released the pins of everything it wrote, so the head can move up to what is
+         still unpromoted in a pov, or a live pov's record. */
+      try {
+        RepoManager->GetWalRetention()->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
+      } catch (const std::exception &ex) {
+        syslog(LOG_ERR, "TServer::Shutdown(): WAL checkpoint failed: %s", ex.what());
+      }
     }
   });
   flush_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
@@ -2242,6 +2356,13 @@ void TServer::Shutdown() {
   syslog(LOG_INFO, "TServer::Shutdown() complete");
 }
 
+void TServer::StopWalCheckpointer() {
+  if (WalCheckpointer.joinable()) {
+    RepoManager->GetWalRetention()->Stop();
+    WalCheckpointer.join();
+  }
+}
+
 TServer::~TServer() {
   if (ShutdownCalled) {
     /* Shutdown() already stopped the threads and destroyed the managers;
@@ -2266,6 +2387,7 @@ TServer::~TServer() {
   }
   WsRunner.ShutDown();
   WsThread.join();
+  StopWalCheckpointer();
   delete TetrisManager;
   ForEachSchedCallbackExtraSet.clear();  // as in Shutdown() (#648)
   DurableManager->Clear();

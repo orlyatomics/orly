@@ -1311,6 +1311,14 @@ static void LogStatusChange(const char *what, const Base::TUuid &repo_id, TSeque
   syslog(LOG_INFO, "Slave %s %s of repo [%s] at seq [%ld]", applied ? "applying" : "discarding", what, strm.str().c_str(), seq_num);
 }
 
+void TManager::SeedNumberingFromReplay(const Base::TUuid &repo_id) {
+  ReplaySeeds.insert(repo_id);
+}
+
+void TManager::ClearReplaySeeds() {
+  ReplaySeeds.clear();
+}
+
 size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -1343,13 +1351,14 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
       switch (action) {
         case TTransactionAction::Push : {
           //std::cout << "Apply transaction PUSH [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
-          TUpdate::TOpByKey op_by_key;
           ++iter;
           const TCore &meta_core = *iter;
           ++iter;
           const TCore &id_core = *iter;
           ++iter;
           Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), num_kv);
+          std::vector<std::tuple<TIndexKey, TKey, TMutator>> entries;
+          entries.reserve(num_kv);
           for (size_t i = 0; i < num_kv; ++i) {
             ++iter;
             Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), index_id);
@@ -1357,11 +1366,23 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
             const TCore &key_core = *iter;
             ++iter;
             const TCore &val_core = *iter;
-            op_by_key[TIndexKey(index_id, TKey(key_core, arena))] = TKey(val_core, arena);
+            ++iter;
+            uint32_t mutator_raw = 0U;
+            Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), mutator_raw);
+            entries.emplace_back(TIndexKey(index_id, TKey(key_core, arena)), TKey(val_core, arena), static_cast<TMutator>(mutator_raw));
           }
           //std::cout << "Push\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
+          if (repo && !ReplaySeeds.empty() && ReplaySeeds.erase(repo_id)) {
+            /* A restored pov's first replayed update (see SeedNumberingFromReplay). */
+            repo->SetNextSequenceNumber(seq_num);
+            repo->SetReleasedUpTo(seq_num > 0UL ? seq_num - 1UL : 0UL);
+          }
           if (repo) {
-            apply_transaction->Push(repo, TUpdate::NewUpdate(op_by_key, TKey(meta_core, arena), TKey(id_core, arena)), seq_num);
+            auto update = TUpdate::NewUpdate({}, TKey(meta_core, arena), TKey(id_core, arena));
+            for (const auto &entry : entries) {
+              update->AddEntry(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry));
+            }
+            apply_transaction->Push(repo, update, seq_num);
           } else {
             LogGoneRepo("push", repo_id, seq_num);
           }
