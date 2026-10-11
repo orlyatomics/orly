@@ -1947,6 +1947,7 @@ void TServer::Init() {
           ? Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) - 16UL * 1024UL
           : Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) / 2UL;
       retention->SetCheckpointPayload([this, snapshot_budget](uint64_t head_lsn) { return OperationTable ? OperationTable->Snapshot(head_lsn, snapshot_budget) : std::string(); });
+      retention->SetHeadFloor([this]() { return OperationTable ? OperationTable->HeadFloor() : UINT64_MAX; });
       retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
       syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld, %ld povs restored), group %ld, ring offset %ld", next_lsn, retention->ComputeHead(), restored_povs.size(), next_group, scan_result.NextRingOffset);
       WalCheckpointer = std::thread([this, retention] {

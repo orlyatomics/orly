@@ -139,6 +139,16 @@ namespace Orly {
       /* The request committed. Records its outcome, and applies retention. */
       void Complete(const Base::TUuid &pov_id, const Base::TUuid &op_id, TOutcome &&outcome);
 
+      /* The request is about to commit a persistent write. Its WAL record will have an LSN of at
+         least `floor_lsn`. Until Complete() or Release(), HeadFloor() keeps a checkpoint's head
+         from passing it: the slot isn't done, so no snapshot holds it, and a head past its record
+         would leave neither the snapshot nor replay to restore it (#861). */
+      void BeginCommit(const Base::TUuid &pov_id, const Base::TUuid &op_id, uint64_t floor_lsn);
+
+      /* The lowest `floor_lsn` of a slot between BeginCommit() and Complete(); UINT64_MAX if none.
+         A checkpoint takes its head no higher than this. */
+      uint64_t HeadFloor() const;
+
       /* The request ended without committing a write. The id can be tried again. */
       void Release(const Base::TUuid &pov_id, const Base::TUuid &op_id) noexcept;
 
@@ -163,6 +173,9 @@ namespace Orly {
       struct TSlot {
         bool IsDone = false;
         TOutcome Outcome;
+
+        /* Set by BeginCommit(); 0 if the slot isn't committing. */
+        uint64_t FloorLsn = 0;
       };
 
       struct TPovTable {

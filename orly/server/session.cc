@@ -539,6 +539,15 @@ std::optional<TMethodResult> TSession::BeginOperation(TServer *server, const TUu
   return std::nullopt;
 }
 
+void TSession::BeginOperationCommit(TServer *server, const TOperation &op) {
+  if (op.Persistent) {
+    if (auto *wal = server->GetWal()) {
+      /* Read before the commit appends, so the record's LSN is above it. */
+      op.Table->BeginCommit(op.PovId, op.OpId, wal->GetLastAppendedLsn() + 1UL);
+    }
+  }
+}
+
 void TSession::FinishOperation(std::optional<TOperation> &op) noexcept {
   if (op && !op->IsComplete) {
     op->Table->Release(op->PovId, op->OpId);
@@ -758,6 +767,9 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
       } catch (const std::bad_alloc &) {
         server->RefuseWriteOutOfMemory();
         throw;
+      }
+      if (op) {
+        BeginOperationCommit(server, *op);
       }
       transaction->Prepare();
       transaction->CommitAction();
@@ -1062,6 +1074,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       } catch (const std::bad_alloc &) {
         server->RefuseWriteOutOfMemory();
         throw;
+      }
+      if (op) {
+        BeginOperationCommit(server, *op);
       }
       transaction->Prepare();
       transaction->CommitAction();

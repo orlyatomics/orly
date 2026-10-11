@@ -166,9 +166,35 @@ void TOperationTable::Complete(const TUuid &pov_id, const TUuid &op_id, TOutcome
   auto &table = TableByPov[pov_id];
   auto &slot = table.SlotByOp[op_id];
   slot.IsDone = true;
+  slot.FloorLsn = 0;
   slot.Outcome = std::move(outcome);
   Done.emplace(GetTimestampMs(op_id), pov_id, op_id);
   Prune();
+}
+
+void TOperationTable::BeginCommit(const TUuid &pov_id, const TUuid &op_id, uint64_t floor_lsn) {
+  lock_guard<mutex> lock(Mutex);
+  auto pov_iter = TableByPov.find(pov_id);
+  if (pov_iter == TableByPov.end()) {
+    return;
+  }
+  auto iter = pov_iter->second.SlotByOp.find(op_id);
+  if (iter != pov_iter->second.SlotByOp.end() && !iter->second.IsDone) {
+    iter->second.FloorLsn = max<uint64_t>(floor_lsn, 1);
+  }
+}
+
+uint64_t TOperationTable::HeadFloor() const {
+  lock_guard<mutex> lock(Mutex);
+  uint64_t floor = UINT64_MAX;
+  for (const auto &pov: TableByPov) {
+    for (const auto &slot: pov.second.SlotByOp) {
+      if (!slot.second.IsDone && slot.second.FloorLsn) {
+        floor = min(floor, slot.second.FloorLsn);
+      }
+    }
+  }
+  return floor;
 }
 
 void TOperationTable::Release(const TUuid &pov_id, const TUuid &op_id) noexcept {
@@ -191,6 +217,14 @@ void TOperationTable::Restore(const TUuid &pov_id, const TUuid &op_id, TOutcome 
   Complete(pov_id, op_id, std::move(outcome));
 }
 
+/* Why a slot that isn't done can't just be left out (#861): a slot is done only in Complete, after
+   the transaction has appended its record, and nothing between the two holds the WAL head. The
+   record's pin drops when its update reaches a root's data file (TWalRetention::OnRootFlushed), and
+   with no other pin the head is the next LSN. So a checkpoint can land there, with the record
+   behind its head, the slot not done and not in this snapshot, and no replay to restore it.
+   BeginCommit()/HeadFloor() close it: the checkpointer takes its head no higher than HeadFloor()
+   (TWalRetention::SetHeadFloor, wired in TServer), so such a record is at or past the head,
+   replayed, and RestoreOperation puts the slot back. */
 string TOperationTable::Snapshot(uint64_t head_lsn, size_t budget) {
   struct TItem {
     uint64_t Ts;

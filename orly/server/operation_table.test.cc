@@ -20,6 +20,7 @@
 
 #include <orly/server/operation_table.h>
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -217,6 +218,44 @@ FIXTURE(SnapshotRoundTrip) {
   EXPECT_FALSE(big.IsNew);
   EXPECT_FALSE(big.Outcome.Result.has_value());
   EXPECT_EQ(big.Outcome.SequenceNumber, 8UL);
+}
+
+/* #861: a write whose record is appended but not yet completed. Nothing holds the WAL head there
+   (its update may already be in a data file), so a checkpoint is taken at the lower of the pins and
+   HeadFloor(), as TWalRetention does. Without that, the head passes the record, the snapshot lacks
+   the not-done slot, replay lacks the record, and a retry after a crash runs the write again. */
+FIXTURE(CheckpointBetweenCommitAndComplete) {
+  Now = 10'000'000UL;
+  TOperationTable table(MakeConfig());
+  auto op = MakeId(Now - 1000UL);
+  const uint64_t record_lsn = 20UL;
+  /* The pins are gone, so the head is the next LSN. */
+  const uint64_t pin_head = record_lsn + 1UL;
+  table.Reserve(Pov, op, 31);
+  EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
+  table.BeginCommit(Pov, op, record_lsn);
+  /* The record is appended, the slot is not done, and the checkpoint lands. */
+  const uint64_t head = std::min(pin_head, table.HeadFloor());
+  EXPECT_EQ(head, record_lsn);
+  auto payload = table.Snapshot(head);
+  /* Crash, then recover: load the checkpoint, replay the records at or past the head. */
+  TOperationTable recovered(MakeConfig());
+  recovered.Load(payload);
+  if (record_lsn >= head) {
+    recovered.Restore(Pov, op, MakeOutcome(9, record_lsn, true, 31));
+  }
+  auto hit = recovered.Reserve(Pov, op, 31);
+  EXPECT_FALSE(hit.IsNew);
+  EXPECT_EQ(hit.Outcome.SequenceNumber, 9UL);
+  /* Complete and Release both lift the floor. */
+  table.Complete(Pov, op, MakeOutcome(9, record_lsn, true, 31));
+  EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
+  auto op2 = MakeId(Now - 900UL);
+  table.Reserve(Pov, op2, 32);
+  table.BeginCommit(Pov, op2, 30);
+  EXPECT_EQ(table.HeadFloor(), 30UL);
+  table.Release(Pov, op2);
+  EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
 }
 
 /* A snapshot too big for its budget drops the oldest entries and refuses their ids after the
