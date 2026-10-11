@@ -29,6 +29,7 @@
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
 #include <orly/server/read_too_large.h>
+#include <orly/server/version_unavailable.h>
 #include <orly/server/write_too_large.h>
 #include <orly/server/meta_record.h>
 #include <orly/server/operation_error.h>
@@ -441,6 +442,29 @@ namespace {
 
   const std::string OpIdName(TMetaRecord::TEntry::OpIdKey);
 
+  /* The reserved argument naming the version a call reads at (#745). */
+  const std::string AtName("$at");
+
+  /* True iff the argument is one of the reserved ones the session takes out, not one for the method. */
+  bool IsReservedArg(const std::string &name) {
+    return name == OpIdName || name == AtName;
+  }
+
+  /* The version a closure asks to read at, or none. */
+  std::optional<Indy::TSequenceNumber> FindAt(const TClosure &closure) {
+    auto iter = closure.GetCoreByName().find(AtName);
+    if (iter == closure.GetCoreByName().end()) {
+      return std::nullopt;
+    }
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    auto var = Var::ToVar(*Sabot::State::TAny::TWrapper(iter->second.NewState(closure.GetArena().get(), state_alloc)));
+    auto *val = var.TryAs<Var::TInt>();
+    if (!val || val->GetVal() < 0) {
+      throw std::invalid_argument("the version to read at must be an int, not negative");
+    }
+    return static_cast<Indy::TSequenceNumber>(val->GetVal());
+  }
+
   /* The operation id a closure carries as its reserved argument, as text, or none. */
   std::optional<std::string> FindOpId(const TClosure &closure) {
     auto iter = closure.GetCoreByName().find(OpIdName);
@@ -603,10 +627,18 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     void *state_alloc_2 = reinterpret_cast<uint8_t *>(state_alloc_1) + Sabot::State::GetMaxStateSize();
     auto arena = closure.GetArena().get();
     for (const auto &[name, core]: closure.GetCoreByName()) {
-      if (name == OpIdName) {
+      if (IsReservedArg(name)) {
         continue;
       }
       prog_args.emplace(name, Indy::TKey(core, arena));
+    }
+    /* A read at a version (#745) reads the global POV as it was; it names no write. */
+    const auto at = FindAt(closure);
+    if (at && pov_id != GlobalPovId) {
+      throw std::invalid_argument("a read at a version is of the global POV only");
+    }
+    if (at && op) {
+      throw std::invalid_argument("a read at a version does not take an operation id");
     }
     // Open the pov and its repo and prepare the data and package contexts.
     auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
@@ -616,7 +648,7 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     }
     AddPov(pov);
     auto repo = pov->GetRepo(server);
-    Indy::TContext context(repo, &my_arena);
+    Indy::TContext context(repo, &my_arena, at);
     Rt::TOpt<Base::TUuid> user_id;
     if (UserId) {
       user_id = UserId->GetRaw();
@@ -637,6 +669,10 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     context.CheckArenaBudget();
     context.ClearReadBudget();
     effects = indy_context.MoveEffects();
+    if (at && !effects.empty()) {
+      /* A past state is read-only: its writes would land on now, against reads of then. */
+      throw TVersionReadOnly();
+    }
     if (!effects.empty()) {
       had_effects = true;
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
@@ -691,7 +727,7 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
       TMetaRecord::TEntry::TArgByName meta_args_by_name;
       auto closure_arena = closure.GetArena().get();
       for (const auto &[name, core]: closure.GetCoreByName()) {
-        if (name == OpIdName) {
+        if (IsReservedArg(name)) {
           continue;
         }
         auto arg = Var::ToVar(*Sabot::State::TAny::TWrapper(core.NewState(closure_arena, state_alloc_1)));
@@ -813,6 +849,11 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
   } catch (const TReadTooLarge &) {
     /* Likewise (#694). */
     throw;
+  } catch (const TVersionUnavailable &) {
+    /* Likewise (#745). */
+    throw;
+  } catch (const TVersionReadOnly &) {
+    throw;
   } catch (const exception &ex) {
     syslog(LOG_ERR, "Error in Session::Try : [%s]", ex.what());
     throw;
@@ -933,6 +974,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
       }
       Package::TArgMap prog_args;
       auto arena = closure.GetArena().get();
+      if (closure.GetCoreByName().contains(AtName)) {
+        throw std::invalid_argument(std::string(what) + " does not read at a version; use a single try");
+      }
       for (const auto &[name, core]: closure.GetCoreByName()) {
         if (name == OpIdName) {
           continue;

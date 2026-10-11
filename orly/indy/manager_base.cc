@@ -183,13 +183,15 @@ size_t TManager::TRepo::WriteFile(TMemoryLayer */*memory_layer*/,
 
 std::unique_ptr<Orly::Indy::TPresentWalker> TManager::TRepo::NewPresentWalkerFile(size_t /*gen_id*/,
                                                                                   const TIndexKey &/*from*/,
-                                                                                  const TIndexKey &/*to*/) const {
+                                                                                  const TIndexKey &/*to*/,
+                                                                                  std::optional<TSequenceNumber> /*at*/) const {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;
 }
 
 std::unique_ptr<Orly::Indy::TPresentWalker> TManager::TRepo::NewPresentWalkerFile(size_t /*gen_id*/,
-                                                                                  const TIndexKey &/*key*/) const {
+                                                                                  const TIndexKey &/*key*/,
+                                                                                  std::optional<TSequenceNumber> /*at*/) const {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;
 }

@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <optional>
 
 #include <base/class_traits.h>
 #include <orly/indy/disk/read_file.h>
@@ -147,10 +148,11 @@ namespace Orly {
 
           /* Look for this specific key. If it's free we'll return the range. This will never fall back to a binary search. If we don't have the prefix
              hash for your key, then there's no way we'll find it in a binary search. */
-          void Init(const TKey &from) {
+          void Init(const TKey &from, std::optional<TSequenceNumber> at = std::nullopt) {
             SearchKind = Match;
             ResetHistory();
             EndRank = NoRank;
+            At = at;
             if (IndexFile) {
               From = from;
               Cached = false;
@@ -170,10 +172,11 @@ namespace Orly {
              whose free members are its rightmost ones, in which case the range runs to the end of the pattern's matches (#735). In case
              where the start of the range exists as a key in this particular file, we'll be able to hash to it and iterate from there. If it does not
              exist, we'll find the first key larger than the given start key using a binary search and iterate from there. */
-          void Init(const TKey &from, const TKey &to) {
+          void Init(const TKey &from, const TKey &to, std::optional<TSequenceNumber> at = std::nullopt) {
             SearchKind = Range;
             ResetHistory();
             EndRank = NoRank;
+            At = at;
             /* Walkers are pooled (TLoaderObj), so clear what a previous walk left behind: when neither search below finds a
                start, the walk must come up empty rather than resume wherever the last one stopped (#735). */
             Valid = false;
@@ -410,6 +413,14 @@ namespace Orly {
               Cached = true;
               switch (Place(Item.Key)) {
                 case TPlace::In: {
+                  if (At && Item.SequenceNumber > *At) {
+                    /* Reading at a version (#745): the current entry is too new, so step back through the key's
+                       history to the newest entry at or below the version; a key with none is not there yet. */
+                    if (SeekHistoryAt(num_hist_keys, offset_of_hist_keys)) {
+                      return;
+                    }
+                    break;
+                  }
                   ArmHistory(num_hist_keys, offset_of_hist_keys);
                   return;
                 }
@@ -455,6 +466,64 @@ namespace Orly {
             }
           }
 
+          /* The sequence number of history entry `num` of this index (#745). */
+          TSequenceNumber GetHistorySeqAt(size_t num) const {
+            TSequenceNumber seq;
+            IndexStream.GoTo(IndexFile->GetByteOffsetOfHistoryIndex() + (num * TData::KeyHistorySize));
+            IndexStream.Read(&seq, sizeof(seq));
+            return seq;
+          }
+
+          /* Reading at a version (#745), and the key's current entry is newer than it: find the newest of the key's
+             `num_hist_keys` history entries (they run newest first) whose sequence number is at or below the version,
+             and make it the walk's item. A gallop from the newest finds a bracket in O(log d) probes, where d is how far
+             back the entry is, and a bisection inside the bracket finds the entry; recent versions, the common case, cost a
+             probe or two. A non-Assign entry arms the replay of the entries older than it, as a current one would. False
+             iff every entry of the key is newer than the version. */
+          bool SeekHistoryAt(size_t num_hist_keys, size_t offset_of_hist_keys) const {
+            assert(At);
+            const size_t base = offset_of_hist_keys / TData::KeyHistorySize;
+            const auto fits = [this, base](size_t idx) { return GetHistorySeqAt(base + idx) <= *At; };
+            /* Gallop: lo is the last probe known to be too new (or none), hi the first known to fit (or the end). */
+            size_t lo = 0UL, hi = num_hist_keys;
+            bool any_too_new = false;
+            for (size_t step = 1UL, idx = 0UL; idx < num_hist_keys; idx += step, step *= 2UL) {
+              if (fits(idx)) {
+                hi = idx;
+                break;
+              }
+              lo = idx;
+              any_too_new = true;
+            }
+            /* Bisect (lo, hi): every entry at or before lo is too new; hi fits or is the end. */
+            size_t first = any_too_new ? lo + 1UL : 0UL;
+            while (first < hi) {
+              const size_t mid = first + ((hi - first) / 2UL);
+              if (fits(mid)) {
+                hi = mid;
+              } else {
+                first = mid + 1UL;
+              }
+            }
+            if (hi == num_hist_keys) {
+              return false;
+            }
+            HistCursor = std::make_unique<typename TMyReadFile::TIndexFile::THistoryKeyCursor>(IndexFile, base + hi);
+            const auto &h = **HistCursor;
+            assert(h.SeqNum <= *At);
+            Item.SequenceNumber = h.SeqNum;
+            Item.Key = h.Key;
+            Item.Op = h.Value;
+            Item.Mutator = h.Mutator;
+            /* `h` is the cursor's own slot, so it names the next entry once the cursor moves: decide from the copy. */
+            ++(*HistCursor);
+            HistRemaining = (Item.Mutator != TMutator::Assign) ? num_hist_keys - hi - 1UL : 0UL;
+            if (!HistRemaining) {
+              HistCursor.reset();
+            }
+            return true;
+          }
+
           Base::TUuid IndexId;
 
           TMyReadFile *MyReadFile;
@@ -493,6 +562,10 @@ namespace Orly {
 
           /* The rank of the first key past the walk's range, once a count has needed it; NoRank until then (#749). */
           mutable size_t EndRank = NoRank;
+
+          /* When set, the walk reads the file as of this sequence number: each key yields its newest entry at or below
+             it, and keys with none are passed over (#745). */
+          std::optional<TSequenceNumber> At;
 
           TLoaderObj *LoaderObj;
 
@@ -582,20 +655,22 @@ namespace Orly {
                                 size_t gen_id,
                                 const Base::TUuid &index_id,
                                 const TKey &from,
-                                const TKey &to)
+                                const TKey &to,
+                                std::optional<TSequenceNumber> at = std::nullopt)
             : TPresentWalker(Match),
           File(TLocalWalkerCache::Cache->Get(engine, file_id, gen_id, index_id)) {
-          File->Init(from, to);
+          File->Init(from, to, at);
         }
 
         TPresentWalkFileWrapper(Util::TEngine *engine,
                                 const Base::TUuid &file_id,
                                 size_t gen_id,
                                 const Base::TUuid &index_id,
-                                const TKey &key)
+                                const TKey &key,
+                                std::optional<TSequenceNumber> at = std::nullopt)
             : TPresentWalker(Match),
           File(TLocalWalkerCache::Cache->Get(engine, file_id, gen_id, index_id)) {
-          File->Init(key);
+          File->Init(key, at);
         }
 
         virtual ~TPresentWalkFileWrapper() {

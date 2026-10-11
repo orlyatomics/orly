@@ -27,6 +27,7 @@
 #include <orly/indy/disk_layer.h>
 #include <orly/indy/util/min_heap.h>
 #include <orly/server/read_too_large.h>
+#include <orly/server/version_unavailable.h>
 
 #include <orly/rt/mutate.h>
 #include <orly/var/mutation.h>
@@ -39,9 +40,27 @@ using namespace Orly::Indy;
 
 auto KeyCursorCollector = Fiber::MakeFiberLocal<TContext::TKeyCursorCollector>();
 
-TContext::TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena)
-    : TContextBase(arena) {
+TContext::TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TCore::TExtensibleArena *arena,
+                   std::optional<TSequenceNumber> at)
+    : TContextBase(arena), At(at) {
   assert(KeyCursorCollector->KeyCursorCollection.IsEmpty());
+  if (At) {
+    /* A child repo's view stacks on its parents' views, each with its own window, so there is no one version to clamp
+       them to; only the root is read at a version for now (#745). */
+    if (private_repo->GetParentRepo()) {
+      throw invalid_argument("a read at a version is of the global POV only");
+    }
+    /* The view first: it pins the layers, and a merge raises the horizon before it publishes the layers that drop
+       history, so a view that holds them reads a horizon that covers them. */
+    auto view = std::make_unique<TRepo::TView>(private_repo.Get(), At);
+    const TSequenceNumber oldest = private_repo->GetHistoryHorizon();
+    const TSequenceNumber newest = view->GetNewest().value_or(0UL);
+    if (*At < oldest || *At > newest) {
+      throw Server::TVersionUnavailable(*At, oldest, newest);
+    }
+    RepoTree.emplace_back(private_repo, std::move(view));
+    return;
+  }
   Indy::L0::TManager::TPtr<L0::TManager::TRepo> cur_repo = private_repo;
   RepoTree.emplace_back(private_repo, std::make_unique<TRepo::TView>(private_repo));
   for (; cur_repo->GetParentRepo(); cur_repo = *cur_repo->GetParentRepo()) {
@@ -226,7 +245,8 @@ namespace {
 
 std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to) {
   CheckViewsHeld();
-  if (!RankCounts || !IsRankable(to ? to->GetKey() : from.GetKey())) {
+  /* Ranks count a file's current keys, which are not the keys as of a version (#745). */
+  if (At || !RankCounts || !IsRankable(to ? to->GetKey() : from.GetKey())) {
     return std::nullopt;
   }
   using TDataLayer = Indy::L0::TManager::TRepo::TDataLayer;

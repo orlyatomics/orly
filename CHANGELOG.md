@@ -6,6 +6,17 @@ Entries reference the originating pull request and the closed issue where applic
 
 ## [Unreleased]
 
+### Added
+
+- **Reads at a version** (stage 1 of [#745](https://github.com/orlyatomics/orly/issues/745)). `try` on
+  the global POV takes `<{.at: V}>` and runs the call against the state as of version V, the numbering
+  write receipts use; the reply carries `"version": V`. Disk files are read at the version by seeking
+  each key's history, so an old version costs a few probes per key, and current reads keep their
+  existing path. A version the server can't answer exactly is refused with
+  `"status": "version_unavailable"` and the readable range (`oldest`, `newest`); merges that fold or
+  prune history raise `oldest`. A call at a version that writes is refused with
+  `"status": "version_read_only"`. See docs/PROTOCOL.md, "Reads at a version".
+
 ### Fixed
 
 ## [v0.2.0] — 2026-10-06

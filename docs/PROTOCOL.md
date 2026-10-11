@@ -390,6 +390,32 @@ try {<pov-id>} mypkg bump <{.n: 1}> <{.op_id: "0194a2b4-7c00-7000-8000-000000000
   as well until it passes. See [durability.md](durability.md), "Retrying a write exactly once".
 - A read (a call that wrote nothing) with an id works but is not remembered: its retry runs again.
 
+### Reads at a version (#745)
+
+A read can run against the global POV as it was at an earlier version, in the numbering a write
+receipt's `version` uses:
+
+```
+try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
+```
+
+- `.at: V` (an int, not negative) runs the call against the global POV with every write after
+  version V left out: point reads, `keys` ranges and `+=` folds all see the state as of V. The
+  reply is the usual one plus `"version": V`. A call without `.at` is exactly what it was before,
+  and its reply has no `version`.
+- Only the global POV. `.at` on any other POV is refused as an exception.
+- Read only. A call read at a version that tries to write replies `"status": "version_read_only"`
+  and writes nothing.
+- `.at` does not combine with `.op_id`, `.receipt` or `.wait_durable_ms`, and the batch and mixed
+  forms refuse it; each is an exception.
+- A version the server can't answer exactly replies `"status": "version_unavailable"` with
+  `"requested"`, `"oldest"` and `"newest"`: the versions from `oldest` to `newest` are the ones it
+  can read now. A version past `newest` is not committed yet. A version below `oldest` is older
+  than the history the disk merges have kept: a merge that folds `+=` runs or prunes overwritten
+  values raises `oldest` to the newest version it merged. After a restart, or after a slave loads
+  a synced file, `oldest` starts at the newest version on disk.
+- Over the binary protocol the version rides as the closure argument `$at` (an int).
+
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
 version of the POV that this server knows to be in a data file on disk, in the numbering a
 receipt's `version` uses. A write whose receipt `version` is at most it survives a crash, so a

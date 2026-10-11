@@ -55,6 +55,11 @@ namespace Orly {
          (hashed), so there is no head-scan to avoid (#257). */
       std::unique_ptr<Indy::TPresentWalker> NewPresentWalker(const TIndexKey &key, bool exact_point = false) const override;
 
+      /* Walkers that read the file as of sequence number `at`: each key yields its newest entry at or below it (#745). */
+      std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerAt(const TIndexKey &from, const TIndexKey &to, TSequenceNumber at) const;
+
+      std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerAt(const TIndexKey &key, TSequenceNumber at) const;
+
       std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalker(TSequenceNumber from) const override;
 
       [[nodiscard]] TKind GetKind() const noexcept override;

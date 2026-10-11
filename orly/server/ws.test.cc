@@ -378,3 +378,40 @@ FIXTURE(DurableVersion) {
     EXPECT_EQ(replies[1]["result"]["durable_version"], Base::TJson(77));
   }
 }
+
+/* `.at` reads a `try` at a version (#745): the reply names the version it read at, a version the server can't answer
+   gets a typed refusal with the bounds it can, and `.at` refuses what a read at a version can't do. */
+FIXTURE(TryAt) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string call = "try {00000000-0000-0000-0000-000000000001} pkg/v1 f <{}>";
+  const string batch = "try {00000000-0000-0000-0000-000000000001} pkg/v1 f [<{}>, <{}>]";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      call + " <{.at: 42}>;",
+      call + ";",
+      call + " <{.at: 5000}>;",
+      call + " <{.at: -1}>;",
+      call + " <{.at: \"latest\"}>;",
+      call + " <{.at: 42, .receipt: true}>;",
+      call + " <{.at: 42, .op_id: \"read-1\"}>;",
+      call + " <{.at: 42, .wait_durable_ms: 100}>;",
+      batch + " <{.at: 42}>;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 10U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1]["result"], Base::TJson(98.6));
+    EXPECT_EQ(replies[1]["version"], Base::TJson(42));
+    EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[2].TryFind("version"), nullptr);
+    EXPECT_EQ(replies[3]["status"], Base::TJson("version_unavailable"));
+    EXPECT_EQ(replies[3]["requested"], Base::TJson(5000));
+    EXPECT_EQ(replies[3]["oldest"], Base::TJson(10));
+    EXPECT_EQ(replies[3]["newest"], Base::TJson(1000));
+    for (size_t i = 4; i < 10; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+      EXPECT_EQ(replies[i].TryFind("version"), nullptr);
+    }
+  }
+}
