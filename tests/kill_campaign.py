@@ -230,9 +230,10 @@ class Server:
                f'--update_entry_pool_size={self.args.update_pool_size * 2}']
         if getattr(self.args, 'mode', 'durable') == 'durable':
             cmd.append('--durable_acks=local')
-            if self.args.negative == 'nosync':
+            negative = getattr(self.args, 'negative', 'none')
+            if negative == 'nosync':
                 cmd.append('--wal_no_sync')
-            elif self.args.negative == 'early_ack':
+            elif negative == 'early_ack':
                 cmd.append('--wal_early_ack')
         self.log = open(self.logpath, 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
