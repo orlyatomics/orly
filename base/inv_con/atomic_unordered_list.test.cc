@@ -18,7 +18,12 @@
 
 #include <base/inv_con/atomic_unordered_list.h>
 
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <thread>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/test/kit.h>
@@ -142,5 +147,50 @@ FIXTURE(Tough) {
     t2.join();
     t3.join();
     t4.join();
+  }
+}
+
+/* Several threads each remove their own player and put it back at the end, so they keep
+   unlinking neighbours of each other.  Before #875 a thread whose try-lock failed
+   released and re-took its own lock at once, and could starve the neighbour that needed
+   it.  A starved thread never sees the stop flag, so if any thread hasn't finished 10
+   seconds after we set it, abort: the threads are spinning and would never join. */
+FIXTURE(AdjacentRemovalsMakeProgress) {
+  const size_t num_threads = 4;
+  TTeam team;
+  TPlayer anchor(&team, 0);
+  std::vector<TPlayer *> players;
+  for (size_t i = 0; i < num_threads; ++i) {
+    players.push_back(new TPlayer(&team, i + 1));
+  }
+  std::vector<size_t> cycles(num_threads, 0);
+  std::atomic<bool> stop(false);
+  std::atomic<size_t> finished(0);
+  std::vector<std::thread> threads;
+  for (size_t i = 0; i < num_threads; ++i) {
+    threads.emplace_back([&, i] {
+      while (!stop.load(std::memory_order_relaxed)) {
+        players[i]->Remove();
+        players[i]->Insert(&team);
+        ++cycles[i];
+      }
+      ++finished;
+    });
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+  stop = true;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (finished < num_threads) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      fprintf(stderr, "%zu of %zu threads still spinning 10s after stop\n", num_threads - finished, num_threads);
+      abort();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  for (auto &thread : threads) {
+    thread.join();
+  }
+  for (size_t i = 0; i < num_threads; ++i) {
+    EXPECT_GT(cycles[i], 0U);
   }
 }
