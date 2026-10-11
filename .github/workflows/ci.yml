@@ -676,6 +676,13 @@ jobs:
           grep '^DISK FULL FAIL' .ci-release/disk-full-control.log | head -3
           echo "control OK: the smoke fails without write admission"
 
+      # #857: Report write amplification and merge amplification on inserts and overwrites,
+      # check the overwrite write amplification limit, and verify 3-pass flatness.
+      - name: Write amplification and three-pass flatness check (#857)
+        if: matrix.group == 'disk'
+        run: bash clients/smoke/run-write-amp.sh
+
+
       # #761: WebSocket statements must not hold an I/O thread while they run. With one I/O
       # thread, 16 sessions running a compute-only read of ~10 ms ("spin") must get at least 1.5x
       # the reads/s of one session: this runner's 2 fast runners run two at once. Under a

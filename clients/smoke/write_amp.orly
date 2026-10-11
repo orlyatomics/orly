@@ -1,0 +1,8 @@
+package #1;
+/* Write amplification smoke (#857). */
+
+read_val = (*<['values', n]>::(int?)) where { n = given::(int); };
+write_val = ((true) effecting { new <['values', n]> <- x; }) where {
+  n = given::(int);
+  x = given::(int);
+};
