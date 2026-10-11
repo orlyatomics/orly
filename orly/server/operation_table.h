@@ -145,9 +145,19 @@ namespace Orly {
          would leave neither the snapshot nor replay to restore it (#861). */
       void BeginCommit(const Base::TUuid &pov_id, const Base::TUuid &op_id, uint64_t floor_lsn);
 
-      /* The lowest `floor_lsn` of a slot between BeginCommit() and Complete(); UINT64_MAX if none.
-         A checkpoint takes its head no higher than this. */
+      /* The lowest `floor_lsn` of a slot between BeginCommit() and Complete(), or of a hold
+         between HoldHead() and ReleaseHead(); UINT64_MAX if none. A checkpoint takes its head no
+         higher than this. */
       uint64_t HeadFloor() const;
+
+      /* A floor with no slot behind it, for a slave applying a replicated write: its record is
+         appended before Restore() can make a slot, and the checkpoint between the two would leave
+         the entry in neither snapshot nor replay (#866). Pass what BeginCommit() would; returns the
+         token ReleaseHead() takes. Every hold must be released, or the head stops moving. */
+      uint64_t HoldHead(uint64_t floor_lsn);
+
+      /* Drop a hold HoldHead() returned. */
+      void ReleaseHead(uint64_t token) noexcept;
 
       /* The request ended without committing a write. The id can be tried again. */
       void Release(const Base::TUuid &pov_id, const Base::TUuid &op_id) noexcept;
@@ -210,6 +220,9 @@ namespace Orly {
 
       /* See RefuseUnknownBefore. */
       uint64_t UnknownBeforeMs = 0;
+
+      /* See HoldHead. */
+      std::multiset<uint64_t> HeldFloors;
 
       /* The completed entries, oldest first: (time in the id, POV id, operation id). */
       std::set<std::tuple<uint64_t, Base::TUuid, Base::TUuid>> Done;

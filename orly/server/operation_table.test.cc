@@ -278,6 +278,44 @@ FIXTURE(CheckpointBetweenCommitAndComplete) {
   EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
 }
 
+/* #866: a slave appends a replicated record before Restore() makes its slot, so there is no slot
+   for BeginCommit() to mark. HoldHead() floors the head across that window instead. */
+FIXTURE(CheckpointBetweenReplicatedAppendAndRestore) {
+  Now = 10'000'000UL;
+  TOperationTable table(MakeConfig());
+  auto op = MakeId(Now - 1000UL);
+  const uint64_t record_lsn = 20UL;
+  const uint64_t pin_head = record_lsn + 1UL;
+  auto token = table.HoldHead(record_lsn);
+  /* The record is appended, Restore() hasn't run, and the checkpoint lands. */
+  const uint64_t head = std::min(pin_head, table.HeadFloor());
+  EXPECT_EQ(head, record_lsn);
+  auto payload = table.Snapshot(head);
+  table.Restore(Pov, op, MakeOutcome(9, record_lsn, true, 31));
+  table.ReleaseHead(token);
+  EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
+  /* Crash, then recover: the record is at the head, so replay restores the entry. */
+  TOperationTable recovered(MakeConfig());
+  recovered.Load(payload);
+  if (record_lsn >= head) {
+    recovered.Restore(Pov, op, MakeOutcome(9, record_lsn, true, 31));
+  }
+  auto hit = recovered.Reserve(Pov, op, 31);
+  EXPECT_FALSE(hit.IsNew);
+  EXPECT_EQ(hit.Outcome.SequenceNumber, 9UL);
+  /* Holds stack: equal floors each need a release, and the lowest wins. */
+  auto a = table.HoldHead(40);
+  auto b = table.HoldHead(40);
+  auto c = table.HoldHead(35);
+  EXPECT_EQ(table.HeadFloor(), 35UL);
+  table.ReleaseHead(c);
+  EXPECT_EQ(table.HeadFloor(), 40UL);
+  table.ReleaseHead(a);
+  EXPECT_EQ(table.HeadFloor(), 40UL);
+  table.ReleaseHead(b);
+  EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
+}
+
 /* A snapshot too big for its budget drops the oldest entries and refuses their ids after the
    load, as if retention had dropped them. */
 FIXTURE(SnapshotTrim) {

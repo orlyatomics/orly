@@ -186,7 +186,7 @@ void TOperationTable::BeginCommit(const TUuid &pov_id, const TUuid &op_id, uint6
 
 uint64_t TOperationTable::HeadFloor() const {
   lock_guard<mutex> lock(Mutex);
-  uint64_t floor = UINT64_MAX;
+  uint64_t floor = HeldFloors.empty() ? UINT64_MAX : *HeldFloors.begin();
   for (const auto &pov: TableByPov) {
     for (const auto &slot: pov.second.SlotByOp) {
       if (!slot.second.IsDone && slot.second.FloorLsn) {
@@ -195,6 +195,19 @@ uint64_t TOperationTable::HeadFloor() const {
     }
   }
   return floor;
+}
+
+uint64_t TOperationTable::HoldHead(uint64_t floor_lsn) {
+  lock_guard<mutex> lock(Mutex);
+  return *HeldFloors.insert(max<uint64_t>(floor_lsn, 1));
+}
+
+void TOperationTable::ReleaseHead(uint64_t token) noexcept {
+  lock_guard<mutex> lock(Mutex);
+  auto iter = HeldFloors.find(token);
+  if (iter != HeldFloors.end()) {
+    HeldFloors.erase(iter);
+  }
 }
 
 void TOperationTable::Release(const TUuid &pov_id, const TUuid &op_id) noexcept {
@@ -229,7 +242,8 @@ void TOperationTable::RefuseUnknownBefore(uint64_t ms) {
    behind its head, the slot not done and not in this snapshot, and no replay to restore it.
    BeginCommit()/HeadFloor() close it: the checkpointer takes its head no higher than HeadFloor()
    (TWalRetention::SetHeadFloor, wired in TServer), so such a record is at or past the head,
-   replayed, and RestoreOperation puts the slot back. */
+   replayed, and RestoreOperation puts the slot back. A slave has the same window with no slot to
+   mark, from the replicated record's append to RestoreOperation; HoldHead() covers it (#866). */
 string TOperationTable::Snapshot(uint64_t head_lsn, size_t budget) {
   struct TItem {
     uint64_t Ts;

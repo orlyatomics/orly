@@ -528,14 +528,28 @@ namespace Orly {
       using TPushCallback = std::function<void (const Base::TUuid &repo_id, TSequenceNumber seq_num,
                                                 const Atom::TCore &meta_core, Atom::TCore::TArena *arena,
                                                 uint64_t lsn)>;
+      /* Keeps a checkpoint's head from passing a transaction's record between its append and the
+         'on_push' calls that act on it (#866). 'Hold' runs before the transaction appends and
+         returns a token; 'Release' gets it back once 'on_push' has run, or the apply has thrown. */
+      struct THeadHold {
+        std::function<uint64_t ()> Hold;
+        std::function<void (uint64_t token)> Release;
+      };
+
       size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena,
-                                         const TPushCallback &on_push = TPushCallback());
+                                         const TPushCallback &on_push = TPushCallback(),
+                                         const THeadHold *head_hold = nullptr);
 
       /* The 'on_push' a slave passes when it applies what the master sends, so a slave keeps the
          same exactly-once entries as its master and has them when it is promoted (#862). Set it
          before the replication loops start. */
       void SetReplicatedPushCallback(TPushCallback cb) {
         ReplicatedPushCb = std::move(cb);
+      }
+
+      /* The head hold a slave passes with ReplicatedPushCb. Set it with the callback. */
+      void SetReplicatedHeadHold(THeadHold hold) {
+        ReplicatedHeadHold = std::move(hold);
       }
 
       /* WAL recovery (#755).  The WAL keeps a restored pov's updates only from the oldest one not
@@ -612,6 +626,9 @@ namespace Orly {
 
       /* See SetReplicatedPushCallback. */
       TPushCallback ReplicatedPushCb;
+
+      /* See SetReplicatedHeadHold. */
+      THeadHold ReplicatedHeadHold;
 
       Base::TFd ReplicationQueueEpollFd;
       std::mutex ReplicationQueueEpollLock;
