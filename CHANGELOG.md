@@ -17,6 +17,19 @@ Entries reference the originating pull request and the closed issue where applic
   prune history raise `oldest`. A call at a version that writes is refused with
   `"status": "version_read_only"`. See docs/PROTOCOL.md, "Reads at a version".
 
+### Changed
+
+- **The post-merge fold streams** (stage 0 of [#745](https://github.com/orlyatomics/orly/issues/745),
+  design §9.6). The fold that collapses `+=` runs after a disk merge used to read the whole merged
+  file into a memory layer of updates, taking an update and an entry per key from the update pools,
+  so a big enough file could never fold (#627) and a fold had to claim its pool space up front
+  (#858). It now walks the merged file key by key, holding one key's versions at a time, and writes
+  its output straight to a data file. It takes nothing from the update pools; the claim is gone,
+  and a merge keeps its output unfolded only if the heap can't hold the folded entries. The output
+  is unchanged: a new differential test in `orly/indy/disk/fold_data_file.test.cc` folds randomized
+  files (several indexes, Assigns, tombstones, `+=` and `*=` chains) with the old implementation and
+  the new one and compares every entry, the key count, the sequence range and the file length.
+
 ### Fixed
 
 ## [v0.2.0] — 2026-10-06

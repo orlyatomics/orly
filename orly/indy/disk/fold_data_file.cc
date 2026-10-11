@@ -7,12 +7,11 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
-#include <unordered_map>
+#include <functional>
 #include <utility>
 #include <vector>
 
-#include <orly/indy/memory_layer.h>
-#include <orly/indy/update.h>
+#include <orly/indy/disk/in_file.h>
 #include <orly/rt/mutate.h>
 #include <orly/sabot/to_native.h>
 #include <orly/var/mutation.h>
@@ -156,8 +155,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                              size_t source_gen_id,
                              size_t dest_gen_id,
                              DiskPriority priority,
-                             size_t temp_file_consol_thresh,
-                             Indy::TUpdate::TCopyClaim *claim)
+                             size_t temp_file_consol_thresh)
     : NumKeys(0UL),
       LowestSeq(0UL),
       HighestSeq(0UL) {
@@ -165,93 +163,71 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
   // 1. Open the source file.
   TFoldReader reader(engine, file_uuid, source_gen_id, priority);
 
-  // 2. Enumerate indices in the source.
+  /* 2. Enumerate indices in the source, in the order a memory layer keeps them (by index id), which
+        is the order TDataFile expects its entries in. */
   std::vector<TUuid> index_ids;
   reader.ForEachIndex([&](const TUuid &index_id, size_t /*offset*/) {
     index_ids.push_back(index_id);
   });
+  std::sort(index_ids.begin(), index_ids.end());
 
-  // 3. Output memory layer + arena. We accumulate surviving entries
-  //    here, then hand it to TDataFile to serialise.
-  TMemoryLayer out_layer(nullptr);
+  /* 3. The surviving entries, one per key, and the arena holding their keys, values and update
+        ids. #745 §9.6: the fold used to build a TUpdate and a TEntry per key, from the update pools,
+        and insert them into a memory layer for TDataFile to write. A big enough file could never
+        fold (#627), and a fold that could claimed pool space a POV might need (#858). Now it walks
+        the source key by key, holding only one key's versions at a time, and hands TDataFile its
+        output directly; nothing comes from the update pools. */
   TSuprena out_arena;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  std::vector<TDataFile::TEntryView> out_entries;
+  /* The empty metadata every folded entry carries. */
+  const TCore empty_metadata = Indy::TKey(&out_arena).GetCore();
 
-  /* The surviving entries, one update each, in the order the passes below
-     produce them. They go into out_layer only at the end, sorted by sequence
-     number: the layer's update list is ordered by sequence number and a
-     memory layer insert is cheapest in order (#754). A stable sort keeps
-     equal sequence numbers in production order, which is the order the
-     layer used to end up with. */
-  std::vector<std::unique_ptr<TUpdate>> out_updates;
-
-  // 4. Per-index pass: read all entries, group by key, fold each
-  //    group, emit surviving entries.
+  // 4. Per index: fold each key's current entry and history, in key order.
   for (const TUuid &index_id : index_ids) {
     TFoldReader::TIndexFile idx_file(&reader, index_id, priority);
     TFoldReader::TIndexFile::TArena idx_arena(
         &idx_file, engine->GetCache<TFoldReader::PhysicalCachePageSize>(), priority);
-
-    struct TKeyGroup {
-      Indy::TKey Key;            // copied into out_arena
-      std::vector<TFoldEntry> Entries;
-    };
-    std::vector<TKeyGroup> groups;
-    /* Each group's index in 'groups', by its key. Looking a key up by scanning 'groups' made a
-       fold O(entries x keys): a file of a few tens of thousands of keys took minutes of CPU, and a
-       graceful stop waits for the merge in flight (#744). TKey hashes by value, and == agrees with
-       it, so a key in the index file's arena finds its group's copy in out_arena. */
-    std::unordered_map<Indy::TKey, size_t> group_by_key;
-
-    auto find_or_create = [&](const TCore &key_core, TCore::TArena *key_arena) -> TKeyGroup & {
-      Indy::TKey probe(key_core, key_arena);
-      const auto iter = group_by_key.find(probe);
-      if (iter != group_by_key.end()) {
-        return groups[iter->second];
-      }
-      groups.emplace_back();
-      auto &g = groups.back();
-      g.Key = Indy::TKey(&out_arena, state_alloc, probe);
-      group_by_key.emplace(g.Key, groups.size() - 1);
-      return g;
-    };
-
-    // 4a. Walk current keys.
+    const size_t index_begin = out_entries.size();
+    std::vector<TFoldEntry> entries;
     for (TFoldReader::TIndexFile::TKeyCursor csr(&idx_file); csr; ++csr) {
       const TFoldReader::TIndexFile::TKeyItem &item = *csr;
-      TKeyGroup &g = find_or_create(item.Key, &idx_arena);
-      TFoldEntry e;
-      e.SeqNum = item.SeqNum;
-      e.Mutator = item.Mutator;
-      e.IsTombstone = item.Value.IsTombstone();
-      if (!e.IsTombstone) {
-        e.Op = OpToVar(item.Value, reader.Arena.get());
+      entries.clear();
+      /* the current entry */ {
+        TFoldEntry e;
+        e.SeqNum = item.SeqNum;
+        e.Mutator = item.Mutator;
+        e.IsTombstone = item.Value.IsTombstone();
+        if (!e.IsTombstone) {
+          e.Op = OpToVar(item.Value, reader.Arena.get());
+        }
+        entries.push_back(std::move(e));
       }
-      g.Entries.push_back(std::move(e));
-    }
-
-    // 4b. Walk history keys.
-    for (TFoldReader::TIndexFile::THistoryKeyCursor csr(&idx_file); csr; ++csr) {
-      const TFoldReader::TIndexFile::THistoryKeyItem &item = *csr;
-      TKeyGroup &g = find_or_create(item.Key, &idx_arena);
-      TFoldEntry e;
-      e.SeqNum = item.SeqNum;
-      e.Mutator = item.Mutator;
-      e.IsTombstone = item.Value.IsTombstone();
-      if (!e.IsTombstone) {
-        e.Op = OpToVar(item.Value, reader.Arena.get());
+      /* and its history: TDataFile writes a key's history as one run */
+      if (item.NumHistKeys > 0UL) {
+        TFoldReader::TIndexFile::THistoryKeyCursor hist_csr(&idx_file, item.OffsetOfHistKeys / TData::KeyHistorySize);
+        for (size_t i = 0UL; i < item.NumHistKeys && hist_csr; ++i, ++hist_csr) {
+          const TFoldReader::TIndexFile::THistoryKeyItem &hist_item = *hist_csr;
+          TFoldEntry e;
+          e.SeqNum = hist_item.SeqNum;
+          e.Mutator = hist_item.Mutator;
+          e.IsTombstone = hist_item.Value.IsTombstone();
+          if (!e.IsTombstone) {
+            e.Op = OpToVar(hist_item.Value, reader.Arena.get());
+          }
+          entries.push_back(std::move(e));
+        }
       }
-      g.Entries.push_back(std::move(e));
-    }
-
-    // 4c. Per-group: sort SeqNum desc, fold, emit.
-    for (auto &g : groups) {
-      std::sort(g.Entries.begin(), g.Entries.end(),
-                [](const TFoldEntry &a, const TFoldEntry &b) {
-                  return a.SeqNum > b.SeqNum;
-                });
-      auto out_entries = FoldOneKey(g.Entries);
-      for (const TFoldEntry &e : out_entries) {
+      std::stable_sort(entries.begin(), entries.end(),
+                       [](const TFoldEntry &a, const TFoldEntry &b) {
+                         return a.SeqNum > b.SeqNum;
+                       });
+      const auto folded = FoldOneKey(entries);
+      if (folded.empty()) {
+        continue;
+      }
+      const Indy::TKey key(&out_arena, state_alloc, Indy::TKey(item.Key, &idx_arena));
+      for (const TFoldEntry &e : folded) {
         Indy::TKey op_key;
         if (e.IsTombstone) {
           op_key = Indy::TKey(Native::TTombstone::Tombstone, &out_arena, state_alloc);
@@ -260,51 +236,24 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
               &out_arena,
               Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, e.Op)).get());
         }
-        const TIndexKey index_key(index_id, g.Key);
-        /* Build the entry under its OWN mutator. NewUpdate(op_by_key, ...)
-           tags every entry Assign, which is wrong for a folded run that
-           stays commutative (FoldOneKey returns out.Mutator == the source
-           commutative mutator when the run never bottomed out at an Assign
-           base or tombstone). Emitting such a run as Assign would make it
-           cap the read-path fold (latest-assign-wins), shadowing the same
-           key's partials in the other LSM files -- a hot key written N
-           times across many files would read back as just one folded
-           group. So Assign entries go through the TOpByKey ctor (existing
-           semantics) and non-Assign entries go through AddEntry post-
-           construction, mirroring TRepo::GetLowestUpdate. */
-        TUpdate::TOpByKey op_by_key;
-        if (e.Mutator == TMutator::Assign) {
-          op_by_key.insert(std::make_pair(index_key, op_key));
-        }
-        auto update = TUpdate::NewUpdate(
-            op_by_key,
-            Indy::TKey(&out_arena),
-            Indy::TKey(TUuid(TUuid::Twister), &out_arena, state_alloc));
-        if (e.Mutator != TMutator::Assign) {
-          update->AddEntry(index_key, op_key, e.Mutator);
-        }
-        update->SetSequenceNumber(e.SeqNum);
-        out_updates.emplace_back(TUpdate::CopyUpdate(update.get(), state_alloc));
-        /* The copy is in use now, so it no longer needs its share of the claim. */
-        if (claim) {
-          claim->ReleaseSome(1UL, 1UL);
-        }
-
+        /* Each entry keeps its own mutator: a folded run that stays commutative (#227) must not
+           turn into an Assign that shadows the key's partials in other files. */
+        const Indy::TKey id(TUuid(TUuid::Twister), &out_arena, state_alloc);
+        out_entries.push_back(TDataFile::TEntryView{index_id, key, op_key.GetCore(), empty_metadata, id.GetCore(),
+                                                    &out_arena, e.SeqNum, e.Mutator});
         ++NumKeys;
       }
     }
+    /* The source is in key order already; sort anyway (newest first within a key), so the output
+       is in a memory layer's order whatever the source's. */
+    std::stable_sort(out_entries.begin() + index_begin, out_entries.end(),
+                     [](const TDataFile::TEntryView &a, const TDataFile::TEntryView &b) {
+                       const auto comp = a.Key.Compare(b.Key);
+                       return Atom::IsLt(comp) || (Atom::IsEq(comp) && a.SequenceNumber > b.SequenceNumber);
+                     });
   }
 
-  std::stable_sort(out_updates.begin(), out_updates.end(),
-                   [](const std::unique_ptr<TUpdate> &a, const std::unique_ptr<TUpdate> &b) {
-                     return a->GetSequenceNumber() < b->GetSequenceNumber();
-                   });
-  for (auto &update : out_updates) {
-    out_layer.Insert(update.release());
-  }
-  out_updates.clear();
-
-  // 5. Serialise the folded memory layer at dest_gen_id. Record the
+  // 5. Serialise the folded entries at dest_gen_id. Record the
   //    source's whole sequence range, not just that of the entries the fold
   //    kept: the output replaces the merge's inputs, and a reload drops a
   //    file only when its range lies inside another's. With the narrower
@@ -322,7 +271,12 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
       }
     }
   }
-  TDataFile data_file(engine, storage_speed, &out_layer, file_uuid,
+  const TDataFile::TEntrySource source = [&out_entries](const std::function<void (const TDataFile::TEntryView &)> &cb) {
+    for (const auto &entry : out_entries) {
+      cb(entry);
+    }
+  };
+  TDataFile data_file(engine, storage_speed, source, file_uuid,
                       dest_gen_id, temp_file_consol_thresh, 0U, priority, source_range);
   LowestSeq = data_file.GetLowestSequence();
   HighestSeq = data_file.GetHighestSequence();

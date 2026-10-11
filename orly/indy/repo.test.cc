@@ -1286,7 +1286,8 @@ class TDiskMergePoolFixture {
 
 };  // TDiskMergePoolFixture
 
-/* The fold step builds a memory layer of updates from the Update pool. */
+/* The fold step used to build a memory layer of updates from the Update pool. Since #745 §9.6 it
+   streams the merged file and takes nothing from the pool, so a full pool no longer stops it. */
 FIXTURE(DiskMergeWithUpdatePoolFull) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRunnerFileCaches file_caches;
@@ -1300,7 +1301,6 @@ FIXTURE(DiskMergeWithUpdatePoolFull) {
         fixture.Root.MergeDisk(4UL);
       }
       EXPECT_TRUE(fixture.ReadsCorrectly());
-      /* A fold is an optimisation: with no room for it, the merge keeps its unfolded output. */
       EXPECT_EQ(fixture.CountLayers(), 1UL);
       /* and a later merge, with room, folds as usual */
       fixture.AddFile();
@@ -1314,10 +1314,10 @@ FIXTURE(DiskMergeWithUpdatePoolFull) {
   });
 }
 
-/* #858: the fold claims its blocks before it allocates any. A fold too big for the room left
-   used to take every free block before it failed, and whatever else wanted one meanwhile (a new
-   POV's System repo write, after a restart) got a bare bad_alloc. Here the pool has room for a
-   few updates but not for the fold's twelve: the fold must not start, so nothing misses. */
+/* #858: a fold too big for the room left in the Update pool used to take every free block before
+   it failed, and whatever else wanted one meanwhile (a new POV's System repo write, after a
+   restart) got a bare bad_alloc. The fold then claimed its blocks up front; since #745 §9.6 it
+   takes none at all. Here the pool has room for a few updates: the merge must not miss on it. */
 FIXTURE(DiskMergeFoldClaimsBeforeAllocating) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRunnerFileCaches file_caches;

@@ -250,7 +250,7 @@ class TIndexFile
 
   void PrepKeyRange(TDataFile::TUpdateCollector *update_collector, TDataFile::TBlockVec *block_vec);
 
-  void PushKey(TUpdate::TEntry *entry);
+  void PushKey(const TDataFile::TEntryView &entry);
   std::optional<Indy::TKey> PrevKeyWritten;
   /* Mutator of the previous current-key entry. Set when PrevKeyWritten is
      set; emitted as the trailing portion of the on-disk TKeyItem when the
@@ -265,7 +265,7 @@ class TIndexFile
   Atom::TCore::TArena *CurArena;
   size_t NumHistoryElem;
   size_t ByteOffsetOfHistory;
-  std::vector<TUpdate::TEntry *> HistKeys;
+  std::vector<TDataFile::TEntryView> HistKeys;
   std::vector<std::unique_ptr<THashCollector>> HashCollectorVec;
   std::unordered_map<uint64_t, TKey> SeenPrefix;
 
@@ -480,9 +480,9 @@ void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec) {
                               NumArenaBytes);
 }
 
-void TIndexFile::PushKey(TUpdate::TEntry *entry) {
+void TIndexFile::PushKey(const TDataFile::TEntryView &entry) {
   assert(UpdateCollector);
-  const TKey &key = entry->GetKey();
+  const TKey &key = entry.Key;
   #ifndef NDEBUG
   void *lhs_type_alloc = alloca(Sabot::Type::GetMaxTypeSize() * 2);
   void *rhs_type_alloc = reinterpret_cast<uint8_t *>(lhs_type_alloc) + Sabot::Type::GetMaxTypeSize();
@@ -514,10 +514,10 @@ void TIndexFile::PushKey(TUpdate::TEntry *entry) {
       ByteOffsetOfHistory += NumHistoryElem * TDataFile::KeyHistorySize;
       NumHistoryElem = 0UL;
     }
-    const TSequenceNumber seq_num = entry->GetSequenceNumber();
-    const TCore &val = entry->GetOp();
+    const TSequenceNumber seq_num = entry.SequenceNumber;
+    const TCore &val = entry.Op;
     PrevKeyWritten = key;
-    PrevKeyMutator = entry->GetMutator();
+    PrevKeyMutator = entry.Mutator;
     CurKeyOffset = stream.GetOffset();
     stream << seq_num;
     TCore key_core = key.GetCore();
@@ -568,16 +568,16 @@ void TIndexFile::PushKey(TUpdate::TEntry *entry) {
 
     } while (prefix_core.TryTruncateTuple());
     UpdateCollector->Emplace(seq_num,
-                             RemapMainCore(entry->GetMetadata(), &entry->GetSuprena()),
-                             RemapMainCore(entry->GetId(), &entry->GetSuprena()),
+                             RemapMainCore(entry.Metadata, entry.Suprena),
+                             RemapMainCore(entry.Id, entry.Suprena),
                              CurKeyOffset, true, IndexId);
 
   } else {  // History Key
     ++NumHistKeys;
     HistKeys.push_back(entry);
-    UpdateCollector->Emplace(entry->GetSequenceNumber(),
-                             RemapMainCore(entry->GetMetadata(), &entry->GetSuprena()),
-                             RemapMainCore(entry->GetId(), &entry->GetSuprena()),
+    UpdateCollector->Emplace(entry.SequenceNumber,
+                             RemapMainCore(entry.Metadata, entry.Suprena),
+                             RemapMainCore(entry.Id, entry.Suprena),
                              ByteOffsetOfHistory + NumHistoryElem * TDataFile::KeyHistorySize, false, IndexId);
     ++NumHistoryElem;
   }
@@ -594,10 +594,10 @@ void TIndexFile::FlushHistory() {
   }
   ByteOffsetOfHistory = stream.GetOffset();
   const uint32_t mutator_padding = 0;
-  for (const TUpdate::TEntry *entry : HistKeys) {
-    const TSequenceNumber seq_num = entry->GetSequenceNumber();
-    const TKey &key = entry->GetKey();
-    const TCore &val = entry->GetOp();
+  for (const TDataFile::TEntryView &entry : HistKeys) {
+    const TSequenceNumber seq_num = entry.SequenceNumber;
+    const TKey &key = entry.Key;
+    const TCore &val = entry.Op;
     stream << seq_num;
     TCore key_core = key.GetCore();
     TCore val_core = val;
@@ -607,7 +607,7 @@ void TIndexFile::FlushHistory() {
     stream.Write(&key_core, sizeof(key_core));
     stream.Write(&val_core, sizeof(val_core));
     /* Trailing TMutator (+ padding) per THistoryKeyItem in read_file.h. */
-    TMutator mutator = entry->GetMutator();
+    TMutator mutator = entry.Mutator;
     stream.Write(&mutator, sizeof(TMutator));
     stream.Write(&mutator_padding, sizeof(mutator_padding));
   }
@@ -788,6 +788,26 @@ void TIndexFile::FlushHashes() {
 
 TDataFile::TDataFile(Util::TEngine *engine,
                      Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
+                     const TEntrySource &source,
+                     const Base::TUuid &file_uid,
+                     size_t gen_id,
+                     size_t temp_file_consol_thresh,
+                     TSequenceNumber /*release_up_to*/,
+                     DiskPriority priority,
+                     const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range)
+    : Engine(engine),
+      StorageSpeed(storage_speed),
+      Priority(priority),
+      NumUpdates(0UL),
+      MainArenaByteOffset(0UL),
+      NumKeys(0UL),
+      TempFileConsolThresh(temp_file_consol_thresh),
+      UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true) {
+  Build(source, nullptr, file_uid, gen_id, cover_range);
+}
+
+TDataFile::TDataFile(Util::TEngine *engine,
+                     Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                      TMemoryLayer *memory_layer,
                      const Base::TUuid &file_uid,
                      size_t gen_id,
@@ -803,6 +823,20 @@ TDataFile::TDataFile(Util::TEngine *engine,
       NumKeys(0UL),
       TempFileConsolThresh(temp_file_consol_thresh),
       UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true) {
+  const TEntrySource source = [memory_layer](const std::function<void (const TEntryView &)> &cb) {
+    for (TMemoryLayer::TEntryCollection::TCursor csr(memory_layer->GetEntryCollection()); csr; ++csr) {
+      cb(TEntryView{csr->GetIndexKey().GetIndexId(), csr->GetKey(), csr->GetOp(), csr->GetMetadata(), csr->GetId(),
+                    &csr->GetSuprena(), csr->GetSequenceNumber(), csr->GetMutator()});
+    }
+  };
+  Build(source, memory_layer, file_uid, gen_id, cover_range);
+}
+
+void TDataFile::Build(const TEntrySource &source,
+                      TMemoryLayer *memory_layer,
+                      const Base::TUuid &file_uid,
+                      size_t gen_id,
+                      const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range) {
   /* Once InsertFile has been issued the file map may own our blocks, so an unwind past that
      point must not free them. */
   bool file_inserted = false;
@@ -816,15 +850,16 @@ TDataFile::TDataFile(Util::TEngine *engine,
        fully-populated UpdateCollector -- see the comment there. */
     /* generate the arena index for each key index */ {
       std::optional<Base::TUuid> prev_index_id;
-      TUpdate::TEntry *prev_entry = nullptr;
+      std::optional<TKey> prev_key;
       std::unique_ptr<TIndexFile::TOrderedNoteIndex> ordered_note_index;
       size_t cur_index_bytes = 0UL;
       size_t max_key_count = 0UL;
-      for (TMemoryLayer::TEntryCollection::TCursor csr(memory_layer->GetEntryCollection()); csr; ++csr) {
-        const Base::TUuid &cur_idx_id = csr->GetIndexKey().GetIndexId();
+      source([&](const TEntryView &entry) {
+        const TEntryView *csr = &entry;
+        const Base::TUuid &cur_idx_id = csr->IndexId;
         if (!prev_index_id || cur_idx_id != *prev_index_id) {
           if (prev_index_id) {
-            assert(prev_entry);
+            assert(prev_key);
             auto ret = index_map.emplace(*prev_index_id,
                                          std::make_unique<TIndexFile>(*prev_index_id,
                                                                       gen_id,
@@ -836,7 +871,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
                                                                       WrittenBlockSet,
                                                                       #endif
                                                                       TempFileConsolThresh,
-                                                                      prev_entry->GetKey()));
+                                                                      *prev_key));
             TIndexFile &index_file = *ret.first->second;
             std::swap(index_file.ArenaNoteIndex, ordered_note_index);
             index_file.MaxArenaBytes = cur_index_bytes;
@@ -848,18 +883,18 @@ TDataFile::TDataFile(Util::TEngine *engine,
           ordered_note_index = std::make_unique<TIndexFile::TOrderedNoteIndex>(
               HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
                                                                               }
-        TSuprena &cur_arena = csr->GetSuprena();
+        TSuprena &cur_arena = *csr->Suprena;
         /* push the key's arena */ {
-          const TCore &key_core = csr->GetKey().GetCore();
+          const TCore &key_core = csr->Key.GetCore();
           const TCore::TOffset *offset = key_core.TryGetOffset();
           if (offset) {
             TIndexFile::EmplaceOrderedNotes(*ordered_note_index, &cur_arena, cur_index_bytes, *offset);
           }
         }
         /* push the main arena : value, meta, id */ {
-          const TCore &val_core = csr->GetOp();
-          const TCore &meta_core = csr->GetMetadata();
-          const TCore &id_core = csr->GetId();
+          const TCore &val_core = csr->Op;
+          const TCore &meta_core = csr->Metadata;
+          const TCore &id_core = csr->Id;
           const TCore::TOffset *offset = val_core.TryGetOffset();
           if (offset) {
             TIndexFile::EmplaceOrderedNotes(*main_arena_note_index, &cur_arena, main_arena_max_bytes, *offset);
@@ -874,10 +909,10 @@ TDataFile::TDataFile(Util::TEngine *engine,
           }
         }
         ++max_key_count;
-        prev_entry = &*csr;
-      }
+        prev_key = csr->Key;
+      });
       if (prev_index_id) {
-        assert(prev_entry);
+        assert(prev_key);
         auto ret = index_map.emplace(*prev_index_id,
                                      std::make_unique<TIndexFile>(*prev_index_id,
                                                                   gen_id,
@@ -889,7 +924,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
                                                                   WrittenBlockSet,
                                                                       #endif
                                                                   TempFileConsolThresh,
-                                                                  prev_entry->GetKey()));
+                                                                  *prev_key));
                                                                               TIndexFile &index_file =
                                                                                   *ret.first->second;
         std::swap(index_file.ArenaNoteIndex, ordered_note_index);
@@ -924,8 +959,9 @@ TDataFile::TDataFile(Util::TEngine *engine,
     /* write the in-order key indexes */ {
       std::optional<Base::TUuid> prev_index_id;
       TIndexFile *cur_index_file = nullptr;
-      for (TMemoryLayer::TEntryCollection::TCursor csr(memory_layer->GetEntryCollection()); csr; ++csr) {
-        const Base::TUuid &cur_idx_id = csr->GetIndexKey().GetIndexId();
+      source([&](const TEntryView &entry) {
+        const TEntryView *csr = &entry;
+        const Base::TUuid &cur_idx_id = csr->IndexId;
         if (!prev_index_id || cur_idx_id != *prev_index_id) {
 
           /* if we just finished the last key for an index, flush the history... */
@@ -950,9 +986,9 @@ TDataFile::TDataFile(Util::TEngine *engine,
           cur_index_file->PrepKeyRange(&UpdateCollector, &BlockVec);
           prev_index_id = cur_idx_id;
         }
-        cur_index_file->CurArena = &csr->GetSuprena();
-        cur_index_file->PushKey(&*csr);
-      }
+        cur_index_file->CurArena = csr->Suprena;
+        cur_index_file->PushKey(*csr);
+      });
       assert(cur_index_file);
       /* flush the last index's history */ {
         /* flush history section */
@@ -1010,7 +1046,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
     const size_t byte_offset_of_bucket_entries = byte_offset_of_update_entries + (NumUpdates * UpdateBucketEntrySize);
     /* write out the update index */ {
       size_t blocks_required = ceil(static_cast<double>(num_bytes_required_for_update_idx) / Disk::Util::LogicalBlockSize);
-      engine->AppendReserveBlocks(StorageSpeed, blocks_required, BlockVec);
+      Engine->AppendReserveBlocks(StorageSpeed, blocks_required, BlockVec);
       unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
       auto ret = collision_map.insert(make_pair(byte_offset_of_bucket_entries / Disk::Util::LogicalBlockSize, nullptr));
       if (ret.second) { // fresh insert
@@ -1144,7 +1180,7 @@ TDataFile::TDataFile(Util::TEngine *engine,
 
       num_blocks += num_meta_blocks;
 
-      engine->AppendReserveBlocks(StorageSpeed, num_meta_blocks, BlockVec);
+      Engine->AppendReserveBlocks(StorageSpeed, num_meta_blocks, BlockVec);
 
       unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
       TDataOutStream stream(HERE,
@@ -1232,10 +1268,12 @@ TDataFile::TDataFile(Util::TEngine *engine,
       Engine->InsertFile(file_uid, TFileObj::TKind::DataFile, gen_id, StartingBlockId, StartingBlockOffset, FileLength, total_num_keys, LowestSeq, HighestSeq, completion_trigger);
       completion_trigger.Wait();
     }
-    for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr; ++csr) {
-      const auto &obj = csr->GetPersistenceNotification();
-      if (obj) {
-        obj->Call(TUpdate::TPersistenceNotification::Completed);
+    if (memory_layer) {
+      for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr; ++csr) {
+        const auto &obj = csr->GetPersistenceNotification();
+        if (obj) {
+          obj->Call(TUpdate::TPersistenceNotification::Completed);
+        }
       }
     }
   } catch (const std::exception &err) {
@@ -1249,10 +1287,12 @@ TDataFile::TDataFile(Util::TEngine *engine,
        write layers that carry no notifications. */
     const bool alloc_failed = !file_inserted && dynamic_cast<const std::bad_alloc *>(&err);
     const bool caller_retries = !file_inserted && (dynamic_cast<const Disk::Util::TDiskFull *>(&err) || alloc_failed);
-    for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr && !caller_retries; ++csr) {
-      const auto &obj = csr->GetPersistenceNotification();
-      if (obj) {
-        obj->Call(TUpdate::TPersistenceNotification::Failed);
+    if (memory_layer) {
+      for (TMemoryLayer::TUpdateCollection::TCursor csr(memory_layer->GetUpdateCollection()); csr && !caller_retries; ++csr) {
+        const auto &obj = csr->GetPersistenceNotification();
+        if (obj) {
+          obj->Call(TUpdate::TPersistenceNotification::Failed);
+        }
       }
     }
     /* The file never reached the file map, so nothing else will free its blocks (#590). The
