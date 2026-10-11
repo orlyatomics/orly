@@ -26,7 +26,7 @@ using namespace Orly;
 using namespace Orly::Server;
 
 const Indy::L0::TManager::TPtr<Indy::TRepo> &TPov::GetRepo(const TServer *server) const {
-  std::lock_guard<std::mutex> lock(RepoLock);
+  std::lock_guard lock(RepoLock);
   if (!Repo) {
     assert(server);
     auto repo_manager = server->GetRepoManager();
@@ -74,20 +74,29 @@ TPov::TPov(Durable::TManager *manager,
            TAudience audience,
            TPolicy policy,
            const TSharedParents &shared_parents)
-    : TObj(manager, id, ttl), SessionId(session_id), Audience(audience), Policy(policy), SharedParents(shared_parents), Reloaded(false) {}
+    : TObj(manager, id, ttl),
+      SessionId(session_id),
+      Audience(audience),
+      Policy(policy),
+      SharedParents(shared_parents),
+      Reloaded(false) {}
 
 TPov::TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm)
     : TObj(manager, id, strm), Reloaded(true) {
-  strm >> SessionId >> reinterpret_cast<char &>(Audience) >> reinterpret_cast<char &>(Policy) >> SharedParents;
+  char audience_char{};
+  char policy_char{};
+  strm >> SessionId >> audience_char >> policy_char >> SharedParents;
+  Audience = static_cast<TAudience>(audience_char);
+  Policy = static_cast<TPolicy>(policy_char);
 }
 
-TPov::~TPov() {}
+TPov::~TPov() = default;
 
 void TPov::Write(Io::TBinaryOutputStream &strm) const {
   TObj::Write(strm);
-  strm << SessionId << reinterpret_cast<const char &>(Audience) << reinterpret_cast<const char &>(Policy);
+  strm << SessionId << static_cast<char>(Audience) << static_cast<char>(Policy);
   strm << SharedParents.size();
-  for (const auto &id: SharedParents) {
+  for (const auto &id : SharedParents) {
     strm << id;
   }
 }
