@@ -383,6 +383,11 @@ try {<pov-id>} mypkg bump <{.n: 1}> <{.op_id: "0194a2b4-7c00-7000-8000-000000000
   recovery rebuilds the table from the checkpoint and the log. On a fast POV, or without the log,
   the table is in memory only: it covers a dropped connection, not a restart (a fast POV does not
   survive one at all).
+- A **slave** keeps the ids its master's writes carry (#862), so after a failover the promoted
+  slave answers a retry with the saved result. It can't know the ids of writes from before it
+  joined, so it replies `operation_expired` to any id it doesn't know that is no newer than its
+  join plus a minute (for client clock skew). A slave promoted within that minute refuses new ids
+  as well until it passes. See [durability.md](durability.md), "Retrying a write exactly once".
 - A read (a call that wrote nothing) with an id works but is not remembered: its retry runs again.
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest

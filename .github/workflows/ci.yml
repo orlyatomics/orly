@@ -757,6 +757,30 @@ jobs:
           grep -E 'VIOLATION|^KILL CAMPAIGN' .ci-release/kill-retry-control.log | head -5
           echo "control OK: the campaign catches a write applied twice"
 
+      # #862: a write sent again with the same operation id after a failover applies once: the
+      # promoted slave answers it from the table it kept from the master's replicated writes.
+      - name: Exactly-once writes across a failover (#862)
+        if: matrix.group == 'durability'
+        run: ./tests/failover_retry_test.sh
+
+      # Negative control for the step above: with the slave's exactly-once table off, the retry
+      # sent after the failover runs again, and the test must fail on its retry check.
+      - name: The failover retry test fails when a resent write applies twice
+        if: matrix.group == 'durability'
+        run: |
+          if NEGATIVE=noretry ./tests/failover_retry_test.sh > .ci-release/failover-control.log 2>&1; then
+            cat .ci-release/failover-control.log
+            echo "CONTROL FAIL: the failover test passed with the slave's exactly-once table off"
+            exit 1
+          fi
+          if ! grep -q 'FAIL retry: id B' .ci-release/failover-control.log; then
+            cat .ci-release/failover-control.log
+            echo "CONTROL FAIL: the failover test failed, but not because the retry ran again"
+            exit 1
+          fi
+          grep -E 'FAIL|^FAILOVER RETRY' .ci-release/failover-control.log | head -5
+          echo "control OK: the failover test catches a write applied twice"
+
       # #744: SIGTERM orlyi under the campaign's write load, four times. Each stop must finish
       # on its own and exit cleanly, and every acknowledged write must come back
       # after the restart. Before #744 most of these stops hung (a disk merge waited on a fast

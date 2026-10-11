@@ -115,10 +115,21 @@ new store, which holds the table at its default size.
   restart, and a fast POV does not survive one.
 - An id the table has forgotten (aged out, or pushed out by newer ones) is refused as
   `operation_expired` rather than run again.
+- **Across a failover (#862):** a slave reads the id and result out of each write its master
+  sends, as recovery does, so a retry sent to it after it is promoted gets the saved result. (A
+  slave on a disk volume can't join yet, #866, so today it is a `--mem_sim` slave and the table is
+  in its memory.) The writes
+  from before the slave joined reach it as data, not as records, so it can't know their ids: it
+  refuses, as `operation_expired`, any id it doesn't know that is no newer than when it joined plus
+  a minute, the minute being for clients whose clocks run ahead. Two consequences. A slave promoted
+  within a minute of joining refuses new ids too, until that minute is up; writes without an id are
+  unaffected. And that floor is not in the checkpoint, so if a promoted slave restarts within the
+  retention window (an hour) of joining, an id from before the join could run again.
 
 `tests/kill_campaign.sh` checks it: its `retry` writer sends its last write again after every
 restart, and the `counter` check fails if the `+=` ran twice. `NEGATIVE=noretry` turns the table
-off and CI requires that run to fail. See `docs/PROTOCOL.md`, "Exactly-once writes", and
+off and CI requires that run to fail. `tests/failover_retry_test.sh` checks the failover: it writes with an id
+on a master, kills it, and sends the write again to the promoted slave. See `docs/PROTOCOL.md`, "Exactly-once writes", and
 `docs/design/durable-acks.md` section 8.2.1.
 
 ## Store format and compatibility
