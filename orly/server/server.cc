@@ -1424,6 +1424,14 @@ void TServer::Init() {
       RepoState = Orly::Indy::TManager::Solo;
     } else if (Cmd.StartingState == "SLAVE") {
       RepoState = Orly::Indy::TManager::SyncSlave;
+      /* The writes before this reach a slave in the synced data, not through the apply path that
+         reads their operation ids, so once promoted it can't tell a retry of one from a new write;
+         refuse those ids (#862). An id's time is the client's clock, so a minute more covers a
+         client running that far ahead. */
+      if (OperationTable) {
+        const auto now_ms = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch());
+        OperationTable->RefuseUnknownBefore(static_cast<uint64_t>((now_ms + chrono::minutes(1)).count()));
+      }
       starting_sock = TFd(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
       Connect(starting_sock, Cmd.AddressOfMaster);
       if (Cmd.ReplicationToken) {
@@ -1909,7 +1917,7 @@ void TServer::Init() {
             const uint64_t rec_lsn = rec.Lsn;
             RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena(),
                 [this, rec_lsn](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
-                                Atom::TCore::TArena *arena) {
+                                Atom::TCore::TArena *arena, uint64_t) {
                   RestoreOperation(repo_id, seq_num, meta_core, arena, rec_lsn);
                 });
           }
@@ -1965,6 +1973,12 @@ void TServer::Init() {
       });
       TetrisManager->ResumePromotion();
     }
+    /* A slave keeps the exactly-once entries its master's writes carry, as recovery does (#862). */
+    RepoManager->SetReplicatedPushCallback(
+        [this](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
+               Atom::TCore::TArena *arena, uint64_t lsn) {
+          RestoreOperation(repo_id, seq_num, meta_core, arena, lsn);
+        });
     /* schedule everything the repo manager needs */ {
       /* Read() from master / slave */ {
         ScheduleRunnerHost(&RunReplicationQueueRunner);

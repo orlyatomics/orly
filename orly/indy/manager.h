@@ -522,11 +522,21 @@ namespace Orly {
 
          If 'on_push' is given, it is called with the meta core of each push in a transaction that
          has no pop, and the repo it was pushed to, so recovery can read what the record says
-         (#733). A transaction that pops is a promotion, which pushes records already seen. */
+         (#733). A transaction that pops is a promotion, which pushes records already seen.
+         'lsn' is where this server's log put the transaction, or 0 if there is no log yet, as
+         in recovery. */
       using TPushCallback = std::function<void (const Base::TUuid &repo_id, TSequenceNumber seq_num,
-                                                const Atom::TCore &meta_core, Atom::TCore::TArena *arena)>;
+                                                const Atom::TCore &meta_core, Atom::TCore::TArena *arena,
+                                                uint64_t lsn)>;
       size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena,
                                          const TPushCallback &on_push = TPushCallback());
+
+      /* The 'on_push' a slave passes when it applies what the master sends, so a slave keeps the
+         same exactly-once entries as its master and has them when it is promoted (#862). Set it
+         before the replication loops start. */
+      void SetReplicatedPushCallback(TPushCallback cb) {
+        ReplicatedPushCb = std::move(cb);
+      }
 
       /* WAL recovery (#755).  The WAL keeps a restored pov's updates only from the oldest one not
          yet in the global pov, so the first of them replayed says where the repo's numbering
@@ -599,6 +609,9 @@ namespace Orly {
 
       /* See SeedNumberingFromReplay.  Only recovery touches it, before replication starts. */
       std::unordered_set<Base::TUuid> ReplaySeeds;
+
+      /* See SetReplicatedPushCallback. */
+      TPushCallback ReplicatedPushCb;
 
       Base::TFd ReplicationQueueEpollFd;
       std::mutex ReplicationQueueEpollLock;

@@ -151,7 +151,7 @@ TOperationTable::TReservation TOperationTable::Reserve(const TUuid &pov_id, cons
     }
     return TReservation{false, iter->second.Outcome};
   }
-  if (ts <= table.ExpiredBeforeMs || ts + age_ms < now) {
+  if (ts <= table.ExpiredBeforeMs || ts <= UnknownBeforeMs || ts + age_ms < now) {
     throw TOperationExpired(
         "operation expired: this id is older than the server keeps outcomes, so it can't say whether the write ran");
   }
@@ -215,6 +215,11 @@ void TOperationTable::Release(const TUuid &pov_id, const TUuid &op_id) noexcept 
 
 void TOperationTable::Restore(const TUuid &pov_id, const TUuid &op_id, TOutcome &&outcome) {
   Complete(pov_id, op_id, std::move(outcome));
+}
+
+void TOperationTable::RefuseUnknownBefore(uint64_t ms) {
+  lock_guard<mutex> lock(Mutex);
+  UnknownBeforeMs = std::max(UnknownBeforeMs, ms);
 }
 
 /* Why a slot that isn't done can't just be left out (#861): a slot is done only in Complete, after

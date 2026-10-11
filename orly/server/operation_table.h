@@ -152,8 +152,13 @@ namespace Orly {
       /* The request ended without committing a write. The id can be tried again. */
       void Release(const Base::TUuid &pov_id, const Base::TUuid &op_id) noexcept;
 
-      /* Add an entry recovery found in a replayed record. */
+      /* Add an entry recovery found in a replayed record, or a slave in a replicated one. */
       void Restore(const Base::TUuid &pov_id, const Base::TUuid &op_id, TOutcome &&outcome);
+
+      /* Refuse, in every POV, an id at or below `ms` that has no entry: the table can't have seen
+         its write. A slave sets this when it joins, because the writes before that reach it as
+         data, not as records (#862). It only rises, and isn't in the checkpoint. */
+      void RefuseUnknownBefore(uint64_t ms);
 
       /* The entries a checkpoint at `head_lsn` must keep: the persistent ones whose records it
          will no longer replay, trimmed oldest first to fit `budget` bytes. Never empty: it holds
@@ -202,6 +207,9 @@ namespace Orly {
       mutable std::mutex Mutex;
 
       std::unordered_map<Base::TUuid, TPovTable> TableByPov;
+
+      /* See RefuseUnknownBefore. */
+      uint64_t UnknownBeforeMs = 0;
 
       /* The completed entries, oldest first: (time in the id, POV id, operation id). */
       std::set<std::tuple<uint64_t, Base::TUuid, Base::TUuid>> Done;

@@ -1439,11 +1439,17 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
         }
       }
     }
+    /* The log position comes when the transaction commits, which is when it goes. */
+    std::optional<uint64_t> lsn;
+    if (on_push && !has_pop) {
+      apply_transaction->ReportCommitLsn(&lsn);
+    }
     apply_transaction->Prepare();
     apply_transaction->CommitAction();
+    apply_transaction.reset();
     if (on_push && !has_pop) {
       for (const auto &push: pushed) {
-        on_push(std::get<0>(push), std::get<1>(push), *std::get<2>(push), arena);
+        on_push(std::get<0>(push), std::get<1>(push), *std::get<2>(push), arena, lsn.value_or(0UL));
       }
     }
   }
@@ -1451,7 +1457,7 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
 }
 
 size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
-  return Manager->ApplyCoreVectorTransactions(core_vec, arena);
+  return Manager->ApplyCoreVectorTransactions(core_vec, arena, Manager->ReplicatedPushCb);
 }
 
 void TManager::TSlave::TransitionToSlave() {

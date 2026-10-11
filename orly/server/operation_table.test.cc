@@ -137,6 +137,25 @@ FIXTURE(ExpiredByAge) {
   EXPECT_TRUE(table.Reserve(Pov, MakeId(Now - 59'000UL), 1).IsNew);
 }
 
+/* A slave refuses an id from before it joined unless it has the id's entry, in every POV (#862). */
+FIXTURE(UnknownBeforeJoin) {
+  Now = 10'000'000UL;
+  TOperationTable table(MakeConfig());
+  auto seen = MakeId(Now - 2000UL);
+  table.Restore(Pov, seen, MakeOutcome(5, 3, true, 1));
+  table.RefuseUnknownBefore(Now - 1000UL);
+  EXPECT_FALSE(table.Reserve(Pov, seen, 1).IsNew);
+  auto unseen = [&] { table.Reserve(Pov, MakeId(Now - 1500UL), 1); };
+  EXPECT_THROW_FUNC(TOperationExpired, unseen);
+  auto unseen_other = [&] { table.Reserve(OtherPov, MakeId(Now - 1000UL), 1); };
+  EXPECT_THROW_FUNC(TOperationExpired, unseen_other);
+  EXPECT_TRUE(table.Reserve(OtherPov, MakeId(Now - 999UL), 1).IsNew);
+  /* It only rises. */
+  table.RefuseUnknownBefore(Now - 5000UL);
+  auto still = [&] { table.Reserve(Pov, MakeId(Now - 1200UL), 1); };
+  EXPECT_THROW_FUNC(TOperationExpired, still);
+}
+
 /* An entry that retention dropped leaves its id refused, not forgotten: running it again would
    write twice. */
 FIXTURE(ExpiredByCount) {
