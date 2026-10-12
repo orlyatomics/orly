@@ -48,7 +48,7 @@ substitute `node /path/to/orly/clients/mcp/dist/index.js` for `npx -y orly-mcp`.
 | Tool | What it does |
 |---|---|
 | `orly_new_pov` | Create a POV (safe/fast × shared/private, optional parent); returns the pov id agents share. |
-| `orly_call` | `try {pov} package method <{args}>` — call a package method (read or write), one transaction. |
+| `orly_call` | `try {pov} package method <{args}>` — call a package method (read or write), one transaction. With `at` (a version, `{"time": "<RFC 3339>"}` or `{"save": "name"}`) it reads the global POV as it was and replies `{result, version}` ([#745](https://github.com/orlyatomics/orly/issues/745)). |
 | `orly_call_batch` | N calls of one method folded into a single atomic transaction ([#253](https://github.com/orlyatomics/orly/issues/253)). |
 | `orly_install_package` | Install a compiled package by name/version (its `.so` must be in orlyi's package dir). |
 

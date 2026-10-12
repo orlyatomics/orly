@@ -34,7 +34,7 @@ __all__ = ["DEFAULT_URL", "DEFAULT_TIMEOUT_S", "DEFAULT_RECV_TIMEOUT_S",
            "DEFAULT_RETRIES", "DEFAULT_BACKOFF_S", "OrlyError", "InsufficientStorage",
            "InsufficientMemory", "WriteTooLarge", "ReadTooLarge", "RemoteCompileDisabled",
            "DurableTimeout", "OperationExpired", "OperationIdReused", "OperationInFlight",
-           "OutcomeTooLarge", "Unauthorized", "Lit", "lit", "Addr", "new_op_id",
+           "OutcomeTooLarge", "VersionUnavailable", "VersionReadOnly", "Unauthorized", "Lit", "lit", "Addr", "new_op_id",
            "Client", "connect"]
 
 DEFAULT_URL = "ws://127.0.0.1:8082/"
@@ -139,7 +139,32 @@ class OutcomeTooLarge(OrlyError):
 
     @property
     def version(self):
-        return self.reply.get("version")
+        return _as_version(self.reply.get("version"))
+
+
+class VersionUnavailable(OrlyError):
+    """Raised when a read at a version, time or save point asks for history the
+    server cannot answer exactly (``"status": "version_unavailable"``, #745):
+    older than the merges have kept, or not committed yet. Not retryable as
+    sent: read inside ``oldest`` to ``newest``, the versions it can read now.
+    ``requested`` is 0 when no version was asked for (a time with no sample)."""
+
+    @property
+    def requested(self):
+        return _as_version(self.reply.get("requested"))
+
+    @property
+    def oldest(self):
+        return _as_version(self.reply.get("oldest"))
+
+    @property
+    def newest(self):
+        return _as_version(self.reply.get("newest"))
+
+
+class VersionReadOnly(OrlyError):
+    """Raised when a call read at a version tried to write
+    (``"status": "version_read_only"``, #745). Nothing was written."""
 
 
 class Unauthorized(OrlyError):
@@ -274,6 +299,28 @@ def _try_options(receipt=False, wait_durable_ms=None, op_id=None):
     return f" <{{{', '.join(opts)}}}>" if opts else ""
 
 
+def _as_version(v):
+    """A version as an int. The server prints the global POV's numbers as
+    ``4.000000``, which JSON decodes as a float; a vector string stays a string."""
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    return v if isinstance(v, (int, str)) and not isinstance(v, bool) else None
+
+
+def _at_clause(at):
+    """The ``at ...`` keyword of a read at a version, time or save point
+    (#745, #889), with its trailing space; empty for ``at=None``."""
+    if at is None:
+        return ""
+    if isinstance(at, dict) and len(at) == 1 and "time" in at:
+        return f"at time {_quote(at['time'])} "
+    if isinstance(at, dict) and len(at) == 1 and "save" in at:
+        return f"at save {_quote(at['save'])} "
+    if isinstance(at, int) and not isinstance(at, bool) and at >= 0:
+        return f"at {at} "
+    raise TypeError("orly: at must be a non-negative int, {'time': ...} or {'save': ...}")
+
+
 class Client:
     """A connection to a running ``orlyi`` (one WebSocket, one session)."""
 
@@ -281,6 +328,8 @@ class Client:
         self.ws = ws
         self.session_id = None
         self.last_receipt = None
+        # The "version" of the last reply that had one: what a read at ``at=`` ran against.
+        self.last_version = None
         self._reconnect = None  # connect()'s arguments, for resending an op_id write
 
     # -- core ------------------------------------------------------------
@@ -289,7 +338,13 @@ class Client:
         self.ws.send(statement)
         reply = _json.loads(self.ws.recv())
         self.last_receipt = reply.get("receipt")
+        version = reply.get("version")
+        self.last_version = _as_version(version)
         status = reply.get("status")
+        if status == "version_unavailable":
+            raise VersionUnavailable(statement, reply)
+        if status == "version_read_only":
+            raise VersionReadOnly(statement, reply)
         if status == "insufficient_storage":
             raise InsufficientStorage(statement, reply)
         if status == "insufficient_memory":
@@ -491,7 +546,7 @@ class Client:
 
     # -- methods --------------------------------------------------------
     def call(self, pov, package, method, args=None, *, receipt=False, wait_durable_ms=None,
-             op_id=None, op_retries=DEFAULT_OP_RETRIES):
+             op_id=None, op_retries=DEFAULT_OP_RETRIES, at=None):
         """Call ``package method`` on ``pov`` with a record of ``args``.
 
         Builds ``try {<pov>} <package> <method> <{.k: v, ...}>;``. ``args`` is a
@@ -505,9 +560,17 @@ class Client:
         times, and the server answers a retry of a write that already applied with
         its saved result instead of running it again (#733). Without ``op_id``
         nothing is resent.
+
+        ``at`` reads the global POV as it was (#745, #889): a version (an int, in
+        the numbering a receipt's ``version`` uses), ``{"time": "<RFC 3339>"}``
+        (needs ``--retention_seconds``) or ``{"save": "<name>"}``. Read only, and
+        not combined with ``receipt``, ``wait_durable_ms`` or ``op_id``. The version
+        the read ran against is in :attr:`last_version`; one the server cannot
+        answer raises :class:`VersionUnavailable`.
         """
         options = _try_options(receipt=receipt, wait_durable_ms=wait_durable_ms, op_id=op_id)
-        result = self._send_op(f"try {{{pov}}} {package} {method} {lit(args or {})}{options};", op_id, op_retries)
+        result = self._send_op(
+            f"try {{{pov}}} {_at_clause(at)}{package} {method} {lit(args or {})}{options};", op_id, op_retries)
         return (result, self.last_receipt) if receipt else result
 
     def call_batch(self, pov, package, method, args_list, *, receipt=False, wait_durable_ms=None,
@@ -549,7 +612,7 @@ class Client:
         return self.send(f"try {{{pov}}} [{', '.join(parts)}];")
 
     def pages(self, pov, package, method, args, cursor="last", page_size=None,
-              to_cursor=None):
+              to_cursor=None, at=None, pin=True):
         """Keyset paging (#735): call a paging method page after page, yielding
         each page's rows (a list).
 
@@ -567,13 +630,24 @@ class Client:
         however nested, becomes an int) turns it into the value to encode. A
         cursor holding ``real`` members that may be integral needs its own
         ``to_cursor``, such as one wrapping them in :class:`Lit` with ``.0``.
+
+        The pages read one version of the global POV (#745): ``at`` if given (a
+        version, time or save point), else the newest version when the first page
+        is asked for, so writes that land between pages cannot shift rows across
+        them. The server holds that version while the pages keep coming.
+        ``pin=False`` reads each page as it is when asked, and so does paging on a
+        POV other than the global one, which has no single version to pin.
         """
         if cursor not in args:
             raise TypeError(f"orly: pages needs the first page's cursor as args[{cursor!r}]")
         convert = _integral_floats_to_ints if to_cursor is None else to_cursor
         nxt = dict(args)
+        if at is None and pin:
+            newest = self.version_of(pov)
+            if isinstance(newest, int):
+                at = newest
         while True:
-            page = self.call(pov, package, method, nxt)
+            page = self.call(pov, package, method, nxt, at=at)
             if not isinstance(page, dict) or not isinstance(page.get("rows"), list) or cursor not in page:
                 raise TypeError(f"orly: {package} {method} must return "
                                 f"<{{.rows: [...], .{cursor}: ...}}> to be paged")
@@ -603,6 +677,37 @@ class Client:
             v = reply.get("durable_version")
             return int(v) if v is not None else None
         return None
+
+    # -- versioned reads (#745, #889) --------------------------------------
+    def version_of(self, pov):
+        """The newest version of ``pov``, from ``version of {<pov>};``: an int
+        for the global POV (the number a write receipt carries), a vector string
+        such as ``"(3, 1000)"`` for any other."""
+        return _as_version(self.send(f"version of {{{pov}}};")["version"])
+
+    def hold(self, pov, version, secs):
+        """Keep the history of ``version`` of the global POV through merges for
+        ``secs`` seconds (1 to 86400), from ``hold version {<pov>} V for N;``.
+        Returns the lease id that :meth:`release` ends early. Holds live in
+        memory, so a restart ends them."""
+        return self.send(f"hold version {{{pov}}} {int(version)} for {int(secs)};")["lease"]
+
+    def release(self, lease):
+        """End a hold early. Returns False if the lease is unknown or has lapsed."""
+        return self.send(f"release {{{lease}}};")["released"]
+
+    def save_point(self, pov, name, at=None):
+        """Name a version so merges keep its history:
+        ``save point {<pov>} "name" [at V];``. On the global POV it is durable,
+        made at the newest version unless ``at`` gives one, and needs retention
+        to have been on; read it back with ``call(..., at={"save": name})``. On
+        another POV it names the newest version, for a diff of the writes after it."""
+        suffix = "" if at is None else f" at {int(at)}"
+        self.send(f"save point {{{pov}}} {_quote(name)}{suffix};")
+
+    def drop_save_point(self, pov, name):
+        """Remove a save point. Returns False if there was none."""
+        return self.send(f"drop save point {{{pov}}} {_quote(name)};")["dropped"]
 
     # -- teardown -------------------------------------------------------
     def exit(self):

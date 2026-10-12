@@ -1150,7 +1150,9 @@ class TWsImpl final
       /* Likewise, the version to read at (#745). */
       static void AddAt(TClosure &closure, uint64_t at) {
         void *alloc = alloca(SabotStateSize);
-        TWrapper state(Native::State::New(static_cast<int64_t>(at), alloc));
+        /* The state refers to its value, so the value must outlive it: a temporary would be gone before the closure copies it. */
+        const int64_t value = static_cast<int64_t>(at);
+        TWrapper state(Native::State::New(value, alloc));
         closure.AddArgBySabot("$at", state);
       }
 
