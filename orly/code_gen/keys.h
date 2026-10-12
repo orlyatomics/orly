@@ -45,7 +45,9 @@ namespace Orly {
             TAddrElems &&addr_elems,
             const TInline::TPtr &bound,
             bool bound_is_inclusive,
-            bool count_only);
+            bool count_only,
+            const TInline::TPtr &first,
+            const TInline::TPtr &second);
 
       void WriteExpr(TCppPrinter &out) const;
 
@@ -56,6 +58,10 @@ namespace Orly {
         }
         if (Bound) {
           AppendDependency(Bound, dependency_set);
+        }
+        if (First) {
+          AppendDependency(First, dependency_set);
+          AppendDependency(Second, dependency_set);
         }
       }
 
@@ -72,6 +78,9 @@ namespace Orly {
       Type::TType AddrType;
 
       bool CountOnly;
+
+      /* The versions of `changed between` (#889), or null. */
+      TInline::TPtr First, Second;
     };
 
   } // CodeGen

@@ -188,6 +188,10 @@ class expr_visitor_t
     if (that->GetBound()) {
       Yield(that->GetBound());
     }
+    if (that->GetFirst()) {
+      Yield(that->GetFirst());
+      Yield(that->GetSecond());
+    }
   }
   virtual void operator()(const TList *that) const {
     for(auto &it: that->GetExprs()) {
@@ -417,6 +421,10 @@ class expr_visitor_t
       }
       if (that->GetBound()) {
         Yield(that->GetBound());
+      }
+      if (that->GetFirst()) {
+        Yield(that->GetFirst());
+        Yield(that->GetSecond());
       }
     }
     virtual void operator()(const TList *that) const {

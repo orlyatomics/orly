@@ -752,17 +752,27 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     if (at && pov_id != GlobalPovId) {
       throw std::invalid_argument("a read at a version is of the global POV only");
     }
+    if (!at && pov_id == GlobalPovId) {
+      throw std::invalid_argument("the global POV can only be read at a version (.at)");
+    }
     if (at && op) {
       throw std::invalid_argument("a read at a version does not take an operation id");
     }
     // Open the pov and its repo and prepare the data and package contexts.
-    auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
-    if (!pov) {
-      DEFINE_ERROR(error_t, runtime_error, "unknown pov_id");
-      THROW_ERROR(error_t) << pov_id;
+    /* The global POV is a repo with no durable POV object behind it, so a read at a version
+       takes it from the repo manager. */
+    Indy::L0::TManager::TPtr<Indy::TRepo> repo;
+    if (pov_id == GlobalPovId) {
+      repo = server->GetRepoManager()->ForceGetRepo(GlobalPovId);
+    } else {
+      auto pov = server->GetDurableManager()->Open<TPov>(pov_id);
+      if (!pov) {
+        DEFINE_ERROR(error_t, runtime_error, "unknown pov_id");
+        THROW_ERROR(error_t) << pov_id;
+      }
+      AddPov(pov);
+      repo = pov->GetRepo(server);
     }
-    AddPov(pov);
-    auto repo = pov->GetRepo(server);
     Indy::TContext context(repo, &my_arena, at);
     Rt::TOpt<Base::TUuid> user_id;
     if (UserId) {

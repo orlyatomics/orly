@@ -157,11 +157,11 @@ FIXTURE(KeyCountsInternSeparatelyFromKeySequences) {
   const auto seq_type = Type::TSeq::Get(Type::TAddr::Get({{TAddrDir::Asc, Type::TInt::Get()}}));
   auto free = interner.GetTypedLeaf(nullptr, TTypedLeaf::Free, Type::TInt::Get(), TAddrDir::Asc);
   auto keys = interner.GetKeys(nullptr, seq_type, Type::TInt::Get(),
-      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, false);
+      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, false, TInline::TPtr(), TInline::TPtr());
   auto count = interner.GetKeys(nullptr, seq_type, Type::TInt::Get(),
-      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, true);
+      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, true, TInline::TPtr(), TInline::TPtr());
   auto count_again = interner.GetKeys(nullptr, seq_type, Type::TInt::Get(),
-      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, true);
+      TKeys::TAddrElems{{TAddrDir::Asc, free}}, TInline::TPtr(), false, true, TInline::TPtr(), TInline::TPtr());
   EXPECT_NE(keys, count);
   EXPECT_EQ(count, count_again);
   EXPECT_TRUE(keys->GetReturnType() == seq_type);

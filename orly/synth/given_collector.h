@@ -122,6 +122,11 @@ namespace Orly {
         } else if (auto from = dynamic_cast<const Package::Syntax::TFromDbKeysBound *>(that->GetOptDbKeysBound())) {
           Push(from->GetExpr());
         }
+        /* The versions of `changed between` (#889). */
+        if (auto changed = dynamic_cast<const Package::Syntax::TDbKeysChanged *>(that->GetOptDbKeysChanged())) {
+          Push(changed->GetFirst());
+          Push(changed->GetSecond());
+        }
       }
       virtual void operator()(const Package::Syntax::TDictCtor *that) const {
         ForEach<Package::Syntax::TDictMember>(that->GetDictMemberList(),

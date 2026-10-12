@@ -144,6 +144,11 @@ namespace Orly {
       /* True for `from` (the bound itself is included), false for `after`. */
       bool BoundIsInclusive = false;
 
+      /* `changed between (First, Second)` (#889): the two versions, or both null. */
+      TExpr *First = nullptr;
+
+      TExpr *Second = nullptr;
+
     };  // TDbKeysExpr
 
   }  // Synth

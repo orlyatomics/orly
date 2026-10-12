@@ -154,6 +154,10 @@ TDbKeysExpr::TDbKeysExpr(const TExprFactory *expr_factory, const Package::Syntax
       bool &IsInclusive;
     };  // TBoundVisitor
     DbKeysExpr->GetOptDbKeysBound()->Accept(TBoundVisitor(expr_factory, Bound, BoundIsInclusive));
+    if (auto changed = dynamic_cast<const Package::Syntax::TDbKeysChanged *>(DbKeysExpr->GetOptDbKeysChanged())) {
+      First = expr_factory->NewExpr(changed->GetFirst());
+      Second = expr_factory->NewExpr(changed->GetSecond());
+    }
   } catch (...) {
     Cleanup();
     throw;
@@ -170,7 +174,8 @@ Expr::TExpr::TPtr TDbKeysExpr::Build() const {
     members.emplace_back(std::make_pair(member->GetAddrDir(), member->Build()));
   }
   return Expr::TKeys::New(
-      members, ValueType->GetSymbolicType(), GetPosRange(DbKeysExpr), Bound ? Bound->Build() : nullptr, BoundIsInclusive);
+      members, ValueType->GetSymbolicType(), GetPosRange(DbKeysExpr), Bound ? Bound->Build() : nullptr, BoundIsInclusive,
+      First ? First->Build() : nullptr, Second ? Second->Build() : nullptr);
 }
 
 void TDbKeysExpr::Cleanup() {
@@ -179,6 +184,10 @@ void TDbKeysExpr::Cleanup() {
   }
   delete Bound;
   Bound = nullptr;
+  delete First;
+  First = nullptr;
+  delete Second;
+  Second = nullptr;
 }
 
 void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
@@ -189,6 +198,10 @@ void TDbKeysExpr::ForEachInnerScope(const std::function<void (TScope *)> &cb) {
   if (Bound) {
     Bound->ForEachInnerScope(cb);
   }
+  if (First) {
+    First->ForEachInnerScope(cb);
+    Second->ForEachInnerScope(cb);
+  }
 }
 
 void TDbKeysExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
@@ -198,6 +211,10 @@ void TDbKeysExpr::ForEachRef(const std::function<void (TAnyRef &)> &cb) {
   }
   if (Bound) {
     Bound->ForEachRef(cb);
+  }
+  if (First) {
+    First->ForEachRef(cb);
+    Second->ForEachRef(cb);
   }
   ValueType->ForEachRef(cb);
 }

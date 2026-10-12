@@ -178,6 +178,60 @@ namespace Orly {
 
       };  // TKeyCursor
 
+      /* The keys of a pattern (or of a range, with `to`) whose value differs between two versions of the global POV,
+         in key order (#889). A key present at only one of the versions differs. It merge-joins one walk of each
+         version, so it costs the keys in the pattern, however many versions lie between. Reads the same layers the
+         other cursors do: it needs the versions to be within the repo's history. */
+      class TChangedKeyCursor final
+          : public Orly::TKeyCursor {
+        NO_COPY(TChangedKeyCursor);
+        public:
+
+        /* Throws Server::TVersionUnavailable if either version is outside what the repo can read, and
+           std::invalid_argument if the context is not of the global POV. */
+        TChangedKeyCursor(TContext *context, const Indy::TIndexKey &from, const Indy::TIndexKey *to,
+                          TSequenceNumber first, TSequenceNumber second);
+
+        ~TChangedKeyCursor() override;
+
+        [[nodiscard]] operator bool() const override {
+          return Valid;
+        }
+
+        [[nodiscard]] const Indy::TKey &operator*() const override {
+          assert(Valid);
+          return Item;
+        }
+
+        [[nodiscard]] const Indy::TKey *operator->() const override {
+          assert(Valid);
+          return &Item;
+        }
+
+        TChangedKeyCursor &operator++() override;
+
+        private:
+
+        /* Advance the two walks to the next key that differs, leaving it in Item, or clear Valid. */
+        void Settle();
+
+        /* The walks may hold on to the keys they were opened with. */
+        Indy::TIndexKey From;
+
+        std::optional<Indy::TIndexKey> To;
+
+        TRepoTree Trees[2];
+
+        std::unique_ptr<TPresentWalker> Walkers[2];
+
+        bool Valid = true;
+
+        Indy::TKey Item;
+
+        TContext *Owner = nullptr;
+
+      };  // TChangedKeyCursor
+
       /* With `at`, the context reads the repo as of that version (#745): only a repo with no parent (the global POV's)
          can be read so, and a version older than the repo's history horizon or newer than its newest commit throws
          Server::TVersionUnavailable. */
@@ -353,7 +407,8 @@ namespace Orly {
 
     class TIndyContext
           : public Orly::Package::TContext,
-            public TKeyCountContext {
+            public TKeyCountContext,
+            public TChangedKeysContext {
       NO_COPY(TIndyContext);
       public:
 
@@ -387,6 +442,19 @@ namespace Orly {
       [[nodiscard]] TKeyCursor *NewKeyCursor(TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey &to) const override {
         auto *data_context = dynamic_cast<Indy::TContext *>(context);
         return new Indy::TContext::TKeyCursor(data_context, from, to);
+      }
+
+      [[nodiscard]] TKeyCursor *NewChangedKeyCursor(
+          TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey *to, int64_t first, int64_t second) const override {
+        auto *data_context = dynamic_cast<Indy::TContext *>(context);
+        if (!data_context) {
+          throw std::logic_error("changed between needs the engine's context");
+        }
+        if (first < 0 || second < 0) {
+          throw std::invalid_argument("changed between: a version must not be negative");
+        }
+        return new Indy::TContext::TChangedKeyCursor(data_context, from, to, static_cast<TSequenceNumber>(first),
+                                                     static_cast<TSequenceNumber>(second));
       }
 
       private:

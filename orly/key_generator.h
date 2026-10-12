@@ -61,6 +61,25 @@ namespace Orly {
 
   };  // TKeyCursor
 
+  /* Optional: a context that can walk the keys that changed between two versions (#889). Separate from
+     L0::TPackageContext so that class's vtable, which packages compiled by an older orlyc were built against,
+     stays as it was. */
+  class TChangedKeysContext {
+    NO_COPY(TChangedKeysContext);
+    public:
+
+    virtual ~TChangedKeysContext() = default;
+
+    /* The keys, in key order, whose value differs between the global POV's versions `first` and `second`. Walks
+       the pattern `from` or, if `to` is set, the range from the whole key `from` to the pattern `to`. */
+    [[nodiscard]] virtual TKeyCursor *NewChangedKeyCursor(
+        TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey *to, int64_t first, int64_t second) const = 0;
+
+    protected:
+
+    TChangedKeysContext() = default;
+  };
+
   namespace L0 {
 
     class TPackageContext {
@@ -195,6 +214,26 @@ namespace Orly {
           BoundIsInclusive(bound_is_inclusive),
           NewRangeCursor(std::move(new_range_cursor)) {}
 
+    /* `... changed between (first, second)` (#889), with an optional keyset-paging bound: the keys of the walk
+       whose value differs between those two versions. `bound` may be null. */
+    using TChangedCursorFactory = std::function<Orly::TKeyCursor *(
+        TContextBase *, const Indy::TIndexKey &, const Indy::TIndexKey *, int64_t, int64_t)>;
+
+    TKeyGenerator(L0::TPackageContext *package_context, TChangedCursorFactory new_changed_cursor, int64_t first, int64_t second,
+                  TContextBase &ctx, const Sabot::State::TAny *start, const Sabot::State::TAny *bound,
+                  bool bound_is_inclusive, const Base::TUuid &index_id)
+        : PackageContext(package_context),
+          Ctx(ctx),
+          Start(index_id, Indy::TKey(Ctx.GetArena(), start)),
+          BoundIsInclusive(bound_is_inclusive),
+          NewChangedCursor(std::move(new_changed_cursor)),
+          First(first),
+          Second(second) {
+      if (bound) {
+        Bound.emplace(index_id, Indy::TKey(Ctx.GetArena(), bound));
+      }
+    }
+
     private:
 
     /* A cursor for one pass over the keys. Without a bound it walks the
@@ -207,7 +246,7 @@ namespace Orly {
        cursor finds by stopping at its first key. */
     Orly::TKeyCursor *NewKeyCursor() const {
       if (!Bound) {
-        return PackageContext->NewKeyCursor(&Ctx, Start);
+        return NewChangedCursor ? NewChangedCursor(&Ctx, Start, nullptr, First, Second) : PackageContext->NewKeyCursor(&Ctx, Start);
       }
       const Indy::TKey &pattern = Start.GetKey();
       const Indy::TKey &bound = Bound->GetKey();
@@ -217,9 +256,10 @@ namespace Orly {
       Sabot::State::TAny::TWrapper bound_state(bound.GetState(bound_alloc));
       if (Sabot::MatchPrefixState(*pattern_state, *bound_state) != Sabot::TMatchResult::Unifies &&
           Atom::IsLt(Sabot::OrderStates(*bound_state, *pattern_state))) {
-        return PackageContext->NewKeyCursor(&Ctx, Start);
+        return NewChangedCursor ? NewChangedCursor(&Ctx, Start, nullptr, First, Second) : PackageContext->NewKeyCursor(&Ctx, Start);
       }
-      std::unique_ptr<Orly::TKeyCursor> csr(NewRangeCursor(&Ctx, *Bound, Start));
+      std::unique_ptr<Orly::TKeyCursor> csr(NewChangedCursor ? NewChangedCursor(&Ctx, *Bound, &Start, First, Second)
+                                                              : NewRangeCursor(&Ctx, *Bound, Start));
       if (!BoundIsInclusive && *csr && **csr == bound) {
         ++*csr;
       }
@@ -238,6 +278,10 @@ namespace Orly {
     bool BoundIsInclusive = false;
 
     TRangeCursorFactory NewRangeCursor;
+
+    TChangedCursorFactory NewChangedCursor;
+
+    int64_t First = 0, Second = 0;
 
   };  // TKeyGenerator
 
