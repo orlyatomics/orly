@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <atomic>
 
 #include <base/class_traits.h>
@@ -58,7 +60,12 @@ namespace Orly {
                        size_t max_block_cache_read_slots_allowed,
                        size_t temp_file_consol_thresh,
                        bool can_tail,
-                       bool can_tail_tombstone);
+                       bool can_tail_tombstone,
+                       std::optional<TSequenceNumber> retain_from = std::nullopt);
+
+        /* #745 stage 2: `retain_from`, for a merge that may tail (`can_tail`), is the oldest version reads must still
+           find whole: the merge keeps each key's versions newer than it, and its state as of it. Without it, a tailing
+           merge keeps each key's newest entry only, as before. A merge that can't tail keeps every version anyway. */
 
         inline size_t GetNumKeys() const {
           return NumKeys;

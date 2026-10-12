@@ -47,6 +47,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <base/class_traits.h>
 #include <base/uuid.h>
 #include <orly/atom/kit2.h>
@@ -82,7 +84,14 @@ namespace Orly {
                       size_t source_gen_id,
                       size_t dest_gen_id,
                       DiskPriority priority,
-                      size_t temp_file_consol_thresh);
+                      size_t temp_file_consol_thresh,
+                      std::optional<TSequenceNumber> retain_from = std::nullopt);
+
+        /* #745 stage 2: with `retain_from`, the fold keeps every version newer than it (reads at any version from
+           `retain_from` on stay whole) and folds only the ones at or below it. Within the window, every
+           KeyframeInterval-th delta of a run whose value the file determines is written as an Assign of that value,
+           so a read replays at most KeyframeInterval deltas. Without it, each key keeps one entry, as before. */
+        static constexpr size_t KeyframeInterval = 64UL;
 
         inline size_t GetNumKeys() const {
           return NumKeys;

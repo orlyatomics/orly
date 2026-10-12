@@ -196,6 +196,10 @@ namespace {
     size_t MaxWrites = 4;
     size_t NumKeys = 2;
 
+    /* #745 stage 2: the rule as the merge applies it. It keeps no reader set: an open reader's version is a lease that
+       lowers the horizon the merge keeps from to the oldest leased version, H = min(window horizon, oldest lease). */
+    bool LeasesLowerHorizon = false;
+
     /* Negative control switches: */
     bool BrokenDropTooMany = false;
     bool BrokenIgnoreWindow = false;
@@ -221,7 +225,11 @@ namespace {
     TMergeRetentionPolicy policy;
     policy.HasWindow = config.HasWindow && !config.BrokenIgnoreWindow;
     policy.Horizon = state.Horizon;
-    if (!config.BrokenIgnoreReader) {
+    if (config.LeasesLowerHorizon) {
+      if (!state.OpenReaders.empty()) {
+        policy.Horizon = std::min(policy.Horizon, *state.OpenReaders.begin());
+      }
+    } else if (!config.BrokenIgnoreReader) {
       policy.OpenReaders = &state.OpenReaders;
     }
 
@@ -462,4 +470,19 @@ FIXTURE(BrokenReaderRuleMustFail) {
   };
   const auto stats = RunModel(config);
   EXPECT_GT(stats.Mismatches, 0UL);
+}
+
+/* 8. #745 stage 2: the merge's form of the rule, which folds the open readers into the horizon (each is a lease on its
+      version, so H = min(window horizon, oldest lease)) instead of keeping a reader set, matches the oracle too. */
+FIXTURE(RetentionRuleWithLeasesInTheHorizon) {
+  TRunConfig config{
+    .HasWindow = true,
+    .MaxDepth = 7,
+    .MaxWrites = 3,
+    .NumKeys = 2,
+    .LeasesLowerHorizon = true,
+  };
+  const auto stats = RunModel(config);
+  EXPECT_GT(stats.StatesExplored, 100UL);
+  EXPECT_EQ(stats.Mismatches, 0UL);
 }

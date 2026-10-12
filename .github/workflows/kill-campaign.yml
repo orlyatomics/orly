@@ -40,6 +40,10 @@ on:
         default: 'ubuntu-24.04'
         type: choice
         options: ['ubuntu-24.04', 'ubuntu-24.04-arm']
+      retention_versions:
+        description: 'Run orlyi with --retention_versions=N (#745 stage 2); empty leaves retention off'
+        required: false
+        default: ''
 
 jobs:
   campaign:
@@ -84,6 +88,7 @@ jobs:
           KILLS: ${{ inputs.kills || '40' }}
           SEED: ${{ inputs.seed }}
           SIGNAL: ${{ inputs.signal || 'KILL' }}
+          RETENTION_VERSIONS: ${{ inputs.retention_versions }}
         run: ./tests/kill_campaign.sh 2>&1 | tee /tmp/kill-campaign.log; exit "${PIPESTATUS[0]}"
 
       # A wedged restart (#804) or a hung SIGTERM stop leaves its threads' states and stacks in

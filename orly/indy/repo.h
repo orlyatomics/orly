@@ -21,6 +21,7 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -369,6 +370,26 @@ namespace Orly {
         while (cur < seq && !HistoryHorizon.compare_exchange_weak(cur, seq)) {}
       }
 
+      /* #745 stage 2: how long a read at a version holds that version's history, from its latest read. */
+      static constexpr std::chrono::seconds VersionLeaseTtl{600};
+
+      /* Holds the history of version `at` for a read there, while the retention window is on, until VersionLeaseTtl
+         after its latest call: a merge keeps it even once the window has moved past it, so a reader paging through
+         the version can finish. A merge that started before the lease may still drop it; the read then reports the
+         version unavailable. No-op with the window off. */
+      void LeaseVersion(TSequenceNumber at);
+
+      /* Sets how long a lease lasts (VersionLeaseTtl by default); tests shorten it. */
+      void SetVersionLeaseTtl(std::chrono::steady_clock::duration ttl) {
+        std::lock_guard<std::mutex> lock(RetentionLock);
+        LeaseTtl = ttl;
+      }
+
+      /* The oldest version the next merge must keep whole (see TMergeDataFile and TFoldDataFile), or nothing while
+         the retention window is off or for a repo that isn't the global POV: the window's start, lowered to the
+         oldest leased version, and never below the horizon, whose older versions are gone already. */
+      [[nodiscard]] std::optional<TSequenceNumber> GetRetainFrom();
+
       /* Cumulative bytes written in memtable flushes (#857). */
       [[nodiscard]] size_t GetFlushBytes() const noexcept {
         return FlushBytes.load(std::memory_order_relaxed);
@@ -647,6 +668,13 @@ namespace Orly {
 
       /* See GetHistoryHorizon. */
       std::atomic<TSequenceNumber> HistoryHorizon{0UL};
+
+      /* See LeaseVersion and GetRetainFrom. Leases maps each leased version to its expiry; NewestSamples holds
+         (time, newest version then) pairs, oldest first, for --retention_seconds. */
+      std::mutex RetentionLock;
+      std::map<TSequenceNumber, std::chrono::steady_clock::time_point> Leases;
+      std::chrono::steady_clock::duration LeaseTtl = VersionLeaseTtl;
+      std::deque<std::pair<std::chrono::steady_clock::time_point, TSequenceNumber>> NewestSamples;
 
       /* Cumulative bytes written in memtable flushes (#857). */
       std::atomic<size_t> FlushBytes{0UL};

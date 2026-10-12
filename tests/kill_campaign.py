@@ -276,6 +276,8 @@ class Server:
                 cmd.append('--wal_early_ack')
             elif negative == 'noretry':
                 cmd.append('--operation_retention_count=0')
+        if getattr(self.args, 'retention_versions', 0):
+            cmd.append(f'--retention_versions={self.args.retention_versions}')
         self.log = open(self.logpath, 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + self.args.startup_timeout
@@ -456,6 +458,8 @@ def main():
     ap.add_argument('--port', type=int, default=19900)
     ap.add_argument('--volume-gb', type=int, default=3)
     ap.add_argument('--update-pool-size', type=int, default=100000)
+    ap.add_argument('--retention-versions', type=int, default=int(os.environ.get('RETENTION_VERSIONS') or 0),
+                    help='run orlyi with --retention_versions (#745 stage 2); 0 leaves retention off')
     ap.add_argument('--startup-timeout', type=int, default=300)
     ap.add_argument('--wedge-min-txns', type=int, default=100,
                     help='a load that acknowledges fewer transactions than this is a wedge (#804)')

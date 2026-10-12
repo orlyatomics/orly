@@ -58,6 +58,8 @@ TContext::TContext(const Indy::L0::TManager::TPtr<TRepo> &private_repo, Atom::TC
     if (*At < oldest || *At > newest) {
       throw Server::TVersionUnavailable(*At, oldest, newest);
     }
+    /* #745 stage 2: with the retention window on, hold this version's history while the reader pages through it. */
+    private_repo->LeaseVersion(*At);
     RepoTree.emplace_back(private_repo, std::move(view));
     return;
   }

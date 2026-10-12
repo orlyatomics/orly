@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -734,6 +735,120 @@ FIXTURE(StreamingFoldMatchesReference) {
     /* the inputs exercised the fold, not just copied keys through */
     EXPECT_GT(folded_runs, 1000UL);
     EXPECT_GT(compared, 500UL);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* The id of each update in a file's update index, by sequence number. */
+static std::map<TSequenceNumber, TUuid> ReadUpdateIds(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id) {
+  struct TUpdateReader : public TReader {
+    using TReader::TReader;
+    using TReader::TReadFile::GetByteOffsetOfUpdateIndex;
+  };
+  TUpdateReader reader(HERE, mem_engine.GetEngine(), file_id, gen_id);
+  TDataFile::TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileOther, RealTime, &reader,
+      mem_engine.GetEngine()->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(),
+      reader.GetByteOffsetOfUpdateIndex());
+  TReader::TArena main_arena(&reader, mem_engine.GetEngine()->GetCache<TReader::PhysicalCachePageSize>(), RealTime);
+  std::map<TSequenceNumber, TUuid> out;
+  for (size_t u = 0UL; u < reader.GetNumUpdates(); ++u) {
+    TSequenceNumber seq_num;
+    TCore meta_core, id_core;
+    in_stream.Read(seq_num);
+    in_stream.Read(&meta_core, sizeof(meta_core));
+    in_stream.Read(&id_core, sizeof(id_core));
+    in_stream.Skip(sizeof(size_t) * 2UL);
+    void *state = alloca(Sabot::State::GetMaxStateSize());
+    TUuid id;
+    Sabot::ToNative(*Sabot::State::TAny::TWrapper(id_core.NewState(&main_arena, state)), id);
+    out[seq_num] = id;
+  }
+  return out;
+}
+
+/* #745 stage 2: a fold with a retention window keeps every version newer than it, as written and with its update's
+   id, and folds the rest to their state as of the window's start. A long `+=` run on a known value gets an Assign
+   keyframe every KeyframeInterval deltas, so reading any version replays at most that many; replaying the output
+   gives the source's value at every version in the window. */
+FIXTURE(RetainingFoldKeepsTheWindowWithKeyframes) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    TUuid file_id(TUuid::Best);
+    TUuid index_id(TUuid::Twister);
+    const size_t src_gen = 1, dst_gen = 2;
+    /* Key 42: Assign(10) at 1, then `+= 1` at 2..151. Key 7: Assign(1) at 152, Assign(2) at 153. */
+    constexpr TSequenceNumber last_add = 151UL, retain_from = 50UL;
+    {
+      TMockMem mem_layer;
+      Insert(mem_layer, 1UL, index_id, 10L, 42L);
+      for (TSequenceNumber seq = 2UL; seq <= last_add; ++seq) {
+        InsertMut(mem_layer, seq, index_id, 42L, 1L, TMutator::Add);
+      }
+      Insert(mem_layer, 152UL, index_id, 1L, 7L);
+      Insert(mem_layer, 153UL, index_id, 2L, 7L);
+      TDataFile(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, src_gen, 20UL, 0U, Medium);
+    }
+    TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, src_gen, dst_gen, Medium, 20UL, retain_from);
+    EXPECT_EQ(fold.GetNumKeys(), 2UL);
+    const auto entries = DumpFile(mem_engine, file_id, dst_gen, {index_id});
+    std::map<int64_t, std::vector<TDumpEntry>> by_key;
+    for (const auto &e : entries) {
+      by_key[e.Key].push_back(e);
+    }
+    /* Key 42: the base at 50 (10 + 49), then 101 deltas, the 64th of them (at 114) a keyframe of 10 + 113. */
+    const auto &hot = by_key[42L];
+    EXPECT_EQ(hot.size(), 1UL + (last_add - retain_from));
+    std::vector<TSequenceNumber> assigns;
+    for (const auto &e : hot) {
+      if (e.Mutator == TMutator::Assign) {
+        assigns.push_back(e.SeqNum);
+        EXPECT_EQ(e.Value, 10L + static_cast<int64_t>(e.SeqNum) - 1L);
+      } else {
+        EXPECT_EQ(e.Value, 1L);
+      }
+    }
+    EXPECT_TRUE(assigns == std::vector<TSequenceNumber>({retain_from + TFoldDataFile::KeyframeInterval, retain_from}));
+    EXPECT_EQ(by_key[7L].size(), 2UL);
+    /* Replay key 42 at every version from the window's start, as a read does: from the newest entry at or below the
+       version back to the first Assign. */
+    size_t max_replay = 0UL;
+    for (TSequenceNumber at = retain_from; at <= last_add; ++at) {
+      int64_t value = 0L;
+      size_t replayed = 0UL;
+      for (const auto &e : hot) {  // newest first
+        if (e.SeqNum > at) {
+          continue;
+        }
+        value += e.Value;
+        ++replayed;
+        if (e.Mutator == TMutator::Assign) {
+          break;
+        }
+      }
+      max_replay = std::max(max_replay, replayed);
+      if (!EXPECT_EQ(value, 10L + static_cast<int64_t>(at) - 1L)) {
+        break;
+      }
+    }
+    EXPECT_LE(max_replay, TFoldDataFile::KeyframeInterval);
+    /* Every version in the window keeps its update's id; the folded base gets a fresh one. */
+    const auto src_ids = ReadUpdateIds(mem_engine, file_id, src_gen);
+    const auto dst_ids = ReadUpdateIds(mem_engine, file_id, dst_gen);
+    size_t kept_ids = 0UL;
+    for (const auto &[seq, id] : dst_ids) {
+      if (seq > retain_from) {
+        kept_ids += (src_ids.at(seq) == id) ? 1UL : 0UL;
+      } else {
+        EXPECT_FALSE(src_ids.at(seq) == id);
+      }
+    }
+    EXPECT_EQ(kept_ids, 153UL - retain_from);
+    /* Without a window the same source folds to one entry a key, as before. */
+    TFoldDataFile plain(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, src_gen, 3UL, Medium, 20UL);
+    EXPECT_EQ(DumpFile(mem_engine, file_id, 3UL, {index_id}).size(), 2UL);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

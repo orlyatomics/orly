@@ -53,7 +53,8 @@ class TMergeDataFileImpl {
                      TSequenceNumber /*release_up_to*/,
                      DiskPriority priority,
                      size_t max_block_cache_read_slots_allowed,
-                     size_t temp_file_consol_thresh)
+                     size_t temp_file_consol_thresh,
+                     std::optional<TSequenceNumber> retain_from = std::nullopt)
       : Engine(engine),
         StorageSpeed(storage_speed),
         UpdateIndexStorageSpeed(TVolume::TDesc::TStorageSpeed::Slow),
@@ -179,6 +180,26 @@ class TMergeDataFileImpl {
                   typename TReader::TIndexFile::THistoryKeyCursor hist_csr(source_file.get(), item.OffsetOfHistKeys / TData::KeyHistorySize);
                   for (size_t i = 0; i < item.NumHistKeys && hist_csr; ++i, ++hist_csr) {
                     seq_keeper->Emplace((*hist_csr).SeqNum);
+                  }
+                }
+                /* #745 stage 2: with a retention window, keep what a read at any version from `retain_from` on
+                   needs of this key: every version newer than `retain_from`, then the older ones down to the first
+                   Assign or tombstone at or below it (the key's state as of `retain_from`, which a `+=` there would
+                   otherwise read without its base). Keeping a sequence number keeps its whole update, as above. */
+                else if (retain_from && item.NumHistKeys > 0 && item.SeqNum > *retain_from) {
+                  std::vector<std::pair<TSequenceNumber, bool>> hist;  // seq, absolute (an Assign or a tombstone)
+                  hist.reserve(item.NumHistKeys);
+                  typename TReader::TIndexFile::THistoryKeyCursor hist_csr(source_file.get(), item.OffsetOfHistKeys / TData::KeyHistorySize);
+                  for (size_t i = 0; i < item.NumHistKeys && hist_csr; ++i, ++hist_csr) {
+                    const auto &hist_item = *hist_csr;
+                    hist.emplace_back(hist_item.SeqNum, hist_item.Mutator == TMutator::Assign || hist_item.Value.IsTombstone());
+                  }
+                  std::stable_sort(hist.begin(), hist.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+                  for (const auto &[seq, absolute] : hist) {
+                    seq_keeper->Emplace(seq);
+                    if (seq <= *retain_from && absolute) {
+                      break;
+                    }
                   }
                 }
               }
@@ -2879,17 +2900,18 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
                                size_t max_block_cache_read_slots_allowed,
                                size_t temp_file_consol_thresh,
                                bool can_tail,
-                               bool can_tail_tombstone) {
+                               bool can_tail_tombstone,
+                               std::optional<TSequenceNumber> retain_from) {
   if (can_tail) {
     if (can_tail_tombstone) {
-      TMergeDataFileImpl<true, true> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
+      TMergeDataFileImpl<true, true> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
       FileLength = merge_file.GetFileLength();
     } else {
-      TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
+      TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();

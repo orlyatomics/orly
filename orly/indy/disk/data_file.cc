@@ -601,6 +601,9 @@ void TIndexFile::FlushHistory() {
     stream << seq_num;
     TCore key_core = key.GetCore();
     TCore val_core = val;
+    /* Store the hash on history key cores as PushKey does on current ones: a range walk at a version yields
+       history keys, and TKey::TupleNeEq reads the stored hash (#745 stage 2 folds write history through here). */
+    key_core.TrySetStoredHash(key.GetHash());
     CurArena = key.GetArena();
     key_core.Remap(KeyRemapper);
     val_core.Remap(ValRemapper);

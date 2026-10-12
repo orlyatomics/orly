@@ -390,8 +390,15 @@ namespace Orly {
                  (disk entries do not participate in cross-repo dedup -- the
                  child-POV release filter in TRepo::StepMergeMem keeps released
                  duplicates off disk; see #227). */
+              const bool base = (h.Mutator == TMutator::Assign || h.Value.IsTombstone());
               ++(*HistCursor);
               --HistRemaining;
+              /* #745 stage 2: an Assign or a tombstone is the value's base, and nothing older in the file can change
+                 it, so the replay stops there. It matters once a file keeps history (a retention window): a hot `+=`
+                 key replays back to its last keyframe, not to the start of the window. */
+              if (base) {
+                HistRemaining = 0UL;
+              }
               Cached = true;
               return;
             }

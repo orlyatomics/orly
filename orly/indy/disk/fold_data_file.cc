@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <functional>
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -58,6 +59,8 @@ namespace {
        (same trick TReader in merge_data_file.cc uses). */
     using TReadFile::ForEachIndex;
     using TReadFile::TIndexFile;
+    using TReadFile::GetNumUpdates;
+    using TReadFile::GetByteOffsetOfUpdateIndex;
 
     std::unique_ptr<TArena> Arena;
   };
@@ -145,6 +148,75 @@ namespace {
     return {out};
   }
 
+  /* #745 stage 2: one key's entries (sorted SeqNum desc) folded under a retention window. The versions newer than
+     `retain_from` stay as they were written, oldest last, so a read at any version from `retain_from` on finds the
+     key's state; the ones at or below it fold to their state as of `retain_from`, as FoldOneKey folds a whole run.
+     Every `KeyframeInterval`-th delta of a run whose value is known (it starts at an Assign or a tombstone, in this
+     file) becomes an Assign of that value, so a read replays at most that many deltas. Each output entry says
+     whether it is a version in the window, whose update's metadata and id carry over. */
+  std::vector<std::pair<TFoldEntry, bool>> FoldOneKeyRetaining(const std::vector<TFoldEntry> &entries, TSequenceNumber retain_from) {
+    auto first_old = std::find_if(entries.begin(), entries.end(), [retain_from](const TFoldEntry &e) { return e.SeqNum <= retain_from; });
+    const std::vector<TFoldEntry> old_entries(first_old, entries.end());
+    const auto base = FoldOneKey(old_entries);
+    /* The value as of the oldest kept entry, when this file alone determines it. */
+    bool known = false;
+    bool absent = false;
+    Var::TVar running;
+    std::optional<TMutator> run_mut;
+    size_t run_len = 0UL;
+    const auto set_from = [&](const TFoldEntry &e) {
+      if (e.IsTombstone) {
+        known = true;
+        absent = true;
+        run_mut.reset();
+        run_len = 0UL;
+      } else if (e.Mutator == TMutator::Assign) {
+        known = true;
+        absent = false;
+        running = e.Op;
+        run_mut.reset();
+        run_len = 0UL;
+      } else {
+        known = false;
+      }
+    };
+    std::vector<std::pair<TFoldEntry, bool>> out;
+    /* The base carries empty metadata, as every folded entry does: no version at or below `retain_from` keeps its
+       update's, so one sequence number never has entries of both kinds. */
+    if (!base.empty()) {
+      out.emplace_back(base.front(), false);
+      set_from(base.front());
+    }
+    for (auto it = std::make_reverse_iterator(first_old); it != entries.rend(); ++it) {
+      const TFoldEntry &e = *it;
+      if (e.IsTombstone || e.Mutator == TMutator::Assign) {
+        set_from(e);
+        out.emplace_back(e, true);
+        continue;
+      }
+      if (!known || !Var::IsDeferSafeCommutative(e.Mutator) || (run_mut && *run_mut != e.Mutator)) {
+        /* A delta on a value this file can't tell, or a mixed or non-commutative run: kept as written, and the
+           value stays unknown until the next Assign or tombstone. */
+        known = false;
+        out.emplace_back(e, true);
+        continue;
+      }
+      running = absent ? e.Op : Rt::Mutate(running, e.Mutator, e.Op);
+      absent = false;
+      run_mut = e.Mutator;
+      if (++run_len == TFoldDataFile::KeyframeInterval) {
+        out.emplace_back(TFoldEntry{e.SeqNum, TMutator::Assign, running, /*IsTombstone=*/false}, true);
+        run_mut.reset();
+        run_len = 0UL;
+      } else {
+        out.emplace_back(e, true);
+      }
+    }
+    /* Newest first, as FoldOneKey's caller writes them. */
+    std::reverse(out.begin(), out.end());
+    return out;
+  }
+
 }  // namespace
 
 namespace Orly { namespace Indy { namespace Disk {
@@ -155,7 +227,8 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                              size_t source_gen_id,
                              size_t dest_gen_id,
                              DiskPriority priority,
-                             size_t temp_file_consol_thresh)
+                             size_t temp_file_consol_thresh,
+                             std::optional<TSequenceNumber> retain_from)
     : NumKeys(0UL),
       LowestSeq(0UL),
       HighestSeq(0UL) {
@@ -182,6 +255,27 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
   std::vector<TDataFile::TEntryView> out_entries;
   /* The empty metadata every folded entry carries. */
   const TCore empty_metadata = Indy::TKey(&out_arena).GetCore();
+  /* #745 stage 2: the metadata and id of each update in the retention window, which its entries keep. */
+  std::map<TSequenceNumber, std::pair<TCore, TCore>> window_updates;
+  if (retain_from) {
+    const size_t num_updates = reader.GetNumUpdates();
+    TDataFile::TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileScan, priority, &reader,
+                                            engine->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(),
+                                            reader.GetByteOffsetOfUpdateIndex());
+    for (size_t u = 0UL; u < num_updates; ++u) {
+      TSequenceNumber seq_num;
+      TCore meta_core, id_core;
+      in_stream.Read(seq_num);
+      in_stream.Read(&meta_core, sizeof(meta_core));
+      in_stream.Read(&id_core, sizeof(id_core));
+      in_stream.Skip(sizeof(size_t) * 2UL);
+      if (seq_num > *retain_from) {
+        const Indy::TKey meta(&out_arena, state_alloc, Indy::TKey(meta_core, reader.Arena.get()));
+        const Indy::TKey id(&out_arena, state_alloc, Indy::TKey(id_core, reader.Arena.get()));
+        window_updates.emplace(seq_num, std::make_pair(meta.GetCore(), id.GetCore()));
+      }
+    }
+  }
 
   // 4. Per index: fold each key's current entry and history, in key order.
   for (const TUuid &index_id : index_ids) {
@@ -222,12 +316,22 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                        [](const TFoldEntry &a, const TFoldEntry &b) {
                          return a.SeqNum > b.SeqNum;
                        });
-      const auto folded = FoldOneKey(entries);
+      std::vector<std::pair<TFoldEntry, bool>> folded;
+      if (retain_from) {
+        folded = FoldOneKeyRetaining(entries, *retain_from);
+      } else {
+        for (auto &e : FoldOneKey(entries)) {
+          folded.emplace_back(std::move(e), false);
+        }
+      }
       if (folded.empty()) {
         continue;
       }
-      const Indy::TKey key(&out_arena, state_alloc, Indy::TKey(item.Key, &idx_arena));
-      for (const TFoldEntry &e : folded) {
+      const Indy::TKey source_key(item.Key, &idx_arena);
+      for (const auto &[e, in_window] : folded) {
+        /* Each entry its own copy of the key, as each update in a memory layer has: TDataFile stores a current key's
+           hash with it, which the same core reused for the key's history would not match. */
+        const Indy::TKey key(&out_arena, state_alloc, source_key);
         Indy::TKey op_key;
         if (e.IsTombstone) {
           op_key = Indy::TKey(Native::TTombstone::Tombstone, &out_arena, state_alloc);
@@ -238,10 +342,17 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
         }
         /* Each entry keeps its own mutator: a folded run that stays commutative (#227) must not
            turn into an Assign that shadows the key's partials in other files. */
-        const Indy::TKey id(TUuid(TUuid::Twister), &out_arena, state_alloc);
-        out_entries.push_back(TDataFile::TEntryView{index_id, key, op_key.GetCore(), empty_metadata, id.GetCore(),
+        TCore metadata = empty_metadata;
+        TCore id_core;
+        const auto update = in_window ? window_updates.find(e.SeqNum) : window_updates.end();
+        if (update != window_updates.end()) {
+          metadata = update->second.first;
+          id_core = update->second.second;
+        } else {
+          id_core = Indy::TKey(TUuid(TUuid::Twister), &out_arena, state_alloc).GetCore();
+        }
+        out_entries.push_back(TDataFile::TEntryView{index_id, key, op_key.GetCore(), metadata, id_core,
                                                     &out_arena, e.SeqNum, e.Mutator});
-        ++NumKeys;
       }
     }
     /* The source is in key order already; sort anyway (newest first within a key), so the output
@@ -278,6 +389,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
   };
   TDataFile data_file(engine, storage_speed, source, file_uuid,
                       dest_gen_id, temp_file_consol_thresh, 0U, priority, source_range);
+  NumKeys = data_file.GetNumKeys();
   LowestSeq = data_file.GetLowestSequence();
   HighestSeq = data_file.GetHighestSequence();
   FileLength = data_file.GetFileLength();
