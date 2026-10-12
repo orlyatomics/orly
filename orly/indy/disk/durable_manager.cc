@@ -1124,12 +1124,12 @@ size_t TDurableManager::TSortedInFile::GetStartingBlock() const {
 }
 
 void TDurableManager::TSortedInFile::ReadMeta(size_t offset, size_t &out) const {
-  assert(InStream);
-  size_t cur_offset = InStream->GetOffset();
-  assert(cur_offset < FileLength);
-  InStream->GoTo(offset);
-  InStream->Read(out);
-  InStream->GoTo(cur_offset);
+  /* A stream of its own: this runs from inside InStream's own CheckBuf (via FindPageIdOfByte), so moving InStream
+     here and restoring it would re-enter CheckBuf at the same unloaded offset and recurse forever (#886). The layout
+     table sits in the file's first block, which needs no layout lookup to read. */
+  assert(offset < Disk::Util::LogicalBlockSize);
+  TInStream meta_stream(HERE, Source::DurableFetch, RealTime, this, PageCache, offset);
+  meta_stream.Read(out);
 }
 
 size_t TDurableManager::TSortedInFile::FindPageIdOfByte(size_t offset) const {

@@ -315,6 +315,34 @@ FIXTURE(SeqNumSurvivesReopen) {
   });
 }
 
+/* A durable file larger than one logical block finds its pages through a layout table, and reading it back after a
+   reopen must not recurse (#886): the layout lookup used to move the very stream that was being positioned, and
+   restoring it re-entered the lookup forever. */
+FIXTURE(ReopenFileLargerThanOneBlock) {
+  RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 8, milliseconds(30000)));
+    Sim::TMemEngine mem_engine(&scheduler, 64, 16, 64, 1, 32, 1);
+    TReplicationStub rep_stub;
+    const Durable::TId id(TUuid::Twister);
+    const Durable::TTtl ttl(600);
+    const Durable::TDeadline deadline = Durable::TDeadline::clock::now() + ttl;
+    /* Three logical blocks' worth, so the file spans blocks 0 to 3. */
+    const std::string blob(3 * Disk::Util::LogicalBlockSize, 'x');
+    /* before */ {
+      TDurableManager first(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                            100UL, milliseconds(300), milliseconds(300), milliseconds(10000), 20UL, true);
+      Durable::TSem sem;
+      first.Save(id, deadline, ttl, blob, &sem);
+      sem.Pop();
+    }
+    TDurableManager second(&scheduler, runner_cons, frame_pool_manager, &rep_stub, mem_engine.GetEngine(),
+                           100UL, milliseconds(300), milliseconds(300), milliseconds(10000), 20UL, false);
+    std::string loaded;
+    EXPECT_TRUE(second.TryLoad(id, loaded));
+    EXPECT_TRUE(loaded == blob);
+  });
+}
+
 /* A null sem is a fire-and-forget save: no signal, no crash, still flushed. */
 FIXTURE(NullSemIsFireAndForget) {
   RunOnFiber([](Fiber::TRunner::TRunnerCons &runner_cons, Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager) {

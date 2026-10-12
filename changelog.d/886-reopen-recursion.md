@@ -1,0 +1,1 @@
+- **Fixed**: a store whose durable by-id file spans more than one logical block can be reopened. Finding a page past the first block read the file's layout table through the same stream that was being positioned, and restoring that stream re-entered the lookup until the stack overflowed; the layout entry is now read through a stream of its own (#886).
