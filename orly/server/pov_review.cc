@@ -26,6 +26,8 @@
 #include <stdexcept>
 #include <thread>
 
+#include <syslog.h>
+
 #include <orly/atom/suprena.h>
 #include <orly/indy/context.h>
 #include <orly/indy/fiber/fiber.h>
@@ -310,7 +312,14 @@ TPovDiscard Orly::Server::DiscardPov(Indy::TManager *repo_manager, const TRepoPt
     }
   } catch (...) {
     if (was_normal) {
-      ChangeStatus(repo_manager, repo, false);
+      /* Put the POV back as it was.  If even that fails (no WAL room, #891), don't let it replace
+         the error being reported: the pops that committed stay committed, a retried discard pops
+         the rest, and unpause_pov (which may use the WAL's headroom) unpauses it. */
+      try {
+        ChangeStatus(repo_manager, repo, false);
+      } catch (const exception &ex) {
+        syslog(LOG_ERR, "discard_pov: could not unpause the POV after a failed discard; it stays paused until unpause_pov: %s", ex.what());
+      }
     }
     throw;
   }

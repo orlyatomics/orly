@@ -72,6 +72,15 @@ namespace Orly {
         explicit TWalRingFull(const std::string &msg) : std::runtime_error(msg) {}
       };
 
+      /* A record a write keeping headroom (TWal::TRoom::KeepHeadroom) asked for is too big ever to be
+         safe to take (#891): its promotion, a record about as big, has only the headroom to be
+         written into once client writes have filled the rest, so a record bigger than half the
+         headroom could be accepted and then never promoted.  Not retryable: split the write. */
+      class TWalRecordTooLarge : public std::runtime_error {
+        public:
+        explicit TWalRecordTooLarge(const std::string &msg) : std::runtime_error(msg) {}
+      };
+
       /* 4 KiB group / page alignment for Direct I/O and log groups */
       static constexpr size_t WalAlignment = 4096UL;
 
@@ -344,7 +353,8 @@ namespace Orly {
            Reserve() takes that promise ahead of the append, for a caller that must not fail once
            it has started (a transaction reserves before it applies, and appends from its
            destructor).  It throws TWalRingFull if there is no room, after waiting up to `wait` for
-           a checkpoint to make some; a fiber must not wait. */
+           a checkpoint to make some; a fiber must not wait.  With TRoom::KeepHeadroom it throws
+           TWalRecordTooLarge, at once, for a record bigger than half the headroom. */
         TWalReservation Reserve(size_t size, TRoom room, std::chrono::milliseconds wait = std::chrono::milliseconds(0));
 
         /* Append a record. Returns assigned LSN. Thread-safe.  Throws TWalRingFull if there is no
@@ -394,6 +404,9 @@ namespace Orly {
 
         /* The ring's size in bytes. */
         size_t GetCapacityBytes() const { return Config.CapacityBytes; }
+
+        /* The last part of the ring that only TRoom::All may use (#891). */
+        size_t GetHeadroomBytes() const { return HeadroomBytes; }
 
         /* Copy-forward unpromoted records near the head. Returns assigned new LSNs. */
         std::vector<uint64_t> CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records);

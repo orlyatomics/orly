@@ -19,6 +19,7 @@
 #include <memory>
 #include <optional>
 #include <chrono>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -92,10 +93,12 @@ namespace Orly {
           WalRoom = Disk::TWal::TRoom::KeepHeadroom;
         }
 
-        /* How long Prepare may wait for WAL room before refusing (#891).  Zero, the default, never
-           waits.  Never from a fiber. */
-        void SetWalSpaceWait(std::chrono::milliseconds wait) NO_THROW {
-          WalSpaceWait = wait;
+        /* For a transaction that must not be refused (one a master replicated, #891): Prepare
+           waits for WAL room for as long as it takes, refusing (Disk::TWalRingFull) only once
+           `give_up` returns true.  On a fiber it yields between attempts; off one it blocks.  A
+           failed or stopping WAL still throws at once.  Before Prepare. */
+        void WaitForWalRoom(std::function<bool ()> give_up) {
+          WalGiveUp = std::move(give_up);
         }
 
         /* Mark the prepared action to be committed.  The commitment will occur when this object destructs.
@@ -519,7 +522,8 @@ namespace Orly {
 
         Disk::TWal::TRoom WalRoom = Disk::TWal::TRoom::All;
 
-        std::chrono::milliseconds WalSpaceWait = std::chrono::milliseconds(0);
+        /* Set by WaitForWalRoom; empty means Prepare refuses at once when there is no room. */
+        std::function<bool ()> WalGiveUp;
 
         /* What this transaction commits to safe repos, for the WAL's retention (#755): each push's
            replica mutation (its sequence number is set when the push lands) and whether its repo

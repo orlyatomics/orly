@@ -31,7 +31,9 @@
 #include <vector>
 
 #include <base/scheduler.h>
+#include <orly/indy/disk/sim/fault_device.h>
 #include <orly/indy/disk/sim/mem_engine.h>
+#include <orly/indy/disk/wal.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
 #include <orly/indy/repo.h>
 #include <orly/server/tetris_manager.h>
@@ -154,6 +156,7 @@ class TMyManager
 
   using TManager::OpenOrCreate;
   using L0::TManager::TryOpenLiveRepo;
+  using L1::TManager::SetWal;
 
   private:
 
@@ -1538,4 +1541,89 @@ FIXTURE(Issue665PopCompletionOnCachedRepo) {
     fin = true;
     cond.notify_one();
   }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* A transaction a master replicated must not be refused for want of WAL room (#891): the slave
+   applies it on a fiber, and a refusal there left the batch half-applied and the replica behind
+   for good.  With WaitForWalRoom, Prepare on a fiber waits out a full ring until a checkpoint (on
+   another thread, as the server's checkpointer is) makes room, then commits; it refuses only once
+   its give_up says so. */
+FIXTURE(Issue891ReplicatedWriteWaitsForWalRoom) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    using namespace Orly::Indy::Disk;
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(4, 4, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    /* Declared before the manager, so it outlives it. */
+    Sim::TFaultPlan plan;
+    Sim::TFaultDevice device(&plan, 512UL);
+    TWal::TConfig config;
+    config.BaseOffset = Orly::Indy::Disk::Util::PhysicalBlockSize;
+    config.CapacityBytes = 32UL * 1024UL;
+    config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+    config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+    config.StoreId = TUuid("12345678-1234-1234-1234-123456789abc");
+    TWal wal(&device, config);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    manager->SetWal(&wal);
+    /* Fill the ring until not even a one-byte record fits. */
+    uint64_t last = 0UL;
+    for (size_t size : {2000UL, 200UL, 1UL}) {
+      const std::string payload(size, 'X');
+      for (;;) {
+        try {
+          last = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
+        } catch (const TWalRingFull &) {
+          break;
+        }
+      }
+    }
+    EXPECT_TRUE(wal.WaitForDurable(last, 5000ms));
+    const auto reserve_one = [&wal] { wal.Reserve(1UL, TWal::TRoom::All); };
+    EXPECT_THROW_FUNC(TWalRingFull, reserve_one);
+    const TUuid idx_id(TUuid::Twister);
+    auto repo = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+    const auto new_update = [&] {
+      return TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(1L), &arena, state_alloc)), TKey(10L, &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Best), &arena, state_alloc));
+    };
+    /* Stopping: refused, with nothing applied. */ {
+      auto transaction = manager->NewTransaction();
+      transaction->Push(repo, new_update());
+      transaction->WaitForWalRoom([] { return true; });
+      const auto prepare = [&transaction] { transaction->Prepare(); };
+      EXPECT_THROW_FUNC(TWalRingFull, prepare);
+    }
+    EXPECT_EQ(repo->GetNextSequenceNumber(), 1UL);
+    /* Not stopping: waits for the checkpoint, then commits. */
+    std::atomic<bool> checkpointed(false);
+    std::thread checkpointer([&wal, &checkpointed, last] {
+      std::this_thread::sleep_for(200ms);
+      checkpointed = true;
+      wal.Checkpoint(last + 1UL, 0UL);
+    });
+    /* extra */ {
+      auto transaction = manager->NewTransaction();
+      transaction->Push(repo, new_update());
+      transaction->WaitForWalRoom([] { return false; });
+      bool prepared = false;
+      try {
+        transaction->Prepare();
+        prepared = true;
+      } catch (const std::exception &ex) {
+        std::cerr << "Prepare threw: " << ex.what() << std::endl;
+      }
+      EXPECT_TRUE(prepared);
+      EXPECT_TRUE(checkpointed.load());
+      transaction->CommitAction();
+    }
+    checkpointer.join();
+    EXPECT_EQ(repo->GetNextSequenceNumber(), 2UL);
+    EXPECT_EQ(wal.GetLastAppendedLsn(), last + 1UL);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
 }

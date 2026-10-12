@@ -109,7 +109,7 @@ Every refusal the server has a typed status for is its own error, and
 | Error | Status | Retry? |
 | -- | -- | -- |
 | `error.InsufficientMemory` | `insufficient_memory` | yes, in a few seconds |
-| `error.InsufficientStorage` | `insufficient_storage` | yes, once space is freed |
+| `error.InsufficientStorage` | `insufficient_storage` | yes: in seconds for a full WAL ring, once space is freed for a full disk |
 | `error.WriteTooLarge` | `write_too_large` | no: split the write |
 | `error.ReadTooLarge` | `read_too_large` | no: read less |
 | `error.RemoteCompileDisabled` | `remote_compile_disabled` | no: compile with `orlyc` |

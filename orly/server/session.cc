@@ -182,6 +182,22 @@ static void PrepareClientWrite(Indy::L1::TTransaction &transaction) {
     transaction.Prepare();
   } catch (const Indy::Disk::TWalRingFull &ex) {
     ThrowWalRingFull(ex);
+  } catch (const Indy::Disk::TWalRecordTooLarge &ex) {
+    /* Too big for its promotion ever to be sure of WAL room: not retryable (#891). */
+    throw TWriteTooLarge(ex.what());
+  }
+}
+
+/* Prepare a pause or unpause a client asked for (#891).  Unlike PrepareClientWrite this may use
+   the WAL's headroom: the record is a few hundred bytes and carries no data, nothing pins it past
+   the next checkpoint, and an unpause is how a paused POV's backlog gets promoted and lets go of
+   the head.  If a paused POV is what filled the ring, keeping headroom would refuse the one write
+   that frees it.  Refused only when the headroom is gone too. */
+static void PrepareStatusChange(Indy::L1::TTransaction &transaction) {
+  try {
+    transaction.Prepare();
+  } catch (const Indy::Disk::TWalRingFull &ex) {
+    ThrowWalRingFull(ex);
   }
 }
 
@@ -393,7 +409,7 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
   auto repo = pov->GetRepo(server);
   auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->Pause(repo);
-  PrepareClientWrite(*transaction);
+  PrepareStatusChange(*transaction);
   transaction->CommitAction();
   AddPov(pov);
 }
@@ -1219,7 +1235,7 @@ void TSession::UnpausePov(TServer *server, const TUuid &pov_id) {
   auto repo = pov->GetRepo(server);
   auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->UnPause(repo);
-  PrepareClientWrite(*transaction);
+  PrepareStatusChange(*transaction);
   transaction->CommitAction();
   AddPov(pov);
 }
@@ -1516,6 +1532,10 @@ TUuid TSession::NewPov(
     pov->GetRepo(server);
   } catch (const std::bad_alloc &) {
     ThrowNewPovOutOfMemory();
+  } catch (const Indy::Disk::TWalRingFull &ex) {
+    /* The System repo's record of the new repo had no WAL room (#891): refused before it
+       applied, so, as above, nothing was written and the POV expires unused. */
+    ThrowWalRingFull(ex);
   }
   /* The fork (#746): conflicts are tracked from here, before anyone can write to the POV. */
   WatchFork(pov->GetRepo(server), conflict_mode);

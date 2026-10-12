@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <orly/atom/suprena.h>
+#include <orly/indy/disk/wal.h>
 #include <orly/server/version_unavailable.h>
 #include <orly/var/int.h>
 #include <orly/var/sabot_to_var.h>
@@ -44,6 +45,10 @@ using namespace Orly::Server;
 using namespace Signal;
 
 /* Our finalization of TWs::TSessionManager. */
+/* POV ids whose pause stands for a write the WAL refused (#891); see TSession::PausePov. */
+static const TUuid WalRingFullPovId("00000000-0000-0000-0000-0000000008a1");
+static const TUuid WalRecordTooLargePovId("00000000-0000-0000-0000-0000000008a2");
+
 class TWsTestServer::TSessionManager
     : public TWs::TSessionManager {
   public:
@@ -117,8 +122,16 @@ class TWsTestServer::TSessionManager
       return TUuid(TUuid::Best);
     }
 
-    /* Do-little. */
-    void PausePov(const Base::TUuid &/*pov_id*/) const {}
+    /* Do-little, except that the POV ids WalRingFullPovId and WalRecordTooLargePovId stand for a
+       write the WAL refused (#891), so a test can see how the reply maps those refusals. */
+    void PausePov(const Base::TUuid &pov_id) const {
+      if (pov_id == WalRingFullPovId) {
+        throw Indy::Disk::TWalRingFull("test: the WAL ring is full");
+      }
+      if (pov_id == WalRecordTooLargePovId) {
+        throw Indy::Disk::TWalRecordTooLarge("test: the WAL record is too large");
+      }
+    }
 
     /* Do-little. */
     void SetTtl(const TUuid &/*durable_id*/, const chrono::seconds &/*ttl*/) const {}

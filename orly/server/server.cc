@@ -1496,7 +1496,14 @@ void TServer::Init() {
       bool is_new = ret.second;
       if (is_new) {
         assert(RepoManager);
-        RepoManager->SaveIndexNamespaceMapping(idx_id, pkg_key);
+        try {
+          RepoManager->SaveIndexNamespaceMapping(idx_id, pkg_key);
+        } catch (...) {
+          /* Not saved (refused for WAL room while replication stopped, #891): forget it, so the
+             mapping is saved when the master sends it again rather than skipped as known. */
+          IndexByIndexId.erase(ret.first);
+          throw;
+        }
         IndexIdSet.insert(idx_id);
         stringstream ss;
         ss << "Replicating index [" << idx_id << "] " << pkg_key << " <- ";
@@ -2437,6 +2444,8 @@ void TServer::Shutdown() {
     DurableManager.reset();
     GlobalRepo.Reset();
     RepoManager.reset();
+    /* Last: a transaction's WAL reservation (#891) points back at the ring, and every transaction
+       has gone with Tetris, the sessions and the repos above. */
     Wal.reset();
   });
   teardown_jumper(FramePoolManager.get(), FastRunnerVec[0].get());

@@ -53,9 +53,10 @@ export class OrlyError extends Error {
   }
 }
 
-/** Thrown when the server refuses a write because it is low on disk space
- *  (`"status": "insufficient_storage"`). Nothing was written, reads still work, and the
- *  write can be retried once space is freed. */
+/** Thrown when the server refuses a write because it is low on disk space, or because a safe
+ *  POV's write-ahead log ring is full (`"status": "insufficient_storage"`). Nothing was
+ *  written, reads still work, and the write can be retried: a full ring usually clears within
+ *  seconds, a full disk once space is freed. */
 export class InsufficientStorageError extends OrlyError {
   constructor(statement: string, reply: unknown) {
     super(statement, reply);

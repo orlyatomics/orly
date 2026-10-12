@@ -266,6 +266,19 @@ FIXTURE(ReservationsHoldRingRoom) {
   EXPECT_EQ(TWal::GetRecordGroupBytes(page_body), WalAlignment);
   EXPECT_EQ(TWal::GetRecordGroupBytes(page_body + 1UL), 2UL * WalAlignment);
 
+  /* A record keeping headroom may be at most half the headroom (here 8 KiB, so one page): its
+     promotion has only the headroom to go into once client writes have filled the rest.  Refused
+     as too large, not as ring full, and nothing is charged; the server's own writes aren't capped. */
+  EXPECT_EQ(wal.GetHeadroomBytes(), 2UL * WalAlignment);
+  const auto reserve_too_large = [&wal, page_body] { wal.Reserve(page_body + 1UL, TWal::TRoom::KeepHeadroom); };
+  EXPECT_THROW_FUNC(TWalRecordTooLarge, reserve_too_large);
+  EXPECT_EQ(wal.GetOwedBytes(), 0UL);
+  /* extra */ {
+    TWalReservation big = wal.Reserve(page_body + 1UL, TWal::TRoom::All);
+    EXPECT_TRUE(static_cast<bool>(big));
+  }
+  EXPECT_EQ(wal.GetOwedBytes(), 0UL);
+
   /* Each one-page record is charged two pages (its group and a seal), so with 14 pages outside the
      headroom, 7 reservations keeping headroom fit and an 8th doesn't; with the headroom, one more. */
   std::vector<TWalReservation> held;
@@ -331,15 +344,16 @@ FIXTURE(RingFullNeverStrandsAnAcceptedRecord) {
     for (size_t i = 0; i < 64 && !refused; ++i) {
       try {
         last = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
-      } catch (const std::runtime_error &) {
+      } catch (const TWalRingFull &) {
+        /* Only a ring-full refusal: a TWalIoError (failed or stopping) must fail the test. */
         ++refused;
       }
     }
     EXPECT_EQ(refused, 1UL);
     EXPECT_FALSE(wal.IsFailed());
     /* The flush's write-ahead wait: every record the layer holds becomes durable with the head where
-       it is.  Before #891 this never returned. */
-    wal.WaitForDurable(last);
+       it is.  Before #891 this never returned; bounded so a regression fails rather than hangs. */
+    EXPECT_TRUE(wal.WaitForDurable(last, std::chrono::milliseconds(10000)));
     /* The layer is in a data file now, so nothing before the next record is needed. */
     wal.Checkpoint(last + 1UL, 0UL);
   }

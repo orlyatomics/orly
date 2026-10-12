@@ -531,6 +531,9 @@ namespace Orly {
 
       virtual void SaveRepo(TRepo *base_repo) override;
 
+      /* Prepare a write the server makes to the System repo (#891): see the definition. */
+      void PrepareSystemWrite(L1::TTransaction &transaction);
+
       void SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std::string &namespace_name);
 
       std::unordered_map<Base::TUuid, std::string> GetIndexNamespaceMapping();

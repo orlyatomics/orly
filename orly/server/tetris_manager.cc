@@ -18,6 +18,8 @@
 
 #include <orly/server/tetris_manager.h>
 
+#include <algorithm>
+#include <chrono>
 #include <new>
 #include <thread>
 
@@ -244,6 +246,9 @@ void TTetrisManager::TPlayer::Main() {
     //DEBUG_LOG("tetris player %p: entering Main()", this);
     /* wait to see if we're allowed to play tetris. This will trigger if we're master, if we just became master, or if this player should be destroyed. */
     CanWork.Pop();
+    /* How long to sleep after a round the WAL refused (#891), doubling while it keeps refusing;
+       zero once a round gets through. */
+    std::chrono::microseconds ring_full_pause(0);
     for (;;) {
       if (Paused) {
         /* Ready the unpause before acknowledging the pause: once AwaitPause() returns, an
@@ -276,6 +281,7 @@ void TTetrisManager::TPlayer::Main() {
           if (!TetrisManager->Halted.load()) {
             Play();
           }
+          ring_full_pause = std::chrono::microseconds(0);
         } catch (const std::bad_alloc &) {
           /* Out of pool space mid-round (#584). Nothing was committed: a
              transaction destroyed without CommitAction discards its pushes,
@@ -298,6 +304,11 @@ void TTetrisManager::TPlayer::Main() {
           if ((refusals & (refusals - 1UL)) == 0UL) {
             syslog(LOG_ERR, "tetris player %p: WAL ring full; retrying the round (%ld times so far)", static_cast<void *>(this), refusals);
           }
+          /* Room comes only from a root flush and the checkpoint after it, milliseconds away at
+             best, so retrying at once just spins.  Back off, 100 us doubling to 5 ms; short enough
+             that a pause or stop waiting on this runner is barely held up. */
+          ring_full_pause = std::clamp<std::chrono::microseconds>(ring_full_pause * 2, std::chrono::microseconds(100), std::chrono::milliseconds(5));
+          std::this_thread::sleep_for(ring_full_pause);
         }
         /* Let other fibers on this runner run between rounds (#584). Without
            this the player monopolized the runner, and a fiber that hopped here

@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <stdexcept>
 #include <string>
 #include <iostream>
@@ -196,6 +197,10 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
 
 TWal::~TWal() {
   Stop();
+  /* A reservation points back at its ring and gives its room back when it goes, so every one must
+     go first (#891): the server destroys the transactions holding them (the sessions', Tetris's
+     and the repos') before it resets the WAL. */
+  assert(ReservedGroupBytes.empty());
 }
 
 void TWal::Stop() {
@@ -381,6 +386,14 @@ TWalReservation TWal::Reserve(size_t size, TRoom room, std::chrono::milliseconds
   std::unique_lock<std::mutex> lock(Mutex);
   CheckAppendableLocked(size);
   const size_t group_bytes = GetRecordGroupBytes(size);
+  /* Its promotion needs about as much again, from the headroom alone if client writes have filled
+     the rest; half of it leaves room for what the promotion adds (its pop, its seal). */
+  if (room == TRoom::KeepHeadroom && group_bytes > HeadroomBytes / 2UL) {
+    throw TWalRecordTooLarge("write too large: its WAL record of " + std::to_string(size) + " bytes is more than half the " +
+                             std::to_string(HeadroomBytes >> 10) + " KiB the WAL keeps for promotions (an eighth of --wal_mb), "
+                             "so it could be accepted and never promoted; retrying won't help, split it into smaller batches "
+                             "or raise --wal_mb");
+  }
   if (!AdmitsLocked(group_bytes, room)) {
     if (wait.count() > 0) {
       SpaceCv.wait_for(lock, wait, [this, group_bytes, room] { return Failed || Stopping || AdmitsLocked(group_bytes, room); });
