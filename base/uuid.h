@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <compare>
 #include <cstring>
 #include <istream>
 #include <random>
@@ -169,7 +170,7 @@ namespace Base {
     }
 
     /* True iff. the uuid is not null. */
-    operator bool() const {
+    explicit operator bool() const {
       return uuid_is_null(Data) == 0;
     }
 
@@ -201,6 +202,14 @@ namespace Base {
     /* Comparator. */
     bool operator>=(const TUuid &that) const {
       return uuid_compare(Data, that.Data) >= 0;
+    }
+
+    /* Three-way comparator. */
+    std::strong_ordering operator<=>(const TUuid &that) const {
+      int cmp = uuid_compare(Data, that.Data);
+      if (cmp < 0) return std::strong_ordering::less;
+      if (cmp > 0) return std::strong_ordering::greater;
+      return std::strong_ordering::equal;
     }
 
     /* Comparator. */
