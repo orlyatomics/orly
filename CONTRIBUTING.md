@@ -22,23 +22,27 @@ are repo-root-relative. Expect `156 passed / 2 xfail`.
 ### Getting started on macOS (or any non-Linux machine)
 
 The engine uses Linux-only APIs (`epoll`, `eventfd`, `O_DIRECT`, loop-device
-volumes), so on a Mac it builds in a container. `./dev` does that for you; on
-Linux the same command builds natively.
+volumes), so on a Mac it builds and runs in a container. `./dev` does that for
+you; on Linux the same command builds natively.
 
 ```sh
 ./dev build                      # everything, debug
 ./dev build orly/orlyc           # one target
 ./dev test                       # the C++ unit tests
 ./dev lang                       # the orlyscript language suite
+./dev run                        # a dev server (mem-sim, WS on 8082)
 ./dev sh                         # a shell in the build environment
 ```
 
 You need Docker (Docker Desktop, OrbStack or Colima). The first run builds the
 toolchain image from [`docker/Dockerfile.dev`](docker/Dockerfile.dev) once. The
 source stays on your machine; object files and the compiler cache live in named
-volumes (`orly-dev-out`, `orly-dev-ccache`), so only the first build is cold.
-Set `ORLY_DEV_IMAGE` to use another image, or `ORLY_DEV_NATIVE=1` / `0` to force
-a native or containerised build.
+volumes (`orly-dev-out`, `orly-dev-ccache`), so only the first build is cold
+(~8 s for a single target + test, ~0.4 s for a warm rebuild). `./dev run`
+publishes the WebSocket port (`-p 127.0.0.1:8082:8082`), so native tools on your
+Mac (`npx orly-repl`, `orly-mcp`, or the Python/Go/TS client libraries) connect
+seamlessly to `ws://127.0.0.1:8082/`. Set `ORLY_DEV_IMAGE` to use another image,
+or `ORLY_DEV_NATIVE=1` / `0` to force a native or containerised build.
 
 ## Comments and the TODO convention
 
