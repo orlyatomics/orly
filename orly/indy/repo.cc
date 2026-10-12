@@ -1423,18 +1423,15 @@ void TRepo::StepMergeMem() {
                       new_mem->ImporterAppendUpdate(new_update);
                     }
                   }
+                  std::vector<TMemoryLayer::TCopiedEntry> copies;
                   for (TMemoryLayer::TEntryCollection::TCursor csr(src->GetEntryCollection()); csr; ++csr) {
                     if (csr->GetSequenceNumber() > lower_seq_bound) {
-                      const TUpdate::TEntry &cur_entry = *csr;
-                      const auto iter = update_remap.find(cur_entry.GetUpdate());
+                      const auto iter = update_remap.find(csr->GetUpdate());
                       assert(iter != update_remap.end());
-                      /* #227: MUST pass the mutator -- the 2-arg AddEntry defaults
-                         it to Assign (update.h), which silently turns a commutative
-                         Add into an Assign and caps the read-time fold. */
-                      TUpdate::TEntry *new_entry = iter->second->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()), cur_entry.GetMutator());
-                      new_mem->ImporterAppendEntry(new_entry);
+                      copies.push_back({&*csr, iter->second});
                     }
                   }
+                  new_mem->ImporterAppendCopies(copies, state_alloc);
                   copy_claim.Release();
                   /* new_mem (unreleased remainder) is added to the mapping
                      below; src is MarkForDelete'd there. */
@@ -1490,30 +1487,22 @@ void TRepo::StepMergeMem() {
                     new (update_sorter_alloc + pos) TCopyMergeSorter<TUpdate *, size_t, TUpdateSortComparator>::TMergeElement(&update_sorter, &*csr, pos);
                   }
                 }
+                std::vector<TMemoryLayer::TCopiedEntry> copies;
                 while(!entry_sorter.IsEmpty()) {
                   size_t pos = entry_sorter.Pop();
                   auto &csr = entry_csr_vec[pos];
-                  const TUpdate::TEntry &cur_entry = *csr;
                   /* #227: see the update-loop above -- root keeps all, child drops released. */
                   if (!ParentRepo || csr->GetSequenceNumber() > lower_seq_bound) {
-                    const TUpdate *cur_update = cur_entry.GetUpdate();
-                    const auto iter = update_remap.find(cur_update);
+                    const auto iter = update_remap.find(csr->GetUpdate());
                     assert(iter != update_remap.end());
-                    TUpdate *new_update = iter->second;
-                    /* #227: pass the mutator (see the size==1 path) -- the 2-arg
-                       AddEntry defaults to Assign and would turn a commutative
-                       Add into an Assign during this mem-layer consolidation,
-                       seeding the disk Assign that caps the read fold. This
-                       latent bug was dormant until the merge scheduler fix made
-                       StepMergeMem actually run. */
-                    TUpdate::TEntry *new_entry = new_update->AddEntry(cur_entry.GetIndexKey(), TKey(cur_entry.GetOp(), &cur_entry.GetSuprena()), cur_entry.GetMutator());
-                    new_mem->ImporterAppendEntry(new_entry);
+                    copies.push_back({&*csr, iter->second});
                   }
                   ++csr;
                   if (csr) {
                     new (entry_sorter_alloc + pos) TKeySorter<size_t>::TMergeElement(&entry_sorter, csr->GetKey(), csr->GetSequenceNumber(), pos);
                   }
                 }
+                new_mem->ImporterAppendCopies(copies, state_alloc);
               }  // end sorter alloca scope
               copy_claim.Release();
               if (IsSafeRepo() && !ParentRepo) {

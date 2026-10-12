@@ -24,9 +24,11 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <thread>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -684,6 +686,129 @@ FIXTURE(UpdateBuildKeepsMutatorsAndTies) {
     actual.emplace_back(std::get<0>(k), v, csr->GetMutator());
   }
   EXPECT_TRUE(actual == expected);
+}
+
+/* #892: copy every update of src into a fresh layer the way StepMergeMem does: shallow-copy the
+   updates, then hand the entries, in src's entry order, to ImporterAppendCopies. */
+static void CopyLayer(const TMemoryLayer &src, TMemoryLayer *dst, void *state_alloc) {
+  std::unordered_map<const TUpdate *, TUpdate *> remap;
+  for (TMemoryLayer::TUpdateCollection::TCursor csr(src.GetUpdateCollection()); csr; ++csr) {
+    TUpdate *copy = TUpdate::ShallowCopy(&*csr, state_alloc);
+    remap.emplace(&*csr, copy);
+    dst->ImporterAppendUpdate(copy);
+  }
+  vector<TMemoryLayer::TCopiedEntry> copies;
+  for (TMemoryLayer::TEntryCollection::TCursor csr(src.GetEntryCollection()); csr; ++csr) {
+    copies.push_back({ &*csr, remap.at(csr->GetUpdate()) });
+  }
+  dst->ImporterAppendCopies(copies, state_alloc);
+}
+
+static bool SameEntry(const TUpdate::TEntry &a, const TUpdate::TEntry &b) {
+  return a.GetIndexKey() == b.GetIndexKey() && TKey(a.GetOp(), &a.GetSuprena()) == TKey(b.GetOp(), &b.GetSuprena()) &&
+         a.GetMutator() == b.GetMutator() && a.GetSequenceNumber() == b.GetSequenceNumber();
+}
+
+/* #892: the copy has the same entries as the source, in the same order, in each update and in the
+   layer, with the mutators kept and equal keys across indexes in memory-layer order. */
+FIXTURE(CopyKeepsEntriesOrderAndMutators) {
+  Atom::TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  const Base::TUuid idx_a(Base::TUuid::Twister), idx_b(Base::TUuid::Twister), idx_c(Base::TUuid::Twister);
+  auto key = [&](const Base::TUuid &idx, int64_t k) { return TIndexKey(idx, TKey(make_tuple(k), &arena, state_alloc)); };
+  auto op = [&](int64_t v) { return TKey(v, &arena, state_alloc); };
+  TMemoryLayer src(nullptr);
+  /* Two updates over three indexes, with keys that tie across indexes, and Add mutators. (Entries
+     added with a mutator are kept off the ties: their order among equal keys is not the index order.) */
+  TUpdate::TOpByKey first{ { key(idx_a, 5), op(1) }, { key(idx_a, 2), op(2) }, { key(idx_b, 5), op(3) }, { key(idx_b, 1), op(4) } };
+  vector<TUpdate::TNewEntry> first_more{ { key(idx_c, 7), op(5), TMutator::Add }, { key(idx_c, 3), op(6), TMutator::Add } };
+  TUpdate::TOpByKey second{ { key(idx_a, 5), op(7) }, { key(idx_c, 5), op(8) }, { key(idx_b, 2), op(9) } };
+  auto u1 = TUpdate::NewUpdate(first, first_more, TKey(&arena), TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc));
+  u1->SetSequenceNumber(1);
+  src.Insert(TUpdate::CopyUpdate(u1.get(), state_alloc));
+  auto u2 = TUpdate::NewUpdate(second, TKey(&arena), TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc));
+  u2->SetSequenceNumber(2);
+  src.Insert(TUpdate::CopyUpdate(u2.get(), state_alloc));
+  TMemoryLayer dst_layer(nullptr);
+  TMemoryLayer *const dst = &dst_layer;
+  CopyLayer(src, dst, state_alloc);
+  EXPECT_EQ(dst->GetSize(), src.GetSize());
+  /* the layer's entry order */ {
+    TMemoryLayer::TEntryCollection::TCursor a(src.GetEntryCollection()), b(dst->GetEntryCollection());
+    size_t count = 0;
+    for (; a && b; ++a, ++b, ++count) {
+      EXPECT_TRUE(SameEntry(*a, *b));
+    }
+    EXPECT_FALSE(a || b);
+    EXPECT_EQ(count, 9UL);
+  }
+  /* each update's entry order, and that its entries are its own */ {
+    TMemoryLayer::TUpdateCollection::TCursor a(src.GetUpdateCollection()), b(dst->GetUpdateCollection());
+    for (; a && b; ++a, ++b) {
+      EXPECT_EQ(a->GetSequenceNumber(), b->GetSequenceNumber());
+      TUpdate::TEntryCollection::TCursor x(a->GetEntryCollection()), y(b->GetEntryCollection());
+      for (; x && y; ++x, ++y) {
+        EXPECT_TRUE(SameEntry(*x, *y));
+        EXPECT_TRUE(y->GetUpdate() == &*b);
+      }
+      EXPECT_FALSE(x || y);
+    }
+    EXPECT_FALSE(a || b);
+  }
+  /* the Add mutators survived */ {
+    size_t adds = 0;
+    for (TMemoryLayer::TEntryCollection::TCursor csr(dst->GetEntryCollection()); csr; ++csr) {
+      adds += csr->GetMutator() == TMutator::Add ? 1 : 0;
+    }
+    EXPECT_EQ(adds, 2UL);
+  }
+}
+
+/* #892: time copying a layer of 4,096 entries across 8 indexes, against adding the same entries
+   one by one in memory-layer order (what StepMergeMem used to do). The copy must come out the
+   same, and the old way is quadratic here, so even on a noisy runner the new way is well ahead. */
+FIXTURE(CopyScaling) {
+  std::mt19937_64 rng(892);
+  constexpr int64_t num_entries = 4096, num_indexes = 8;
+  vector<Base::TUuid> idx_ids;
+  for (int64_t i = 0; i < num_indexes; ++i) {
+    idx_ids.emplace_back(Base::TUuid::Twister);
+  }
+  Atom::TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  TUpdate::TOpByKey op_by_key;
+  while (static_cast<int64_t>(op_by_key.size()) < num_entries) {
+    const auto i = static_cast<size_t>(rng() % static_cast<uint64_t>(num_indexes));
+    op_by_key.emplace(TIndexKey(idx_ids[i], TKey(make_tuple(static_cast<int64_t>(i), static_cast<int64_t>(rng() >> 4)), &arena, state_alloc)),
+                      TKey(int64_t(1), &arena, state_alloc));
+  }
+  TMemoryLayer src(nullptr);
+  auto update = TUpdate::NewUpdate(op_by_key, TKey(&arena), TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc));
+  update->SetSequenceNumber(1);
+  src.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
+  auto start = std::chrono::steady_clock::now();
+  TMemoryLayer old_way(nullptr);
+  TUpdate *old_update = TUpdate::ShallowCopy(&*TMemoryLayer::TUpdateCollection::TCursor(src.GetUpdateCollection()), state_alloc);
+  for (TMemoryLayer::TEntryCollection::TCursor csr(src.GetEntryCollection()); csr; ++csr) {
+    old_update->AddEntry(csr->GetIndexKey(), TKey(csr->GetOp(), &csr->GetSuprena()), csr->GetMutator());
+  }
+  old_way.Insert(old_update);
+  const double old_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  TMemoryLayer dst_layer(nullptr);
+  TMemoryLayer *const dst = &dst_layer;
+  start = std::chrono::steady_clock::now();
+  CopyLayer(src, dst, state_alloc);
+  const double new_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "  " << num_entries << " entries, " << num_indexes << " indexes: memory-layer order " << old_ms << " ms, key order " << new_ms << " ms"
+            << std::endl;
+  TMemoryLayer::TEntryCollection::TCursor a(old_way.GetEntryCollection()), b(dst->GetEntryCollection());
+  size_t count = 0;
+  for (; a && b; ++a, ++b, ++count) {
+    EXPECT_TRUE(SameEntry(*a, *b));
+  }
+  EXPECT_FALSE(a || b);
+  EXPECT_EQ(count, static_cast<size_t>(num_entries));
+  EXPECT_TRUE(new_ms < old_ms);
 }
 
 #if 0

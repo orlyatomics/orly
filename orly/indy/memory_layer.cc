@@ -20,6 +20,8 @@
 
 #include <orly/sabot/to_native.h>
 
+#include <algorithm>
+
 using namespace std;
 using namespace Base;
 using namespace Orly::Indy;
@@ -407,4 +409,32 @@ void TMemoryLayer::ImporterAppendUpdate(TUpdate *update) {
 void TMemoryLayer::ImporterAppendEntry(TUpdate::TEntry *entry) {
   assert(entry);
   LinkEntry(entry);
+}
+
+/* #892: copies arrive in memory-layer order, (index id, key, seq). An update's EntryCollection is
+   ordered by key alone and AddEntry walks back from the tail to find each entry's place, so adding
+   them in that order is O(N^2) for an update spanning several indexes. So add them in key order
+   instead. The sort is stable, so entries with equal keys (in different indexes) keep memory-layer
+   order, as they'd have had when added one by one. This layer's own collection is ordered by
+   index id first, so the copies are linked in the original order. The mutator is passed on (#227).
+   If AddEntry throws, nothing has been linked into this layer yet, and the copies made so far
+   belong to their target updates, which the layer's owner deletes. */
+void TMemoryLayer::ImporterAppendCopies(const std::vector<TCopiedEntry> &copies, void *state_alloc) {
+  std::vector<size_t> order(copies.size());
+  for (size_t i = 0; i < order.size(); ++i) {
+    order[i] = i;
+  }
+  std::stable_sort(order.begin(), order.end(), [&copies](size_t lhs, size_t rhs) {
+    return copies[lhs].Source->GetKey() < copies[rhs].Source->GetKey();
+  });
+  std::vector<TUpdate::TEntry *> added(copies.size(), nullptr);
+  for (const size_t i : order) {
+    const TUpdate::TEntry &src = *copies[i].Source;
+    /* #227: MUST pass the mutator -- the 2-arg AddEntry defaults it to Assign (update.h), which
+       silently turns a commutative Add into an Assign and caps the read-time fold. */
+    added[i] = copies[i].Target->AddEntry(src.GetIndexKey(), TKey(src.GetOp(), &src.GetSuprena()), src.GetMutator());
+  }
+  for (TUpdate::TEntry *entry : added) {
+    ImporterAppendEntry(entry);
+  }
 }
