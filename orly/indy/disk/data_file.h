@@ -30,6 +30,7 @@
 #include <orly/indy/memory_layer.h>
 #include <orly/sabot/all.h>
 
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -181,6 +182,37 @@ namespace Orly {
         /* The file map records the sequence range of the updates written, widened to cover
            'cover_range' if one is given. A file that replaces others records their whole range,
            so that a reload recognises them as its inputs (TSafeRepo::ReConstructFromDisk). */
+        /* One entry of the file being written, as a source hands it over. Key, Op, Metadata and
+           Id live in Suprena (Key's own arena is Suprena too), which must outlive the TDataFile
+           constructor: the file's arenas are built from them before the keys are written. */
+        struct TEntryView {
+          Base::TUuid IndexId;
+          TKey Key;
+          Atom::TCore Op;
+          Atom::TCore Metadata;
+          Atom::TCore Id;
+          Atom::TSuprena *Suprena;
+          TSequenceNumber SequenceNumber;
+          TMutator Mutator;
+        };  // TEntryView
+
+        /* Calls its argument once per entry, in the order a memory layer's entry collection keeps
+           them: by index id, then key, then newest sequence number first. TDataFile walks the
+           source twice and both walks must yield the same entries. */
+        using TEntrySource = std::function<void (const std::function<void (const TEntryView &)> &)>;
+
+        /* Writes the entries a source yields (#745 §9.6: the fold streams its output this way,
+           without a memory layer or the update pools). Nothing is notified on completion. */
+        TDataFile(Util::TEngine *engine,
+                  Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
+                  const TEntrySource &source,
+                  const Base::TUuid &file_uid,
+                  size_t gen_id,
+                  size_t temp_file_consol_thresh,
+                  TSequenceNumber release_up_to,
+                  DiskPriority priority,
+                  const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range = std::nullopt);
+
         TDataFile(Util::TEngine *engine,
                   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                   TMemoryLayer *memory_layer,
@@ -208,6 +240,14 @@ namespace Orly {
         }
 
         private:
+
+        /* The body of both constructors. 'memory_layer', if given, is the layer whose updates'
+           persistence notifications fire when the file is in the file map (or fails). */
+        void Build(const TEntrySource &source,
+                   TMemoryLayer *memory_layer,
+                   const Base::TUuid &file_uid,
+                   size_t gen_id,
+                   const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range);
 
         Util::TEngine *Engine;
 

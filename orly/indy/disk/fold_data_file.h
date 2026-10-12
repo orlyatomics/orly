@@ -21,9 +21,9 @@
    TMergeDataFile (which is forward-only and tied to a complex
    offset-remap pipeline). Instead it iterates the source file via
    the existing TReader cursors into typed space (Var::TVar via
-   Sabot::ToNative), applies the fold via Rt::Mutate, materialises
-   the result into a fresh TMemoryLayer, and serialises that layer
-   via TDataFile.
+   Sabot::ToNative), one key at a time, applies the fold via
+   Rt::Mutate, and hands the surviving entries to TDataFile as an
+   entry source (no memory layer, no update pools).
 
    Output entries are always promoted to TMutator::Assign:
    identity-zero (commutative-mutator identity) folded onto the
@@ -55,7 +55,6 @@
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/util/volume_manager.h>
 #include <orly/indy/sequence_number.h>
-#include <orly/indy/update.h>
 
 namespace Orly {
 
@@ -69,10 +68,10 @@ namespace Orly {
          The source file is not modified or removed -- the caller
          (TSafeRepo::MergeFiles) is responsible for the cleanup.
 
-         The fold holds an update and an entry for every key it emits until
-         it writes the file. 'claim', if given, is the caller's claim on the
-         update pools for them (#858); the fold gives it back one update and
-         one entry at a time, as it allocates them. */
+         The fold walks the source key by key, holding one key's versions
+         at a time, and writes its output straight from the heap: it takes
+         nothing from the update pools (#745 §9.6, which retires the pool
+         claim of #858). */
       class TFoldDataFile {
         NO_COPY(TFoldDataFile);
         public:
@@ -83,8 +82,7 @@ namespace Orly {
                       size_t source_gen_id,
                       size_t dest_gen_id,
                       DiskPriority priority,
-                      size_t temp_file_consol_thresh,
-                      Indy::TUpdate::TCopyClaim *claim = nullptr);
+                      size_t temp_file_consol_thresh);
 
         inline size_t GetNumKeys() const {
           return NumKeys;

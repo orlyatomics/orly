@@ -2254,15 +2254,16 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
      file via TMutation::Augment-equivalent logic in typed space. Output
      entries are promoted to Assign(folded value), bringing read
      amplification back to O(1) per key. */
-  /* #627: the fold holds an update and an entry for every key of the merged file in the update
-     pools at once, so a big enough file can never fold, whatever the pools' reserve (#607).
-     Folding only bounds read amplification: the unfolded file is a correct result, as on the
-     fast path above, and a later merge that takes it in folds again. */
+  /* #627: a fold that can't get the memory it needs keeps the merge unfolded. Folding only bounds
+     read amplification: the unfolded file is a correct result, as on the fast path above, and a
+     later merge that takes it in folds again. Since #745 §9.6 the fold takes nothing from the
+     update pools (it streams the merged file key by key), so it no longer claims pool space up
+     front (#858); only a heap allocation failure lands here. */
   const auto keep_unfolded = [&]() {
     static std::atomic<size_t> fold_misses(0UL);
     const size_t misses = ++fold_misses;
     if ((misses & (misses - 1UL)) == 0UL) {
-      syslog(LOG_ERR, "MergeFiles: no pool space to fold %ld keys; keeping the merge unfolded (%ld times so far)", merge_data_file.GetNumKeys(), misses);
+      syslog(LOG_ERR, "MergeFiles: no memory to fold %ld keys; keeping the merge unfolded (%ld times so far)", merge_data_file.GetNumKeys(), misses);
     }
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
@@ -2274,27 +2275,16 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     AddMergeBytes(merge_data_file.GetFileLength());
     return intermediate_gen_id;
   };
-  /* #858: so the fold claims all of that before it allocates any of it, and leaves the pools'
-     reserve alone. A fold that set out without room took every free block before it failed, and
-     anything that wanted one meanwhile got a bare bad_alloc: after a restart, that was the next
-     new POV, whose System repo write has no admission. The fold emits at most one update, of
-     one entry, per key, and builds each in a scratch update first. */
-  const size_t fold_blocks = merge_data_file.GetNumKeys() + 1UL;
-  TUpdate::TCopyClaim fold_claim;
-  if (!fold_claim.TryAcquire(fold_blocks, fold_blocks, true)) {
-    return keep_unfolded();
-  }
   size_t final_gen_id = GetNextGenId();
   size_t fold_file_length = 0UL;
   try {
-    TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh, &fold_claim);
+    TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh);
     out_num_keys = fold_data_file.GetNumKeys();
     out_saved_low_seq = fold_data_file.GetLowestSequence();
     out_saved_high_seq = fold_data_file.GetHighestSequence();
     fold_file_length = fold_data_file.GetFileLength();
   } catch (const std::bad_alloc &) {
-    /* The claim should prevent this, but a key count can be short of what the fold emits. The
-       fold's own output freed itself (TDataFile, before the file map has it). */
+    /* The fold's own output freed itself (TDataFile, before the file map has it). */
     return keep_unfolded();
   } catch (const std::exception &ex) {
     /* The fold's own output frees itself (it is a TDataFile), but the intermediate file is
