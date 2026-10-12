@@ -15,7 +15,7 @@ Entries reference the originating pull request and the closed issue where applic
   existing path. A version the server can't answer exactly is refused with
   `"status": "version_unavailable"` and the readable range (`oldest`, `newest`); merges that fold or
   prune history raise `oldest`. A call at a version that writes is refused with
-  `"status": "version_read_only"`. See docs/PROTOCOL.md, "Reads at a version".
+  `"status": "version_read_only"`. `try {pov} at V pkg method ...;` is the same read in keyword form; it lowers to `.at`, and giving both is refused. See docs/PROTOCOL.md, "Reads at a version".
 
 ### Fixed
 

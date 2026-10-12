@@ -684,7 +684,7 @@ class TWsImpl final
           auto tail = dynamic_cast<const TObjMemberListTail *>(list->GetOptObjMemberListTail());
           list = tail ? tail->GetObjMemberList() : nullptr;
         }
-        const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
+        const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()), stmt->GetOptAt());
         if (options.OpId) {
           AddOpId(closure, *options.OpId);
         }
@@ -751,9 +751,9 @@ class TWsImpl final
           auto list_tail = dynamic_cast<const TObjExprListTail *>(list->GetOptObjExprListTail());
           list = list_tail ? list_tail->GetObjExprList() : nullptr;
         }
-        const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()));
+        const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()), stmt->GetOptAt());
         if (options.At) {
-          throw invalid_argument("try_batch: .at is not supported; read at a version with a single try");
+          throw invalid_argument("try_batch: at and .at are not supported; read at a version with a single try");
         }
         if (options.OpId) {
           /* The batch is one request; the id rides on its first call. */
@@ -795,6 +795,9 @@ class TWsImpl final
       void operator()(const TTryMultiStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
+        if (dynamic_cast<const TAtVersion *>(stmt->GetOptAt())) {
+          throw invalid_argument("try_multi: at is not supported; read at a version with a single try");
+        }
         void *alloc = alloca(SabotStateSize);
         /* One call per element, each naming its own package and method; the server folds
            them all into a single transaction (#255). */
@@ -1026,9 +1029,31 @@ class TWsImpl final
         closure.AddArgBySabot("$op_id", state);
       }
 
-      [[nodiscard]] static TTryOptions GetTryOptions(const TOptionList &options) {
+      /* `try {pov} at V ...` is the keyword spelling of `.at: V` (#745); the two lower to the same option and
+         setting both is refused. */
+      [[nodiscard]] static TTryOptions GetTryOptions(const TOptionList &options, const TOptAt *opt_at) {
         constexpr int64_t max_wait_ms = 60000;
         TTryOptions result;
+        auto at_version = dynamic_cast<const TAtVersion *>(opt_at);
+        std::optional<int64_t> keyword_at;
+        if (at_version) {
+          try {
+            keyword_at = at_version->GetIntExpr()->GetLexeme().AsInt();
+          } catch (const exception &) {
+            throw invalid_argument("try: at must be followed by an int version");
+          }
+        }
+        if (keyword_at) {
+          for (const auto &option : options) {
+            if (option.first == "at") {
+              throw invalid_argument("try: the version is given twice, as `at` and as .at; use one");
+            }
+          }
+          if (*keyword_at < 0) {
+            throw invalid_argument("try: at must not be negative");
+          }
+          result.At = static_cast<uint64_t>(*keyword_at);
+        }
         for (const auto &[name, value] : options) {
           if (name == "receipt") {
             try {
