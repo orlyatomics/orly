@@ -1895,6 +1895,28 @@ class TAcceptClient final
 
 };  // TAcceptClient
 
+/* True once read_val(n) in the global pov reads x; false on deadline.  Says how long it waited
+   when the first read didn't. */
+bool WaitForGlobalVal(const shared_ptr<TExerciseClient> &client, int64_t n, int64_t x, seconds deadline) {
+  const auto start = steady_clock::now();
+  for (size_t reads = 1UL;; ++reads) {
+    auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov (global read)");
+    const Rt::TOpt<int64_t> got = ReadVal(client, **pov_id, n);
+    if (got.IsKnown() && got.GetVal() == x) {
+      if (reads > 1UL) {
+        cout << "read_val(" << n << ") in the global pov read " << x << " after " << reads << " reads, "
+             << duration_cast<milliseconds>(steady_clock::now() - start).count() << " ms" << endl;
+      }
+      return true;
+    }
+    if (steady_clock::now() - start >= deadline) {
+      cout << "read_val(" << n << ") in the global pov never read " << x << endl;
+      return false;
+    }
+    this_thread::sleep_for(milliseconds(50));
+  }
+}
+
 /* An int read out of a POV review result's value. */
 int64_t AsInt(const optional<Var::TVar> &var) {
   return var ? Var::TVar::TDt<int64_t>::As(*var) : -1L;
@@ -1923,6 +1945,9 @@ FIXTURE(PovReviewOverBinaryProtocol) {
   auto pov = Answered(client->NewReviewPov(std::nullopt, /* is_safe */ true, /* is_shared */ false, TConflictMode::Report), "NewReviewPov");
   Answered(client->PausePov(**pov), "PausePov (review)")->Sync();
   EXPECT_TRUE(WriteValReplicated(client, **writer, 81L, 100L));
+  /* The slave's acknowledgement of the write to the global pov doesn't promise that a read of
+     the global pov on the master sees it yet (#882), and DiffPov reads the parent's values now. */
+  EXPECT_TRUE(WaitForGlobalVal(client, 81L, 100L, seconds(60)));
   WriteVal(client, **pov, 81L, 11L);
   WriteVal(client, **pov, 83L, 33L);
   auto diff = Answered(client->DiffPov(**pov), "DiffPov");
