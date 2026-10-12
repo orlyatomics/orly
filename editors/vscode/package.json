@@ -1,0 +1,108 @@
+{
+  "name": "orlyscript",
+  "displayName": "Orlyscript",
+  "description": "Language support, syntax highlighting, and LSP integration for Orlyscript",
+  "version": "0.1.0",
+  "publisher": "orlyatomics",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/orlyatomics/orly.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:orly"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "orly",
+        "aliases": [
+          "Orly",
+          "orly",
+          "orlyscript",
+          "Orlyscript"
+        ],
+        "extensions": [
+          ".orly"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "orly",
+        "scopeName": "source.orly",
+        "path": "./syntaxes/orlyscript.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "orly",
+        "path": "./snippets/orlyscript.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "orly.runLocalOrlyi",
+        "title": "Orly: Run against local orlyi"
+      },
+      {
+        "command": "orly.restartLsp",
+        "title": "Orly: Restart Language Server"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "orly.runLocalOrlyi",
+          "when": "editorLangId == orly",
+          "group": "orly@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Orly",
+      "properties": {
+        "orly.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Orlyscript Language Server (orly-lsp)."
+        },
+        "orly.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the orly-lsp executable. If empty, the extension looks in PATH, ./out_orly/debug/orly/orly_lsp, or ./out_orly/release/orly/orly_lsp."
+        },
+        "orly.orlyi.path": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the orlyi executable for local execution."
+        },
+        "orly.orlyi.port": {
+          "type": "number",
+          "default": 1984,
+          "description": "Port of the local orlyi instance."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0",
+    "vscode-languageclient": "^9.0.1"
+  }
+}

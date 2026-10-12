@@ -1,0 +1,72 @@
+{
+  "Package Skeleton": {
+    "prefix": "pkg",
+    "body": [
+      "package #${1:1};",
+      "",
+      "${2:main} = (${3:x * 2}) where {",
+      "  ${4:x} = given::(${5:int});",
+      "};",
+      "",
+      "test {",
+      "  ${6:t1}: ${2:main}(.${4:x}: ${7:21}) == ${8:42};",
+      "};"
+    ],
+    "description": "Orlyscript package skeleton with a function and test block"
+  },
+  "Function with Where Clause": {
+    "prefix": "fn",
+    "body": [
+      "${1:func_name} = (${2:body}) where {",
+      "  ${3:x} = given::(${4:int});",
+      "};"
+    ],
+    "description": "Function definition with given parameters"
+  },
+  "Given Parameter": {
+    "prefix": "given",
+    "body": [
+      "${1:name} = given::(${2:int});"
+    ],
+    "description": "Given parameter declaration"
+  },
+  "Test Block": {
+    "prefix": "test",
+    "body": [
+      "test {",
+      "  ${1:test_name}: ${2:expression} == ${3:expected};",
+      "};"
+    ],
+    "description": "Test assertion block"
+  },
+  "Effecting Block": {
+    "prefix": "effecting",
+    "body": [
+      "(${1:result}) effecting {",
+      "  ${2:new <[${3:key}]> <- ${4:val};}",
+      "}"
+    ],
+    "description": "Transaction effecting block with mutations"
+  },
+  "Reduce Expression": {
+    "prefix": "reduce",
+    "body": [
+      "reduce (start: ${1:0}) that ${2:start} + ${3:that}"
+    ],
+    "description": "Reduce collection fold expression"
+  },
+  "Sorted By Expression": {
+    "prefix": "sorted",
+    "body": [
+      "sorted_by that.${1:field}"
+    ],
+    "description": "Sort collection by projection"
+  },
+  "Filter Expression": {
+    "prefix": "filter",
+    "body": [
+      "where that > ${1:0}"
+    ],
+    "description": "Filter collection elements"
+  }
+}
