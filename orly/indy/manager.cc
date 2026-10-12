@@ -143,6 +143,7 @@ TManager::TManager(Disk::Util::TEngine *engine,
         auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
         WaitForSlave(cb);
       }  // release context lock
+      ShipsRetentionFlag = true;
       StateChangeCb(Solo);
       break;
     }
@@ -159,6 +160,7 @@ TManager::TManager(Disk::Util::TEngine *engine,
         ReplicationQueueSem.Push();
         ReplicationWorkSem.Push();
       }  // release context lock
+      ShipsRetentionFlag = false;
       StateChangeCb(SyncSlave);
       break;
     }
@@ -1501,6 +1503,7 @@ void TManager::TSlave::TransitionToSlave() {
 
           syslog(LOG_INFO, "TSlave::TransitionToSlave() changing state");
           Manager->State = Slave;
+          Manager->ShipsRetentionFlag = false;
           Manager->StateChangeCb(Slave);
           break;
         }
@@ -2027,15 +2030,21 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             batch_bytes = 0UL;
           };
           std::string blob;
+          /* With them, the retention record a root repo ships (#745 stage 3), so the slave keeps the history the
+             master's horizon promises from the start. That one does change; if an older copy lands after a newer one
+             from the live stream, the slave only keeps more history until the next one comes. */
           for (const auto &repo : to_inventory) {
-            if (!DurableManager->TryReadSaved(repo->GetId(), blob)) {
-              continue;
-            }
-            batch->PushDurable(TDurableReplication(repo->GetId(), repo->GetTtl(), blob));
-            ++batch_records;
-            batch_bytes += blob.size();
-            if (batch_records >= max_batch_records || batch_bytes >= max_batch_bytes) {
-              send_batch();
+            const Base::TUuid ids[2] = {repo->GetId(), Indy::TRepo::GetRetentionRecordId(repo->GetId(), true)};
+            for (const auto &id : ids) {
+              if (!DurableManager->TryReadSaved(id, blob)) {
+                continue;
+              }
+              batch->PushDurable(TDurableReplication(id, (id == repo->GetId()) ? repo->GetTtl() : RetentionRecordTtl, blob));
+              ++batch_records;
+              batch_bytes += blob.size();
+              if (batch_records >= max_batch_records || batch_bytes >= max_batch_bytes) {
+                send_batch();
+              }
             }
           }
           if (batch_records) {
@@ -2157,6 +2166,7 @@ void TManager::Demote() {
   assert(State == Master);
   Context.reset();
   State = Solo;
+  ShipsRetentionFlag = true;
   StateChangeCb(Solo);
   syslog(LOG_NOTICE, "TManager: demoted back to solo");
   auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
@@ -2172,6 +2182,7 @@ void TManager::PromoteSolo(const Base::TFd &fd) {
   ReplicationQueueSem.Push();
   ReplicationWorkSem.Push();
   State = Master;
+  ShipsRetentionFlag = true;
   StateChangeCb(Master);
   syslog(LOG_NOTICE, "TManager: solo promoted to master");
 }
@@ -2180,6 +2191,7 @@ void TManager::PromoteSlave() {
   assert(State == Slave);
   Context.reset();
   State = Solo;
+  ShipsRetentionFlag = true;
   StateChangeCb(Solo);
   auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
   WaitForSlave(cb);

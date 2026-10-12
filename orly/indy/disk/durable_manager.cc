@@ -326,16 +326,36 @@ void TDurableManager::Delete(const Durable::TId &/*id*/, Durable::TSem */*sem*/)
 }
 
 void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &deadline, const Durable::TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem) {
+  AddEntry(id, deadline, ttl, serialized_form, sem, true, false);
+}
+
+bool TDurableManager::TrySaveRecord(const Durable::TId &id, const Durable::TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem, bool replicate) {
+  /* A writer that stopped after an I/O error never pushes the sem; one that has retired would have it pushed now,
+     before the disk has the record. Refuse in both cases: the caller must not act on a record the disk may lack. */
+  if (HasFailed()) {
+    return false;
+  }
+  return AddEntry(id, Durable::TDeadline(std::chrono::system_clock::now() + ttl), ttl, serialized_form, sem, replicate, true);
+}
+
+bool TDurableManager::AddEntry(const Durable::TId &id, const Durable::TDeadline &deadline, const Durable::TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem,
+                               bool replicate, bool refuse_once_retired) {
   assert(serialized_form.size() > 0);
   if (serialized_form.size() >= UINT32_MAX) {
     throw std::runtime_error("Serialized Durable size >= UINT32_MAX");
   }
-  TDurableReplication *durable_replication = Manager->NewDurableReplication(id, ttl, serialized_form);
+  TDurableReplication *durable_replication = replicate ? Manager->NewDurableReplication(id, ttl, serialized_form) : nullptr;
   try {
     std::string temp = serialized_form;
     bool signal_now = false;
     /* acquire data lock */ {
       std::lock_guard<std::mutex> data_lock(DataLock);
+      if (refuse_once_retired && WriterRetired) {
+        if (durable_replication) {
+          delete durable_replication;
+        }
+        return false;
+      }
       TSequenceNumber new_seq_num = ++SeqNum;
       assert(CurMemoryLayer);
       /* The saver's sem rides on the entry and is pushed by the writer fiber once the layer
@@ -345,7 +365,9 @@ void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &dea
          is at-risk exactly as it always was at shutdown. */
       signal_now = WriterRetired;
       new TMemSlushLayer::TDurableEntry(CurMemoryLayer, id, deadline, std::move(temp), new_seq_num, signal_now ? nullptr : sem);
-      Manager->EnqueueDurable(durable_replication);
+      if (durable_replication) {
+        Manager->EnqueueDurable(durable_replication);
+      }
     }  // release data lock
     SlushSem.Push();
     //SlushCounter.Push();
@@ -356,6 +378,7 @@ void TDurableManager::Save(const Durable::TId &id, const Durable::TDeadline &dea
     delete durable_replication;
     throw;
   }
+  return true;
 }
 
 bool TDurableManager::TryLoad(const Durable::TId &id, std::string &serialized_form_out) {

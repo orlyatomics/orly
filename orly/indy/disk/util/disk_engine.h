@@ -57,7 +57,8 @@ namespace Orly {
                       bool create = false,
                       bool no_realtime = false,
                       bool durable_acks = false,
-                      size_t wal_mb = 256)
+                      size_t wal_mb = 256,
+                      bool persist_retention = false)
             : Scheduler(scheduler),
               SystemBlockId(0UL),
               FileAppendLogBlocks((append_log_mb * 1024 * 1024) / Util::PhysicalBlockSize) {
@@ -278,10 +279,10 @@ namespace Orly {
                 WalCheckpoint1Block = dev_info.WalCheckpoint1Block;
                 WalCheckpointBlocks = dev_info.WalCheckpointBlocks ? dev_info.WalCheckpointBlocks : 1UL;
               }
-              if (FormatVersion > 1UL) {
-                throw std::runtime_error("unsupported store format version " + std::to_string(FormatVersion) + ": this binary supports format versions up to 1");
+              if (FormatVersion > MaxFormatVersion) {
+                throw std::runtime_error("unsupported store format version " + std::to_string(FormatVersion) + ": this binary supports format versions up to " + std::to_string(MaxFormatVersion));
               }
-              if (FormatVersion == 1UL) {
+              if (FormatVersion >= 1UL) {
                 VolMan->MarkBlockRangeUsed(TBlockRange(WalStartBlock, WalNumBlocks));
                 VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint0Block, WalCheckpointBlocks));
                 VolMan->MarkBlockRangeUsed(TBlockRange(WalCheckpoint1Block, WalCheckpointBlocks));
@@ -360,6 +361,22 @@ namespace Orly {
                      WalStartBlock, WalNumBlocks, WalCheckpoint0Block, WalCheckpoint1Block);
             }
 
+            /* #745 stage 3: format version 2 is version 1 plus the per-repo retention records (the history horizon,
+               save points and window samples, kept in the durable store). A binary that predates it refuses the store
+               (above), so it can never drop history a record still promises. Upgrade only when the retention window is
+               on: a store that never keeps history stays at version 1 and any binary since #846 opens it. A version 0
+               store (no WAL, --durable_acks=false) is left alone, and its retention stays in memory only. */
+            if (persist_retention && FormatVersion == 1UL) {
+              FormatVersion = 2UL;
+              for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
+                entry.second.FormatVersion = FormatVersion;
+                TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
+              }
+              syslog(LOG_INFO, "upgraded store to format version 2: retention records (#745)");
+            } else if (persist_retention && FormatVersion == 0UL) {
+              syslog(LOG_WARNING, "store format version 0 has no retention records: the retention window will not survive a restart (#745); start with --durable_acks to upgrade");
+            }
+
             Engine =
                 std::make_unique<Util::TEngine>(VolMan, PageCache.get(), BlockCache.get(), FileService.get(), true);
           }
@@ -421,7 +438,7 @@ namespace Orly {
           /* The blocks owned by the engine outside the file service (system block, WAL, checkpoints). */
           std::vector<size_t> GetEngineBlocks() const {
             std::vector<size_t> blocks = {SystemBlockId};
-            if (FormatVersion == 1UL && WalNumBlocks > 0) {
+            if (FormatVersion >= 1UL && WalNumBlocks > 0) {
               for (size_t i = 0; i < WalCheckpointBlocks; ++i) {
                 blocks.push_back(WalCheckpoint0Block + i);
                 blocks.push_back(WalCheckpoint1Block + i);
@@ -452,6 +469,9 @@ namespace Orly {
                 }, options, yield_cb);
           }
 
+          /* The newest store format this binary opens: 1 adds the WAL (#755), 2 the retention records (#745). */
+          static constexpr uint64_t MaxFormatVersion = 2UL;
+
           uint64_t GetFormatVersion() const { return FormatVersion; }
           uint64_t GetWalStartBlock() const { return WalStartBlock; }
           uint64_t GetWalNumBlocks() const { return WalNumBlocks; }
@@ -461,7 +481,7 @@ namespace Orly {
           uint64_t GetWalCheckpointBlocks() const { return WalCheckpointBlocks; }
           /* The size a new store gives each checkpoint slot: 1 MiB, in blocks. */
           static constexpr size_t DefaultWalCheckpointBlocks() { return (1024UL * 1024UL) / Util::PhysicalBlockSize; }
-          bool HasWal() const { return FormatVersion == 1UL && WalNumBlocks > 0; }
+          bool HasWal() const { return FormatVersion >= 1UL && WalNumBlocks > 0; }
           TPersistentDevice *GetPersistentDevice() const {
             if (!DiskUtil->GetPersistentDeviceSet().empty()) {
               return dynamic_cast<TPersistentDevice *>(DiskUtil->GetPersistentDeviceSet().begin()->get());

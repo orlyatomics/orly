@@ -782,6 +782,15 @@ retained history.
    horizon, save points, (time, version) samples), the horizon shipped in the replication stream, the
    store format version, and #755's log in the same bump. Tests: failover keeps every version inside
    the horizon; a restart keeps save points; an older binary refuses the store.
+
+   As built: each root POV has two durable records, its own (never replicated) and the one its master
+   ships (`TRepo::GetRetentionRecordId`). A merge's retain-from is held to the horizon of the newest
+   own record known to be on disk, so a crash can only find history kept, never promised and gone; a
+   restart lowers the horizon from the newest version on disk to the record's. A slave also holds to
+   the shipped horizon, and keeps everything until one arrives. Format version 2 is set only on a
+   start with a retention flag (decision 3: an upgrade never grows the disk on its own). Save points
+   are an internal API (`TRepo::SetSavePoint`); their protocol surface is stage 4's. #755's log is
+   already format version 1 (#846), so the bump carries only the records.
 4. **Diff and time (two-way on top of 3).** `changed between`, `at time`, `version of`, #746's
    save-point hook.
 5. **Clients and docs.** TS/Python/Go/MCP, `docs/PROTOCOL.md`, a rewritten time-travel section in

@@ -708,6 +708,43 @@ namespace Orly {
           return RetentionSeconds.load();
         }
 
+        /* #745 stage 3: whether root repos keep their retention record (horizon, save points, window samples) in the
+           durable store, so a restart keeps the horizon. Set once the store is at format version 2 (see
+           TDiskEngine::MaxFormatVersion): a record in an older store could be outlived by history an older binary
+           dropped, so it is never trusted there. Off (the default) keeps the stage 2 behaviour exactly. */
+        void SetRetentionPersisted(bool persisted) noexcept {
+          RetentionPersisted = persisted;
+        }
+
+        [[nodiscard]] bool IsRetentionPersisted() const noexcept {
+          return RetentionPersisted.load();
+        }
+
+        /* The record store behind the above (Indy::TManager: the durable manager, which the server sets after it
+           has opened the global POV). Until there is one, a repo cannot tell whether it has a record. */
+        virtual bool HasRetentionStore() const noexcept {
+          return false;
+        }
+
+        /* Read the record with the given id into 'blob'; false if there is none, or no store yet. May park the
+           calling fiber on a read: call it holding no std::mutex. */
+        virtual bool TryLoadRetentionRecord(const Base::TUuid &/*id*/, std::string &/*blob*/) {
+          return false;
+        }
+
+        /* Save the record with the given id, replicated to the slaves if 'replicate'. True if saved, and then 'sem'
+           is pushed once, when the record is on disk; false, saving nothing, if there is no store or it cannot
+           promise the disk (see Durable::TManager::TrySaveRecord). */
+        virtual bool TrySaveRetentionRecord(const Base::TUuid &/*id*/, const std::string &/*blob*/, Base::TEventSemaphore */*sem*/, bool /*replicate*/) {
+          return false;
+        }
+
+        /* Whether this node decides the horizon and ships it to slaves (solo or master), rather than taking the one
+           its master ships (slave). */
+        virtual bool ShipsRetention() const noexcept {
+          return true;
+        }
+
         /* True once the merge runners have been told to stop (StopMergeRunners). */
         bool IsShuttingDown() const {
           return ShuttingDown;
@@ -957,6 +994,9 @@ namespace Orly {
         /* See SetRetention. */
         std::atomic<size_t> RetentionVersions{0UL};
         std::atomic<size_t> RetentionSeconds{0UL};
+
+        /* See SetRetentionPersisted. */
+        std::atomic<bool> RetentionPersisted{false};
 
         mutable TRemovalCollection::TImpl RemovalCollection;
         std::mutex RemovalLock;
