@@ -570,9 +570,11 @@ namespace Orly {
                as a view dying on a Tetris round's thread (#713). Those hold neither merge lock, so
                the flag is atomic. Its ordering is not what makes the removal correct: a merge only
                marks a layer in the mapping it has acquired, whose entry holds a reference, and
-               that reference goes only under MappingLock after the merge's own ReleaseMapping or
-               PublishMemMerge. So the Decr() that takes the count to zero always happens after
-               the mark, and sees it. See Decr(). */
+               before releasing that mapping it takes its own reference on the layer (#904,
+               TRepo::TMergeHold), which it drops only after it is done. The mapping's reference
+               goes only under MappingLock after that, or after the merge's publish. So the Decr()
+               that takes the count to zero always happens after the mark, and sees it. See
+               Decr(). */
             std::atomic<bool> MarkedTaken;
 
             static Util::TPool Pool;

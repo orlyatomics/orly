@@ -707,6 +707,65 @@ namespace Orly {
       /* Unpin (Decr) a mapping acquired via AcquireCurrentMapping. */
       void ReleaseMapping(TMapping *mapping);
 
+      /* What a merge holds while it runs (#904). It starts by holding the current mapping, which
+         the merge scans for its inputs. Once the merge has chosen them, Narrow takes a reference
+         on each input and releases the mapping. A merge reads only its inputs, and a mapping
+         references every layer in it, so a merge that held its mapping to the end kept every
+         memory layer flushed meanwhile in the pools until it finished, which for a disk merge
+         or a flush on a busy root is seconds. */
+      class TMergeHold {
+        NO_COPY(TMergeHold);
+        public:
+
+        explicit TMergeHold(TRepo *repo)
+            : Repo(repo), Mapping(repo->AcquireCurrentMapping()) {}
+
+        ~TMergeHold() {
+          Release();
+        }
+
+        /* The mapping, until Narrow or Release. */
+        [[nodiscard]] TMapping *GetMapping() const {
+          assert(Mapping);
+          return Mapping;
+        }
+
+        /* Reference 'layers', which must be in the mapping, and release the mapping. If this
+           throws, nothing has changed. */
+        template <typename TLayer>
+        void Narrow(const std::vector<TLayer *> &layers) {
+          assert(Mapping);
+          assert(Layers.empty());
+          Layers.assign(layers.begin(), layers.end());
+          for (TDataLayer *layer : Layers) {
+            layer->Incr();
+          }
+          Repo->ReleaseMapping(Mapping);
+          Mapping = nullptr;
+        }
+
+        /* Drop whatever is held. Idempotent. */
+        void Release() {
+          if (Mapping) {
+            Repo->ReleaseMapping(Mapping);
+            Mapping = nullptr;
+          }
+          for (TDataLayer *layer : Layers) {
+            layer->Decr();
+          }
+          Layers.clear();
+        }
+
+        private:
+
+        TRepo *Repo;
+
+        TMapping *Mapping;
+
+        std::vector<TDataLayer *> Layers;
+
+      };  // TMergeHold
+
       /* Serializes the mem-merge body of StepMergeMem (one per repo at a time). */
       std::mutex MemMergeLock;
 
