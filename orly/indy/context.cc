@@ -654,3 +654,78 @@ void TContext::TKeyCursor::Refresh() const {
     }
   }
 }
+TContext::TChangedKeyCursor::TChangedKeyCursor(TContext *context, const Indy::TIndexKey &from, const Indy::TIndexKey *to,
+                                               TSequenceNumber first, TSequenceNumber second)
+    : Orly::TKeyCursor(context->Arena), From(from), Owner(context) {
+  if (to) {
+    To.emplace(*to);
+  }
+  context->CheckViewsHeld();
+  if (context->RepoTree.size() != 1 || context->RepoTree.front().first->GetParentRepo()) {
+    throw invalid_argument("changed between reads the global POV only");
+  }
+  const auto &repo = context->RepoTree.front().first;
+  const TSequenceNumber versions[2] = {first, second};
+  for (size_t i = 0; i < 2; ++i) {
+    /* As in a read at a version: the view first, so the horizon read after it covers the layers it pins. */
+    auto view = std::make_unique<TRepo::TView>(repo.Get(), versions[i]);
+    const TSequenceNumber oldest = repo->GetHistoryHorizon();
+    const TSequenceNumber newest = view->GetNewest().value_or(0UL);
+    if (versions[i] < oldest || versions[i] > newest) {
+      throw Server::TVersionUnavailable(versions[i], oldest, newest);
+    }
+    repo->LeaseVersion(versions[i]);
+    Trees[i].emplace_back(repo, std::move(view));
+  }
+  for (size_t i = 0; i < 2; ++i) {
+    Walkers[i] = To ? std::make_unique<TPresentWalker>(context, Trees[i], From, *To)
+                    : std::make_unique<TPresentWalker>(context, Trees[i], From);
+  }
+  ++(context->WalkerCount);
+  ++(context->OpenCursorCount);
+  Settle();
+}
+
+TContext::TChangedKeyCursor::~TChangedKeyCursor() {
+  assert(Owner->OpenCursorCount);
+  --(Owner->OpenCursorCount);
+}
+
+TContext::TChangedKeyCursor &TContext::TChangedKeyCursor::operator++() {
+  assert(Valid);
+  Settle();
+  return *this;
+}
+
+void TContext::TChangedKeyCursor::Settle() {
+  TPresentWalker &lhs = *Walkers[0], &rhs = *Walkers[1];
+  while (lhs || rhs) {
+    Atom::TComparison comp;
+    if (lhs && rhs) {
+      comp = (*lhs).CompareKeys(*rhs);
+    } else {
+      comp = lhs ? Atom::TComparison::Lt : Atom::TComparison::Gt;
+    }
+    if (Atom::IsEq(comp)) {
+      const auto &l = *lhs, &r = *rhs;
+      const bool differs = !Indy::TKey::EqEq(l.Op, l.OpArena, r.Op, r.OpArena);
+      if (differs) {
+        Item = Indy::TKey(l.Key, l.KeyArena);
+      }
+      ++lhs;
+      ++rhs;
+      if (differs) {
+        return;
+      }
+    } else if (Atom::IsLt(comp)) {
+      Item = Indy::TKey((*lhs).Key, (*lhs).KeyArena);
+      ++lhs;
+      return;
+    } else {
+      Item = Indy::TKey((*rhs).Key, (*rhs).KeyArena);
+      ++rhs;
+      return;
+    }
+  }
+  Valid = false;
+}

@@ -113,6 +113,34 @@ its children, until the delete is promoted
 ([#791](https://github.com/orlyatomics/orly/issues/791)). For a fixed view,
 read every page in one call, or keep a version in the key and page over that.
 
+### Keys that changed between two versions
+
+`changed between (a, b)` lists the keys of a pattern whose value differs
+between versions `a` and `b` of the global POV, or that exist at only one of
+them (written, or deleted, in between):
+
+```orly
+edges_changed = (row(.k: keys (int) @ <['edge', g, free::(int)]> changed between (a, b)) as [<{.e: int}>]) where {
+  g = given::(int);
+  a = given::(int);
+  b = given::(int);
+};
+```
+
+- The versions are ordinary ints, in the numbering `durable_version` and
+  `version of` use; either order gives the same keys. A rewrite to the same
+  value is not a change, and equal versions give an empty result.
+- It goes before an `after`/`from` bound and works with `take` and `skip`:
+  `keys (T) @ <[...]> changed between (a, b) after last take 100`.
+- The global POV only: call it with `try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} pkg method <{...}> <{.at: V}>;`.
+  On any other POV, including the one a test block runs in, it is a runtime
+  error. A version below the oldest kept or past the newest replies
+  `version_unavailable`.
+- It gives keys, not values. A `*key` in the same method reads at the call's
+  version `V`, so a key deleted since has nothing to read.
+- `changed` and `between` are reserved words (still fine as record field
+  names). Checked by `clients/smoke/run-changed-between.sh`.
+
 ### Record field names and keywords
 
 Record field names match `[_a-zA-Z][_a-zA-Z0-9]*`. After the field dot, a

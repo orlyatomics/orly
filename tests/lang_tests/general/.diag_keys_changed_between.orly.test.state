@@ -1,0 +1,13 @@
+[
+  1,
+  [
+    [],
+    [
+      "Synth + Symbols"
+    ],
+    [
+      "TypeCheck",
+      "22:76-22:79 a version in `changed between` must be an int, not str"
+    ]
+  ]
+]

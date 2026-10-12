@@ -673,6 +673,9 @@ message starts with `version unavailable`.
 Versions are values: a method takes one as an ordinary `given::(int)` argument. Two additions:
 - `keys (T) @ <[pattern]> changed between (v1, v2)`: the keys in the pattern whose value differs
   between two versions, as a sequence, with the same `after`/`from` bounds as #793.
+  As built (#889): it is written before the `after`/`from` bound, compares values (a rewrite to the same value
+  is not a change), merge-joins the two versions, reads the global POV only, and throws `version_unavailable`
+  outside the kept history. The `*<[key]> at v` form is not built.
 - `*<[key]>::(T) at v`: a single read of one key at a version inside a method that otherwise reads
   current, for "what changed" methods that show the old and new values side by side.
 

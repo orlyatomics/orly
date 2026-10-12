@@ -42,7 +42,8 @@ namespace Orly {
       typedef std::shared_ptr<TKeys> TPtr;
 
       static TPtr New(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range,
-                      const TExpr::TPtr &bound = nullptr, bool bound_is_inclusive = false);
+                      const TExpr::TPtr &bound = nullptr, bool bound_is_inclusive = false,
+                      const TExpr::TPtr &first = nullptr, const TExpr::TPtr &second = nullptr);
 
       virtual ~TKeys();
 
@@ -75,15 +76,28 @@ namespace Orly {
         return BoundIsInclusive;
       }
 
+      /* The versions of `changed between (first, second)` (#889), or null for a walk of the keys as they are. Both
+         are ints (checked in GetTypeImpl). */
+      const TExpr::TPtr &GetFirst() const {
+        return First;
+      }
+
+      const TExpr::TPtr &GetSecond() const {
+        return Second;
+      }
+
       private:
       Type::TType ValueType;
+
+      TExpr::TPtr First, Second;
 
       TExpr::TPtr Bound;
 
       bool BoundIsInclusive;
 
       TKeys(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range,
-            const TExpr::TPtr &bound, bool bound_is_inclusive);
+            const TExpr::TPtr &bound, bool bound_is_inclusive,
+            const TExpr::TPtr &first, const TExpr::TPtr &second);
 
     };  // TKeys
 

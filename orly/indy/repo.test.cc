@@ -844,6 +844,20 @@ class TRootRepoFixture {
     return keys;
   }
 
+  /* The keys in [lo, hi] whose value differs between versions `first` and `second` (#889), by the changed-key
+     cursor; `pattern` walks the one key `lo` as a pattern instead. */
+  vector<TKey> ChangedKeys(int64_t lo, int64_t hi, TSequenceNumber first, TSequenceNumber second, bool pattern = false) {
+    TSuprena ctx_arena;
+    TContext context(Repo, &ctx_arena);
+    vector<TKey> keys;
+    const TIndexKey from = IndexKey(lo), to = IndexKey(hi);
+    TContext::TChangedKeyCursor csr(&context, from, pattern ? nullptr : &to, first, second);
+    for (; csr; ++csr) {
+      keys.emplace_back(&Arena, State, *csr);
+    }
+    return keys;
+  }
+
   /* The key as a range walk yields it. */
   TKey KeyOf(int64_t key) {
     return TKey(make_tuple(key), &Arena, State);
@@ -2091,7 +2105,67 @@ namespace {
     TSequenceNumber Horizon = 0UL;
     /* Checks at which the horizon cut into the retention window. */
     size_t WindowCuts = 0UL;
+    /* (first, second) pairs whose changed keys were compared with the model (#889). */
+    size_t ChangedChecks = 0UL;
   };
+
+  /* Compares the changed-key cursor with the model for pairs of versions in [oldest, newest]. */
+  template <typename TExpectedAt>
+  size_t CheckChangedKeys(TRootRepoFixture &root, const TExpectedAt &expected_at, TSequenceNumber oldest,
+                          TSequenceNumber newest, int64_t hot_key, int64_t num_keys, size_t &mismatches) {
+    size_t checks = 0UL;
+    const auto check_pair = [&](TSequenceNumber first, TSequenceNumber second) {
+      ++checks;
+      const auto &before = expected_at(first);
+      const auto &after = expected_at(second);
+      vector<TKey> expected;
+      for (int64_t key = 0L; key < num_keys; ++key) {
+        const auto lhs = before.find(key), rhs = after.find(key);
+        if ((lhs == before.end()) != (rhs == after.end()) || (lhs != before.end() && lhs->second != rhs->second)) {
+          expected.push_back(root.KeyOf(key));
+        }
+      }
+      if (root.ChangedKeys(0L, num_keys - 1L, first, second) != expected && mismatches++ < 10UL) {
+        cerr << "changed between " << first << " and " << second << " differs from the model" << endl;
+      }
+      const bool hot_changed = !expected.empty() && expected.front() == root.KeyOf(hot_key);
+      if (root.ChangedKeys(hot_key, hot_key, first, second, true).size() != (hot_changed ? 1UL : 0UL) && mismatches++ < 10UL) {
+        cerr << "changed between " << first << " and " << second << " differs from the model for key " << hot_key << endl;
+      }
+    };
+    /* Negative controls: a version below the horizon or past the newest is refused, whichever side it is on. */
+    const auto refuses = [&](TSequenceNumber first, TSequenceNumber second) {
+      try {
+        root.ChangedKeys(0L, num_keys - 1L, first, second);
+      } catch (const Orly::Server::TVersionUnavailable &) {
+        return true;
+      }
+      return false;
+    };
+    if (oldest) {
+      for (const bool refused : {refuses(oldest - 1UL, newest), refuses(newest, oldest - 1UL)}) {
+        if (!refused) {
+          ++mismatches;
+          cerr << "changed between below the horizon " << oldest << " was not refused" << endl;
+        }
+      }
+    }
+    for (const bool refused : {refuses(oldest, newest + 1UL), refuses(newest + 1UL, oldest)}) {
+      if (!refused) {
+        ++mismatches;
+        cerr << "changed between past the newest version " << newest << " was not refused" << endl;
+      }
+    }
+    for (TSequenceNumber first = oldest; first <= newest; first += 3UL) {
+      check_pair(first, newest);
+      check_pair(newest, first);
+      check_pair(first, first);
+      if (first + 1UL <= newest) {
+        check_pair(first, first + 1UL);
+      }
+    }
+    return checks;
+  }
 
   TReadAtStats RunReadAtScenario(const TReadAtScenario &scenario) {
     constexpr int64_t num_keys = 8L, hot_key = 0L;
@@ -2164,6 +2238,9 @@ namespace {
           cerr << "seed " << scenario.Seed << ": range at " << at << " differs" << endl;
         }
       }
+      /* #889: the keys that differ between two versions, against the model, for a spread of pairs (either order, an
+         empty pair, the whole window) and, for one key, as a pattern. */
+      stats.ChangedChecks += CheckChangedKeys(root, expected_at, stats.Horizon, newest, hot_key, num_keys, stats.Mismatches);
       /* The negative controls: below the horizon, and past the newest. */
       const auto refused = [&](TSequenceNumber at) {
         try {
@@ -2219,6 +2296,7 @@ FIXTURE(ReadAtVersionMatchesModel) {
       /* History kept: no merge drops any, so every version reads, out of merged files. */ {
         const auto stats = RunReadAtScenario({.Prune = false, .Unfolded = true, .Seed = seed});
         EXPECT_EQ(stats.Mismatches, 0UL);
+        EXPECT_GT(stats.ChangedChecks, 0UL);
         EXPECT_EQ(stats.Horizon, 0UL);
         EXPECT_GT(stats.PastValues, 0UL);
         EXPECT_GE(stats.MaxDiskLayers, 3UL);

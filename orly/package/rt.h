@@ -116,6 +116,45 @@ namespace Orly {
             bound_is_inclusive, index_id);
       }
 
+      /* `keys (T) @ <[pattern]> [after/from bound] changed between (first, second)` (#889). */
+      template <typename TRet, typename... TArgs>
+      std::shared_ptr<const TKeyGenerator<TRet>> NewChanged(TContextBase &ctx, const Base::TUuid &index_id,
+                                                            const std::tuple<TArgs...> &start, int64_t first, int64_t second) {
+        return NewChangedImpl<TRet>(ctx, index_id, start, nullptr, false, first, second);
+      }
+
+      template <typename TRet, typename... TArgs>
+      std::shared_ptr<const TKeyGenerator<TRet>> NewChanged(TContextBase &ctx, const Base::TUuid &index_id,
+                                                            const std::tuple<TArgs...> &start, const TRet &bound,
+                                                            bool bound_is_inclusive, int64_t first, int64_t second) {
+        return NewChangedImpl<TRet>(ctx, index_id, start, &bound, bound_is_inclusive, first, second);
+      }
+
+      private:
+
+      template <typename TRet, typename... TArgs>
+      std::shared_ptr<const TKeyGenerator<TRet>> NewChangedImpl(TContextBase &ctx, const Base::TUuid &index_id,
+                                                                const std::tuple<TArgs...> &start, const TRet *bound,
+                                                                bool bound_is_inclusive, int64_t first, int64_t second) {
+        auto *changed = dynamic_cast<TChangedKeysContext *>(this);
+        if (!changed) {
+          throw std::logic_error("`changed between` is not available in this context");
+        }
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+        void *bound_alloc = static_cast<uint8_t *>(state_alloc) + Sabot::State::GetMaxStateSize();
+        return std::make_shared<const TKeyGenerator<TRet>>(
+            this,
+            [changed](TContextBase *context, const Indy::TIndexKey &from, const Indy::TIndexKey *to, int64_t a, int64_t b) {
+              return changed->NewChangedKeyCursor(context, from, to, a, b);
+            },
+            first, second, ctx,
+            Sabot::State::TAny::TWrapper(Native::State::New(start, state_alloc)).get(),
+            bound ? Sabot::State::TAny::TWrapper(Native::State::New(*bound, bound_alloc)).get() : nullptr,
+            bound_is_inclusive, index_id);
+      }
+
+      public:
+
       template <typename... TArgs>
       int64_t CountKeys(TContextBase &ctx, const Base::TUuid &index_id, const std::tuple<TArgs...> &start) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());

@@ -25,6 +25,7 @@
 #include <orly/expr/visitor.h>
 #include <orly/type/addr.h>
 #include <orly/type/any.h>
+#include <orly/type/int.h>
 #include <orly/type/orlyify.h>
 #include <orly/type/seq.h>
 #include <orly/type/util.h>
@@ -33,21 +34,31 @@ using namespace Orly;
 using namespace Orly::Expr;
 
 TKeys::TPtr TKeys::New(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range,
-                       const TExpr::TPtr &bound, bool bound_is_inclusive) {
-  return TKeys::TPtr(new TKeys(members, value_type, pos_range, bound, bound_is_inclusive));
+                       const TExpr::TPtr &bound, bool bound_is_inclusive, const TExpr::TPtr &first, const TExpr::TPtr &second) {
+  return TKeys::TPtr(new TKeys(members, value_type, pos_range, bound, bound_is_inclusive, first, second));
 }
 
 TKeys::TKeys(const TAddr::TMemberVec &members, const Type::TType &value_type, const TPosRange &pos_range,
-             const TExpr::TPtr &bound, bool bound_is_inclusive)
-    : TNAry(members, pos_range), ValueType(value_type), Bound(bound), BoundIsInclusive(bound_is_inclusive) {
+             const TExpr::TPtr &bound, bool bound_is_inclusive, const TExpr::TPtr &first, const TExpr::TPtr &second)
+    : TNAry(members, pos_range), ValueType(value_type), First(first), Second(second), Bound(bound),
+      BoundIsInclusive(bound_is_inclusive) {
+  assert(static_cast<bool>(First) == static_cast<bool>(Second));
   if (Bound) {
     Bound->SetExprParent(this);
+  }
+  if (First) {
+    First->SetExprParent(this);
+    Second->SetExprParent(this);
   }
 }
 
 TKeys::~TKeys() {
   if (Bound) {
     Bound->UnsetExprParent(this);
+  }
+  if (First) {
+    First->UnsetExprParent(this);
+    Second->UnsetExprParent(this);
   }
 }
 
@@ -92,6 +103,18 @@ Type::TType TKeys::GetTypeImpl() const {
           Base::AsStr("the `", keyword, "` bound has type ", bound_name.str(),
                       ", but this pattern's keys have type ", addr_name.str(),
                       "; the bound must be a whole key of the same shape, such as the last key of the previous page").c_str());
+    }
+  }
+  if (First) {
+    /* #889: the versions are the numbers a write receipt carries. A TAny is an unresolved recursive call; defer. */
+    for (const TExpr::TPtr &version : {First, Second}) {
+      Type::TType version_type = version->GetType();
+      if (!version_type.Is<Type::TAny>() && !version_type.Is<Type::TInt>()) {
+        std::ostringstream version_name;
+        Type::Orlyify(version_name, version_type);
+        throw TExprError(HERE, version->GetPosRange(),
+            Base::AsStr("a version in `changed between` must be an int, not ", version_name.str()).c_str());
+      }
     }
   }
   return Type::TSeq::Get(addr_type);

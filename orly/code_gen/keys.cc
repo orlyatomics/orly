@@ -33,19 +33,25 @@ TKeys::TKeys(const L0::TPackage *package,
              TAddrElems &&addr_elems,
              const TInline::TPtr &bound,
              bool bound_is_inclusive,
-             bool count_only)
+             bool count_only,
+             const TInline::TPtr &first,
+             const TInline::TPtr &second)
     : TInline(package, count_only ? Type::TInt::Get() : seq_type),
       AddrElems(std::move(addr_elems)),
       ValType(val_type),
       AddrType(Type::UnwrapSequence(seq_type)),
       Bound(bound),
       BoundIsInclusive(bound_is_inclusive),
-      CountOnly(count_only) {}
+      CountOnly(count_only),
+      First(first),
+      Second(second) {}
 
 void TKeys::WriteExpr(TCppPrinter &out) const {
 
   if (CountOnly) {
     out << "ctx.CountKeys(ctx.GetFlux(), ";
+  } else if (First) {
+    out << "ctx.NewChanged<" << AddrType << ">(ctx.GetFlux(), ";
   } else {
     out << "ctx.New<" << AddrType << ">(ctx.GetFlux(), ";
   }
@@ -117,7 +123,13 @@ void TKeys::WriteExpr(TCppPrinter &out) const {
     << ")";
   /* Keyset paging (#735): the bound key, then whether it is inclusive. An
      unbounded `keys` emits exactly what it always did. */
-  if (Bound && !CountOnly) {
+  if (First) {
+    /* `changed between` (#889): the bound and whether it is inclusive, if any, then the two versions. */
+    if (Bound) {
+      out << ", " << Bound << ", " << (BoundIsInclusive ? "true" : "false");
+    }
+    out << ", " << First << ", " << Second;
+  } else if (Bound && !CountOnly) {
     out << ", " << Bound << ", " << (BoundIsInclusive ? "true" : "false");
   }
   out << ")";

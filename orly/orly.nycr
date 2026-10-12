@@ -51,8 +51,10 @@ atan_kwd          = '"atan"';
 atan2_kwd         = '"atan2"';
 bang              = '"!"' unary_prec left;
 bar               = '"|"' bitwise_or_prec left;
+between_kwd       = '"between"';
 bool_kwd          = '"bool"';
 ceiling_kwd       = '"ceiling"';
+changed_kwd       = '"changed"';
 close_addr        = '"]>"';
 close_brace       = '"}"';
 close_bracket     = '"]"';
@@ -197,8 +199,10 @@ field_name;
   assert_kwd_field_name : field_name -> name:assert_kwd;
   atan_kwd_field_name : field_name -> name:atan_kwd;
   atan2_kwd_field_name : field_name -> name:atan2_kwd;
+  between_kwd_field_name : field_name -> name:between_kwd;
   bool_kwd_field_name : field_name -> name:bool_kwd;
   ceiling_kwd_field_name : field_name -> name:ceiling_kwd;
+  changed_kwd_field_name : field_name -> name:changed_kwd;
   collated_by_kwd_field_name : field_name -> name:collated_by_kwd;
   collected_by_kwd_field_name : field_name -> name:collected_by_kwd;
   cos_kwd_field_name : field_name -> name:cos_kwd;
@@ -656,7 +660,7 @@ when_expr : expr -> open_paren expr close_paren when_kwd open_brace opt_when_arm
 
 effecting_expr : expr -> open_paren expr close_paren effecting_kwd stmt_block;
 
-db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr opt_db_keys_member_list close_addr opt_db_keys_bound;
+db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr opt_db_keys_member_list close_addr opt_db_keys_changed opt_db_keys_bound;
 
   opt_db_keys_member_list;
   no_db_keys_member_list : opt_db_keys_member_list -> empty;
@@ -679,6 +683,13 @@ db_keys_expr : expr -> keys_kwd open_paren type close_paren at_sign open_addr op
   no_db_keys_bound    : opt_db_keys_bound -> empty;
   after_db_keys_bound : opt_db_keys_bound -> after_kwd expr prec unary_placeholder;
   from_db_keys_bound  : opt_db_keys_bound -> from_kwd expr prec unary_placeholder;
+
+  /* The keys whose value differs between two versions of the global POV (#889). */
+  opt_db_keys_changed;
+  /* It comes before the keyset-paging bound: a bound ends in an expression, which could itself be a `keys`, and a
+     `changed` after it would then be ambiguous. */
+  no_db_keys_changed : opt_db_keys_changed -> empty;
+  db_keys_changed    : opt_db_keys_changed -> changed_kwd between_kwd open_paren first:expr comma second:expr close_paren;
 
 collated_by_expr : expr -> seq:expr collated_by_kwd reduce:expr having_kwd having:expr;
 

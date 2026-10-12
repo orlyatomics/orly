@@ -511,6 +511,13 @@ Retention is a server flag today (`--retention_versions`, `--retention_seconds`)
 root in the store, and a statement would have to rewrite that record and the replicated horizon
 under a live server.
 
+A method can compare two versions itself with `keys (T) @ <[pattern]> changed between (v1, v2)`, which
+lists the keys whose value differs between them (see the [walkthrough](walkthrough.md#keys-that-changed-between-two-versions)).
+Call it on the global POV with `.at` (any kept version, the newest for the freshest view); the versions inside
+the method are held and checked like `.at`, and one outside the kept history replies `version_unavailable`.
+On any other POV it is an exception ("changed between reads the global POV only").
+A call on the global POV without `.at` is refused as an exception.
+
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
 version of the POV that this server knows to be in a data file on disk, in the numbering a
 receipt's `version` uses. A write whose receipt `version` is at most it survives a crash, so a

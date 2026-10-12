@@ -1337,6 +1337,14 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: clients/smoke
 
+      # `keys ... changed between (a, b)` (#889): the keys whose value differs between two versions
+      # of the global POV, in either order and with a keyset bound; a version past the newest and
+      # a private POV are refused.
+      - name: client changed-between smoke (clients/smoke)
+        run: ORLY_OUT="$GITHUB_WORKSPACE/../out_orly/debug" bash run-changed-between.sh
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: clients/smoke
+
       - name: GRC-20 benchmark fixture check
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |

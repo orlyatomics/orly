@@ -98,7 +98,7 @@ static bool IsIntLiteral(const Expr::TExpr::TPtr &expr, int64_t value) {
 static const Expr::TKeys *CountKeysSource(const Expr::TReduce *reduce) {
   const auto *keys = dynamic_cast<const Expr::TKeys *>(reduce->GetLhs().get());
   const auto *sum = dynamic_cast<const Expr::TAdd *>(reduce->GetRhs().get());
-  if (!keys || keys->GetBound() || !keys->GetAddrType().Is<Type::TAddr>() || !sum ||
+  if (!keys || keys->GetBound() || keys->GetFirst() || !keys->GetAddrType().Is<Type::TAddr>() || !sum ||
       !IsIntLiteral(reduce->GetStart()->GetExpr(), 0)) {
     return nullptr;
   }
@@ -631,7 +631,9 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
       }
       /* The keyset-paging bound (#735); null for a plain `keys`. */
       TInline::TPtr bound = that->GetBound() ? Build(Package, that->GetBound(), false) : TInline::TPtr();
-      Res = Interner.GetKeys(Package, that->GetType(), that->GetValueType(), move(elems), bound, that->GetBoundIsInclusive(), false);
+      Res = Interner.GetKeys(Package, that->GetType(), that->GetValueType(), move(elems), bound, that->GetBoundIsInclusive(), false,
+          that->GetFirst() ? Build(Package, that->GetFirst(), false) : TInline::TPtr(),
+          that->GetSecond() ? Build(Package, that->GetSecond(), false) : TInline::TPtr());
     }
     virtual void operator()(const Expr::TKnown *that) const { Unary(Package, TUnary::Known, that); }
     virtual void operator()(const Expr::TLengthOf *that) const { Unary(Package, TUnary::LengthOf, that); }
@@ -700,7 +702,7 @@ TInline::TPtr Orly::CodeGen::Build(const L0::TPackage *package, const Expr::TExp
         for (const auto &member : keys->GetMembers()) {
           elems.emplace_back(member.first, Build(Package, member.second, false));
         }
-        Res = Interner.GetKeys(Package, keys->GetType(), keys->GetValueType(), move(elems), TInline::TPtr(), false, true);
+        Res = Interner.GetKeys(Package, keys->GetType(), keys->GetValueType(), move(elems), TInline::TPtr(), false, true, TInline::TPtr(), TInline::TPtr());
         return;
       }
       // Build function
