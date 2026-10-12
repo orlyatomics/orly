@@ -17,6 +17,7 @@
 package orly
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -308,5 +309,165 @@ func TestOpIDResendsAfterDrop(t *testing.T) {
 	mu.Unlock()
 	if _, err := c.Call("p1", "pkg", "fn", nil); err == nil {
 		t.Fatalf("without an id the drop must surface")
+	}
+}
+
+func TestReadAtVersion(t *testing.T) {
+	var stmts []string
+	server, client := newTestServer(t, func(stmt string) string {
+		stmts = append(stmts, stmt)
+		switch {
+		case strings.Contains(stmt, " at 3 "):
+			return `{"status": "version_unavailable", "result": "gone", "requested": 3, "oldest": 10, "newest": 20}`
+		case strings.Contains(stmt, " at save "):
+			return `{"status": "version_read_only", "result": "no"}`
+		case strings.Contains(stmt, " at "):
+			return `{"status": "ok", "result": 7, "version": 42}`
+		}
+		return `{"status": "ok", "result": 1}`
+	})
+	defer server.Close()
+	defer client.Close()
+
+	raw, err := client.CallWithOpts("p1", "pkg", "get", map[string]any{"n": 1}, CallOpts{At: AtVersion(42)})
+	if err != nil || string(raw) != "7" || client.LastVersion == nil || *client.LastVersion != 42 {
+		t.Fatalf("at version: %s, %v, %v", raw, err, client.LastVersion)
+	}
+	if _, err = client.CallWithOpts("p1", "pkg", "get", nil, CallOpts{At: AtTime("2026-01-01T00:00:00Z")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.Call("p1", "pkg", "get", nil); err != nil || client.LastVersion != nil {
+		t.Fatalf("plain call: %v, %v", err, client.LastVersion)
+	}
+	want := []string{
+		"try {p1} at 42 pkg get <{.n: 1}>;",
+		`try {p1} at time "2026-01-01T00:00:00Z" pkg get <{}>;`,
+		"try {p1} pkg get <{}>;",
+	}
+	for i, w := range want {
+		if stmts[i] != w {
+			t.Fatalf("statement %d: %q, want %q", i, stmts[i], w)
+		}
+	}
+
+	_, err = client.CallWithOpts("p1", "pkg", "get", nil, CallOpts{At: AtVersion(3)})
+	var vue *VersionUnavailableError
+	if !errors.Is(err, ErrVersionUnavailable) || !errors.As(err, &vue) ||
+		vue.Requested != 3 || vue.Oldest != 10 || vue.Newest != 20 {
+		t.Fatalf("version unavailable: %v", err)
+	}
+	_, err = client.CallWithOpts("p1", "pkg", "put", nil, CallOpts{At: AtSave(`a"b`)})
+	if !errors.Is(err, ErrVersionReadOnly) {
+		t.Fatalf("read only: %v", err)
+	}
+	if _, err = client.CallBatchWithOpts("p1", "pkg", "get", []map[string]any{{}}, CallOpts{At: AtVersion(1)}); err == nil {
+		t.Fatal("a batch at a version must be refused")
+	}
+}
+
+func TestVersionStatements(t *testing.T) {
+	var stmts []string
+	server, client := newTestServer(t, func(stmt string) string {
+		stmts = append(stmts, stmt)
+		switch {
+		case stmt == "version of {g};":
+			return `{"status": "ok", "result": {"pov": "g", "version": 1000}}`
+		case stmt == "version of {p};":
+			return `{"status": "ok", "result": {"pov": "p", "version": "(3, 1000)"}}`
+		case strings.HasPrefix(stmt, "hold"):
+			return `{"status": "ok", "result": {"lease": "L", "seconds": 60}}`
+		case strings.HasPrefix(stmt, "release"):
+			return `{"status": "ok", "result": {"lease": "L", "released": true}}`
+		case strings.HasPrefix(stmt, "drop"):
+			return `{"status": "ok", "result": {"dropped": false}}`
+		}
+		return `{"status": "ok", "result": {"save_point": "a"}}`
+	})
+	defer server.Close()
+	defer client.Close()
+
+	if v, err := client.VersionOf("g"); err != nil || v != (PovVersion{Number: 1000}) {
+		t.Fatalf("VersionOf(g): %v, %v", v, err)
+	}
+	if v, err := client.VersionOf("p"); err != nil || v != (PovVersion{Vector: "(3, 1000)"}) {
+		t.Fatalf("VersionOf(p): %v, %v", v, err)
+	}
+	if lease, err := client.Hold("g", 5, 60); err != nil || lease != "L" {
+		t.Fatalf("Hold: %q, %v", lease, err)
+	}
+	if ok, err := client.Release("L"); err != nil || !ok {
+		t.Fatalf("Release: %v, %v", ok, err)
+	}
+	if err := client.SavePoint("g", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SavePointAt("g", "a", 7); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := client.DropSavePoint("g", "a"); err != nil || ok {
+		t.Fatalf("DropSavePoint: %v, %v", ok, err)
+	}
+	want := []string{
+		"version of {g};", "version of {p};", "hold version {g} 5 for 60;", "release {L};",
+		`save point {g} "a";`, `save point {g} "a" at 7;`, `drop save point {g} "a";`,
+	}
+	if strings.Join(stmts, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("statements:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+func TestPagesPinTheVersion(t *testing.T) {
+	var stmts []string
+	server, client := newTestServer(t, func(stmt string) string {
+		stmts = append(stmts, stmt)
+		switch {
+		case stmt == "version of {g};":
+			return `{"status": "ok", "result": {"pov": "g", "version": 77}}`
+		case stmt == "version of {p};":
+			return `{"status": "ok", "result": {"pov": "p", "version": "(3, 1000)"}}`
+		case strings.Contains(stmt, ".last: 0"):
+			return `{"status": "ok", "result": {"rows": [1, 2], "last": 2.0}}`
+		}
+		return `{"status": "ok", "result": {"rows": [], "last": 2.0}}`
+	})
+	defer server.Close()
+	defer client.Close()
+
+	pages := 0
+	count := func([]json.RawMessage) error { pages++; return nil }
+	args := func() map[string]any { return map[string]any{"last": 0} }
+	if err := client.Pages("g", "pkg", "list", args(), PageOptions{}, count); err != nil || pages != 1 {
+		t.Fatalf("Pages: %d, %v", pages, err)
+	}
+	want := []string{
+		"version of {g};", "try {g} at 77 pkg list <{.last: 0}>;", "try {g} at 77 pkg list <{.last: 2}>;",
+	}
+	if strings.Join(stmts, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("pinned:\n%s", strings.Join(stmts, "\n"))
+	}
+
+	stmts = nil
+	client.Pages("p", "pkg", "list", args(), PageOptions{PageSize: 5}, count)
+	client.Pages("g", "pkg", "list", args(), PageOptions{PageSize: 5, NoPin: true}, count)
+	client.Pages("g", "pkg", "list", args(), PageOptions{PageSize: 5, At: AtSave("s")}, count)
+	want = []string{
+		"version of {p};", "try {p} pkg list <{.last: 0}>;",
+		"try {g} pkg list <{.last: 0}>;",
+		`try {g} at save "s" pkg list <{.last: 0}>;`,
+	}
+	if strings.Join(stmts, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unpinned:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+func TestWholeNumber(t *testing.T) {
+	var b struct{ V wholeNumber }
+	for _, in := range []string{`{"V":7}`, `{"V":7.0}`, `{"V":4.000000}`} {
+		if err := json.Unmarshal([]byte(in), &b); err != nil || b.V != wholeNumber(map[string]uint64{`{"V":7}`: 7, `{"V":7.0}`: 7, `{"V":4.000000}`: 4}[in]) {
+			t.Fatalf("%s: %v, %d", in, err, b.V)
+		}
+	}
+	if json.Unmarshal([]byte(`{"V":1.5}`), &b) == nil || json.Unmarshal([]byte(`{"V":-1}`), &b) == nil {
+		t.Fatal("a fraction or a negative is not a version")
 	}
 }

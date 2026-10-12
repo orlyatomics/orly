@@ -129,6 +129,36 @@ func (e *OutcomeTooLargeError) Unwrap() error {
 	return ErrOutcomeTooLarge
 }
 
+// ErrVersionUnavailable is wrapped by VersionUnavailableError: a read at a
+// version, time or save point asked for history the server cannot answer
+// exactly ("status": "version_unavailable", #745). Not retryable as sent. Test
+// with errors.Is, or errors.As for the bounds.
+var ErrVersionUnavailable = errors.New("orly: version unavailable")
+
+// VersionUnavailableError carries what the server can read now: Oldest to
+// Newest. Requested is 0 when no version was asked for (a time with no
+// sample). Older than Oldest is history the merges have not kept; past Newest
+// is not committed yet.
+type VersionUnavailableError struct {
+	Statement string
+	Reply     json.RawMessage
+	Requested uint64
+	Oldest    uint64
+	Newest    uint64
+}
+
+func (e *VersionUnavailableError) Error() string {
+	return fmt.Sprintf("orly: %s -> %s: %v", e.Statement, e.Reply, ErrVersionUnavailable)
+}
+
+func (e *VersionUnavailableError) Unwrap() error {
+	return ErrVersionUnavailable
+}
+
+// ErrVersionReadOnly is wrapped by the error a call read at a version gets when
+// it tried to write ("status": "version_read_only", #745). Nothing was written.
+var ErrVersionReadOnly = errors.New("orly: version read only")
+
 // connError is a failed write or read on the connection itself, as opposed to
 // an error status the server answered with. Only the former is worth resending
 // a write for.
@@ -187,8 +217,34 @@ type Receipt struct {
 	Durability string `json:"durability"`
 }
 
+// At says which past state of the global POV a read runs against (#745,
+// #889). Make one with AtVersion, AtTime or AtSave.
+type At struct{ clause string }
+
+// AtVersion reads at a version, in the numbering a Receipt's Version uses.
+func AtVersion(v uint64) *At { return &At{fmt.Sprintf("at %d ", v)} }
+
+// AtTime reads at an RFC 3339 date-time with a zone, such as
+// "2026-05-17T09:30:00Z". The server needs --retention_seconds for it.
+func AtTime(rfc3339 string) *At { return &At{"at time " + quote(rfc3339) + " "} }
+
+// AtSave reads at a save point made by SavePoint.
+func AtSave(name string) *At { return &At{"at save " + quote(name) + " "} }
+
+func (a *At) String() string {
+	if a == nil {
+		return ""
+	}
+	return a.clause
+}
+
 // CallOpts specifies options for Call and CallBatch (#750).
 type CallOpts struct {
+	// At reads the global POV as it was (#745, #889). Read only, and not
+	// combined with Receipt, WaitDurableMs or OpID. The version the read ran
+	// against is in Client.LastVersion; one the server cannot answer is a
+	// *VersionUnavailableError.
+	At *At
 	// Receipt requests a write receipt in the reply.
 	Receipt bool
 	// WaitDurableMs holds the reply until the write is on disk, up to this many
@@ -209,6 +265,9 @@ type CallOpts struct {
 type Client struct {
 	conn        *websocket.Conn
 	LastReceipt *Receipt
+	// LastVersion is the "version" of the last reply, when it had one: the
+	// version a read with CallOpts.At ran against. Nil otherwise.
+	LastVersion *uint64
 
 	url, token string // how to dial again, for resending an OpID write
 	sessionID  string
@@ -218,7 +277,7 @@ type reply struct {
 	Status  string          `json:"status"`
 	Result  json.RawMessage `json:"result"`
 	Receipt *Receipt        `json:"receipt,omitempty"`
-	Version uint64          `json:"version,omitempty"`
+	Version *wholeNumber    `json:"version,omitempty"`
 }
 
 // Connect dials a running orlyi at DefaultURL.
@@ -329,6 +388,21 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("orly: parse reply to %q: %w (raw: %s)", stmt, err, msg)
 	}
 	c.LastReceipt = r.Receipt
+	c.LastVersion = nil
+	if r.Version != nil {
+		v := uint64(*r.Version)
+		c.LastVersion = &v
+	}
+	if r.Status == "version_unavailable" {
+		var b struct {
+			Requested, Oldest, Newest wholeNumber
+		}
+		_ = json.Unmarshal(msg, &b)
+		return nil, &VersionUnavailableError{Statement: stmt, Reply: msg, Requested: uint64(b.Requested), Oldest: uint64(b.Oldest), Newest: uint64(b.Newest)}
+	}
+	if r.Status == "version_read_only" {
+		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrVersionReadOnly)
+	}
 	if r.Status == "insufficient_storage" {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrInsufficientStorage)
 	}
@@ -364,7 +438,11 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("orly: %s -> %s: %w", stmt, msg, ErrOperationInFlight)
 	}
 	if r.Status == "outcome_too_large" {
-		return nil, &OutcomeTooLargeError{Statement: stmt, Reply: msg, Version: r.Version}
+		var version uint64
+		if r.Version != nil {
+			version = uint64(*r.Version)
+		}
+		return nil, &OutcomeTooLargeError{Statement: stmt, Reply: msg, Version: version}
 	}
 	if r.Status != "ok" {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)
@@ -740,13 +818,13 @@ func (c *Client) Call(pov, pkg, method string, args map[string]any) (json.RawMes
 	return c.CallWithOpts(pov, pkg, method, args, CallOpts{})
 }
 
-// CallWithOpts invokes package.method on pov with options (Receipt, WaitDurableMs, OpID) (#750, #733).
+// CallWithOpts invokes package.method on pov with options (Receipt, WaitDurableMs, OpID, At) (#750, #733, #745).
 func (c *Client) CallWithOpts(pov, pkg, method string, args map[string]any, opts CallOpts) (json.RawMessage, error) {
 	lit, err := litRecord(args)
 	if err != nil {
 		return nil, err
 	}
-	return c.sendOp(fmt.Sprintf("try {%s} %s %s %s%s;", pov, pkg, method, lit, formatTryOptions(opts)), opts)
+	return c.sendOp(fmt.Sprintf("try {%s} %s%s %s %s%s;", pov, opts.At, pkg, method, lit, formatTryOptions(opts)), opts)
 }
 
 // CallWithReceipt invokes package.method on pov, requests a write receipt, and returns it (#750).
@@ -778,6 +856,9 @@ func (c *Client) CallBatch(pov, pkg, method string, argsList []map[string]any) (
 func (c *Client) CallBatchWithOpts(pov, pkg, method string, argsList []map[string]any, opts CallOpts) (json.RawMessage, error) {
 	if len(argsList) == 0 {
 		return nil, fmt.Errorf("CallBatch requires at least one argument record")
+	}
+	if opts.At != nil {
+		return nil, fmt.Errorf("CallBatch cannot read at a version")
 	}
 	recs := make([]string, 0, len(argsList))
 	for _, a := range argsList {
@@ -851,6 +932,13 @@ type PageOptions struct {
 	// float64. A cursor holding real members that may be integral needs its
 	// own, such as one returning Raw("3.0").
 	ToCursor func(json.RawMessage) (any, error)
+	// At reads every page at a version, time or save point (#745, #889).
+	At *At
+	// NoPin reads each page as it is when asked. By default, with At nil, the
+	// pages read the newest version when the first is asked for, so writes
+	// between pages cannot shift rows across them. A POV other than the global
+	// one has no single version, and is never pinned.
+	NoPin bool
 }
 
 // Pages is keyset paging (#735): it calls pkg method on pov page after page
@@ -862,6 +950,9 @@ type PageOptions struct {
 // pages; each page reads the data as it is when that call runs. Paging stops
 // at the first empty page, at a page shorter than opts.PageSize, or when fn
 // returns an error (ErrStopPages stops without one).
+//
+// The pages read one version of the global POV (see PageOptions.At and
+// NoPin); the server holds it while the pages keep coming.
 func (c *Client) Pages(pov, pkg, method string, args map[string]any, opts PageOptions,
 	fn func(rows []json.RawMessage) error) error {
 	cursor := opts.Cursor
@@ -879,8 +970,18 @@ func (c *Client) Pages(pov, pkg, method string, args map[string]any, opts PageOp
 	for k, v := range args {
 		next[k] = v
 	}
+	at := opts.At
+	if at == nil && !opts.NoPin {
+		v, err := c.VersionOf(pov)
+		if err != nil {
+			return err
+		}
+		if v.Vector == "" {
+			at = AtVersion(v.Number)
+		}
+	}
 	for {
-		raw, err := c.Call(pov, pkg, method, next)
+		raw, err := c.CallWithOpts(pov, pkg, method, next, CallOpts{At: at})
 		if err != nil {
 			return err
 		}
@@ -963,6 +1064,104 @@ func (c *Client) DurableVersion(pov string) (*uint64, error) {
 		return nil, fmt.Errorf("orly: parse durable_version result: %w", err)
 	}
 	return res.DurableVersion, nil
+}
+
+// PovVersion is the newest version of a POV. The global POV's is Number, the
+// one a Receipt carries; any other POV's is Vector, a string such as
+// "(3, 1000)", and Number is 0.
+type PovVersion struct {
+	Number uint64
+	Vector string
+}
+
+// VersionOf returns the newest version of pov (`version of {pov};`, #889).
+func (c *Client) VersionOf(pov string) (PovVersion, error) {
+	raw, err := c.Send(fmt.Sprintf("version of {%s};", pov))
+	if err != nil {
+		return PovVersion{}, err
+	}
+	var res struct {
+		Version json.RawMessage `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return PovVersion{}, fmt.Errorf("orly: parse version of result: %w", err)
+	}
+	var vec string
+	if json.Unmarshal(res.Version, &vec) == nil {
+		return PovVersion{Vector: vec}, nil
+	}
+	var n wholeNumber
+	if err := json.Unmarshal(res.Version, &n); err != nil {
+		return PovVersion{}, fmt.Errorf("orly: parse version of result %s: %w", raw, err)
+	}
+	return PovVersion{Number: uint64(n)}, nil
+}
+
+// wholeNumber reads a version the server prints as a float (4.000000).
+type wholeNumber uint64
+
+func (w *wholeNumber) UnmarshalJSON(b []byte) error {
+	var f float64
+	if err := json.Unmarshal(b, &f); err != nil {
+		return err
+	}
+	if f < 0 || f != float64(uint64(f)) {
+		return fmt.Errorf("orly: %s is not a version number", b)
+	}
+	*w = wholeNumber(f)
+	return nil
+}
+
+// Hold keeps the history of version of the global POV through merges for secs
+// seconds (1 to 86400): `hold version {pov} V for N;` (#889). It returns the
+// lease id that Release ends early. Holds live in memory, so a restart ends
+// them.
+func (c *Client) Hold(pov string, version uint64, secs int) (string, error) {
+	raw, err := c.Send(fmt.Sprintf("hold version {%s} %d for %d;", pov, version, secs))
+	if err != nil {
+		return "", err
+	}
+	var res struct {
+		Lease string `json:"lease"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return "", fmt.Errorf("orly: parse hold result: %w", err)
+	}
+	return res.Lease, nil
+}
+
+// Release ends a hold early. It reports false if the lease is unknown or has
+// lapsed.
+func (c *Client) Release(lease string) (bool, error) {
+	var res struct {
+		Released bool `json:"released"`
+	}
+	err := c.sendInto(fmt.Sprintf("release {%s};", lease), &res)
+	return res.Released, err
+}
+
+// SavePoint names the newest version of pov so merges keep its history (#889).
+// On the global POV it is durable and needs retention to have been on; read it
+// back with CallOpts{At: AtSave(name)}. On another POV it is in memory and
+// names its newest version.
+func (c *Client) SavePoint(pov, name string) error {
+	_, err := c.Send(fmt.Sprintf("save point {%s} %s;", pov, quote(name)))
+	return err
+}
+
+// SavePointAt is SavePoint at a given version of the global POV.
+func (c *Client) SavePointAt(pov, name string, version uint64) error {
+	_, err := c.Send(fmt.Sprintf("save point {%s} %s at %d;", pov, quote(name), version))
+	return err
+}
+
+// DropSavePoint removes a save point. It reports false if there was none.
+func (c *Client) DropSavePoint(pov, name string) (bool, error) {
+	var res struct {
+		Dropped bool `json:"dropped"`
+	}
+	err := c.sendInto(fmt.Sprintf("drop save point {%s} %s;", pov, quote(name)), &res)
+	return res.Dropped, err
 }
 
 // Exit ends the session.

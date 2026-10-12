@@ -30,7 +30,9 @@ with orly.connect() as c:                 # opens the WebSocket
 `pages(pov, package, method, args)` pages through a keyset-paging method (#735): one
 that takes a `last` cursor and returns `<{.rows: [...], .last: ...}>`. It yields each page's
 rows, passes each page's `.last` back for the next (integral floats back as ints), and stops
-at the first empty page (or, given `page_size`, at a shorter one). See
+at the first empty page (or, given `page_size`, at a shorter one). On the global POV every page
+reads the version the first was asked at, so writes between pages cannot shift rows
+(`pin=False` turns that off; see "Reading the past"). See
 [paging through keys](../../docs/walkthrough.md#paging-through-keys).
 
 `call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`.
@@ -61,6 +63,25 @@ c.call_batch(pov, "bank", "deposit", rows, op_id=op)   # a batch takes one id fo
 
 `OperationExpired`, `OperationIdReused` and `OutcomeTooLarge` (with `.version`) are the server's
 refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
+
+## Reading the past (#745)
+
+```python
+v = c.version_of(pov)                                   # newest version (an int on the global POV)
+c.call(pov, "mypkg", "get", {"k": 1}, at=v - 10)        # as of version v - 10
+c.call(pov, "mypkg", "get", {"k": 1}, at={"time": "2026-05-17T09:30:00Z"})  # needs --retention_seconds
+c.save_point(pov, "before-migration")                   # durable on the global POV
+c.call(pov, "mypkg", "get", {"k": 1}, at={"save": "before-migration"})
+print(c.last_version)                                   # the version that read ran against
+lease = c.hold(pov, v, 3600)                            # keep that version's history for an hour
+c.release(lease)
+```
+
+A read with `at` is read only and the global POV's only. Every reply's `"version"` is in
+`c.last_version`. A version the server no longer keeps, or has not committed, raises
+`VersionUnavailable` (`requested`, `oldest`, `newest`): it is not retried, since asking again
+cannot help. `VersionReadOnly` is a read at a version that tried to write. See
+[docs/PROTOCOL.md](../../docs/PROTOCOL.md#reads-at-a-version-745).
 
 ## Reviewing a POV's changes (#746)
 

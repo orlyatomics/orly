@@ -149,6 +149,36 @@ export class OutcomeTooLargeError extends OrlyError {
   }
 }
 
+/** Thrown when a read at a version, time or save point asks for history the server cannot answer
+ *  exactly (`"status": "version_unavailable"`, #745): older than the merges have kept, or not
+ *  committed yet. Not retryable as sent: read inside `[oldest, newest]`, which are the versions it
+ *  can read now. `requested` is 0 when no version was asked for (a time with no sample). */
+export class VersionUnavailableError extends OrlyError {
+  public readonly requested?: number;
+  public readonly oldest?: number;
+  public readonly newest?: number;
+
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "VersionUnavailableError";
+    if (reply && typeof reply === "object") {
+      const r = reply as { requested?: number; oldest?: number; newest?: number };
+      this.requested = r.requested;
+      this.oldest = r.oldest;
+      this.newest = r.newest;
+    }
+  }
+}
+
+/** Thrown when a call read at a version tried to write (`"status": "version_read_only"`, #745).
+ *  Nothing was written. */
+export class VersionReadOnlyError extends OrlyError {
+  constructor(statement: string, reply: unknown) {
+    super(statement, reply);
+    this.name = "VersionReadOnlyError";
+  }
+}
+
 /** A fresh operation id (#733): a UUIDv7 in canonical text form. Time ordered, which is what lets
  *  the server forget old ids by age. */
 export function newOpId(): string {
@@ -176,6 +206,11 @@ export interface Receipt {
 
 /** Options for `call` and `callBatch` (#750). */
 export interface CallOptions {
+  /** Read the global POV as it was at a version (an int, in the numbering a receipt's `version`
+   *  uses), at a time (`{ time: "<RFC 3339>" }`, needs `--retention_seconds`), or at a save point
+   *  (`{ save: "name" }`) (#745, #889). The reply's version is in {@link Client.lastVersion}. Read
+   *  only, and not combined with `receipt`, `waitDurableMs` or `opId`. */
+  at?: number | { time: string } | { save: string };
   receipt?: boolean;
   waitDurableMs?: number;
   /** Makes the write apply at most once (#733); see {@link newOpId}. If the connection drops, the
@@ -189,6 +224,8 @@ export interface CallOptions {
 export interface CallResult<T = unknown> {
   result: T;
   receipt?: Receipt;
+  /** The version a read at `at` ran against, when the call had one. */
+  version?: number;
 }
 
 /** Thrown when a write asked to wait for durable (`waitDurableMs`) committed but was
@@ -391,6 +428,16 @@ function quote(s: string): string {
   return '"' + escaped + '"';
 }
 
+function formatAt(at: CallOptions["at"]): string {
+  if (at === undefined) return "";
+  if (typeof at === "number") {
+    if (!Number.isSafeInteger(at) || at < 0) throw new TypeError("orly: at must be a non-negative integer");
+    return `at ${at} `;
+  }
+  if ("time" in at) return `at time ${quote(at.time)} `;
+  return `at save ${quote(at.save)} `;
+}
+
 function formatTryOptions(opts: CallOptions): string {
   const parts: string[] = [];
   if (opts.opId !== undefined) parts.push(`.op_id: ${lit(opts.opId)}`);
@@ -411,6 +458,8 @@ interface SocketLike {
 export class Client {
   private pending: Array<{ stmt: string; resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
   public lastReceipt?: Receipt;
+  /** The `"version"` of the last reply that carried one: the version a read at `at` ran against. */
+  public lastVersion?: number;
   private sessionId?: string;
   /** Set by {@link connect}: opens and authenticates a replacement socket, for resending an `opId` write. */
   public reconnect?: () => Promise<SocketLike>;
@@ -446,8 +495,13 @@ export class Client {
     } else {
       this.lastReceipt = undefined;
     }
+    this.lastVersion = reply != null && typeof reply.version === "number" ? reply.version : undefined;
     if (reply == null || reply.status !== "ok") {
-      p.reject(reply?.status === "insufficient_storage"
+      p.reject(reply?.status === "version_unavailable"
+        ? new VersionUnavailableError(p.stmt, reply)
+        : reply?.status === "version_read_only"
+        ? new VersionReadOnlyError(p.stmt, reply)
+        : reply?.status === "insufficient_storage"
         ? new InsufficientStorageError(p.stmt, reply)
         : reply?.status === "insufficient_memory"
         ? new InsufficientMemoryError(p.stmt, reply)
@@ -642,14 +696,17 @@ export class Client {
   /** Call `package method` on `pov`: `try {pov} package method <{.k: v}>;`.
    *  `opts.receipt: true` requests a write receipt and resolves `{ result, receipt }`;
    *  `opts.waitDurableMs` holds the reply until the write is on disk (#750).
-   *  `opts.opId` makes the write apply at most once, and resends it if the connection drops (#733). */
+   *  `opts.opId` makes the write apply at most once, and resends it if the connection drops (#733).
+   *  `opts.at` reads the global POV at a version, time or save point (#745, #889): the version it
+   *  ran against is in {@link Client.lastVersion}, and a version the server cannot answer rejects
+   *  with {@link VersionUnavailableError}. */
   call<T = unknown>(pov: string, pkg: string, method: string, args: Args, opts: CallOptions & { receipt: true }): Promise<CallResult<T>>;
   call<T = unknown>(pov: string, pkg: string, method: string, args?: Args, opts?: CallOptions): Promise<T>;
   async call(pov: string, pkg: string, method: string, args: Args = {}, opts: CallOptions = {}): Promise<unknown> {
     const options = formatTryOptions(opts);
-    const result = await this.sendOp(`try {${pov}} ${pkg} ${method} ${lit(args)}${options};`, opts);
+    const result = await this.sendOp(`try {${pov}} ${formatAt(opts.at)}${pkg} ${method} ${lit(args)}${options};`, opts);
     if (opts.receipt) {
-      return { result, receipt: this.lastReceipt };
+      return { result, receipt: this.lastReceipt, version: this.lastVersion };
     }
     return result;
   }
@@ -674,6 +731,7 @@ export class Client {
     if (argsList.length === 0) {
       throw new TypeError("orly: callBatch requires at least one argument record");
     }
+    if (opts.at !== undefined) throw new TypeError("orly: callBatch cannot read at a version");
     const options = formatTryOptions(opts);
     const result = await this.sendOp(`try {${pov}} ${pkg} ${method} ${lit(argsList)}${options};`, opts);
     if (opts.receipt) {
@@ -703,21 +761,32 @@ export class Client {
    *  `keys (T) @ <[...]> after <[...]>`. `args` carries the first page's cursor. The server
    *  keeps no state between pages; each page reads the data as it is when that call runs.
    *  Iteration stops at the first empty page, or, given `opts.pageSize`, at the first page
-   *  shorter than that. See docs/walkthrough.md for a paging method. */
+   *  shorter than that. See docs/walkthrough.md for a paging method.
+   *
+   *  The pages read one version of the global POV (#745): `opts.at` if given (a version, time or
+   *  save point), else the newest version when the first page is asked for, so writes that land
+   *  between pages cannot shift rows across them. The server holds that version while the pages
+   *  keep coming. `opts.pin: false` reads each page as it is when asked, and so does paging on a
+   *  POV other than the global one, which has no single version to pin. */
   async *pages(
     pov: string,
     pkg: string,
     method: string,
     args: Args,
-    opts: { cursor?: string; pageSize?: number } = {},
+    opts: { cursor?: string; pageSize?: number; at?: CallOptions["at"]; pin?: boolean } = {},
   ): AsyncGenerator<unknown[], void, undefined> {
     const cursor = opts.cursor ?? "last";
     if (!(cursor in args)) {
       throw new TypeError(`orly: pages needs the first page's cursor as args.${cursor}`);
     }
     let next: Args = { ...args };
+    let at = opts.at;
+    if (at === undefined && opts.pin !== false) {
+      const v = await this.versionOf(pov);
+      if (typeof v === "number") at = v;
+    }
     for (;;) {
-      const page = (await this.call(pov, pkg, method, next)) as Record<string, unknown> | null;
+      const page = (await this.call(pov, pkg, method, next, at === undefined ? {} : { at })) as Record<string, unknown> | null;
       if (page === null || typeof page !== "object" || !Array.isArray(page.rows) || !(cursor in page)) {
         throw new TypeError(`orly: ${pkg} ${method} must return <{.rows: [...], .${cursor}: ...}> to be paged`);
       }
@@ -741,6 +810,46 @@ export class Client {
   async durableVersion(pov: string): Promise<number | null> {
     const res = (await this.send(`durable_version {${pov}};`)) as { pov: string; durable_version: number | null } | null;
     return res?.durable_version ?? null;
+  }
+
+  // -- versioned reads (#745, #889) -------------------------------------
+
+  /** The newest version of `pov`, from `version of {pov};`. The global POV's is a number, the one
+   *  a write receipt carries; any other POV's is a vector string such as `"(3, 1000)"`. */
+  async versionOf(pov: string): Promise<number | string> {
+    const res = (await this.send(`version of {${pov}};`)) as { pov: string; version: number | string };
+    return res.version;
+  }
+
+  /** Keep the history of `version` of the global POV through merges for `seconds` (1 to 86400),
+   *  from `hold version {pov} V for N;`. Resolves the lease id, which {@link release} ends early.
+   *  Holds live in memory, so a restart ends them. */
+  async hold(pov: string, version: number, seconds: number): Promise<string> {
+    const res = (await this.send(`hold version {${pov}} ${Math.floor(version)} for ${Math.floor(seconds)};`)) as {
+      lease: string;
+    };
+    return res.lease;
+  }
+
+  /** End a hold early. Resolves false if the lease is unknown or has lapsed. */
+  async release(lease: string): Promise<boolean> {
+    const res = (await this.send(`release {${lease}};`)) as { released: boolean };
+    return res.released;
+  }
+
+  /** Name a version so merges keep its history: `save point {pov} "name" [at V];`. On the global
+   *  POV it is durable, made at the newest version unless `opts.at` gives one, and needs retention
+   *  to have been on; read it back with `call(..., { at: { save: name } })`. On another POV it
+   *  names the newest version and `diffPages(pov, { since: name })` lists the writes after it. */
+  async savePoint(pov: string, name: string, opts: { at?: number } = {}): Promise<void> {
+    const at = opts.at === undefined ? "" : ` at ${Math.floor(opts.at)}`;
+    await this.send(`save point {${pov}} ${quote(name)}${at};`);
+  }
+
+  /** Remove a save point. Resolves false if there was none. */
+  async dropSavePoint(pov: string, name: string): Promise<boolean> {
+    const res = (await this.send(`drop save point {${pov}} ${quote(name)};`)) as { dropped: boolean };
+    return res.dropped;
   }
 
   // -- teardown ---------------------------------------------------------

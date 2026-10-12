@@ -199,13 +199,41 @@ shadowed (§5) — that is what lets a `+=` survive alongside the value it adds 
 
 ### Time travel
 
-The original 2014 pitch implied user-facing "time-travel" queries. The **engine
-has no native time-travel mechanism** — sequence ordering is purely an internal
-merge/storage device. Historical queries are achievable in **user-space** by
-encoding the version axis into the key and folding over it on read (`reduce` + a
-monoid). See `examples/bitcoin-time-travel/` (balance at a block height;
-branched-history multiverse) and `examples/wikipedia-categories/` (set-union over
-years).
+The global POV can be read as it stood at an earlier version (#745, designed in
+[`design/versioned-reads.md`](design/versioned-reads.md)). A **version** is the global
+POV's sequence number, the number a write receipt carries; a read at version V sees, for
+each key, its newest entry at or before V (and folds `+=` runs only up to V), so point
+reads, `keys` ranges and folds all see one consistent state across keys.
+
+- **Reading.** `try {pov} at V pkg method <{...}>;` (also `at time "<RFC 3339>"` and
+  `at save "<name>"`) reads the global POV at a version, at the newest version of a time,
+  or at a save point. `version of {pov};` gives the newest version. A non-global POV has a
+  version *vector* (one number per repo up to the global one), readable only until
+  something after it is promoted. The client libraries wrap these as `call(..., { at })`,
+  `versionOf`, `hold`, `savePoint` and a `pages` that pins the first page's version.
+- **Retention.** Merges throw old versions away unless told otherwise. By default
+  history is kept only until a merge folds it, so `at` reaches back seconds. With
+  `--retention_versions=N` and/or `--retention_seconds=S` merges keep a window of history
+  (the wider wins); a **save point** names a version that merges keep regardless; a
+  `hold version` or a read at a version keeps one for a while (in memory). A read outside
+  what is kept replies `version_unavailable` with the `oldest` and `newest` it can read,
+  never a wrong answer.
+- **Cost.** Current reads cost what they did. An old point read is a binary search of the
+  key's history run, roughly 10-25% more; an old range walk 55-75% more where every key
+  changed since. Retained history costs disk and merge bandwidth in proportion to the window.
+- **Replication.** A slave holds the same sequence numbers as its master, the master ships
+  its retention horizon, and a slave never drops a version at or above it, so versions
+  survive a failover.
+- **Store format.** Retention records are persisted, which makes the store **format
+  version 2** the first time a retention flag is used. Older binaries that check the format
+  refuse such a store, but one from before #846 (v0.2.0, say) has no check and would open it
+  and drop the history: see the upgrade note in [PROTOCOL.md](PROTOCOL.md#reads-at-a-version-745).
+
+Time travel that doesn't need retention, such as a version axis in the key folded with
+`reduce` and a monoid, still works in **user-space**, and suits history that must be kept
+forever or branched: see `examples/bitcoin-time-travel/` (balance at a block height;
+branched-history multiverse) and `examples/wikipedia-categories/` (set-union over years).
+`examples/grc20-pov/` shows the native versioned reads in use.
 
 ---
 

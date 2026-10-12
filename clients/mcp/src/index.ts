@@ -90,6 +90,17 @@ const opIdSchema = {
     ),
 };
 
+const atSchema = z
+  .union([z.number().int().nonnegative(), z.object({ time: z.string() }), z.object({ save: z.string() })])
+  .optional()
+  .describe(
+    "READ the global POV as it was, instead of now (read only; the method must not write; not with " +
+      "op_id). A version number (the `version` of a write receipt), {\"time\": \"<RFC 3339 with zone>\"} " +
+      "(needs the server's --retention_seconds), or {\"save\": \"<save point name>\"}. The reply is then " +
+      "{result, version} with the version it read. A version the server no longer keeps (or has not " +
+      "committed) is rejected as version_unavailable, naming the oldest and newest it can read.",
+  );
+
 // -- argument decoding: JSON escape objects -> driver literal types -------
 
 function decodeArg(v: unknown): unknown {
@@ -177,7 +188,7 @@ server.registerTool(
     title: "Call an Orly package method",
     description:
       "Invoke `method` from installed package `package` against POV `pov` and return its result " +
-      "(one transaction). This is both read and write: methods are orlyscript functions; writes " +
+      "(one transaction); pass `at` to read the global POV as of an earlier version, time or save point. This is both read and write: methods are orlyscript functions; writes " +
       "are their effects. Args map by name to the method's `given` parameters. JSON numbers are " +
       "ints; use {\"$real\": 5} for reals, {\"$set\": [..]} for sets, {\"$raw\": \"expr\"} for a " +
       "verbatim orlyscript expression. Results: ints as numbers, sets as unordered arrays, " +
@@ -187,11 +198,19 @@ server.registerTool(
       package: z.string().describe("installed package name"),
       method: z.string().describe("method (function) name in the package"),
       args: z.record(z.unknown()).optional().describe("named arguments for the method"),
+      at: atSchema,
       ...opIdSchema,
     },
   },
-  guard(async ({ pov, package: pkg, method, args, op_id, exactly_once }) => {
+  guard(async ({ pov, package: pkg, method, args, at, op_id, exactly_once }) => {
     const opId = opIdOf(op_id, exactly_once);
+    if (at !== undefined) {
+      if (opId !== undefined) throw new Error("a read at a version takes no op_id or exactly_once");
+      const result = await withClient((c) =>
+        c.call(pov, pkg, method, decodeArgs(args), { at }).then((result) => ({ result, version: c.lastVersion })),
+      );
+      return ok(result);
+    }
     const result = await withClient(
       (c) => c.call(pov, pkg, method, decodeArgs(args), opId === undefined ? {} : { opId }),
       opId !== undefined,

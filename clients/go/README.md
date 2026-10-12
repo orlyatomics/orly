@@ -55,7 +55,9 @@ the last error is returned once the retries are exhausted.
 (#735): one that takes a `last` cursor and returns `<{.rows: [...], .last: ...}>`. It calls
 `fn` with each page's rows, passes each page's `.last` back for the next (integral numbers
 back as ints), and stops at the first empty page, at one shorter than `opts.PageSize`, or
-when `fn` returns `orly.ErrStopPages`. See
+when `fn` returns `orly.ErrStopPages`. On the global POV every page reads the version the first
+was asked at, so writes between pages cannot shift rows (`opts.NoPin` turns that off; see
+"Reading the past"). See
 [paging through keys](../../docs/walkthrough.md#paging-through-keys).
 
 `Call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`
@@ -85,6 +87,24 @@ raw, err := c.CallWithOpts(pov, "bank", "deposit", args, orly.CallOpts{OpID: orl
 
 `ErrOperationExpired`, `ErrOperationIDReused` and `*OutcomeTooLargeError` (with `.Version`) are the
 server's refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
+
+## Reading the past (#745)
+
+```go
+v, _ := c.VersionOf(pov)                                // v.Number on the global POV, v.Vector otherwise
+raw, err := c.CallWithOpts(pov, "mypkg", "get", args, orly.CallOpts{At: orly.AtVersion(v.Number - 10)})
+// orly.AtTime("2026-05-17T09:30:00Z") needs --retention_seconds; orly.AtSave("name") reads a save point
+c.SavePoint(pov, "before-migration")                    // durable on the global POV
+fmt.Println(*c.LastVersion)                             // the version that read ran against
+lease, _ := c.Hold(pov, v.Number, 3600)                 // keep that version's history for an hour
+c.Release(lease)
+```
+
+A read with `At` is read only and the global POV's only. A version the server no longer keeps, or
+has not committed, is a `*orly.VersionUnavailableError` (`errors.Is(err, orly.ErrVersionUnavailable)`;
+`Requested`, `Oldest`, `Newest`): it is not retried, since asking again cannot help.
+`orly.ErrVersionReadOnly` is a read at a version that tried to write. See
+[docs/PROTOCOL.md](../../docs/PROTOCOL.md#reads-at-a-version-745).
 
 ## Reviewing a POV's changes (#746)
 

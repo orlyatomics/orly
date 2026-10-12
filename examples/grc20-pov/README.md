@@ -300,6 +300,53 @@ The corpus is loaded by two sessions writing concurrently into one shared POV, e
 - **Reading your own revision.** A revision overwrites a claim the global POV may already hold. Until [#791](https://github.com/orlyatomics/orly/issues/791) is fixed (PR #796), a POV may not see its own overwrite of such a key until the write is promoted, so the demo waits for the revision to show before checking it.
 - **No authorization.** "Trusted sources" is a read filter the caller chooses, not access control. Anyone who can call the package can assert as any source; see [docs/PROTOCOL.md](../../docs/PROTOCOL.md#security-and-trust-model).
 
+## Native versioned reads (`versioned.orly`)
+
+The event log above is how you get history when the engine can't: every
+edit is an event and "as of" is a fold. Orly can now answer it directly
+(#745). `versioned.orly` stores only the **current** value of each property
+(`<['val', entity, property]>` -> a `Text | Number | Relation` variant);
+removing a property deletes its key. History is the engine's: every write to
+the global POV has a version, and a read can run as of a version, a time or
+a save point.
+
+```python
+c.save_point(GLOBAL, "last-week")
+# ... edits, a correction, a delete ...
+now  = c.call(GLOBAL, "versioned", "snapshot", {"entity": "plato"})
+then = c.call(GLOBAL, "versioned", "snapshot", {"entity": "plato"},
+              at={"save": "last-week"})      # or at=V, or at={"time": "<RFC 3339>"}
+```
+
+"What changed since" is a diff of the two snapshots. `versioned_demo.py`
+does that and checks it, including the deleted property still being visible
+in the past.
+
+Trade-offs against the event log: no editor or reason is recorded (the
+engine remembers values, not who wrote them), and history is only as deep as
+the retention window (`--retention_versions` / `--retention_seconds`; older
+reads fail with a typed `version_unavailable`). Keep the event log when you
+need an audit trail forever; use versioned reads when you need to look back
+and don't want to store it twice. Only the global POV can be read in the
+past.
+
+To run it you need a **disk-backed** `orlyi` (the in-memory simulator that
+the other demos use has no versioned history, and refuses save points), started
+with a retention flag. Create a volume as in [`docs/durability.md`](../../docs/durability.md),
+then:
+
+```
+orlyc -o /some/dir versioned.orly        # also runs the inline tests
+cp /some/dir/versioned.1.so <package_dir>/
+orlyi --create=true ... --package_dir=<package_dir> --retention_seconds=3600
+python3 versioned_demo.py                # against a fresh store
+```
+
+The demo asks for a save point; without one it falls back to the version it
+noted. A read at a wall-clock time works only from the first retention sample
+on, so a moment before that is a typed `version_unavailable`, which the demo
+prints and moves on from.
+
 ## Related demos
 
 - [`examples/wikipedia-categories/`](../wikipedia-categories/) — same fold-on-read pattern with set-union values, version axis in the key (year). This demo extends it to *heterogeneous typed* events with editor attribution and an in-engine `reduce`/`when` replay.
@@ -317,3 +364,5 @@ The corpus is loaded by two sessions writing concurrently into one shared POV, e
 | `claims.orly` | The claims package: claim-level provenance, evidence, qualifiers, honest answers, and the read shapes above, with 66 inline tests |
 | `claims_demo.py` | Python driver for `claims.orly`: loads the corpus from two concurrent sessions, walks every read shape, checks every result |
 | `run-claims.sh` | End-to-end smoke for the claims package: compile, start a fresh orlyi, run `claims_demo.py` |
+| `versioned.orly` | Current-value-only model read with native versioned reads (no event log) |
+| `versioned_demo.py` | Python driver: reads as of a save point, version and time, and diffs against now |

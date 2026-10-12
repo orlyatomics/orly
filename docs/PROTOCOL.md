@@ -303,6 +303,9 @@ sent as one WebSocket text message. The server replies with one JSON message:
 - `operation_expired`, `operation_id_reused`, `operation_in_flight` and
   `outcome_too_large` (#733) answer a write that carries an operation id. See
   "Exactly-once writes" below for what each means and which can be retried.
+- `version_unavailable` (#745) answers a read at a version, time or save point the server can't
+  answer exactly, with `"requested"`, `"oldest"` and `"newest"`; not retryable as sent. See
+  "Reads at a version" below. `version_read_only` is a read at a version that tried to write.
 
 ## Statements
 
@@ -319,6 +322,7 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Compile package | `compile "<orlyscript source>";` | `{"name": ..., "version": ...}`; refused unless `--allow_remote_compile` |
 | New POV | `new (safe\|fast) (shared\|private) pov [from {<pov-id>}] [<{.conflicts: "report"\|"refuse"}>];` | POV id (string) |
 | Call a method | `try {<pov-id>} <pkg> <method> <args> [<{.receipt: true}>];` | method result (JSON, marshaled); see "Write receipts" and "Exactly-once writes" |
+| Read at a version | `try {<pov-id>} at <version> <pkg> <method> <args>;`, or `at time "<RFC 3339>"`, or `at save "<name>"` | method result as of that version; the reply adds `"version"`; see "Reads at a version" |
 | Batch a method | `try {<pov-id>} <pkg> <method> [<args1>, <args2>, ...];` | JSON array of N per-call results |
 | Batch different methods | `try {<pov-id>} [<pkg1> <method1> <args1>, <pkg2> <method2> <args2>, ...];` | JSON array of N per-call results |
 | Pause / unpause POV | `pause {<id>};` / `unpause {<id>};` | `"paused"` / `"unpaused"` |
@@ -453,6 +457,12 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
   drops a version at or above it, so after a failover `oldest` is no newer than the old master's.
   Until a slave has heard from its master it keeps all history. Give master and slaves the same
   retention flags; the server does not check that they match.
+- **Upgrade note.** Only binaries from #846 on (the store format version 1 check) refuse a store
+  whose version is newer than they know. One from before it, such as v0.2.0, has no format check,
+  so it would open a format version 2 store instead of refusing it, then drop the retained history
+  in its merges and ignore the records. Upgrade every binary that may open the store, including
+  slaves, standbys and tools such as `orly_dm`, to a release with the check before the first start
+  with a retention flag.
 - Store format version 2: the first start with `--retention_versions` or `--retention_seconds` on
   a format version 1 store upgrades it in place to version 2, which adds the per-POV retention
   records. Binaries before it refuse a version 2 store ("unsupported store format version 2"), so
@@ -647,6 +657,8 @@ exit;
    connection's token was missing or wrong. For a write with an operation id,
    `operation_in_flight` means "retry shortly", and `operation_expired`,
    `operation_id_reused` and `outcome_too_large` mean do not resend as is.
+   `version_unavailable` names the versions that can be read (`oldest` to `newest`):
+   asking again for the same one cannot help.
 
 ## Toward a client SDK
 

@@ -41,7 +41,9 @@ per call.
 `pages(pov, pkg, method, args)` pages through a keyset-paging method (#735): one that takes a
 `last` cursor and returns `<{.rows: [...], .last: ...}>`. It is an async iterator over each
 page's rows, passing each page's `.last` back for the next, and stops at the first empty page
-(or, given `{ pageSize }`, at a shorter one). See
+(or, given `{ pageSize }`, at a shorter one). On the global POV every page reads the version the
+first was asked at, so writes between pages cannot shift rows (`{ pin: false }` turns that off; see
+"Reading the past"). See
 [paging through keys](../../docs/walkthrough.md#paging-through-keys).
 
 `call(pov, package, method, args)` builds `try {pov} package method <{.k: v}>;`.
@@ -72,6 +74,25 @@ await client.callBatch(pov, "bank", "deposit", rows, { opId }); // one id for th
 
 `OperationExpiredError`, `OperationIdReusedError` and `OutcomeTooLargeError` (with `.version`) are the
 server's refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
+
+## Reading the past (#745)
+
+```ts
+const v = await c.versionOf(pov);                       // newest version (a number on the global POV)
+await c.call(pov, "mypkg", "get", { k: 1 }, { at: v - 10 });          // as of version v - 10
+await c.call(pov, "mypkg", "get", { k: 1 }, { at: { time: "2026-05-17T09:30:00Z" } }); // needs --retention_seconds
+await c.savePoint(pov, "before-migration");             // durable on the global POV
+await c.call(pov, "mypkg", "get", { k: 1 }, { at: { save: "before-migration" } });
+console.log(c.lastVersion);                             // the version that read ran against
+const lease = await c.hold(pov, v, 3600);               // keep that version's history for an hour
+await c.release(lease);
+```
+
+A read at `at` is read only and the global POV's only. Every reply's `"version"` is in
+`c.lastVersion` (and in `{ result, version }` when `receipt: true`). A version the server no longer
+keeps, or has not committed, rejects with `VersionUnavailableError` (`requested`, `oldest`,
+`newest`): it is not retried, since asking again cannot help. `VersionReadOnlyError` is a read at a
+version that tried to write. See [docs/PROTOCOL.md](../../docs/PROTOCOL.md#reads-at-a-version-745).
 
 ## Reviewing a POV's changes (#746)
 

@@ -144,7 +144,8 @@ on a master, kills it, and sends the write again to the promoted slave. See `doc
 - **Downgrade:** `orly_dm --downgrade-format --dev=<device>` downgrades a format version 1 volume to
   format version 0 only when the WAL contains no uncheckpointed records (following a clean stop where
   all POVs were drained).
-- **Version enforcement:** Stores with format version greater than 1 are refused with an explicit error.
+- **Format version 2** (#745) adds per-POV retention records; it is set only by a start with `--retention_versions` or `--retention_seconds`, and `--downgrade-format` refuses it. See [PROTOCOL.md](PROTOCOL.md#reads-at-a-version-745).
+- **Version enforcement:** a binary refuses a store with a format version newer than it supports, with an explicit error. Binaries from before #846 (such as v0.2.0) have no check.
 
 ## A graceful stop
 
