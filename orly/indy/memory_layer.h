@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
@@ -243,9 +244,25 @@ namespace Orly {
          (#754). Stored keys are concrete, so it never throws. */
       [[nodiscard]] static bool EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b) noexcept;
 
+    public:
+
       void ImporterAppendUpdate(TUpdate *update);
 
       void ImporterAppendEntry(TUpdate::TEntry *entry);
+
+      /* #892: a source entry and the update it is being copied into. */
+      struct TCopiedEntry {
+        const TUpdate::TEntry *Source;
+        TUpdate *Target;
+      };
+
+      /* Copy each source entry into its target update, then link the copies into this layer.
+         The targets must already be in this layer's UpdateCollection (or about to be).
+         copies must be in this layer's entry order, (index id, key, seq), which is also the order the
+         copies are linked in. See the definition for the order they are added to the updates in. */
+      void ImporterAppendCopies(const std::vector<TCopiedEntry> &copies, void *state_alloc);
+
+    private:
 
       mutable TUpdateCollection::TImpl UpdateCollection;
 
