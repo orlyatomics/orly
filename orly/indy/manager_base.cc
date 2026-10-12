@@ -100,7 +100,9 @@ TManager::TRepo::TDataLayer::~TDataLayer() {
 
 void TManager::TRepo::TDataLayer::Incr() {
   assert(!RemovalMembership.TryGetCollection());
-  assert(!(GetMarkedTaken() && RefCount == 0));
+  /* A merge's TMergeHold::Narrow comes here while views drop references on other threads, so
+     the count is read atomically like every other access to it (#904). */
+  assert(!(GetMarkedTaken() && __atomic_load_n(&RefCount, __ATOMIC_RELAXED) == 0));
   __sync_add_and_fetch(&RefCount, 1U);
 }
 
