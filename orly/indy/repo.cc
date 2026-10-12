@@ -1410,7 +1410,8 @@ void TRepo::StepMergeMem() {
       std::lock_guard<std::mutex> lock(MemMergeLock);
 
       /* grab the current mapping */ {
-        TMapping *mapping = AcquireCurrentMapping();
+        TMergeHold hold(this);
+        TMapping *mapping = hold.GetMapping();
         TMemoryLayer *new_mem = nullptr;
         TDiskLayer *new_disk = nullptr;
         TSequenceNumber lower_seq_bound;
@@ -1476,6 +1477,8 @@ void TRepo::StepMergeMem() {
               }
             }
           }
+          /* #904: from here the merge reads only the layers it took. */
+          hold.Narrow(mem_to_merge_vec);
           if (mem_to_merge_vec.size() == 1) {
               //syslog(LOG_INFO, "mem_to_merge_vec.size() == 1");
               if (IsSafeRepo() && !ParentRepo && !reinterpret_cast<TMemoryLayer *>(mem_to_merge_vec[0])->IsEmpty()) {
@@ -1528,7 +1531,7 @@ void TRepo::StepMergeMem() {
                      in place with no copy, as the original fast path did. */
                   src->UnmarkTaken();
                   delete new_mem;
-                  ReleaseMapping(mapping);
+                  hold.Release();
                   return;
                 } else {
                   /* child with a mix of released + unreleased entries -> keep
@@ -1654,7 +1657,7 @@ void TRepo::StepMergeMem() {
             } else {
               //syslog(LOG_INFO, "mem_to_merge_vec.size() == 0");
               delete new_mem;
-              ReleaseMapping(mapping);
+              hold.Release();
               return;
             }
           if (new_mem) {
@@ -1690,7 +1693,7 @@ void TRepo::StepMergeMem() {
             UnpublishedMergeDisk = new_disk;
             UnpublishedMergeTries = 0UL;
             DeferUnpublishedMemMerge();
-            ReleaseMapping(mapping);
+            hold.Release();
             return;
           }
           /* Published: from here on there is nothing to roll back. */
@@ -1708,10 +1711,10 @@ void TRepo::StepMergeMem() {
               layer->UnmarkTaken();
             }
           }
-          ReleaseMapping(mapping);
+          hold.Release();
           throw;
         }
-        ReleaseMapping(mapping);
+        hold.Release();
       }  // release the current mapping
       EndDiskFullStreak(MergeMemDiskFullStreak, "StepMergeMem");
       CheckRemoveDirty();
@@ -2404,7 +2407,8 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
   try {
     /* Flush a merge disk file if available */ {
       /* grab the current mapping */ {
-        TMapping *mapping = AcquireCurrentMapping();
+        TMergeHold hold(this);
+        TMapping *mapping = hold.GetMapping();
         assert(mapping);
         TDiskLayer *new_merge_disk = 0;
         std::vector<size_t> gen_id_vec;
@@ -2425,7 +2429,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
               layer->UnmarkTaken();
             }
           }  // release Merge lock
-          ReleaseMapping(mapping);
+          hold.Release();
           EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", err, what_ran_out));
         };
         /* #692: set when an eligible pair is skipped because it can't fit. */
@@ -2488,11 +2492,13 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
               }
             }
           }  // release Merge lock
+          /* #904: from here the merge reads only the pair. */
+          hold.Narrow(gen_layer_vec);
           if (gen_id_vec.empty() && skipped_unfit) {
             /* Nothing fits: write nothing, and look again after a backoff. No claim is noted for
                write admission, which already keeps its reserve free: a pair that can't fit even
                with writes held off would otherwise hold them off for good. */
-            ReleaseMapping(mapping);
+            hold.Release();
             EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", "no mergeable pair fits in the free space", "disk space"));
             return;
           }
@@ -2527,11 +2533,11 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepMergeDisk [1113] caught error [%s]", ex.what());
-          ReleaseMapping(mapping);
+          hold.Release();
           throw;
         } catch (...) {
           syslog(LOG_EMERG, "StepMergeDisk [1117] caught error");
-          ReleaseMapping(mapping);
+          hold.Release();
           throw;
         }
         if (gen_id_vec.size() > 0) {
@@ -2543,20 +2549,20 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
             /* #627: the merged file is written, but no reader has it, and the inputs still hold
                all its data. Drop it and retry the merge later, as when it runs out of disk. */
             DiscardDiskMerge(gen_layer_vec, new_merge_disk);
-            ReleaseMapping(mapping);
+            hold.Release();
             EnqueueMergeDiskAfter(NextDiskFullBackoff(MergeDiskDiskFullStreak, "StepMergeDisk", ex.what(), "pool space"));
             return;
           } catch (const std::exception &ex) {
             syslog(LOG_EMERG, "StepMergeDisk [1176] caught error [%s]", ex.what());
-            ReleaseMapping(mapping);
+            hold.Release();
             throw;
           } catch (...) {
             syslog(LOG_EMERG, "StepMergeDisk [1180] caught error");
-            ReleaseMapping(mapping);
+            hold.Release();
             throw;
           }
         }
-        ReleaseMapping(mapping);
+        hold.Release();
         if (!gen_id_vec.empty()) {
           EndDiskFullStreak(MergeDiskDiskFullStreak, "StepMergeDisk");
         }
