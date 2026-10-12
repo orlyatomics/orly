@@ -367,6 +367,83 @@ std::optional<uint64_t> TSession::GetDurableVersion(TServer *server, const TUuid
   return pov->GetRepo(server)->GetPromotedDurableSequenceNumber(global_durable);
 }
 
+uint64_t TSession::ResolveTime(TServer *server, std::chrono::system_clock::time_point when) {
+  assert(server);
+  return server->GetRepoManager()->ForceGetRepo(GlobalPovId)->ResolveTime(when);
+}
+
+uint64_t TSession::ResolveSavePoint(TServer *server, const std::string &name) {
+  assert(server);
+  const auto save_points = server->GetRepoManager()->ForceGetRepo(GlobalPovId)->GetSavePoints();
+  const auto iter = save_points.find(name);
+  if (iter == save_points.end()) {
+    throw invalid_argument("no save point named \"" + name + "\"");
+  }
+  return iter->second;
+}
+
+TVersionOf TSession::GetVersionOf(TServer *server, const TUuid &pov_id) {
+  assert(server);
+  TVersionOf result;
+  if (pov_id == GlobalPovId) {
+    result.Number = server->GetRepoManager()->ForceGetRepo(GlobalPovId)->GetNewestSequenceNumber();
+    return result;
+  }
+  auto repo = OpenReviewRepo(server, pov_id, "version of");
+  ostringstream strm;
+  strm << '(';
+  /* Own part first, then each parent's, up to the global POV's. */
+  for (;;) {
+    strm << repo->GetNewestSequenceNumber();
+    const auto &parent = repo->GetParentRepo();
+    if (!parent || !*parent) {
+      break;
+    }
+    strm << ", ";
+    repo = *parent;
+  }
+  strm << ')';
+  result.Vector = strm.str();
+  return result;
+}
+
+void TSession::SetSavePoint(TServer *server, const TUuid &pov_id, const std::string &name, const std::optional<uint64_t> &at) {
+  assert(server);
+  if (name.empty()) {
+    throw invalid_argument("save point: the name must not be empty");
+  }
+  if (pov_id == GlobalPovId) {
+    auto repo = server->GetRepoManager()->ForceGetRepo(GlobalPovId);
+    repo->SetSavePoint(name, at ? *at : repo->GetNewestSequenceNumber());
+    return;
+  }
+  if (at) {
+    throw invalid_argument("save point: a POV other than the global one is saved at its newest version, not at one given");
+  }
+  OpenReviewRepo(server, pov_id, "save point")->SetSavePoint(name);
+}
+
+bool TSession::DropSavePoint(TServer *server, const TUuid &pov_id, const std::string &name) {
+  assert(server);
+  if (pov_id == GlobalPovId) {
+    return server->GetRepoManager()->ForceGetRepo(GlobalPovId)->DeleteSavePoint(name);
+  }
+  return OpenReviewRepo(server, pov_id, "drop save point")->DeleteSavePoint(name);
+}
+
+TUuid TSession::HoldVersion(TServer *server, const TUuid &pov_id, uint64_t at, const std::chrono::seconds &ttl) {
+  assert(server);
+  if (pov_id != GlobalPovId) {
+    throw invalid_argument("hold version: only the global POV's versions can be held");
+  }
+  return server->GetRepoManager()->ForceGetRepo(GlobalPovId)->HoldVersion(at, ttl);
+}
+
+bool TSession::ReleaseHold(TServer *server, const TUuid &hold_id) {
+  assert(server);
+  return server->GetRepoManager()->ForceGetRepo(GlobalPovId)->ReleaseHold(hold_id);
+}
+
 TPovDiff TSession::DiffPov(TServer *server, const TUuid &pov_id, const TPovDiffOptions &options) {
   /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
   std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;

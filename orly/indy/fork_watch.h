@@ -39,9 +39,9 @@
    The watch lives only in the master's memory, like the POV's repo (POVs don't survive a restart,
    #439).  A slave doesn't keep one, so after a failover the POV promotes unwatched.
 
-   Named save points (#745) would hang off this object: a save point is a version of the POV,
-   and a diff or a discard "since a save point" needs versioned reads, which don't exist yet.  See
-   docs/design/versioned-reads.md.
+   Named save points of a POV (#889) are kept by its repo (TRepo::SetSavePoint), not here: a save point is the POV's
+   newest own version, and `diff_pov` with `.since` diffs the writes after it, until one of them is promoted.  A
+   discard "since a save point" is not done.  See docs/design/versioned-reads.md.
 
    Copyright 2010-2026 Atomic Kismet Company
 

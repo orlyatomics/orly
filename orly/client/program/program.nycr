@@ -97,6 +97,15 @@ promote_pov_kwd   = '"promote_pov"';
 review_pov_kwd    = '"review_pov"';
 durable_version_kwd = '"durable_version"';
 at_kwd            = '"at"';
+time_kwd             = '"time"';
+save_kwd             = '"save"';
+point_kwd            = '"point"';
+version_kwd          = '"version"';
+of_kwd               = '"of"';
+drop_kwd             = '"drop"';
+hold_kwd             = '"hold"';
+release_kwd          = '"release"';
+for_kwd              = '"for"';
 
 unary_placeholder = '' unary_prec right;
 name = '[_a-zA-Z][_a-zA-Z0-9]*' pri 2;
@@ -110,6 +119,15 @@ field_name;
   try_kwd_field_name : field_name -> name:try_kwd;
   new_kwd_field_name : field_name -> name:new_kwd;
   at_kwd_field_name : field_name -> name:at_kwd;
+  time_kwd_field_name : field_name -> name:time_kwd;
+  save_kwd_field_name : field_name -> name:save_kwd;
+  point_kwd_field_name : field_name -> name:point_kwd;
+  version_kwd_field_name : field_name -> name:version_kwd;
+  of_kwd_field_name : field_name -> name:of_kwd;
+  drop_kwd_field_name : field_name -> name:drop_kwd;
+  hold_kwd_field_name : field_name -> name:hold_kwd;
+  release_kwd_field_name : field_name -> name:release_kwd;
+  for_kwd_field_name : field_name -> name:for_kwd;
   safe_kwd_field_name : field_name -> name:safe_kwd;
   fast_kwd_field_name : field_name -> name:fast_kwd;
   set_kwd_field_name : field_name -> name:set_kwd;
@@ -184,6 +202,15 @@ opt_at;
 no_at      : opt_at -> empty;
 at_version : opt_at -> at_kwd int_expr;
 
+/* `try {pov} at time "<RFC 3339>" ...` and `... at save "<name>" ...` read at the version a time or a save point names
+   (#889). */
+at_time    : opt_at -> at_kwd time_kwd str_expr;
+at_save    : opt_at -> at_kwd save_kwd str_expr;
+
+opt_save_at;
+no_save_at : opt_save_at -> empty;
+save_at    : opt_save_at -> at_kwd int_expr;
+
 /* ------------------------------------------------------------------------------------------------------------------------------------------------
     TOP-LEVEL
    ------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -206,6 +233,11 @@ discard_pov_stmt    : stmt -> discard_pov_kwd id_expr semi;
 promote_pov_stmt    : stmt -> promote_pov_kwd id_expr opt_options semi;
 review_pov_stmt     : stmt -> review_pov_kwd id_expr opt_options semi;
 durable_version_stmt : stmt -> durable_version_kwd id_expr semi;
+version_of_stmt     : stmt -> version_kwd of_kwd id_expr semi;
+save_point_stmt     : stmt -> save_kwd point_kwd id_expr str_expr opt_save_at semi;
+drop_save_point_stmt : stmt -> drop_kwd save_kwd point_kwd id_expr str_expr semi;
+hold_version_stmt   : stmt -> hold_kwd version_kwd id_expr version:int_expr for_kwd seconds:int_expr semi;
+release_stmt        : stmt -> release_kwd id_expr semi;
 set_user_id_stmt    : stmt -> set_kwd user_id_kwd id_expr semi;
 set_ttl_stmt        : stmt -> set_kwd ttl_kwd id_expr to_kwd int_expr semi;
 try_stmt            : stmt -> try_kwd pov_id:id_expr opt_at package:name_list method_name:name args:obj_expr opt_options semi;

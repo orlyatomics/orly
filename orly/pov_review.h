@@ -71,9 +71,10 @@ namespace Orly {
        types, so it may hold a few more. */
     uint64_t Limit = DefaultLimit;
 
-    /* The hook for named save points (#745): diff since a save point rather than against the
-       parent.  Save points need versioned reads, which don't exist yet, so DiffPov refuses
-       this; see docs/design/versioned-reads.md. */
+    /* Diff since a named save point (#889) rather than from the fork: only the writes after the save point, with the
+       key's value at the save point as the "before".  `save point {pov} "name";` makes one, of the POV's newest
+       version, and it is good only until a write after it is promoted, when DiffPov refuses it; see
+       docs/design/versioned-reads.md §4.3. */
     std::optional<std::string> Since;
 
     /* The binary protocol's form: a closure named "diff" with the options as arguments

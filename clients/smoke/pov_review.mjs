@@ -15,7 +15,7 @@
  *     state.  Commutative updates never conflict.
  *  3. Discard: thousands of paused writes are thrown away, the update pools fall back, and the
  *     POV reads as its parent.
- *  4. Errors: discarding a shared POV or another session's POV, `.since` (save points, #745), an
+ *  4. Errors: discarding a shared POV or another session's POV, `.since` of an unknown save point, an
  *     unknown option. */
 
 import net from "node:net";
@@ -379,6 +379,34 @@ for (const parentKind of ["global", "paused shared pov"]) {
   if (freed && failures === before) console.log("POV REVIEW OK: discard");
 }
 
+/* 5. Save points (#889): a diff since a save point holds only the writes after it, starting from the key's value at it. */
+{
+  const before = failures;
+  const g5 = ++g;
+  const P = await c.newPov({ safe: false, shared: false });
+  await c.pause(P);
+  await c.call(P, PKG, "put", { g: g5, e: 1, w: 10 });
+  await c.send(`save point {${P}} "a";`);
+  await c.call(P, PKG, "put", { g: g5, e: 1, w: 20 });
+  await c.call(P, PKG, "put", { g: g5, e: 2, w: 5 });
+  const since = await c.diff(P, { since: "a" });
+  check("diff since a save point", normDiff(since.changes), [
+    { key: ["edge", g5, 1], kind: "changed", before: 10, after: 20 },
+    { key: ["edge", g5, 2], kind: "added", before: null, after: 5 },
+  ]);
+  check("diff since a save point: updates", since.updates, 2);
+  check("diff from the fork", normDiff((await c.diff(P)).changes), [
+    { key: ["edge", g5, 1], kind: "added", before: null, after: 20 },
+    { key: ["edge", g5, 2], kind: "added", before: null, after: 5 },
+  ]);
+  const dropped = await c.send(`drop save point {${P}} "a";`);
+  check("drop save point", dropped.dropped, true);
+  await expectError("diff since a dropped save point", c.diff(P, { since: "a" }), /no save point named/);
+  const version = await c.send(`version of {${P}};`);
+  check("version of a POV is a vector", typeof version.version, "string");
+  if (failures === before) console.log("POV REVIEW OK: save points");
+}
+
 /* 4. Errors. */
 {
   const before = failures;
@@ -389,7 +417,7 @@ for (const parentKind of ["global", "paused shared pov"]) {
   await other.newSession();
   await expectError("discard another session's POV", other.discard(mine), /only the session that made a private POV/);
   other.close();
-  await expectError("diff since a save point", c.send(`diff_pov {${mine}} <{.since: "v1"}>;`), /#745/);
+  await expectError("diff since a save point that was never made", c.send(`diff_pov {${mine}} <{.since: "v1"}>;`), /no save point named/);
   await expectError("an unknown option", c.send(`diff_pov {${mine}} <{.limt: 3}>;`), /unknown option/);
   await expectError("a bad conflict mode", c.send("new fast private pov <{.conflicts: \"maybe\"}>;"), /report/);
   await expectError("a limit too big", c.diff(mine, { limit: 100000 }), /limit/);

@@ -278,6 +278,8 @@ export interface DiffOptions {
   stop?: unknown[] | OrlyAddr | Raw;
   after?: unknown[] | OrlyAddr | Raw;
   limit?: number;
+  /** Only the writes after this save point, made with `save point {pov} "name";` (#889). */
+  since?: string;
 }
 
 export interface PovConflict {
@@ -577,6 +579,7 @@ export class Client {
     if (opts.stop !== undefined) parts.push(`.stop: ${keyLit(opts.stop)}`);
     if (opts.after !== undefined) parts.push(`.after: ${keyLit(opts.after)}`);
     if (opts.limit !== undefined) parts.push(`.limit: ${lit(opts.limit)}`);
+    if (opts.since !== undefined) parts.push(`.since: ${lit(opts.since)}`);
     const options = parts.length ? ` <{${parts.join(", ")}}>` : "";
     return this.send(`diff_pov {${pov}}${options};`) as Promise<PovDiff>;
   }

@@ -26,6 +26,7 @@
 #include <thread>
 
 #include <base/debug_log.h>
+#include <orly/server/version_unavailable.h>
 #include <orly/indy/disk/open_check.h>
 #include <orly/indy/disk/util/hash_util.h>
 #include <orly/indy/disk/wal.h>
@@ -116,6 +117,83 @@ void TRepo::LeaseVersion(TSequenceNumber at) {
   Leases[at] = chrono::steady_clock::now() + LeaseTtl;
 }
 
+void TRepo::SampleNewestLocked(chrono::steady_clock::time_point now, TSequenceNumber newest, chrono::steady_clock::duration window) {
+  const auto spacing = max<chrono::steady_clock::duration>(chrono::seconds(1), window / 1024);
+  if (NewestSamples.empty() || now - NewestSamples.back().first >= spacing) {
+    NewestSamples.emplace_back(now, newest);
+  }
+}
+
+TSequenceNumber TRepo::GetNewestSequenceNumber() {
+  optional<TSequenceNumber> seq_start, seq_limit;
+  TSequenceNumber next_seq = 0UL;
+  GetSnapshot(seq_start, seq_limit, next_seq);
+  return seq_limit ? *seq_limit : (next_seq ? next_seq - 1UL : 0UL);
+}
+
+TSequenceNumber TRepo::ResolveTime(chrono::system_clock::time_point when) {
+  if (GetParentRepo()) {
+    throw invalid_argument("a read at a time is of the global POV only");
+  }
+  const size_t seconds = GetRetentionSeconds();
+  if (!seconds) {
+    throw runtime_error("at time needs the retention window to be in seconds: start the server with --retention_seconds");
+  }
+  const TSequenceNumber newest = GetNewestSequenceNumber();
+  const TSequenceNumber oldest = GetHistoryHorizon();
+  const auto system_now = chrono::system_clock::now();
+  if (when > system_now) {
+    throw Server::TTimeUnavailable("that time is in the future", oldest, newest);
+  }
+  lock_guard<mutex> lock(RetentionLock);
+  const auto steady_now = chrono::steady_clock::now();
+  /* A sample now, so that a time just before it needn't resolve to one a spacing ago. */
+  SampleNewestLocked(steady_now, newest, chrono::seconds(seconds));
+  const auto target = steady_now - chrono::duration_cast<chrono::steady_clock::duration>(system_now - when);
+  /* The newest sample at or before the time. */
+  auto it = upper_bound(NewestSamples.begin(), NewestSamples.end(), target,
+                        [](const chrono::steady_clock::time_point &t, const auto &sample) { return t < sample.first; });
+  if (it == NewestSamples.begin()) {
+    throw Server::TTimeUnavailable("that time is older than the oldest the retention window has samples for", oldest, newest);
+  }
+  return prev(it)->second;
+}
+
+Base::TUuid TRepo::HoldVersion(TSequenceNumber at, chrono::seconds ttl) {
+  if (GetParentRepo()) {
+    throw invalid_argument("a version is held of the global POV only");
+  }
+  const TSequenceNumber newest = GetNewestSequenceNumber();
+  if (at > newest || at < GetHistoryHorizon()) {
+    throw Server::TVersionUnavailable(at, GetHistoryHorizon(), newest);
+  }
+  const Base::TUuid id(Base::TUuid::Best);
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    if (!GetRetentionVersions() && !GetRetentionSeconds() && SavePoints.empty()) {
+      throw runtime_error("hold version needs retention: with none, merges drop history as soon as they can; start the server with --retention_versions or --retention_seconds");
+    }
+    Holds.emplace(id, make_pair(at, chrono::steady_clock::now() + ttl));
+  }  // release Retention lock
+  /* A merge that began before the hold may have dropped the version meanwhile. */
+  if (at < GetHistoryHorizon()) {
+    ReleaseHold(id);
+    throw Server::TVersionUnavailable(at, GetHistoryHorizon(), newest);
+  }
+  return id;
+}
+
+bool TRepo::ReleaseHold(const Base::TUuid &id) {
+  lock_guard<mutex> lock(RetentionLock);
+  const auto it = Holds.find(id);
+  if (it == Holds.end()) {
+    return false;
+  }
+  const bool live = it->second.second > chrono::steady_clock::now();
+  Holds.erase(it);
+  return live;
+}
+
 optional<TSequenceNumber> TRepo::GetRetainFrom() {
   const size_t versions = GetRetentionVersions();
   const size_t seconds = GetRetentionSeconds();
@@ -125,7 +203,7 @@ optional<TSequenceNumber> TRepo::GetRetainFrom() {
   if (!versions && !seconds) {
     /* #745 stage 3: a save point keeps history with the window off. */
     lock_guard<mutex> lock(RetentionLock);
-    if (SavePoints.empty()) {
+    if (SavePoints.empty() && Holds.empty()) {
       return nullopt;
     }
   }
@@ -144,10 +222,7 @@ optional<TSequenceNumber> TRepo::GetRetainFrom() {
        newest sample at least `seconds` old: every version newer than it was newest within the window. Without one
        that old (the window is longer than this process has sampled), keep everything. */
     const auto window = chrono::seconds(seconds);
-    const auto spacing = max<chrono::steady_clock::duration>(chrono::seconds(1), window / 1024);
-    if (NewestSamples.empty() || now - NewestSamples.back().first >= spacing) {
-      NewestSamples.emplace_back(now, newest);
-    }
+    SampleNewestLocked(now, newest, window);
     while (NewestSamples.size() > 1UL && NewestSamples[1].first <= now - window) {
       NewestSamples.pop_front();
     }
@@ -158,6 +233,14 @@ optional<TSequenceNumber> TRepo::GetRetainFrom() {
   }
   if (!Leases.empty()) {
     retain_from = min(retain_from, Leases.begin()->first);
+  }
+  for (auto it = Holds.begin(); it != Holds.end();) {
+    if (it->second.second <= now) {
+      it = Holds.erase(it);
+    } else {
+      retain_from = min(retain_from, it->second.first);
+      ++it;
+    }
   }
   for (const auto &save_point : SavePoints) {
     retain_from = min(retain_from, save_point.second);
@@ -472,8 +555,42 @@ void TRepo::NoteHistoryHorizonRaised() {
   SaveRecordAndWait();
 }
 
+void TRepo::SetSavePoint(const string &name) {
+  if (!GetParentRepo()) {
+    SetSavePoint(name, GetNewestSequenceNumber());
+    return;
+  }
+  const TSequenceNumber newest = GetNewestSequenceNumber();
+  lock_guard<mutex> lock(RetentionLock);
+  PovSavePoints[name] = newest;
+}
+
+TSequenceNumber TRepo::GetPovSavePoint(const string &name) {
+  TSequenceNumber at;
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    const auto it = PovSavePoints.find(name);
+    if (it == PovSavePoints.end()) {
+      throw runtime_error("no save point named \"" + name + "\" on this POV");
+    }
+    at = it->second;
+  }  // release Retention lock
+  optional<TSequenceNumber> seq_start, seq_limit;
+  TSequenceNumber next_seq = 0UL;
+  GetSnapshot(seq_start, seq_limit, next_seq);
+  /* Every write at or below promoted_up_to has left this repo; with none left, all of them have. */
+  const TSequenceNumber promoted_up_to = seq_start ? (*seq_start ? *seq_start - 1UL : 0UL) : (next_seq ? next_seq - 1UL : 0UL);
+  if (promoted_up_to > at) {
+    throw runtime_error("version unavailable: the writes after save point \"" + name + "\" have been promoted, so it can no longer be read");
+  }
+  return at;
+}
+
 void TRepo::SetSavePoint(const string &name, TSequenceNumber at) {
-  if (GetParentRepo() || !PersistRecords) {
+  if (GetParentRepo()) {
+    throw invalid_argument("a save point of a POV with a parent is made at its newest version");
+  }
+  if (!PersistRecords) {
     throw runtime_error("save points need persisted retention on a root repo (#745)");
   }
   if (!Manager->ShipsRetention()) {
@@ -503,6 +620,10 @@ void TRepo::SetSavePoint(const string &name, TSequenceNumber at) {
 }
 
 bool TRepo::DeleteSavePoint(const string &name) {
+  if (GetParentRepo()) {
+    lock_guard<mutex> lock(RetentionLock);
+    return PovSavePoints.erase(name) != 0UL;
+  }
   /* acquire Retention lock */ {
     lock_guard<mutex> lock(RetentionLock);
     if (!SavePoints.erase(name)) {
@@ -516,6 +637,10 @@ bool TRepo::DeleteSavePoint(const string &name) {
 }
 
 map<string, TSequenceNumber> TRepo::GetSavePoints() {
+  if (GetParentRepo()) {
+    lock_guard<mutex> lock(RetentionLock);
+    return PovSavePoints;
+  }
   if (PersistRecords && !GetParentRepo()) {
     ResolveRecord();
   }

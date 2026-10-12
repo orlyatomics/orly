@@ -59,6 +59,7 @@
 #include <orly/server/insufficient_memory.h>
 #include <orly/server/insufficient_storage.h>
 #include <orly/server/operation_error.h>
+#include <orly/server/rfc3339.h>
 #include <orly/server/read_too_large.h>
 #include <orly/server/version_unavailable.h>
 #include <orly/server/write_too_large.h>
@@ -671,6 +672,107 @@ class TWsImpl final
         };
       }
 
+      /* The POV's newest version (#889): a number for the global POV, a vector string otherwise. Runs off the I/O thread
+         like durable_version: a POV other than the global one is opened. */
+      void operator()(const TVersionOfStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        Conn->Deferred = [session = GetSharedSession(), pov_id] {
+          const auto version = session->GetVersionOf(pov_id);
+          return TStmtQueue::TFinish([pov_id, version] {
+            TJson result = TJson::Object;
+            result["pov"] = AsStr(pov_id);
+            result["version"] = version.Number ? TJson(*version.Number) : TJson(version.Vector);
+            return result;
+          });
+        };
+      }
+
+      void operator()(const TSavePointStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        string name = Translate(stmt->GetStrExpr());
+        std::optional<uint64_t> at;
+        if (auto save_at = dynamic_cast<const TSaveAt *>(stmt->GetOptSaveAt())) {
+          int64_t version;
+          try {
+            version = save_at->GetIntExpr()->GetLexeme().AsInt();
+          } catch (const exception &) {
+            throw invalid_argument("save point: at must be followed by an int version");
+          }
+          if (version < 0) {
+            throw invalid_argument("save point: at must not be negative");
+          }
+          at = static_cast<uint64_t>(version);
+        }
+        Conn->Deferred = [session = GetSharedSession(), pov_id, name, at] {
+          session->SetSavePoint(pov_id, name, at);
+          return TStmtQueue::TFinish([pov_id, name] {
+            TJson result = TJson::Object;
+            result["pov"] = AsStr(pov_id);
+            result["save_point"] = name;
+            return result;
+          });
+        };
+      }
+
+      void operator()(const TDropSavePointStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        string name = Translate(stmt->GetStrExpr());
+        Conn->Deferred = [session = GetSharedSession(), pov_id, name] {
+          const bool dropped = session->DropSavePoint(pov_id, name);
+          return TStmtQueue::TFinish([pov_id, name, dropped] {
+            TJson result = TJson::Object;
+            result["pov"] = AsStr(pov_id);
+            result["save_point"] = name;
+            result["dropped"] = dropped;
+            return result;
+          });
+        };
+      }
+
+      void operator()(const THoldVersionStmt *stmt) const override {
+        assert(stmt);
+        TUuid pov_id = Translate(stmt->GetIdExpr());
+        int64_t version, seconds_to_hold;
+        try {
+          version = stmt->GetVersion()->GetLexeme().AsInt();
+          seconds_to_hold = stmt->GetSeconds()->GetLexeme().AsInt();
+        } catch (const exception &) {
+          throw invalid_argument("hold version: the version and the seconds must be ints");
+        }
+        constexpr int64_t max_hold_seconds = 24 * 60 * 60;
+        if (version < 0 || seconds_to_hold < 1 || seconds_to_hold > max_hold_seconds) {
+          throw invalid_argument("hold version: the version must not be negative, and the seconds must be from 1 to 86400");
+        }
+        Conn->Deferred = [session = GetSharedSession(), pov_id, version, seconds_to_hold] {
+          const auto lease_id = session->HoldVersion(pov_id, static_cast<uint64_t>(version), std::chrono::seconds(seconds_to_hold));
+          return TStmtQueue::TFinish([pov_id, version, seconds_to_hold, lease_id] {
+            TJson result = TJson::Object;
+            result["pov"] = AsStr(pov_id);
+            result["version"] = static_cast<uint64_t>(version);
+            result["lease"] = AsStr(lease_id);
+            result["seconds"] = static_cast<uint64_t>(seconds_to_hold);
+            return result;
+          });
+        };
+      }
+
+      void operator()(const TReleaseStmt *stmt) const override {
+        assert(stmt);
+        TUuid lease_id = Translate(stmt->GetIdExpr());
+        Conn->Deferred = [session = GetSharedSession(), lease_id] {
+          const bool released = session->ReleaseHold(lease_id);
+          return TStmtQueue::TFinish([lease_id, released] {
+            TJson result = TJson::Object;
+            result["lease"] = AsStr(lease_id);
+            result["released"] = released;
+            return result;
+          });
+        };
+      }
+
       void operator()(const TReviewPovStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetIdExpr());
@@ -705,7 +807,17 @@ class TWsImpl final
         }
         /* Runs off the I/O thread (#761); see TStmtQueue. */
         Conn->Deferred = [conn = Conn, options, session_mngr = Conn->Ws->SessionManager, session = GetSharedSession(),
-                          request = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
+                          pov_id, fq_name, closure,
+                          planned = std::make_shared<const TMethodRequest>(pov_id, fq_name, closure)] {
+          /* A time or a save point is resolved to its version here, and the call reads at that. */
+          std::optional<uint64_t> read_at = options.At;
+          auto request = planned;
+          if (options.AtTime || options.AtSave) {
+            read_at = options.AtTime ? session->ResolveTime(*options.AtTime) : session->ResolveSavePoint(*options.AtSave);
+            TClosure resolved(closure);
+            AddAt(resolved, *read_at);
+            request = std::make_shared<const TMethodRequest>(pov_id, fq_name, resolved);
+          }
           auto result = std::make_shared<TMethodResult>(session->Try(*request));
           const auto &seq_num = result->GetCommitSequenceNumber();
           const auto &commit_lsn = result->GetCommitLsn();
@@ -723,12 +835,12 @@ class TWsImpl final
           } else if (options.WaitDurableMs && seq_num) {
             durable = WaitDurable(session_mngr, *session, request->GetPovId(), *seq_num, options.WaitDurableMs);
           }
-          return TStmtQueue::TFinish([conn, options, durable, request, result] {
+          return TStmtQueue::TFinish([conn, options, read_at, durable, request, result] {
             if (options.Receipt) {
               conn->Receipt = ToReceipt(request->GetPovId(), *result, durable);
             }
             /* The version the call read at, echoed so a client can tell the reply's state from a newer one (#745). */
-            conn->ReadVersion = options.At;
+            conn->ReadVersion = read_at;
             if (options.WaitDurableMs && result->GetCommitSequenceNumber() && !durable) {
               throw TDurableTimeout(options.WaitDurableMs);
             }
@@ -764,7 +876,7 @@ class TWsImpl final
           list = list_tail ? list_tail->GetObjExprList() : nullptr;
         }
         const TTryOptions options = GetTryOptions(TranslateOptions(stmt->GetOptOptions()), stmt->GetOptAt());
-        if (options.At) {
+        if (options.ReadsPast()) {
           throw invalid_argument("try_batch: at and .at are not supported; read at a version with a single try");
         }
         if (options.OpId) {
@@ -807,7 +919,7 @@ class TWsImpl final
       void operator()(const TTryMultiStmt *stmt) const override {
         assert(stmt);
         TUuid pov_id = Translate(stmt->GetPovId());
-        if (dynamic_cast<const TAtVersion *>(stmt->GetOptAt())) {
+        if (!dynamic_cast<const TNoAt *>(stmt->GetOptAt())) {
           throw invalid_argument("try_multi: at is not supported; read at a version with a single try");
         }
         void *alloc = alloca(SabotStateSize);
@@ -1024,6 +1136,15 @@ class TWsImpl final
         uint64_t WaitDurableMs = 0;
         std::optional<std::string> OpId;
         std::optional<uint64_t> At;
+
+        /* `at time "..."` and `at save "..."` (#889): the version is found by the statement, off the I/O thread, as it
+           takes the repo's locks. */
+        std::optional<std::chrono::system_clock::time_point> AtTime;
+        std::optional<std::string> AtSave;
+
+        [[nodiscard]] bool ReadsPast() const {
+          return At || AtTime || AtSave;
+        }
       };
 
       /* Likewise, the version to read at (#745). */
@@ -1047,6 +1168,24 @@ class TWsImpl final
         constexpr int64_t max_wait_ms = 60000;
         TTryOptions result;
         auto at_version = dynamic_cast<const TAtVersion *>(opt_at);
+        auto at_time = dynamic_cast<const TAtTime *>(opt_at);
+        auto at_save = dynamic_cast<const TAtSave *>(opt_at);
+        if (at_time || at_save) {
+          for (const auto &option : options) {
+            if (option.first == "at") {
+              throw invalid_argument("try: the version is given twice, as `at time` or `at save` and as .at; use one");
+            }
+          }
+          if (at_time) {
+            const auto when = ParseRfc3339(Translate(at_time->GetStrExpr()));
+            if (!when) {
+              throw invalid_argument("try: at time must be an RFC 3339 time with a zone, such as \"2026-05-17T09:30:00Z\"");
+            }
+            result.AtTime = *when;
+          } else {
+            result.AtSave = Translate(at_save->GetStrExpr());
+          }
+        }
         std::optional<int64_t> keyword_at;
         if (at_version) {
           try {
@@ -1105,8 +1244,8 @@ class TWsImpl final
             throw invalid_argument("try: unknown option ." + name + "; the options are .receipt, .wait_durable_ms, .op_id and .at");
           }
         }
-        if (result.At && (result.OpId || result.Receipt || result.WaitDurableMs)) {
-          throw invalid_argument("try: .at reads a past version, so it does not take .op_id, .receipt or .wait_durable_ms");
+        if (result.ReadsPast() && (result.OpId || result.Receipt || result.WaitDurableMs)) {
+          throw invalid_argument("try: a read at a past version does not take .op_id, .receipt or .wait_durable_ms");
         }
         result.Receipt = result.Receipt || result.WaitDurableMs;
         return result;

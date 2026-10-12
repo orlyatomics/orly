@@ -237,6 +237,58 @@ class TWsTestServer::TSessionManager
         /* POV ...0002 is always durable up to any version a fake write gets (#750); the rest stay at 77. */
         return pov_id == TUuid("00000000-0000-0000-0000-000000000002") ? 1000000UL : 77UL;
       }
+      /* Fakes for the versioned reads' statements (#889). POV ...0001 is the global one, with version 1000 now, which
+         has a save point `known` at 42 and one `gone` below the horizon. Any time from 2000 to now is version 500;
+         an earlier one is older than the window. */
+      virtual uint64_t ResolveTime(std::chrono::system_clock::time_point when) const override {
+        if (when > std::chrono::system_clock::now()) {
+          throw Server::TTimeUnavailable("that time is in the future", 10UL, 1000UL);
+        }
+        if (when < std::chrono::system_clock::time_point(std::chrono::hours(24 * 10957))) {
+          throw Server::TTimeUnavailable("that time is older than the oldest the retention window has samples for", 10UL, 1000UL);
+        }
+        return 500UL;
+      }
+      virtual uint64_t ResolveSavePoint(const string &name) const override {
+        if (name == "known") {
+          return 42UL;
+        }
+        if (name == "gone") {
+          throw Server::TVersionUnavailable(5UL, 10UL, 1000UL);
+        }
+        throw invalid_argument("no save point named \"" + name + "\"");
+      }
+      virtual Server::TVersionOf GetVersionOf(const TUuid &pov_id) const override {
+        Server::TVersionOf result;
+        if (pov_id == TUuid("00000000-0000-0000-0000-000000000001")) {
+          result.Number = 1000UL;
+        } else {
+          result.Vector = "(3, 1000)";
+        }
+        return result;
+      }
+      virtual void SetSavePoint(const TUuid &pov_id, const string &name, const optional<uint64_t> &at) const override {
+        if (pov_id != TUuid("00000000-0000-0000-0000-000000000001") && at) {
+          throw invalid_argument("save point: a POV other than the global one is saved at its newest version");
+        }
+        if (at && (*at < 10UL || *at > 1000UL)) {
+          throw Server::TVersionUnavailable(*at, 10UL, 1000UL);
+        }
+        if (name.empty()) {
+          throw invalid_argument("save point: the name must not be empty");
+        }
+      }
+      virtual bool DropSavePoint(const TUuid &, const string &name) const override { return name == "known"; }
+      virtual TUuid HoldVersion(const TUuid &pov_id, uint64_t at, const chrono::seconds &) const override {
+        if (pov_id != TUuid("00000000-0000-0000-0000-000000000001")) {
+          throw invalid_argument("hold version: only the global POV's versions can be held");
+        }
+        if (at < 10UL || at > 1000UL) {
+          throw Server::TVersionUnavailable(at, 10UL, 1000UL);
+        }
+        return TUuid("00000000-0000-0000-0000-0000000000aa");
+      }
+      virtual bool ReleaseHold(const TUuid &hold_id) const override { return hold_id == TUuid("00000000-0000-0000-0000-0000000000aa"); }
       virtual TPovPromote PromotePov(const TUuid &, bool) const override { return TPovPromote(); }
       virtual TPovReview ReviewPov(const TUuid &, uint64_t) const override { return TPovReview(); }
 

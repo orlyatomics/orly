@@ -120,12 +120,44 @@ void Orly::Server::WatchFork(const TRepoPtr &repo, TConflictMode mode) {
   }
 }
 
-TPovDiff Orly::Server::DiffPov(const TRepoPtr &repo, const TPovDiffOptions &options) {
-  if (options.Since) {
-    /* The save-point hook (#745). */
-    throw invalid_argument("diff_pov: .since needs named save points, which need versioned reads (#745); Orly doesn't have them yet");
+namespace {
+
+  /* The value of a key after `recs`, its writes oldest first, are applied to `before`: from the newest overwrite or delete
+     if there is one, else on top of `before`. */
+  template <typename TRecs>
+  optional<Var::TVar> ApplyRecs(const optional<Var::TVar> &before, const TRecs &recs, Atom::TSuprena *arena) {
+    ptrdiff_t base = -1;
+    for (size_t i = 0; i < recs.size(); ++i) {
+      if (recs[i].Mutator == TMutator::Assign) {
+        base = static_cast<ptrdiff_t>(i);
+      }
+    }
+    optional<Var::TVar> acc;
+    size_t from = 0;
+    if (base < 0) {
+      acc = before;
+    } else {
+      if (!recs[base].IsTombstone) {
+        acc = CoreToVar(recs[base].Op, arena);
+      }
+      from = static_cast<size_t>(base) + 1;
+    }
+    for (size_t i = from; i < recs.size(); ++i) {
+      const Var::TVar rhs = CoreToVar(recs[i].Op, arena);
+      acc = acc ? Rt::Mutate(*acc, recs[i].Mutator, rhs) : rhs;
+    }
+    return acc;
   }
+
+}  // namespace
+
+TPovDiff Orly::Server::DiffPov(const TRepoPtr &repo, const TPovDiffOptions &options) {
   CheckHasParent(repo, "diff_pov");
+  /* `.since`: only the writes after the named save point (#889). */
+  optional<Indy::TSequenceNumber> since;
+  if (options.Since) {
+    since = repo->GetPovSavePoint(*options.Since);
+  }
   if (options.Limit < 1 || options.Limit > TPovDiffOptions::MaxLimit) {
     throw invalid_argument("diff_pov: bad .limit");
   }
@@ -146,13 +178,15 @@ TPovDiff Orly::Server::DiffPov(const TRepoPtr &repo, const TPovDiffOptions &opti
     TMutator Mutator;
     bool IsTombstone;
     Atom::TCore Op;
+    Indy::TSequenceNumber Seq;
   };
   map<Indy::TIndexKey, vector<TRec>, TKeyOrder> by_key;
   TPovDiff diff;
   /* extra */ {
     auto view = make_unique<Indy::TRepo::TView>(repo);
     if (view->GetLower() && view->GetUpper()) {
-      diff.Updates = *view->GetUpper() - *view->GetLower() + 1UL;
+      const Indy::TSequenceNumber first = since ? max(*view->GetLower(), *since + 1UL) : *view->GetLower();
+      diff.Updates = *view->GetUpper() >= first ? *view->GetUpper() - first + 1UL : 0UL;
       auto walker = repo->NewUpdateWalker(view, *view->GetLower(), *view->GetUpper());
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       for (auto &cur = *walker; cur; ++cur) {
@@ -168,7 +202,8 @@ TPovDiff Orly::Server::DiffPov(const TRepoPtr &repo, const TPovDiffOptions &opti
           }
           const bool is_tombstone = entry.Op.IsTombstone();
           iter->second.push_back(TRec{entry.Mutator, is_tombstone,
-                                      is_tombstone ? Atom::TCore() : Atom::TCore(&arena, state_alloc, item.MainArena, entry.Op)});
+                                      is_tombstone ? Atom::TCore() : Atom::TCore(&arena, state_alloc, item.MainArena, entry.Op),
+                                      item.SequenceNumber});
         }
       }
     }
@@ -189,7 +224,9 @@ TPovDiff Orly::Server::DiffPov(const TRepoPtr &repo, const TPovDiffOptions &opti
       diff.NextLiteral = strm.str();
       break;
     }
-    const auto &recs = item.second;
+    /* A diff since a save point starts from the key as it was at the save point: the parent's value with the POV's
+       writes up to it on top, which are then left out of the diff. */
+    vector<TRec> recs;
     TPovChange change;
     change.Key = CoreToVar(item.first.GetKey().GetCore(), item.first.GetKey().GetArena());
     /* extra */ {
@@ -197,6 +234,18 @@ TPovDiff Orly::Server::DiffPov(const TRepoPtr &repo, const TPovDiffOptions &opti
       if (!before.GetCore().IsVoid()) {
         change.Before = CoreToVar(before.GetCore(), before.GetArena());
       }
+    }
+    if (since) {
+      vector<TRec> early;
+      for (const auto &rec: item.second) {
+        (rec.Seq > *since ? recs : early).push_back(rec);
+      }
+      if (recs.empty()) {
+        continue;
+      }
+      change.Before = ApplyRecs(change.Before, early, &arena);
+    } else {
+      recs = item.second;
     }
     /* The newest overwrite or delete in the POV, if any: the POV's own base for the key. */
     ptrdiff_t base = -1;
