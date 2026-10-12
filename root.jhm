@@ -1,6 +1,7 @@
 {
   "targets": [
       "orly/orlyc",
+      "orly/orly_lsp",
       "orly/server/orlyi",
       "orly/client/orly_client",
       "orly/indy/disk/util/orly_dm",
