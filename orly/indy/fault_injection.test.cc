@@ -9,6 +9,8 @@
      the repo's teardown, which removes the merge's inputs.
    - MergeDiskFold: the same over two files of `+=` deltas, which takes the fold path
      (MergeFiles phase B).
+   - MergeDiskRetain, MergeDiskFoldRetain: MergeDisk and MergeDiskFold with retention on
+     (#745 stage 2), so the merge and the fold write the history they keep.
    - DurableSaveMerge: a durable save, which the writer flushes to a third file, and the
      durable merger merging the three; the layer cleaner then removes the inputs.
    - BaseImage: file-map changes that fill the append log, so the file service writes a base
@@ -540,6 +542,11 @@ class TRepoFixture {
     return Stepped;
   }
 
+  /* #745 stage 2: keep the last `versions` versions through merges and folds. */
+  void SetRetention(size_t versions) {
+    Manager->SetRetention(versions, 0UL);
+  }
+
   private:
 
   vector<uint8_t> StateBuf;
@@ -703,12 +710,17 @@ class TMergeDiskCase final
     CrashBeforeRemovalOldRange
   };
 
-  /* fold: the files hold only `+=` deltas, so MergeFiles takes the fold path. */
-  explicit TMergeDiskCase(bool fold, TEnd end = TEnd::Teardown)
-      : Fold(fold), End(end) {}
+  /* fold: the files hold only `+=` deltas, so MergeFiles takes the fold path. retain: retention is on
+     (#745 stage 2), so the merge and the fold write the history they keep, and a reopen must still read the
+     current values. */
+  explicit TMergeDiskCase(bool fold, TEnd end = TEnd::Teardown, bool retain = false)
+      : Fold(fold), End(end), Retain(retain) {}
 
   virtual void Setup(TCaseEnv &env) override {
     Fixture = make_unique<TRepoFixture>(env.Engine->GetEngine(), env.Scheduler, true);
+    if (Retain) {
+      Fixture->SetRetention(1000UL);
+    }
     map<int64_t, int64_t> vals;
     if (Fold) {
       /* As RootMergeFoldsChainOntoBaseOutsideMerge (repo.test.cc): Assign bases in a big file,
@@ -798,6 +810,8 @@ class TMergeDiskCase final
   const bool Fold;
 
   const TEnd End;
+
+  const bool Retain;
 
 };  // TMergeDiskCase
 
@@ -1014,6 +1028,12 @@ static unique_ptr<TCase> NewCase(const string &name) {
   if (name == "MergeDiskFold") {
     return make_unique<TMergeDiskCase>(true);
   }
+  if (name == "MergeDiskRetain") {
+    return make_unique<TMergeDiskCase>(false, TMergeDiskCase::TEnd::Teardown, true);
+  }
+  if (name == "MergeDiskFoldRetain") {
+    return make_unique<TMergeDiskCase>(true, TMergeDiskCase::TEnd::Teardown, true);
+  }
   /* Not swept: FoldMergeCrashBeforeInputRemoval runs these once. */
   if (name == "MergeDiskFoldCrash") {
     return make_unique<TMergeDiskCase>(true, TMergeDiskCase::TEnd::CrashBeforeRemoval);
@@ -1030,7 +1050,8 @@ static unique_ptr<TCase> NewCase(const string &name) {
   throw logic_error("no such case: " + name);
 }
 
-static const vector<string> CaseNames{"MergeMem", "MergeDisk", "MergeDiskFold", "DurableSaveMerge", "BaseImage"};
+static const vector<string> CaseNames{"MergeMem", "MergeDisk", "MergeDiskFold", "MergeDiskRetain", "MergeDiskFoldRetain",
+                                      "DurableSaveMerge", "BaseImage"};
 
 /*** Modes ***/
 

@@ -773,6 +773,17 @@ class TRootRepoFixture {
   }
 
   /* Keep merge outputs unfolded, so reads go through a TMergeDataFile's history (#666). */
+  /* #745 stage 2: the retention window, and how long a read at a version leases it. */
+  void SetRetention(size_t versions, size_t seconds, std::chrono::steady_clock::duration lease_ttl) {
+    Manager->SetRetention(versions, seconds);
+    Stepped->SetVersionLeaseTtl(lease_ttl);
+  }
+
+  /* Tails the oldest disk file. */
+  void Tail() {
+    static_cast<Orly::Indy::TRepo *>(Stepped)->StepTail(256UL);
+  }
+
   void KeepMergesUnfolded() {
     Stepped->FoldMergedFiles = false;
   }
@@ -1957,6 +1968,9 @@ namespace {
     bool Prune;
     bool Unfolded;
     uint32_t Seed;
+    /* #745 stage 2: --retention_versions, and whether each merge round also tails the oldest file. */
+    size_t RetainVersions = 0UL;
+    bool Tail = false;
   };
 
   struct TReadAtStats {
@@ -1967,6 +1981,8 @@ namespace {
     size_t MaxDiskLayers = 0UL;
     size_t DiskLayersAfterMerges = 0UL;
     TSequenceNumber Horizon = 0UL;
+    /* Checks at which the horizon cut into the retention window. */
+    size_t WindowCuts = 0UL;
   };
 
   TReadAtStats RunReadAtScenario(const TReadAtScenario &scenario) {
@@ -1976,6 +1992,10 @@ namespace {
     TRootRepoFixture root(scenario.Prune);
     if (scenario.Unfolded) {
       root.KeepMergesUnfolded();
+    }
+    if (scenario.RetainVersions) {
+      /* Leases expire at once, so the reads below don't hold history past the window. */
+      root.SetRetention(scenario.RetainVersions, 0UL, chrono::steady_clock::duration::zero());
     }
     mt19937 rng(scenario.Seed);
     /* The model: the state after each commit, by the commit's sequence number. */
@@ -2006,6 +2026,9 @@ namespace {
       stats.Horizon = root.GetHistoryHorizon();
       const TSequenceNumber newest = history.empty() ? 0UL : history.rbegin()->first;
       const auto &now = expected_at(newest);
+      if (scenario.RetainVersions && newest >= scenario.RetainVersions && stats.Horizon > newest - scenario.RetainVersions + 1UL) {
+        ++stats.WindowCuts;
+      }
       for (TSequenceNumber at = stats.Horizon; at <= newest; ++at) {
         const auto &expected = expected_at(at);
         vector<TKey> expected_keys;
@@ -2061,6 +2084,9 @@ namespace {
       stats.MaxDiskLayers = max(stats.MaxDiskLayers, disk);
       if (round == 2UL || round == num_rounds - 1UL) {
         root.MergeDisk(8UL);
+        if (scenario.Tail) {
+          root.Tail();
+        }
       }
       check();
       expected_refusals += stats.Horizon ? 3UL : 1UL;
@@ -2102,6 +2128,71 @@ FIXTURE(ReadAtVersionMatchesModel) {
         EXPECT_GT(stats.Horizon, 0UL);
         EXPECT_LT(stats.DiskLayersAfterMerges, stats.MaxDiskLayers);
       }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745 stage 2: with a retention window, merges, folds and tails keep every version in it. The window (20 versions)
+   is shorter than the run (~150), so the horizon still rises, but never past the window's start; every version from
+   the horizon up reads as the model says, `+=` keys included, out of folded files. */
+FIXTURE(ReadAtVersionWithRetentionWindow) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    for (uint32_t seed : {1U, 2U, 3U}) {
+      for (bool prune : {true, false}) {
+        for (bool unfolded : {false, true}) {
+          for (bool tail : {false, true}) {
+            const auto stats = RunReadAtScenario({.Prune = prune, .Unfolded = unfolded, .Seed = seed, .RetainVersions = 20UL, .Tail = tail});
+            EXPECT_EQ(stats.Mismatches, 0UL);
+            EXPECT_EQ(stats.WindowCuts, 0UL);
+            EXPECT_GT(stats.PastValues, 0UL);
+            EXPECT_LT(stats.DiskLayersAfterMerges, stats.MaxDiskLayers);
+            if (prune || !unfolded) {
+              EXPECT_GT(stats.Horizon, 0UL);
+            }
+          }
+        }
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745 stage 2: a read at a version leases it. Once the window has moved past the version, merges still keep it
+   while the lease lasts, so the read can go on; with the lease gone, the next merge drops it. */
+FIXTURE(ReadAtVersionLeaseHoldsHistory) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(true);
+      root.SetRetention(2UL, 0UL, chrono::hours(1));
+      const TSequenceNumber leased = root.Commit({{1L, 10L, TMutator::Assign}});
+      root.Commit({{2L, 5L, TMutator::Assign}});
+      root.Flush();
+      EXPECT_TRUE(root.ReadAt(1L, leased) == root.Int(10L));
+      for (int64_t i = 0L; i < 8L; ++i) {
+        root.Commit({{1L, 11L + i, TMutator::Assign}});
+        root.Commit({{2L, 1L, TMutator::Add}});
+        root.Flush();
+      }
+      root.MergeDisk(8UL);
+      root.Tail();
+      EXPECT_LE(root.GetHistoryHorizon(), leased);
+      EXPECT_TRUE(root.ReadAt(1L, leased) == root.Int(10L));
+      EXPECT_FALSE(root.ReadAt(2L, leased));
+      /* Without the lease, the window alone decides. */
+      root.SetRetention(2UL, 0UL, chrono::steady_clock::duration::zero());
+      root.ReadAt(1L, leased);
+      root.Commit({{1L, 100L, TMutator::Assign}});
+      root.Flush();
+      root.MergeDisk(8UL);
+      root.Tail();
+      EXPECT_GT(root.GetHistoryHorizon(), leased);
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

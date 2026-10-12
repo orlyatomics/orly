@@ -382,6 +382,18 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Off keeps every version of every key on disk, so disk use grows with every write. Independent of allow_tailing."
   );
   Param(
+      &TCmd::RetentionVersions, "retention_versions", Optional, "retention_versions\0",
+      "Keep the history reads at a version need for the newest N versions of the global pov (#745). 0, the default, "
+      "keeps only the current state, as before. Kept in memory: a restart starts the window afresh. A master and its "
+      "slaves must be started with the same value; it is not checked."
+  );
+  Param(
+      &TCmd::RetentionSeconds, "retention_seconds", Optional, "retention_seconds\0",
+      "Keep the history reads at a version need for every version of the global pov that was newest within the last "
+      "N seconds (#745). 0, the default, is off. With retention_versions as well, both windows are kept. A master and "
+      "its slaves must be started with the same value; it is not checked."
+  );
+  Param(
       &TCmd::AllowFileSync, "allow_file_sync", Optional, "allow_file_sync\0",
       "Turn on / off support for file_sync. On means we sync from scratch much faster. You want to turn this off if the underlying data layout has changed."
   );
@@ -637,6 +649,8 @@ TServer::TCmd::TCmd()
       ScrubInterval(0UL),
       ScrubYieldEveryNKeys(256UL),
       PruneMergeHistory(true),
+      RetentionVersions(0UL),
+      RetentionSeconds(0UL),
       AllowFileSync(true),
       NoRealtime(false),
       DoFsync(true),
@@ -1580,6 +1594,8 @@ void TServer::Init() {
                                                     Cmd.MemMergeCoreVec,
                                                     Cmd.DiskMergeCoreVec,
                                                     Cmd.Create);
+    /* #745 stage 2: merges that start before this keep only the current state, as with the window off. */
+    RepoManager->SetRetention(Cmd.RetentionVersions, Cmd.RetentionSeconds);
     auto global_ttl = TTtl::max();
     GlobalRepo = RepoManager->GetRepo(TSession::GlobalPovId,
                                       global_ttl,

@@ -322,6 +322,10 @@ namespace Orly {
         /* Whether the global pov's disk merges drop superseded versions (#592). */
         bool PruneMergeHistory;
 
+        /* #745 stage 2: the history the global pov keeps for reads at a version; 0 for both is off. */
+        size_t RetentionVersions;
+        size_t RetentionSeconds;
+
         /* We can use this to sync when the data layout has changed. */
         bool AllowFileSync;
 

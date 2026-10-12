@@ -387,6 +387,15 @@ namespace Orly {
           /* See TManager::PruneMergeHistory. */
           inline bool IsMergePruningAllowed() const;
 
+          /* See TManager::SetRetention. */
+          [[nodiscard]] size_t GetRetentionVersions() const noexcept {
+            return Manager->GetRetentionVersions();
+          }
+
+          [[nodiscard]] size_t GetRetentionSeconds() const noexcept {
+            return Manager->GetRetentionSeconds();
+          }
+
           protected:
 
           /* Forward Declarations. */
@@ -682,6 +691,23 @@ namespace Orly {
 
         inline size_t GetTempFileConsolThresh() const;
 
+        /* #745 stage 2: the history the global POV keeps for reads at a version. With `versions`, reads at the newest
+           `versions` versions stay whole; with `seconds`, reads at any version that was newest within the last
+           `seconds`; with both, the union. Zero for both (the default) keeps today's behaviour: merges keep only what
+           the current state needs. Kept in memory only: a restart starts the window afresh. */
+        void SetRetention(size_t versions, size_t seconds) noexcept {
+          RetentionVersions = versions;
+          RetentionSeconds = seconds;
+        }
+
+        [[nodiscard]] size_t GetRetentionVersions() const noexcept {
+          return RetentionVersions.load();
+        }
+
+        [[nodiscard]] size_t GetRetentionSeconds() const noexcept {
+          return RetentionSeconds.load();
+        }
+
         /* True once the merge runners have been told to stop (StopMergeRunners). */
         bool IsShuttingDown() const {
           return ShuttingDown;
@@ -927,6 +953,10 @@ namespace Orly {
         /* Whether a root safe repo's disk merges drop superseded versions (#592). Independent of
            AllowTailing, which gates only the tail statement. */
         bool PruneMergeHistory;
+
+        /* See SetRetention. */
+        std::atomic<size_t> RetentionVersions{0UL};
+        std::atomic<size_t> RetentionSeconds{0UL};
 
         mutable TRemovalCollection::TImpl RemovalCollection;
         std::mutex RemovalLock;

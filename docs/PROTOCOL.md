@@ -414,6 +414,14 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
   than the history the disk merges have kept: a merge that folds `+=` runs or prunes overwritten
   values raises `oldest` to the newest version it merged. After a restart, or after a slave loads
   a synced file, `oldest` starts at the newest version on disk.
+- Retention (off by default) keeps a window of history through merges and folds, so `oldest`
+  stays within it. `--retention_versions=N` keeps the last N versions and `--retention_seconds=S`
+  the versions of the last S seconds; with both set, the wider window wins. A read at a version
+  also holds that version for 10 minutes (renewed by each read at it), so a client paging through
+  a snapshot keeps it while it reads; a merge that started before the first read may still drop
+  it, and the read then gets `version_unavailable`. The window and the holds live in memory: after
+  a restart `oldest` starts at the newest version on disk, as above. Give master and slaves the
+  same retention flags; the server does not check that they match.
 - Over the binary protocol the version rides as the closure argument `$at` (an int).
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest

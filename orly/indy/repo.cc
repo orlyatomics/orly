@@ -108,6 +108,53 @@ class TDiskLayerSlot {
 
 };  // TDiskLayerSlot
 
+void TRepo::LeaseVersion(TSequenceNumber at) {
+  if (!GetRetentionVersions() && !GetRetentionSeconds()) {
+    return;
+  }
+  lock_guard<mutex> lock(RetentionLock);
+  Leases[at] = chrono::steady_clock::now() + LeaseTtl;
+}
+
+optional<TSequenceNumber> TRepo::GetRetainFrom() {
+  const size_t versions = GetRetentionVersions();
+  const size_t seconds = GetRetentionSeconds();
+  if ((!versions && !seconds) || GetParentRepo()) {
+    return nullopt;
+  }
+  optional<TSequenceNumber> seq_start, seq_limit;
+  TSequenceNumber next_seq = 0UL;
+  GetSnapshot(seq_start, seq_limit, next_seq);
+  const TSequenceNumber newest = next_seq ? next_seq - 1UL : 0UL;
+  const auto now = chrono::steady_clock::now();
+  TSequenceNumber retain_from = newest;
+  lock_guard<mutex> lock(RetentionLock);
+  if (versions) {
+    retain_from = min(retain_from, (newest >= versions) ? newest - versions + 1UL : 0UL);
+  }
+  if (seconds) {
+    /* Sample the newest version now and then (at most about 1024 samples a window), and start the window at the
+       newest sample at least `seconds` old: every version newer than it was newest within the window. Without one
+       that old (the window is longer than this process has sampled), keep everything. */
+    const auto window = chrono::seconds(seconds);
+    const auto spacing = max<chrono::steady_clock::duration>(chrono::seconds(1), window / 1024);
+    if (NewestSamples.empty() || now - NewestSamples.back().first >= spacing) {
+      NewestSamples.emplace_back(now, newest);
+    }
+    while (NewestSamples.size() > 1UL && NewestSamples[1].first <= now - window) {
+      NewestSamples.pop_front();
+    }
+    retain_from = min(retain_from, (NewestSamples.front().first <= now - window) ? NewestSamples.front().second : 0UL);
+  }
+  for (auto it = Leases.begin(); it != Leases.end();) {
+    it = (it->second <= now) ? Leases.erase(it) : next(it);
+  }
+  if (!Leases.empty()) {
+    retain_from = min(retain_from, Leases.begin()->first);
+  }
+  return max(retain_from, GetHistoryHorizon());
+}
+
 void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed) {
   //assert(!ParentRepo);
   TDataLayer *new_layer = nullptr;
@@ -2228,10 +2275,16 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
      StepMergeDisk. */
   bool my_can_tail = can_tail && !static_cast<bool>(GetParentRepo());
   bool my_can_tail_tombstone = my_can_tail && can_tail_tombstone && (gen_id_vec.size() == 1);
+  /* #745 stage 2: the oldest version this merge keeps whole, with the retention window on; nothing otherwise. The
+     horizon rises to it (or to the merge's newest version, if lower) rather than to the newest. */
+  const std::optional<TSequenceNumber> retain_from = GetRetainFrom();
+  const auto horizon_after = [&retain_from](TSequenceNumber high) {
+    return retain_from ? std::min(*retain_from, high) : high;
+  };
   /* Phase A: standard merge. Produces a data file at intermediate_gen_id
      with same-mutator commutative runs still expanded -- correct but
      unbounded in entries-per-key under contention. */
-  TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), intermediate_gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone);
+  TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), intermediate_gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone, retain_from);
   /* Fast path (#64): if the merge produced no non-Assign entries,
      there's nothing to fold and the intermediate file IS the final
      output. Skip the TFoldDataFile read+write+remove cycle entirely.
@@ -2244,7 +2297,7 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     /* A pruning merge keeps only each key's newest entry, so versions below its newest are gone (#745). The caller
        publishes the file after this returns. */
     if (my_can_tail) {
-      RaiseHistoryHorizon(out_saved_high_seq);
+      RaiseHistoryHorizon(horizon_after(out_saved_high_seq));
     }
     /* #857: count bytes written to disk in this merge. */
     AddMergeBytes(merge_data_file.GetFileLength());
@@ -2269,7 +2322,7 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     out_saved_low_seq = merge_data_file.GetLowestSequence();
     out_saved_high_seq = merge_data_file.GetHighestSequence();
     if (my_can_tail) {
-      RaiseHistoryHorizon(out_saved_high_seq);
+      RaiseHistoryHorizon(horizon_after(out_saved_high_seq));
     }
     /* #857: count bytes written to disk in this merge. */
     AddMergeBytes(merge_data_file.GetFileLength());
@@ -2278,7 +2331,7 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   size_t final_gen_id = GetNextGenId();
   size_t fold_file_length = 0UL;
   try {
-    TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh);
+    TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh, retain_from);
     out_num_keys = fold_data_file.GetNumKeys();
     out_saved_low_seq = fold_data_file.GetLowestSequence();
     out_saved_high_seq = fold_data_file.GetHighestSequence();
@@ -2300,8 +2353,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   /* Reclaim the intermediate file's blocks. */
   RemoveFile(intermediate_gen_id, false);
   /* The fold leaves each key one entry, its value as of the newest version merged, so older versions are gone
-     (#745). The caller publishes the file after this returns. */
-  RaiseHistoryHorizon(out_saved_high_seq);
+     (#745), but for those the retention window keeps. The caller publishes the file after this returns. */
+  RaiseHistoryHorizon(horizon_after(out_saved_high_seq));
   /* #857: count bytes written to disk in this merge (Phase A intermediate + Phase B final). */
   AddMergeBytes(merge_data_file.GetFileLength() + fold_file_length);
   return final_gen_id;
