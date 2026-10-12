@@ -400,8 +400,37 @@ namespace Orly {
       /* #745 stage 3: a named save point keeps every version from `at` on whole, through restarts and on the slaves,
          until it is deleted. Returns once the record holding it is on disk. Throws where there are no records (a
          repo that isn't a root repo, persisted retention off, no store yet, or a slave), or if `at` is a version a
-         merge may already have dropped. Blocks: not for a fiber. Internal for now: no protocol surface yet. */
+         merge may already have dropped. Blocks the calling thread for the disk write of the record. The protocol's
+         `save point` statement (#889) goes through this.
+
+         On a repo with a parent (a POV under review, #746) a save point is the repo's newest own version (or `at`, if
+         given), kept in memory for as long as the repo, and good only while the writes after it are still here: once
+         Tetris has promoted any of them the save point has lost its meaning, and GetPovSavePoint refuses it. */
       void SetSavePoint(const std::string &name, TSequenceNumber at);
+      void SetSavePoint(const std::string &name);
+
+      /* #889: the own version a save point of a repo with a parent names, for a diff of the writes since it. Throws
+         std::runtime_error if there is no such save point, or a write after it has been promoted. */
+      [[nodiscard]] TSequenceNumber GetPovSavePoint(const std::string &name);
+
+      /* #889: the version the global POV had at `when`, for `at time`. Resolves through the (time, version) samples
+         of the --retention_seconds window, to the newest sample at or before `when`, so the answer is up to one
+         sample spacing (the greater of a second and the window over 1024) behind the time asked for. Throws
+         Server::TTimeUnavailable when `when` is in the future or before the oldest sample, and std::runtime_error
+         with no --retention_seconds window, which is all the samples are taken for. */
+      [[nodiscard]] TSequenceNumber ResolveTime(std::chrono::system_clock::time_point when);
+
+      /* #889: `hold version`. Keeps the history of `at` for `ttl` (the next merge keeps it, as a lease would, but one
+         that a client names and releases), and returns its id. Throws Server::TVersionUnavailable for a version
+         outside what can be read, and std::runtime_error with no retention (the window or a save point), where a
+         merge drops history as soon as it can and nothing could be kept. */
+      [[nodiscard]] Base::TUuid HoldVersion(TSequenceNumber at, std::chrono::seconds ttl);
+
+      /* #889: ends a hold early; false if there was none by that id (never made, expired or already released). */
+      bool ReleaseHold(const Base::TUuid &id);
+
+      /* #889: `version of` for a repo with a parent: its newest own version. */
+      [[nodiscard]] TSequenceNumber GetNewestSequenceNumber();
 
       /* For a repo just loaded from disk: raises the horizon to `highest`, the newest version the files hold, as
          nothing says which of them dropped history; the retention record, once read, may lower it again. */
@@ -718,6 +747,11 @@ namespace Orly {
          (time, newest version then) pairs, oldest first, for --retention_seconds. */
       std::mutex RetentionLock;
       std::map<TSequenceNumber, std::chrono::steady_clock::time_point> Leases;
+
+      /* #889: the holds `hold version` made, by id, each a version and its expiry; like Leases, they keep history. And
+         the save points of a repo with a parent, which are never persisted. */
+      std::map<Base::TUuid, std::pair<TSequenceNumber, std::chrono::steady_clock::time_point>> Holds;
+      std::map<std::string, TSequenceNumber> PovSavePoints;
       std::chrono::steady_clock::duration LeaseTtl = VersionLeaseTtl;
       std::deque<std::pair<std::chrono::steady_clock::time_point, TSequenceNumber>> NewestSamples;
 
@@ -739,6 +773,9 @@ namespace Orly {
       std::map<std::string, TSequenceNumber> SavePoints;
       bool NotedStuckSave = false;
       bool NotedNoShipped = false;
+
+      /* Takes a (time, newest) sample if the last is a spacing old (see ResolveTime). Call with RetentionLock held. */
+      void SampleNewestLocked(std::chrono::steady_clock::time_point now, TSequenceNumber newest, std::chrono::steady_clock::duration window);
 
       /* GetMergeRetainFrom's parts, under RetentionLock. */
       void ResolveRecordLocked(bool found, const std::string &blob);

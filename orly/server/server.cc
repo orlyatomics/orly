@@ -3009,6 +3009,60 @@ std::optional<uint64_t> TServer::TSessionPin::GetDurableVersion(const Base::TUui
   return result;
 }
 
+uint64_t TServer::TSessionPin::ResolveTime(std::chrono::system_clock::time_point when) const {
+  uint64_t result{};
+  Conn->RunWs([this, when, &result] {
+    result = Conn->ResolveTime(when);
+  });
+  return result;
+}
+
+uint64_t TServer::TSessionPin::ResolveSavePoint(const std::string & name) const {
+  uint64_t result{};
+  Conn->RunWs([this, &name, &result] {
+    result = Conn->ResolveSavePoint(name);
+  });
+  return result;
+}
+
+TVersionOf TServer::TSessionPin::GetVersionOf(const Base::TUuid & pov_id) const {
+  TVersionOf result{};
+  Conn->RunWs([this, &pov_id, &result] {
+    result = Conn->GetVersionOf(pov_id);
+  });
+  return result;
+}
+
+void TServer::TSessionPin::SetSavePoint(const Base::TUuid & pov_id, const std::string & name, const std::optional<uint64_t> & at) const {
+  Conn->RunWs([this, &pov_id, &name, &at] {
+    Conn->SetSavePoint(pov_id, name, at);
+  });
+}
+
+bool TServer::TSessionPin::DropSavePoint(const Base::TUuid & pov_id, const std::string & name) const {
+  bool result{};
+  Conn->RunWs([this, &pov_id, &name, &result] {
+    result = Conn->DropSavePoint(pov_id, name);
+  });
+  return result;
+}
+
+Base::TUuid TServer::TSessionPin::HoldVersion(const Base::TUuid &pov_id, uint64_t at, const std::chrono::seconds &ttl) const {
+  Base::TUuid result{};
+  Conn->RunWs([this, &pov_id, at, &ttl, &result] {
+    result = Conn->HoldVersion(pov_id, at, ttl);
+  });
+  return result;
+}
+
+bool TServer::TSessionPin::ReleaseHold(const Base::TUuid & hold_id) const {
+  bool result{};
+  Conn->RunWs([this, &hold_id, &result] {
+    result = Conn->ReleaseHold(hold_id);
+  });
+  return result;
+}
+
 TPovPromote TServer::TSessionPin::PromotePov(const Base::TUuid &pov_id, bool force) const {
   TPovPromote result;
   Conn->RunWs([this, &pov_id, force, &result] {

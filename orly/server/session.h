@@ -19,6 +19,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -43,6 +44,7 @@
 #include <orly/server/batch_call.h>
 #include <orly/server/pov.h>
 #include <orly/server/pov_review.h>
+#include <orly/server/version_of.h>
 #include <orly/var.h>
 
 namespace Orly {
@@ -268,6 +270,26 @@ namespace Orly {
          disk; for the global POV, its own highest durable version.  A POV several levels down
          never has one. */
       [[nodiscard]] std::optional<uint64_t> GetDurableVersion(TServer *server, const Base::TUuid &pov_id);
+
+      /* Versioned reads, stage 4 (#889). The version of the global POV at `when`, which is the version `at time`
+         reads at; see Indy::TRepo::ResolveTime. */
+      [[nodiscard]] uint64_t ResolveTime(TServer *server, std::chrono::system_clock::time_point when);
+
+      /* The version of the global POV a save point names, which `at save` reads at. */
+      [[nodiscard]] uint64_t ResolveSavePoint(TServer *server, const std::string &name);
+
+      /* `version of`. */
+      [[nodiscard]] TVersionOf GetVersionOf(TServer *server, const Base::TUuid &pov_id);
+
+      /* `save point` and `drop save point`. Of the global POV the save point is durable, at `at` (default: its newest
+         version); of any other, it is kept in memory and names its newest version. DropSavePoint says whether there
+         was one. */
+      void SetSavePoint(TServer *server, const Base::TUuid &pov_id, const std::string &name, const std::optional<uint64_t> &at);
+      [[nodiscard]] bool DropSavePoint(TServer *server, const Base::TUuid &pov_id, const std::string &name);
+
+      /* `hold version` and `release`, of the global POV. */
+      [[nodiscard]] Base::TUuid HoldVersion(TServer *server, const Base::TUuid &pov_id, uint64_t at, const std::chrono::seconds &ttl);
+      [[nodiscard]] bool ReleaseHold(TServer *server, const Base::TUuid &hold_id);
 
       /* Insert the given notification into the pending set and return the sequence number that is assigned to it.
          If the session isn't queuing notifications (see SetQueuesNotifications()), delete the notification and

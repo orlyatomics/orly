@@ -2308,6 +2308,86 @@ FIXTURE(ReadAtVersionLeaseHoldsHistory) {
   });
 }
 
+/* #889: `hold version` keeps a version's history through merges like a lease, until it is released or lapses; with no
+   retention at all it is refused, as nothing could be kept, and so is a version outside what can be read. */
+FIXTURE(HoldVersionKeepsHistory) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(true);
+      /* Negative control: no window and no save points. */
+      const TSequenceNumber held = root.Commit({{1L, 10L, TMutator::Assign}});
+      root.Flush();
+      { auto thrower = [&] { (void) root.GetSafe()->HoldVersion(held, chrono::seconds(60)); }; EXPECT_THROW_FUNC(std::runtime_error, thrower); }
+      root.SetRetention(2UL, 0UL, chrono::steady_clock::duration::zero());
+      { auto thrower = [&] { (void) root.GetSafe()->HoldVersion(held + 1000UL, chrono::seconds(60)); }; EXPECT_THROW_FUNC(Orly::Server::TVersionUnavailable, thrower); }
+      const auto hold = root.GetSafe()->HoldVersion(held, chrono::seconds(600));
+      for (int64_t i = 0L; i < 8L; ++i) {
+        root.Commit({{1L, 11L + i, TMutator::Assign}});
+        root.Flush();
+      }
+      root.MergeDisk(8UL);
+      root.Tail();
+      EXPECT_LE(root.GetHistoryHorizon(), held);
+      EXPECT_TRUE(root.ReadAt(1L, held) == root.Int(10L));
+      EXPECT_TRUE(root.GetSafe()->ReleaseHold(hold));
+      EXPECT_FALSE(root.GetSafe()->ReleaseHold(hold));
+      root.Commit({{1L, 100L, TMutator::Assign}});
+      root.Flush();
+      root.MergeDisk(8UL);
+      root.Tail();
+      EXPECT_GT(root.GetHistoryHorizon(), held);
+      /* The version is gone, so a hold of it is refused, and leaves nothing behind. */
+      { auto thrower = [&] { (void) root.GetSafe()->HoldVersion(held, chrono::seconds(60)); }; EXPECT_THROW_FUNC(Orly::Server::TVersionUnavailable, thrower); }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #889: `at time` resolves through the (time, version) samples of the seconds window: to the newest sample at or before
+   the time, refusing a time before the first sample and one in the future, and refusing outright with no seconds window. */
+FIXTURE(ResolveTimeThroughSamples) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(true);
+      root.Commit({{1L, 1L, TMutator::Assign}});
+      root.Flush();
+      { auto thrower = [&] { (void) root.GetSafe()->ResolveTime(chrono::system_clock::now()); }; EXPECT_THROW_FUNC(std::runtime_error, thrower); }
+      /* A window of at most 1024 seconds samples at most a second apart. */
+      root.SetRetention(0UL, 1000UL, chrono::steady_clock::duration::zero());
+      const auto start = chrono::system_clock::now();
+      const TSequenceNumber first = root.Commit({{1L, 10L, TMutator::Assign}});
+      root.Flush();
+      root.MergeDisk(8UL);
+      root.Tail();
+      /* The merge took the first sample. A read of "now" finds it, and not the writes since. */
+      const TSequenceNumber second = root.Commit({{1L, 11L, TMutator::Assign}});
+      root.Flush();
+      EXPECT_EQ(root.GetSafe()->ResolveTime(chrono::system_clock::now()), first);
+      /* Before the first sample, and in the future: refused. */
+      { auto thrower = [&] { (void) root.GetSafe()->ResolveTime(start - chrono::hours(1)); }; EXPECT_THROW_FUNC(Orly::Server::TTimeUnavailable, thrower); }
+      { auto thrower = [&] { (void) root.GetSafe()->ResolveTime(chrono::system_clock::now() + chrono::hours(1)); }; EXPECT_THROW_FUNC(Orly::Server::TTimeUnavailable, thrower); }
+      /* A second sample, a spacing later, takes over. */
+      this_thread::sleep_for(chrono::milliseconds(1100));
+      /* The first call takes the sample, so a time just before it still resolves to the old one. */
+      EXPECT_EQ(root.GetSafe()->ResolveTime(chrono::system_clock::now()), first);
+      const auto between = chrono::system_clock::now();
+      EXPECT_EQ(root.GetSafe()->ResolveTime(between), second);
+      this_thread::sleep_for(chrono::milliseconds(10));
+      root.Commit({{1L, 12L, TMutator::Assign}});
+      root.Flush();
+      /* The earlier time still resolves to what it did. */
+      EXPECT_EQ(root.GetSafe()->ResolveTime(start + chrono::milliseconds(500)), first);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* #745 stage 3: with persisted retention, a restart keeps the history horizon and the save points. Without, the
    reload raises the horizon to the newest version the files hold (stage 2). After the restart the window is off, and
    the record and its save point go on holding history through merges. */

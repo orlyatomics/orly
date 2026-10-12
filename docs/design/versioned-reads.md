@@ -789,10 +789,23 @@ retained history.
    restart lowers the horizon from the newest version on disk to the record's. A slave also holds to
    the shipped horizon, and keeps everything until one arrives. Format version 2 is set only on a
    start with a retention flag (decision 3: an upgrade never grows the disk on its own). Save points
-   are an internal API (`TRepo::SetSavePoint`); their protocol surface is stage 4's. #755's log is
+   are made through `TRepo::SetSavePoint`; their protocol surface is stage 4's (#889). #755's log is
    already format version 1 (#846), so the bump carries only the records.
 4. **Diff and time (two-way on top of 3).** `changed between`, `at time`, `version of`, #746's
    save-point hook.
+
+   As built (#889), in two parts. First, the protocol surface: `try ... at time "..."` and
+   `at save "..."` (resolved off the I/O thread to a version, echoed in the reply),
+   `version of`, `save point` / `drop save point`, `hold version ... for` / `release`, and #746's
+   hook. Time resolves through the persisted samples (`TRepo::ResolveTime`) to the newest sample
+   at or before the time, so it is exact only to the sample spacing; with no
+   `--retention_seconds` it is refused. A non-global POV's save point is in memory on its repo, a
+   name for its newest own version, and `diff_pov .since` replays the POV's writes in two halves
+   at it; it is refused once a write after it is promoted, as a vector is (§4.2). Holds are a
+   second registry beside the leases, folded into the same retain-from minimum. The `retention`
+   statement is left out: retention is a server flag recorded per root in the format 2 store, and
+   changing it under a live server would mean rewriting the record and the replicated horizon.
+   Second, `keys ... changed between (v1, v2)` is not in this change.
 5. **Clients and docs.** TS/Python/Go/MCP, `docs/PROTOCOL.md`, a rewritten time-travel section in
    `docs/architecture.md`, and a walkthrough on the grc20-pov model.
 6. **Option B, only when needed** (its own design and approval): history files for unbounded

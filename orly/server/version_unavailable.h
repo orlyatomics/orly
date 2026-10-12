@@ -53,6 +53,12 @@ namespace Orly {
         return Newest;
       }
 
+      protected:
+
+      /* For a subclass with its own message (see TTimeUnavailable). */
+      TVersionUnavailable(const std::string &message, uint64_t requested, uint64_t oldest, uint64_t newest)
+          : std::runtime_error(message), Requested(requested), Oldest(oldest), Newest(newest) {}
+
       private:
 
       static std::string Describe(uint64_t requested, uint64_t oldest, uint64_t newest) {
@@ -67,6 +73,18 @@ namespace Orly {
       uint64_t Requested, Oldest, Newest;
 
     };  // TVersionUnavailable
+
+    /* `at time` (#889) names a time that no version can be resolved for: one in the future, or older than the
+       oldest (time, version) sample the retention window has kept. Reported as a TVersionUnavailable, with
+       `requested` 0, as no version was asked for; `oldest` and `newest` are the versions that can be read. */
+    class TTimeUnavailable
+        : public TVersionUnavailable {
+      public:
+
+      TTimeUnavailable(const std::string &why, uint64_t oldest, uint64_t newest)
+          : TVersionUnavailable("version unavailable: " + why, 0UL, oldest, newest) {}
+
+    };  // TTimeUnavailable
 
     class TVersionReadOnly
         : public std::runtime_error {

@@ -123,6 +123,21 @@ namespace {
     virtual void operator()(const TDurableVersionStmt *) const override {
       Infos.push_back({"durable_version", "durable_version {pov_id};", "Show the highest version of the global point of view known to be on disk (WebSocket only)"});
     }
+    virtual void operator()(const TVersionOfStmt *) const override {
+      Infos.push_back({"version of", "version of {pov_id};", "Show the newest version of a point of view (WebSocket only)"});
+    }
+    virtual void operator()(const TSavePointStmt *) const override {
+      Infos.push_back({"save point", "save point {pov_id} \"name\" [at version];", "Name a version, so history is kept for it (WebSocket only)"});
+    }
+    virtual void operator()(const TDropSavePointStmt *) const override {
+      Infos.push_back({"drop save point", "drop save point {pov_id} \"name\";", "Forget a save point (WebSocket only)"});
+    }
+    virtual void operator()(const THoldVersionStmt *) const override {
+      Infos.push_back({"hold version", "hold version {pov_id} version for seconds;", "Keep a version readable for a while (WebSocket only)"});
+    }
+    virtual void operator()(const TReleaseStmt *) const override {
+      Infos.push_back({"release", "release {lease_id};", "End a hold on a version early (WebSocket only)"});
+    }
     virtual void operator()(const TReviewPovStmt *) const override {
       Infos.push_back({"review_pov", "review_pov {pov_id};", "Show a point of view's promotion progress and conflicts"});
     }
@@ -188,7 +203,12 @@ namespace {
                    TDiscardPovStmt,
                    TPromotePovStmt,
                    TReviewPovStmt,
-                   TDurableVersionStmt>(TGetInfo(result));
+                   TDurableVersionStmt,
+                   TVersionOfStmt,
+                   TSavePointStmt,
+                   TDropSavePointStmt,
+                   THoldVersionStmt,
+                   TReleaseStmt>(TGetInfo(result));
       return result;
     }();
     return infos;

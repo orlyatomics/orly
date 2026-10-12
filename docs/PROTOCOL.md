@@ -327,6 +327,11 @@ The server accepts exactly these (handlers in `orly/server/ws.cc`):
 | Promote a POV | `promote_pov {<id>} [<{.force: true}>];` | `{"status": "promoting"\|"refused", "pending", "mark", "conflicts"}` |
 | Review a POV | `review_pov {<id>} [<{.after: n}>];` | `{"conflict_mode", "status", "pending", "blocked", "blocked_on", "conflicts", ...}` |
 | Durable version | `durable_version {<pov-id>};` | `{"pov", "durable_version"}`; see "Write receipts" |
+| Version of | `version of {<pov-id>};` | `{"pov", "version"}`: a number for the global POV, a vector string otherwise; see "Reads at a version" |
+| Save point | `save point {<pov-id>} "<name>" [at <version>];` | `{"pov", "save_point"}` |
+| Drop a save point | `drop save point {<pov-id>} "<name>";` | `{"pov", "save_point", "dropped"}` |
+| Hold a version | `hold version {<pov-id>} <version> for <seconds>;` | `{"pov", "version", "lease", "seconds"}` |
+| Release a hold | `release {<lease-id>};` | `{"lease", "released"}` |
 | Tail | `tail;` | streamed updates |
 | Exit | `exit;` | — |
 
@@ -456,6 +461,55 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
   keeps honouring its records with the flags off. A version 0 store (`--durable_acks=false`) is
   not upgraded and its window stays in memory only, as before.
 - Over the binary protocol the version rides as the closure argument `$at` (an int).
+
+#### Reading at a time or a save point (#889)
+
+`try {pov} at time "<RFC 3339>" mypkg get <{...}>;` and `try {pov} at save "<name>" mypkg get <{...}>;`
+resolve to a version first and then read exactly as `at V` does, with everything above holding,
+including the reply's `"version"`, which is the version they resolved to. Both are refused where
+`at V` is: on a POV other than the global one, with `.at`, `.op_id`, `.receipt` or
+`.wait_durable_ms`, and in the batch and mixed forms. `time` and `save` are reserved after `at`.
+
+- **`at time`** needs `--retention_seconds`, which is what the server's (time, version) samples are
+  kept for; without it the statement is an exception. The time must be an RFC 3339 date-time with
+  a zone (`2026-05-17T09:30:00Z`, `2026-05-17T11:30:00.25+02:00`); anything else is an exception.
+  It resolves to the version of the newest sample at or before the time, so the version is up to
+  one sample spacing behind the time asked for: the spacing is the greater of a second and the
+  window over 1024. A time in the future, or older than the oldest sample, replies
+  `"status": "version_unavailable"` with `"requested": 0` (no version was asked for) and the
+  `"oldest"` and `"newest"` versions that can be read. Samples are persisted with the retention
+  record, so they survive a restart; times are the server's clock.
+- **`at save`** reads at the version of a save point of the global POV. An unknown name is an
+  exception. A save point holds its version through merges, so it is below `oldest` only if the
+  save point was made at a version that has since gone, which `save point` refuses.
+
+`version of {pov};` replies `{"pov": ..., "version": N}`: for the global POV the newest version
+(the number a write receipt carries); for any other POV a vector string such as `"(3, 1000)"`,
+the newest version of its own repo and then of each repo up to the global one. A vector can be
+read only until something after it is promoted, and nothing reads at one yet.
+
+`save point {pov} "<name>" [at <version>];` names a version so that merges keep its history.
+Of the global POV it is durable (it survives a restart and a failover), is made at the newest
+version unless `at` gives one, and needs retention to have been on (store format version 2: start
+once with `--retention_versions` or `--retention_seconds`); a version outside what can be read is
+`version_unavailable`. Making a save point with a name that exists moves it. Of any other POV it
+is in memory, names the POV's newest version, takes no `at`, and is good only until a write
+after it is promoted: `diff_pov {pov} <{.since: "name"}>;` then lists only the writes after it,
+each change starting from the key's value at the save point. A `.since` of an unknown name or a
+promoted-past save point is an exception. A discard since a save point is not offered.
+`drop save point {pov} "<name>";` replies `"dropped": false` if there was none.
+
+`hold version {global-pov} <version> for <seconds>;` keeps the history of `version` through merges
+for 1 to 86400 seconds, like the 10-minute hold a read at a version takes but named by the client,
+and replies a lease id that `release {<lease-id>};` ends early (`"released": false` if it is
+unknown or lapsed). With no retention at all, neither a window nor a save point, nothing could be
+kept and it is an exception; a version outside what can be read is `version_unavailable`. Holds
+live in memory, so a restart ends them.
+
+Not shipped: `retention {pov} ...;`, which would change a POV's retention from a statement.
+Retention is a server flag today (`--retention_versions`, `--retention_seconds`), recorded per
+root in the store, and a statement would have to rewrite that record and the replicated horizon
+under a live server.
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest
 version of the POV that this server knows to be in a data file on disk, in the numbering a

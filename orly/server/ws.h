@@ -35,6 +35,7 @@
 #include <orly/method_result.h>
 #include <orly/package/manager.h>
 #include <orly/server/batch_call.h>
+#include <orly/server/version_of.h>
 #include <orly/var.h>
 
 namespace Orly {
@@ -112,6 +113,16 @@ namespace Orly {
 
           /* Override to answer the durable_version statement (#750). */
           [[nodiscard]] virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &pov_id) const = 0;
+
+          /* Override to answer the versioned reads' statements (#889): the version `at time` and `at save` read at, `version of`,
+             `save point`, `drop save point`, `hold version` and `release`. */
+          [[nodiscard]] virtual uint64_t ResolveTime(std::chrono::system_clock::time_point when) const = 0;
+          [[nodiscard]] virtual uint64_t ResolveSavePoint(const std::string &name) const = 0;
+          [[nodiscard]] virtual Server::TVersionOf GetVersionOf(const Base::TUuid &pov_id) const = 0;
+          virtual void SetSavePoint(const Base::TUuid &pov_id, const std::string &name, const std::optional<uint64_t> &at) const = 0;
+          [[nodiscard]] virtual bool DropSavePoint(const Base::TUuid &pov_id, const std::string &name) const = 0;
+          [[nodiscard]] virtual Base::TUuid HoldVersion(const Base::TUuid &pov_id, uint64_t at, const std::chrono::seconds &ttl) const = 0;
+          [[nodiscard]] virtual bool ReleaseHold(const Base::TUuid &hold_id) const = 0;
           [[nodiscard]] virtual TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) const = 0;
           [[nodiscard]] virtual TPovReview ReviewPov(const Base::TUuid &pov_id, uint64_t after) const = 0;
 

@@ -682,6 +682,35 @@ namespace Orly {
           return Session->GetDurableVersion(Server, pov_id);
         }
 
+        /* The versioned reads of #889; see TSession. */
+        uint64_t ResolveTime(std::chrono::system_clock::time_point when) {
+          return Session->ResolveTime(Server, when);
+        }
+
+        uint64_t ResolveSavePoint(const std::string &name) {
+          return Session->ResolveSavePoint(Server, name);
+        }
+
+        TVersionOf GetVersionOf(const Base::TUuid &pov_id) {
+          return Session->GetVersionOf(Server, pov_id);
+        }
+
+        void SetSavePoint(const Base::TUuid &pov_id, const std::string &name, const std::optional<uint64_t> &at) {
+          Session->SetSavePoint(Server, pov_id, name, at);
+        }
+
+        bool DropSavePoint(const Base::TUuid &pov_id, const std::string &name) {
+          return Session->DropSavePoint(Server, pov_id, name);
+        }
+
+        Base::TUuid HoldVersion(const Base::TUuid &pov_id, uint64_t at, const std::chrono::seconds &ttl) {
+          return Session->HoldVersion(Server, pov_id, at, ttl);
+        }
+
+        bool ReleaseHold(const Base::TUuid &hold_id) {
+          return Session->ReleaseHold(Server, hold_id);
+        }
+
         TPovPromote PromotePov(const Base::TUuid &pov_id, bool force) {
           return Session->PromotePov(Server, pov_id, force);
         }
@@ -858,6 +887,13 @@ namespace Orly {
         virtual TPovDiff DiffPov(const Base::TUuid &, const TPovDiffOptions &) const override;
         virtual TPovDiscard DiscardPov(const Base::TUuid &) const override;
         virtual std::optional<uint64_t> GetDurableVersion(const Base::TUuid &) const override;
+        virtual uint64_t ResolveTime(std::chrono::system_clock::time_point) const override;
+        virtual uint64_t ResolveSavePoint(const std::string &) const override;
+        virtual TVersionOf GetVersionOf(const Base::TUuid &) const override;
+        virtual void SetSavePoint(const Base::TUuid &, const std::string &, const std::optional<uint64_t> &) const override;
+        virtual bool DropSavePoint(const Base::TUuid &, const std::string &) const override;
+        virtual Base::TUuid HoldVersion(const Base::TUuid &, uint64_t, const std::chrono::seconds &) const override;
+        virtual bool ReleaseHold(const Base::TUuid &) const override;
         virtual TPovPromote PromotePov(const Base::TUuid &, bool) const override;
         virtual TPovReview ReviewPov(const Base::TUuid &, uint64_t) const override;
 

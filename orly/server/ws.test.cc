@@ -470,3 +470,106 @@ FIXTURE(TryAtKeyword) {
     }
   }
 }
+
+/* `try {pov} at time "..."` and `at save "..."` read at the version a time or a save point names (#889). The reply names
+   the version the read resolved to; a time with no version, or a save point below the horizon, gets the typed refusal;
+   and they are refused wherever `at` is. */
+FIXTURE(TryAtTimeAndSave) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string pov = "try {00000000-0000-0000-0000-000000000001}";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      pov + " at time \"2026-01-01T00:00:00Z\" pkg/v1 f <{}>;",
+      pov + " at time \"2026-01-01T01:00:00+01:00\" pkg/v1 f <{}>;",
+      pov + " at time \"1999-12-31T23:59:59Z\" pkg/v1 f <{}>;",
+      pov + " at time \"2999-01-01T00:00:00Z\" pkg/v1 f <{}>;",
+      pov + " at time \"yesterday\" pkg/v1 f <{}>;",
+      pov + " at save \"known\" pkg/v1 f <{}>;",
+      pov + " at save \"gone\" pkg/v1 f <{}>;",
+      pov + " at save \"nope\" pkg/v1 f <{}>;",
+      pov + " at save \"known\" pkg/v1 f <{}> <{.at: 7}>;",
+      pov + " at time \"2026-01-01T00:00:00Z\" pkg/v1 f <{}> <{.op_id: \"read-1\"}>;",
+      pov + " at save \"known\" pkg/v1 f [<{}>, <{}>];",
+      pov + " at time \"2026-01-01T00:00:00Z\" [pkg/v1 f <{}>, pkg/v1 f <{}>];"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 13U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1]["version"], Base::TJson(500));
+    EXPECT_EQ(replies[2], replies[1]);
+    /* Older than the window and in the future: refused with the bounds, and no version was asked for. */
+    for (size_t i = 3; i < 5; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("version_unavailable"));
+      EXPECT_EQ(replies[i]["requested"], Base::TJson(0));
+      EXPECT_EQ(replies[i]["oldest"], Base::TJson(10));
+      EXPECT_EQ(replies[i]["newest"], Base::TJson(1000));
+    }
+    EXPECT_EQ(replies[5]["status"], Base::TJson("exception"));
+    EXPECT_EQ(replies[6]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[6]["version"], Base::TJson(42));
+    EXPECT_EQ(replies[7]["status"], Base::TJson("version_unavailable"));
+    EXPECT_EQ(replies[7]["requested"], Base::TJson(5));
+    for (size_t i = 8; i < 13; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+      EXPECT_EQ(replies[i].TryFind("version"), nullptr);
+    }
+  }
+}
+
+/* `version of`, `save point`, `drop save point`, `hold version` and `release` (#889), and their refusals. `at`, `time`,
+   `save`, `point`, `version`, `of`, `drop`, `hold`, `release` and `for` stay legal as field names. */
+FIXTURE(VersionStatements) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string global = "{00000000-0000-0000-0000-000000000001}";
+  const string other = "{00000000-0000-0000-0000-000000000002}";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      "version of " + global + ";",
+      "version of " + other + ";",
+      "save point " + global + " \"a\";",
+      "save point " + global + " \"a\" at 42;",
+      "save point " + global + " \"a\" at 5;",
+      "save point " + global + " \"a\" at -1;",
+      "save point " + global + " \"\";",
+      "save point " + other + " \"a\" at 42;",
+      "save point " + other + " \"a\";",
+      "drop save point " + global + " \"known\";",
+      "drop save point " + global + " \"unknown\";",
+      "hold version " + global + " 42 for 60;",
+      "hold version " + global + " 5 for 60;",
+      "hold version " + global + " 42 for 0;",
+      "hold version " + global + " 42 for 86401;",
+      "hold version " + global + " -1 for 60;",
+      "hold version " + other + " 42 for 60;",
+      "release {00000000-0000-0000-0000-0000000000aa};",
+      "release {00000000-0000-0000-0000-0000000000bb};",
+      "echo <{.time: 1, .save: 2, .point: 3, .version: 4, .of: 5, .drop: 6, .hold: 7, .release: 8, .for: 9}>;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 21U)) {
+    EXPECT_EQ(replies[1]["result"]["version"], Base::TJson(1000));
+    EXPECT_EQ(replies[2]["result"]["version"], Base::TJson("(3, 1000)"));
+    EXPECT_EQ(replies[3]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[3]["result"]["save_point"], Base::TJson("a"));
+    EXPECT_EQ(replies[4]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[5]["status"], Base::TJson("version_unavailable"));
+    EXPECT_EQ(replies[5]["requested"], Base::TJson(5));
+    for (size_t i : {6, 7, 8}) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+    }
+    EXPECT_EQ(replies[9]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[10]["result"]["dropped"], Base::TJson(true));
+    EXPECT_EQ(replies[11]["result"]["dropped"], Base::TJson(false));
+    EXPECT_EQ(replies[12]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[12]["result"]["lease"], Base::TJson("00000000-0000-0000-0000-0000000000aa"));
+    EXPECT_EQ(replies[13]["status"], Base::TJson("version_unavailable"));
+    for (size_t i : {14, 15, 16, 17}) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+    }
+    EXPECT_EQ(replies[18]["result"]["released"], Base::TJson(true));
+    EXPECT_EQ(replies[19]["result"]["released"], Base::TJson(false));
+    EXPECT_EQ(replies[20]["status"], Base::TJson("ok"));
+  }
+}
