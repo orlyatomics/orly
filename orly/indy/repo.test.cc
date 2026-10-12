@@ -179,6 +179,29 @@ class TLatchedFastRepo final
 
 /* A minimal L1::TManager that builds stepped safe repos, and latched fast ones. Nothing here runs
    the merge loops, so the tests drive every merge. */
+/* #745 stage 3: a retention record store in memory, standing in for the durable manager. While Hold is set, saves
+   wait in Held, off the disk, until Release. With Ships off, the node is a slave. */
+struct TRetentionStoreSim {
+  std::mutex Mutex;
+  std::map<Base::TUuid, std::string> Records;
+  std::vector<std::tuple<Base::TUuid, std::string, Base::TEventSemaphore *>> Held;
+  bool Hold = false;
+  bool Ships = true;
+  size_t Saves = 0UL;
+
+  void Release() {
+    std::lock_guard<std::mutex> lock(Mutex);
+    for (auto &[id, blob, sem] : Held) {
+      Records[id] = blob;
+      if (sem) {
+        sem->Push();
+      }
+    }
+    Held.clear();
+    Hold = false;
+  }
+};
+
 class TMyManager
     : public L1::TManager {
   NO_COPY(TMyManager);
@@ -214,11 +237,54 @@ class TMyManager
   virtual void Delete(const L0::TId &/*id*/, L0::TSem */*sem*/) override {}
   virtual void Save(const L0::TId &/*id*/, const L0::TDeadline &/*deadline*/, const std::string &/*blob*/, L0::TSem */*sem*/) override {}
   virtual bool TryLoad(const L0::TId &/*id*/, std::string &/*blob*/) override { return true; }
-  virtual TRepo *ReconstructRepo(const Base::TUuid &/*repo_id*/) override { return nullptr; }
+  virtual TRepo *ReconstructRepo(const Base::TUuid &repo_id) override {
+    /* With a record store, a restart (TRootRepoFixture::Restart) reloads the repo from the engine's files. */
+    return RetentionSim ? TSafeRepo::ReConstructFromDisk(this, repo_id, L0::TDeadline::clock::now() + std::chrono::seconds(1000)) : nullptr;
+  }
   virtual void RunReplicationQueue() override {}
   virtual void RunReplicationWork() override {}
   virtual void RunReplicateTransaction() override {}
   virtual std::mutex &GetReplicationQueueLock() NO_THROW override { return ReplicationQueueLock; }
+
+  virtual bool HasRetentionStore() const noexcept override {
+    return RetentionSim != nullptr;
+  }
+
+  virtual bool TryLoadRetentionRecord(const Base::TUuid &id, std::string &blob) override {
+    if (!RetentionSim) {
+      return false;
+    }
+    std::lock_guard<std::mutex> lock(RetentionSim->Mutex);
+    const auto pos = RetentionSim->Records.find(id);
+    if (pos == RetentionSim->Records.end()) {
+      return false;
+    }
+    blob = pos->second;
+    return true;
+  }
+
+  virtual bool TrySaveRetentionRecord(const Base::TUuid &id, const std::string &blob, Base::TEventSemaphore *sem, bool /*replicate*/) override {
+    if (!RetentionSim) {
+      return false;
+    }
+    std::lock_guard<std::mutex> lock(RetentionSim->Mutex);
+    ++RetentionSim->Saves;
+    if (RetentionSim->Hold) {
+      RetentionSim->Held.emplace_back(id, blob, sem);
+    } else {
+      RetentionSim->Records[id] = blob;
+      if (sem) {
+        sem->Push();
+      }
+    }
+    return true;
+  }
+
+  virtual bool ShipsRetention() const noexcept override {
+    return !RetentionSim || RetentionSim->Ships;
+  }
+
+  TRetentionStoreSim *RetentionSim = nullptr;
 
   inline TManager::TPtr<TRepo> GetRepo(const Base::TUuid &repo_id,
                                        const std::optional<TTtl> &ttl,
@@ -228,6 +294,10 @@ class TMyManager
   }
 
   using L0::TManager::TryOpenLiveRepo;
+
+  TManager::TPtr<TRepo> Reopen(const Base::TUuid &repo_id) {
+    return ForceOpenRepo(repo_id);
+  }
 
   private:
 
@@ -693,16 +763,39 @@ class TRootRepoFixture {
   NO_COPY(TRootRepoFixture);
   public:
 
-  explicit TRootRepoFixture(bool prune_merge_history)
+  /* With 'retention_sim', retention is persisted there (#745 stage 3), and Restart reloads the repo. */
+  explicit TRootRepoFixture(bool prune_merge_history, TRetentionStoreSim *retention_sim = nullptr)
       : StateBuf(Sabot::State::GetMaxStateSize()),
         State(StateBuf.data()),
         Engine(&Scheduler, 256, 256, 16384, 1, 1024, 1),
+        PruneMergeHistory(prune_merge_history),
+        RetentionSim(retention_sim),
         IdxId(TUuid::Twister) {
     Scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
-    Manager = make_unique<TMyManager>(Engine.GetEngine(), &Scheduler, prune_merge_history);
+    NewManager();
     Repo = Manager->GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
     Stepped = dynamic_cast<TSteppedSafeRepo *>(Repo.Get());
     assert(Stepped);
+    Safe = Stepped;
+  }
+
+  /* Closes the repo and its manager, then reloads the repo from the files, as a restart would. Flush first: what
+     is still in memory is gone. Afterwards only what works on a TSafeRepo (no Flush) is available. */
+  void Restart() {
+    assert(RetentionSim);
+    const Base::TUuid repo_id = Repo->GetId();
+    Repo.Reset();
+    Stepped = nullptr;
+    Safe = nullptr;
+    Manager.reset();
+    NewManager();
+    Repo = Manager->Reopen(repo_id);
+    Safe = dynamic_cast<TSafeRepo *>(Repo.Get());
+    assert(Safe);
+  }
+
+  TSafeRepo *GetSafe() const {
+    return Safe;
   }
 
   ~TRootRepoFixture() {
@@ -757,7 +850,7 @@ class TRootRepoFixture {
   }
 
   TSequenceNumber GetHistoryHorizon() const {
-    return Stepped->GetHistoryHorizon();
+    return Safe->GetHistoryHorizon();
   }
 
   /* The disk and memory layers of the repo's current view. */
@@ -776,7 +869,7 @@ class TRootRepoFixture {
   /* #745 stage 2: the retention window, and how long a read at a version leases it. */
   void SetRetention(size_t versions, size_t seconds, std::chrono::steady_clock::duration lease_ttl) {
     Manager->SetRetention(versions, seconds);
-    Stepped->SetVersionLeaseTtl(lease_ttl);
+    Safe->SetVersionLeaseTtl(lease_ttl);
   }
 
   /* Tails the oldest disk file. */
@@ -790,7 +883,7 @@ class TRootRepoFixture {
 
   void MergeDisk(size_t passes) {
     for (size_t i = 0UL; i < passes; ++i) {
-      Stepped->StepMergeDisk(256UL);
+      Safe->StepMergeDisk(256UL);
     }
   }
 
@@ -858,6 +951,21 @@ class TRootRepoFixture {
   L0::TManager::TPtr<L0::TManager::TRepo> Repo;
 
   TSteppedSafeRepo *Stepped = nullptr;
+
+  /* The repo, before and after a Restart. */
+  TSafeRepo *Safe = nullptr;
+
+  const bool PruneMergeHistory;
+
+  TRetentionStoreSim *RetentionSim;
+
+  void NewManager() {
+    Manager = make_unique<TMyManager>(Engine.GetEngine(), &Scheduler, PruneMergeHistory);
+    if (RetentionSim) {
+      Manager->RetentionSim = RetentionSim;
+      Manager->SetRetentionPersisted(true);
+    }
+  }
 
   TSuprena Arena;
 
@@ -2198,6 +2306,181 @@ FIXTURE(ReadAtVersionLeaseHoldsHistory) {
     fin = true;
     cond.notify_one();
   });
+}
+
+/* #745 stage 3: with persisted retention, a restart keeps the history horizon and the save points. Without, the
+   reload raises the horizon to the newest version the files hold (stage 2). After the restart the window is off, and
+   the record and its save point go on holding history through merges. */
+FIXTURE(PersistedRetentionSurvivesRestart) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    for (bool persisted : {false, true}) {
+      TRetentionStoreSim sim;
+      TRootRepoFixture root(true, &sim);
+      root.SetRetention(3UL, 0UL, chrono::steady_clock::duration::zero());
+      for (int64_t i = 0L; i < 6L; ++i) {
+        root.Commit({{1L, 10L + i, TMutator::Assign}});
+        root.Flush();
+      }
+      root.MergeDisk(8UL);
+      const TSequenceNumber at = root.Commit({{1L, 50L, TMutator::Assign}});
+      root.Flush();
+      root.GetSafe()->SetSavePoint("sp", at);
+      for (int64_t i = 0L; i < 6L; ++i) {
+        root.Commit({{1L, 51L + i, TMutator::Assign}});
+        root.Flush();
+      }
+      root.MergeDisk(8UL);
+      const TSequenceNumber newest = root.Commit({{1L, 99L, TMutator::Assign}});
+      root.Flush();
+      EXPECT_LE(root.GetHistoryHorizon(), at);
+      EXPECT_TRUE(root.ReadAt(1L, at) == root.Int(50L));
+      if (!persisted) {
+        /* As if they had never been kept: a store without records (stage 2). */
+        std::lock_guard<std::mutex> lock(sim.Mutex);
+        sim.Records.clear();
+      }
+      root.Restart();
+      if (persisted) {
+        EXPECT_LE(root.GetHistoryHorizon(), at);
+        EXPECT_TRUE(root.ReadAt(1L, at) == root.Int(50L));
+        const auto save_points = root.GetSafe()->GetSavePoints();
+        EXPECT_EQ(save_points.size(), 1UL);
+        EXPECT_TRUE(save_points.count("sp") && save_points.at("sp") == at);
+        /* The window is off now; the record still holds. */
+        root.MergeDisk(8UL);
+        EXPECT_LE(root.GetHistoryHorizon(), at);
+        EXPECT_TRUE(root.ReadAt(1L, at) == root.Int(50L));
+        /* With the save point gone and no window, merges may drop history again. */
+        EXPECT_TRUE(root.GetSafe()->DeleteSavePoint("sp"));
+      } else {
+        EXPECT_EQ(root.GetHistoryHorizon(), newest);
+        EXPECT_TRUE(root.GetSafe()->GetSavePoints().empty());
+      }
+      EXPECT_TRUE(root.ReadAt(1L, newest) == root.Int(99L));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745 stage 3: a merge never drops a version the record on disk doesn't let it: until a save of the record is on
+   disk, merges keep everything older; once it is, the window decides again. */
+FIXTURE(PersistedRetentionWaitsForTheRecord) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRetentionStoreSim sim;
+      sim.Hold = true;
+      TRootRepoFixture root(true, &sim);
+      root.SetRetention(1UL, 0UL, chrono::steady_clock::duration::zero());
+      const TSequenceNumber first = root.Commit({{1L, 10L, TMutator::Assign}});
+      root.Flush();
+      for (int64_t i = 0L; i < 6L; ++i) {
+        root.Commit({{1L, 11L + i, TMutator::Assign}});
+        root.Flush();
+      }
+      root.MergeDisk(8UL);
+      root.Tail();
+      EXPECT_LE(root.GetHistoryHorizon(), first);
+      EXPECT_TRUE(root.ReadAt(1L, first) == root.Int(10L));
+      EXPECT_GE(sim.Saves, 1UL);
+      sim.Release();
+      for (int64_t i = 0L; i < 3L; ++i) {
+        root.Commit({{1L, 20L + i, TMutator::Assign}});
+        root.Flush();
+        root.MergeDisk(8UL);
+        root.Tail();
+      }
+      EXPECT_GT(root.GetHistoryHorizon(), first);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745 stage 3: a slave never drops a version at or above the horizon its master ships, whatever its own window
+   says, so a failover to it keeps every version the master promised. With none shipped yet, it keeps everything. */
+FIXTURE(PersistedRetentionSlaveHoldsToShippedHorizon) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRetentionStoreSim sim;
+      sim.Ships = false;
+      TRootRepoFixture root(true, &sim);
+      root.SetRetention(1UL, 0UL, chrono::steady_clock::duration::zero());
+      const TSequenceNumber first = root.Commit({{1L, 10L, TMutator::Assign}});
+      root.Flush();
+      for (int64_t i = 0L; i < 4L; ++i) {
+        root.Commit({{1L, 11L + i, TMutator::Assign}});
+        root.Flush();
+      }
+      root.MergeDisk(8UL);
+      root.Tail();
+      /* Nothing shipped: the cap is the empty record's horizon, 0. */
+      EXPECT_LE(root.GetHistoryHorizon(), first);
+      EXPECT_TRUE(root.ReadAt(1L, first) == root.Int(10L));
+      const TSequenceNumber shipped = root.Commit({{1L, 30L, TMutator::Assign}});
+      root.Flush();
+      /* acquire the sim's lock */ {
+        Orly::Indy::TRepo::TRetentionRecord rec;
+        rec.Horizon = shipped;
+        std::lock_guard<std::mutex> lock(sim.Mutex);
+        sim.Records[Orly::Indy::TRepo::GetRetentionRecordId(root.GetSafe()->GetId(), true)] = rec.Encode();
+      }
+      for (int64_t i = 0L; i < 4L; ++i) {
+        root.Commit({{1L, 31L + i, TMutator::Assign}});
+        root.Flush();
+        root.MergeDisk(8UL);
+        root.Tail();
+      }
+      EXPECT_GT(root.GetHistoryHorizon(), first);
+      EXPECT_LE(root.GetHistoryHorizon(), shipped);
+      EXPECT_TRUE(root.ReadAt(1L, shipped) == root.Int(30L));
+      /* A slave takes its save points from the master, and sets none. */
+      bool refused = false;
+      try {
+        root.GetSafe()->SetSavePoint("sp", shipped);
+      } catch (const std::runtime_error &) {
+        refused = true;
+      }
+      EXPECT_TRUE(refused);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #745 stage 3: a record's encoding round-trips, and a truncated or foreign one is refused. */
+FIXTURE(RetentionRecordEncoding) {
+  Orly::Indy::TRepo::TRetentionRecord rec;
+  rec.Horizon = 42UL;
+  rec.Versions = 1000UL;
+  rec.Seconds = 60UL;
+  rec.Samples.emplace_back(chrono::system_clock::now(), 41UL);
+  rec.SavePoints["a"] = 42UL;
+  rec.SavePoints["bb"] = 50UL;
+  const string blob = rec.Encode();
+  Orly::Indy::TRepo::TRetentionRecord out;
+  EXPECT_TRUE(Orly::Indy::TRepo::TRetentionRecord::TryDecode(blob, out));
+  EXPECT_EQ(out.Horizon, 42UL);
+  EXPECT_EQ(out.Versions, 1000UL);
+  EXPECT_EQ(out.Seconds, 60UL);
+  EXPECT_EQ(out.Samples.size(), 1UL);
+  EXPECT_TRUE(out.SavePoints == rec.SavePoints);
+  for (size_t len = 0UL; len < blob.size(); ++len) {
+    EXPECT_FALSE(Orly::Indy::TRepo::TRetentionRecord::TryDecode(blob.substr(0UL, len), out));
+  }
+  EXPECT_FALSE(Orly::Indy::TRepo::TRetentionRecord::TryDecode(blob + "x", out));
+  string foreign = blob;
+  foreign[0] ^= 1;
+  EXPECT_FALSE(Orly::Indy::TRepo::TRetentionRecord::TryDecode(foreign, out));
+  const Base::TUuid id(TUuid::Twister);
+  EXPECT_FALSE(Orly::Indy::TRepo::GetRetentionRecordId(id, false) == Orly::Indy::TRepo::GetRetentionRecordId(id, true));
+  EXPECT_FALSE(Orly::Indy::TRepo::GetRetentionRecordId(id, false) == id);
 }
 
 /* #745: a key whose whole history is newer than the version is not there, in a file that holds older keys. */

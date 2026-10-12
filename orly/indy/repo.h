@@ -390,6 +390,51 @@ namespace Orly {
          oldest leased version, and never below the horizon, whose older versions are gone already. */
       [[nodiscard]] std::optional<TSequenceNumber> GetRetainFrom();
 
+      /* #745 stage 3: what a merge passes as its retain-from: GetRetainFrom, held to the horizon this repo's retention
+         record has on disk, so that a restart, which trusts the record, never claims a version a merge dropped. Moves
+         the record along (saving it, and shipping it to the slaves from a master), and on a slave holds to the
+         horizon the master ships as well. Without persisted retention (see L0::TManager::SetRetentionPersisted),
+         GetRetainFrom itself. */
+      [[nodiscard]] std::optional<TSequenceNumber> GetMergeRetainFrom();
+
+      /* #745 stage 3: a named save point keeps every version from `at` on whole, through restarts and on the slaves,
+         until it is deleted. Returns once the record holding it is on disk. Throws where there are no records (a
+         repo that isn't a root repo, persisted retention off, no store yet, or a slave), or if `at` is a version a
+         merge may already have dropped. Blocks: not for a fiber. Internal for now: no protocol surface yet. */
+      void SetSavePoint(const std::string &name, TSequenceNumber at);
+
+      /* For a repo just loaded from disk: raises the horizon to `highest`, the newest version the files hold, as
+         nothing says which of them dropped history; the retention record, once read, may lower it again. */
+      void NoteLoadedFromDisk(TSequenceNumber highest);
+
+      /* After something raised the history horizon, makes the retention record on disk cover it (#745). */
+      void NoteHistoryHorizonRaised();
+
+      /* Deletes a save point; returns once the record without it is on disk. False if there was none by that name. */
+      bool DeleteSavePoint(const std::string &name);
+
+      [[nodiscard]] std::map<std::string, TSequenceNumber> GetSavePoints();
+
+      /* The ids of a repo's retention records in the durable store: the node's own (never replicated), and the one
+         a master ships to its slaves. Derived from the repo id so they never meet a pov's record (its repo id). */
+      static Base::TUuid GetRetentionRecordId(const Base::TUuid &repo_id, bool shipped);
+
+      /* What a retention record holds. */
+      struct TRetentionRecord {
+        /* Every version from Horizon on is whole on disk: no merge has dropped it. */
+        TSequenceNumber Horizon = 0UL;
+        /* The window it was saved under (see L0::TManager::SetRetention), for the record. */
+        size_t Versions = 0UL, Seconds = 0UL;
+        /* (wall-clock time, newest version then) samples of the --retention_seconds window. */
+        std::vector<std::pair<std::chrono::system_clock::time_point, TSequenceNumber>> Samples;
+        std::map<std::string, TSequenceNumber> SavePoints;
+
+        std::string Encode() const;
+
+        /* False if 'blob' isn't one. */
+        static bool TryDecode(const std::string &blob, TRetentionRecord &out);
+      };
+
       /* Cumulative bytes written in memtable flushes (#857). */
       [[nodiscard]] size_t GetFlushBytes() const noexcept {
         return FlushBytes.load(std::memory_order_relaxed);
@@ -675,6 +720,36 @@ namespace Orly {
       std::map<TSequenceNumber, std::chrono::steady_clock::time_point> Leases;
       std::chrono::steady_clock::duration LeaseTtl = VersionLeaseTtl;
       std::deque<std::pair<std::chrono::steady_clock::time_point, TSequenceNumber>> NewestSamples;
+
+      /* #745 stage 3 (see GetMergeRetainFrom), under RetentionLock but for the first. PersistRecords: whether this
+         repo keeps a record, as the manager said when it was made. RestartClaim: for a repo loaded from disk, the
+         horizon the load set (its newest version), which the record may lower. RecordResolved: the record has been
+         looked for; RecordOn: there is one, or the window or a save point is on. DurableHorizon: the horizon of the
+         newest record known to be on disk, which no merge may pass. PendingSem/Horizon/Blob: the save in flight, if
+         any; PendingSem is pushed when it is on disk. MaxRetainFrom: the highest retain-from handed to a merge. */
+      bool PersistRecords = false;
+      std::optional<TSequenceNumber> RestartClaim;
+      bool RecordResolved = false;
+      bool RecordOn = false;
+      TSequenceNumber DurableHorizon = 0UL;
+      Base::TEventSemaphore *PendingSem = nullptr;
+      TSequenceNumber PendingHorizon = 0UL;
+      std::string PendingBlob;
+      TSequenceNumber MaxRetainFrom = 0UL;
+      std::map<std::string, TSequenceNumber> SavePoints;
+      bool NotedStuckSave = false;
+      bool NotedNoShipped = false;
+
+      /* GetMergeRetainFrom's parts, under RetentionLock. */
+      void ResolveRecordLocked(bool found, const std::string &blob);
+      void PollPendingSaveLocked();
+      bool StartSaveLocked(TSequenceNumber horizon);
+
+      /* Save the record as it now is and wait for it to reach the disk (SetSavePoint, DeleteSavePoint). */
+      void SaveRecordAndWait();
+
+      /* Look the record up, if not yet: outside RetentionLock (the read may park the fiber). */
+      void ResolveRecord();
 
       /* Cumulative bytes written in memtable flushes (#857). */
       std::atomic<size_t> FlushBytes{0UL};

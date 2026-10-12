@@ -1539,7 +1539,9 @@ void TServer::Init() {
           Cmd.Create,
           Cmd.NoRealtime,
           Cmd.IsDurableAcksEnabled(),
-          Cmd.WalMB);
+          Cmd.WalMB,
+          /* #745 stage 3: format 2 only once asked for history; an upgrade never grows the disk on its own. */
+          Cmd.RetentionVersions || Cmd.RetentionSeconds);
       engine_ptr = DiskEngine->GetEngine();
     }
     assert(engine_ptr);
@@ -1596,6 +1598,9 @@ void TServer::Init() {
                                                     Cmd.Create);
     /* #745 stage 2: merges that start before this keep only the current state, as with the window off. */
     RepoManager->SetRetention(Cmd.RetentionVersions, Cmd.RetentionSeconds);
+    /* #745 stage 3: on a format 2 store, repos opened from here on keep their retention records (the system repo,
+       opened before, does not, and has no window). */
+    RepoManager->SetRetentionPersisted(DiskEngine && DiskEngine->GetFormatVersion() >= 2UL);
     auto global_ttl = TTtl::max();
     GlobalRepo = RepoManager->GetRepo(TSession::GlobalPovId,
                                       global_ttl,

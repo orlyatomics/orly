@@ -423,9 +423,20 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
   the versions of the last S seconds; with both set, the wider window wins. A read at a version
   also holds that version for 10 minutes (renewed by each read at it), so a client paging through
   a snapshot keeps it while it reads; a merge that started before the first read may still drop
-  it, and the read then gets `version_unavailable`. The window and the holds live in memory: after
-  a restart `oldest` starts at the newest version on disk, as above. Give master and slaves the
-  same retention flags; the server does not check that they match.
+  it, and the read then gets `version_unavailable`. The holds live in memory. The window's
+  horizon is kept on disk (store format version 2, below), so after a restart `oldest` comes back
+  where it was rather than at the newest version on disk; merges never drop a version until the
+  record saying they may is on disk. A master ships its horizon to its slaves, and a slave never
+  drops a version at or above it, so after a failover `oldest` is no newer than the old master's.
+  Until a slave has heard from its master it keeps all history. Give master and slaves the same
+  retention flags; the server does not check that they match.
+- Store format version 2: the first start with `--retention_versions` or `--retention_seconds` on
+  a format version 1 store upgrades it in place to version 2, which adds the per-POV retention
+  records. Binaries before it refuse a version 2 store ("unsupported store format version 2"), so
+  none can drop history the records promise; there is no downgrade (`orly_dm --downgrade-format`
+  refuses it). A store started without the flags stays at version 1, and once at version 2 it
+  keeps honouring its records with the flags off. A version 0 store (`--durable_acks=false`) is
+  not upgraded and its window stays in memory only, as before.
 - Over the binary protocol the version rides as the closure argument `$at` (an int).
 
 `durable_version {<pov-id>};` replies `{"pov": "<pov-id>", "durable_version": 42}`: the highest

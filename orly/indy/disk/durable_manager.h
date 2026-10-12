@@ -157,6 +157,9 @@ namespace Orly {
 
         virtual bool TryLoad(const Durable::TId &id, std::string &serialized_form_out) override;
 
+        /* See Durable::TManager. */
+        virtual bool TrySaveRecord(const Durable::TId &id, const TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem, bool replicate) override;
+
         /* TryLoad() takes this manager's own locks, so it is safe without Durable::TManager's
            mutex (#680), as Durable::TManager now calls it (#804). */
         virtual bool TryReadSaved(const Durable::TId &id, std::string &serialized_form_out) override {
@@ -222,6 +225,11 @@ namespace Orly {
         static std::function<void (TDurableManager *)> OnMemLayerWrittenForTest;
 
         private:
+
+        /* Save() and TrySaveRecord(): add the entry to the current memory layer, and queue it for the slaves if
+           'replicate'. With 'refuse_once_retired', return false, adding nothing, once the writer has retired. */
+        bool AddEntry(const Durable::TId &id, const Durable::TDeadline &deadline, const Durable::TTtl &ttl, const std::string &serialized_form,
+                      Durable::TSem *sem, bool replicate, bool refuse_once_retired);
 
         /* Forward Declarations. */
         class TMemSlushLayer;

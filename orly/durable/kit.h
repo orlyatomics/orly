@@ -255,6 +255,15 @@ namespace Orly {
         return false;
       }
 
+      /* Save 'blob' as the record with the given id, like Save(), for a caller that must know the record has
+         reached the disk before it acts on it (#745 stage 3: a repo's retention record). Replicate it to slaves only
+         if 'replicate'. Returns false, saving nothing and leaving 'sem' alone, when this manager cannot promise the
+         disk: the default, and a manager whose writer has stopped. Otherwise 'sem' is pushed once the record is on
+         disk, and only then. */
+      virtual bool TrySaveRecord(const TId &/*id*/, const TTtl &/*ttl*/, const std::string &/*blob*/, TSem */*sem*/, bool /*replicate*/) {
+        return false;
+      }
+
       virtual void RunLayerCleaner() = 0;
 
       /* Make RunLayerCleaner return: without this the cleaner fiber sits in

@@ -149,6 +149,30 @@ namespace Orly {
 
       inline void SetDurableManager(const std::shared_ptr<Durable::TManager> &durable_manager) {
         DurableManager = durable_manager;
+        RetentionStore = durable_manager.get();
+      }
+
+      /* #745 stage 3: retention records live in the durable manager, once there is one. */
+      virtual bool HasRetentionStore() const noexcept override {
+        return RetentionStore.load() != nullptr;
+      }
+
+      virtual bool TryLoadRetentionRecord(const Base::TUuid &id, std::string &blob) override {
+        Durable::TManager *store = RetentionStore.load();
+        return store && store->TryReadSaved(id, blob);
+      }
+
+      virtual bool TrySaveRetentionRecord(const Base::TUuid &id, const std::string &blob, Base::TEventSemaphore *sem, bool replicate) override {
+        Durable::TManager *store = RetentionStore.load();
+        return store && store->TrySaveRecord(id, RetentionRecordTtl, blob, sem, replicate);
+      }
+
+      /* A retention record's ttl: long enough never to lapse while its repo lives. One that did lapse would only
+         cost history after a restart (the repo would then trust its newest version alone). */
+      static constexpr Durable::TTtl RetentionRecordTtl{60L * 60L * 24L * 365L * 10L};
+
+      virtual bool ShipsRetention() const noexcept override {
+        return ShipsRetentionFlag.load();
       }
 
       static const Base::TUuid MinId;
@@ -680,6 +704,11 @@ namespace Orly {
       std::function<void (const std::function<bool (Fiber::TRunner *)> &)> ForEachSchedulerCb;
 
       std::shared_ptr<Durable::TManager> DurableManager;
+
+      /* The durable manager, for the merge fibers that read and save retention records while the server is still
+         setting it (SetDurableManager); and whether State is Solo or Master (see ShipsRetention), likewise. */
+      std::atomic<Durable::TManager *> RetentionStore{nullptr};
+      std::atomic<bool> ShipsRetentionFlag{true};
 
       Indy::Fiber::TRunner *BGFastRunner;
 

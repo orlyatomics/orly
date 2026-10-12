@@ -119,8 +119,15 @@ void TRepo::LeaseVersion(TSequenceNumber at) {
 optional<TSequenceNumber> TRepo::GetRetainFrom() {
   const size_t versions = GetRetentionVersions();
   const size_t seconds = GetRetentionSeconds();
-  if ((!versions && !seconds) || GetParentRepo()) {
+  if (GetParentRepo()) {
     return nullopt;
+  }
+  if (!versions && !seconds) {
+    /* #745 stage 3: a save point keeps history with the window off. */
+    lock_guard<mutex> lock(RetentionLock);
+    if (SavePoints.empty()) {
+      return nullopt;
+    }
   }
   optional<TSequenceNumber> seq_start, seq_limit;
   TSequenceNumber next_seq = 0UL;
@@ -152,7 +159,368 @@ optional<TSequenceNumber> TRepo::GetRetainFrom() {
   if (!Leases.empty()) {
     retain_from = min(retain_from, Leases.begin()->first);
   }
+  for (const auto &save_point : SavePoints) {
+    retain_from = min(retain_from, save_point.second);
+  }
   return max(retain_from, GetHistoryHorizon());
+}
+
+/* #745 stage 3: retention records. */
+
+namespace {
+
+  /* Constants the record ids are derived with: the repo id's bytes, xor these. */
+  constexpr uint8_t LocalRecordMask = 0x5AU, ShippedRecordMask = 0xA5U;
+
+  /* What a record starts with, and its layout's version. */
+  constexpr uint64_t RecordMagic = 0x3174655279726C4FUL;  // "OrlyRet1", little-endian
+
+  void PutU64(string &out, uint64_t val) {
+    char buf[sizeof(val)];
+    memcpy(buf, &val, sizeof(val));
+    out.append(buf, sizeof(val));
+  }
+
+  bool GetU64(const string &in, size_t &pos, uint64_t &val) {
+    if (pos > in.size() || in.size() - pos < sizeof(val)) {
+      return false;
+    }
+    memcpy(&val, in.data() + pos, sizeof(val));
+    pos += sizeof(val);
+    return true;
+  }
+
+}  // namespace
+
+Base::TUuid TRepo::GetRetentionRecordId(const Base::TUuid &repo_id, bool shipped) {
+  uuid_t raw;
+  memcpy(raw, repo_id.GetRaw(), sizeof(raw));
+  for (auto &byte : raw) {
+    byte ^= shipped ? ShippedRecordMask : LocalRecordMask;
+  }
+  return Base::TUuid(raw);
+}
+
+string TRepo::TRetentionRecord::Encode() const {
+  string out;
+  PutU64(out, RecordMagic);
+  PutU64(out, Horizon);
+  PutU64(out, Versions);
+  PutU64(out, Seconds);
+  PutU64(out, Samples.size());
+  for (const auto &[when, seq] : Samples) {
+    PutU64(out, static_cast<uint64_t>(chrono::duration_cast<chrono::nanoseconds>(when.time_since_epoch()).count()));
+    PutU64(out, seq);
+  }
+  PutU64(out, SavePoints.size());
+  for (const auto &[name, seq] : SavePoints) {
+    PutU64(out, name.size());
+    out.append(name);
+    PutU64(out, seq);
+  }
+  return out;
+}
+
+bool TRepo::TRetentionRecord::TryDecode(const string &blob, TRetentionRecord &out) {
+  TRetentionRecord rec;
+  size_t pos = 0UL;
+  uint64_t magic = 0UL, versions = 0UL, seconds = 0UL, count = 0UL;
+  if (!GetU64(blob, pos, magic) || magic != RecordMagic || !GetU64(blob, pos, rec.Horizon) || !GetU64(blob, pos, versions) ||
+      !GetU64(blob, pos, seconds) || !GetU64(blob, pos, count) || count > blob.size()) {
+    return false;
+  }
+  rec.Versions = versions;
+  rec.Seconds = seconds;
+  for (uint64_t i = 0UL; i < count; ++i) {
+    uint64_t nanos = 0UL, seq = 0UL;
+    if (!GetU64(blob, pos, nanos) || !GetU64(blob, pos, seq)) {
+      return false;
+    }
+    rec.Samples.emplace_back(chrono::system_clock::time_point(chrono::duration_cast<chrono::system_clock::duration>(chrono::nanoseconds(static_cast<int64_t>(nanos)))), seq);
+  }
+  if (!GetU64(blob, pos, count) || count > blob.size()) {
+    return false;
+  }
+  for (uint64_t i = 0UL; i < count; ++i) {
+    uint64_t len = 0UL, seq = 0UL;
+    if (!GetU64(blob, pos, len) || len > blob.size() - pos) {
+      return false;
+    }
+    string name = blob.substr(pos, len);
+    pos += len;
+    if (!GetU64(blob, pos, seq)) {
+      return false;
+    }
+    rec.SavePoints[name] = seq;
+  }
+  if (pos != blob.size()) {
+    return false;
+  }
+  out = move(rec);
+  return true;
+}
+
+void TRepo::NoteLoadedFromDisk(TSequenceNumber highest) {
+  RaiseHistoryHorizon(highest);
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    if (!PersistRecords) {
+      return;
+    }
+    RestartClaim = highest;
+  }  // release Retention lock
+  /* Reads at older versions wait on the record, so read it now if there is a store to read it from. */
+  if (!GetParentRepo()) {
+    ResolveRecord();
+  }
+}
+
+void TRepo::ResolveRecord() {
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    if (RecordResolved || !Manager->HasRetentionStore()) {
+      return;
+    }
+  }
+  string blob;
+  const bool found = Manager->TryLoadRetentionRecord(GetRetentionRecordId(GetId(), false), blob);
+  lock_guard<mutex> lock(RetentionLock);
+  if (!RecordResolved) {
+    ResolveRecordLocked(found, blob);
+  }
+}
+
+void TRepo::ResolveRecordLocked(bool found, const string &blob) {
+  assert(!RecordResolved);
+  RecordResolved = true;
+  /* Without a record, what the files say: their newest version for a repo loaded from disk, nothing for a new one. */
+  DurableHorizon = RestartClaim ? *RestartClaim : 0UL;
+  RecordOn = GetRetentionVersions() || GetRetentionSeconds();
+  if (!found) {
+    return;
+  }
+  TRetentionRecord rec;
+  if (!TRetentionRecord::TryDecode(blob, rec)) {
+    /* Trust the files alone, and write a good record over it. */
+    Log(LOG_ERR, "retention", "unreadable retention record; keeping the horizon the files give (#745)");
+    RecordOn = true;
+    return;
+  }
+  RecordOn = true;
+  DurableHorizon = rec.Horizon;
+  SavePoints = rec.SavePoints;
+  /* The window's samples, in this process's steady clock. */
+  if (NewestSamples.empty()) {
+    const auto steady_now = chrono::steady_clock::now();
+    const auto system_now = chrono::system_clock::now();
+    for (const auto &[when, seq] : rec.Samples) {
+      if (when <= system_now) {
+        NewestSamples.emplace_back(steady_now - chrono::duration_cast<chrono::steady_clock::duration>(system_now - when), seq);
+      }
+    }
+  }
+  /* Every merge before the restart kept every version from the record's horizon on (none passed it, see
+     GetMergeRetainFrom), and none since has dropped any (none passes DurableHorizon either, and it was the restart
+     claim until now), so the horizon may come down to it. Only from the restart claim: anything else that raised it
+     meanwhile (a synced file) must stand. */
+  if (RestartClaim && rec.Horizon < *RestartClaim) {
+    TSequenceNumber expected = *RestartClaim;
+    HistoryHorizon.compare_exchange_strong(expected, rec.Horizon);
+  }
+}
+
+void TRepo::PollPendingSaveLocked() {
+  if (!PendingSem || !PendingSem->Pop()) {
+    return;
+  }
+  delete PendingSem;
+  PendingSem = nullptr;
+  DurableHorizon = max(DurableHorizon, PendingHorizon);
+  NotedStuckSave = false;
+  /* On disk here; now the slaves may have it. Fire and forget: a slave only ever holds to less than it. */
+  if (Manager->ShipsRetention()) {
+    Manager->TrySaveRetentionRecord(GetRetentionRecordId(GetId(), true), PendingBlob, nullptr, true);
+  }
+  PendingBlob.clear();
+}
+
+bool TRepo::StartSaveLocked(TSequenceNumber horizon) {
+  assert(!PendingSem);
+  TRetentionRecord rec;
+  rec.Horizon = horizon;
+  rec.Versions = GetRetentionVersions();
+  rec.Seconds = GetRetentionSeconds();
+  const auto steady_now = chrono::steady_clock::now();
+  const auto system_now = chrono::system_clock::now();
+  for (const auto &[when, seq] : NewestSamples) {
+    rec.Samples.emplace_back(system_now - chrono::duration_cast<chrono::system_clock::duration>(steady_now - when), seq);
+  }
+  rec.SavePoints = SavePoints;
+  string blob = rec.Encode();
+  auto *sem = new Base::TEventSemaphore(0UL, true);
+  bool saved = false;
+  try {
+    saved = Manager->TrySaveRetentionRecord(GetRetentionRecordId(GetId(), false), blob, sem, false);
+  } catch (...) {
+    delete sem;
+    throw;
+  }
+  if (!saved) {
+    delete sem;
+    return false;
+  }
+  PendingSem = sem;
+  PendingHorizon = horizon;
+  PendingBlob = move(blob);
+  return true;
+}
+
+optional<TSequenceNumber> TRepo::GetMergeRetainFrom() {
+  if (GetParentRepo() || !PersistRecords) {
+    return GetRetainFrom();
+  }
+  ResolveRecord();
+  /* A slave holds to the horizon its master ships too. Read here, holding no lock. */
+  optional<TRetentionRecord> shipped;
+  const bool is_slave = !Manager->ShipsRetention();
+  if (is_slave) {
+    string blob;
+    TRetentionRecord rec;
+    if (Manager->TryLoadRetentionRecord(GetRetentionRecordId(GetId(), true), blob) && TRetentionRecord::TryDecode(blob, rec)) {
+      shipped = move(rec);
+    }
+  }
+  if (shipped) {
+    /* Its save points hold this node's history too, and go with it into this node's own record. */
+    lock_guard<mutex> lock(RetentionLock);
+    SavePoints = shipped->SavePoints;
+  }
+  const optional<TSequenceNumber> desired = GetRetainFrom();
+  optional<TSequenceNumber> seq_start, seq_limit;
+  TSequenceNumber next_seq = 0UL;
+  GetSnapshot(seq_start, seq_limit, next_seq);
+  const TSequenceNumber newest = next_seq ? next_seq - 1UL : 0UL;
+  lock_guard<mutex> lock(RetentionLock);
+  if (!RecordResolved) {
+    /* No store to read the record from yet (the server is still starting): a record may promise anything the files
+       hold, so keep all of it. */
+    return 0UL;
+  }
+  if (!RecordOn) {
+    return desired;
+  }
+  PollPendingSaveLocked();
+  TSequenceNumber want = desired ? *desired : max(newest, GetHistoryHorizon());
+  if (shipped) {
+    want = min(want, shipped->Horizon);
+  } else if (is_slave) {
+    /* Nothing from the master yet: it may promise any version this node holds, so keep them all. */
+    want = 0UL;
+    if (!NotedNoShipped) {
+      NotedNoShipped = true;
+      Log(LOG_WARNING, "retention", "no retention record from the master yet; this slave keeps all history until one arrives (#745)");
+    }
+  }
+  /* What a record claims is kept from must never be below the horizon: on a slave, want can be (the shipped horizon
+     is below what a synced file raised it to), and a restart would trust the record over the files. */
+  const TSequenceNumber save_horizon = max(want, GetHistoryHorizon());
+  if (save_horizon > DurableHorizon) {
+    if (!PendingSem && !StartSaveLocked(save_horizon) && !NotedStuckSave) {
+      NotedStuckSave = true;
+      Log(LOG_WARNING, "retention", "cannot save the retention record; merges keep history from the last saved horizon on (#745)");
+    }
+  }
+  const TSequenceNumber retain_from = min(want, DurableHorizon);
+  MaxRetainFrom = max(MaxRetainFrom, retain_from);
+  return retain_from;
+}
+
+void TRepo::SaveRecordAndWait() {
+  /* Any save started once the change is in memory carries it; wait for one to reach the disk. */
+  bool started = false;
+  for (;;) {
+    /* acquire Retention lock */ {
+      lock_guard<mutex> lock(RetentionLock);
+      PollPendingSaveLocked();
+      if (!PendingSem) {
+        if (started) {
+          return;
+        }
+        if (!StartSaveLocked(max(DurableHorizon, GetHistoryHorizon()))) {
+          throw runtime_error("cannot save the retention record (#745)");
+        }
+        started = true;
+      }
+    }  // release Retention lock
+    this_thread::sleep_for(chrono::milliseconds(1));
+  }
+}
+
+void TRepo::NoteHistoryHorizonRaised() {
+  if (GetParentRepo() || !PersistRecords) {
+    return;
+  }
+  ResolveRecord();
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    PollPendingSaveLocked();
+    if (!RecordResolved || !RecordOn || DurableHorizon >= GetHistoryHorizon()) {
+      return;
+    }
+  }  // release Retention lock
+  /* A record on disk below the horizon would, after a restart, bring the horizon down over versions that are gone. */
+  SaveRecordAndWait();
+}
+
+void TRepo::SetSavePoint(const string &name, TSequenceNumber at) {
+  if (GetParentRepo() || !PersistRecords) {
+    throw runtime_error("save points need persisted retention on a root repo (#745)");
+  }
+  if (!Manager->ShipsRetention()) {
+    throw runtime_error("save points are set on the master (#745)");
+  }
+  ResolveRecord();
+  optional<TSequenceNumber> seq_start, seq_limit;
+  TSequenceNumber next_seq = 0UL;
+  GetSnapshot(seq_start, seq_limit, next_seq);
+  const TSequenceNumber newest = next_seq ? next_seq - 1UL : 0UL;
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    if (!RecordResolved) {
+      throw runtime_error("no retention record store yet (#745)");
+    }
+    /* A merge may already have dropped what is older than what one was handed, or than the horizon. And the
+       record's horizon, saved or being saved, may have gone to the slaves, which may drop what is older than it
+       before this save point reaches them; at or above it, every node keeps the version. */
+    const TSequenceNumber floor = max({MaxRetainFrom, GetHistoryHorizon(), DurableHorizon, PendingSem ? PendingHorizon : 0UL});
+    if (at < floor || at > newest) {
+      throw runtime_error("save point version " + to_string(at) + " is outside the versions kept, [" + to_string(floor) + ", " + to_string(newest) + "] (#745)");
+    }
+    SavePoints[name] = at;
+    RecordOn = true;
+  }  // release Retention lock
+  SaveRecordAndWait();
+}
+
+bool TRepo::DeleteSavePoint(const string &name) {
+  /* acquire Retention lock */ {
+    lock_guard<mutex> lock(RetentionLock);
+    if (!SavePoints.erase(name)) {
+      return false;
+    }
+  }  // release Retention lock
+  if (PersistRecords && !GetParentRepo() && Manager->ShipsRetention()) {
+    SaveRecordAndWait();
+  }
+  return true;
+}
+
+map<string, TSequenceNumber> TRepo::GetSavePoints() {
+  if (PersistRecords && !GetParentRepo()) {
+    ResolveRecord();
+  }
+  lock_guard<mutex> lock(RetentionLock);
+  return SavePoints;
 }
 
 void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed) {
@@ -382,6 +750,7 @@ TRepo::TRepo(L0::TManager *manager,
       InTetris(false),
       PromotionHoldCount(0UL),
       PauseCount(0UL) {
+  PersistRecords = manager->IsRetentionPersisted();
   try {
     /* acquire Mapping lock */ {
       std::lock_guard<std::mutex> lock(MappingLock);
@@ -413,6 +782,7 @@ TRepo::TRepo(L0::TManager *manager,
       PauseCount(0UL) {
   /* No entry counts for a backlog loaded from disk (#628). */
   BacklogEntriesKnown = !lowest;
+  PersistRecords = manager->IsRetentionPersisted();
   try {
     /* acquire Mapping lock */ {
       std::lock_guard<std::mutex> lock(MappingLock);
@@ -453,6 +823,11 @@ TRepo::~TRepo() {
   /* #691: not marked for delete, so the file stays in the file map. */
   delete UnpublishedMergeDisk;
   delete CurMemoryLayer;
+  /* #745 stage 3: a retention record save still in flight holds its sem, which the durable writer pushes once the
+     record is on disk. If it hasn't yet, the sem must outlive this repo: leave it (one eventfd, at teardown). */
+  if (PendingSem && PendingSem->Pop()) {
+    delete PendingSem;
+  }
 }
 
 std::atomic<size_t> TRepo::PeakBacklogEntries {0UL};
@@ -2095,6 +2470,7 @@ size_t TSafeRepo::AddSyncedFileToRepo(size_t starting_block_id,
   }
   /* A synced file may be the output of a merge that dropped history, and nothing here says whether it was (#745). */
   RaiseHistoryHorizon(high_saved);
+  NoteHistoryHorizonRaised();
   AddFileToRepo(gen_id, low_saved, high_saved, num_keys);
   return gen_id;
 }
@@ -2238,9 +2614,9 @@ TSafeRepo *TSafeRepo::ReConstructFromDisk(L0::TManager *manager,
   TSafeRepo *safe_repo = new TSafeRepo(manager, repo_id, repo_ttl, parent_repo, lowest, highest, next_update, TStatus::Normal);
   if (highest) {
     safe_repo->NoteDurable(*highest);
-    /* The files found may be merges that dropped history, and nothing records which were, so only the newest
-       version is known to be whole (#745). */
-    safe_repo->RaiseHistoryHorizon(*highest);
+    /* The files found may be merges that dropped history, and nothing in them records which were, so only the newest
+       version is known to be whole (#745), unless the retention record says more (stage 3). */
+    safe_repo->NoteLoadedFromDisk(*highest);
   }
   return safe_repo;
 }
@@ -2277,7 +2653,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   bool my_can_tail_tombstone = my_can_tail && can_tail_tombstone && (gen_id_vec.size() == 1);
   /* #745 stage 2: the oldest version this merge keeps whole, with the retention window on; nothing otherwise. The
      horizon rises to it (or to the merge's newest version, if lower) rather than to the newest. */
-  const std::optional<TSequenceNumber> retain_from = GetRetainFrom();
+  /* Stage 3: never past the horizon the retention record has on disk (GetMergeRetainFrom). */
+  const std::optional<TSequenceNumber> retain_from = GetMergeRetainFrom();
   const auto horizon_after = [&retain_from](TSequenceNumber high) {
     return retain_from ? std::min(*retain_from, high) : high;
   };
