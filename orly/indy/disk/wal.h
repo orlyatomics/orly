@@ -34,6 +34,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -62,6 +63,22 @@ namespace Orly {
       class TWalCorruptError : public std::runtime_error {
         public:
         explicit TWalCorruptError(const std::string &msg) : std::runtime_error(msg) {}
+      };
+
+      /* The ring has no room it can promise a record (#891).  Nothing was appended, and retrying
+         once a checkpoint has moved the head on may succeed. */
+      class TWalRingFull : public std::runtime_error {
+        public:
+        explicit TWalRingFull(const std::string &msg) : std::runtime_error(msg) {}
+      };
+
+      /* A record a write keeping headroom (TWal::TRoom::KeepHeadroom) asked for is too big ever to be
+         safe to take (#891): its promotion, a record about as big, has only the headroom to be
+         written into once client writes have filled the rest, so a record bigger than half the
+         headroom could be accepted and then never promoted.  Not retryable: split the write. */
+      class TWalRecordTooLarge : public std::runtime_error {
+        public:
+        explicit TWalRecordTooLarge(const std::string &msg) : std::runtime_error(msg) {}
       };
 
       /* 4 KiB group / page alignment for Direct I/O and log groups */
@@ -246,6 +263,44 @@ namespace Orly {
         return strm << static_cast<int>(status);
       }
 
+      class TWal;
+
+      /* Room a TWal holds for one record that is not appended yet (#891): see TWal::Reserve.  Empty
+         when default-constructed or once used or released.  Releases its room when destroyed, so it
+         must not outlive its TWal. */
+      class TWalReservation {
+        NO_COPY(TWalReservation);
+        public:
+
+        TWalReservation() = default;
+
+        TWalReservation(TWalReservation &&that) noexcept;
+
+        TWalReservation &operator=(TWalReservation &&that) noexcept;
+
+        ~TWalReservation() { Release(); }
+
+        explicit operator bool() const { return Wal != nullptr; }
+
+        /* The body size the room was reserved for. */
+        size_t GetSize() const { return Size; }
+
+        /* Give the room back without appending. */
+        void Release();
+
+        private:
+
+        friend class TWal;
+
+        TWal *Wal = nullptr;
+
+        size_t Size = 0UL;
+
+        /* What the room was charged as: see TWal::GetRecordGroupBytes. */
+        size_t GroupBytes = 0UL;
+
+      };  // TWalReservation
+
       /* The Write-Ahead Log class */
       class TWal {
         NO_COPY(TWal);
@@ -275,8 +330,49 @@ namespace Orly {
              const std::vector<TGroupLocation> &retained_groups = std::vector<TGroupLocation>());
         ~TWal();
 
-        /* Append a record. Returns assigned LSN. Thread-safe. */
+        /* Which part of the ring a reservation may use.  Writes a client asked for leave the last
+           eighth of the ring to the server's own (promotions, pauses, copied Pov records), so a
+           full ring never stops the writes that let its head move on. */
+        enum class TRoom {
+          All,
+          KeepHeadroom
+        };
+
+        /* Ring-space accounting (#891).  The leader never overwrites a group at or after the
+           checkpointed head, and the head moves only once the records before it are no longer
+           needed, which for a record that pushed into a root's memory layer means once that layer
+           is in a data file.  The flush that writes the layer first waits for those records to be
+           durable (write-ahead), so a record the leader can't write until the head moves would
+           strand the flush, and the flush the checkpoint: the server would hang for good.
+
+           So the WAL takes a record only if it can promise it room: every record taken but not yet
+           written, together with the groups that will seal them, fits between the write position
+           and the checkpointed head, with the head where it is.  A record that doesn't fit is
+           refused (TWalRingFull) before anything is appended.
+
+           Reserve() takes that promise ahead of the append, for a caller that must not fail once
+           it has started (a transaction reserves before it applies, and appends from its
+           destructor).  It throws TWalRingFull if there is no room, after waiting up to `wait` for
+           a checkpoint to make some; a fiber must not wait.  With TRoom::KeepHeadroom it throws
+           TWalRecordTooLarge, at once, for a record bigger than half the headroom. */
+        TWalReservation Reserve(size_t size, TRoom room, std::chrono::milliseconds wait = std::chrono::milliseconds(0));
+
+        /* Append a record. Returns assigned LSN. Thread-safe.  Throws TWalRingFull if there is no
+           room for it (with TRoom::All). */
         uint64_t Append(TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U);
+
+        /* Append a record into room reserved for it, which it uses up.  Never refused for room, so
+           long as the record is no bigger than the room. */
+        uint64_t Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U);
+
+        /* The most a record of `size` body bytes can add to the group it goes in, in whole pages.
+           A reservation is charged this and a page more, for the seal-only group that may have to
+           follow it. */
+        static size_t GetRecordGroupBytes(size_t size);
+
+        /* Ring bytes promised to records taken but not yet written, seals included.  For tests and
+           status. */
+        size_t GetOwedBytes() const;
 
         /* Convenience: append and wait for durability. Returns assigned LSN. */
         uint64_t AppendAndWait(TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U);
@@ -308,6 +404,9 @@ namespace Orly {
 
         /* The ring's size in bytes. */
         size_t GetCapacityBytes() const { return Config.CapacityBytes; }
+
+        /* The last part of the ring that only TRoom::All may use (#891). */
+        size_t GetHeadroomBytes() const { return HeadroomBytes; }
 
         /* Copy-forward unpromoted records near the head. Returns assigned new LSNs. */
         std::vector<uint64_t> CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records);
@@ -358,6 +457,46 @@ namespace Orly {
         void SyncerMain();
         void Stop();
 
+        /* Ring-space accounting (#891); see Reserve().  All require Mutex. */
+
+        /* What the records taken but not written still need from the ring, seals included. */
+        size_t OwedBytesLocked() const;
+
+        /* How much of the ring a sequence of groups, none bigger than `max_group`, is sure to fit
+           in from the write position without the checkpointed head moving.  A group that doesn't
+           fit before the end of the ring wraps, wasting the rest of the lap. */
+        size_t UsableBytesLocked(size_t max_group) const;
+
+        /* The biggest group the leader could build from the records taken, plus one more charged
+           `extra` group bytes. */
+        size_t MaxGroupLocked(size_t extra) const;
+
+        /* Whether a record charged `group_bytes` fits the promise. */
+        bool AdmitsLocked(size_t group_bytes, TRoom room) const;
+
+        /* Throw TWalRingFull, for a record of `size` body bytes. */
+        [[noreturn]] void ThrowRingFullLocked(size_t size, TRoom room) const;
+
+        /* Take a reservation's charge, or give it back. */
+        void ChargeLocked(size_t group_bytes);
+        void UnchargeLocked(size_t group_bytes);
+
+        /* Account for a record of `encoded` bytes joining PendingRecords: it goes in the last group
+           the leader will build from them, as the leader will put it, or starts a new one. */
+        void QueueRecordLocked(size_t encoded);
+
+        /* The leader has taken the first of those groups, of `payload` bytes. */
+        void DequeueGroupLocked(size_t payload);
+
+        /* Throws TWalIoError if failed or stopping, and for a record no group could hold. */
+        void CheckAppendableLocked(size_t size) const;
+
+        uint64_t AppendLocked(TWalRecordType type, const void *data, size_t size, uint8_t flags);
+
+        friend class TWalReservation;
+
+        void ReleaseReservation(TWalReservation &reservation);
+
         Util::TDevice *Device;
         const TConfig Config;
 
@@ -392,6 +531,33 @@ namespace Orly {
 
         bool Stopping;
         bool Failed;
+
+        /* The most payload the leader puts in one group (a single bigger record goes alone), and the
+           group that payload makes. */
+        size_t MaxGroupPayload;
+        size_t MaxBatchGroupBytes;
+
+        /* What a reservation keeping headroom leaves free (TRoom::KeepHeadroom). */
+        size_t HeadroomBytes;
+
+        /* The charges (GetRecordGroupBytes) of the reservations not yet used or released, and their
+           sum.  Each may be appended alone, so each may make a group of its own. */
+        std::multiset<size_t> ReservedGroupBytes;
+        size_t ReservedGroupBytesSum;
+
+        /* The groups the leader will build from PendingRecords, as it builds them (in order, each
+           taking records while they fit in MaxGroupPayload): each one's payload, the multiset of
+           their sizes in the ring, and the sum of those sizes. */
+        std::deque<size_t> PendingGroupPayloads;
+        std::multiset<size_t> PendingGroupBytes;
+        size_t PendingGroupBytesSum;
+
+        /* Whether a group with records in it has been given a position since the last seal-only
+           group was (one more seal-only group may follow it). */
+        bool Unsealed;
+
+        /* Notified whenever the room the accounting can promise may have grown. */
+        std::condition_variable SpaceCv;
 
         std::deque<TPendingRecord> PendingRecords;
         std::deque<TInFlightGroup> InFlightGroups;

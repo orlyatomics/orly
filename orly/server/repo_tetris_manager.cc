@@ -21,6 +21,7 @@
 #include <sstream>
 #include <vector>
 
+#include <orly/indy/disk/wal.h>
 #include <orly/notification/pov_failure.h>
 #include <orly/notification/update_progress.h>
 #include <base/util/time.h>
@@ -565,6 +566,19 @@ bool TRepoTetrisManager::TPlayer::PlayRound() {
        player holds nothing the merges or another round could use; the next round peeks
        again. This round's transaction never committed, so its promotions didn't happen. */
     RoundAccepted.clear();
+    {
+      lock_guard<mutex> lock(Mutex);
+      for (const auto &item: ChildByPovId) {
+        item.second->Flush();
+      }
+    }
+    throw;
+  } catch (const Indy::Disk::TWalRingFull &) {
+    /* No WAL room for a promotion's record (#891): its transaction was refused before it applied,
+       so, as above, nothing of it happened. TTetrisManager::TPlayer::Main logs it, rate-limited,
+       and plays the round again once a checkpoint has made room. */
+    RoundAccepted.clear();
+    Promotion.reset();
     {
       lock_guard<mutex> lock(Mutex);
       for (const auto &item: ChildByPovId) {

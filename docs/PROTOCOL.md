@@ -205,6 +205,20 @@ sent as one WebSocket text message. The server replies with one JSON message:
   `--disk_reserve_pct` of the disk (default 10%, and at least 64 MiB or a quarter
   of the disk, whichever is smaller). Over the binary protocol the same refusal
   is an error whose message starts with `insufficient storage`.
+  A write to a safe POV also gets `insufficient_storage` when the server's
+  write-ahead log ring (`--wal_mb`) has no room for its record (#891), with a
+  reason that starts `insufficient storage: write refused; the WAL ring is full`.
+  The check is made before the write is applied, so nothing was written and it
+  can be retried; room comes back once the merges flush the root and a
+  checkpoint moves the log's head, usually within seconds. Client writes and
+  new safe POVs leave the last eighth of the ring for the server's own
+  promotion writes, which is what drains it. `pause` and `unpause` may use that
+  eighth (an unpause is what lets a paused POV's backlog drain), so they are
+  refused only when it is gone too. A write the server makes on a client's
+  behalf (opening a POV's repo, recording an index or an installed package) is
+  refused the same way. A safe write whose record is more than half of that
+  eighth replies `write_too_large` instead (below): it could be accepted but
+  never promoted.
 - A write refused because the server's update pools are down to the reserve kept
   for its merges replies `"status": "insufficient_memory"`, with the reason in
   `result` (#607). Writes are buffered in fixed-size memory pools (the Update and
@@ -248,6 +262,10 @@ sent as one WebSocket text message. The server replies with one JSON message:
   but leaves less of the pool for writes. `--memory_reserve_pct=0` turns the
   check off along with the rest of memory admission. Over the binary protocol
   the same refusal is an error whose message starts with `write too large`.
+  A write to a safe POV whose write-ahead log record is more than half the
+  eighth of the ring (`--wal_mb`) kept for promotions gets the same reply
+  (#891), for the same reason: its promotion could never be sure of room. Split
+  it, or raise `--wal_mb`.
 - A method call that walks more rows, or builds more result memory, than the
   per-read budget replies `"status": "read_too_large"`, with the reason in
   `result` (#694). Like `write_too_large` it is **not retryable as sent**: the

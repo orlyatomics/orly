@@ -18,9 +18,12 @@
 
 #include <memory>
 #include <optional>
+#include <chrono>
+#include <functional>
 #include <utility>
 #include <vector>
 
+#include <orly/indy/disk/wal.h>
 #include <orly/indy/manager_base.h>
 #include <orly/indy/repo.h>
 #include <orly/indy/status.h>
@@ -78,7 +81,25 @@ namespace Orly {
            peek.  True iff this transaction now holds it. */
         bool HoldForPromotion(const L0::TManager::TPtr<TRepo> &repo);
 
+        /* Gather what the transaction will do.  If it touches a safe repo, this is also where it
+           reserves the WAL room for its record (#891), so call it before applying anything: it
+           throws Disk::TWalRingFull, and nothing has been done, if the ring can't promise that
+           room.  Calling it again releases the old reservation and takes a new one. */
         void Prepare();
+
+        /* For a write a client asked for: leave the WAL's headroom (Disk::TWal::TRoom) to the
+           server's own transactions.  Before Prepare. */
+        void KeepWalHeadroom() NO_THROW {
+          WalRoom = Disk::TWal::TRoom::KeepHeadroom;
+        }
+
+        /* For a transaction that must not be refused (one a master replicated, #891): Prepare
+           waits for WAL room for as long as it takes, refusing (Disk::TWalRingFull) only once
+           `give_up` returns true.  On a fiber it yields between attempts; off one it blocks.  A
+           failed or stopping WAL still throws at once.  Before Prepare. */
+        void WaitForWalRoom(std::function<bool ()> give_up) {
+          WalGiveUp = std::move(give_up);
+        }
 
         /* Mark the prepared action to be committed.  The commitment will occur when this object destructs.
            If there is no prepared action, do nothing. */
@@ -494,6 +515,15 @@ namespace Orly {
         bool EnsureOrDiscard;
 
         TReplica Replica;
+
+        /* The WAL room Prepare reserved for this transaction's record (#891), which ~TTransaction
+           appends it into or gives back. */
+        Disk::TWalReservation WalReservation;
+
+        Disk::TWal::TRoom WalRoom = Disk::TWal::TRoom::All;
+
+        /* Set by WaitForWalRoom; empty means Prepare refuses at once when there is no room. */
+        std::function<bool ()> WalGiveUp;
 
         /* What this transaction commits to safe repos, for the WAL's retention (#755): each push's
            replica mutation (its sequence number is set when the push lands) and whether its repo

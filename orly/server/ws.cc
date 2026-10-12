@@ -140,10 +140,22 @@ namespace {
          it from a failed statement and keep reading. */
       reply["result"] = ex.what();
       reply["status"] = "insufficient_storage";
+    } catch (const Orly::Indy::Disk::TWalRingFull &ex) {
+      /* The WAL ring had no room for a write's record (#891) and the write was refused before
+         anything was applied.  Session maps the writes a client asks for itself; this catches the
+         ones the server makes on a client's behalf (opening a POV's repo, saving an index
+         namespace mapping or an installed package), which would otherwise come back as a
+         generic error.  Retryable, like any insufficient_storage. */
+      reply["result"] = std::string("insufficient storage: write refused; ") + ex.what() + "; nothing was written; retry";
+      reply["status"] = "insufficient_storage";
     } catch (const Orly::Server::TInsufficientMemory &ex) {
       /* A write refused because the update pools are down to the merges' reserve (#607). */
       reply["result"] = ex.what();
       reply["status"] = "insufficient_memory";
+    } catch (const Orly::Indy::Disk::TWalRecordTooLarge &ex) {
+      /* A record too big for the WAL to be sure of promoting (#891); as write_too_large below. */
+      reply["result"] = ex.what();
+      reply["status"] = "write_too_large";
     } catch (const Orly::Server::TWriteTooLarge &ex) {
       /* A write too big ever to be promoted (#687). Not retryable: the client must split it. */
       reply["result"] = ex.what();

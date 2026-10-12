@@ -1441,6 +1441,17 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
     if (on_push && !has_pop) {
       apply_transaction->ReportCommitLsn(&lsn);
     }
+    /* Reserves the transaction's WAL room before it applies (#891), and before the head hold
+       below, which would keep a checkpoint from making that room.  What a master sent has to be
+       applied, and in order: refusing one would leave this batch half-applied and the replica
+       behind the master for good, since the master never sends it again.  So wait for room, on a
+       fiber too (PushNotifications runs on one), however long the checkpoints take; the master
+       waits for our ack without a timeout, so this is backpressure on it, not a failure.  Only
+       stopping replication (or the server) gives up. */
+    apply_transaction->WaitForWalRoom([this] {
+      return ReplicationServicesStopping.load() || Base::IsShuttingDown();
+    });
+    apply_transaction->Prepare();
     /* Taken before the append, so the record is at or past it, and let go only after on_push. */
     struct THeld {
       ~THeld() {
@@ -1455,7 +1466,6 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
       held.Token = head_hold->Hold();
       held.HeadHold = head_hold;
     }
-    apply_transaction->Prepare();
     apply_transaction->CommitAction();
     apply_transaction.reset();
     if (on_push && !has_pop) {
@@ -1560,7 +1570,7 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
             try {
               auto transaction = NewTransaction(false /* don't replicate this transactions, we replicate system changes seperately */);
               transaction->Push(SystemRepo, TUpdate::NewUpdate(op_by_key, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc)));
-              transaction->Prepare();
+              PrepareSystemWrite(*transaction);
               transaction->CommitAction();
             } catch (...) {
               RequeueSavedRepoRemovals(removed);
@@ -1806,10 +1816,24 @@ void TManager::SaveRepo(TRepo *base_repo) {
                            repo->GetReleasedUpTo(),
                            state), &arena, state_alloc)} }, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
       transaction->Push(SystemRepo, update);
-      transaction->Prepare();
+      PrepareSystemWrite(*transaction);
       transaction->CommitAction();
     }
   }
+}
+
+void TManager::PrepareSystemWrite(L1::TTransaction &transaction) {
+  /* A slave's System repo writes come from what the master replicated (the repos it made, the
+     index ids it registered), so, like the replicated transactions themselves, they must not be
+     refused for WAL room (#891): wait for it, unless replication or the server is stopping.  A
+     master's or a solo server's refuse at once, and the refusal reaches the client that asked
+     as insufficient_storage. */
+  if (State == SyncSlave || State == Slave) {
+    transaction.WaitForWalRoom([this] {
+      return ReplicationServicesStopping.load() || Base::IsShuttingDown();
+    });
+  }
+  transaction.Prepare();
 }
 
 void TManager::SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std::string &namespace_name) {
@@ -1823,7 +1847,7 @@ void TManager::SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std:
       TIndexKey(SystemIDNSIndexId, TKey(make_tuple(index_id), &arena, state_alloc)),
       TKey(namespace_name, &arena, state_alloc)} }, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
     transaction->Push(SystemRepo, update);
-    transaction->Prepare();
+    PrepareSystemWrite(*transaction);
     transaction->CommitAction();
   }
 }
@@ -1840,7 +1864,7 @@ void TManager::SaveInstalledPackage(const std::vector<std::string> &package_name
       TIndexKey(SystemPackageIndexId, TKey(make_tuple(package_name, static_cast<int64_t>(version)), &arena, state_alloc)),
       TKey(installed, &arena, state_alloc)} }, TKey(), TKey(TUuid(TUuid::Twister), &arena, state_alloc));
     transaction->Push(SystemRepo, update);
-    transaction->Prepare();
+    PrepareSystemWrite(*transaction);
     transaction->CommitAction();
   }
 }

@@ -52,9 +52,10 @@ pub const default_url = "ws://127.0.0.1:8082/";
 /// Every refusal the server has a typed status for, plus the client's own
 /// failures. After a server error, `Client.detail()` holds the raw reply.
 pub const Error = error{
-    /// `"status": "insufficient_storage"`: the disk is full. Nothing was
-    /// written, reads still work, and the write can be retried once space is
-    /// freed.
+    /// `"status": "insufficient_storage"`: the disk is full, or a safe POV's
+    /// write-ahead log ring is (#891). Nothing was written, reads still work,
+    /// and the write can be retried: a full ring usually clears within
+    /// seconds, a full disk once space is freed.
     InsufficientStorage,
     /// `"status": "insufficient_memory"`: the update pools are down to the
     /// reserve kept for merges. Nothing was written; retry in a few seconds.

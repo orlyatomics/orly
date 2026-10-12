@@ -336,7 +336,10 @@ namespace Orly {
 
       void PushIndexId(const TIndexIdReplication &index_replica);
 
-      void PushTransaction(const L1::TTransaction::TReplica &replica);
+      /* With unapplied, the replica's pushes needn't have their sequence numbers yet (they are
+         sent as 0): for sizing a transaction's WAL record before it applies (#891).  A sequence
+         number takes the same room whatever its value, so the size is the size it will have. */
+      void PushTransaction(const L1::TTransaction::TReplica &replica, bool unapplied = false);
 
       void PushDurable(const TDurableReplication &durable_replica);
 

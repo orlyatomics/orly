@@ -770,12 +770,33 @@ the table from the same replicated records, so it needs nothing beyond this.
 
 - **Disk (#590).** The log range is reserved at creation; disk admission's free space excludes it.
   The log never allocates at run time.
-- **Log space (new).** Before commit, a safe write reserves its record's encoded size in the ring,
-  next to the existing memory reservation; if the ring can't take it, the write is refused with
-  `insufficient_storage` (retryable, nothing written), and admitted again once flushes retire
-  records. Because an unretired record is a write that isn't in a data file yet, and every such
-  write holds Update pool memory, sizing the ring to the pools' bytes means memory admission
-  refuses first in practice; the log check is the backstop.
+- **Log space (#891).** Before it applies anything (in `TTransaction::Prepare`), a safe write
+  reserves its record's encoded size in the ring, next to the existing memory reservation; if the
+  ring can't take it, the write is refused with `insufficient_storage` (retryable, nothing
+  written), and admitted again once flushes retire records. The ring counts what it owes: every
+  reservation, and every record it has taken but not yet written, as the groups the leader will
+  build from them, each with a page for its seal. A record is only taken if that total still fits
+  before the checkpointed head, so the leader never waits for room for a record it has accepted.
+  Without this the ring could fill with records the root flush had to wait for (write-ahead),
+  while the checkpoint that would free room waited for the flush. Client writes and new POVs
+  leave the last eighth of the ring free; the server's own writes (promotion, pause and unpause,
+  copy-forward) may use it, and are refused only when it is gone too. A client write whose record
+  is more than half that eighth is refused with `write_too_large` instead (not retryable): its
+  promotion, a record about as big, could have only the headroom to land in, so it could be
+  accepted and never promoted. The Tetris player retries a refused promotion round, backing off
+  from 100 µs up to 5 ms. A slave applying replicated records (and its System-repo writes) never
+  refuses for want of room: the master's replication `Sync` has no timeout, so the slave's apply
+  waits until a checkpoint frees room, yielding its fiber, and gives up only when replication or
+  the server is stopping; the master then waits on the slave, which is the backpressure. A slave's
+  `--wal_mb` should be at least the master's. Because an unretired record is a write that isn't in
+  a data file yet, and every such write holds Update pool memory, sizing the ring to the pools'
+  bytes means memory admission refuses first in practice; the log check is the backstop.
+  **Known gap:** with several children of one parent, promotions are ordered per player by
+  promote-ness, not by WAL age, so other children's promotions can use up the headroom before the
+  child pinning the oldest record is promoted. The head can't move past that record, and its
+  promotion may find no room left, so safe writes can stay refused (refused, not hung) for a long
+  time. Memory admission makes this unlikely with the ring sized to the pools; closing it needs
+  age-ordered promotion under ring pressure, or promotion room reserved at admission.
 - **Memory (#607).** Unchanged. A write waiting for its group holds no pool reservation beyond its
   committed update, which it holds today anyway.
 - **Backlog cap (#721).** Unchanged; it now also bounds how much log a POV's backlog can pin, and so

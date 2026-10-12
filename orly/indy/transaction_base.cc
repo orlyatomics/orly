@@ -17,9 +17,12 @@
    limitations under the License. */
 
 #include <orly/indy/transaction_base.h>
+#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <thread>
+
+#include <syslog.h>
 
 #include <base/debug_log.h>
 #include <base/io/binary_output_only_stream.h>
@@ -33,6 +36,40 @@ using namespace std;
 using namespace Base;
 using namespace Orly::Atom;
 using namespace Orly::Indy::L1;
+
+/* Reserve WAL room for a record (#891).  With no give_up, refuse at once if there is none.  With
+   one, keep trying until there is room or give_up says to stop: room comes from checkpoints, which
+   run on their own thread and don't wait on the caller.  A fiber must not block its runner, so on
+   one we only ever ask without waiting, and yield between asks with a short, growing pause so the
+   loop doesn't spin. */
+static Orly::Indy::Disk::TWalReservation ReserveWalRoom(
+    Orly::Indy::Disk::TWal &wal, size_t size, Orly::Indy::Disk::TWal::TRoom room, const std::function<bool ()> &give_up) {
+  using Orly::Indy::Disk::TWalRingFull;
+  if (!give_up) {
+    return wal.Reserve(size, room);
+  }
+  const bool on_fiber = Orly::Indy::Fiber::TFrame::LocalFrame != nullptr;
+  constexpr auto max_pause = chrono::milliseconds(2);
+  chrono::microseconds pause(50);
+  for (uint64_t attempt = 1;; ++attempt) {
+    try {
+      return wal.Reserve(size, room, on_fiber ? chrono::milliseconds(0) : chrono::milliseconds(100));
+    } catch (const TWalRingFull &ex) {
+      if (give_up()) {
+        throw;
+      }
+      /* The 1st, 2nd, 4th, 8th... refusal: enough to show it is stuck without flooding the log. */
+      if (!(attempt & (attempt - 1))) {
+        syslog(LOG_WARNING, "TTransaction: waiting for WAL room for a %zu-byte record (refused %lu times so far): %s", size, attempt, ex.what());
+      }
+    }
+    if (on_fiber) {
+      Orly::Indy::Fiber::YieldSlow();
+      this_thread::sleep_for(pause);
+      pause = min<chrono::microseconds>(pause * 2, max_pause);
+    }
+  }
+}
 
 /* Test-only; empty in production. See header. */
 std::function<void ()> TTransaction::OnCommitBetweenPushAndPopForTest;
@@ -319,6 +356,7 @@ void TTransaction::Prepare() {
   SafePushes.clear();
   SafePops.clear();
   size_t num_push = 0UL;
+  std::vector<const TPusher *> safe_pushers;
   std::vector<std::pair<Base::TUuid, TSequenceNumber>> release_set;
   for (TMutationCollection::TCursor csr(&MutationCollection); csr; ++csr) {
     switch (csr->GetKind()) {
@@ -332,20 +370,8 @@ void TTransaction::Prepare() {
           /* No parent: a data file of the repo's own is where the update ends up. */
           const auto &parent = pusher->Repo->GetParentRepo();
           SafePushes.emplace_back(pusher->MyMutation, !(parent && *parent));
-          TTransactionCompletion *transaction_completion = TransactionCompletion;
-          auto func = [transaction_completion](TUpdate::TPersistenceNotification::TResult result) {
-            switch (result) {
-              case TUpdate::TPersistenceNotification::Completed: {
-                transaction_completion->RegisterCompletion();
-                break;
-              }
-              case TUpdate::TPersistenceNotification::Failed: {
-                transaction_completion->RegisterFailure();
-                break;
-              }
-            }
-          };
-          pusher->Update->SetPersistenceNotification(func);
+          /* Its persistence notification is set below, once the WAL room is reserved. */
+          safe_pushers.push_back(pusher);
         }
 
 
@@ -432,6 +458,43 @@ void TTransaction::Prepare() {
       }
     }
   });
+  /* Reserve the room for this transaction's WAL record before anything is applied (#891): a
+     record the WAL took but couldn't write before its checkpointed head would hold up the flush
+     of every root it pushed into, and with it the checkpoint that would make the room.  Sized by
+     serialising it as ~TTransaction will; only the sequence numbers are missing, and they take
+     the same room whatever they are. */
+  WalReservation.Release();
+  Disk::TWal *wal = TouchesSafeRepo ? Manager->GetWal() : nullptr;
+  if (wal) {
+    TReplicationStreamer streamer;
+    streamer.PushTransaction(Replica, true);
+    auto recorder = std::make_shared<Io::TRecorder>();
+    /* serialize */ {
+      Io::TBinaryOutputOnlyStream strm(recorder);
+      streamer.Write(strm);
+      strm.Flush();
+    }
+    std::string wire;
+    recorder->CopyOut(wire);
+    WalReservation = ReserveWalRoom(*wal, wire.size(), WalRoom, WalGiveUp);
+  }
+  /* Only now that nothing above can refuse the transaction: a refused one leaves its updates as
+     they were. */
+  TTransactionCompletion *transaction_completion = TransactionCompletion;
+  for (const TPusher *pusher : safe_pushers) {
+    pusher->Update->SetPersistenceNotification([transaction_completion](TUpdate::TPersistenceNotification::TResult result) {
+      switch (result) {
+        case TUpdate::TPersistenceNotification::Completed: {
+          transaction_completion->RegisterCompletion();
+          break;
+        }
+        case TUpdate::TPersistenceNotification::Failed: {
+          transaction_completion->RegisterFailure();
+          break;
+        }
+      }
+    });
+  }
   TransactionCompletion->SetCb(func);
   TransactionCompletion->SetWaitFor(num_push);
   Prepared = true;
@@ -545,7 +608,10 @@ TTransaction::~TTransaction() NO_THROW {
             }
             std::string wire;
             recorder->CopyOut(wire);
-            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops);
+            if (WalReservation && wire.size() > WalReservation.GetSize()) {
+              syslog(LOG_ERR, "~TTransaction: WAL record of %ld bytes is bigger than the %ld Prepare reserved for it (#891)", wire.size(), WalReservation.GetSize());
+            }
+            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops, &WalReservation);
             if (CommitLsnOut) {
               *CommitLsnOut = lsn;
             }
@@ -567,6 +633,8 @@ TTransaction::~TTransaction() NO_THROW {
       delete TransactionCompletion;
       Manager->DeleteTransactionReplication(TransactionReplication);
     }
+    /* Not committed (or nothing to append): give the room back. */
+    WalReservation.Release();
   }
 }
 

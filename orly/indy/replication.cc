@@ -107,7 +107,7 @@ void TReplicationStreamer::PushIndexId(const TIndexIdReplication &index_id) {
   IndexIdBuilder.PushState(index_id.GetVal().GetState(state_alloc));
 }
 
-void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &replica) {
+void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &replica, bool unapplied) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TransactionBuilder.Push(replica.GetMutationList().size()); /* number of mutations in this transaction. */
   for (const auto &mutation : replica.GetMutationList()) {
@@ -116,7 +116,8 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
        that as 0, which is never a real sequence number (they start at 1).  The slave reads 0 as
        "my copy must be empty too" (TTransaction::Pause and friends). */
     const L1::TTransaction::TReplica::TMutation::TKind kind = mutation.GetKind();
-    assert(mutation.GetSequenceNumber() ||
+    (void)unapplied;
+    assert(unapplied || mutation.GetSequenceNumber() ||
            kind == L1::TTransaction::TReplica::TMutation::Pauser ||
            kind == L1::TTransaction::TReplica::TMutation::UnPauser ||
            kind == L1::TTransaction::TReplica::TMutation::Failer);

@@ -54,9 +54,10 @@ const (
 )
 
 // ErrInsufficientStorage is wrapped by the error a write gets when the server
-// refuses it for lack of disk space ("status": "insufficient_storage"). Nothing
-// was written, reads still work, and the write can be retried once space is
-// freed. Test with errors.Is.
+// refuses it for lack of disk space, or because a safe POV's write-ahead log
+// ring is full ("status": "insufficient_storage"). Nothing was written, reads
+// still work, and the write can be retried: a full ring usually clears within
+// seconds, a full disk once space is freed. Test with errors.Is.
 var ErrInsufficientStorage = errors.New("orly: insufficient storage")
 
 // ErrInsufficientMemory is wrapped by the error a write gets when the server

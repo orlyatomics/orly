@@ -277,6 +277,26 @@ FIXTURE(PovReviewStatements) {
   }
 }
 
+/* A write the WAL refuses reaches the client as a status it can act on, not as a bare exception
+   (#891): a full ring is insufficient_storage (retry shortly), a record too big ever to promote is
+   write_too_large (split it).  The test server's pause stands in for such a write. */
+FIXTURE(WalRefusalStatuses) {
+  TWsTestServer ws_test_server(8080, 100);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      "pause {00000000-0000-0000-0000-0000000008a1};",
+      "pause {00000000-0000-0000-0000-0000000008a2};",
+      "pause {00000000-0000-0000-0000-000000000001};"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 4U)) {
+    EXPECT_EQ(replies[0]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[1]["status"], Base::TJson("insufficient_storage"));
+    EXPECT_EQ(replies[2]["status"], Base::TJson("write_too_large"));
+    EXPECT_EQ(replies[3]["status"], Base::TJson("ok"));
+  }
+}
+
 /* A `try` that asks for a receipt gets one, with a version that rises with each write; one that
    doesn't gets the reply it always did (#750). */
 FIXTURE(TryReceipt) {
