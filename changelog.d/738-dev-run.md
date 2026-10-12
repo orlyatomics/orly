@@ -1,0 +1,1 @@
+- **Added**: `./dev run` to build and launch a local development `orlyi` server in memory simulation mode with WebSocket port 8082 published, enabling native macOS clients and REPL to connect over loopback and closing #738 (#738)

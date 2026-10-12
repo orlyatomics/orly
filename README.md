@@ -392,6 +392,8 @@ All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./
 
 Linux. Verified on Ubuntu 24.04.
 
+**macOS development**: on macOS (Apple silicon and Intel), the Linux engine builds and runs in a container through [`./dev`](CONTRIBUTING.md#getting-started-on-macos-or-any-non-linux-machine) (`./dev build|test|lang|run`), with warm ccache and build volumes yielding ~0.4 s incremental rebuilds; native macOS clients and REPL connect over loopback WebSocket ([#738](https://github.com/orlyatomics/orly/issues/738)).
+
 **x86-64** and **aarch64**. Both are built and released against: the published
 docker image is a multi-arch manifest, each architecture built on its own native
 runner and gated by the same smokes — the MCP smoke, an in-container `orlyc`
