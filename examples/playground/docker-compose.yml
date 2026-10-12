@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  # Orly engine service running with remote compile, shared auth secret, and read budget
+  orly:
+    image: ghcr.io/orlyatomics/orly:latest
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command:
+      - --allow_remote_compile
+      - --auth_token=playground-secret-token-12345678
+      - --read_budget=134217728
+      - --mem_sim_mb=256
+      - --memory_budget_mb=512
+    ports:
+      - "127.0.0.1:8082:8082"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # Playground web frontend and session proxy
+  playground:
+    build:
+      context: ../..
+      dockerfile: examples/playground/Dockerfile
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - ORLY_WS_URL=ws://orly:8082/
+      - ORLY_AUTH_TOKEN=playground-secret-token-12345678
+      - SESSION_TIMEOUT_MS=900000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - orly
+    restart: unless-stopped

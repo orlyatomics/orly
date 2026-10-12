@@ -1,0 +1,22 @@
+{
+  "name": "orly-playground",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive browser playground for Orlyscript",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.js",
+    "test": "node --test test/playground.test.mjs"
+  },
+  "dependencies": {
+    "orly": "file:../../clients/ts",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.0.0"
+  }
+}

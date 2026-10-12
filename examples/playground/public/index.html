@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orlyscript Playground</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #161922;
+      --panel-border: #262b3d;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --font-mono: "JetBrains Mono", "Fira Code", monospace, Menlo, Monaco;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--panel-border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.5px;
+    }
+    .brand-badge {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    select, button {
+      background: #1e2433;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+    select:hover, button:hover {
+      background: #252d40;
+      border-color: #3b455f;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #0b1120;
+      border: none;
+      font-weight: 600;
+    }
+    button.primary:hover {
+      background: var(--accent-hover);
+      color: #fff;
+    }
+    button.primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .status-badge {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-badge.connected { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .status-badge.connecting { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+    .status-badge.disconnected, .status-badge.error { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+    .pov-badge {
+      font-family: var(--font-mono);
+      background: #1e2433;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 55% 45%;
+      overflow: hidden;
+    }
+
+    /* Left Pane: Editor */
+    .editor-pane {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--panel-border);
+      background: var(--bg);
+      position: relative;
+    }
+    .pane-header {
+      background: #131722;
+      border-bottom: 1px solid var(--panel-border);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .editor-wrapper {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+    }
+    .line-numbers {
+      width: 48px;
+      padding: 16px 8px 16px 0;
+      text-align: right;
+      color: #475569;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 20px;
+      user-select: none;
+      background: #0d0f15;
+      overflow: hidden;
+    }
+    .editor-content {
+      flex: 1;
+      position: relative;
+      height: 100%;
+    }
+    .editor-textarea, .editor-highlight {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 20px;
+      white-space: pre;
+      overflow: auto;
+      tab-size: 2;
+    }
+    .editor-textarea {
+      color: transparent;
+      background: transparent;
+      caret-color: var(--accent);
+      border: none;
+      outline: none;
+      resize: none;
+      z-index: 2;
+    }
+    .editor-highlight {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* Syntax Tokens */
+    .tok-keyword { color: #f43f5e; font-weight: 600; }
+    .tok-type { color: #38bdf8; font-weight: 600; }
+    .tok-string { color: #34d399; }
+    .tok-number { color: #fbbf24; }
+    .tok-comment { color: #64748b; font-style: italic; }
+    .tok-operator { color: #c084fc; }
+    .tok-param { color: #a78bfa; font-weight: 600; }
+    .tok-ident { color: #e2e8f0; }
+
+    /* Right Pane: Controls & Console */
+    .controls-pane {
+      display: flex;
+      flex-direction: column;
+      background: #11141d;
+      overflow: hidden;
+    }
+    .section {
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .section-title {
+      padding: 10px 16px;
+      background: #161924;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .quick-calls-grid {
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+    }
+    .quick-call-btn {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 8px 12px;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .quick-call-btn:hover {
+      background: #232c3d;
+      border-color: var(--accent);
+    }
+    .quick-call-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .quick-call-desc {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    /* Methods Explorer */
+    .functions-wrapper {
+      padding: 12px 16px;
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .function-card {
+      background: #181d2a;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .func-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+    .func-name { color: #f43f5e; font-weight: 600; }
+    .func-return { color: #38bdf8; font-size: 0.75rem; }
+    .func-params {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .param-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .param-row label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .param-type { color: #38bdf8; }
+    .param-row input {
+      background: #11141d;
+      border: 1px solid #2d3748;
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+    }
+    .call-btn {
+      align-self: flex-start;
+      background: #2563eb;
+      color: white;
+      border: none;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+    .call-btn:hover { background: #1d4ed8; }
+
+    /* Console */
+    .console-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0d0f15;
+    }
+    .console-output {
+      flex: 1;
+      padding: 12px 16px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .console-entry {
+      border-left: 3px solid #334155;
+      padding-left: 10px;
+    }
+    .console-entry.stmt { border-color: #c084fc; }
+    .console-entry.result { border-color: #38bdf8; }
+    .console-entry.success { border-color: #10b981; }
+    .console-entry.error { border-color: #ef4444; }
+    .console-entry.system { border-color: #64748b; }
+    .entry-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.7rem;
+      margin-bottom: 2px;
+    }
+    .tag {
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+      font-size: 0.65rem;
+    }
+    .tag.stmt { background: rgba(192, 132, 252, 0.2); color: #c084fc; }
+    .tag.result { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+    .tag.success { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    .tag.error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .tag.system { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+    .entry-time { color: #64748b; }
+    .duration { color: #38bdf8; font-weight: 600; }
+    .entry-content {
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .empty-hint {
+      color: #64748b;
+      font-size: 0.8rem;
+      font-style: italic;
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>Orlyscript</span>
+      <span class="brand-badge">Playground</span>
+    </div>
+
+    <div class="header-actions">
+      <select id="example-select" aria-label="Select preloaded example">
+        <option value="counter">Counter (+= and POVs)</option>
+        <option value="grc20">GRC-20 Knowledge Graph</option>
+        <option value="market">Prediction Market</option>
+      </select>
+
+      <button id="compile-btn" class="primary">Compile & Install</button>
+      <button id="new-pov-btn" title="Create a new safe shared POV branch">New POV</button>
+    </div>
+
+    <div class="header-actions">
+      <span id="pov-badge" class="pov-badge" title="Active POV">POV: none</span>
+      <span id="status-indicator" class="status-badge connecting">Connecting...</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Pane: Editor -->
+    <div class="editor-pane">
+      <div class="pane-header">
+        <span>Source Code (.orly) &bull; <kbd>Ctrl+Enter</kbd> to Compile</span>
+        <span id="example-desc">Preloaded example</span>
+      </div>
+
+      <div class="editor-wrapper">
+        <div id="line-numbers" class="line-numbers">1</div>
+        <div class="editor-content">
+          <textarea id="editor-textarea" class="editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          <pre id="editor-highlight" class="editor-highlight"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Pane: Method Runner & Console -->
+    <div class="controls-pane">
+      <!-- Quick Test Calls -->
+      <div class="section">
+        <div class="section-title">Quick Actions</div>
+        <div id="quick-calls-container" class="quick-calls-grid"></div>
+      </div>
+
+      <!-- Installed Methods Explorer -->
+      <div class="section">
+        <div class="section-title">
+          <span>Installed Functions: <span id="package-title" style="color: var(--accent);">None</span></span>
+        </div>
+        <div id="functions-container" class="functions-wrapper">
+          <div class="empty-hint">Click "Compile & Install" above to inspect and call package functions.</div>
+        </div>
+      </div>
+
+      <!-- Real-time Console Output -->
+      <div class="console-pane">
+        <div class="section-title">
+          <span>Activity Log</span>
+          <button id="clear-console-btn" style="padding: 2px 8px; font-size: 0.7rem;">Clear</button>
+        </div>
+        <div id="console-output" class="console-output"></div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/bundle.js"></script>
+</body>
+</html>
