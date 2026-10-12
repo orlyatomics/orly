@@ -1441,6 +1441,13 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
     if (on_push && !has_pop) {
       apply_transaction->ReportCommitLsn(&lsn);
     }
+    /* Reserves the transaction's WAL room before it applies (#891), and before the head hold
+       below, which would keep a checkpoint from making that room.  What a master sent has to be
+       applied, so off a fiber wait a while for room before refusing; a fiber must not wait. */
+    if (!Fiber::TFrame::LocalFrame) {
+      apply_transaction->SetWalSpaceWait(30s);
+    }
+    apply_transaction->Prepare();
     /* Taken before the append, so the record is at or past it, and let go only after on_push. */
     struct THeld {
       ~THeld() {
@@ -1455,7 +1462,6 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
       held.Token = head_hold->Hold();
       held.HeadHold = head_hold;
     }
-    apply_transaction->Prepare();
     apply_transaction->CommitAction();
     apply_transaction.reset();
     if (on_push && !has_pop) {

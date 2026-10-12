@@ -163,6 +163,28 @@ static void RefuseWriteToStalledBacklog(const Indy::L0::TManager::TPtr<Indy::TRe
   ThrowFullStalledBacklog(status, backlog, entries, cap, entry_cap);
 }
 
+/* #891: the WAL refuses a record it can't promise room before its checkpointed head, since one it
+   took but couldn't write would hold up the root flush that has to wait for it, and so the
+   checkpoint that would make room. To a client that is insufficient_storage, retryable, and
+   nothing was written. */
+[[noreturn]] static void ThrowWalRingFull(const Indy::Disk::TWalRingFull &ex) {
+  std::ostringstream msg;
+  msg << "insufficient storage: write refused; " << ex.what() << "; nothing was written; retry";
+  throw TInsufficientStorage(msg.str());
+}
+
+/* Prepare a write a client asked for (#891): it leaves the WAL's headroom to the server's own
+   transactions, and is refused, before anything is applied, if the ring has no room for its
+   record. Before BeginOperationCommit, so a refused write leaves no commit begun. */
+static void PrepareClientWrite(Indy::L1::TTransaction &transaction) {
+  transaction.KeepWalHeadroom();
+  try {
+    transaction.Prepare();
+  } catch (const Indy::Disk::TWalRingFull &ex) {
+    ThrowWalRingFull(ex);
+  }
+}
+
 /* #721: takes room in repo's backlog for a write of num_entries entries, waiting while the
    backlog drains, or throws TInsufficientMemory. See the comment above GetWriterBacklogCap. */
 static void ReserveBacklogRoom(TSession::TServer *server, Indy::TRepo::TBacklogReservation &room,
@@ -371,7 +393,7 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
   auto repo = pov->GetRepo(server);
   auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->Pause(repo);
-  transaction->Prepare();
+  PrepareClientWrite(*transaction);
   transaction->CommitAction();
   AddPov(pov);
 }
@@ -785,10 +807,10 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
         server->RefuseWriteOutOfMemory();
         throw;
       }
+      PrepareClientWrite(*transaction);
       if (op) {
         BeginOperationCommit(server, *op);
       }
-      transaction->Prepare();
       transaction->CommitAction();
       transaction.reset();
       if (op) {
@@ -1093,10 +1115,10 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
         server->RefuseWriteOutOfMemory();
         throw;
       }
+      PrepareClientWrite(*transaction);
       if (op) {
         BeginOperationCommit(server, *op);
       }
-      transaction->Prepare();
       transaction->CommitAction();
       transaction.reset();
       if (op) {
@@ -1197,7 +1219,7 @@ void TSession::UnpausePov(TServer *server, const TUuid &pov_id) {
   auto repo = pov->GetRepo(server);
   auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->UnPause(repo);
-  transaction->Prepare();
+  PrepareClientWrite(*transaction);
   transaction->CommitAction();
   AddPov(pov);
 }
@@ -1353,7 +1375,7 @@ void TSession::RunFuncCommit(TServer *server,
     server->RefuseWriteOutOfMemory();
     throw;
   }
-  transaction->Prepare();
+  PrepareClientWrite(*transaction);
   transaction->CommitAction();
 }
 
@@ -1520,10 +1542,15 @@ TUuid TSession::NewPov(
        lives (#755). */
     auto *repo_manager = server->GetRepoManager();
     Indy::TWalRetention *retention = repo_manager ? repo_manager->GetWalRetention() : nullptr;
-    if (retention) {
-      server->GetWal()->WaitForDurable(retention->AppendPov(pov_id, wire));
-    } else {
-      server->GetWal()->AppendAndWait(Indy::Disk::TWalRecordType::Pov, wire.data(), wire.size());
+    try {
+      if (retention) {
+        server->GetWal()->WaitForDurable(retention->AppendPov(pov_id, wire, true));
+      } else {
+        server->GetWal()->AppendAndWait(Indy::Disk::TWalRecordType::Pov, wire.data(), wire.size());
+      }
+    } catch (const Indy::Disk::TWalRingFull &ex) {
+      /* The pov never reaches the session, and expires unused. */
+      ThrowWalRingFull(ex);
     }
   }
   AddPov(std::move(pov));

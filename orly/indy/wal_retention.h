@@ -18,8 +18,10 @@
    again (flagged Copied), and the pin moves to the copy once the copy is durable.
 
    Not handled: an update that sits unpromoted in a safe child (a paused pov) still holds the head,
-   and once the ring is full writes wait (TWal never overwrites a record past the checkpointed head)
-   rather than lose it.
+   and TWal never overwrites a record past the checkpointed head, so once the ring is full up to
+   it, writes are refused (Disk::TWalRingFull, retriable) until the pov is unpaused or goes.  They
+   are refused rather than left waiting (#891): a record the WAL took but couldn't write would hold
+   up the root flush that has to wait for it, and so the checkpoint that would make room.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -58,6 +60,7 @@ namespace Orly {
 
     namespace Disk {
       class TWal;
+      class TWalReservation;
     }
 
     namespace L1 {
@@ -85,11 +88,14 @@ namespace Orly {
       explicit TWalRetention(L1::TManager *manager);
 
       /* Append a transaction's record and pin it for the updates it pushed.  Called from
-         ~TTransaction with the replication queue lock held.  Throws what TWal::Append throws. */
-      uint64_t AppendTxn(const std::string &wire, const std::vector<TPush> &pushes, const std::vector<TPop> &pops);
+         ~TTransaction with the replication queue lock held, into the room the transaction reserved
+         before it applied (#891) if `reservation` is given.  Throws what TWal::Append throws. */
+      uint64_t AppendTxn(const std::string &wire, const std::vector<TPush> &pushes, const std::vector<TPop> &pops, Disk::TWalReservation *reservation = nullptr);
 
-      /* Append a safe pov's Pov record and pin it for as long as the pov is live. */
-      uint64_t AppendPov(const Base::TUuid &pov_id, const std::string &body);
+      /* Append a safe pov's Pov record and pin it for as long as the pov is live.  Throws
+         Disk::TWalRingFull if the ring has no room for it (#891); with keep_headroom (a pov a
+         client asked for), if it would need the headroom TWal::TRoom::KeepHeadroom leaves. */
+      uint64_t AppendPov(const Base::TUuid &pov_id, const std::string &body, bool keep_headroom = false);
 
       /* Recovery.  Between BeginReplay and EndReplay, the transactions recovery replays (which
          have no WAL to append to) are pinned at the LSN of the record being replayed. */

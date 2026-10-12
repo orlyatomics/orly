@@ -770,10 +770,18 @@ the table from the same replicated records, so it needs nothing beyond this.
 
 - **Disk (#590).** The log range is reserved at creation; disk admission's free space excludes it.
   The log never allocates at run time.
-- **Log space (new).** Before commit, a safe write reserves its record's encoded size in the ring,
-  next to the existing memory reservation; if the ring can't take it, the write is refused with
-  `insufficient_storage` (retryable, nothing written), and admitted again once flushes retire
-  records. Because an unretired record is a write that isn't in a data file yet, and every such
+- **Log space (#891).** Before it applies anything (in `TTransaction::Prepare`), a safe write
+  reserves its record's encoded size in the ring, next to the existing memory reservation; if the
+  ring can't take it, the write is refused with `insufficient_storage` (retryable, nothing
+  written), and admitted again once flushes retire records. The ring counts what it owes: every
+  reservation, and every record it has taken but not yet written, as the groups the leader will
+  build from them, each with a page for its seal. A record is only taken if that total still fits
+  before the checkpointed head, so the leader never waits for room for a record it has accepted.
+  Without this the ring could fill with records the root flush had to wait for (write-ahead),
+  while the checkpoint that would free room waited for the flush. Client writes and new POVs
+  leave the last eighth of the ring free; the server's own writes (promotion, pause and unpause,
+  copy-forward) may use it, and are refused only when it is gone too. The Tetris player retries a
+  refused promotion round; a slave applying replicated records waits up to 30 s for room. Because an unretired record is a write that isn't in a data file yet, and every such
   write holds Update pool memory, sizing the ring to the pools' bytes means memory admission
   refuses first in practice; the log check is the backstop.
 - **Memory (#607).** Unchanged. A write waiting for its group holds no pool reservation beyond its

@@ -152,11 +152,19 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
       CheckpointedHeadLap(HeadLap),
       CheckpointedHeadRingOffset(HeadRingOffset),
       Stopping(false),
-      Failed(false) {
+      Failed(false),
+      MaxGroupPayload(std::min<size_t>(64UL * 1024UL, config.CapacityBytes > sizeof(TGroupHeader) ? config.CapacityBytes - sizeof(TGroupHeader) : 0UL)),
+      MaxBatchGroupBytes(AlignToWal(sizeof(TGroupHeader) + MaxGroupPayload)),
+      HeadroomBytes((config.CapacityBytes / 8UL) / WalAlignment * WalAlignment),
+      ReservedGroupBytesSum(0UL),
+      PendingGroupBytesSum(0UL),
+      Unsealed(false) {
   assert(Device != nullptr);
   assert(Config.CapacityBytes >= WalAlignment);
   assert(Config.CapacityBytes % WalAlignment == 0);
   assert(Config.BaseOffset % WalAlignment == 0);
+  /* A group of the most payload the leader batches still fits the ring. */
+  assert(MaxBatchGroupBytes <= Config.CapacityBytes);
 
   /* The groups recovery found from the head on are still needed until a checkpoint retires them.
      Without them a checkpoint after a restart would name the write position as the head and the
@@ -198,6 +206,7 @@ void TWal::Stop() {
     }
     Stopping = true;
   }
+  SpaceCv.notify_all();
   LeaderCv.notify_all();
   if (LeaderThread.joinable()) {
     LeaderThread.join();
@@ -208,8 +217,154 @@ void TWal::Stop() {
   }
 }
 
-uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_t flags) {
-  std::unique_lock<std::mutex> lock(Mutex);
+TWalReservation::TWalReservation(TWalReservation &&that) noexcept
+    : Wal(that.Wal), Size(that.Size), GroupBytes(that.GroupBytes) {
+  that.Wal = nullptr;
+}
+
+TWalReservation &TWalReservation::operator=(TWalReservation &&that) noexcept {
+  if (this != &that) {
+    Release();
+    Wal = that.Wal;
+    Size = that.Size;
+    GroupBytes = that.GroupBytes;
+    that.Wal = nullptr;
+  }
+  return *this;
+}
+
+void TWalReservation::Release() {
+  if (Wal) {
+    Wal->ReleaseReservation(*this);
+    Wal = nullptr;
+  }
+}
+
+size_t TWal::GetRecordGroupBytes(size_t size) {
+  return AlignToWal(sizeof(TGroupHeader) + sizeof(TRecordHeader) + size);
+}
+
+/* Why the promise holds (#891).  Owed (OwedBytesLocked) is what the records taken but not written
+   need, each group with a page for a seal-only group that may follow it: the groups the leader will
+   build from PendingRecords, which it builds exactly as QueueRecordLocked predicts; for each
+   reservation, a group of its own; and a page more if a group with records has been written since
+   the last seal-only one.  A reserved record appended costs no more than its charge: it either
+   joins the last predicted group, adding at most its own group bytes, or starts a group of its own.
+   No group the leader builds is bigger than MaxGroupLocked(0), and every group it gives a position
+   to takes at least its own size off Owed: a group with records in it is the first predicted one,
+   and takes its size and its seal page, of which the page moves to Unsealed; a seal-only group is
+   written only once every group with records before it is synced, so it uses up that page.  Usable (UsableBytesLocked) loses no more than each group's size
+   as groups are placed, and only grows as checkpoints move the head on.  So once Owed fits within
+   Usable it always does, and with the head standing still every record taken gets a position and
+   the seal that makes it durable.  The admission check is that Owed, with the new record's charge,
+   fits within Usable. */
+
+size_t TWal::OwedBytesLocked() const {
+  return ReservedGroupBytesSum + ReservedGroupBytes.size() * WalAlignment +
+         PendingGroupBytesSum + PendingGroupPayloads.size() * WalAlignment + (Unsealed ? WalAlignment : 0UL);
+}
+
+size_t TWal::MaxGroupLocked(size_t extra) const {
+  const size_t sum = ReservedGroupBytesSum + PendingGroupBytesSum + extra;
+  size_t biggest = extra;
+  if (!ReservedGroupBytes.empty()) {
+    biggest = std::max(biggest, *ReservedGroupBytes.rbegin());
+  }
+  if (!PendingGroupBytes.empty()) {
+    biggest = std::max(biggest, *PendingGroupBytes.rbegin());
+  }
+  return std::max(WalAlignment, std::min(sum, std::max(MaxBatchGroupBytes, biggest)));
+}
+
+size_t TWal::UsableBytesLocked(size_t max_group) const {
+  if (CurrentLap == CheckpointedHeadLap + 1U) {
+    /* Free from the write position up to the head, and no further: wrapping again would pass it. */
+    return CheckpointedHeadRingOffset > CurrentRingOffset ? CheckpointedHeadRingOffset - CurrentRingOffset : 0UL;
+  }
+  if (CurrentLap == CheckpointedHeadLap) {
+    /* Free from the write position to the end of the ring, then from its start up to the head.  A
+       group that doesn't fit before the end wastes what is left there, which is less than the
+       group. */
+    const size_t tail = Config.CapacityBytes > CurrentRingOffset ? Config.CapacityBytes - CurrentRingOffset : 0UL;
+    const size_t both = tail + CheckpointedHeadRingOffset;
+    return std::max(tail, both > max_group ? both - max_group : 0UL);
+  }
+  return 0UL;
+}
+
+bool TWal::AdmitsLocked(size_t group_bytes, TRoom room) const {
+  const size_t needed = OwedBytesLocked() + group_bytes + WalAlignment;
+  const size_t usable = UsableBytesLocked(MaxGroupLocked(group_bytes));
+  if (room == TRoom::KeepHeadroom) {
+    return usable >= HeadroomBytes && needed <= usable - HeadroomBytes;
+  }
+  return needed <= usable;
+}
+
+void TWal::ThrowRingFullLocked(size_t size, TRoom room) const {
+  static std::atomic<size_t> refusals(0UL);
+  const size_t n = ++refusals;
+  const size_t owed = OwedBytesLocked();
+  const size_t usable = UsableBytesLocked(MaxGroupLocked(GetRecordGroupBytes(size)));
+  /* LOG_ERR, not WARNING: the default mask drops warnings.  The 1st, 2nd, 4th, ... */
+  if ((n & (n - 1UL)) == 0UL) {
+    syslog(LOG_ERR, "WAL: ring full; refused a record of %ld bytes (%ld KiB owed to records not yet written, %ld KiB usable before the checkpointed head at lap %u offset %ld, %ld KiB kept as headroom%s); %ld refused so far",
+           size, owed >> 10, usable >> 10, CheckpointedHeadLap, CheckpointedHeadRingOffset, HeadroomBytes >> 10,
+           room == TRoom::KeepHeadroom ? "" : ", not for this record", n);
+  }
+  throw TWalRingFull("the WAL ring is full up to its checkpointed head; refused a record of " + std::to_string(size) +
+                     " bytes, and nothing was appended; retry once a root flush and checkpoint have made room");
+}
+
+void TWal::ChargeLocked(size_t group_bytes) {
+  ReservedGroupBytes.insert(group_bytes);
+  ReservedGroupBytesSum += group_bytes;
+}
+
+void TWal::UnchargeLocked(size_t group_bytes) {
+  auto iter = ReservedGroupBytes.find(group_bytes);
+  assert(iter != ReservedGroupBytes.end());
+  if (iter != ReservedGroupBytes.end()) {
+    ReservedGroupBytes.erase(iter);
+    ReservedGroupBytesSum -= group_bytes;
+  }
+}
+
+void TWal::QueueRecordLocked(size_t encoded) {
+  /* The leader's rule: a group takes records while they fit, and a first record however big. */
+  if (!PendingGroupPayloads.empty() && PendingGroupPayloads.back() + encoded <= MaxGroupPayload) {
+    size_t &payload = PendingGroupPayloads.back();
+    const size_t was = AlignToWal(sizeof(TGroupHeader) + payload);
+    payload += encoded;
+    const size_t now = AlignToWal(sizeof(TGroupHeader) + payload);
+    if (now != was) {
+      PendingGroupBytes.erase(PendingGroupBytes.find(was));
+      PendingGroupBytes.insert(now);
+      PendingGroupBytesSum += now - was;
+    }
+    return;
+  }
+  PendingGroupPayloads.push_back(encoded);
+  const size_t bytes = AlignToWal(sizeof(TGroupHeader) + encoded);
+  PendingGroupBytes.insert(bytes);
+  PendingGroupBytesSum += bytes;
+}
+
+void TWal::DequeueGroupLocked(size_t payload) {
+  assert(!PendingGroupPayloads.empty() && PendingGroupPayloads.front() == payload);
+  if (PendingGroupPayloads.empty()) {
+    return;
+  }
+  if (PendingGroupPayloads.front() != payload) {
+    syslog(LOG_ERR, "WAL: the leader built a group of %ld payload bytes where the accounting expected %ld", payload, PendingGroupPayloads.front());
+  }
+  const size_t bytes = AlignToWal(sizeof(TGroupHeader) + PendingGroupPayloads.front());
+  PendingGroupPayloads.pop_front();
+  PendingGroupBytes.erase(PendingGroupBytes.find(bytes));
+  PendingGroupBytesSum -= bytes;
+}
+
+void TWal::CheckAppendableLocked(size_t size) const {
   if (Failed) {
     throw TWalIoError("WAL is in failed state");
   }
@@ -217,10 +372,77 @@ uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_
     throw TWalIoError("WAL is stopping");
   }
   /* A group bigger than the ring could never be written: the leader would wait for room forever. */
-  if (AlignToWal(sizeof(TGroupHeader) + sizeof(TRecordHeader) + size) > Config.CapacityBytes) {
+  if (GetRecordGroupBytes(size) > Config.CapacityBytes) {
     throw TWalIoError("WAL record of " + std::to_string(size) + " bytes is bigger than the ring");
   }
+}
 
+TWalReservation TWal::Reserve(size_t size, TRoom room, std::chrono::milliseconds wait) {
+  std::unique_lock<std::mutex> lock(Mutex);
+  CheckAppendableLocked(size);
+  const size_t group_bytes = GetRecordGroupBytes(size);
+  if (!AdmitsLocked(group_bytes, room)) {
+    if (wait.count() > 0) {
+      SpaceCv.wait_for(lock, wait, [this, group_bytes, room] { return Failed || Stopping || AdmitsLocked(group_bytes, room); });
+      CheckAppendableLocked(size);
+    }
+    if (!AdmitsLocked(group_bytes, room)) {
+      ThrowRingFullLocked(size, room);
+    }
+  }
+  ChargeLocked(group_bytes);
+  TWalReservation reservation;
+  reservation.Wal = this;
+  reservation.Size = size;
+  reservation.GroupBytes = group_bytes;
+  return reservation;
+}
+
+void TWal::ReleaseReservation(TWalReservation &reservation) {
+  /* lock */ {
+    std::lock_guard<std::mutex> lock(Mutex);
+    UnchargeLocked(reservation.GroupBytes);
+  }
+  SpaceCv.notify_all();
+}
+
+size_t TWal::GetOwedBytes() const {
+  std::lock_guard<std::mutex> lock(Mutex);
+  return OwedBytesLocked();
+}
+
+uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_t flags) {
+  std::unique_lock<std::mutex> lock(Mutex);
+  CheckAppendableLocked(size);
+  const size_t group_bytes = GetRecordGroupBytes(size);
+  if (!AdmitsLocked(group_bytes, TRoom::All)) {
+    ThrowRingFullLocked(size, TRoom::All);
+  }
+  return AppendLocked(type, data, size, flags);
+}
+
+uint64_t TWal::Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags) {
+  assert(reservation.Wal == this);
+  if (reservation.Wal != this) {
+    throw std::logic_error("TWal::Append: the reservation is not this WAL's");
+  }
+  std::unique_lock<std::mutex> lock(Mutex);
+  CheckAppendableLocked(size);
+  /* The record takes over the reservation's room: it costs no more than the charge, so long as it
+     is no bigger than what was reserved. */
+  UnchargeLocked(reservation.GroupBytes);
+  if (GetRecordGroupBytes(size) > reservation.GroupBytes && !AdmitsLocked(GetRecordGroupBytes(size), TRoom::All)) {
+    /* It has to go in all the same, since the caller can no longer back out, but the ring may then
+       not have room for it with the head where it is. */
+    syslog(LOG_ERR, "WAL: a record of %ld bytes was reserved room for %ld bytes; appending it beyond what the ring can promise",
+           size, reservation.Size);
+  }
+  reservation.Wal = nullptr;
+  SpaceCv.notify_all();
+  return AppendLocked(type, data, size, flags);
+}
+
+uint64_t TWal::AppendLocked(TWalRecordType type, const void *data, size_t size, uint8_t flags) {
   const uint64_t lsn = ++NextLsn;
   TPendingRecord rec;
   rec.Lsn = lsn;
@@ -241,6 +463,7 @@ uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_
     memcpy(rec.Encoded.data() + sizeof(TRecordHeader), data, size);
   }
 
+  QueueRecordLocked(rec.Encoded.size());
   PendingRecords.push_back(std::move(rec));
   LeaderCv.notify_one();
   return lsn;
@@ -345,8 +568,7 @@ void TWal::LeaderMain() {
     std::vector<TPendingRecord> batch;
     size_t payload_bytes = 0UL;
     if (have_records) {
-      const size_t max_group_payload = 64UL * 1024UL; // 64 KiB batch limit
-      while (!PendingRecords.empty() && (payload_bytes == 0 || payload_bytes + PendingRecords.front().Encoded.size() <= max_group_payload)) {
+      while (!PendingRecords.empty() && (payload_bytes == 0 || payload_bytes + PendingRecords.front().Encoded.size() <= MaxGroupPayload)) {
         payload_bytes += PendingRecords.front().Encoded.size();
         batch.push_back(std::move(PendingRecords.front()));
         PendingRecords.pop_front();
@@ -374,10 +596,13 @@ void TWal::LeaderMain() {
       return lap == CheckpointedHeadLap + 1U && offset + group_size <= CheckpointedHeadRingOffset;
     };
     if (!fits()) {
+      /* The ring-space accounting promises every record it takes a position with the head where it
+         is (#891), so this wait means the accounting is wrong: a flush may be waiting on one of
+         these records, and then nothing moves the head. */
       static std::atomic<size_t> ring_full_waits(0UL);
       const size_t n = ++ring_full_waits;
       if ((n & (n - 1UL)) == 0UL) {
-        syslog(LOG_WARNING, "WAL: ring full up to the checkpointed head (lap %u offset %ld); waiting for a checkpoint (%ld times so far)",
+        syslog(LOG_ERR, "WAL: ring full up to the checkpointed head (lap %u offset %ld) for a group the accounting had room for; waiting for a checkpoint (%ld times so far)",
                CheckpointedHeadLap, CheckpointedHeadRingOffset, n);
       }
       LeaderCv.wait(lock, [this, &fits] { return Stopping || Failed || fits(); });
@@ -402,6 +627,12 @@ void TWal::LeaderMain() {
     }
     const size_t group_offset = CurrentRingOffset;
     CurrentRingOffset += group_size;
+    /* The records have their room now (#891). */
+    if (!is_seal_only) {
+      DequeueGroupLocked(payload_bytes);
+    }
+    Unsealed = !is_seal_only;
+    SpaceCv.notify_all();
 
     TGroupHeader header;
     memcpy(header.Magic, "ORLYWAL1", 8);
@@ -628,6 +859,7 @@ void TWal::Checkpoint(uint64_t head_lsn, uint64_t global_flushed_seq, const void
   CheckpointedHeadLap = cur_head_lap;
   CheckpointedHeadRingOffset = cur_head_offset;
   LeaderCv.notify_all();
+  SpaceCv.notify_all();
 }
 
 size_t TWal::GetRingBytesBehind(uint64_t lsn) const {

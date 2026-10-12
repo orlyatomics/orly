@@ -23,6 +23,7 @@
 
 #include <base/debug_log.h>
 #include <orly/indy/disk/util/volume_manager.h>
+#include <orly/indy/disk/wal.h>
 
 using namespace std;
 using namespace Base;
@@ -288,6 +289,14 @@ void TTetrisManager::TPlayer::Main() {
           const size_t misses = ++pool_misses;
           if ((misses & (misses - 1UL)) == 0UL) {
             syslog(LOG_ERR, "tetris player %p: out of pool space; retrying the round (%ld times so far)", static_cast<void *>(this), misses);
+          }
+        } catch (const Indy::Disk::TWalRingFull &) {
+          /* No WAL room for the promotion's record (#891). Nothing was committed, as above; play
+             again once a checkpoint has made room. Log the 1st, 2nd, 4th, ... */
+          static std::atomic<size_t> ring_full(0UL);
+          const size_t refusals = ++ring_full;
+          if ((refusals & (refusals - 1UL)) == 0UL) {
+            syslog(LOG_ERR, "tetris player %p: WAL ring full; retrying the round (%ld times so far)", static_cast<void *>(this), refusals);
           }
         }
         /* Let other fibers on this runner run between rounds (#584). Without

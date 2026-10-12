@@ -184,9 +184,11 @@ FIXTURE(RingWrapAcrossLaps) {
   }
 }
 
-/* The leader never overwrites a group recovery still needs (#755): with the ring full up to the
-   checkpointed head, an append waits until a checkpoint moves the head on. */
-FIXTURE(RingFullWaitsForCheckpoint) {
+/* The leader never overwrites a group recovery still needs (#755), and the WAL takes no record it
+   can't promise room before the checkpointed head (#891): with nothing retired, appends are refused
+   once the ring is spoken for, every record taken still becomes durable, and a checkpoint that
+   moves the head on lets appends in again. */
+FIXTURE(RingFullRefusesUntilCheckpoint) {
   TFaultPlan plan;
   TFaultDevice device(&plan, 512UL);
 
@@ -199,38 +201,149 @@ FIXTURE(RingFullWaitsForCheckpoint) {
 
   const std::string payload(2000, 'X');
   TWal wal(&device, config);
-  /* Nothing is ever retired, so within a lap the leader runs into the head (lap 1, offset 0). */
-  uint64_t blocked = 0UL;
-  for (size_t i = 0; i < 64 && !blocked; ++i) {
-    const uint64_t lsn = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
-    if (!wal.WaitForDurable(lsn, std::chrono::milliseconds(300))) {
-      blocked = lsn;
+  uint64_t last = 0UL;
+  bool refused = false;
+  for (size_t i = 0; i < 64 && !refused; ++i) {
+    try {
+      last = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
+    } catch (const TWalRingFull &) {
+      refused = true;
     }
   }
-  EXPECT_GT(blocked, 1UL);
+  EXPECT_TRUE(refused);
+  EXPECT_GT(last, 1UL);
+  EXPECT_TRUE(wal.WaitForDurable(last, std::chrono::milliseconds(5000)));
   EXPECT_EQ(wal.GetLap(), 1U);
+  EXPECT_EQ(wal.GetOwedBytes(), 0UL);
 
-  /* Nothing recovery needs was overwritten: every durable record is still there from LSN 1. */
+  /* Nothing recovery needs was overwritten: every record is still there from LSN 1. */
   const auto scan = TWal::Scan(&device, config);
   EXPECT_EQ(scan.Status, TScanStatus::Clean);
-  EXPECT_GE(scan.Records.size(), blocked - 1UL);
+  EXPECT_EQ(scan.Records.size(), last);
   for (size_t i = 0; i < scan.Records.size(); ++i) {
     EXPECT_EQ(scan.Records[i].Lsn, i + 1UL);
   }
 
-  /* Retiring everything before it lets the waiting record through, into lap 2. */
-  wal.Checkpoint(blocked, 0UL);
-  EXPECT_TRUE(wal.WaitForDurable(blocked, std::chrono::milliseconds(5000)));
+  /* Still nothing retired: a record the size of the free ring is refused, and no reservation either. */
+  const std::string big(config.CapacityBytes - 2UL * WalAlignment, 'Y');
+  const auto append_big = [&wal, &big] { wal.Append(TWalRecordType::Txn, big.data(), big.size()); };
+  const auto reserve_big = [&wal, &big] { wal.Reserve(big.size(), TWal::TRoom::All); };
+  EXPECT_THROW_FUNC(TWalRingFull, append_big);
+  EXPECT_THROW_FUNC(TWalRingFull, reserve_big);
+  EXPECT_FALSE(wal.IsFailed());
+
+  /* Retiring everything lets writes in again. */
+  wal.Checkpoint(last + 1UL, 0UL);
+  const uint64_t next = wal.AppendAndWait(TWalRecordType::Txn, payload.data(), payload.size());
+  EXPECT_EQ(next, last + 1UL);
   const auto cp = TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, TestStoreId);
   EXPECT_TRUE(cp.has_value());
-  EXPECT_EQ(cp->HeadLsn, blocked);
+  EXPECT_EQ(cp->HeadLsn, last + 1UL);
   const auto after = TWal::Scan(&device, config, cp->HeadGroupNum, cp->HeadLsn, cp->HeadLap, cp->HeadRingOffset, cp->HeadChain);
   EXPECT_EQ(after.Status, TScanStatus::Clean);
-  EXPECT_FALSE(after.Records.empty());
+  EXPECT_EQ(after.Records.size(), 1UL);
   if (!after.Records.empty()) {
-    EXPECT_EQ(after.Records.front().Lsn, blocked);
+    EXPECT_EQ(after.Records.front().Lsn, next);
   }
-  EXPECT_EQ(wal.GetLap(), 2U);
+}
+
+/* Room reserved ahead of an append (#891): a reservation counts against the ring until it is used
+   or released, a write that keeps headroom stops short of the last eighth of the ring, and a record
+   appended into its reservation is never refused. */
+FIXTURE(ReservationsHoldRingRoom) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, 512UL);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 64UL * 1024UL; // 16 pages; 2 of them headroom
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  TWal wal(&device, config);
+  const size_t page_body = WalAlignment - sizeof(TGroupHeader) - sizeof(TRecordHeader);
+  EXPECT_EQ(TWal::GetRecordGroupBytes(page_body), WalAlignment);
+  EXPECT_EQ(TWal::GetRecordGroupBytes(page_body + 1UL), 2UL * WalAlignment);
+
+  /* Each one-page record is charged two pages (its group and a seal), so with 14 pages outside the
+     headroom, 7 reservations keeping headroom fit and an 8th doesn't; with the headroom, one more. */
+  std::vector<TWalReservation> held;
+  for (size_t i = 0; i < 7; ++i) {
+    held.push_back(wal.Reserve(page_body, TWal::TRoom::KeepHeadroom));
+  }
+  EXPECT_EQ(wal.GetOwedBytes(), 14UL * WalAlignment);
+  const auto reserve_keeping_headroom = [&wal, page_body] { wal.Reserve(page_body, TWal::TRoom::KeepHeadroom); };
+  EXPECT_THROW_FUNC(TWalRingFull, reserve_keeping_headroom);
+  held.push_back(wal.Reserve(page_body, TWal::TRoom::All));
+  const auto append_one = [&wal] { wal.Append(TWalRecordType::Txn, "x", 1UL); };
+  EXPECT_THROW_FUNC(TWalRingFull, append_one);
+
+  /* Giving one back makes room for one. */
+  held.back().Release();
+  EXPECT_FALSE(static_cast<bool>(held.back()));
+  held.pop_back();
+  EXPECT_EQ(wal.GetOwedBytes(), 14UL * WalAlignment);
+  held.push_back(wal.Reserve(page_body, TWal::TRoom::All));
+
+  /* Every reserved record goes in, and becomes durable with the head where it was. */
+  const std::string body(page_body, 'Z');
+  uint64_t last = 0UL;
+  for (auto &reservation : held) {
+    last = wal.Append(reservation, TWalRecordType::Txn, body.data(), body.size());
+    EXPECT_FALSE(static_cast<bool>(reservation));
+  }
+  EXPECT_TRUE(wal.WaitForDurable(last, std::chrono::milliseconds(5000)));
+  EXPECT_EQ(wal.GetOwedBytes(), 0UL);
+  EXPECT_FALSE(wal.IsFailed());
+
+  /* A reservation dropped unused gives its room back. */
+  wal.Checkpoint(last + 1UL, 0UL);
+  /* reservation */ {
+    TWalReservation dropped = wal.Reserve(page_body, TWal::TRoom::All);
+    EXPECT_EQ(wal.GetOwedBytes(), 2UL * WalAlignment);
+  }
+  EXPECT_EQ(wal.GetOwedBytes(), 0UL);
+}
+
+/* The cycle in #891.  A root's unflushed memory layer pins every record that pushed into it, so the
+   head can't move until the layer reaches a data file, and the flush that writes it first waits for
+   those records to be durable (write-ahead, #755).  So every record the WAL takes must be able to
+   become durable without the head moving: one that can't strands the flush, and the flush strands
+   the checkpoint that would have made room for it. */
+FIXTURE(RingFullNeverStrandsAnAcceptedRecord) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, 512UL);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 32UL * 1024UL; // 8 groups of 4 KiB
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  const std::string payload(2000, 'X');
+  TWal wal(&device, config);
+  for (int round = 0; round < 8; ++round) {
+    /* Writes go into the layer, and nothing is retired, until the ring refuses one. */
+    uint64_t last = 0UL;
+    size_t refused = 0UL;
+    for (size_t i = 0; i < 64 && !refused; ++i) {
+      try {
+        last = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
+      } catch (const std::runtime_error &) {
+        ++refused;
+      }
+    }
+    EXPECT_EQ(refused, 1UL);
+    EXPECT_FALSE(wal.IsFailed());
+    /* The flush's write-ahead wait: every record the layer holds becomes durable with the head where
+       it is.  Before #891 this never returned. */
+    wal.WaitForDurable(last);
+    /* The layer is in a data file now, so nothing before the next record is needed. */
+    wal.Checkpoint(last + 1UL, 0UL);
+  }
+  EXPECT_GT(wal.GetLap(), 1U);
 }
 
 /* After a restart the groups recovery scanned are still needed: a checkpoint must keep naming the

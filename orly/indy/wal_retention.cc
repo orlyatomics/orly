@@ -68,20 +68,25 @@ void TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vect
   }
 }
 
-uint64_t TWalRetention::AppendTxn(const string &wire, const vector<TPush> &pushes, const vector<TPop> &pops) {
+uint64_t TWalRetention::AppendTxn(const string &wire, const vector<TPush> &pushes, const vector<TPop> &pops, Disk::TWalReservation *reservation) {
   Disk::TWal *wal = Manager->GetWal();
   assert(wal);
   lock_guard<mutex> lock(Mutex);
-  const uint64_t lsn = wal->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
+  const uint64_t lsn = (reservation && *reservation)
+      ? wal->Append(*reservation, Disk::TWalRecordType::Txn, wire.data(), wire.size())
+      : wal->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
   PinTxn(lsn, pushes, pops);
   return lsn;
 }
 
-uint64_t TWalRetention::AppendPov(const Base::TUuid &pov_id, const string &body) {
+uint64_t TWalRetention::AppendPov(const Base::TUuid &pov_id, const string &body, bool keep_headroom) {
   Disk::TWal *wal = Manager->GetWal();
   assert(wal);
+  /* Reserve first, so a pov a client asked for can't take the headroom; then the append into the
+     reservation can't be refused. */
+  Disk::TWalReservation reservation = wal->Reserve(body.size(), keep_headroom ? Disk::TWal::TRoom::KeepHeadroom : Disk::TWal::TRoom::All);
   lock_guard<mutex> lock(Mutex);
-  const uint64_t lsn = wal->Append(Disk::TWalRecordType::Pov, body.data(), body.size());
+  const uint64_t lsn = wal->Append(reservation, Disk::TWalRecordType::Pov, body.data(), body.size());
   Povs[pov_id] = TPovPin{lsn, body};
   return lsn;
 }
@@ -232,7 +237,14 @@ void TWalRetention::CopyPovsForward(Disk::TWal *wal) {
     lock_guard<mutex> lock(Mutex);
     for (const auto &pov : Povs) {
       if (wal->GetRingBytesBehind(pov.second.Lsn) > limit) {
-        const uint64_t lsn = wal->Append(Disk::TWalRecordType::Pov, pov.second.Body.data(), pov.second.Body.size(), Disk::WalRecordFlags::Copied);
+        uint64_t lsn;
+        try {
+          lsn = wal->Append(Disk::TWalRecordType::Pov, pov.second.Body.data(), pov.second.Body.size(), Disk::WalRecordFlags::Copied);
+        } catch (const Disk::TWalRingFull &) {
+          /* No room for more copies this pass (#891); the pins of those not copied stay put, and
+             the next pass tries again. */
+          break;
+        }
         copies.emplace_back(pov.first, make_pair(pov.second.Lsn, lsn));
         newest = lsn;
       }

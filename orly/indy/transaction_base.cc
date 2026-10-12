@@ -432,6 +432,26 @@ void TTransaction::Prepare() {
       }
     }
   });
+  /* Reserve the room for this transaction's WAL record before anything is applied (#891): a
+     record the WAL took but couldn't write before its checkpointed head would hold up the flush
+     of every root it pushed into, and with it the checkpoint that would make the room.  Sized by
+     serialising it as ~TTransaction will; only the sequence numbers are missing, and they take
+     the same room whatever they are. */
+  WalReservation.Release();
+  Disk::TWal *wal = TouchesSafeRepo ? Manager->GetWal() : nullptr;
+  if (wal) {
+    TReplicationStreamer streamer;
+    streamer.PushTransaction(Replica, true);
+    auto recorder = std::make_shared<Io::TRecorder>();
+    /* serialize */ {
+      Io::TBinaryOutputOnlyStream strm(recorder);
+      streamer.Write(strm);
+      strm.Flush();
+    }
+    std::string wire;
+    recorder->CopyOut(wire);
+    WalReservation = wal->Reserve(wire.size(), WalRoom, WalSpaceWait);
+  }
   TransactionCompletion->SetCb(func);
   TransactionCompletion->SetWaitFor(num_push);
   Prepared = true;
@@ -545,7 +565,10 @@ TTransaction::~TTransaction() NO_THROW {
             }
             std::string wire;
             recorder->CopyOut(wire);
-            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops);
+            if (WalReservation && wire.size() > WalReservation.GetSize()) {
+              syslog(LOG_ERR, "~TTransaction: WAL record of %ld bytes is bigger than the %ld Prepare reserved for it (#891)", wire.size(), WalReservation.GetSize());
+            }
+            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops, &WalReservation);
             if (CommitLsnOut) {
               *CommitLsnOut = lsn;
             }
@@ -567,6 +590,8 @@ TTransaction::~TTransaction() NO_THROW {
       delete TransactionCompletion;
       Manager->DeleteTransactionReplication(TransactionReplication);
     }
+    /* Not committed (or nothing to append): give the room back. */
+    WalReservation.Release();
   }
 }
 
