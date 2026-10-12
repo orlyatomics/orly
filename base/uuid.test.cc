@@ -18,6 +18,7 @@
 
 #include <base/uuid.h>
 
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -122,3 +123,31 @@ FIXTURE(TimeAndMACSafe) {
     // Acceptable: this host can't make the guarantee.
   }
 }
+
+FIXTURE(ComparisonAndPairOrdering) {
+  const TUuid u1("1b4e28ba-2fa1-11d2-883f-b9a761bde3fb");
+  const TUuid u2("2b4e28ba-2fa1-11d2-883f-b9a761bde3fb");
+  const TUuid r1("3b4e28ba-2fa1-11d2-883f-b9a761bde3fb");
+  const TUuid r2("4b4e28ba-2fa1-11d2-883f-b9a761bde3fb");
+
+  EXPECT_TRUE((u1 <=> u2) < 0);
+  EXPECT_TRUE((u2 <=> u1) > 0);
+  EXPECT_TRUE((u1 <=> u1) == 0);
+
+  auto p1 = make_pair(u1, r1);
+  auto p2 = make_pair(u2, r1);
+  auto p3 = make_pair(u1, r2);
+
+  EXPECT_TRUE(p1 < p2);
+  EXPECT_FALSE(p2 < p1);
+  EXPECT_TRUE(p1 < p3);
+  EXPECT_FALSE(p3 < p1);
+
+  set<pair<TUuid, TUuid>> s;
+  s.insert(p1);
+  EXPECT_EQ(s.size(), 1UL);
+  EXPECT_TRUE(s.find(p1) != s.end());
+  EXPECT_TRUE(s.find(p2) == s.end());
+  EXPECT_TRUE(s.find(p3) == s.end());
+}
+
