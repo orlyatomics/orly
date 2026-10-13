@@ -1071,53 +1071,46 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
   DiskMergeCoreVec.clear();
   DiskControllerCoreVec.clear();
 
+  /* Memory merges get cores of their own, never the disk mergers' (#904). A
+     root flush is what frees the Update pools; on cores shared with the 8 disk
+     merge threads it waited behind a long disk merge, memory layers piled up and
+     writes were refused. Where the machine is big enough, the cores come out of
+     the slow set. */
   int num_proc = sysconf(_SC_NPROCESSORS_ONLN);
   /* Fast Core Vector */
   if (num_proc < 2) {
     syslog(LOG_ERR, "Indy is not supported on single processor machines");
   } else if (num_proc >= 64) {
-    for (size_t i = 0; i < 12; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 32; i < 44; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 12; i < 16; ++i) {
-      MemMergeCoreVec.emplace_back(i);
-      DiskMergeCoreVec.emplace_back(i);
-    }
-    for (size_t i = 44; i < 48; ++i) {
-      MemMergeCoreVec.emplace_back(i);
-      DiskMergeCoreVec.emplace_back(i);
-    }
+    for (size_t i = 0; i < 10; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 32; i < 42; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 10; i < 12; ++i) {MemMergeCoreVec.emplace_back(i);}
+    for (size_t i = 42; i < 44; ++i) {MemMergeCoreVec.emplace_back(i);}
+    for (size_t i = 12; i < 16; ++i) {DiskMergeCoreVec.emplace_back(i);}
+    for (size_t i = 44; i < 48; ++i) {DiskMergeCoreVec.emplace_back(i);}
 
     DiskControllerCoreVec.emplace_back(16UL);
     DiskControllerCoreVec.emplace_back(48UL);
     for (size_t i = 17; i < 32; ++i) {FastCoreVec.emplace_back(i);}
     for (size_t i = 49; i < 64; ++i) {FastCoreVec.emplace_back(i);}
   } else if (num_proc >= 32) {
-    for (size_t i = 0; i < 6; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 16; i < 24; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 6; i < 8; ++i) {
-      MemMergeCoreVec.emplace_back(i);
-      DiskMergeCoreVec.emplace_back(i);
-    }
-    for (size_t i = 22; i < 24; ++i) {
-      MemMergeCoreVec.emplace_back(i);
-      DiskMergeCoreVec.emplace_back(i);
-    }
+    for (size_t i = 0; i < 5; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 16; i < 21; ++i) {SlowCoreVec.emplace_back(i);}
+    MemMergeCoreVec.emplace_back(5UL);
+    MemMergeCoreVec.emplace_back(21UL);
+    for (size_t i = 6; i < 8; ++i) {DiskMergeCoreVec.emplace_back(i);}
+    for (size_t i = 22; i < 24; ++i) {DiskMergeCoreVec.emplace_back(i);}
 
     DiskControllerCoreVec.emplace_back(8UL);
     DiskControllerCoreVec.emplace_back(24UL);
     for (size_t i = 9; i < 16; ++i) {FastCoreVec.emplace_back(i);}
     for (size_t i = 25; i < 32; ++i) {FastCoreVec.emplace_back(i);}
   } else if (num_proc >= 16) {
-    for (size_t i = 0; i < 3; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 8; i < 11; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 3; i < 4; ++i) {
-      MemMergeCoreVec.emplace_back(i);
-      DiskMergeCoreVec.emplace_back(i);
-    }
-    for (size_t i = 11; i < 12; ++i) {
-      MemMergeCoreVec.emplace_back(i);
-      DiskMergeCoreVec.emplace_back(i);
-    }
+    for (size_t i = 0; i < 2; ++i) {SlowCoreVec.emplace_back(i);}
+    for (size_t i = 8; i < 10; ++i) {SlowCoreVec.emplace_back(i);}
+    MemMergeCoreVec.emplace_back(2UL);
+    MemMergeCoreVec.emplace_back(10UL);
+    DiskMergeCoreVec.emplace_back(3UL);
+    DiskMergeCoreVec.emplace_back(11UL);
 
     DiskControllerCoreVec.emplace_back(4UL);
     DiskControllerCoreVec.emplace_back(12UL);
@@ -1125,10 +1118,12 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
     for (size_t i = 13; i < 16; ++i) {FastCoreVec.emplace_back(i);}
   } else if (num_proc >= 8) {
 
-    for (size_t i = 0; i < 2; ++i) {SlowCoreVec.emplace_back(i);}
-    for (size_t i = 4; i < 6; ++i) {
+    for (size_t i = 0; i < 2; ++i) {
       SlowCoreVec.emplace_back(i);
       MemMergeCoreVec.emplace_back(i);
+    }
+    for (size_t i = 4; i < 6; ++i) {
+      SlowCoreVec.emplace_back(i);
       DiskMergeCoreVec.emplace_back(i);
     }
 
@@ -1136,7 +1131,7 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
     for (size_t i = 3; i < 4; ++i) {FastCoreVec.emplace_back(i);}
     for (size_t i = 6; i < 8; ++i) {FastCoreVec.emplace_back(i);}
   } else if (num_proc >= 4) {
-    MemMergeCoreVec.emplace_back(2UL);
+    MemMergeCoreVec.emplace_back(0UL);
     DiskMergeCoreVec.emplace_back(2UL);
 
     SlowCoreVec.emplace_back(0UL);
