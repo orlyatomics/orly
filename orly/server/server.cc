@@ -1338,6 +1338,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     FastRunnerVec.emplace_back(new Fiber::TRunner(RunnerCons));
     FastRunnerThreadVec.emplace_back(new std::thread(std::bind(launch_fast_fiber_sched, cmd.FastCoreVec[i], FastRunnerVec.back().get())));
   }
+  FastRunnerBalancer.emplace(FastRunnerVec.size());
 
   /* Launch the fast */
   auto launch_bg_fiber_sched = [this](Fiber::TRunner *runner) {
@@ -2559,8 +2560,8 @@ namespace {
 
     using TFramePool = TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool;
 
-    TWsStatementRunnable(std::function<void ()> &&func, TFramePool *frame_pool)
-        : Func(std::move(func)), FramePool(frame_pool) {}
+    TWsStatementRunnable(std::function<void ()> &&func, TFramePool *frame_pool, TRunnerBalancer::TLease &&lease)
+        : Func(std::move(func)), FramePool(frame_pool), Lease(std::move(lease)) {}
 
     /* Give the statement back if it never ran (see TServer::RunStatement()). */
     std::function<void ()> TakeFunc() {
@@ -2577,6 +2578,8 @@ namespace {
         syslog(LOG_ERR, "ws statement: unknown exception (#761)");
       }
       Func = nullptr;
+      /* Done with the runner: the next statement may come here (#908). */
+      Lease.Release();
       /* The frame came from the pool of the thread that started us, which may not be this
          one; FreeMyFrame() hands it back to that pool once this fiber has switched away. */
       Fiber::FreeMyFrame(FramePool);
@@ -2588,6 +2591,9 @@ namespace {
     std::function<void ()> Func;
 
     TFramePool *const FramePool;
+
+    /* Our place in the load of the fast runner we were latched onto (#908). */
+    TRunnerBalancer::TLease Lease;
 
   };  // TWsStatementRunnable
 
@@ -2611,20 +2617,21 @@ void TServer::RunStatement(std::function<void ()> &&work) {
   if (!frame) {
     throw TInsufficientMemory(Indy::Fiber::TFramePoolExhausted().what());
   }
+  /* The least-loaded fast runner (#908), from the same balancer that TSession::Try() and
+     RunBatch() use to switch a binary-protocol statement to one; they see this one is already on
+     a fast runner and stay (TSession::TServer::TFastRunnerSwitch).  The statement holds the lease
+     until it is done, so the next ones steer around a runner busy with a long batch. */
+  auto lease = LeaseFastRunner();
+  Fiber::TRunner *const runner = FastRunnerVec[lease.GetIndex()].get();
   TWsStatementRunnable *runnable = nullptr;
   try {
-    runnable = new TWsStatementRunnable(std::move(work), frame_pool);
+    runnable = new TWsStatementRunnable(std::move(work), frame_pool, std::move(lease));
   } catch (...) {
     frame_pool->Free(frame);
     throw;
   }
-  /* The same fast runners, in the same rotation, that TSession::Try() and RunBatch() switch a
-     binary-protocol statement to; they see this one is already on one and stay
-     (TSession::TServer::NextFastRunner()). */
-  const size_t prev_assignment_count = std::atomic_fetch_add(&FastAssignmentCounter, 1UL);
   try {
-    frame->Latch(FastRunnerVec[prev_assignment_count % FastRunnerVec.size()].get(), runnable,
-                 static_cast<Fiber::TRunnable::TFunc>(&TWsStatementRunnable::Compute));
+    frame->Latch(runner, runnable, static_cast<Fiber::TRunnable::TFunc>(&TWsStatementRunnable::Compute));
   } catch (...) {
     work = runnable->TakeFunc();
     delete runnable;

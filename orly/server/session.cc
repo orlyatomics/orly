@@ -446,37 +446,25 @@ bool TSession::ReleaseHold(TServer *server, const TUuid &hold_id) {
 
 TPovDiff TSession::DiffPov(TServer *server, const TUuid &pov_id, const TPovDiffOptions &options) {
   /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
-  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
-  if (auto *runner = server->NextFastRunner()) {
-    runner_switcher.emplace(runner);
-  }
+  TServer::TFastRunnerSwitch fast_runner_switch(server);
   return Orly::Server::DiffPov(OpenReviewRepo(server, pov_id, "diff_pov"), options);
 }
 
 TPovDiscard TSession::DiscardPov(TServer *server, const TUuid &pov_id) {
   /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
-  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
-  if (auto *runner = server->NextFastRunner()) {
-    runner_switcher.emplace(runner);
-  }
+  TServer::TFastRunnerSwitch fast_runner_switch(server);
   return Orly::Server::DiscardPov(server->GetRepoManager(), OpenReviewRepo(server, pov_id, "discard_pov", /* must_be_ours */ true));
 }
 
 TPovPromote TSession::PromotePov(TServer *server, const TUuid &pov_id, bool force) {
   /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
-  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
-  if (auto *runner = server->NextFastRunner()) {
-    runner_switcher.emplace(runner);
-  }
+  TServer::TFastRunnerSwitch fast_runner_switch(server);
   return Orly::Server::PromotePov(server->GetRepoManager(), OpenReviewRepo(server, pov_id, "promote_pov"), force);
 }
 
 TPovReview TSession::ReviewPov(TServer *server, const TUuid &pov_id, uint64_t after) {
   /* Run where reads run, as Try does: a binary connection's fiber is on a slow runner. */
-  std::optional<Indy::Fiber::TSwitchToRunner> runner_switcher;
-  if (auto *runner = server->NextFastRunner()) {
-    runner_switcher.emplace(runner);
-  }
+  TServer::TFastRunnerSwitch fast_runner_switch(server);
   return Orly::Server::ReviewPov(OpenReviewRepo(server, pov_id, "review_pov"), after);
 }
 
@@ -722,10 +710,7 @@ TMethodResult TSession::Try(TServer *server, const TUuid &pov_id, const vector<s
 
 TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vector<string> &fq_name, const TClosure &closure, TOperation *op) {
   assert(Indy::Fiber::TRunner::LocalRunner);
-  std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
-  if (auto *runner = server->NextFastRunner()) {
-    RunnerSwitcher.emplace(runner);
-  }
+  TServer::TFastRunnerSwitch fast_runner_switch(server);
   TCore result_core;
   Base::TTimer timer;
   Base::TTimer call_timer;
@@ -1028,10 +1013,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     TOperation *op) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   assert(!calls.empty());  // grammar guarantees N >= 1
-  std::optional<Indy::Fiber::TSwitchToRunner> RunnerSwitcher;
-  if (auto *runner = server->NextFastRunner()) {
-    RunnerSwitcher.emplace(runner);
-  }
+  /* Weighted by its calls, so reads steer around the runner while it runs (#908). */
+  TServer::TFastRunnerSwitch fast_runner_switch(server, calls.size());
   Base::TTimer timer;
   Base::TTimer call_timer;
   bool had_effects = false;

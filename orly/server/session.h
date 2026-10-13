@@ -44,6 +44,7 @@
 #include <orly/server/batch_call.h>
 #include <orly/server/pov.h>
 #include <orly/server/pov_review.h>
+#include <orly/server/runner_balancer.h>
 #include <orly/server/version_of.h>
 #include <orly/var.h>
 
@@ -170,18 +171,44 @@ namespace Orly {
 
         TServer(size_t num_runners) : RunnerCons(num_runners) {}
 
-        /* The fast runner a statement should switch to, or null to stay where it is: a
-           websocket statement already runs on a fast runner (#761), and a second hop would only
-           add a cross-runner handoff each way.  Anything else takes the next in rotation. */
-        [[nodiscard]] Indy::Fiber::TRunner *NextFastRunner() noexcept {
-          Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
-          for (const auto &runner: FastRunnerVec) {
-            if (runner.get() == local) {
-              return nullptr;
+        /* For its lifetime, puts the calling fiber on the least-loaded fast runner (#908) and
+           counts it in that runner's load, as 'weight' small statements' worth (a batch passes
+           its call count); then switches back.  It stays where it is if that is already a fast
+           runner: a websocket statement already runs on one (#761), holding a lease of weight 1,
+           and a second hop would only add a cross-runner handoff each way.  It then charges the
+           rest of the weight to that runner, so new work steers around the batch. */
+        class TFastRunnerSwitch final {
+          NO_COPY(TFastRunnerSwitch);
+          public:
+
+          explicit TFastRunnerSwitch(TServer *server, size_t weight = 1UL) {
+            assert(server);
+            Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
+            for (size_t i = 0UL; i < server->FastRunnerVec.size(); ++i) {
+              if (server->FastRunnerVec[i].get() == local) {
+                if (weight > 1UL) {
+                  Lease = server->FastRunnerBalancer->Charge(i, weight - 1UL);
+                }
+                return;
+              }
             }
+            Lease = server->FastRunnerBalancer->Acquire(weight);
+            Switcher.emplace(server->FastRunnerVec[Lease.GetIndex()].get());
           }
-          const size_t prev_assignment_count = std::atomic_fetch_add(&FastAssignmentCounter, 1UL);
-          return FastRunnerVec[prev_assignment_count % FastRunnerVec.size()].get();
+
+          private:
+
+          /* Declared in this order so that we switch back before the lease is released. */
+          TRunnerBalancer::TLease Lease;
+          std::optional<Indy::Fiber::TSwitchToRunner> Switcher;
+
+        };  // TFastRunnerSwitch
+
+        /* A lease on the least-loaded fast runner (#908), for a statement to be latched onto
+           FastRunnerVec[lease.GetIndex()].  Call only once the fast runners are up. */
+        [[nodiscard]] TRunnerBalancer::TLease LeaseFastRunner() noexcept {
+          assert(FastRunnerBalancer);
+          return FastRunnerBalancer->Acquire();
         }
 
         void InitalizeFramePoolManager(size_t num_frames, size_t frame_stack_size, Indy::Fiber::TRunner *runner) {
@@ -195,7 +222,8 @@ namespace Orly {
         std::atomic<size_t> SlowAssignmentCounter{0UL};
         std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>> FramePoolManager;
         std::vector<std::unique_ptr<Indy::Fiber::TRunner>> FastRunnerVec;
-        std::atomic<size_t> FastAssignmentCounter{0UL};
+        /* Which fast runner each statement goes to (#908); made once FastRunnerVec is full. */
+        std::optional<TRunnerBalancer> FastRunnerBalancer;
         std::vector<std::unique_ptr<std::thread>> FastRunnerThreadVec;
 
         friend class TSession;
