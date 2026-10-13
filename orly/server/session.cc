@@ -1053,8 +1053,20 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     /* One read budget for the whole batch, as for a single call in Try() (#694). */
     context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena,
         server->GetReadBudgetSteps());
+    /* Yield every K calls so reads parked on this runner (e.g. waiting in
+       TCompletionTrigger::Wait for a page-cache miss) can resume between calls
+       instead of waiting out the whole batch (#912). Their wakeups arrive as
+       cross-runner handoffs, which only YieldSlow lets in; a plain Yield re-queues
+       locally (#584). Nothing is locked across calls here, and a call that misses
+       the cache already parks mid-batch, so this adds no new interleaving. */
+    constexpr size_t BatchYieldInterval = 32UL;
+    size_t call_idx = 0UL;
     call_timer.Start();
     for (const auto &call: calls) {
+      if (call_idx > 0 && (call_idx % BatchYieldInterval == 0)) {
+        Indy::Fiber::YieldSlow();
+      }
+      ++call_idx;
       const TClosure &closure = *call.Closure;
       if (!func_fq_name || *func_fq_name != *call.FqName || *func_method_name != closure.GetMethodName()) {
         func = server->GetPackageManager().Get(Package::TName{*call.FqName})->GetFunctionInfo(AsPiece(closure.GetMethodName()));
