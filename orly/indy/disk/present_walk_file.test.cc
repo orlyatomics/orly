@@ -371,7 +371,8 @@ static size_t CountHeldBlocks(TEngine *engine, size_t num_blocks) {
   return held;
 }
 
-/* #910: a walker must not keep pages pinned once its file's caches are cleared, however it comes back. */
+/* #910: a walker must not keep pages pinned once its file's caches are cleared, whatever index it was for and however it
+   comes back. */
 FIXTURE(ClearWithWalkerOut) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRAIITest required_thread_locals;
@@ -403,7 +404,7 @@ FIXTURE(ClearWithWalkerOut) {
     }
     const size_t num_blocks = 64UL;
     auto clear_caches = [&] {
-      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id, int_idx);
+      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id);
       TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
     };
     auto new_walker = [&] {
@@ -421,7 +422,7 @@ FIXTURE(ClearWithWalkerOut) {
     }
     /* Cleared while checked out: the walker comes back after Clear and is deleted, not pooled. */ {
       auto walker = new_walker();
-      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id, int_idx);
+      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id);
       walker.reset();
       TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
       EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
@@ -436,6 +437,17 @@ FIXTURE(ClearWithWalkerOut) {
       delete other;
       TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
       EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
+      clear_caches();
+      EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
+    }
+    /* Asked for an index the file has no data for: the walker finds nothing but still reads the file and holds its
+       pages while pooled, and Clear must reach it although the file lists no such index. */ {
+      const Base::TUuid absent_idx(Base::TUuid::Twister);
+      auto walker = std::make_unique<TPresentWalkFileWrapper>(engine, data_file_id, data_gen_id, absent_idx, TKey(make_tuple(0L), &arena, state_alloc));
+      EXPECT_FALSE(*walker);
+      walker.reset();
+      TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
+      EXPECT_GT(CountHeldBlocks(engine, num_blocks), 0U);
       clear_caches();
       EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
     }

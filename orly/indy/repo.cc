@@ -2859,16 +2859,7 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
 
 void TSafeRepo::ClearLocalFileCaches(size_t gen_id) {
   const Base::TUuid &repo_id = GetId();
-  Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
-    Disk::Util::LogicalBlockSize,
-    Disk::Util::PhysicalBlockSize,
-    Disk::Util::CheckedPage>::TLocalReadFile *my_read_file = Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
-    Disk::Util::LogicalBlockSize,
-    Disk::Util::PhysicalBlockSize,
-    Disk::Util::CheckedPage>::Cache->Get(Manager->GetEngine(), repo_id, gen_id);
-  for (const auto &index_pair : my_read_file->GetIndexByIdMap()) {
-    Disk::TLocalWalkerCache::Cache->Clear(repo_id, gen_id, index_pair.first);
-  }
+  Disk::TLocalWalkerCache::Cache->Clear(repo_id, gen_id);
   Disk::TLocalReadFileCache<Disk::Util::LogicalPageSize,
     Disk::Util::LogicalBlockSize,
     Disk::Util::PhysicalBlockSize,

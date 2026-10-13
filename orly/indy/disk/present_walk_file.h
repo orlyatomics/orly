@@ -27,6 +27,7 @@
 #include <atomic>
 #include <cassert>
 #include <optional>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <orly/indy/disk/read_file.h>
@@ -595,11 +596,20 @@ namespace Orly {
           return loader->GetNewFile(engine, file_id, gen_id, index_id);
         }
 
-        /* Drop the walkers this runner pools for the file's index. One still checked out keeps its loader alive, and is
-           deleted rather than pooled when it comes back (#910). */
-        void Clear(const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
-          TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
-          if (loader) {
+        /* Drop the walkers this runner pools for the file, under every index id they were asked for. That includes ids
+           the file has no data for: such a walker still reads the file and pins its pages, so clearing only the file's
+           own indexes left it pooled after the blocks were freed and reused (#910). One still checked out keeps its
+           loader alive, and is deleted rather than pooled when it comes back. */
+        void Clear(const Base::TUuid &file_id, size_t gen_id) {
+          std::vector<TLoaderObj *> loaders;
+          LoaderCollection.ForEachUniqueMember([&](TLoaderObj *loader) {
+            const TWalkerKey &key = loader->GetKey();
+            if (key.GenId == gen_id && key.FileId == file_id) {
+              loaders.push_back(loader);
+            }
+            return true;
+          });
+          for (TLoaderObj *loader : loaders) {
             loader->Detach();
           }
         }
@@ -653,6 +663,10 @@ namespace Orly {
               delete walker;
             }
             Release();
+          }
+
+          const TWalkerKey &GetKey() const {
+            return CacheMembership.GetKey();
           }
 
           /* Leave the cache and delete the pooled walkers. The loader itself goes once the last walker still checked
