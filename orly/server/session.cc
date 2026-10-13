@@ -1013,7 +1013,8 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     TOperation *op) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   assert(!calls.empty());  // grammar guarantees N >= 1
-  TServer::TFastRunnerSwitch fast_runner_switch(server);
+  /* Weighted by its calls, so reads steer around the runner while it runs (#908). */
+  TServer::TFastRunnerSwitch fast_runner_switch(server, calls.size());
   Base::TTimer timer;
   Base::TTimer call_timer;
   bool had_effects = false;

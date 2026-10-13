@@ -172,22 +172,27 @@ namespace Orly {
         TServer(size_t num_runners) : RunnerCons(num_runners) {}
 
         /* For its lifetime, puts the calling fiber on the least-loaded fast runner (#908) and
-           counts it in that runner's load; then switches back.  It stays where it is if that is
-           already a fast runner: a websocket statement already runs on one (#761), holding its
-           own lease, and a second hop would only add a cross-runner handoff each way. */
+           counts it in that runner's load, as 'weight' small statements' worth (a batch passes
+           its call count); then switches back.  It stays where it is if that is already a fast
+           runner: a websocket statement already runs on one (#761), holding a lease of weight 1,
+           and a second hop would only add a cross-runner handoff each way.  It then charges the
+           rest of the weight to that runner, so new work steers around the batch. */
         class TFastRunnerSwitch final {
           NO_COPY(TFastRunnerSwitch);
           public:
 
-          explicit TFastRunnerSwitch(TServer *server) {
+          explicit TFastRunnerSwitch(TServer *server, size_t weight = 1UL) {
             assert(server);
             Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
-            for (const auto &runner: server->FastRunnerVec) {
-              if (runner.get() == local) {
+            for (size_t i = 0UL; i < server->FastRunnerVec.size(); ++i) {
+              if (server->FastRunnerVec[i].get() == local) {
+                if (weight > 1UL) {
+                  Lease = server->FastRunnerBalancer->Charge(i, weight - 1UL);
+                }
                 return;
               }
             }
-            Lease = server->FastRunnerBalancer->Acquire();
+            Lease = server->FastRunnerBalancer->Acquire(weight);
             Switcher.emplace(server->FastRunnerVec[Lease.GetIndex()].get());
           }
 

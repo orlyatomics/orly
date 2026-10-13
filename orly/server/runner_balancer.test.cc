@@ -129,6 +129,56 @@ FIXTURE(LeaseMoves) {
   EXPECT_EQ(balancer.GetLoad(1UL), 0UL);
 }
 
+/* #908 with many sessions: every runner has a small statement or two in flight, and the one
+   holding a big batch, weighted by its calls, still gets nothing until the others catch up. */
+FIXTURE(WeightedBatchIsAvoided) {
+  TRunnerBalancer balancer(4UL);
+  TLease batch = balancer.Acquire(100UL);
+  const size_t busy = batch.GetIndex();
+  EXPECT_EQ(balancer.GetLoad(busy), 100UL);
+  vector<TLease> reads;
+  for (size_t i = 0UL; i < 3UL * 100UL; ++i) {
+    reads.push_back(balancer.Acquire());
+    EXPECT_NE(reads.back().GetIndex(), busy);
+  }
+  /* Now all four are at 100: the next goes wherever rotation says. */
+  for (size_t i = 0UL; i < 4UL; ++i) {
+    EXPECT_EQ(balancer.GetLoad(i), 100UL);
+  }
+  reads.clear();
+  batch.Release();
+  for (size_t i = 0UL; i < 4UL; ++i) {
+    EXPECT_EQ(balancer.GetLoad(i), 0UL);
+  }
+  /* A weight of 0 still counts as one statement. */
+  auto zero = balancer.Acquire(0UL);
+  EXPECT_EQ(balancer.GetLoad(zero.GetIndex()), 1UL);
+}
+
+/* A statement already on a runner charges it the rest of its weight once it knows it, as a
+   websocket batch does from RunBatch(); the charge goes when the lease does. */
+FIXTURE(ChargeInPlace) {
+  TRunnerBalancer balancer(3UL);
+  TLease statement = balancer.Acquire();
+  const size_t index = statement.GetIndex();
+  {
+    TLease charge = balancer.Charge(index, 49UL);
+    EXPECT_TRUE(charge);
+    EXPECT_EQ(charge.GetIndex(), index);
+    EXPECT_EQ(balancer.GetLoad(index), 50UL);
+    for (size_t i = 0UL; i < 20UL; ++i) {
+      EXPECT_NE(balancer.Acquire().GetIndex(), index);
+    }
+    /* A weighted lease moves with its weight. */
+    TLease moved(std::move(charge));
+    EXPECT_EQ(balancer.GetLoad(index), 50UL);
+  }
+  EXPECT_EQ(balancer.GetLoad(index), 1UL);
+  TLease nothing = balancer.Charge(index, 0UL);
+  EXPECT_FALSE(nothing);
+  EXPECT_EQ(balancer.GetLoad(index), 1UL);
+}
+
 FIXTURE(Sizes) {
   EXPECT_THROW(std::invalid_argument, [] { TRunnerBalancer balancer(0UL); (void)balancer; });
   TRunnerBalancer one(1UL);
