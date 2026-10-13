@@ -18,6 +18,8 @@
 
 #include <orly/indy/disk/present_walk_file.h>
 
+#include <memory>
+
 #include <base/scheduler.h>
 #include <orly/indy/disk/data_file.h>
 #include <orly/indy/disk/disk_test.h>
@@ -350,6 +352,92 @@ FIXTURE(Range) {
     /* empty range using non-existing start, non-existing limit */ {
       TPresentWalkFileWrapper walker(mem_engine.GetEngine(), data_file_id, data_gen_id, int_idx, TKey(make_tuple(11L), &arena, state_alloc), TKey(make_tuple(13L), &arena, state_alloc));
       EXPECT_FALSE(walker);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+    GracefullShutdown();
+  });
+}
+
+/* The number of the first num_blocks blocks whose first page someone still references. */
+static size_t CountHeldBlocks(TEngine *engine, size_t num_blocks) {
+  size_t held = 0UL;
+  for (size_t block_id = 0UL; block_id < num_blocks; ++block_id) {
+    if (!engine->GetPageCache()->AssertNoRefCount(block_id * 16UL)) {
+      ++held;
+    }
+  }
+  return held;
+}
+
+/* #910: a walker must not keep pages pinned once its file's caches are cleared, however it comes back. */
+FIXTURE(ClearWithWalkerOut) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRAIITest required_thread_locals;
+    const TScheduler::TPolicy scheduler_policy(10, 10, milliseconds(10));
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler,
+                               256 /* disk space: 256MB */,
+                               256,
+                               16384 /* page cache slots: 64MB */,
+                               1 /* num page lru */,
+                               1024 /* block cache slots: 64MB */,
+                               1 /* num block lru */);
+    TEngine *engine = mem_engine.GetEngine();
+
+    Base::TUuid data_file_id(TUuid::TimeAndMAC);
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    size_t data_gen_id = 1;
+    TSequenceNumber seq_num = 0U;
+    Base::TUuid int_idx(Base::TUuid::Twister);
+    /* data file */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 11; i += 2) {
+        Insert(mem_layer, ++seq_num, int_idx, static_cast<int64_t>(rand()), i);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, data_file_id, data_gen_id, 20UL, 0U, RealTime);
+    }
+    const size_t num_blocks = 64UL;
+    auto clear_caches = [&] {
+      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id, int_idx);
+      TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
+    };
+    auto new_walker = [&] {
+      return std::make_unique<TPresentWalkFileWrapper>(engine, data_file_id, data_gen_id, int_idx, TKey(make_tuple(0L), &arena, state_alloc));
+    };
+    EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
+    /* The probe sees a walker's pages, a walker returned on its own runner is pooled with them, and Clear lets them go. */ {
+      auto walker = new_walker();
+      EXPECT_TRUE(*walker);
+      EXPECT_GT(CountHeldBlocks(engine, num_blocks), 0U);
+      walker.reset();
+      EXPECT_GT(CountHeldBlocks(engine, num_blocks), 0U);
+      clear_caches();
+      EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
+    }
+    /* Cleared while checked out: the walker comes back after Clear and is deleted, not pooled. */ {
+      auto walker = new_walker();
+      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id, int_idx);
+      walker.reset();
+      TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
+      EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
+    }
+    /* Returned on another runner: the walker is deleted there, not pushed onto its home runner's free queue. */ {
+      auto walker = new_walker();
+      Disk::TLocalWalkerCache *home = Disk::TLocalWalkerCache::Cache.Get();
+      auto *other = new Disk::TLocalWalkerCache();
+      Disk::TLocalWalkerCache::Cache = other;
+      walker.reset();
+      Disk::TLocalWalkerCache::Cache = home;
+      delete other;
+      TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
+      EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
+      clear_caches();
+      EXPECT_EQ(CountHeldBlocks(engine, num_blocks), 0U);
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

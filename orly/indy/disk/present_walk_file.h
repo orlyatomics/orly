@@ -24,6 +24,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <optional>
 
@@ -141,7 +142,7 @@ namespace Orly {
           struct TDeleter {
 
             void operator ()(TPresentWalkFile *p) const {
-              p->LoaderObj->Free(p);
+              p->LoaderObj->Return(p);
             };
 
           };  // TDeleter
@@ -594,9 +595,13 @@ namespace Orly {
           return loader->GetNewFile(engine, file_id, gen_id, index_id);
         }
 
+        /* Drop the walkers this runner pools for the file's index. One still checked out keeps its loader alive, and is
+           deleted rather than pooled when it comes back (#910). */
         void Clear(const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
-          delete loader;
+          if (loader) {
+            loader->Detach();
+          }
         }
 
         /* Fiber-safe: see TFiberSafeLocal (#554, #578). */
@@ -610,35 +615,75 @@ namespace Orly {
           typedef InvCon::UnorderedMultimap::TMembership<TLoaderObj, TLocalWalkerCache, TWalkerKey> TCacheMembership;
 
           TLoaderObj(TLocalWalkerCache *cache, const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id)
-              : FreeQueue(nullptr),
+              : Owner(cache),
+                FreeQueue(nullptr),
+                RefCount(1UL),
                 CacheMembership(this, TWalkerKey(file_id, gen_id, index_id), &cache->LoaderCollection) {}
 
           ~TLoaderObj() {
-            for (TPresentWalkFile *file = FreeQueue; file;) {
-              TPresentWalkFile *to_delete = file;
-              file = file->NextWalker;
-              delete to_delete;
-            }
+            assert(!FreeQueue);
           }
 
           TPresentWalkFile *GetNewFile(Util::TEngine *engine, const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id) {
-            if (!FreeQueue) {
-              return new TPresentWalkFile(engine, file_id, gen_id, index_id, this);
-            } else {
+            /* Count the walker before building it: the ctor reads the file and so yields, and a Clear in that window must
+               leave this loader standing. */
+            RefCount.fetch_add(1UL, std::memory_order_relaxed);
+            if (FreeQueue) {
               TPresentWalkFile *ret = FreeQueue;
               FreeQueue = ret->NextWalker;
               return ret;
             }
+            try {
+              return new TPresentWalkFile(engine, file_id, gen_id, index_id, this);
+            } catch (...) {
+              Release();
+              throw;
+            }
           }
 
-          void Free(TPresentWalkFile *walker) {
-            walker->NextWalker = FreeQueue;
-            FreeQueue = walker;
+          /* Take back a walker GetNewFile handed out. Only the runner that owns this loader's cache may pool it: the
+             free queue is that thread's alone, and a reader that resumed on another runner would race it, losing a
+             walker (and every page it pins) or handing one out twice. A walker that comes back anywhere else, or after
+             Clear, is deleted, which releases its pages (#910). */
+          void Return(TPresentWalkFile *walker) {
+            if (Owner == TLocalWalkerCache::Cache.Get() && CacheMembership.TryGetCollection()) {
+              walker->NextWalker = FreeQueue;
+              FreeQueue = walker;
+            } else {
+              delete walker;
+            }
+            Release();
+          }
+
+          /* Leave the cache and delete the pooled walkers. The loader itself goes once the last walker still checked
+             out comes back. Runs on the owning runner. */
+          void Detach() {
+            CacheMembership.Remove();
+            while (FreeQueue) {
+              TPresentWalkFile *to_delete = FreeQueue;
+              FreeQueue = to_delete->NextWalker;
+              delete to_delete;
+            }
+            Release();
           }
 
           private:
 
+          /* Drop one reference; the last one deletes the loader. */
+          void Release() {
+            if (RefCount.fetch_sub(1UL, std::memory_order_acq_rel) == 1UL) {
+              delete this;
+            }
+          }
+
+          /* The runner-local cache this loader belongs to. */
+          TLocalWalkerCache *const Owner;
+
+          /* Walkers waiting for reuse. Touched only on the owning runner. */
           TPresentWalkFile *FreeQueue;
+
+          /* One for the cache, while the loader is in it, plus one per walker checked out. */
+          std::atomic<size_t> RefCount;
 
           typename TCacheMembership::TImpl CacheMembership;
 
@@ -683,7 +728,7 @@ namespace Orly {
         virtual ~TPresentWalkFileWrapper() {
           assert(File);
           assert(File->LoaderObj);
-          File->LoaderObj->Free(File);
+          File->LoaderObj->Return(File);
         }
 
         /* True iff. we have an item. */
