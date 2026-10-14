@@ -204,6 +204,12 @@ namespace Orly {
         /* This is how many blocks a write group represents */
         constexpr size_t MaxOutBlockGroupSize = 16UL;
 
+        /* At most this many blocks an out stream has written may be in flight at once (counted on
+           its completion trigger). Without a bound a big merge could submit its whole file before
+           waiting, holding a disk event and a block buffer for every block. A whole number of
+           write groups, so a stream waits once per group, not once per block. */
+        constexpr size_t MaxOutInFlightBlocks = 4UL * MaxOutBlockGroupSize;
+
         constexpr size_t SortBufSize = 524288;
         constexpr size_t SortBufMinParallelSize = 32768;
 

@@ -128,6 +128,11 @@ namespace Orly {
 
         inline void Wait(bool come_back_right_away = false);
 
+        /* Waits until at most max_outstanding registered completions are still to arrive, then
+           returns. Unlike Wait(), it never throws: a failure stays recorded for the final Wait().
+           Writers call it before submitting more, to bound what they have in flight. */
+        inline void WaitUntilAtMost(size_t max_outstanding);
+
         private:
 
         std::atomic<size_t> WaitFor;
@@ -136,6 +141,10 @@ namespace Orly {
 
         Fiber::TFrame *FrameWaiting;
         Fiber::TRunner *RunnerToReactivateOn;
+
+        /* The parked frame is woken once outstanding completions fall to this many. Zero for
+           Wait() and the destructor, which wait for all of them. */
+        size_t WakeAt;
 
         Base::TSpinLock SpinLock;
 
@@ -154,6 +163,7 @@ namespace Orly {
           NumFinished(0UL),
           FrameWaiting(nullptr),
           RunnerToReactivateOn(nullptr),
+          WakeAt(0UL),
           Result(Success),
           ErrStr(nullptr) {}
 
@@ -173,6 +183,7 @@ namespace Orly {
             should_wait = true;
             FrameWaiting = Fiber::TFrame::LocalFrame;
             RunnerToReactivateOn = Fiber::TRunner::LocalRunner;
+            WakeAt = 0UL;
           }
         }
         if (should_wait) {
@@ -222,8 +233,9 @@ namespace Orly {
             Result = disk_result;
             ErrStr = err_str;
           }
-          if (num_finished == WaitFor.load() && FrameWaiting) {
-            /* Final completion and a frame is parked: claim it for the post-unlock wake. */
+          if (FrameWaiting && WaitFor.load() - num_finished <= WakeAt) {
+            /* Few enough still outstanding (none, unless WaitUntilAtMost() parked the frame) and a
+               frame is parked: claim it for the post-unlock wake. */
             assert(RunnerToReactivateOn);
             frame = FrameWaiting;
             runner = RunnerToReactivateOn;
@@ -247,6 +259,7 @@ namespace Orly {
             should_wait = true;
             FrameWaiting = Fiber::TFrame::LocalFrame;
             RunnerToReactivateOn = Fiber::TRunner::LocalRunner;
+            WakeAt = 0UL;
           }
         }
         if (should_wait) {
@@ -272,6 +285,30 @@ namespace Orly {
             throw TDiskServiceShutdown();
             break;
           }
+        }
+      }
+
+      inline void TCompletionTrigger::WaitUntilAtMost(size_t max_outstanding) {
+        if (!Fiber::TFrame::LocalFrame) {
+          /* Not on a fiber (tests, plain threads): nothing to park, so spin. */
+          while (WaitFor.load() - NumFinished.load() > max_outstanding) {
+            std::this_thread::yield();
+          }
+          return;
+        }
+        bool should_wait = false;
+        /* set frame waiting */ {
+          Base::TSpinLock::TLock lock(SpinLock);
+          if (WaitFor.load() - NumFinished.load() > max_outstanding) {
+            assert(!FrameWaiting);
+            should_wait = true;
+            FrameWaiting = Fiber::TFrame::LocalFrame;
+            RunnerToReactivateOn = Fiber::TRunner::LocalRunner;
+            WakeAt = max_outstanding;
+          }
+        }
+        if (should_wait) {
+          Fiber::Wait();
         }
       }
 
