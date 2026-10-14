@@ -667,6 +667,11 @@ void TManager::EnqueueMergeMemAfter(TRepo *repo, milliseconds delay) {
   }  // release MergeMem lock
 }
 
+bool TManager::IsMergeDiskQueued(TRepo *repo) {
+  Fiber::TFiberLock::TLock lock(MergeDiskLock);
+  return repo->MergeDiskMembership.TryGetCollector() != nullptr;
+}
+
 void TManager::EnqueueMergeDiskAfter(TRepo *repo, milliseconds delay) {
   /* acquire MergeDisk lock */ {
     Fiber::TFiberLock::TLock lock(MergeDiskLock);
@@ -1000,17 +1005,17 @@ TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
       DurableCond.wait(lock);
     }
   }
+  TRepo *repo = nullptr;
   try {
     /* Reopen the repo from disk. The actual reload boundary is ReconstructRepo ->
        ConstructRepo, which is not implemented (durable on-disk persistence/reload was never
        ported, see issue #173); it fails there with a descriptive error if ever reached. */
-    TRepo *repo = ReconstructRepo(id);
+    repo = ReconstructRepo(id);
     std::lock_guard<std::mutex> lock(DurableMutex);
     TObj *&openable_obj = ret.first->second;
     assert(!openable_obj);
     openable_obj = repo;
     DurableCond.notify_all();
-    return TPtr<TManager::TRepo>(repo, Orly::Indy::L0::New);
   } catch (...) {
     /* We could not find the object on disk or the object's constructor failed.
        Either way, we need to dispose of the slot we made before continuing to handle the error. */
@@ -1018,4 +1023,8 @@ TManager::TPtr<TManager::TRepo> TManager::Open(const TId &id) {
     OpenableObjs.erase(id);
     throw;
   }
+  TPtr<TManager::TRepo> ptr(repo, Orly::Indy::L0::New);
+  /* Only once it is live: a merge step drops a repo TryOpenLiveRepo can't find. */
+  repo->OnReopened();
+  return ptr;
 }

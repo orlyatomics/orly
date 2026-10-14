@@ -698,6 +698,11 @@ namespace Orly {
          enqueue can never strand a mergeable mapping. */
       [[nodiscard]] bool HasDiskMergeCandidate(TMapping *mapping) const;
 
+      /* A reloaded repo's first mapping is built from its files in the constructor, which is not
+         one of the installs that re-run that gate. Run it here, or a repo that is only read after
+         a restart keeps every disk file it came back with. */
+      void OnReopened() override;
+
       /* Copy-on-write a new data layer into the mapping; returns the layer count. */
       size_t AddMapping(TDataLayer *layer);
 
