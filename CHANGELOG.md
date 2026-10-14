@@ -37,6 +37,10 @@ Entries reference the originating pull request and the closed issue where applic
   short-lived POVs used up those pools first; every new POV was then refused. The cached repo also
   counted as live, so its WAL Pov record stayed pinned: the WAL head could not pass it, and a restart
   restored every such POV. The layer cleaner now discards cached repos at their deadline. (#914)
+- **A refused new POV names the pool that ran out.** The refusal always said the update pools were
+  full, with their counts, even when the pool that had run out was Data Layer or Repo Mapping. It now
+  names whichever of the Repo Mapping, Repo Mapping Entry, Data Layer, Update and Update Entry pools
+  is full, with its blocks in use. (#914)
 
 ## [v0.2.0] — 2026-10-06
 

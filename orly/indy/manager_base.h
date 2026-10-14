@@ -835,6 +835,19 @@ namespace Orly {
           return sizeof(TRepo::TDataLayer);
         }
 
+        /* The pools making a new repo can take blocks from, for refusals that name the one that ran out (#914). */
+        [[nodiscard]] static const Util::TPool &GetMappingPool() noexcept {
+          return TRepo::TMapping::Pool;
+        }
+
+        [[nodiscard]] static const Util::TPool &GetMappingEntryPool() noexcept {
+          return TRepo::TMapping::TEntry::Pool;
+        }
+
+        [[nodiscard]] static const Util::TPool &GetDataLayerPool() noexcept {
+          return TRepo::TDataLayer::Pool;
+        }
+
         Base::TSigmaCalc MergeMemAverageKeysCalc;
         std::mutex MergeMemCPULock;
 

@@ -22,6 +22,7 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <vector>
 
 #include <orly/atom/suprena.h>
 #include <orly/indy/context.h>
@@ -108,13 +109,37 @@ size_t Orly::Server::GetStalledBacklogRefusals() noexcept {
   return StalledBacklogRefusals.load();
 }
 
-/* #858: the refusal of a new POV that found the Update pool full. */
+/* #858: the refusal of a new POV that found a pool full. The miss is a bare bad_alloc, so it
+   names the pools a new repo takes from that are full now (#914: it used to name the update
+   pools whichever ran out, and it is often Data Layer). A pool that has freed blocks since the
+   miss may leave none full; then it lists them all. */
 [[noreturn]] static void ThrowNewPovOutOfMemory() {
-  const auto &updates = Indy::TUpdate::GetUpdatePool(), &entries = Indy::TUpdate::GetEntryPool();
+  const Indy::Util::TPool *pools[] = {
+      &Indy::L0::TManager::GetMappingPool(), &Indy::L0::TManager::GetMappingEntryPool(), &Indy::L0::TManager::GetDataLayerPool(),
+      &Indy::TUpdate::GetUpdatePool(), &Indy::TUpdate::GetEntryPool()};
+  std::vector<const Indy::Util::TPool *> full;
+  for (const auto *pool : pools) {
+    if (pool->GetNumBlocksUsed() >= pool->GetMaxBlocks()) {
+      full.push_back(pool);
+    }
+  }
+  const bool any_full = !full.empty();
+  if (!any_full) {
+    full.assign(std::begin(pools), std::end(pools));
+  }
   std::ostringstream msg;
-  msg << "insufficient memory: new POV refused; the update pools are full (Update "
-      << updates.GetNumBlocksUsed() << " / " << updates.GetMaxBlocks() << ", Update Entry "
-      << entries.GetNumBlocksUsed() << " / " << entries.GetMaxBlocks() << " in use); nothing was created, so it can be retried";
+  msg << "insufficient memory: new POV refused; ";
+  if (!any_full) {
+    msg << "a pool it needs was full (";
+  } else if (full.size() == 1) {
+    msg << "the " << full.front()->GetName() << " pool is full (";
+  } else {
+    msg << "these pools are full (";
+  }
+  for (size_t i = 0; i < full.size(); ++i) {
+    msg << (i ? ", " : "") << full[i]->GetName() << ' ' << full[i]->GetNumBlocksUsed() << " / " << full[i]->GetMaxBlocks();
+  }
+  msg << " in use); nothing was created, so it can be retried";
   throw TInsufficientMemory(msg.str());
 }
 
@@ -1606,10 +1631,10 @@ TUuid TSession::NewPov(
     shared_parents.push_back(*parent_pov_id);
   }
   auto pov = durable_manager->New<TPov>(TUuid::Twister, time_to_live, GetId(), audience, policy, shared_parents);
-  /* Making the POV's repo records it in the System repo, with an update from the Update pool.
-     Memory admission (#607) doesn't apply to new POVs, but that allocation can still miss when
-     the pool is full: refuse with the retryable insufficient_memory rather than a bare bad_alloc
-     (#858). Nothing has been written, and the POV never reaches the session. */
+  /* Making the POV's repo takes a Repo Mapping block and a Data Layer block, and records it in
+     the System repo with an update from the Update pool. Memory admission (#607) doesn't apply to
+     new POVs, but any of those allocations can still miss when its pool is full: refuse with
+     the retryable insufficient_memory rather than a bare bad_alloc (#858). Nothing has been written, and the POV never reaches the session. */
   try {
     pov->GetRepo(server);
   } catch (const std::bad_alloc &) {
