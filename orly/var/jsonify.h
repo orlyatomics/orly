@@ -21,6 +21,7 @@
 #include <ostream>
 
 #include <base/json.h>
+#include <orly/sabot/state.h>
 
 namespace Orly {
 
@@ -36,6 +37,12 @@ namespace Orly {
        reals keep full double precision instead of being clipped to the
        ostream's six significant digits by the text hop. */
     Base::TJson ToJson(const TVar &var);
+
+    /* The JSON for a sabot state: always equal to ToJson(ToVar(state)), but ints, bools, reals,
+       ids, strings, optionals, lists and addresses are built straight from the state, without the
+       intermediate var tree.  Everything else (and an empty list or unknown optional, whose var
+       carries a translated element type) takes the ToJson(ToVar()) path for its subtree. */
+    Base::TJson StateToJson(const Sabot::State::TAny &state);
 
   }  // Var
 

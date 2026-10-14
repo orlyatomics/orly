@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include <base/as_str.h>
 #include <base/test/kit.h>
@@ -214,4 +215,28 @@ FIXTURE(RoundTrip) {
   EXPECT_EQ(TJson::Parse(AsStr(TJson(98.6))), 98.6);
   EXPECT_EQ(TJson::Parse(AsStr(TJson(Array))), Array);
   EXPECT_EQ(TJson::Parse(AsStr(TJson(Object))), Object);
+}
+
+/* AppendTo is the reply path's writer; it must produce exactly the text Write does. */
+static string ViaAppend(const TJson &json) {
+  string out = "prefix";
+  json.AppendTo(out);
+  return out.substr(6);
+}
+
+FIXTURE(AppendToMatchesWrite) {
+  vector<TJson> samples = {
+      TJson(), TJson(true), TJson(false), TJson(0), TJson(-0.0), TJson(42), TJson(-7), TJson(98.6),
+      TJson(0.1234565), TJson(1e-9), TJson(-1e-7), TJson(1e300), TJson(int64_t(9007199254740993)),
+      TJson(uint64_t(18446744073709551615ULL)), TJson(""), TJson("plain text"),
+      TJson(string("\"\\/\b\f\n\r\t7")), TJson(string("a\x01" "b\x1f\v")), TJson(string("caf\xc3\xa9")),
+      TJson(string("\x7f trailing \\")), TJson(Array), TJson(Object)};
+  TJson nested = TJson::Object;
+  nested["rows"] = TJson(TJson::TArray{TJson(Array), TJson(Object), TJson("x\"y")});
+  nested["status"] = "ok";
+  nested["k\ney"] = TJson();
+  samples.push_back(nested);
+  for (const auto &json : samples) {
+    EXPECT_EQ(ViaAppend(json), AsStr(json));
+  }
 }
