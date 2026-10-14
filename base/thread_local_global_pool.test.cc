@@ -239,3 +239,69 @@ FIXTURE(TryAllocWithoutStealing) {
   });
   t1.join();
 }
+
+/* A pool whose thread allocated a burst, freed it and went on to allocate again used to park the
+   whole burst where only that thread can reach it, so another pool got none of it. It now keeps
+   at most GetMaxParked() and hands the rest back. */
+FIXTURE(BurstIsNotStranded) {
+  const size_t pool_size = 1000UL;
+  TThreadLocalGlobalPoolManager<TObj> manager(pool_size);
+  const size_t max_parked = manager.GetMaxParked();
+  EXPECT_LT(max_parked, pool_size / 2UL);
+  thread t1([&](){
+    TThreadLocalGlobalPoolManager<TObj>::TThreadLocalPool bursty(&manager), other(&manager);
+    std::vector<TObj *> objs;
+    for (size_t i = 0; i < pool_size; ++i) {
+      objs.push_back(bursty.Alloc());
+    }
+    for (auto *obj : objs) {
+      bursty.Free(obj);
+    }
+    objs.clear();
+    /* This takes the burst off bursty's free queue, out of other's reach. */
+    TObj *kept = bursty.Alloc();
+    /* Without stealing, other gets only what went back to the global pool. */
+    while (TObj *obj = other.TryAlloc(false)) {
+      objs.push_back(obj);
+    }
+    EXPECT_GE(objs.size(), pool_size - max_parked);
+    for (auto *obj : objs) {
+      other.Free(obj);
+    }
+    bursty.Free(kept);
+  });
+  t1.join();
+}
+
+/* A pool that goes away hands back what it holds free, parked or on its free queue. */
+FIXTURE(DestroyedPoolReturnsItsObjects) {
+  const size_t pool_size = 100UL;
+  TThreadLocalGlobalPoolManager<TObj> manager(pool_size);
+  thread t1([&](){
+    TThreadLocalGlobalPoolManager<TObj>::TThreadLocalPool other(&manager);
+    /* gone */ {
+      TThreadLocalGlobalPoolManager<TObj>::TThreadLocalPool gone(&manager);
+      std::vector<TObj *> objs;
+      for (size_t i = 0; i < pool_size; ++i) {
+        objs.push_back(gone.Alloc());
+      }
+      /* Half parked, half on its free queue. */
+      for (size_t i = 0; i < pool_size / 2UL; ++i) {
+        gone.Free(objs[i]);
+      }
+      gone.Free(gone.Alloc());
+      for (size_t i = pool_size / 2UL; i < pool_size; ++i) {
+        gone.Free(objs[i]);
+      }
+    }
+    std::vector<TObj *> objs;
+    while (TObj *obj = other.TryAlloc(false)) {
+      objs.push_back(obj);
+    }
+    EXPECT_EQ(objs.size(), pool_size);
+    for (auto *obj : objs) {
+      other.Free(obj);
+    }
+  });
+  t1.join();
+}

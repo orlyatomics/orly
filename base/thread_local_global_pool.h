@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
@@ -74,7 +75,17 @@ namespace Base {
         assert(manager);
       }
 
-      virtual ~TThreadLocalPool() {}
+      /* Hands back everything still free here, so a pool that goes away doesn't take its
+         objects with it. An object still in use mustn't be freed here afterwards. */
+      virtual ~TThreadLocalPool() {
+        if (AvailableQueue) {
+          Manager->Return(AvailableQueue);
+        }
+        TObjBase *free_queue = FreeQueue.exchange(nullptr, std::memory_order_acquire);
+        if (free_queue) {
+          Manager->Return(free_queue);
+        }
+      }
 
       inline void Free(TObjBase *obj) {
         #ifndef NDEBUG
@@ -185,20 +196,23 @@ namespace Base {
         return alloc_obj;
       }
 
+      /* Takes a stack swapped in from a free queue, ours or another pool's, as our available
+         queue. Only this thread can pop that queue, so nothing parked on it can be stolen: a
+         pool that keeps a whole burst's worth there keeps it for good once its thread goes
+         idle, and others run dry while most of the objects sit free. So keep at most
+         Manager->MaxParked and hand the rest back to the global pool. */
       inline void MakeStackAvailable(TObjBase *cur_tail) {
-        /* fast pop */
+        assert(cur_tail);
         AvailableQueue = cur_tail;
-        /* reverse pop (circular queue) */
-        #if 0
-        TObjBase *new_head = nullptr;
-        while (cur_tail) {
-          TObjBase *next = cur_tail->NextObj;
-          cur_tail->NextObj = new_head;
-          new_head = cur_tail;
-          cur_tail = next;
+        TObjBase *last_kept = cur_tail;
+        for (size_t kept = 1UL; kept < Manager->MaxParked && last_kept->NextObj; ++kept) {
+          last_kept = last_kept->NextObj;
         }
-        AvailableQueue = new_head;
-        #endif
+        TObjBase *const excess = last_kept->NextObj;
+        if (excess) {
+          last_kept->NextObj = nullptr;
+          Manager->Return(excess);
+        }
       }
 
       /* Cross-thread free list (Treiber stack). Atomic because Free() (push,
@@ -217,7 +231,7 @@ namespace Base {
     };  // TThreadLocalPool
 
     TThreadLocalGlobalPoolManager(size_t num_elems, const TArgs &... args)
-        : NumElems(num_elems), Alloc(nullptr), PoolCollection(this) {
+        : NumElems(num_elems), MaxParked(ChooseMaxParked(num_elems)), Alloc(nullptr), PoolCollection(this) {
       Alloc = reinterpret_cast<TObj *>(malloc(sizeof(TObj) * num_elems));
       MlockN(*Alloc, num_elems);
       if (unlikely(!Alloc)) {
@@ -246,7 +260,30 @@ namespace Base {
       free(Alloc);
     }
 
+    /* The most free objects a thread-local pool keeps for itself; see MakeStackAvailable. */
+    size_t GetMaxParked() const {
+      return MaxParked;
+    }
+
     private:
+
+    /* A 256th of the objects, but at least 16, so that dozens of pools can't strand more than
+       a small share between them while a pool still reuses what it frees without a lock. */
+    static constexpr size_t ChooseMaxParked(size_t num_elems) {
+      return std::max<size_t>(16UL, num_elems / 256UL);
+    }
+
+    /* Pushes a null-terminated stack of free objects onto the global free list. */
+    void Return(TObjBase *stack) {
+      assert(stack);
+      TObjBase *tail = stack;
+      while (tail->NextObj) {
+        tail = tail->NextObj;
+      }
+      Base::TSpinLock::TLock lock(FreeQueueLock);
+      tail->NextObj = FreeQueue;
+      FreeQueue = stack;
+    }
 
     inline TObjBase *TryAlloc() {
       TObjBase *obj = nullptr;
@@ -264,6 +301,8 @@ namespace Base {
     typedef InvCon::AtomicUnorderedList::TCollection<TThreadLocalGlobalPoolManager, TThreadLocalPool> TPoolCollection;
 
     const size_t NumElems;
+
+    const size_t MaxParked;
 
     TObj *Alloc;
 
