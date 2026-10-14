@@ -1371,6 +1371,44 @@ FIXTURE(CachedRepoGoesAtItsDeadline) {
   });
 }
 
+/* #914: an expired pov's repo is flagged DiscardWhenClosed(), so it skips the cache when its
+   last ptr goes, whichever holder lets go last, and lets go of its parent. */
+FIXTURE(DiscardWhenClosedSkipsTheCache) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Orly::Indy::Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler, true, 16UL);
+      const Base::TUuid parent_id(TUuid::Twister), flagged_id(TUuid::Twister), plain_id(TUuid::Twister);
+      /* A ttl-0 parent, held open only by its children. */ {
+        auto parent = manager.GetRepo(parent_id, TTtl(0s), std::nullopt, true);
+        auto flagged = manager.GetRepo(flagged_id, TTtl(600s), parent, true);
+        auto plain = manager.GetRepo(plain_id, TTtl(600s), parent, true);
+        /* A second holder, as a Tetris player holds a safe child's repo. */
+        auto other = flagged;
+        flagged->DiscardWhenClosed();
+        flagged.Reset();
+        EXPECT_TRUE(manager.IsLiveRepo(flagged_id));
+        other.Reset();
+        EXPECT_FALSE(manager.IsLiveRepo(flagged_id));
+        /* An unflagged repo is still cached. */
+        plain.Reset();
+        EXPECT_TRUE(manager.IsLiveRepo(plain_id));
+      }
+      /* The cached child still holds the parent. */
+      EXPECT_TRUE(manager.IsLiveRepo(parent_id));
+      manager.DiscardExpiredObjs(L0::TDeadline::clock::now() + 1200s);
+      EXPECT_FALSE(manager.IsLiveRepo(plain_id));
+      EXPECT_FALSE(manager.IsLiveRepo(parent_id));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* Takes every free block of a pool, through the class's own operator new, until it throws, and
    gives them all back when released. On a fiber the pools fail at once (#607), so this doesn't
    wait. */
