@@ -151,3 +151,24 @@ FIXTURE(ComparisonAndPairOrdering) {
   EXPECT_TRUE(s.find(p3) == s.end());
 }
 
+
+FIXTURE(FormatMatchesUnparse) {
+  /* Format writes the text itself; it must be uuid_unparse*'s text, byte for byte, in each casing. */
+  for (int i = 0; i < 1000; ++i) {
+    TUuid uuid(i % 2 ? TUuid::Random : TUuid::TimeAndMAC);
+    if (i == 0) {
+      uuid = TUuid();
+    }
+    char actual[TUuid::MinBufSize], expected[TUuid::MinBufSize];
+    uuid.Format(actual);
+    uuid_unparse(uuid.GetRaw(), expected);
+    EXPECT_EQ(string(actual), string(expected));
+    uuid.Format(actual, TUuid::Upper);
+    uuid_unparse_upper(uuid.GetRaw(), expected);
+    EXPECT_EQ(string(actual), string(expected));
+    uuid.Format(actual, TUuid::Lower);
+    uuid_unparse_lower(uuid.GetRaw(), expected);
+    EXPECT_EQ(string(actual), string(expected));
+    EXPECT_TRUE(TUuid(uuid) == uuid);
+  }
+}
