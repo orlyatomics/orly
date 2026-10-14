@@ -1315,6 +1315,19 @@ bool TRepo::HasDiskMergeCandidate(TMapping *mapping) const {
   return false;
 }
 
+void TRepo::OnReopened() {
+  TMapping *mapping = AcquireCurrentMapping();
+  size_t total_disk_layers = 0UL;
+  for (TMapping::TEntryCollection::TCursor csr(mapping->GetEntryCollection()); csr; ++csr) {
+    total_disk_layers += csr->GetLayer()->GetKind() == TDataLayer::Disk ? 1UL : 0UL;
+  }
+  const bool has_merge_candidate = HasDiskMergeCandidate(mapping);
+  ReleaseMapping(mapping);
+  if (total_disk_layers >= 3 && has_merge_candidate) {
+    EnqueueMergeDisk();
+  }
+}
+
 /* Merges back off and retry about once a second while the disk stays full, so let at most one
    line about it through every 10s. */
 static bool ShouldLogDiskFullMerge() {

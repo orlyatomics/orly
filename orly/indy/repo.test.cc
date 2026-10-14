@@ -213,6 +213,7 @@ class TMyManager
 
   using L0::TManager::DiscardExpiredObjs;
   using L0::TManager::IsLiveRepo;
+  using L0::TManager::IsMergeDiskQueued;
 
   /* The sweeps Indy::TManager runs in its destructor. They also remove the files that merges
      retired, which needs ForEachScheduler: ~TManager's own drain runs after this object is gone. */
@@ -801,6 +802,10 @@ class TRootRepoFixture {
     return Safe;
   }
 
+  bool IsMergeDiskQueued() {
+    return Manager->IsMergeDiskQueued(Repo.Get());
+  }
+
   ~TRootRepoFixture() {
     Repo.Reset();
     Manager.reset();
@@ -872,7 +877,7 @@ class TRootRepoFixture {
 
   /* The disk and memory layers of the repo's current view. */
   pair<size_t, size_t> CountLayersByKind() {
-    Orly::Indy::TRepo::TView view(Stepped);
+    Orly::Indy::TRepo::TView view(Safe);
     size_t disk = 0UL, mem = 0UL;
     view.CountLayers(disk, mem);
     return {disk, mem};
@@ -2601,6 +2606,34 @@ FIXTURE(PersistedRetentionSurvivesRestart) {
         EXPECT_TRUE(root.GetSafe()->GetSavePoints().empty());
       }
       EXPECT_TRUE(root.ReadAt(1L, newest) == root.Int(99L));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* A repo that is only read after a restart still merges the files it came back with: reopening it queues a disk
+   merge, as every other mapping install does, when there are three or more and a pair is mergeable. */
+FIXTURE(ReopenedRepoQueuesItsDiskMerge) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    for (size_t files : {2UL, 6UL}) {
+      TRetentionStoreSim sim;
+      TRootRepoFixture root(true, &sim);
+      for (size_t i = 0UL; i < files; ++i) {
+        root.Commit({{static_cast<int64_t>(i), 10L, TMutator::Assign}});
+        root.Flush();
+      }
+      EXPECT_EQ(root.CountLayersByKind().first, files);
+      root.Restart();
+      EXPECT_EQ(root.CountLayersByKind().first, files);
+      EXPECT_EQ(root.IsMergeDiskQueued(), files >= 3UL);
+      if (files >= 3UL) {
+        root.MergeDisk(1UL);
+        EXPECT_LT(root.CountLayersByKind().first, files);
+      }
+      EXPECT_TRUE(root.Read(static_cast<int64_t>(files) - 1L) == root.Int(10L));
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

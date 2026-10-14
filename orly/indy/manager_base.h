@@ -653,6 +653,9 @@ namespace Orly {
 
           virtual void StepTail(size_t block_slots_available) = 0;
 
+          /* Called once the repo is live again after a reload from disk (TManager::Open). */
+          virtual void OnReopened() {}
+
           void MakeDirty();
 
           void RemoveFromDirty();
@@ -968,6 +971,9 @@ namespace Orly {
            cached, or being constructed right now).  Unlike TryOpenLiveRepo(), this never pins the
            repo, so asking can't be what closes it. */
         bool IsLiveRepo(const Base::TUuid &repo_id);
+
+        /* True iff. the repo is waiting on the disk-merge queue. */
+        bool IsMergeDiskQueued(TRepo *repo);
 
         /* Destroy every cached repo whose deadline is at or before `now`, as the cache would if
            it were full, and release what they held open.  Without this a closed repo lives until
