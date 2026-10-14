@@ -358,3 +358,76 @@ FIXTURE(PrefetchWindow) {
     cond.notify_one();
   });
 }
+
+/* A memory device whose writes start failing to submit after the first few, as they do when the
+   disk event pool runs dry: TPersistentDevice::Write() throws bad_alloc before submitting. */
+class TFailingWriteMemoryDevice
+    : public TMemoryDevice {
+  NO_COPY(TFailingWriteMemoryDevice);
+  public:
+
+  TFailingWriteMemoryDevice(size_t num_good_writes)
+      : TMemoryDevice(512, 512, 32768 /* 16 MB */, true /* fsync */, true /* corruption check */),
+        NumGoodWrites(num_good_writes) {}
+
+  virtual void Write(const Base::TCodeLocation &code_location, TBufKind buf_kind, uint8_t util_src, void *buf,
+                     const TOffset offset, long long nbytes, DiskPriority priority, bool abort_on_error,
+                     const TOffset logical_start_offset, const TIOCallback &cb) override {
+    if (NumWrites++ >= NumGoodWrites) {
+      throw std::bad_alloc();
+    }
+    TMemoryDevice::Write(code_location, buf_kind, util_src, buf, offset, nbytes, priority, abort_on_error, logical_start_offset, cb);
+  }
+
+  private:
+
+  const size_t NumGoodWrites;
+
+  std::atomic<size_t> NumWrites{0UL};
+
+};
+
+/* A TOutStream write whose submit throws, part way through a flush. The exception must leave the
+   stream's scope, and every buffer must be freed exactly once. ~TOutStream used to write out the
+   rest while unwinding, which threw again from a destructor and terminated (and handed the device
+   buffers that the failed flush's callbacks had already freed). */
+FIXTURE(OutStreamWriteFailureUnwinds) {
+  Orly::Indy::Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    /* The first flush comes at MaxOutBlockGroupSize blocks; its fourth write fails. */
+    TFailingWriteMemoryDevice device(3UL);
+    TVolume volume(TVolume::TDesc{TVolume::TDesc::Striped, device.GetDesc(), TVolume::TDesc::Fast, 1UL, 1UL, 1024UL, 8UL, 0.85},
+                   [](TCacheInstr, const TOffset, void *, size_t) {}, &scheduler);
+    TVolumeManager vol_man(&scheduler);
+    volume.AddDevice(&device, 0);
+    vol_man.AddNewVolume(&volume);
+    const size_t num_blocks = MaxOutBlockGroupSize + 4UL;
+    Orly::Indy::Util::TBlockVec block_vec;
+    vol_man.TryAllocateSequentialBlocks(TVolume::TDesc::Fast, num_blocks, [&block_vec](const TBlockRange &range) {
+      block_vec.PushBack(range);
+    });
+    const size_t bufs_used = TBufBlock::Pool.GetNumBlocksUsed();
+    bool threw = false;
+    try {
+      unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
+      TCompletionTrigger trigger;
+      std::unordered_set<size_t> written_block_set{};
+      TDataOutStream out_stream(HERE, 0UL, &vol_man, 0UL, block_vec, collision_map,
+                                trigger, RealTime, true
+                                #ifndef NDEBUG
+                                ,written_block_set
+                                #endif
+                                );
+      for (size_t i = 0; i < (num_blocks * LogicalBlockSize) / sizeof(size_t); ++i) {
+        out_stream << i;
+      }
+    } catch (const std::bad_alloc &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+    EXPECT_EQ(TBufBlock::Pool.GetNumBlocksUsed(), bufs_used);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}

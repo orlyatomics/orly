@@ -26,6 +26,7 @@
 #include <cassert>
 
 #include <algorithm>
+#include <exception>
 
 #include <base/class_traits.h>
 #include <base/uuid.h>
@@ -108,18 +109,29 @@ namespace Orly {
                 #endif
                 Priority(priority),
                 CodeLocation(code_location),
-                UtilSrc(util_src) {
+                UtilSrc(util_src),
+                UncaughtAtConstruction(std::uncaught_exceptions()) {
           }
 
+          /* Writes out what is still buffered, unless an exception is unwinding through the
+             stream's owner. That write is being abandoned (a merge that throws keeps no file), and
+             writing would need disk events: when the throw was a disk event pool running dry, the
+             second throw, from a destructor, terminated the process. So then just free the buffers. */
           virtual ~TOutStream() {
+            if (std::uncaught_exceptions() > UncaughtAtConstruction) {
+              if (!CurBlockIsCollision) {
+                delete Buf;
+              }
+              while (TBufferedWrite *write = WriteCollection.TryGetFirstMember()) {
+                delete write->GetBuf();
+                delete write;
+              }
+              QueueSize = 0UL;
+              return;
+            }
             if (!CurBlockIsCollision && Buf) {
             //if (!CurBlockIsCollision && Buf && ((ByteIndex % TService::BlockSize) != 0)) {
-              while (BlockVec.Size() < BlockInBuf + 1) {
-                BlockVec.PushBack(NewBlockCb(VolMan));
-              }
-              assert(BlockInBuf < BlockVec.Size());
-              size_t cur_block_id = BlockVec[BlockInBuf];
-              Append(cur_block_id, Buf);
+              AppendBuf();
             }
             if (GetSize() > 0) {
               Flush();
@@ -229,14 +241,14 @@ namespace Orly {
 
           void Sync() {
             if (!CurBlockIsCollision && Buf) {
-              while (BlockVec.Size() < BlockInBuf + 1) {
-                BlockVec.PushBack(NewBlockCb(VolMan));
-              }
-              assert(BlockInBuf < BlockVec.Size());
-              size_t cur_block_id = BlockVec[BlockInBuf];
               TBufBlock *new_buf = new TBufBlock();
               memcpy(new_buf->GetData(), Buf, PhysicalBlockSize);
-              Append(cur_block_id, Buf);
+              try {
+                AppendBuf();
+              } catch (...) {
+                delete new_buf;
+                throw;
+              }
               Buf = new_buf;
             }
             if (GetSize() > 0) {
@@ -256,14 +268,29 @@ namespace Orly {
             }
           }
 
+          /* Moves Buf, a block of our own, into the write group. If this throws, Buf is still
+             ours when it is non-null, and the group's or a submitted write's when it is null. */
+          void AppendBuf() {
+            assert(!CurBlockIsCollision && Buf);
+            while (BlockVec.Size() < BlockInBuf + 1) {
+              BlockVec.PushBack(NewBlockCb(VolMan));
+            }
+            assert(BlockInBuf < BlockVec.Size());
+            size_t cur_block_id = BlockVec[BlockInBuf];
+            /* Append() flushes a group that cur_block_id doesn't follow before it adds the block.
+               Do that here, while Buf is still ours, so Append() adds it before any flush. */
+            const TBufferedWrite *last = WriteCollection.TryGetLastMember();
+            if (last && last->GetBlockId() + 1 != cur_block_id) {
+              Flush();
+            }
+            const TBufBlock *buf = Buf;
+            Buf = nullptr;
+            Append(cur_block_id, buf);
+          }
+
           inline void FetchBlock(size_t block) {
             if (!CurBlockIsCollision && Buf) {
-              while (BlockVec.Size() < BlockInBuf + 1) {
-                BlockVec.PushBack(NewBlockCb(VolMan));
-              }
-              assert(BlockInBuf < BlockVec.Size());
-              size_t cur_block_id = BlockVec[BlockInBuf];
-              Append(cur_block_id, Buf);
+              AppendBuf();
             }
             auto ret = BlockCollisionMap.find(block);
             if (ret != BlockCollisionMap.end()) {  // this is a collision block
@@ -276,19 +303,25 @@ namespace Orly {
             BlockInBuf = block;
           }
 
+          /* Each write leaves the group before it is submitted. From then on its callback owns the
+             buffer, even if the submit throws, since a failed submit still calls back (#590). So
+             after a throw the group holds only buffers nothing else will free. */
           void Flush() {
             TCompletionTrigger *completion_trigger = &CompletionTrigger;
-            for (TWriteCollection::TCursor csr(&WriteCollection); csr; ++csr) {
+            while (TBufferedWrite *write = WriteCollection.TryGetFirstMember()) {
+              const size_t block_id = write->GetBlockId();
+              const TBufBlock *cur_buf = write->GetBuf();
+              delete write;
+              --QueueSize;
               #ifndef NDEBUG
-              WrittenToSet.insert(csr->GetBlockId());
+              WrittenToSet.insert(block_id);
               #endif
-              const TBufBlock *cur_buf = csr->GetBuf();
-              VolMan->WriteBlock(CodeLocation, BufKind, UtilSrc, csr->GetBuf()->GetData(), csr->GetBlockId(), Priority, Disk::Util::CacheAll, CompletionTrigger, [cur_buf, completion_trigger](TDiskResult result, const char *err_str) {
+              VolMan->WriteBlock(CodeLocation, BufKind, UtilSrc, cur_buf->GetData(), block_id, Priority, Disk::Util::CacheAll, CompletionTrigger, [cur_buf, completion_trigger](TDiskResult result, const char *err_str) {
                 delete cur_buf;
                 completion_trigger->Callback(result, err_str);
               });
             }
-            TWriteGroup::Flush();
+            assert(QueueSize == 0UL);
           }
 
           virtual size_t GetLogicalBlockSize() const override {
@@ -331,6 +364,9 @@ namespace Orly {
           const Base::TCodeLocation CodeLocation;
 
           uint8_t UtilSrc;
+
+          /* std::uncaught_exceptions() when we were made; more at destruction means unwinding. */
+          const int UncaughtAtConstruction;
 
         };  // TOutStream
 
