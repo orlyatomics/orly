@@ -90,7 +90,16 @@ TPov::TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputSt
   Policy = static_cast<TPolicy>(policy_char);
 }
 
-TPov::~TPov() = default;
+TPov::~TPov() {
+  /* Past our deadline, nothing can open this pov again, so nothing can open its repo either.
+     Without this the repo, closed by our letting go, would sit in the repo cache for another
+     ttl of its own, holding its pool blocks and its WAL pin (#914).  Before the deadline (cache
+     pressure, or shutdown) the pov can be reloaded and attach to its repo, so that stays cached. */
+  const auto &deadline = GetDeadline();
+  if (Repo && deadline && *deadline <= Durable::TDeadline::clock::now()) {
+    Repo->DiscardWhenClosed();
+  }
+}
 
 void TPov::Write(Io::TBinaryOutputStream &strm) const {
   TObj::Write(strm);

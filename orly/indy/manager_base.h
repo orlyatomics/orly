@@ -255,6 +255,11 @@ namespace Orly {
           /* Change the time-to-live.  The time must be non-negatvie and the object must be open. */
           void SetTtl(const TTtl &ttl);
 
+          /* When the last ptr to this object goes, destroy it as if its ttl were zero, instead of
+             caching it.  For an object nothing may open again, such as an expired pov's repo
+             (#914).  The object must be open, so the caller must hold a ptr to it. */
+          void DiscardWhenClosed() noexcept;
+
           #if 0
           /* Override this function to stream private object state to serialized blob form.
              Call this version first, then stream your own data.
@@ -346,6 +351,9 @@ namespace Orly {
 
           /* See accessor. */
           TTtl Ttl;
+
+          /* See DiscardWhenClosed().  Guarded by the manager's DurableMutex. */
+          bool DiscardOnClose;
 
           /* See accessor. */
           std::optional<TDeadline> Deadline;

@@ -814,8 +814,14 @@ void TManager::TObj::SetTtl(const TTtl &ttl) {
   Ttl = ttl;
 }
 
+void TManager::TObj::DiscardWhenClosed() noexcept {
+  lock_guard<mutex> lock(Manager->DurableMutex);
+  assert(PtrCount);
+  DiscardOnClose = true;
+}
+
 TManager::TObj::TObj(TManager *manager, const TId &id, const TTtl &ttl)
-    : Manager(manager), Id(id), PtrCount(0), OnDisk(false), DiscardSanctioned(false), Ttl(ttl) {
+    : Manager(manager), Id(id), PtrCount(0), OnDisk(false), DiscardSanctioned(false), Ttl(ttl), DiscardOnClose(false) {
   assert(manager);
   Sem = new TSem;
 }
@@ -870,7 +876,7 @@ void TManager::TObj::OnPtrRelease() noexcept {
       /* Steal the sem.  We may be destroyed by the ensuing logic and we'll need to keep the sem around to wait for. */
       sem = Sem;
       Sem = nullptr;
-      if (Ttl.count() > 0) {
+      if (Ttl.count() > 0 && !DiscardOnClose) {
         /* We have a non-zero time-to-live, so establish a deadline and save the object. */
         Deadline = TDeadline::clock::now() + Ttl;
         try {
@@ -893,7 +899,7 @@ void TManager::TObj::OnPtrRelease() noexcept {
           Manager->DestroyObj(this);
         }
       } else {
-        /* We have a zero time-to-live, so delete the object from disk (if necessary) and evict it. */
+        /* We have a zero time-to-live (or must be discarded), so delete the object from disk (if necessary) and evict it. */
         if (OnDisk) {
           try {
             Manager->Delete(Id, sem);

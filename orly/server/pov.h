@@ -118,7 +118,7 @@ namespace Orly {
       /* Open an existing pov. */
       TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm);
 
-      /* Do-little. */
+      /* Discards our repo once it closes, if we expired. */
       ~TPov() override;
 
       /* See TDurable. */
