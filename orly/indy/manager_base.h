@@ -948,6 +948,16 @@ namespace Orly {
            repo, so asking can't be what closes it. */
         bool IsLiveRepo(const Base::TUuid &repo_id);
 
+        /* Destroy every cached repo whose deadline is at or before `now`, as the cache would if
+           it were full, and release what they held open.  Without this a closed repo lives until
+           the cache is full, and the cache is sized at twice the pools a repo takes blocks from
+           (a pov's repo takes a Data Layer and a Repo Mapping), so an expired pov's repo held
+           both until the pools ran out, and held its WAL Pov record (IsLiveRepo) until then too.
+           A pov's repo has the pov's ttl and closes when the pov lets go of it, so its deadline
+           is never before the pov's own: nothing can open it again after this.  The layer
+           cleaner calls it on every tick. */
+        void DiscardExpiredObjs(TDeadline now = TDeadline::clock::now());
+
         /* Called as the manager destroys a closed repo it is done with: one its ttl let go, or
            one the cache discarded.  Not called for the teardown sweep.  Runs with the manager's
            mutex held, so an override must not touch the manager; it may only take note. */
