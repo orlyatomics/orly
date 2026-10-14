@@ -32,6 +32,12 @@ Entries reference the originating pull request and the closed issue where applic
 
 ### Fixed
 
+- **Expired POVs no longer leak their repos.** A closed repo stayed in the repo cache until the cache
+  filled, and the cache is sized at twice the Data Layer and Repo Mapping pools, so a steady stream of
+  short-lived POVs used up those pools first; every new POV was then refused. The cached repo also
+  counted as live, so its WAL Pov record stayed pinned: the WAL head could not pass it, and a restart
+  restored every such POV. The layer cleaner now discards cached repos at their deadline. (#914)
+
 ## [v0.2.0] — 2026-10-06
 
 A robustness release. Under memory or disk pressure `orlyi` now refuses writes instead of aborting, and keeps

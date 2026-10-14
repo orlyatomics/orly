@@ -211,6 +211,9 @@ class TMyManager
       : TManager(engine, 1h, 1h, true, prune_merge_history, true, 1000ms, scheduler,
                  100UL, max_repo_cache_size, 20UL, MemMergeCoreVec, DiskMergeCoreVec, true) {}
 
+  using L0::TManager::DiscardExpiredObjs;
+  using L0::TManager::IsLiveRepo;
+
   /* The sweeps Indy::TManager runs in its destructor. They also remove the files that merges
      retired, which needs ForEachScheduler: ~TManager's own drain runs after this object is gone. */
   virtual ~TMyManager() {
@@ -1317,6 +1320,50 @@ FIXTURE(CachedRepoKeepsItsParent) {
       /* Teardown: the root is still held by the cached fillers. */
       root.Reset();
       EXPECT_TRUE(static_cast<bool>(manager.TryOpenLiveRepo(root_id)));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* A cached repo goes at its deadline, not only when the cache is full.  An expired pov's repo
+   used to sit in the cache, holding a Data Layer and a Repo Mapping, until the cache filled; the
+   cache is twice the size of those pools, so they ran out first and every new pov was refused.
+   Its WAL Pov record stayed pinned too, since the repo was still live. */
+FIXTURE(CachedRepoGoesAtItsDeadline) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Orly::Indy::Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler, true, 16UL);
+      const Base::TUuid root_id(TUuid::Twister), short_id(TUuid::Twister), long_id(TUuid::Twister), ttl0_parent_id(TUuid::Twister);
+      auto root = manager.GetRepo(root_id, TTtl::max(), std::nullopt, true);
+      const auto start = L0::TDeadline::clock::now();
+      manager.GetRepo(short_id, TTtl(60s), root, true);  // dropped at once: closed, so cached
+      manager.GetRepo(long_id, TTtl(3600s), root, true);
+      /* A ttl-0 parent held open only by its cached child. */ {
+        auto ttl0_parent = manager.GetRepo(ttl0_parent_id, TTtl(0s), std::nullopt, true);
+        manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl(60s), ttl0_parent, true);
+      }
+      EXPECT_TRUE(manager.IsLiveRepo(short_id));
+      EXPECT_TRUE(manager.IsLiveRepo(ttl0_parent_id));
+      /* Nothing has expired yet. */
+      manager.DiscardExpiredObjs(start);
+      EXPECT_TRUE(manager.IsLiveRepo(short_id));
+      EXPECT_TRUE(manager.IsLiveRepo(long_id));
+      EXPECT_TRUE(manager.IsLiveRepo(ttl0_parent_id));
+      /* Past the short deadlines but not the long one. */
+      manager.DiscardExpiredObjs(start + 120s);
+      EXPECT_FALSE(manager.IsLiveRepo(short_id));
+      EXPECT_TRUE(manager.IsLiveRepo(long_id));
+      /* The discarded child let go of its parent, which then went too. */
+      EXPECT_FALSE(manager.IsLiveRepo(ttl0_parent_id));
+      /* The cached repos still hold the root. */
+      root.Reset();
+      EXPECT_TRUE(manager.IsLiveRepo(root_id));
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

@@ -360,6 +360,8 @@ void TManager::RunLayerCleaner() {
       syslog(LOG_INFO, "TManager::RunLayerCleaner shutting down (#440)");
       return;
     }
+    /* First, so the layers of a repo it discards go on this pass. */
+    DiscardExpiredObjs();
     RemoveLayersFromQueue();
   }
 }
@@ -768,6 +770,26 @@ bool TManager::TryCacheObj(TObj *obj, vector<TObj *> &dependents) noexcept {
     }
   }
   return success;
+}
+
+void TManager::DiscardExpiredObjs(TDeadline now) {
+  vector<TObj *> dependents;
+  /* lock */ {
+    lock_guard<mutex> lock(DurableMutex);
+    /* The cache is in deadline order, so the expired objects are at the front. */
+    while (!ClosedObjs.empty() && ClosedObjs.begin()->first.first <= now) {
+      auto iter = ClosedObjs.begin();
+      TObj *cached_obj = iter->second;
+      ClosedObjs.erase(iter);
+      /* As in TryCacheObj: its dependents are released once the mutex is free (#661). */
+      cached_obj->TakeDependents(dependents);
+      DestroyObj(cached_obj);
+    }
+  }
+  /* Each release may cache or destroy its object, so it runs outside the lock. */
+  for (TObj *obj : dependents) {
+    obj->OnPtrRelease();
+  }
 }
 
 const char *TManager::TObj::GetKind() const noexcept {
