@@ -308,6 +308,10 @@ namespace Orly {
              after a throw the group holds only buffers nothing else will free. */
           void Flush() {
             TCompletionTrigger *completion_trigger = &CompletionTrigger;
+            /* Make room for this group within MaxOutInFlightBlocks before submitting any of it. */
+            static_assert(Util::MaxOutInFlightBlocks >= Util::MaxOutBlockGroupSize, "a whole group must fit in flight");
+            assert(QueueSize <= Util::MaxOutInFlightBlocks);
+            CompletionTrigger.WaitUntilAtMost(Util::MaxOutInFlightBlocks - QueueSize);
             while (TBufferedWrite *write = WriteCollection.TryGetFirstMember()) {
               const size_t block_id = write->GetBlockId();
               const TBufBlock *cur_buf = write->GetBuf();

@@ -20,8 +20,12 @@
 
 #include <atomic>
 #include <cstring>
+#include <deque>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
+#include <thread>
 
 #include <orly/indy/disk/out_stream.h>
 #include <orly/indy/disk/sim/mem_engine.h>
@@ -426,6 +430,120 @@ FIXTURE(OutStreamWriteFailureUnwinds) {
     }
     EXPECT_TRUE(threw);
     EXPECT_EQ(TBufBlock::Pool.GetNumBlocksUsed(), bufs_used);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* A memory device that holds its writes back and lets a releaser thread carry them out one at a
+   time, slower than a stream can produce blocks, counting the most held at once. */
+class THoldingWriteMemoryDevice
+    : public TMemoryDevice {
+  NO_COPY(THoldingWriteMemoryDevice);
+  public:
+
+  THoldingWriteMemoryDevice()
+      : TMemoryDevice(512, 512, 32768 /* 16 MB */, true /* fsync */, true /* corruption check */),
+        Releaser([this] {
+          for (;;) {
+            std::function<void ()> write;
+            /* take one */ {
+              std::lock_guard<std::mutex> lock(Mutex);
+              if (!Held.empty()) {
+                write = std::move(Held.front());
+                Held.pop_front();
+              } else if (Stop) {
+                break;
+              }
+            }
+            if (write) {
+              std::this_thread::sleep_for(microseconds(200));
+              write();
+            } else {
+              std::this_thread::yield();
+            }
+          }
+        }) {}
+
+  ~THoldingWriteMemoryDevice() {
+    /* stop */ {
+      std::lock_guard<std::mutex> lock(Mutex);
+      Stop = true;
+    }
+    Releaser.join();
+  }
+
+  size_t GetMaxHeld() const {
+    std::lock_guard<std::mutex> lock(Mutex);
+    return MaxHeld;
+  }
+
+  size_t GetNumWrites() const {
+    std::lock_guard<std::mutex> lock(Mutex);
+    return NumWrites;
+  }
+
+  virtual void Write(const Base::TCodeLocation &code_location, TBufKind buf_kind, uint8_t util_src, void *buf,
+                     const TOffset offset, long long nbytes, DiskPriority priority, bool abort_on_error,
+                     const TOffset logical_start_offset, const TIOCallback &cb) override {
+    std::lock_guard<std::mutex> lock(Mutex);
+    Held.push_back([=, this] {
+      TMemoryDevice::Write(code_location, buf_kind, util_src, buf, offset, nbytes, priority, abort_on_error, logical_start_offset, cb);
+    });
+    ++NumWrites;
+    MaxHeld = std::max(MaxHeld, Held.size());
+  }
+
+  private:
+
+  mutable std::mutex Mutex;
+
+  std::deque<std::function<void ()>> Held;
+
+  size_t MaxHeld = 0UL;
+
+  size_t NumWrites = 0UL;
+
+  bool Stop = false;
+
+  std::thread Releaser;
+
+};
+
+/* A stream writing faster than its device completes must stop at MaxOutInFlightBlocks blocks in
+   flight, rather than submitting the whole file before waiting. */
+FIXTURE(OutStreamBoundsInFlightWrites) {
+  Orly::Indy::Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    THoldingWriteMemoryDevice device;
+    TVolume volume(TVolume::TDesc{TVolume::TDesc::Striped, device.GetDesc(), TVolume::TDesc::Fast, 1UL, 1UL, 1024UL, 8UL, 0.85},
+                   [](TCacheInstr, const TOffset, void *, size_t) {}, &scheduler);
+    TVolumeManager vol_man(&scheduler);
+    volume.AddDevice(&device, 0);
+    vol_man.AddNewVolume(&volume);
+    const size_t num_blocks = 2UL * MaxOutInFlightBlocks + MaxOutBlockGroupSize;
+    Orly::Indy::Util::TBlockVec block_vec;
+    vol_man.TryAllocateSequentialBlocks(TVolume::TDesc::Fast, num_blocks, [&block_vec](const TBlockRange &range) {
+      block_vec.PushBack(range);
+    });
+    unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
+    TCompletionTrigger trigger;
+    /* stream data out */ {
+      std::unordered_set<size_t> written_block_set{};
+      TDataOutStream out_stream(HERE, 0UL, &vol_man, 0UL, block_vec, collision_map,
+                                trigger, RealTime, true
+                                #ifndef NDEBUG
+                                ,written_block_set
+                                #endif
+                                );
+      for (size_t i = 0; i < (num_blocks * LogicalBlockSize) / sizeof(size_t); ++i) {
+        out_stream << i;
+      }
+    }
+    trigger.Wait();
+    EXPECT_EQ(device.GetNumWrites(), num_blocks);
+    EXPECT_LE(device.GetMaxHeld(), MaxOutInFlightBlocks);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

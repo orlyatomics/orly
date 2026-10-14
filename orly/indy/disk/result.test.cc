@@ -24,6 +24,11 @@
    parks to do so must not leak its in-flight exception into the other
    fibers on its runner.
 
+   WaitUntilAtMost() is the partial wait a writer uses to bound what it has
+   in flight: it must wake once few enough completions are outstanding (not
+   only at the barrier), must not throw an error that landed before it, and
+   gets the same free-on-wake hammer as Wait().
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -412,5 +417,122 @@ FIXTURE(ParkedUnwindDoesNotLeakExceptionState) {
     EXPECT_EQ(b_uncaught_after, 0);
     EXPECT_TRUE(a_caught_own);
     EXPECT_EQ(a_uncaught_in_catch, 0);
+  });
+}
+
+/* The waiter asks for at most 2 of 5 outstanding.  The completer sends 2, holds
+   the third until the waiter has had every chance to wake early, then sends
+   it -- and must see the waiter wake while the last 2 are still held back. */
+FIXTURE(WaitUntilAtMostWakesAtThreshold) {
+  WithRunner([&](TFramePoolMngr *frame_pool_mngr, TRunner *runner) {
+    TCompletionTrigger trigger;
+    trigger.WaitForMore(5);
+    atomic<bool> third_sent(false);
+    atomic<bool> woke(false);
+    bool woke_after_third = false;
+    thread completer([&] {
+      trigger.Callback(Success, nullptr);
+      trigger.Callback(Success, nullptr);
+      this_thread::sleep_for(chrono::milliseconds(50));
+      third_sent.store(true, memory_order_release);
+      trigger.Callback(Success, nullptr);
+      while (!woke.load(memory_order_acquire)) {
+        this_thread::yield();
+      }
+      trigger.Callback(Success, nullptr);
+      trigger.Callback(Success, nullptr);
+    });
+    TJumpRunnable jump([&] {
+      trigger.WaitUntilAtMost(2);
+      woke_after_third = third_sent.load(memory_order_acquire);
+      woke.store(true, memory_order_release);
+      trigger.Wait();
+    });
+    jump(frame_pool_mngr, runner);
+    completer.join();
+    EXPECT_TRUE(woke_after_third);
+  });
+}
+
+/* An error among the completions WaitUntilAtMost() waited out is not thrown
+   there; it stays sticky for the final Wait(). */
+FIXTURE(WaitUntilAtMostLeavesErrorForWait) {
+  WithRunner([&](TFramePoolMngr *frame_pool_mngr, TRunner *runner) {
+    TCompletionTrigger trigger;
+    trigger.WaitForMore(3);
+    atomic<bool> woke(false);
+    bool partial_threw = false;
+    bool final_threw = false;
+    thread completer([&] {
+      trigger.Callback(Error, "first completion failed");
+      trigger.Callback(Success, nullptr);
+      while (!woke.load(memory_order_acquire)) {
+        this_thread::yield();
+      }
+      trigger.Callback(Success, nullptr);
+    });
+    TJumpRunnable jump([&] {
+      try {
+        trigger.WaitUntilAtMost(1);
+      } catch (const TDiskError &) {
+        partial_threw = true;
+      }
+      woke.store(true, memory_order_release);
+      try {
+        trigger.Wait();
+      } catch (const TDiskError &) {
+        final_threw = true;
+      }
+    });
+    jump(frame_pool_mngr, runner);
+    completer.join();
+    EXPECT_FALSE(partial_threw);
+    EXPECT_TRUE(final_threw);
+  });
+}
+
+/* HammerFreeOnWake with a partial wait first: each round waits until at most
+   half its completions are outstanding, then for the rest, then destroys the
+   trigger.  Under TSan a completer touch racing either wake shows up. */
+FIXTURE(WaitUntilAtMostFreeOnWake) {
+  const size_t num_rounds = 10000;
+  WithRunner([&](TFramePoolMngr *frame_pool_mngr, TRunner *runner) {
+    atomic<TRound *> slot(nullptr);
+    atomic<bool> stop(false);
+    thread completer([&] {
+      for (;;) {
+        TRound *round = slot.exchange(nullptr, memory_order_acq_rel);
+        if (round) {
+          TCompletionTrigger *const trigger = round->Trigger;
+          const size_t num_completions = round->NumCompletions;
+          for (size_t i = 0; i < num_completions; ++i) {
+            trigger->Callback(Success, nullptr);
+          }
+        } else if (stop.load(memory_order_acquire)) {
+          break;
+        } else {
+          this_thread::yield();
+        }
+      }
+    });
+    alignas(TCompletionTrigger) unsigned char storage[sizeof(TCompletionTrigger)];
+    const size_t num_completions = 8;
+    size_t wakeups = 0;
+    for (size_t i = 0; i < num_rounds; ++i) {
+      TJumpRunnable jump([&] {
+        TCompletionTrigger *trigger = new (storage) TCompletionTrigger();
+        trigger->WaitForMore(num_completions);
+        TRound round{trigger, num_completions, num_completions};
+        slot.store(&round, memory_order_release);
+        trigger->WaitUntilAtMost(num_completions / 2);
+        trigger->Wait();
+        trigger->~TCompletionTrigger();
+        ++wakeups;
+      });
+      jump(frame_pool_mngr, runner);
+    }
+    stop.store(true, memory_order_release);
+    completer.join();
+    EXPECT_EQ(wakeups, num_rounds);
   });
 }
