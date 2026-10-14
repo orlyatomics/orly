@@ -25,6 +25,7 @@
 #include <base/not_implemented.h>
 #include <orly/type/orlyify.h>
 #include <orly/var.h>
+#include <orly/var/sabot_to_var.h>
 
 using namespace std;
 using namespace Orly;
@@ -173,7 +174,7 @@ Base::TJson Orly::Var::ToJson(const TVar &var) {
     private:
     virtual void operator()(const TAddr *that) const {
       TJson::TArray arr;
-      for (auto iter : that->GetVal()) {
+      for (const auto &iter : that->GetVal()) {
         arr.emplace_back(ToJson(iter.second));
       }
       Out = TJson(move(arr));
@@ -183,7 +184,7 @@ Base::TJson Orly::Var::ToJson(const TVar &var) {
     }
     virtual void operator()(const TDict *that) const {
       TJson::TObject obj;
-      for (auto iter : that->GetVal()) {
+      for (const auto &iter : that->GetVal()) {
         /* Same key convention as Jsonify (which the wire format inherited
            through the old parse round-trip): a string key is used verbatim;
            any other key type appears as the compact JSON text of the key
@@ -201,16 +202,16 @@ Base::TJson Orly::Var::ToJson(const TVar &var) {
     virtual void operator()(const TErr *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const TFree *) const {NOT_IMPLEMENTED();}
     virtual void operator()(const TId *that) const {
-      ostringstream strm;
-      strm << that->GetVal();
-      Out = TJson(strm.str());
+      char buf[Base::TUuid::MinBufSize];
+      that->GetVal().Format(buf);
+      Out = TJson(string(buf));
     }
     virtual void operator()(const TInt *that) const {
       Out = TJson(that->GetVal());
     }
     virtual void operator()(const TList *that) const {
       TJson::TArray arr;
-      for (auto iter : that->GetVal()) {
+      for (const auto &iter : that->GetVal()) {
         arr.emplace_back(ToJson(iter));
       }
       Out = TJson(move(arr));
@@ -220,7 +221,7 @@ Base::TJson Orly::Var::ToJson(const TVar &var) {
     }
     virtual void operator()(const TObj *that) const {
       TJson::TObject obj;
-      for (auto iter : that->GetVal()) {
+      for (const auto &iter : that->GetVal()) {
         obj[iter.first] = ToJson(iter.second);
       }
       Out = TJson(move(obj));
@@ -243,7 +244,7 @@ Base::TJson Orly::Var::ToJson(const TVar &var) {
     }
     virtual void operator()(const TSet *that) const {
       TJson::TArray arr;
-      for (auto iter : that->GetVal()) {
+      for (const auto &iter : that->GetVal()) {
         arr.emplace_back(ToJson(iter));
       }
       Out = TJson(move(arr));
@@ -269,5 +270,121 @@ Base::TJson Orly::Var::ToJson(const TVar &var) {
   };
   TJson result;
   var.Accept(TToJsonVisitor(result));
+  return result;
+}
+
+namespace {
+
+  /* See Orly::Var::StateToJson.  Each direct case mirrors what ToVar builds for the state and what
+     ToJson then makes of that var. */
+  class TStateToJsonVisitor final
+      : public Sabot::TStateVisitor {
+    public:
+
+    TStateToJsonVisitor(Base::TJson &out, bool in_tuple = false)
+        : Out(out), InTuple(in_tuple) {}
+
+    void operator()(const Sabot::State::TFree &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TTombstone &state) const override  { Fallback(state); }
+    void operator()(const Sabot::State::TVoid &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TInt8 &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TInt16 &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TInt32 &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TInt64 &state) const override      { Out = Base::TJson(state.Get()); }
+    void operator()(const Sabot::State::TUInt8 &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TUInt16 &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TUInt32 &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TUInt64 &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TBool &state) const override       { Out = Base::TJson(state.Get()); }
+    void operator()(const Sabot::State::TChar &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TFloat &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TDouble &state) const override {
+      /* As ToJson(TReal): JSON has no NaN / Infinity, so those are null (#276). */
+      const double val = state.Get();
+      Out = isfinite(val) ? Base::TJson(val) : Base::TJson();
+    }
+    void operator()(const Sabot::State::TDuration &state) const override   { Fallback(state); }
+    void operator()(const Sabot::State::TTimePoint &state) const override  { Fallback(state); }
+    void operator()(const Sabot::State::TUuid &state) const override {
+      char buf[Base::TUuid::MinBufSize];
+      Base::TUuid(state.Get().GetRaw()).Format(buf);
+      Out = Base::TJson(string(buf));
+    }
+    void operator()(const Sabot::State::TBlob &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TStr &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      Sabot::State::TStr::TPin::TWrapper pin(state.Pin(pin_alloc));
+      Out = Base::TJson(string(pin->GetStart(), pin->GetSize()));
+    }
+    void operator()(const Sabot::State::TDesc &state) const override {
+      /* ToVar takes a desc only as an address member, where ToJson drops the direction. */
+      if (!InTuple) {
+        Fallback(state);
+        return;
+      }
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TDesc::TPin::TWrapper pin(state.Pin(pin_alloc));
+      Out = Var::StateToJson(*Sabot::State::TAny::TWrapper(pin->NewElem(0, state_alloc)));
+    }
+    void operator()(const Sabot::State::TOpt &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TOpt::TPin::TWrapper pin(state.Pin(pin_alloc));
+      if (!pin->GetElemCount()) {
+        Fallback(state);
+        return;
+      }
+      Out = Var::StateToJson(*Sabot::State::TAny::TWrapper(pin->NewElem(0, state_alloc)));
+    }
+    void operator()(const Sabot::State::TSet &state) const override        { Fallback(state); }
+    void operator()(const Sabot::State::TVector &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TVector::TPin::TWrapper pin(state.Pin(pin_alloc));
+      const size_t elem_count = pin->GetElemCount();
+      if (!elem_count) {
+        Fallback(state);
+        return;
+      }
+      Base::TJson::TArray arr;
+      arr.reserve(elem_count);
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        arr.emplace_back(Var::StateToJson(*Sabot::State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc))));
+      }
+      Out = Base::TJson(std::move(arr));
+    }
+    void operator()(const Sabot::State::TMap &state) const override        { Fallback(state); }
+    void operator()(const Sabot::State::TRecord &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TTuple &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TTuple::TPin::TWrapper pin(state.Pin(pin_alloc));
+      const size_t elem_count = pin->GetElemCount();
+      Base::TJson::TArray arr(elem_count);
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        Sabot::State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc))->Accept(TStateToJsonVisitor(arr[elem_idx], true));
+      }
+      Out = Base::TJson(std::move(arr));
+    }
+
+    private:
+
+    void Fallback(const Sabot::State::TAny &state) const {
+      Out = Var::ToJson(Var::ToVar(state));
+    }
+
+    Base::TJson &Out;
+
+    /* True for a member of an address, where a desc may appear. */
+    const bool InTuple;
+
+  };  // TStateToJsonVisitor
+
+}  // namespace
+
+Base::TJson Orly::Var::StateToJson(const Sabot::State::TAny &state) {
+  Base::TJson result;
+  state.Accept(TStateToJsonVisitor(result));
   return result;
 }

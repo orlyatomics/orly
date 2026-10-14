@@ -558,7 +558,7 @@ class TWsImpl final
       void operator()(const TEchoStmt *stmt) const override {
         assert(stmt);
         void *alloc = alloca(SabotStateSize);
-        Result = Var::ToJson(Var::ToVar(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc))));
+        Result = Var::StateToJson(*TWrapper(NewStateSabot(stmt->GetExpr(), alloc)));
       }
 
       void operator()(const TExitStmt *) const override {
@@ -1295,8 +1295,7 @@ class TWsImpl final
       /* A method result as the reply's JSON. */
       [[nodiscard]] static TJson ToJson(const TMethodResult &result) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        return Var::ToJson(
-            Var::ToVar(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc))));
+        return Var::StateToJson(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)));
       }
 
       [[nodiscard]] static TUuid Translate(const TIdExpr *id_expr) {
@@ -1443,7 +1442,9 @@ class TWsImpl final
 
     /* Write a reply, then read the next message (or close, after an exit or a refused token). */
     void SendReply(TJson &&reply) {
-      ReplyBuf = AsStr(reply);
+      /* Formatted straight into the buffer (no stream): a 1000-row reply is ~180 KB of text. */
+      ReplyBuf.clear();
+      reply.AppendTo(ReplyBuf);
       WsStream.text(true);
       WsStream.async_write(
           net::buffer(ReplyBuf),

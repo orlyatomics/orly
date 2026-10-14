@@ -121,12 +121,12 @@ namespace Base {
 
     /* Copy constructor. */
     TUuid(const TUuid &that) {
-      uuid_copy(Data, that.Data);
+      std::memcpy(Data, that.Data, sizeof(Data));
     }
 
     /* Copy constructor. */
     TUuid(const uuid_t &that) {
-      uuid_copy(Data, that);
+      std::memcpy(Data, that, sizeof(Data));
     }
 
     /* Construct with a unique state. */
@@ -151,7 +151,7 @@ namespace Base {
     /* Copy assignment. */
     TUuid &operator=(const TUuid &that) {
       if (this != &that) {
-        uuid_copy(Data, that.Data);
+        std::memcpy(Data, that.Data, sizeof(Data));
       }
       return *this;
     }
@@ -159,7 +159,7 @@ namespace Base {
     /* Copy assignment. */
     TUuid &operator=(const uuid_t &that) {
       if (&Data != &that) {
-        uuid_copy(Data, that);
+        std::memcpy(Data, that, sizeof(Data));
       }
       return *this;
     }
@@ -222,21 +222,41 @@ namespace Base {
        See the comment at the top of this file for more information about text formatting. */
     void Format(char *buf, TCasing casing = DefaultCasing) const {
       assert(buf);
+      /* Formatted here rather than by uuid_unparse*, which go through sprintf: a reply of 1000
+         rows formats thousands of ids.  The default casing is whatever this platform's
+         uuid_unparse produces, asked once. */
+      bool upper;
       switch (casing) {
         case DefaultCasing: {
-          uuid_unparse(Data, buf);
+          static const bool default_upper = [] {
+            const uuid_t probe = {0xab};
+            char text[MinBufSize];
+            uuid_unparse(probe, text);
+            return text[0] == 'A';
+          }();
+          upper = default_upper;
           break;
         }
         case Upper: {
-          uuid_unparse_upper(Data, buf);
+          upper = true;
           break;
         }
         case Lower: {
-          uuid_unparse_lower(Data, buf);
+          upper = false;
           break;
         }
         NO_DEFAULT_CASE;
       }
+      const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+      char *out = buf;
+      for (size_t idx = 0; idx < sizeof(Data); ++idx) {
+        if (idx == 4 || idx == 6 || idx == 8 || idx == 10) {
+          *out++ = '-';
+        }
+        *out++ = digits[Data[idx] >> 4];
+        *out++ = digits[Data[idx] & 0xF];
+      }
+      *out = '\0';
     }
 
     /* Format with an underscore instead of '-' */

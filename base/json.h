@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <fstream>
 #include <functional>
@@ -30,6 +31,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -81,54 +84,47 @@ namespace Base {
        usual suspects, \u00XX for the remaining control characters, and raw
        (legal) pass-through for everything else including multi-byte UTF-8. */
     static void WriteString(std::ostream &strm, const std::string &text) {
-      strm << '"';
-      const auto end = text.end();
-      for(auto it = text.begin(); it != end; ++it) {
-        char c = *it;
-        switch(c) {
-          case '\\': {
-            strm << R"(\\)";
-            break;
-          }
-          case '\"': {
-            strm << R"(\")";
-            break;
-          }
-          case '\b': {
-            strm << R"(\b)";
-            break;
-          }
-          case '\f': {
-            strm << R"(\f)";
-            break;
-          }
-          case '\n': {
-            strm << R"(\n)";
-            break;
-          }
-          case '\r': {
-            strm << R"(\r)";
-            break;
-          }
-          case '\t': {
-            strm << R"(\t)";
-            break;
-          }
+      std::string out;
+      out.reserve(text.size() + 2);
+      AppendString(out, text);
+      strm.write(out.data(), static_cast<std::streamsize>(out.size()));
+    }
+
+    /* Appends 'text' as a JSON string, exactly as WriteString writes it.  Runs of characters that
+       need no escape are appended whole, not a character at a time. */
+    static void AppendString(std::string &out, std::string_view text) {
+      out.push_back('"');
+      const char *run = text.data();
+      const char *const end = text.data() + text.size();
+      for (const char *it = run; it != end; ++it) {
+        const auto c = static_cast<unsigned char>(*it);
+        if (c >= 0x20 && c != '"' && c != '\\') {
+          continue;
+        }
+        out.append(run, it);
+        run = it + 1;
+        switch (c) {
+          case '\\': out.append(R"(\\)"); break;
+          case '"':  out.append(R"(\")"); break;
+          case '\b': out.append(R"(\b)"); break;
+          case '\f': out.append(R"(\f)"); break;
+          case '\n': out.append(R"(\n)"); break;
+          case '\r': out.append(R"(\r)"); break;
+          case '\t': out.append(R"(\t)"); break;
           default: {
             /* JSON forbids raw control characters in strings; emit the ones
                without a short escape as \u00XX.  Anything else -- including
                raw multi-byte UTF-8 -- passes through, which is legal JSON
                (#276).  ReadQuotedString's \u handler round-trips these. */
-            if (static_cast<unsigned char>(c) < 0x20) {
-              constexpr const char *hex = "0123456789abcdef";
-              strm << R"(\u00)" << hex[(c >> 4) & 0xF] << hex[c & 0xF];
-            } else {
-              strm << c;
-            }
+            constexpr const char *hex = "0123456789abcdef";
+            out.append(R"(\u00)");
+            out.push_back(hex[(c >> 4) & 0xF]);
+            out.push_back(hex[c & 0xF]);
           }
         }
       }
-      strm << '"';
+      out.append(run, end);
+      out.push_back('"');
     }
 
     /* Read from the given input string to find a JSON string which starts/ends with '"' and properly unescape escaped
@@ -837,6 +833,64 @@ namespace Base {
         }
         case String: {
           WriteString(strm, String_);
+          break;
+        }
+      }
+    }
+
+    /* Append the text Write would produce for a fresh stream (numbers fixed, six places), without a
+       stream: no per-character stream calls and no intermediate buffer.  The WebSocket reply path
+       formats every reply this way. */
+    void AppendTo(std::string &out) const {
+      switch (Kind) {
+        case Null: {
+          out.append("null");
+          break;
+        }
+        case Bool: {
+          out.append(Bool_ ? "true" : "false");
+          break;
+        }
+        case Number: {
+          /* Same digits as 'strm << std::fixed' at the default precision (printf "%.6f"). */
+          char buf[400];
+          const auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), Number_, std::chars_format::fixed, 6);
+          assert(ec == std::errc());
+          out.append(buf, ptr);
+          break;
+        }
+        case Array: {
+          out.push_back('[');
+          bool sep = false;
+          for (const auto &elem: Array_) {
+            if (sep) {
+              out.push_back(',');
+            } else {
+              sep = true;
+            }
+            elem.AppendTo(out);
+          }
+          out.push_back(']');
+          break;
+        }
+        case Object: {
+          out.push_back('{');
+          bool sep = false;
+          for (const auto &elem: Object_) {
+            if (sep) {
+              out.push_back(',');
+            } else {
+              sep = true;
+            }
+            AppendString(out, elem.first);
+            out.push_back(':');
+            elem.second.AppendTo(out);
+          }
+          out.push_back('}');
+          break;
+        }
+        case String: {
+          AppendString(out, String_);
           break;
         }
       }
