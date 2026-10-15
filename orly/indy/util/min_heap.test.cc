@@ -139,3 +139,70 @@ FIXTURE(ReplaceTop) {
   }
   EXPECT_TRUE(seen == expected);
 }
+
+/* Orders by value, then by ref, so equal values come out in ref order. */
+struct TByValThenRef {
+  bool operator()(const TMyObj &lhs, size_t lhs_ref, const TMyObj &rhs, size_t rhs_ref) const {
+    return lhs.Key != rhs.Key ? lhs.Key < rhs.Key : lhs_ref < rhs_ref;
+  }
+};
+
+FIXTURE(MatchesSort) {
+  /* Random inserts, pops and replace-tops over a small key range, so ties are common; every pop must
+     give the smallest (key, ref) left, as a sorted list of the same pairs does. */
+  const size_t max_elems = 37;
+  std::vector<TMyObj> vals;
+  vals.reserve(max_elems);
+  for (size_t i = 0; i < max_elems; ++i) {
+    vals.emplace_back(0, i);
+  }
+  uint64_t seed = 0x9e3779b97f4a7c15ULL;
+  auto rand = [&seed](size_t n) {
+    seed ^= seed << 13;
+    seed ^= seed >> 7;
+    seed ^= seed << 17;
+    return static_cast<size_t>(seed % n);
+  };
+  TMinHeap<TMyObj, size_t, TByValThenRef> min_heap(max_elems);
+  std::vector<std::pair<size_t, size_t>> model;
+  std::vector<size_t> free_refs;
+  for (size_t i = 0; i < max_elems; ++i) {
+    free_refs.push_back(i);
+  }
+  bool ok = true;
+  for (int step = 0; step < 20000 && ok; ++step) {
+    const size_t op = rand(3);
+    if (op == 0 && !free_refs.empty()) {
+      const size_t ref = free_refs.back();
+      free_refs.pop_back();
+      vals[ref].Key = rand(8);
+      min_heap.Insert(vals[ref], ref);
+      model.emplace_back(vals[ref].Key, ref);
+    } else if (model.empty()) {
+      continue;
+    } else {
+      std::sort(model.begin(), model.end());
+      size_t ref;
+      const TMyObj &top = min_heap.Peek(ref);
+      ok = top.Key == model.front().first && ref == model.front().second;
+      if (op == 1) {
+        min_heap.Pop(ref);
+        model.erase(model.begin());
+        free_refs.push_back(ref);
+      } else {
+        vals[ref].Key = rand(8);
+        min_heap.ReplaceTop(vals[ref]);
+        model.front().first = vals[ref].Key;
+      }
+    }
+  }
+  EXPECT_TRUE(ok);
+  std::sort(model.begin(), model.end());
+  for (const auto &[key, ref]: model) {
+    size_t pos;
+    const TMyObj &min_val = min_heap.Pop(pos);
+    EXPECT_EQ(min_val.Key, key);
+    EXPECT_EQ(pos, ref);
+  }
+  EXPECT_FALSE(min_heap);
+}

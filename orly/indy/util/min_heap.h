@@ -90,10 +90,7 @@ namespace Orly {
           size_t i = NumElem;
           ++NumElem;
           new (Data + i) TMinHeapElem(val, ref);
-          while (i > 0 && Less(Data[i], Data[Parent(i)])) {
-            std::swap(Data[i], Data[Parent(i)]);
-            i = Parent(i);
-          }
+          SiftUp(i);
         }
 
         inline const TVal &Peek(TRef &ref) const {
@@ -108,10 +105,11 @@ namespace Orly {
           const TMinHeapElem &min_val = Data[0];
           ref = min_val.Ref;
           const TVal &min_ref = *(min_val.Val);
-          Data[0] = std::move(Data[NumElem - 1]);
-          Data[NumElem - 1].~TMinHeapElem();
           --NumElem;
-          MinHeapify(0);
+          if (NumElem) {
+            SiftDown(0, Data[NumElem].Val, Data[NumElem].Ref);
+          }
+          Data[NumElem].~TMinHeapElem();
           return min_ref;
         }
 
@@ -121,17 +119,20 @@ namespace Orly {
            non-empty. */
         inline void ReplaceTop(const TVal &val) {
           assert(NumElem > 0);
-          Data[0].Val = &val;
-          MinHeapify(0);
+          SiftDown(0, &val, Data[0].Ref);
         }
 
         private:
 
         inline bool Less(const TMinHeapElem &lhs, const TMinHeapElem &rhs) const {
+          return Less(lhs.Val, lhs.Ref, rhs.Val, rhs.Ref);
+        }
+
+        inline bool Less(const TVal *lhs, const TRef &lhs_ref, const TVal *rhs, const TRef &rhs_ref) const {
           if constexpr (std::is_invocable_r_v<bool, const TComparator &, const TVal &, const TRef &, const TVal &, const TRef &>) {
-            return Comp(*lhs.Val, lhs.Ref, *rhs.Val, rhs.Ref);
+            return Comp(*lhs, lhs_ref, *rhs, rhs_ref);
           } else {
-            return Comp(*lhs.Val, *rhs.Val);
+            return Comp(*lhs, *rhs);
           }
         }
 
@@ -151,22 +152,47 @@ namespace Orly {
           return 2 * (i + 1);
         }
 
-        void MinHeapify(size_t i) {
-          const size_t left = Left(i);
-          const size_t right = Right(i);
-          size_t smallest;
-          if (left < NumElem && Less(Data[left], Data[i])) {
-            smallest = left;
-          } else {
-            smallest = i;
+        /* Move the element at offset i up to its place. Parents that order after it shift down one level
+           into the hole it leaves, and it is written once, where the hole stops, rather than swapped at
+           every level. */
+        void SiftUp(size_t i) {
+          const TVal *val = Data[i].Val;
+          const TRef ref = Data[i].Ref;
+          while (i > 0) {
+            const size_t parent = Parent(i);
+            if (!Less(val, ref, Data[parent].Val, Data[parent].Ref)) {
+              break;
+            }
+            Data[i].Val = Data[parent].Val;
+            Data[i].Ref = Data[parent].Ref;
+            i = parent;
           }
-          if (right < NumElem && Less(Data[right], Data[smallest])) {
-            smallest = right;
+          Data[i].Val = val;
+          Data[i].Ref = ref;
+        }
+
+        /* Place (val, ref) in the subtree rooted at offset i, whose current element is discarded. The
+           smaller child moves up into the hole until neither child orders before (val, ref), which is then
+           written once. Ties keep (val, ref) above its children and prefer the left child, as the
+           swap-based version did. */
+        void SiftDown(size_t i, const TVal *val, TRef ref) {
+          for (;;) {
+            size_t child = Left(i);
+            if (child >= NumElem) {
+              break;
+            }
+            if (child + 1 < NumElem && Less(Data[child + 1], Data[child])) {
+              ++child;
+            }
+            if (!Less(Data[child].Val, Data[child].Ref, val, ref)) {
+              break;
+            }
+            Data[i].Val = Data[child].Val;
+            Data[i].Ref = Data[child].Ref;
+            i = child;
           }
-          if (smallest != i) {
-            std::swap(Data[i], Data[smallest]);
-            MinHeapify(smallest);
-          }
+          Data[i].Val = val;
+          Data[i].Ref = ref;
         }
 
         const size_t MaxElem;
