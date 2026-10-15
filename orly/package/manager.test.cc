@@ -313,8 +313,8 @@ FIXTURE(InternedTypeControlBlockLivesInHostNotPackageSo) {
   const string body =
       "val_t is <| B(bool) | I(int) | R(real) | S(str) |>;\n"
       "triple_t is <{.s: str, .p: str, .v: val_t}>;\n"
-      "get = (<{.s: \"s\", .p: \"p\", .v: S(\"v\")}>);\n"
-      "get_set = ({<{.s: \"s\", .p: \"p\", .v: I(1)}>});\n"
+      "get = (<{.s: \"s\", .p: \"p\", .v: val_t.S(\"v\")}>);\n"
+      "get_set = ({<{.s: \"s\", .p: \"p\", .v: val_t.I(1)}>});\n"
       "get_list = ([<[\"a\", 1]>]);\n";
   CompilePackage(scratch, pkg_dir, "up", "package #1;\n" + body);
   CompilePackage(scratch, pkg_dir, "up", "package #2;\n" + body);
