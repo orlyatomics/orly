@@ -335,7 +335,7 @@ namespace Orly {
               #ifndef NDEBUG
               WrittenToSet.insert(block_id);
               #endif
-              VolMan->WriteBlock(CodeLocation, BufKind, UtilSrc, cur_buf->GetData(), block_id, Priority, Disk::Util::CacheAll, CompletionTrigger, [cur_buf, completion_trigger](TDiskResult result, const char *err_str) {
+              VolMan->WriteBlock(CodeLocation, BufKind, UtilSrc, cur_buf->GetData(), block_id, Priority, DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll, CompletionTrigger, [cur_buf, completion_trigger](TDiskResult result, const char *err_str) {
                 delete cur_buf;
                 completion_trigger->Callback(result, err_str);
               });

@@ -211,7 +211,8 @@ namespace Orly {
                   size_t temp_file_consol_thresh,
                   TSequenceNumber release_up_to,
                   DiskPriority priority,
-                  const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range = std::nullopt);
+                  const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range = std::nullopt,
+                  bool do_cache = false);
 
         TDataFile(Util::TEngine *engine,
                   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
@@ -276,6 +277,8 @@ namespace Orly {
         TBlockVec BlockVec;
 
         TUpdateCollector UpdateCollector;
+
+        bool DoCache;
 
         #ifndef NDEBUG
         std::unordered_set<size_t> WrittenBlockSet;
