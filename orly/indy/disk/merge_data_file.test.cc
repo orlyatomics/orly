@@ -1057,3 +1057,87 @@ FIXTURE(TailFoldsChainsAcrossInputs) {
     cond.notify_one();
   });
 }
+
+/* #927: raising the cancel flag aborts TMergeDataFile and TFoldDataFile with TMergeCancelled,
+   frees any output blocks allocated so far, does not insert the output file, and leaves the
+   inputs readable. */
+FIXTURE(CancelMergeAndFold) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid idx(TUuid::Twister);
+    auto write_file = [&](size_t gen, const vector<tuple<TSequenceNumber, int64_t, TMutator>> &writes) {
+      TMockMem mem_layer;
+      for (const auto &[seq, val, mut] : writes) {
+        InsertEntries(mem_layer, seq, {{idx, 42L, val, mut}});
+      }
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, gen, 20UL, 0U, Medium);
+    };
+    write_file(1UL, {{1UL, 10L, TMutator::Assign}, {2UL, 1L, TMutator::Add}});
+    write_file(2UL, {{3UL, 1L, TMutator::Add}, {4UL, 1L, TMutator::Add}});
+
+    const auto has_gen = [&](size_t gen) {
+      vector<TFileObj> files;
+      mem_engine.GetEngine()->AppendFileGenSet(file_id, files);
+      for (const auto &f : files) {
+        if (f.GenId == gen) return true;
+      }
+      return false;
+    };
+
+    const size_t avail_before = mem_engine.GetVolMan()->GetSpace().GetAvailable();
+    std::atomic<bool> cancel(true);
+
+    /* Cancelled TMergeDataFile (both non-tailing and tailing) throws TMergeCancelled,
+       does not publish gen 3, and leaks no blocks. */
+    for (bool can_tail : {false, true}) {
+      bool threw = false;
+      try {
+        TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{1UL, 2UL}, file_id, 3UL, 0U, Low, 16384, 20UL, can_tail, false, std::nullopt, &cancel);
+      } catch (const TMergeCancelled &) {
+        threw = true;
+      }
+      EXPECT_TRUE(threw);
+      EXPECT_FALSE(has_gen(3UL));
+      EXPECT_EQ(mem_engine.GetVolMan()->GetSpace().GetAvailable(), avail_before);
+    }
+
+    /* Merge succeeds when cancel is false. */
+    cancel.store(false);
+    {
+      TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{1UL, 2UL}, file_id, 3UL, 0U, Low, 16384, 20UL, true, false, std::nullopt, &cancel);
+    }
+    EXPECT_TRUE(has_gen(3UL));
+    const size_t avail_after_merge = mem_engine.GetVolMan()->GetSpace().GetAvailable();
+
+    /* Cancelled TFoldDataFile throws TMergeCancelled, does not publish gen 4, and leaks no blocks. */
+    cancel.store(true);
+    {
+      bool threw = false;
+      try {
+        TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, 3UL, 4UL, Low, 20UL, std::nullopt, &cancel);
+      } catch (const TMergeCancelled &) {
+        threw = true;
+      }
+      EXPECT_TRUE(threw);
+      EXPECT_FALSE(has_gen(4UL));
+      EXPECT_EQ(mem_engine.GetVolMan()->GetSpace().GetAvailable(), avail_after_merge);
+    }
+
+    /* Fold succeeds once cancel is cleared. */
+    cancel.store(false);
+    TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, 3UL, 4UL, Low, 20UL, std::nullopt, &cancel);
+    EXPECT_TRUE(has_gen(4UL));
+    const auto state = ReadState(mem_engine, file_id, 4UL, idx);
+    if (EXPECT_TRUE(state.count(42L) == 1UL)) {
+      EXPECT_TRUE(state.at(42L).first == optional<int64_t>(13L));
+      EXPECT_TRUE(state.at(42L).second == TMutator::Assign);
+    }
+
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}

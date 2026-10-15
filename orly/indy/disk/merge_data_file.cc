@@ -113,7 +113,7 @@ class TMergeDataFileImpl {
             max_arena_bytes += idx_file.GetNumBytesOfArena();
           }
           assert(idx_file_vec.size());
-          /* mini scope for small stream */ {
+            /* mini scope for small stream */ {
             TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileRemapIndex, RealTime, idx_file_vec[0].get(), engine->GetCache<TDataInStream<0UL>::PhysicalCachePageSize>(), 0);
             index_map.emplace(
                 index_id,
@@ -129,7 +129,8 @@ class TMergeDataFileImpl {
                                              #ifndef NDEBUG
                                              WrittenBlockSet,
                                              #endif
-                                             idx_file_vec[0]->GetKey(0UL, in_stream, disk_arena_vec[0].get())));
+                                             idx_file_vec[0]->GetKey(0UL, in_stream, disk_arena_vec[0].get()),
+                                             Cancel));
           }
           TMergeIndexFile &merge_idx_file = *index_map[index_id];
           assert(idx_file_vec.size() == disk_arena_vec.size());
@@ -222,16 +223,18 @@ class TMergeDataFileImpl {
             TMergeDataFileImpl::TSeqResolvedSorter seq_resolved(HERE, Source::MergeDataFileTailIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true);
             size_t idx = 0UL;
             for (typename TReader::TIndexFile::THistoryKeyCursor history_cursor(source_file.get()); history_cursor; ++history_cursor) {
+              ThrowIfCancelled();
               const typename TReader::TIndexFile::THistoryKeyItem &item = *history_cursor;
               seq_access.Emplace(++idx, item.SeqNum);
             }
-            TMergeDataFileImpl::ResolveSeqFilter(MaxBlockCacheReadSlotsAllowed, seq_access, *seq_keeper, seq_resolved);
+            TMergeDataFileImpl::ResolveSeqFilter(MaxBlockCacheReadSlotsAllowed, seq_access, *seq_keeper, seq_resolved, Cancel);
 
             assert(source_idx < merge_idx_file.HistoryKeeperFilterVec.size());
             std::vector<bool> &hist_filter_vec = merge_idx_file.HistoryKeeperFilterVec[source_idx];
             typename TMergeDataFileImpl::TSeqResolvedSorter::TCursor hist_filter_csr(&seq_resolved, MaxBlockCacheReadSlotsAllowed);
             size_t cur_hist_offset = 0UL;
             for (typename TReader::TIndexFile::THistoryKeyCursor history_cursor(source_file.get()); history_cursor; ++history_cursor, ++hist_filter_csr, ++cur_hist_offset) {
+              ThrowIfCancelled();
               assert(cur_hist_offset < hist_filter_vec.size());
               assert(hist_filter_csr);
               const typename TReader::TIndexFile::THistoryKeyItem &item = *history_cursor;
@@ -270,6 +273,7 @@ class TMergeDataFileImpl {
           typename TSeqKeeperSorter::TCursor filter_csr(seq_keeper.get(), MaxBlockCacheReadSlotsAllowed);
           TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileTailIndex, Priority, reader.get(), Engine->GetCache<TDataInStream<0UL>::PhysicalCachePageSize>(), reader->GetByteOffsetOfUpdateIndex());
           for (size_t u = 0; u < num_updates; ++u) {
+            ThrowIfCancelled();
             TSequenceNumber seq_num;
             Atom::TCore meta_core, id_core;
             in_stream.Read(seq_num);
@@ -294,6 +298,8 @@ class TMergeDataFileImpl {
           try {
             merge_idx_file.ConstructArena(merge_idx_file.TypeBoundaryOffsetVec,
                                           merge_idx_file.MaxArenaBytes);
+          } catch (const TMergeCancelled &) {
+            throw;
           } catch (const std::exception &ex) {
             syslog(LOG_ERR, "MergeDataFile caught error [%s]", ex.what());
 
@@ -333,9 +339,12 @@ class TMergeDataFileImpl {
                                             #endif
                                             max_arena_bytes,
                                             num_main_arena_notes,
-                                            num_main_arena_bytes);
+                                            num_main_arena_bytes,
+                                            Cancel);
           }
         }
+      } catch (const TMergeCancelled &) {
+        throw;
       } catch (const std::exception &ex) {
         std::cerr << "Main Arena error " << ex.what() << std::endl;
         throw;
@@ -368,6 +377,7 @@ class TMergeDataFileImpl {
           auto in_stream = make_update_index_stream();
           auto filter_csr = make_seq_filter_csr();
           for (size_t u = 0; u < num_updates; ++u) {
+            ThrowIfCancelled();
             TSequenceNumber seq_num;
             Atom::TCore meta_core, id_core;
             in_stream->Read(seq_num);
@@ -388,7 +398,7 @@ class TMergeDataFileImpl {
             }
           }
         }
-        const size_t num_missed = ResolveRemapTolerant(MaxBlockCacheReadSlotsAllowed, access_sorter, *main_remap_sorter_vec[i], resolved_sorter);
+        const size_t num_missed = ResolveRemapTolerant(MaxBlockCacheReadSlotsAllowed, access_sorter, *main_remap_sorter_vec[i], resolved_sorter, Cancel);
         if (num_missed) {
           syslog(LOG_WARNING, "MergeDataFile gen [%ld] dropped [%ld] unmappable metadata / id cores from source gen [%ld]; file predates the seq-index remap fix (#323)", gen_id, num_missed, reader->GetGenId());
         }
@@ -409,6 +419,7 @@ class TMergeDataFileImpl {
             }
           };
           for (size_t u = 0; u < num_updates; ++u) {
+            ThrowIfCancelled();
             TSequenceNumber seq_num;
             Atom::TCore meta_core, id_core;
             in_stream->Read(seq_num);
@@ -473,6 +484,7 @@ class TMergeDataFileImpl {
                 size_t idx = 0UL;
                 if (CanTail) {
                   for (typename TReader::TIndexFile::TKeyCursor key_cursor(source_file.get()); key_cursor; ++key_cursor) {
+                    ThrowIfCancelled();
                     const typename TReader::TIndexFile::TKeyItem &item = *key_cursor;
                     if (!CanTailTombstones || !item.Value.IsTombstone() || item.NumHistKeys > 0) {
                       const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
@@ -487,6 +499,7 @@ class TMergeDataFileImpl {
                   }
                 } else {
                   for (typename TReader::TIndexFile::TKeyCursor key_cursor(source_file.get()); key_cursor; ++key_cursor) {
+                    ThrowIfCancelled();
                     const typename TReader::TIndexFile::TKeyItem &item = *key_cursor;
                     const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
                     if (key_off) {
@@ -498,8 +511,8 @@ class TMergeDataFileImpl {
                     }
                   }
                 }
-                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, key_access_sorter, key_remap_sorter, key_resolved_sorter);
-                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, val_access_sorter, val_remap_sorter, val_resolved_sorter);
+                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, key_access_sorter, key_remap_sorter, key_resolved_sorter, Cancel);
+                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, val_access_sorter, val_remap_sorter, val_resolved_sorter, Cancel);
                 key_access_sorter_vec.back().reset(); /* reset the access sorter so we release the resources. */
                 val_access_sorter_vec.back().reset(); /* reset the access sorter so we release the resources. */
                 key_resolved_sorter_cursor_vec.push_back(std::make_unique<typename TMergeDataFileImpl::TRemapResolvedSorter::TCursor>(&key_resolved_sorter, max_block_cache_read_slot_per_sub_cursor));
@@ -525,6 +538,7 @@ class TMergeDataFileImpl {
                   assert(hist_filter_vec.size() == source_file->GetNumHistKeys());
                   size_t cur_hist_offset = 0UL;
                   for (typename TReader::TIndexFile::THistoryKeyCursor history_cursor(source_file.get()); history_cursor; ++history_cursor, ++cur_hist_offset) {
+                    ThrowIfCancelled();
                     assert(cur_hist_offset < hist_filter_vec.size());
                     if (hist_filter_vec[cur_hist_offset]) {
                       const typename TReader::TIndexFile::THistoryKeyItem &item = *history_cursor;
@@ -540,6 +554,7 @@ class TMergeDataFileImpl {
                   }
                 } else {
                   for (typename TReader::TIndexFile::THistoryKeyCursor history_cursor(source_file.get()); history_cursor; ++history_cursor) {
+                    ThrowIfCancelled();
                     const typename TReader::TIndexFile::THistoryKeyItem &item = *history_cursor;
                     const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
                     if (key_off) {
@@ -551,8 +566,8 @@ class TMergeDataFileImpl {
                     }
                   }
                 }
-                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, key_access_sorter, key_remap_sorter, key_resolved_sorter);
-                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, val_access_sorter, val_remap_sorter, val_resolved_sorter);
+                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, key_access_sorter, key_remap_sorter, key_resolved_sorter, Cancel);
+                TMergeDataFileImpl::ResolveRemap(MaxBlockCacheReadSlotsAllowed, val_access_sorter, val_remap_sorter, val_resolved_sorter, Cancel);
                 key_access_sorter_vec.back().reset(); /* reset the access sorter so we release the resources. */
                 val_access_sorter_vec.back().reset(); /* reset the access sorter so we release the resources. */
                 key_resolved_sorter_cursor_vec.push_back(std::make_unique<typename TMergeDataFileImpl::TRemapResolvedSorter::TCursor>(&key_resolved_sorter, max_block_cache_read_slot_per_sub_cursor));
@@ -1042,10 +1057,14 @@ class TMergeDataFileImpl {
   }
 
   /* A shutdown stops the merge here: the caller's inputs are untouched, and the catch in the constructor frees the output. */
-  void ThrowIfCancelled() const {
-    if (Cancel && Cancel->load(std::memory_order_relaxed)) {
+  static void ThrowIfCancelled(const std::atomic<bool> *cancel) {
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
       throw TMergeCancelled();
     }
+  }
+
+  void ThrowIfCancelled() const {
+    ThrowIfCancelled(Cancel);
   }
 
   class TUpdateObj {
@@ -1425,9 +1444,11 @@ class TMergeDataFileImpl {
   static void ResolveRemap(size_t max_block_cache_read_slots_allowed,
                            TRemapAccessSorter &access_sorter,
                            TRemapSorter &remap_sorter,
-                           TRemapResolvedSorter &resolved_sorter) {
+                           TRemapResolvedSorter &resolved_sorter,
+                           const std::atomic<bool> *cancel = nullptr) {
     typename TRemapSorter::TCursor remap_csr(&remap_sorter, max_block_cache_read_slots_allowed / 2);
     for (typename TRemapAccessSorter::TCursor access_csr(&access_sorter, max_block_cache_read_slots_allowed / 2); access_csr; ++access_csr) {
+      ThrowIfCancelled(cancel);
       assert(remap_csr);
       #ifndef NDEBUG
       try {
@@ -1452,10 +1473,12 @@ class TMergeDataFileImpl {
   static size_t ResolveRemapTolerant(size_t max_block_cache_read_slots_allowed,
                                      TRemapAccessSorter &access_sorter,
                                      TRemapSorter &remap_sorter,
-                                     TRemapResolvedSorter &resolved_sorter) {
+                                     TRemapResolvedSorter &resolved_sorter,
+                                     const std::atomic<bool> *cancel = nullptr) {
     size_t num_missed = 0UL;
     typename TRemapSorter::TCursor remap_csr(&remap_sorter, max_block_cache_read_slots_allowed / 2);
     for (typename TRemapAccessSorter::TCursor access_csr(&access_sorter, max_block_cache_read_slots_allowed / 2); access_csr; ++access_csr) {
+      ThrowIfCancelled(cancel);
       for (; remap_csr && remap_csr->OldKey < access_csr->Key; ++remap_csr) {}
       if (remap_csr && remap_csr->OldKey == access_csr->Key) {
         resolved_sorter.Emplace(access_csr->Idx, remap_csr->OldKey, remap_csr->NewKey);
@@ -1469,9 +1492,11 @@ class TMergeDataFileImpl {
   static void ResolveSeqFilter(size_t max_block_cache_read_slots_allowed,
                            TSeqAccessSorter &access_sorter,
                            TSeqKeeperSorter &keep_filter_sorter,
-                           TSeqResolvedSorter &resolved_sorter) {
+                           TSeqResolvedSorter &resolved_sorter,
+                           const std::atomic<bool> *cancel = nullptr) {
     TSeqKeeperSorter::TCursor filter_csr(&keep_filter_sorter, max_block_cache_read_slots_allowed / 2);
     for (typename TSeqAccessSorter::TCursor access_csr(&access_sorter, max_block_cache_read_slots_allowed / 2); access_csr; ++access_csr) {
+      ThrowIfCancelled(cancel);
       for (; filter_csr && (*filter_csr < access_csr->Key); ++filter_csr) {}
       if (filter_csr) {
         resolved_sorter.Emplace(access_csr->Idx, access_csr->Key, *filter_csr == access_csr->Key);
@@ -1504,7 +1529,8 @@ class TMergeDataFileImpl {
                           #endif
                           size_t max_total_note_bytes,
                           size_t &num_notes_out,
-                          size_t &num_bytes_out) {
+                          size_t &num_bytes_out,
+                          const std::atomic<bool> *cancel = nullptr) {
     /* build a map from boundary to sorted keeper filter for each file */
     std::vector<std::map<size_t, std::unique_ptr<typename TMergeDataFileImpl<CanTail, CanTailTombstones>::TArenaKeeperSorter>>> sorted_keeper_map_vec;
     if (CanTail) {
@@ -1519,6 +1545,7 @@ class TMergeDataFileImpl {
       assert(arena_keeper_vec.size() == sorted_keeper_map_vec.size());
       for (size_t i = 0; i < arena_keeper_vec.size(); ++i) {
         for (typename TMergeDataFileImpl<CanTail, CanTailTombstones>::TArenaKeeperSorter::TCursor arena_keeper_csr(arena_keeper_vec[i].get(), max_block_cache_read_slots_allowed); arena_keeper_csr; ++arena_keeper_csr) {
+          ThrowIfCancelled(cancel);
           auto &m = sorted_keeper_map_vec[i];
           auto upper_b = m.upper_bound(*arena_keeper_csr);
           --upper_b;
@@ -1542,6 +1569,7 @@ class TMergeDataFileImpl {
             const auto &filter = sorted_keeper_map_vec[i][*iter];
             typename TMergeDataFileImpl<CanTail, CanTailTombstones>::TArenaKeeperSorter::TCursor filter_csr(filter.get(), max_block_cache_read_slots_allowed);
             for (TDataDiskArena<true>::TCursor note_cursor(disk_arena_vec[i].get(), *iter, end_offset); note_cursor; ++note_cursor) {
+              ThrowIfCancelled(cancel);
               for (; filter_csr && *filter_csr < note_cursor.GetOffset(); ++filter_csr) {}
               if (filter_csr && *filter_csr == note_cursor.GetOffset()) {
                 //std::cout << "\t\t" << note_cursor.GetOffset() << std::endl;
@@ -1572,8 +1600,8 @@ class TMergeDataFileImpl {
     #endif
     assert(block_vec.Size() == total_blocks_required);
 
-    TCompletionTrigger completion_trigger;
     std::unordered_map<size_t, std::shared_ptr<const TBufBlock>> arena_collision_map {};
+    TCompletionTrigger completion_trigger;
     /* arena stream life-span */ {
       TDataOutStream arena_stream(HERE,
                                   Source::MergeDataFileArena,
@@ -1628,7 +1656,8 @@ class TMergeDataFileImpl {
                                  remap_sorter_vec,
                                  cur_disk_offset,
                                  num_notes_out,
-                                 num_bytes_out);
+                                 num_bytes_out,
+                                 cancel);
           } else {
             if (num_notes_out > 0) {
               /* flush last collision block */ {
@@ -1677,7 +1706,8 @@ class TMergeDataFileImpl {
                              remap_sorter_vec,
                              cur_disk_offset,
                              num_notes_out,
-                             num_bytes_out);
+                             num_bytes_out,
+                             cancel);
             } else {
               MergeTypeRange(engine,
                              storage_speed,
@@ -1693,7 +1723,8 @@ class TMergeDataFileImpl {
                              remap_sorter_vec,
                              cur_disk_offset,
                              num_notes_out,
-                             num_bytes_out);
+                             num_bytes_out,
+                             cancel);
             }
           }
         };
@@ -1766,7 +1797,8 @@ class TMergeDataFileImpl {
                                    const std::vector<std::unique_ptr<TRemapSorter>> &remap_sorter_vec,
                                    Atom::TCore::TOffset &cur_disk_offset,
                                    size_t &num_notes_out,
-                                   size_t &num_bytes_out) {
+                                   size_t &num_bytes_out,
+                                   const std::atomic<bool> *cancel = nullptr) {
     try {
       std::vector<std::unique_ptr<typename TDataDiskArena<ScanAheadAllowed>::TCursor>> note_cursor_vec;
       std::vector<std::unique_ptr<typename TArenaKeeperSorter::TCursor>> keeper_filter_csr_vec;
@@ -1828,6 +1860,7 @@ class TMergeDataFileImpl {
       }
       try {
         while (min_heap) {
+          ThrowIfCancelled(cancel);
           const TL0MergeNote &merge_note = min_heap.Pop(pos);
           typename TDataDiskArena<ScanAheadAllowed>::TCursor &csr = *note_cursor_vec[pos];
           const size_t file = file_id_by_pos_vec[pos];
@@ -1887,6 +1920,8 @@ class TMergeDataFileImpl {
         temp_note = nullptr;
         throw;
       }
+    } catch (const TMergeCancelled &) {
+      throw;
     } catch (const std::exception &ex) {
       syslog(LOG_ERR, "MergeTypeRangeDepth0 caught error [%s]", ex.what());
       throw;
@@ -1908,7 +1943,8 @@ class TMergeDataFileImpl {
                              const std::vector<std::unique_ptr<TRemapSorter>> &remap_sorter_vec,
                              Atom::TCore::TOffset &cur_disk_offset,
                              size_t &num_notes_out,
-                             size_t &num_bytes_out) {
+                             size_t &num_bytes_out,
+                             const std::atomic<bool> *cancel = nullptr) {
     //std::cout << "MergeTypeRange" << std::endl;
     try {
       assert(remap_sorter_vec.size() == disk_arena_vec.size());
@@ -1962,6 +1998,7 @@ class TMergeDataFileImpl {
             typename TArenaKeeperSorter::TCursor filter_csr(keeper_filter.get(), max_block_cache_read_slots_allowed);
             keeper_filter_csr_vec.emplace_back(new typename TArenaKeeperSorter::TCursor(keeper_filter.get(), max_block_cache_read_slots_allowed));
             for (typename TDataDiskArena<DiskArenaVecScanAheadAllowed>::TCursor csr(disk_arena, from_offset, to_offset); csr; ++csr) {
+              ThrowIfCancelled(cancel);
               for (; csr && filter_csr && csr.GetOffset() < *filter_csr; ++csr) {}
               if (csr && filter_csr && csr.GetOffset() == *filter_csr) {
                 /* keep this one */
@@ -1971,6 +2008,7 @@ class TMergeDataFileImpl {
             }
           } else {
             for (typename TDataDiskArena<DiskArenaVecScanAheadAllowed>::TCursor csr(disk_arena, from_offset, to_offset); csr; ++csr) {
+              ThrowIfCancelled(cancel);
               if (csr) {
                 csr->ForOffset(pusher);
               }
@@ -1978,7 +2016,7 @@ class TMergeDataFileImpl {
           }
 
           //std::cout << "ResolveRemap file [" << file << "]" << std::endl;
-          ResolveRemap(max_block_cache_read_slots_allowed, access_sorter, remap_sorter, resolved_sorter);
+          ResolveRemap(max_block_cache_read_slots_allowed, access_sorter, remap_sorter, resolved_sorter, cancel);
           resolved_sorter_cursor_vec.push_back(std::unique_ptr<typename TRemapResolvedSorter::TCursor>(new typename TRemapResolvedSorter::TCursor(&resolved_sorter, max_block_cache_read_slots_allowed_per_subcursor)));
         }
         access_sorter_vec.back().reset();
@@ -2049,6 +2087,7 @@ class TMergeDataFileImpl {
           std::optional<TMergeNote> prev_note;
           Atom::TCore::TOffset prev_disk_offset = cur_disk_offset;
           while (min_heap) {
+            ThrowIfCancelled(cancel);
             min_heap.Pop(pos);
             const typename TMergeDataFileImpl<CanTail, CanTailTombstones>::TMergeNote &merge_note = merge_note_vec[pos];
             typename TDataDiskArena<DiskArenaVecScanAheadAllowed>::TCursor &csr = *note_cursor_vec[pos];
@@ -2140,6 +2179,8 @@ class TMergeDataFileImpl {
         }
         throw;
       }
+    } catch (const TMergeCancelled &) {
+      throw;
     } catch (const std::exception &ex) {
       syslog(LOG_ERR, "MergeTypeRange caught error [%s]", ex.what());
       throw;
@@ -2273,7 +2314,8 @@ class TMergeDataFileImpl {
                     #ifndef NDEBUG
                     std::unordered_set<size_t> &written_block_set,
                     #endif
-                    const TKey &example_key)
+                    const TKey &example_key,
+                    const std::atomic<bool> *cancel = nullptr)
         : IndexId(index_id),
           Engine(engine),
           StorageSpeed(storage_speed),
@@ -2281,6 +2323,7 @@ class TMergeDataFileImpl {
           Priority(priority),
           MaxBlockCacheReadSlotsAllowed(max_block_cache_read_slots_allowed),
           TempFileConsolThresh(temp_file_consol_thresh),
+          Cancel(cancel),
           ExampleKey(example_key),
           ArenaByteOffset(0UL),
           NumArenaNotes(0UL),
@@ -2394,7 +2437,8 @@ class TMergeDataFileImpl {
                                   #endif
                                   max_total_note_bytes,
                                   NumArenaNotes,
-                                  NumArenaBytes);
+                                  NumArenaBytes,
+                                  Cancel);
       FileSize = ArenaByteOffset + NumArenaBytes;
       MyArena = std::make_unique<TDataDiskArena<true>>(this, Engine->GetCache<TDataDiskArena<true>::PhysicalCachePageSize>(), Priority);
     }
@@ -2566,6 +2610,7 @@ class TMergeDataFileImpl {
         /* make a new index with the hashes modded by the hash field size */
         THashCollector modded_hash_collector(HERE, Source::DataFileHashIndex, TempFileConsolThresh, SorterStorageSpeed, Engine, true);
         for (typename THashCollector::TCursor orig_csr(collection.get(), MaxBlockCacheReadSlotsAllowed); orig_csr; ++orig_csr) {
+          ThrowIfCancelled(Cancel);
           const THashObj &obj = *orig_csr;
           modded_hash_collector.Emplace(obj.Core, obj.Hash % num_hash_fields, obj.Offset);
         }
@@ -2586,6 +2631,7 @@ class TMergeDataFileImpl {
                                 #endif
                                 );
           for (size_t i = 0; i < num_hash_fields; ++i) {
+            ThrowIfCancelled(Cancel);
             if (hash_csr && (*hash_csr).Hash <= i) {
               const THashObj &obj = *hash_csr;
               assert(obj.Core.IsTuple());
@@ -2737,6 +2783,8 @@ class TMergeDataFileImpl {
     size_t MaxBlockCacheReadSlotsAllowed;
 
     size_t TempFileConsolThresh;
+
+    const std::atomic<bool> *Cancel;
 
     TKey ExampleKey;
 
