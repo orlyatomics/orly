@@ -18,6 +18,13 @@
 
 #include <orly/type/variant.h>
 
+#include <cassert>
+
+#include <orly/type/int.h>
+#include <orly/type/obj.h>
+#include <orly/type/opt.h>
+#include <orly/type/unroll.h>
+
 using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TVariant, TVariantElems);
@@ -27,6 +34,27 @@ TType TVariant::Get(const TVariantElems &elems) {
 }
 
 TVariant::~TVariant() {}
+
+TVariant::TLowered TVariant::NewLowered() const {
+  static const std::string which_name("$which");
+  TLowered lowered;
+  TObjElems rec;
+  rec[which_name] = TInt::Get();
+  lowered.OptTypes.reserve(GetElems().size());
+  lowered.WhichPos = 0;
+  for (const auto &arm: GetElems()) {
+    TType opt_type = TOpt::Get(arm.second);
+    rec[arm.first] = opt_type;
+    lowered.OptTypes.push_back(opt_type);
+    if (arm.first < which_name) {
+      ++lowered.WhichPos;
+    }
+  }
+  lowered.RecType = TObj::Get(rec);
+  lowered.HasGroupRef = Orly::Type::HasGroupRef(AsType());
+  assert(lowered.WhichPos <= lowered.OptTypes.size());
+  return lowered;
+}
 
 void TVariant::Write(std::ostream &out) const {
   out << "Orly::Rt::Variants::TVariant" << AsType().GetMangledName();

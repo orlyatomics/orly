@@ -22,7 +22,10 @@
 #include <string>
 
 #include <orly/sabot/state_dumper.h>
+#include <orly/type/sabot_to_type.h>
 #include <orly/type/type_czar.h>
+#include <orly/type/variant.h>
+#include <orly/var/sabot_to_var.h>
 #include <base/test/kit.h>
 
 using namespace std;
@@ -119,4 +122,38 @@ FIXTURE(AddrWithDesc) {
   EXPECT_EQ(ToString(Var::TVar(addr2)), "tuple(true, desc(101), 98.6)");
   std::tuple<bool, int64_t, TDesc<double>> addr3(true, 101, 98.6);
   EXPECT_EQ(ToString(Var::TVar(addr3)), "tuple(true, 101, desc(98.6))");
+}
+
+/* A variant value encodes as the fixed-shape #96 record (#946 caches the
+   shape on the variant type). Each value must dump, and read back, exactly
+   as the equivalent hand-built record of optionals plus `$which` does. */
+FIXTURE(Variant) {
+  const Type::TType empty = Type::TObj::Get({});
+  const Type::TType var_type = Type::TVariant::Get({
+      { "Deleted", empty }, { "Integer", Type::TInt::Get() }, { "Text", Type::TStr::Get() } });
+  struct TCase { const char *Tag; Var::TVar Payload; int64_t Which; };
+  const TCase cases[] = {
+      { "Deleted", Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{}), 0 },
+      { "Integer", Var::TVar(int64_t(-384)), 1 },
+      { "Text", Var::TVar(string("val")), 2 } };
+  for (const auto &c: cases) {
+    const auto value = Var::TVar::Variant(var_type, c.Tag, c.Payload);
+    auto opt = [&](const char *tag, const Type::TType &type) {
+      return string(tag) == c.Tag ? Var::TVar::Opt(Rt::TOpt<Var::TVar>(c.Payload), type)
+                                  : Var::TVar::Opt(Rt::TOpt<Var::TVar>(), type);
+    };
+    const auto rec = Var::TVar::Obj(std::unordered_map<std::string, Var::TVar>{
+        { "$which", Var::TVar(c.Which) },
+        { "Deleted", opt("Deleted", empty) },
+        { "Integer", opt("Integer", Type::TInt::Get()) },
+        { "Text", opt("Text", Type::TStr::Get()) } });
+    EXPECT_EQ(ToString(value), ToString(rec));
+    void *buf = alloca(Sabot::State::GetMaxStateSize());
+    Sabot::State::TAny::TWrapper state(NewSabot(buf, value));
+    void *type_buf = alloca(Sabot::Type::GetMaxTypeSize());
+    Sabot::Type::TAny::TWrapper type(state->GetType(type_buf));
+    /* The `$which` sentinel reads the record back as the variant type. */
+    EXPECT_TRUE(Type::ToType(*type) == var_type);
+    EXPECT_TRUE(Var::ToVar(*state) == value);
+  }
 }

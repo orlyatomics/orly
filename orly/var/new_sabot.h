@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cassert>
+#include <iterator>
 #include <stdexcept>
 
 #include <orly/native/state.h>
@@ -262,6 +263,10 @@ namespace Orly {
         /* Cache the value. */
         TInt(const Var::TInt *var)
             : Val(var->GetVal()) {}
+
+        /* Wrap a raw value (a variant record's `$which`, see TVariantRec). */
+        explicit TInt(int64_t val)
+            : Val(val) {}
 
         /* See Sabot::State::TScalar<TVal>. */
         virtual const int64_t &Get() const override {
@@ -758,54 +763,6 @@ namespace Orly {
           std::sort(Elems.begin(), Elems.end());
         }
 
-        /* A variant value serializes as a FIXED-SHAPE record (issue #96):
-           every value of one declared variant gets the SAME record type
-
-             <{ .$which: int, .Tag0: payload0?, .Tag1: payload1?, ... }>
-
-           -- a discriminant `$which` plus one optional payload field per
-           arm. Only the active arm's optional is set; the others are empty
-           optionals of their declared payload type. `$which` holds the
-           active arm's index in asciibetical tag order (matching the native
-           `Which` and the Var-level tag ordering).
-
-           This is what makes a SET of differently-tagged variants
-           homogeneous on disk: they all share one record type. The sentinel
-           field name `$which` is un-expressible in orlyscript (names must
-           match [_a-zA-Z][_a-zA-Z0-9]*), so it can never collide with a user
-           record field or a variant tag -- which lets the Var read path
-           (orly/var/sabot_to_var.cc) recognize a variant record without the
-           call-site ::(T) annotation. Reuses Type::TObj / Sabot::State::TRecord
-           rather than a dedicated variant sabot kind (see issue #96).
-
-           A tag-only arm (e.g. `Deleted`) carries the empty object as its
-           payload type and value, so its active optional is `Opt(<{}>)` --
-           no empty-object trap (#90), and inactive optionals round-trip from
-           their type pin (the empty-optional path, see #96 Phase 0). */
-        TObj(const Var::TVariant *var) {
-          const auto *variant_type = var->GetType().As<Orly::Type::TVariant>();
-          const auto &arms = variant_type->GetElems();
-          std::map<std::string, Orly::Type::TType> rec_type;
-          rec_type["$which"] = Orly::Type::TInt::Get();
-          size_t which = 0, idx = 0;
-          for (const auto &arm: arms) {
-            if (arm.first == var->GetTag()) {
-              which = idx;
-            }
-            rec_type[arm.first] = Orly::Type::TOpt::Get(arm.second);
-            Rt::TOpt<Var::TVar> payload_opt;
-            if (arm.first == var->GetTag()) {
-              payload_opt = Rt::TOpt<Var::TVar>(var->GetVal());
-            }
-            Elems.push_back(std::make_pair(arm.first, Var::TVar::Opt(payload_opt, arm.second)));
-            ++idx;
-          }
-          Elems.push_back(std::make_pair(std::string("$which"),
-                                         Var::TVar(static_cast<int64_t>(which))));
-          Type = Orly::Type::TObj::Get(rec_type);
-          std::sort(Elems.begin(), Elems.end());
-        }
-
         /* See Sabot::State::TRecord. */
         virtual Sabot::Type::TRecord *GetRecordType(void *buf) const override {
           return dynamic_cast<Sabot::Type::TRecord *>(Type::NewSabot(buf, Type));
@@ -825,6 +782,183 @@ namespace Orly {
         std::vector<std::pair<std::string, Var::TVar>> Elems;
 
       };  // TObj
+
+      /* One arm's optional payload field of a variant record (see
+         TVariantRec): set iff this is the active arm. Its type is the
+         variant's cached `TOpt::Get(payload)`, so no interning per value. */
+      class TVariantArm final
+          : public Sabot::State::TOpt {
+        public:
+
+        /* The base class which our pin finalizes. */
+        using TPinBase = Sabot::State::TOpt::TPin;
+
+        /* Our pin. */
+        class TPin final
+            : public TPinBase {
+          public:
+
+          /* Point at our state. */
+          TPin(const TVariantArm *state)
+              : TPinBase(state), State(state) {
+            assert(state);
+          }
+
+          private:
+
+          /* See TPinBase. */
+          virtual Sabot::State::TAny *NewElemInRange(size_t, void *buf) const override {
+            assert(State->Payload);
+            return NewSabot(buf, *State->Payload);
+          }
+
+          /* The state which we pin. */
+          const TVariantArm *State;
+
+        };  // TVariantArm::TPin
+
+        /* Payload is null for an inactive arm. Both pointers must outlive us. */
+        TVariantArm(const Var::TVar *payload, const Orly::Type::TType *opt_type)
+            : Payload(payload), OptType(opt_type) {
+          assert(opt_type);
+        }
+
+        /* See Sabot::State::TArrayOfScalars<>. */
+        virtual size_t GetElemCount() const override {
+          return Payload ? 1 : 0;
+        }
+
+        /* See Sabot::State::TOpt. */
+        virtual Sabot::Type::TOpt *GetOptType(void *buf) const override {
+          return dynamic_cast<Sabot::Type::TOpt *>(Type::NewSabot(buf, *OptType));
+        }
+
+        /* See Sabot::State::TArrayOfScalars<>. */
+        virtual TPinBase *Pin(void *buf) const override {
+          return new (buf) TPin(this);
+        }
+
+        private:
+
+        /* The active arm's payload, or null. */
+        const Var::TVar *Payload;
+
+        /* TOpt::Get(this arm's payload type), owned by the variant type. */
+        const Orly::Type::TType *OptType;
+
+      };  // TVariantArm
+
+      /* A variant value serializes as a FIXED-SHAPE record (issue #96):
+         every value of one declared variant gets the SAME record type
+
+           <{ .$which: int, .Tag0: payload0?, .Tag1: payload1?, ... }>
+
+         -- a discriminant `$which` plus one optional payload field per
+         arm. Only the active arm's optional is set; the others are empty
+         optionals of their declared payload type. `$which` holds the
+         active arm's index in asciibetical tag order (matching the native
+         `Which` and the Var-level tag ordering).
+
+         This is what makes a SET of differently-tagged variants
+         homogeneous on disk: they all share one record type. The sentinel
+         field name `$which` is un-expressible in orlyscript (names must
+         match [_a-zA-Z][_a-zA-Z0-9]*), so it can never collide with a user
+         record field or a variant tag -- which lets the Var read path
+         (orly/var/sabot_to_var.cc) recognize a variant record without the
+         call-site ::(T) annotation. Reuses Type::TObj / Sabot::State::TRecord
+         rather than a dedicated variant sabot kind (see issue #96).
+
+         A tag-only arm (e.g. `Deleted`) carries the empty object as its
+         payload type and value, so its active optional is `Opt(<{}>)` --
+         no empty-object trap (#90), and inactive optionals round-trip from
+         their type pin (the empty-optional path, see #96 Phase 0).
+
+         The record type, the per-arm optional types and the field order are
+         the same for every value of a variant, so they are computed once on
+         the variant type (Type::TVariant::GetLowered) and shared (#946).
+         Encoding a value builds no map, interns nothing and sorts nothing. */
+      class TVariantRec final
+          : public Sabot::State::TRecord {
+        public:
+
+        /* The base class which our pin finalizes. */
+        using TPinBase = Sabot::State::TRecord::TPin;
+
+        /* Our pin. */
+        class TPin final
+            : public TPinBase {
+          public:
+
+          /* Point at our state. */
+          TPin(const TVariantRec *state)
+              : TPinBase(state), State(state), Lowered(&state->GetLowered()) {}
+
+          private:
+
+          /* See TPinBase. Fields come in field-name order: the arms in tag
+             order with `$which` at Lowered->WhichPos (it sorts first, since a
+             tag cannot start with `$`). */
+          virtual Sabot::State::TAny *NewElemInRange(size_t elem_idx, void *buf) const override {
+            const size_t arm_count = Lowered->OptTypes.size();
+            if (elem_idx == Lowered->WhichPos) {
+              /* An unknown tag leaves every arm empty and `$which` 0, as
+                 before #946. */
+              return new (buf) TInt(static_cast<int64_t>(State->Active < arm_count ? State->Active : 0));
+            }
+            size_t arm_idx = (elem_idx < Lowered->WhichPos) ? elem_idx : elem_idx - 1;
+            assert(arm_idx < arm_count);
+            return new (buf) TVariantArm(
+                (arm_idx == State->Active) ? &State->Payload : nullptr,
+                &Lowered->OptTypes[arm_idx]);
+          }
+
+          /* The state which we pin. */
+          const TVariantRec *State;
+
+          /* Its variant type's cached lowering. */
+          const Orly::Type::TVariant::TLowered *Lowered;
+
+        };  // TVariantRec::TPin
+
+        /* Everything per type comes from the variant type's cached lowering;
+           per value we only find the active arm. We hold the variant type and
+           the payload ourselves: the value we were built from is often a
+           temporary (a generated State::Factory converts with AsVar()). */
+        TVariantRec(const Var::TVariant *var)
+            : Type(var->GetVariantType()), Payload(var->GetVal()) {
+          const auto &arms = Type.As<Orly::Type::TVariant>()->GetElems();
+          auto pos = arms.find(var->GetTag());
+          Active = static_cast<size_t>(std::distance(arms.begin(), pos));
+        }
+
+        /* See Sabot::State::TRecord. */
+        virtual Sabot::Type::TRecord *GetRecordType(void *buf) const override {
+          return dynamic_cast<Sabot::Type::TRecord *>(Type::NewSabot(buf, GetLowered().RecType));
+        }
+
+        /* See Sabot::State::TArrayOfScalars<>. */
+        virtual TPinBase *Pin(void *buf) const override {
+          return new (buf) TPin(this);
+        }
+
+        private:
+
+        /* The variant type's cached record lowering; it lives as long as Type. */
+        const Orly::Type::TVariant::TLowered &GetLowered() const {
+          return Type.As<Orly::Type::TVariant>()->GetLowered();
+        }
+
+        /* The declared variant type, which owns the lowering. */
+        Orly::Type::TType Type;
+
+        /* The active arm's payload. */
+        Var::TVar Payload;
+
+        /* Index of the active arm in tag order; the arm count if the tag is
+           unknown. */
+        size_t Active;
+
+      };  // TVariantRec
 
     }  // SS
 

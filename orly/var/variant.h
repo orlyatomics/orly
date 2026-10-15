@@ -100,6 +100,11 @@ namespace Orly {
          declared variant report the same type. */
       virtual Type::TType GetType() const;
 
+      /* GetType() without the copy: the reference lives as long as this value. */
+      const Type::TType &GetVariantType() const {
+        return VariantType;
+      }
+
       virtual void Touch();
 
       virtual void Write(std::ostream &) const;

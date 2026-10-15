@@ -139,6 +139,8 @@ namespace Orly {
           sizeof(Var::SS::TDict::TPin),
           sizeof(Var::SS::TAddr::TPin),
           sizeof(Var::SS::TObj ::TPin),
+          sizeof(Var::SS::TVariantArm::TPin),
+          sizeof(Var::SS::TVariantRec::TPin),
 
           sizeof(Orly::TClosure::TState::TPin),
 
@@ -286,6 +288,8 @@ namespace Orly {
           sizeof(Var::SS::TDict    ),
           sizeof(Var::SS::TAddr    ),
           sizeof(Var::SS::TObj     ),
+          sizeof(Var::SS::TVariantArm),
+          sizeof(Var::SS::TVariantRec),
 
           sizeof(Orly::TClosure::TState),
 

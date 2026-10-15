@@ -100,16 +100,13 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
          as an ordinary recursive #96 record. The inlined form is the same for
          every value of the member type, so a stored set stays homogeneous and
          `::(member)` matches it on read-back. */
-      if (HasGroupRef(type->AsType())) {
+      const auto &lowered = type->GetLowered();
+      if (lowered.HasGroupRef) {
         Result = TryNewSabot(Buf, InlinedMemberType(type->AsType()));
         return;
       }
-      TObjElems rec;
-      rec["$which"] = TInt::Get();
-      for (const auto &arm: type->GetElems()) {
-        rec[arm.first] = TOpt::Get(arm.second);
-      }
-      Result = new (Buf) ST::TRecord(TObj::Get(rec).As<TObj>());
+      /* The record is built and interned once per variant type (#946). */
+      Result = new (Buf) ST::TRecord(lowered.RecType.As<TObj>());
     }
     /* The recursion point of a self-recursive variant (issue #115): emit the
        finite sabot back-reference leaf carrying the de Bruijn depth.  This is

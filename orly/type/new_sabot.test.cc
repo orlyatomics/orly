@@ -153,3 +153,29 @@ FIXTURE(RecursiveVariantCompareTypes) {
   Sabot::Type::TAny::TWrapper json_c(NewSabot(c, MakeJson()));
   EXPECT_FALSE(Atom::IsEq(Sabot::CompareTypes(*tree_a, *json_c)));
 }
+
+/* A variant's storage record (#96) is lowered once per interned variant type
+   and cached (#946): the type sabot is exactly the hand-built record, and
+   repeated lowering hands back the same interned record. */
+FIXTURE(VariantLoweringIsCached) {
+  const Type::TType empty = Type::TObj::Get({});
+  const Type::TType var_type = Type::TVariant::Get({
+      { "Deleted", empty }, { "Integer", Type::TInt::Get() }, { "_low", Type::TStr::Get() } });
+  const Type::TType rec = Type::TObj::Get({
+      { "$which", Type::TInt::Get() },
+      { "Deleted", Type::TOpt::Get(empty) },
+      { "Integer", Type::TOpt::Get(Type::TInt::Get()) },
+      { "_low", Type::TOpt::Get(Type::TStr::Get()) } });
+  EXPECT_EQ(ToString(var_type), ToString(rec));
+  const auto *variant = var_type.As<Type::TVariant>();
+  const auto &lowered = variant->GetLowered();
+  EXPECT_TRUE(&lowered == &variant->GetLowered());
+  EXPECT_TRUE(lowered.RecType == rec);
+  EXPECT_EQ(lowered.WhichPos, 0U);
+  EXPECT_FALSE(lowered.HasGroupRef);
+  EXPECT_EQ(lowered.OptTypes.size(), 3U);
+  EXPECT_TRUE(lowered.OptTypes[0] == Type::TOpt::Get(empty));
+  EXPECT_TRUE(lowered.OptTypes[1] == Type::TOpt::Get(Type::TInt::Get()));
+  EXPECT_TRUE(lowered.OptTypes[2] == Type::TOpt::Get(Type::TStr::Get()));
+  EXPECT_TRUE(RoundTrip(var_type) == var_type);
+}
