@@ -1649,7 +1649,7 @@ FIXTURE(DiskMergeWithCachePagesPinned) {
            in the LRU rather than leaked with RefCount > 0. */
         page_hog.Give(1UL);
         {
-          Disk::Util::TCompletionTrigger trigger;
+          Disk::TCompletionTrigger trigger;
           bool threw = false;
           try {
             engine->GetPageCache()->AsyncMultiGet(HERE, Disk::Low, engine->GetPageCache(),
