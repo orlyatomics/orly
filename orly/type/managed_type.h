@@ -45,6 +45,14 @@
 #include <base/hash.h>
 #include <orly/type/impl.h>
 
+/* Same as ORLY_FIBER_NO_IPA in <orly/indy/fiber/fiber.h>, which this layer does not include: an
+   opaque call, so the thread pointer is re-read at every access (#554). */
+#if defined(__GNUC__) && !defined(__clang__)
+#define ORLY_TYPE_NO_IPA __attribute__((noipa))
+#else
+#define ORLY_TYPE_NO_IPA __attribute__((noinline))
+#endif
+
 #define IMPL_INTERNED_TYPE(TFinal, TArgs...) \
     template <> \
     typename ::Orly::Type::TInternedType<TFinal, TArgs>::TStore *::Orly::Type::TInternedType<TFinal, TArgs>::Store = nullptr; \
@@ -89,7 +97,7 @@ namespace Orly {
       static TType Get(TCompatArgs &&... args) {
         assert(Store);  // If this fails, you likely don't have an instance of TTypeCzar.
         TKey key(args...);
-        if (!ExclusiveDepth) {
+        if (!GetExclusiveDepth()) {
           {
             std::shared_lock<std::shared_mutex> lock(Store->Mutex);
             auto iter = Store->TypeByKey.find(key);
@@ -126,7 +134,7 @@ namespace Orly {
           delete impl;
           return;
         }
-        if (ExclusiveDepth) {
+        if (GetExclusiveDepth()) {
           TExclusive lock;
           Free(impl);
           return;
@@ -162,22 +170,25 @@ namespace Orly {
       class TExclusive {
         public:
         TExclusive() {
-          if (!ExclusiveDepth) {
+          int depth = GetExclusiveDepth();
+          if (!depth) {
             Store->Mutex.lock();
           }
-          ++ExclusiveDepth;
+          SetExclusiveDepth(depth + 1);
         }
         explicit TExclusive(std::adopt_lock_t) {
-          assert(!ExclusiveDepth);
-          ExclusiveDepth = 1;
+          assert(!GetExclusiveDepth());
+          SetExclusiveDepth(1);
         }
         TExclusive(const TExclusive &) = delete;
         TExclusive &operator=(const TExclusive &) = delete;
         ~TExclusive() {
-          if (ExclusiveDepth == 1) {
+          if (GetExclusiveDepth() == 1) {
             FreePending();
           }
-          if (!--ExclusiveDepth) {
+          int depth = GetExclusiveDepth() - 1;
+          SetExclusiveDepth(depth);
+          if (!depth) {
             Store->Mutex.unlock();
           }
         }
@@ -232,7 +243,19 @@ namespace Orly {
 
       static TStore *Store;
 
-      /* How many TExclusive this thread holds on Store->Mutex. */
+      /* How many TExclusive this thread holds on Store->Mutex. Fibers migrate OS threads, and a
+         bare thread-local read inlined into a caller that switched fibers can use the thread
+         pointer from before the switch (#554) -- here, another thread's depth, so the lock would be
+         skipped. Touch it only through these opaque accessors, as TFiberSafeLocal does. The lock
+         itself is never held across a fiber switch, so one read per check is enough. */
+      ORLY_TYPE_NO_IPA static int GetExclusiveDepth() {
+        return ExclusiveDepth;
+      }
+
+      ORLY_TYPE_NO_IPA static void SetExclusiveDepth(int depth) {
+        ExclusiveDepth = depth;
+      }
+
       static thread_local int ExclusiveDepth;
 
       TKey Key;

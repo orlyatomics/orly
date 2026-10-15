@@ -44,6 +44,10 @@ ALLOWED = {
         'client dispatch thread, plain std::thread, no fibers',
     ('orly/client/client.cc', 'DispatchSelfDestructed'):
         'definition of the flag above',
+    ('orly/type/managed_type.h', 'ExclusiveDepth'):
+        'interner lock depth (declaration and IMPL_INTERNED_TYPE definition); '
+        'touched only by the noipa GetExclusiveDepth()/SetExclusiveDepth(), '
+        'like TFiberSafeLocal::Slot, and never held across a fiber switch',
     ('orly/rt/read_budget.cc', 'NoFrameBudget'):
         'read budget (#729) of code running off any fiber, so it cannot change '
         'threads; on a fiber the budget lives in TFrame::ReadBudget and this '
