@@ -115,6 +115,16 @@ namespace Orly {
           return min_ref;
         }
 
+        /* Replace the value of the minimum element, keeping its ref, then restore heap order with a
+           single sift-down. This is Pop() followed by Insert(val, ref) for the same ref, minus one pass:
+           if the new value still orders before the root's children, nothing moves. The heap must be
+           non-empty. */
+        inline void ReplaceTop(const TVal &val) {
+          assert(NumElem > 0);
+          Data[0].Val = &val;
+          MinHeapify(0);
+        }
+
         private:
 
         inline bool Less(const TMinHeapElem &lhs, const TMinHeapElem &rhs) const {

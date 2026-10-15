@@ -439,7 +439,7 @@ void TContext::TPresentWalker::Refresh() {
   bool done = false;
   size_t pos;
   while (Valid) {
-    const Indy::TPresentWalker::TItem &cur_item = MinHeap.Pop(pos);
+    const Indy::TPresentWalker::TItem &cur_item = MinHeap.Peek(pos);
     Indy::TPresentWalker &walker = *WalkerVec[pos];
     assert((*walker).KeyArena == cur_item.KeyArena);
     assert((*walker).OpArena == cur_item.OpArena);
@@ -452,7 +452,9 @@ void TContext::TPresentWalker::Refresh() {
     }
     ++walker;
     if (walker) {
-      MinHeap.Insert(*walker, pos);
+      MinHeap.ReplaceTop(*walker);
+    } else {
+      MinHeap.Pop(pos);
     }
     if (!done) {
       Valid = static_cast<bool>(MinHeap);
