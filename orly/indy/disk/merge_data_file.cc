@@ -774,7 +774,7 @@ class TMergeDataFileImpl {
                                                     collision_map,
                                                     completion_trigger,
                                                     Priority,
-                                                    true /* do_cache */
+                                                    false /* do_cache */
                                                     #ifndef NDEBUG
                                                     ,WrittenBlockSet
                                                     #endif
@@ -787,7 +787,7 @@ class TMergeDataFileImpl {
                                                     collision_map,
                                                     completion_trigger,
                                                     Priority,
-                                                    true /* do_cache */
+                                                    false /* do_cache */
                                                     #ifndef NDEBUG
                                                     ,WrittenBlockSet
                                                     #endif
@@ -856,7 +856,7 @@ class TMergeDataFileImpl {
                                             iter.second->GetData(),
                                             BlockVec[iter.first],
                                             Priority,
-                                            Disk::Util::CacheAll,
+                                            Disk::Util::ClearAll,
                                             completion_trigger);
           }
           /* wait for the io to finish since the collision map is about to go out of scope. */
@@ -914,7 +914,7 @@ class TMergeDataFileImpl {
                                               collision_map,
                                               completion_trigger,
                                               Priority,
-                                              true /* do_cache */
+                                              false /* do_cache */
                                               #ifndef NDEBUG
                                               ,WrittenBlockSet
                                               #endif
@@ -1583,7 +1583,7 @@ class TMergeDataFileImpl {
                                   arena_collision_map,
                                   completion_trigger,
                                   priority,
-                                  true /* do_cache */
+                                  false /* do_cache */
                                   #ifndef NDEBUG
                                   ,written_block_set
                                   #endif
@@ -1650,7 +1650,7 @@ class TMergeDataFileImpl {
                                                   arena_collision_map[max_block]->GetData(),
                                                   block_vec[max_block],
                                                   priority,
-                                                  Disk::Util::CacheAll,
+                                                  Disk::Util::ClearAll,
                                                   completion_trigger);
                 }
               }
@@ -1735,7 +1735,7 @@ class TMergeDataFileImpl {
                                         arena_collision_map[max_block]->GetData(),
                                         block_vec[max_block],
                                         priority,
-                                        Disk::Util::CacheAll,
+                                        Disk::Util::ClearAll,
                                         completion_trigger);
       }
     }
@@ -2333,7 +2333,7 @@ class TMergeDataFileImpl {
                                    KeyCollisionMap,
                                    KeyTrigger,
                                    Priority,
-                                   true /*do cache */
+                                   false /*do cache */
                                    #ifndef NDEBUG
                                    ,WrittenBlockSet
                                    #endif
@@ -2368,7 +2368,7 @@ class TMergeDataFileImpl {
                                           iter.second->GetData(),
                                           (*BlockVec)[iter.first],
                                           Priority,
-                                          Disk::Util::CacheAll,
+                                          Disk::Util::ClearAll,
                                           KeyTrigger);
         }
       }
@@ -2432,7 +2432,7 @@ class TMergeDataFileImpl {
                                            KeyCollisionMap,
                                            KeyTrigger,
                                            Priority,
-                                           true /* do_cache */
+                                           false /* do_cache */
                                            #ifndef NDEBUG
                                            ,WrittenBlockSet
                                            #endif
@@ -2580,7 +2580,7 @@ class TMergeDataFileImpl {
                                 collision_map,
                                 completion_trigger,
                                 Priority,
-                                true /* do_cache */
+                                false /* do_cache */
                                 #ifndef NDEBUG
                                 ,WrittenBlockSet
                                 #endif
@@ -2614,7 +2614,7 @@ class TMergeDataFileImpl {
                                               collision_map[collision_block_pos]->GetData(),
                                               (*BlockVec)[collision_block_pos],
                                               Priority,
-                                              Disk::Util::CacheAll,
+                                              Disk::Util::ClearAll,
                                               completion_trigger);
               const size_t byte_offset_of_end = hash_index_byte_offset + num_hash_fields * TDataFile::HashEntrySize;
               const size_t end_block_pos = byte_offset_of_end / LogicalBlockSize;
@@ -2630,7 +2630,7 @@ class TMergeDataFileImpl {
                                                 collision_map[end_block_pos]->GetData(),
                                                 (*BlockVec)[end_block_pos],
                                                 Priority,
-                                                Disk::Util::CacheAll,
+                                                Disk::Util::ClearAll,
                                                 completion_trigger);
               }
             }
@@ -2645,7 +2645,7 @@ class TMergeDataFileImpl {
                                       collision_map,
                                       completion_trigger,
                                       Priority,
-                                      true /* do_cache */
+                                      false /* do_cache */
                                       #ifndef NDEBUG
                                       ,WrittenBlockSet
                                       #endif
@@ -2693,7 +2693,7 @@ class TMergeDataFileImpl {
                                           iter.second->GetData(),
                                           (*BlockVec)[iter.first],
                                           Priority,
-                                          Disk::Util::CacheAll,
+                                          Disk::Util::ClearAll,
                                           completion_trigger);
         }
         completion_trigger.Wait();

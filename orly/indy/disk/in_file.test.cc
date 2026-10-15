@@ -597,3 +597,39 @@ FIXTURE(OutStreamBoundsInFlightWrites) {
     cond.notify_one();
   });
 }
+
+/* TOutStream::Flush must forward DoCache as CacheAll vs ClearAll rather than always passing CacheAll. */
+FIXTURE(OutStreamHonorsDoCacheFlag) {
+  Orly::Indy::Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    TCacheInstr last_instr = TCacheInstr::NoCache;
+    TMemoryDevice device(512, 512, 32768, true, true);
+    TVolume volume(TVolume::TDesc{TVolume::TDesc::Striped, device.GetDesc(), TVolume::TDesc::Fast, 1UL, 1UL, 1024UL, 8UL, 0.85},
+                   [&last_instr](TCacheInstr instr, const TOffset, void *, size_t) { last_instr = instr; }, &scheduler);
+    TVolumeManager vol_man(&scheduler);
+    volume.AddDevice(&device, 0);
+    vol_man.AddNewVolume(&volume);
+    Orly::Indy::Util::TBlockVec block_vec;
+    vol_man.TryAllocateSequentialBlocks(TVolume::TDesc::Fast, 2, [&block_vec](const TBlockRange &range) {
+      block_vec.PushBack(range);
+    });
+    unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
+    TCompletionTrigger trigger;
+    for (bool do_cache : {true, false}) {
+      std::unordered_set<size_t> written_block_set{};
+      TDataOutStream out_stream(HERE, 0UL, &vol_man, do_cache ? 0UL : LogicalBlockSize, block_vec, collision_map,
+                                trigger, RealTime, do_cache
+                                #ifndef NDEBUG
+                                ,written_block_set
+                                #endif
+                                );
+      out_stream << 42UL;
+    }
+    trigger.Wait();
+    EXPECT_EQ(last_instr, TCacheInstr::ClearAll);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
