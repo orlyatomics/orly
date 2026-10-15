@@ -738,6 +738,9 @@ namespace Orly {
       /* Assumes we're a tuple, get the number of non-free elements. */
       inline size_t GetTupleNumNonFree() const;
 
+      /* Assumes we're a tuple, true iff. no non-free element follows a free one. */
+      inline bool HasTrailingFrees() const;
+
       /* True iff. that note is this one byte for byte, leaving out the Unused flag bits. Notes
          written to disk before #666 carry garbage there, so equal notes can differ in them. */
       bool HasSameBytes(const TNote &that) const;
@@ -1636,6 +1639,18 @@ namespace Orly {
         }
       }
       return ret;
+    }
+
+    inline bool TCore::TNote::HasTrailingFrees() const {
+      assert(Tycon == TTycon::Tuple);
+      const TCore *start, *limit;
+      GetArray(start, limit);
+      for (start += GetTupleNumNonFree(); start < limit; ++start) {
+        if (!start->IsFree()) {
+          return false;
+        }
+      }
+      return true;
     }
 
     /*

@@ -18,4 +18,21 @@
 
 #include <orly/indy/key.h>
 
+#include <cassert>
+#include <stdexcept>
+
 using namespace Orly::Indy;
+
+void TKey::CheckFreesTrail() const {
+  if (!GetArena() || !GetCore().IsTuple()) {
+    return;
+  }
+  const Atom::TCore::TOffset *const off = GetCore().TryGetOffset();
+  assert(off);
+  void *pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin));
+  Atom::TCore::TArena::TFinalPin::TWrapper pin(
+      GetArena()->Pin(*off, sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * *GetCore().TryGetElemCount()), pin_alloc));
+  if (!pin->GetNote()->HasTrailingFrees()) {
+    throw std::invalid_argument("a pattern's free members must all follow its bound ones (orly/synth/db_keys_expr.cc)");
+  }
+}

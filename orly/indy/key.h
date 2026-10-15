@@ -80,6 +80,11 @@ namespace Orly {
 
       [[nodiscard]] size_t GetHash() const;
 
+      /* Throws std::invalid_argument if this is a tuple pattern with a bound member after a free one. The walkers stop early on
+         the premise that frees trail, which the compiler enforces (orly/synth/db_keys_expr.cc: "all free expressions must
+         appear to the right of fixed expressions"); a pattern built directly in C++ must keep to it too (#944). */
+      void CheckFreesTrail() const;
+
       [[nodiscard]] static bool EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
       [[nodiscard]] static bool TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
