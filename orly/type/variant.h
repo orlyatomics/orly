@@ -38,6 +38,10 @@
 #pragma once
 
 #include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <orly/type/managed_type.h>
@@ -66,6 +70,35 @@ namespace Orly {
 
       static TType Get(const TVariantElems &elems);
 
+      /* The storage lowering of this variant (issue #96), computed once per
+         interned variant type and then shared by every value of it (#946).
+
+         `RecType` is the fixed-shape record
+
+           <{ .$which: int, .Tag0: payload0?, .Tag1: payload1?, ... }>
+
+         that both Type::NewSabot (orly/type/new_sabot.cc) and the value
+         encoder Var::SS::TVariantRec (orly/var/new_sabot.h) produce.
+         `OptTypes[i]` is `TOpt::Get(payload_i)` for the i-th arm in tag
+         order. `WhichPos` is where `$which` falls among the record's fields
+         in field-name order (the order a record sabot walks them); arm i is
+         field `i` before that position and field `i + 1` from it on.
+         `HasGroupRef` caches Type::HasGroupRef on this variant. */
+      struct TLowered {
+        TType RecType;
+        std::vector<TType> OptTypes;
+        size_t WhichPos;
+        bool HasGroupRef;
+      };
+
+      /* The lowering above, built on first use. Interned types are shared by
+         every thread, so this is guarded by a once-flag; afterwards it is a
+         lock-free read. The result lives as long as this type does. */
+      const TLowered &GetLowered() const {
+        std::call_once(LoweredOnce, [this] { Lowered.reset(new TLowered(NewLowered())); });
+        return *Lowered;
+      }
+
       /* The widening (subtype) relation `this ⊑ wide` (issue #104): true
          iff every `(tag → payload)` arm of `this` appears identically (same
          tag, same payload type) in `wide`. The tag set widens; payloads stay
@@ -91,6 +124,15 @@ namespace Orly {
       virtual ~TVariant();
 
       virtual void Write(std::ostream &) const;
+
+      /* Builds the value GetLowered() caches. */
+      TLowered NewLowered() const;
+
+      /* See GetLowered(). */
+      mutable std::once_flag LoweredOnce;
+
+      /* See GetLowered(). */
+      mutable std::unique_ptr<const TLowered> Lowered;
 
       friend class TInternedType;
     };  // TVariant
