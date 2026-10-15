@@ -141,7 +141,8 @@ class TIndexFile
              std::unordered_set<size_t> &written_block_set,
              #endif
              size_t temp_file_consol_thresh,
-             const TKey &example_key)
+             const TKey &example_key,
+             bool do_cache)
       : IndexId(index_id),
         GenId(gen_id),
         Engine(engine),
@@ -157,6 +158,7 @@ class TIndexFile
         FileSize(0UL),
         TempFileConsolThresh(temp_file_consol_thresh),
         ExampleKey(example_key),
+        DoCache(do_cache),
         #ifndef NDEBUG
         WrittenBlockSet(written_block_set),
         #endif
@@ -190,7 +192,7 @@ class TIndexFile
                                             KeyCollisionMap,
                                             KeyTrigger,
                                             Priority,
-                                            true
+                                            DoCache
                                             #ifndef NDEBUG
                                             ,WrittenBlockSet
                                             #endif
@@ -238,7 +240,7 @@ class TIndexFile
                                         iter.second->GetData(),
                                         (*BlockVec)[iter.first],
                                         Priority,
-                                        Disk::Util::CacheAll,
+                                        DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll,
                                         KeyTrigger);
       }
     }
@@ -322,6 +324,8 @@ class TIndexFile
 
   TKey ExampleKey;
 
+  bool DoCache;
+
   #ifndef NDEBUG
   std::unordered_set<size_t> &WrittenBlockSet;
   #endif
@@ -386,7 +390,8 @@ size_t MakeArena(Disk::Util::TEngine *engine,
                  TDataFile::TTypeBoundaryOffsetVec &type_boundary_vec,
                  size_t max_total_note_bytes,
                  size_t &num_note_out,
-                 size_t &num_bytes_out);
+                 size_t &num_bytes_out,
+                 bool do_cache);
 
 void TIndexFile::EmplaceOrderedNotes(TOrderedNoteIndex &note_index, TSuprena *arena, size_t &total_bytes, TCore::TOffset offset) {
   const TCore::TNote *const note = reinterpret_cast<const TCore::TNote *>(offset);
@@ -431,7 +436,7 @@ void TIndexFile::PrepKeyRange(TDataFile::TUpdateCollector *update_collector, TDa
                                                   KeyCollisionMap,
                                                   KeyTrigger,
                                                   Priority,
-                                                  true
+                                                  DoCache
                                                   #ifndef NDEBUG
                                                   ,WrittenBlockSet
                                                   #endif
@@ -477,7 +482,8 @@ void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec) {
                               ArenaTypeBoundaryOffsetVec,
                               MaxArenaBytes,
                               NumArenaNotes,
-                              NumArenaBytes);
+                              NumArenaBytes,
+                              DoCache);
 }
 
 void TIndexFile::PushKey(const TDataFile::TEntryView &entry) {
@@ -662,7 +668,7 @@ void TIndexFile::FlushHashes() {
                                        collision_map,
                                        completion_trigger,
                                        Priority,
-                                       true
+                                       DoCache
                                        #ifndef NDEBUG
                                        ,WrittenBlockSet
                                        #endif
@@ -699,7 +705,7 @@ void TIndexFile::FlushHashes() {
                                           collision_map[collision_block_pos]->GetData(),
                                           (*BlockVec)[collision_block_pos],
                                           Priority,
-                                          Disk::Util::CacheAll,
+                                          DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll,
                                           completion_trigger);
           const size_t byte_offset_of_end = hash_index_byte_offset + num_hash_fields * TDataFile::HashEntrySize;
           const size_t end_block_pos = byte_offset_of_end / Disk::Util::LogicalBlockSize;
@@ -715,7 +721,7 @@ void TIndexFile::FlushHashes() {
                                             collision_map[end_block_pos]->GetData(),
                                             (*BlockVec)[end_block_pos],
                                             Priority,
-                                            Disk::Util::CacheAll,
+                                            DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll,
                                             completion_trigger);
           }
         }
@@ -730,7 +736,7 @@ void TIndexFile::FlushHashes() {
                                              collision_map,
                                              completion_trigger,
                                              Priority,
-                                             true
+                                             DoCache
                                              #ifndef NDEBUG
                                              ,WrittenBlockSet
                                              #endif
@@ -742,6 +748,9 @@ void TIndexFile::FlushHashes() {
         for (; i < num_hash_fields; ++i) {
           in_stream.Read(&core, sizeof(TCore));
           in_stream.Read(key_ptr);
+          if (!in_stream) {
+            in_stream.ReleaseBuf();
+          }
           if (memcmp(&core, &TData::NullCore, sizeof(TCore)) == 0) {
             assert(hash_csr);
             const THashObj &obj = *hash_csr;
@@ -760,10 +769,13 @@ void TIndexFile::FlushHashes() {
             break;
           }
         }
-        size_t left = std::min(Disk::Util::LogicalBlockSize - in_stream.GetOffset() % Disk::Util::LogicalBlockSize, FileSize - in_stream.GetOffset());
-        char buf[left];
-        in_stream.Read(buf, left);
-        out_stream.Write(buf, left);
+        if (in_stream) {
+          size_t left = std::min(Disk::Util::LogicalBlockSize - in_stream.GetOffset() % Disk::Util::LogicalBlockSize, FileSize - in_stream.GetOffset());
+          char buf[left];
+          in_stream.Read(buf, left);
+          in_stream.ReleaseBuf();
+          out_stream.Write(buf, left);
+        }
         assert(!hash_csr);
       }
     }
@@ -781,7 +793,7 @@ void TIndexFile::FlushHashes() {
                                       iter.second->GetData(),
                                       (*BlockVec)[iter.first],
                                       Priority,
-                                      Disk::Util::CacheAll,
+                                      DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll,
                                       completion_trigger);
     }
     completion_trigger.Wait();
@@ -797,7 +809,8 @@ TDataFile::TDataFile(Util::TEngine *engine,
                      size_t temp_file_consol_thresh,
                      TSequenceNumber /*release_up_to*/,
                      DiskPriority priority,
-                     const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range)
+                     const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range,
+                     bool do_cache)
     : Engine(engine),
       StorageSpeed(storage_speed),
       Priority(priority),
@@ -805,7 +818,8 @@ TDataFile::TDataFile(Util::TEngine *engine,
       MainArenaByteOffset(0UL),
       NumKeys(0UL),
       TempFileConsolThresh(temp_file_consol_thresh),
-      UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true) {
+      UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true),
+      DoCache(do_cache) {
   Build(source, nullptr, file_uid, gen_id, cover_range);
 }
 
@@ -825,7 +839,8 @@ TDataFile::TDataFile(Util::TEngine *engine,
       MainArenaByteOffset(0UL),
       NumKeys(0UL),
       TempFileConsolThresh(temp_file_consol_thresh),
-      UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true) {
+      UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true),
+      DoCache(true) {
   const TEntrySource source = [memory_layer](const std::function<void (const TEntryView &)> &cb) {
     for (TMemoryLayer::TEntryCollection::TCursor csr(memory_layer->GetEntryCollection()); csr; ++csr) {
       cb(TEntryView{csr->GetIndexKey().GetIndexId(), csr->GetKey(), csr->GetOp(), csr->GetMetadata(), csr->GetId(),
@@ -874,7 +889,8 @@ void TDataFile::Build(const TEntrySource &source,
                                                                       WrittenBlockSet,
                                                                       #endif
                                                                       TempFileConsolThresh,
-                                                                      *prev_key));
+                                                                      *prev_key,
+                                                                      DoCache));
             TIndexFile &index_file = *ret.first->second;
             std::swap(index_file.ArenaNoteIndex, ordered_note_index);
             index_file.MaxArenaBytes = cur_index_bytes;
@@ -927,7 +943,8 @@ void TDataFile::Build(const TEntrySource &source,
                                                                   WrittenBlockSet,
                                                                       #endif
                                                                   TempFileConsolThresh,
-                                                                  *prev_key));
+                                                                  *prev_key,
+                                                                  DoCache));
                                                                               TIndexFile &index_file =
                                                                                   *ret.first->second;
         std::swap(index_file.ArenaNoteIndex, ordered_note_index);
@@ -957,7 +974,8 @@ void TDataFile::Build(const TEntrySource &source,
                                       MainArenaTypeBoundaryOffsetVec,
                                       main_arena_max_bytes,
                                       num_main_arena_notes,
-                                      num_main_arena_bytes);
+                                      num_main_arena_bytes,
+                                      DoCache);
     }
     /* write the in-order key indexes */ {
       std::optional<Base::TUuid> prev_index_id;
@@ -1064,7 +1082,7 @@ void TDataFile::Build(const TEntrySource &source,
                                   collision_map,
                                   completion_trigger,
                                   Priority,
-                                  true
+                                  DoCache
                                   #ifndef NDEBUG
                                   ,WrittenBlockSet
                                   #endif
@@ -1077,7 +1095,7 @@ void TDataFile::Build(const TEntrySource &source,
                                   collision_map,
                                   completion_trigger,
                                   Priority,
-                                  true
+                                  DoCache
                                   #ifndef NDEBUG
                                   ,WrittenBlockSet
                                   #endif
@@ -1137,7 +1155,7 @@ void TDataFile::Build(const TEntrySource &source,
                                           iter.second->GetData(),
                                           BlockVec[iter.first],
                                           Priority,
-                                          Disk::Util::CacheAll,
+                                          DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll,
                                           completion_trigger);
         }
         /* wait for the io to finish since the collision map is about to go out of scope. */
@@ -1194,7 +1212,7 @@ void TDataFile::Build(const TEntrySource &source,
                             collision_map,
                             completion_trigger,
                             Priority,
-                            true
+                            DoCache
                             #ifndef NDEBUG
                             ,WrittenBlockSet
                             #endif
@@ -1331,7 +1349,8 @@ size_t MakeArena(Disk::Util::TEngine *engine,
                  TDataFile::TTypeBoundaryOffsetVec &type_boundary_vec,
                  size_t max_total_note_bytes,
                  size_t &num_notes_out,
-                 size_t &num_bytes_out) {
+                 size_t &num_bytes_out,
+                 bool do_cache) {
   assert(remap_index.empty());
   Atom::TCore::TArena *cur_arena = nullptr;
   auto remapper = [&remap_index, &cur_arena](TCore::TOffset off) {
@@ -1369,7 +1388,7 @@ size_t MakeArena(Disk::Util::TEngine *engine,
                                            arena_collision_map,
                                            completion_trigger,
                                            priority,
-                                           true
+                                           do_cache
                                            #ifndef NDEBUG
                                            ,written_block_set
                                            #endif

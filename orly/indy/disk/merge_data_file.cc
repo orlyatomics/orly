@@ -2657,6 +2657,9 @@ class TMergeDataFileImpl {
             for (; i < num_hash_fields; ++i) {
               in_stream.Read(&core, sizeof(Atom::TCore));
               in_stream.Read(key_ptr);
+              if (!in_stream) {
+                in_stream.ReleaseBuf();
+              }
               if (memcmp(&core, &TData::NullCore, sizeof(Atom::TCore)) == 0) {
                 assert(hash_csr);
                 const THashObj &obj = *hash_csr;
@@ -2672,10 +2675,13 @@ class TMergeDataFileImpl {
                 break;
               }
             }
-            size_t left = std::min(Disk::Util::LogicalBlockSize - in_stream.GetOffset() % LogicalBlockSize, FileSize - in_stream.GetOffset());
-            char buf[left];
-            in_stream.Read(buf, left);
-            out_stream.Write(buf, left);
+            if (in_stream) {
+              size_t left = std::min(Disk::Util::LogicalBlockSize - in_stream.GetOffset() % LogicalBlockSize, FileSize - in_stream.GetOffset());
+              char buf[left];
+              in_stream.Read(buf, left);
+              in_stream.ReleaseBuf();
+              out_stream.Write(buf, left);
+            }
             assert(!hash_csr);
           }
         }
