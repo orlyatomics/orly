@@ -22,6 +22,8 @@
 
 #include <thread>
 
+#include <base/backtrace.h>
+
 using namespace std::literals;
 using namespace Orly::Indy::Fiber;
 
@@ -101,6 +103,7 @@ void Orly::Indy::ExternFiber::TSync::WaitForMore(size_t num) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 void TRunner::Run() {
+  Base::InstallThreadCrashStack();
   LocalRunner = this;
   #if defined(__SANITIZE_THREAD__)
   /* The scheduler loop runs on this OS thread's native stack. Adopt the

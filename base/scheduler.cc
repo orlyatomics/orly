@@ -25,6 +25,7 @@
 #include <sched.h>
 #include <time.h>
 
+#include <base/backtrace.h>
 #include <base/debug_log.h>
 #include <base/zero.h>
 #include <base/io/input_consumer.h>
@@ -227,6 +228,7 @@ TScheduler::TWorker::~TWorker() {
 }
 
 void TScheduler::TWorker::ThreadMain() {
+  InstallThreadCrashStack();
   try {
     if (Scheduler->Policy.IsRealTime()) {
       struct sched_param sp;
