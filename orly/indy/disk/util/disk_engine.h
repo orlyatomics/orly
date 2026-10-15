@@ -64,6 +64,16 @@ namespace Orly {
               FileAppendLogBlocks((append_log_mb * 1024 * 1024) / Util::PhysicalBlockSize) {
             assert(disk_controller_core_vec.size());
             CacheCb = [this](Util::TCacheInstr cache_instr, const Util::TOffset logical_start_offset, void *buf, size_t count) {
+              /* Caching a write is best-effort. With every page buffer referenced (many layers under
+                 many readers), throwing here failed the write it was caching, and from an out
+                 stream's destructor that terminated the server. A page left out is just read from
+                 disk later, and it can't leave a stale copy behind: Replace() only needs a new
+                 buffer for a page that isn't cached already. */
+              const auto replace = [](auto &cache, size_t id, void *data) {
+                try {
+                  cache.Replace(id, data);
+                } catch (const Util::TOutOfCachePages &) {}
+              };
               switch (cache_instr) {
                 case Util::TCacheInstr::CacheAll: {
                   assert(PageCache.get());
@@ -73,10 +83,10 @@ namespace Orly {
                   assert(logical_start_offset % Util::TBlockCache::DataSize == 0);
                   assert(count % Util::TBlockCache::DataSize == 0);
                   for (size_t i = 0; i < (count / Util::TPageCache::DataSize); ++i) {
-                    PageCache->Replace((logical_start_offset / Util::TPageCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TPageCache::DataSize));
+                    replace(*PageCache, (logical_start_offset / Util::TPageCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TPageCache::DataSize));
                   }
                   for (size_t i = 0; i < (count / Util::TBlockCache::DataSize); ++i) {
-                    BlockCache->Replace((logical_start_offset / Util::TBlockCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TBlockCache::DataSize));
+                    replace(*BlockCache, (logical_start_offset / Util::TBlockCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TBlockCache::DataSize));
                   }
                 }
                 case Util::TCacheInstr::CachePageOnly: {
@@ -84,7 +94,7 @@ namespace Orly {
                   assert(logical_start_offset % Util::TPageCache::DataSize == 0);
                   assert(count % Util::TPageCache::DataSize == 0);
                   for (size_t i = 0; i < (count / Util::TPageCache::DataSize); ++i) {
-                    PageCache->Replace((logical_start_offset / Util::TPageCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TPageCache::DataSize));
+                    replace(*PageCache, (logical_start_offset / Util::TPageCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TPageCache::DataSize));
                   }
                   break;
                 }
@@ -93,7 +103,7 @@ namespace Orly {
                   assert(logical_start_offset % Util::TBlockCache::DataSize == 0);
                   assert(count % Util::TBlockCache::DataSize == 0);
                   for (size_t i = 0; i < (count / Util::TBlockCache::DataSize); ++i) {
-                    BlockCache->Replace((logical_start_offset / Util::TBlockCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TBlockCache::DataSize));
+                    replace(*BlockCache, (logical_start_offset / Util::TBlockCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TBlockCache::DataSize));
                   }
                   break;
                 }

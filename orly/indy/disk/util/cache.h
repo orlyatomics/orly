@@ -47,6 +47,17 @@ namespace Orly {
 
       namespace Util {
 
+        /* Thrown when every page buffer is referenced, so none can be reclaimed. A read that needs a
+           page has to fail; a write-through insert can skip the page instead (see TDiskEngine). */
+        class TOutOfCachePages
+            : public std::runtime_error {
+          public:
+
+          TOutOfCachePages()
+              : std::runtime_error("Ran out of cache pages") {}
+
+        };  // TOutOfCachePages
+
         template <size_t PageSize>
         class TCache {
           NO_COPY(TCache);
@@ -816,7 +827,7 @@ namespace Orly {
             #else
             syslog(LOG_INFO, "NewPageBuf ps=[%ld] Ran out of cache pages", PageSize);
             #endif
-            throw std::runtime_error("Ran out of cache pages");
+            throw TOutOfCachePages();
           }
 
           bool TryRemoveSlot(const TSlot &slot, TSlot *&slot_to_remove, size_t &out_reclaimed_page_buf, size_t &main_slot_page_id) {

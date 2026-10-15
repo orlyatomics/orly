@@ -436,6 +436,54 @@ FIXTURE(OutStreamWriteFailureUnwinds) {
   });
 }
 
+/* The same failure in the write-out ~TOutStream does itself, for the blocks left over at the end.
+   The destructor must not throw (that terminated the server when a merge's cache insert ran out
+   of pages); it frees the buffers and leaves the failure on the trigger, for the owner's Wait(). */
+FIXTURE(OutStreamDestructorWriteFailureFailsTrigger) {
+  Orly::Indy::Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    /* Too few blocks for a flush while writing: the destructor submits all four, and the second fails. */
+    TFailingWriteMemoryDevice device(1UL);
+    TVolume volume(TVolume::TDesc{TVolume::TDesc::Striped, device.GetDesc(), TVolume::TDesc::Fast, 1UL, 1UL, 1024UL, 8UL, 0.85},
+                   [](TCacheInstr, const TOffset, void *, size_t) {}, &scheduler);
+    TVolumeManager vol_man(&scheduler);
+    volume.AddDevice(&device, 0);
+    vol_man.AddNewVolume(&volume);
+    const size_t num_blocks = 4UL;
+    static_assert(num_blocks < MaxOutBlockGroupSize, "the stream must not flush before it is destroyed");
+    Orly::Indy::Util::TBlockVec block_vec;
+    vol_man.TryAllocateSequentialBlocks(TVolume::TDesc::Fast, num_blocks, [&block_vec](const TBlockRange &range) {
+      block_vec.PushBack(range);
+    });
+    const size_t bufs_used = TBufBlock::Pool.GetNumBlocksUsed();
+    unordered_map<size_t, shared_ptr<const TBufBlock>> collision_map {};
+    TCompletionTrigger trigger;
+    /* stream data out */ {
+      std::unordered_set<size_t> written_block_set{};
+      TDataOutStream out_stream(HERE, 0UL, &vol_man, 0UL, block_vec, collision_map,
+                                trigger, RealTime, true
+                                #ifndef NDEBUG
+                                ,written_block_set
+                                #endif
+                                );
+      for (size_t i = 0; i < (num_blocks * LogicalBlockSize) / sizeof(size_t); ++i) {
+        out_stream << i;
+      }
+    }
+    bool threw = false;
+    try {
+      trigger.Wait();
+    } catch (const TDiskError &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+    EXPECT_EQ(TBufBlock::Pool.GetNumBlocksUsed(), bufs_used);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* A memory device that holds its writes back and lets a releaser thread carry them out one at a
    time, slower than a stream can produce blocks, counting the most held at once. */
 class THoldingWriteMemoryDevice

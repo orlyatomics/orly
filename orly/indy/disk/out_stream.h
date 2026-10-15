@@ -116,25 +116,27 @@ namespace Orly {
           /* Writes out what is still buffered, unless an exception is unwinding through the
              stream's owner. That write is being abandoned (a merge that throws keeps no file), and
              writing would need disk events: when the throw was a disk event pool running dry, the
-             second throw, from a destructor, terminated the process. So then just free the buffers. */
+             second throw, from a destructor, terminated the process. So then just free the buffers.
+             A write-out that throws fails the same way, so it never leaves here: the buffers are
+             freed and the failure goes on the completion trigger, whose Wait() the owner calls
+             next and which throws it there. */
           virtual ~TOutStream() {
             if (std::uncaught_exceptions() > UncaughtAtConstruction) {
-              if (!CurBlockIsCollision) {
-                delete Buf;
-              }
-              while (TBufferedWrite *write = WriteCollection.TryGetFirstMember()) {
-                delete write->GetBuf();
-                delete write;
-              }
-              QueueSize = 0UL;
+              FreeBuffers();
               return;
             }
-            if (!CurBlockIsCollision && Buf) {
-            //if (!CurBlockIsCollision && Buf && ((ByteIndex % TService::BlockSize) != 0)) {
-              AppendBuf();
-            }
-            if (GetSize() > 0) {
-              Flush();
+            try {
+              if (!CurBlockIsCollision && Buf) {
+              //if (!CurBlockIsCollision && Buf && ((ByteIndex % TService::BlockSize) != 0)) {
+                AppendBuf();
+              }
+              if (GetSize() > 0) {
+                Flush();
+              }
+            } catch (...) {
+              FreeBuffers();
+              CompletionTrigger.WaitForOneMore();
+              CompletionTrigger.Callback(TDiskResult::Error, "out stream could not write out its last blocks");
             }
           }
 
@@ -266,6 +268,19 @@ namespace Orly {
                 FetchBlock(block);
               }
             }
+          }
+
+          /* Frees the block we are filling, if it is ours, and every block still in the write group. */
+          void FreeBuffers() noexcept {
+            if (!CurBlockIsCollision) {
+              delete Buf;
+            }
+            Buf = nullptr;
+            while (TBufferedWrite *write = WriteCollection.TryGetFirstMember()) {
+              delete write->GetBuf();
+              delete write;
+            }
+            QueueSize = 0UL;
           }
 
           /* Moves Buf, a block of our own, into the write group. If this throws, Buf is still
