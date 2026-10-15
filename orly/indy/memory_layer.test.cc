@@ -25,6 +25,7 @@
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <random>
 #include <thread>
 #include <tuple>
@@ -386,6 +387,29 @@ FIXTURE(ConcurrentWalkInsert) {
   EXPECT_EQ(bad.load(), 0UL);
   EXPECT_EQ(missing.load(), 0UL);
   EXPECT_EQ(mem_layer.GetSize(), static_cast<size_t>(N));
+}
+
+/* A pattern with a bound member after a free one is rejected at the walker (#944): the early stop in the match walks
+   assumes frees trail, as the compiler guarantees (orly/synth/db_keys_expr.cc). */
+FIXTURE(RejectsBoundAfterFree) {
+  TMemoryLayer mem_layer(nullptr);
+  Base::TUuid idx(Base::TUuid::Twister);
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  Insert(mem_layer, 1UL, idx, 1L, 1L, 2L, 3L);
+  auto rejected = [&](const TIndexKey &pattern) {
+    try {
+      mem_layer.NewPresentWalker(pattern);
+    } catch (const std::invalid_argument &) {
+      return true;
+    }
+    return false;
+  };
+  const Native::TFree<int64_t> free_int;
+  EXPECT_TRUE(rejected(TIndexKey(idx, TKey(make_tuple(1L, free_int, 3L), &arena, state_alloc))));
+  EXPECT_TRUE(rejected(TIndexKey(idx, TKey(make_tuple(free_int, 2L, free_int), &arena, state_alloc))));
+  EXPECT_FALSE(rejected(TIndexKey(idx, TKey(make_tuple(1L, free_int, free_int), &arena, state_alloc))));
+  EXPECT_FALSE(rejected(TIndexKey(idx, TKey(make_tuple(1L, 2L, 3L), &arena, state_alloc))));
 }
 
 /* The range walker (#735): it seeks to `from` and walks to `to`, which is

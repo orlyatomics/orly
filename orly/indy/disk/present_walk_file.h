@@ -274,6 +274,9 @@ namespace Orly {
           /* Marks EndRank as not found yet. */
           static constexpr size_t NoRank = static_cast<size_t>(-1);
 
+          /* The Match walk's early stop (Past) is valid only because a pattern's free members trail its bound ones, so the
+             matching keys are one contiguous run and FindInHash's prefix hash picks the right table (TKey::CheckFreesTrail,
+             orly/synth/db_keys_expr.cc). */
           TPlace Place(const Atom::TCore &key) const {
             switch (SearchKind) {
               case Match: {

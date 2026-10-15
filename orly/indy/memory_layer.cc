@@ -254,6 +254,7 @@ TMemoryLayer::TMatchPresentWalker::TMatchPresentWalker(const TMemoryLayer *layer
       Key(key),
       Csr(Layer->GetEntryCollection()),
       ExactPoint(exact_point) {
+  Key.GetKey().CheckFreesTrail();
   if (ExactPoint) {
     /* Fully-bound point read (operator[]/Exists): jump straight to key's run
        via the skip-list accelerator instead of scanning the ordered list from
@@ -311,6 +312,8 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
         Sabot::TMatchResult result = MatchPrefixState(*key_state, *cur_state);
         switch (result) {
           case Sabot::TMatchResult::NoMatch: {
+            /* Once a match has been seen, the first NoMatch ends the run. That is sound only because free members trail
+               (see TKey::CheckFreesTrail): the matches then form one contiguous run in key order. */
             if (PassedMatch) {
               Valid = false;
               return;

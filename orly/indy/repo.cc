@@ -1936,6 +1936,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       Valid(false),
       IgnoreTombstone(ignore_tombstone),
       ExactPoint(exact_point) {
+  From.GetKey().CheckFreesTrail();
   if (View->GetLower() && View->GetUpper()) {
     /* Hash the key once, here, before any layer's walker copies it. TKey caches its hash and a copy keeps the
        cache, so each disk layer's FindInHash reuses this hash instead of recomputing it from an unhashed copy.
