@@ -2828,16 +2828,16 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
      file via TMutation::Augment-equivalent logic in typed space. Output
      entries are promoted to Assign(folded value), bringing read
      amplification back to O(1) per key. */
-  /* #627: a fold that can't get the memory it needs keeps the merge unfolded. Folding only bounds
-     read amplification: the unfolded file is a correct result, as on the fast path above, and a
-     later merge that takes it in folds again. Since #745 §9.6 the fold takes nothing from the
+  /* #627: a fold that can't get the memory or cache pages it needs keeps the merge unfolded. Folding
+     only bounds read amplification: the unfolded file is a correct result, as on the fast path above,
+     and a later merge that takes it in folds again. Since #745 §9.6 the fold takes nothing from the
      update pools (it streams the merged file key by key), so it no longer claims pool space up
-     front (#858); only a heap allocation failure lands here. */
-  const auto keep_unfolded = [&]() {
+     front (#858); a heap allocation failure or cache-page exhaustion (#932) lands here. */
+  const auto keep_unfolded = [&](const char *reason) {
     static std::atomic<size_t> fold_misses(0UL);
     const size_t misses = ++fold_misses;
     if ((misses & (misses - 1UL)) == 0UL) {
-      syslog(LOG_ERR, "MergeFiles: no memory to fold %ld keys; keeping the merge unfolded (%ld times so far)", merge_data_file.GetNumKeys(), misses);
+      syslog(LOG_ERR, "MergeFiles: %s to fold %ld keys; keeping the merge unfolded (%ld times so far)", reason, merge_data_file.GetNumKeys(), misses);
     }
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
@@ -2859,7 +2859,11 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     fold_file_length = fold_data_file.GetFileLength();
   } catch (const std::bad_alloc &) {
     /* The fold's own output freed itself (TDataFile, before the file map has it). */
-    return keep_unfolded();
+    return keep_unfolded("no memory");
+  } catch (const Disk::Util::TOutOfCachePages &) {
+    /* The fold's own output freed itself (TDataFile, before the file map has it). Keep the valid
+       Phase A output rather than deleting it and throwing away the completed merge (#932). */
+    return keep_unfolded("no cache pages");
   } catch (const std::exception &ex) {
     /* The fold's own output frees itself (it is a TDataFile), but the intermediate file is
        complete and in the file map, and no layer owns it, so nothing else would ever remove it

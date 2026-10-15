@@ -518,6 +518,7 @@ namespace Orly {
                       return;
                     }
                   }
+                  std::atomic_store(cur_slot, val);
                   syslog(LOG_ERR, "TCache: cannot release slot - page_id combination that does not exist in cache [%ld]", page_id);
                   throw std::logic_error("Cannot release slot - page_id combination that does not exist in cache.");
                 }
@@ -639,8 +640,16 @@ namespace Orly {
             TSlot *data_slots[num_consec_pages];
             TSlot **main_slots_ptr = main_slots;
             TSlot **data_slots_ptr = data_slots;
-            for (size_t i = 0; i < num_consec_pages; ++i) {
-              main_slots[i] = Get(page_id + i, data_slots[i]);
+            size_t num_acquired = 0UL;
+            try {
+              for (; num_acquired < num_consec_pages; ++num_acquired) {
+                main_slots[num_acquired] = Get(page_id + num_acquired, data_slots[num_acquired]);
+              }
+            } catch (...) {
+              for (size_t j = 0UL; j < num_acquired; ++j) {
+                Release(main_slots[j], page_id + j);
+              }
+              throw;
             }
 
             auto load_range_func = [data_slots_ptr, main_slots_ptr, page_id, cache, &async_trigger, &code_location, buf_kind, util_src, can_release, priority](size_t from_page_id, size_t num_pages) {
