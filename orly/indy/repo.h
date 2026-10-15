@@ -1370,7 +1370,8 @@ namespace Orly {
                         size_t &out_num_keys,
                         TSequenceNumber release_up_to,
                         bool can_tail,
-                        bool can_tail_tombstone) override;
+                        bool can_tail_tombstone,
+                        bool cancel_on_shutdown = false) override;
 
       /* Make the mapping with merged_layer in place of input_layers current, and mark the inputs
          for delete (#627). The inputs must be taken and in the current mapping. If an allocation
