@@ -47,6 +47,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <optional>
 
 #include <base/class_traits.h>
@@ -85,7 +86,8 @@ namespace Orly {
                       size_t dest_gen_id,
                       DiskPriority priority,
                       size_t temp_file_consol_thresh,
-                      std::optional<TSequenceNumber> retain_from = std::nullopt);
+                      std::optional<TSequenceNumber> retain_from = std::nullopt,
+                      const std::atomic<bool> *cancel = nullptr);
 
         /* #745 stage 2: with `retain_from`, the fold keeps every version newer than it (reads at any version from
            `retain_from` on stay whole) and folds only the ones at or below it. Within the window, every

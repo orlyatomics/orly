@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <orly/indy/disk/in_file.h>
+#include <orly/indy/disk/merge_data_file.h>
 #include <orly/rt/mutate.h>
 #include <orly/sabot/to_native.h>
 #include <orly/var/mutation.h>
@@ -228,10 +229,17 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                              size_t dest_gen_id,
                              DiskPriority priority,
                              size_t temp_file_consol_thresh,
-                             std::optional<TSequenceNumber> retain_from)
+                             std::optional<TSequenceNumber> retain_from,
+                             const std::atomic<bool> *cancel)
     : NumKeys(0UL),
       LowestSeq(0UL),
       HighestSeq(0UL) {
+  const auto throw_if_cancelled = [cancel]() {
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+      throw TMergeCancelled();
+    }
+  };
+  throw_if_cancelled();
 
   // 1. Open the source file.
   TFoldReader reader(engine, file_uuid, source_gen_id, priority);
@@ -263,6 +271,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
                                             engine->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(),
                                             reader.GetByteOffsetOfUpdateIndex());
     for (size_t u = 0UL; u < num_updates; ++u) {
+      throw_if_cancelled();
       TSequenceNumber seq_num;
       TCore meta_core, id_core;
       in_stream.Read(seq_num);
@@ -285,6 +294,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
     const size_t index_begin = out_entries.size();
     std::vector<TFoldEntry> entries;
     for (TFoldReader::TIndexFile::TKeyCursor csr(&idx_file); csr; ++csr) {
+      throw_if_cancelled();
       const TFoldReader::TIndexFile::TKeyItem &item = *csr;
       entries.clear();
       /* the current entry */ {
@@ -382,8 +392,9 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
       }
     }
   }
-  const TDataFile::TEntrySource source = [&out_entries](const std::function<void (const TDataFile::TEntryView &)> &cb) {
+  const TDataFile::TEntrySource source = [&out_entries, &throw_if_cancelled](const std::function<void (const TDataFile::TEntryView &)> &cb) {
     for (const auto &entry : out_entries) {
+      throw_if_cancelled();
       cb(entry);
     }
   };

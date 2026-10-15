@@ -2297,13 +2297,17 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           if (gen_layer_to_tail) {
             syslog(LOG_INFO, "Tailing file [%ld] with [%ld] num keys", gen_id_to_tail, num_keys);
             disk_slot.emplace();
-            size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsTailingAllowed(), true);
+            size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsTailingAllowed(), true, true);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
             }
             new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
           }
+        } catch (const Disk::TMergeCancelled &) {
+          /* #927: shutdown stopped the tail merge. The output is freed and the input layer is untouched. */
+          hand_back();
+          return;
         } catch (const Disk::Util::TDiskFull &ex) {
           /* #590: as in StepMergeDisk, hand the layer back. Tailing runs once per request
              (TServer::TailGlobalPov), not from a queue, so report it and don't retry. */
@@ -2864,7 +2868,7 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   size_t final_gen_id = GetNextGenId();
   size_t fold_file_length = 0UL;
   try {
-    TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh, retain_from);
+    TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh, retain_from, cancel_on_shutdown ? &Manager->GetShuttingDownFlag() : nullptr);
     out_num_keys = fold_data_file.GetNumKeys();
     out_saved_low_seq = fold_data_file.GetLowestSequence();
     out_saved_high_seq = fold_data_file.GetHighestSequence();
