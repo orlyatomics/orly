@@ -30,4 +30,17 @@ namespace Base {
 
   void SetBacktraceOnTerminate();
 
+  /* Gives the calling thread an alternate signal stack, so the crash handler can run when the fault was
+     a stack overflow or the thread is on a small fiber stack. Keeps an alternate stack the thread already
+     has (ASan's). Scheduler workers and fiber runner threads call it; other threads (plain std::threads)
+     still get the handler on their own stack, so only a stack overflow there stays silent. Later calls on
+     the same thread do nothing. */
+  void InstallThreadCrashStack();
+
+  /* Installs a handler for SIGSEGV, SIGBUS, SIGILL, SIGFPE and SIGABRT that writes "*** CRASH SIGNAL
+     RECEIVED ***" to stderr, then a backtrace, then dies of the same signal. The message goes out
+     before anything that could fault, and the handler runs on the alternate stack. Also installs the
+     calling thread's crash stack. */
+  void InstallCrashHandler();
+
 } // Base

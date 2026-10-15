@@ -18,7 +18,14 @@
 
 #include <iostream>
 
+#include <array>
+#include <csignal>
+#include <cstdlib>
+#include <memory>
+#include <string_view>
+
 #include <execinfo.h>
+#include <unistd.h>
 
 #include <base/as_str.h>
 
@@ -64,4 +71,57 @@ void Base::SetBacktraceOnTerminate() {
     PrintBacktrace(100);
     cerr << "TERMINATED" << endl;
   });
+}
+
+namespace {
+
+  constexpr size_t CrashStackBytes = 64UL * 1024UL;
+
+  void CrashHandler(int sig) {
+    constexpr std::string_view msg = "\n*** CRASH SIGNAL RECEIVED ***\n";
+    [[maybe_unused]] const auto written = write(STDERR_FILENO, msg.data(), msg.size());
+    std::array<void *, 64> frames;
+    const int frame_count = backtrace(frames.data(), static_cast<int>(frames.size()));
+    backtrace_symbols_fd(frames.data(), frame_count, STDERR_FILENO);
+    /* SA_RESETHAND already put the default action back, and SA_NODEFER left the signal unblocked, so
+       this kills the process with the original signal (and a core, if enabled). */
+    raise(sig);
+  }
+
+}  // namespace
+
+void Base::InstallThreadCrashStack() {
+  /* Keep an alternate stack the thread already has: ours from an earlier call, or ASan's. ASan installs one per thread
+     and unmaps whatever is installed when the thread exits, so replacing it with a malloc'd block makes every thread
+     exit die in ASan's munmap. */
+  stack_t cur;
+  if (sigaltstack(nullptr, &cur) == 0 && !(cur.ss_flags & SS_DISABLE)) {
+    return;
+  }
+  /* Leaked on purpose: the stack must outlive every signal the thread can take. */
+  void *mem = malloc(CrashStackBytes);
+  if (!mem) {
+    return;
+  }
+  stack_t ss;
+  ss.ss_sp = mem;
+  ss.ss_size = CrashStackBytes;
+  ss.ss_flags = 0;
+  if (sigaltstack(&ss, nullptr) != 0) {
+    free(mem);
+  }
+}
+
+void Base::InstallCrashHandler() {
+  /* The first backtrace() call loads libgcc_s, which allocates; do it now, not inside the handler. */
+  std::array<void *, 4> warm;
+  backtrace(warm.data(), static_cast<int>(warm.size()));
+  InstallThreadCrashStack();
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = CrashHandler;
+  sa.sa_flags = SA_ONSTACK | SA_RESETHAND | SA_NODEFER;
+  for (int sig : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT}) {
+    sigaction(sig, &sa, nullptr);
+  }
 }

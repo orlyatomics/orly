@@ -26,7 +26,6 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
-#include <execinfo.h>
 
 #include <base/backtrace.h>
 #include <base/debug_log.h>
@@ -160,24 +159,10 @@ static void ScrubSecretArgs(std::span<char *> args) {
   }
 }
 
-static void CrashHandler(int sig) {
-  std::array<void *, 64> frames;
-  const int frame_count = backtrace(frames.data(), static_cast<int>(frames.size()));
-  constexpr std::string_view msg = "\n*** CRASH SIGNAL RECEIVED ***\n";
-  write(STDERR_FILENO, msg.data(), msg.size());
-  backtrace_symbols_fd(frames.data(), frame_count, STDERR_FILENO);
-  signal(sig, SIG_DFL);
-  raise(sig);
-}
-
 int main(int argc, char *argv[]) {
   // Make std::terminate calls produce more data / info for us.
   SetBacktraceOnTerminate();
-  signal(SIGSEGV, CrashHandler);
-  signal(SIGABRT, CrashHandler);
-  signal(SIGBUS, CrashHandler);
-  signal(SIGILL, CrashHandler);
-  signal(SIGFPE, CrashHandler);
+  InstallCrashHandler();
 #if defined(__SANITIZE_THREAD__)
   RunTsanRacyControl();
 #endif
