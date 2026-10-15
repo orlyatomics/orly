@@ -802,6 +802,10 @@ class TRootRepoFixture {
     return Safe;
   }
 
+  Orly::Indy::Disk::Util::TEngine *GetEngine() {
+    return Engine.GetEngine();
+  }
+
   bool IsMergeDiskQueued() {
     return Manager->IsMergeDiskQueued(Repo.Get());
   }
@@ -1559,6 +1563,160 @@ FIXTURE(DiskMergeFoldClaimsBeforeAllocating) {
       }
       EXPECT_TRUE(fixture.ReadsCorrectly());
       EXPECT_EQ(fixture.CountLayers(), 1UL);
+      fixture.AddFile();
+      fixture.Root.MergeDisk(4UL);
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Holds every page buffer of a cache, through pages no file owns, until released, as the readers of a
+   busy server do. With none free, a read that misses throws TOutOfCachePages (#932). */
+template <typename TCacheType>
+class TCachePageHog {
+  NO_COPY(TCachePageHog);
+  public:
+
+  explicit TCachePageHog(TCacheType *cache)
+      : Cache(cache) {
+    constexpr size_t bogus_page_id_base = 200000000UL;
+    try {
+      for (size_t i = 0UL; i < 1000000UL; ++i) {
+        typename TCacheType::TSlot *data_slot;
+        const size_t page_id = bogus_page_id_base + i;
+        Held.emplace_back(Cache->Get(page_id, data_slot), page_id);
+      }
+    } catch (const Orly::Indy::Disk::Util::TOutOfCachePages &) {
+      Full = true;
+    }
+  }
+
+  ~TCachePageHog() {
+    Release();
+  }
+
+  bool IsFull() const {
+    return Full;
+  }
+
+  void Give(size_t n) {
+    while (n > 0UL && !Held.empty()) {
+      Cache->Release(Held.back().first, Held.back().second);
+      Held.pop_back();
+      --n;
+    }
+  }
+
+  void Release() {
+    for (const auto &held : Held) {
+      Cache->Release(held.first, held.second);
+    }
+    Held.clear();
+  }
+
+  private:
+
+  TCacheType *Cache;
+
+  bool Full = false;
+
+  vector<pair<typename TCacheType::TSlot *, size_t>> Held;
+
+};  // TCachePageHog
+
+/* #932: a disk merge that finds every cache page referenced must not abort the server. A read in the merge throws
+   TOutOfCachePages. The merge must free what it wrote and let go of the pages and the layers it took, so the input
+   layers stay readable and mergeable, and it must go through once pages are free again. */
+FIXTURE(DiskMergeWithCachePagesPinned) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TDiskMergePoolFixture fixture;
+      EXPECT_EQ(fixture.CountLayers(), 2UL);
+      auto *const engine = fixture.Root.GetEngine();
+      auto *const vol_man = engine->GetVolMan();
+      const size_t available = vol_man->GetSpace().GetAvailable();
+      {
+        TCachePageHog page_hog(engine->GetPageCache());
+        TCachePageHog block_hog(engine->GetBlockCache());
+        EXPECT_TRUE(page_hog.IsFull());
+        EXPECT_TRUE(block_hog.IsFull());
+        /* AsyncMultiGet that throws midway must release the pages it already grabbed, leaving them
+           in the LRU rather than leaked with RefCount > 0. */
+        page_hog.Give(1UL);
+        {
+          Disk::Util::TCompletionTrigger trigger;
+          bool threw = false;
+          try {
+            engine->GetPageCache()->AsyncMultiGet(HERE, Disk::Low, engine->GetPageCache(),
+                Disk::Util::PageCheckedBlock, 0U, 300000000UL, 2UL, true, trigger);
+          } catch (const Disk::Util::TOutOfCachePages &) {
+            threw = true;
+          }
+          EXPECT_TRUE(threw);
+          Disk::Util::TPageCache::TSlot *data_slot = nullptr;
+          auto *const main_slot = engine->GetPageCache()->Get(300000002UL, data_slot);
+          EXPECT_TRUE(main_slot != nullptr);
+          engine->GetPageCache()->Release(main_slot, 300000002UL);
+          /* A stream with only 1 free page in the cache must still step across sequential pages
+             without PrefetchNextPage / AsyncMultiGet eating the last page or ~TStream releasing a
+             mismatched (MainSlot, LoadedPageId) pair. */
+          struct TMultiPageFile final : Disk::TInFile {
+            virtual size_t GetFileLength() const override { return 8UL * Disk::Util::LogicalPageSize; }
+            virtual size_t GetStartingBlock() const override { return 0UL; }
+            virtual void ReadMeta(size_t, size_t &) const override { throw; }
+            virtual size_t FindPageIdOfByte(size_t offset) const override {
+              return 1024UL + (offset / Disk::Util::LogicalPageSize);
+            }
+          } multi_page_file;
+          {
+            Disk::TStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize,
+                Disk::Util::PhysicalBlockSize, Disk::Util::FullPage, 0UL>
+                stream(HERE, 0U, Disk::RealTime, &multi_page_file, engine->GetPageCache(), 0UL);
+            stream.GoTo(Disk::Util::LogicalPageSize);
+            stream.GoTo(2UL * Disk::Util::LogicalPageSize);
+          }
+          /* And a locally cached stream that hits TOutOfCachePages on page 1 must not claim page 1
+             is loaded or wedge the cache. */
+          {
+            Disk::TStream<Disk::Util::LogicalPageSize, Disk::Util::LogicalBlockSize,
+                Disk::Util::PhysicalBlockSize, Disk::Util::FullPage, 4UL>
+                stream(HERE, 0U, Disk::RealTime, &multi_page_file, engine->GetPageCache(), 0UL);
+            bool page1_threw = false;
+            try {
+              stream.GoTo(Disk::Util::LogicalPageSize);
+            } catch (const Disk::Util::TOutOfCachePages &) {
+              page1_threw = true;
+            }
+            EXPECT_TRUE(page1_threw);
+            stream.GoTo(0UL);
+          }
+          /* Re-pin that single page while the hog holds the rest. */
+          auto *const pinned_slot = engine->GetPageCache()->Get(300000002UL, data_slot);
+          bool full_again = false;
+          try {
+            engine->GetPageCache()->Get(300000003UL, data_slot);
+          } catch (const Disk::Util::TOutOfCachePages &) {
+            full_again = true;
+          }
+          EXPECT_TRUE(full_again);
+          /* Each pass takes the pair, fails, and hands it back. */
+          fixture.Root.MergeDisk(4UL);
+          EXPECT_EQ(fixture.CountLayers(), 2UL);
+          /* The failed merges kept none of the blocks they wrote. */
+          EXPECT_EQ(vol_man->GetSpace().GetAvailable(), available);
+          engine->GetPageCache()->Release(pinned_slot, 300000002UL);
+        }
+      }
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+      fixture.Root.MergeDisk(4UL);
+      EXPECT_EQ(fixture.CountLayers(), 1UL);
+      EXPECT_TRUE(fixture.ReadsCorrectly());
+      /* and a later merge, with pages free, folds as usual */
       fixture.AddFile();
       fixture.Root.MergeDisk(4UL);
       EXPECT_EQ(fixture.CountLayers(), 1UL);

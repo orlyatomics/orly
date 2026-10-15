@@ -1006,18 +1006,17 @@ namespace Orly {
 
         /* try to just point at the memory in the cache block if the note is contiguous. */
         if (note_offset / DataChunkSize == (note_offset + note_size) / DataChunkSize) {
+          data1 = nullptr;
+          typename Util::TCache<PhysicalCachePageSize>::TSlot *data_slot;
+          typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Get(loaded_page_id, data_slot);
           try {
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *data_slot;
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Get(loaded_page_id, data_slot);
             data1 = main_slot;
             data2 = data_slot;
             data3 = reinterpret_cast<void *>(loaded_page_id);
             data_slot->SyncGetData(HERE, Priority, Cache, BufKind, Source::DiskArena, loaded_page_id, SyncTrigger);
             SyncTrigger.Wait();
-          } catch (const Disk::TDiskFailure &err) {
-            data1 = nullptr;
-            throw;
-          } catch (const Disk::TDiskServiceShutdown &err) {
+          } catch (...) {
+            Cache->Release(main_slot, loaded_page_id);
             data1 = nullptr;
             throw;
           }

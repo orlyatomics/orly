@@ -140,6 +140,8 @@ namespace Orly {
               Cache(cache),
               EndOfStream(end_of_stream),
               LoadedPageId(0UL),
+              LoadedByteStart(0UL),
+              LoadedByteEnd(0UL),
               ByteOffset(byte_offset),
               MainSlot(0),
               DataSlot(0),
@@ -380,6 +382,7 @@ namespace Orly {
 
         void ReleaseBuf() {
           ByteOffset = -1;
+          BufData = nullptr;
           if (MainSlot) {
             Cache->Release(MainSlot, LoadedPageId);
             MainSlot = nullptr;
@@ -413,39 +416,49 @@ namespace Orly {
               size_t consec_next_page_id = -1;
               size_t num_consec = 0UL;
               /* === We're using these variables to figure out how many async pages we can grab at once === */
-              for (size_t i = starting_offset; i < ending_offset; ++i) {
-                size_t cur_offset = i * CachePageSize;
-                assert(cur_offset < EndOfStream);
-                size_t page_id = FindPageIdOfByte(cur_offset);
+              try {
+                for (size_t i = starting_offset; i < ending_offset; ++i) {
+                  size_t cur_offset = i * CachePageSize;
+                  assert(cur_offset < EndOfStream);
+                  size_t page_id = FindPageIdOfByte(cur_offset);
 
-                if (page_id == consec_next_page_id) {
-                  /* this page logically follows the previous one... we could grab them together */
-                  ++consec_next_page_id;
-                  ++num_consec;
-                } else {
-                  if (num_consec > 0UL) {
-                    Cache->AsyncMultiGet(CodeLocation, Priority, Cache, BufKind, UtilSrc, consec_starting_page_id, num_consec, true, AsyncTrigger);
+                  if (page_id == consec_next_page_id) {
+                    /* this page logically follows the previous one... we could grab them together */
+                    ++consec_next_page_id;
+                    ++num_consec;
+                  } else {
+                    if (num_consec > 0UL) {
+                      Cache->AsyncMultiGet(CodeLocation, Priority, Cache, BufKind, UtilSrc, consec_starting_page_id, num_consec, true, AsyncTrigger);
+                    }
+                    /* this page does not follow logically, we'll have to do a separate request for this one.
+                       It starts a new run of one page: starting the count at 0 dropped the last page of
+                       every run, and any page that ran alone, from the prefetch. */
+                    num_consec = 1UL;
+                    consec_starting_page_id = page_id;
+                    consec_next_page_id = consec_starting_page_id + 1UL;
                   }
-                  /* this page does not follow logically, we'll have to do a separate request for this one.
-                     It starts a new run of one page: starting the count at 0 dropped the last page of
-                     every run, and any page that ran alone, from the prefetch. */
-                  num_consec = 1UL;
-                  consec_starting_page_id = page_id;
-                  consec_next_page_id = consec_starting_page_id + 1UL;
                 }
-              }
-              if (num_consec > 0UL) {
-                Cache->AsyncMultiGet(CodeLocation, Priority, Cache, BufKind, UtilSrc, consec_starting_page_id, num_consec, true, AsyncTrigger);
+                if (num_consec > 0UL) {
+                  Cache->AsyncMultiGet(CodeLocation, Priority, Cache, BufKind, UtilSrc, consec_starting_page_id, num_consec, true, AsyncTrigger);
+                }
+              } catch (const Util::TOutOfCachePages &) {
+                /* Prefetch is advisory; leave whatever cache pages remain for the demand read. */
               }
             }
           }
         }
 
         inline void FetchBuf(size_t page_id, size_t offset) {
-          const size_t prev_loaded_page_id = LoadedPageId;
-          LoadedPageId = page_id;
-          LoadedByteStart = (offset / CachePageSize) * CachePageSize;
-          LoadedByteEnd = LoadedByteStart + CachePageSize;
+          /* Release the previously held page before touching LoadedPageId or running a prefetch or
+             Get that can throw TOutOfCachePages (#932). Otherwise a throw leaves MainSlot pointing at
+             the old page while LoadedPageId names the new one, and the next FetchBuf or ~TStream
+             calls Cache->Release(old_slot, new_page_id). */
+          if (MaxLocalCacheSize == 0 && MainSlot) {
+            Cache->Release(MainSlot, LoadedPageId);
+          }
+          MainSlot = nullptr;
+          DataSlot = nullptr;
+          BufData = nullptr;
           /* if this offset_block comes sequentially after the one we were on, then we record a sequential access. */
           if (ScanAheadAllowed) {
             if ((offset / CachePageSize) == (LastFetched + 1)) {
@@ -462,42 +475,38 @@ namespace Orly {
               DataSlot = pos->DataSlot;
               BufData = DataSlot->KnownGetData(Cache);
             } else {
+              MainSlot = Cache->Get(page_id, DataSlot);
               try {
-                MainSlot = Cache->Get(page_id, DataSlot);
                 BufData = DataSlot->SyncGetData(CodeLocation, Priority, Cache, BufKind, UtilSrc, page_id, SyncTrigger);
                 LocalBufCache.Emplace(std::forward_as_tuple(page_id), std::forward_as_tuple(page_id, Cache, MainSlot, DataSlot));
-              } catch (const Disk::TDiskFailure &err) {
+              } catch (...) {
+                Cache->Release(MainSlot, page_id);
                 MainSlot = nullptr;
                 DataSlot = nullptr;
-                throw;
-              } catch (const Disk::TDiskServiceShutdown &err) {
-                MainSlot = nullptr;
-                DataSlot = nullptr;
+                BufData = nullptr;
                 throw;
               }
             }
           } else {
-            if (MainSlot) {
-              Cache->Release(MainSlot, prev_loaded_page_id);
-            }
+            MainSlot = Cache->Get(page_id, DataSlot);
             try {
-              MainSlot = Cache->Get(page_id, DataSlot);
               BufData = DataSlot->SyncGetData(CodeLocation, Priority, Cache, BufKind, UtilSrc, page_id, SyncTrigger);
-            } catch (const Disk::TDiskFailure &err) {
+            } catch (...) {
+              Cache->Release(MainSlot, page_id);
               MainSlot = nullptr;
               DataSlot = nullptr;
-              throw;
-            } catch (const Disk::TDiskServiceShutdown &err) {
-              MainSlot = nullptr;
-              DataSlot = nullptr;
+              BufData = nullptr;
               throw;
             }
           }
+          LoadedPageId = page_id;
+          LoadedByteStart = (offset / CachePageSize) * CachePageSize;
+          LoadedByteEnd = LoadedByteStart + CachePageSize;
           LastFetched = offset / CachePageSize;
         }
 
         inline void CheckBuf() {
-          if ((ByteOffset >= LoadedByteEnd || ByteOffset < LoadedByteStart) && ByteOffset < EndOfStream) {
+          if ((!BufData || ByteOffset >= LoadedByteEnd || ByteOffset < LoadedByteStart) && ByteOffset < EndOfStream) {
             size_t page_id_of_byte_index = FindPageIdOfByte(ByteOffset);
             FetchBuf(page_id_of_byte_index, ByteOffset);
             ++FetchCount;

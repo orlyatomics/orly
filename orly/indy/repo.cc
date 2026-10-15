@@ -2315,6 +2315,11 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           hand_back();
           syslog(LOG_ERR, "StepTail out of pool space [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
           return;
+        } catch (const Disk::Util::TOutOfCachePages &ex) {
+          /* #932: likewise for cache pages. */
+          hand_back();
+          syslog(LOG_ERR, "StepTail out of cache pages [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
+          return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepTail [1083] caught error [%s]", ex.what());
           ReleaseMapping(mapping);
@@ -2554,6 +2559,12 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           /* #627: the same, for pool space. Nothing is written yet: the disk layer slot comes
              before MergeFiles, and MergeFiles keeps no file when it throws. */
           hand_back("pool space", ex.what());
+          return;
+        } catch (const Disk::Util::TOutOfCachePages &ex) {
+          /* #932: a read in the merge found every page buffer referenced. The merge frees what it
+             wrote and drops its page references as it unwinds, as for the others, so the inputs
+             are as they were. Readers hold the pages, and may be done with them next time. */
+          hand_back("cache pages", ex.what());
           return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepMergeDisk [1113] caught error [%s]", ex.what());
@@ -2829,16 +2840,16 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
      file via TMutation::Augment-equivalent logic in typed space. Output
      entries are promoted to Assign(folded value), bringing read
      amplification back to O(1) per key. */
-  /* #627: a fold that can't get the memory it needs keeps the merge unfolded. Folding only bounds
-     read amplification: the unfolded file is a correct result, as on the fast path above, and a
-     later merge that takes it in folds again. Since #745 §9.6 the fold takes nothing from the
+  /* #627: a fold that can't get the memory or cache pages it needs keeps the merge unfolded. Folding
+     only bounds read amplification: the unfolded file is a correct result, as on the fast path above,
+     and a later merge that takes it in folds again. Since #745 §9.6 the fold takes nothing from the
      update pools (it streams the merged file key by key), so it no longer claims pool space up
-     front (#858); only a heap allocation failure lands here. */
-  const auto keep_unfolded = [&]() {
+     front (#858); a heap allocation failure or cache-page exhaustion (#932) lands here. */
+  const auto keep_unfolded = [&](const char *reason) {
     static std::atomic<size_t> fold_misses(0UL);
     const size_t misses = ++fold_misses;
     if ((misses & (misses - 1UL)) == 0UL) {
-      syslog(LOG_ERR, "MergeFiles: no memory to fold %ld keys; keeping the merge unfolded (%ld times so far)", merge_data_file.GetNumKeys(), misses);
+      syslog(LOG_ERR, "MergeFiles: %s to fold %ld keys; keeping the merge unfolded (%ld times so far)", reason, merge_data_file.GetNumKeys(), misses);
     }
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
@@ -2860,7 +2871,11 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     fold_file_length = fold_data_file.GetFileLength();
   } catch (const std::bad_alloc &) {
     /* The fold's own output freed itself (TDataFile, before the file map has it). */
-    return keep_unfolded();
+    return keep_unfolded("no memory");
+  } catch (const Disk::Util::TOutOfCachePages &) {
+    /* The fold's own output freed itself (TDataFile, before the file map has it). Keep the valid
+       Phase A output rather than deleting it and throwing away the completed merge (#932). */
+    return keep_unfolded("no cache pages");
   } catch (const std::exception &ex) {
     /* The fold's own output frees itself (it is a TDataFile), but the intermediate file is
        complete and in the file map, and no layer owns it, so nothing else would ever remove it
@@ -2872,8 +2887,14 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     }
     throw;
   }
-  /* Reclaim the intermediate file's blocks. */
-  RemoveFile(intermediate_gen_id, false);
+  /* Reclaim the intermediate file's blocks. Finding them reads the file's meta blocks, which can run
+     out of cache pages (#932). The fold's output is whole by now, so don't fail the merge: a restart
+     drops the intermediate file, whose sequence range the output covers (ReConstructFromDisk). */
+  try {
+    RemoveFile(intermediate_gen_id, false);
+  } catch (const Disk::Util::TOutOfCachePages &ex) {
+    syslog(LOG_ERR, "MergeFiles could not remove intermediate file [%ld] after folding: [%s]", intermediate_gen_id, ex.what());
+  }
   /* The fold leaves each key one entry, its value as of the newest version merged, so older versions are gone
      (#745), but for those the retention window keeps. The caller publishes the file after this returns. */
   RaiseHistoryHorizon(horizon_after(out_saved_high_seq));
