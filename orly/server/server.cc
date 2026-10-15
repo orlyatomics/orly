@@ -2943,7 +2943,7 @@ TMethodResult TServer::TSessionPin::Try(const TMethodRequest &method_request) co
             method_request.GetPovId(), method_request.GetPackage(), method_request.GetClosure());
       }
   );
-  return move(method_result);
+  return method_result;
 }
 
 TMethodResult TServer::TSessionPin::TryBatch(
@@ -2954,7 +2954,7 @@ TMethodResult TServer::TSessionPin::TryBatch(
         method_result = Conn->TryBatch(pov_id, fq_name, closures);
       }
   );
-  return move(method_result);
+  return method_result;
 }
 
 std::vector<Var::TVar> TServer::TSessionPin::TryMulti(const Base::TUuid &pov_id, const std::vector<TBatchCall> &calls) const {

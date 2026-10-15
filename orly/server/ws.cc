@@ -1328,7 +1328,7 @@ class TWsImpl final
         };
         string result;
         str_expr->Accept(visitor_t(result));
-        return move(result);
+        return result;
       }
 
       TConn *Conn;

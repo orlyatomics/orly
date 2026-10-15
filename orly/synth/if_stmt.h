@@ -55,7 +55,7 @@ namespace Orly {
 
       private:
 
-      class TIfClause {
+      class TIfClause final {
         NO_COPY(TIfClause);
         public:
 

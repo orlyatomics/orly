@@ -1636,7 +1636,7 @@ TUuid TSession::NewPov(
      new POVs, but any of those allocations can still miss when its pool is full: refuse with
      the retryable insufficient_memory rather than a bare bad_alloc (#858). Nothing has been written, and the POV never reaches the session. */
   try {
-    pov->GetRepo(server);
+    (void) pov->GetRepo(server);
   } catch (const std::bad_alloc &) {
     ThrowNewPovOutOfMemory();
   } catch (const Indy::Disk::TWalRingFull &ex) {

@@ -66,7 +66,7 @@ TFd TFactory::New(TAddress &address) const {
   if (!Port) {
     address = GetSockName(fd);
   }
-  return move(fd);
+  return fd;
 }
 
 sockaddr *TFactory::FindNetworkInterface() const {

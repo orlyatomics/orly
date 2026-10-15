@@ -602,7 +602,7 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
         TSuprena ctx_arena;
         TContext context(child, &ctx_arena);
         context.ReleaseViews();
-        auto count_after_release = [&]() { context.CountKeys(group(1L)); };
+        auto count_after_release = [&]() { (void) context.CountKeys(group(1L)); };
         EXPECT_THROW_FUNC(logic_error, count_after_release);
       }
     }
@@ -1926,14 +1926,14 @@ FIXTURE(ContextReleasesViewsBeforeWait) {
         /* (d) */
         bool threw = false;
         try {
-          context[index_key(1L)];
+          (void) context[index_key(1L)];
         } catch (const logic_error &) {
           threw = true;
         }
         EXPECT_TRUE(threw);
         threw = false;
         try {
-          context.Exists(index_key(2L));
+          (void) context.Exists(index_key(2L));
         } catch (const logic_error &) {
           threw = true;
         }
@@ -2059,12 +2059,12 @@ FIXTURE(RangeCountsPreserveVisibilityAndSnapshots) {
         EXPECT_EQ(context.CountKeys(key(9)), 0L);
         EXPECT_EQ(context.CountKeys(key(9), key(10)), 0L);
         const TIndexKey other_index(Base::TUuid(TUuid::Twister), key(3).GetKey());
-        auto mismatched_indexes = [&]() { context.CountKeys(key(2), other_index); };
+        auto mismatched_indexes = [&]() { (void) context.CountKeys(key(2), other_index); };
         EXPECT_THROW_FUNC(invalid_argument, mismatched_indexes);
         EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
         EXPECT_EQ(context[key(2)], TKey(32L, &arena, state));
         context.ReleaseViews();
-        auto count_after_release = [&]() { context.CountKeys(all); };
+        auto count_after_release = [&]() { (void) context.CountKeys(all); };
         EXPECT_THROW_FUNC(logic_error, count_after_release);
       }
       flush(root);
@@ -2144,7 +2144,7 @@ FIXTURE(RangeCountsRespectReadBudgetsWithoutFoldingValues) {
         EXPECT_EQ(context.GetFoldDedupProbes(), 0UL);
         EXPECT_EQ(ctx_arena.GetByteSize(), bytes_before);
         EXPECT_EQ(context.CountKeys(absent), 0L);
-        auto over_rows = [&]() { context.CountKeys(all); };
+        auto over_rows = [&]() { (void) context.CountKeys(all); };
         EXPECT_THROW_FUNC(Orly::Server::TReadTooLarge, over_rows);
         EXPECT_EQ(context.GetRowsWalked(), 4UL);
         context.ClearReadBudget();
@@ -2158,7 +2158,7 @@ FIXTURE(RangeCountsRespectReadBudgetsWithoutFoldingValues) {
         TContext context(repo, &ctx_arena);
         TKey allocated(string(1024, 'y'), &ctx_arena, state);
         context.SetReadBudget(0, 1, &ctx_arena, 0);
-        auto over_bytes = [&]() { context.CountKeys(absent); };
+        auto over_bytes = [&]() { (void) context.CountKeys(absent); };
         EXPECT_THROW_FUNC(Orly::Server::TReadTooLarge, over_bytes);
       }
     }
