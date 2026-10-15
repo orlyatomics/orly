@@ -1,0 +1,1 @@
+- **Changed (performance)**: Comparing two uuids no longer calls libuuid's `uuid_compare`, which showed as about 9% of CPU in a profile of reads and merges under ingest. The comparison is now inline (two big-endian 64-bit loads), in `TUuid`'s operators and in the durable manager and merge sorter. The order is exactly libuuid's, so existing stores are unaffected.

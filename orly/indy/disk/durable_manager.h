@@ -1093,15 +1093,15 @@ namespace Orly {
       }
 
       inline bool TDurableManager::TMemSlushLayer::TDurableEntry::TKey::operator==(const TKey &that) const {
-        return SeqNum == that.SeqNum && uuid_compare(Id, that.Id) == 0;
+        return SeqNum == that.SeqNum && Base::CompareUuid(Id, that.Id) == 0;
       }
 
       inline bool TDurableManager::TMemSlushLayer::TDurableEntry::TKey::operator!=(const TKey &that) const {
-        return SeqNum != that.SeqNum || uuid_compare(Id, that.Id) != 0;
+        return SeqNum != that.SeqNum || Base::CompareUuid(Id, that.Id) != 0;
       }
 
       inline bool TDurableManager::TMemSlushLayer::TDurableEntry::TKey::operator<=(const TKey &that) const {
-        int uuid_comp = uuid_compare(Id, that.Id);
+        int uuid_comp = Base::CompareUuid(Id, that.Id);
         return uuid_comp < 0 || (uuid_comp == 0 && SeqNum > that.SeqNum);
       }
 
