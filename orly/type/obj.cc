@@ -22,6 +22,10 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TObj, TObjElems);
 
+TType TObj::Get(const TObjElems &elems) {
+  return TInternedType::Get(elems);
+}
+
 TObj::~TObj() {}
 
 void TObj::Write(std::ostream &out) const {

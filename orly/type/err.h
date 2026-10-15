@@ -29,6 +29,11 @@ namespace Orly {
 
     class TErr : public TUnaryType<TErr> {
       NO_COPY(TErr);
+      public:
+
+      static TType Get(const TType &type);
+
+      private:
 
       TErr(const TType &elem) : TUnaryType(elem) {}
       virtual ~TErr();

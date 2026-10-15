@@ -64,9 +64,7 @@ namespace Orly {
         return std::get<0>(GetKey());
       }
 
-      static TType Get(const TVariantElems &elems) {
-        return TInternedType::Get(elems);
-      }
+      static TType Get(const TVariantElems &elems);
 
       /* The widening (subtype) relation `this ⊑ wide` (issue #104): true
          iff every `(tag → payload)` arm of `this` appears identically (same

@@ -166,9 +166,7 @@ namespace Orly {
         return std::get<0>(GetKey());
       }
 
-      static TType Get(const TObjElems &elems) {
-        return TInternedType::Get(elems);
-      }
+      static TType Get(const TObjElems &elems);
 
       bool IsSubsetOf(const TObj *that, bool &is_optional) const {
         assert(that);

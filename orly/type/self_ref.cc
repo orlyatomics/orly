@@ -22,6 +22,10 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TSelfRef, size_t);
 
+TType TSelfRef::Get(size_t depth) {
+  return TInternedType::Get(depth);
+}
+
 TSelfRef::~TSelfRef() {}
 
 void TSelfRef::Write(std::ostream &out) const {

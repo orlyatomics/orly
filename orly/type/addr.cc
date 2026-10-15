@@ -24,6 +24,10 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TAddr, TAddrElems);
 
+TType TAddr::Get(const TElems &elems) {
+  return TInternedType::Get(elems);
+}
+
 TAddr::~TAddr() {}
 
 void TAddr::Write(std::ostream &strm) const {

@@ -22,7 +22,7 @@
 
 using namespace Orly::Type;
 
-IMPL_UNARY_TYPE(TOpt);
+IMPL_INTERNED_TYPE(TOpt, ::Orly::Type::TType);
 
 TType TOpt::Get(const Type::TType &type) {
   assert(!type.Is<TOpt>());

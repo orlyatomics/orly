@@ -39,9 +39,7 @@ namespace Orly {
       typedef TAddrDir TDir;
       typedef TAddrElems TElems;
 
-      static TType Get(const TElems &elems) {
-        return TInternedType::Get(elems);
-      }
+      static TType Get(const TElems &elems);
       const TElems &GetElems() const {
         return std::get<0>(GetKey());
       }
