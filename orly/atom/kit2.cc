@@ -880,22 +880,20 @@ TCore::TArena::TPin::TPin(TArena *arena, TOffset offset)
     : Arena(arena), Offset(offset), Data1(nullptr), Data2(nullptr), Data3(nullptr) {
   assert(arena);
   Note = arena->TryAcquireNote(offset, Data1, Data2, Data3);
-  #ifndef NDEBUG
+  /* Checked in every build: a pin on a null note is a SIGSEGV at the first GetNote() (#925). */
   if (!Note) {
     throw TNotFound();
   }
-  #endif
 }
 
 TCore::TArena::TPin::TPin(TArena *arena, TOffset offset, size_t known_size)
     : Arena(arena), Offset(offset), Data1(nullptr), Data2(nullptr), Data3(nullptr) {
   assert(arena);
   Note = arena->TryAcquireNote(offset, known_size, Data1, Data2, Data3);
-  #ifndef NDEBUG
+  /* Checked in every build: a pin on a null note is a SIGSEGV at the first GetNote() (#925). */
   if (!Note) {
     throw TNotFound();
   }
-  #endif
 }
 
 TCore::TArena::TFinalPin *TCore::TArena::Pin(TOffset offset, void *alloc) {

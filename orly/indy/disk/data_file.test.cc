@@ -18,6 +18,9 @@
 
 #include <orly/indy/disk/data_file.h>
 
+#include <functional>
+#include <vector>
+
 #include <valgrind/callgrind.h>
 
 #include <base/scheduler.h>
@@ -320,6 +323,144 @@ FIXTURE(History) {
       }
       size_t data_gen_id = 1;
       TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, data_gen_id, 20UL, 0U, Medium);
+    }
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #925: a note that straddles a block boundary is copied out of two cache pages, and the second page may not fit. With
+   every page buffer in the cache referenced, reading it throws TOutOfCachePages. TryAcquireNote used to swallow that and
+   return a null note, which a release build then dereferenced; it must let the error out instead, from both overloads
+   and from Pin. This checks the return value directly because a debug build's TPin already turned a null into
+   TNotFound. */
+FIXTURE(StraddlingNoteOutOfCachePages) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    const TScheduler::TPolicy scheduler_policy(4, 10, milliseconds(10));
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler,
+                               256 /* disk space: 256MB */,
+                               256 /* slow disk space: 256MB */,
+                               16384 /* page cache slots: 64MB */,
+                               1 /* num page lru */,
+                               256 /* block cache slots: 16MB */,
+                               1 /* num block lru */);
+    Disk::Util::TEngine *engine = mem_engine.GetEngine();
+    using TCachePage = Disk::Util::TCache<TReader::PhysicalCachePageSize>;
+    TCachePage *cache = engine->GetCache<TReader::PhysicalCachePageSize>();
+
+    Base::TUuid file_id(TUuid::Best);
+    const size_t data_gen_id = 1;
+    TSequenceNumber seq_num = 0U;
+    TUuid idx(TUuid::Twister);
+    /* Long values land in the main arena as notes of a few KB, so some cross a block boundary. */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 100; ++i) {
+        TSuprena suprena;
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        Insert(mem_layer, ++seq_num, idx, TKey(string(3000 + static_cast<size_t>(i) * 37, 'v'), &suprena, state_alloc), i);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, file_id, data_gen_id, 20UL, 0U, Medium);
+    }
+
+    TReader reader(HERE, engine, file_id, data_gen_id);
+    const size_t arena_start = static_cast<TArenaInFile &>(reader).GetByteOffsetOfArena();
+    /* Find a note that starts in the same block as a chunk-contiguous note before it (so the earlier note can load the
+       first page) and ends in the next block, in a block other than the arena's first. */
+    bool found = false;
+    size_t prev_offset = 0UL, prev_size = 0UL, target_offset = 0UL, target_size = 0UL;
+    /* The scan's stream keeps every page it read referenced until it goes. */ {
+      TReader::TArena scan(&reader, cache, RealTime);
+      bool have_prev = false;
+      for (TReader::TArena::TCursor csr(&scan, 0, scan.GetNumBytesOfArena()); csr && !found; ++csr) {
+        const size_t offset = csr.GetOffset();
+        const size_t size = sizeof(TCore::TNote) + csr->GetRawSize();
+        const size_t abs = arena_start + offset;
+        if (have_prev &&
+            abs % LogicalBlockSize != 0UL &&
+            abs / LogicalBlockSize != arena_start / LogicalBlockSize &&
+            (arena_start + prev_offset) / LogicalBlockSize == abs / LogicalBlockSize &&
+            (arena_start + prev_offset) / LogicalBlockSize == (arena_start + prev_offset + prev_size) / LogicalBlockSize &&
+            abs / LogicalBlockSize != (abs + size) / LogicalBlockSize) {
+          found = true;
+          target_offset = offset;
+          target_size = size;
+        } else {
+          prev_offset = offset;
+          prev_size = size;
+          have_prev = true;
+        }
+      }
+    }
+    if (EXPECT_TRUE(found)) {
+      TReader::TArena arena(&reader, cache, RealTime);
+      /* Load the first page into the arena's stream, then use up every other page buffer. */ {
+        void *d1 = nullptr, *d2 = nullptr, *d3 = nullptr;
+        const TCore::TNote *warm = arena.TryAcquireNote(prev_offset, d1, d2, d3);
+        EXPECT_TRUE(warm != nullptr);
+        arena.ReleaseNote(warm, prev_offset, d1, d2, d3);
+      }
+      const size_t bogus_page_id_base = 100000000UL;
+      std::vector<std::pair<TCachePage::TSlot *, size_t>> held;
+      bool full = false;
+      try {
+        for (size_t i = 0; i < 100000UL; ++i) {
+          TCachePage::TSlot *data_slot;
+          const size_t page_id = bogus_page_id_base + i;
+          held.emplace_back(cache->Get(page_id, data_slot), page_id);
+        }
+      } catch (const Disk::Util::TOutOfCachePages &) {
+        full = true;
+      }
+      EXPECT_TRUE(full);
+      /* Returns true if the call threw TOutOfCachePages, and false, having left nothing held, if it came back with a note. */
+      auto reports_out_of_cache = [&](const std::function<const TCore::TNote *(void *&, void *&, void *&)> &acquire) {
+        void *d1 = nullptr, *d2 = nullptr, *d3 = nullptr;
+        bool threw = false;
+        const TCore::TNote *note = nullptr;
+        try {
+          note = acquire(d1, d2, d3);
+        } catch (const Disk::Util::TOutOfCachePages &) {
+          threw = true;
+        }
+        if (note) {
+          arena.ReleaseNote(note, target_offset, d1, d2, d3);
+        }
+        return threw;
+      };
+      EXPECT_TRUE(reports_out_of_cache([&](void *&d1, void *&d2, void *&d3) {
+        return arena.TryAcquireNote(target_offset, d1, d2, d3);
+      }));
+      EXPECT_TRUE(reports_out_of_cache([&](void *&d1, void *&d2, void *&d3) {
+        return arena.TryAcquireNote(target_offset, target_size, d1, d2, d3);
+      }));
+      /* Pin goes through the same calls and must not hand back a pin on a null note either. */ {
+        void *pin_alloc = alloca(sizeof(TCore::TArena::TFinalPin));
+        bool threw = false;
+        try {
+          TCore::TArena::TFinalPin *pin = arena.Pin(target_offset, pin_alloc);
+          pin->TPin::~TPin();
+        } catch (const Disk::Util::TOutOfCachePages &) {
+          threw = true;
+        } catch (const std::exception &) {
+        }
+        EXPECT_TRUE(threw);
+      }
+      for (const auto &slot : held) {
+        cache->Release(slot.first, slot.second);
+      }
+      /* With buffers free again the same note reads fine, and is the size the scan saw. */ {
+        void *d1 = nullptr, *d2 = nullptr, *d3 = nullptr;
+        const TCore::TNote *note = arena.TryAcquireNote(target_offset, d1, d2, d3);
+        if (EXPECT_TRUE(note != nullptr)) {
+          EXPECT_EQ(sizeof(TCore::TNote) + note->GetRawSize(), target_size);
+          arena.ReleaseNote(note, target_offset, d1, d2, d3);
+        }
+      }
     }
     GracefullShutdown();
     std::lock_guard<std::mutex> lock(mut);
