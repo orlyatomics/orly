@@ -88,6 +88,7 @@ namespace Orly {
                   for (size_t i = 0; i < (count / Util::TBlockCache::DataSize); ++i) {
                     replace(*BlockCache, (logical_start_offset / Util::TBlockCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * Util::TBlockCache::DataSize));
                   }
+                  break;
                 }
                 case Util::TCacheInstr::CachePageOnly: {
                   assert(PageCache.get());
@@ -120,6 +121,7 @@ namespace Orly {
                   for (size_t i = 0; i < (count / Util::TBlockCache::DataSize); ++i) {
                     BlockCache->Clear((logical_start_offset / Util::TBlockCache::DataSize) + i);
                   }
+                  break;
                 }
                 case Util::TCacheInstr::ClearPageOnly: {
                   assert(PageCache.get());
