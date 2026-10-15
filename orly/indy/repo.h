@@ -1581,7 +1581,7 @@ namespace Orly {
       bool done = false;
       while (Valid) {
         size_t pos;
-        const Indy::TPresentWalker::TItem &cur_item = MinHeap.Pop(pos);
+        const Indy::TPresentWalker::TItem &cur_item = MinHeap.Peek(pos);
         Indy::TPresentWalker &walker = *WalkerVec[pos];
         assert(cur_item.Key.IsTuple());
         assert((*walker).KeyArena == cur_item.KeyArena);
@@ -1594,7 +1594,9 @@ namespace Orly {
         }
         ++walker;
         if (walker) {
-          MinHeap.Insert(*walker, pos);
+          MinHeap.ReplaceTop(*walker);
+        } else {
+          MinHeap.Pop(pos);
         }
         if (done) {
           break;
@@ -1608,7 +1610,7 @@ namespace Orly {
       bool done = false;
       while (Valid) {
         size_t pos;
-        const Indy::TPresentWalker::TItem &cur_item = MinHeap.Pop(pos);
+        const Indy::TPresentWalker::TItem &cur_item = MinHeap.Peek(pos);
         Indy::TPresentWalker &walker = *WalkerVec[pos];
         assert(cur_item.Key.IsTuple());
         assert((*walker).KeyArena == cur_item.KeyArena);
@@ -1630,7 +1632,9 @@ namespace Orly {
         }
         ++walker;
         if (walker) {
-          MinHeap.Insert(*walker, pos);
+          MinHeap.ReplaceTop(*walker);
+        } else {
+          MinHeap.Pop(pos);
         }
         if (done) {
           break;

@@ -18,6 +18,9 @@
 
 #include <orly/indy/util/min_heap.h>
 
+#include <algorithm>
+#include <vector>
+
 #include <orly/atom/suprena.h>
 #include <orly/indy/key.h>
 #include <orly/sabot/type_dumper.h>
@@ -102,4 +105,37 @@ FIXTURE(RevTypical) {
   for (auto iter : data) {
     delete iter;
   }
+}
+
+FIXTURE(ReplaceTop) {
+  /* Each source holds a run of values; ReplaceTop advances the source on top, Pop retires it. The merge
+     must match a plain sort, including when one source supplies several rows in a row. */
+  const std::vector<std::vector<size_t>> sources = {{1, 2, 3, 50}, {10, 20, 30}, {5, 6, 7, 8, 9, 100}, {}};
+  std::vector<TMyObj> cur;
+  std::vector<size_t> next(sources.size(), 0UL);
+  cur.reserve(sources.size());
+  std::vector<size_t> expected;
+  for (size_t i = 0; i < sources.size(); ++i) {
+    cur.emplace_back(sources[i].empty() ? 0 : sources[i][0], i);
+    expected.insert(expected.end(), sources[i].begin(), sources[i].end());
+  }
+  std::sort(expected.begin(), expected.end());
+  TMinHeap<TMyObj, size_t> min_heap(sources.size());
+  for (size_t i = 0; i < sources.size(); ++i) {
+    if (!sources[i].empty()) {
+      min_heap.Insert(cur[i], i);
+    }
+  }
+  std::vector<size_t> seen;
+  while (min_heap) {
+    size_t pos;
+    seen.push_back(min_heap.Peek(pos).GetKey());
+    if (++next[pos] < sources[pos].size()) {
+      cur[pos].Key = sources[pos][next[pos]];
+      min_heap.ReplaceTop(cur[pos]);
+    } else {
+      min_heap.Pop(pos);
+    }
+  }
+  EXPECT_TRUE(seen == expected);
 }
