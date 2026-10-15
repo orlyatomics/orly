@@ -902,7 +902,7 @@ namespace Base {
       std::istringstream strm(std::forward<TArg>(arg));
       TJson result;
       result.Read(strm);
-      return std::move(result);
+      return result;
     }
 
     private:

@@ -32,6 +32,8 @@
 #pragma once
 
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
@@ -218,7 +220,10 @@ namespace Base {
       size_t counter = 0UL;
       PoolCollection.ForEach([&counter](const TThreadLocalRegisteredPool &){++counter; return true;});
       if (counter != 0UL) {
-        throw std::logic_error("TThreadLocalPoolManager should not be destroyed while owning any pools");
+        /* A destructor is noexcept, so throwing here would terminate anyway; fail fast explicitly. */
+        syslog(LOG_ERR, "TThreadLocalPoolManager should not be destroyed while owning any pools");
+        std::fputs("TThreadLocalPoolManager should not be destroyed while owning any pools\n", stderr);
+        std::abort();
       }
       for (auto alloc_pair : AllocVec) {
         for (size_t i = 0; i < alloc_pair.second; ++i) {

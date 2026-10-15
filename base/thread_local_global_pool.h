@@ -19,6 +19,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
@@ -251,7 +253,10 @@ namespace Base {
       size_t counter = 0UL;
       PoolCollection.ForEach([&counter](const TThreadLocalPool &){++counter; return true;});
       if (counter != 0UL) {
-        throw std::logic_error("TThreadLocalGlobalPoolManager should not be destroyed while owning any pools");
+        /* A destructor is noexcept, so throwing here would terminate anyway; fail fast explicitly. */
+        syslog(LOG_ERR, "TThreadLocalGlobalPoolManager should not be destroyed while owning any pools");
+        std::fputs("TThreadLocalGlobalPoolManager should not be destroyed while owning any pools\n", stderr);
+        std::abort();
       }
       for (size_t i = 0; i < NumElems; ++i) {
         TObj *const obj = Alloc + i;

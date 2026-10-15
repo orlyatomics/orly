@@ -150,18 +150,25 @@ int main(int argc, char *argv[]) {
   try {
     auto client = make_shared<TClient>(cmd);
     syslog(LOG_INFO, "beginning import mode");
-    client->BeginImport();
+    client->BeginImport()->Sync();
     syslog(LOG_INFO, "import mode begun");
     try {
       client->ImportCoreVector(cmd.ImportPattern, cmd.ImportPkg, cmd.NumLoadThreads, cmd.NumMergeThreads, cmd.NumSimMerge)->Sync();
     } catch (...) {
       syslog(LOG_INFO, "ending import mode due to exception");
-      client->EndImport();
-      syslog(LOG_INFO, "import mode ended due to error");
+      /* A failure to end import mode must not mask the exception that got us here. */
+      try {
+        client->EndImport()->Sync();
+        syslog(LOG_INFO, "import mode ended due to error");
+      } catch (const exception &ex) {
+        syslog(LOG_ERR, "failed to end import mode after error; %s", ex.what());
+      } catch (...) {
+        syslog(LOG_ERR, "failed to end import mode after error");
+      }
       throw;
     }
     syslog(LOG_INFO, "ending import mode");
-    client->EndImport();
+    client->EndImport()->Sync();
     syslog(LOG_INFO, "import mode ended");
     result = EXIT_SUCCESS;
   } catch (const exception &ex) {

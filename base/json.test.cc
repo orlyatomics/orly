@@ -42,7 +42,7 @@ static TJson ToString(const char *text) {
     istringstream strm(temp);
     strm >> json;
   }
-  return move(json);
+  return json;
 }
 
 FIXTURE(HexCode) {

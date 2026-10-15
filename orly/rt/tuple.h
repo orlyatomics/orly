@@ -48,7 +48,7 @@ namespace Orly {
       [&]<std::size_t... Idx>(std::index_sequence<Idx...>) {
         /* The fold short-circuits at the first non-Match element, whose
            MatchLess decides the order. */
-        ((Match(std::get<Idx>(lhs), std::get<Idx>(rhs))
+        (void) ((Match(std::get<Idx>(lhs), std::get<Idx>(rhs))
               ? true
               : (less = MatchLess(std::get<Idx>(lhs), std::get<Idx>(rhs)), false)) && ...);
       }(std::index_sequence_for<TArgs...>{});

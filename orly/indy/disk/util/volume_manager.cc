@@ -303,11 +303,11 @@ void TDiskController::QueueRunner(std::vector<TPersistentDevice *> device_vec, b
                 break;
               }
               case IO_CMD_PREADV: {
-                syslog(LOG_INFO, "ioq[%ld] IO_CMD_PREADV, nr=[%d], offset=[%lld], size=[%ld]", nr, ioq[nr]->u.v.nr, ioq[nr]->u.v.offset, ioq[nr]->u.v.vec[0].iov_len);
+                syslog(LOG_INFO, "ioq[%zu] IO_CMD_PREADV, nr=[%lu], offset=[%lld], size=[%zu]", nr, ioq[nr]->u.v.nr, ioq[nr]->u.v.offset, ioq[nr]->u.v.vec[0].iov_len);
                 break;
               }
               case IO_CMD_PWRITEV: {
-                syslog(LOG_INFO, "ioq[%ld] IO_CMD_PWRITEV, nr=[%d], offset=[%lld], size=[%ld]", nr, ioq[nr]->u.v.nr, ioq[nr]->u.v.offset, ioq[nr]->u.v.vec[0].iov_len);
+                syslog(LOG_INFO, "ioq[%zu] IO_CMD_PWRITEV, nr=[%lu], offset=[%lld], size=[%zu]", nr, ioq[nr]->u.v.nr, ioq[nr]->u.v.offset, ioq[nr]->u.v.vec[0].iov_len);
                 break;
               }
             }

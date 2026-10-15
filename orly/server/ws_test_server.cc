@@ -21,11 +21,14 @@
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <syslog.h>
 
 #include <orly/atom/suprena.h>
 #include <orly/indy/disk/wal.h>
@@ -204,7 +207,10 @@ class TWsTestServer::TSessionManager
                 would be available to be removed from disk. */
       virtual ~TPin() {
         if (Session->Pin != this) {
-          throw logic_error("session pin is messed up");
+          /* A destructor is noexcept, so throwing here would terminate anyway; fail fast explicitly. */
+          syslog(LOG_ERR, "session pin is messed up");
+          cerr << "session pin is messed up" << endl;
+          abort();
         }
         Session->Pin = nullptr;
       }

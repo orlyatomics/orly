@@ -73,7 +73,7 @@ static vector<Symbol::TKey::TField> TranslateKeyPartList(
     }
     that = tail->GetColRefList();
   }
-  return move(fields);
+  return fields;
 }
 
 static bool TranslateNull(const Syntax::TNull *that) {
