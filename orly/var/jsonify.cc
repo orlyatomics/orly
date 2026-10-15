@@ -19,6 +19,7 @@
 #include <orly/var/jsonify.h>
 
 #include <cmath>
+#include <optional>
 #include <sstream>
 
 #include <base/json.h>
@@ -383,18 +384,20 @@ namespace {
            fields in asciibetical order so "$which" is field 0.  Emit {"<active_tag>": <payload>}
            directly from the active arm without decoding the inactive arms. */
         if (field_name == "$which") {
-          const Sabot::State::TAny::TWrapper which_state(pin->NewElem(0, state_alloc));
-          const auto *which_int = dynamic_cast<const Sabot::State::TInt64 *>(which_state.get());
-          if (!which_int) {
+          /* Read $which in its own scope: the arm below reuses state_alloc, and a live wrapper
+             over the same buffer would destroy the arm's state a second time. */
+          std::optional<int64_t> which;
+          {
+            const Sabot::State::TAny::TWrapper which_state(pin->NewElem(0, state_alloc));
+            if (const auto *which_int = dynamic_cast<const Sabot::State::TInt64 *>(which_state.get())) {
+              which = which_int->Get();
+            }
+          }
+          if (!which || *which < 0 || static_cast<size_t>(*which) + 1 >= elem_count) {
             Fallback(state);
             return;
           }
-          const int64_t which = which_int->Get();
-          if (which < 0 || static_cast<size_t>(which) + 1 >= elem_count) {
-            Fallback(state);
-            return;
-          }
-          const size_t arm_idx = static_cast<size_t>(which) + 1;
+          const size_t arm_idx = static_cast<size_t>(*which) + 1;
           Sabot::Type::TAny::TWrapper(type_pin->NewElem(arm_idx, field_name, elem_type_alloc));
           const Sabot::State::TAny::TWrapper arm_state(pin->NewElem(arm_idx, state_alloc));
           const auto *arm_opt = dynamic_cast<const Sabot::State::TOpt *>(arm_state.get());
