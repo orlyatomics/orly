@@ -108,8 +108,7 @@ namespace Orly {
     typedef std::shared_ptr<const TKeyGenerator> TPtr;
 
     /* Walks the generator's underlying key cursor, decoding each key into a
-       native TRet lazily -- at most once per position, on the first bool or
-       deref probe after construction or an advance (#351). */
+       native TRet lazily -- at most once per position, when dereferenced (#351). */
     class TCursor final
         : public Base::TIter<const TRet> {
       NO_COPY(TCursor);
@@ -124,8 +123,7 @@ namespace Orly {
       TCursor(TCursor &&that) = default;
 
       operator bool() const override {
-        Refresh();
-        return Item.has_value();
+        return Fresh ? Item.has_value() : static_cast<bool>(*Iter);
       }
 
       TVal &operator*() const override {
