@@ -2528,7 +2528,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
 
                Tombstones stay: this pair need not be the oldest files, so a tombstone may still be
                hiding an older version. */
-            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsMergePruningAllowed(), false);
+            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsMergePruningAllowed(), false, true);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
@@ -2538,6 +2538,17 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
         } catch (const Disk::Util::TDiskFull &ex) {
           /* #590 */
           hand_back("disk space", ex.what());
+          return;
+        } catch (const Disk::TMergeCancelled &) {
+          /* #927: shutdown stopped the merge. The output is freed and the inputs are untouched; the next
+             start queues the merge again (#918). */
+          /* acquire Merge lock */ {
+            std::lock_guard<std::mutex> lock(MergeLock);
+            for (TDiskLayer *layer : gen_layer_vec) {
+              layer->UnmarkTaken();
+            }
+          }  // release Merge lock
+          hold.Release();
           return;
         } catch (const std::bad_alloc &ex) {
           /* #627: the same, for pool space. Nothing is written yet: the disk layer slot comes
@@ -2767,7 +2778,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
                              size_t &out_num_keys,
                              TSequenceNumber release_up_to,
                              bool can_tail,
-                             bool can_tail_tombstone) {
+                             bool can_tail_tombstone,
+                             bool cancel_on_shutdown) {
   /* Until it finishes, this merge allocates up to the size of its inputs while they stay live.
      Write admission keeps that much free on top of its reserve, and, if the merge fails for
      space, keeps it free for its retry (#590). */
@@ -2794,7 +2806,7 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   /* Phase A: standard merge. Produces a data file at intermediate_gen_id
      with same-mutator commutative runs still expanded -- correct but
      unbounded in entries-per-key under contention. */
-  TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), intermediate_gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone, retain_from);
+  TMergeDataFile merge_data_file(Manager->GetEngine(), storage_speed, GetId(), gen_id_vec, GetId(), intermediate_gen_id, release_up_to, Low, max_block_cache_read_slots_allowed, temp_file_consol_thresh, my_can_tail, my_can_tail_tombstone, retain_from, cancel_on_shutdown ? &Manager->GetShuttingDownFlag() : nullptr);
   /* Fast path (#64): if the merge produced no non-Assign entries,
      there's nothing to fold and the intermediate file IS the final
      output. Skip the TFoldDataFile read+write+remove cycle entirely.

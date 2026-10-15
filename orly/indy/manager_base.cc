@@ -158,7 +158,8 @@ size_t TManager::TRepo::MergeFiles(const std::vector<size_t> &/*gen_id_vec*/,
                                    size_t &/*out_num_keys*/,
                                    TSequenceNumber /*release_up_to*/,
                                    bool /*can_tail*/,
-                                   bool /*can_tail_tombstones*/) {
+                                   bool /*can_tail_tombstones*/,
+                                   bool /*cancel_on_shutdown*/) {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;
 }

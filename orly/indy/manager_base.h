@@ -609,7 +609,8 @@ namespace Orly {
                                     size_t &out_num_keys,
                                     TSequenceNumber release_up_to,
                                     bool can_tail,
-                                    bool can_tail_tombstone);
+                                    bool can_tail_tombstone,
+                                    bool cancel_on_shutdown = false);
 
           /* caches_cleared: the caller already ran ClearLocalFileCaches on
              every runner (the batched layer cleaner, #584). */
@@ -759,6 +760,10 @@ namespace Orly {
         }
 
         /* True once the merge runners have been told to stop (StopMergeRunners). */
+        const std::atomic<bool> &GetShuttingDownFlag() const {
+          return ShuttingDown;
+        }
+
         bool IsShuttingDown() const {
           return ShuttingDown;
         }

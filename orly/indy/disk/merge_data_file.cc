@@ -54,13 +54,15 @@ class TMergeDataFileImpl {
                      DiskPriority priority,
                      size_t max_block_cache_read_slots_allowed,
                      size_t temp_file_consol_thresh,
-                     std::optional<TSequenceNumber> retain_from = std::nullopt)
+                     std::optional<TSequenceNumber> retain_from = std::nullopt,
+                     const std::atomic<bool> *cancel = nullptr)
       : Engine(engine),
         StorageSpeed(storage_speed),
         UpdateIndexStorageSpeed(TVolume::TDesc::TStorageSpeed::Slow),
         SorterStorageSpeed(TVolume::TDesc::TStorageSpeed::Slow),
         Priority(priority),
         MaxBlockCacheReadSlotsAllowed(max_block_cache_read_slots_allowed),
+        Cancel(cancel),
         MainArenaByteOffset(0UL),
         NumUpdates(0UL),
         NumKeys(0UL),
@@ -158,6 +160,7 @@ class TMergeDataFileImpl {
             TArenaKeeperSorter &key_arena_keeper = *(merge_idx_file.ArenaKeeperVec[source_idx]);
             TArenaKeeperSorter &main_arena_keeper = *(main_arena_keeper_vec[merge_idx_file.OrigReadVecPos[source_idx]]);
             for (typename TReader::TIndexFile::TKeyCursor key_cursor(source_file.get()); key_cursor; ++key_cursor) {
+              ThrowIfCancelled();
               const typename TReader::TIndexFile::TKeyItem &item = *key_cursor;
               if (!CanTailTombstones || !item.Value.IsTombstone() || item.NumHistKeys > 0) {
                 /* add the sequence number */
@@ -624,6 +627,7 @@ class TMergeDataFileImpl {
           idx_file.PrepKeyRange(max_key_count, &UpdateCollector);
           std::optional<TKey> last_written;
           while (min_heap) {
+            ThrowIfCancelled();
             size_t pos;
             const TSortedKey &k = min_heap.Pop(pos);
             if (pos % 2 == 0) { /* came from a current source */
@@ -811,6 +815,7 @@ class TMergeDataFileImpl {
           size_t num_accum = 0U;
           LowestSeq = (*update_csr).SequenceNumber;
           while (update_csr) {
+            ThrowIfCancelled();
             const TUpdateObj &obj = *update_csr;
             if (obj.SequenceNumber != cur_seq_num) {
               seq_stream << cur_seq_num;  // Sequence Number
@@ -1010,6 +1015,12 @@ class TMergeDataFileImpl {
         syslog(LOG_INFO, "MergeDataFile [%s] gen [%ld]: tail merge of [%ld] files kept [%ld] of [%ld] updates",
                strm.str().c_str(), gen_id, gen_vec.size(), NumUpdates, num_input_updates);
       }
+    } catch (const TMergeCancelled &) {
+      syslog(LOG_INFO, "MergeDataFile gen [%ld] cancelled by shutdown; the output is discarded and the inputs are untouched", gen_id);
+      if (!file_inserted) {
+        Engine->FreeAllBlocks(BlockVec);
+      }
+      throw;
     } catch (const std::exception &ex) {
       syslog(LOG_ERR, "MergeDataFile gen [%ld] caught error [%s]", gen_id, ex.what());
       /* The output never reached the file map, so nothing else will free its blocks (#590).
@@ -1028,6 +1039,13 @@ class TMergeDataFileImpl {
       }
     }
     #endif
+  }
+
+  /* A shutdown stops the merge here: the caller's inputs are untouched, and the catch in the constructor frees the output. */
+  void ThrowIfCancelled() const {
+    if (Cancel && Cancel->load(std::memory_order_relaxed)) {
+      throw TMergeCancelled();
+    }
   }
 
   class TUpdateObj {
@@ -2856,6 +2874,8 @@ class TMergeDataFileImpl {
 
   size_t MaxBlockCacheReadSlotsAllowed;
 
+  const std::atomic<bool> *Cancel;
+
   TBlockVec BlockVec;
 
   size_t MainArenaByteOffset;
@@ -2901,17 +2921,18 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
                                size_t temp_file_consol_thresh,
                                bool can_tail,
                                bool can_tail_tombstone,
-                               std::optional<TSequenceNumber> retain_from) {
+                               std::optional<TSequenceNumber> retain_from,
+                       const std::atomic<bool> *cancel) {
   if (can_tail) {
     if (can_tail_tombstone) {
-      TMergeDataFileImpl<true, true> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from);
+      TMergeDataFileImpl<true, true> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from, cancel);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
       FileLength = merge_file.GetFileLength();
     } else {
-      TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from);
+      TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from, cancel);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
@@ -2919,7 +2940,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
       FileLength = merge_file.GetFileLength();
     }
   } else {
-    TMergeDataFileImpl<false, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh);
+    TMergeDataFileImpl<false, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, std::nullopt, cancel);
     NumKeys = merge_file.GetNumKeys();
     NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
     LowestSeq = merge_file.GetLowestSequence();

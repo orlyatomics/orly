@@ -26,6 +26,7 @@
 #include <optional>
 
 #include <atomic>
+#include <stdexcept>
 
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
@@ -45,6 +46,13 @@ namespace Orly {
       template <bool ScanAheadAllowed>
       using TDataDiskArena = TDiskArena<Util::LogicalBlockSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::PageCheckedBlock, DiskArenaMaxCacheSize, ScanAheadAllowed>;
 
+      /* Thrown out of a TMergeDataFile constructor whose cancel flag was raised. The output is freed and the
+         inputs are untouched. */
+      class TMergeCancelled : public std::runtime_error {
+        public:
+        TMergeCancelled() : std::runtime_error("merge cancelled by shutdown") {}
+      };
+
       class TMergeDataFile {
         NO_COPY(TMergeDataFile);
         public:
@@ -61,7 +69,10 @@ namespace Orly {
                        size_t temp_file_consol_thresh,
                        bool can_tail,
                        bool can_tail_tombstone,
-                       std::optional<TSequenceNumber> retain_from = std::nullopt);
+                       std::optional<TSequenceNumber> retain_from = std::nullopt,
+                       const std::atomic<bool> *cancel = nullptr);
+
+        /* `cancel`, when set and raised mid-merge, makes the constructor throw TMergeCancelled. */
 
         /* #745 stage 2: `retain_from`, for a merge that may tail (`can_tail`), is the oldest version reads must still
            find whole: the merge keeps each key's versions newer than it, and its state as of it. Without it, a tailing
