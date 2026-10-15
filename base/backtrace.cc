@@ -91,13 +91,9 @@ namespace {
 }  // namespace
 
 void Base::InstallThreadCrashStack() {
-  thread_local bool installed = false;
-  if (installed) {
-    return;
-  }
-  installed = true;
-  /* Keep an alternate stack the thread already has. ASan installs one per thread and unmaps whatever is installed
-     when the thread exits, so replacing it with a malloc'd block makes every thread exit die in ASan's munmap. */
+  /* Keep an alternate stack the thread already has: ours from an earlier call, or ASan's. ASan installs one per thread
+     and unmaps whatever is installed when the thread exits, so replacing it with a malloc'd block makes every thread
+     exit die in ASan's munmap. */
   stack_t cur;
   if (sigaltstack(nullptr, &cur) == 0 && !(cur.ss_flags & SS_DISABLE)) {
     return;
