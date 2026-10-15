@@ -39,7 +39,10 @@
     typename ::Orly::Type::TInternedType<TFinal, TArgs>::TTypeByKey *::Orly::Type::TInternedType<TFinal, TArgs>::TypeByKey = nullptr;
 
 #define IMPL_UNARY_TYPE(TFinal) \
-    IMPL_INTERNED_TYPE(TFinal, ::Orly::Type::TType)
+    IMPL_INTERNED_TYPE(TFinal, ::Orly::Type::TType) \
+    ::Orly::Type::TType TFinal::Get(const ::Orly::Type::TType &type) { \
+      return ::Orly::Type::TUnaryType<TFinal>::Get(type); \
+    }
 
 #define IMPL_SINGLETON_TYPE(TFinal) \
     template <> \
@@ -197,16 +200,16 @@ namespace Orly {
     class TUnaryType : public TInternedType<TFinal, Type::TType> {
       public:
 
-      static TType Get(const Type::TType &type) {
-        return TInternedType<TFinal, Type::TType>::Get(type);
-      }
-
       const TType &GetElem() const {
         //NOTE: The this-> really shuoldn't be necessary...
         return std::get<0>(this->GetKey());
       }
 
       protected:
+
+      static TType Get(const Type::TType &type) {
+        return TInternedType<TFinal, Type::TType>::Get(type);
+      }
 
       TUnaryType(const Type::TType &elem) : TInternedType<TFinal, Type::TType>(elem) {}
 

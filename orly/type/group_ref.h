@@ -69,9 +69,7 @@ namespace Orly {
         return std::get<1>(GetKey());
       }
 
-      static TType Get(const TGroupId &group, size_t index) {
-        return TInternedType::Get(group, index);
-      }
+      static TType Get(const TGroupId &group, size_t index);
 
       private:
       TGroupRef(const TGroupId &group, size_t index) : TInternedType(group, index) {}

@@ -39,9 +39,7 @@ namespace Orly {
         return std::get<1>(TInternedType::GetKey());
       }
 
-      static TType Get(const TType &key, const TType &val) {
-        return TInternedType::Get(key, val);
-      }
+      static TType Get(const TType &key, const TType &val);
 
       private:
       TDict(const TType &key, const TType &val) : TInternedType(key, val) {}

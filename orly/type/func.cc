@@ -24,6 +24,11 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TFunc, TType, TType);
 
+TType TFunc::Get(const TType &param_obj, const TType &return_type) {
+  assert(param_obj.Is<TObj>());
+  return TInternedType::Get(param_obj, return_type);
+}
+
 TFunc::~TFunc() {}
 
 void TFunc::Write(std::ostream &) const {

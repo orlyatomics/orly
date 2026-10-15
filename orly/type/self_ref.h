@@ -56,9 +56,7 @@ namespace Orly {
         return std::get<0>(GetKey());
       }
 
-      static TType Get(size_t depth) {
-        return TInternedType::Get(depth);
-      }
+      static TType Get(size_t depth);
 
       private:
       TSelfRef(size_t depth) : TInternedType(depth) {}

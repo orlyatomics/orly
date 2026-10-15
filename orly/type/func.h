@@ -40,10 +40,7 @@ namespace Orly {
       const TType &GetReturnType() const {
         return std::get<1>(this->GetKey());
       }
-      static TType Get(const TType &param_obj, const TType &return_type) {
-        assert(param_obj.Is<TObj>());
-        return TInternedType::Get(param_obj, return_type);
-      }
+      static TType Get(const TType &param_obj, const TType &return_type);
 
       private:
       TFunc(const TType &param_object, const TType &return_type) : TInternedType(param_object, return_type) {}

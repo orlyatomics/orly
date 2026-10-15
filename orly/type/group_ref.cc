@@ -22,6 +22,10 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TGroupRef, TGroupId, size_t);
 
+TType TGroupRef::Get(const TGroupId &group, size_t index) {
+  return TInternedType::Get(group, index);
+}
+
 TGroupRef::~TGroupRef() {}
 
 void TGroupRef::Write(std::ostream &out) const {

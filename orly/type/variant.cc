@@ -22,6 +22,10 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TVariant, TVariantElems);
 
+TType TVariant::Get(const TVariantElems &elems) {
+  return TInternedType::Get(elems);
+}
+
 TVariant::~TVariant() {}
 
 void TVariant::Write(std::ostream &out) const {

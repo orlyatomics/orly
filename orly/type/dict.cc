@@ -22,6 +22,10 @@ using namespace Orly::Type;
 
 IMPL_INTERNED_TYPE(TDict, TType, TType);
 
+TType TDict::Get(const TType &key, const TType &val) {
+  return TInternedType::Get(key, val);
+}
+
 TDict::~TDict() {}
 
 void TDict::Write(std::ostream &strm) const {

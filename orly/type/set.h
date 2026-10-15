@@ -28,6 +28,11 @@ namespace Orly {
 
     class TSet : public TUnaryType<TSet> {
       NO_COPY(TSet);
+      public:
+
+      static TType Get(const TType &type);
+
+      private:
 
       TSet(const TType &elem) : TUnaryType(elem) {}
       virtual ~TSet();

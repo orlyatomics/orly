@@ -29,6 +29,11 @@ namespace Orly {
 
     class TList : public TUnaryType<TList> {
       NO_COPY(TList);
+      public:
+
+      static TType Get(const TType &type);
+
+      private:
 
       TList(const Type::TType &elem) : TUnaryType(elem) {}
       virtual ~TList();

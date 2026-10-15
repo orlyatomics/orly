@@ -31,6 +31,11 @@ namespace Orly {
 
     class TSeq : public TUnaryType<TSeq> {
       NO_COPY(TSeq);
+      public:
+
+      static TType Get(const TType &type);
+
+      private:
 
       TSeq(const TType &elem) : TUnaryType(elem) {}
       virtual ~TSeq();

@@ -292,6 +292,44 @@ FIXTURE(RecordRegistryIsPrivateToEachPackage) {
   EXPECT_EQ(manager.Get(TName{{"rec"}})->GetName().Version, 2U);
 }
 
+/* #938: TInternedType::Get used to be defined inline in the type headers, so
+   a compiled package .so instantiated TInternedType<...>::Get and its
+   std::_Sp_counted_deleter vtable in the package's own address space. When v1
+   loaded first, it created the interned TType impls (with v1's deleter vtable);
+   when v2 loaded next, it shared those interned impls via TypeByKey and
+   dlclose()d v1; when v2 later unloaded (at uninstall or ~TServer),
+   TFuncInfo::~TFuncInfo() released the last shared_ptr reference through v1's
+   unmapped _Sp_counted_deleter vtable and segfaulted if the address range had
+   been reused or unmapped. Interned type construction is now out-of-line in
+   orly/type/*.cc, so no package .so carries _Sp_counted_deleter or
+   TInternedType::DeleteImpl symbols, and unmapping v1's address range before
+   uninstalling v2 is safe. */
+FIXTURE(InternedTypeControlBlockLivesInHostNotPackageSo) {
+  Orly::Type::TTypeCzar type_czar;
+  const string scratch = MakeScratch();
+  const string pkg_dir = scratch + "/packages";
+  Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
+  ofstream marker(pkg_dir + "/__orly__");
+  const string body =
+      "val_t is <| B(bool) | I(int) | R(real) | S(str) |>;\n"
+      "triple_t is <{.s: str, .p: str, .v: val_t}>;\n"
+      "get = (<{.s: \"s\", .p: \"p\", .v: val_t.S(\"v\")}>);\n"
+      "get_set = ({<{.s: \"s\", .p: \"p\", .v: val_t.I(1)}>});\n"
+      "get_list = ([<[\"a\", 1]>]);\n";
+  CompilePackage(scratch, pkg_dir, "up", "package #1;\n" + body);
+  CompilePackage(scratch, pkg_dir, "up", "package #2;\n" + body);
+  const string readelf_cmd =
+      "readelf -Wr '" + pkg_dir + "/up.1.so' '" + pkg_dir + "/up.2.so' | c++filt | grep -q '_Sp_counted_deleter'";
+  EXPECT_FALSE(system(readelf_cmd.c_str()) == 0);
+
+  TManager manager((Jhm::TTree(pkg_dir)));
+  manager.Install({{TName{{"up"}}, 1}});
+  manager.Install({{TName{{"up"}}, 2}});
+  /* Uninstalling v2 runs TFuncInfo::~TFuncInfo() on all interned types shared
+     with the already-dlclose()d v1. */
+  manager.Uninstall({{TName{{"up"}}, 2}});
+}
+
 /* A package compiled before the fix still exports its registry, and two such
    packages declaring the same record type cannot be made safe once loaded
    together. The loader must refuse the second one with an error instead of
