@@ -2315,6 +2315,11 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           hand_back();
           syslog(LOG_ERR, "StepTail out of pool space [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
           return;
+        } catch (const Disk::Util::TOutOfCachePages &ex) {
+          /* #932: likewise for cache pages. */
+          hand_back();
+          syslog(LOG_ERR, "StepTail out of cache pages [%s]; file [%ld] left untailed", ex.what(), gen_id_to_tail);
+          return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepTail [1083] caught error [%s]", ex.what());
           ReleaseMapping(mapping);
@@ -2543,6 +2548,12 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           /* #627: the same, for pool space. Nothing is written yet: the disk layer slot comes
              before MergeFiles, and MergeFiles keeps no file when it throws. */
           hand_back("pool space", ex.what());
+          return;
+        } catch (const Disk::Util::TOutOfCachePages &ex) {
+          /* #932: a read in the merge found every page buffer referenced. The merge frees what it
+             wrote and drops its page references as it unwinds, as for the others, so the inputs
+             are as they were. Readers hold the pages, and may be done with them next time. */
+          hand_back("cache pages", ex.what());
           return;
         } catch (const std::exception &ex) {
           syslog(LOG_EMERG, "StepMergeDisk [1113] caught error [%s]", ex.what());
@@ -2860,8 +2871,14 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     }
     throw;
   }
-  /* Reclaim the intermediate file's blocks. */
-  RemoveFile(intermediate_gen_id, false);
+  /* Reclaim the intermediate file's blocks. Finding them reads the file's meta blocks, which can run
+     out of cache pages (#932). The fold's output is whole by now, so don't fail the merge: a restart
+     drops the intermediate file, whose sequence range the output covers (ReConstructFromDisk). */
+  try {
+    RemoveFile(intermediate_gen_id, false);
+  } catch (const Disk::Util::TOutOfCachePages &ex) {
+    syslog(LOG_ERR, "MergeFiles could not remove intermediate file [%ld] after folding: [%s]", intermediate_gen_id, ex.what());
+  }
   /* The fold leaves each key one entry, its value as of the newest version merged, so older versions are gone
      (#745), but for those the retention window keeps. The caller publishes the file after this returns. */
   RaiseHistoryHorizon(horizon_after(out_saved_high_seq));
