@@ -50,17 +50,18 @@ namespace {
     return lanes;
   }
 
-  /* True iff. key sorts before every key that unifies with pattern, in level-0 order. Different
-     index ids decide it alone. Within one, the keys are tuples of the index's key type, compared
-     member by member, so the pattern's members are compared with key's while they are fully bound
-     and the comparison stops at the first that is not: a member that is a free, or holds one, has
-     a type of its own, which never orders equal to the key member's type. Comparing against the
-     whole pattern instead would decide at that member by type alone, whatever the values before
-     it. The keys this is true of are therefore the ones whose bound leading members order before
-     the pattern's, a head of the index's run, and none of them can unify with the pattern. */
-  [[nodiscard]] bool SortsBeforePattern(const TIndexKey &key, const TIndexKey &pattern) {
+  /* Where key sorts relative to the keys that unify with pattern, in level-0 order: Lt if before
+     all of them, Gt if after all of them, Eq if it can't say. Different index ids decide it alone.
+     Within one, the keys are tuples of the index's key type, compared member by member, so the
+     pattern's members are compared with key's while they are fully bound and the comparison stops
+     at the first that is not: a member that is a free, or holds one, has a type of its own, which
+     never orders equal to the key member's type. Comparing against the whole pattern instead would
+     decide at that member by type alone, whatever the values before it. Every key of the index
+     agrees on how many members that is, so the keys it calls Lt are a head of the index's run and
+     the ones it calls Gt a tail, and none of either can unify with the pattern. */
+  [[nodiscard]] Orly::Atom::TComparison ComparePatternPrefix(const TIndexKey &key, const TIndexKey &pattern) {
     if (key.GetIndexId() != pattern.GetIndexId()) {
-      return key.GetIndexId() < pattern.GetIndexId();
+      return key.GetIndexId() < pattern.GetIndexId() ? Orly::Atom::TComparison::Lt : Orly::Atom::TComparison::Gt;
     }
     void *state_alloc = alloca(Orly::Sabot::State::GetMaxStateSize() * 4);
     void *pattern_state_alloc = static_cast<uint8_t *>(state_alloc) + Orly::Sabot::State::GetMaxStateSize();
@@ -75,7 +76,7 @@ namespace {
     const auto *key_tuple = dynamic_cast<const Orly::Sabot::State::TTuple *>(&*key_state);
     const auto *pattern_tuple = dynamic_cast<const Orly::Sabot::State::TTuple *>(&*pattern_state);
     if (!key_tuple || !pattern_tuple) {
-      return false;  // not a key shape we can narrow: seek no further than the index's start
+      return Orly::Atom::TComparison::Eq;  // not a key shape we can narrow: the whole index's run
     }
     Orly::Sabot::State::TTuple::TPin::TWrapper key_pin(key_tuple->Pin(pin_alloc));
     Orly::Sabot::State::TTuple::TPin::TWrapper pattern_pin(pattern_tuple->Pin(pattern_pin_alloc));
@@ -85,14 +86,14 @@ namespace {
       Orly::Sabot::State::TAny::TWrapper pattern_elem(pattern_pin->NewElem(elem_idx, pattern_elem_alloc));
       if (!Orly::Atom::IsEq(Orly::Sabot::OrderTypes(*Orly::Sabot::Type::TAny::TWrapper(key_elem->GetType(type_alloc)),
                                         *Orly::Sabot::Type::TAny::TWrapper(pattern_elem->GetType(pattern_type_alloc))))) {
-        return false;
+        return Orly::Atom::TComparison::Eq;
       }
       const Orly::Atom::TComparison comp = Orly::Sabot::OrderStates(*key_elem, *pattern_elem);
       if (!Orly::Atom::IsEq(comp)) {
-        return Orly::Atom::IsLt(comp);
+        return comp;
       }
     }
-    return false;
+    return Orly::Atom::TComparison::Eq;
   }
 
 }  // namespace
@@ -208,7 +209,9 @@ TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekRun(const TIndexKey &k
 }
 
 TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekPattern(const TIndexKey &pattern) const {
-  return SeekPast([&pattern](const TUpdate::TEntry &entry) { return SortsBeforePattern(entry.GetIndexKey(), pattern); });
+  return SeekPast([&pattern](const TUpdate::TEntry &entry) {
+    return Atom::IsLt(ComparePatternPrefix(entry.GetIndexKey(), pattern));
+  });
 }
 
 TMemoryLayer::~TMemoryLayer() {
@@ -312,9 +315,14 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
               Valid = false;
               return;
             }
-            break;
+            [[fallthrough]];
           }
           case Sabot::TMatchResult::PrefixMatch: {
+            /* Past the keys that could unify with the pattern: none further on in the index can. */
+            if (Atom::IsGt(ComparePatternPrefix(Csr->GetIndexKey(), Key))) {
+              Valid = false;
+              return;
+            }
             break;
           }
           case Sabot::TMatchResult::Unifies: {

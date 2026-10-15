@@ -549,14 +549,15 @@ static TUpdate *MakeUpdate(TSequenceNumber seq_num, const vector<pair<Base::TUui
 /* The memory-layer half of the read-time trace under ingest: a pattern walk used to match every
    entry from the head of the layer, so its cost grew with the layer (other indexes included).
    Time 2,000 walks of <[a, free]> over a layer of 4k to 128k entries, half of them in a second
-   index that sorts ahead of the one read. Prints a table and checks nothing about timing -- a
-   shared runner is too noisy for that. */
+   index that sorts ahead of the one read, for an a the layer holds and for one it does not. A walk
+   that finds nothing used to run on to the end of the index. Prints a table and checks nothing
+   about timing -- a shared runner is too noisy for that. */
 FIXTURE(PatternSeekScaling) {
   std::mt19937_64 rng(257);
   const Base::TUuid lo(Base::TUuid::Twister), hi(Base::TUuid::Twister);
   const Base::TUuid &other = std::min(lo, hi), &read = std::max(lo, hi);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  std::cout << "  entries   ms per 2,000 pattern walks" << std::endl;
+  std::cout << "  entries   ms per 2,000 pattern walks: present   absent" << std::endl;
   for (int64_t entries = 4096; entries <= 131072; entries *= 2) {
     TMemoryLayer mem_layer(nullptr);
     vector<pair<Base::TUuid, int64_t>> keys;
@@ -567,21 +568,25 @@ FIXTURE(PatternSeekScaling) {
     TSequenceNumber seq_num = 1UL;
     for (int64_t a = 0; a < entries / 32; ++a) {
       for (int64_t b = 0; b < 16; ++b) {
-        Insert(mem_layer, ++seq_num, read, b, a, b);
+        Insert(mem_layer, ++seq_num, read, b, a * 2, b);
       }
     }
     TSuprena arena;
-    size_t found = 0;
-    const auto start = std::chrono::steady_clock::now();
-    for (int walks = 0; walks < 2000; ++walks) {
-      const int64_t a = static_cast<int64_t>(rng() % static_cast<uint64_t>(entries / 32));
-      auto wp = mem_layer.NewPresentWalker(TIndexKey(read, TKey(make_tuple(a, Native::TFree<int64_t>()), &arena, state_alloc)));
-      for (auto &w = *wp; w; ++w) {
-        ++found;
+    std::cout << "  " << entries;
+    for (int64_t absent : {0, 1}) {
+      size_t found = 0;
+      const auto start = std::chrono::steady_clock::now();
+      for (int walks = 0; walks < 2000; ++walks) {
+        const int64_t a = static_cast<int64_t>(rng() % static_cast<uint64_t>(entries / 32)) * 2 + absent;
+        auto wp = mem_layer.NewPresentWalker(TIndexKey(read, TKey(make_tuple(a, Native::TFree<int64_t>()), &arena, state_alloc)));
+        for (auto &w = *wp; w; ++w) {
+          ++found;
+        }
       }
+      std::cout << "\t    " << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      EXPECT_EQ(found, absent ? 0UL : 2000UL * 16UL);
     }
-    std::cout << "  " << entries << "\t    " << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << std::endl;
-    EXPECT_EQ(found, 2000UL * 16UL);
+    std::cout << std::endl;
   }
 }
 
