@@ -199,6 +199,8 @@ namespace Orly {
             if (Pin) {
               Offset += sizeof(Atom::TCore::TNote) + Pin->GetNote()->GetRawSize();
               Pin->TPin::~TPin();
+              /* Arena->Pin below can throw, and the pin is gone: don't let the destructor release it again. */
+              Pin = nullptr;
             }
             if (Offset < EndOffset) {
               Pin = Arena->Pin(Offset, PinAlloc);
@@ -1035,8 +1037,9 @@ namespace Orly {
             Stream.GoTo(note_offset);
             Stream.Read(note_ptr, note_size);
           } catch (...) {
+            /* The read failed (TOutOfCachePages, a disk failure). Let that out; a null note would reach a release build's TPin as a pin on nothing (#925). */
             free(note_ptr);
-            note_ptr = nullptr;
+            throw;
           }
           assert(note_offset / DataChunkSize != (note_offset + note_size) / DataChunkSize);
           return note_ptr;
@@ -1091,8 +1094,9 @@ namespace Orly {
             Stream.GoTo(note_offset);
             Stream.Read(note_ptr, note_size);
           } catch (...) {
+            /* The read failed (TOutOfCachePages, a disk failure). Let that out; a null note would reach a release build's TPin as a pin on nothing (#925). */
             free(note_ptr);
-            note_ptr = nullptr;
+            throw;
           }
           assert(note_offset / DataChunkSize != (note_offset + note_size) / DataChunkSize);
           return note_ptr;
