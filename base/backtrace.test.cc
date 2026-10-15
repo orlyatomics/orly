@@ -49,6 +49,8 @@ static string RunChild(TBody body, int &sig) {
   if (pid == 0) {
     close(fds[0]);
     dup2(fds[1], STDERR_FILENO);
+    /* If the handler ever hangs instead of dying, SIGALRM kills the child and the checks below fail. */
+    alarm(10);
     InstallCrashHandler();
     body();
     _exit(0);
@@ -101,4 +103,36 @@ FIXTURE(StackOverflow) {
   }, sig);
   EXPECT_NE(out.find("*** CRASH SIGNAL RECEIVED ***"), string::npos);
   EXPECT_EQ(sig, SIGSEGV);
+}
+
+FIXTURE(KeepsAnExistingAltStack) {
+  /* ASan gives each thread an alternate stack and unmaps whatever is installed at thread exit, so ours must not
+     replace one that is already there. Under ASan the existing stack is ASan's own; otherwise the test installs one. */
+  thread t([] {
+    static char existing[64 * 1024];
+    stack_t before;
+    EXPECT_EQ(sigaltstack(nullptr, &before), 0);
+    const bool installed_here = (before.ss_flags & SS_DISABLE) != 0;
+    if (installed_here) {
+      stack_t ss;
+      ss.ss_sp = existing;
+      ss.ss_size = sizeof(existing);
+      ss.ss_flags = 0;
+      EXPECT_EQ(sigaltstack(&ss, nullptr), 0);
+    }
+    stack_t expected;
+    EXPECT_EQ(sigaltstack(nullptr, &expected), 0);
+    InstallThreadCrashStack();
+    stack_t cur;
+    EXPECT_EQ(sigaltstack(nullptr, &cur), 0);
+    EXPECT_EQ(cur.ss_sp, expected.ss_sp);
+    if (installed_here) {
+      stack_t off;
+      off.ss_sp = nullptr;
+      off.ss_size = 0;
+      off.ss_flags = SS_DISABLE;
+      EXPECT_EQ(sigaltstack(&off, nullptr), 0);
+    }
+  });
+  t.join();
 }

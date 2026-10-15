@@ -96,6 +96,12 @@ void Base::InstallThreadCrashStack() {
     return;
   }
   installed = true;
+  /* Keep an alternate stack the thread already has. ASan installs one per thread and unmaps whatever is installed
+     when the thread exits, so replacing it with a malloc'd block makes every thread exit die in ASan's munmap. */
+  stack_t cur;
+  if (sigaltstack(nullptr, &cur) == 0 && !(cur.ss_flags & SS_DISABLE)) {
+    return;
+  }
   /* Leaked on purpose: the stack must outlive every signal the thread can take. */
   void *mem = malloc(CrashStackBytes);
   if (!mem) {
