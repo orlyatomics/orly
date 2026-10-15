@@ -267,6 +267,9 @@ namespace Orly {
 
         size_t NumMemMergeThreads;
 
+        /* The default for NumDiskMergeThreads until ResolveCoreVecDefaults() takes the layout's. */
+        static constexpr size_t DefaultNumDiskMergeThreads = 8;
+
         size_t NumDiskMergeThreads;
 
         /* The number of websocket I/O threads.  They read, parse and reply; statements run on the

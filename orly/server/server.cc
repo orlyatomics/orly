@@ -637,7 +637,7 @@ TServer::TCmd::TCmd()
       DurableWriteInterval(40),
       DurableMergeInterval(10),
       NumMemMergeThreads(3),
-      NumDiskMergeThreads(8),
+      NumDiskMergeThreads(DefaultNumDiskMergeThreads),
       NumWsThreads(4),
       MaxWsInFlight(0),
       MaxRepoCacheSize(10000),
@@ -1078,6 +1078,11 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
   MemMergeCoreVec = std::move(layout.MemMerge);
   DiskMergeCoreVec = std::move(layout.DiskMerge);
   DiskControllerCoreVec = std::move(layout.DiskController);
+  /* The layout's disk merge thread count goes with its disk merge cores, unless the command line
+     or a caller (orlyc's test server sets 1) already chose either. */
+  if (user_disk.empty() && !WasGiven("num_disk_merge_threads") && NumDiskMergeThreads == DefaultNumDiskMergeThreads) {
+    NumDiskMergeThreads = layout.DiskMergeThreads;
+  }
 
   /* Restore any user-specified vectors, overriding the defaults just computed. */
   if (!user_fast.empty()) {FastCoreVec = user_fast;}
@@ -1100,7 +1105,8 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
            << " slow=[" << join_cores(SlowCoreVec) << "]"
            << " mem_merge=[" << join_cores(MemMergeCoreVec) << "]"
            << " disk_merge=[" << join_cores(DiskMergeCoreVec) << "]"
-           << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]";
+           << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]"
+           << " disk_merge_threads=" << NumDiskMergeThreads;
   syslog(LOG_INFO, "%s", resolved.str().c_str());
 }
 

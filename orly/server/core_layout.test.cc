@@ -91,9 +91,7 @@ FIXTURE(StaysInsideTheMask) {
 }
 
 FIXTURE(MaskedPositionsMap) {
-  /* Twelve CPUs get the 8-CPU table; a mask of the odd CPUs maps position i to 2i+1. */
-  const TCoreLayout l12 = DefaultCoreLayout(Range(0, 12));
-  EXPECT_TRUE(l12.Fast == (vector<size_t>{3, 6, 7}));
+  /* A mask of the odd CPUs maps position i to 2i+1. */
   vector<size_t> odd;
   for (size_t i = 0; i < 16; ++i) {
     odd.emplace_back(2 * i + 1);
@@ -101,6 +99,24 @@ FIXTURE(MaskedPositionsMap) {
   const TCoreLayout lodd = DefaultCoreLayout(odd);
   EXPECT_TRUE(lodd.Fast == (vector<size_t>{11, 13, 15, 27, 29, 31}));
   EXPECT_TRUE(lodd.DiskController == (vector<size_t>{9, 25}));
+}
+
+FIXTURE(TwelveToFifteen) {
+  /* 12-15 CPUs get six merge cores, one per disk merge thread, out of the slow set; the 8-CPU
+     table put 8 disk merge threads on 2 cores. Past 12 the rest are left idle, as before. */
+  for (size_t n : {12, 15}) {
+    const TCoreLayout layout = DefaultCoreLayout(Range(0, n));
+    EXPECT_TRUE(layout.Fast == (vector<size_t>{5, 6, 7}));
+    EXPECT_TRUE(layout.Slow == (vector<size_t>{0, 1}));
+    EXPECT_TRUE(layout.MemMerge == (vector<size_t>{2, 3}));
+    EXPECT_TRUE(layout.DiskMerge == (vector<size_t>{8, 9, 10, 11}));
+    EXPECT_TRUE(layout.DiskController == (vector<size_t>{4}));
+    EXPECT_EQ(layout.DiskMergeThreads, 4UL);
+  }
+  /* Other sizes keep 8 disk merge threads. */
+  for (size_t n : {2, 8, 11, 16, 32, 64}) {
+    EXPECT_EQ(DefaultCoreLayout(Range(0, n)).DiskMergeThreads, 8UL);
+  }
 }
 
 FIXTURE(TooFew) {

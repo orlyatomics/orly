@@ -38,6 +38,9 @@ namespace Orly {
 
       std::vector<size_t> Fast, Slow, MemMerge, DiskMerge, DiskController;
 
+      /* How many disk merge threads to run over DiskMerge, unless --num_disk_merge_threads says. */
+      size_t DiskMergeThreads = 8;
+
     };  // TCoreLayout
 
     /* The default layout over cpus, which is ascending: the table for cpus.size() CPUs, with
