@@ -67,6 +67,18 @@ namespace {
       layout.DiskController = {4, 12};
       AddRange(layout.Fast, 5, 8);
       AddRange(layout.Fast, 13, 16);
+    } else if (n >= 12) {
+      /* From a core-split A/B under taskset -c 0-11. Against 8 disk merge threads on 2 cores
+         (the 16-CPU table's first 12 positions), giving merges six cores, the disk mergers one
+         each, settled a 64-session ingest in 264 s instead of 454, kept 371 disk layers at peak
+         instead of 467, and nearly halved join p50 under ingest and merge. The 8-CPU table, which
+         12 CPUs got before, has the same 2 disk merge cores. The slow set gives up the cores. */
+      layout.Slow = {0, 1};
+      layout.MemMerge = {2, 3};
+      layout.DiskController = {4};
+      layout.Fast = {5, 6, 7};
+      AddRange(layout.DiskMerge, 8, 12);
+      layout.DiskMergeThreads = 4;
     } else if (n >= 8) {
       layout.Slow = {0, 1, 4, 5};
       layout.MemMerge = {0, 1};
