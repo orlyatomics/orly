@@ -172,3 +172,83 @@ FIXTURE(FormatMatchesUnparse) {
     EXPECT_TRUE(TUuid(uuid) == uuid);
   }
 }
+
+/* The sign of the inline compare must agree with libuuid's uuid_compare, because the order is the
+   on-disk sort order of uuid keys. */
+static int Sign(int x) {
+  return (x > 0) - (x < 0);
+}
+
+static void ExpectSameOrder(const uuid_t &a, const uuid_t &b) {
+  int expected = Sign(uuid_compare(a, b));
+  EXPECT_EQ(Sign(CompareUuid(a, b)), expected);
+  EXPECT_EQ(Sign(CompareUuid(b, a)), -expected);
+  EXPECT_EQ(Sign(TUuid(a).Compare(TUuid(b))), expected);
+  EXPECT_TRUE((TUuid(a) < TUuid(b)) == (expected < 0));
+  EXPECT_TRUE((TUuid(a) <= TUuid(b)) == (expected <= 0));
+  EXPECT_TRUE((TUuid(a) > TUuid(b)) == (expected > 0));
+  EXPECT_TRUE((TUuid(a) >= TUuid(b)) == (expected >= 0));
+  EXPECT_TRUE((TUuid(a) == TUuid(b)) == (expected == 0));
+  EXPECT_TRUE((TUuid(a) != TUuid(b)) == (expected != 0));
+  auto order = TUuid(a) <=> TUuid(b);
+  EXPECT_EQ(Sign((order > 0) - (order < 0)), expected);
+}
+
+FIXTURE(CompareMatchesLibuuidRandom) {
+  mt19937_64 gen(12345);
+  for (int i = 0; i < 200000; ++i) {
+    uuid_t a, b;
+    for (auto &byte : a) {
+      byte = static_cast<unsigned char>(gen());
+    }
+    if (i % 4 == 0) {
+      /* Share a long prefix, so the later fields decide. */
+      memcpy(b, a, sizeof(b));
+      size_t pos = gen() % 16;
+      b[pos] = static_cast<unsigned char>(gen());
+      for (size_t j = pos + 1; j < 16; ++j) {
+        b[j] = static_cast<unsigned char>(gen());
+      }
+    } else {
+      for (auto &byte : b) {
+        byte = static_cast<unsigned char>(gen());
+      }
+    }
+    ExpectSameOrder(a, b);
+  }
+}
+
+FIXTURE(CompareMatchesLibuuidEdgeBytes) {
+  static const unsigned char Values[] = { 0x00, 0x01, 0x7f, 0x80, 0xff };
+  /* Every pair of values at every position, against fillers of each edge value, so a signed char
+     mistake or a wrong field boundary shows. */
+  for (unsigned char fill_a : Values) {
+    for (unsigned char fill_b : Values) {
+      for (size_t pos = 0; pos < 16; ++pos) {
+        for (unsigned char va : Values) {
+          for (unsigned char vb : Values) {
+            uuid_t a, b;
+            memset(a, fill_a, sizeof(a));
+            memset(b, fill_b, sizeof(b));
+            a[pos] = va;
+            b[pos] = vb;
+            ExpectSameOrder(a, b);
+          }
+        }
+      }
+    }
+  }
+  /* Differing in exactly one position, everything else equal. */
+  for (size_t pos = 0; pos < 16; ++pos) {
+    for (unsigned char va : Values) {
+      for (unsigned char vb : Values) {
+        uuid_t a, b;
+        memset(a, 0x5a, sizeof(a));
+        memset(b, 0x5a, sizeof(b));
+        a[pos] = va;
+        b[pos] = vb;
+        ExpectSameOrder(a, b);
+      }
+    }
+  }
+}

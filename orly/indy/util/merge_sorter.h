@@ -24,6 +24,7 @@
 
 #include <cassert>
 
+#include <base/uuid.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/key.h>
 #include <orly/indy/sequence_number.h>
@@ -306,7 +307,7 @@ namespace Orly {
             TMergeElement *prev = 0;
             for (;;) {
               if (!first) break;
-              int comp = uuid_compare(first->Id, Id);
+              int comp = Base::CompareUuid(first->Id, Id);
               if (comp < 0 || (comp == 0 && first->SeqNum >= SeqNum)) {
                 prev = first;
                 first = first->Next;

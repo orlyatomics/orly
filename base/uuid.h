@@ -22,8 +22,10 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <compare>
+#include <cstdint>
 #include <cstring>
 #include <istream>
 #include <random>
@@ -37,6 +39,34 @@
 #include <base/io/binary_output_stream.h>
 
 namespace Base {
+
+  /* Three-way compare of two raw uuids, in the order libuuid's uuid_compare gives: time_low,
+     time_mid, time_hi_and_version, clock_seq, then the node, each unsigned and big-endian as stored,
+     which is the same as an unsigned lexicographic compare of the 16 bytes.  That order is the on-disk
+     sort order of uuid keys, so it must never change.  Returns -1, 0 or 1 (libuuid returns any
+     difference; callers only test the sign).  Inline, because uuid_compare is an out-of-line call
+     made once per key comparison; two big-endian 64-bit loads are cheaper than memcmp, which GCC
+     will not inline for an ordering. */
+  inline int CompareUuid(const uuid_t a, const uuid_t b) {
+    uint64_t a_hi, a_lo, b_hi, b_lo;
+    std::memcpy(&a_hi, a, 8);
+    std::memcpy(&a_lo, a + 8, 8);
+    std::memcpy(&b_hi, b, 8);
+    std::memcpy(&b_lo, b + 8, 8);
+    if constexpr (std::endian::native == std::endian::little) {
+      a_hi = __builtin_bswap64(a_hi);
+      a_lo = __builtin_bswap64(a_lo);
+      b_hi = __builtin_bswap64(b_hi);
+      b_lo = __builtin_bswap64(b_lo);
+    }
+    if (a_hi != b_hi) {
+      return a_hi < b_hi ? -1 : 1;
+    }
+    if (a_lo != b_lo) {
+      return a_lo < b_lo ? -1 : 1;
+    }
+    return 0;
+  }
 
   /* A value-type wrapper for uuid_t defined in <uuid/uuid.h>. */
   class TUuid {
@@ -176,37 +206,37 @@ namespace Base {
 
     /* Comparator. */
     bool operator==(const TUuid &that) const {
-      return uuid_compare(Data, that.Data) == 0;
+      return std::memcmp(Data, that.Data, sizeof(Data)) == 0;
     }
 
     /* Comparator. */
     bool operator!=(const TUuid &that) const {
-      return uuid_compare(Data, that.Data) != 0;
+      return std::memcmp(Data, that.Data, sizeof(Data)) != 0;
     }
 
     /* Comparator. */
     bool operator<(const TUuid &that) const {
-      return uuid_compare(Data, that.Data) < 0;
+      return CompareUuid(Data, that.Data) < 0;
     }
 
     /* Comparator. */
     bool operator<=(const TUuid &that) const {
-      return uuid_compare(Data, that.Data) <= 0;
+      return CompareUuid(Data, that.Data) <= 0;
     }
 
     /* Comparator. */
     bool operator>(const TUuid &that) const {
-      return uuid_compare(Data, that.Data) > 0;
+      return CompareUuid(Data, that.Data) > 0;
     }
 
     /* Comparator. */
     bool operator>=(const TUuid &that) const {
-      return uuid_compare(Data, that.Data) >= 0;
+      return CompareUuid(Data, that.Data) >= 0;
     }
 
     /* Three-way comparator. */
     std::strong_ordering operator<=>(const TUuid &that) const {
-      int cmp = uuid_compare(Data, that.Data);
+      int cmp = CompareUuid(Data, that.Data);
       if (cmp < 0) return std::strong_ordering::less;
       if (cmp > 0) return std::strong_ordering::greater;
       return std::strong_ordering::equal;
@@ -214,7 +244,7 @@ namespace Base {
 
     /* Comparator. */
     int Compare(const TUuid &that) const {
-      return uuid_compare(Data, that.Data);
+      return CompareUuid(Data, that.Data);
     }
 
     /* Format the uuid as a 36-character string, followed by a null terminator.

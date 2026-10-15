@@ -57,7 +57,7 @@ TDurableManager::TMapping::~TMapping() {
 
 void TDurableManager::TMemSlushLayer::FindMax(TSequenceNumber &cur_max_seq, const Base::TUuid &id, std::string &serialized_form_out) const {
   for (TEntryCollection::TCursor csr(&EntryCollection); csr; ++csr) {
-    int uuid_comp = uuid_compare(csr->GetId(), id.GetRaw());
+    int uuid_comp = Base::CompareUuid(csr->GetId(), id.GetRaw());
     if (uuid_comp > 0) {
       break;
     } else if (uuid_comp == 0 && csr->GetSeqNum() > cur_max_seq) {
@@ -887,7 +887,7 @@ void TDurableManager::TSortedByIdFile::Write(TMemSlushLayer *mem_layer,
       TSerializedSize serialized_size = (*csr).GetSerializedSize();
       const uuid_t &cur_id = (*csr).GetId();
       const size_t cur_deadline_count = (*csr).GetDeadlineCount();
-      if (!last_id || uuid_compare(cur_id, last_id->GetRaw()) != 0) {
+      if (!last_id || Base::CompareUuid(cur_id, last_id->GetRaw()) != 0) {
         last_id = TUuid(cur_id);
         if (cur_deadline_count >= latest_deadline_count) {
           ++NumDurable;
@@ -974,7 +974,7 @@ void TDurableManager::TSortedByIdFile::Write(TMemSlushLayer *mem_layer,
       TSerializedSize serialized_size = (*csr).GetSerializedSize();
       const uuid_t &cur_id = (*csr).GetId();
       const size_t cur_deadline_count = (*csr).GetDeadlineCount();
-      if (!last_id || uuid_compare(cur_id, last_id->GetRaw()) != 0) {
+      if (!last_id || Base::CompareUuid(cur_id, last_id->GetRaw()) != 0) {
         last_id = TUuid(cur_id);
         if (cur_deadline_count >= latest_deadline_count) {
           const size_t id_hash = *reinterpret_cast<size_t *>(const_cast<unsigned char *>(cur_id));
@@ -1182,7 +1182,7 @@ void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num
     if (memcmp(&cur_id, &TSortedByIdFile::NullId.GetRaw(), sizeof(uuid_t)) == 0) {
       done = true;
     } else {
-      if (uuid_compare(id.GetRaw(), cur_id) == 0) {
+      if (Base::CompareUuid(id.GetRaw(), cur_id) == 0) {
         size_t byte_offset_of_durable;
         hash_stream.Read(byte_offset_of_durable);
         InStream->GoTo(GetStartOfDurableByIdIndex() + byte_offset_of_durable);
@@ -1214,7 +1214,7 @@ void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num
       if (memcmp(&cur_id, &TSortedByIdFile::NullId.GetRaw(), sizeof(uuid_t)) == 0) {
         done = true;
       } else {
-        if (uuid_compare(id.GetRaw(), cur_id) == 0) {
+        if (Base::CompareUuid(id.GetRaw(), cur_id) == 0) {
           size_t byte_offset_of_durable;
           hash_stream.Read(byte_offset_of_durable);
           InStream->GoTo(GetStartOfDurableByIdIndex() + byte_offset_of_durable);
@@ -1344,7 +1344,7 @@ void TDurableManager::TMergeSortedByIdFile::Write(const std::vector<size_t> &gen
         entry_stream.Read(cur_deadline_count);
         entry_stream.Read(cur_serialized_size);
         entry_stream.Skip(cur_serialized_size);
-        if (!last_id || uuid_compare(cur_id, last_id->GetRaw()) != 0) {
+        if (!last_id || Base::CompareUuid(cur_id, last_id->GetRaw()) != 0) {
           last_id = TUuid(cur_id);
           if (cur_deadline_count >= latest_deadline_count) {
             ++NumDurable;
@@ -1471,7 +1471,7 @@ void TDurableManager::TMergeSortedByIdFile::Write(const std::vector<size_t> &gen
         TInStream &index_in_stream = *index_in_stream_vec[pos];
         index_in_stream.Read(cur_deadline_count);
         index_in_stream.Read(cur_serialized_size);
-        if (!last_id || uuid_compare(cur_id, last_id->GetRaw()) != 0) {
+        if (!last_id || Base::CompareUuid(cur_id, last_id->GetRaw()) != 0) {
           last_id = TUuid(cur_id);
           if (cur_deadline_count >= latest_deadline_count) {
             const size_t id_hash = *reinterpret_cast<size_t *>(const_cast<unsigned char *>(cur_id));
