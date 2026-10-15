@@ -96,6 +96,16 @@ namespace Orly {
          TMatchPresentWalker's exact-point guard). */
       [[nodiscard]] TEntryCollection::TCursor SeekRun(const TIndexKey &key) const;
 
+      /* Return an EntryCollection cursor positioned at the first entry that
+         could unify with pattern, a key whose members may be or hold frees:
+         past every entry of a lower index id and every entry of pattern's
+         index whose members before the pattern's first not fully bound one
+         order before the pattern's. Like SeekRun it jumps through the
+         skip-list accelerator and finishes on level 0; unlike it, it never
+         compares a free with a concrete member, so it takes any key. The
+         entry it lands on need not unify -- the caller still matches. */
+      [[nodiscard]] TEntryCollection::TCursor SeekPattern(const TIndexKey &pattern) const;
+
       [[nodiscard]] inline TUpdateCollection *GetUpdateCollection() const noexcept;
 
       [[nodiscard]] inline bool IsEmpty() const noexcept;
@@ -242,6 +252,12 @@ namespace Orly {
          LinkEntry, which links an entry after the last one that does not sort
          after it, puts it exactly where ReverseInsert would, ties included
          (#754). Stored keys are concrete, so it never throws. */
+      /* The descent SeekRun and SeekPattern share: a cursor at the first
+         entry before(entry) is false of. before must be true of a head of
+         level 0 and false of the rest. */
+      template <typename TBefore>
+      [[nodiscard]] TEntryCollection::TCursor SeekPast(const TBefore &before) const;
+
       [[nodiscard]] static bool EntryAfter(const TUpdate::TEntry *a, const TUpdate::TEntry *b) noexcept;
 
     public:

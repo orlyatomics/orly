@@ -18,6 +18,7 @@
 
 #include <orly/indy/memory_layer.h>
 
+#include <orly/sabot/order_states.h>
 #include <orly/sabot/to_native.h>
 
 #include <algorithm>
@@ -47,6 +48,51 @@ namespace {
       ++lanes;
     }
     return lanes;
+  }
+
+  /* True iff. key sorts before every key that unifies with pattern, in level-0 order. Different
+     index ids decide it alone. Within one, the keys are tuples of the index's key type, compared
+     member by member, so the pattern's members are compared with key's while they are fully bound
+     and the comparison stops at the first that is not: a member that is a free, or holds one, has
+     a type of its own, which never orders equal to the key member's type. Comparing against the
+     whole pattern instead would decide at that member by type alone, whatever the values before
+     it. The keys this is true of are therefore the ones whose bound leading members order before
+     the pattern's, a head of the index's run, and none of them can unify with the pattern. */
+  [[nodiscard]] bool SortsBeforePattern(const TIndexKey &key, const TIndexKey &pattern) {
+    if (key.GetIndexId() != pattern.GetIndexId()) {
+      return key.GetIndexId() < pattern.GetIndexId();
+    }
+    void *state_alloc = alloca(Orly::Sabot::State::GetMaxStateSize() * 4);
+    void *pattern_state_alloc = static_cast<uint8_t *>(state_alloc) + Orly::Sabot::State::GetMaxStateSize();
+    void *key_elem_alloc = static_cast<uint8_t *>(pattern_state_alloc) + Orly::Sabot::State::GetMaxStateSize();
+    void *pattern_elem_alloc = static_cast<uint8_t *>(key_elem_alloc) + Orly::Sabot::State::GetMaxStateSize();
+    void *pin_alloc = alloca(Orly::Sabot::State::GetMaxStatePinSize() * 2);
+    void *pattern_pin_alloc = static_cast<uint8_t *>(pin_alloc) + Orly::Sabot::State::GetMaxStatePinSize();
+    void *type_alloc = alloca(Orly::Sabot::Type::GetMaxTypeSize() * 2);
+    void *pattern_type_alloc = static_cast<uint8_t *>(type_alloc) + Orly::Sabot::Type::GetMaxTypeSize();
+    Orly::Sabot::State::TAny::TWrapper key_state(key.GetKey().GetCore().NewState(key.GetKey().GetArena(), state_alloc));
+    Orly::Sabot::State::TAny::TWrapper pattern_state(pattern.GetKey().GetCore().NewState(pattern.GetKey().GetArena(), pattern_state_alloc));
+    const auto *key_tuple = dynamic_cast<const Orly::Sabot::State::TTuple *>(&*key_state);
+    const auto *pattern_tuple = dynamic_cast<const Orly::Sabot::State::TTuple *>(&*pattern_state);
+    if (!key_tuple || !pattern_tuple) {
+      return false;  // not a key shape we can narrow: seek no further than the index's start
+    }
+    Orly::Sabot::State::TTuple::TPin::TWrapper key_pin(key_tuple->Pin(pin_alloc));
+    Orly::Sabot::State::TTuple::TPin::TWrapper pattern_pin(pattern_tuple->Pin(pattern_pin_alloc));
+    const size_t count = std::min(key_pin->GetElemCount(), pattern_pin->GetElemCount());
+    for (size_t elem_idx = 0; elem_idx < count; ++elem_idx) {
+      Orly::Sabot::State::TAny::TWrapper key_elem(key_pin->NewElem(elem_idx, key_elem_alloc));
+      Orly::Sabot::State::TAny::TWrapper pattern_elem(pattern_pin->NewElem(elem_idx, pattern_elem_alloc));
+      if (!Orly::Atom::IsEq(Orly::Sabot::OrderTypes(*Orly::Sabot::Type::TAny::TWrapper(key_elem->GetType(type_alloc)),
+                                        *Orly::Sabot::Type::TAny::TWrapper(pattern_elem->GetType(pattern_type_alloc))))) {
+        return false;
+      }
+      const Orly::Atom::TComparison comp = Orly::Sabot::OrderStates(*key_elem, *pattern_elem);
+      if (!Orly::Atom::IsEq(comp)) {
+        return Orly::Atom::IsLt(comp);
+      }
+    }
+    return false;
   }
 
 }  // namespace
@@ -132,17 +178,18 @@ void TMemoryLayer::LinkEntry(TUpdate::TEntry *entry) NO_THROW {
   }
 }
 
-TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekRun(const TIndexKey &key) const {
-  /* Descend the express lanes to the largest entry whose index-key is strictly
-     less than key, then finish on level 0 (EntryCollection). Stale upper lanes
-     (a concurrent insert in flight) only shorten the jump -- the level-0 walk
-     below always reaches the right place, so the result is never wrong. */
+template <typename TBefore>
+TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekPast(const TBefore &before) const {
+  /* Descend the express lanes to the last entry before() is true of, then
+     finish on level 0 (EntryCollection). Stale upper lanes (a concurrent
+     insert in flight) only shorten the jump -- the level-0 walk below always
+     reaches the right place, so the result is never wrong. */
   TUpdate::TEntry *node = nullptr;
   const size_t cur_top = SkipListLevel.load(std::memory_order_acquire);
   for (size_t li = cur_top; li-- > 0;) {
     TUpdate::TEntry *next = node ? node->SkipFwd[li].load(std::memory_order_acquire)
                                  : SkipHead[li].load(std::memory_order_acquire);
-    while (next && next->GetIndexKey() < key) {
+    while (next && before(*next)) {
       node = next;
       next = node->SkipFwd[li].load(std::memory_order_acquire);
     }
@@ -150,10 +197,18 @@ TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekRun(const TIndexKey &k
   TEntryCollection::TCursor csr = node
       ? TEntryCollection::TCursor(&node->MemoryLayerMembership, InvCon::TOrient::Fwd)
       : TEntryCollection::TCursor(GetEntryCollection());
-  while (csr && csr->GetIndexKey() < key) {
+  while (csr && before(*csr)) {
     ++csr;
   }
   return csr;
+}
+
+TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekRun(const TIndexKey &key) const {
+  return SeekPast([&key](const TUpdate::TEntry &entry) { return entry.GetIndexKey() < key; });
+}
+
+TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekPattern(const TIndexKey &pattern) const {
+  return SeekPast([&pattern](const TUpdate::TEntry &entry) { return SortsBeforePattern(entry.GetIndexKey(), pattern); });
 }
 
 TMemoryLayer::~TMemoryLayer() {
@@ -208,6 +263,12 @@ TMemoryLayer::TMatchPresentWalker::TMatchPresentWalker(const TMemoryLayer *layer
       Valid = false;
       Cached = true;  // nothing here; suppress the head-scan in Refresh()
     }
+  } else {
+    /* A pattern (or a whole key not flagged exact): start at the first entry
+       that could unify with it, skipping other indexes and the keys whose
+       bound leading members order before the pattern's, rather than matching
+       every entry from the head of the layer. */
+    Csr = Layer->SeekPattern(Key);
   }
   Refresh();
 }
