@@ -133,6 +133,25 @@ FIXTURE(DuplicateNoteInOrderedArena) {
   EXPECT_TRUE(TKey::Compare(one, &arena, two, &arena) == Atom::TComparison::Lt);
 }
 
+/* A TKey caches its hash and a copy carries the cache along, so hashing a key once before handing out copies must not
+   change any hash: the copy, an assignment, a copy through a TIndexKey and a freshly built equal key all agree. */
+FIXTURE(HashSurvivesCopy) {
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  const TKey fresh(make_tuple(10L, 20L), &arena, state_alloc);
+  const TKey hashed(make_tuple(10L, 20L), &arena, state_alloc);
+  const size_t hash = hashed.GetHash();
+  EXPECT_EQ(hash, fresh.GetHash());
+  const TKey copy(hashed);
+  EXPECT_EQ(copy.GetHash(), hash);
+  TKey assigned(make_tuple(1L), &arena, state_alloc);
+  assigned = hashed;
+  EXPECT_EQ(assigned.GetHash(), hash);
+  const TIndexKey index_key(TUuid(TUuid::Twister), hashed);
+  const TIndexKey index_copy(index_key);
+  EXPECT_EQ(index_copy.GetKey().GetHash(), hash);
+}
+
 FIXTURE(IndexKey) {
   TSuprena arena;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());

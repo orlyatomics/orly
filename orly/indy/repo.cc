@@ -1890,6 +1890,11 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       Valid(false),
       IgnoreTombstone(ignore_tombstone) {
   if (View->GetLower() && View->GetUpper()) {
+    /* Hash the key once, here, before any layer's walker copies it. TKey caches its hash and a copy keeps the
+       cache, so each disk layer's FindInHash reuses this hash instead of recomputing it from an unhashed copy. */
+    if (From.GetKey().GetArena()) {
+      From.GetKey().GetHash();
+    }
     size_t pos = 0UL;
     for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
       const TDataLayer *layer = mapping_csr->GetLayer();
@@ -1932,6 +1937,12 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       IgnoreTombstone(ignore_tombstone),
       ExactPoint(exact_point) {
   if (View->GetLower() && View->GetUpper()) {
+    /* Hash the key once, here, before any layer's walker copies it. TKey caches its hash and a copy keeps the
+       cache, so each disk layer's FindInHash reuses this hash instead of recomputing it from an unhashed copy.
+       It must happen before the fan-out below: the prep fibers would otherwise race on the mutable cache. */
+    if (From.GetKey().GetArena()) {
+      From.GetKey().GetHash();
+    }
     /* Build layer i's sub-walker into WalkerVec[i], fanned out over at most
        MaxPrepFibers prep fibers. A task that can't get a frame is built inline
        here instead, so an empty frame pool slows a read down rather than
