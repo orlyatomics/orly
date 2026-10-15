@@ -129,7 +129,31 @@ FIXTURE(StateToJsonMatchesToVar) {
   CheckState(Rt::TOpt<int64_t>());
   CheckState(Rt::TOpt<vector<TUuid>>(vector<TUuid>{a}));
   CheckState(Rt::TSet<int64_t>{5, 2, 1});
-  CheckState(vector<Rt::TSet<TUuid>>{{a, b}});
+  CheckState(Rt::TSet<int64_t>{});
+  CheckState(vector<Rt::TSet<TUuid>>{{a, b}, {}});
   CheckState(Rt::TDict<int64_t, double>{{5, 5.5}, {2, 2.25}});
   CheckState(Rt::TDict<string, vector<int64_t>>{{"x", {1}}, {"y\"z", {}}});
+  /* Records, variants, and sets of records containing variants (the M1 entity/page shapes). */
+  const auto empty_obj = TVar::Obj(unordered_map<string, TVar>{});
+  CheckState(empty_obj);
+  const auto rec = TVar::Obj(unordered_map<string, TVar>{
+      {"p", TVar(a)},
+      {"s", TVar(b)},
+      {"v", TVar(string("hello"))}});
+  CheckState(rec);
+  const auto var_type = Type::TVariant::Get({
+      {"Deleted", Type::TObj::Get({})},
+      {"Integer", Type::TInt::Get()},
+      {"Text", Type::TStr::Get()}});
+  const auto v_del = TVar::Variant(var_type, "Deleted", empty_obj);
+  const auto v_int = TVar::Variant(var_type, "Integer", TVar(int64_t(99)));
+  const auto v_txt = TVar::Variant(var_type, "Text", TVar(string("val")));
+  CheckState(v_del);
+  CheckState(v_int);
+  CheckState(v_txt);
+  const auto row1 = TVar::Obj(unordered_map<string, TVar>{{"p", TVar(a)}, {"s", TVar(b)}, {"v", v_int}});
+  const auto row2 = TVar::Obj(unordered_map<string, TVar>{{"p", TVar(b)}, {"s", TVar(a)}, {"v", v_txt}});
+  const auto row3 = TVar::Obj(unordered_map<string, TVar>{{"p", TVar(a)}, {"s", TVar(a)}, {"v", v_del}});
+  CheckState(row1);
+  CheckState(TVar::Set(Rt::TSet<TVar>{row1, row2, row3}, row1.GetType()));
 }

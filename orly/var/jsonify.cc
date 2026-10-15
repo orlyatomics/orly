@@ -19,6 +19,7 @@
 #include <orly/var/jsonify.h>
 
 #include <cmath>
+#include <optional>
 #include <sstream>
 
 #include <base/json.h>
@@ -303,8 +304,12 @@ namespace {
       const double val = state.Get();
       Out = isfinite(val) ? Base::TJson(val) : Base::TJson();
     }
-    void operator()(const Sabot::State::TDuration &state) const override   { Fallback(state); }
-    void operator()(const Sabot::State::TTimePoint &state) const override  { Fallback(state); }
+    void operator()(const Sabot::State::TDuration &state) const override {
+      Out = Base::TJson(std::chrono::duration_cast<Base::Chrono::TTimeDiff>(state.Get()).count());
+    }
+    void operator()(const Sabot::State::TTimePoint &state) const override {
+      Out = Base::TJson(std::chrono::duration_cast<Base::Chrono::TTimeDiff>(state.Get().time_since_epoch()).count());
+    }
     void operator()(const Sabot::State::TUuid &state) const override {
       char buf[Base::TUuid::MinBufSize];
       Base::TUuid(state.Get().GetRaw()).Format(buf);
@@ -332,21 +337,28 @@ namespace {
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Sabot::State::TOpt::TPin::TWrapper pin(state.Pin(pin_alloc));
       if (!pin->GetElemCount()) {
-        Fallback(state);
+        Out = Base::TJson();
         return;
       }
       Out = Var::StateToJson(*Sabot::State::TAny::TWrapper(pin->NewElem(0, state_alloc)));
     }
-    void operator()(const Sabot::State::TSet &state) const override        { Fallback(state); }
+    void operator()(const Sabot::State::TSet &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TSet::TPin::TWrapper pin(state.Pin(pin_alloc));
+      const size_t elem_count = pin->GetElemCount();
+      Base::TJson::TArray arr;
+      arr.reserve(elem_count);
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        arr.emplace_back(Var::StateToJson(*Sabot::State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc))));
+      }
+      Out = Base::TJson(std::move(arr));
+    }
     void operator()(const Sabot::State::TVector &state) const override {
       void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
       Sabot::State::TVector::TPin::TWrapper pin(state.Pin(pin_alloc));
       const size_t elem_count = pin->GetElemCount();
-      if (!elem_count) {
-        Fallback(state);
-        return;
-      }
       Base::TJson::TArray arr;
       arr.reserve(elem_count);
       for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
@@ -355,7 +367,68 @@ namespace {
       Out = Base::TJson(std::move(arr));
     }
     void operator()(const Sabot::State::TMap &state) const override        { Fallback(state); }
-    void operator()(const Sabot::State::TRecord &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TRecord &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      void *type_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());
+      void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+      void *elem_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+      Sabot::State::TRecord::TPin::TWrapper pin(state.Pin(pin_alloc));
+      Sabot::Type::TRecord::TWrapper record_type(state.GetRecordType(type_alloc));
+      Sabot::Type::TRecord::TPin::TWrapper type_pin(record_type->Pin(type_pin_alloc));
+      const size_t elem_count = pin->GetElemCount();
+      string field_name;
+      if (elem_count) {
+        Sabot::Type::TAny::TWrapper(type_pin->NewElem(0, field_name, elem_type_alloc));
+        /* A variant value (#96) is stored as <{ .$which: int, .Tag0: payload0?, ... }>, with
+           fields in asciibetical order so "$which" is field 0.  Emit {"<active_tag>": <payload>}
+           directly from the active arm without decoding the inactive arms. */
+        if (field_name == "$which") {
+          /* Read $which in its own scope: the arm below reuses state_alloc, and a live wrapper
+             over the same buffer would destroy the arm's state a second time. */
+          std::optional<int64_t> which;
+          {
+            const Sabot::State::TAny::TWrapper which_state(pin->NewElem(0, state_alloc));
+            if (const auto *which_int = dynamic_cast<const Sabot::State::TInt64 *>(which_state.get())) {
+              which = which_int->Get();
+            }
+          }
+          if (!which || *which < 0 || static_cast<size_t>(*which) + 1 >= elem_count) {
+            Fallback(state);
+            return;
+          }
+          const size_t arm_idx = static_cast<size_t>(*which) + 1;
+          Sabot::Type::TAny::TWrapper(type_pin->NewElem(arm_idx, field_name, elem_type_alloc));
+          const Sabot::State::TAny::TWrapper arm_state(pin->NewElem(arm_idx, state_alloc));
+          const auto *arm_opt = dynamic_cast<const Sabot::State::TOpt *>(arm_state.get());
+          if (!arm_opt) {
+            Fallback(state);
+            return;
+          }
+          void *opt_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+          void *payload_alloc = alloca(Sabot::State::GetMaxStateSize());
+          Sabot::State::TOpt::TPin::TWrapper opt_pin(arm_opt->Pin(opt_pin_alloc));
+          if (opt_pin->GetElemCount() != 1) {
+            Fallback(state);
+            return;
+          }
+          Base::TJson::TObject obj;
+          obj.emplace(std::move(field_name),
+                      Var::StateToJson(*Sabot::State::TAny::TWrapper(opt_pin->NewElem(0, payload_alloc))));
+          Out = Base::TJson(std::move(obj));
+          return;
+        }
+      }
+      Base::TJson::TObject obj;
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        if (elem_idx) {
+          Sabot::Type::TAny::TWrapper(type_pin->NewElem(elem_idx, field_name, elem_type_alloc));
+        }
+        obj.emplace(std::move(field_name),
+                    Var::StateToJson(*Sabot::State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc))));
+      }
+      Out = Base::TJson(std::move(obj));
+    }
     void operator()(const Sabot::State::TTuple &state) const override {
       void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
       void *state_alloc = alloca(Sabot::State::GetMaxStateSize());

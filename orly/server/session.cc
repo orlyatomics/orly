@@ -744,7 +744,8 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
   std::optional<uint64_t> commit_lsn;
   std::optional<TTracker> tracker;
   size_t walker_count = 0UL;
-  TSuprena my_arena;
+  auto shared_arena = std::make_shared<TSuprena>();
+  TSuprena &my_arena = *shared_arena;
   try {
     // Convert the args to vars.
     Package::TArgMap prog_args;
@@ -949,7 +950,7 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     }
     TServer::TryWalkerCountCalc.Push(walker_count);
     TServer::TryWalkerConsTimerCalc.Push(ToSecondsDouble(context.GetPresentWalkConsTimer().GetTotal()));
-    TMethodResult method_result(indy_context.GetArena(), result_core, tracker);
+    TMethodResult method_result(shared_arena, result_core, tracker);
     method_result.SetCommitSequenceNumber(commit_seq);
     method_result.SetCommitLsn(commit_lsn);
     return method_result;
@@ -1008,11 +1009,11 @@ TMethodResult TSession::TryBatch(TServer *server, const TUuid &pov_id, const vec
   // Aggregate the N per-call results into one list-typed core (one entry per
   // call, in order); the ws marshal renders it as a JSON array. Every call ran
   // the same method, so the results share a type.
-  TSuprena arena;
+  auto arena = std::make_shared<TSuprena>();
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   Var::TVar list_var = Var::TVar::List(results, results.front().GetType());
-  TCore list_core(&arena, Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, list_var)).get());
-  TMethodResult result(&arena, list_core, tracker);
+  TCore list_core(arena.get(), Sabot::State::TAny::TWrapper(Var::NewSabot(state_alloc, list_var)).get());
+  TMethodResult result(arena, list_core, tracker);
   result.SetCommitSequenceNumber(commit_seq);
   result.SetCommitLsn(commit_lsn);
   return result;
