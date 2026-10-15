@@ -33,6 +33,8 @@
 #include <vector>
 
 #include <base/test/kit.h>
+#include <orly/desc.h>
+#include <orly/sabot/match_prefix_state.h>
 #include <orly/sabot/to_native.h>
 
 using namespace std;
@@ -432,6 +434,105 @@ FIXTURE(RangeWalk) {
               (std::vector<int64_t>{-1}));
 }
 
+/* A pattern walk seeks to the pattern's run through the skip list instead of matching every entry
+   from the head of the layer. Keys are (string, desc int, int) over three indexes, most with several
+   versions, inserted in a shuffled order; one string is too long to sit directly in a core, and the
+   desc member orders backwards. For patterns bound on none, some or all of their members, the walk
+   must surface exactly the entries of the pattern's index that unify with it, in level-0 order, as a
+   filter of the whole layer finds them, and SeekPattern must land on the first of them -- or, for a
+   run the layer does not hold, on the first entry of the next one. */
+FIXTURE(PatternSeek) {
+  using D = TDesc<int64_t>;
+  const string long_str = "e string well past direct storage in a core";
+  const vector<string> strs = { "a", "c", long_str };
+  TMemoryLayer mem_layer(nullptr);
+  const vector<Base::TUuid> idxs = { Base::TUuid(Base::TUuid::Twister), Base::TUuid(Base::TUuid::Twister), Base::TUuid(Base::TUuid::Twister) };
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+  void *state_alloc_2 = static_cast<uint8_t *>(state_alloc) + Sabot::State::GetMaxStateSize();
+  /* Every key gets 1 to 3 versions; every op value is distinct, so it names its entry. */ {
+    std::mt19937_64 rng(257);
+    vector<tuple<size_t, string, int64_t, int64_t>> keys;
+    for (size_t i = 0; i < idxs.size(); ++i) {
+      for (const string &str : strs) {
+        for (int64_t d = 0; d < 6; ++d) {
+          for (int64_t v = 0; v < 8; v += 1 + static_cast<int64_t>(rng() % 2)) {
+            for (uint64_t n = 1 + rng() % 3; n; --n) {
+              keys.emplace_back(i, str, d, v);
+            }
+          }
+        }
+      }
+    }
+    std::shuffle(keys.begin(), keys.end(), rng);
+    TSequenceNumber seq_num = 0UL;
+    for (const auto &[i, str, d, v] : keys) {
+      ++seq_num;
+      Insert(mem_layer, seq_num, idxs[i], static_cast<int64_t>(seq_num), str, D(d), v);
+    }
+  }
+  auto op_of = [&](const Atom::TCore &op, Atom::TCore::TArena *op_arena) {
+    return Sabot::AsNative<int64_t>(*Sabot::State::TAny::TWrapper(op.NewState(op_arena, state_alloc)));
+  };
+  /* What the walk must surface: the pattern's index's entries that unify with it, in level-0 order. */
+  auto filter = [&](const TIndexKey &pattern) {
+    vector<int64_t> ops;
+    for (TMemoryLayer::TEntryCollection::TCursor csr(mem_layer.GetEntryCollection()); csr; ++csr) {
+      if (csr->GetIndexKey().GetIndexId() == pattern.GetIndexId() &&
+          Sabot::MatchPrefixState(
+              *Sabot::State::TAny::TWrapper(pattern.GetKey().GetCore().NewState(pattern.GetKey().GetArena(), state_alloc)),
+              *Sabot::State::TAny::TWrapper(csr->GetKey().GetCore().NewState(csr->GetKey().GetArena(), state_alloc_2))) == Sabot::TMatchResult::Unifies) {
+        ops.push_back(op_of(csr->GetOp(), csr->GetKey().GetArena()));
+      }
+    }
+    return ops;
+  };
+  auto walk = [&](const TIndexKey &pattern) {
+    vector<int64_t> ops;
+    auto wp = mem_layer.NewPresentWalker(pattern);
+    for (auto &w = *wp; w; ++w) {
+      ops.push_back(op_of((*w).Op, (*w).OpArena));
+    }
+    return ops;
+  };
+  auto landing = [&](const TIndexKey &pattern) {
+    auto csr = mem_layer.SeekPattern(pattern);
+    return csr ? op_of(csr->GetOp(), csr->GetKey().GetArena()) : int64_t(-1);
+  };
+  const Native::TFree<string> free_str;
+  const Native::TFree<D> free_desc;
+  const Native::TFree<int64_t> free_int;
+  size_t checked = 0;
+  for (const Base::TUuid &idx : idxs) {
+    vector<TIndexKey> patterns = { TIndexKey(idx, TKey(make_tuple(free_str, free_desc, free_int), &arena, state_alloc)) };
+    for (const string &str : strs) {
+      patterns.emplace_back(idx, TKey(make_tuple(str, free_desc, free_int), &arena, state_alloc));
+      for (int64_t d = 0; d < 6; d += 2) {
+        patterns.emplace_back(idx, TKey(make_tuple(str, D(d), free_int), &arena, state_alloc));
+        patterns.emplace_back(idx, TKey(make_tuple(str, D(d), int64_t(4)), &arena, state_alloc));
+      }
+    }
+    for (const TIndexKey &pattern : patterns) {
+      const vector<int64_t> want = filter(pattern);
+      EXPECT_TRUE(walk(pattern) == want);
+      if (!want.empty()) {
+        EXPECT_EQ(landing(pattern), want.front());
+        ++checked;
+      }
+    }
+    /* Runs the layer does not hold: "b" sorts between "a" and "c", desc 9 before desc 5. */
+    EXPECT_TRUE(walk(TIndexKey(idx, TKey(make_tuple(string("b"), free_desc, free_int), &arena, state_alloc))).empty());
+    EXPECT_EQ(landing(TIndexKey(idx, TKey(make_tuple(string("b"), free_desc, free_int), &arena, state_alloc))),
+              filter(TIndexKey(idx, TKey(make_tuple(string("c"), free_desc, free_int), &arena, state_alloc))).front());
+    EXPECT_TRUE(walk(TIndexKey(idx, TKey(make_tuple(string("c"), D(9), free_int), &arena, state_alloc))).empty());
+    EXPECT_EQ(landing(TIndexKey(idx, TKey(make_tuple(string("c"), D(9), free_int), &arena, state_alloc))),
+              filter(TIndexKey(idx, TKey(make_tuple(string("c"), D(5), free_int), &arena, state_alloc))).front());
+  }
+  /* Value 0 is stored under every (string, desc) pair, so every pattern above that leaves the last
+     member free found something, and the landing checks did not pass vacuously. */
+  EXPECT_TRUE(checked >= idxs.size() * (1 + strs.size() * 4));
+}
+
 /* An update holding one entry per (index id, key) in keys, each with op val, at seq_num. */
 static TUpdate *MakeUpdate(TSequenceNumber seq_num, const vector<pair<Base::TUuid, int64_t>> &keys, int64_t val) {
   Atom::TSuprena arena;
@@ -443,6 +544,50 @@ static TUpdate *MakeUpdate(TSequenceNumber seq_num, const vector<pair<Base::TUui
   std::shared_ptr<TUpdate> update(TUpdate::NewUpdate(op_by_key, TKey(&arena), TKey(Base::TUuid(Base::TUuid::Best), &arena, state_alloc)));
   update->SetSequenceNumber(seq_num);
   return TUpdate::CopyUpdate(update.get(), state_alloc);
+}
+
+/* The memory-layer half of the read-time trace under ingest: a pattern walk used to match every
+   entry from the head of the layer, so its cost grew with the layer (other indexes included).
+   Time 2,000 walks of <[a, free]> over a layer of 4k to 128k entries, half of them in a second
+   index that sorts ahead of the one read, for an a the layer holds and for one it does not. A walk
+   that finds nothing used to run on to the end of the index. Prints a table and checks nothing
+   about timing -- a shared runner is too noisy for that. */
+FIXTURE(PatternSeekScaling) {
+  std::mt19937_64 rng(257);
+  const Base::TUuid lo(Base::TUuid::Twister), hi(Base::TUuid::Twister);
+  const Base::TUuid &other = std::min(lo, hi), &read = std::max(lo, hi);
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  std::cout << "  entries   ms per 2,000 pattern walks: present   absent" << std::endl;
+  for (int64_t entries = 4096; entries <= 131072; entries *= 2) {
+    TMemoryLayer mem_layer(nullptr);
+    vector<pair<Base::TUuid, int64_t>> keys;
+    for (int64_t i = 0; i < entries / 2; ++i) {
+      keys.emplace_back(other, i);
+    }
+    mem_layer.Insert(MakeUpdate(1, keys, 0));
+    TSequenceNumber seq_num = 1UL;
+    for (int64_t a = 0; a < entries / 32; ++a) {
+      for (int64_t b = 0; b < 16; ++b) {
+        Insert(mem_layer, ++seq_num, read, b, a * 2, b);
+      }
+    }
+    TSuprena arena;
+    std::cout << "  " << entries;
+    for (int64_t absent : {0, 1}) {
+      size_t found = 0;
+      const auto start = std::chrono::steady_clock::now();
+      for (int walks = 0; walks < 2000; ++walks) {
+        const int64_t a = static_cast<int64_t>(rng() % static_cast<uint64_t>(entries / 32)) * 2 + absent;
+        auto wp = mem_layer.NewPresentWalker(TIndexKey(read, TKey(make_tuple(a, Native::TFree<int64_t>()), &arena, state_alloc)));
+        for (auto &w = *wp; w; ++w) {
+          ++found;
+        }
+      }
+      std::cout << "\t    " << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      EXPECT_EQ(found, absent ? 0UL : 2000UL * 16UL);
+    }
+    std::cout << std::endl;
+  }
 }
 
 /* #754: an insert finds its place through the skip list instead of walking back from the tail.
