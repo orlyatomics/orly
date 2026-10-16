@@ -179,3 +179,19 @@ FIXTURE(VariantLoweringIsCached) {
   EXPECT_TRUE(lowered.OptTypes[2] == Type::TOpt::Get(Type::TStr::Get()));
   EXPECT_TRUE(RoundTrip(var_type) == var_type);
 }
+
+FIXTURE(RecordElemsByIdxIsCached) {
+  const Type::TType rec_type = Type::TObj::Get({
+      { "b", Type::TStr::Get() }, { "a", Type::TInt::Get() }, { "c", Type::TReal::Get() } });
+  const auto *obj = rec_type.As<Type::TObj>();
+  const auto &by_idx = obj->GetElemsByIdx();
+  EXPECT_TRUE(&by_idx == &obj->GetElemsByIdx());
+  EXPECT_EQ(by_idx.size(), 3U);
+  EXPECT_EQ(by_idx[0]->first, "a");
+  EXPECT_EQ(by_idx[1]->first, "b");
+  EXPECT_EQ(by_idx[2]->first, "c");
+  EXPECT_TRUE(by_idx[1]->second == Type::TStr::Get());
+  EXPECT_EQ(ToString(rec_type), ToString(Type::TObj::Get({
+      { "a", Type::TInt::Get() }, { "b", Type::TStr::Get() }, { "c", Type::TReal::Get() } })));
+  EXPECT_TRUE(RoundTrip(rec_type) == rec_type);
+}
