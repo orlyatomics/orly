@@ -25,6 +25,9 @@
 #pragma once
 
 #include <map>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <orly/type/managed_type.h>
@@ -166,6 +169,24 @@ namespace Orly {
         return std::get<0>(GetKey());
       }
 
+      /* The elems as a vector indexed by position, built on first use. Record
+         sabots walk elems by index, and building this per value was hot on
+         reads. The map is already in field-name order, so is this. Interned
+         types are shared by every thread, so this is guarded by a once-flag;
+         afterwards it is a lock-free read. The result lives as long as this
+         type does. */
+      const std::vector<const TObjElems::value_type *> &GetElemsByIdx() const {
+        std::call_once(ElemsByIdxOnce, [this] {
+          auto by_idx = std::make_unique<std::vector<const TObjElems::value_type *>>();
+          by_idx->reserve(GetElems().size());
+          for (const auto &item: GetElems()) {
+            by_idx->push_back(&item);
+          }
+          ElemsByIdx = std::move(by_idx);
+        });
+        return *ElemsByIdx;
+      }
+
       static TType Get(const TObjElems &elems);
 
       bool IsSubsetOf(const TObj *that, bool &is_optional) const {
@@ -188,6 +209,12 @@ namespace Orly {
       virtual ~TObj();
 
       virtual void Write(std::ostream &) const;
+
+      /* See GetElemsByIdx(). */
+      mutable std::once_flag ElemsByIdxOnce;
+
+      /* See GetElemsByIdx(). */
+      mutable std::unique_ptr<const std::vector<const TObjElems::value_type *>> ElemsByIdx;
 
       friend class TInternedType;
     };  // TObj

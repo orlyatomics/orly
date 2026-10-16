@@ -1,0 +1,1 @@
+- **Changed (performance)**: converting a record value for a query result no longer copies and sorts its type's fields per value. `Type::TObj` now builds its position-indexed field list once and caches it, and the record type sabot points at it. The bytes written and the types produced are unchanged.

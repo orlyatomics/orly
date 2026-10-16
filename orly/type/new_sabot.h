@@ -221,21 +221,21 @@ namespace Orly {
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, std::string &name, void *buf) const override {
-            const auto &item = Record->Elems[elem_idx];
+            const auto &item = *(*Record->Elems)[elem_idx];
             name = item.first;
             return NewSabot(buf, item.second);
           }
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *&out_field_name_state, void *field_name_state_alloc, void *buf) const override {
-            const auto &item = Record->Elems[elem_idx];
+            const auto &item = *(*Record->Elems)[elem_idx];
             out_field_name_state = Native::State::New(item.first, field_name_state_alloc);
             return NewSabot(buf, item.second);
           }
 
           /* See Sabot::Type::TRecord. */
           virtual Sabot::Type::TAny *NewElem(size_t elem_idx, void *buf) const override {
-            const auto &item = Record->Elems[elem_idx];
+            const auto &item = *(*Record->Elems)[elem_idx];
             return NewSabot(buf, item.second);
           }
 
@@ -246,19 +246,14 @@ namespace Orly {
 
         };  // TRecord::TPin
 
-        /* Cache the pointer to the object type we represent.
-           This is safe because the type objects are interned. */
-        TRecord(const TObj *addr) {
-          assert(addr);
-          for (const auto &item: addr->GetElems()) {
-            Elems.push_back(item);
-          }
-          std::sort(Elems.begin(), Elems.end());
-        }
+        /* Hold a ref to the object type we represent, since a type sabot can
+           outlive the TType it was made from, and point at its cached elems. */
+        TRecord(const TObj *addr)
+            : Obj(addr->AsType()), Elems(&addr->GetElemsByIdx()) {}
 
         /* See Sabot::Type::TNAry. */
         virtual size_t GetElemCount() const override {
-          return Elems.size();
+          return Elems->size();
         }
 
         /* See Sabot::Type::TRecord. */
@@ -268,8 +263,11 @@ namespace Orly {
 
         private:
 
-        /* Points to the object type we represent. */
-        std::vector<std::pair<std::string, Type::TType>> Elems;
+        /* The object type we represent. Keeps Elems alive. */
+        TType Obj;
+
+        /* The elems of the object type we represent, in field-name order. */
+        const std::vector<const TObjElems::value_type *> *Elems;
 
       };  // TRecord
 
