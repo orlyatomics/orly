@@ -292,7 +292,7 @@ jobs:
       # Release orlyi allocates through TCMalloc (release.jhm). Under merge and ingest it served
       # 30-45% more point reads than with glibc malloc on the M1 readtrace.
       - name: orlyi links TCMalloc
-        run: ldd out_orly/release/orly/server/orlyi | grep -q libtcmalloc_minimal
+        run: ldd ../out_orly/release/orly/server/orlyi | grep -q libtcmalloc_minimal
 
       - name: Release smoke (orlyc deadline, orlyi write loop)
         run: tools/maint/arm_release_smoke.sh 20
@@ -373,7 +373,7 @@ jobs:
         run: PATH="$PWD/tools:$PATH" tools/jhm -c release
 
       - name: orlyi links TCMalloc
-        run: ldd out_orly/release/orly/server/orlyi | grep -q libtcmalloc_minimal
+        run: ldd ../out_orly/release/orly/server/orlyi | grep -q libtcmalloc_minimal
 
       - name: Build storage and merge unit tests (release)
         run: |
