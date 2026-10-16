@@ -185,7 +185,7 @@ between the budget and the limit, for example
 ```sh
 sudo apt-get install -y \
   build-essential gcc g++ \
-  uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev \
+  uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev libabsl-dev \
   libreadline-dev libboost-system-dev zlib1g-dev \
   bison flex valgrind
 ```

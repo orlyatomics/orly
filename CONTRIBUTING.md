@@ -44,6 +44,18 @@ Mac (`npx orly-repl`, `orly-mcp`, or the Python/Go/TS client libraries) connect
 seamlessly to `ws://127.0.0.1:8082/`. Set `ORLY_DEV_IMAGE` to use another image,
 or `ORLY_DEV_NATIVE=1` / `0` to force a native or containerised build.
 
+### Abseil containers
+
+Abseil (`libabsl-dev`) is available, but `std::` containers stay the default.
+Reach for `absl::flat_hash_map` / `flat_hash_set` only where a profile or a
+benchmark shows the map is hot, and put the measurement in the PR -- the first
+user, the type interner, gained nothing at 1,000 keys. Mind reference stability:
+`flat_hash_*` moves every element on rehash, so no reference, pointer or
+iterator into it may survive an insert (use `node_hash_*` if one must). Keep
+the existing hasher unless you have measured a better one; Swiss tables read
+the low hash bits, so check a pointer-derived hash is not clustering. Link
+flags for Abseil are in `root.jhm`.
+
 ## Comments and the TODO convention
 
 The 2014-era codebase attached an empty `/* TODO */` doc-stub to nearly every

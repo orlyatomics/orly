@@ -16,7 +16,7 @@
 FROM ubuntu:24.04 AS build
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev \
+      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev libabsl-dev \
       libreadline-dev libboost-system-dev zlib1g-dev bison flex python3 \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
@@ -79,12 +79,14 @@ LABEL org.opencontainers.image.source="https://github.com/orlyatomics/orly" \
 
 # Runtime .so set verified via ldd on orlyi/orlyc, plus what in-container
 # package compiles need: g++ (orlyc execs `g++ -I$ORLY_SRC_ROOT ...`) and
-# uuid-dev (generated code includes base/uuid.h -> <uuid/uuid.h>; the lib
-# alone is not enough -- verified by compiling a package in the container).
+# libabsl-dev (generated code includes managed_type.h -> <absl/container/flat_hash_map.h>; it
+# also pulls in the libabsl runtime libs orlyi needs) and uuid-dev (generated code includes
+# base/uuid.h -> <uuid/uuid.h>; the lib alone is not enough -- verified by compiling a package
+# in the container).
 # nodejs (no npm) runs the pre-built orly-repl.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       g++ uuid-dev libgmp10 libgmpxx4ldbl libaio1t64 libboost-system1.83.0 \
-      libreadline8t64 libsnappy1v5 libtcmalloc-minimal4t64 zlib1g nodejs \
+      libreadline8t64 libsnappy1v5 libtcmalloc-minimal4t64 libabsl-dev zlib1g nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/out_orly/release/orly/server/orlyi /usr/local/bin/orlyi

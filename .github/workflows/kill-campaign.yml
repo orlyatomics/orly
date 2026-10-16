@@ -57,7 +57,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential gcc g++ uuid-dev libgmp-dev libaio-dev \
-            libsnappy-dev libgoogle-perftools-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache \
+            libsnappy-dev libgoogle-perftools-dev libabsl-dev libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind ccache \
             elfutils
           pip3 install --break-system-packages --quiet websocket-client
 

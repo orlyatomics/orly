@@ -37,9 +37,10 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <absl/container/flat_hash_map.h>
 
 #include <base/assert_true.h>
 #include <base/hash.h>
@@ -85,7 +86,9 @@ namespace Orly {
       typedef std::tuple<TArgs...> TKey;
 
       public:
-      typedef std::unordered_map<TKey, TWeak> TTypeByKey;
+      /* Not node-stable: an insert can move every entry, so no reference or iterator into the map
+         may be held across a Get that could insert (see Get). */
+      typedef absl::flat_hash_map<TKey, TWeak, std::hash<TKey>> TTypeByKey;
 
       void Accept(const TType::TVisitor &visitor) const {
         visitor(Base::AssertTrue(dynamic_cast<const TFinal*>(this)));
@@ -112,12 +115,17 @@ namespace Orly {
           }
         }
         TExclusive lock;
-        TWeak &weak = Store->TypeByKey[std::move(key)];
-        TPtr strong = weak.lock();
-        if (!strong) {
-          strong = TPtr(new TFinal(std::forward<TCompatArgs>(args)...), TInternedType::DeleteImpl);
-          weak = strong;
+        auto iter = Store->TypeByKey.find(key);
+        if (iter != Store->TypeByKey.end()) {
+          if (TPtr strong = iter->second.lock()) {
+            return strong->AsType();
+          }
         }
+        /* No iterator or reference into the map is held across the constructor: it may run code
+           that interns into this family, and an insert rehashes. Re-insert by key afterwards
+           (this also replaces an expired entry). */
+        TPtr strong(new TFinal(std::forward<TCompatArgs>(args)...), TInternedType::DeleteImpl);
+        Store->TypeByKey.insert_or_assign(std::move(key), TWeak(strong));
         return strong->AsType();
       }
 
