@@ -1203,7 +1203,7 @@ namespace Orly {
          threads. */
       std::atomic<bool> ShutdownCalled{false};
 
-      bool InitFinished;
+      bool InitFinished = false;
       std::condition_variable InitCond;
       std::mutex InitMutex;
 
