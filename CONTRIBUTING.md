@@ -93,6 +93,35 @@ safety rather than churn for its own sake:
 - **Keep sanitizers green**: All changes must pass AddressSanitizer (ASan) and
   ThreadSanitizer (TSan) suites without warnings or regressions.
 
+## Code style
+
+The house style is implicit in the existing code; [`.clang-format`](.clang-format)
+encodes it, and [`.clang-tidy`](.clang-tidy) is a deliberately narrow set of
+checks for new code.
+
+- **Names**: types are `T`-prefixed (`TSession`); members, methods and
+  functions are `PascalCase` (`GetFd()`, `Entries`); locals and parameters are
+  `snake_case`. Pointers and references bind to the name (`TFoo &x`).
+- **Layout**: two-space indent, namespace contents indented, access specifiers
+  at the member indent, opening brace on the same line, `#pragma once`.
+- **Comments**: `/* ... */`, not `//`, for documentation comments.
+- **Errors**: exceptions are the error model -- `THROW` / `DEFINE_ERROR`, not
+  error codes.
+- **Constructors**: single-argument constructors are `explicit`.
+- **Ownership**: `std::unique_ptr` / `std::make_unique` in new code; no owning
+  raw pointers.
+- **Namespaces**: no `using namespace` in headers (it is routine in `.cc`
+  files).
+
+The formatter and linter apply to **changed lines only**. There is no mass
+reformat: it would wreck `git blame`, and the repo-wide churn would drown real
+changes. Format just your own edits with
+`git clang-format-18 origin/master` (clang-format 18, the version on Ubuntu
+24.04). CI runs both tools over the lines a PR touches in an advisory job,
+`style-advisory`, which annotates findings but never fails the PR. Wrap code
+that is deliberately aligned (tables, generated-looking blocks) in
+`// clang-format off` / `// clang-format on`.
+
 ## Pull requests
 
 Keep a PR to one concern. CI (`.github/workflows/ci.yml`) must be green:

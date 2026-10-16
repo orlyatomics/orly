@@ -1,0 +1,58 @@
+# Narrow clang-tidy profile for NEW and CHANGED code (see CONTRIBUTING.md,
+# "Code style"). CI runs it only over changed lines, advisory, via
+# clang-tidy-diff -- the 2014-era bulk of the tree is deliberately not
+# expected to be clean. Pinned to what clang-tidy-18 (ubuntu-24.04) supports.
+#
+# Enabled:
+#   bugprone-*                 real-bug detectors; the noisy members are
+#                              excluded below.
+#   google-explicit-constructor  single-arg constructors must be explicit.
+#   google-default-arguments     no default args on virtual functions.
+#   google-runtime-int           use int32_t/int64_t, not short/long/long long.
+#   google-readability-casting   no C-style casts; use static_cast etc.
+#   google-global-names-in-headers  the enforceable form of "no `using
+#                              namespace` in headers" (see below).
+#   modernize-make-unique        std::make_unique over `unique_ptr(new T)`.
+#   modernize-use-nullptr        nullptr, not NULL / 0.
+#   cppcoreguidelines-owning-memory  new code owns via unique_ptr/shared_ptr.
+#
+# Excluded, with reasons:
+#   google-build-using-namespace  `using namespace X;` in .cc files is
+#                              pervasive (~2,000) and deliberate house style,
+#                              so it would fire on every changed .cc.
+#                              google-global-names-in-headers covers the rule
+#                              that matters (no using-declarations/directives
+#                              at namespace scope in headers).
+#   bugprone-easily-swappable-parameters  fires on nearly every function with
+#                              two same-typed parameters (10 hits in 15 sampled
+#                              files); no signal.
+#   bugprone-narrowing-conversions  size_t/int/uint32_t mixing is pervasive
+#                              and mostly intentional; -Wall covers the
+#                              dangerous cases.
+#   bugprone-exception-escape    exceptions (THROW / DEFINE_ERROR) are the
+#                              error model, and destructors / noexcept
+#                              functions routinely call throwing helpers.
+#   bugprone-signed-bitwise      hash and bit-twiddling code is pervasive and
+#                              deliberate.
+#   bugprone-macro-parentheses   the codebase leans on token-pasting macros
+#                              (NO_COPY, DEFINE_ERROR, EMPTY_STATE, ...) whose
+#                              arguments cannot be parenthesised.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-exception-escape,
+  -bugprone-signed-bitwise,
+  -bugprone-macro-parentheses,
+  google-explicit-constructor,
+  google-default-arguments,
+  google-runtime-int,
+  google-readability-casting,
+  google-global-names-in-headers,
+  modernize-make-unique,
+  modernize-use-nullptr,
+  cppcoreguidelines-owning-memory
+WarningsAsErrors: ''
+# Only the repo's own code; never third_party/ or generated output.
+HeaderFilterRegex: '^(base|orly|jhm)/'
