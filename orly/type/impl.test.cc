@@ -117,6 +117,37 @@ FIXTURE(SingletonsAreUnowned) {
   }
 }
 
+/* Interned types looked up, built and freed on several threads at once: every Get of a key
+   must give the one impl live for it, including while frees that found the lock busy are
+   queued and done later. */
+FIXTURE(InternAcrossThreads) {
+  TTypeCzar type_czar;
+  TType held = TList::Get(TInt::Get());
+  vector<thread> threads;
+  for (int t = 0; t < 4; ++t) {
+    threads.emplace_back([&held, t] {
+      for (int i = 0; i < 20000; ++i) {
+        /* Each thread churns its own keys and two shared ones: built, matched, then freed. */
+        TType mine = TOpt::Get(TList::Get(TSet::Get(TInt::Get())));
+        TType shared = TObj::Get({{"a", TList::Get(TInt::Get())}, {"b", TOpt::Get(TStr::Get())}});
+        TType nested = TList::Get(TList::Get(t % 2 ? TInt::Get() : TStr::Get()));
+        if (TList::Get(TInt::Get()) != held
+            || TOpt::Get(TList::Get(TSet::Get(TInt::Get()))) != mine
+            || TObj::Get({{"a", TList::Get(TInt::Get())}, {"b", TOpt::Get(TStr::Get())}}) != shared
+            || TList::Get(TList::Get(t % 2 ? TInt::Get() : TStr::Get())) != nested) {
+          abort();
+        }
+      }
+    });
+  }
+  for (auto &th: threads) {
+    th.join();
+  }
+  TType a = TObj::Get({{"a", TList::Get(TInt::Get())}, {"b", TOpt::Get(TStr::Get())}});
+  EXPECT_EQ(a, TObj::Get({{"a", TList::Get(TInt::Get())}, {"b", TOpt::Get(TStr::Get())}}));
+  EXPECT_EQ(held, TList::Get(TInt::Get()));
+}
+
 FIXTURE(Mangling) {
   TTypeCzar type_czar;
   //Basic Types

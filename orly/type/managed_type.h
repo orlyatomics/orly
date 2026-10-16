@@ -8,6 +8,15 @@
    `IMPL_INTERNED_TYPE` / `IMPL_SINGLETON_TYPE` macros emit the static
    storage definitions in each leaf's `.cc` file.
 
+   Lookups take the interner's lock shared, so the fast runners can find
+   existing types in parallel (#946 follow-up: the old recursive mutex was
+   ~8% futex time across three runners). Inserting and freeing take it
+   exclusive. A thread already holding it exclusive (a constructor or a
+   free that reaches the same family again) re-enters without locking.
+   A free that cannot get the lock does not wait -- two families freeing
+   into each other could deadlock -- so it is queued and done by the next
+   thread that can take the lock.
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,19 +33,31 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <base/assert_true.h>
 #include <base/hash.h>
 #include <orly/type/impl.h>
 
+/* Same as ORLY_FIBER_NO_IPA in <orly/indy/fiber/fiber.h>, which this layer does not include: an
+   opaque call, so the thread pointer is re-read at every access (#554). */
+#if defined(__GNUC__) && !defined(__clang__)
+#define ORLY_TYPE_NO_IPA __attribute__((noipa))
+#else
+#define ORLY_TYPE_NO_IPA __attribute__((noinline))
+#endif
+
 #define IMPL_INTERNED_TYPE(TFinal, TArgs...) \
     template <> \
-    std::recursive_mutex *::Orly::Type::TInternedType<TFinal, TArgs>::Mutex = nullptr; \
+    typename ::Orly::Type::TInternedType<TFinal, TArgs>::TStore *::Orly::Type::TInternedType<TFinal, TArgs>::Store = nullptr; \
     template <> \
-    typename ::Orly::Type::TInternedType<TFinal, TArgs>::TTypeByKey *::Orly::Type::TInternedType<TFinal, TArgs>::TypeByKey = nullptr;
+    thread_local int ::Orly::Type::TInternedType<TFinal, TArgs>::ExclusiveDepth = 0;
 
 #define IMPL_UNARY_TYPE(TFinal) \
     IMPL_INTERNED_TYPE(TFinal, ::Orly::Type::TType) \
@@ -74,10 +95,24 @@ namespace Orly {
 
       template <typename... TCompatArgs>
       static TType Get(TCompatArgs &&... args) {
-        assert(Mutex);  // If this fails, you likely don't have an instance of TTypeCzar.
-        assert(TypeByKey);  // If this fails, you likely don't have an instance of TTypeCzar.
-        std::lock_guard<std::recursive_mutex> lock(*Mutex);
-        TWeak &weak = (*TypeByKey)[TKey(args...)];
+        assert(Store);  // If this fails, you likely don't have an instance of TTypeCzar.
+        TKey key(args...);
+        if (!GetExclusiveDepth()) {
+          {
+            std::shared_lock<std::shared_mutex> lock(Store->Mutex);
+            auto iter = Store->TypeByKey.find(key);
+            if (iter != Store->TypeByKey.end()) {
+              if (TPtr strong = iter->second.lock()) {
+                return strong->AsType();
+              }
+            }
+          }
+          if (Store->NumPending.load(std::memory_order_relaxed)) {
+            TryFreePending();
+          }
+        }
+        TExclusive lock;
+        TWeak &weak = Store->TypeByKey[std::move(key)];
         TPtr strong = weak.lock();
         if (!strong) {
           strong = TPtr(new TFinal(std::forward<TCompatArgs>(args)...), TInternedType::DeleteImpl);
@@ -89,37 +124,29 @@ namespace Orly {
       template <typename... TCompatArgs>
       TInternedType(TCompatArgs &&...key) : Key(std::forward<TCompatArgs>(key)...) {}
 
-      ~TInternedType() {
-        if (TypeByKey) {
-          TypeByKey->erase(Key);
-        }
-      }
+      ~TInternedType() {}
 
+      /* The shared_ptr deleter. Frees under the exclusive lock, or queues the free when the lock
+         is busy (see the header comment). */
       static void DeleteImpl(TInternedType *impl) {
         assert(impl);
-        if (Mutex) {
-          if (Mutex->try_lock()) {
-            if (impl->CanDeleteImpl()) {
-              delete impl;
-            }
-            Mutex->unlock();
-          }
-        } else {
+        if (!Store) {
           delete impl;
+          return;
         }
-      }
-
-      bool CanDeleteImpl() const {
-
-        /* quick fix to get indy running :s */
-        auto res = TypeByKey->find(Key);
-        return res != TypeByKey->end() ? res->second.expired() : true;
-
-        #if 0
-        TWeak &result = TypeByKey->find(Key)->second;
-        TPtr ptr = result.lock();
-        return ptr == 0;
-        #endif
+        if (GetExclusiveDepth()) {
+          TExclusive lock;
+          Free(impl);
+          return;
+        }
+        if (Store->Mutex.try_lock()) {
+          TExclusive lock(std::adopt_lock);
+          Free(impl);
+          return;
+        }
+        std::lock_guard<std::mutex> lock(Store->PendingMutex);
+        Store->Pending.push_back(impl);
+        Store->NumPending.fetch_add(1, std::memory_order_relaxed);
       }
 
       const TKey &GetKey() const {
@@ -128,26 +155,108 @@ namespace Orly {
 
       private:
 
-      static void New() {
-        assert(!Mutex);
-        assert(!TypeByKey);
-        Mutex = new std::recursive_mutex();
-        TypeByKey = new TTypeByKey();
-      }
-
-      static void Delete() {
-        assert(TypeByKey);
-        assert(Mutex);
-        delete TypeByKey;
-        delete Mutex;
-        TypeByKey = nullptr;
-        Mutex = nullptr;
-      }
-
       /* Interner storage */
-      static std::recursive_mutex *Mutex;
+      struct TStore {
+        std::shared_mutex Mutex;
+        TTypeByKey TypeByKey;
+        /* Frees that found Mutex busy. */
+        std::mutex PendingMutex;
+        std::vector<TInternedType *> Pending;
+        std::atomic<size_t> NumPending{0};
+      };
 
-      static TTypeByKey *TypeByKey;
+      /* Holds Mutex exclusive for this thread, re-entrantly. On the outermost release it first
+         does any queued frees, which can queue more (a freed key releases its element types). */
+      class TExclusive {
+        public:
+        TExclusive() {
+          int depth = GetExclusiveDepth();
+          if (!depth) {
+            Store->Mutex.lock();
+          }
+          SetExclusiveDepth(depth + 1);
+        }
+        explicit TExclusive(std::adopt_lock_t) {
+          assert(!GetExclusiveDepth());
+          SetExclusiveDepth(1);
+        }
+        TExclusive(const TExclusive &) = delete;
+        TExclusive &operator=(const TExclusive &) = delete;
+        ~TExclusive() {
+          if (GetExclusiveDepth() == 1) {
+            FreePending();
+          }
+          int depth = GetExclusiveDepth() - 1;
+          SetExclusiveDepth(depth);
+          if (!depth) {
+            Store->Mutex.unlock();
+          }
+        }
+      };
+
+      /* Call with Mutex held exclusive. Drops impl's map entry only if the entry is still impl's:
+         a queued free can run after Get has interned a new impl under the same key, and erasing
+         that entry would let a second impl for the key be interned beside it. */
+      static void Free(TInternedType *impl) {
+        auto iter = Store->TypeByKey.find(impl->Key);
+        if (iter != Store->TypeByKey.end()) {
+          auto self = impl->weak_from_this();
+          if (!iter->second.owner_before(self) && !self.owner_before(iter->second)) {
+            Store->TypeByKey.erase(iter);
+          }
+        }
+        delete impl;
+      }
+
+      /* Call with Mutex held exclusive. */
+      static void FreePending() {
+        while (Store->NumPending.load(std::memory_order_relaxed)) {
+          std::vector<TInternedType *> pending;
+          {
+            std::lock_guard<std::mutex> lock(Store->PendingMutex);
+            pending.swap(Store->Pending);
+            Store->NumPending.store(0, std::memory_order_relaxed);
+          }
+          for (TInternedType *impl : pending) {
+            Free(impl);
+          }
+        }
+      }
+
+      static void TryFreePending() {
+        if (Store->Mutex.try_lock()) {
+          TExclusive lock(std::adopt_lock);
+        }
+      }
+
+      static void New() {
+        assert(!Store);
+        Store = new TStore();
+      }
+
+      /* Queued frees still pending here are dropped, as a busy free always was before. */
+      static void Delete() {
+        assert(Store);
+        TStore *store = std::exchange(Store, nullptr);
+        delete store;
+      }
+
+      static TStore *Store;
+
+      /* How many TExclusive this thread holds on Store->Mutex. Fibers migrate OS threads, and a
+         bare thread-local read inlined into a caller that switched fibers can use the thread
+         pointer from before the switch (#554) -- here, another thread's depth, so the lock would be
+         skipped. Touch it only through these opaque accessors, as TFiberSafeLocal does. The lock
+         itself is never held across a fiber switch, so one read per check is enough. */
+      ORLY_TYPE_NO_IPA static int GetExclusiveDepth() {
+        return ExclusiveDepth;
+      }
+
+      ORLY_TYPE_NO_IPA static void SetExclusiveDepth(int depth) {
+        ExclusiveDepth = depth;
+      }
+
+      static thread_local int ExclusiveDepth;
 
       TKey Key;
 
