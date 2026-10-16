@@ -39,6 +39,9 @@
       "+flags": [
         "-O3",
         "-flto=auto"
+      ],
+      "+libs": [
+        "-ltcmalloc_minimal"
       ]
     }
   }
