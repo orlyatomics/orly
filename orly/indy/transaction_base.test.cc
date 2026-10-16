@@ -1569,19 +1569,26 @@ FIXTURE(Issue891ReplicatedWriteWaitsForWalRoom) {
     TWal wal(&device, config);
     auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
     manager->SetWal(&wal);
-    /* Fill the ring until not even a one-byte record fits. */
+    /* Fill the ring until not even a one-byte record fits.  Admission is conservative while records
+       are pending (it allows for the biggest group the leader might build from them), so once they
+       are durable a little room can come back; top up until a pass after they are durable takes
+       nothing. */
     uint64_t last = 0UL;
-    for (size_t size : {2000UL, 200UL, 1UL}) {
-      const std::string payload(size, 'X');
-      for (;;) {
-        try {
-          last = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
-        } catch (const TWalRingFull &) {
-          break;
+    for (bool took = true; took;) {
+      took = false;
+      for (size_t size : {2000UL, 200UL, 1UL}) {
+        const std::string payload(size, 'X');
+        for (;;) {
+          try {
+            last = wal.Append(TWalRecordType::Txn, payload.data(), payload.size());
+            took = true;
+          } catch (const TWalRingFull &) {
+            break;
+          }
         }
       }
+      EXPECT_TRUE(wal.WaitForDurable(last, 5000ms));
     }
-    EXPECT_TRUE(wal.WaitForDurable(last, 5000ms));
     const auto reserve_one = [&wal] { wal.Reserve(1UL, TWal::TRoom::All); };
     EXPECT_THROW_FUNC(TWalRingFull, reserve_one);
     const TUuid idx_id(TUuid::Twister);
