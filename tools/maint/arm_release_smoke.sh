@@ -7,7 +7,7 @@
 #   #554  orlyc's embedded server wedged at teardown   -> step 1
 #   #578  orlyi segfaulted right after the first write  -> step 2
 #
-#   1. Compile two packages with the release orlyc, each under a deadline:
+#   1. Compile packages with the release orlyc, each under a deadline:
 #      one with test{} blocks, so orlyc stands up and tears down a whole
 #      mem-sim server to run them, which is what hung (a package without tests
 #      gets no server, #678); and the sample package step 2 installs.
@@ -75,6 +75,13 @@ compile_under_deadline() {
 }
 compile_under_deadline "$TESTED_PKG"
 compile_under_deadline "$PKG"
+# The Docker image build compiles these with the release orlyc. A server-init race (TServer's
+# InitFinished read before it was set) crashed it on roughly a third of runs, so one pass proves
+# little: repeat the package that tripped it.
+for _ in 1 2 3 4 5 6; do
+  compile_under_deadline "$REPO_ROOT/examples/agent-swarm/graph.orly"
+done
+compile_under_deadline "$REPO_ROOT/examples/prediction-market/market.orly"
 mkdir "$WORK/packages"
 touch "$WORK/packages/__orly__"
 cp "$WORK/pkgout/sample.1.so" "$WORK/packages/"
