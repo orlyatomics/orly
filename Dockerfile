@@ -16,7 +16,7 @@
 FROM ubuntu:24.04 AS build
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev \
+      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev libabsl-dev \
       libreadline-dev libboost-system-dev zlib1g-dev bison flex python3 \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
@@ -84,7 +84,7 @@ LABEL org.opencontainers.image.source="https://github.com/orlyatomics/orly" \
 # nodejs (no npm) runs the pre-built orly-repl.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       g++ uuid-dev libgmp10 libgmpxx4ldbl libaio1t64 libboost-system1.83.0 \
-      libreadline8t64 libsnappy1v5 libtcmalloc-minimal4t64 zlib1g nodejs \
+      libreadline8t64 libsnappy1v5 libtcmalloc-minimal4t64 libabsl20220623t64 zlib1g nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/out_orly/release/orly/server/orlyi /usr/local/bin/orlyi

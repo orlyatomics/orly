@@ -6,7 +6,7 @@
 FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev \
+      build-essential gcc g++ uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev libabsl-dev \
       libreadline-dev libboost-system-dev zlib1g-dev bison flex valgrind \
       ccache python3 python3-websocket nodejs git \
     && rm -rf /var/lib/apt/lists/*
