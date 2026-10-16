@@ -24,7 +24,10 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <map>
+#include <numeric>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -96,16 +99,24 @@ FIXTURE(FreeThenReintern) {
   }
 }
 
-/* Timed hit path: not an assertion, only printed. ORLY_TYPE_BENCH_RUNS (default 1) repeats it. */
+/* Timed hit path: not an assertion, only printed. ORLY_TYPE_BENCH_RUNS (default 1) repeats it and
+   ORLY_TYPE_BENCH_N (default 1000) sets how many distinct keys the lookups cycle through. */
 FIXTURE(TimedHitPath) {
   TTypeCzar type_czar;
-  const size_t n = 1000;
-  const size_t passes = 2000;
+  const char *n_env = getenv("ORLY_TYPE_BENCH_N");
+  const size_t n = n_env ? static_cast<size_t>(atoll(n_env)) : 1000;
+  const size_t passes = 2000000 / n;
   vector<TType> objs = MakeObjs(n);
   vector<TType> lists;
   for (const TType &o : objs) {
     lists.push_back(TList::Get(o));
   }
+  /* Visit the keys in a shuffled order: the impls are allocated in sequence, so their pointer-derived
+     hashes are too, and walking them in allocation order would flatter any table that keeps
+     neighbouring hashes in neighbouring slots. */
+  vector<size_t> order(n);
+  iota(order.begin(), order.end(), 0);
+  shuffle(order.begin(), order.end(), mt19937_64(1));
   const char *env = getenv("ORLY_TYPE_BENCH_RUNS");
   int runs = env ? atoi(env) : 1;
   for (int run = 0; run < runs; ++run) {
@@ -113,7 +124,7 @@ FIXTURE(TimedHitPath) {
     size_t sum = 0;
     for (size_t p = 0; p < passes; ++p) {
       for (size_t i = 0; i < n; ++i) {
-        sum += TList::Get(objs[i]).GetHash();
+        sum += TList::Get(objs[order[i]]).GetHash();
       }
     }
     auto ns = chrono::duration_cast<chrono::nanoseconds>(chrono::steady_clock::now() - start).count();
