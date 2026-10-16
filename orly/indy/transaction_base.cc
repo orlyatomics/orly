@@ -43,17 +43,18 @@ using namespace Orly::Indy::L1;
    one we only ever ask without waiting, and yield between asks with a short, growing pause so the
    loop doesn't spin. */
 static Orly::Indy::Disk::TWalReservation ReserveWalRoom(
-    Orly::Indy::Disk::TWal &wal, size_t size, Orly::Indy::Disk::TWal::TRoom room, const std::function<bool ()> &give_up) {
+    Orly::Indy::Disk::TWal &wal, size_t size, Orly::Indy::Disk::TWal::TRoom room, const std::function<bool ()> &give_up,
+    size_t credit, const std::vector<Orly::Indy::Disk::TPromotionDebt> &owes) {
   using Orly::Indy::Disk::TWalRingFull;
   if (!give_up) {
-    return wal.Reserve(size, room);
+    return wal.Reserve(size, room, chrono::milliseconds(0), credit, owes);
   }
   const bool on_fiber = Orly::Indy::Fiber::TFrame::LocalFrame != nullptr;
   constexpr auto max_pause = chrono::milliseconds(2);
   chrono::microseconds pause(50);
   for (uint64_t attempt = 1;; ++attempt) {
     try {
-      return wal.Reserve(size, room, on_fiber ? chrono::milliseconds(0) : chrono::milliseconds(100));
+      return wal.Reserve(size, room, on_fiber ? chrono::milliseconds(0) : chrono::milliseconds(100), credit, owes);
     } catch (const TWalRingFull &ex) {
       if (give_up()) {
         throw;
@@ -69,6 +70,22 @@ static Orly::Indy::Disk::TWalReservation ReserveWalRoom(
       pause = min<chrono::microseconds>(pause * 2, max_pause);
     }
   }
+}
+
+/* The promotions that will write a WAL record for an update pushed into `repo` on its way to a root
+   (#959): one for each step up from a safe repo.  Once it reaches a repo that isn't safe, no pin
+   holds the head for it, so later steps owe nothing. */
+static size_t CountPromotionsAhead(const Orly::Indy::L0::TManager::TRepo *repo) {
+  size_t levels = 0UL;
+  for (const auto *cur = repo; cur && cur->IsSafeRepo();) {
+    const auto &parent = cur->GetParentRepo();
+    if (!(parent && *parent)) {
+      break;
+    }
+    ++levels;
+    cur = parent->operator->();
+  }
+  return levels;
 }
 
 /* Test-only; empty in production. See header. */
@@ -369,7 +386,7 @@ void TTransaction::Prepare() {
           ++num_push;
           /* No parent: a data file of the repo's own is where the update ends up. */
           const auto &parent = pusher->Repo->GetParentRepo();
-          SafePushes.emplace_back(pusher->MyMutation, !(parent && *parent));
+          SafePushes.push_back(TSafePush{pusher->MyMutation, !(parent && *parent), CountPromotionsAhead(pusher->Repo.operator->())});
           /* Its persistence notification is set below, once the WAL room is reserved. */
           safe_pushers.push_back(pusher);
         }
@@ -476,7 +493,25 @@ void TTransaction::Prepare() {
     }
     std::string wire;
     recorder->CopyOut(wire);
-    WalReservation = ReserveWalRoom(*wal, wire.size(), WalRoom, WalGiveUp);
+    /* A promotion may spend the room kept for it, and its pushes owe room for the promotions still
+       ahead of them (#959). */
+    size_t credit = 0UL;
+    std::vector<Disk::TPromotionDebt> owes;
+    if (TWalRetention *retention = Manager->GetWalRetention()) {
+      std::vector<TWalRetention::TPop> pops;
+      pops.reserve(SafePops.size());
+      for (const auto &pop : SafePops) {
+        pops.push_back(TWalRetention::TPop{pop.first, pop.second});
+      }
+      credit = retention->GetPromotionCredit(pops);
+      const size_t debt_group_bytes = Disk::TWal::GetPromotionGroupBytes(wire.size());
+      for (const auto &push : SafePushes) {
+        if (push.Levels) {
+          owes.push_back(Disk::TPromotionDebt{debt_group_bytes, push.Levels});
+        }
+      }
+    }
+    WalReservation = ReserveWalRoom(*wal, wire.size(), WalRoom, WalGiveUp, credit, owes);
   }
   /* Only now that nothing above can refuse the transaction: a refused one leaves its updates as
      they were. */
@@ -588,8 +623,8 @@ TTransaction::~TTransaction() NO_THROW {
           pushes.reserve(SafePushes.size());
           for (const auto &push : SafePushes) {
             /* A push the repo refused has no sequence number; it isn't there to rebuild. */
-            if (push.first->GetSequenceNumber()) {
-              pushes.push_back(TWalRetention::TPush{push.first->GetRepoId(), *push.first->GetSequenceNumber(), push.second});
+            if (push.Mutation->GetSequenceNumber()) {
+              pushes.push_back(TWalRetention::TPush{push.Mutation->GetRepoId(), *push.Mutation->GetSequenceNumber(), push.IsRoot, push.Levels});
             }
           }
           std::vector<TWalRetention::TPop> pops;

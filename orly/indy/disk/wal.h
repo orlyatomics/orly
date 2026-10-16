@@ -265,6 +265,13 @@ namespace Orly {
 
       class TWal;
 
+      /* Room the ring owes the promotions an update has yet to go through (#959): one group of
+         GroupBytes (TWal::GetPromotionGroupBytes) for each of Levels promotions, up to the root. */
+      struct TPromotionDebt {
+        size_t GroupBytes = 0UL;
+        size_t Levels = 0UL;
+      };
+
       /* Room a TWal holds for one record that is not appended yet (#891): see TWal::Reserve.  Empty
          when default-constructed or once used or released.  Releases its room when destroyed, so it
          must not outlive its TWal. */
@@ -298,6 +305,9 @@ namespace Orly {
 
         /* What the room was charged as: see TWal::GetRecordGroupBytes. */
         size_t GroupBytes = 0UL;
+
+        /* The promotion room the record will leave owed (#959), held since Reserve. */
+        std::vector<TPromotionDebt> Owes;
 
       };  // TWalReservation
 
@@ -354,25 +364,59 @@ namespace Orly {
            it has started (a transaction reserves before it applies, and appends from its
            destructor).  It throws TWalRingFull if there is no room, after waiting up to `wait` for
            a checkpoint to make some; a fiber must not wait.  With TRoom::KeepHeadroom it throws
-           TWalRecordTooLarge, at once, for a record bigger than half the headroom. */
-        TWalReservation Reserve(size_t size, TRoom room, std::chrono::milliseconds wait = std::chrono::milliseconds(0));
+           TWalRecordTooLarge, at once, for a record bigger than half the headroom.
+
+           Promotion room (#959).  An update pushed into a safe child stays in the ring until it
+           reaches a root's data file, and it gets there only by being promoted, a record about as
+           big for each level.  If those promotions had to compete for room with everything else,
+           the ring could fill up to the record that pushed the update, and then nothing would
+           fit, the promotion included: the head could never move again.  So the ring keeps that
+           room for them.  A record that pushes into a safe child owes it (`owes`, held from
+           Reserve until the record is appended or the reservation released, then until the
+           retention repays it), and no record may take room the debt is owed, except a
+           promotion spending the room its own pops were owed (`credit`). */
+        TWalReservation Reserve(size_t size, TRoom room, std::chrono::milliseconds wait = std::chrono::milliseconds(0), size_t credit = 0UL,
+                                std::vector<TPromotionDebt> owes = std::vector<TPromotionDebt>());
+
+        /* What a record does to the promotion debt: the debts of the updates it popped, now repaid,
+           and those of the updates it pushed, now owed. */
+        struct TPromotionDebtChange {
+          std::vector<TPromotionDebt> Repaid;
+          std::vector<TPromotionDebt> Owed;
+        };
 
         /* Append a record. Returns assigned LSN. Thread-safe.  Throws TWalRingFull if there is no
-           room for it (with TRoom::All). */
-        uint64_t Append(TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U);
+           room for it (with TRoom::All, and the debt it would owe). */
+        uint64_t Append(TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U, const TPromotionDebtChange &debt = TPromotionDebtChange());
 
         /* Append a record into room reserved for it, which it uses up.  Never refused for room, so
-           long as the record is no bigger than the room. */
-        uint64_t Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U);
+           long as the record is no bigger than the room.  The debt the reservation held gives way
+           to `debt`, in the same step. */
+        uint64_t Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U,
+                        const TPromotionDebtChange &debt = TPromotionDebtChange());
+
+        /* Change the promotion debt without a record: an update gone with its repo, or the debts
+           recovery rebuilt, owed to the WAL recovery made. */
+        void ChangePromotionDebt(const TPromotionDebtChange &debt);
 
         /* The most a record of `size` body bytes can add to the group it goes in, in whole pages.
            A reservation is charged this and a page more, for the seal-only group that may have to
            follow it. */
         static size_t GetRecordGroupBytes(size_t size);
 
+        /* What one promotion of an update is owed, if the record that pushed it had `size` body
+           bytes: a reservation's charge for a record that big plus PromotionSlackBytes, for what a
+           promotion adds (its pop, its parent). */
+        static size_t GetPromotionGroupBytes(size_t size);
+
+        static constexpr size_t PromotionSlackBytes = 512UL;
+
         /* Ring bytes promised to records taken but not yet written, seals included.  For tests and
            status. */
         size_t GetOwedBytes() const;
+
+        /* Ring bytes owed to promotions not yet written.  For tests and status. */
+        size_t GetPromotionDebtBytes() const;
 
         /* Convenience: append and wait for durability. Returns assigned LSN. */
         uint64_t AppendAndWait(TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U);
@@ -472,7 +516,12 @@ namespace Orly {
         size_t MaxGroupLocked(size_t extra) const;
 
         /* Whether a record charged `group_bytes` fits the promise. */
-        bool AdmitsLocked(size_t group_bytes, TRoom room) const;
+        bool AdmitsLocked(size_t group_bytes, TRoom room, size_t credit = 0UL, size_t new_debt = 0UL, size_t new_debt_group = 0UL) const;
+
+        /* Owe or repay promotion room.  Repaying more than is owed (which the accounting never
+           should) is logged, and clamps at nothing owed. */
+        void OweLocked(const std::vector<TPromotionDebt> &debts);
+        void RepayLocked(const std::vector<TPromotionDebt> &debts);
 
         /* Throw TWalRingFull, for a record of `size` body bytes. */
         [[noreturn]] void ThrowRingFullLocked(size_t size, TRoom room) const;
@@ -544,6 +593,11 @@ namespace Orly {
            sum.  Each may be appended alone, so each may make a group of its own. */
         std::multiset<size_t> ReservedGroupBytes;
         size_t ReservedGroupBytesSum;
+
+        /* Promotion room owed (#959): see Reserve.  The group size of each debt, so the biggest
+           can be allowed for where a group wraps, and the sum of GroupBytes * Levels. */
+        std::multiset<size_t> DebtGroupBytes;
+        size_t DebtBytesSum = 0UL;
 
         /* The groups the leader will build from PendingRecords, as it builds them (in order, each
            taking records while they fit in MaxGroupPayload): each one's payload, the multiset of

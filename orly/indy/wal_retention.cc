@@ -35,12 +35,71 @@ TWalRetention::TWalRetention(L1::TManager *manager)
   assert(manager);
 }
 
-void TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vector<TPop> &pops) {
+vector<Disk::TPromotionDebt> TWalRetention::GetPopDebtsLocked(const vector<TPop> &pops) const {
+  vector<Disk::TPromotionDebt> debts;
+  for (const auto &pop : pops) {
+    auto iter = Repos.find(pop.RepoId);
+    if (iter == Repos.end()) {
+      continue;
+    }
+    const auto &pins = iter->second.Pins;
+    const auto end = pins.upper_bound(pop.Seq);
+    for (auto pin = pins.begin(); pin != end; ++pin) {
+      if (pin->second.Debt.Levels) {
+        debts.push_back(pin->second.Debt);
+      }
+    }
+  }
+  return debts;
+}
+
+void TWalRetention::OweWalLocked(Disk::TWal *wal) {
+  if (!wal || DebtWal == wal) {
+    return;
+  }
+  Disk::TWal::TPromotionDebtChange change;
+  for (const auto &repo : Repos) {
+    for (const auto &pin : repo.second.Pins) {
+      if (pin.second.Debt.Levels) {
+        change.Owed.push_back(pin.second.Debt);
+      }
+    }
+  }
+  wal->ChangePromotionDebt(change);
+  DebtWal = wal;
+  if (!change.Owed.empty()) {
+    syslog(LOG_INFO, "TWalRetention: %ld unpromoted updates are owed %ld KiB of promotion room", change.Owed.size(), wal->GetPromotionDebtBytes() >> 10);
+  }
+}
+
+void TWalRetention::RepayDroppedLocked(vector<Disk::TPromotionDebt> dropped, size_t already_repaid) {
+  assert(already_repaid <= dropped.size());
+  if (!DebtWal || dropped.size() <= already_repaid) {
+    return;
+  }
+  dropped.erase(dropped.begin(), dropped.begin() + static_cast<ptrdiff_t>(already_repaid));
+  Disk::TWal::TPromotionDebtChange change;
+  change.Repaid = std::move(dropped);
+  DebtWal->ChangePromotionDebt(change);
+}
+
+size_t TWalRetention::GetPromotionCredit(const vector<TPop> &pops) {
+  lock_guard<mutex> lock(Mutex);
+  OweWalLocked(Manager->GetWal());
+  size_t credit = 0UL;
+  for (const auto &debt : GetPopDebtsLocked(pops)) {
+    credit += debt.GroupBytes * debt.Levels;
+  }
+  return credit;
+}
+
+vector<Disk::TPromotionDebt> TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vector<TPop> &pops, size_t debt_group_bytes) {
+  vector<Disk::TPromotionDebt> dropped;
   /* LSNs start at 1; a pin at 0 would hold the head before the ring's first group for good. */
   assert(lsn);
   if (!lsn) {
     syslog(LOG_ERR, "TWalRetention: refusing to pin LSN 0");
-    return;
+    return dropped;
   }
   /* A promotion pops updates out of a child and pushes them into its parent in one record.  The
      child's own records are what rebuild the child, so whatever the child needed for them, the
@@ -55,6 +114,9 @@ void TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vect
     const auto end = pins.upper_bound(pop.Seq);
     for (auto pin = pins.begin(); pin != end; ++pin) {
       carried = carried ? min(*carried, pin->second.Lsn) : pin->second.Lsn;
+      if (pin->second.Debt.Levels) {
+        dropped.push_back(pin->second.Debt);
+      }
     }
     pins.erase(pins.begin(), end);
     if (pins.empty()) {
@@ -64,18 +126,37 @@ void TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vect
   for (const auto &push : pushes) {
     auto &repo = Repos[push.RepoId];
     repo.IsRoot = push.IsRoot;
-    repo.Pins[push.Seq] = TPin{carried ? min(lsn, *carried) : lsn, lsn};
+    const Disk::TPromotionDebt debt{push.Levels ? debt_group_bytes : 0UL, push.Levels};
+    auto [pin, is_new] = repo.Pins.try_emplace(push.Seq, TPin{carried ? min(lsn, *carried) : lsn, lsn, debt});
+    if (!is_new) {
+      if (pin->second.Debt.Levels) {
+        dropped.push_back(pin->second.Debt);
+      }
+      pin->second = TPin{carried ? min(lsn, *carried) : lsn, lsn, debt};
+    }
   }
+  return dropped;
 }
 
 uint64_t TWalRetention::AppendTxn(const string &wire, const vector<TPush> &pushes, const vector<TPop> &pops, Disk::TWalReservation *reservation) {
   Disk::TWal *wal = Manager->GetWal();
   assert(wal);
   lock_guard<mutex> lock(Mutex);
+  OweWalLocked(wal);
+  /* The pops' pins are the ones PinTxn drops, since nothing changes the pins between here and there
+     with Mutex held; so the record repays exactly the room they were owed. */
+  const size_t debt_group_bytes = Disk::TWal::GetPromotionGroupBytes(wire.size());
+  Disk::TWal::TPromotionDebtChange debt;
+  debt.Repaid = GetPopDebtsLocked(pops);
+  for (const auto &push : pushes) {
+    if (push.Levels) {
+      debt.Owed.push_back(Disk::TPromotionDebt{debt_group_bytes, push.Levels});
+    }
+  }
   const uint64_t lsn = (reservation && *reservation)
-      ? wal->Append(*reservation, Disk::TWalRecordType::Txn, wire.data(), wire.size())
-      : wal->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
-  PinTxn(lsn, pushes, pops);
+      ? wal->Append(*reservation, Disk::TWalRecordType::Txn, wire.data(), wire.size(), 0U, debt)
+      : wal->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size(), 0U, debt);
+  RepayDroppedLocked(PinTxn(lsn, pushes, pops, debt_group_bytes), debt.Repaid.size());
   return lsn;
 }
 
@@ -97,15 +178,22 @@ void TWalRetention::BeginReplay() {
   ReplayLsn = 0UL;
 }
 
-void TWalRetention::SetReplayLsn(uint64_t lsn) {
+void TWalRetention::SetReplayLsn(uint64_t lsn, size_t record_bytes) {
   lock_guard<mutex> lock(Mutex);
   ReplayLsn = lsn;
+  ReplayRecordBytes = record_bytes;
+}
+
+void TWalRetention::NoteWalAttached() {
+  lock_guard<mutex> lock(Mutex);
+  OweWalLocked(Manager->GetWal());
 }
 
 void TWalRetention::EndReplay() {
   lock_guard<mutex> lock(Mutex);
   Replaying = false;
   ReplayLsn = 0UL;
+  ReplayRecordBytes = 0UL;
 }
 
 bool TWalRetention::NoteReplayedTxn(const vector<TPush> &pushes, const vector<TPop> &pops) {
@@ -115,7 +203,7 @@ bool TWalRetention::NoteReplayedTxn(const vector<TPush> &pushes, const vector<TP
   if (!Replaying || !ReplayLsn) {
     return false;
   }
-  PinTxn(ReplayLsn, pushes, pops);
+  RepayDroppedLocked(PinTxn(ReplayLsn, pushes, pops, Disk::TWal::GetPromotionGroupBytes(ReplayRecordBytes)), 0UL);
   return true;
 }
 
@@ -157,7 +245,17 @@ void TWalRetention::OnRootFlushed(const Base::TUuid &root_id, TSequenceNumber lo
     auto iter = Repos.find(root_id);
     if (iter != Repos.end()) {
       auto &pins = iter->second.Pins;
-      pins.erase(pins.lower_bound(low_seq), pins.upper_bound(high_seq));
+      const auto begin = pins.lower_bound(low_seq), end = pins.upper_bound(high_seq);
+      vector<Disk::TPromotionDebt> dropped;
+      for (auto pin = begin; pin != end; ++pin) {
+        if (pin->second.Debt.Levels) {
+          dropped.push_back(pin->second.Debt);
+        }
+      }
+      pins.erase(begin, end);
+      /* A root's updates have no promotions ahead, so this repays nothing unless a repo stopped
+         being a root's child. */
+      RepayDroppedLocked(std::move(dropped), 0UL);
       if (pins.empty()) {
         Repos.erase(iter);
       }
@@ -214,9 +312,21 @@ void TWalRetention::DropDeadPins() {
   /* A repo that has gone takes its unpromoted updates with it, and nothing creates a repo again
      under an old id, so its pins can't be needed. */
   lock_guard<mutex> lock(Mutex);
+  vector<Disk::TPromotionDebt> dropped;
   for (const auto &id : dead_repos) {
-    Repos.erase(id);
+    auto iter = Repos.find(id);
+    if (iter == Repos.end()) {
+      continue;
+    }
+    for (const auto &pin : iter->second.Pins) {
+      if (pin.second.Debt.Levels) {
+        dropped.push_back(pin.second.Debt);
+      }
+    }
+    Repos.erase(iter);
   }
+  /* Their promotions will never come, so neither does the room they were owed. */
+  RepayDroppedLocked(std::move(dropped), 0UL);
   for (const auto &id : dead_povs) {
     Povs.erase(id);
   }

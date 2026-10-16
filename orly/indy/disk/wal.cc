@@ -223,7 +223,7 @@ void TWal::Stop() {
 }
 
 TWalReservation::TWalReservation(TWalReservation &&that) noexcept
-    : Wal(that.Wal), Size(that.Size), GroupBytes(that.GroupBytes) {
+    : Wal(that.Wal), Size(that.Size), GroupBytes(that.GroupBytes), Owes(std::move(that.Owes)) {
   that.Wal = nullptr;
 }
 
@@ -233,6 +233,7 @@ TWalReservation &TWalReservation::operator=(TWalReservation &&that) noexcept {
     Wal = that.Wal;
     Size = that.Size;
     GroupBytes = that.GroupBytes;
+    Owes = std::move(that.Owes);
     that.Wal = nullptr;
   }
   return *this;
@@ -247,6 +248,29 @@ void TWalReservation::Release() {
 
 size_t TWal::GetRecordGroupBytes(size_t size) {
   return AlignToWal(sizeof(TGroupHeader) + sizeof(TRecordHeader) + size);
+}
+
+size_t TWal::GetPromotionGroupBytes(size_t size) {
+  return GetRecordGroupBytes(size + PromotionSlackBytes) + WalAlignment;
+}
+
+/* The room a set of promotion debts is owed, and the biggest group one of them may need. */
+static size_t SumDebtBytes(const std::vector<TPromotionDebt> &debts) {
+  size_t sum = 0UL;
+  for (const auto &debt : debts) {
+    sum += debt.GroupBytes * debt.Levels;
+  }
+  return sum;
+}
+
+static size_t MaxDebtGroupBytes(const std::vector<TPromotionDebt> &debts) {
+  size_t biggest = 0UL;
+  for (const auto &debt : debts) {
+    if (debt.Levels) {
+      biggest = std::max(biggest, debt.GroupBytes);
+    }
+  }
+  return biggest;
 }
 
 /* Why the promise holds (#891).  Owed (OwedBytesLocked) is what the records taken but not written
@@ -297,9 +321,21 @@ size_t TWal::UsableBytesLocked(size_t max_group) const {
   return 0UL;
 }
 
-bool TWal::AdmitsLocked(size_t group_bytes, TRoom room) const {
-  const size_t needed = OwedBytesLocked() + group_bytes + WalAlignment;
-  const size_t usable = UsableBytesLocked(MaxGroupLocked(group_bytes));
+/* Promotion room (#959) is promised the same way, as though the promotions were records already
+   taken: Owed and the debt together fit within Usable, so long as the head stands still, and a
+   record may be admitted only if that stays true once it is in.  A promotion may count the debt its
+   pops repay as free: that room was being kept for it.  The record and whatever its pushes owe at
+   the next level up then take no more than that (GetPromotionGroupBytes leaves the slack for it),
+   so the promise still holds once the retention repays the pops.  The groups the debt is owed may
+   be bigger than any taken yet, so where a group wraps, allow for the biggest of them too. */
+bool TWal::AdmitsLocked(size_t group_bytes, TRoom room, size_t credit, size_t new_debt, size_t new_debt_group) const {
+  const size_t debt = DebtBytesSum - std::min(credit, DebtBytesSum) + new_debt;
+  const size_t needed = OwedBytesLocked() + group_bytes + WalAlignment + debt;
+  size_t max_group = std::max(MaxGroupLocked(group_bytes), new_debt_group);
+  if (!DebtGroupBytes.empty()) {
+    max_group = std::max(max_group, *DebtGroupBytes.rbegin());
+  }
+  const size_t usable = UsableBytesLocked(max_group);
   if (room == TRoom::KeepHeadroom) {
     return usable >= HeadroomBytes && needed <= usable - HeadroomBytes;
   }
@@ -313,8 +349,8 @@ void TWal::ThrowRingFullLocked(size_t size, TRoom room) const {
   const size_t usable = UsableBytesLocked(MaxGroupLocked(GetRecordGroupBytes(size)));
   /* LOG_ERR, not WARNING: the default mask drops warnings.  The 1st, 2nd, 4th, ... */
   if ((n & (n - 1UL)) == 0UL) {
-    syslog(LOG_ERR, "WAL: ring full; refused a record of %ld bytes (%ld KiB owed to records not yet written, %ld KiB usable before the checkpointed head at lap %u offset %ld, %ld KiB kept as headroom%s); %ld refused so far",
-           size, owed >> 10, usable >> 10, CheckpointedHeadLap, CheckpointedHeadRingOffset, HeadroomBytes >> 10,
+    syslog(LOG_ERR, "WAL: ring full; refused a record of %ld bytes (%ld KiB owed to records not yet written, %ld KiB to promotions, %ld KiB usable before the checkpointed head at lap %u offset %ld, %ld KiB kept as headroom%s); %ld refused so far",
+           size, owed >> 10, DebtBytesSum >> 10, usable >> 10, CheckpointedHeadLap, CheckpointedHeadRingOffset, HeadroomBytes >> 10,
            room == TRoom::KeepHeadroom ? "" : ", not for this record", n);
   }
   throw TWalRingFull("the WAL ring is full up to its checkpointed head; refused a record of " + std::to_string(size) +
@@ -324,6 +360,47 @@ void TWal::ThrowRingFullLocked(size_t size, TRoom room) const {
 void TWal::ChargeLocked(size_t group_bytes) {
   ReservedGroupBytes.insert(group_bytes);
   ReservedGroupBytesSum += group_bytes;
+}
+
+void TWal::OweLocked(const std::vector<TPromotionDebt> &debts) {
+  for (const auto &debt : debts) {
+    if (debt.Levels) {
+      DebtGroupBytes.insert(debt.GroupBytes);
+      DebtBytesSum += debt.GroupBytes * debt.Levels;
+    }
+  }
+}
+
+void TWal::RepayLocked(const std::vector<TPromotionDebt> &debts) {
+  for (const auto &debt : debts) {
+    if (!debt.Levels) {
+      continue;
+    }
+    auto iter = DebtGroupBytes.find(debt.GroupBytes);
+    const size_t bytes = debt.GroupBytes * debt.Levels;
+    assert(iter != DebtGroupBytes.end() && bytes <= DebtBytesSum);
+    if (iter == DebtGroupBytes.end() || bytes > DebtBytesSum) {
+      syslog(LOG_ERR, "WAL: repaid %ld bytes of promotion room that were not owed (%ld owed)", bytes, DebtBytesSum);
+    }
+    if (iter != DebtGroupBytes.end()) {
+      DebtGroupBytes.erase(iter);
+    }
+    DebtBytesSum -= std::min(bytes, DebtBytesSum);
+  }
+}
+
+void TWal::ChangePromotionDebt(const TPromotionDebtChange &debt) {
+  /* lock */ {
+    std::lock_guard<std::mutex> lock(Mutex);
+    OweLocked(debt.Owed);
+    RepayLocked(debt.Repaid);
+  }
+  SpaceCv.notify_all();
+}
+
+size_t TWal::GetPromotionDebtBytes() const {
+  std::lock_guard<std::mutex> lock(Mutex);
+  return DebtBytesSum;
 }
 
 void TWal::UnchargeLocked(size_t group_bytes) {
@@ -382,10 +459,12 @@ void TWal::CheckAppendableLocked(size_t size) const {
   }
 }
 
-TWalReservation TWal::Reserve(size_t size, TRoom room, std::chrono::milliseconds wait) {
+TWalReservation TWal::Reserve(size_t size, TRoom room, std::chrono::milliseconds wait, size_t credit, std::vector<TPromotionDebt> owes) {
   std::unique_lock<std::mutex> lock(Mutex);
   CheckAppendableLocked(size);
   const size_t group_bytes = GetRecordGroupBytes(size);
+  const size_t new_debt = SumDebtBytes(owes);
+  const size_t new_debt_group = MaxDebtGroupBytes(owes);
   /* Its promotion needs about as much again, from the headroom alone if client writes have filled
      the rest; half of it leaves room for what the promotion adds (its pop, its seal). */
   if (room == TRoom::KeepHeadroom && group_bytes > HeadroomBytes / 2UL) {
@@ -394,20 +473,23 @@ TWalReservation TWal::Reserve(size_t size, TRoom room, std::chrono::milliseconds
                              "so it could be accepted and never promoted; retrying won't help, split it into smaller batches "
                              "or raise --wal_mb");
   }
-  if (!AdmitsLocked(group_bytes, room)) {
+  const auto admits = [&] { return AdmitsLocked(group_bytes, room, credit, new_debt, new_debt_group); };
+  if (!admits()) {
     if (wait.count() > 0) {
-      SpaceCv.wait_for(lock, wait, [this, group_bytes, room] { return Failed || Stopping || AdmitsLocked(group_bytes, room); });
+      SpaceCv.wait_for(lock, wait, [this, &admits] { return Failed || Stopping || admits(); });
       CheckAppendableLocked(size);
     }
-    if (!AdmitsLocked(group_bytes, room)) {
+    if (!admits()) {
       ThrowRingFullLocked(size, room);
     }
   }
   ChargeLocked(group_bytes);
+  OweLocked(owes);
   TWalReservation reservation;
   reservation.Wal = this;
   reservation.Size = size;
   reservation.GroupBytes = group_bytes;
+  reservation.Owes = std::move(owes);
   return reservation;
 }
 
@@ -415,6 +497,8 @@ void TWal::ReleaseReservation(TWalReservation &reservation) {
   /* lock */ {
     std::lock_guard<std::mutex> lock(Mutex);
     UnchargeLocked(reservation.GroupBytes);
+    RepayLocked(reservation.Owes);
+    reservation.Owes.clear();
   }
   SpaceCv.notify_all();
 }
@@ -424,17 +508,22 @@ size_t TWal::GetOwedBytes() const {
   return OwedBytesLocked();
 }
 
-uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_t flags) {
+uint64_t TWal::Append(TWalRecordType type, const void *data, size_t size, uint8_t flags, const TPromotionDebtChange &debt) {
   std::unique_lock<std::mutex> lock(Mutex);
   CheckAppendableLocked(size);
   const size_t group_bytes = GetRecordGroupBytes(size);
-  if (!AdmitsLocked(group_bytes, TRoom::All)) {
+  if (!AdmitsLocked(group_bytes, TRoom::All, SumDebtBytes(debt.Repaid), SumDebtBytes(debt.Owed), MaxDebtGroupBytes(debt.Owed))) {
     ThrowRingFullLocked(size, TRoom::All);
+  }
+  OweLocked(debt.Owed);
+  RepayLocked(debt.Repaid);
+  if (!debt.Repaid.empty()) {
+    SpaceCv.notify_all();
   }
   return AppendLocked(type, data, size, flags);
 }
 
-uint64_t TWal::Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags) {
+uint64_t TWal::Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags, const TPromotionDebtChange &debt) {
   assert(reservation.Wal == this);
   if (reservation.Wal != this) {
     throw std::logic_error("TWal::Append: the reservation is not this WAL's");
@@ -444,6 +533,12 @@ uint64_t TWal::Append(TWalReservation &reservation, TWalRecordType type, const v
   /* The record takes over the reservation's room: it costs no more than the charge, so long as it
      is no bigger than what was reserved. */
   UnchargeLocked(reservation.GroupBytes);
+  /* What the record leaves owed takes over from what the reservation held: the same, unless a push
+     was refused (and owes nothing) or the record came out bigger. */
+  RepayLocked(reservation.Owes);
+  reservation.Owes.clear();
+  OweLocked(debt.Owed);
+  RepayLocked(debt.Repaid);
   if (GetRecordGroupBytes(size) > reservation.GroupBytes && !AdmitsLocked(GetRecordGroupBytes(size), TRoom::All)) {
     /* It has to go in all the same, since the caller can no longer back out, but the ring may then
        not have room for it with the head where it is. */

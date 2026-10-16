@@ -526,9 +526,15 @@ namespace Orly {
         std::function<bool ()> WalGiveUp;
 
         /* What this transaction commits to safe repos, for the WAL's retention (#755): each push's
-           replica mutation (its sequence number is set when the push lands) and whether its repo
-           is a root, and each pop's repo and sequence number.  Filled by Prepare. */
-        std::vector<std::pair<TReplica::TMutation *, bool>> SafePushes;
+           replica mutation (its sequence number is set when the push lands), whether its repo is a
+           root, and the promotions ahead of it (#959); and each pop's repo and sequence number.
+           Filled by Prepare. */
+        struct TSafePush {
+          TReplica::TMutation *Mutation;
+          bool IsRoot;
+          size_t Levels;
+        };
+        std::vector<TSafePush> SafePushes;
         std::vector<std::pair<Base::TUuid, TSequenceNumber>> SafePops;
 
         TTransactionReplication *TransactionReplication;
