@@ -1875,7 +1875,7 @@ void TServer::Init() {
             auto player = std::make_shared<Io::TPlayer>(recorder);
             Io::TBinaryInputOnlyStream strm(player);
             streamer.Read(strm);
-            retention->SetReplayLsn(rec.Lsn);
+            retention->SetReplayLsn(rec.Lsn, rec.Body.size());
             const uint64_t rec_lsn = rec.Lsn;
             RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena(),
                 [this, rec_lsn](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
@@ -1911,6 +1911,8 @@ void TServer::Init() {
       auto head_loc = scan_result.FindGroupForLsn(head_lsn);
       Wal = std::make_unique<Indy::Disk::TWal>(persistent_dev, wal_config, next_lsn, next_group, current_lap, scan_result.NextRingOffset, scan_result.LastGroupChecksum, head_lsn, head_loc.GroupNum, head_loc.Lap, head_loc.Offset, head_loc.Chain, scan_result.GroupLocations);
       RepoManager->SetWal(Wal.get());
+      /* Keep room for the promotions the replayed updates are still owed (#959). */
+      retention->NoteWalAttached();
       /* The table may take the slot less its header, keeping 16 KiB for sections other than its own. If it
          is bigger, it drops its oldest entries and their ids answer operation_expired. */
       const size_t snapshot_budget = Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) > 16UL * 1024UL

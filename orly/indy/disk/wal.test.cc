@@ -319,6 +319,80 @@ FIXTURE(ReservationsHoldRingRoom) {
   EXPECT_EQ(wal.GetOwedBytes(), 0UL);
 }
 
+/* The wedge in #959.  An update in a safe child holds the head until a promotion carries it up, and
+   the promotion needs room of its own.  So the room is kept for it from the update's own record on:
+   other records are refused before they take it, the promotion may spend it, and once it has, or
+   the update's record never comes, the room is free again. */
+FIXTURE(PromotionRoomKeptForUnpromotedUpdates) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, 512UL);
+
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 64UL * 1024UL; // 16 pages; 2 of them headroom
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+
+  TWal wal(&device, config);
+  const std::string body(100, 'U');
+  /* Its page, and a page more: what a promotion adds to the record it promotes. */
+  const size_t group = TWal::GetPromotionGroupBytes(body.size());
+  EXPECT_EQ(group, 2UL * WalAlignment);
+  const TPromotionDebt one_level{group, 1UL};
+
+  /* A reservation holds its pushes' debt, and gives it back if it is dropped unused. */
+  /* reservation */ {
+    TWalReservation dropped = wal.Reserve(body.size(), TWal::TRoom::KeepHeadroom, std::chrono::milliseconds(0), 0UL, {one_level});
+    EXPECT_EQ(wal.GetPromotionDebtBytes(), group);
+  }
+  EXPECT_EQ(wal.GetPromotionDebtBytes(), 0UL);
+
+  /* A client's write into a pov: its record leaves the update owed one promotion. */
+  TWalReservation write = wal.Reserve(body.size(), TWal::TRoom::KeepHeadroom, std::chrono::milliseconds(0), 0UL, {one_level});
+  TWal::TPromotionDebtChange owed;
+  owed.Owed.push_back(one_level);
+  uint64_t last = wal.Append(write, TWalRecordType::Txn, body.data(), body.size(), 0U, owed);
+  EXPECT_EQ(wal.GetPromotionDebtBytes(), group);
+  EXPECT_TRUE(wal.WaitForDurable(last, std::chrono::milliseconds(5000)));
+
+  /* The server's own records then fill the ring, the head standing still, until one is refused. */
+  size_t appended = 0UL;
+  for (;;) {
+    try {
+      last = wal.Append(TWalRecordType::Txn, "x", 1UL);
+    } catch (const TWalRingFull &) {
+      break;
+    }
+    ++appended;
+    EXPECT_TRUE(wal.WaitForDurable(last, std::chrono::milliseconds(5000)));
+    EXPECT_LT(appended, 16UL);
+  }
+  EXPECT_GT(appended, 0UL);
+  EXPECT_FALSE(wal.IsFailed());
+
+  /* Any other record is refused, but the promotion, spending what was kept for it, goes in. */
+  const auto reserve_without_credit = [&wal, &body] { wal.Reserve(body.size(), TWal::TRoom::All); };
+  EXPECT_THROW_FUNC(TWalRingFull, reserve_without_credit);
+  TWalReservation promotion = wal.Reserve(body.size(), TWal::TRoom::All, std::chrono::milliseconds(0), group);
+  TWal::TPromotionDebtChange repaid;
+  repaid.Repaid.push_back(one_level);
+  last = wal.Append(promotion, TWalRecordType::Txn, body.data(), body.size(), 0U, repaid);
+  EXPECT_EQ(wal.GetPromotionDebtBytes(), 0UL);
+  EXPECT_TRUE(wal.WaitForDurable(last, std::chrono::milliseconds(5000)));
+  EXPECT_FALSE(wal.IsFailed());
+
+  /* Once the root's layer reaches a data file the head moves, and there is room again. */
+  wal.Checkpoint(last + 1UL, 0UL);
+  wal.Append(TWalRecordType::Txn, "x", 1UL);
+
+  /* A debt the retention drops (its repo discarded) frees its room too. */
+  wal.ChangePromotionDebt(owed);
+  EXPECT_EQ(wal.GetPromotionDebtBytes(), group);
+  wal.ChangePromotionDebt(repaid);
+  EXPECT_EQ(wal.GetPromotionDebtBytes(), 0UL);
+}
+
 /* The cycle in #891.  A root's unflushed memory layer pins every record that pushed into it, so the
    head can't move until the layer reaches a data file, and the flush that writes it first waits for
    those records to be durable (write-ahead, #755).  So every record the WAL takes must be able to
