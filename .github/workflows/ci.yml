@@ -122,6 +122,42 @@ jobs:
           node --check bench/grc20.mjs
           bash -n bench/run-grc20.sh tests/restart_test.sh
 
+  # ADVISORY until the config has proven itself: clang-format and clang-tidy
+  # over the lines a PR changed (never the whole tree -- no mass reformat, it
+  # would wreck git blame). Findings show up as annotations and in the log;
+  # continue-on-error keeps a finding or a tooling hiccup from turning the PR
+  # red. Nothing `needs` this job. Config: .clang-format, .clang-tidy; driver:
+  # tools/ci/style_check.py. Flip to blocking by removing continue-on-error.
+  style-advisory:
+    name: Style (advisory, changed lines)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # The ubuntu-24.04 runner image already ships clang-18 tooling; install
+      # only what is missing (clang-tidy needs the project's -dev headers to
+      # parse the code, same set as the build jobs).
+      - name: Install clang tooling
+        run: |
+          missing=""
+          for t in clang-format-18 clang-tidy-18 clang-tidy-diff-18.py git-clang-format-18; do
+            command -v "$t" >/dev/null || missing=1
+          done
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq uuid-dev libgmp-dev libaio-dev \
+            libsnappy-dev libreadline-dev libboost-system-dev zlib1g-dev \
+            ${missing:+clang-format-18 clang-tidy-18}
+
+      - name: Check changed lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 tools/ci/style_check.py --base "$BASE_SHA" --jobs "$(nproc)"
+
   debug-and-test:
     name: make debug + make test
     needs: todo-lint
