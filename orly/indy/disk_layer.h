@@ -26,6 +26,7 @@
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
 #include <base/uuid.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/tombstone_counts.h>
 #include <orly/indy/manager_base.h>
 #include <orly/indy/update.h>
@@ -44,7 +45,8 @@ namespace Orly {
                  size_t gen_id,
                  size_t num_keys,
                  TSequenceNumber lowest_seq,
-                 TSequenceNumber highest_seq);
+                 TSequenceNumber highest_seq,
+                 std::shared_ptr<const Disk::TFileKeyFilter> key_filter = nullptr);
 
       ~TDiskLayer() override;
 
@@ -76,6 +78,13 @@ namespace Orly {
 
       void ClearLocalCaches() override;
 
+      /* The filter of the file's current keys, made when the file was written, or null (a file
+         opened from disk, or one whose filter couldn't be made): then every key may be here. It
+         never changes and lives as long as the layer. */
+      [[nodiscard]] const Disk::TFileKeyFilter *GetKeyFilter() const noexcept {
+        return KeyFilter.get();
+      }
+
       /* The tombstone counts of this file's num_keys current keys in the index, made on first
          use and shared by every count that passes over the file, on any runner, for the file's
          life (#749). Reads nothing from disk: the counts fill in as counts read the file. */
@@ -103,6 +112,9 @@ namespace Orly {
       size_t NumKeys;
 
       TSequenceNumber LowestSeq, HighestSeq;
+
+      /* See accessor. */
+      std::shared_ptr<const Disk::TFileKeyFilter> KeyFilter;
 
     };  // TDiskLayer
 

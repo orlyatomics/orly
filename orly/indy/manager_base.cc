@@ -159,7 +159,8 @@ size_t TManager::TRepo::MergeFiles(const std::vector<size_t> &/*gen_id_vec*/,
                                    TSequenceNumber /*release_up_to*/,
                                    bool /*can_tail*/,
                                    bool /*can_tail_tombstones*/,
-                                   bool /*cancel_on_shutdown*/) {
+                                   bool /*cancel_on_shutdown*/,
+                                   std::shared_ptr<const Disk::TFileKeyFilter> */*out_key_filter*/) {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;
 }
@@ -179,7 +180,8 @@ size_t TManager::TRepo::WriteFile(TMemoryLayer */*memory_layer*/,
                                   TSequenceNumber &/*out_saved_low_seq*/,
                                   TSequenceNumber &/*out_saved_high_seq*/,
                                   size_t &/*out_num_keys*/,
-                                  TSequenceNumber /*release_up_to*/) {
+                                  TSequenceNumber /*release_up_to*/,
+                                  std::shared_ptr<const Disk::TFileKeyFilter> */*out_key_filter*/) {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;
 }

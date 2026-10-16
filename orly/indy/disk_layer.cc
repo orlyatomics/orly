@@ -34,13 +34,15 @@ TDiskLayer::TDiskLayer(L0::TManager *manager,
                        size_t gen_id,
                        size_t num_keys,
                        TSequenceNumber lowest_seq,
-                       TSequenceNumber highest_seq)
+                       TSequenceNumber highest_seq,
+                       shared_ptr<const Disk::TFileKeyFilter> key_filter)
     : TDataLayer(manager),
       Repo(repo),
       GenId(gen_id),
       NumKeys(num_keys),
       LowestSeq(lowest_seq),
-      HighestSeq(highest_seq) {
+      HighestSeq(highest_seq),
+      KeyFilter(std::move(key_filter)) {
   assert(HighestSeq >= LowestSeq);
 }
 

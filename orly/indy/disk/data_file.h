@@ -21,6 +21,7 @@
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/disk/in_file.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/out_stream.h>
 #include <orly/indy/disk/util/cache.h>
 #include <orly/indy/disk/util/engine.h>
@@ -240,6 +241,11 @@ namespace Orly {
           return FileLength;
         }
 
+        /* The filter of the file's current keys, for its disk layer; null if it couldn't be made. */
+        [[nodiscard]] inline const std::shared_ptr<const TFileKeyFilter> &GetKeyFilter() const noexcept {
+          return KeyFilter;
+        }
+
         private:
 
         /* The body of both constructors. 'memory_layer', if given, is the layer whose updates'
@@ -277,6 +283,8 @@ namespace Orly {
         TBlockVec BlockVec;
 
         TUpdateCollector UpdateCollector;
+
+        std::shared_ptr<const TFileKeyFilter> KeyFilter;
 
         bool DoCache;
 

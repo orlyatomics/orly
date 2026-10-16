@@ -35,6 +35,7 @@
 
 #include <base/scheduler.h>
 #include <orly/indy/context.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/merge_data_file.h>
 #include <orly/indy/disk/present_walk_file.h>
 #include <orly/indy/disk/read_file.h>
@@ -870,6 +871,30 @@ class TRootRepoFixture {
     return keys;
   }
 
+  /* A key of a second index, whose keys have two members. */
+  TIndexKey PairKey(int64_t a, int64_t b) {
+    return TIndexKey(PairIdxId, TKey(make_tuple(a, b), &Arena, State));
+  }
+
+  /* Commits (a, b) <- val in the second index as one update. */
+  TSequenceNumber CommitPairs(const vector<tuple<int64_t, int64_t, int64_t>> &entries) {
+    return CommitWith([&](TUpdate *update) {
+      for (const auto &[a, b, val] : entries) {
+        update->AddEntry(PairKey(a, b), TKey(val, &Arena, State));
+      }
+    });
+  }
+
+  /* Reads `key` now, by a point read: its value, or unset if it isn't there. */
+  std::optional<TKey> ReadKey(const TIndexKey &key) {
+    TSuprena ctx_arena;
+    TContext context(Repo, &ctx_arena);
+    if (!context.Exists(key)) {
+      return std::nullopt;
+    }
+    return TKey(&Arena, State, context[key]);
+  }
+
   /* The key as a range walk yields it. */
   TKey KeyOf(int64_t key) {
     return TKey(make_tuple(key), &Arena, State);
@@ -996,6 +1021,8 @@ class TRootRepoFixture {
   TSuprena Arena;
 
   const Base::TUuid IdxId;
+
+  const Base::TUuid PairIdxId{TUuid::Twister};
 
 };  // TRootRepoFixture
 
@@ -2934,6 +2961,122 @@ FIXTURE(ReadAtVersionBeforeAKeyExists) {
       EXPECT_EQ(root.KeysAt(0L, 9L, first).size(), 1UL);
       EXPECT_EQ(root.KeysAt(0L, 9L, second).size(), 2UL);
       EXPECT_EQ(root.KeysAt(0L, 9L, 0UL).size(), 0UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Disk layer key filters: a point read that skips the files whose filters rule its key out reads
+   what a read of every file does. Two indexes of different arity, keys spread over many files,
+   overwrites, deletes and a `+=` chain across files, read from the written files and again from
+   merged ones, folded and unfolded, for keys present, deleted and never written. */
+FIXTURE(KeyFiltersReadAsEveryFile) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    for (bool unfolded : {false, true}) {
+      {
+        TRootRepoFixture root(!unfolded);
+        if (unfolded) {
+          root.KeepMergesUnfolded();
+        }
+        const int64_t num_rounds = 12L, per_round = 40L, pairs_per_round = 20L, counter = -1L;
+        map<int64_t, int64_t> model;
+        map<pair<int64_t, int64_t>, int64_t> pair_model;
+        for (int64_t r = 0L; r < num_rounds; ++r) {
+          vector<tuple<int64_t, int64_t, TMutator>> entries;
+          for (int64_t i = 0L; i < per_round; ++i) {
+            const int64_t key = r * per_round + i;
+            entries.emplace_back(key, r * 1000L + i, TMutator::Assign);
+            model[key] = r * 1000L + i;
+          }
+          if (r > 0L) {
+            for (int64_t i = 0L; i < per_round; i += 4L) {
+              const int64_t key = (r - 1L) * per_round + i;
+              entries.emplace_back(key, r * 1000L + 500L + i, TMutator::Assign);
+              model[key] = r * 1000L + 500L + i;
+            }
+          }
+          root.Commit(entries);
+          if (r > 1L) {
+            for (int64_t i = 1L; i < per_round; i += 5L) {
+              const int64_t key = (r - 2L) * per_round + i;
+              root.CommitDelete(key);
+              model.erase(key);
+            }
+          }
+          root.Commit({{counter, r ? 1L : 10L, r ? TMutator::Add : TMutator::Assign}});
+          vector<tuple<int64_t, int64_t, int64_t>> pairs;
+          for (int64_t b = 0L; b < pairs_per_round; ++b) {
+            pairs.emplace_back(r, b, r * 100L + b);
+            pair_model[{r, b}] = r * 100L + b;
+          }
+          if (r > 0L) {
+            for (int64_t b = 0L; b < pairs_per_round; b += 3L) {
+              pairs.emplace_back(r - 1L, b, -(r * 100L + b));
+              pair_model[{r - 1L, b}] = -(r * 100L + b);
+            }
+          }
+          root.CommitPairs(pairs);
+          root.Flush();
+        }
+        model[counter] = 10L + (num_rounds - 1L);
+        EXPECT_GE(root.CountLayersByKind().first, static_cast<size_t>(num_rounds));
+        EXPECT_GE(Disk::TFileKeyFilter::GetTotalFiles(), static_cast<size_t>(num_rounds));
+        EXPECT_GT(Disk::TFileKeyFilter::GetTotalBytes(), 0UL);
+        /* Every key read with the filters and without, against the model. */
+        auto check = [&]() {
+          size_t mismatches = 0UL, present = 0UL, absent = 0UL;
+          for (bool enabled : {true, false}) {
+            Disk::TFileKeyFilter::Enabled = enabled;
+            for (int64_t key = -3L; key < num_rounds * per_round + 10L; ++key) {
+              const auto found = model.find(key);
+              const auto actual = root.ReadKey(root.IndexKey(key));
+              if (found == model.end()) {
+                ++absent;
+                mismatches += actual ? 1UL : 0UL;
+              } else {
+                ++present;
+                mismatches += (actual && *actual == root.Int(found->second)) ? 0UL : 1UL;
+              }
+            }
+            for (int64_t a = -1L; a <= num_rounds; ++a) {
+              for (int64_t b = -1L; b <= pairs_per_round; ++b) {
+                const auto found = pair_model.find({a, b});
+                const auto actual = root.ReadKey(root.PairKey(a, b));
+                if (found == pair_model.end()) {
+                  ++absent;
+                  mismatches += actual ? 1UL : 0UL;
+                } else {
+                  ++present;
+                  mismatches += (actual && *actual == root.Int(found->second)) ? 0UL : 1UL;
+                }
+              }
+            }
+          }
+          Disk::TFileKeyFilter::Enabled = true;
+          EXPECT_EQ(mismatches, 0UL);
+          EXPECT_GT(present, 0UL);
+          EXPECT_GT(absent, 0UL);
+        };
+        check();
+        const size_t disk_layers = root.CountLayersByKind().first;
+        root.MergeDisk(8UL);
+        EXPECT_LT(root.CountLayersByKind().first, disk_layers);
+        check();
+        /* More files on top of the merged ones, then merge again. */
+        for (int64_t key = 0L; key < per_round; key += 2L) {
+          root.CommitDelete(key);
+          model.erase(key);
+          if (key % 10L == 8L) {
+            root.Flush();
+          }
+        }
+        check();
+        root.MergeDisk(8UL);
+        check();
+      }
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

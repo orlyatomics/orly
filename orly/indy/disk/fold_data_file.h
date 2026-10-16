@@ -48,12 +48,14 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <optional>
 
 #include <base/class_traits.h>
 #include <base/uuid.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/disk/data_file.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/util/volume_manager.h>
@@ -113,12 +115,18 @@ namespace Orly {
           return FileLength;
         }
 
+        /* The filter of the output's current keys, for its disk layer; null if it couldn't be made. */
+        [[nodiscard]] inline const std::shared_ptr<const TFileKeyFilter> &GetKeyFilter() const noexcept {
+          return KeyFilter;
+        }
+
         private:
 
         size_t NumKeys;
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
         size_t FileLength = 0UL;
+        std::shared_ptr<const TFileKeyFilter> KeyFilter;
 
       };  // TFoldDataFile
 

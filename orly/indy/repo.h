@@ -1371,7 +1371,8 @@ namespace Orly {
                         TSequenceNumber release_up_to,
                         bool can_tail,
                         bool can_tail_tombstone,
-                        bool cancel_on_shutdown = false) override;
+                        bool cancel_on_shutdown = false,
+                        std::shared_ptr<const Disk::TFileKeyFilter> *out_key_filter = nullptr) override;
 
       /* Make the mapping with merged_layer in place of input_layers current, and mark the inputs
          for delete (#627). The inputs must be taken and in the current mapping. If an allocation
@@ -1398,7 +1399,8 @@ namespace Orly {
                        TSequenceNumber &out_saved_low_seq,
                        TSequenceNumber &out_saved_high_seq,
                        size_t &out_num_keys,
-                       TSequenceNumber release_up_to) override;
+                       TSequenceNumber release_up_to,
+                       std::shared_ptr<const Disk::TFileKeyFilter> *out_key_filter = nullptr) override;
 
       /* Register a replication-synced file: allocate a gen_id, hand the blocks to
          the disk engine, then AddFileToRepo it. */

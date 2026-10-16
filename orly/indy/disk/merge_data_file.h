@@ -26,11 +26,13 @@
 #include <optional>
 
 #include <atomic>
+#include <memory>
 #include <stdexcept>
 
 #include <base/class_traits.h>
 #include <orly/atom/kit2.h>
 #include <orly/indy/disk/data_file.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/out_stream.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/util/index_manager.h>
@@ -101,6 +103,11 @@ namespace Orly {
           return FileLength;
         }
 
+        /* The filter of the output's current keys, for its disk layer; null if it couldn't be made. */
+        [[nodiscard]] inline const std::shared_ptr<const TFileKeyFilter> &GetKeyFilter() const noexcept {
+          return KeyFilter;
+        }
+
         /* Test only. When true, a merge writes every input's copy of an equal note into its output
            arena, as release merges did before #666 whenever the copies' unused header bits held
            different garbage. A test sets it to build such a file (#674). Nothing else does. */
@@ -113,6 +120,7 @@ namespace Orly {
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
         size_t FileLength = 0UL;
+        std::shared_ptr<const TFileKeyFilter> KeyFilter;
 
       };  // TMergeDataFile
 

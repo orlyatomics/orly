@@ -971,6 +971,19 @@ class TMergeDataFileImpl {
           NumNonAssignEntries += idx.second->NumNonAssignEntries;
         }
       }
+      /* make the key filters */ {
+        std::vector<TFileKeyFilter::TIndex> filters;
+        try {
+          filters.reserve(index_map.size());
+          for (const auto &idx : index_map) {
+            filters.push_back(idx.second->KeyFilterBuilder.Make(idx.first, idx.second->NumHashTables));
+          }
+          KeyFilter = std::make_shared<const TFileKeyFilter>(std::move(filters));
+        } catch (const std::bad_alloc &) {
+          /* A file without a filter is read as before. */
+          KeyFilter.reset();
+        }
+      }
       completion_trigger.Wait();
       StartingBlockId = BlockVec[BlockVec.Size() - num_meta_blocks];
       StartingBlockOffset = BlockVec.Size() - num_meta_blocks;
@@ -2210,7 +2223,14 @@ class TMergeDataFileImpl {
     return FileLength;
   }
 
+  inline const std::shared_ptr<const TFileKeyFilter> &GetKeyFilter() const noexcept {
+    return KeyFilter;
+  }
+
   private:
+
+  /* The filter of the output's current keys; null if it couldn't be made. */
+  std::shared_ptr<const TFileKeyFilter> KeyFilter;
 
   class TSortedKey {
     public:
@@ -2532,6 +2552,10 @@ class TMergeDataFileImpl {
           size_t prefix_hash = prefix_key.GetHash();
           prefix_core.TrySetStoredHash(prefix_hash);
           HashCollectorVec[prefix_size - 1]->Emplace(prefix_core, prefix_hash, CurKeyOffset);
+          /* The key filter holds exactly the whole-key table's hashes (TDataFile does the same). */
+          if (prefix_size == NumHashTables) {
+            KeyFilterBuilder.Push(prefix_hash);
+          }
         } else {
           break;
         }
@@ -2860,6 +2884,9 @@ class TMergeDataFileImpl {
     std::vector<std::vector<bool>> HistoryKeeperFilterVec;
 
     std::vector<std::unique_ptr<THashCollector>> HashCollectorVec;
+
+    /* The hashes of the current keys, for the file's key filter. */
+    TKeyFilterBuilder KeyFilterBuilder;
     std::unordered_map<uint64_t, TKey> SeenPrefix;
 
     std::vector<std::pair<size_t, size_t>> NumHashFieldsByOffset;
@@ -2985,6 +3012,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
       FileLength = merge_file.GetFileLength();
+      KeyFilter = merge_file.GetKeyFilter();
     } else {
       TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from, cancel);
       NumKeys = merge_file.GetNumKeys();
@@ -2992,6 +3020,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
       FileLength = merge_file.GetFileLength();
+      KeyFilter = merge_file.GetKeyFilter();
     }
   } else {
     TMergeDataFileImpl<false, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, std::nullopt, cancel);
@@ -3000,6 +3029,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
     LowestSeq = merge_file.GetLowestSequence();
     HighestSeq = merge_file.GetHighestSequence();
     FileLength = merge_file.GetFileLength();
+    KeyFilter = merge_file.GetKeyFilter();
     assert(!can_tail_tombstone);
   }
 }

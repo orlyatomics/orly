@@ -271,6 +271,9 @@ class TIndexFile
   std::vector<std::unique_ptr<THashCollector>> HashCollectorVec;
   std::unordered_map<uint64_t, TKey> SeenPrefix;
 
+  /* The hashes of the current keys, for the file's key filter. */
+  TKeyFilterBuilder KeyFilterBuilder;
+
   void FlushHistory();
 
   void FlushHashes();
@@ -568,6 +571,11 @@ void TIndexFile::PushKey(const TDataFile::TEntryView &entry) {
         remapped_prefix_core.TrySetStoredHash(prefix_hash);
         assert(HashCollectorVec.size() > prefix_size - 1);
         HashCollectorVec[prefix_size - 1]->Emplace(remapped_prefix_core, prefix_hash, CurKeyOffset);
+        /* The key filter holds exactly the whole-key table's hashes, which is all FindInHash
+           looks up a fully bound key by. */
+        if (prefix_size == NumHashTables) {
+          KeyFilterBuilder.Push(prefix_hash);
+        }
       } else {
         break;
       }
@@ -1029,6 +1037,20 @@ void TDataFile::Build(const TEntrySource &source,
         for (const auto &index : index_map) {
           TIndexFile &index_file = *index.second;
           index_file.FlushHashes();
+        }
+      }
+      /* make the key filters */ {
+        std::vector<TFileKeyFilter::TIndex> filters;
+        try {
+          filters.reserve(index_map.size());
+          for (const auto &index : index_map) {
+            TIndexFile &index_file = *index.second;
+            filters.push_back(index_file.KeyFilterBuilder.Make(index.first, index_file.NumHashTables));
+          }
+          KeyFilter = std::make_shared<const TFileKeyFilter>(std::move(filters));
+        } catch (const std::bad_alloc &) {
+          /* A file without a filter is read as before. */
+          KeyFilter.reset();
         }
       }
     }

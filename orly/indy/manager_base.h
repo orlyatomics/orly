@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <memory>
 #include <optional>
 
 #include <base/class_traits.h>
@@ -56,6 +57,7 @@ namespace Orly {
     class TDiskLayer;
     class TWalRetention;
     namespace Disk {
+      class TFileKeyFilter;
       class TWal;
     }
 
@@ -610,7 +612,8 @@ namespace Orly {
                                     TSequenceNumber release_up_to,
                                     bool can_tail,
                                     bool can_tail_tombstone,
-                                    bool cancel_on_shutdown = false);
+                                    bool cancel_on_shutdown = false,
+                                    std::shared_ptr<const Disk::TFileKeyFilter> *out_key_filter = nullptr);
 
           /* caches_cleared: the caller already ran ClearLocalFileCaches on
              every runner (the batched layer cleaner, #584). */
@@ -624,7 +627,8 @@ namespace Orly {
                                    TSequenceNumber &out_saved_low_seq,
                                    TSequenceNumber &out_saved_high_seq,
                                    size_t &out_num_keys,
-                                   TSequenceNumber release_up_to);
+                                   TSequenceNumber release_up_to,
+                                   std::shared_ptr<const Disk::TFileKeyFilter> *out_key_filter = nullptr);
 
           /* `at`, when set, reads the file as of that sequence number (#745). */
           virtual std::unique_ptr<Indy::TPresentWalker> NewPresentWalkerFile(size_t gen_id,

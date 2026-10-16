@@ -405,6 +405,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
   LowestSeq = data_file.GetLowestSequence();
   HighestSeq = data_file.GetHighestSequence();
   FileLength = data_file.GetFileLength();
+  KeyFilter = data_file.GetKeyFilter();
 }
 
 }}}  // namespace Orly::Indy::Disk

@@ -96,9 +96,10 @@ class TDiskLayerSlot {
 
   /* TDiskLayer's constructor doesn't throw. */
   TDiskLayer *Make(L0::TManager *manager, L0::TManager::TRepo *repo, size_t gen_id, size_t num_keys,
-                   TSequenceNumber lowest_seq, TSequenceNumber highest_seq) {
+                   TSequenceNumber lowest_seq, TSequenceNumber highest_seq,
+                   std::shared_ptr<const Disk::TFileKeyFilter> key_filter) {
     assert(Mem);
-    TDiskLayer *layer = ::new (Mem) TDiskLayer(manager, repo, gen_id, num_keys, lowest_seq, highest_seq);
+    TDiskLayer *layer = ::new (Mem) TDiskLayer(manager, repo, gen_id, num_keys, lowest_seq, highest_seq, std::move(key_filter));
     Mem = nullptr;
     return layer;
   }
@@ -659,10 +660,11 @@ void TRepo::AddImportLayer(TMemoryLayer *mem_layer, Base::TEventSemaphore &sem, 
     }  // release Data lock
     size_t num_keys = 0UL;
     TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
-    size_t gen_id = WriteFile(mem_layer, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
+    std::shared_ptr<const Disk::TFileKeyFilter> key_filter;
+    size_t gen_id = WriteFile(mem_layer, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound, &key_filter);
     /* acquire DataLayer lock */ {
       std::lock_guard<std::mutex> lock(DataLock);
-      new_layer = new TDiskLayer(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
+      new_layer = new TDiskLayer(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq, std::move(key_filter));
       delete mem_layer;
     }  // release DataLayer lock
   } else {
@@ -1440,10 +1442,11 @@ void TRepo::StepMergeMem() {
            space: TDataFile throws TDiskFull before the file reaches the file map, having freed
            its blocks and left the updates' persistence notifications pending, so the layers can
            go back and the merge retry (#590). */
-        auto write_file = [&](TMemoryLayer *layer, TSequenceNumber &saved_low_seq, TSequenceNumber &saved_high_seq, size_t &num_keys) {
+        auto write_file = [&](TMemoryLayer *layer, TSequenceNumber &saved_low_seq, TSequenceNumber &saved_high_seq, size_t &num_keys,
+                              std::shared_ptr<const Disk::TFileKeyFilter> &key_filter) {
           can_retry = false;
           try {
-            return WriteFile(layer, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound);
+            return WriteFile(layer, storage_speed, saved_low_seq, saved_high_seq, num_keys, lower_seq_bound, &key_filter);
           } catch (const Disk::Util::TDiskFull &) {
             can_retry = true;
             throw;
@@ -1513,14 +1516,15 @@ void TRepo::StepMergeMem() {
                 size_t num_keys = 0U;
                 TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
                 TDiskLayerSlot disk_slot;
+                std::shared_ptr<const Disk::TFileKeyFilter> key_filter;
                 /* WriteFile keeps the WAL's write-ahead rule and releases what the WAL kept for
                    these updates (#755). */
-                size_t gen_id = write_file(src, saved_low_seq, saved_high_seq, num_keys);
+                size_t gen_id = write_file(src, saved_low_seq, saved_high_seq, num_keys, key_filter);
                 {
                   std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                   Manager->MergeMemAverageKeysCalc.Push(num_keys);
                 }
-                new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
+                new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq, std::move(key_filter));
                 delete new_mem;
                 new_mem = nullptr;
               } else {
@@ -1657,12 +1661,13 @@ void TRepo::StepMergeMem() {
                   size_t num_keys = 0U;
                   TSequenceNumber saved_low_seq = 0UL, saved_high_seq = 0UL;
                   TDiskLayerSlot disk_slot;
-                  size_t gen_id = write_file(new_mem, saved_low_seq, saved_high_seq, num_keys);
+                  std::shared_ptr<const Disk::TFileKeyFilter> key_filter;
+                  size_t gen_id = write_file(new_mem, saved_low_seq, saved_high_seq, num_keys, key_filter);
                   {
                     std::lock_guard<std::mutex> lock(Manager->MergeMemCPULock);
                     Manager->MergeMemAverageKeysCalc.Push(num_keys);
                   }
-                  new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq);
+                  new_disk = disk_slot.Make(Manager, this, gen_id, num_keys, saved_low_seq, saved_high_seq, std::move(key_filter));
                 }
                 delete new_mem;
                 new_mem = nullptr;
@@ -1949,12 +1954,27 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
        here instead, so an empty frame pool slows a read down rather than
        failing it (#762). Every started task is waited for before anything
        unwinds: the preps point into this object and this stack frame. */
+    /* A disk layer whose key filter says the file can't hold the key gets no walker: its walker would
+       find nothing, and leaving it out keeps the others in order. Only this, the point read, consults
+       the filters; a range read may match keys under any hash. */
+    optional<Disk::TFileKeyFilter::TProbe> probe;
+    if (Disk::TFileKeyFilter::Enabled.load(memory_order_relaxed)) {
+      probe.emplace(From);
+    }
     vector<TDataLayer *> layers;
     layers.reserve(View->GetNumEntries());
     for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
-      if (Reads(mapping_csr->GetLayer())) {
-        layers.push_back(mapping_csr->GetLayer());
+      TDataLayer *const layer = mapping_csr->GetLayer();
+      if (!Reads(layer)) {
+        continue;
       }
+      if (probe && layer->GetKind() == TDataLayer::Disk) {
+        const Disk::TFileKeyFilter *const key_filter = static_cast<const TDiskLayer *>(layer)->GetKeyFilter();
+        if (key_filter && !key_filter->MayContain(*probe)) {
+          continue;
+        }
+      }
+      layers.push_back(layer);
     }
     WalkerVec.resize(layers.size());
     const size_t num_tasks = min(layers.size(), MaxPrepFibers);
@@ -2309,12 +2329,13 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
           if (gen_layer_to_tail) {
             syslog(LOG_INFO, "Tailing file [%ld] with [%ld] num keys", gen_id_to_tail, num_keys);
             disk_slot.emplace();
-            size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsTailingAllowed(), true, true);
+            std::shared_ptr<const Disk::TFileKeyFilter> key_filter;
+            size_t gen_id = MergeFiles(std::vector<size_t>{gen_id_to_tail}, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsTailingAllowed(), true, true, &key_filter);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
             }
-            new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
+            new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq, std::move(key_filter));
           }
         } catch (const Disk::TMergeCancelled &) {
           /* #927: shutdown stopped the tail merge. The output is freed and the input layer is untouched. */
@@ -2549,12 +2570,13 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
 
                Tombstones stay: this pair need not be the oldest files, so a tombstone may still be
                hiding an older version. */
-            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsMergePruningAllowed(), false, true);
+            std::shared_ptr<const Disk::TFileKeyFilter> key_filter;
+            size_t gen_id = MergeFiles(gen_id_vec, storage_speed, block_slots_available, Manager->GetTempFileConsolThresh(), lowest_seq, highest_seq, num_keys, GetReleasedUpTo(), IsMergePruningAllowed(), false, true, &key_filter);
             {
               std::lock_guard<std::mutex> lock(Manager->MergeDiskCPULock);
               Manager->MergeDiskAverageKeysCalc.Push(num_keys);
             }
-            new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
+            new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq, std::move(key_filter));
           }
         } catch (const Disk::Util::TDiskFull &ex) {
           /* #590 */
@@ -2806,7 +2828,8 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
                              TSequenceNumber release_up_to,
                              bool can_tail,
                              bool can_tail_tombstone,
-                             bool cancel_on_shutdown) {
+                             bool cancel_on_shutdown,
+                             std::shared_ptr<const Disk::TFileKeyFilter> *out_key_filter) {
   /* Until it finishes, this merge allocates up to the size of its inputs while they stay live.
      Write admission keeps that much free on top of its reserve, and, if the merge fails for
      space, keeps it free for its retry (#590). */
@@ -2850,6 +2873,9 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     }
     /* #857: count bytes written to disk in this merge. */
     AddMergeBytes(merge_data_file.GetFileLength());
+    if (out_key_filter) {
+      *out_key_filter = merge_data_file.GetKeyFilter();
+    }
     return intermediate_gen_id;
   }
   /* Phase B (#55): fold same-mutator commutative runs in the just-merged
@@ -2875,16 +2901,21 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     }
     /* #857: count bytes written to disk in this merge. */
     AddMergeBytes(merge_data_file.GetFileLength());
+    if (out_key_filter) {
+      *out_key_filter = merge_data_file.GetKeyFilter();
+    }
     return intermediate_gen_id;
   };
   size_t final_gen_id = GetNextGenId();
   size_t fold_file_length = 0UL;
+  std::shared_ptr<const Disk::TFileKeyFilter> fold_key_filter;
   try {
     TFoldDataFile fold_data_file(Manager->GetEngine(), storage_speed, GetId(), intermediate_gen_id, final_gen_id, Low, temp_file_consol_thresh, retain_from, cancel_on_shutdown ? &Manager->GetShuttingDownFlag() : nullptr);
     out_num_keys = fold_data_file.GetNumKeys();
     out_saved_low_seq = fold_data_file.GetLowestSequence();
     out_saved_high_seq = fold_data_file.GetHighestSequence();
     fold_file_length = fold_data_file.GetFileLength();
+    fold_key_filter = fold_data_file.GetKeyFilter();
   } catch (const std::bad_alloc &) {
     /* The fold's own output freed itself (TDataFile, before the file map has it). */
     return keep_unfolded("no memory");
@@ -2916,6 +2947,9 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
   RaiseHistoryHorizon(horizon_after(out_saved_high_seq));
   /* #857: count bytes written to disk in this merge (Phase A intermediate + Phase B final). */
   AddMergeBytes(merge_data_file.GetFileLength() + fold_file_length);
+  if (out_key_filter) {
+    *out_key_filter = std::move(fold_key_filter);
+  }
   return final_gen_id;
 }
 
@@ -2961,7 +2995,8 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
                             TSequenceNumber &out_saved_low_seq,
                             TSequenceNumber &out_saved_high_seq,
                             size_t &out_num_keys,
-                            TSequenceNumber release_up_to) {
+                            TSequenceNumber release_up_to,
+                            std::shared_ptr<const Disk::TFileKeyFilter> *out_key_filter) {
   /* A root's data file is where its updates end up, so the WAL can let go of what it kept for
      them once the file is durable.  But the file mustn't get there first: a transaction that also
      wrote to a child pov, which only the WAL rebuilds, would come back half applied (#755). */
@@ -2984,6 +3019,9 @@ size_t TSafeRepo::WriteFile(TMemoryLayer *memory_layer,
   out_saved_high_seq = data_file.GetHighestSequence();
   /* #857: count bytes written to disk in this memtable flush. */
   AddFlushBytes(data_file.GetFileLength());
+  if (out_key_filter) {
+    *out_key_filter = data_file.GetKeyFilter();
+  }
   /* TDataFile has synced the file and waited for its entry to be written. */
   NoteDurable(out_saved_high_seq);
   if (retention) {
