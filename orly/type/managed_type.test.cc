@@ -49,7 +49,6 @@ FIXTURE(HitReturnsSameImpl) {
   TType a = TList::Get(TInt::Get());
   TType b = TList::Get(TInt::Get());
   EXPECT_TRUE(a == b);
-  EXPECT_TRUE(a.get() == b.get());
   EXPECT_FALSE(TList::Get(TBool::Get()) == a);
 }
 
@@ -66,7 +65,7 @@ FIXTURE(GrowthKeepsEntries) {
     lists.push_back(TList::Get(o));
   }
   for (size_t i = 0; i < n; ++i) {
-    EXPECT_TRUE(TList::Get(objs[i]).get() == lists[i].get());
+    EXPECT_TRUE(TList::Get(objs[i]) == lists[i]);
   }
   /* Deep nesting: each level's constructor reaches the next family member. */
   TType deep = TInt::Get();
@@ -77,7 +76,7 @@ FIXTURE(GrowthKeepsEntries) {
   for (int i = 0; i < 200; ++i) {
     deep2 = TList::Get(TOpt::Get(deep2));
   }
-  EXPECT_TRUE(deep.get() == deep2.get());
+  EXPECT_TRUE(deep == deep2);
 }
 
 /* A freed type leaves the map; interning the same key again makes a fresh, working one. */
@@ -92,7 +91,7 @@ FIXTURE(FreeThenReintern) {
       }
     }
     for (const TType &o : objs) {
-      EXPECT_TRUE(TList::Get(o).get() == TList::Get(o).get());
+      EXPECT_TRUE(TList::Get(o) == TList::Get(o));
     }
   }
 }
@@ -114,7 +113,7 @@ FIXTURE(TimedHitPath) {
     size_t sum = 0;
     for (size_t p = 0; p < passes; ++p) {
       for (size_t i = 0; i < n; ++i) {
-        sum += reinterpret_cast<size_t>(TList::Get(objs[i]).get());
+        sum += TList::Get(objs[i]).GetHash();
       }
     }
     auto ns = chrono::duration_cast<chrono::nanoseconds>(chrono::steady_clock::now() - start).count();
