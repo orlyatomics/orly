@@ -915,6 +915,11 @@ jobs:
       - name: tests/restart_test.sh
         run: ./tests/restart_test.sh
 
+      # A paused safe POV stays paused across a SIGKILL restart once its pause record has left
+      # the WAL ring's head (#961).
+      - name: tests/pause_restart_test.sh
+        run: ./tests/pause_restart_test.sh
+
   lang-tests:
     name: lang_test.py
     needs: todo-lint

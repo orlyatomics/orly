@@ -8,6 +8,7 @@
      * it pushed an update into a live safe repo, and that update is not yet in a root's data file
        (either still in the repo it was pushed to, or promoted on up and not yet flushed there);
      * it is the Pov record of a live safe pov, which is how recovery rebuilds that pov.
+     * it is the record that paused a live safe repo, which is the only place the pause is kept (#961).
 
    Each such fact is a pin on an LSN, and the head is the lowest pin.  Pins are taken under the
    same lock as the append that writes the record, so the head can never pass a record that is
@@ -89,18 +90,27 @@ namespace Orly {
         TSequenceNumber Seq;
       };
 
+      /* A pause or unpause a transaction committed to a safe repo (#961).  Seq is the repo's lowest
+         unpromoted sequence number, as the record carries it; unset when the repo had none. */
+      struct TStatusChange {
+        Base::TUuid RepoId;
+        bool Paused;
+        std::optional<TSequenceNumber> Seq;
+      };
+
       explicit TWalRetention(L1::TManager *manager);
 
       /* The promotion room (#959) the updates these pops would take out of their repos are owed: what
          a promotion popping them may spend (TWal::Reserve's credit). */
       size_t GetPromotionCredit(const std::vector<TPop> &pops);
 
-      /* Append a transaction's record and pin it for the updates it pushed.  Called from
-         ~TTransaction with the replication queue lock held, into the room the transaction reserved
-         before it applied (#891) if `reservation` is given.  The pins of the updates it pops repay
-         their promotion room, and those of the updates it pushes owe theirs.  Throws what
-         TWal::Append throws. */
-      uint64_t AppendTxn(const std::string &wire, const std::vector<TPush> &pushes, const std::vector<TPop> &pops, Disk::TWalReservation *reservation = nullptr);
+      /* Append a transaction's record and pin it for the updates it pushed and for the repos it
+         paused (#961).  Called from ~TTransaction with the replication queue lock held, into the
+         room the transaction reserved before it applied (#891) if `reservation` is given.  The pins
+         of the updates it pops repay their promotion room, and those of the updates it pushes owe
+         theirs; a pause pin owes none.  Throws what TWal::Append throws. */
+      uint64_t AppendTxn(const std::string &wire, const std::vector<TPush> &pushes, const std::vector<TPop> &pops,
+                         const std::vector<TStatusChange> &statuses, Disk::TWalReservation *reservation = nullptr);
 
       /* Append a safe pov's Pov record and pin it for as long as the pov is live.  Throws
          Disk::TWalRingFull if the ring has no room for it (#891); with keep_headroom (a pov a
@@ -118,7 +128,7 @@ namespace Orly {
       void NoteWalAttached();
 
       /* Pin a replayed transaction at the current replay LSN.  False if not replaying. */
-      bool NoteReplayedTxn(const std::vector<TPush> &pushes, const std::vector<TPop> &pops);
+      bool NoteReplayedTxn(const std::vector<TPush> &pushes, const std::vector<TPop> &pops, const std::vector<TStatusChange> &statuses);
 
       /* Pin the Pov record recovery restored a safe pov from. */
       void NoteRestoredPov(const Base::TUuid &pov_id, uint64_t lsn, const std::string &body);
@@ -134,8 +144,8 @@ namespace Orly {
       /* The lowest LSN recovery still needs.  Drops the pins of repos that have gone. */
       uint64_t ComputeHead();
 
-      /* Copy old Pov records forward if they are holding the ring, then write a WAL checkpoint at
-         the head.  Skipped when the head hasn't moved, unless forced.  Throws on a WAL failure. */
+      /* Copy old Pov records, and the records that paused live safe repos, forward if they are
+         holding the ring, then write a WAL checkpoint at the head.  Skipped when the head hasn't moved, unless forced.  Throws on a WAL failure. */
       void Checkpoint(uint64_t global_flushed_seq, bool force = false);
 
       /* What a checkpoint carries as its payload, given the head it is taken at (#733): the state
@@ -179,10 +189,21 @@ namespace Orly {
       /* Requires Mutex.  The debts of the pins these pops take. */
       std::vector<Disk::TPromotionDebt> GetPopDebtsLocked(const std::vector<TPop> &pops) const;
 
+      /* The record that paused a safe repo still paused (#961).  A pause leaves no other trace:
+         the repo's Pov record carries no status, and a paused repo with nothing pending has no
+         update pins either, so without this pin the head moved past the pause and recovery
+         brought the repo back unpaused.  It is a pin on a record, not on an update, so it owes the
+         WAL no promotion room and no pop or flush repays or drops it. */
+      struct TStatusPin {
+        uint64_t Lsn;
+      };
+
       /* Requires Mutex.  Pins the pushes, each owed `debt_group_bytes` for each of its levels, and
-         drops the pins the pops take.  Returns the debts of the pins it dropped: the pops' first,
-         as GetPopDebtsLocked lists them, then any a push replaced. */
-      std::vector<Disk::TPromotionDebt> PinTxn(uint64_t lsn, const std::vector<TPush> &pushes, const std::vector<TPop> &pops, size_t debt_group_bytes);
+         drops the pins the pops take; pins and unpins the repos `statuses` pause and unpause.
+         Returns the debts of the pins it dropped: the pops' first, as GetPopDebtsLocked lists them,
+         then any a push replaced. */
+      std::vector<Disk::TPromotionDebt> PinTxn(uint64_t lsn, const std::vector<TPush> &pushes, const std::vector<TPop> &pops,
+                                               const std::vector<TStatusChange> &statuses, size_t debt_group_bytes);
 
       /* Requires Mutex.  Owe `wal` the debt of every pin, if it is not owed already. */
       void OweWalLocked(Disk::TWal *wal);
@@ -201,6 +222,15 @@ namespace Orly {
       /* Copy forward every Pov record more than half the ring behind; move its pin once durable. */
       void CopyPovsForward(Disk::TWal *wal);
 
+      /* Requires Mutex.  The repo's lowest unpromoted sequence number, from its update pins: a
+         paused repo is never a root, so every update it holds is pinned until it is popped. */
+      std::optional<TSequenceNumber> LowestPinnedSeqLocked(const Base::TUuid &repo_id) const;
+      /* Write a fresh pause record for every paused safe repo whose pause is more than half the
+         ring behind, and move its pin there once durable (#961).  The record is an ordinary
+         transaction record holding one pause, as the pause itself wrote, so recovery replays it
+         as one. */
+      void CopyPausesForward(Disk::TWal *wal);
+
       L1::TManager *const Manager;
 
       /* Covers everything below.  Taken inside the replication queue lock and the TWal's own
@@ -210,6 +240,7 @@ namespace Orly {
       std::unordered_map<Base::TUuid, TRepoPins> Repos;
 
       std::unordered_map<Base::TUuid, TPovPin> Povs;
+      std::unordered_map<Base::TUuid, TStatusPin> Paused;
 
       bool Replaying = false;
 

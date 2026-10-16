@@ -537,6 +537,11 @@ namespace Orly {
         std::vector<TSafePush> SafePushes;
         std::vector<std::pair<Base::TUuid, TSequenceNumber>> SafePops;
 
+        /* Each pause or unpause of a safe repo: its replica mutation (whose sequence number the
+           commit sets) and whether it pauses.  The WAL keeps a pause's record while the repo stays
+           paused (#961).  Filled by Prepare. */
+        std::vector<std::pair<TReplica::TMutation *, bool>> SafeStatuses;
+
         TTransactionReplication *TransactionReplication;
 
         TTransactionCompletion *TransactionCompletion;

@@ -110,6 +110,17 @@ static bool FollowsStatusChange(const Orly::Indy::L0::TManager::TPtr<Orly::Indy:
   return start && *start == *follow_or_discard;
 }
 
+/* Whether a replicated or replayed pause or unpause would change nothing: the repo already has
+   that status.  Recovery replays a pause twice when the WAL holds both the pause and the copy of
+   it the WAL wrote to keep it (#961), and an unpause whose pause the ring no longer holds; the
+   second pause (or the unpause of a repo that was never paused here) is discarded rather than
+   reaching TRepo::ChangeStatus, which takes a repo only to a different status.  A local change
+   (no follow_or_discard) is the caller's to get right, as before. */
+static bool AlreadyHasStatus(const Orly::Indy::L0::TManager::TPtr<Orly::Indy::TRepo> &repo, const std::optional<Orly::Indy::TSequenceNumber> &follow_or_discard,
+                             Orly::Indy::TStatus status) {
+  return follow_or_discard && repo->GetStatus() == status;
+}
+
 bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<TUpdate> &update, const std::optional<TSequenceNumber> &ensure_or_discard,
                         const Base::TUuid &promoted_from) {
   Prepared = false;
@@ -260,7 +271,7 @@ bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const std::optio
     assert(false);  // Cannot attach a StatusChanger to a repo with an existing mutation
     throw std::runtime_error("Cannot attach a StatusChanger to a repo with an existing mutation.");
   }
-  if (FollowsStatusChange(repo, follow_or_discard)) {
+  if (FollowsStatusChange(repo, follow_or_discard) && !AlreadyHasStatus(repo, follow_or_discard, Paused)) {
     /* Let any Tetris round that has already peeked this repo finish promoting it before the
        pause can commit, and keep new rounds from peeking it (#636; see TRepo::BeginPause).  We
        wait here, before the commit, because the round's own commit needs the replication queue
@@ -293,7 +304,7 @@ bool TTransaction::UnPause(const L0::TManager::TPtr<TRepo> &repo, const std::opt
     assert(false);  // Cannot attach a StatusChanger to a repo with an existing mutation
     throw std::runtime_error("Cannot attach a StatusChanger to a repo with an existing mutation.");
   }
-  if (FollowsStatusChange(repo, follow_or_discard)) {
+  if (FollowsStatusChange(repo, follow_or_discard) && !AlreadyHasStatus(repo, follow_or_discard, Normal)) {
     new TStatusChanger(this, repo, Normal);
     return true;
   }
@@ -372,6 +383,7 @@ void TTransaction::Prepare() {
   TouchesSafeRepo = false;
   SafePushes.clear();
   SafePops.clear();
+  SafeStatuses.clear();
   size_t num_push = 0UL;
   std::vector<const TPusher *> safe_pushers;
   std::vector<std::pair<Base::TUuid, TSequenceNumber>> release_set;
@@ -440,6 +452,9 @@ void TTransaction::Prepare() {
             throw;
             break;
           }
+        }
+        if (status_changer->Repo->IsSafeRepo()) {
+          SafeStatuses.emplace_back(status_changer->MyMutation, status_changer->Status == Paused);
         }
         break;
       }
@@ -632,6 +647,11 @@ TTransaction::~TTransaction() NO_THROW {
           for (const auto &pop : SafePops) {
             pops.push_back(TWalRetention::TPop{pop.first, pop.second});
           }
+          std::vector<TWalRetention::TStatusChange> statuses;
+          statuses.reserve(SafeStatuses.size());
+          for (const auto &status : SafeStatuses) {
+            statuses.push_back(TWalRetention::TStatusChange{status.first->GetRepoId(), status.second, status.first->GetSequenceNumber()});
+          }
           if (Manager->GetWal()) {
             TReplicationStreamer streamer;
             streamer.PushTransaction(Replica);
@@ -646,14 +666,14 @@ TTransaction::~TTransaction() NO_THROW {
             if (WalReservation && wire.size() > WalReservation.GetSize()) {
               syslog(LOG_ERR, "~TTransaction: WAL record of %ld bytes is bigger than the %ld Prepare reserved for it (#891)", wire.size(), WalReservation.GetSize());
             }
-            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops, &WalReservation);
+            const uint64_t lsn = retention->AppendTxn(wire, pushes, pops, statuses, &WalReservation);
             if (CommitLsnOut) {
               *CommitLsnOut = lsn;
             }
           } else {
             /* Recovery replaying the WAL, before there is one to append to: pin the record being
                replayed.  Does nothing otherwise. */
-            retention->NoteReplayedTxn(pushes, pops);
+            retention->NoteReplayedTxn(pushes, pops, statuses);
           }
         } catch (const std::exception &ex) {
           syslog(LOG_ERR, "~TTransaction: WAL append failed: %s", ex.what());
